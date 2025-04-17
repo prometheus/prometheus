@@ -92,7 +92,12 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 
 				metric := metricSlice.At(k)
 				mostRecentTimestamp = max(mostRecentTimestamp, mostRecentTimestampInMetric(metric))
-				temporality, hasTemporality := aggregationTemporality(metric)
+				temporality, hasTemporality, err := aggregationTemporality(metric)
+				if err != nil {
+					errs = multierr.Append(errs, err)
+					continue
+				}
+
 				if hasTemporality &&
 					(temporality == pmetric.AggregationTemporalityUnspecified ||
 						(!settings.AllowDeltaTemporality && temporality == pmetric.AggregationTemporalityDelta)) {

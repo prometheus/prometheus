@@ -256,8 +256,8 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromCounterSeries("test_metric_1", ts),
-				createPromCounterSeries("test_metric_2", ts),
+				createPromFloatSeries("test_metric_1", ts),
+				createPromFloatSeries("test_metric_2", ts),
 			},
 		},
 		{
@@ -268,8 +268,8 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityDelta, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromCounterSeries("test_metric_1", ts),
-				createPromCounterSeries("test_metric_2", ts),
+				createPromFloatSeries("test_metric_1", ts),
+				createPromFloatSeries("test_metric_2", ts),
 			},
 		},
 		{
@@ -280,8 +280,8 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromCounterSeries("test_metric_1", ts),
-				createPromCounterSeries("test_metric_2", ts),
+				createPromFloatSeries("test_metric_1", ts),
+				createPromFloatSeries("test_metric_2", ts),
 			},
 		},
 		{
@@ -292,7 +292,7 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityDelta, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromCounterSeries("test_metric_1", ts),
+				createPromFloatSeries("test_metric_1", ts),
 			},
 			expectedError: `invalid temporality and type combination for metric "test_metric_2"`,
 		},
@@ -304,7 +304,7 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityUnspecified, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromCounterSeries("test_metric_1", ts),
+				createPromFloatSeries("test_metric_1", ts),
 			},
 			expectedError: `invalid temporality and type combination for metric "test_metric_2"`,
 		},
@@ -387,47 +387,8 @@ func TestTemporality(t *testing.T) {
 				createOtelExplicitHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
 				createOtelExplicitHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
-			expectedSeries: []prompb.TimeSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_2_bucket"},
-						{Name: "le", Value: "1"},
-						{Name: "test_label", Value: "test_value"},
-					},
-					Samples: []prompb.Sample{{Value: 10, Timestamp: 100000}},
-				},
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_2_bucket"},
-						{Name: "le", Value: "2"},
-						{Name: "test_label", Value: "test_value"},
-					},
-					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
-				},
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_2_bucket"},
-						{Name: "le", Value: "+Inf"},
-						{Name: "test_label", Value: "test_value"},
-					},
-					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
-				},
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_2_count"},
-						{Name: "test_label", Value: "test_value"},
-					},
-					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
-				},
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_2_sum"},
-						{Name: "test_label", Value: "test_value"},
-					},
-					Samples: []prompb.Sample{{Value: 30, Timestamp: 100000}},
-				},
-			},
-			expectedError: `invalid temporality and type combination for metric "test_histogram_1"`,
+			expectedSeries: createPromClassicHistogramSeries("test_histogram_2", ts),
+			expectedError:  `invalid temporality and type combination for metric "test_histogram_1"`,
 		},
 		{
 			name:          "delta histogram with buckets and convertToNHCB=false when allowed",
@@ -437,84 +398,34 @@ func TestTemporality(t *testing.T) {
 				createOtelExplicitHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
 				createOtelExplicitHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
-			expectedSeries: []prompb.TimeSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_1_bucket"},
-						{Name: "le", Value: "1"},
-						{Name: "test_label", Value: "test_value"},
-					},
-					Samples: []prompb.Sample{{Value: 10, Timestamp: 100000}},
-				},
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_1_bucket"},
-						{Name: "le", Value: "2"},
-						{Name: "test_label", Value: "test_value"},
-					},
-					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
-				},
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_1_bucket"},
-						{Name: "le", Value: "+Inf"},
-						{Name: "test_label", Value: "test_value"},
-					},
-					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
-				},
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_1_count"},
-						{Name: "test_label", Value: "test_value"},
-					},
-					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
-				},
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_1_sum"},
-						{Name: "test_label", Value: "test_value"},
-					},
-					Samples: []prompb.Sample{{Value: 30, Timestamp: 100000}},
-				},
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_2_bucket"},
-						{Name: "le", Value: "1"},
-						{Name: "test_label", Value: "test_value"},
-					},
-					Samples: []prompb.Sample{{Value: 10, Timestamp: 100000}},
-				},
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_2_bucket"},
-						{Name: "le", Value: "2"},
-						{Name: "test_label", Value: "test_value"},
-					},
-					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
-				},
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_2_bucket"},
-						{Name: "le", Value: "+Inf"},
-						{Name: "test_label", Value: "test_value"},
-					},
-					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
-				},
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_2_count"},
-						{Name: "test_label", Value: "test_value"},
-					},
-					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
-				},
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_2_sum"},
-						{Name: "test_label", Value: "test_value"},
-					},
-					Samples: []prompb.Sample{{Value: 30, Timestamp: 100000}},
-				},
+			expectedSeries: append(
+				createPromClassicHistogramSeries("test_histogram_1", ts),
+				createPromClassicHistogramSeries("test_histogram_2", ts)...,
+			),
+		},
+		{
+			name: "summary does not have temporality",
+			inputSeries: []pmetric.Metric{
+				createOtelSummary("test_summary_1", ts),
 			},
+			expectedSeries: createPromSummarySeries("test_summary_1", ts),
+		},
+		{
+			name: "gauge does not have temporality",
+			inputSeries: []pmetric.Metric{
+				createOtelGauge("test_gauge_1", ts),
+			},
+			expectedSeries: []prompb.TimeSeries{
+				createPromFloatSeries("test_gauge_1", ts),
+			},
+		},
+		{
+			name: "empty metric type errors",
+			inputSeries: []pmetric.Metric{
+				createOtelEmptyType("test_empty", ts),
+			},
+			expectedSeries: []prompb.TimeSeries{},
+			expectedError:  `could not get aggregation temporality for test_empty as it has unsupported metric type Empty`,
 		},
 	}
 
@@ -563,7 +474,7 @@ func createOtelSum(name string, temporality pmetric.AggregationTemporality, ts t
 	return m
 }
 
-func createPromCounterSeries(name string, ts time.Time) prompb.TimeSeries {
+func createPromFloatSeries(name string, ts time.Time) prompb.TimeSeries {
 	return prompb.TimeSeries{
 		Labels: []prompb.Label{
 			{Name: "__name__", Value: name},
@@ -574,6 +485,18 @@ func createPromCounterSeries(name string, ts time.Time) prompb.TimeSeries {
 			Timestamp: ts.UnixMilli(),
 		}},
 	}
+}
+
+func createOtelGauge(name string, ts time.Time) pmetric.Metric {
+	metrics := pmetric.NewMetricSlice()
+	m := metrics.AppendEmpty()
+	m.SetName(name)
+	gauge := m.SetEmptyGauge()
+	dp := gauge.DataPoints().AppendEmpty()
+	dp.SetDoubleValue(5)
+	dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+	dp.Attributes().PutStr("test_label", "test_value")
+	return m
 }
 
 func createOtelExponentialHistogram(name string, temporality pmetric.AggregationTemporality, ts time.Time) pmetric.Metric {
@@ -651,6 +574,108 @@ func createPromNHCBSeries(name string, hint prompb.Histogram_ResetHint, ts time.
 			},
 		},
 	}
+}
+
+func createPromClassicHistogramSeries(name string, ts time.Time) []prompb.TimeSeries {
+	return []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: name + "_bucket"},
+				{Name: "le", Value: "1"},
+				{Name: "test_label", Value: "test_value"},
+			},
+			Samples: []prompb.Sample{{Value: 10, Timestamp: ts.UnixMilli()}},
+		},
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: name + "_bucket"},
+				{Name: "le", Value: "2"},
+				{Name: "test_label", Value: "test_value"},
+			},
+			Samples: []prompb.Sample{{Value: 20, Timestamp: ts.UnixMilli()}},
+		},
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: name + "_bucket"},
+				{Name: "le", Value: "+Inf"},
+				{Name: "test_label", Value: "test_value"},
+			},
+			Samples: []prompb.Sample{{Value: 20, Timestamp: ts.UnixMilli()}},
+		},
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: name + "_count"},
+				{Name: "test_label", Value: "test_value"},
+			},
+			Samples: []prompb.Sample{{Value: 20, Timestamp: ts.UnixMilli()}},
+		},
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: name + "_sum"},
+				{Name: "test_label", Value: "test_value"},
+			},
+			Samples: []prompb.Sample{{Value: 30, Timestamp: ts.UnixMilli()}},
+		},
+	}
+}
+
+func createOtelSummary(name string, ts time.Time) pmetric.Metric {
+	metrics := pmetric.NewMetricSlice()
+	m := metrics.AppendEmpty()
+	m.SetName(name)
+	summary := m.SetEmptySummary()
+	dp := summary.DataPoints().AppendEmpty()
+	dp.SetCount(9)
+	dp.SetSum(18)
+	qv := dp.QuantileValues().AppendEmpty()
+	qv.SetQuantile(0.5)
+	qv.SetValue(2)
+	dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+	dp.Attributes().PutStr("test_label", "test_value")
+	return m
+}
+
+func createPromSummarySeries(name string, ts time.Time) []prompb.TimeSeries {
+	return []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: name + "_sum"},
+				{Name: "test_label", Value: "test_value"},
+			},
+			Samples: []prompb.Sample{{
+				Value:     18,
+				Timestamp: ts.UnixMilli(),
+			}},
+		},
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: name + "_count"},
+				{Name: "test_label", Value: "test_value"},
+			},
+			Samples: []prompb.Sample{{
+				Value:     9,
+				Timestamp: ts.UnixMilli(),
+			}},
+		},
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: name},
+				{Name: "quantile", Value: "0.5"},
+				{Name: "test_label", Value: "test_value"},
+			},
+			Samples: []prompb.Sample{{
+				Value:     2,
+				Timestamp: ts.UnixMilli(),
+			}},
+		},
+	}
+}
+
+func createOtelEmptyType(name string, ts time.Time) pmetric.Metric {
+	metrics := pmetric.NewMetricSlice()
+	m := metrics.AppendEmpty()
+	m.SetName(name)
+	return m
 }
 
 func sortTimeSeries(series []prompb.TimeSeries) []prompb.TimeSeries {
