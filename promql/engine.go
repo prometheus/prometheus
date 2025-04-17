@@ -1386,11 +1386,11 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 		if params.HasAnyNaN() {
 			annos.Add(annotations.NewInvalidQuantileWarning(math.NaN(), aggExpr.Param.PositionRange()))
 		}
-		if minVal := params.Min(); minVal < 0 {
-			annos.Add(annotations.NewInvalidQuantileWarning(minVal, aggExpr.Param.PositionRange()))
-		}
 		if maxVal := params.Max(); maxVal > 1 {
 			annos.Add(annotations.NewInvalidQuantileWarning(maxVal, aggExpr.Param.PositionRange()))
+		}
+		if minVal := params.Min(); minVal < 0 {
+			annos.Add(annotations.NewInvalidQuantileWarning(minVal, aggExpr.Param.PositionRange()))
 		}
 	}
 
