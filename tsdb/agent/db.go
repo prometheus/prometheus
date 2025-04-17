@@ -21,12 +21,12 @@ import (
 	"math"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -278,6 +278,9 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 		return nil, fmt.Errorf("creating WAL: %w", err)
 	}
 
+	var nextRef atomic.Uint64
+	nextRef.Store(0)
+
 	db := &DB{
 		logger: l,
 		opts:   opts,
@@ -286,7 +289,7 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 		wal:    w,
 		locker: locker,
 
-		nextRef: atomic.NewUint64(0),
+		nextRef: &nextRef,
 		series:  newStripeSeries(opts.StripeSize),
 		deleted: make(map[chunks.HeadSeriesRef]int),
 
@@ -529,7 +532,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				// Update the lastTs for the series based
 				ref, ok := multiRef[entry.Ref]
 				if !ok {
-					nonExistentSeriesRefs.Inc()
+					nonExistentSeriesRefs.Add(1)
 					continue
 				}
 				series := db.series.GetByID(ref)
@@ -543,7 +546,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				// Update the lastTs for the series based
 				ref, ok := multiRef[entry.Ref]
 				if !ok {
-					nonExistentSeriesRefs.Inc()
+					nonExistentSeriesRefs.Add(1)
 					continue
 				}
 				series := db.series.GetByID(ref)
@@ -557,7 +560,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				// Update the lastTs for the series based
 				ref, ok := multiRef[entry.Ref]
 				if !ok {
-					nonExistentSeriesRefs.Inc()
+					nonExistentSeriesRefs.Add(1)
 					continue
 				}
 				series := db.series.GetByID(ref)
@@ -851,7 +854,7 @@ func (a *appender) getOrCreate(l labels.Labels) (series *memSeries, created bool
 		return series, false
 	}
 
-	ref := chunks.HeadSeriesRef(a.nextRef.Inc())
+	ref := chunks.HeadSeriesRef(a.nextRef.Add(1))
 	series = &memSeries{ref: ref, lset: l, lastTs: math.MinInt64}
 	a.series.Set(hash, series)
 	return series, true
