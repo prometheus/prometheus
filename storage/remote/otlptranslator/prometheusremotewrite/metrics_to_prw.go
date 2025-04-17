@@ -27,10 +27,22 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
+type ResourceAttributeAction int
+
+const (
+	PromoteResourceAttributeAction ResourceAttributeAction = iota
+	IgnoreResourceAttributeAction
+)
+
+type ResourceAttributesSetting struct {
+	Action ResourceAttributeAction
+	Attr   map[string]struct{}
+}
 type Settings struct {
 	Namespace                         string
 	ExternalLabels                    map[string]string
@@ -38,7 +50,7 @@ type Settings struct {
 	ExportCreatedMetric               bool
 	AddMetricSuffixes                 bool
 	AllowUTF8                         bool
-	PromoteResourceAttributes         []string
+	ResourceAttributesSetting         ResourceAttributesSetting
 	KeepIdentifyingResourceAttributes bool
 	ConvertHistogramsToNHCB           bool
 }
@@ -259,4 +271,44 @@ func (c *PrometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Lab
 	ts, _ := c.getOrCreateTimeSeries(lbls)
 	ts.Samples = append(ts.Samples, *sample)
 	return ts
+}
+
+func NewResourceAttributesSetting(otlpCfg config.OTLPConfig) ResourceAttributesSetting {
+	if otlpCfg.IgnoreResourceAttributes == nil {
+		attr := make(map[string]struct{}, len(otlpCfg.PromoteResourceAttributes))
+		for _, s := range otlpCfg.PromoteResourceAttributes {
+			attr[s] = struct{}{}
+		}
+		return ResourceAttributesSetting{
+			Action: PromoteResourceAttributeAction,
+			Attr:   attr,
+		}
+	}
+	attr := make(map[string]struct{}, len(otlpCfg.IgnoreResourceAttributes))
+	for _, s := range otlpCfg.IgnoreResourceAttributes {
+		attr[s] = struct{}{}
+	}
+	return ResourceAttributesSetting{
+		Action: IgnoreResourceAttributeAction,
+		Attr:   attr,
+	}
+}
+
+func (s *ResourceAttributesSetting) shouldPromote(name string) bool {
+	switch s.Action {
+	case IgnoreResourceAttributeAction:
+		_, exist := s.Attr[name]
+		return !exist
+	case PromoteResourceAttributeAction:
+		_, exist := s.Attr[name]
+		return exist
+	default:
+		return false
+	}
+}
+
+// Not promote anything.
+func (s *ResourceAttributesSetting) reset() {
+	s.Action = PromoteResourceAttributeAction
+	s.Attr = make(map[string]struct{})
 }
