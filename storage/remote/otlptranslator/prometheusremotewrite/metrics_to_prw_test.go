@@ -422,7 +422,7 @@ func TestTemporality(t *testing.T) {
 		{
 			name: "empty metric type errors",
 			inputSeries: []pmetric.Metric{
-				createOtelEmptyType("test_empty", ts),
+				createOtelEmptyType("test_empty"),
 			},
 			expectedSeries: []prompb.TimeSeries{},
 			expectedError:  `could not get aggregation temporality for test_empty as it has unsupported metric type Empty`,
@@ -671,7 +671,7 @@ func createPromSummarySeries(name string, ts time.Time) []prompb.TimeSeries {
 	}
 }
 
-func createOtelEmptyType(name string, ts time.Time) pmetric.Metric {
+func createOtelEmptyType(name string) pmetric.Metric {
 	metrics := pmetric.NewMetricSlice()
 	m := metrics.AppendEmpty()
 	m.SetName(name)
