@@ -168,7 +168,7 @@ recommended to update these files atomically.
 `--enable-feature=otlp-deltatocumulative`
 
 When enabled, Prometheus will convert OTLP metrics from delta temporality to their
-cumulative equivalent, instead of dropping them.
+cumulative equivalent, instead of dropping them. This cannot be enabled in conjunction with `otlp-native-delta-ingestion`.
 
 This uses
 [deltatocumulative][d2c]
