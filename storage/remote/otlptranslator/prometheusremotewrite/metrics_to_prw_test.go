@@ -256,8 +256,8 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromCounter("test_metric_1", ts),
-				createPromCounter("test_metric_2", ts),
+				createPromCounterSeries("test_metric_1", ts),
+				createPromCounterSeries("test_metric_2", ts),
 			},
 		},
 		{
@@ -268,8 +268,8 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityDelta, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromCounter("test_metric_1", ts),
-				createPromCounter("test_metric_2", ts),
+				createPromCounterSeries("test_metric_1", ts),
+				createPromCounterSeries("test_metric_2", ts),
 			},
 		},
 		{
@@ -280,18 +280,21 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromCounter("test_metric_1", ts),
-				createPromCounter("test_metric_2", ts),
+				createPromCounterSeries("test_metric_1", ts),
+				createPromCounterSeries("test_metric_2", ts),
 			},
 		},
 		{
-			name:          "delta rejected when not allowed",
-			allowDelta:    false,
-			expectedError: `invalid temporality and type combination for metric "test_metric_2"`,
+			name:       "delta rejected when not allowed",
+			allowDelta: false,
 			inputSeries: []pmetric.Metric{
 				createOtelSum("test_metric_1", pmetric.AggregationTemporalityCumulative, ts),
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityDelta, ts),
 			},
+			expectedSeries: []prompb.TimeSeries{
+				createPromCounterSeries("test_metric_1", ts),
+			},
+			expectedError: `invalid temporality and type combination for metric "test_metric_2"`,
 		},
 		{
 			name:       "unspecified temporality not allowed",
@@ -300,39 +303,42 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_1", pmetric.AggregationTemporalityCumulative, ts),
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityUnspecified, ts),
 			},
+			expectedSeries: []prompb.TimeSeries{
+				createPromCounterSeries("test_metric_1", ts),
+			},
 			expectedError: `invalid temporality and type combination for metric "test_metric_2"`,
 		},
 		{
 			name:       "cumulative histogram",
 			allowDelta: false,
 			inputSeries: []pmetric.Metric{
-				createOtelExpHistogram("test_histogram", pmetric.AggregationTemporalityCumulative, ts),
+				createOtelExponentialHistogram("test_histogram", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromNativeHistogram("test_histogram", prompb.Histogram_UNKNOWN, ts),
+				createPromNativeHistogramSeries("test_histogram", prompb.Histogram_UNKNOWN, ts),
 			},
 		},
 		{
 			name:       "delta histogram when allowed",
 			allowDelta: true,
 			inputSeries: []pmetric.Metric{
-				createOtelExpHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
-				createOtelExpHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
+				createOtelExponentialHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
+				createOtelExponentialHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromNativeHistogram("test_histogram_1", prompb.Histogram_GAUGE, ts),
-				createPromNativeHistogram("test_histogram_2", prompb.Histogram_UNKNOWN, ts),
+				createPromNativeHistogramSeries("test_histogram_1", prompb.Histogram_GAUGE, ts),
+				createPromNativeHistogramSeries("test_histogram_2", prompb.Histogram_UNKNOWN, ts),
 			},
 		},
 		{
 			name:       "delta histogram when not allowed",
 			allowDelta: false,
 			inputSeries: []pmetric.Metric{
-				createOtelExpHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
-				createOtelExpHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
+				createOtelExponentialHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
+				createOtelExponentialHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromNativeHistogram("test_histogram_2", prompb.Histogram_UNKNOWN, ts),
+				createPromNativeHistogramSeries("test_histogram_2", prompb.Histogram_UNKNOWN, ts),
 			},
 			expectedError: `invalid temporality and type combination for metric "test_histogram_1"`,
 		},
@@ -344,7 +350,7 @@ func TestTemporality(t *testing.T) {
 				createOtelExplicitHistogram("test_histogram", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromNHCB("test_histogram", prompb.Histogram_UNKNOWN, ts),
+				createPromNHCBSeries("test_histogram", prompb.Histogram_UNKNOWN, ts),
 			},
 		},
 		{
@@ -356,8 +362,8 @@ func TestTemporality(t *testing.T) {
 				createOtelExplicitHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromNHCB("test_histogram_1", prompb.Histogram_GAUGE, ts),
-				createPromNHCB("test_histogram_2", prompb.Histogram_UNKNOWN, ts),
+				createPromNHCBSeries("test_histogram_1", prompb.Histogram_GAUGE, ts),
+				createPromNHCBSeries("test_histogram_2", prompb.Histogram_UNKNOWN, ts),
 			},
 		},
 		{
@@ -365,11 +371,11 @@ func TestTemporality(t *testing.T) {
 			allowDelta:    false,
 			convertToNHCB: true,
 			inputSeries: []pmetric.Metric{
-				createOtelExpHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
+				createOtelExplicitHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
 				createOtelExplicitHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromNativeHistogram("test_histogram_1", prompb.Histogram_GAUGE, ts),
+				createPromNHCBSeries("test_histogram_2", prompb.Histogram_UNKNOWN, ts),
 			},
 			expectedError: `invalid temporality and type combination for metric "test_histogram_1"`,
 		},
@@ -378,11 +384,48 @@ func TestTemporality(t *testing.T) {
 			allowDelta:    false,
 			convertToNHCB: false,
 			inputSeries: []pmetric.Metric{
-				createOtelExpHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
+				createOtelExplicitHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
 				createOtelExplicitHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromNativeHistogram("test_histogram_1", prompb.Histogram_GAUGE, ts),
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_histogram_2_bucket"},
+						{Name: "le", Value: "1"},
+						{Name: "test_label", Value: "test_value"},
+					},
+					Samples: []prompb.Sample{{Value: 10, Timestamp: 100000}},
+				},
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_histogram_2_bucket"},
+						{Name: "le", Value: "2"},
+						{Name: "test_label", Value: "test_value"},
+					},
+					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
+				},
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_histogram_2_bucket"},
+						{Name: "le", Value: "+Inf"},
+						{Name: "test_label", Value: "test_value"},
+					},
+					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
+				},
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_histogram_2_count"},
+						{Name: "test_label", Value: "test_value"},
+					},
+					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
+				},
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_histogram_2_sum"},
+						{Name: "test_label", Value: "test_value"},
+					},
+					Samples: []prompb.Sample{{Value: 30, Timestamp: 100000}},
+				},
 			},
 			expectedError: `invalid temporality and type combination for metric "test_histogram_1"`,
 		},
@@ -391,11 +434,48 @@ func TestTemporality(t *testing.T) {
 			allowDelta:    true,
 			convertToNHCB: false,
 			inputSeries: []pmetric.Metric{
-				createOtelExpHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
+				createOtelExplicitHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
 				createOtelExplicitHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromNativeHistogram("test_histogram_1", prompb.Histogram_GAUGE, ts),
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_histogram_1_bucket"},
+						{Name: "le", Value: "1"},
+						{Name: "test_label", Value: "test_value"},
+					},
+					Samples: []prompb.Sample{{Value: 10, Timestamp: 100000}},
+				},
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_histogram_1_bucket"},
+						{Name: "le", Value: "2"},
+						{Name: "test_label", Value: "test_value"},
+					},
+					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
+				},
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_histogram_1_bucket"},
+						{Name: "le", Value: "+Inf"},
+						{Name: "test_label", Value: "test_value"},
+					},
+					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
+				},
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_histogram_1_count"},
+						{Name: "test_label", Value: "test_value"},
+					},
+					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
+				},
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_histogram_1_sum"},
+						{Name: "test_label", Value: "test_value"},
+					},
+					Samples: []prompb.Sample{{Value: 30, Timestamp: 100000}},
+				},
 				{
 					Labels: []prompb.Label{
 						{Name: "__name__", Value: "test_histogram_2_bucket"},
@@ -458,10 +538,10 @@ func TestTemporality(t *testing.T) {
 
 			if tc.expectedError != "" {
 				require.EqualError(t, err, tc.expectedError)
-				return
+			} else {
+				require.NoError(t, err)
 			}
 
-			require.NoError(t, err)
 			series := c.TimeSeries()
 
 			// Sort series to make the test deterministic.
@@ -483,7 +563,7 @@ func createOtelSum(name string, temporality pmetric.AggregationTemporality, ts t
 	return m
 }
 
-func createPromCounter(name string, ts time.Time) prompb.TimeSeries {
+func createPromCounterSeries(name string, ts time.Time) prompb.TimeSeries {
 	return prompb.TimeSeries{
 		Labels: []prompb.Label{
 			{Name: "__name__", Value: name},
@@ -496,7 +576,7 @@ func createPromCounter(name string, ts time.Time) prompb.TimeSeries {
 	}
 }
 
-func createOtelExpHistogram(name string, temporality pmetric.AggregationTemporality, ts time.Time) pmetric.Metric {
+func createOtelExponentialHistogram(name string, temporality pmetric.AggregationTemporality, ts time.Time) pmetric.Metric {
 	metrics := pmetric.NewMetricSlice()
 	m := metrics.AppendEmpty()
 	m.SetName(name)
@@ -510,7 +590,7 @@ func createOtelExpHistogram(name string, temporality pmetric.AggregationTemporal
 	return m
 }
 
-func createPromNativeHistogram(name string, hint prompb.Histogram_ResetHint, ts time.Time) prompb.TimeSeries {
+func createPromNativeHistogramSeries(name string, hint prompb.Histogram_ResetHint, ts time.Time) prompb.TimeSeries {
 	return prompb.TimeSeries{
 		Labels: []prompb.Label{
 			{Name: "__name__", Value: name},
@@ -546,7 +626,7 @@ func createOtelExplicitHistogram(name string, temporality pmetric.AggregationTem
 	return m
 }
 
-func createPromNHCB(name string, hint prompb.Histogram_ResetHint, ts time.Time) prompb.TimeSeries {
+func createPromNHCBSeries(name string, hint prompb.Histogram_ResetHint, ts time.Time) prompb.TimeSeries {
 	return prompb.TimeSeries{
 		Labels: []prompb.Label{
 			{Name: "__name__", Value: name},
