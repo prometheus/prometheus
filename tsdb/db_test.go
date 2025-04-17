@@ -34,6 +34,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -9515,5 +9516,87 @@ func TestBlockClosingBlockedDuringRemoteRead(t *testing.T) {
 	case <-time.After(10 * time.Millisecond):
 		require.Fail(t, "Closing the block timed out.")
 	case <-blockClosed:
+	}
+}
+
+var sizeRestrictedFSAvailable = flag.Bool("test.size-restricted-fs", false, "run tests that require size restricted FS")
+
+// TestNoSpaceLeftFailureRecovery uses the size-restricted filesystems in /mnt/test_prom_size_restricted_fs
+// to reproduce an ENOSPC failure during appending, it then frees some space and ensures
+// that appending resumes and that the already produced WAL isn't corrupted.
+// Issues such as https://github.com/prometheus/prometheus/issues/13027 have suggested that the WAL
+// becomes corrupted when the disk is full. This test will help give additional attention to such cases.
+// and help provide an environement to learn more about them.
+func TestSizeRestrictedFS_NoSpaceLeftFailureRecovery(t *testing.T) {
+	fsRoot := "/mnt/test_prom_size_restricted_fs"
+	if !*sizeRestrictedFSAvailable {
+		t.Skip("test requires size restricted FS")
+	}
+
+	for i := range 100 {
+		t.Run(fmt.Sprintf("fs_%d", i), func(t *testing.T) {
+			t.Parallel()
+			root := filepath.Join(fsRoot, fmt.Sprintf("fs_%d", i), "tmp")
+			require.NoError(t, os.RemoveAll(root))
+			require.NoError(t, os.MkdirAll(root, 0o777))
+			ctx := context.Background()
+
+			// Reserve some space in the FS.
+			placeholder := filepath.Join(root, "placeholder")
+			f, err := os.OpenFile(placeholder, os.O_WRONLY|os.O_CREATE, 0o777)
+			require.NoError(t, err)
+			err = fileutil.Preallocate(f, 2*1024*1024, false)
+			require.NoError(t, err)
+			require.NoError(t, f.Close())
+
+			dbDir := filepath.Join(root, t.TempDir())
+			db, err := Open(dbDir, nil, nil, nil, nil)
+			require.NoError(t, err)
+			db.DisableCompactions()
+
+			i := 0
+			for {
+				app := db.Appender(ctx)
+				_, err = app.Append(storage.SeriesRef(i), labels.FromStrings("foo", "bar"), int64(i), float64(i))
+				require.NoError(t, err)
+				err = app.Commit()
+				if errors.Is(err, syscall.ENOSPC) {
+					break
+				}
+				require.NoError(t, err)
+				i++
+			}
+
+			// Continue appending on ENOSPC
+			for j := i; j < i+100; j++ {
+				app := db.Appender(ctx)
+				_, err = app.Append(storage.SeriesRef(i), labels.FromStrings("foo", "bar"), int64(j), float64(j))
+				require.NoError(t, err)
+				err = app.Commit()
+				require.ErrorIs(t, err, syscall.ENOSPC)
+			}
+
+			// Free the reserved space.
+			require.NoError(t, os.Remove(placeholder))
+			app := db.Appender(ctx)
+			_, err = app.Append(storage.SeriesRef(i), labels.FromStrings("foo", "bar"), int64(i), float64(i))
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// Re-open the DB and ensure the WAL wasn't corrupted.
+			require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal))
+			// Some WAL was written.
+			size, err := db.head.wal.Size()
+			require.Greater(t, size, int64(1024))
+			require.NoError(t, err)
+
+			require.NoError(t, db.Close())
+			db, err = Open(dbDir, nil, nil, nil, nil)
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
+			require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal))
+		})
 	}
 }
