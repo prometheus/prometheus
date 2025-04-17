@@ -1510,15 +1510,19 @@ var (
 	// Unit and type suffixes may be appended to metric names, according to certain rules.
 	UnderscoreEscapingWithSuffixes translationStrategyOption = "UnderscoreEscapingWithSuffixes"
 	// NoTranslation (EXPERIMENTAL): disables all translation of incoming metric
-	// and label names.
+	// and label names. This offers a way for the OTLP users to use native metric names, reducing confusion.
 	//
-	// Note that because metrics in Open Telemetry are considered
-	// distinct if they share the same name but have different Type or Units, for
-	// instance "foo.bar" with units Seconds is a separate series from "foo.bar"
-	// with units Milliseconds. Because prometheus can't differentiate timeseries
-	// based on type and unit metadata, these two series would be conflated in
-	// Prometheus. Therefore this setting is experimental and should not be used in
+	// WARNING: This setting has significant known risks and limitations (see
+	// https://prometheus.io/docs/practices/naming/  for details):
+	// * Impaired UX when using PromQL in plain YAML (e.g. alerts, rules, dashboard, autoscaling configuration).
+	// * Series collisions which in the best case may result in OOO errors, in the worst case a silently malformed
+	// time series. For instance, you may end up in situation of ingesting `foo.bar` series with unit
+	// `seconds` and a separate series `foo.bar` with unit `milliseconds`.
+	//
+	// As a result, this setting is experimental and currently, should not be used in
 	// production systems.
+	//
+	// TODO(ArthurSens): Mention `type-and-unit-labels` feature (https://github.com/prometheus/proposals/pull/39) once released, as potential mitigation of the above risks.
 	NoTranslation translationStrategyOption = "NoTranslation"
 )
 
