@@ -1734,7 +1734,7 @@ func (h *Head) String() string {
 	return "head"
 }
 
-func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, error) {
+func (h *Head) getOrCreate(hash uint64, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
 	// Just using `getOrCreateWithID` below would be semantically sufficient, but we'd create
 	// a new series on every sample inserted via Add(), which causes allocations
 	// and makes our series IDs rather random and harder to compress in postings.
@@ -1746,17 +1746,17 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 	// Optimistically assume that we are the first one to create the series.
 	id := chunks.HeadSeriesRef(h.lastSeriesID.Inc())
 
-	return h.getOrCreateWithID(id, hash, lset)
+	return h.getOrCreateWithID(id, hash, lset, pendingCommit)
 }
 
-func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
+func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
 		shardHash := uint64(0)
 		if h.opts.EnableSharding {
 			shardHash = labels.StableHash(lset)
 		}
 
-		return newMemSeries(lset, id, shardHash, h.opts.IsolationDisabled)
+		return newMemSeries(lset, id, shardHash, h.opts.IsolationDisabled, pendingCommit)
 	})
 	if err != nil {
 		return nil, false, err
@@ -2197,12 +2197,13 @@ type memSeriesOOOFields struct {
 	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0].
 }
 
-func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, isolationDisabled bool) *memSeries {
+func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, isolationDisabled, pendingCommit bool) *memSeries {
 	s := &memSeries{
-		lset:      lset,
-		ref:       id,
-		nextAt:    math.MinInt64,
-		shardHash: shardHash,
+		lset:          lset,
+		ref:           id,
+		nextAt:        math.MinInt64,
+		shardHash:     shardHash,
+		pendingCommit: pendingCommit,
 	}
 	if !isolationDisabled {
 		s.txs = newTxRing(0)
