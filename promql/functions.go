@@ -1367,8 +1367,10 @@ func funcHistogramStdDev(vals []parser.Value, _ parser.Expressions, enh *EvalNod
 			var val float64
 			if bucket.Lower <= 0 && 0 <= bucket.Upper {
 				val = 0
-			} else {
+			} else if sample.H.Schema == -53 {
 				val = (bucket.Upper * bucket.Lower) / 2.0
+			} else {
+				val = math.Sqrt(bucket.Upper * bucket.Lower)
 				if bucket.Upper < 0 {
 					val = -val
 				}
