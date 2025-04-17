@@ -469,7 +469,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			appendable := handleOtlp(t, exportRequest, testCase.otlpCfg)
+			appendable := handleOTLP(t, exportRequest, testCase.otlpCfg)
 			for _, sample := range testCase.expectedSamples {
 				requireContainsSample(t, appendable.samples, sample)
 			}
@@ -480,7 +480,20 @@ func TestOTLPWriteHandler(t *testing.T) {
 	}
 }
 
-func handleOtlp(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg config.OTLPConfig) *mockAppendable {
+func requireContainsSample(t *testing.T, actual []mockSample, expected mockSample) {
+	t.Helper()
+
+	for _, got := range actual {
+		if labels.Equal(expected.l, got.l) && expected.t == got.t && expected.v == got.v {
+			return
+		}
+	}
+	require.Fail(t, fmt.Sprintf("Sample not found: \n"+
+		"expected: %v\n"+
+		"actual  : %v", expected, actual))
+}
+
+func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg config.OTLPConfig) *mockAppendable {
 	buf, err := exportRequest.MarshalProto()
 	require.NoError(t, err)
 
