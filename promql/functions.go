@@ -283,7 +283,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 }
 
 // === trailing_increase(node parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcTrailingIncrease(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcJustIncrease(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	var (
 		samples            = vals[0].(Matrix)[0]
 		resultFloat        float64
@@ -1936,7 +1936,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"tanh":                         funcTanh,
 	"time":                         funcTime,
 	"timestamp":                    funcTimestamp,
-	"trailing_increase":            funcTrailingIncrease,
+	"just_increase":                funcJustIncrease,
 	"vector":                       funcVector,
 	"year":                         funcYear,
 }

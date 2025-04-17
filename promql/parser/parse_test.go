@@ -2824,9 +2824,9 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: "trailing_increase(some_metric[5m])",
+		input: "just_increase(some_metric[5m])",
 		expected: &Call{
-			Func: MustGetFunction("trailing_increase"),
+			Func: MustGetFunction("just_increase"),
 			Args: Expressions{
 				&MatrixSelector{
 					VectorSelector: &VectorSelector{
@@ -2835,43 +2835,17 @@ var testExpr = []struct {
 							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
 						},
 						PosRange: posrange.PositionRange{
-							Start: 18,
-							End:   29,
+							Start: 14,
+							End:   25,
 						},
 					},
 					Range:  5 * time.Minute,
-					EndPos: 33,
+					EndPos: 29,
 				},
 			},
 			PosRange: posrange.PositionRange{
 				Start: 0,
-				End:   34,
-			},
-		},
-	},
-	{
-		input: "trailing_increase(some_metric[5m])",
-		expected: &Call{
-			Func: MustGetFunction("trailing_increase"),
-			Args: Expressions{
-				&MatrixSelector{
-					VectorSelector: &VectorSelector{
-						Name: "some_metric",
-						LabelMatchers: []*labels.Matcher{
-							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
-						},
-						PosRange: posrange.PositionRange{
-							Start: 18,
-							End:   29,
-						},
-					},
-					Range:  5 * time.Minute,
-					EndPos: 33,
-				},
-			},
-			PosRange: posrange.PositionRange{
-				Start: 0,
-				End:   34,
+				End:   30,
 			},
 		},
 	},
