@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !stringlabels && !dedupelabels
+//go:build slicelabels
 
 package labels
 
@@ -453,7 +453,7 @@ func (b *ScratchBuilder) Add(name, value string) {
 }
 
 // UnsafeAddBytes adds a name/value pair, using []byte instead of string.
-// The '-tags stringlabels' version of this function is unsafe, hence the name.
+// The default version of this function is unsafe, hence the name.
 // This version is safe - it copies the strings immediately - but we keep the same name so everything compiles.
 func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
 	b.add = append(b.add, Label{Name: string(name), Value: string(value)})
