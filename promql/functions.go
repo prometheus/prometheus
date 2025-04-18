@@ -932,8 +932,7 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 	return append(enh.Out, Sample{F: quantile(q, values)}), annos
 }
 
-// === stddev_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcStddevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func varianceOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, varianceToResult func(float64) float64) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
@@ -953,33 +952,22 @@ func funcStddevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalN
 			mean, cMean = kahanSumInc(delta/count, mean, cMean)
 			aux, cAux = kahanSumInc(delta*(f.F-(mean+cMean)), aux, cAux)
 		}
-		return math.Sqrt((aux + cAux) / count)
+		variance := (aux + cAux) / count
+		if varianceToResult == nil {
+			return variance
+		}
+		return varianceToResult(variance)
 	}), annos
+}
+
+// === stddev_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
+func funcStddevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return varianceOverTime(vals, args, enh, math.Sqrt)
 }
 
 // === stdvar_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcStdvarOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	samples := vals[0].(Matrix)[0]
-	var annos annotations.Annotations
-	if len(samples.Floats) == 0 {
-		return enh.Out, nil
-	}
-	if len(samples.Histograms) > 0 {
-		metricName := samples.Metric.Get(labels.MetricName)
-		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
-	}
-	return aggrOverTime(vals, enh, func(s Series) float64 {
-		var count float64
-		var mean, cMean float64
-		var aux, cAux float64
-		for _, f := range s.Floats {
-			count++
-			delta := f.F - (mean + cMean)
-			mean, cMean = kahanSumInc(delta/count, mean, cMean)
-			aux, cAux = kahanSumInc(delta*(f.F-(mean+cMean)), aux, cAux)
-		}
-		return (aux + cAux) / count
-	}), annos
+	return varianceOverTime(vals, args, enh, nil)
 }
 
 // === absent(Vector parser.ValueTypeVector) (Vector, Annotations) ===
@@ -1347,11 +1335,9 @@ func funcHistogramAvg(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHe
 	return enh.Out, nil
 }
 
-// === histogram_stddev(Vector parser.ValueTypeVector) (Vector, Annotations)  ===
-func funcHistogramStdDev(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	inVec := vals[0].(Vector)
-
-	for _, sample := range inVec {
+func histogramVariance(vals []parser.Value, enh *EvalNodeHelper, varianceToResult func(float64) float64) (Vector, annotations.Annotations) {
+	vec := vals[0].(Vector)
+	for _, sample := range vec {
 		// Skip non-histogram samples.
 		if sample.H == nil {
 			continue
@@ -1381,48 +1367,8 @@ func funcHistogramStdDev(vals []parser.Value, _ parser.Expressions, enh *EvalNod
 		if !enh.enableDelayedNameRemoval {
 			sample.Metric = sample.Metric.DropMetricName()
 		}
-		enh.Out = append(enh.Out, Sample{
-			Metric:   sample.Metric,
-			F:        math.Sqrt(variance),
-			DropName: true,
-		})
-	}
-	return enh.Out, nil
-}
-
-// === histogram_stdvar(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcHistogramStdVar(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	inVec := vals[0].(Vector)
-
-	for _, sample := range inVec {
-		// Skip non-histogram samples.
-		if sample.H == nil {
-			continue
-		}
-		mean := sample.H.Sum / sample.H.Count
-		var variance, cVariance float64
-		it := sample.H.AllBucketIterator()
-		for it.Next() {
-			bucket := it.At()
-			if bucket.Count == 0 {
-				continue
-			}
-			var val float64
-			if bucket.Lower <= 0 && 0 <= bucket.Upper {
-				val = 0
-			} else {
-				val = math.Sqrt(bucket.Upper * bucket.Lower)
-				if bucket.Upper < 0 {
-					val = -val
-				}
-			}
-			delta := val - mean
-			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
-		}
-		variance += cVariance
-		variance /= sample.H.Count
-		if !enh.enableDelayedNameRemoval {
-			sample.Metric = sample.Metric.DropMetricName()
+		if varianceToResult != nil {
+			variance = varianceToResult(variance)
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
@@ -1431,6 +1377,16 @@ func funcHistogramStdVar(vals []parser.Value, _ parser.Expressions, enh *EvalNod
 		})
 	}
 	return enh.Out, nil
+}
+
+// === histogram_stddev(Vector parser.ValueTypeVector) (Vector, Annotations)  ===
+func funcHistogramStdDev(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return histogramVariance(vals, enh, math.Sqrt)
+}
+
+// === histogram_stdvar(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+func funcHistogramStdVar(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return histogramVariance(vals, enh, nil)
 }
 
 // === histogram_fraction(lower, upper parser.ValueTypeScalar, Vector parser.ValueTypeVector) (Vector, Annotations) ===
