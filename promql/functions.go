@@ -952,7 +952,11 @@ func varianceOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNod
 			mean, cMean = kahanSumInc(delta/count, mean, cMean)
 			aux, cAux = kahanSumInc(delta*(f.F-(mean+cMean)), aux, cAux)
 		}
-		return varianceToResult((aux + cAux) / count)
+		variance := (aux + cAux) / count
+		if varianceToResult == nil {
+			return variance
+		}
+		return varianceToResult(variance)
 	}), annos
 }
 
@@ -963,9 +967,7 @@ func funcStddevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalN
 
 // === stdvar_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcStdvarOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return varianceOverTime(vals, args, enh, func(f float64) float64 {
-		return f
-	})
+	return varianceOverTime(vals, args, enh, nil)
 }
 
 // === absent(Vector parser.ValueTypeVector) (Vector, Annotations) ===
@@ -1333,7 +1335,8 @@ func funcHistogramAvg(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHe
 	return enh.Out, nil
 }
 
-func histogramVariance(vec Vector, enh *EvalNodeHelper, varianceToResult func(float64) float64) (Vector, annotations.Annotations) {
+func histogramVariance(vals []parser.Value, enh *EvalNodeHelper, varianceToResult func(float64) float64) (Vector, annotations.Annotations) {
+	vec := vals[0].(Vector)
 	for _, sample := range vec {
 		// Skip non-histogram samples.
 		if sample.H == nil {
@@ -1364,9 +1367,12 @@ func histogramVariance(vec Vector, enh *EvalNodeHelper, varianceToResult func(fl
 		if !enh.enableDelayedNameRemoval {
 			sample.Metric = sample.Metric.DropMetricName()
 		}
+		if varianceToResult != nil {
+			variance = varianceToResult(variance)
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
-			F:        varianceToResult(variance),
+			F:        variance,
 			DropName: true,
 		})
 	}
@@ -1375,16 +1381,12 @@ func histogramVariance(vec Vector, enh *EvalNodeHelper, varianceToResult func(fl
 
 // === histogram_stddev(Vector parser.ValueTypeVector) (Vector, Annotations)  ===
 func funcHistogramStdDev(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	inVec := vals[0].(Vector)
-	return histogramVariance(inVec, enh, math.Sqrt)
+	return histogramVariance(vals, enh, math.Sqrt)
 }
 
 // === histogram_stdvar(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcHistogramStdVar(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	inVec := vals[0].(Vector)
-	return histogramVariance(inVec, enh, func(f float64) float64 {
-		return f
-	})
+	return histogramVariance(vals, enh, nil)
 }
 
 // === histogram_fraction(lower, upper parser.ValueTypeScalar, Vector parser.ValueTypeVector) (Vector, Annotations) ===
