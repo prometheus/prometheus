@@ -68,11 +68,25 @@ func (a *Alert) ResolvedAt(ts time.Time) bool {
 	return !a.EndsAt.After(ts)
 }
 
+// Copy returns a copy of the alert.
+func (a *Alert) Copy() *Alert {
+	return &Alert{
+		Labels:       a.Labels.Copy(),
+		Annotations:  a.Annotations.Copy(),
+		StartsAt:     a.StartsAt,
+		EndsAt:       a.EndsAt,
+		GeneratorURL: a.GeneratorURL,
+	}
+}
+
 func relabelAlerts(relabelConfigs []*relabel.Config, externalLabels labels.Labels, alerts []*Alert) []*Alert {
 	lb := labels.NewBuilder(labels.EmptyLabels())
 	var relabeledAlerts []*Alert
 
-	for _, a := range alerts {
+	for _, s := range alerts {
+		// Copy the alert to avoid race condition.
+		a := s.Copy()
+
 		lb.Reset(a.Labels)
 		externalLabels.Range(func(l labels.Label) {
 			if a.Labels.Get(l.Name) == "" {
