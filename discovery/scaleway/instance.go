@@ -182,9 +182,10 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 			var ipv6Addresses []string
 
 			for _, ip := range server.PublicIPs {
-				if ip.Family == instance.ServerIPIPFamilyInet {
+				switch ip.Family {
+				case instance.ServerIPIPFamilyInet:
 					ipv4Addresses = append(ipv4Addresses, ip.Address.String())
-				} else if ip.Family == instance.ServerIPIPFamilyInet6 {
+				case instance.ServerIPIPFamilyInet6:
 					ipv6Addresses = append(ipv6Addresses, ip.Address.String())
 				}
 			}
