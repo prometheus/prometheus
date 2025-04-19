@@ -10,6 +10,7 @@ Maintainers for specific parts of the codebase:
   * `promtool`: David Leadbeater (<dgl@dgl.cx> / @dgl)
 * `discovery`
   * `k8s`: Frederic Branczyk (<fbranczyk@gmail.com> / @brancz)
+  * `stackit`: Jan-Otto Kröpke (<mail@jkroepke.de> / @jkroepke)
 * `documentation`
   * `prometheus-mixin`: Matthias Loibl (<mail@matthiasloibl.com> / @metalmatze)
 * `model/histogram` and other code related to native histograms: Björn Rabenstein (<beorn@grafana.com> / @beorn7),
