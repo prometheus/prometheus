@@ -627,8 +627,17 @@ func main() {
 		logger.Error(fmt.Sprintf("Error loading dynamic scrape config files from config (--config.file=%q)", cfg.configFile), "file", absPath, "err", err)
 		os.Exit(2)
 	}
-	//What this issue is about is the parsing of the rules files that actually exist, to make sure they are syntactically correct before doing the heavy lifting of loading the WAL.
-	// is the code that does that for the config file and the separate scrape config files. In the same style, we need a section just after it doing it for rules files.
+	// This section of the code is responsible for validating and parsing rule files
+	// specified in the Prometheus configuration. It ensures that all rule files
+	// match the provided patterns and are syntactically correct before Prometheus
+	// starts processing them.
+	// 1. Iterate through the list of rule file patterns specified in the configuration (`cfgFile.RuleFiles`).
+	// 2. Use `filepath.Glob` to expand each pattern into a list of matching files.
+	// 3. If an error occurs during pattern expansion, log the error, resolve the absolute path of the pattern, and exit with an error code.
+	// 4. For each matching file, attempt to parse it using `rules.ParseFile`.
+	// 5. If parsing fails, log the error, resolve the absolute path of the file, and exit with an error code.
+	//
+	// Errors are logged with details such as the configuration file path, the rule file pattern, and the specific error encountered.
 
 	if len(cfgFile.RuleFiles) > 0 {
 		for _, pat := range cfgFile.RuleFiles {

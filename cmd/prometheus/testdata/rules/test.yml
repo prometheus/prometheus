@@ -1,6 +1,0 @@
-groups:
-  - name: querylogtest
-    interval: 1s
-    rules:
-      - record: test
-        expr: query_in_rule
