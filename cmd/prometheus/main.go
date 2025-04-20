@@ -627,6 +627,34 @@ func main() {
 		logger.Error(fmt.Sprintf("Error loading dynamic scrape config files from config (--config.file=%q)", cfg.configFile), "file", absPath, "err", err)
 		os.Exit(2)
 	}
+	//What this issue is about is the parsing of the rules files that actually exist, to make sure they are syntactically correct before doing the heavy lifting of loading the WAL.
+	// is the code that does that for the config file and the separate scrape config files. In the same style, we need a section just after it doing it for rules files.
+
+	if len(cfgFile.RuleFiles) > 0 {
+		for _, pat := range cfgFile.RuleFiles {
+			files, err := filepath.Glob(pat)
+			if err != nil {
+				absPath, pathErr := filepath.Abs(pat)
+				if pathErr != nil {
+					absPath = pat
+				}
+				logger.Error(fmt.Sprintf("Error loading rules pattern (--config.file=%q)", cfg.configFile), "file", absPath, "pattern", pat, "err", err)
+				os.Exit(2)
+			}
+			for _, fn := range files {
+				if _, err := rules.ParseFile(fn); err != nil {
+					absPath, pathErr := filepath.Abs(fn)
+					if pathErr != nil {
+						absPath = fn
+					}
+					logger.Error(fmt.Sprintf("Error loading rules file (--config.file=%q)", cfg.configFile), "file", absPath, "err", err)
+					os.Exit(2)
+				}
+
+			}
+		}
+	}
+
 	if cfg.tsdb.EnableExemplarStorage {
 		if cfgFile.StorageConfig.ExemplarsConfig == nil {
 			cfgFile.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig

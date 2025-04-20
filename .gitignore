@@ -31,3 +31,6 @@ npm_licenses.tar.bz2
 
 # Ignore parser debug
 y.output
+.idea/modules.xml
+.idea/prometheus.iml
+.idea/vcs.xml
