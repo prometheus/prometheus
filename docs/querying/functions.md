@@ -255,18 +255,21 @@ histogram samples:
 
 `histogram_fraction(lower scalar, upper scalar, b instant-vector)` returns the
 estimated fraction of observations between the provided lower and upper values
-for each histogram sample in `b`.
-It can handle
-[classic histograms](https://prometheus.io/docs/concepts/metric_types/#histogram)
-or native histograms.
-If used with classic histogram take care that the `lower` and `upper` values dont
-stray far from the exported bucket boundaries, otherwise interpolation will lead
-to a potentially large margin of error. The interpolation method for classic historams
-is the same as the one used for `histogram_quantile()`.
-(See
-[here](https://prometheus.io/docs/practices/histograms/#apdex-score) for a more
-informed approach to compute fractions for classic histograms using the exported
-bucket boundaries directly.)
+for each classic or native histogram contained in `b`. Float samples in `b` are 
+considered the counts of observations in each bucket of one or more classic
+histograms, while native histogram samples in `b` are treated each individually 
+as a separate histogram. This works in the same way as for `histogram_quantile()`.
+(See there for more details.)
+
+If the provided lower and upper values do not coincide with bucket boundaries,
+the calculated fraction is an estimate, using the same interpolation method as for
+`histogram_quantile()`. (See there for more details.) Especially with classic
+histograms, it is easy to accidentally pick lower or upper values that are very
+far away from any bucket boundary, leading to large margins of error. Rather than
+using `histogram_fraction()` with classic histograms, it is often a more robust approach
+to directly act on the bucket series when calculating fractions. See the
+[calculation of the Apdex scare](https://prometheus.io/docs/practices/histograms/#apdex-score)
+as a typical example.
 
 For example, the following expression calculates the fraction of HTTP requests
 over the last hour that took 200ms or less:
