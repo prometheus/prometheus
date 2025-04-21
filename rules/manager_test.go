@@ -2574,7 +2574,7 @@ groups:
 `
 
 	// Write the test content to the file.
-	err := os.WriteFile(testFile, []byte(testContent), 0644)
+	err := os.WriteFile(testFile, []byte(testContent), 0o644)
 	require.NoError(t, err)
 
 	// Call the ParseFile function.
