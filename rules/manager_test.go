@@ -20,6 +20,7 @@ import (
 	"math"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"sync"
@@ -2549,6 +2550,43 @@ func TestLabels_FromMaps(t *testing.T) {
 	)
 
 	require.Equal(t, expected, mLabels, "unexpected labelset")
+}
+
+func TestParseFile(t *testing.T) {
+	// Create a temporary directory for the test.
+	tmpDir := t.TempDir()
+
+	// Define the test file path.
+	testFile := filepath.Join(tmpDir, "test_rules.yml")
+
+	// Define the content of the test YAML file.
+	testContent := `
+groups:
+  - name: example
+    rules:
+      - alert: HighRequestLatency
+        expr: job:request_latency_seconds:mean5m{job="myjob"} > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High request latency"
+`
+
+	// Write the test content to the file.
+	err := os.WriteFile(testFile, []byte(testContent), 0644)
+	require.NoError(t, err)
+
+	// Call the ParseFile function.
+	result, err := ParseFile(testFile)
+	require.NoError(t, err)
+
+	// Assert that the result is not nil.
+	require.NotNil(t, result, "Expected parsed rules to be non-nil")
+
+	// Optionally, you can add more assertions to validate the structure of the parsed rules.
+	// For example, if you know the expected structure, you can cast `result` to the appropriate type
+	// and check its fields.
 }
 
 func TestRuleDependencyController_AnalyseRules(t *testing.T) {
