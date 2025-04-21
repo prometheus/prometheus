@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -27,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 	"golang.org/x/sync/semaphore"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -578,4 +580,19 @@ func FromMaps(maps ...map[string]string) labels.Labels {
 	}
 
 	return labels.FromMap(mLables)
+}
+
+func ParseFile(fn string) (interface{}, error) {
+	content, err := os.ReadFile(fn)
+	if err != nil {
+		return nil, err
+	}
+
+	var rules interface{}
+	err = yaml.Unmarshal(content, &rules)
+	if err != nil {
+		return nil, err
+	}
+
+	return rules, nil
 }
