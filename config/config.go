@@ -255,8 +255,7 @@ var (
 
 	// DefaultOTLPConfig is the default OTLP configuration.
 	DefaultOTLPConfig = OTLPConfig{
-		TranslationStrategy:      UnderscoreEscapingWithSuffixes,
-		IgnoreResourceAttributes: nil,
+		TranslationStrategy: UnderscoreEscapingWithSuffixes,
 	}
 )
 
@@ -1514,6 +1513,7 @@ var (
 
 // OTLPConfig is the configuration for writing to the OTLP endpoint.
 type OTLPConfig struct {
+	PromoteAllResourceAttributes      bool                      `yaml:"promote_all_resource_attributes,omitempty"`
 	PromoteResourceAttributes         []string                  `yaml:"promote_resource_attributes,omitempty"`
 	IgnoreResourceAttributes          []string                  `yaml:"ignore_resource_attributes,omitempty"`
 	TranslationStrategy               translationStrategyOption `yaml:"translation_strategy,omitempty"`
@@ -1529,8 +1529,8 @@ func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	if c.IgnoreResourceAttributes != nil && len(c.PromoteResourceAttributes) > 0 {
-		return errors.New("'ignore_resource_attributes' and 'promote_resource_attributes' cannot be configured simultaneously")
+	if c.PromoteAllResourceAttributes && len(c.PromoteResourceAttributes) > 0 {
+		return errors.New("'promote_all_resource_attributes' and 'promote_resource_attributes' cannot be configured simultaneously")
 	}
 
 	if err := validateAttributes(c.IgnoreResourceAttributes); err != nil {

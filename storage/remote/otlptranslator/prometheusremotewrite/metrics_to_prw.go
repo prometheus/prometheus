@@ -274,23 +274,24 @@ func (c *PrometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Lab
 }
 
 func NewResourceAttributesSetting(otlpCfg config.OTLPConfig) ResourceAttributesSetting {
-	if otlpCfg.IgnoreResourceAttributes == nil {
-		attr := make(map[string]struct{}, len(otlpCfg.PromoteResourceAttributes))
-		for _, s := range otlpCfg.PromoteResourceAttributes {
+	createAttrMap := func(attributes []string) map[string]struct{} {
+		attr := make(map[string]struct{}, len(attributes))
+		for _, s := range attributes {
 			attr[s] = struct{}{}
 		}
+		return attr
+	}
+
+	if otlpCfg.PromoteAllResourceAttributes {
 		return ResourceAttributesSetting{
-			Action: PromoteResourceAttributeAction,
-			Attr:   attr,
+			Action: IgnoreResourceAttributeAction,
+			Attr:   createAttrMap(otlpCfg.IgnoreResourceAttributes),
 		}
 	}
-	attr := make(map[string]struct{}, len(otlpCfg.IgnoreResourceAttributes))
-	for _, s := range otlpCfg.IgnoreResourceAttributes {
-		attr[s] = struct{}{}
-	}
+
 	return ResourceAttributesSetting{
-		Action: IgnoreResourceAttributeAction,
-		Attr:   attr,
+		Action: PromoteResourceAttributeAction,
+		Attr:   createAttrMap(otlpCfg.PromoteResourceAttributes),
 	}
 }
 
