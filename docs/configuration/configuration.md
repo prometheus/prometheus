@@ -185,7 +185,7 @@ otlp:
   # Be aware that changes in attributes received by the OTLP endpoint may result in time series churn and lead to high memory usage by the Prometheus server.
   # It cannot be set to 'true' simultaneously with 'promote_resource_attributes'.
   [ promote_all_resource_attributes: <boolean> | default = false ]
-  # When promoting all resource attributes to labels, except the ignored ones. 
+  # Promoting all resource attributes to labels, except the ignored ones. 
   [ ignore_resource_attributes: [<string>, ...] | default = [] ]
   # Configures translation of OTLP metrics when received through the OTLP metrics
   # endpoint. Available values:

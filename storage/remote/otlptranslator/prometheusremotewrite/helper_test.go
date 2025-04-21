@@ -59,7 +59,7 @@ func TestCreateAttributes(t *testing.T) {
 		{
 			name: "Successful conversion without resource attribute promotion",
 			resourceAttributesSetting: ResourceAttributesSetting{
-				Action: PromoteResourceAttributeAction,
+				Action: PromoteSpecificResourceAttributeAction,
 				Attr:   map[string]struct{}{},
 			},
 			expectedLabels: []prompb.Label{
@@ -88,7 +88,7 @@ func TestCreateAttributes(t *testing.T) {
 		{
 			name: "Successful conversion with some attributes ignored",
 			resourceAttributesSetting: ResourceAttributesSetting{
-				Action: PromoteResourceAttributeAction,
+				Action: PromoteSpecificResourceAttributeAction,
 
 				Attr: map[string]struct{}{},
 			},
@@ -115,7 +115,7 @@ func TestCreateAttributes(t *testing.T) {
 		{
 			name: "Successful conversion with resource attribute promotion",
 			resourceAttributesSetting: ResourceAttributesSetting{
-				Action: PromoteResourceAttributeAction,
+				Action: PromoteSpecificResourceAttributeAction,
 				Attr: map[string]struct{}{
 					"non-existent-attr": {},
 					"existent-attr":     {},
@@ -151,7 +151,7 @@ func TestCreateAttributes(t *testing.T) {
 		{
 			name: "Successful conversion with resource attribute promotion, conflicting resource attributes are ignored",
 			resourceAttributesSetting: ResourceAttributesSetting{
-				Action: PromoteResourceAttributeAction,
+				Action: PromoteSpecificResourceAttributeAction,
 				Attr: map[string]struct{}{
 					"non-existent-attr": {},
 					"existent-attr":     {},
@@ -190,7 +190,7 @@ func TestCreateAttributes(t *testing.T) {
 		{
 			name: "Successful conversion with resource attribute promotion, attributes are only promoted once",
 			resourceAttributesSetting: ResourceAttributesSetting{
-				Action: PromoteResourceAttributeAction,
+				Action: PromoteSpecificResourceAttributeAction,
 				Attr: map[string]struct{}{
 					"existent-attr": {},
 				},
@@ -225,7 +225,7 @@ func TestCreateAttributes(t *testing.T) {
 		{
 			name: "Successful conversion promoting all resource attribute",
 			resourceAttributesSetting: ResourceAttributesSetting{
-				Action: IgnoreResourceAttributeAction,
+				Action: PromoteAllExceptIgnoreResourceAttributeAction,
 				Attr:   map[string]struct{}{},
 			},
 			expectedLabels: []prompb.Label{
@@ -266,7 +266,7 @@ func TestCreateAttributes(t *testing.T) {
 		{
 			name: "Successful conversion promoting all resource attribute, ignoring 'service.instance.id'",
 			resourceAttributesSetting: ResourceAttributesSetting{
-				Action: IgnoreResourceAttributeAction,
+				Action: PromoteAllExceptIgnoreResourceAttributeAction,
 				Attr: map[string]struct{}{
 					"service.instance.id": {},
 				},

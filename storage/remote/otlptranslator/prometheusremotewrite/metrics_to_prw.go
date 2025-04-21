@@ -35,8 +35,8 @@ import (
 type ResourceAttributeAction int
 
 const (
-	PromoteResourceAttributeAction ResourceAttributeAction = iota
-	IgnoreResourceAttributeAction
+	PromoteSpecificResourceAttributeAction ResourceAttributeAction = iota
+	PromoteAllExceptIgnoreResourceAttributeAction
 )
 
 type ResourceAttributesSetting struct {
@@ -274,7 +274,7 @@ func (c *PrometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Lab
 }
 
 func NewResourceAttributesSetting(otlpCfg config.OTLPConfig) ResourceAttributesSetting {
-	createAttrMap := func(attributes []string) map[string]struct{} {
+	createAttr := func(attributes []string) map[string]struct{} {
 		attr := make(map[string]struct{}, len(attributes))
 		for _, s := range attributes {
 			attr[s] = struct{}{}
@@ -284,23 +284,23 @@ func NewResourceAttributesSetting(otlpCfg config.OTLPConfig) ResourceAttributesS
 
 	if otlpCfg.PromoteAllResourceAttributes {
 		return ResourceAttributesSetting{
-			Action: IgnoreResourceAttributeAction,
-			Attr:   createAttrMap(otlpCfg.IgnoreResourceAttributes),
+			Action: PromoteAllExceptIgnoreResourceAttributeAction,
+			Attr:   createAttr(otlpCfg.IgnoreResourceAttributes),
 		}
 	}
 
 	return ResourceAttributesSetting{
-		Action: PromoteResourceAttributeAction,
-		Attr:   createAttrMap(otlpCfg.PromoteResourceAttributes),
+		Action: PromoteSpecificResourceAttributeAction,
+		Attr:   createAttr(otlpCfg.PromoteResourceAttributes),
 	}
 }
 
 func (s *ResourceAttributesSetting) shouldPromote(name string) bool {
 	switch s.Action {
-	case IgnoreResourceAttributeAction:
+	case PromoteAllExceptIgnoreResourceAttributeAction:
 		_, exist := s.Attr[name]
 		return !exist
-	case PromoteResourceAttributeAction:
+	case PromoteSpecificResourceAttributeAction:
 		_, exist := s.Attr[name]
 		return exist
 	default:
@@ -310,6 +310,6 @@ func (s *ResourceAttributesSetting) shouldPromote(name string) bool {
 
 // Not promote anything.
 func (s *ResourceAttributesSetting) reset() {
-	s.Action = PromoteResourceAttributeAction
+	s.Action = PromoteSpecificResourceAttributeAction
 	s.Attr = make(map[string]struct{})
 }

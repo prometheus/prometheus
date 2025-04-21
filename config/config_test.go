@@ -1697,12 +1697,12 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		require.ErrorContains(t, err, `empty OTel resource attribute`)
 	})
 
-	t.Run("bad config - conflict promote and (empty) ignore resource attributes", func(t *testing.T) {
+	t.Run("bad config - conflict promote all and promote specific resource attributes", func(t *testing.T) {
 		_, err := LoadFile(filepath.Join("testdata", "otlp_promote_all_resource_attributes.bad.yml"), false, promslog.NewNopLogger())
 		require.ErrorContains(t, err, `'promote_all_resource_attributes' and 'promote_resource_attributes' cannot be configured simultaneously`)
 	})
 
-	t.Run("bad config - conflict promote and ignore resource attributes", func(t *testing.T) {
+	t.Run("bad config - conflict promote all, promote specific resource attributes and ignore resource attributes", func(t *testing.T) {
 		_, err := LoadFile(filepath.Join("testdata", "otlp_promote_all_resource_attributes2.bad.yml"), false, promslog.NewNopLogger())
 		require.ErrorContains(t, err, `'promote_all_resource_attributes' and 'promote_resource_attributes' cannot be configured simultaneously`)
 	})
