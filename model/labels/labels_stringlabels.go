@@ -524,8 +524,10 @@ func marshalLabelToSizedBuffer(m *Label, data []byte) int {
 func sizeWhenEncoded(x uint64) (n int) {
 	if x < 255 {
 		return 1
+	} else if x <= 1<<24 {
+		return 4
 	}
-	return 4
+	panic("String too long to encode as label.")
 }
 
 func encodeSize(data []byte, offset, v int) int {
