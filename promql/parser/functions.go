@@ -431,6 +431,26 @@ var Functions = map[string]*Function{
 		Variadic:   1,
 		ReturnType: ValueTypeVector,
 	},
+	"direct_delta_rate": {
+		Name:       "direct_delta_rate",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
+	"direct_delta_increase": {
+		Name:       "direct_delta_increase",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
+	"extrapolated_delta_rate": {
+		Name:       "extrapolated_delta_rate",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
+	"extrapolated_delta_increase": {
+		Name:       "extrapolated_delta_increase",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
 }
 
 // getFunction returns a predefined Function object for the given name.

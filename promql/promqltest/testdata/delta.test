@@ -1,0 +1,45 @@
+load 10s
+	test_delta_counter	0 1+0x30
+
+
+eval instant at 5m direct_delta_increase(test_delta_counter[5m])
+    {} 30
+
+eval instant at 5m extrapolated_delta_increase(test_delta_counter[5m])
+    {} 30
+
+eval instant at 5m direct_delta_rate(test_delta_counter[5m])
+    {} 0.1
+
+eval instant at 5m extrapolated_delta_rate(test_delta_counter[5m])
+    {} 0.1
+
+eval instant at 35s direct_delta_increase(test_delta_counter[30s])
+    {} 3
+
+eval instant at 35s extrapolated_delta_increase(test_delta_counter[30s])
+    {} 3
+
+eval instant at 35s direct_delta_rate(test_delta_counter[30s])
+    {} 0.1
+
+eval instant at 35s extrapolated_delta_rate(test_delta_counter[30s])
+    {} 0.1
+
+# includes points at T10, T20, T30
+eval instant at 30s direct_delta_increase(test_delta_counter[21s])
+    {} 3
+
+# gets correct increase for selected range (for this specific example...)
+eval instant at 30s extrapolated_delta_increase(test_delta_counter[21s])
+	{} 2.1
+
+# includes points at T10, T20, T30 -> 3 / 21
+eval instant at 30s direct_delta_rate(test_delta_counter[21s])
+    {} 0.14285714285714285
+
+# gets correct rate for selected range
+eval instant at 30s extrapolated_delta_rate(test_delta_counter[21s])
+	{} 0.1
+
+clear

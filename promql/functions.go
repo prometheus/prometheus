@@ -1900,6 +1900,12 @@ var FunctionCalls = map[string]FunctionCall{
 	"timestamp":                    funcTimestamp,
 	"vector":                       funcVector,
 	"year":                         funcYear,
+
+	// for testing purposes
+	"direct_delta_rate":           funcDirectDeltaRate,
+	"direct_delta_increase":       funcDirectDeltaIncrease,
+	"extrapolated_delta_rate":     funcExtrapolatedDeltaRate,
+	"extrapolated_delta_increase": funcExtrapolatedDeltaIncrease,
 }
 
 // AtModifierUnsafeFunctions are the functions whose result
