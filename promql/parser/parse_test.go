@@ -2337,12 +2337,12 @@ var testExpr = []struct {
 	{
 		input:  `foo[]`,
 		fail:   true,
-		errMsg: "bad number or duration syntax: \"\"",
+		errMsg: "unexpected \"]\" in subquery selector, expected number or duration",
 	},
 	{
 		input:  `foo[-1]`,
 		fail:   true,
-		errMsg: "bad number or duration syntax: \"\"",
+		errMsg: "duration must be greater than 0",
 	},
 	{
 		input:  `some_metric[5m] OFFSET 1mm`,
@@ -3091,7 +3091,7 @@ var testExpr = []struct {
 	{
 		input:  `foo{bar="baz"}[`,
 		fail:   true,
-		errMsg: `1:16: parse error: bad number or duration syntax: ""`,
+		errMsg: `unexpected end of input in duration expression`,
 	},
 	{
 		input: `foo{bar="baz"}[10m:6s]`,
@@ -3946,6 +3946,304 @@ var testExpr = []struct {
 			},
 		},
 	},
+	{
+		input: `foo[11s+10s-5*2^2]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			RangeExpr: &DurationExpr{
+				Op: SUB,
+				LHS: &DurationExpr{
+					Op: ADD,
+					LHS: &NumberLiteral{
+						Val: 11,
+						PosRange: posrange.PositionRange{
+							Start: 4,
+							End:   7,
+						},
+						Duration: true,
+					},
+					RHS: &NumberLiteral{
+						Val: 10,
+						PosRange: posrange.PositionRange{
+							Start: 8,
+							End:   11,
+						},
+						Duration: true,
+					},
+				},
+				RHS: &DurationExpr{
+					Op:  MUL,
+					LHS: &NumberLiteral{Val: 5, PosRange: posrange.PositionRange{Start: 12, End: 13}},
+					RHS: &DurationExpr{
+						Op:  POW,
+						LHS: &NumberLiteral{Val: 2, PosRange: posrange.PositionRange{Start: 14, End: 15}},
+						RHS: &NumberLiteral{Val: 2, PosRange: posrange.PositionRange{Start: 16, End: 17}},
+					},
+				},
+			},
+			EndPos: 18,
+		},
+	},
+	{
+		input: `foo[-(10s-5s)+20s]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			RangeExpr: &DurationExpr{
+				Op: ADD,
+				LHS: &DurationExpr{
+					Op:       SUB,
+					StartPos: 4,
+					RHS: &DurationExpr{
+						Op: SUB,
+						LHS: &NumberLiteral{
+							Val: 10,
+							PosRange: posrange.PositionRange{
+								Start: 6,
+								End:   9,
+							},
+							Duration: true,
+						},
+						RHS: &NumberLiteral{
+							Val: 5,
+							PosRange: posrange.PositionRange{
+								Start: 10,
+								End:   12,
+							},
+							Duration: true,
+						},
+						Wrapped: true,
+					},
+				},
+				RHS: &NumberLiteral{
+					Val: 20,
+					PosRange: posrange.PositionRange{
+						Start: 14,
+						End:   17,
+					},
+					Duration: true,
+				},
+			},
+			EndPos: 18,
+		},
+	},
+	{
+		input: `foo[-10s+15s]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			RangeExpr: &DurationExpr{
+				Op: ADD,
+				LHS: &NumberLiteral{
+					Val: -10,
+					PosRange: posrange.PositionRange{
+						Start: 4,
+						End:   8,
+					},
+					Duration: true,
+				},
+				RHS: &NumberLiteral{
+					Val: 15,
+					PosRange: posrange.PositionRange{
+						Start: 9,
+						End:   12,
+					},
+					Duration: true,
+				},
+			},
+			EndPos: 13,
+		},
+	},
+	{
+		input: `foo[4s+4s:1s*2] offset (5s-8)`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			RangeExpr: &DurationExpr{
+				Op: ADD,
+				LHS: &NumberLiteral{
+					Val: 4,
+					PosRange: posrange.PositionRange{
+						Start: 4,
+						End:   6,
+					},
+					Duration: true,
+				},
+				RHS: &NumberLiteral{
+					Val: 4,
+					PosRange: posrange.PositionRange{
+						Start: 7,
+						End:   9,
+					},
+					Duration: true,
+				},
+			},
+			StepExpr: &DurationExpr{
+				Op: MUL,
+				LHS: &NumberLiteral{
+					Val: 1,
+					PosRange: posrange.PositionRange{
+						Start: 10,
+						End:   12,
+					},
+					Duration: true,
+				},
+				RHS: &NumberLiteral{
+					Val: 2,
+					PosRange: posrange.PositionRange{
+						Start: 13,
+						End:   14,
+					},
+				},
+			},
+			OriginalOffsetExpr: &DurationExpr{
+				Op: SUB,
+				LHS: &NumberLiteral{
+					Val: 5,
+					PosRange: posrange.PositionRange{
+						Start: 24,
+						End:   26,
+					},
+					Duration: true,
+				},
+				RHS: &NumberLiteral{
+					Val: 8,
+					PosRange: posrange.PositionRange{
+						Start: 27,
+						End:   28,
+					},
+				},
+				Wrapped: true,
+			},
+			EndPos: 29,
+		},
+	},
+	{
+		input: `foo offset 5s-8`,
+		expected: &BinaryExpr{
+			Op: SUB,
+			LHS: &VectorSelector{
+				Name:           "foo",
+				OriginalOffset: 5 * time.Second,
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   13,
+				},
+			},
+			RHS: &NumberLiteral{
+				Val: 8,
+				PosRange: posrange.PositionRange{
+					Start: 14,
+					End:   15,
+				},
+			},
+		},
+	},
+	{
+		input: `rate(foo[2m+2m])`,
+		expected: &Call{
+			Func: MustGetFunction("rate"),
+			Args: Expressions{
+				&MatrixSelector{
+					VectorSelector: &VectorSelector{
+						Name: "foo",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 5,
+							End:   8,
+						},
+					},
+					RangeExpr: &DurationExpr{
+						Op: ADD,
+						LHS: &NumberLiteral{
+							Val: 120,
+							PosRange: posrange.PositionRange{
+								Start: 9,
+								End:   11,
+							},
+							Duration: true,
+						},
+						RHS: &NumberLiteral{
+							Val: 120,
+							PosRange: posrange.PositionRange{
+								Start: 12,
+								End:   14,
+							},
+							Duration: true,
+						},
+					},
+					EndPos: 15,
+				},
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   16,
+			},
+		},
+	},
+	{
+		input:  `foo[5s/0d]`,
+		fail:   true,
+		errMsg: `division by zero`,
+	},
+	{
+		input:  `foo offset (4d/0)`,
+		fail:   true,
+		errMsg: `division by zero`,
+	},
+	{
+		input:  `foo[5s%0d]`,
+		fail:   true,
+		errMsg: `modulo by zero`,
+	},
+	{
+		input:  `foo offset 9.5e10`,
+		fail:   true,
+		errMsg: `duration out of range`,
+	},
+	{
+		input:  `foo[9.5e10]`,
+		fail:   true,
+		errMsg: `duration out of range`,
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
@@ -3965,8 +4263,11 @@ func readable(s string) string {
 func TestParseExpressions(t *testing.T) {
 	// Enable experimental functions testing.
 	EnableExperimentalFunctions = true
+	// Enable experimental duration expression parsing.
+	ExperimentalDurationExpr = true
 	t.Cleanup(func() {
 		EnableExperimentalFunctions = false
+		ExperimentalDurationExpr = false
 	})
 
 	for _, test := range testExpr {

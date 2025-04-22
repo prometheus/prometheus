@@ -183,4 +183,38 @@ This state is periodically ([`max_stale`][d2c]) cleared of inactive series.
 Enabling this _can_ have negative impact on performance, because the in-memory
 state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
+### PromQL arithmetic expressions in time durations
+
+`--enable-feature=promql-duration-expr`
+
+With this flag, arithmetic expressions can be used in time durations in range queries and offset durations. For example:
+
+In range queries:
+    rate(http_requests_total[5m * 2])  # 10 minute range
+    rate(http_requests_total[(5+2) * 1m])  # 7 minute range
+
+In offset durations:
+    http_requests_total offset (1h / 2)  # 30 minute offset
+    http_requests_total offset ((2 ^ 3) * 1m)  # 8 minute offset
+
+Note: Duration expressions are not supported in the @ timestamp operator.
+
+The following operators are supported:
+
+* `+` - addition
+* `-` - subtraction
+* `*` - multiplication 
+* `/` - division
+* `%` - modulo
+* `^` - exponentiation
+
+Examples of equivalent durations:
+
+* `5m * 2` is the equivalent to `10m` or `600s`
+* `10m - 1m` is the equivalent to `9m` or `540s`
+* `(5+2) * 1m` is the equivalent to `7m` or `420s`
+* `1h / 2` is the equivalent to `30m` or `1800s`
+* `4h % 3h` is the equivalent to `1h` or `3600s`
+* `(2 ^ 3) * 1m` is the equivalent to `8m` or `480s`
+
 [d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
