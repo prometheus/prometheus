@@ -1015,6 +1015,40 @@ func (p *parser) addOffsetExpr(e Node, expr *DurationExpr) {
 	*endPosp = p.lastClosing
 }
 
+func (p *parser) setAnchored(e Node) {
+	switch s := e.(type) {
+	case *VectorSelector:
+		s.Anchored = true
+		if s.Smoothed {
+			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
+		}
+	case *MatrixSelector:
+		s.VectorSelector.(*VectorSelector).Anchored = true
+		if s.VectorSelector.(*VectorSelector).Smoothed {
+			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
+		}
+	default:
+		p.addParseErrf(e.PositionRange(), "anchored modifier not implemented")
+	}
+}
+
+func (p *parser) setSmoothed(e Node) {
+	switch s := e.(type) {
+	case *VectorSelector:
+		s.Smoothed = true
+		if s.Anchored {
+			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
+		}
+	case *MatrixSelector:
+		s.VectorSelector.(*VectorSelector).Smoothed = true
+		if s.VectorSelector.(*VectorSelector).Anchored {
+			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
+		}
+	default:
+		p.addParseErrf(e.PositionRange(), "smoothed modifier not implemented")
+	}
+}
+
 // setTimestamp is used to set the timestamp from the @ modifier in the generated parser.
 func (p *parser) setTimestamp(e Node, ts float64) {
 	if math.IsInf(ts, -1) || math.IsInf(ts, 1) || math.IsNaN(ts) ||
