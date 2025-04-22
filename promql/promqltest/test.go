@@ -117,8 +117,12 @@ func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 
 // RunBuiltinTestsWithStorage runs an acceptance test suite against the provided engine and storage.
 func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage) {
-	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
+	t.Cleanup(func() {
+		parser.EnableExperimentalFunctions = false
+		parser.ExperimentalDurationExpr = false
+	})
 	parser.EnableExperimentalFunctions = true
+	parser.ExperimentalDurationExpr = true
 
 	files, err := fs.Glob(testsFs, "*/*.test")
 	require.NoError(t, err)
