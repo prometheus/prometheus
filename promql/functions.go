@@ -1351,17 +1351,17 @@ func histogramVariance(vals []parser.Value, enh *EvalNodeHelper, varianceToResul
 				continue
 			}
 			var val float64
-			if sample.H.UsesCustomBuckets() {
-				// use arithmetic mean in case of NHCB.
+			switch {
+			case bucket.Lower <= 0 && bucket.Upper >= 0:
+				val = 0
+			case sample.H.UsesCustomBuckets():
+				// Use arithmetic mean in case of custom buckets.
 				val = (bucket.Upper * bucket.Lower) / 2.0
-			} else {
-				if bucket.Lower <= 0 && bucket.Upper >= 0 {
-					val = 0
-				} else {
-					val = math.Sqrt(bucket.Upper * bucket.Lower)
-					if bucket.Upper < 0 {
-						val = -val
-					}
+			default:
+				// Use geometric mean in case of standard exponential buckets.
+				val = math.Sqrt(bucket.Upper * bucket.Lower)
+				if bucket.Upper < 0 {
+					val = -val
 				}
 			}
 			delta := val - mean
