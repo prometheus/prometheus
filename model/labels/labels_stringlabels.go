@@ -35,13 +35,14 @@ type Labels struct {
 func decodeSize(data string, index int) (int, int) {
 	// Fast-path for common case of a single byte, value 0..254.
 	b := data[index]
+	index++
 	if b < 255 {
-		return int(b), index + 1
+		return int(b), index
 	}
 	// Otherwise it's encoded as 3 bytes little-endian.
 	// Just panic if we go of the end of data, since all Labels strings are constructed internally and
 	// malformed data indicates a bug, or memory corruption.
-	return int(data[index+1]) + (int(data[index+2]) << 8) + (int(data[index+3]) << 16), index + 4
+	return int(data[index]) + (int(data[index+1]) << 8) + (int(data[index+2]) << 16), index + 3
 }
 
 func decodeString(data string, index int) (string, int) {
