@@ -74,6 +74,7 @@ type (
 	T interface {
 		Errorf(format string, args ...interface{})
 		FailNow()
+		Cleanup(func())
 	}
 )
 
