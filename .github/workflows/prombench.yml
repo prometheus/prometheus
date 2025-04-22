@@ -31,6 +31,22 @@ jobs:
           -H "Content-Type: application/json"
           --data '{"state":"pending",  "context": "prombench-status-update-start", "target_url": "'$GITHUB_STATUS_TARGET_URL'"}'
           "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$LAST_COMMIT_SHA"
+      - name: Setup PR Namespace and Copy Config
+        run: |
+          PR_NAMESPACE="prombench-${PR_NUMBER}"
+
+          echo "Creating namespace: $PR_NAMESPACE"
+          kubectl create namespace $PR_NAMESPACE || echo "Namespace already exists"
+
+          echo "Copying ConfigMap..."
+          kubectl get configmap blocksync-config -n default -o yaml | \
+            sed "s/namespace: default/namespace: $PR_NAMESPACE/" | \
+            kubectl apply -n $PR_NAMESPACE -f -
+
+          echo "Copying Secret..."
+          kubectl get secret bucket-secret -n default -o yaml | \
+            sed "s/namespace: default/namespace: $PR_NAMESPACE/" | \
+            kubectl apply -n $PR_NAMESPACE -f -
       - name: Run make deploy to start test
         id: make_deploy
         uses: docker://prominfra/prombench:master
