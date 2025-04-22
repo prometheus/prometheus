@@ -522,7 +522,7 @@ func marshalLabelToSizedBuffer(m *Label, data []byte) int {
 }
 
 func sizeWhenEncoded(x uint64) (n int) {
-	if x < 254 {
+	if x < 255 {
 		return 1
 	}
 	return 4
