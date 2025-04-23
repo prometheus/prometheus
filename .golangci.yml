@@ -24,14 +24,10 @@ linters:
   enable:
     - depguard
     - errorlint
-    - exptostd
     - gocritic
     - godot
     - loggercheck
     - misspell
-    - nilnesserr
-    # TODO(bwplotka): Enable once https://github.com/golangci/golangci-lint/issues/3228 is fixed.
-    # - nolintlint
     - perfsprint
     - predeclared
     - revive
@@ -199,5 +195,3 @@ output:
 
 run:
   timeout: 15m
-
-version: "2"
