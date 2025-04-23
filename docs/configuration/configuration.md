@@ -186,7 +186,7 @@ otlp:
   # - "NoUTF8EscapingWithSuffixes" is a mode that relies on UTF-8 support in Prometheus.
   #   It preserves all special characters like dots, but still adds required metric name suffixes
   #   for units and _total, as UnderscoreEscapingWithSuffixes does.
-  # - (EXPERIMENTAL) "NoTranslation"  is a mode that relies on UTF-8 support in Prometheus.
+  # - (EXPERIMENTAL) "NoTranslation" is a mode that relies on UTF-8 support in Prometheus.
   #   It preserves all special character like dots and won't append special suffixes for metric
   #   unit and type.
   #
