@@ -26,7 +26,6 @@ import (
 	"github.com/facette/natsort"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -1371,20 +1370,19 @@ func histogramVariance(vals []parser.Value, enh *EvalNodeHelper, varianceToResul
 				}
 				
 				var val float64
-				if bucket.Lower <= 0 && 0 <= bucket.Upper {
+				switch {
+				case bucket.Lower <= 0 && 0 <= bucket.Upper:
 					// For zero bucket, use 0 as the value
 					val = 0
-				} else if sample.H.UsesCustomBuckets() {
+				case sample.H.UsesCustomBuckets():
 					// For custom buckets, use arithmetic mean
 					val = (bucket.Lower + bucket.Upper) / 2
-				} else {
+				case bucket.Lower < 0 && bucket.Upper < 0:
+					// For negative exponential buckets, negate the geometric mean
+					val = -math.Sqrt(bucket.Lower*bucket.Upper)
+				default:
 					// For exponential buckets, use geometric mean
-					if bucket.Lower < 0 && bucket.Upper < 0 {
-						// For negative exponential buckets, negate the geometric mean
-						val = -math.Sqrt(bucket.Lower*bucket.Upper)
-					} else {
-						val = math.Sqrt(bucket.Upper * bucket.Lower)
-					}
+					val = math.Sqrt(bucket.Upper * bucket.Lower)
 				}
 				
 				delta := val - mean
