@@ -1351,11 +1351,12 @@ func histogramVariance(vals []parser.Value, enh *EvalNodeHelper, varianceToResul
 			}
 			var val float64
 			switch {
-			case bucket.Lower <= 0 && bucket.Upper >= 0:
-				val = 0
 			case sample.H.UsesCustomBuckets():
 				// Use arithmetic mean in case of custom buckets.
-				val = (bucket.Upper * bucket.Lower) / 2.0
+				val = (bucket.Upper + bucket.Lower) / 2.0
+			case bucket.Lower <= 0 && bucket.Upper >= 0:
+				// Use zero (effectively the arithmetic mean) in the zero bucket of a standard exponential histogram.
+				val = 0
 			default:
 				// Use geometric mean in case of standard exponential buckets.
 				val = math.Sqrt(bucket.Upper * bucket.Lower)
