@@ -933,12 +933,13 @@ func getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path
 		// evaluation range to cover the smoothing window.  For standard range
 		// queries, extend the start time backwards by the range (minus one
 		// millisecond) to exclude samples exactly at the lower boundary.
-		if n.Anchored {
+		switch {
+		case n.Anchored:
 			start -= durationMilliseconds(s.LookbackDelta + evalRange)
-		} else if n.Smoothed {
+		case n.Smoothed:
 			start -= durationMilliseconds(s.LookbackDelta + evalRange)
 			end += durationMilliseconds(s.LookbackDelta)
-		} else {
+		default:
 			start -= durationMilliseconds(evalRange) - 1
 		}
 	}
@@ -1828,11 +1829,12 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				if len(floats)+len(histograms) == 0 {
 					continue
 				}
-				if selVS.Anchored {
+				switch {
+				case selVS.Anchored:
 					inMatrix[0].Floats = anchorFloats(floats, mint, maxt)
-				} else if selVS.Smoothed {
+				case selVS.Smoothed:
 					inMatrix[0].Floats = smoothFloats(floats, mint, maxt)
-				} else {
+				default:
 					inMatrix[0].Floats = floats
 				}
 				inMatrix[0].Histograms = histograms
