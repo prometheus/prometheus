@@ -6,6 +6,7 @@
 * [FEATURE] OTLP translate: Add feature flag for optionally translating OTel explicit bucket histograms into native histograms with custom buckets. #15850
 * [FEATURE] OTLP translate: Add option to receive OTLP metrics without translating names or attributes. #16441
 * [ENHANCEMENT] TSDB: add `prometheus_tsdb_wal_replay_unknown_refs_total` and `prometheus_tsdb_wbl_replay_unknown_refs_total` metrics to track unknown series references during WAL/WBL replay. #16166
+* [ENHANCEMENT] API: Allow error response code to be customized. #16257
 * [BUGFIX] TSDB: fix unknown series errors and possible lost data during WAL replay when series are removed from the head due to inactivity and reappear before the next WAL checkpoint. #16060
 
 ## 3.2.1 / 2025-02-25
