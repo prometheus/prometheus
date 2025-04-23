@@ -1341,34 +1341,70 @@ func histogramVariance(vals []parser.Value, enh *EvalNodeHelper, varianceToResul
 		if sample.H == nil {
 			continue
 		}
+		
+		// Handle special cases first
+		if math.IsNaN(sample.H.Sum) || math.IsInf(sample.H.Sum, 0) {
+			if !enh.enableDelayedNameRemoval {
+				sample.Metric = sample.Metric.DropMetricName()
+			}
+			enh.Out = append(enh.Out, Sample{
+				Metric:   sample.Metric,
+				F:        sample.H.Sum,  // Propagate NaN or Inf
+				DropName: true,
+			})
+			continue
+		}
+
 		mean := sample.H.Sum / sample.H.Count
 		var variance, cVariance float64
-		it := sample.H.AllBucketIterator()
-		for it.Next() {
-			bucket := it.At()
-			if bucket.Count == 0 {
-				continue
-			}
-			var val float64
-			if bucket.Lower <= 0 && 0 <= bucket.Upper {
-				val = 0
-			} else {
-				val = math.Sqrt(bucket.Upper * bucket.Lower)
-				if bucket.Upper < 0 {
-					val = -val
+		
+		// Special case: single value histogram
+		if sample.H.Count == 1 {
+			// For a single value, variance is always 0
+			variance = 0
+		} else {
+			it := sample.H.AllBucketIterator()
+			for it.Next() {
+				bucket := it.At()
+				if bucket.Count == 0 {
+					continue
 				}
+				
+				var val float64
+				if bucket.Lower <= 0 && 0 <= bucket.Upper {
+					// For zero bucket, use 0 as the value
+					val = 0
+				} else if sample.H.UsesCustomBuckets() {
+					// For custom buckets, use arithmetic mean
+					val = (bucket.Lower + bucket.Upper) / 2
+				} else {
+					// For exponential buckets, use geometric mean
+					if bucket.Lower < 0 && bucket.Upper < 0 {
+						// For negative exponential buckets, negate the geometric mean
+						val = -math.Sqrt(bucket.Lower*bucket.Upper)
+					} else {
+						val = math.Sqrt(bucket.Upper * bucket.Lower)
+					}
+				}
+				
+				delta := val - mean
+				variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
 			}
-			delta := val - mean
-			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
+			
+			variance += cVariance
+			if sample.H.Count > 0 {
+				variance /= sample.H.Count
+			}
 		}
-		variance += cVariance
-		variance /= sample.H.Count
+		
 		if !enh.enableDelayedNameRemoval {
 			sample.Metric = sample.Metric.DropMetricName()
 		}
+		
 		if varianceToResult != nil {
 			variance = varianceToResult(variance)
 		}
+		
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
 			F:        variance,

@@ -1011,6 +1011,18 @@ eval instant at 5m histogram_quantile(0.5, custom_buckets_histogram)
 eval instant at 5m sum(custom_buckets_histogram)
     {} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
 
+eval instant at 5m histogram_count(custom_buckets_histogram)
+    {} 4
+
+eval instant at 5m histogram_avg(custom_buckets_histogram)
+    {} 1.25
+
+eval instant at 5m histogram_stddev(custom_buckets_histogram)
+    {} Inf
+
+eval instant at 5m histogram_stdvar(custom_buckets_histogram)
+    {} Inf
+
 clear
 
 # Test 'this native histogram metric is not a counter' warning for rate

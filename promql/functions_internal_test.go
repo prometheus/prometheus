@@ -18,6 +18,9 @@ import (
 	"math"
 	"testing"
 
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 )
 
@@ -78,4 +81,30 @@ func TestKahanSumInc(t *testing.T) {
 			runTest(t, testCase.second, testCase.first, testCase.expected)
 		})
 	}
+}
+
+func TestHistogramVarianceOneBucket(t *testing.T) {
+	// Histogram with a single custom bucket [0,10)
+	fh := &histogram.FloatHistogram{
+		Schema:         -53,
+		Count:          1,
+		Sum:            5,
+		PositiveBuckets: []float64{1},
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		CustomValues:    []float64{10},
+	}
+	// Build a vector for evaluation
+	vec := Vector{Sample{Metric: labels.Labels{}, H: fh}}
+
+	// Test stdvar (variance)
+	enh := &EvalNodeHelper{}
+	stdVarRes, _ := histogramVariance([]parser.Value{vec}, enh, nil)
+	require.Len(t, stdVarRes, 1)
+	require.Equal(t, 0.0, stdVarRes[0].F)
+
+	// Test stddev
+	enh = &EvalNodeHelper{}
+	stdDevRes, _ := histogramVariance([]parser.Value{vec}, enh, math.Sqrt)
+	require.Len(t, stdDevRes, 1)
+	require.Equal(t, 0.0, stdDevRes[0].F)
 }
