@@ -168,7 +168,7 @@ recommended to update these files atomically.
 `--enable-feature=otlp-deltatocumulative`
 
 When enabled, Prometheus will convert OTLP metrics from delta temporality to their
-cumulative equivalent, instead of dropping them.
+cumulative equivalent, instead of dropping them. This cannot be enabled in conjunction with `otlp-native-delta-ingestion`.
 
 This uses
 [deltatocumulative][d2c]
@@ -218,3 +218,32 @@ Examples of equivalent durations:
 * `(2 ^ 3) * 1m` is the equivalent to `8m` or `480s`
 
 [d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
+
+## OTLP Native Delta Support
+
+`--enable-feature=otlp-native-delta-ingestion`
+
+When enabled, allows for the native ingestion of delta OTLP metrics, storing the raw sample values without conversion. This cannot be enabled in conjunction with `otlp-deltatocumulative`.
+
+Currently, the StartTimeUnixNano field is ignored, and deltas are given the unknown metric metadata type.
+
+Delta support is in a very early stage of development and the ingestion and querying process my change over time. For the open proposal see [prometheus/proposals#48](https://github.com/prometheus/proposals/pull/48). 
+
+### Querying
+
+We encourage users to experiment with deltas and existing PromQL functions; we will collect feedback and likely build features to improve the experience around querying deltas.
+
+Note that standard PromQL counter functions like `rate()` and `increase()` are designed for cumulative metrics and will produce incorrect results when used with delta metrics. This may change in the future, but for now, to get similar results for delta metrics, you need `sum_over_time()`:
+
+* `sum_over_time(delta_metric[<range>])`: Calculates the sum of delta values over the specified time range.
+* `sum_over_time(delta_metric[<range>]) / <range>`: Calculates the per-second rate of the delta metric.
+
+These may not work well if the `<range>` is not a multiple of the collection interval of the metric. For example, if you do `sum_over_time(delta_metric[1m]) / 1m` range query (with a 1m step), but the collection interval of a metric is 10m, the graph will show a single point every 10 minutes with a high rate value, rather than 10 points with a lower, constant value.
+
+### Current gotchas
+
+* If delta metrics are exposed via [federation](https://prometheus.io/docs/prometheus/latest/federation/), data can be incorrectly collected if the ingestion interval is not the same as the scrape interval for the federated endpoint.
+
+* It is difficult to figure out whether a metric has delta or cumulative temporality, since there's no indication of temporality in metric names or labels. For now, if you are ingesting a mix of delta and cumulative metrics we advise you to explicitly add your own labels to distinguish them. In the future, we plan to introduce type labels to consistently distinguish metric types and potentially make PromQL functions type-aware (e.g. providing warnings when cumulative-only functions are used with delta metrics).
+
+* If there are multiple samples being ingested at the same timestamp, only one of the points is kept - the samples are **not** summed together (this is how Prometheus works in general - duplicate timestamp samples are rejected). Any aggregation will have to be done before sending samples to Prometheus.
