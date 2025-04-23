@@ -86,9 +86,9 @@ func TestKahanSumInc(t *testing.T) {
 func TestHistogramVarianceOneBucket(t *testing.T) {
 	// Histogram with a single custom bucket [0,10)
 	fh := &histogram.FloatHistogram{
-		Schema:         -53,
-		Count:          1,
-		Sum:            5,
+		Schema:          -53,
+		Count:           1,
+		Sum:             5,
 		PositiveBuckets: []float64{1},
 		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 		CustomValues:    []float64{10},
