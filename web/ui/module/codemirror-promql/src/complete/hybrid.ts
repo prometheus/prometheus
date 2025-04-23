@@ -79,6 +79,10 @@ import {
 import { Matcher } from '../types';
 import { syntaxTree } from '@codemirror/language';
 
+// Default list of label names that define a metric name in PromQL matchers.
+// This can be customized to support additional metric-defining labels.
+const METRIC_NAME_LABELS: string[] = ['__name__', 'custom_metric'];
+
 const autocompleteNodes: { [key: string]: Completion[] } = {
   matchOp: matchOpTerms,
   binOp: binOpTerms,
@@ -146,11 +150,72 @@ function getMetricNameInVectorSelector(tree: SyntaxNode, state: EditorState): st
     // Weird case that shouldn't happen, because "VectorSelector" is by definition the parent of the LabelMatchers.
     return '';
   }
-  currentNode = currentNode.getChild(Identifier);
-  if (!currentNode) {
+
+  const identifier = currentNode.getChild(Identifier);
+  if (identifier) {
+    return state.sliceDoc(identifier.from, identifier.to);
+  }
+
+  const labelMatchers = currentNode.getChild(LabelMatchers);
+  if (labelMatchers) {
+    return findMetricNameInLabelMatchers(labelMatchers, state);
+  }
+
+  return '';
+}
+
+/**
+ * Attempts to extract the metric name from a label matcher block such as:
+ * `{__name__="http_requests_total"}`.
+ *
+ * This is a fallback strategy when the metric name is not provided as an identifier
+ * but instead is stored as a label matcher using one of the metric-defining labels
+ * (e.g., `__name__` or custom labels defined in `METRIC_NAME_LABELS`)
+ *
+ * It only considers exact match expressions like `__name__="metric"` and ignores
+ * regex matches (`=~`, `!~`) or inequality operators (`!=`, `<`, etc).
+ *
+ * Useful when autocompleting or analyzing metric selectors in PromQL syntax trees.
+ */
+function findMetricNameInLabelMatchers(labelMatchers: SyntaxNode | null, state: EditorState): string {
+  // Validate that we are working with a LabelMatchers node.
+  // If not, return early with no result.
+  if (!labelMatchers || labelMatchers.type.id !== LabelMatchers) {
     return '';
   }
-  return state.sliceDoc(currentNode.from, currentNode.to);
+
+  // Initialize a cursor to iterate through the label matchers inside the `{...}` block.
+  let cursor = labelMatchers.cursor();
+
+  // Move the cursor to the first child (first individual matcher) if it exists.
+  if (cursor.firstChild()) {
+    do {
+      // Try to find the LabelName (e.g., "__name__"), the StringLiteral (e.g., '"metric"'),
+      // and the exact match operator (EqlSingle, representing `=`).
+      const labelNameNode = cursor.node.getChild(LabelName);
+      const valueNode = cursor.node.getChild(StringLiteral);
+      const operatorNode = cursor.node.getChild(MatchOp)?.getChild(EqlSingle); // ensures it's an `=` match
+
+      // Continue only if all three parts are present — this ensures we ignore things like `=~`, `!=`, etc.
+      if (labelNameNode && valueNode && operatorNode) {
+        // Extract the actual label name from the source text.
+        const labelName = state.sliceDoc(labelNameNode.from, labelNameNode.to);
+
+        // Check if the label name is one of the expected metric name indicators (default: "__name__").
+        if (METRIC_NAME_LABELS.includes(labelName)) {
+          // Extract the raw value string, which is quoted.
+          const raw = state.sliceDoc(valueNode.from, valueNode.to);
+
+          // Remove surrounding quotes from the string literal to get the plain metric name.
+          const metricName = raw.replace(/^"(.*)"$/, '$1');
+          return metricName;
+        }
+      }
+      // Move to the next sibling matcher inside the `{...}` block.
+    } while (cursor.nextSibling());
+  }
+  // If no matching label matcher is found, return an empty string.
+  return '';
 }
 
 function arrayToCompletionResult(data: Completion[], from: number, to: number, includeSnippet = false, span = true): CompletionResult {
@@ -434,15 +499,33 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         } else if (node.parent.firstChild?.type.id === QuotedLabelName) {
           labelName = state.sliceDoc(node.parent.firstChild.from, node.parent.firstChild.to).slice(1, -1);
         }
-        // then find the metricName if it exists
-        const metricName = getMetricNameInVectorSelector(node, state);
-        // finally get the full matcher available
+
+        //Identify the current matcher being edited
+        const currentMatcher = node.parent;
+
+        // Collect all other matcher in the LabelMatchers node, excluding the current matcher
         const matcherNode = walkBackward(node, LabelMatchers);
-        const labelMatcherOpts = [QuotedLabelName, QuotedLabelMatcher, UnquotedLabelMatcher];
+        const labelMatcherOpts = [QuotedLabelMatcher, UnquotedLabelMatcher];
         let labelMatchers: Matcher[] = [];
-        for (const labelMatcherOpt of labelMatcherOpts) {
-          labelMatchers = labelMatchers.concat(buildLabelMatchers(matcherNode ? matcherNode.getChildren(labelMatcherOpt) : [], state));
+        if (matcherNode) {
+          let allMatchers: SyntaxNode[] = [];
+          for (const labelMatcherOpt of labelMatcherOpts) {
+            allMatchers = allMatchers.concat(matcherNode.getChildren(labelMatcherOpt));
+          }
+
+          //Exclude the current matcher to avoid including its incomplete value
+          const otherMatchers = allMatchers.filter((m) => m !== currentMatcher);
+          //Convert the remaining matchers to Matcher Objects
+          labelMatchers = buildLabelMatchers(otherMatchers, state);
         }
+
+        //Set the metric name, handling the special case for __name__
+        let metricName = '';
+        if (!METRIC_NAME_LABELS.includes(labelName)) {
+          metricName = getMetricNameInVectorSelector(node, state);
+        }
+
+        //Add the autocompletion context for label values
         result.push({
           kind: ContextKind.LabelValue,
           metricName: metricName,
