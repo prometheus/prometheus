@@ -142,7 +142,7 @@ function getMetricNameInGroupBy(tree: SyntaxNode, state: EditorState): string {
   return metricName;
 }
 
-function getMetricNameInVectorSelector(tree: SyntaxNode, state: EditorState): string {
+export function getMetricNameInVectorSelector(tree: SyntaxNode, state: EditorState): string {
   // Find if there is a defined metric name. Should be used to autocomplete a labelValue or a labelName
   // First find the parent "VectorSelector" to be able to find then the subChild "Identifier" if it exists.
   let currentNode: SyntaxNode | null = walkBackward(tree, VectorSelector);
@@ -177,7 +177,7 @@ function getMetricNameInVectorSelector(tree: SyntaxNode, state: EditorState): st
  *
  * Useful when autocompleting or analyzing metric selectors in PromQL syntax trees.
  */
-function findMetricNameInLabelMatchers(labelMatchers: SyntaxNode | null, state: EditorState): string {
+export function findMetricNameInLabelMatchers(labelMatchers: SyntaxNode | null, state: EditorState): string {
   // Validate that we are working with a LabelMatchers node.
   // If not, return early with no result.
   if (!labelMatchers || labelMatchers.type.id !== LabelMatchers) {

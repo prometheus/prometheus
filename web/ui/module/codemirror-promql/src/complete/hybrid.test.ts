@@ -29,6 +29,8 @@ import {
 import { EqlSingle, Neq } from '@prometheus-io/lezer-promql';
 import { syntaxTree } from '@codemirror/language';
 import { newCompleteStrategy } from './index';
+import { getMetricNameInVectorSelector } from './hybrid';
+import { findMetricNameInLabelMatchers } from './hybrid';
 
 describe('analyzeCompletion test', () => {
   const testCases = [
@@ -1376,5 +1378,112 @@ describe('autocomplete promQL test', () => {
       const result = await completion.promQL(context);
       expect(value.expectedResult).toEqual(result);
     });
+  });
+});
+
+// Tests for the updated getMetricNameInVectorSelector and new findMetricNameInLabelMatchers functionality
+describe('getMetricNameInVectorSelector and findMetricNameInLabelMatchers tests', () => {
+  const testCases = [
+    {
+      title: 'should get metric name from identifier',
+      expr: 'http_requests_total{code="200"}',
+      pos: 12, // position inside the label matcher section
+      expectedMetricName: 'http_requests_total',
+    },
+    {
+      title: 'should get metric name from __name__ label matcher',
+      expr: '{__name__="http_requests_total", code="200"}',
+      pos: 20, // position inside the label matcher section
+      expectedMetricName: 'http_requests_total',
+    },
+    {
+      title: 'should get metric name from otel_metric_name label matcher',
+      expr: '{otel_metric_name="http.server.request.duration", instance="localhost:9090"}',
+      pos: 30, // position inside the label matcher section
+      expectedMetricName: 'http.server.request.duration',
+    },
+    {
+      title: 'should return empty string when no metric name can be found',
+      expr: '{instance="localhost:9090", code="200"}',
+      pos: 12, // position inside the label matcher section
+      expectedMetricName: '',
+    },
+    {
+      title: 'should ignore regex match expressions when finding metric name',
+      expr: '{__name__=~"http_.*", instance="localhost:9090"}',
+      pos: 12, // position inside the label matcher section
+      expectedMetricName: '',
+    },
+    {
+      title: 'should ignore inequality expressions when finding metric name',
+      expr: '{__name__!="not_this_metric", instance="localhost:9090"}',
+      pos: 12, // position inside the label matcher section
+      expectedMetricName: '',
+    },
+    {
+      title: 'should prioritize identifier over label matcher',
+      expr: 'metric_from_identifier{__name__="metric_from_label"}',
+      pos: 30, // position inside the label matcher section
+      expectedMetricName: 'metric_from_identifier',
+    },
+  ];
+
+  testCases.forEach((value) => {
+    it(value.title, () => {
+      const state = createEditorState(value.expr);
+      const tree = syntaxTree(state);
+      const node = tree.resolve(value.pos, -1);
+      const result = getMetricNameInVectorSelector(node, state);
+      expect(result).toEqual(value.expectedMetricName);
+    });
+  });
+});
+
+// Tests specifically for findMetricNameInLabelMatchers
+describe('findMetricNameInLabelMatchers function', () => {
+  it('should return empty string when labelMatchers is null', () => {
+    const state = createEditorState('metric');
+    const result = findMetricNameInLabelMatchers(null, state);
+    expect(result).toEqual('');
+  });
+
+  it('should return empty string when no metric name labels are found', () => {
+    const state = createEditorState('{instance="localhost:9090"}');
+    const tree = syntaxTree(state);
+    const labelMatchers = tree.resolve(1, -1).node;
+    const result = findMetricNameInLabelMatchers(labelMatchers, state);
+    expect(result).toEqual('');
+  });
+
+  it('should extract metric name from __name__ label', () => {
+    const state = createEditorState('{__name__="node_cpu_seconds_total"}');
+    const tree = syntaxTree(state);
+    const labelMatchers = tree.resolve(1, -1).node;
+    const result = findMetricNameInLabelMatchers(labelMatchers, state);
+    expect(result).toEqual('node_cpu_seconds_total');
+  });
+
+  it('should extract metric name from otel_metric_name label', () => {
+    const state = createEditorState('{otel_metric_name="process.runtime.go.gc.count"}');
+    const tree = syntaxTree(state);
+    const labelMatchers = tree.resolve(1, -1).node;
+    const result = findMetricNameInLabelMatchers(labelMatchers, state);
+    expect(result).toEqual('process.runtime.go.gc.count');
+  });
+
+  it('should only consider exact match operators (=)', () => {
+    const state = createEditorState('{__name__=~"http_requests.*"}');
+    const tree = syntaxTree(state);
+    const labelMatchers = tree.resolve(1, -1).node;
+    const result = findMetricNameInLabelMatchers(labelMatchers, state);
+    expect(result).toEqual('');
+  });
+
+  it('should work with multiple label matchers', () => {
+    const state = createEditorState('{instance="localhost:9090", __name__="go_goroutines", job="prometheus"}');
+    const tree = syntaxTree(state);
+    const labelMatchers = tree.resolve(1, -1).node;
+    const result = findMetricNameInLabelMatchers(labelMatchers, state);
+    expect(result).toEqual('go_goroutines');
   });
 });
