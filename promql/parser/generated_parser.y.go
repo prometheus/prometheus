@@ -1372,7 +1372,7 @@ yydefault:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
-				yylex.(*parser).addOffset(yyDollar[1].node, time.Duration(numLit.Val*1000)*time.Millisecond)
+				yylex.(*parser).addOffset(yyDollar[1].node, time.Duration(math.Round(numLit.Val*float64(time.Second))))
 				yyVAL.node = yyDollar[1].node
 				break
 			}
@@ -1423,7 +1423,7 @@ yydefault:
 
 			var rangeNl time.Duration
 			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
-				rangeNl = time.Duration(numLit.Val*1000) * time.Millisecond
+				rangeNl = time.Duration(math.Round(numLit.Val * float64(time.Second)))
 			}
 			rangeExpr, _ := yyDollar[3].node.(*DurationExpr)
 			yyVAL.node = &MatrixSelector{
@@ -1439,11 +1439,11 @@ yydefault:
 			var rangeNl time.Duration
 			var stepNl time.Duration
 			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
-				rangeNl = time.Duration(numLit.Val*1000) * time.Millisecond
+				rangeNl = time.Duration(math.Round(numLit.Val * float64(time.Second)))
 			}
 			rangeExpr, _ := yyDollar[3].node.(*DurationExpr)
 			if numLit, ok := yyDollar[5].node.(*NumberLiteral); ok {
-				stepNl = time.Duration(numLit.Val*1000) * time.Millisecond
+				stepNl = time.Duration(math.Round(numLit.Val * float64(time.Second)))
 			}
 			stepExpr, _ := yyDollar[5].node.(*DurationExpr)
 			yyVAL.node = &SubqueryExpr{
@@ -1460,7 +1460,7 @@ yydefault:
 		{
 			var rangeNl time.Duration
 			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
-				rangeNl = time.Duration(numLit.Val*1000) * time.Millisecond
+				rangeNl = time.Duration(math.Round(numLit.Val * float64(time.Second)))
 			}
 			rangeExpr, _ := yyDollar[3].node.(*DurationExpr)
 			yyVAL.node = &SubqueryExpr{

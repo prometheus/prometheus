@@ -452,7 +452,7 @@ positive_duration_expr : duration_expr
 offset_expr: expr OFFSET duration_expr
                         {
                         if numLit, ok := $3.(*NumberLiteral); ok {
-                            yylex.(*parser).addOffset($1, time.Duration(numLit.Val*1000)*time.Millisecond)
+                            yylex.(*parser).addOffset($1, time.Duration(math.Round(numLit.Val*float64(time.Second))))
                             $$ = $1
                             break
                         }
@@ -506,7 +506,7 @@ matrix_selector : expr LEFT_BRACKET positive_duration_expr RIGHT_BRACKET
 
                         var rangeNl time.Duration
                         if numLit, ok := $3.(*NumberLiteral); ok {
-                                rangeNl = time.Duration(numLit.Val*1000)*time.Millisecond
+                                rangeNl = time.Duration(math.Round(numLit.Val*float64(time.Second)))
                         }
                         rangeExpr, _ := $3.(*DurationExpr)
                         $$ = &MatrixSelector{
@@ -523,11 +523,11 @@ subquery_expr   : expr LEFT_BRACKET positive_duration_expr COLON positive_durati
                         var rangeNl time.Duration
                         var stepNl time.Duration
                         if numLit, ok := $3.(*NumberLiteral); ok {
-                                rangeNl = time.Duration(numLit.Val*1000)*time.Millisecond
+                                rangeNl = time.Duration(math.Round(numLit.Val*float64(time.Second)))
                         }
                         rangeExpr, _ := $3.(*DurationExpr)
                         if numLit, ok := $5.(*NumberLiteral); ok {
-                                stepNl = time.Duration(numLit.Val*1000)*time.Millisecond
+                                stepNl = time.Duration(math.Round(numLit.Val*float64(time.Second)))
                         }
                         stepExpr, _ := $5.(*DurationExpr)
                         $$ = &SubqueryExpr{
@@ -543,7 +543,7 @@ subquery_expr   : expr LEFT_BRACKET positive_duration_expr COLON positive_durati
                         {
                         var rangeNl time.Duration
                         if numLit, ok := $3.(*NumberLiteral); ok {
-                                rangeNl = time.Duration(numLit.Val*1000)*time.Millisecond
+                                rangeNl = time.Duration(math.Round(numLit.Val*float64(time.Second)))
                         }
                         rangeExpr, _ := $3.(*DurationExpr)
                         $$ = &SubqueryExpr{
