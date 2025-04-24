@@ -81,7 +81,7 @@ import { syntaxTree } from '@codemirror/language';
 
 // Default list of label names that define a metric name in PromQL matchers.
 // This can be customized to support additional metric-defining labels.
-const METRIC_NAME_LABELS: string[] = ['__name__', 'custom_metric'];
+const METRIC_NAME_LABELS: string[] = ['__name__', 'otel_metric_name'];
 
 const autocompleteNodes: { [key: string]: Completion[] } = {
   matchOp: matchOpTerms,
