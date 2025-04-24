@@ -96,10 +96,10 @@ func TestSampleRingMixed(t *testing.T) {
 
 	// With ValNone as the preferred type, nothing should be initialized.
 	r := newSampleRing(10, 2, chunkenc.ValNone)
-	require.Zero(t, len(r.fBuf))
-	require.Zero(t, len(r.hBuf))
-	require.Zero(t, len(r.fhBuf))
-	require.Zero(t, len(r.iBuf))
+	require.Empty(t, r.fBuf)
+	require.Empty(t, r.hBuf)
+	require.Empty(t, r.fhBuf)
+	require.Empty(t, r.iBuf)
 
 	// But then mixed adds should work as expected.
 	r.addF(fSample{t: 1, f: 3.14})
@@ -146,10 +146,10 @@ func TestSampleRingAtFloatHistogram(t *testing.T) {
 
 	// With ValNone as the preferred type, nothing should be initialized.
 	r := newSampleRing(10, 2, chunkenc.ValNone)
-	require.Zero(t, len(r.fBuf))
-	require.Zero(t, len(r.hBuf))
-	require.Zero(t, len(r.fhBuf))
-	require.Zero(t, len(r.iBuf))
+	require.Empty(t, r.fBuf)
+	require.Empty(t, r.hBuf)
+	require.Empty(t, r.fhBuf)
+	require.Empty(t, r.iBuf)
 
 	var (
 		h  *histogram.Histogram

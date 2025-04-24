@@ -17,6 +17,7 @@
 package prometheusremotewrite
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -26,6 +27,74 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 )
+
+func TestFromMetrics(t *testing.T) {
+	t.Run("successful", func(t *testing.T) {
+		converter := NewPrometheusConverter()
+		payload := createExportRequest(5, 128, 128, 2, 0)
+
+		annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), Settings{})
+		require.NoError(t, err)
+		require.Empty(t, annots)
+	})
+
+	t.Run("context cancellation", func(t *testing.T) {
+		converter := NewPrometheusConverter()
+		ctx, cancel := context.WithCancel(context.Background())
+		// Verify that converter.FromMetrics respects cancellation.
+		cancel()
+		payload := createExportRequest(5, 128, 128, 2, 0)
+
+		annots, err := converter.FromMetrics(ctx, payload.Metrics(), Settings{})
+		require.ErrorIs(t, err, context.Canceled)
+		require.Empty(t, annots)
+	})
+
+	t.Run("context timeout", func(t *testing.T) {
+		converter := NewPrometheusConverter()
+		// Verify that converter.FromMetrics respects timeout.
+		ctx, cancel := context.WithTimeout(context.Background(), 0)
+		t.Cleanup(cancel)
+		payload := createExportRequest(5, 128, 128, 2, 0)
+
+		annots, err := converter.FromMetrics(ctx, payload.Metrics(), Settings{})
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.Empty(t, annots)
+	})
+
+	t.Run("exponential histogram warnings for zero count and non-zero sum", func(t *testing.T) {
+		request := pmetricotlp.NewExportRequest()
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+		generateAttributes(rm.Resource().Attributes(), "resource", 10)
+
+		metrics := rm.ScopeMetrics().AppendEmpty().Metrics()
+		ts := pcommon.NewTimestampFromTime(time.Now())
+
+		for i := 1; i <= 10; i++ {
+			m := metrics.AppendEmpty()
+			m.SetEmptyExponentialHistogram()
+			m.SetName(fmt.Sprintf("histogram-%d", i))
+			m.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+			h := m.ExponentialHistogram().DataPoints().AppendEmpty()
+			h.SetTimestamp(ts)
+
+			h.SetCount(0)
+			h.SetSum(155)
+
+			generateAttributes(h.Attributes(), "series", 10)
+		}
+
+		converter := NewPrometheusConverter()
+		annots, err := converter.FromMetrics(context.Background(), request.Metrics(), Settings{})
+		require.NoError(t, err)
+		require.NotEmpty(t, annots)
+		ws, infos := annots.AsStrings("", 0, 0)
+		require.Empty(t, infos)
+		require.Equal(t, []string{
+			"exponential histogram data point has zero count, but non-zero sum: 155.000000",
+		}, ws)
+	})
+}
 
 func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 	for _, resourceAttributeCount := range []int{0, 5, 50} {
@@ -49,7 +118,9 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 
 											for i := 0; i < b.N; i++ {
 												converter := NewPrometheusConverter()
-												require.NoError(b, converter.FromMetrics(payload.Metrics(), Settings{}))
+												annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), Settings{})
+												require.NoError(b, err)
+												require.Empty(b, annots)
 												require.NotNil(b, converter.TimeSeries())
 											}
 										})

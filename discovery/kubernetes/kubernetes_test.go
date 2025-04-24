@@ -154,7 +154,7 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 
 // readResultWithTimeout reads all targetgroups from channel with timeout.
 // It merges targetgroups by source and sends the result to result channel.
-func readResultWithTimeout(t *testing.T, ctx context.Context, ch <-chan []*targetgroup.Group, max int, stopAfter time.Duration, resChan chan<- map[string]*targetgroup.Group) {
+func readResultWithTimeout(t *testing.T, ctx context.Context, ch <-chan []*targetgroup.Group, maxGroups int, stopAfter time.Duration, resChan chan<- map[string]*targetgroup.Group) {
 	res := make(map[string]*targetgroup.Group)
 	timeout := time.After(stopAfter)
 Loop:
@@ -167,7 +167,7 @@ Loop:
 				}
 				res[tg.Source] = tg
 			}
-			if len(res) == max {
+			if len(res) == maxGroups {
 				// Reached max target groups we may get, break fast.
 				break Loop
 			}
@@ -175,10 +175,10 @@ Loop:
 			// Because we use queue, an object that is created then
 			// deleted or updated may be processed only once.
 			// So possibly we may skip events, timed out here.
-			t.Logf("timed out, got %d (max: %d) items, some events are skipped", len(res), max)
+			t.Logf("timed out, got %d (max: %d) items, some events are skipped", len(res), maxGroups)
 			break Loop
 		case <-ctx.Done():
-			t.Logf("stopped, got %d (max: %d) items", len(res), max)
+			t.Logf("stopped, got %d (max: %d) items", len(res), maxGroups)
 			break Loop
 		}
 	}

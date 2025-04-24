@@ -95,3 +95,13 @@ Assuming this metric contains one time series per running instance, you could
 count the number of running instances per application like this:
 
     count by (app) (instance_cpu_time_ns)
+
+If we are exploring some metrics for their labels, to e.g. be able to aggregate
+over some of them, we could use the following:
+
+    limitk(10, app_foo_metric_bar)
+
+Alternatively, if we wanted the returned timeseries to be more evenly sampled,
+we could use the following to get approximately 10% of them:
+
+    limit_ratio(0.1, app_foo_metric_bar)

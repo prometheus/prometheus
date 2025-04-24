@@ -7,6 +7,7 @@ To use it:
 
 ```
 go build
+
 ./example_write_adapter
 ```
 
@@ -15,10 +16,19 @@ go build
 ```yaml
 remote_write:
   - url: "http://localhost:1234/receive"
+    protobuf_message: "io.prometheus.write.v2.Request"
 ```
 
-Then start Prometheus:
+or for the eventually deprecated Remote Write 1.0 message:
+
+```yaml
+remote_write:
+  - url: "http://localhost:1234/receive"
+    protobuf_message: "prometheus.WriteRequest"
+```
+
+Then start Prometheus (in separate terminal):
 
 ```
-./prometheus
+./prometheus --enable-feature=metadata-wal-records
 ```

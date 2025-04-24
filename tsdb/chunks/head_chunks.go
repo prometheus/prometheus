@@ -191,7 +191,7 @@ func (f *chunkPos) bytesToWriteForChunk(chkLen uint64) uint64 {
 // ChunkDiskMapper is for writing the Head block chunks to disk
 // and access chunks via mmapped files.
 type ChunkDiskMapper struct {
-	/// Writer.
+	// Writer.
 	dir             *os.File
 	writeBufferSize int
 
@@ -210,7 +210,7 @@ type ChunkDiskMapper struct {
 	crc32        hash.Hash
 	writePathMtx sync.Mutex
 
-	/// Reader.
+	// Reader.
 	// The int key in the map is the file number on the disk.
 	mmappedChunkFiles map[int]*mmappedChunkFile // Contains the m-mapped files for each chunk file mapped with its index.
 	closers           map[int]io.Closer         // Closers for resources behind the byte slices.

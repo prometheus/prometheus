@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/stretchr/testify/require"
@@ -254,56 +255,98 @@ func BenchmarkMergedStringIter(b *testing.B) {
 	b.ReportAllocs()
 }
 
-func BenchmarkQuerierSelect(b *testing.B) {
-	opts := DefaultHeadOptions()
-	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = b.TempDir()
-	h, err := NewHead(nil, nil, nil, nil, opts, nil)
+func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(app storage.Appender, i int)) (*Head, *DB) {
+	dir := b.TempDir()
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 255
+	opts.OutOfOrderTimeWindow = 1000
+	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(b, err)
-	defer h.Close()
+	b.Cleanup(func() {
+		require.NoError(b, db.Close())
+	})
+	h := db.Head()
+
 	app := h.Appender(context.Background())
-	numSeries := 1000000
 	for i := 0; i < numSeries; i++ {
-		app.Append(0, labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0)
+		addSeries(app, i)
 	}
 	require.NoError(b, app.Commit())
+	return h, db
+}
 
-	bench := func(b *testing.B, br BlockReader, sorted bool) {
-		matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
-		for s := 1; s <= numSeries; s *= 10 {
-			b.Run(fmt.Sprintf("%dof%d", s, numSeries), func(b *testing.B) {
-				q, err := NewBlockQuerier(br, 0, int64(s-1))
-				require.NoError(b, err)
+func benchmarkSelect(b *testing.B, queryable storage.Queryable, numSeries int, sorted bool) {
+	matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
+	b.ResetTimer()
+	for s := 1; s <= numSeries; s *= 10 {
+		b.Run(fmt.Sprintf("%dof%d", s, numSeries), func(b *testing.B) {
+			q, err := queryable.Querier(0, int64(s-1))
+			require.NoError(b, err)
 
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
-					ss := q.Select(context.Background(), sorted, nil, matcher)
-					for ss.Next() {
-					}
-					require.NoError(b, ss.Err())
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				ss := q.Select(context.Background(), sorted, nil, matcher)
+				for ss.Next() {
 				}
-				q.Close()
-			})
-		}
+				require.NoError(b, ss.Err())
+			}
+			q.Close()
+		})
 	}
+}
+
+func BenchmarkQuerierSelect(b *testing.B) {
+	numSeries := 1000000
+	h, db := createHeadForBenchmarkSelect(b, numSeries, func(app storage.Appender, i int) {
+		_, err := app.Append(0, labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0)
+		if err != nil {
+			b.Fatal(err)
+		}
+	})
 
 	b.Run("Head", func(b *testing.B) {
-		bench(b, h, false)
+		benchmarkSelect(b, db, numSeries, false)
 	})
 	b.Run("SortedHead", func(b *testing.B) {
-		bench(b, h, true)
+		benchmarkSelect(b, db, numSeries, true)
 	})
 
-	tmpdir := b.TempDir()
-
-	blockdir := createBlockFromHead(b, tmpdir, h)
-	block, err := OpenBlock(nil, blockdir, nil)
-	require.NoError(b, err)
-	defer func() {
-		require.NoError(b, block.Close())
-	}()
-
 	b.Run("Block", func(b *testing.B) {
-		bench(b, block, false)
+		tmpdir := b.TempDir()
+
+		blockdir := createBlockFromHead(b, tmpdir, h)
+		block, err := OpenBlock(nil, blockdir, nil)
+		require.NoError(b, err)
+		defer func() {
+			require.NoError(b, block.Close())
+		}()
+
+		benchmarkSelect(b, (*queryableBlock)(block), numSeries, false)
+	})
+}
+
+// Type wrapper to let a Block be a Queryable in benchmarkSelect().
+type queryableBlock Block
+
+func (pb *queryableBlock) Querier(mint, maxt int64) (storage.Querier, error) {
+	return NewBlockQuerier((*Block)(pb), mint, maxt)
+}
+
+func BenchmarkQuerierSelectWithOutOfOrder(b *testing.B) {
+	numSeries := 1000000
+	_, db := createHeadForBenchmarkSelect(b, numSeries, func(app storage.Appender, i int) {
+		l := labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix))
+		ref, err := app.Append(0, l, int64(i+1), 0)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_, err = app.Append(ref, l, int64(i), 1) // Out of order sample
+		if err != nil {
+			b.Fatal(err)
+		}
+	})
+
+	b.Run("Head", func(b *testing.B) {
+		benchmarkSelect(b, db, numSeries, false)
 	})
 }

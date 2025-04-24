@@ -136,6 +136,11 @@ func (b *MemoizedSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHist
 	return b.it.AtFloatHistogram(nil)
 }
 
+// AtT returns the timestamp of the current element of the iterator.
+func (b *MemoizedSeriesIterator) AtT() int64 {
+	return b.it.AtT()
+}
+
 // Err returns the last encountered error.
 func (b *MemoizedSeriesIterator) Err() error {
 	return b.it.Err()

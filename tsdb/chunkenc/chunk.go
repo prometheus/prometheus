@@ -213,7 +213,7 @@ func MockSeriesIterator(timestamps []int64, values []float64) Iterator {
 	return &mockSeriesIterator{
 		timeStamps: timestamps,
 		values:     values,
-		currIndex:  0,
+		currIndex:  -1,
 	}
 }
 

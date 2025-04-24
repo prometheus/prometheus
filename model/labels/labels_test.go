@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
@@ -272,8 +273,83 @@ func TestLabels_IsValid(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			require.Equal(t, test.expected, test.input.IsValid())
+			require.Equal(t, test.expected, test.input.IsValid(model.LegacyValidation))
 		})
+	}
+}
+
+func TestLabels_ValidationModes(t *testing.T) {
+	for _, test := range []struct {
+		input      Labels
+		globalMode model.ValidationScheme
+		callMode   model.ValidationScheme
+		expected   bool
+	}{
+		{
+			input: FromStrings(
+				"__name__", "test.metric",
+				"hostname", "localhost",
+				"job", "check",
+			),
+			globalMode: model.UTF8Validation,
+			callMode:   model.UTF8Validation,
+			expected:   true,
+		},
+		{
+			input: FromStrings(
+				"__name__", "test",
+				"\xc5 bad utf8", "localhost",
+				"job", "check",
+			),
+			globalMode: model.UTF8Validation,
+			callMode:   model.UTF8Validation,
+			expected:   false,
+		},
+		{
+			// Setting the common model to legacy validation and then trying to check for UTF-8 on a
+			// per-call basis is not supported.
+			input: FromStrings(
+				"__name__", "test.utf8.metric",
+				"hostname", "localhost",
+				"job", "check",
+			),
+			globalMode: model.LegacyValidation,
+			callMode:   model.UTF8Validation,
+			expected:   false,
+		},
+		{
+			input: FromStrings(
+				"__name__", "test",
+				"hostname", "localhost",
+				"job", "check",
+			),
+			globalMode: model.LegacyValidation,
+			callMode:   model.LegacyValidation,
+			expected:   true,
+		},
+		{
+			input: FromStrings(
+				"__name__", "test.utf8.metric",
+				"hostname", "localhost",
+				"job", "check",
+			),
+			globalMode: model.UTF8Validation,
+			callMode:   model.LegacyValidation,
+			expected:   false,
+		},
+		{
+			input: FromStrings(
+				"__name__", "test",
+				"host.name", "localhost",
+				"job", "check",
+			),
+			globalMode: model.UTF8Validation,
+			callMode:   model.LegacyValidation,
+			expected:   false,
+		},
+	} {
+		model.NameValidationScheme = test.globalMode
+		require.Equal(t, test.expected, test.input.IsValid(test.callMode))
 	}
 }
 
@@ -466,6 +542,38 @@ func TestLabels_DropMetricName(t *testing.T) {
 	require.True(t, Equal(original, check))
 }
 
+func ScratchBuilderForBenchmark() ScratchBuilder {
+	// (Only relevant to -tags dedupelabels: stuff the symbol table before adding the real labels, to avoid having everything fitting into 1 byte.)
+	b := NewScratchBuilder(256)
+	for i := 0; i < 256; i++ {
+		b.Add(fmt.Sprintf("name%d", i), fmt.Sprintf("value%d", i))
+	}
+	b.Labels()
+	b.Reset()
+	return b
+}
+
+func NewForBenchmark(ls ...Label) Labels {
+	b := ScratchBuilderForBenchmark()
+	for _, l := range ls {
+		b.Add(l.Name, l.Value)
+	}
+	b.Sort()
+	return b.Labels()
+}
+
+func FromStringsForBenchmark(ss ...string) Labels {
+	if len(ss)%2 != 0 {
+		panic("invalid number of strings")
+	}
+	b := ScratchBuilderForBenchmark()
+	for i := 0; i < len(ss); i += 2 {
+		b.Add(ss[i], ss[i+1])
+	}
+	b.Sort()
+	return b.Labels()
+}
+
 // BenchmarkLabels_Get was written to check whether a binary search can improve the performance vs the linear search implementation
 // The results have shown that binary search would only be better when searching last labels in scenarios with more than 10 labels.
 // In the following list, `old` is the linear search while `new` is the binary search implementation (without calling sort.Search, which performs even worse here)
@@ -488,7 +596,7 @@ func BenchmarkLabels_Get(b *testing.B) {
 	}
 	for _, size := range []int{5, 10, maxLabels} {
 		b.Run(fmt.Sprintf("with %d labels", size), func(b *testing.B) {
-			labels := New(allLabels[:size]...)
+			labels := NewForBenchmark(allLabels[:size]...)
 			for _, scenario := range []struct {
 				desc, label string
 			}{
@@ -520,33 +628,33 @@ var comparisonBenchmarkScenarios = []struct {
 }{
 	{
 		"equal",
-		FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
-		FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+		FromStringsForBenchmark("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+		FromStringsForBenchmark("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
 	},
 	{
 		"not equal",
-		FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
-		FromStrings("a_label_name", "a_label_value", "another_label_name", "a_different_label_value"),
+		FromStringsForBenchmark("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+		FromStringsForBenchmark("a_label_name", "a_label_value", "another_label_name", "a_different_label_value"),
 	},
 	{
 		"different sizes",
-		FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
-		FromStrings("a_label_name", "a_label_value"),
+		FromStringsForBenchmark("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+		FromStringsForBenchmark("a_label_name", "a_label_value"),
 	},
 	{
 		"lots",
-		FromStrings("aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj", "kkk", "lll", "mmm", "nnn", "ooo", "ppp", "qqq", "rrz"),
-		FromStrings("aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj", "kkk", "lll", "mmm", "nnn", "ooo", "ppp", "qqq", "rrr"),
+		FromStringsForBenchmark("aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj", "kkk", "lll", "mmm", "nnn", "ooo", "ppp", "qqq", "rrz"),
+		FromStringsForBenchmark("aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj", "kkk", "lll", "mmm", "nnn", "ooo", "ppp", "qqq", "rrr"),
 	},
 	{
 		"real long equal",
-		FromStrings("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
-		FromStrings("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
+		FromStringsForBenchmark("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
+		FromStringsForBenchmark("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
 	},
 	{
 		"real long different end",
-		FromStrings("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
-		FromStrings("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "deadbeef-0000-1111-2222-b9ad64bb417e"),
+		FromStringsForBenchmark("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
+		FromStringsForBenchmark("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "deadbeef-0000-1111-2222-b9ad64bb417e"),
 	},
 }
 
@@ -834,7 +942,7 @@ func BenchmarkBuilder(b *testing.B) {
 }
 
 func BenchmarkLabels_Copy(b *testing.B) {
-	l := New(benchmarkLabels...)
+	l := NewForBenchmark(benchmarkLabels...)
 
 	for i := 0; i < b.N; i++ {
 		l = l.Copy()

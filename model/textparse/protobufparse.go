@@ -47,7 +47,7 @@ import (
 // the re-arrangement work is actually causing problems (which has to be seen),
 // that expectation needs to be changed.
 type ProtobufParser struct {
-	in        []byte // The intput to parse.
+	in        []byte // The input to parse.
 	inPos     int    // Position within the input.
 	metricPos int    // Position within Metric slice.
 	// fieldPos is the position within a Summary or (legacy) Histogram. -2
@@ -71,7 +71,7 @@ type ProtobufParser struct {
 
 	mf *dto.MetricFamily
 
-	// Wether to also parse a classic histogram that is also present as a
+	// Whether to also parse a classic histogram that is also present as a
 	// native histogram.
 	parseClassicHistograms bool
 
@@ -409,6 +409,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 	switch p.state {
 	case EntryInvalid:
 		p.metricPos = 0
+		p.exemplarPos = 0
 		p.fieldPos = -2
 		n, err := readDelimited(p.in[p.inPos:], p.mf)
 		p.inPos += n
@@ -485,6 +486,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			p.metricPos++
 			p.fieldPos = -2
 			p.fieldsDone = false
+			p.exemplarPos = 0
 			// If this is a metric family containing native
 			// histograms, we have to switch back to native
 			// histograms after parsing a classic histogram.
