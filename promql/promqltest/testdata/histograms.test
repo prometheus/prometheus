@@ -95,13 +95,13 @@ eval instant at 50m histogram_avg(testhistogram3)
 
 # Test histogram_stddev. This has no classic equivalent.
 eval instant at 50m histogram_stddev(testhistogram3)
-	{start="positive"} 2.8189265757336734
-	{start="negative"} 4.182715937754936
+	{start="positive"} 2.7435461458749795
+	{start="negative"} 4.187667907081458
 
 # Test histogram_stdvar. This has no classic equivalent.
 eval instant at 50m histogram_stdvar(testhistogram3)
-	{start="positive"} 7.946347039377573
-	{start="negative"} 17.495112615949154
+	{start="positive"} 7.527045454545455
+	{start="negative"} 17.5365625
 
 # Test histogram_fraction.
 #
