@@ -283,15 +283,6 @@ export default function AlertsPage() {
                     return (
                       <Accordion.Item
                         mt={rem(5)}
-                        styles={{
-                          item: {
-                            // TODO: This transparency hack is an OK workaround to make the collapsed items
-                            // have a different background color than their surrounding group card in dark mode,
-                            // but it would be better to use CSS to override the light/dark colors for
-                            // collapsed/expanded accordion items.
-                            backgroundColor: "#c0c0c015",
-                          },
-                        }}
                         key={j}
                         value={j.toString()}
                         className={
