@@ -253,7 +253,7 @@ func (a *collectResultAppender) String() string {
 	return sb.String()
 }
 
-// protoMarshalDelimited marshals a MetricFamily into a delimited
+// protoMarshalDelimited marshals a MetricDescriptor into a delimited
 // Prometheus proto exposition format bytes (known as 'encoding=delimited`)
 //
 // See also https://eli.thegreenplace.net/2011/08/02/length-prefix-framing-for-protocol-buffers

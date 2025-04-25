@@ -351,11 +351,11 @@ func (ls Labels) DropMetricName() Labels {
 	return ls
 }
 
-// DropMetricIdentity is like DropMetricName but drops all parts of MetricIdentity.
-func (ls Labels) DropMetricIdentity() Labels {
+// DropMetricDescriptorLabels is like DropMetricName but drops all parts of MetricDescriptor.
+func (ls Labels) DropMetricDescriptorLabels() Labels {
 	rm := 0
 	for i, l := range ls {
-		if IsMetricIdentityLabel(l.Name) {
+		if IsMetricDescriptorLabel(l.Name) {
 			i := i - rm // Offsetting after removals.
 			if i == 0 { // Make common case fast with no allocations.
 				ls = ls[1:]

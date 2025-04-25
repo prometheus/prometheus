@@ -233,7 +233,7 @@ func (p *PromParser) Labels(l *labels.Labels) {
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
 	if p.enableTypeAndUnitLabels {
-		p.builder.AddMetricIdentity(labels.MetricIdentity{
+		p.builder.AddMetricIdentity(labels.MetricDescriptor{
 			Name: metricName,
 			Type: p.mtype,
 		})

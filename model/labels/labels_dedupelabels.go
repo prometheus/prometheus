@@ -575,7 +575,7 @@ func (ls Labels) DropMetricName() Labels {
 	return ls
 }
 
-// DropMetricIdentity is like DropMetricName but drops all parts of MetricIdentity.
+// DropMetricDescriptorLabels is like DropMetricName but drops all parts of MetricDescriptor.
 func (ls Labels) DropMetricIdentity() Labels {
 	for i := 0; i < len(ls.data); {
 		lName, i2 := decodeString(ls.syms, ls.data, i)

@@ -1827,7 +1827,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			it.Reset(chkIter)
 			metric := selVS.Series[i].Labels()
 			if !ev.enableDelayedNameRemoval && dropName {
-				metric = metric.DropMetricIdentity()
+				metric = metric.DropMetricDescriptorLabels()
 			}
 			ss := Series{
 				Metric:   metric,
@@ -1966,7 +1966,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		if e.Op == parser.SUB {
 			for i := range mat {
 				if !ev.enableDelayedNameRemoval {
-					mat[i].Metric = mat[i].Metric.DropMetricIdentity()
+					mat[i].Metric = mat[i].Metric.DropMetricDescriptorLabels()
 				}
 				mat[i].DropName = true
 				for j := range mat[i].Floats {
@@ -2715,7 +2715,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		}
 		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
 		if !ev.enableDelayedNameRemoval && returnBool {
-			metric = metric.DropMetricIdentity()
+			metric = metric.DropMetricDescriptorLabels()
 		}
 		insertedSigs, exists := matchedSigs[sig]
 		if matching.Card == parser.CardOneToOne {
@@ -2784,7 +2784,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 
 	if shouldDropMetricIdentity(op) {
 		// Setting to empty fields will cause the deletion of those.
-		enh.lb.SetMetricIdentity(labels.MetricIdentity{})
+		enh.lb.SetMetricIdentity(labels.MetricDescriptor{})
 	}
 
 	if matching.Card == parser.CardOneToOne {
@@ -2845,7 +2845,7 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 			lhsSample.H = histogram
 			if shouldDropMetricIdentity(op) || returnBool {
 				if !ev.enableDelayedNameRemoval {
-					lhsSample.Metric = lhsSample.Metric.DropMetricIdentity()
+					lhsSample.Metric = lhsSample.Metric.DropMetricDescriptorLabels()
 				}
 				lhsSample.DropName = true
 			}
@@ -3503,7 +3503,7 @@ func (ev *evaluator) cleanupMetricLabels(v parser.Value) {
 		mat := v.(Matrix)
 		for i := range mat {
 			if mat[i].DropName {
-				mat[i].Metric = mat[i].Metric.DropMetricIdentity()
+				mat[i].Metric = mat[i].Metric.DropMetricDescriptorLabels()
 			}
 		}
 		if mat.ContainsSameLabelset() {
@@ -3513,7 +3513,7 @@ func (ev *evaluator) cleanupMetricLabels(v parser.Value) {
 		vec := v.(Vector)
 		for i := range vec {
 			if vec[i].DropName {
-				vec[i].Metric = vec[i].Metric.DropMetricIdentity()
+				vec[i].Metric = vec[i].Metric.DropMetricDescriptorLabels()
 			}
 		}
 		if vec.ContainsSameLabelset() {

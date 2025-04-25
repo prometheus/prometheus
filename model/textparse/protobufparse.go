@@ -72,7 +72,7 @@ type ProtobufParser struct {
 	exemplarReturned bool
 
 	// state is marked by the entry we are processing. EntryInvalid implies
-	// that we have to decode the next MetricFamily.
+	// that we have to decode the next MetricDescriptor.
 	state Entry
 
 	// Whether to also parse a classic histogram that is also present as a
@@ -556,7 +556,7 @@ func (p *ProtobufParser) onSeriesOrHistogramUpdate() error {
 
 	if p.enableTypeAndUnitLabels {
 		_, typ := p.Type()
-		p.builder.AddMetricIdentity(labels.MetricIdentity{
+		p.builder.AddMetricIdentity(labels.MetricDescriptor{
 			Name: p.getMagicName(),
 			Type: typ,
 			Unit: p.dec.GetUnit(),

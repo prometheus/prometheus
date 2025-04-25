@@ -519,14 +519,14 @@ func TestLabels_DropMetricName(t *testing.T) {
 }
 
 func TestLabels_DropMetricIdentity(t *testing.T) {
-	require.True(t, Equal(FromStrings("aaa", "111", "bbb", "222"), FromStrings("aaa", "111", "bbb", "222").DropMetricIdentity()))
-	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "aaa", "111").DropMetricIdentity()))
-	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", metricType, string(model.MetricTypeCounter), "aaa", "111").DropMetricIdentity()))
-	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", metricType, string(model.MetricTypeCounter), metricUnit, "seconds", "aaa", "111").DropMetricIdentity()))
+	require.True(t, Equal(FromStrings("aaa", "111", "bbb", "222"), FromStrings("aaa", "111", "bbb", "222").DropMetricDescriptorLabels()))
+	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "aaa", "111").DropMetricDescriptorLabels()))
+	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", metricType, string(model.MetricTypeCounter), "aaa", "111").DropMetricDescriptorLabels()))
+	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", metricType, string(model.MetricTypeCounter), metricUnit, "seconds", "aaa", "111").DropMetricDescriptorLabels()))
 
 	original := FromStrings("__aaa__", "111", MetricName, "myname", "bbb", "222")
 	check := original.Copy()
-	require.True(t, Equal(FromStrings("__aaa__", "111", "bbb", "222"), check.DropMetricIdentity()))
+	require.True(t, Equal(FromStrings("__aaa__", "111", "bbb", "222"), check.DropMetricDescriptorLabels()))
 	require.True(t, Equal(original, check))
 }
 
