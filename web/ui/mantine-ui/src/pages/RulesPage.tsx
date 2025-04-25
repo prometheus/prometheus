@@ -34,6 +34,7 @@ import { NumberParam, useQueryParam, withDefault } from "use-query-params";
 import { useSettings } from "../state/settingsSlice";
 import { useEffect } from "react";
 import CustomInfiniteScroll from "../components/CustomInfiniteScroll";
+import classes from "./RulesPage.module.css";
 
 const healthBadgeClass = (state: string) => {
   switch (state) {
@@ -144,19 +145,10 @@ export default function RulesPage() {
             <CustomInfiniteScroll
               allItems={g.rules}
               child={({ items }) => (
-                <Accordion multiple variant="separated">
+                <Accordion multiple variant="separated" classNames={classes}>
                   {items.map((r, j) => (
                     <Accordion.Item
                       mt={rem(5)}
-                      styles={{
-                        item: {
-                          // TODO: This transparency hack is an OK workaround to make the collapsed items
-                          // have a different background color than their surrounding group card in dark mode,
-                          // but it would be better to use CSS to override the light/dark colors for
-                          // collapsed/expanded accordion items.
-                          backgroundColor: "#c0c0c015",
-                        },
-                      }}
                       key={j}
                       value={j.toString()}
                       style={{
