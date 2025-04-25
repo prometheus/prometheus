@@ -695,7 +695,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 			for x := 0; x < totalUpdatesCount; x++ {
 				select {
 				case <-ctx.Done():
-					require.FailNow(t, fmt.Sprintf("%d: no update arrived within the timeout limit", x))
+					t.Fatalf("%d: no update arrived within the timeout limit", x)
 				case tgs := <-provUpdates:
 					discoveryManager.updateGroup(poolKey{setName: strconv.Itoa(i), provider: tc.title}, tgs)
 					for _, got := range discoveryManager.allGroups() {
@@ -770,11 +770,11 @@ func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Grou
 		}
 	}
 	if match != present {
-		msg := ""
+		msg := " "
 		if !present {
 			msg = " not "
 		}
-		require.FailNow(t, fmt.Sprintf("%q should%sbe present in Targets labels: %q", label, msg, mergedTargets))
+		t.Fatalf("%q should%sbe present in Targets labels: %q", label, msg, mergedTargets)
 	}
 }
 
@@ -1373,7 +1373,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 				time.Sleep(expected.delay)
 				select {
 				case <-ctx.Done():
-					require.FailNow(t, fmt.Sprintf("step %d: no update received in the expected timeframe", i))
+					t.Fatalf("step %d: no update received in the expected timeframe", i)
 				case tgs, ok := <-mgr.SyncCh():
 					require.True(t, ok, "step %d: discovery manager channel is closed", i)
 					require.Len(t, tgs, len(expected.tgs), "step %d: targets mismatch", i)
