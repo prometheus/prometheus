@@ -3948,6 +3948,9 @@ func smoothFloats(floats []FPoint, mint, maxt int64) []FPoint {
 		if f.T < mint {
 			continue
 		}
+		if f.T > maxt && len(smooth) == 0 {
+			return smooth
+		}
 		if len(smooth) == 0 {
 			if i > 0 {
 				prevF := floats[i-1]
