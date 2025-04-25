@@ -3951,7 +3951,11 @@ func smoothFloats(floats []FPoint, mint, maxt int64) []FPoint {
 		if len(smooth) == 0 {
 			if i > 0 {
 				prevF := floats[i-1]
-				smoothedF := prevF.F + (f.F-prevF.F)*(float64(mint-prevF.T)/float64(f.T-prevF.T))
+				prevFf := prevF.F
+				if prevFf > f.F {
+					prevFf = 0
+				}
+				smoothedF := prevFf + (f.F-prevFf)*(float64(mint-prevF.T)/float64(f.T-prevF.T))
 				smooth = append(smooth, FPoint{T: mint, F: smoothedF})
 			} else {
 				smooth = append(smooth, FPoint{T: mint, F: f.F})
@@ -3960,13 +3964,17 @@ func smoothFloats(floats []FPoint, mint, maxt int64) []FPoint {
 		if f.T > mint && f.T < maxt {
 			smooth = append(smooth, f)
 		}
-		if i == len(floats)-1 || f.T == maxt {
+		if (i == len(floats)-1 && f.T < maxt) || f.T == maxt {
 			smooth = append(smooth, FPoint{T: maxt, F: floats[i].F})
 			return smooth
 		}
 		if f.T > maxt {
 			prevF := floats[i-1]
-			smoothedF := prevF.F + (f.F-prevF.F)*(float64(maxt-prevF.T)/float64(f.T-prevF.T))
+			prevFf := prevF.F
+			if prevFf > f.F {
+				prevFf = 0
+			}
+			smoothedF := prevFf + (f.F-prevFf)*(float64(maxt-prevF.T)/float64(f.T-prevF.T))
 			smooth = append(smooth, FPoint{T: maxt, F: smoothedF})
 			return smooth
 		}
