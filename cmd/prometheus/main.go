@@ -249,6 +249,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "promql-experimental-functions":
 				parser.EnableExperimentalFunctions = true
 				logger.Info("Experimental PromQL functions enabled.")
+			case "promql-duration-expr":
+				parser.ExperimentalDurationExpr = true
+				logger.Info("Experimental duration expression parsing enabled.")
 			case "native-histograms":
 				c.tsdb.EnableNativeHistograms = true
 				c.scrape.EnableNativeHistogramsIngestion = true
@@ -279,10 +282,21 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "otlp-deltatocumulative":
 				c.web.ConvertOTLPDelta = true
 				logger.Info("Converting delta OTLP metrics to cumulative")
+			case "otlp-native-delta-ingestion":
+				// Experimental OTLP native delta ingestion.
+				// This currently just stores the raw delta value as-is with unknown metric type. Better typing and
+				// type-aware functions may come later.
+				// See proposal: https://github.com/prometheus/proposals/pull/48
+				c.web.NativeOTLPDeltaIngestion = true
+				logger.Info("Enabling native ingestion of delta OTLP metrics, storing the raw sample values without conversion. WARNING: Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
 		}
+	}
+
+	if c.web.ConvertOTLPDelta && c.web.NativeOTLPDeltaIngestion {
+		return errors.New("cannot enable otlp-deltatocumulative and otlp-native-delta-ingestion features at the same time")
 	}
 
 	return nil
@@ -539,7 +553,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative, promql-duration-expr. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
