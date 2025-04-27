@@ -1638,6 +1638,10 @@ role: <string>
 # The time after which the servers are refreshed.
 [ refresh_interval: <duration> | default = 60s ]
 
+# Label selector used to filter the servers when fetching them from the API. See https://docs.hetzner.cloud/#label-selector for more details.
+# Only used when role is hcloud.
+[ label_selector: <string> ]
+
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
 [ <http_config> ]
