@@ -36,6 +36,7 @@ type PromoteResourceAttributes struct {
 	promoteAll bool
 	attrs      map[string]struct{}
 }
+
 type Settings struct {
 	Namespace                         string
 	ExternalLabels                    map[string]string
