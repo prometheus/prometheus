@@ -1529,20 +1529,26 @@ func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	if c.PromoteAllResourceAttributes && len(c.PromoteResourceAttributes) > 0 {
-		return errors.New("'promote_all_resource_attributes' and 'promote_resource_attributes' cannot be configured simultaneously")
+	if c.PromoteAllResourceAttributes {
+		if len(c.PromoteResourceAttributes) > 0 {
+			return errors.New("'promote_all_resource_attributes' and 'promote_resource_attributes' cannot be configured simultaneously")
+		}
+		if err := sanitizeAttributes(c.IgnoreResourceAttributes); err != nil {
+			return fmt.Errorf("invalid 'ignore_resource_attributes': %w", err)
+		}
+	} else {
+		if len(c.IgnoreResourceAttributes) > 0 {
+			return errors.New("'promote_resource_attributes' and 'ignore_resource_attributes' cannot be configured simultaneously")
+		}
+		if err := sanitizeAttributes(c.PromoteResourceAttributes); err != nil {
+			return fmt.Errorf("invalid 'promote_resource_attributes': %w", err)
+		}
 	}
 
-	if err := validateAttributes(c.IgnoreResourceAttributes); err != nil {
-		return fmt.Errorf("invalid 'ignore_resource_attributes': %w", err)
-	}
-	if err := validateAttributes(c.PromoteResourceAttributes); err != nil {
-		return fmt.Errorf("invalid 'promote_resource_attributes': %w", err)
-	}
 	return nil
 }
 
-func validateAttributes(attributes []string) error {
+func sanitizeAttributes(attributes []string) error {
 	seen := map[string]struct{}{}
 	var err error
 	for i, attr := range attributes {

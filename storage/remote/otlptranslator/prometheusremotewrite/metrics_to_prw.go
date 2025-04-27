@@ -32,16 +32,9 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-type ResourceAttributeAction int
-
-const (
-	PromoteSpecificResourceAttributeAction ResourceAttributeAction = iota
-	PromoteAllExceptIgnoreResourceAttributeAction
-)
-
-type ResourceAttributesSetting struct {
-	Action ResourceAttributeAction
-	Attr   map[string]struct{}
+type PromoteResourceAttributes struct {
+	promoteAll bool
+	attrs      map[string]struct{}
 }
 type Settings struct {
 	Namespace                         string
@@ -50,7 +43,7 @@ type Settings struct {
 	ExportCreatedMetric               bool
 	AddMetricSuffixes                 bool
 	AllowUTF8                         bool
-	ResourceAttributesSetting         ResourceAttributesSetting
+	PromoteResourceAttributes         *PromoteResourceAttributes
 	KeepIdentifyingResourceAttributes bool
 	ConvertHistogramsToNHCB           bool
 }
@@ -273,7 +266,7 @@ func (c *PrometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Lab
 	return ts
 }
 
-func NewResourceAttributesSetting(otlpCfg config.OTLPConfig) ResourceAttributesSetting {
+func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAttributes {
 	createAttr := func(attributes []string) map[string]struct{} {
 		attr := make(map[string]struct{}, len(attributes))
 		for _, s := range attributes {
@@ -283,33 +276,41 @@ func NewResourceAttributesSetting(otlpCfg config.OTLPConfig) ResourceAttributesS
 	}
 
 	if otlpCfg.PromoteAllResourceAttributes {
-		return ResourceAttributesSetting{
-			Action: PromoteAllExceptIgnoreResourceAttributeAction,
-			Attr:   createAttr(otlpCfg.IgnoreResourceAttributes),
+		return &PromoteResourceAttributes{
+			promoteAll: true,
+			attrs:      createAttr(otlpCfg.IgnoreResourceAttributes),
 		}
 	}
 
-	return ResourceAttributesSetting{
-		Action: PromoteSpecificResourceAttributeAction,
-		Attr:   createAttr(otlpCfg.PromoteResourceAttributes),
+	return &PromoteResourceAttributes{
+		promoteAll: false,
+		attrs:      createAttr(otlpCfg.PromoteResourceAttributes),
 	}
 }
 
-func (s *ResourceAttributesSetting) shouldPromote(name string) bool {
-	switch s.Action {
-	case PromoteAllExceptIgnoreResourceAttributeAction:
-		_, exist := s.Attr[name]
-		return !exist
-	case PromoteSpecificResourceAttributeAction:
-		_, exist := s.Attr[name]
-		return exist
-	default:
-		return false
+// promotedAttributes returns labels for promoted resourceAttributes.
+func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommon.Map) []prompb.Label {
+	if s == nil {
+		return nil
 	}
-}
-
-// Not promote anything.
-func (s *ResourceAttributesSetting) reset() {
-	s.Action = PromoteSpecificResourceAttributeAction
-	s.Attr = make(map[string]struct{})
+	var promotedAttrs []prompb.Label
+	if s.promoteAll {
+		promotedAttrs = make([]prompb.Label, 0, resourceAttributes.Len())
+		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+			if _, exists := s.attrs[name]; !exists {
+				promotedAttrs = append(promotedAttrs, prompb.Label{Name: name, Value: value.AsString()})
+			}
+			return true
+		})
+	} else {
+		promotedAttrs = make([]prompb.Label, 0, len(s.attrs))
+		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+			if _, exists := s.attrs[name]; exists {
+				promotedAttrs = append(promotedAttrs, prompb.Label{Name: name, Value: value.AsString()})
+			}
+			return true
+		})
+	}
+	sort.Stable(ByLabelName(promotedAttrs))
+	return promotedAttrs
 }
