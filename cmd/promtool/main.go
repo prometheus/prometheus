@@ -61,6 +61,8 @@ import (
 	"github.com/prometheus/prometheus/util/documentcli"
 )
 
+var promqlEnableDelayedNameRemoval = false
+
 func init() {
 	// This can be removed when the legacy global mode is fully deprecated.
 	//nolint:staticcheck
@@ -304,7 +306,7 @@ func main() {
 	promQLLabelsDeleteQuery := promQLLabelsDeleteCmd.Arg("query", "PromQL query.").Required().String()
 	promQLLabelsDeleteName := promQLLabelsDeleteCmd.Arg("name", "Name of the label to delete.").Required().String()
 
-	featureList := app.Flag("enable-feature", "Comma separated feature names to enable. Currently unused.").Default("").Strings()
+	featureList := app.Flag("enable-feature", "Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details").Default("").Strings()
 
 	documentationCmd := app.Command("write-documentation", "Generate command line documentation. Internal use.").Hidden()
 
@@ -338,10 +340,14 @@ func main() {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
 			switch o {
+			case "promql-experimental-functions":
+				parser.EnableExperimentalFunctions = true
+			case "promql-delayed-name-removal":
+				promqlEnableDelayedNameRemoval = true
 			case "":
 				continue
 			default:
-				fmt.Printf("  WARNING: --enable-feature is currently a no-op")
+				fmt.Printf("  WARNING: Unknown feature passed to --enable-feature: %s", o)
 			}
 		}
 	}
@@ -399,8 +405,9 @@ func main() {
 		}
 		os.Exit(RulesUnitTestResult(results,
 			promqltest.LazyLoaderOpts{
-				EnableAtModifier:     true,
-				EnableNegativeOffset: true,
+				EnableAtModifier:         true,
+				EnableNegativeOffset:     true,
+				EnableDelayedNameRemoval: promqlEnableDelayedNameRemoval,
 			},
 			*testRulesRun,
 			*testRulesDiff,

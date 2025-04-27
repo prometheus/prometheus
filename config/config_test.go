@@ -1742,7 +1742,7 @@ func TestOTLPConvertHistogramsToNHCB(t *testing.T) {
 }
 
 func TestOTLPAllowUTF8(t *testing.T) {
-	t.Run("good config", func(t *testing.T) {
+	t.Run("good config - NoUTF8EscapingWithSuffixes", func(t *testing.T) {
 		fpath := filepath.Join("testdata", "otlp_allow_utf8.good.yml")
 		verify := func(t *testing.T, conf *Config, err error) {
 			t.Helper()
@@ -1762,11 +1762,51 @@ func TestOTLPAllowUTF8(t *testing.T) {
 		})
 	})
 
-	t.Run("incompatible config", func(t *testing.T) {
+	t.Run("incompatible config - NoUTF8EscapingWithSuffixes", func(t *testing.T) {
 		fpath := filepath.Join("testdata", "otlp_allow_utf8.incompatible.yml")
 		verify := func(t *testing.T, err error) {
 			t.Helper()
-			require.ErrorContains(t, err, `OTLP translation strategy NoUTF8EscapingWithSuffixes is not allowed when UTF8 is disabled`)
+			require.ErrorContains(t, err, `OTLP translation strategy "NoUTF8EscapingWithSuffixes" is not allowed when UTF8 is disabled`)
+		}
+
+		t.Run("LoadFile", func(t *testing.T) {
+			_, err := LoadFile(fpath, false, promslog.NewNopLogger())
+			verify(t, err)
+		})
+		t.Run("Load", func(t *testing.T) {
+			content, err := os.ReadFile(fpath)
+			require.NoError(t, err)
+			_, err = Load(string(content), promslog.NewNopLogger())
+			t.Log("err", err)
+			verify(t, err)
+		})
+	})
+
+	t.Run("good config - NoTranslation", func(t *testing.T) {
+		fpath := filepath.Join("testdata", "otlp_no_translation.good.yml")
+		verify := func(t *testing.T, conf *Config, err error) {
+			t.Helper()
+			require.NoError(t, err)
+			require.Equal(t, NoTranslation, conf.OTLPConfig.TranslationStrategy)
+		}
+
+		t.Run("LoadFile", func(t *testing.T) {
+			conf, err := LoadFile(fpath, false, promslog.NewNopLogger())
+			verify(t, conf, err)
+		})
+		t.Run("Load", func(t *testing.T) {
+			content, err := os.ReadFile(fpath)
+			require.NoError(t, err)
+			conf, err := Load(string(content), promslog.NewNopLogger())
+			verify(t, conf, err)
+		})
+	})
+
+	t.Run("incompatible config - NoTranslation", func(t *testing.T) {
+		fpath := filepath.Join("testdata", "otlp_no_translation.incompatible.yml")
+		verify := func(t *testing.T, err error) {
+			t.Helper()
+			require.ErrorContains(t, err, `OTLP translation strategy "NoTranslation" is not allowed when UTF8 is disabled`)
 		}
 
 		t.Run("LoadFile", func(t *testing.T) {
