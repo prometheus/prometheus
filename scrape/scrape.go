@@ -1103,9 +1103,6 @@ func (c *scrapeCache) trackStaleness(hash uint64, ce *cacheEntry) {
 
 func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool) {
 	for h, ce := range c.seriesPrev {
-		if ce == nil {
-			continue
-		}
 		if _, ok := c.seriesCur[h]; !ok {
 			if !f(ce.ref, ce.lset) {
 				break
@@ -1817,7 +1814,11 @@ loop:
 			break loop
 		}
 
-		if !seriesCached {
+		// If series wasn't cached (is new, not seen on previous scrape) we need need to add it to the scrape cache.
+		// But we only do this for series that were appended to TSDB without errors.
+		// If a series was new but we didn't append it due to sample_limit or other errors then we don't need
+		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
+		if !seriesCached && sampleAdded {
 			ce = sl.cache.addRef(met, ref, lset, hash)
 			if parsedTimestamp == nil || sl.trackTimestampsStaleness {
 				// Bypass staleness logic if there is an explicit timestamp.
