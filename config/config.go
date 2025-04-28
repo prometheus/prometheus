@@ -1548,14 +1548,14 @@ func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		if len(c.PromoteResourceAttributes) > 0 {
 			return errors.New("'promote_all_resource_attributes' and 'promote_resource_attributes' cannot be configured simultaneously")
 		}
-		if err := sanitizeAttributes(c.IgnoreResourceAttributes); err != nil {
+		if err := sanitizeAttributes(c.IgnoreResourceAttributes, "ignored"); err != nil {
 			return fmt.Errorf("invalid 'ignore_resource_attributes': %w", err)
 		}
 	} else {
 		if len(c.IgnoreResourceAttributes) > 0 {
-			return errors.New("'promote_resource_attributes' and 'ignore_resource_attributes' cannot be configured simultaneously")
+			return errors.New("'ignore_resource_attributes' cannot be configured unless 'promote_all_resource_attributes' is true")
 		}
-		if err := sanitizeAttributes(c.PromoteResourceAttributes); err != nil {
+		if err := sanitizeAttributes(c.PromoteResourceAttributes, "promoted"); err != nil {
 			return fmt.Errorf("invalid 'promote_resource_attributes': %w", err)
 		}
 	}
@@ -1563,17 +1563,17 @@ func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-func sanitizeAttributes(attributes []string) error {
+func sanitizeAttributes(attributes []string, adjective string) error {
 	seen := map[string]struct{}{}
 	var err error
 	for i, attr := range attributes {
 		attr = strings.TrimSpace(attr)
 		if attr == "" {
-			err = errors.Join(err, errors.New("empty OTel resource attribute"))
+			err = errors.Join(err, fmt.Errorf("empty %s OTel resource attribute", adjective))
 			continue
 		}
 		if _, exists := seen[attr]; exists {
-			err = errors.Join(err, fmt.Errorf("duplicated OTel resource attribute %q", attr))
+			err = errors.Join(err, fmt.Errorf("duplicated %s OTel resource attribute %q", adjective, attr))
 			continue
 		}
 

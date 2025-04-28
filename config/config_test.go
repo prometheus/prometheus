@@ -1660,8 +1660,8 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 	t.Run("bad config - promote resource attributes", func(t *testing.T) {
 		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_promote_resource_attributes.bad.yml"), false, promslog.NewNopLogger())
 		require.Contains(t, err.Error(), `invalid 'promote_resource_attributes'`)
-		require.ErrorContains(t, err, `duplicated OTel resource attribute "k8s.job.name"`)
-		require.ErrorContains(t, err, `empty OTel resource attribute`)
+		require.ErrorContains(t, err, `duplicated promoted OTel resource attribute "k8s.job.name"`)
+		require.ErrorContains(t, err, `empty promoted OTel resource attribute`)
 	})
 
 	t.Run("good config - promote all resource attributes", func(t *testing.T) {
@@ -1693,8 +1693,8 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 	t.Run("bad config - ignore resource attributes", func(t *testing.T) {
 		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_ignore_resource_attributes.bad.yml"), false, promslog.NewNopLogger())
 		require.Contains(t, err.Error(), `invalid 'ignore_resource_attributes'`)
-		require.ErrorContains(t, err, `duplicated OTel resource attribute "k8s.job.name"`)
-		require.ErrorContains(t, err, `empty OTel resource attribute`)
+		require.ErrorContains(t, err, `duplicated ignored OTel resource attribute "k8s.job.name"`)
+		require.ErrorContains(t, err, `empty ignored OTel resource attribute`)
 	})
 
 	t.Run("bad config - conflict promote all and promote specific resource attributes", func(t *testing.T) {
@@ -1709,7 +1709,7 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 
 	t.Run("bad config - conflict promote specific resource attributes and ignore resource attributes", func(t *testing.T) {
 		_, err := LoadFile(filepath.Join("testdata", "otlp_promote_and_ignore_resource_attributes.bad.yml"), false, promslog.NewNopLogger())
-		require.ErrorContains(t, err, `'promote_resource_attributes' and 'ignore_resource_attributes' cannot be configured simultaneously`)
+		require.ErrorContains(t, err, `'ignore_resource_attributes' cannot be configured unless 'promote_all_resource_attributes' is true`)
 	})
 }
 
