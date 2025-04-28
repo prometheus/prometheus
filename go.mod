@@ -16,7 +16,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/dennwc/varint v1.0.0
 	github.com/digitalocean/godo v1.142.0
-	github.com/docker/docker v28.0.4+incompatible
+	github.com/docker/docker v28.1.1+incompatible
 	github.com/edsrzf/mmap-go v1.2.0
 	github.com/envoyproxy/go-control-plane/envoy v1.32.4
 	github.com/envoyproxy/protoc-gen-validate v1.2.1
@@ -95,6 +95,7 @@ require (
 
 require (
 	github.com/hashicorp/go-version v1.7.0 // indirect
+	github.com/moby/sys/atomicwriter v0.1.0 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
 	go.opentelemetry.io/collector/featuregate v1.30.0 // indirect
 	go.opentelemetry.io/collector/internal/telemetry v0.124.0 // indirect
