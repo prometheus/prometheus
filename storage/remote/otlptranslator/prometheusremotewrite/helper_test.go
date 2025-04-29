@@ -106,12 +106,8 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                         "Successful conversion with resource attribute promotion",
-			promoteAllResourceAttributes: false,
-			promoteResourceAttributes: []string{
-				"non-existent-attr",
-				"existent-attr",
-			},
+			name:                      "Successful conversion with resource attribute promotion",
+			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr"},
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -140,15 +136,8 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                         "Successful conversion with resource attribute promotion, conflicting resource attributes are ignored",
-			promoteAllResourceAttributes: false,
-			promoteResourceAttributes: []string{
-				"non-existent-attr",
-				"existent-attr",
-				"metric-attr",
-				"job",
-				"instance",
-			},
+			name:                      "Successful conversion with resource attribute promotion, conflicting resource attributes are ignored",
+			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr", "metric-attr", "job", "instance"},
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -177,11 +166,8 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                         "Successful conversion with resource attribute promotion, attributes are only promoted once",
-			promoteAllResourceAttributes: false,
-			promoteResourceAttributes: []string{
-				"existent-attr",
-			},
+			name:                      "Successful conversion with resource attribute promotion, attributes are only promoted once",
+			promoteResourceAttributes: []string{"existent-attr", "existent-attr"},
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
