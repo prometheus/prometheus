@@ -2,8 +2,116 @@
 
 ## unreleased
 
-* [CHANGE] Notifier: Increment the prometheus_notifications_errors_total metric by the number of affected alerts rather than by one per batch of affected alerts. #15428
-* [ENHANCEMENT] OTLP receiver: Convert also metric metadata. #15416
+* [CHANGE] Make setting out-of-order native histograms feature (`--enable-feature=ooo-native-histograms`) a no-op. Out-of-order native histograms are now always enabled when `out_of_order_time_window` is greater than zero and `--enable-feature=native-histograms` is set. #16207
+* [FEATURE] OTLP translate: Add feature flag for optionally translating OTel explicit bucket histograms into native histograms with custom buckets. #15850
+* [FEATURE] OTLP translate: Add option to receive OTLP metrics without translating names or attributes. #16441
+* [ENHANCEMENT] TSDB: add `prometheus_tsdb_wal_replay_unknown_refs_total` and `prometheus_tsdb_wbl_replay_unknown_refs_total` metrics to track unknown series references during WAL/WBL replay. #16166
+* [BUGFIX] TSDB: fix unknown series errors and possible lost data during WAL replay when series are removed from the head due to inactivity and reappear before the next WAL checkpoint. #16060
+
+## 3.3.0 / 2025-04-15
+
+* [FEATURE] PromQL: Implement `idelta()` and `irate()` for native histograms. #15853
+* [ENHANCEMENT] Scaleway SD: Add `__meta_scaleway_instance_public_ipv4_addresses` and `__meta_scaleway_instance_public_ipv6_addresses` labels. #14228
+* [ENHANCEMENT] TSDB: Reduce locking while reloading blocks. #12920
+* [ENHANCEMENT] PromQL: Allow UTF-8 labels in `label_replace()`. #15974
+* [ENHANCEMENT] Promtool: `tsdb create-blocks-from openmetrics` can now read from a Pipe. #16011
+* [ENHANCEMENT] Rules: Add support for anchors and aliases in rule files. #14957
+* [ENHANCEMENT] Dockerfile: Make `/prometheus` writable. #16073
+* [ENHANCEMENT] API: Include scrape pool name for dropped targets in `/api/v1/targets`. #16085
+* [ENHANCEMENT] UI: Improve time formatting and copying of selectors. #15999 #16165
+* [ENHANCEMENT] UI: Bring back vertical grid lines and graph legend series toggling instructions. #16163 #16164
+* [ENHANCEMENT] Mixin: The `cluster` label can be customized using `clusterLabel`. #15826
+* [PERF] TSDB: Optimize some operations on head chunks by taking shortcuts. #12659
+* [PERF] TSDB & Agent: Reduce memory footprint during WL replay. #15778
+* [PERF] Remote-Write: Reduce memory footprint during WAL replay. #16197
+* [PERF] API: Reduce memory footprint during header parsing. #16001
+* [PERF] Rules: Improve dependency evaluation, enabling better concurrency. #16039
+* [PERF] Scraping: Improve scraping performance for native histograms. #15731
+* [PERF] Scraping: Improve parsing of created timestamps. #16072
+* [BUGFIX] Scraping: Bump cache iteration after error to avoid false duplicate detections. #16174
+* [BUGFIX] Scraping: Skip native histograms series when ingestion is disabled. #16218
+* [BUGFIX] PromQL: Fix counter reset detection for native histograms. #15902 #15987
+* [BUGFIX] PromQL: Fix inconsistent behavior with an empty range. #15970
+* [BUGFIX] PromQL: Fix inconsistent annotation in `quantile_over_time()`. #16018
+* [BUGFIX] PromQL: Prevent `label_join()` from producing duplicates. #15975
+* [BUGFIX] PromQL: Ignore native histograms in `scalar()`, `sort()` and `sort_desc()`. #15964
+* [BUGFIX] PromQL: Fix annotations for binary operations between incompatible native histograms. #15895
+* [BUGFIX] Alerting: Consider alert relabeling when deciding whether alerts are dropped. #15979
+* [BUGFIX] Config: Set `GoGC` to the default value in case of an empty configuration. #16052
+* [BUGFIX] TSDB: Fix unknown series errors and potential data loss during WAL replay when inactive series are removed from the head and reappear before the next WAL checkpoint. #16060
+* [BUGFIX] Scaleway SD: The public IP will no longer be set to `__meta_meta_scaleway_instance_public_ipv4` if it is an IPv6 address. #14228
+* [BUGFIX] UI: Display the correct value of Alerting rules' `keep_firing_for`. #16211
+
+## 3.2.1 / 2025-02-25
+
+* [BUGFIX] Don't send Accept` header `escape=allow-utf-8` when `metric_name_validation_scheme: legacy` is configured. #16061
+
+## 3.2.0 / 2025-02-17
+
+* [CHANGE] relabel: Replace actions can now use UTF-8 characters in `targetLabel` field. Note that `$<chars>` or `${<chars>}` will be expanded. This also apply to `replacement` field for `LabelMap` action. #15851
+* [CHANGE] rulefmt: Rule names can use UTF-8 characters, except `{` and `}` characters (due to common mistake checks). #15851
+* [FEATURE] remote/otlp: Add feature flag `otlp-deltatocumulative` to support conversion from delta to cumulative. #15165
+* [ENHANCEMENT] openstack SD: Discover Octavia loadbalancers. #15539
+* [ENHANCEMENT] scrape: Add metadata for automatic metrics to WAL for `metadata-wal-records` feature. #15837
+* [ENHANCEMENT] promtool: Support linting of scrape interval, through lint option `too-long-scrape-interval`. #15719
+* [ENHANCEMENT] promtool: Add --ignore-unknown-fields option. #15706
+* [ENHANCEMENT] ui: Make "hide empty rules" and hide empty rules" persistent #15807
+* [ENHANCEMENT] web/api: Add a limit parameter to `/query` and `/query_range`. #15552
+* [ENHANCEMENT] api: Add fields Node and ServerTime to `/status`. #15784
+* [PERF] Scraping: defer computing labels for dropped targets until they are needed by the UI.  #15261
+* [BUGFIX] remotewrite2: Fix invalid metadata bug for metrics without metadata. #15829
+* [BUGFIX] remotewrite2: Fix the unit field propagation. #15825
+* [BUGFIX] scrape: Fix WAL metadata for histograms and summaries. #15832
+* [BUGFIX] ui: Merge duplicate "Alerts page settings" sections. #15810
+* [BUGFIX] PromQL: Fix `<aggr_over_time>` functions with histograms. #15711
+
+## 3.1.0 / 2025-01-02
+
+ * [SECURITY] upgrade golang.org/x/crypto to address reported CVE-2024-45337. #15691
+ * [CHANGE] Notifier: Increment prometheus_notifications_errors_total by the number of affected alerts rather than per batch. #15428
+ * [CHANGE] API: list rules field "groupNextToken:omitempty" renamed to "groupNextToken". #15400
+ * [ENHANCEMENT] OTLP translate: keep identifying attributes in target_info. #15448
+ * [ENHANCEMENT] Paginate rule groups, add infinite scroll to rules within groups. #15677
+ * [ENHANCEMENT] TSDB: Improve calculation of space used by labels. #13880
+ * [ENHANCEMENT] Rules: new metric rule_group_last_rule_duration_sum_seconds. #15672
+ * [ENHANCEMENT] Observability: Export 'go_sync_mutex_wait_total_seconds_total' metric. #15339
+ * [ENHANCEMEN] Remote-Write: optionally use a DNS resolver that picks a random IP. #15329
+ * [PERF] Optimize `l=~".+"` matcher. #15474, #15684
+ * [PERF] TSDB: Cache all symbols for compaction . #15455
+ * [PERF] TSDB: MemPostings: keep a map of label values slices. #15426
+ * [PERF] Remote-Write: Remove interning hook. #15456
+ * [PERF] Scrape: optimize string manipulation for experimental native histograms with custom buckets. #15453
+ * [PERF] TSDB: reduce memory allocations. #15465, #15427
+ * [PERF] Storage: Implement limit in mergeGenericQuerier. #14489
+ * [PERF] TSDB: Optimize inverse matching. #14144
+ * [PERF] Regex: use stack memory for lowercase copy of string. #15210
+ * [PERF] TSDB: When deleting from postings index, pause to unlock and let readers read. #15242
+ * [BUGFIX] Main: Avoid possible segfault at exit. (#15724)
+ * [BUGFIX] Rules: Do not run rules concurrently if uncertain about dependencies. #15560
+ * [BUGFIX] PromQL: Adds test for `absent`, `absent_over_time` and `deriv` func with histograms. #15667
+ * [BUGFIX] PromQL: Fix various bugs related to quoting UTF-8 characters. #15531
+ * [BUGFIX] Scrape: fix nil panic after scrape loop reload. #15563
+ * [BUGFIX] Remote-write: fix panic on repeated log message. #15562
+ * [BUGFIX] Scrape: reload would ignore always_scrape_classic_histograms and convert_classic_histograms_to_nhcb configs. #15489
+ * [BUGFIX] TSDB: fix data corruption in experimental native histograms. #15482
+ * [BUGFIX] PromQL: Ignore histograms in all time related functions. #15479
+ * [BUGFIX] OTLP receiver: Convert metric metadata. #15416
+ * [BUGFIX] PromQL: Fix `resets` function for histograms. #15527
+ * [BUGFIX] PromQL: Fix behaviour of `changes()` for mix of histograms and floats. #15469
+ * [BUGFIX] PromQL: Fix behaviour of some aggregations with histograms. #15432
+ * [BUGFIX] allow quoted exemplar keys in openmetrics text format. #15260
+ * [BUGFIX] TSDB: fixes for rare conditions when loading write-behind-log (WBL). #15380
+ * [BUGFIX] `round()` function did not remove `__name__` label. #15250
+ * [BUGFIX] Promtool: analyze block shows metric name with 0 cardinality. #15438
+ * [BUGFIX] PromQL: Fix `count_values` for histograms. #15422
+ * [BUGFIX] PromQL: fix issues with comparison binary operations with `bool` modifier and native histograms. #15413
+ * [BUGFIX] PromQL: fix incorrect "native histogram ignored in aggregation" annotations. #15414
+ * [BUGFIX] PromQL: Corrects the behaviour of some operator and aggregators with Native Histograms. #15245
+ * [BUGFIX] TSDB: Always return unknown hint for first sample in non-gauge histogram chunk. #15343
+ * [BUGFIX] PromQL: Clamp functions: Ignore any points with native histograms. #15169
+ * [BUGFIX] TSDB: Fix race on stale values in headAppender. #15322
+ * [BUGFIX] UI: Fix selector / series formatting for empty metric names. #15340
+ * [BUGFIX] OTLP receiver: Allow colons in non-standard units. #15710
 
 ## 3.0.1 / 2024-11-28
 
@@ -36,14 +144,14 @@ This release includes new features such as a brand new UI and UTF-8 support enab
 * [CHANGE] PromQL: Range selectors and the lookback delta are now left-open, i.e. a sample coinciding with the lower time limit is excluded rather than included. #13904
 * [CHANGE] Kubernetes SD: Remove support for `discovery.k8s.io/v1beta1` API version of EndpointSlice. This version is no longer served as of Kubernetes v1.25. #14365
 * [CHANGE] Kubernetes SD: Remove support for `networking.k8s.io/v1beta1` API version of Ingress. This version is no longer served as of Kubernetes v1.22. #14365
-* [CHANGE] UTF-8: Enable UTF-8 support by default. Prometheus now allows all UTF-8 characters in metric and label names. The corresponding `utf8-name` feature flag has been removed. #14705
+* [CHANGE] UTF-8: Enable UTF-8 support by default. Prometheus now allows all UTF-8 characters in metric and label names. The corresponding `utf8-name` feature flag has been removed. #14705, #15258
 * [CHANGE] Console: Remove example files for the console feature. Users can continue using the console feature by supplying their own JavaScript and templates. #14807
 * [CHANGE] SD: Enable the new service discovery manager by default. This SD manager does not restart unchanged discoveries upon reloading. This makes reloads faster and reduces pressure on service discoveries' sources. The corresponding `new-service-discovery-manager` feature flag has been removed. #14770
 * [CHANGE] Agent mode has been promoted to stable. The feature flag `agent` has been removed. To run Prometheus in Agent mode, use the new `--agent` cmdline arg instead. #14747
 * [CHANGE] Remove deprecated `remote-write-receiver`,`promql-at-modifier`, and `promql-negative-offset` feature flags. #13456, #14526
 * [CHANGE] Remove deprecated `storage.tsdb.allow-overlapping-blocks`, `alertmanager.timeout`, and `storage.tsdb.retention` flags. #14640, #14643
 * [FEATURE] OTLP receiver: Ability to skip UTF-8 normalization using `otlp.translation_strategy = NoUTF8EscapingWithSuffixes` configuration option. #15384
-* [FEATURE] Support config reload automatically - feature flag `auto-reload-config`. #14769
+* [FEATURE] Support config reload automatically - feature flag `auto-reload-config`. #14769, #15011
 * [ENHANCEMENT] Scraping, rules: handle targets reappearing, or rules moving group, when out-of-order is enabled. #14710
 * [ENHANCEMENT] Tools: add debug printouts to promtool rules unit testing #15196
 * [ENHANCEMENT] Scraping: support Created-Timestamp feature on native histograms. #14694
@@ -72,6 +180,11 @@ This release includes new features such as a brand new UI and UTF-8 support enab
 * [BUGFIX] PromQL: Handle stale marker in native histogram series (e.g. if series goes away and comes back). #15025
 * [BUGFIX] Autoreload: Reload invalid yaml files. #14947
 * [BUGFIX] Scrape: Do not override target parameter labels with config params. #11029
+
+## 2.53.4 / 2025-03-18
+
+* [BUGFIX] Runtime: fix GOGC is being set to 0 when installed with empty prometheus.yml file resulting high cpu usage. #16090
+* [BUGFIX] Scrape: fix dropping valid metrics after previous scrape failed. #16220
 
 ## 2.53.3 / 2024-11-04
 

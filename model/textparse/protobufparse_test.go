@@ -582,8 +582,8 @@ metric: <
   counter: <
     value: 42
     created_timestamp: <
-      seconds: 1
-      nanos: 1
+      seconds: 1625851153
+      nanos: 146848499
     >
   >
 >
@@ -597,8 +597,8 @@ metric: <
     sample_count: 42
     sample_sum: 1.234
     created_timestamp: <
-      seconds: 1
-      nanos: 1
+      seconds: 1625851153
+      nanos: 146848499
     >
   >
 >
@@ -610,8 +610,8 @@ type: HISTOGRAM
 metric: <
   histogram: <
     created_timestamp: <
-      seconds: 1
-      nanos: 1
+      seconds: 1625851153
+      nanos: 146848499
     >
     positive_span: <
       offset: 0
@@ -627,8 +627,8 @@ type: GAUGE_HISTOGRAM
 metric: <
   histogram: <
     created_timestamp: <
-      seconds: 1
-      nanos: 1
+      seconds: 1625851153
+      nanos: 146848499
     >
     positive_span: <
       offset: 0
@@ -1246,7 +1246,7 @@ func TestProtobufParse(t *testing.T) {
 					),
 				},
 				{
-					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.5",
+					m: "rpc_durations_seconds\xffquantile\xff0.5\xffservice\xffexponential",
 					v: 6.442786329648548e-07,
 					lset: labels.FromStrings(
 						"__name__", "rpc_durations_seconds",
@@ -1255,7 +1255,7 @@ func TestProtobufParse(t *testing.T) {
 					),
 				},
 				{
-					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.9",
+					m: "rpc_durations_seconds\xffquantile\xff0.9\xffservice\xffexponential",
 					v: 1.9435742936658396e-06,
 					lset: labels.FromStrings(
 						"__name__", "rpc_durations_seconds",
@@ -1264,7 +1264,7 @@ func TestProtobufParse(t *testing.T) {
 					),
 				},
 				{
-					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.99",
+					m: "rpc_durations_seconds\xffquantile\xff0.99\xffservice\xffexponential",
 					v: 4.0471608667037015e-06,
 					lset: labels.FromStrings(
 						"__name__", "rpc_durations_seconds",
@@ -1324,7 +1324,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_counter_with_createdtimestamp",
 					v:  42,
-					ct: int64p(1000),
+					ct: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_counter_with_createdtimestamp",
 					),
@@ -1340,7 +1340,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_summary_with_createdtimestamp_count",
 					v:  42,
-					ct: int64p(1000),
+					ct: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_count",
 					),
@@ -1348,7 +1348,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_summary_with_createdtimestamp_sum",
 					v:  1.234,
-					ct: int64p(1000),
+					ct: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_sum",
 					),
@@ -1363,7 +1363,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:  "test_histogram_with_createdtimestamp",
-					ct: int64p(1000),
+					ct: 1625851153146,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.UnknownCounterReset,
 						PositiveSpans:    []histogram.Span{},
@@ -1383,7 +1383,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:  "test_gaugehistogram_with_createdtimestamp",
-					ct: int64p(1000),
+					ct: 1625851153146,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.GaugeType,
 						PositiveSpans:    []histogram.Span{},
@@ -2199,7 +2199,7 @@ func TestProtobufParse(t *testing.T) {
 					),
 				},
 				{
-					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.5",
+					m: "rpc_durations_seconds\xffquantile\xff0.5\xffservice\xffexponential",
 					v: 6.442786329648548e-07,
 					lset: labels.FromStrings(
 						"__name__", "rpc_durations_seconds",
@@ -2208,7 +2208,7 @@ func TestProtobufParse(t *testing.T) {
 					),
 				},
 				{
-					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.9",
+					m: "rpc_durations_seconds\xffquantile\xff0.9\xffservice\xffexponential",
 					v: 1.9435742936658396e-06,
 					lset: labels.FromStrings(
 						"__name__", "rpc_durations_seconds",
@@ -2217,7 +2217,7 @@ func TestProtobufParse(t *testing.T) {
 					),
 				},
 				{
-					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.99",
+					m: "rpc_durations_seconds\xffquantile\xff0.99\xffservice\xffexponential",
 					v: 4.0471608667037015e-06,
 					lset: labels.FromStrings(
 						"__name__", "rpc_durations_seconds",
@@ -2277,7 +2277,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_counter_with_createdtimestamp",
 					v:  42,
-					ct: int64p(1000),
+					ct: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_counter_with_createdtimestamp",
 					),
@@ -2293,7 +2293,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_summary_with_createdtimestamp_count",
 					v:  42,
-					ct: int64p(1000),
+					ct: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_count",
 					),
@@ -2301,7 +2301,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_summary_with_createdtimestamp_sum",
 					v:  1.234,
-					ct: int64p(1000),
+					ct: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_sum",
 					),
@@ -2316,7 +2316,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:  "test_histogram_with_createdtimestamp",
-					ct: int64p(1000),
+					ct: 1625851153146,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.UnknownCounterReset,
 						PositiveSpans:    []histogram.Span{},
@@ -2336,7 +2336,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:  "test_gaugehistogram_with_createdtimestamp",
-					ct: int64p(1000),
+					ct: 1625851153146,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.GaugeType,
 						PositiveSpans:    []histogram.Span{},

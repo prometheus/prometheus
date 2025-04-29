@@ -26,6 +26,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -43,7 +44,8 @@ import (
 )
 
 func init() {
-	// This can be removed when the default validation scheme in common is updated.
+	// This can be removed when the legacy global mode is fully deprecated.
+	//nolint:staticcheck
 	model.NameValidationScheme = model.UTF8Validation
 }
 
@@ -246,7 +248,14 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 			// Log stderr in case of failure.
 			stderr, err := prom.StderrPipe()
 			require.NoError(t, err)
+
+			// WaitGroup is used to ensure that we don't call t.Log() after the test has finished.
+			var wg sync.WaitGroup
+			wg.Add(1)
+			defer wg.Wait()
+
 			go func() {
+				defer wg.Done()
 				slurp, _ := io.ReadAll(stderr)
 				t.Log(string(slurp))
 			}()
@@ -303,7 +312,14 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 			// Log stderr in case of failure.
 			stderr, err := prom.StderrPipe()
 			require.NoError(t, err)
+
+			// WaitGroup is used to ensure that we don't call t.Log() after the test has finished.
+			var wg sync.WaitGroup
+			wg.Add(1)
+			defer wg.Wait()
+
 			go func() {
+				defer wg.Done()
 				slurp, _ := io.ReadAll(stderr)
 				t.Log(string(slurp))
 			}()
@@ -497,7 +513,14 @@ func TestModeSpecificFlags(t *testing.T) {
 			// Log stderr in case of failure.
 			stderr, err := prom.StderrPipe()
 			require.NoError(t, err)
+
+			// WaitGroup is used to ensure that we don't call t.Log() after the test has finished.
+			var wg sync.WaitGroup
+			wg.Add(1)
+			defer wg.Wait()
+
 			go func() {
+				defer wg.Done()
 				slurp, _ := io.ReadAll(stderr)
 				t.Log(string(slurp))
 			}()

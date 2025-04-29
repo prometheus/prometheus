@@ -24,10 +24,11 @@ function stack(
   }
 
   for (let i = 1; i < data.length; i++) {
-    !omit(i) &&
+    if (!omit(i)) {
       bands.push({
         series: [data.findIndex((_s, j) => j > i && !omit(j)), i],
       });
+    }
   }
 
   bands = bands.filter((b) => b.series[1] > -1);
@@ -65,7 +66,9 @@ export function setStackedOpts(opts: uPlot.Options, data: uPlot.AlignedData) {
       if (show) {
         const pts: number[] = [];
         data[seriesIdx].forEach((v, i) => {
-          v != null && pts.push(i);
+          if (v != null) {
+            pts.push(i);
+          }
         });
         return pts;
       }

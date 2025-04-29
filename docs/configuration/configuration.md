@@ -59,6 +59,7 @@ global:
   [ scrape_interval: <duration> | default = 1m ]
 
   # How long until a scrape request times out.
+  # It cannot be greater than the scrape interval.
   [ scrape_timeout: <duration> | default = 10s ]
 
   # The protocols to negotiate during a scrape with the client.
@@ -139,6 +140,10 @@ global:
   # and underscores.
   [ metric_name_validation_scheme <string> | default "utf8" ]
 
+  # Specifies whether to convert all scraped classic histograms into native
+  # histograms with custom buckets.
+  [ convert_classic_histograms_to_nhcb <bool> | default = false]
+
 runtime:
   # Configure the Go garbage collector GOGC parameter
   # See: https://tip.golang.org/doc/gc-guide#GOGC
@@ -181,11 +186,23 @@ otlp:
   # - "NoUTF8EscapingWithSuffixes" is a mode that relies on UTF-8 support in Prometheus.
   #   It preserves all special characters like dots, but still adds required metric name suffixes
   #   for units and _total, as UnderscoreEscapingWithSuffixes does.
+  # - (EXPERIMENTAL) "NoTranslation" is a mode that relies on UTF-8 support in Prometheus.
+  #   It preserves all special character like dots and won't append special suffixes for metric
+  #   unit and type.
+  #
+  #   WARNING: The "NoTranslation" setting has significant known risks and limitations (see https://prometheus.io/docs/practices/naming/  
+  #   for details):
+  #       * Impaired UX when using PromQL in plain YAML (e.g. alerts, rules, dashboard, autoscaling configuration).
+  #       * Series collisions which in the best case may result in OOO errors, in the worst case a silently malformed
+  #         time series. For instance, you may end up in situation of ingesting `foo.bar` series with unit
+  #         `seconds` and a separate series `foo.bar` with unit `milliseconds`.
   [ translation_strategy: <string> | default = "UnderscoreEscapingWithSuffixes" ]
   # Enables adding "service.name", "service.namespace" and "service.instance.id"
   # resource attributes to the "target_info" metric, on top of converting
   # them into the "instance" and "job" labels.
   [ keep_identifying_resource_attributes: <boolean> | default = false]
+  # Configures optional translation of OTLP explicit bucket histograms into native histograms with custom buckets.
+  [ convert_histograms_to_nhcb: <boolean> | default = false]
 
 # Settings related to the remote read feature.
 remote_read:
@@ -221,6 +238,7 @@ job_name: <job_name>
 [ scrape_interval: <duration> | default = <global_config.scrape_interval> ]
 
 # Per-scrape timeout when scraping this job.
+# It cannot be greater than the scrape interval.
 [ scrape_timeout: <duration> | default = <global_config.scrape_timeout> ]
 
 # The protocols to negotiate during a scrape with the client.
@@ -465,6 +483,22 @@ metric_relabel_configs:
 # underscores.
 [ metric_name_validation_scheme <string> | default "utf8" ]
 
+# Specifies the character escaping scheme that will be requested when scraping
+# for metric and label names that do not conform to the legacy Prometheus
+# character set. Available options are: 
+#   * `allow-utf-8`: Full UTF-8 support, no escaping needed.
+#   * `underscores`: Escape all legacy-invalid characters to underscores.
+#   * `dots`: Escapes dots to `_dot_`, underscores to `__`, and all other
+#     legacy-invalid characters to underscores.
+#   * `values`: Prepend the name with `U__` and replace all invalid
+#     characters with their unicode value, surrounded by underscores. Single
+#     underscores are replaced with double underscores. 
+#     e.g. "U__my_2e_dotted_2e_name".
+# If this value is left blank, Prometheus will default to `allow-utf-8` if the
+# validation scheme for the current scrape config is set to utf8, or
+# `underscores` if the validation scheme is set to `legacy`.
+[ metric_name_validation_scheme <string> | default "utf8" ]
+
 # Limit on total number of positive and negative buckets allowed in a single
 # native histogram. The resolution of a histogram with more buckets will be
 # reduced until the number of buckets is within the limit. If the limit cannot
@@ -511,6 +545,11 @@ metric_relabel_configs:
 # 0 results in the smallest supported factor (which is currently ~1.0027 or
 # schema 8, but might change in the future).
 [ native_histogram_min_bucket_factor: <float> | default = 0 ]
+
+# Specifies whether to convert classic histograms into native histograms with
+# custom buckets (has no effect without --enable-feature=native-histograms).
+[ convert_classic_histograms_to_nhcb <bool> | default =
+<global.convert_classic_histograms_to_nhcb>]
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.
@@ -620,7 +659,7 @@ A `tls_config` allows configuring TLS connections.
 
 ### `<oauth2>`
 
-OAuth 2.0 authentication using the client credentials grant type.
+OAuth 2.0 authentication using the client credentials or password grant type.
 Prometheus fetches an access token from the specified endpoint with
 the given client access and secret keys.
 
@@ -640,6 +679,11 @@ scopes:
 token_url: <string>
 
 # Optional parameters to append to the token URL.
+# To set 'password' grant type, add it to params:
+# endpoint_params:
+#   grant_type: 'password'
+#   username: 'username@example.com'
+#   password: 'strongpassword'
 endpoint_params:
   [ <string>: <string> ... ]
 
@@ -1205,6 +1249,25 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
 * `__meta_openstack_tag_<key>`: each metadata item of the instance, with any unsupported characters converted to an underscore.
 * `__meta_openstack_user_id`: the user account owning the tenant.
+
+#### `loadbalancer`
+
+The `loadbalancer` role discovers one target per Octavia loadbalancer with a 
+`PROMETHEUS` listener. The target address defaults to the VIP address
+of the load balancer.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_openstack_loadbalancer_availability_zone`: the availability zone of the OpenStack load balancer.
+* `__meta_openstack_loadbalancer_floating_ip`: the floating IP of the OpenStack load balancer.
+* `__meta_openstack_loadbalancer_id`:  the OpenStack load balancer ID.
+* `__meta_openstack_loadbalancer_name`: the OpenStack load balancer name.
+* `__meta_openstack_loadbalancer_provider`: the Octavia provider of the OpenStack load balancer.
+* `__meta_openstack_loadbalancer_operating_status`: the operating status of the OpenStack load balancer.
+* `__meta_openstack_loadbalancer_provisioning_status`: the provisioning status of the OpenStack load balancer.
+* `__meta_openstack_loadbalancer_tags`: comma separated list of the OpenStack load balancer.
+* `__meta_openstack_loadbalancer_vip`: the VIP of the OpenStack load balancer.
+* `__meta_openstack_project_id`: the project (tenant) owning this load balancer.
 
 See below for the configuration options for OpenStack discovery:
 
@@ -1894,7 +1957,7 @@ which automates the Prometheus setup on top of Kubernetes.
 
 Kuma SD configurations allow retrieving scrape target from the [Kuma](https://kuma.io) control plane.
 
-This SD discovers "monitoring assignments" based on Kuma [Dataplane Proxies](https://kuma.io/docs/latest/documentation/dps-and-data-model),
+This SD discovers "monitoring assignments" based on Kuma [Dataplane Proxies](https://kuma.io/docs/latest/production/dp-config/dpp/#data-plane-proxy),
 via the MADS v1 (Monitoring Assignment Discovery Service) xDS API, and will create a target for each proxy
 inside a Prometheus-enabled mesh.
 
@@ -2317,6 +2380,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_instance_project_id`: project id of the server
 * `__meta_scaleway_instance_public_ipv4`: the public IPv4 address of the server
 * `__meta_scaleway_instance_public_ipv6`: the public IPv6 address of the server
+* `__meta_scaleway_instance_public_ipv4_addresses`: the public IPv4 addresses of the server
+* `__meta_scaleway_instance_public_ipv6_addresses`: the public IPv6 addresses of the server
 * `__meta_scaleway_instance_region`: the region of the server
 * `__meta_scaleway_instance_security_group_id`: the ID of the security group of the server
 * `__meta_scaleway_instance_security_group_name`: the name of the security group of the server
@@ -2528,7 +2593,8 @@ input to a subsequent relabeling step), use the `__tmp` label name prefix. This
 prefix is guaranteed to never be used by Prometheus itself.
 
 ```yaml
-# The source labels select values from existing labels. Their content is concatenated
+# The source_labels tells the rule what labels to fetch from the series. Any 
+# labels which do not exist get a blank value ("").  Their content is concatenated
 # using the configured separator and matched against the configured regular expression
 # for the replace, keep, and drop actions.
 [ source_labels: '[' <labelname> [, ...] ']' ]

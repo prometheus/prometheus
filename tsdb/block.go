@@ -26,8 +26,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/oklog/ulid"
-
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -221,7 +220,7 @@ type BlockMetaCompaction struct {
 }
 
 func (bm *BlockMetaCompaction) SetOutOfOrder() {
-	if bm.containsHint(CompactionHintFromOutOfOrder) {
+	if bm.FromOutOfOrder() {
 		return
 	}
 	bm.Hints = append(bm.Hints, CompactionHintFromOutOfOrder)
@@ -229,16 +228,7 @@ func (bm *BlockMetaCompaction) SetOutOfOrder() {
 }
 
 func (bm *BlockMetaCompaction) FromOutOfOrder() bool {
-	return bm.containsHint(CompactionHintFromOutOfOrder)
-}
-
-func (bm *BlockMetaCompaction) containsHint(hint string) bool {
-	for _, h := range bm.Hints {
-		if h == hint {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(bm.Hints, CompactionHintFromOutOfOrder)
 }
 
 const (
@@ -665,7 +655,7 @@ Outer:
 func (pb *Block) CleanTombstones(dest string, c Compactor) ([]ulid.ULID, bool, error) {
 	numStones := 0
 
-	if err := pb.tombstones.Iter(func(id storage.SeriesRef, ivs tombstones.Intervals) error {
+	if err := pb.tombstones.Iter(func(_ storage.SeriesRef, ivs tombstones.Intervals) error {
 		numStones += len(ivs)
 		return nil
 	}); err != nil {

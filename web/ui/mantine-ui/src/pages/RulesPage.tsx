@@ -86,15 +86,15 @@ export default function RulesPage() {
           (effectiveActivePage - 1) * ruleGroupsPerPage,
           effectiveActivePage * ruleGroupsPerPage
         )
-        .map((g, i) => (
+        .map((g) => (
           <Card
             shadow="xs"
             withBorder
             p="md"
             mb="md"
-            key={i} // TODO: Find a stable and definitely unique key.
+            key={`${g.file}-${g.name}`}
           >
-            <Group mb="md" mt="xs" ml="xs" justify="space-between">
+            <Group mb="sm" justify="space-between">
               <Group align="baseline">
                 <Text fz="xl" fw={600} c="var(--mantine-primary-color-filled)">
                   {g.name}
@@ -147,6 +147,7 @@ export default function RulesPage() {
                 <Accordion multiple variant="separated">
                   {items.map((r, j) => (
                     <Accordion.Item
+                      mt={rem(5)}
                       styles={{
                         item: {
                           // TODO: This transparency hack is an OK workaround to make the collapsed items
@@ -167,7 +168,9 @@ export default function RulesPage() {
                               : "5px solid var(--mantine-color-green-4)",
                       }}
                     >
-                      <Accordion.Control>
+                      <Accordion.Control
+                        styles={{ label: { paddingBlock: rem(10) } }}
+                      >
                         <Group justify="space-between" mr="lg">
                           <Group gap="xs" wrap="nowrap">
                             {r.type === "alerting" ? (

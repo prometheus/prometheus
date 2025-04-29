@@ -109,7 +109,7 @@ func TestAlertingRuleTemplateWithHistogram(t *testing.T) {
 		NegativeBuckets: []float64{-2, 2, 2, 7, 5, 5, 2},
 	}
 
-	q := func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
+	q := func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) {
 		return []promql.Sample{{H: &h}}, nil
 	}
 
@@ -678,7 +678,7 @@ func TestQueryForStateSeries(t *testing.T) {
 	tests := []testInput{
 		// Test for empty series.
 		{
-			selectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+			selectMockFunction: func(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 				return storage.EmptySeriesSet()
 			},
 			expectedSeries: nil,
@@ -686,7 +686,7 @@ func TestQueryForStateSeries(t *testing.T) {
 		},
 		// Test for error series.
 		{
-			selectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+			selectMockFunction: func(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 				return storage.ErrSeriesSet(testError)
 			},
 			expectedSeries: nil,
@@ -694,7 +694,7 @@ func TestQueryForStateSeries(t *testing.T) {
 		},
 		// Test for mock series.
 		{
-			selectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+			selectMockFunction: func(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 				return storage.TestSeriesSet(storage.MockSeries(
 					[]int64{1, 2, 3},
 					[]float64{1, 2, 3},
@@ -989,7 +989,7 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 		true, promslog.NewNopLogger(),
 	)
 
-	_, err = rule.Eval(ctx, 0, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
+	_, err = rule.Eval(ctx, 0, now, func(ctx context.Context, _ string, _ time.Time) (promql.Vector, error) {
 		detail = FromOriginContext(ctx)
 		return nil, nil
 	}, nil, 0)
@@ -998,7 +998,9 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 	require.Equal(t, detail, NewRuleDetail(rule))
 }
 
-func TestAlertingRule_SetNoDependentRules(t *testing.T) {
+func TestAlertingRule_SetDependentRules(t *testing.T) {
+	dependentRule := NewRecordingRule("test1", nil, labels.EmptyLabels())
+
 	rule := NewAlertingRule(
 		"test",
 		&parser.NumberLiteral{Val: 1},
@@ -1012,14 +1014,18 @@ func TestAlertingRule_SetNoDependentRules(t *testing.T) {
 	)
 	require.False(t, rule.NoDependentRules())
 
-	rule.SetNoDependentRules(false)
+	rule.SetDependentRules([]Rule{dependentRule})
 	require.False(t, rule.NoDependentRules())
+	require.Equal(t, []Rule{dependentRule}, rule.DependentRules())
 
-	rule.SetNoDependentRules(true)
+	rule.SetDependentRules([]Rule{})
 	require.True(t, rule.NoDependentRules())
+	require.Empty(t, rule.DependentRules())
 }
 
-func TestAlertingRule_SetNoDependencyRules(t *testing.T) {
+func TestAlertingRule_SetDependencyRules(t *testing.T) {
+	dependencyRule := NewRecordingRule("test1", nil, labels.EmptyLabels())
+
 	rule := NewAlertingRule(
 		"test",
 		&parser.NumberLiteral{Val: 1},
@@ -1033,11 +1039,13 @@ func TestAlertingRule_SetNoDependencyRules(t *testing.T) {
 	)
 	require.False(t, rule.NoDependencyRules())
 
-	rule.SetNoDependencyRules(false)
+	rule.SetDependencyRules([]Rule{dependencyRule})
 	require.False(t, rule.NoDependencyRules())
+	require.Equal(t, []Rule{dependencyRule}, rule.DependencyRules())
 
-	rule.SetNoDependencyRules(true)
+	rule.SetDependencyRules([]Rule{})
 	require.True(t, rule.NoDependencyRules())
+	require.Empty(t, rule.DependencyRules())
 }
 
 func TestAlertingRule_ActiveAlertsCount(t *testing.T) {

@@ -16,24 +16,24 @@ package tsdb
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 const (
-	float               = "float"
-	intHistogram        = "integer histogram"
-	floatHistogram      = "float histogram"
-	gaugeIntHistogram   = "gauge int histogram"
-	gaugeFloatHistogram = "gauge float histogram"
+	float                       = "float"
+	intHistogram                = "integer histogram"
+	floatHistogram              = "float histogram"
+	customBucketsIntHistogram   = "custom buckets int histogram"
+	customBucketsFloatHistogram = "custom buckets float histogram"
+	gaugeIntHistogram           = "gauge int histogram"
+	gaugeFloatHistogram         = "gauge float histogram"
 )
 
 type testValue struct {
@@ -80,6 +80,28 @@ var sampleTypeScenarios = map[string]sampleTypeScenario{
 		},
 		sampleFunc: func(ts, value int64) sample {
 			return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(value)}
+		},
+	},
+	customBucketsIntHistogram: {
+		sampleType: sampleMetricTypeHistogram,
+		appendFunc: func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
+			s := sample{t: ts, h: tsdbutil.GenerateTestCustomBucketsHistogram(value)}
+			ref, err := appender.AppendHistogram(0, lbls, ts, s.h, nil)
+			return ref, s, err
+		},
+		sampleFunc: func(ts, value int64) sample {
+			return sample{t: ts, h: tsdbutil.GenerateTestCustomBucketsHistogram(value)}
+		},
+	},
+	customBucketsFloatHistogram: {
+		sampleType: sampleMetricTypeHistogram,
+		appendFunc: func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
+			s := sample{t: ts, fh: tsdbutil.GenerateTestCustomBucketsFloatHistogram(value)}
+			ref, err := appender.AppendHistogram(0, lbls, ts, nil, s.fh)
+			return ref, s, err
+		},
+		sampleFunc: func(ts, value int64) sample {
+			return sample{t: ts, fh: tsdbutil.GenerateTestCustomBucketsFloatHistogram(value)}
 		},
 	},
 	gaugeIntHistogram: {

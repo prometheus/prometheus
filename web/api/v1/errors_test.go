@@ -142,6 +142,9 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable) *route
 		false,
 		config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2},
 		false,
+		false,
+		false,
+		false,
 	)
 
 	promRouter := route.New().WithPrefix("/api/v1")
@@ -156,15 +159,15 @@ type errorTestQueryable struct {
 	err error
 }
 
-func (t errorTestQueryable) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
+func (t errorTestQueryable) ExemplarQuerier(_ context.Context) (storage.ExemplarQuerier, error) {
 	return nil, t.err
 }
 
-func (t errorTestQueryable) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+func (t errorTestQueryable) ChunkQuerier(_, _ int64) (storage.ChunkQuerier, error) {
 	return nil, t.err
 }
 
-func (t errorTestQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+func (t errorTestQueryable) Querier(_, _ int64) (storage.Querier, error) {
 	if t.q != nil {
 		return t.q, nil
 	}
@@ -188,7 +191,7 @@ func (t errorTestQuerier) Close() error {
 	return nil
 }
 
-func (t errorTestQuerier) Select(_ context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (t errorTestQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 	if t.s != nil {
 		return t.s
 	}
@@ -215,7 +218,7 @@ func (t errorTestSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
-// DummyTargetRetriever implements github.com/prometheus/prometheus/web/api/v1.ScrapePoolsRetriever.
+// DummyScrapePoolsRetriever implements github.com/prometheus/prometheus/web/api/v1.ScrapePoolsRetriever.
 type DummyScrapePoolsRetriever struct{}
 
 func (DummyScrapePoolsRetriever) ScrapePools() []string {

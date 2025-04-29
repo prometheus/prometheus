@@ -44,7 +44,7 @@ var (
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 		RefreshInterval:  model.Duration(60 * time.Second),
 	}
-	userAgent        = fmt.Sprintf("Prometheus/%s", version.Version)
+	userAgent        = version.PrometheusUserAgent()
 	matchContentType = regexp.MustCompile(`^(?i:application\/json(;\s*charset=("utf-8"|utf-8))?)$`)
 )
 

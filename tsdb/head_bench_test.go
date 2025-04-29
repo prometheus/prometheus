@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/compression"
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
@@ -43,7 +43,7 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 	defer h.Close()
 
 	for i := 0; i < b.N; i++ {
-		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)))
+		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)), false)
 	}
 }
 
@@ -62,7 +62,7 @@ func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			i := count.Inc()
-			h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(int(i))))
+			h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(int(i))), false)
 		}
 	})
 }
@@ -82,7 +82,7 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 	defer h.Close()
 
 	for i := 0; i < b.N; i++ {
-		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)))
+		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)), false)
 	}
 }
 
@@ -132,7 +132,7 @@ func BenchmarkHead_WalCommit(b *testing.B) {
 
 					for i := 0; i < b.N; i++ {
 						b.StopTimer()
-						h, w := newTestHead(b, 10000, wlog.CompressionNone, false)
+						h, w := newTestHead(b, 10000, compression.None, false)
 						b.Cleanup(func() {
 							if h != nil {
 								h.Close()

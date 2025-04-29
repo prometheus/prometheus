@@ -491,12 +491,13 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 		metadata              []record.RefMetadata
 	)
 	for r.Next() && !isClosed(w.quit) {
+		var err error
 		rec := r.Record()
 		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
 
 		switch dec.Type(rec) {
 		case record.Series:
-			series, err := dec.Series(rec, series[:0])
+			series, err = dec.Series(rec, series[:0])
 			if err != nil {
 				w.recordDecodeFailsMetric.Inc()
 				return err
@@ -509,7 +510,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			if !tail {
 				break
 			}
-			samples, err := dec.Samples(rec, samples[:0])
+			samples, err = dec.Samples(rec, samples[:0])
 			if err != nil {
 				w.recordDecodeFailsMetric.Inc()
 				return err
@@ -539,14 +540,14 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			if !tail {
 				break
 			}
-			exemplars, err := dec.Exemplars(rec, exemplars[:0])
+			exemplars, err = dec.Exemplars(rec, exemplars[:0])
 			if err != nil {
 				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
 			w.writer.AppendExemplars(exemplars)
 
-		case record.HistogramSamples:
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
 			// Skip if experimental "histograms over remote write" is not enabled.
 			if !w.sendHistograms {
 				break
@@ -554,7 +555,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			if !tail {
 				break
 			}
-			histograms, err := dec.HistogramSamples(rec, histograms[:0])
+			histograms, err = dec.HistogramSamples(rec, histograms[:0])
 			if err != nil {
 				w.recordDecodeFailsMetric.Inc()
 				return err
@@ -574,7 +575,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				histogramsToSend = histogramsToSend[:0]
 			}
 
-		case record.FloatHistogramSamples:
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
 			// Skip if experimental "histograms over remote write" is not enabled.
 			if !w.sendHistograms {
 				break
@@ -582,7 +583,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			if !tail {
 				break
 			}
-			floatHistograms, err := dec.FloatHistogramSamples(rec, floatHistograms[:0])
+			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms[:0])
 			if err != nil {
 				w.recordDecodeFailsMetric.Inc()
 				return err
@@ -606,12 +607,12 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			if !w.sendMetadata {
 				break
 			}
-			meta, err := dec.Metadata(rec, metadata[:0])
+			metadata, err = dec.Metadata(rec, metadata[:0])
 			if err != nil {
 				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
-			w.writer.StoreMetadata(meta)
+			w.writer.StoreMetadata(metadata)
 
 		case record.Unknown:
 			// Could be corruption, or reading from a WAL from a newer Prometheus.
@@ -679,7 +680,7 @@ func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) err
 	// Ensure we read the whole contents of every segment in the checkpoint dir.
 	segs, err := listSegments(checkpointDir)
 	if err != nil {
-		return fmt.Errorf("Unable to get segments checkpoint dir: %w", err)
+		return fmt.Errorf("unable to get segments checkpoint dir: %w", err)
 	}
 	for _, segRef := range segs {
 		size, err := getSegmentSize(checkpointDir, segRef.index)

@@ -20,7 +20,6 @@ package remote
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -74,17 +73,21 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 	interner.intern(testString)
 	interned, ok := interner.pool[testString]
 	require.True(t, ok)
-	require.Equalf(t, int64(1), interned.refs.Load(), "expected refs to be 1 but it was %d", interned.refs.Load())
+	require.Equal(t, int64(1), interned.refs.Load(), "wrong interned refs count")
 
-	go interner.release(testString)
-
-	interner.intern(testString)
-
-	time.Sleep(time.Millisecond)
+	for i := 0; i < 1000; i++ {
+		released := make(chan struct{})
+		go func() {
+			interner.release(testString)
+			close(released)
+		}()
+		interner.intern(testString)
+		<-released
+	}
 
 	interner.mtx.RLock()
 	interned, ok = interner.pool[testString]
 	interner.mtx.RUnlock()
 	require.True(t, ok)
-	require.Equalf(t, int64(1), interned.refs.Load(), "expected refs to be 1 but it was %d", interned.refs.Load())
+	require.Equal(t, int64(1), interned.refs.Load(), "wrong interned refs count")
 }

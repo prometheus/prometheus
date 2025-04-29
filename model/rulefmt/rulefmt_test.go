@@ -24,12 +24,44 @@ import (
 )
 
 func TestParseFileSuccess(t *testing.T) {
-	_, errs := ParseFile("testdata/test.yaml")
+	_, errs := ParseFile("testdata/test.yaml", false)
+	require.Empty(t, errs, "unexpected errors parsing file")
+
+	_, errs = ParseFile("testdata/utf-8_lname.good.yaml", false)
+	require.Empty(t, errs, "unexpected errors parsing file")
+	_, errs = ParseFile("testdata/utf-8_annotation.good.yaml", false)
 	require.Empty(t, errs, "unexpected errors parsing file")
 }
 
+func TestParseFileSuccessWithAliases(t *testing.T) {
+	exprString := `sum without(instance) (rate(errors_total[5m]))
+/
+sum without(instance) (rate(requests_total[5m]))
+`
+	rgs, errs := ParseFile("testdata/test_aliases.yaml", false)
+	require.Empty(t, errs, "unexpected errors parsing file")
+	for _, rg := range rgs.Groups {
+		require.Equal(t, "HighAlert", rg.Rules[0].Alert)
+		require.Equal(t, "critical", rg.Rules[0].Labels["severity"])
+		require.Equal(t, "stuff's happening with {{ $.labels.service }}", rg.Rules[0].Annotations["description"])
+
+		require.Equal(t, "new_metric", rg.Rules[1].Record)
+
+		require.Equal(t, "HighAlert", rg.Rules[2].Alert)
+		require.Equal(t, "critical", rg.Rules[2].Labels["severity"])
+		require.Equal(t, "stuff's happening with {{ $.labels.service }}", rg.Rules[0].Annotations["description"])
+
+		require.Equal(t, "HighAlert2", rg.Rules[3].Alert)
+		require.Equal(t, "critical", rg.Rules[3].Labels["severity"])
+
+		for _, rule := range rg.Rules {
+			require.Equal(t, exprString, rule.Expr)
+		}
+	}
+}
+
 func TestParseFileFailure(t *testing.T) {
-	table := []struct {
+	for _, c := range []struct {
 		filename string
 		errMsg   string
 	}{
@@ -54,16 +86,8 @@ func TestParseFileFailure(t *testing.T) {
 			errMsg:   "field 'expr' must be set in rule",
 		},
 		{
-			filename: "bad_lname.bad.yaml",
-			errMsg:   "invalid label name",
-		},
-		{
-			filename: "bad_annotation.bad.yaml",
-			errMsg:   "invalid annotation name",
-		},
-		{
 			filename: "invalid_record_name.bad.yaml",
-			errMsg:   "invalid recording rule name",
+			errMsg:   "braces present in the recording rule name; should it be in expr?: strawberry{flavor=\"sweet\"}",
 		},
 		{
 			filename: "bad_field.bad.yaml",
@@ -81,12 +105,12 @@ func TestParseFileFailure(t *testing.T) {
 			filename: "record_and_keep_firing_for.bad.yaml",
 			errMsg:   "invalid field 'keep_firing_for' in recording rule",
 		},
-	}
-
-	for _, c := range table {
-		_, errs := ParseFile(filepath.Join("testdata", c.filename))
-		require.NotEmpty(t, errs, "Expected error parsing %s but got none", c.filename)
-		require.ErrorContainsf(t, errs[0], c.errMsg, "Expected error for %s.", c.filename)
+	} {
+		t.Run(c.filename, func(t *testing.T) {
+			_, errs := ParseFile(filepath.Join("testdata", c.filename), false)
+			require.NotEmpty(t, errs, "Expected error parsing %s but got none", c.filename)
+			require.ErrorContainsf(t, errs[0], c.errMsg, "Expected error for %s.", c.filename)
+		})
 	}
 }
 
@@ -179,7 +203,7 @@ groups:
 	}
 
 	for _, tst := range tests {
-		rgs, errs := Parse([]byte(tst.ruleString))
+		rgs, errs := Parse([]byte(tst.ruleString), false)
 		require.NotNil(t, rgs, "Rule parsing, rule=\n"+tst.ruleString)
 		passed := (tst.shouldPass && len(errs) == 0) || (!tst.shouldPass && len(errs) > 0)
 		require.True(t, passed, "Rule validation failed, rule=\n"+tst.ruleString)
@@ -206,7 +230,7 @@ groups:
     annotations:
       summary: "Instance {{ $labels.instance }} up"
 `
-	_, errs := Parse([]byte(group))
+	_, errs := Parse([]byte(group), false)
 	require.Len(t, errs, 2, "Expected two errors")
 	var err00 *Error
 	require.ErrorAs(t, errs[0], &err00)

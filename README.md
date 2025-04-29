@@ -97,9 +97,9 @@ Prometheus will now be reachable at <http://localhost:9090/>.
 
 To build Prometheus from source code, You need:
 
-* Go [version 1.17 or greater](https://golang.org/doc/install).
-* NodeJS [version 16 or greater](https://nodejs.org/).
-* npm [version 7 or greater](https://www.npmjs.com/).
+* Go [version 1.22 or greater](https://golang.org/doc/install).
+* NodeJS [version 22 or greater](https://nodejs.org/).
+* npm [version 8 or greater](https://www.npmjs.com/).
 
 Start by cloning the repository:
 
@@ -160,7 +160,6 @@ always, be extra careful when loading third party code.
 
 ### Building the Docker image
 
-The `make docker` target is designed for use in our CI system.
 You can build a docker image locally with the following commands:
 
 ```bash
@@ -169,6 +168,9 @@ promu crossbuild -p linux/amd64
 make npm_licenses
 make common-docker-amd64
 ```
+
+The `make docker` target is intended only for use in our CI system and will not
+produce a fully working image when run locally.
 
 ## Using Prometheus as a Go Library
 

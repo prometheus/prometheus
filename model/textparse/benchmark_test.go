@@ -20,42 +20,20 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
-
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
-type newParser func([]byte, *labels.SymbolTable) Parser
-
-var newTestParserFns = map[string]newParser{
-	"promtext": NewPromParser,
-	"promproto": func(b []byte, st *labels.SymbolTable) Parser {
-		return NewProtobufParser(b, true, st)
-	},
-	"omtext": func(b []byte, st *labels.SymbolTable) Parser {
-		return NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
-	},
-	"omtext_with_nhcb": func(b []byte, st *labels.SymbolTable) Parser {
-		p := NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
-		return NewNHCBParser(p, st, false)
-	},
-}
-
-// BenchmarkParse benchmarks parsing, mimicking how scrape/scrape.go#append use it.
-// Typically used as follows:
-/*
-	export bench=v1 && go test ./model/textparse/... \
-		 -run '^$' -bench '^BenchmarkParse' \
-		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
-	 | tee ${bench}.txt
-*/
-// For profiles, add -memprofile=${bench}.mem.pprof -cpuprofile=${bench}.cpu.pprof
-// options.
+// BenchmarkParse... set of benchmarks analyze efficiency of parsing various
+// datasets with different parsers. It mimics how scrape/scrape.go#append use parsers
+// and allows comparison with expfmt decoders if applicable.
 //
 // NOTE(bwplotka): Previous iterations of this benchmark had different cases for isolated
 // Series, Series+Metrics with and without reuse, Series+CT. Those cases are sometimes
@@ -63,123 +41,298 @@ var newTestParserFns = map[string]newParser{
 // make sense to persist such cases for everybody (e.g. for CI one day).
 // For local iteration, feel free to adjust cases/comment out code etc.
 //
-// NOTE(bwplotka): Do not try to conclude "what parser (OM, proto, prom) is the fastest"
-// as the testdata has different amount and type of metrics and features (e.g. exemplars).
-func BenchmarkParse(b *testing.B) {
-	for _, bcase := range []struct {
-		dataFile  string // Localized to "./testdata".
-		dataProto []byte
-		parser    string
+// NOTE(bwplotka): Those benchmarks are purposefully categorized per data-sets,
+// to avoid temptation to assess "what parser (OM, proto, prom) is the fastest,
+// in general" here due to not every parser supporting every data set type.
+// Use scrape.BenchmarkScrapeLoopAppend if you want one benchmark comparing parsers fairly.
 
-		compareToExpfmtFormat expfmt.FormatType
-	}{
-		{dataFile: "promtestdata.txt", parser: "promtext", compareToExpfmtFormat: expfmt.TypeTextPlain},
-		{dataFile: "promtestdata.nometa.txt", parser: "promtext", compareToExpfmtFormat: expfmt.TypeTextPlain},
+/*
+	export bench=v1 && go test ./model/textparse/... \
+		 -run '^$' -bench '^BenchmarkParsePromText' \
+		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+	 | tee ${bench}.txt
+*/
+func BenchmarkParsePromText(b *testing.B) {
+	data := readTestdataFile(b, "alltypes.237mfs.prom.txt")
 
-		//  We don't pass compareToExpfmtFormat: expfmt.TypeProtoDelim as expfmt does not support GAUGE_HISTOGRAM, see https://github.com/prometheus/common/issues/430.
-		{dataProto: createTestProtoBuf(b).Bytes(), parser: "promproto"},
-
-		// We don't pass compareToExpfmtFormat: expfmt.TypeOpenMetrics as expfmt does not support OM exemplars, see https://github.com/prometheus/common/issues/703.
-		{dataFile: "omtestdata.txt", parser: "omtext"},
-		{dataFile: "promtestdata.txt", parser: "omtext"}, // Compare how omtext parser deals with Prometheus text format vs promtext.
-
-		// NHCB.
-		{dataFile: "omhistogramdata.txt", parser: "omtext"},           // Measure OM parser baseline for histograms.
-		{dataFile: "omhistogramdata.txt", parser: "omtext_with_nhcb"}, // Measure NHCB over OM parser.
+	for _, parser := range []string{
+		"promtext",
+		"omtext", // Compare how omtext parser deals with Prometheus text format.
+		"expfmt-promtext",
 	} {
-		var buf []byte
-		dataCase := bcase.dataFile
-		if len(bcase.dataProto) > 0 {
-			dataCase = "createTestProtoBuf()"
-			buf = bcase.dataProto
-		} else {
-			f, err := os.Open(filepath.Join("testdata", bcase.dataFile))
-			require.NoError(b, err)
-			b.Cleanup(func() {
-				_ = f.Close()
-			})
-			buf, err = io.ReadAll(f)
-			require.NoError(b, err)
-		}
-		b.Run(fmt.Sprintf("data=%v/parser=%v", dataCase, bcase.parser), func(b *testing.B) {
-			newParserFn := newTestParserFns[bcase.parser]
-			var (
-				res labels.Labels
-				e   exemplar.Exemplar
-			)
-
-			b.SetBytes(int64(len(buf)))
-			b.ReportAllocs()
-			b.ResetTimer()
-
-			st := labels.NewSymbolTable()
-			for i := 0; i < b.N; i++ {
-				p := newParserFn(buf, st)
-
-			Inner:
-				for {
-					t, err := p.Next()
-					switch t {
-					case EntryInvalid:
-						if errors.Is(err, io.EOF) {
-							break Inner
-						}
-						b.Fatal(err)
-					case EntryType:
-						_, _ = p.Type()
-						continue
-					case EntryHelp:
-						_, _ = p.Help()
-						continue
-					case EntryUnit:
-						_, _ = p.Unit()
-						continue
-					case EntryComment:
-						continue
-					case EntryHistogram:
-						_, _, _, _ = p.Histogram()
-					case EntrySeries:
-						_, _, _ = p.Series()
-					default:
-						b.Fatal("not implemented entry", t)
-					}
-
-					_ = p.Metric(&res)
-					_ = p.CreatedTimestamp()
-					for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
-					}
-				}
-			}
-		})
-
-		b.Run(fmt.Sprintf("data=%v/parser=xpfmt", dataCase), func(b *testing.B) {
-			if bcase.compareToExpfmtFormat == expfmt.TypeUnknown {
-				b.Skip("compareToExpfmtFormat not set")
-			}
-
-			b.SetBytes(int64(len(buf)))
-			b.ReportAllocs()
-			b.ResetTimer()
-
-			for i := 0; i < b.N; i++ {
-				decSamples := make(model.Vector, 0, 50)
-				sdec := expfmt.SampleDecoder{
-					Dec: expfmt.NewDecoder(bytes.NewReader(buf), expfmt.NewFormat(bcase.compareToExpfmtFormat)),
-					Opts: &expfmt.DecodeOptions{
-						Timestamp: model.TimeFromUnixNano(0),
-					},
-				}
-
-				for {
-					if err := sdec.Decode(&decSamples); err != nil {
-						if errors.Is(err, io.EOF) {
-							break
-						}
-						b.Fatal(err)
-					}
-					decSamples = decSamples[:0]
-				}
+		b.Run(fmt.Sprintf("parser=%v", parser), func(b *testing.B) {
+			if strings.HasPrefix(parser, "expfmt-") {
+				benchExpFmt(b, data, parser)
+			} else {
+				benchParse(b, data, parser)
 			}
 		})
 	}
+}
+
+/*
+	export bench=v1 && go test ./model/textparse/... \
+		 -run '^$' -bench '^BenchmarkParsePromText_NoMeta' \
+		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+	 | tee ${bench}.txt
+*/
+func BenchmarkParsePromText_NoMeta(b *testing.B) {
+	data := readTestdataFile(b, "alltypes.237mfs.nometa.prom.txt")
+
+	for _, parser := range []string{
+		"promtext",
+		"expfmt-promtext",
+	} {
+		b.Run(fmt.Sprintf("parser=%v", parser), func(b *testing.B) {
+			if strings.HasPrefix(parser, "expfmt-") {
+				benchExpFmt(b, data, parser)
+			} else {
+				benchParse(b, data, parser)
+			}
+		})
+	}
+}
+
+/*
+	export bench=v1 && go test ./model/textparse/... \
+		 -run '^$' -bench '^BenchmarkParseOMText' \
+		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+	 | tee ${bench}.txt
+*/
+func BenchmarkParseOMText(b *testing.B) {
+	data := readTestdataFile(b, "alltypes.5mfs.om.txt")
+	// TODO(bwplotka): Add comparison with expfmt.TypeOpenMetrics once expfmt
+	// support OM exemplars, see https://github.com/prometheus/common/issues/703.
+	benchParse(b, data, "omtext")
+}
+
+/*
+	export bench=v1 && go test ./model/textparse/... \
+		 -run '^$' -bench '^BenchmarkParsePromProto' \
+		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+	 | tee ${bench}.txt
+*/
+func BenchmarkParsePromProto(b *testing.B) {
+	data := createTestProtoBuf(b).Bytes()
+	// TODO(bwplotka): Add comparison with expfmt.TypeProtoDelim once expfmt
+	// support GAUGE_HISTOGRAM, see https://github.com/prometheus/common/issues/430.
+	benchParse(b, data, "promproto")
+}
+
+/*
+	export bench=v1 && go test ./model/textparse/... \
+		 -run '^$' -bench '^BenchmarkParseOpenMetricsNHCB' \
+		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+	 | tee ${bench}.txt
+*/
+func BenchmarkParseOpenMetricsNHCB(b *testing.B) {
+	data := readTestdataFile(b, "1histogram.om.txt")
+
+	for _, parser := range []string{
+		"omtext",           // Measure OM parser baseline for histograms.
+		"omtext_with_nhcb", // Measure NHCB over OM parser.
+	} {
+		b.Run(fmt.Sprintf("parser=%v", parser), func(b *testing.B) {
+			benchParse(b, data, parser)
+		})
+	}
+}
+
+func benchParse(b *testing.B, data []byte, parser string) {
+	type newParser func([]byte, *labels.SymbolTable) Parser
+
+	var newParserFn newParser
+	switch parser {
+	case "promtext":
+		newParserFn = NewPromParser
+	case "promproto":
+		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
+			return NewProtobufParser(b, true, st)
+		}
+	case "omtext":
+		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
+			return NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
+		}
+	case "omtext_with_nhcb":
+		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
+			p := NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
+			return NewNHCBParser(p, st, false)
+		}
+	default:
+		b.Fatal("unknown parser", parser)
+	}
+
+	var (
+		res labels.Labels
+		e   exemplar.Exemplar
+	)
+
+	b.SetBytes(int64(len(data)))
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	st := labels.NewSymbolTable()
+	for i := 0; i < b.N; i++ {
+		p := newParserFn(data, st)
+
+	Inner:
+		for {
+			t, err := p.Next()
+			switch t {
+			case EntryInvalid:
+				if errors.Is(err, io.EOF) {
+					break Inner
+				}
+				b.Fatal(err)
+			case EntryType:
+				_, _ = p.Type()
+				continue
+			case EntryHelp:
+				_, _ = p.Help()
+				continue
+			case EntryUnit:
+				_, _ = p.Unit()
+				continue
+			case EntryComment:
+				continue
+			case EntryHistogram:
+				_, _, _, _ = p.Histogram()
+			case EntrySeries:
+				_, _, _ = p.Series()
+			default:
+				b.Fatal("not implemented entry", t)
+			}
+
+			p.Labels(&res)
+			_ = p.CreatedTimestamp()
+			for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
+			}
+		}
+	}
+}
+
+func benchExpFmt(b *testing.B, data []byte, expFormatTypeStr string) {
+	expfmtFormatType := expfmt.TypeUnknown
+	switch expFormatTypeStr {
+	case "expfmt-promtext":
+		expfmtFormatType = expfmt.TypeProtoText
+	case "expfmt-promproto":
+		expfmtFormatType = expfmt.TypeProtoDelim
+	case "expfmt-omtext":
+		expfmtFormatType = expfmt.TypeOpenMetrics
+	default:
+		b.Fatal("unknown expfmt format type", expFormatTypeStr)
+	}
+
+	b.SetBytes(int64(len(data)))
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		decSamples := make(model.Vector, 0, 50)
+		sdec := expfmt.SampleDecoder{
+			Dec: expfmt.NewDecoder(bytes.NewReader(data), expfmt.NewFormat(expfmtFormatType)),
+			Opts: &expfmt.DecodeOptions{
+				Timestamp: model.TimeFromUnixNano(0),
+			},
+		}
+
+		for {
+			if err := sdec.Decode(&decSamples); err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				b.Fatal(err)
+			}
+			decSamples = decSamples[:0]
+		}
+	}
+}
+
+func readTestdataFile(tb testing.TB, file string) []byte {
+	tb.Helper()
+
+	f, err := os.Open(filepath.Join("testdata", file))
+	require.NoError(tb, err)
+
+	tb.Cleanup(func() {
+		_ = f.Close()
+	})
+	buf, err := io.ReadAll(f)
+	require.NoError(tb, err)
+	return buf
+}
+
+/*
+	export bench=v1 && go test ./model/textparse/... \
+		 -run '^$' -bench '^BenchmarkCreatedTimestampPromProto' \
+		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+	 | tee ${bench}.txt
+*/
+func BenchmarkCreatedTimestampPromProto(b *testing.B) {
+	data := createTestProtoBuf(b).Bytes()
+
+	st := labels.NewSymbolTable()
+	p := NewProtobufParser(data, true, st)
+
+	found := false
+Inner:
+	for {
+		t, err := p.Next()
+		switch t {
+		case EntryInvalid:
+			b.Fatal(err)
+		case EntryType:
+			m, _ := p.Type()
+			if string(m) == "go_memstats_alloc_bytes_total" {
+				found = true
+				break Inner
+			}
+		// Parser impl requires this (bug?)
+		case EntryHistogram:
+			_, _, _, _ = p.Histogram()
+		case EntrySeries:
+			_, _, _ = p.Series()
+		}
+	}
+	require.True(b, found)
+	b.Run("case=no-ct", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if p.CreatedTimestamp() != 0 {
+				b.Fatal("should be nil")
+			}
+		}
+	})
+
+	found = false
+Inner2:
+	for {
+		t, err := p.Next()
+		switch t {
+		case EntryInvalid:
+			b.Fatal(err)
+		case EntryType:
+			m, _ := p.Type()
+			if string(m) == "test_counter_with_createdtimestamp" {
+				found = true
+				break Inner2
+			}
+		case EntryHistogram:
+			_, _, _, _ = p.Histogram()
+		case EntrySeries:
+			_, _, _ = p.Series()
+		}
+	}
+	require.True(b, found)
+	b.Run("case=ct", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if p.CreatedTimestamp() == 0 {
+				b.Fatal("should be not nil")
+			}
+		}
+	})
 }

@@ -1,14 +1,8 @@
-import {
-  useMantineColorScheme,
-  SegmentedControl,
-  rem,
-  MantineColorScheme,
-  Tooltip,
-} from "@mantine/core";
+import { useMantineColorScheme, rem, ActionIcon } from "@mantine/core";
 import {
   IconMoonFilled,
   IconSunFilled,
-  IconUserFilled,
+  IconBrightnessFilled,
 } from "@tabler/icons-react";
 import { FC } from "react";
 
@@ -20,45 +14,28 @@ export const ThemeSelector: FC = () => {
   };
 
   return (
-    <SegmentedControl
-      color="gray.7"
-      size="xs"
-      // styles={{ root: { backgroundColor: "var(--mantine-color-gray-7)" } }}
-      styles={{
-        root: {
-          padding: 3,
-          backgroundColor: "var(--mantine-color-gray-6)",
-        },
-      }}
-      withItemsBorders={false}
-      value={colorScheme}
-      onChange={(v) => setColorScheme(v as MantineColorScheme)}
-      data={[
-        {
-          value: "light",
-          label: (
-            <Tooltip label="Use light theme" offset={15}>
-              <IconSunFilled {...iconProps} />
-            </Tooltip>
-          ),
-        },
-        {
-          value: "dark",
-          label: (
-            <Tooltip label="Use dark theme" offset={15}>
-              <IconMoonFilled {...iconProps} />
-            </Tooltip>
-          ),
-        },
-        {
-          value: "auto",
-          label: (
-            <Tooltip label="Use browser-preferred theme" offset={15}>
-              <IconUserFilled {...iconProps} />
-            </Tooltip>
-          ),
-        },
-      ]}
-    />
+    <ActionIcon
+      color="gray"
+      title={`Switch to ${colorScheme === "light" ? "dark" : colorScheme === "dark" ? "browser-preferred" : "light"} theme`}
+      aria-label={`Switch to ${colorScheme === "light" ? "dark" : colorScheme === "dark" ? "browser-preferred" : "light"} theme`}
+      size={32}
+      onClick={() =>
+        setColorScheme(
+          colorScheme === "light"
+            ? "dark"
+            : colorScheme === "dark"
+              ? "auto"
+              : "light"
+        )
+      }
+    >
+      {colorScheme === "light" ? (
+        <IconSunFilled {...iconProps} />
+      ) : colorScheme === "dark" ? (
+        <IconMoonFilled {...iconProps} />
+      ) : (
+        <IconBrightnessFilled {...iconProps} />
+      )}
+    </ActionIcon>
   );
 };

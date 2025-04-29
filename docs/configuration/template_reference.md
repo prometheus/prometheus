@@ -68,7 +68,7 @@ versions.
 
 | Name          | Arguments     | Returns |    Notes    |
 | ------------- | ------------- | ------- | ----------- |
-| title         | string        | string  | [strings.Title](https://golang.org/pkg/strings/#Title), capitalises first character of each word.|
+| title         | string        | string  | [cases.Title](https://pkg.go.dev/golang.org/x/text/cases#Title), capitalises first character of each word.|
 | toUpper       | string        | string  | [strings.ToUpper](https://golang.org/pkg/strings/#ToUpper), converts all characters to upper case.|
 | toLower       | string        | string  | [strings.ToLower](https://golang.org/pkg/strings/#ToLower), converts all characters to lower case.|
 | stripPort     | string        | string  | [net.SplitHostPort](https://pkg.go.dev/net#SplitHostPort), splits string into host and port, then returns only host.|

@@ -20,7 +20,7 @@ import (
 	"math"
 	"slices"
 
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -484,15 +484,15 @@ func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *l
 	return getOOOSeriesChunks(s, ir.ch.mint, ir.ch.maxt, 0, ir.ch.lastMmapRef, false, 0, chks)
 }
 
-func (ir *OOOCompactionHeadIndexReader) SortedLabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+func (ir *OOOCompactionHeadIndexReader) SortedLabelValues(_ context.Context, _ string, _ ...*labels.Matcher) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+func (ir *OOOCompactionHeadIndexReader) LabelValues(_ context.Context, _ string, _ ...*labels.Matcher) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) PostingsForMatchers(_ context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+func (ir *OOOCompactionHeadIndexReader) PostingsForMatchers(_ context.Context, _ bool, _ ...*labels.Matcher) (index.Postings, error) {
 	return nil, errors.New("not implemented")
 }
 
@@ -504,7 +504,7 @@ func (ir *OOOCompactionHeadIndexReader) LabelValueFor(context.Context, storage.S
 	return "", errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error) {
+func (ir *OOOCompactionHeadIndexReader) LabelNamesFor(_ context.Context, _ index.Postings) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 

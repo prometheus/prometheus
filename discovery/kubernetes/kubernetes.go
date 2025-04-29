@@ -24,8 +24,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/prometheus/util/strutil"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -40,15 +38,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
+	// Required to get the GCP auth provider working.
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 
-	// Required to get the GCP auth provider working.
-	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
@@ -59,14 +57,10 @@ const (
 	presentValue    = model.LabelValue("true")
 )
 
-var (
-	// Http header.
-	userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
-	// DefaultSDConfig is the default Kubernetes SD configuration.
-	DefaultSDConfig = SDConfig{
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
-	}
-)
+// DefaultSDConfig is the default Kubernetes SD configuration.
+var DefaultSDConfig = SDConfig{
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
+}
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
@@ -336,7 +330,7 @@ func New(l *slog.Logger, metrics discovery.DiscovererMetrics, conf *SDConfig) (*
 		}
 	}
 
-	kcfg.UserAgent = userAgent
+	kcfg.UserAgent = version.PrometheusUserAgent()
 	kcfg.ContentType = "application/vnd.kubernetes.protobuf"
 
 	c, err := kubernetes.NewForConfig(kcfg)

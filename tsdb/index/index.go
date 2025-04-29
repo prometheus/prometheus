@@ -1473,7 +1473,7 @@ func (r *Reader) Close() error {
 	return r.c.Close()
 }
 
-func (r *Reader) lookupSymbol(ctx context.Context, o uint32) (string, error) {
+func (r *Reader) lookupSymbol(_ context.Context, o uint32) (string, error) {
 	if s, ok := r.nameSymbols[o]; ok {
 		return s, nil
 	}

@@ -23,21 +23,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/atomic"
 
-	"github.com/prometheus/prometheus/promql/parser"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/promslog"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
@@ -74,9 +72,7 @@ type Group struct {
 	// defaults to DefaultEvalIterationFunc.
 	evalIterationFunc GroupEvalIterationFunc
 
-	// concurrencyController controls the rules evaluation concurrency.
-	concurrencyController RuleConcurrencyController
-	appOpts               *storage.AppendOptions
+	appOpts *storage.AppendOptions
 }
 
 // GroupEvalIterationFunc is used to implement and extend rule group
@@ -126,33 +122,27 @@ func NewGroup(o GroupOptions) *Group {
 		evalIterationFunc = DefaultEvalIterationFunc
 	}
 
-	concurrencyController := opts.RuleConcurrencyController
-	if concurrencyController == nil {
-		concurrencyController = sequentialRuleEvalController{}
-	}
-
 	if opts.Logger == nil {
 		opts.Logger = promslog.NewNopLogger()
 	}
 
 	return &Group{
-		name:                  o.Name,
-		file:                  o.File,
-		interval:              o.Interval,
-		queryOffset:           o.QueryOffset,
-		limit:                 o.Limit,
-		rules:                 o.Rules,
-		shouldRestore:         o.ShouldRestore,
-		opts:                  opts,
-		seriesInPreviousEval:  make([]map[string]labels.Labels, len(o.Rules)),
-		done:                  make(chan struct{}),
-		managerDone:           o.done,
-		terminated:            make(chan struct{}),
-		logger:                opts.Logger.With("file", o.File, "group", o.Name),
-		metrics:               metrics,
-		evalIterationFunc:     evalIterationFunc,
-		concurrencyController: concurrencyController,
-		appOpts:               &storage.AppendOptions{DiscardOutOfOrder: true},
+		name:                 o.Name,
+		file:                 o.File,
+		interval:             o.Interval,
+		queryOffset:          o.QueryOffset,
+		limit:                o.Limit,
+		rules:                o.Rules,
+		shouldRestore:        o.ShouldRestore,
+		opts:                 opts,
+		seriesInPreviousEval: make([]map[string]labels.Labels, len(o.Rules)),
+		done:                 make(chan struct{}),
+		managerDone:          o.done,
+		terminated:           make(chan struct{}),
+		logger:               opts.Logger.With("file", o.File, "group", o.Name),
+		metrics:              metrics,
+		evalIterationFunc:    evalIterationFunc,
+		appOpts:              &storage.AppendOptions{DiscardOutOfOrder: true},
 	}
 }
 
@@ -310,9 +300,17 @@ func (g *Group) run(ctx context.Context) {
 	}
 }
 
-func (g *Group) stop() {
+func (g *Group) stopAsync() {
 	close(g.done)
+}
+
+func (g *Group) waitStopped() {
 	<-g.terminated
+}
+
+func (g *Group) stop() {
+	g.stopAsync()
+	g.waitStopped()
 }
 
 func (g *Group) hash() uint64 {
@@ -647,25 +645,51 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	}
 
 	var wg sync.WaitGroup
-	for i, rule := range g.rules {
-		select {
-		case <-g.done:
-			return
-		default:
-		}
+	ctrl := g.opts.RuleConcurrencyController
+	if ctrl == nil {
+		ctrl = sequentialRuleEvalController{}
+	}
 
-		if ctrl := g.concurrencyController; ctrl.Allow(ctx, g, rule) {
-			wg.Add(1)
-
-			go eval(i, rule, func() {
-				wg.Done()
-				ctrl.Done(ctx)
-			})
-		} else {
+	batches := ctrl.SplitGroupIntoBatches(ctx, g)
+	if len(batches) == 0 {
+		// Sequential evaluation when batches aren't set.
+		// This is the behaviour without a defined RuleConcurrencyController
+		for i, rule := range g.rules {
+			// Check if the group has been stopped.
+			select {
+			case <-g.done:
+				return
+			default:
+			}
 			eval(i, rule, nil)
 		}
+	} else {
+		// Concurrent evaluation.
+		for _, batch := range batches {
+			for _, ruleIndex := range batch {
+				// Check if the group has been stopped.
+				select {
+				case <-g.done:
+					wg.Wait()
+					return
+				default:
+				}
+				rule := g.rules[ruleIndex]
+				if len(batch) > 1 && ctrl.Allow(ctx, g, rule) {
+					wg.Add(1)
+
+					go eval(ruleIndex, rule, func() {
+						wg.Done()
+						ctrl.Done(ctx)
+					})
+				} else {
+					eval(ruleIndex, rule, nil)
+				}
+			}
+			// It is important that we finish processing any rules in this current batch - before we move into the next one.
+			wg.Wait()
+		}
 	}
-	wg.Wait()
 
 	g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal.Load())
 	g.cleanupStaleSeries(ctx, ts)
@@ -1034,27 +1058,25 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 // output metric produced by another rule in its expression (i.e. as its "input").
 type dependencyMap map[Rule][]Rule
 
-// dependents returns the count of rules which use the output of the given rule as one of their inputs.
-func (m dependencyMap) dependents(r Rule) int {
-	return len(m[r])
+// dependents returns the rules which use the output of the given rule as one of their inputs.
+func (m dependencyMap) dependents(r Rule) []Rule {
+	return m[r]
 }
 
-// dependencies returns the count of rules on which the given rule is dependent for input.
-func (m dependencyMap) dependencies(r Rule) int {
+// dependencies returns the rules on which the given rule is dependent for input.
+func (m dependencyMap) dependencies(r Rule) []Rule {
 	if len(m) == 0 {
-		return 0
+		return []Rule{}
 	}
 
-	var count int
-	for _, children := range m {
-		for _, child := range children {
-			if child == r {
-				count++
-			}
+	var dependencies []Rule
+	for rule, dependents := range m {
+		if slices.Contains(dependents, r) {
+			dependencies = append(dependencies, rule)
 		}
 	}
 
-	return count
+	return dependencies
 }
 
 // isIndependent determines whether the given rule is not dependent on another rule for its input, nor is any other rule
@@ -1064,7 +1086,7 @@ func (m dependencyMap) isIndependent(r Rule) bool {
 		return false
 	}
 
-	return m.dependents(r)+m.dependencies(r) == 0
+	return len(m.dependents(r)) == 0 && len(m.dependencies(r)) == 0
 }
 
 // buildDependencyMap builds a data-structure which contains the relationships between rules within a group.
@@ -1086,9 +1108,6 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 		return dependencies
 	}
 
-	inputs := make(map[string][]Rule, len(rules))
-	outputs := make(map[string][]Rule, len(rules))
-
 	var indeterminate bool
 
 	for _, rule := range rules {
@@ -1096,26 +1115,46 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 			break
 		}
 
-		name := rule.Name()
-		outputs[name] = append(outputs[name], rule)
-
-		parser.Inspect(rule.Query(), func(node parser.Node, path []parser.Node) error {
+		parser.Inspect(rule.Query(), func(node parser.Node, _ []parser.Node) error {
 			if n, ok := node.(*parser.VectorSelector); ok {
+				// Find the name matcher for the rule.
+				var nameMatcher *labels.Matcher
+				if n.Name != "" {
+					nameMatcher = labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, n.Name)
+				} else {
+					for _, m := range n.LabelMatchers {
+						if m.Name == model.MetricNameLabel {
+							nameMatcher = m
+							break
+						}
+					}
+				}
+
 				// A wildcard metric expression means we cannot reliably determine if this rule depends on any other,
 				// which means we cannot safely run any rules concurrently.
-				if n.Name == "" && len(n.LabelMatchers) > 0 {
+				if nameMatcher == nil {
 					indeterminate = true
 					return nil
 				}
 
 				// Rules which depend on "meta-metrics" like ALERTS and ALERTS_FOR_STATE will have undefined behaviour
 				// if they run concurrently.
-				if n.Name == alertMetricName || n.Name == alertForStateMetricName {
+				if nameMatcher.Matches(alertMetricName) || nameMatcher.Matches(alertForStateMetricName) {
 					indeterminate = true
 					return nil
 				}
 
-				inputs[n.Name] = append(inputs[n.Name], rule)
+				// Find rules which depend on the output of this rule.
+				for _, other := range rules {
+					if other == rule {
+						continue
+					}
+
+					otherName := other.Name()
+					if nameMatcher.Matches(otherName) {
+						dependencies[other] = append(dependencies[other], rule)
+					}
+				}
 			}
 			return nil
 		})
@@ -1123,14 +1162,6 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 
 	if indeterminate {
 		return nil
-	}
-
-	for output, outRules := range outputs {
-		for _, outRule := range outRules {
-			if inRules, found := inputs[output]; found && len(inRules) > 0 {
-				dependencies[outRule] = append(dependencies[outRule], inRules...)
-			}
-		}
 	}
 
 	return dependencies

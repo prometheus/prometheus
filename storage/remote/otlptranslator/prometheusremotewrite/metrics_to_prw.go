@@ -22,12 +22,12 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
 
 	"github.com/prometheus/prometheus/prompb"
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -40,6 +40,8 @@ type Settings struct {
 	AllowUTF8                         bool
 	PromoteResourceAttributes         []string
 	KeepIdentifyingResourceAttributes bool
+	ConvertHistogramsToNHCB           bool
+	AllowDeltaTemporality             bool
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
@@ -90,13 +92,28 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 
 				metric := metricSlice.At(k)
 				mostRecentTimestamp = max(mostRecentTimestamp, mostRecentTimestampInMetric(metric))
+				temporality, hasTemporality, err := aggregationTemporality(metric)
+				if err != nil {
+					errs = multierr.Append(errs, err)
+					continue
+				}
 
-				if !isValidAggregationTemporality(metric) {
+				if hasTemporality &&
+					// Cumulative temporality is always valid.
+					// Delta temporality is also valid if AllowDeltaTemporality is true.
+					// All other temporality values are invalid.
+					!(temporality == pmetric.AggregationTemporalityCumulative ||
+						(settings.AllowDeltaTemporality && temporality == pmetric.AggregationTemporalityDelta)) {
 					errs = multierr.Append(errs, fmt.Errorf("invalid temporality and type combination for metric %q", metric.Name()))
 					continue
 				}
 
-				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes, settings.AllowUTF8)
+				var promName string
+				if settings.AllowUTF8 {
+					promName = otlptranslator.BuildMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
+				} else {
+					promName = otlptranslator.BuildCompliantMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
+				}
 				c.metadata = append(c.metadata, prompb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
 					MetricFamilyName: promName,
@@ -137,10 +154,21 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName); err != nil {
-						errs = multierr.Append(errs, err)
-						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-							return
+					if settings.ConvertHistogramsToNHCB {
+						ws, err := c.addCustomBucketsHistogramDataPoints(ctx, dataPoints, resource, settings, promName, temporality)
+						annots.Merge(ws)
+						if err != nil {
+							errs = multierr.Append(errs, err)
+							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+								return
+							}
+						}
+					} else {
+						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName); err != nil {
+							errs = multierr.Append(errs, err)
+							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+								return
+							}
 						}
 					}
 				case pmetric.MetricTypeExponentialHistogram:
@@ -155,6 +183,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						resource,
 						settings,
 						promName,
+						temporality,
 					)
 					annots.Merge(ws)
 					if err != nil {

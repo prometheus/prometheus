@@ -313,6 +313,7 @@ export const getUPlotOptions = (
   legend: {
     show: true,
     live: false,
+    isolate: true,
     markers: {
       fill: (
         _u: uPlot,
@@ -332,17 +333,45 @@ export const getUPlotOptions = (
   axes: [
     // X axis (time).
     {
+      space: 80,
       labelSize: 20,
       stroke: light ? "#333" : "#eee",
       ticks: {
         stroke: light ? "#00000010" : "#ffffff20",
       },
       grid: {
-        show: false,
-        stroke: light ? "#eee" : "#333",
+        show: true,
+        stroke: light ? "#00000010" : "#ffffff20",
         width: 2,
         dash: [],
       },
+      values: [
+        // See https://github.com/leeoniya/uPlot/tree/master/docs#axis--grid-opts and https://github.com/leeoniya/uPlot/issues/83.
+        //
+        // We want to achieve 24h-based time formatting instead of the default AM/PM-based time formatting.
+        // We also want to render dates in an unambiguous format that uses the abbreviated month name instead of a US-centric DD/MM/YYYY format.
+        //
+        // The "tick incr" column defines the breakpoint in seconds at which the format changes.
+        // The "default" column defines the default format for a tick at this breakpoint.
+        // The "year"/"month"/"day"/"hour"/"min"/"sec" columns define additional values to display for year/month/day/... rollovers occurring around a tick.
+        // The "mode" column value "1" means that rollover values will be concatenated with the default format (instead of replacing it).
+        //
+        // tick incr        default                  year                  month  day             hour   min    sec    mode
+        // prettier-ignore
+        [3600 * 24 * 365,   "{YYYY}",                null,                 null,  null,           null,  null,  null,     1],
+        // prettier-ignore
+        [3600 * 24 * 28,    "{MMM}",                 "\n{YYYY}",           null,  null,           null,  null,  null,     1],
+        // prettier-ignore
+        [3600 * 24,         "{MMM} {D}",             "\n{YYYY}",           null,  null,           null,  null,  null,     1],
+        // prettier-ignore
+        [3600,              "{HH}:{mm}",             "\n{MMM} {D} '{YY}",  null,  "\n{MMM} {D}",  null,  null,  null,     1],
+        // prettier-ignore
+        [60,                "{HH}:{mm}",             "\n{MMM} {D} '{YY}",  null,  "\n{MMM} {D}",  null,  null,  null,     1],
+        // prettier-ignore
+        [1,                 "{HH}:{mm}:{ss}",        "\n{MMM} {D} '{YY}",  null,  "\n{MMM} {D}",  null,  null,  null,     1],
+        // prettier-ignore
+        [0.001,             "{HH}:{mm}:{ss}.{fff}",  "\n{MMM} {D} '{YY}",  null,  "\n{MMM} {D}",  null,  null,  null,     1],
+      ],
     },
     // Y axis (sample value).
     {
@@ -382,7 +411,10 @@ export const getUPlotOptions = (
       (self: uPlot) => {
         // Disallow sub-second zoom as this cause inconsistenices in the X axis in uPlot.
         const leftVal = self.posToVal(self.select.left, "x");
-        const rightVal = Math.max(self.posToVal(self.select.left + self.select.width, "x"), leftVal + 1);
+        const rightVal = Math.max(
+          self.posToVal(self.select.left + self.select.width, "x"),
+          leftVal + 1
+        );
 
         onSelectRange(leftVal, rightVal);
       },

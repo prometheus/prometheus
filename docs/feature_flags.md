@@ -114,8 +114,7 @@ Fall back to serving the old (Prometheus 2.x) web UI instead of the new UI. The 
 When enabled, Prometheus will store metadata in-memory and keep track of
 metadata changes as WAL records on a per-series basis.
 
-This must be used if
-you are also using remote write 2.0 as it will only gather metadata from the WAL.
+This must be used if you would like to send metadata using the new remote write 2.0.
 
 ## Delay compaction start time
 
@@ -131,13 +130,25 @@ Note that during this delay, the Head continues its usual operations, which incl
 
 Despite the delay in compaction, the blocks produced are time-aligned in the same manner as they would be if the delay was not in place.
 
-## Delay __name__ label removal for PromQL engine
+## Delay `__name__` label removal for PromQL engine
 
 `--enable-feature=promql-delayed-name-removal`
 
 When enabled, Prometheus will change the way in which the `__name__` label is removed from PromQL query results (for functions and expressions for which this is necessary). Specifically, it will delay the removal to the last step of the query evaluation, instead of every time an expression or function creating derived metrics is evaluated.
 
 This allows optionally preserving the `__name__` label via the `label_replace` and `label_join` functions, and helps prevent the "vector cannot contain metrics with the same labelset" error, which can happen when applying a regex-matcher to the `__name__` label.
+
+Note that evaluating parts of the query separately will still trigger the
+labelset collision. This commonly happens when analyzing intermediate results
+of a query manually or with a tool like PromLens.
+
+If a query refers to the already removed `__name__` label, its behavior may
+change while this feature flag is set. (Example: `sum by (__name__)
+(rate({foo="bar"}[5m]))`, see [details on
+GitHub](https://github.com/prometheus/prometheus/issues/11397#issuecomment-1451998792).)
+These queries are rare to occur and easy to fix. (In the above example,
+removing `by (__name__)` doesn't change anything without the feature flag and
+fixes the possible problem with the feature flag.)
 
 ## Auto Reload Config
 
@@ -151,3 +162,88 @@ Configuration reloads are triggered by detecting changes in the checksum of the
 main configuration file or any referenced files, such as rule and scrape
 configurations. To ensure consistency and avoid issues during reloads, it's
 recommended to update these files atomically.
+
+## OTLP Delta Conversion
+
+`--enable-feature=otlp-deltatocumulative`
+
+When enabled, Prometheus will convert OTLP metrics from delta temporality to their
+cumulative equivalent, instead of dropping them. This cannot be enabled in conjunction with `otlp-native-delta-ingestion`.
+
+This uses
+[deltatocumulative][d2c]
+from the OTel collector, using its default settings.
+
+Delta conversion keeps in-memory state to aggregate delta changes per-series over time.
+When Prometheus restarts, this state is lost, starting the aggregation from zero
+again. This results in a counter reset in the cumulative series.
+
+This state is periodically ([`max_stale`][d2c]) cleared of inactive series.
+
+Enabling this _can_ have negative impact on performance, because the in-memory
+state is mutex guarded. Cumulative-only OTLP requests are not affected.
+
+### PromQL arithmetic expressions in time durations
+
+`--enable-feature=promql-duration-expr`
+
+With this flag, arithmetic expressions can be used in time durations in range queries and offset durations. For example:
+
+In range queries:
+    rate(http_requests_total[5m * 2])  # 10 minute range
+    rate(http_requests_total[(5+2) * 1m])  # 7 minute range
+
+In offset durations:
+    http_requests_total offset (1h / 2)  # 30 minute offset
+    http_requests_total offset ((2 ^ 3) * 1m)  # 8 minute offset
+
+Note: Duration expressions are not supported in the @ timestamp operator.
+
+The following operators are supported:
+
+* `+` - addition
+* `-` - subtraction
+* `*` - multiplication 
+* `/` - division
+* `%` - modulo
+* `^` - exponentiation
+
+Examples of equivalent durations:
+
+* `5m * 2` is the equivalent to `10m` or `600s`
+* `10m - 1m` is the equivalent to `9m` or `540s`
+* `(5+2) * 1m` is the equivalent to `7m` or `420s`
+* `1h / 2` is the equivalent to `30m` or `1800s`
+* `4h % 3h` is the equivalent to `1h` or `3600s`
+* `(2 ^ 3) * 1m` is the equivalent to `8m` or `480s`
+
+[d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
+
+## OTLP Native Delta Support
+
+`--enable-feature=otlp-native-delta-ingestion`
+
+When enabled, allows for the native ingestion of delta OTLP metrics, storing the raw sample values without conversion. This cannot be enabled in conjunction with `otlp-deltatocumulative`.
+
+Currently, the StartTimeUnixNano field is ignored, and deltas are given the unknown metric metadata type.
+
+Delta support is in a very early stage of development and the ingestion and querying process my change over time. For the open proposal see [prometheus/proposals#48](https://github.com/prometheus/proposals/pull/48). 
+
+### Querying
+
+We encourage users to experiment with deltas and existing PromQL functions; we will collect feedback and likely build features to improve the experience around querying deltas.
+
+Note that standard PromQL counter functions like `rate()` and `increase()` are designed for cumulative metrics and will produce incorrect results when used with delta metrics. This may change in the future, but for now, to get similar results for delta metrics, you need `sum_over_time()`:
+
+* `sum_over_time(delta_metric[<range>])`: Calculates the sum of delta values over the specified time range.
+* `sum_over_time(delta_metric[<range>]) / <range>`: Calculates the per-second rate of the delta metric.
+
+These may not work well if the `<range>` is not a multiple of the collection interval of the metric. For example, if you do `sum_over_time(delta_metric[1m]) / 1m` range query (with a 1m step), but the collection interval of a metric is 10m, the graph will show a single point every 10 minutes with a high rate value, rather than 10 points with a lower, constant value.
+
+### Current gotchas
+
+* If delta metrics are exposed via [federation](https://prometheus.io/docs/prometheus/latest/federation/), data can be incorrectly collected if the ingestion interval is not the same as the scrape interval for the federated endpoint.
+
+* It is difficult to figure out whether a metric has delta or cumulative temporality, since there's no indication of temporality in metric names or labels. For now, if you are ingesting a mix of delta and cumulative metrics we advise you to explicitly add your own labels to distinguish them. In the future, we plan to introduce type labels to consistently distinguish metric types and potentially make PromQL functions type-aware (e.g. providing warnings when cumulative-only functions are used with delta metrics).
+
+* If there are multiple samples being ingested at the same timestamp, only one of the points is kept - the samples are **not** summed together (this is how Prometheus works in general - duplicate timestamp samples are rejected). Any aggregation will have to be done before sending samples to Prometheus.

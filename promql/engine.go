@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/zeropool"
 )
@@ -123,12 +124,13 @@ type QueryEngine interface {
 	NewRangeQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error)
 }
 
+var _ QueryLogger = (*logging.JSONFileLogger)(nil)
+
 // QueryLogger is an interface that can be used to log all the queries logged
 // by the engine.
 type QueryLogger interface {
-	Log(context.Context, slog.Level, string, ...any)
-	With(args ...any)
-	Close() error
+	slog.Handler
+	io.Closer
 }
 
 // A Query is derived from an a raw query string and can be run against an engine
@@ -436,6 +438,8 @@ func NewEngine(opts EngineOpts) *Engine {
 }
 
 // Close closes ng.
+// Callers must ensure the engine is really no longer in use before calling this to avoid
+// issues failures like in https://github.com/prometheus/prometheus/issues/15232
 func (ng *Engine) Close() error {
 	if ng == nil {
 		return nil
@@ -485,9 +489,9 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
-	*pExpr = PreprocessExpr(expr, ts, ts)
+	*pExpr, err = PreprocessExpr(expr, ts, ts)
 
-	return qry, nil
+	return qry, err
 }
 
 // NewRangeQuery returns an evaluation query for the given time range and with
@@ -509,9 +513,9 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
-	*pExpr = PreprocessExpr(expr, start, end)
+	*pExpr, err = PreprocessExpr(expr, start, end)
 
-	return qry, nil
+	return qry, err
 }
 
 func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start, end time.Time, interval time.Duration) (*parser.Expr, *query) {
@@ -554,7 +558,7 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 	var atModifierUsed, negativeOffsetUsed bool
 
 	var validationErr error
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			if n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END {
@@ -626,6 +630,9 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 	defer func() {
 		ng.queryLoggerLock.RLock()
 		if l := ng.queryLogger; l != nil {
+			logger := slog.New(l)
+			f := make([]slog.Attr, 0, 16) // Probably enough up front to not need to reallocate on append.
+
 			params := make(map[string]interface{}, 4)
 			params["query"] = q.q
 			if eq, ok := q.Statement().(*parser.EvalStmt); ok {
@@ -634,20 +641,20 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 				// The step provided by the user is in seconds.
 				params["step"] = int64(eq.Interval / (time.Second / time.Nanosecond))
 			}
-			f := []interface{}{"params", params}
+			f = append(f, slog.Any("params", params))
 			if err != nil {
-				f = append(f, "error", err)
+				f = append(f, slog.Any("error", err))
 			}
-			f = append(f, "stats", stats.NewQueryStats(q.Stats()))
+			f = append(f, slog.Any("stats", stats.NewQueryStats(q.Stats())))
 			if span := trace.SpanFromContext(ctx); span != nil {
-				f = append(f, "spanID", span.SpanContext().SpanID())
+				f = append(f, slog.Any("spanID", span.SpanContext().SpanID()))
 			}
 			if origin := ctx.Value(QueryOrigin{}); origin != nil {
 				for k, v := range origin.(map[string]interface{}) {
-					f = append(f, k, v)
+					f = append(f, slog.Any(k, v))
 				}
 			}
-			l.Log(context.Background(), slog.LevelInfo, "promql query logged", f...)
+			logger.LogAttrs(context.Background(), slog.LevelInfo, "promql query logged", f...)
 			// TODO: @tjhop -- do we still need this metric/error log if logger doesn't return errors?
 			// ng.metrics.queryLogFailures.Inc()
 			// ng.logger.Error("can't log query", "err", err)
@@ -1130,8 +1137,9 @@ type EvalNodeHelper struct {
 	Out Vector
 
 	// Caches.
-	// funcHistogramQuantile for classic histograms.
+	// funcHistogramQuantile and funcHistogramFraction for classic histograms.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
+	nativeHistogramSamples       []Sample
 
 	lb           *labels.Builder
 	lblBuf       []byte
@@ -1152,6 +1160,62 @@ func (enh *EvalNodeHelper) resetBuilder(lbls labels.Labels) {
 	} else {
 		enh.lb.Reset(lbls)
 	}
+}
+
+// resetHistograms prepares the histogram caches by splitting the given vector into native and classic histograms.
+func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annotations.Annotations {
+	var annos annotations.Annotations
+
+	if enh.signatureToMetricWithBuckets == nil {
+		enh.signatureToMetricWithBuckets = map[string]*metricWithBuckets{}
+	} else {
+		for _, v := range enh.signatureToMetricWithBuckets {
+			v.buckets = v.buckets[:0]
+		}
+	}
+	enh.nativeHistogramSamples = enh.nativeHistogramSamples[:0]
+
+	for _, sample := range inVec {
+		// We are only looking for classic buckets here. Remember
+		// the histograms for later treatment.
+		if sample.H != nil {
+			enh.nativeHistogramSamples = append(enh.nativeHistogramSamples, sample)
+			continue
+		}
+
+		upperBound, err := strconv.ParseFloat(
+			sample.Metric.Get(model.BucketLabel), 64,
+		)
+		if err != nil {
+			annos.Add(annotations.NewBadBucketLabelWarning(sample.Metric.Get(labels.MetricName), sample.Metric.Get(model.BucketLabel), arg.PositionRange()))
+			continue
+		}
+		enh.lblBuf = sample.Metric.BytesWithoutLabels(enh.lblBuf, labels.BucketLabel)
+		mb, ok := enh.signatureToMetricWithBuckets[string(enh.lblBuf)]
+		if !ok {
+			sample.Metric = labels.NewBuilder(sample.Metric).
+				Del(excludedLabels...).
+				Labels()
+			mb = &metricWithBuckets{sample.Metric, nil}
+			enh.signatureToMetricWithBuckets[string(enh.lblBuf)] = mb
+		}
+		mb.buckets = append(mb.buckets, Bucket{upperBound, sample.F})
+	}
+
+	for _, sample := range enh.nativeHistogramSamples {
+		// We have to reconstruct the exact same signature as above for
+		// a classic histogram, just ignoring any le label.
+		enh.lblBuf = sample.Metric.Bytes(enh.lblBuf)
+		if mb, ok := enh.signatureToMetricWithBuckets[string(enh.lblBuf)]; ok && len(mb.buckets) > 0 {
+			// At this data point, we have classic histogram
+			// buckets and a native histogram with the same name and
+			// labels. Do not evaluate anything.
+			annos.Add(annotations.NewMixedClassicNativeHistogramsWarning(sample.Metric.Get(labels.MetricName), arg.PositionRange()))
+			delete(enh.signatureToMetricWithBuckets, string(enh.lblBuf))
+			continue
+		}
+	}
+	return annos
 }
 
 // rangeEval evaluates the given expressions, and then for each step calls
@@ -1541,6 +1605,28 @@ func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr
 		VectorSelector: vs,
 	}
 	for _, s := range mat {
+		// Set any "NotCounterReset" and "CounterReset" hints in native
+		// histograms to "UnknownCounterReset" because we might
+		// otherwise miss a counter reset happening in samples not
+		// returned by the subquery, or we might over-detect counter
+		// resets if the sample with a counter reset is returned
+		// multiple times by a high-res subquery. This intentionally
+		// does not attempt to be clever (like detecting if we are
+		// really missing underlying samples or returning underlying
+		// samples multiple times) because subqueries on counters are
+		// inherently problematic WRT counter reset handling, so we
+		// cannot really solve the problem for good. We only want to
+		// avoid problems that happen due to the explicitly set counter
+		// reset hints and go back to the behavior we already know from
+		// float samples.
+		for i, hp := range s.Histograms {
+			switch hp.H.CounterResetHint {
+			case histogram.NotCounterReset, histogram.CounterReset:
+				h := *hp.H // Shallow copy is sufficient, we only change CounterResetHint.
+				h.CounterResetHint = histogram.UnknownCounterReset
+				s.Histograms[i].H = &h
+			}
+		}
 		vs.Series = append(vs.Series, NewStorageSeries(s))
 	}
 	return ms, mat.TotalSamples(), ws
@@ -1553,6 +1639,11 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 	if err := contextDone(ctx, "expression evaluation"); err != nil {
 		ev.error(err)
 	}
+
+	if ev.endTimestamp < ev.startTimestamp {
+		return Matrix{}, nil
+	}
+
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
 	// Create a new span to help investigate inner evaluation performances.
@@ -1575,7 +1666,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		if e.Op == parser.COUNT_VALUES {
 			valueLabel := param.(*parser.StringLiteral)
 			if !model.LabelName(valueLabel.Val).IsValid() {
-				ev.errorf("invalid label name %q", valueLabel)
+				ev.errorf("invalid label name %s", valueLabel)
 			}
 			if !e.Without {
 				sortedGrouping = append(sortedGrouping, valueLabel.Val)
@@ -1940,7 +2031,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 	case *parser.NumberLiteral:
 		span.SetAttributes(attribute.Float64("value", e.Val))
-		return ev.rangeEval(ctx, nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+		return ev.rangeEval(ctx, nil, func(_ []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 			return append(enh.Out, Sample{F: e.Val, Metric: labels.EmptyLabels()}), nil
 		})
 
@@ -2109,7 +2200,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 		seriesIterators[i] = storage.NewMemoizedIterator(it, durationMilliseconds(ev.lookbackDelta)-1)
 	}
 
-	return ev.rangeEval(ctx, nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return ev.rangeEval(ctx, nil, func(_ []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 		if vs.Timestamp != nil {
 			// This is a special case for "timestamp()" when the @ modifier is used, to ensure that
 			// we return a point for each time step in this case.
@@ -2348,6 +2439,11 @@ func (ev *evaluator) matrixIterSlice(
 		if histograms != nil {
 			histograms = histograms[:0]
 		}
+	}
+
+	if mint == maxt {
+		// Empty range: return the empty slices.
+		return floats, histograms
 	}
 
 	soughtValueType := it.Seek(maxt)
@@ -3468,15 +3564,14 @@ func handleVectorBinopError(err error, e *parser.BinaryExpr) annotations.Annotat
 	if err == nil {
 		return nil
 	}
-	metricName := ""
+	op := parser.ItemTypeStr[e.Op]
 	pos := e.PositionRange()
 	if errors.Is(err, annotations.PromQLInfo) || errors.Is(err, annotations.PromQLWarning) {
 		return annotations.New().Add(err)
 	}
-	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
-		return annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
-	} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-		return annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, pos))
+	// TODO(NeerajGartia21): Test the exact annotation output once the testing framework can do so.
+	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) || errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+		return annotations.New().Add(annotations.NewIncompatibleBucketLayoutInBinOpWarning(op, pos))
 	}
 	return nil
 }
@@ -3542,11 +3637,11 @@ func formatDate(t time.Time) string {
 // unwrapParenExpr does the AST equivalent of removing parentheses around a expression.
 func unwrapParenExpr(e *parser.Expr) {
 	for {
-		if p, ok := (*e).(*parser.ParenExpr); ok {
-			*e = p.Expr
-		} else {
+		p, ok := (*e).(*parser.ParenExpr)
+		if !ok {
 			break
 		}
+		*e = p.Expr
 	}
 }
 
@@ -3558,15 +3653,20 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 }
 
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
-// StepInvariantExpr. It also resolves the preprocessors.
-func PreprocessExpr(expr parser.Expr, start, end time.Time) parser.Expr {
+// StepInvariantExpr. It also resolves the preprocessors and evaluates duration expressions
+// into their numeric values.
+func PreprocessExpr(expr parser.Expr, start, end time.Time) (parser.Expr, error) {
 	detectHistogramStatsDecoding(expr)
+
+	if err := parser.Walk(&durationVisitor{}, expr, nil); err != nil {
+		return nil, err
+	}
 
 	isStepInvariant := preprocessExprHelper(expr, start, end)
 	if isStepInvariant {
-		return newStepInvariantExpr(expr)
+		return newStepInvariantExpr(expr), nil
 	}
-	return expr
+	return expr, nil
 }
 
 // preprocessExprHelper wraps the child nodes of the expression
@@ -3719,14 +3819,15 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 			if !ok {
 				continue
 			}
-			if call.Func.Name == "histogram_count" || call.Func.Name == "histogram_sum" {
+			switch call.Func.Name {
+			case "histogram_count", "histogram_sum", "histogram_avg":
 				n.SkipHistogramBuckets = true
-				break
-			}
-			if call.Func.Name == "histogram_quantile" || call.Func.Name == "histogram_fraction" {
+			case "histogram_quantile", "histogram_fraction":
 				n.SkipHistogramBuckets = false
-				break
+			default:
+				continue
 			}
+			break
 		}
 		return errors.New("stop")
 	})
@@ -3755,7 +3856,7 @@ func NewHashRatioSampler() *HashRatioSampler {
 	return &HashRatioSampler{}
 }
 
-func (s *HashRatioSampler) sampleOffset(ts int64, sample *Sample) float64 {
+func (s *HashRatioSampler) sampleOffset(_ int64, sample *Sample) float64 {
 	const (
 		float64MaxUint64 = float64(math.MaxUint64)
 	)

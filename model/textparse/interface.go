@@ -29,12 +29,18 @@ import (
 type Parser interface {
 	// Series returns the bytes of a series with a simple float64 as a
 	// value, the timestamp if set, and the value of the current sample.
+	// TODO(bwplotka): Similar to CreatedTimestamp, have ts == 0 meaning no timestamp provided.
+	// We already accepted in many places (PRW, proto parsing histograms) that 0 timestamp is not a
+	// a valid timestamp. If needed it can be represented as 0+1ms.
 	Series() ([]byte, *int64, float64)
 
 	// Histogram returns the bytes of a series with a sparse histogram as a
 	// value, the timestamp if set, and the histogram in the current sample.
 	// Depending on the parsed input, the function returns an (integer) Histogram
 	// or a FloatHistogram, with the respective other return value being nil.
+	// TODO(bwplotka): Similar to CreatedTimestamp, have ts == 0 meaning no timestamp provided.
+	// We already accepted in many places (PRW, proto parsing histograms) that 0 timestamp is not a
+	// a valid timestamp. If needed it can be represented as 0+1ms.
 	Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram)
 
 	// Help returns the metric name and help text in the current entry.
@@ -57,11 +63,10 @@ type Parser interface {
 	// The returned byte slice becomes invalid after the next call to Next.
 	Comment() []byte
 
-	// Metric writes the labels of the current sample into the passed labels.
-	// It returns the string from which the metric was parsed.
+	// Labels writes the labels of the current sample into the passed labels.
 	// The values of the "le" labels of classic histograms and "quantile" labels
 	// of summaries should follow the OpenMetrics formatting rules.
-	Metric(l *labels.Labels) string
+	Labels(l *labels.Labels)
 
 	// Exemplar writes the exemplar of the current sample into the passed
 	// exemplar. It can be called repeatedly to retrieve multiple exemplars
@@ -70,11 +75,9 @@ type Parser interface {
 	Exemplar(l *exemplar.Exemplar) bool
 
 	// CreatedTimestamp returns the created timestamp (in milliseconds) for the
-	// current sample. It returns nil if it is unknown e.g. if it wasn't set,
+	// current sample. It returns 0 if it is unknown e.g. if it wasn't set or
 	// if the scrape protocol or metric type does not support created timestamps.
-	// Assume the CreatedTimestamp returned pointer is only valid until
-	// the Next iteration.
-	CreatedTimestamp() *int64
+	CreatedTimestamp() int64
 
 	// Next advances the parser to the next sample.
 	// It returns (EntryInvalid, io.EOF) if no samples were read.

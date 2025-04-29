@@ -25,9 +25,8 @@ import {
 } from "../../state/serviceDiscoveryPageSlice";
 import CustomInfiniteScroll from "../../components/CustomInfiniteScroll";
 
-import { useDebouncedValue } from "@mantine/hooks";
+import { useDebouncedValue, useLocalStorage } from "@mantine/hooks";
 import { targetPoolDisplayLimit } from "./ServiceDiscoveryPage";
-import { BooleanParam, useQueryParam, withDefault } from "use-query-params";
 import { LabelBadges } from "../../components/LabelBadges";
 
 type TargetLabels = {
@@ -109,8 +108,7 @@ const buildPoolsData = (
   }
 
   for (const target of droppedTargets) {
-    const { job: poolName } = target.discoveredLabels;
-    const pool = pools[poolName];
+    const pool = pools[target.scrapePool];
     if (!pool) {
       // TODO: Should we do better here?
       throw new Error(
@@ -131,7 +129,7 @@ const buildPoolsData = (
             .map((value) => value.original);
 
   for (const target of filteredDroppedTargets) {
-    pools[target.discoveredLabels.job].targets.push({
+    pools[target.scrapePool].targets.push({
       discoveredLabels: target.discoveredLabels,
       isDropped: true,
       labels: {},
@@ -155,10 +153,10 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
   searchFilter,
 }) => {
   const dispatch = useAppDispatch();
-  const [showEmptyPools, setShowEmptyPools] = useQueryParam(
-    "showEmptyPools",
-    withDefault(BooleanParam, true)
-  );
+  const [showEmptyPools, setShowEmptyPools] = useLocalStorage<boolean>({
+    key: "serviceDiscoveryPage.showEmptyPools",
+    defaultValue: false,
+  });
 
   // Based on the selected pool (if any), load the list of targets.
   const {

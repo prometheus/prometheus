@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/almost"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/convertnhcb"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -49,16 +51,14 @@ var (
 	patLoad        = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)$`)
 	patEvalInstant = regexp.MustCompile(`^eval(?:_(fail|warn|ordered|info))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
 	patEvalRange   = regexp.MustCompile(`^eval(?:_(fail|warn|info))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
+	patExpect      = regexp.MustCompile(`^expect\s+(ordered|fail|warn|no_warn|info|no_info)(?:\s+(regex|msg):(.+))?$`)
+	patMatchAny    = regexp.MustCompile(`^.*$`)
 )
 
 const (
 	defaultEpsilon            = 0.000001 // Relative error allowed for sample values.
 	DefaultMaxSamplesPerQuery = 10000
 )
-
-func init() {
-	model.NameValidationScheme = model.UTF8Validation
-}
 
 type TBRun interface {
 	testing.TB
@@ -117,8 +117,12 @@ func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 
 // RunBuiltinTestsWithStorage runs an acceptance test suite against the provided engine and storage.
 func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage) {
-	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
+	t.Cleanup(func() {
+		parser.EnableExperimentalFunctions = false
+		parser.ExperimentalDurationExpr = false
+	})
 	parser.EnableExperimentalFunctions = true
+	parser.ExperimentalDurationExpr = true
 
 	files, err := fs.Glob(testsFs, "*/*.test")
 	require.NoError(t, err)
@@ -263,6 +267,53 @@ func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValu
 	return metric, vals, nil
 }
 
+func parseExpect(defLine string) (expectCmdType, expectCmd, error) {
+	expectParts := patExpect.FindStringSubmatch(strings.TrimSpace(defLine))
+	expCmd := expectCmd{}
+	if expectParts == nil {
+		return 0, expCmd, errors.New("invalid expect statement, must match `expect <type> <match_type> <string>` format")
+	}
+	var (
+		mode            = expectParts[1]
+		hasOptionalPart = expectParts[2] != ""
+	)
+	expectType, ok := expectTypeStr[mode]
+	if !ok {
+		return 0, expCmd, fmt.Errorf("invalid expected error/annotation type %s", mode)
+	}
+	if hasOptionalPart {
+		switch expectParts[2] {
+		case "msg":
+			expCmd.message = strings.TrimSpace(expectParts[3])
+		case "regex":
+			pattern := strings.TrimSpace(expectParts[3])
+			regex, err := regexp.Compile(pattern)
+			if err != nil {
+				return 0, expCmd, fmt.Errorf("invalid regex %s for %s", pattern, mode)
+			}
+			expCmd.regex = regex
+		default:
+			return 0, expCmd, fmt.Errorf("invalid token %s after %s", expectParts[2], mode)
+		}
+	} else {
+		expCmd.regex = patMatchAny
+	}
+	return expectType, expCmd, nil
+}
+
+func validateExpectedCmds(cmd *evalCmd) error {
+	if len(cmd.expectedCmds[Info]) > 0 && len(cmd.expectedCmds[NoInfo]) > 0 {
+		return errors.New("invalid expect lines, info and no_info cannot be used together")
+	}
+	if len(cmd.expectedCmds[Warn]) > 0 && len(cmd.expectedCmds[NoWarn]) > 0 {
+		return errors.New("invalid expect lines, warn and no_warn cannot be used together")
+	}
+	if len(cmd.expectedCmds[Fail]) > 1 {
+		return errors.New("invalid expect lines, multiple expect fail lines are not allowed")
+	}
+	return nil
+}
+
 func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	instantParts := patEvalInstant.FindStringSubmatch(lines[i])
 	rangeParts := patEvalRange.FindStringSubmatch(lines[i])
@@ -373,6 +424,21 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 				return i, nil, formatErr("invalid regexp '%s' for expected_fail_regexp: %w", pattern, err)
 			}
 			break
+		}
+
+		// This would still allow a metric named 'expect' if it is written as 'expect{}'.
+		if strings.Split(defLine, " ")[0] == "expect" {
+			annoType, expectedAnno, err := parseExpect(defLine)
+			if err != nil {
+				return i, nil, formatErr("%w", err)
+			}
+			cmd.expectedCmds[annoType] = append(cmd.expectedCmds[annoType], expectedAnno)
+			j--
+			err = validateExpectedCmds(cmd)
+			if err != nil {
+				return i, nil, formatErr("%w", err)
+			}
+			continue
 		}
 
 		if f, err := parseNumber(defLine); err == nil {
@@ -632,9 +698,65 @@ type evalCmd struct {
 	expectedFailMessage       string
 	expectedFailRegexp        *regexp.Regexp
 
+	expectedCmds map[expectCmdType][]expectCmd
+
 	metrics      map[uint64]labels.Labels
 	expectScalar bool
 	expected     map[uint64]entry
+}
+
+func (ev *evalCmd) isOrdered() bool {
+	return ev.ordered || (len(ev.expectedCmds[Ordered]) > 0)
+}
+
+func (ev *evalCmd) isFail() bool {
+	return ev.fail || (len(ev.expectedCmds[Fail]) > 0)
+}
+
+type expectCmdType byte
+
+const (
+	Ordered expectCmdType = iota
+	Fail
+	Warn
+	NoWarn
+	Info
+	NoInfo
+)
+
+var expectTypeStr = map[string]expectCmdType{
+	"fail":    Fail,
+	"ordered": Ordered,
+	"warn":    Warn,
+	"no_warn": NoWarn,
+	"info":    Info,
+	"no_info": NoInfo,
+}
+
+type expectCmd struct {
+	message string
+	regex   *regexp.Regexp
+}
+
+func (e *expectCmd) CheckMatch(str string) bool {
+	if e.regex == nil {
+		return e.message == str
+	}
+	return e.regex.MatchString(str)
+}
+
+func (e *expectCmd) String() string {
+	if e.regex == nil {
+		return e.message
+	}
+	return e.regex.String()
+}
+
+func (e *expectCmd) Type() string {
+	if e.regex == nil {
+		return "message"
+	}
+	return "pattern"
 }
 
 type entry struct {
@@ -652,8 +774,9 @@ func newInstantEvalCmd(expr string, start time.Time, line int) *evalCmd {
 		start: start,
 		line:  line,
 
-		metrics:  map[uint64]labels.Labels{},
-		expected: map[uint64]entry{},
+		metrics:      map[uint64]labels.Labels{},
+		expected:     map[uint64]entry{},
+		expectedCmds: map[expectCmdType][]expectCmd{},
 	}
 }
 
@@ -666,8 +789,9 @@ func newRangeEvalCmd(expr string, start, end time.Time, step time.Duration, line
 		line:    line,
 		isRange: true,
 
-		metrics:  map[uint64]labels.Labels{},
-		expected: map[uint64]entry{},
+		metrics:      map[uint64]labels.Labels{},
+		expected:     map[uint64]entry{},
+		expectedCmds: map[expectCmdType][]expectCmd{},
 	}
 }
 
@@ -692,11 +816,79 @@ func (ev *evalCmd) expectMetric(pos int, m labels.Labels, vals ...parser.Sequenc
 	ev.expected[h] = entry{pos: pos, vals: vals}
 }
 
+// validateExpectedAnnotationsOfType validates expected messages and regex match actual annotations.
+func validateExpectedAnnotationsOfType(expr string, expectedAnnotationsOfType []expectCmd, actualAnnotationsOfType []string, line int, annotationType string, allAnnos annotations.Annotations) error {
+	if len(expectedAnnotationsOfType) == 0 {
+		return nil
+	}
+
+	if len(actualAnnotationsOfType) == 0 {
+		return fmt.Errorf("expected %s annotations but none were found for query %q (line %d)", annotationType, expr, line)
+	}
+
+	// Check if all expected annotations are found in actual.
+	for _, e := range expectedAnnotationsOfType {
+		matchFound := slices.ContainsFunc(actualAnnotationsOfType, e.CheckMatch)
+		if !matchFound {
+			return fmt.Errorf(`expected %s annotation matching %s %q but no matching annotation was found for query %q (line %d), found: %v`, annotationType, e.Type(), e.String(), expr, line, allAnnos.AsErrors())
+		}
+	}
+
+	// Check if all actual annotations have a corresponding expected annotation.
+	for _, anno := range actualAnnotationsOfType {
+		matchFound := slices.ContainsFunc(expectedAnnotationsOfType, func(e expectCmd) bool {
+			return e.CheckMatch(anno)
+		})
+		if !matchFound {
+			return fmt.Errorf("unexpected %s annotation %q found for query %s (line %d)", annotationType, anno, expr, line)
+		}
+	}
+
+	return nil
+}
+
+// checkAnnotations asserts if the annotations match the expectations.
+func (ev *evalCmd) checkAnnotations(expr string, annos annotations.Annotations) error {
+	countWarnings, countInfo := annos.CountWarningsAndInfo()
+	switch {
+	case ev.warn && countWarnings == 0:
+		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", expr, ev.line)
+	case ev.info && countInfo == 0:
+		return fmt.Errorf("expected info annotations evaluating query %q (line %d) but got none", expr, ev.line)
+	}
+
+	var warnings, infos []string
+
+	for _, err := range annos {
+		switch {
+		case errors.Is(err, annotations.PromQLWarning):
+			warnings = append(warnings, err.Error())
+		case errors.Is(err, annotations.PromQLInfo):
+			infos = append(infos, err.Error())
+		default:
+			return fmt.Errorf("unexpected annotation type, must be either info or warn but got: %w", err)
+		}
+	}
+	if err := validateExpectedAnnotationsOfType(expr, ev.expectedCmds[Warn], warnings, ev.line, "warn", annos); err != nil {
+		return err
+	}
+	if err := validateExpectedAnnotationsOfType(expr, ev.expectedCmds[Info], infos, ev.line, "info", annos); err != nil {
+		return err
+	}
+	if ev.expectedCmds[NoWarn] != nil && len(warnings) > 0 {
+		return fmt.Errorf("unexpected warning annotations evaluating query %q (line %d): %v", expr, ev.line, annos.AsErrors())
+	}
+	if ev.expectedCmds[NoInfo] != nil && len(infos) > 0 {
+		return fmt.Errorf("unexpected info annotations evaluating query %q (line %d): %v", expr, ev.line, annos.AsErrors())
+	}
+	return nil
+}
+
 // compareResult compares the result value with the defined expectation.
 func (ev *evalCmd) compareResult(result parser.Value) error {
 	switch val := result.(type) {
 	case promql.Matrix:
-		if ev.ordered {
+		if ev.isOrdered() {
 			return errors.New("expected ordered result, but query returned a matrix")
 		}
 
@@ -781,13 +973,13 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			fp := v.Metric.Hash()
 			if _, ok := ev.metrics[fp]; !ok {
 				if v.H != nil {
-					return fmt.Errorf("unexpected metric %s in result, has value %v", v.Metric, v.H)
+					return fmt.Errorf("unexpected metric %s in result, has value %s", v.Metric, HistogramTestExpression(v.H))
 				}
 
 				return fmt.Errorf("unexpected metric %s in result, has value %v", v.Metric, v.F)
 			}
 			exp := ev.expected[fp]
-			if ev.ordered && exp.pos != pos+1 {
+			if ev.isOrdered() && exp.pos != pos+1 {
 				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
 			exp0 := exp.vals[0]
@@ -819,7 +1011,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		}
 		exp0 := ev.expected[0].vals[0]
 		if exp0.Histogram != nil {
-			return fmt.Errorf("expected histogram %v but got %s", exp0.Histogram.TestExpression(), val.String())
+			return fmt.Errorf("expected histogram %s but got %s", exp0.Histogram.TestExpression(), val.String())
 		}
 		if !almost.Equal(exp0.Value, val.V, defaultEpsilon) {
 			return fmt.Errorf("expected scalar %v but got %v", exp0.Value, val.V)
@@ -956,6 +1148,13 @@ func (ev *evalCmd) checkExpectedFailure(actual error) error {
 	if ev.expectedFailRegexp != nil {
 		if !ev.expectedFailRegexp.MatchString(actual.Error()) {
 			return fmt.Errorf("expected error matching pattern %q evaluating query %q (line %d), but got: %s", ev.expectedFailRegexp.String(), ev.expr, ev.line, actual.Error())
+		}
+	}
+
+	expFail, exists := ev.expectedCmds[Fail]
+	if exists && len(expFail) > 0 {
+		if !expFail[0].CheckMatch(actual.Error()) {
+			return fmt.Errorf("expected error matching %q evaluating query %q (line %d), but got: %s", expFail[0].String(), ev.expr, ev.line, actual.Error())
 		}
 	}
 
@@ -1131,29 +1330,21 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	if err != nil {
 		return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
+	defer q.Close()
 	res := q.Exec(t.context)
 	if res.Err != nil {
-		if cmd.fail {
+		if cmd.isFail() {
 			return cmd.checkExpectedFailure(res.Err)
 		}
 
 		return fmt.Errorf("error evaluating query %q (line %d): %w", cmd.expr, cmd.line, res.Err)
 	}
-	if res.Err == nil && cmd.fail {
+	if res.Err == nil && cmd.isFail() {
 		return fmt.Errorf("expected error evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
 	}
-	countWarnings, countInfo := res.Warnings.CountWarningsAndInfo()
-	switch {
-	case !cmd.warn && countWarnings > 0:
-		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", cmd.expr, cmd.line, res.Warnings)
-	case cmd.warn && countWarnings == 0:
-		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
-	case !cmd.info && countInfo > 0:
-		return fmt.Errorf("unexpected info annotations evaluating query %q (line %d): %v", cmd.expr, cmd.line, res.Warnings)
-	case cmd.info && countInfo == 0:
-		return fmt.Errorf("expected info annotations evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
+	if err := cmd.checkAnnotations(cmd.expr, res.Warnings); err != nil {
+		return err
 	}
-	defer q.Close()
 
 	if err := cmd.compareResult(res.Value); err != nil {
 		return fmt.Errorf("error in %s %s (line %d): %w", cmd, cmd.expr, cmd.line, err)
@@ -1184,7 +1375,7 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 	defer q.Close()
 	res := q.Exec(t.context)
 	if res.Err != nil {
-		if cmd.fail {
+		if cmd.isFail() {
 			if err := cmd.checkExpectedFailure(res.Err); err != nil {
 				return err
 			}
@@ -1193,19 +1384,11 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 		}
 		return fmt.Errorf("error evaluating query %q (line %d): %w", iq.expr, cmd.line, res.Err)
 	}
-	if res.Err == nil && cmd.fail {
+	if res.Err == nil && cmd.isFail() {
 		return fmt.Errorf("expected error evaluating query %q (line %d) but got none", iq.expr, cmd.line)
 	}
-	countWarnings, countInfo := res.Warnings.CountWarningsAndInfo()
-	switch {
-	case !cmd.warn && countWarnings > 0:
-		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", iq.expr, cmd.line, res.Warnings)
-	case cmd.warn && countWarnings == 0:
-		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", iq.expr, cmd.line)
-	case !cmd.info && countInfo > 0:
-		return fmt.Errorf("unexpected info annotations evaluating query %q (line %d): %v", iq.expr, cmd.line, res.Warnings)
-	case cmd.info && countInfo == 0:
-		return fmt.Errorf("expected info annotations evaluating query %q (line %d) but got none", iq.expr, cmd.line)
+	if err := cmd.checkAnnotations(iq.expr, res.Warnings); err != nil {
+		return err
 	}
 	err = cmd.compareResult(res.Value)
 	if err != nil {
@@ -1218,12 +1401,12 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 	if err != nil {
 		return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
+	defer q.Close()
 	rangeRes := q.Exec(t.context)
 	if rangeRes.Err != nil {
 		return fmt.Errorf("error evaluating query %q (line %d) in range mode: %w", iq.expr, cmd.line, rangeRes.Err)
 	}
-	defer q.Close()
-	if cmd.ordered {
+	if cmd.isOrdered() {
 		// Range queries are always sorted by labels, so skip this test case that expects results in a particular order.
 		return nil
 	}
@@ -1322,6 +1505,9 @@ type LazyLoaderOpts struct {
 	// Prometheus v2.33). They can still be disabled here for legacy and
 	// other uses.
 	EnableAtModifier, EnableNegativeOffset bool
+	// Currently defaults to false, matches the "promql-delayed-name-removal"
+	// feature flag.
+	EnableDelayedNameRemoval bool
 }
 
 // NewLazyLoader returns an initialized empty LazyLoader.
@@ -1384,7 +1570,7 @@ func (ll *LazyLoader) clear() error {
 		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(ll.SubqueryInterval) },
 		EnableAtModifier:         ll.opts.EnableAtModifier,
 		EnableNegativeOffset:     ll.opts.EnableNegativeOffset,
-		EnableDelayedNameRemoval: true,
+		EnableDelayedNameRemoval: ll.opts.EnableDelayedNameRemoval,
 	}
 
 	ll.queryEngine = promql.NewEngine(opts)
@@ -1416,8 +1602,8 @@ func (ll *LazyLoader) appendTill(ts int64) error {
 
 // WithSamplesTill loads the samples till given timestamp and executes the given function.
 func (ll *LazyLoader) WithSamplesTill(ts time.Time, fn func(error)) {
-	tsMilli := ts.Sub(time.Unix(0, 0).UTC()) / time.Millisecond
-	fn(ll.appendTill(int64(tsMilli)))
+	till := ts.Sub(time.Unix(0, 0).UTC()) / time.Millisecond
+	fn(ll.appendTill(int64(till)))
 }
 
 // QueryEngine returns the LazyLoader's query engine.
