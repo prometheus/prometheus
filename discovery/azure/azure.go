@@ -188,11 +188,11 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // Validate validates config values provided.
 func (c *AzureCloudConfig) Validate() error {
 	if c.Name != azureCustom {
-		return fmt.Errorf("cannot provide cloud name other than AzureCustom in the Azure cloud config")
+		return errors.New("cannot provide cloud name other than AzureCustom in the Azure cloud config")
 	}
 
 	if c.AadEndpoint == "" || c.ArmTokenAudience == "" || c.ArmEndpoint == "" {
-		return fmt.Errorf("must provide all of AAD Endpoint, ARM Token Audience, and ARM Endpoint when using AzureCustom cloud")
+		return errors.New("must provide all of AAD Endpoint, ARM Token Audience, and ARM Endpoint when using AzureCustom cloud")
 	}
 
 	environments["AZURECUSTOM"] = cloud.Configuration{

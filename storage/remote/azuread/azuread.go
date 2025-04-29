@@ -16,7 +16,6 @@ package azuread
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -191,11 +190,11 @@ func (c *AzureADConfig) Validate() error {
 // Validate validates config values provided.
 func (c *AzureADCloudConfig) Validate() error {
 	if c.Name != AzureCustom {
-		return fmt.Errorf("cannot provide cloud name other than AzureCustom in the Azure AD cloud config")
+		return errors.New("cannot provide cloud name other than AzureCustom in the Azure AD cloud config")
 	}
 
 	if (c.AadEndpoint != "" && c.TokenAudience == "") || (c.AadEndpoint == "" && c.TokenAudience != "") {
-		return fmt.Errorf("must provide both AAD Endpoint and Token Audience when either are provided in the Azure AD cloud config")
+		return errors.New("must provide both AAD Endpoint and Token Audience when either are provided in the Azure AD cloud config")
 	}
 
 	return nil
