@@ -556,12 +556,12 @@ func (p *ProtobufParser) onSeriesOrHistogramUpdate() error {
 
 	if p.enableTypeAndUnitLabels {
 		_, typ := p.Type()
-		p.builder.AddMetricIdentity(labels.MetricDescriptor{
+		p.builder.AddMetricDescriptor(labels.MetricDescriptor{
 			Name: p.getMagicName(),
 			Type: typ,
 			Unit: p.dec.GetUnit(),
 		})
-		if err := p.dec.Label(labels.IgnoreIdentityLabelsScratchBuilder{ScratchBuilder: &p.builder}); err != nil {
+		if err := p.dec.Label(labels.IgnoreMetricDescriptorLabelsScratchBuilder{ScratchBuilder: &p.builder}); err != nil {
 			return err
 		}
 	} else {
