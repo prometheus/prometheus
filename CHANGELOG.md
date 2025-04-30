@@ -7,7 +7,7 @@
 * [FEATURE] OTLP translate: Add option to receive OTLP metrics without translating names or attributes. #16441
 * [FEATURE] PromQL: allow arithmetic operations in durations in PromQL parser. #16249
 * [FEATURE] OTLP receiver: Add primitive support for ingesting OTLP delta metrics as-is. #16360
-* [ENHANCEMENT] promql: histogram_fraction for bucket histograms. #16095
+* [ENHANCEMENT] PromQL: histogram_fraction for bucket histograms. #16095
 * [ENHANCEMENT] TSDB: add `prometheus_tsdb_wal_replay_unknown_refs_total` and `prometheus_tsdb_wbl_replay_unknown_refs_total` metrics to track unknown series references during WAL/WBL replay. #16166
 * [ENHANCEMENT] Scraping: Add config option for escaping scheme request. #16066
 * [ENHANCEMENT] Config: Add global config option for convert_classic_histograms_to_nhcb. #16226
@@ -15,12 +15,11 @@
 * [PERF] Kubernetes SD: make endpointSlice discovery more efficient. #16433
 * [BUGFIX] Config: Fix auto-reload on changes to rule and scrape config files. #16340
 * [BUGFIX] Scraping: Skip native histogram series if ingestion is disabled. #16218
-* [BUGFIX] PromQL: return NaN from `irate()` if second-last sample is NaN. #16199
 * [BUGFIX] TSDB: Handle metadata/tombstones/exemplars for duplicate series during WAL replay. #16231
-* [BUGFIX] TSDB: don't process exemplars older than minValidTime during WAL replay. #16242
-* [BUGFIX] promtool: Add feature flags for promql features. #16443
+* [BUGFIX] TSDB: Avoid processing exemplars outside the valid time range during WAL replay. #16242
+* [BUGFIX] Promtool: Add feature flags for PromQL features. #16443
 * [BUGFIX] Rules: correct logging of alert name & template data. #15093
-* [BUGFIX] PromQL: histogram_stddev and histogram_stdvar should use arithmetic mean. #16444
+* [BUGFIX] PromQL: Use arithmetic mean for `histogram_stddev()` and `histogram_stdvar()` . #16444
 
 ## 3.3.0 / 2025-04-15
 
