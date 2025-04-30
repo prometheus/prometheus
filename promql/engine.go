@@ -2778,7 +2778,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 
 	if shouldDropMetricIdentity(op) {
 		// Setting to empty fields will cause the deletion of those.
-		enh.lb.SetMetricIdentity(labels.MetricDescriptor{})
+		enh.lb.SetMetricDescriptor(labels.MetricDescriptor{})
 	}
 
 	if matching.Card == parser.CardOneToOne {
