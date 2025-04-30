@@ -20,6 +20,7 @@ import (
 	"math"
 	"os"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
@@ -1008,11 +1009,8 @@ func TestMetricsUpdate(t *testing.T) {
 		var metrics int
 		for _, m := range ms {
 			s := m.GetName()
-			for _, n := range metricNames {
-				if s == n {
-					metrics += len(m.Metric)
-					break
-				}
+			if slices.Contains(metricNames, s) {
+				metrics += len(m.Metric)
 			}
 		}
 		return metrics
