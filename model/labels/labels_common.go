@@ -38,9 +38,8 @@ const (
 	//	// Builder.SetMetricDescriptor and ScratchBuilder.AddMetricDescriptor for access.
 	metricUnit = "__unit__"
 
-	AlertName   = "alertname"
-	BucketLabel = "le"
-	// TODO(bwplotka): Not used variable, and easy to replace upstream, should we remove?
+	AlertName    = "alertname"
+	BucketLabel  = "le"
 	InstanceName = "instance"
 
 	labelSep = '\xfe' // Used at beginning of `Bytes` return.
