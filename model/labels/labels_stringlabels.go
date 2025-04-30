@@ -51,8 +51,8 @@ func decodeString(data string, index int) (string, int) {
 	return data[index : index+size], index + size
 }
 
-// Bytes returns ls as a byte slice.
-// It uses non-printing characters and so should not be used for printing.
+// Bytes returns an opaque, not-human-readable, encoding of ls, usable as a map key.
+// Encoding may change over time or between runs of Prometheus.
 func (ls Labels) Bytes(buf []byte) []byte {
 	if cap(buf) < len(ls.data) {
 		buf = make([]byte, len(ls.data))
