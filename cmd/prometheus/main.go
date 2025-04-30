@@ -584,7 +584,7 @@ func main() {
 	cfg.web.NotificationsGetter = notifs.Get
 	notifs.AddNotification(notifications.StartingUp)
 
-	if err := cfg.setFeatureListOptions(logger); err != nil {
+	if err = cfg.setFeatureListOptions(logger); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing feature list: %s\n", err)
 		os.Exit(1)
 	}
@@ -633,7 +633,7 @@ func main() {
 	}
 	// Get scrape configs to validate dynamically loaded scrape_config_files.
 	// They can change over time, but do the extra validation on startup for better experience.
-	if _, err := cfgFile.GetScrapeConfigs(); err != nil {
+	if _, err = cfgFile.GetScrapeConfigs(); err != nil {
 		absPath, pathErr := filepath.Abs(cfg.configFile)
 		if pathErr != nil {
 			absPath = cfg.configFile
@@ -805,13 +805,13 @@ func main() {
 		l := func(format string, a ...interface{}) {
 			logger.Info(fmt.Sprintf(strings.TrimPrefix(format, "maxprocs: "), a...), "component", "automaxprocs")
 		}
-		if _, err := maxprocs.Set(maxprocs.Logger(l)); err != nil {
+		if _, err = maxprocs.Set(maxprocs.Logger(l)); err != nil {
 			logger.Warn("Failed to set GOMAXPROCS automatically", "component", "automaxprocs", "err", err)
 		}
 	}
 
 	if cfg.memlimitEnable {
-		if _, err := memlimit.SetGoMemLimitWithOpts(
+		if _, err = memlimit.SetGoMemLimitWithOpts(
 			memlimit.WithRatio(cfg.memlimitRatio),
 			memlimit.WithProvider(
 				memlimit.ApplyFallback(
