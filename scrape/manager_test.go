@@ -970,7 +970,7 @@ func TestManagerCTZeroIngestionHistogram(t *testing.T) {
 					fail := true
 					once.Do(func() {
 						fail = false
-						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricDescriptor; encoding=delimited`)
+						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
 
 						ctrType := dto.MetricType_HISTOGRAM
 						w.Write(protoMarshalDelimited(t, &dto.MetricFamily{
