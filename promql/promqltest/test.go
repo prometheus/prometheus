@@ -58,6 +58,7 @@ const (
 )
 
 func init() {
+	//nolint:staticcheck
 	model.NameValidationScheme = model.UTF8Validation
 }
 

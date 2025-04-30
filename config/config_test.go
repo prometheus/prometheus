@@ -64,6 +64,7 @@ import (
 
 func init() {
 	// This can be removed when the default validation scheme in common is updated.
+	//nolint:staticcheck
 	model.NameValidationScheme = model.UTF8Validation
 }
 
@@ -2181,8 +2182,10 @@ var expectedErrors = []struct {
 }
 
 func TestBadConfigs(t *testing.T) {
+	//nolint:staticcheck
 	model.NameValidationScheme = model.LegacyValidation
 	defer func() {
+		//nolint:staticcheck
 		model.NameValidationScheme = model.UTF8Validation
 	}()
 	for _, ee := range expectedErrors {
@@ -2193,8 +2196,10 @@ func TestBadConfigs(t *testing.T) {
 }
 
 func TestBadStaticConfigsJSON(t *testing.T) {
+	//nolint:staticcheck
 	model.NameValidationScheme = model.LegacyValidation
 	defer func() {
+		//nolint:staticcheck
 		model.NameValidationScheme = model.UTF8Validation
 	}()
 	content, err := os.ReadFile("testdata/static_config.bad.json")
@@ -2205,8 +2210,10 @@ func TestBadStaticConfigsJSON(t *testing.T) {
 }
 
 func TestBadStaticConfigsYML(t *testing.T) {
+	//nolint:staticcheck
 	model.NameValidationScheme = model.LegacyValidation
 	defer func() {
+		//nolint:staticcheck
 		model.NameValidationScheme = model.UTF8Validation
 	}()
 	content, err := os.ReadFile("testdata/static_config.bad.yml")
@@ -2453,8 +2460,10 @@ func TestScrapeConfigDisableCompression(t *testing.T) {
 }
 
 func TestScrapeConfigNameValidationSettings(t *testing.T) {
+	//nolint:staticcheck
 	model.NameValidationScheme = model.UTF8Validation
 	defer func() {
+		//nolint:staticcheck
 		model.NameValidationScheme = model.LegacyValidation
 	}()
 

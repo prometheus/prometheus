@@ -64,6 +64,7 @@ import (
 
 func init() {
 	// This can be removed when the default validation scheme in common is updated.
+	//nolint:staticcheck
 	model.NameValidationScheme = model.UTF8Validation
 }
 

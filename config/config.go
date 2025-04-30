@@ -840,6 +840,7 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	switch globalConfig.MetricNameValidationScheme {
 	case LegacyValidationConfig:
 	case "", UTF8ValidationConfig:
+		//nolint:staticcheck
 		if model.NameValidationScheme != model.UTF8Validation {
 			panic("utf8 name validation requested but model.NameValidationScheme is not set to UTF8")
 		}

@@ -352,6 +352,7 @@ func TestLabels_ValidationModes(t *testing.T) {
 			expected:   false,
 		},
 	} {
+		//nolint:staticcheck
 		model.NameValidationScheme = test.globalMode
 		require.Equal(t, test.expected, test.input.IsValid(test.callMode))
 	}

@@ -469,9 +469,12 @@ foobar{quantile="0.99"} 150.1`
 }
 
 func TestUTF8OpenMetricsParse(t *testing.T) {
+	//nolint:staticcheck
 	oldValidationScheme := model.NameValidationScheme
+	//nolint:staticcheck
 	model.NameValidationScheme = model.UTF8Validation
 	defer func() {
+		//nolint:staticcheck
 		model.NameValidationScheme = oldValidationScheme
 	}()
 

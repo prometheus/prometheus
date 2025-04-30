@@ -205,9 +205,12 @@ testmetric{le="10"} 1`
 }
 
 func TestUTF8PromParse(t *testing.T) {
+	//nolint:staticcheck
 	oldValidationScheme := model.NameValidationScheme
+	//nolint:staticcheck
 	model.NameValidationScheme = model.UTF8Validation
 	defer func() {
+		//nolint:staticcheck
 		model.NameValidationScheme = oldValidationScheme
 	}()
 
