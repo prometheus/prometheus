@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1109,13 +1110,11 @@ func (v *AlertmanagerAPIVersion) UnmarshalYAML(unmarshal func(interface{}) error
 		return err
 	}
 
-	for _, supportedVersion := range SupportedAlertmanagerAPIVersions {
-		if *v == supportedVersion {
-			return nil
-		}
+	if !slices.Contains(SupportedAlertmanagerAPIVersions, *v) {
+		return fmt.Errorf("expected Alertmanager api version to be one of %v but got %v", SupportedAlertmanagerAPIVersions, *v)
 	}
 
-	return fmt.Errorf("expected Alertmanager api version to be one of %v but got %v", SupportedAlertmanagerAPIVersions, *v)
+	return nil
 }
 
 const (

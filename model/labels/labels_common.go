@@ -167,10 +167,8 @@ func (b *Builder) Del(ns ...string) *Builder {
 // Keep removes all labels from the base except those with the given names.
 func (b *Builder) Keep(ns ...string) *Builder {
 	b.base.Range(func(l Label) {
-		for _, n := range ns {
-			if l.Name == n {
-				return
-			}
+		if slices.Contains(ns, l.Name) {
+			return
 		}
 		b.del = append(b.del, l.Name)
 	})

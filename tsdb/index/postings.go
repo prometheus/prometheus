@@ -599,10 +599,8 @@ func Intersect(its ...Postings) Postings {
 	if len(its) == 1 {
 		return its[0]
 	}
-	for _, p := range its {
-		if p == EmptyPostings() {
-			return EmptyPostings()
-		}
+	if slices.Contains(its, EmptyPostings()) {
+		return EmptyPostings()
 	}
 
 	return newIntersectPostings(its...)

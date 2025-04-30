@@ -30,6 +30,7 @@ import (
 	goregexp "regexp" //nolint:depguard // The Prometheus client library requires us to pass a regexp from this package.
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1921,10 +1922,8 @@ func (p *rwProtoMsgFlagParser) Set(opt string) error {
 	if err := t.Validate(); err != nil {
 		return err
 	}
-	for _, prev := range *p.msgs {
-		if prev == t {
-			return fmt.Errorf("duplicated %v flag value, got %v already", t, *p.msgs)
-		}
+	if slices.Contains(*p.msgs, t) {
+		return fmt.Errorf("duplicated %v flag value, got %v already", t, *p.msgs)
 	}
 	*p.msgs = append(*p.msgs, t)
 	return nil

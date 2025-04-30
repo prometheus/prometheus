@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -210,18 +211,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		if _, ok := allowedSelectors[c.Role]; !ok {
 			return fmt.Errorf("invalid role: %q, expecting one of: pod, service, endpoints, endpointslice, node or ingress", c.Role)
 		}
-		var allowed bool
-		for _, role := range allowedSelectors[c.Role] {
-			if role == string(selector.Role) {
-				allowed = true
-				break
-			}
-		}
-
-		if !allowed {
+		if !slices.Contains(allowedSelectors[c.Role], string(selector.Role)) {
 			return fmt.Errorf("%s role supports only %s selectors", c.Role, strings.Join(allowedSelectors[c.Role], ", "))
 		}
-
 		_, err := fields.ParseSelector(selector.Field)
 		if err != nil {
 			return err
