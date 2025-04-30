@@ -27,6 +27,8 @@ import (
 )
 
 func TestLabels_String(t *testing.T) {
+	s254 := strings.Repeat("x", 254) // Edge cases for stringlabels encoding.
+	s255 := strings.Repeat("x", 255)
 	cases := []struct {
 		labels   Labels
 		expected string
@@ -42,6 +44,14 @@ func TestLabels_String(t *testing.T) {
 		{
 			labels:   FromStrings("service.name", "t1", "whatever\\whatever", "t2"),
 			expected: `{"service.name"="t1", "whatever\\whatever"="t2"}`,
+		},
+		{
+			labels:   FromStrings("aaa", "111", "xx", s254),
+			expected: `{aaa="111", xx="` + s254 + `"}`,
+		},
+		{
+			labels:   FromStrings("aaa", "111", "xx", s255),
+			expected: `{aaa="111", xx="` + s255 + `"}`,
 		},
 	}
 	for _, c := range cases {
