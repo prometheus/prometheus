@@ -576,14 +576,14 @@ func (ls Labels) DropMetricName() Labels {
 }
 
 // DropMetricDescriptorLabels is like DropMetricName but drops all parts of MetricDescriptor.
-func (ls Labels) DropMetricIdentity() Labels {
+func (ls Labels) DropMetricDescriptorLabels() Labels {
 	for i := 0; i < len(ls.data); {
 		lName, i2 := decodeString(ls.syms, ls.data, i)
 		_, i2 = decodeVarint(ls.data, i2)
 		if lName[0] > '_' { // Stop looking if we've gone past special labels.
 			break
 		}
-		if IsMetricIdentityLabel(lName) {
+		if IsMetricDescriptorLabel(lName) {
 			if i == 0 { // Make common case fast with no allocations.
 				ls.data = ls.data[i2:]
 			} else {
