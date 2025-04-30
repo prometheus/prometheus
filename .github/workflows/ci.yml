@@ -4,6 +4,9 @@ on:
   pull_request:
   push:
 
+permissions:
+  contents: read
+
 jobs:
   test_go:
     name: Go tests
@@ -14,6 +17,8 @@ jobs:
       image: quay.io/prometheus/golang-builder:1.24-base
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - uses: prometheus/promci@443c7fc2397e946bc9f5029e313a9c3441b9b86d # v0.4.7
       - uses: ./.github/promci/actions/setup_environment
         with:
@@ -30,6 +35,8 @@ jobs:
       image: quay.io/prometheus/golang-builder:1.24-base
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - uses: prometheus/promci@443c7fc2397e946bc9f5029e313a9c3441b9b86d # v0.4.7
       - uses: ./.github/promci/actions/setup_environment
       - run: go test --tags=dedupelabels ./...
@@ -49,6 +56,8 @@ jobs:
       image: quay.io/prometheus/golang-builder:1.23-base
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - run: make build
       # Don't run NPM build; don't run race-detector.
       - run: make test GO_ONLY=1 test-flags=""
@@ -63,6 +72,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - uses: prometheus/promci@443c7fc2397e946bc9f5029e313a9c3441b9b86d # v0.4.7
       - uses: ./.github/promci/actions/setup_environment
         with:
@@ -80,6 +91,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
         with:
           go-version: 1.24.x
@@ -97,6 +110,8 @@ jobs:
       image: quay.io/prometheus/golang-builder:1.24-base
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - run: go install ./cmd/promtool/.
       - run: go install github.com/google/go-jsonnet/cmd/jsonnet@latest
       - run: go install github.com/google/go-jsonnet/cmd/jsonnetfmt@latest
@@ -122,6 +137,8 @@ jobs:
         thread: [ 0, 1, 2 ]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - uses: prometheus/promci@443c7fc2397e946bc9f5029e313a9c3441b9b86d # v0.4.7
       - uses: ./.github/promci/actions/build
         with:
@@ -147,6 +164,8 @@ jobs:
     # should also be updated.
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - uses: prometheus/promci@443c7fc2397e946bc9f5029e313a9c3441b9b86d # v0.4.7
       - uses: ./.github/promci/actions/build
         with:
@@ -179,8 +198,9 @@ jobs:
     name: Check generated parser
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - name: Install Go
         uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
         with:
@@ -192,10 +212,10 @@ jobs:
     name: golangci-lint
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Install Go
-        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
         with:
           go-version: 1.24.x
       - name: Install snmp_exporter/generator dependencies
@@ -220,6 +240,8 @@ jobs:
     if: github.event_name == 'push' && github.event.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - uses: prometheus/promci@443c7fc2397e946bc9f5029e313a9c3441b9b86d # v0.4.7
       - uses: ./.github/promci/actions/publish_main
         with:
@@ -237,6 +259,8 @@ jobs:
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - uses: prometheus/promci@443c7fc2397e946bc9f5029e313a9c3441b9b86d # v0.4.7
       - uses: ./.github/promci/actions/publish_release
         with:
@@ -250,8 +274,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test_ui, codeql]
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - uses: prometheus/promci@443c7fc2397e946bc9f5029e313a9c3441b9b86d # v0.4.7
       - name: Install nodejs
         uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
@@ -269,7 +294,9 @@ jobs:
           (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
           ||
           (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
-        run: ./scripts/ui_release.sh --check-package "$(./scripts/get_module_version.sh ${{ github.ref_name }})"
+        run: ./scripts/ui_release.sh --check-package "$(./scripts/get_module_version.sh ${GH_REF_NAME})"
+        env:
+          GH_REF_NAME: ${{ github.ref_name }}
       - name: build
         run: make assets
       - name: Copy files before publishing libs
