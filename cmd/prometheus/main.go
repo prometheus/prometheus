@@ -671,6 +671,7 @@ func main() {
 					memlimit.FromSystem,
 				),
 			),
+			memlimit.WithLogger(logger.With("component", "automemlimit")),
 		); err != nil {
 			logger.Warn("automemlimit", "msg", "Failed to set GOMEMLIMIT automatically", "err", err)
 		}
