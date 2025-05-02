@@ -9,10 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var anError = errors.New("test error")
-
 func TestMultiError_Is(t *testing.T) {
-	customErr := fmt.Errorf("my error")
+	customErr1 := errors.New("test error 1")
+	customErr2 := fmt.Errorf("test error 2")
 
 	testCases := map[string]struct {
 		sourceErrors []error
@@ -54,33 +53,33 @@ func TestMultiError_Is(t *testing.T) {
 			target:       nil,
 			is:           true,
 		},
-		"nested multi-error contains anError": {
+		"nested multi-error contains customErr1": {
 			sourceErrors: []error{
-				anError,
+				customErr1,
 				NewMulti(
-					customErr,
+					customErr2,
 					fmt.Errorf("wrapped %w", context.Canceled),
 				).Err(),
 			},
-			target: anError,
+			target: customErr1,
 			is:     true,
 		},
 		"nested multi-error contains custom error": {
 			sourceErrors: []error{
-				anError,
+				customErr1,
 				NewMulti(
-					customErr,
+					customErr2,
 					fmt.Errorf("wrapped %w", context.Canceled),
 				).Err(),
 			},
-			target: customErr,
+			target: customErr2,
 			is:     true,
 		},
 		"nested multi-error contains wrapped context.Canceled": {
 			sourceErrors: []error{
-				anError,
+				customErr1,
 				NewMulti(
-					customErr,
+					customErr2,
 					fmt.Errorf("wrapped %w", context.Canceled),
 				).Err(),
 			},
@@ -89,9 +88,9 @@ func TestMultiError_Is(t *testing.T) {
 		},
 		"nested multi-error does not contain context.DeadlineExceeded": {
 			sourceErrors: []error{
-				anError,
+				customErr1,
 				NewMulti(
-					customErr,
+					customErr2,
 					fmt.Errorf("wrapped %w", context.Canceled),
 				).Err(),
 			},
