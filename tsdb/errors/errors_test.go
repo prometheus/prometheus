@@ -24,7 +24,7 @@ import (
 
 func TestMultiError_Is(t *testing.T) {
 	customErr1 := errors.New("test error 1")
-	customErr2 := fmt.Errorf("test error 2")
+	customErr2 := errors.New("test error 2")
 
 	testCases := map[string]struct {
 		sourceErrors []error
