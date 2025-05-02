@@ -225,6 +225,7 @@ func TestReadClient(t *testing.T) {
 		expectedSamples       [][]model.SamplePair
 		expectedErrorContains string
 		sortSeries            bool
+		unwrap                bool
 	}{
 		{
 			name:        "sorted sampled response",
@@ -336,6 +337,14 @@ func TestReadClient(t *testing.T) {
 			timeout:               5 * time.Millisecond,
 			expectedErrorContains: "context deadline exceeded: request timed out after 5ms",
 		},
+		{
+			name: "unwrap error",
+			httpHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "test error", http.StatusBadRequest)
+			}),
+			expectedErrorContains: "test error",
+			unwrap:                true,
+		},
 	}
 
 	for _, test := range tests {
@@ -366,6 +375,10 @@ func TestReadClient(t *testing.T) {
 			ss, err := c.Read(context.Background(), query, test.sortSeries)
 			if test.expectedErrorContains != "" {
 				require.ErrorContains(t, err, test.expectedErrorContains)
+				if test.unwrap {
+					err = errors.Unwrap(err)
+					require.EqualError(t, err, test.expectedErrorContains)
+				}
 				return
 			}
 

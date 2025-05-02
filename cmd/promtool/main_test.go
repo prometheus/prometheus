@@ -558,6 +558,16 @@ func TestCheckRules(t *testing.T) {
 	})
 }
 
+func TestCheckRulesWithFeatureFlag(t *testing.T) {
+	// As opposed to TestCheckRules calling CheckRules directly we run promtool
+	// so the feature flag parsing can be tested.
+
+	args := []string{"-test.main", "--enable-feature=promql-experimental-functions", "check", "rules", "testdata/features.yml"}
+	tool := exec.Command(promtoolPath, args...)
+	err := tool.Run()
+	require.NoError(t, err)
+}
+
 func TestCheckRulesWithRuleFiles(t *testing.T) {
 	t.Run("rules-good", func(t *testing.T) {
 		t.Parallel()

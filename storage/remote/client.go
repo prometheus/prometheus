@@ -384,7 +384,9 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 		_ = httpResp.Body.Close()
 
 		cancel()
-		return nil, fmt.Errorf("remote server %s returned http status %s: %s", c.urlString, httpResp.Status, string(body))
+		errStr := strings.Trim(string(body), "\n")
+		err := errors.New(errStr)
+		return nil, fmt.Errorf("remote server %s returned http status %s: %w", c.urlString, httpResp.Status, err)
 	}
 
 	contentType := httpResp.Header.Get("Content-Type")
