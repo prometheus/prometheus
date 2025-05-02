@@ -142,10 +142,10 @@ func TestMultiError_As(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			mErr := NewMulti(testCase.sourceErrors...).Err()
 			if testCase.as {
-				require.True(t, errors.As(mErr, &target))
+				require.ErrorAs(t, mErr, &target)
 				require.Equal(t, testCase.target, target)
 			} else {
-				require.False(t, errors.As(mErr, &target))
+				require.NotErrorAs(t, mErr, &target)
 			}
 		})
 	}
