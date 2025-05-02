@@ -480,15 +480,15 @@ func TestEndpoints(t *testing.T) {
 		u, err := url.Parse(server.URL)
 		require.NoError(t, err)
 
-		al := promslog.AllowedLevel{}
+		al := promslog.NewLevel()
 		require.NoError(t, al.Set("debug"))
 
-		af := promslog.AllowedFormat{}
+		af := promslog.NewFormat()
 		require.NoError(t, af.Set("logfmt"))
 
 		promslogConfig := promslog.Config{
-			Level:  &al,
-			Format: &af,
+			Level:  al,
+			Format: af,
 		}
 
 		dbDir := t.TempDir()
@@ -3706,6 +3706,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						ctx = route.WithParam(ctx, p, v)
 					}
 
+					//nolint:staticcheck
 					model.NameValidationScheme = test.nameValidationScheme
 
 					req, err := request(method, test.query)

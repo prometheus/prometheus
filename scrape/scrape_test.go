@@ -1325,6 +1325,7 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 }
 
 func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
+	//nolint:staticcheck
 	model.NameValidationScheme = model.LegacyValidation
 	s := teststorage.New(t)
 	defer s.Close()
@@ -1357,8 +1358,10 @@ func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 func TestScrapeLoopFailLegacyUnderUTF8(t *testing.T) {
 	// Test that scrapes fail when default validation is utf8 but scrape config is
 	// legacy.
+	//nolint:staticcheck
 	model.NameValidationScheme = model.UTF8Validation
 	defer func() {
+		//nolint:staticcheck
 		model.NameValidationScheme = model.LegacyValidation
 	}()
 	s := teststorage.New(t)
@@ -3885,7 +3888,9 @@ func TestScrapeReportLimit(t *testing.T) {
 func TestScrapeUTF8(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
+	//nolint:staticcheck
 	model.NameValidationScheme = model.UTF8Validation
+	//nolint:staticcheck
 	t.Cleanup(func() { model.NameValidationScheme = model.LegacyValidation })
 
 	cfg := &config.ScrapeConfig{

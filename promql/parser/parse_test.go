@@ -3970,6 +3970,7 @@ func TestParseExpressions(t *testing.T) {
 		EnableExperimentalFunctions = false
 	})
 
+	//nolint:staticcheck
 	model.NameValidationScheme = model.UTF8Validation
 	for _, test := range testExpr {
 		t.Run(readable(test.input), func(t *testing.T) {

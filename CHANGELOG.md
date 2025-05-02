@@ -2,6 +2,11 @@
 
 ## unreleased
 
+## 3.3.1 / 2025-05-02
+
+* [BUGFIX] Azure SD: Fix panic on malformed log message. #16434 #16210
+* [BUGFIX] Config: Update GOGC before loading TSDB. #16491
+
 ## 3.3.0 / 2025-04-15
 
 * [FEATURE] PromQL: Implement `idelta()` and `irate()` for native histograms. #15853

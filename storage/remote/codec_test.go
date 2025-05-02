@@ -165,9 +165,12 @@ func TestWriteV2RequestFixture(t *testing.T) {
 }
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
+	//nolint:staticcheck
 	oldScheme := model.NameValidationScheme
+	//nolint:staticcheck
 	model.NameValidationScheme = model.LegacyValidation
 	defer func() {
+		//nolint:staticcheck
 		model.NameValidationScheme = oldScheme
 	}()
 	tests := []struct {

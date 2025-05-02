@@ -45,7 +45,7 @@ func NewJSONFileLogger(s string) (*JSONFileLogger, error) {
 		return nil, fmt.Errorf("can't create json log file: %w", err)
 	}
 
-	jsonFmt := &promslog.AllowedFormat{}
+	jsonFmt := promslog.NewFormat()
 	_ = jsonFmt.Set("json")
 	return &JSONFileLogger{
 		handler: promslog.New(&promslog.Config{Format: jsonFmt, Writer: f}).Handler(),
