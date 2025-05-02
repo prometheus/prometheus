@@ -831,14 +831,14 @@ func compareOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 
 // === max_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return compareOverTime(vals, args, enh, func(cur float64, maxVal float64) bool {
+	return compareOverTime(vals, args, enh, func(cur, maxVal float64) bool {
 		return (cur > maxVal) || math.IsNaN(maxVal)
 	})
 }
 
 // === min_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return compareOverTime(vals, args, enh, func(cur float64, maxVal float64) bool {
+	return compareOverTime(vals, args, enh, func(cur, maxVal float64) bool {
 		return (cur < maxVal) || math.IsNaN(maxVal)
 	})
 }
