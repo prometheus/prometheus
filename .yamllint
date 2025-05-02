@@ -2,7 +2,7 @@
 extends: default
 ignore: |
   ui/react-app/node_modules
-
+  .tekton
 rules:
   braces:
     max-spaces-inside: 1

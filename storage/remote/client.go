@@ -14,9 +14,9 @@
 package remote
 
 import (
-	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -35,15 +35,47 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
+	"github.com/prometheus/prometheus/storage/remote/googleiam"
 )
 
-const maxErrMsgLen = 1024
+const (
+	maxErrMsgLen = 1024
 
-var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+	RemoteWriteVersionHeader        = "X-Prometheus-Remote-Write-Version"
+	RemoteWriteVersion1HeaderValue  = "0.1.0"
+	RemoteWriteVersion20HeaderValue = "2.0.0"
+	appProtoContentType             = "application/x-protobuf"
+)
+
+// Compression represents the encoding. Currently remote storage supports only
+// one, but we experiment with more, thus leaving the compression scaffolding
+// for now.
+// NOTE(bwplotka): Keeping it public, as a non-stable help for importers to use.
+type Compression string
+
+const (
+	// SnappyBlockCompression represents https://github.com/google/snappy/blob/2c94e11145f0b7b184b831577c93e5a41c4c0346/format_description.txt
+	SnappyBlockCompression Compression = "snappy"
+)
 
 var (
+	// UserAgent represents Prometheus version to use for user agent header.
+	UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+
+	remoteWriteContentTypeHeaders = map[config.RemoteWriteProtoMsg]string{
+		config.RemoteWriteProtoMsgV1: appProtoContentType, // Also application/x-protobuf;proto=prometheus.WriteRequest but simplified for compatibility with 1.x spec.
+		config.RemoteWriteProtoMsgV2: appProtoContentType + ";proto=io.prometheus.write.v2.Request",
+	}
+
+	AcceptedResponseTypes = []prompb.ReadRequest_ResponseType{
+		prompb.ReadRequest_STREAMED_XOR_CHUNKS,
+		prompb.ReadRequest_SAMPLES,
+	}
+
 	remoteReadQueriesTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
@@ -51,7 +83,7 @@ var (
 			Name:      "read_queries_total",
 			Help:      "The total number of remote read queries.",
 		},
-		[]string{remoteName, endpoint, "code"},
+		[]string{remoteName, endpoint, "response_type", "code"},
 	)
 	remoteReadQueries = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -67,13 +99,13 @@ var (
 			Namespace:                       namespace,
 			Subsystem:                       subsystem,
 			Name:                            "read_request_duration_seconds",
-			Help:                            "Histogram of the latency for remote read requests.",
+			Help:                            "Histogram of the latency for remote read requests. Note that for streamed responses this is only the duration of the initial call and does not include the processing of the stream.",
 			Buckets:                         append(prometheus.DefBuckets, 25, 60),
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 		},
-		[]string{remoteName, endpoint},
+		[]string{remoteName, endpoint, "response_type"},
 	)
 )
 
@@ -89,10 +121,14 @@ type Client struct {
 	timeout    time.Duration
 
 	retryOnRateLimit bool
+	chunkedReadLimit uint64
 
 	readQueries         prometheus.Gauge
 	readQueriesTotal    *prometheus.CounterVec
-	readQueriesDuration prometheus.Observer
+	readQueriesDuration prometheus.ObserverVec
+
+	writeProtoMsg    config.RemoteWriteProtoMsg
+	writeCompression Compression // Not exposed by ClientConfig for now.
 }
 
 // ClientConfig configures a client.
@@ -102,14 +138,17 @@ type ClientConfig struct {
 	HTTPClientConfig config_util.HTTPClientConfig
 	SigV4Config      *sigv4.SigV4Config
 	AzureADConfig    *azuread.AzureADConfig
+	GoogleIAMConfig  *googleiam.Config
 	Headers          map[string]string
 	RetryOnRateLimit bool
+	WriteProtoMsg    config.RemoteWriteProtoMsg
+	ChunkedReadLimit uint64
 }
 
-// ReadClient uses the SAMPLES method of remote read to read series samples from remote server.
-// TODO(bwplotka): Add streamed chunked remote read method as well (https://github.com/prometheus/prometheus/issues/5926).
+// ReadClient will request the STREAMED_XOR_CHUNKS method of remote read but can
+// also fall back to the SAMPLES method if necessary.
 type ReadClient interface {
-	Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error)
+	Read(ctx context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error)
 }
 
 // NewReadClient creates a new client for remote read.
@@ -130,9 +169,10 @@ func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
 		urlString:           conf.URL.String(),
 		Client:              httpClient,
 		timeout:             time.Duration(conf.Timeout),
+		chunkedReadLimit:    conf.ChunkedReadLimit,
 		readQueries:         remoteReadQueries.WithLabelValues(name, conf.URL.String()),
 		readQueriesTotal:    remoteReadQueriesTotal.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: conf.URL.String()}),
-		readQueriesDuration: remoteReadQueryDuration.WithLabelValues(name, conf.URL.String()),
+		readQueriesDuration: remoteReadQueryDuration.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: conf.URL.String()}),
 	}, nil
 }
 
@@ -162,14 +202,27 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 		}
 	}
 
-	httpClient.Transport = otelhttp.NewTransport(t)
+	if conf.GoogleIAMConfig != nil {
+		t, err = googleiam.NewRoundTripper(conf.GoogleIAMConfig, t)
+		if err != nil {
+			return nil, err
+		}
+	}
 
+	writeProtoMsg := config.RemoteWriteProtoMsgV1
+	if conf.WriteProtoMsg != "" {
+		writeProtoMsg = conf.WriteProtoMsg
+	}
+
+	httpClient.Transport = otelhttp.NewTransport(t)
 	return &Client{
 		remoteName:       name,
 		urlString:        conf.URL.String(),
 		Client:           httpClient,
 		retryOnRateLimit: conf.RetryOnRateLimit,
 		timeout:          time.Duration(conf.Timeout),
+		writeProtoMsg:    writeProtoMsg,
+		writeCompression: SnappyBlockCompression,
 	}, nil
 }
 
@@ -198,18 +251,24 @@ type RecoverableError struct {
 
 // Store sends a batch of samples to the HTTP endpoint, the request is the proto marshalled
 // and encoded bytes from codec.go.
-func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
+func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteResponseStats, error) {
 	httpReq, err := http.NewRequest(http.MethodPost, c.urlString, bytes.NewReader(req))
 	if err != nil {
 		// Errors from NewRequest are from unparsable URLs, so are not
 		// recoverable.
-		return err
+		return WriteResponseStats{}, err
 	}
 
-	httpReq.Header.Add("Content-Encoding", "snappy")
-	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	httpReq.Header.Add("Content-Encoding", string(c.writeCompression))
+	httpReq.Header.Set("Content-Type", remoteWriteContentTypeHeaders[c.writeProtoMsg])
 	httpReq.Header.Set("User-Agent", UserAgent)
-	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+	if c.writeProtoMsg == config.RemoteWriteProtoMsgV1 {
+		// Compatibility mode for 1.0.
+		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion1HeaderValue)
+	} else {
+		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+	}
+
 	if attempt > 0 {
 		httpReq.Header.Set("Retry-Attempt", strconv.Itoa(attempt))
 	}
@@ -224,26 +283,32 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 	if err != nil {
 		// Errors from Client.Do are from (for example) network errors, so are
 		// recoverable.
-		return RecoverableError{err, defaultBackoff}
+		return WriteResponseStats{}, RecoverableError{err, defaultBackoff}
 	}
 	defer func() {
-		io.Copy(io.Discard, httpResp.Body)
-		httpResp.Body.Close()
+		_, _ = io.Copy(io.Discard, httpResp.Body)
+		_ = httpResp.Body.Close()
 	}()
 
-	if httpResp.StatusCode/100 != 2 {
-		scanner := bufio.NewScanner(io.LimitReader(httpResp.Body, maxErrMsgLen))
-		line := ""
-		if scanner.Scan() {
-			line = scanner.Text()
-		}
-		err = fmt.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
+	// TODO(bwplotka): Pass logger and emit debug on error?
+	// Parsing error means there were some response header values we can't parse,
+	// we can continue handling.
+	rs, _ := ParseWriteResponseStats(httpResp)
+
+	if httpResp.StatusCode/100 == 2 {
+		return rs, nil
 	}
+
+	// Handling errors e.g. read potential error in the body.
+	// TODO(bwplotka): Pass logger and emit debug on error?
+	body, _ := io.ReadAll(io.LimitReader(httpResp.Body, maxErrMsgLen))
+	err = fmt.Errorf("server returned HTTP status %s: %s", httpResp.Status, body)
+
 	if httpResp.StatusCode/100 == 5 ||
 		(c.retryOnRateLimit && httpResp.StatusCode == http.StatusTooManyRequests) {
-		return RecoverableError{err, retryAfterDuration(httpResp.Header.Get("Retry-After"))}
+		return rs, RecoverableError{err, retryAfterDuration(httpResp.Header.Get("Retry-After"))}
 	}
-	return err
+	return rs, err
 }
 
 // retryAfterDuration returns the duration for the Retry-After header. In case of any errors, it
@@ -263,26 +328,26 @@ func retryAfterDuration(t string) model.Duration {
 }
 
 // Name uniquely identifies the client.
-func (c Client) Name() string {
+func (c *Client) Name() string {
 	return c.remoteName
 }
 
 // Endpoint is the remote read or write endpoint.
-func (c Client) Endpoint() string {
+func (c *Client) Endpoint() string {
 	return c.urlString
 }
 
-// Read reads from a remote endpoint.
-func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
+// Read reads from a remote endpoint. The sortSeries parameter is only respected in the case of a sampled response;
+// chunked responses arrive already sorted by the server.
+func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
 	c.readQueries.Inc()
 	defer c.readQueries.Dec()
 
 	req := &prompb.ReadRequest{
 		// TODO: Support batching multiple queries into one read request,
 		// as the protobuf interface allows for it.
-		Queries: []*prompb.Query{
-			query,
-		},
+		Queries:               []*prompb.Query{query},
+		AcceptedResponseTypes: AcceptedResponseTypes,
 	}
 	data, err := proto.Marshal(req)
 	if err != nil {
@@ -301,7 +366,6 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
 
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
-	defer cancel()
 
 	ctx, span := otel.Tracer("").Start(ctx, "Remote Read", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
@@ -309,23 +373,57 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	start := time.Now()
 	httpResp, err := c.Client.Do(httpReq.WithContext(ctx))
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("error sending request: %w", err)
-	}
-	defer func() {
-		io.Copy(io.Discard, httpResp.Body)
-		httpResp.Body.Close()
-	}()
-	c.readQueriesDuration.Observe(time.Since(start).Seconds())
-	c.readQueriesTotal.WithLabelValues(strconv.Itoa(httpResp.StatusCode)).Inc()
-
-	compressed, err = io.ReadAll(httpResp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error reading response. HTTP status code: %s: %w", httpResp.Status, err)
 	}
 
 	if httpResp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("remote server %s returned HTTP status %s: %s", c.urlString, httpResp.Status, strings.TrimSpace(string(compressed)))
+		// Make an attempt at getting an error message.
+		body, _ := io.ReadAll(httpResp.Body)
+		_ = httpResp.Body.Close()
+
+		cancel()
+		return nil, fmt.Errorf("remote server %s returned http status %s: %s", c.urlString, httpResp.Status, string(body))
 	}
+
+	contentType := httpResp.Header.Get("Content-Type")
+
+	switch {
+	case strings.HasPrefix(contentType, "application/x-protobuf"):
+		c.readQueriesDuration.WithLabelValues("sampled").Observe(time.Since(start).Seconds())
+		c.readQueriesTotal.WithLabelValues("sampled", strconv.Itoa(httpResp.StatusCode)).Inc()
+		ss, err := c.handleSampledResponse(req, httpResp, sortSeries)
+		cancel()
+		return ss, err
+	case strings.HasPrefix(contentType, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"):
+		c.readQueriesDuration.WithLabelValues("chunked").Observe(time.Since(start).Seconds())
+
+		s := NewChunkedReader(httpResp.Body, c.chunkedReadLimit, nil)
+		return NewChunkedSeriesSet(s, httpResp.Body, query.StartTimestampMs, query.EndTimestampMs, func(err error) {
+			code := strconv.Itoa(httpResp.StatusCode)
+			if !errors.Is(err, io.EOF) {
+				code = "aborted_stream"
+			}
+			c.readQueriesTotal.WithLabelValues("chunked", code).Inc()
+			cancel()
+		}), nil
+	default:
+		c.readQueriesDuration.WithLabelValues("unsupported").Observe(time.Since(start).Seconds())
+		c.readQueriesTotal.WithLabelValues("unsupported", strconv.Itoa(httpResp.StatusCode)).Inc()
+		cancel()
+		return nil, fmt.Errorf("unsupported content type: %s", contentType)
+	}
+}
+
+func (c *Client) handleSampledResponse(req *prompb.ReadRequest, httpResp *http.Response, sortSeries bool) (storage.SeriesSet, error) {
+	compressed, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response. HTTP status code: %s: %w", httpResp.Status, err)
+	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, httpResp.Body)
+		_ = httpResp.Body.Close()
+	}()
 
 	uncompressed, err := snappy.Decode(nil, compressed)
 	if err != nil {
@@ -342,5 +440,8 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 		return nil, fmt.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
 	}
 
-	return resp.Results[0], nil
+	// This client does not batch queries so there's always only 1 result.
+	res := resp.Results[0]
+
+	return FromQueryResult(sortSeries, res), nil
 }

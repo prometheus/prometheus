@@ -2,7 +2,7 @@ name: buf.build
 on:
   push:
     branches:
-      - main
+      - release-2.14
 permissions:
   contents: read
 
@@ -13,7 +13,7 @@ jobs:
     if: github.repository_owner == 'prometheus'
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      - uses: bufbuild/buf-setup-action@dde0b9351db90fbf78e345f41a57de8514bf1091 # v1.32.2
+      - uses: bufbuild/buf-setup-action@54abbed4fe8d8d45173eca4798b0c39a53a7b658 # v1.39.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - uses: bufbuild/buf-lint-action@06f9dd823d873146471cfaaf108a993fe00e5325 # v1.1.1
@@ -22,7 +22,7 @@ jobs:
       - uses: bufbuild/buf-breaking-action@c57b3d842a5c3f3b454756ef65305a50a587c5ba # v1.1.4
         with:
           input: 'prompb'
-          against: 'https://github.com/prometheus/prometheus.git#branch=main,ref=HEAD~1,subdir=prompb'
+          against: 'https://github.com/prometheus/prometheus.git#branch=release-2.14,subdir=prompb'
       - uses: bufbuild/buf-push-action@a654ff18effe4641ebea4a4ce242c49800728459 # v1.1.1
         with:
           input: 'prompb'

@@ -105,12 +105,17 @@ func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 	if err != nil {
 		return ulid.ULID{}, fmt.Errorf("create leveled compactor: %w", err)
 	}
-	id, err := compactor.Write(w.destinationDir, w.head, mint, maxt, nil)
+	ids, err := compactor.Write(w.destinationDir, w.head, mint, maxt, nil)
 	if err != nil {
 		return ulid.ULID{}, fmt.Errorf("compactor write: %w", err)
 	}
 
-	return id, nil
+	// No block was produced. Caller is responsible to check empty
+	// ulid.ULID based on its use case.
+	if len(ids) == 0 {
+		return ulid.ULID{}, nil
+	}
+	return ids[0], nil
 }
 
 func (w *BlockWriter) Close() error {

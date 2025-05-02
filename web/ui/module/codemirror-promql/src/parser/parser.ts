@@ -28,6 +28,8 @@ import {
   Gtr,
   Identifier,
   LabelMatchers,
+  LimitK,
+  LimitRatio,
   Lss,
   Lte,
   MatrixSelector,
@@ -167,7 +169,13 @@ export class Parser {
     }
     this.expectType(params[params.length - 1], ValueType.vector, 'aggregation expression');
     // get the parameter of the aggregation operator
-    if (aggregateOp.type.id === Topk || aggregateOp.type.id === Bottomk || aggregateOp.type.id === Quantile) {
+    if (
+      aggregateOp.type.id === Topk ||
+      aggregateOp.type.id === Bottomk ||
+      aggregateOp.type.id === LimitK ||
+      aggregateOp.type.id === LimitRatio ||
+      aggregateOp.type.id === Quantile
+    ) {
       this.expectType(params[0], ValueType.scalar, 'aggregation parameter');
     }
     if (aggregateOp.type.id === CountValues) {
@@ -264,6 +272,13 @@ export class Parser {
         if (funcSignature.variadic > 0 && nargsmax < args.length) {
           this.addDiagnostic(node, `expected at most ${nargsmax} argument(s) in call to "${funcSignature.name}", got ${args.length}`);
         }
+      }
+    }
+
+    if (funcSignature.name === 'info') {
+      // Verify that the data label selector expression is not prefixed with metric name.
+      if (args.length > 1 && args[1].getChild(Identifier)) {
+        this.addDiagnostic(node, `expected label selectors as the second argument to "info" function, got ${args[1].type}`);
       }
     }
 

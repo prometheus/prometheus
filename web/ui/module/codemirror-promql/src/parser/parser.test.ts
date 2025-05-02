@@ -968,6 +968,23 @@ describe('promql operations', () => {
       expectedValueType: ValueType.vector,
       expectedDiag: [],
     },
+    {
+      expr: 'info(rate(http_request_counter_total{}[5m]))',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'info(rate(http_request_counter_total[5m]), target_info{service_version=~".+"})',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 78,
+          message: `expected label selectors as the second argument to "info" function, got [object Object]`,
+          severity: 'error',
+        },
+      ],
+    },
   ];
   testCases.forEach((value) => {
     const state = createEditorState(value.expr);

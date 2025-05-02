@@ -775,7 +775,7 @@ describe('computeStartCompletePosition test', () => {
     it(value.title, () => {
       const state = createEditorState(value.expr);
       const node = syntaxTree(state).resolve(value.pos, -1);
-      const result = computeStartCompletePosition(node, value.pos);
+      const result = computeStartCompletePosition(state, node, value.pos);
       expect(value.expectedStart).toEqual(result);
     });
   });

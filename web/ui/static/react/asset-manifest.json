@@ -1,0 +1,14 @@
+{
+  "files": {
+    "main.css": "./static/css/main.0eb1f61f.css",
+    "main.js": "./static/js/main.4729a977.js",
+    "static/media/codicon.ttf": "./static/media/codicon.b3726f0165bf67ac6849.ttf",
+    "static/media/prometheus_logo_grey.svg": "./static/media/prometheus_logo_grey.3cf697e5443028ca5e5255b93c7906c5.svg",
+    "index.html": "./index.html",
+    "static/media/index.cjs": "./static/media/index.cd351d7c31d0d3fccf96.cjs"
+  },
+  "entrypoints": [
+    "static/css/main.0eb1f61f.css",
+    "static/js/main.4729a977.js"
+  ]
+}

@@ -91,7 +91,7 @@ endif
 
 promql/parser/generated_parser.y.go: promql/parser/generated_parser.y
 	@echo ">> running goyacc to generate the .go file."
-	@goyacc -l -o promql/parser/generated_parser.y.go promql/parser/generated_parser.y
+	@$(FIRST_GOPATH)/bin/goyacc -l -o promql/parser/generated_parser.y.go promql/parser/generated_parser.y
 
 .PHONY: clean-parser
 clean-parser:

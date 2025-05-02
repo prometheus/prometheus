@@ -201,8 +201,8 @@ func (d *Decbuf) UvarintStr() string {
 	return string(d.UvarintBytes())
 }
 
-// The return value becomes invalid if the byte slice goes away.
-// Compared to UvarintStr, this avoid allocations.
+// UvarintBytes returns invalid values if the byte slice goes away.
+// Compared to UvarintStr, it avoid allocations.
 func (d *Decbuf) UvarintBytes() []byte {
 	l := d.Uvarint64()
 	if d.E != nil {

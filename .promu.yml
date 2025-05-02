@@ -1,7 +1,7 @@
 go:
     # Whenever the Go version is updated here,
     # .github/workflows should also be updated.
-    version: 1.22
+    version: 1.23
 repository:
     path: github.com/prometheus/prometheus
 build:
@@ -11,6 +11,7 @@ build:
           path: ./cmd/prometheus
         - name: promtool
           path: ./cmd/promtool
+    flags: -mod=mod
     tags:
         all:
             - netgo

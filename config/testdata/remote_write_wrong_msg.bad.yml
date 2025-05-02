@@ -1,0 +1,3 @@
+remote_write:
+  - url: localhost:9090
+    protobuf_message: io.prometheus.writet.v2.Request # typo in 'write"

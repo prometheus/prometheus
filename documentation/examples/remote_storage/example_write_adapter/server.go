@@ -18,44 +18,103 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/prometheus/common/model"
-
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage/remote"
 )
 
 func main() {
 	http.HandleFunc("/receive", func(w http.ResponseWriter, r *http.Request) {
-		req, err := remote.DecodeWriteRequest(r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		enc := r.Header.Get("Content-Encoding")
+		if enc == "" {
+			http.Error(w, "missing Content-Encoding header", http.StatusUnsupportedMediaType)
+			return
+		}
+		if enc != "snappy" {
+			http.Error(w, "unknown encoding, only snappy supported", http.StatusUnsupportedMediaType)
 			return
 		}
 
-		for _, ts := range req.Timeseries {
-			m := make(model.Metric, len(ts.Labels))
-			for _, l := range ts.Labels {
-				m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-			}
-			fmt.Println(m)
+		contentType := r.Header.Get("Content-Type")
+		if contentType == "" {
+			http.Error(w, "missing Content-Type header", http.StatusUnsupportedMediaType)
+		}
 
-			for _, s := range ts.Samples {
-				fmt.Printf("\tSample:  %f %d\n", s.Value, s.Timestamp)
-			}
+		defer func() { _ = r.Body.Close() }()
 
-			for _, e := range ts.Exemplars {
-				m := make(model.Metric, len(e.Labels))
-				for _, l := range e.Labels {
-					m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-				}
-				fmt.Printf("\tExemplar:  %+v %f %d\n", m, e.Value, e.Timestamp)
+		// Very simplistic content parsing, see
+		// storage/remote/write_handler.go#WriteHandler.ServeHTTP for production example.
+		switch contentType {
+		case "application/x-protobuf", "application/x-protobuf;proto=prometheus.WriteRequest":
+			req, err := remote.DecodeWriteRequest(r.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
 			}
-
-			for _, hp := range ts.Histograms {
-				h := remote.HistogramProtoToHistogram(hp)
-				fmt.Printf("\tHistogram:  %s\n", h.String())
+			printV1(req)
+		case "application/x-protobuf;proto=io.prometheus.write.v2.Request":
+			req, err := remote.DecodeWriteV2Request(r.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
 			}
+			printV2(req)
+		default:
+			msg := fmt.Sprintf("Unknown remote write content type: %s", contentType)
+			fmt.Println(msg)
+			http.Error(w, msg, http.StatusBadRequest)
 		}
 	})
-
 	log.Fatal(http.ListenAndServe(":1234", nil))
+}
+
+func printV1(req *prompb.WriteRequest) {
+	b := labels.NewScratchBuilder(0)
+	for _, ts := range req.Timeseries {
+		fmt.Println(ts.ToLabels(&b, nil))
+
+		for _, s := range ts.Samples {
+			fmt.Printf("\tSample:  %f %d\n", s.Value, s.Timestamp)
+		}
+		for _, ep := range ts.Exemplars {
+			e := ep.ToExemplar(&b, nil)
+			fmt.Printf("\tExemplar:  %+v %f %d\n", e.Labels, e.Value, ep.Timestamp)
+		}
+		for _, hp := range ts.Histograms {
+			if hp.IsFloatHistogram() {
+				h := hp.ToFloatHistogram()
+				fmt.Printf("\tHistogram:  %s\n", h.String())
+				continue
+			}
+			h := hp.ToIntHistogram()
+			fmt.Printf("\tHistogram:  %s\n", h.String())
+		}
+	}
+}
+
+func printV2(req *writev2.Request) {
+	b := labels.NewScratchBuilder(0)
+	for _, ts := range req.Timeseries {
+		l := ts.ToLabels(&b, req.Symbols)
+		m := ts.ToMetadata(req.Symbols)
+		fmt.Println(l, m)
+
+		for _, s := range ts.Samples {
+			fmt.Printf("\tSample:  %f %d\n", s.Value, s.Timestamp)
+		}
+		for _, ep := range ts.Exemplars {
+			e := ep.ToExemplar(&b, req.Symbols)
+			fmt.Printf("\tExemplar:  %+v %f %d\n", e.Labels, e.Value, ep.Timestamp)
+		}
+		for _, hp := range ts.Histograms {
+			if hp.IsFloatHistogram() {
+				h := hp.ToFloatHistogram()
+				fmt.Printf("\tHistogram:  %s\n", h.String())
+				continue
+			}
+			h := hp.ToIntHistogram()
+			fmt.Printf("\tHistogram:  %s\n", h.String())
+		}
+	}
 }
