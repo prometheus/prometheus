@@ -769,12 +769,10 @@ func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Grou
 			}
 		}
 	}
-	if match != present {
-		msg := " "
-		if !present {
-			msg = " not "
-		}
-		t.Fatalf("%q should%sbe present in Targets labels: %q", label, msg, mergedTargets)
+	if present {
+		require.Truef(t, match, "%q must be present in Targets labels: %q", label, mergedTargets)
+	} else {
+		require.Falsef(t, match, "%q must be absent in Targets labels: %q", label, mergedTargets)
 	}
 }
 
