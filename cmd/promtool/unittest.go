@@ -321,12 +321,8 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 			return errs
 		}
 
-		for {
-			if !(curr < len(alertEvalTimes) && ts.Sub(mint) <= time.Duration(alertEvalTimes[curr]) &&
-				time.Duration(alertEvalTimes[curr]) < ts.Add(evalInterval).Sub(mint)) {
-				break
-			}
-
+		for curr < len(alertEvalTimes) && ts.Sub(mint) <= time.Duration(alertEvalTimes[curr]) &&
+			time.Duration(alertEvalTimes[curr]) < ts.Add(evalInterval).Sub(mint) {
 			// We need to check alerts for this time.
 			// If 'ts <= `eval_time=alertEvalTimes[curr]` < ts+evalInterval'
 			// then we compare alerts with the Eval at `ts`.

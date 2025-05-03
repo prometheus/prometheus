@@ -525,7 +525,7 @@ func (b *blockBaseSeriesSet) Next() bool {
 		// Count those in range to size allocation (roughly - ignoring tombstones).
 		nChks := 0
 		for _, chk := range b.bufChks {
-			if !(chk.MaxTime < b.mint || chk.MinTime > b.maxt) {
+			if chk.MaxTime >= b.mint && chk.MinTime <= b.maxt {
 				nChks++
 			}
 		}

@@ -194,7 +194,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		events, err := d.client.ListEvents(ctx, &eventsOpts)
 		if err != nil {
 			var e *linodego.Error
-			if !(errors.As(err, &e) && e.Code == http.StatusUnauthorized) {
+			if !errors.As(err, &e) || e.Code != http.StatusUnauthorized {
 				return nil, err
 			}
 			// If we get a 401, the token doesn't have `events:read_only` scope.
