@@ -240,6 +240,29 @@ func TestRulesUnitTestRun(t *testing.T) {
 			ignoreUnknownFields: true,
 			want:                0,
 		},
+		{
+			name: "Test precise floating point comparison expected failure",
+			args: args{
+				files: []string{"./testdata/rules_run_no_fuzzy.yml"},
+			},
+			want: 1,
+		},
+		{
+			name: "Test fuzzy floating point comparison correct match",
+			args: args{
+				run:   []string{"correct"},
+				files: []string{"./testdata/rules_run_fuzzy.yml"},
+			},
+			want: 0,
+		},
+		{
+			name: "Test fuzzy floating point comparison wrong match",
+			args: args{
+				run:   []string{"wrong"},
+				files: []string{"./testdata/rules_run_fuzzy.yml"},
+			},
+			want: 1,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
