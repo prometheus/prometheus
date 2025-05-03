@@ -3706,7 +3706,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 
 					tr.ResetMetadataStore()
 					for _, tm := range test.metadata {
-						tr.SetMetadataStoreForTargets(tm.identifier, &testMetaStore{Metadata: tm.metadata})
+						require.NoError(t, tr.SetMetadataStoreForTargets(tm.identifier, &testMetaStore{Metadata: tm.metadata}))
 					}
 
 					for _, te := range test.exemplars {

@@ -270,7 +270,7 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 				case err := <-done:
 					t.Fatalf("prometheus should be still running: %v", err)
 				case <-time.After(startupTime):
-					prom.Process.Kill()
+					require.NoError(t, prom.Process.Kill())
 					<-done
 				}
 				return
@@ -334,7 +334,7 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 				case err := <-done:
 					t.Fatalf("prometheus should be still running: %v", err)
 				case <-time.After(startupTime):
-					prom.Process.Kill()
+					require.NoError(t, prom.Process.Kill())
 					<-done
 				}
 				return
@@ -426,7 +426,7 @@ func TestAgentSuccessfulStartup(t *testing.T) {
 		t.Logf("prometheus agent should be still running: %v", err)
 		actualExitStatus = prom.ProcessState.ExitCode()
 	case <-time.After(startupTime):
-		prom.Process.Kill()
+		require.NoError(t, prom.Process.Kill())
 	}
 	require.Equal(t, 0, actualExitStatus)
 }
@@ -449,7 +449,7 @@ func TestAgentFailedStartupWithServerFlag(t *testing.T) {
 		t.Logf("prometheus agent should not be running: %v", err)
 		actualExitStatus = prom.ProcessState.ExitCode()
 	case <-time.After(startupTime):
-		prom.Process.Kill()
+		require.NoError(t, prom.Process.Kill())
 	}
 
 	require.Equal(t, 3, actualExitStatus)
@@ -475,7 +475,7 @@ func TestAgentFailedStartupWithInvalidConfig(t *testing.T) {
 		t.Logf("prometheus agent should not be running: %v", err)
 		actualExitStatus = prom.ProcessState.ExitCode()
 	case <-time.After(startupTime):
-		prom.Process.Kill()
+		require.NoError(t, prom.Process.Kill())
 	}
 	require.Equal(t, 2, actualExitStatus)
 }
@@ -535,7 +535,7 @@ func TestModeSpecificFlags(t *testing.T) {
 				case err := <-done:
 					t.Errorf("prometheus should be still running: %v", err)
 				case <-time.After(startupTime):
-					prom.Process.Kill()
+					require.NoError(t, prom.Process.Kill())
 					<-done
 				}
 				return

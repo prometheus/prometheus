@@ -24,15 +24,15 @@ import (
 
 func TestNHCBConvert(t *testing.T) {
 	tests := map[string]struct {
-		setup       func() *TempHistogram
+		setup       func() (*TempHistogram, error)
 		expectedErr error
 		expectedH   *histogram.Histogram
 		expectedFH  *histogram.FloatHistogram
 	}{
 		"empty": {
-			setup: func() *TempHistogram {
+			setup: func() (*TempHistogram, error) {
 				h := NewTempHistogram()
-				return &h
+				return &h, nil
 			},
 			expectedH: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
@@ -41,10 +41,13 @@ func TestNHCBConvert(t *testing.T) {
 			},
 		},
 		"sum only": {
-			setup: func() *TempHistogram {
+			setup: func() (*TempHistogram, error) {
 				h := NewTempHistogram()
-				h.SetSum(1000.25)
-				return &h
+				err := h.SetSum(1000.25)
+				if err != nil {
+					return nil, err
+				}
+				return &h, nil
 			},
 			expectedH: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
@@ -54,11 +57,17 @@ func TestNHCBConvert(t *testing.T) {
 			},
 		},
 		"single integer bucket": {
-			setup: func() *TempHistogram {
+			setup: func() (*TempHistogram, error) {
 				h := NewTempHistogram()
-				h.SetSum(1000.25)
-				h.SetBucketCount(0.5, 1000)
-				return &h
+				err := h.SetSum(1000.25)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetBucketCount(0.5, 1000)
+				if err != nil {
+					return nil, err
+				}
+				return &h, nil
 			},
 			expectedH: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
@@ -70,11 +79,17 @@ func TestNHCBConvert(t *testing.T) {
 			},
 		},
 		"single float bucket": {
-			setup: func() *TempHistogram {
+			setup: func() (*TempHistogram, error) {
 				h := NewTempHistogram()
-				h.SetSum(1000.25)
-				h.SetBucketCount(0.5, 1337.42)
-				return &h
+				err := h.SetSum(1000.25)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetBucketCount(0.5, 1337.42)
+				if err != nil {
+					return nil, err
+				}
+				return &h, nil
 			},
 			expectedFH: &histogram.FloatHistogram{
 				Schema:          histogram.CustomBucketsSchema,
@@ -86,14 +101,29 @@ func TestNHCBConvert(t *testing.T) {
 			},
 		},
 		"happy case integer bucket": {
-			setup: func() *TempHistogram {
+			setup: func() (*TempHistogram, error) {
 				h := NewTempHistogram()
-				h.SetCount(1000)
-				h.SetSum(1000.25)
-				h.SetBucketCount(0.5, 50)
-				h.SetBucketCount(1.0, 950)
-				h.SetBucketCount(math.Inf(1), 1000)
-				return &h
+				err := h.SetCount(1000)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetSum(1000.25)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetBucketCount(0.5, 50)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetBucketCount(1.0, 950)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetBucketCount(math.Inf(1), 1000)
+				if err != nil {
+					return nil, err
+				}
+				return &h, nil
 			},
 			expectedH: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
@@ -105,14 +135,29 @@ func TestNHCBConvert(t *testing.T) {
 			},
 		},
 		"happy case float bucket": {
-			setup: func() *TempHistogram {
+			setup: func() (*TempHistogram, error) {
 				h := NewTempHistogram()
-				h.SetCount(1000)
-				h.SetSum(1000.25)
-				h.SetBucketCount(0.5, 50)
-				h.SetBucketCount(1.0, 950.5)
-				h.SetBucketCount(math.Inf(1), 1000)
-				return &h
+				err := h.SetCount(1000)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetSum(1000.25)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetBucketCount(0.5, 50)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetBucketCount(1.0, 950.5)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetBucketCount(math.Inf(1), 1000)
+				if err != nil {
+					return nil, err
+				}
+				return &h, nil
 			},
 			expectedFH: &histogram.FloatHistogram{
 				Schema:          histogram.CustomBucketsSchema,
@@ -124,38 +169,83 @@ func TestNHCBConvert(t *testing.T) {
 			},
 		},
 		"non cumulative bucket": {
-			setup: func() *TempHistogram {
+			setup: func() (*TempHistogram, error) {
 				h := NewTempHistogram()
-				h.SetCount(1000)
-				h.SetSum(1000.25)
-				h.SetBucketCount(0.5, 50)
-				h.SetBucketCount(1.0, 950)
-				h.SetBucketCount(math.Inf(1), 900)
-				return &h
+				err := h.SetCount(1000)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetSum(1000.25)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetBucketCount(0.5, 50)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetBucketCount(1.0, 950)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetBucketCount(math.Inf(1), 900)
+				if err != nil {
+					return nil, err
+				}
+				return &h, nil
 			},
 			expectedErr: errCountNotCumulative,
 		},
 		"negative count": {
-			setup: func() *TempHistogram {
+			setup: func() (*TempHistogram, error) {
 				h := NewTempHistogram()
-				h.SetCount(-1000)
-				h.SetSum(1000.25)
-				h.SetBucketCount(0.5, 50)
-				h.SetBucketCount(1.0, 950)
-				h.SetBucketCount(math.Inf(1), 900)
-				return &h
+				err := h.SetCount(-1000)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetSum(1000.25)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetBucketCount(0.5, 50)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetBucketCount(1.0, 950)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetBucketCount(math.Inf(1), 900)
+				if err != nil {
+					return nil, err
+				}
+				return &h, nil
 			},
 			expectedErr: errNegativeCount,
 		},
 		"mixed order": {
-			setup: func() *TempHistogram {
+			setup: func() (*TempHistogram, error) {
 				h := NewTempHistogram()
-				h.SetBucketCount(0.5, 50)
-				h.SetBucketCount(math.Inf(1), 1000)
-				h.SetBucketCount(1.0, 950)
-				h.SetCount(1000)
-				h.SetSum(1000.25)
-				return &h
+				err := h.SetBucketCount(0.5, 50)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetBucketCount(math.Inf(1), 1000)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetBucketCount(1.0, 950)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetCount(1000)
+				if err != nil {
+					return nil, err
+				}
+				err = h.SetSum(1000.25)
+				if err != nil {
+					return nil, err
+				}
+				return &h, nil
 			},
 			expectedH: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
@@ -170,7 +260,8 @@ func TestNHCBConvert(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			th := test.setup()
+			th, err := test.setup()
+			require.NoError(t, err)
 			h, fh, err := th.Convert()
 			if test.expectedErr != nil {
 				require.ErrorIs(t, err, test.expectedErr)

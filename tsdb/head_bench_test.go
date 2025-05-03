@@ -82,7 +82,8 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 	defer h.Close()
 
 	for i := 0; i < b.N; i++ {
-		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)), false)
+		_, _, err = h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)), false)
+		require.NoError(b, err)
 	}
 }
 

@@ -266,7 +266,7 @@ func TestTailSamples(t *testing.T) {
 
 				reader := NewLiveReader(nil, NewLiveReaderMetrics(nil), segment)
 				// Use tail true so we can ensure we got the right number of samples.
-				watcher.readSegment(reader, i, true)
+				require.NoError(t, watcher.readSegment(reader, i, true))
 				require.NoError(t, segment.Close())
 			}
 
@@ -400,8 +400,9 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				}
 			}
 
-			Checkpoint(promslog.NewNopLogger(), w, 0, 1, func(_ chunks.HeadSeriesRef, _ int) bool { return true }, 0)
-			w.Truncate(1)
+			_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, func(_ chunks.HeadSeriesRef, _ int) bool { return true }, 0)
+			require.NoError(t, err)
+			require.NoError(t, w.Truncate(1))
 
 			// Write more records after checkpointing.
 			for i := 0; i < seriesCount; i++ {
@@ -788,7 +789,8 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 			// Write to 00000000, the watcher will read series from it.
 			require.NoError(t, generateWALRecords(w, 0, seriesCount, samplesCount))
 			// Create 00000001, the watcher will tail it once started.
-			w.NextSegment()
+			_, err = w.NextSegment()
+			require.NoError(t, err)
 
 			// Set up the watcher and run it in the background.
 			wt := newWriteToMock(time.Millisecond)
@@ -820,7 +822,8 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 			// We should end up with segmentsToWrite + 1 segments now.
 			for i := 1; i < segmentsToWrite; i++ {
 				require.NoError(t, generateWALRecords(w, i, seriesCount, samplesCount))
-				w.NextSegment()
+				_, err = w.NextSegment()
+				require.NoError(t, err)
 			}
 
 			// Wait for the watcher.

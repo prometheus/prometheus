@@ -58,7 +58,7 @@ Loop:
 		// signal and wait for the graceful shutdown.
 		if _, err := http.Get(url); err == nil {
 			startedOk = true
-			prom.Process.Signal(os.Interrupt)
+			require.NoError(t, prom.Process.Signal(os.Interrupt))
 			select {
 			case stoppedErr = <-done:
 				break Loop

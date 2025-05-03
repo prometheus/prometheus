@@ -64,9 +64,6 @@ linters:
           - gocritic
         text: "appendAssign"
       - linters:
-          - errcheck
-        path: _test.go
-      - linters:
           - errorlint
         path: "tsdb/head_wal.go"
       - linters:
@@ -171,9 +168,6 @@ linters:
         - len # FIXME
         - useless-assert # FIXME: wait for golangci-lint > v2.0.2
       enable-all: true
-
-output:
-  show-stats: false
 
 run:
   timeout: 15m

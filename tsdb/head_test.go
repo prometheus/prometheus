@@ -102,7 +102,8 @@ func BenchmarkCreateSeries(b *testing.B) {
 	b.ResetTimer()
 
 	for _, s := range series {
-		h.getOrCreate(s.Labels().Hash(), s.Labels(), false)
+		_, _, err := h.getOrCreate(s.Labels().Hash(), s.Labels(), false)
+		require.NoError(b, err)
 	}
 }
 
@@ -452,7 +453,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 							}
 							h, err := NewHead(nil, nil, wal, wbl, opts, nil)
 							require.NoError(b, err)
-							h.Init(0)
+							require.NoError(b, h.Init(0))
 						}
 						b.StopTimer()
 						wal.Close()
@@ -528,7 +529,7 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 		labelSets[i] = labels.FromStrings("seriesId", strconv.Itoa(i))
 	}
 
-	head.Init(0)
+	require.NoError(t, head.Init(0))
 
 	g, ctx := errgroup.WithContext(context.Background())
 	whileNotCanceled := func(f func() (bool, error)) error {
@@ -1059,7 +1060,7 @@ func TestHead_CanGarbagecollectSeriesCreatedWithoutSamples(t *testing.T) {
 
 func TestHead_UnknownWALRecord(t *testing.T) {
 	head, w := newTestHead(t, 1000, compression.None, false)
-	w.Log([]byte{255, 42})
+	require.NoError(t, w.Log([]byte{255, 42}))
 	require.NoError(t, head.Init(0))
 	require.NoError(t, head.Close())
 }
@@ -3856,10 +3857,10 @@ func testQueryOOOHeadDuringTruncate(t *testing.T, makeQuerier func(db *DB, minT,
 		<-queryStarted
 	}
 
-	go func() {
-		db.Compact(context.Background()) // Compact and write blocks up to 3000 (maxtT/2).
+	go func(t *testing.T) {
+		require.NoError(t, db.Compact(context.Background())) // Compact and write blocks up to 3000 (maxtT/2).
 		compactionFinished <- struct{}{}
-	}()
+	}(t)
 
 	// Wait for the compaction to start.
 	<-allowQueryToStart
@@ -6261,9 +6262,9 @@ func TestHeadDetectsDuplicateSampleAtSizeLimit(t *testing.T) {
 	vals := []float64{math.MaxFloat64, 0x00} // Use the worst case scenario for the XOR encoding. Otherwise we hit the sample limit before the size limit.
 	for i := 0; i < numSamples; i++ {
 		ts := baseTS + int64(i/2)*10000
-		a.Append(0, labels.FromStrings("foo", "bar"), ts, vals[(i/2)%len(vals)])
-		err = a.Commit()
+		_, err = a.Append(0, labels.FromStrings("foo", "bar"), ts, vals[(i/2)%len(vals)])
 		require.NoError(t, err)
+		require.NoError(t, a.Commit())
 		a = h.Appender(context.Background())
 	}
 
@@ -6326,9 +6327,10 @@ func TestWALSampleAndExemplarOrder(t *testing.T) {
 			app := h.Appender(context.Background())
 			ref, err := tc.appendF(app, 10)
 			require.NoError(t, err)
-			app.AppendExemplar(ref, lbls, exemplar.Exemplar{Value: 1.0, Ts: 5})
+			_, err = app.AppendExemplar(ref, lbls, exemplar.Exemplar{Value: 1.0, Ts: 5})
+			require.NoError(t, err)
 
-			app.Commit()
+			require.NoError(t, app.Commit())
 
 			recs := readTestWAL(t, w.Dir())
 			require.Len(t, recs, 3)
@@ -6360,13 +6362,13 @@ func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 	lbls := labels.FromStrings("foo", "bar")
 	ref, err := app.Append(0, lbls, 1, 1)
 	require.NoError(t, err)
-	app.Commit()
+	require.NoError(t, app.Commit())
 	// Not adding a sample here to trigger the fault.
 	app = h.Appender(context.Background())
 	_, err = app.AppendExemplar(ref, lbls, exemplar.Exemplar{Value: 1, Ts: 20})
 	require.NoError(t, err)
-	h.Truncate(10)
-	app.Commit()
+	require.NoError(t, h.Truncate(10))
+	require.NoError(t, app.Commit())
 	h.Close()
 }
 
