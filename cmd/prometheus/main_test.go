@@ -694,7 +694,7 @@ func eventuallyGetMetricValue(t *testing.T, metricsURL string, metricType model.
 		t.Fatalf("metric type %s not supported", metricType)
 	}
 
-	return metric[0].GetGauge().GetValue(), nil
+	return 0, errors.New("cannot get value")
 }
 
 var sizeRestrictedFSAvailable = flag.Bool("test.size-restricted-fs", false, "run tests that require size restricted FS")
@@ -752,21 +752,21 @@ groups:
 			config := fmt.Sprintf(`
 global:
   scrape_timeout: 200ms
-  evaluation_interval: 200ms
+  evaluation_interval: 100ms
   external_labels:
     prometheus: notme
 
 scrape_configs:
 - job_name: self1
-  scrape_interval: 223ms
+  scrape_interval: 61ms
   static_configs:
     - targets: ["localhost:%d"]
 - job_name: self2
-  scrape_interval: 227ms
+  scrape_interval: 67ms
   static_configs:
     - targets: ["localhost:%d"]
 - job_name: self3
-  scrape_interval: 229ms
+  scrape_interval: 71ms
   static_configs:
     - targets: ["localhost:%d"]
 
