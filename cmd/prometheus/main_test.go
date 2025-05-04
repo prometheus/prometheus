@@ -751,22 +751,22 @@ groups:
 			// Scraping + rules + remote_write to self.
 			config := fmt.Sprintf(`
 global:
-  scrape_timeout: 100ms
-  evaluation_interval: 50ms
+  scrape_timeout: 200ms
+  evaluation_interval: 200ms
   external_labels:
     prometheus: notme
 
 scrape_configs:
 - job_name: self1
-  scrape_interval: 61ms
+  scrape_interval: 223ms
   static_configs:
     - targets: ["localhost:%d"]
 - job_name: self2
-  scrape_interval: 67ms
+  scrape_interval: 227ms
   static_configs:
     - targets: ["localhost:%d"]
 - job_name: self3
-  scrape_interval: 71ms
+  scrape_interval: 229ms
   static_configs:
     - targets: ["localhost:%d"]
 
@@ -779,8 +779,8 @@ rule_files:
 			err = os.WriteFile(configFilePath, []byte(config), 0o644)
 			require.NoError(t, err)
 
-			dbDir, err := os.MkdirTemp(root, "prometheus_data")
-			require.NoError(t, err)
+			dbDir := filepath.Join(root, "prometheus_data")
+			require.NoError(t, os.MkdirAll(dbDir, 0o777))
 
 			var nospcDetected atomic.Bool
 			detectNOSPC := func(l string) {
@@ -810,7 +810,7 @@ rule_files:
 				require.NoError(t, prom.Start())
 
 				for !nospcDetected.Load() {
-					time.Sleep(100 * time.Millisecond)
+					time.Sleep(200 * time.Millisecond)
 				}
 				// Sanity check: some WAL writes failed.
 				failedWrites, err := eventuallyGetMetricValue(t, metricsURL, model.MetricTypeCounter, "prometheus_tsdb_wal_writes_failed_total")
@@ -850,9 +850,11 @@ rule_files:
 			require.NoError(t, prom.Start())
 
 			// Ensure no corruptions
+			// TODO maybe we should wait could get translient 00000
 			corruptions, err := eventuallyGetMetricValue(t, metricsURL, model.MetricTypeCounter, "prometheus_tsdb_wal_corruptions_total")
 			require.NoError(t, err)
 			require.Equal(t, 0.0, corruptions)
+			println("XXXX require.Equal(t, 0.0, corruptions)", corruptions)
 
 			corruptions, err = eventuallyGetMetricValue(t, metricsURL, model.MetricTypeCounter, "prometheus_tsdb_wal_reader_corruption_errors_total")
 			require.NoError(t, err)

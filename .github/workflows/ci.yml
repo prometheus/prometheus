@@ -49,7 +49,7 @@ jobs:
           go-version: 1.24.x
       - name: Set up size-restricted filesystems for tests
         run: bash ./scripts/size_restricted_fs.sh
-      - run: go test ./cmd/prometheus -test.size-restricted-fs=true -run TestSizeRestrictedFS
+      - run: go test -race -v ./cmd/prometheus -test.size-restricted-fs=true -run TestSizeRestrictedFS
 
   test_go_oldest:
     name: Go tests with previous Go version
