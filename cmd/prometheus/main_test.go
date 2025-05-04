@@ -22,6 +22,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -663,6 +664,8 @@ func eventuallyGetMetricValue(t *testing.T, metricsURL string, metricType model.
 	require.Eventually(t, func() bool {
 		r, err = http.Get(metricsURL)
 		if err != nil {
+			// TODO: debug
+			println("XXXXX", r.StatusCode, err.Error())
 			return false
 		}
 		return r.StatusCode == http.StatusOK
@@ -711,7 +714,8 @@ func TestSizeRestrictedFS_NoSpaceLeftFailureRecovery(t *testing.T) {
 
 	for i := range 100 {
 		t.Run(fmt.Sprintf("fs_%d", i), func(t *testing.T) {
-			t.Parallel()
+			// TODO: uncomment
+			// t.Parallel()
 
 			root := filepath.Join(fsRoot, fmt.Sprintf("fs_%d", i), "tmp")
 			require.NoError(t, os.RemoveAll(root))
@@ -724,6 +728,12 @@ func TestSizeRestrictedFS_NoSpaceLeftFailureRecovery(t *testing.T) {
 			err = fileutil.Preallocate(f, 2*1024*1024, false)
 			require.NoError(t, err)
 			require.NoError(t, f.Close())
+
+			// Remote endpoint
+			remoteEndpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer remoteEndpoint.Close()
 
 			port := testutil.RandomUnprivilegedPort(t)
 			metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", port)
@@ -761,11 +771,11 @@ scrape_configs:
     - targets: ["localhost:%d"]
 
 remote_write:
-  - url: "http://localhost:%d/api/v1/write"
+  - url: %s
 
 rule_files:
   - %s
-`, port, port, port, port, recodingRulesFilePath)
+`, port, port, port, remoteEndpoint.URL, recodingRulesFilePath)
 			err = os.WriteFile(configFilePath, []byte(config), 0o644)
 			require.NoError(t, err)
 
