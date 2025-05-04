@@ -665,7 +665,7 @@ func eventuallyGetMetricValue(t *testing.T, metricsURL string, metricType model.
 		r, err = http.Get(metricsURL)
 		if err != nil {
 			// TODO: debug
-			println("XXXXX", r.StatusCode, err.Error())
+			println("XXXXX", err.Error())
 			return false
 		}
 		return r.StatusCode == http.StatusOK
