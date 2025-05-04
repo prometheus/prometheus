@@ -22,7 +22,7 @@ jobs:
       - run: go test ./tsdb/ -test.tsdb-isolation=false
       - run: make -C documentation/examples/remote_storage
       - run: make -C documentation/examples
-  
+
   test_go_more:
     name: More Go tests
     runs-on: ubuntu-latest
@@ -49,7 +49,7 @@ jobs:
           go-version: 1.24.x
       - name: Set up size-restricted filesystems for tests
         run: bash ./scripts/size_restricted_fs.sh
-      - run: go test ./cmd/ -test.size-restricted-fs=true -run TestSizeRestrictedFS
+      - run: go test ./cmd/prometheus -test.size-restricted-fs=true -run TestSizeRestrictedFS
 
   test_go_oldest:
     name: Go tests with previous Go version
