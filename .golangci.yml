@@ -168,8 +168,6 @@ linters:
       disable:
         - float-compare
         - go-require
-        - len # FIXME
-        - useless-assert # FIXME: wait for golangci-lint > v2.0.2
       enable-all: true
 
 output:
