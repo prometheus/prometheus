@@ -253,8 +253,8 @@ github.com/hashicorp/serf v0.10.1 h1:Z1H2J60yRKvfDYAOZLd2MU0ND4AH/WDz7xYHDWQsIPY
 github.com/hashicorp/serf v0.10.1/go.mod h1:yL2t6BqATOLGc5HF7qbFkTfXoPIY0WZdWHfEvMqbG+4=
 github.com/hetznercloud/hcloud-go/v2 v2.21.0 h1:wUpQT+fgAxIcdMtFvuCJ78ziqc/VARubpOQPQyj4Q84=
 github.com/hetznercloud/hcloud-go/v2 v2.21.0/go.mod h1:WSM7w+9tT86sJTNcF8a/oHljC3HUmQfcLxYsgx6PpSc=
-github.com/ionos-cloud/sdk-go/v6 v6.3.3 h1:q33Sw1ZqsvqDkFaKG53dGk7BCOvPCPbGZpYqsF6tdjw=
-github.com/ionos-cloud/sdk-go/v6 v6.3.3/go.mod h1:wCVwNJ/21W29FWFUv+fNawOTMlFoP1dS3L+ZuztFW48=
+github.com/ionos-cloud/sdk-go/v6 v6.3.4 h1:jTvGl4LOF8v8OYoEIBNVwbFoqSGAFqn6vGE7sp7/BqQ=
+github.com/ionos-cloud/sdk-go/v6 v6.3.4/go.mod h1:wCVwNJ/21W29FWFUv+fNawOTMlFoP1dS3L+ZuztFW48=
 github.com/jarcoal/httpmock v1.3.1 h1:iUx3whfZWVf3jT01hQTO/Eo5sAYtB2/rqaUuOtpInww=
 github.com/jarcoal/httpmock v1.3.1/go.mod h1:3yb8rc4BI7TCBhFY8ng0gjuLKJNquuDNiPaZjnENuYg=
 github.com/jmespath/go-jmespath v0.4.0 h1:BEgLn5cpjn8UN1mAw4NjwDrS35OdebyEtFe+9YPoQUg=
