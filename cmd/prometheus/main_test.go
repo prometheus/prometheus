@@ -654,22 +654,16 @@ func TestRwProtoMsgFlagParser(t *testing.T) {
 	}
 }
 
-func eventuallyGetMetricValue(t *testing.T, metricsURL string, metricType model.MetricType, metricName string) (float64, error) {
+func getMetricValue(t *testing.T, metricsURL string, metricType model.MetricType, metricName string) (float64, error) {
 	t.Helper()
 
-	var (
-		r   *http.Response
-		err error
-	)
-	require.Eventually(t, func() bool {
-		r, err = http.Get(metricsURL)
-		if err != nil {
-			// TODO: debug
-			println("XXXXX", err.Error())
-			return false
-		}
-		return r.StatusCode == http.StatusOK
-	}, 5*time.Second, 100*time.Millisecond)
+	r, err := http.Get(metricsURL)
+	if err != nil {
+		return 0, err
+	}
+	if r.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("server returned HTTP status %s", r.Status)
+	}
 	defer r.Body.Close()
 
 	p := expfmt.TextParser{}
@@ -813,14 +807,18 @@ rule_files:
 					time.Sleep(200 * time.Millisecond)
 				}
 				// Sanity check: some WAL writes failed.
-				failedWrites, err := eventuallyGetMetricValue(t, metricsURL, model.MetricTypeCounter, "prometheus_tsdb_wal_writes_failed_total")
-				require.NoError(t, err)
-				require.NotZero(t, failedWrites)
+				require.Eventually(t, func() bool {
+					failedWrites, err := getMetricValue(t, metricsURL, model.MetricTypeCounter, "prometheus_tsdb_wal_writes_failed_total")
+					if err != nil {
+						return false
+					}
+					return failedWrites > 0
+				}, 5*time.Second, 100*time.Millisecond)
 
 				// Let the instance run under ENOSPC to better simulate reality
 				time.Sleep(500 * time.Millisecond)
 
-				initialWalSize, err := eventuallyGetMetricValue(t, metricsURL, model.MetricTypeGauge, "prometheus_tsdb_wal_storage_size_bytes")
+				initialWalSize, err := getMetricValue(t, metricsURL, model.MetricTypeGauge, "prometheus_tsdb_wal_storage_size_bytes")
 				require.NoError(t, err)
 				require.NotZero(t, initialWalSize)
 
@@ -828,10 +826,13 @@ rule_files:
 				require.NoError(t, os.Remove(placeholder))
 
 				// Ensure it resumes WAL writing
-				time.Sleep(500 * time.Millisecond)
-				walSize, err := eventuallyGetMetricValue(t, metricsURL, model.MetricTypeGauge, "prometheus_tsdb_wal_storage_size_bytes")
-				require.NoError(t, err)
-				require.Greater(t, walSize, initialWalSize+1024)
+				require.Eventually(t, func() bool {
+					walSize, err := getMetricValue(t, metricsURL, model.MetricTypeGauge, "prometheus_tsdb_wal_storage_size_bytes")
+					if err != nil {
+						return false
+					}
+					return walSize > initialWalSize+1024
+				}, 5*time.Second, 100*time.Millisecond)
 			})
 
 			// Restart the instance
@@ -849,16 +850,23 @@ rule_files:
 			)
 			require.NoError(t, prom.Start())
 
-			// Ensure no corruptions
-			// TODO maybe we should wait could get translient 00000
-			corruptions, err := eventuallyGetMetricValue(t, metricsURL, model.MetricTypeCounter, "prometheus_tsdb_wal_corruptions_total")
-			require.NoError(t, err)
-			require.Equal(t, 0.0, corruptions)
-			println("XXXX require.Equal(t, 0.0, corruptions)", corruptions)
+			// Wait for the TSDB to be loaded.
+			require.Eventually(t, func() bool {
+				ready, err := getMetricValue(t, metricsURL, model.MetricTypeGauge, "prometheus_ready")
+				if err != nil {
+					return false
+				}
+				return ready == 1.0
+			}, 5*time.Second, 100*time.Millisecond)
 
-			corruptions, err = eventuallyGetMetricValue(t, metricsURL, model.MetricTypeCounter, "prometheus_tsdb_wal_reader_corruption_errors_total")
+			// Ensure no corruptions
+			corruptions, err := getMetricValue(t, metricsURL, model.MetricTypeCounter, "prometheus_tsdb_wal_corruptions_total")
 			require.NoError(t, err)
 			require.Equal(t, 0.0, corruptions)
+
+			rwCorruptions, err := getMetricValue(t, metricsURL, model.MetricTypeCounter, "prometheus_tsdb_wal_reader_corruption_errors_total")
+			require.NoError(t, err)
+			require.Equal(t, 0.0, rwCorruptions)
 		})
 	}
 }
