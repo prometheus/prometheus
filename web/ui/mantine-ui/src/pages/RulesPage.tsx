@@ -86,12 +86,13 @@ export default function RulesPage() {
           (effectiveActivePage - 1) * ruleGroupsPerPage,
           effectiveActivePage * ruleGroupsPerPage
         )
-        .map((g, i) => (
+        .map((g) => (
           <Card
             shadow="xs"
             withBorder
             p="md"
-            key={i} // TODO: Find a stable and definitely unique key.
+            mb="md"
+            key={`${g.file}-${g.name}`}
           >
             <Group mb="sm" justify="space-between">
               <Group align="baseline">

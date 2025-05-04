@@ -129,7 +129,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 
 	// Checking on-disk bytes for the first file.
 	require.Len(t, hrw.mmappedChunkFiles, 3, "expected 3 mmapped files, got %d", len(hrw.mmappedChunkFiles))
-	require.Equal(t, len(hrw.mmappedChunkFiles), len(hrw.closers))
+	require.Len(t, hrw.closers, len(hrw.mmappedChunkFiles))
 
 	actualBytes, err := os.ReadFile(firstFileName)
 	require.NoError(t, err)
@@ -208,9 +208,9 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 
 		files, err := os.ReadDir(hrw.dir.Name())
 		require.NoError(t, err)
-		require.Equal(t, len(remainingFiles), len(files), "files on disk")
-		require.Equal(t, len(remainingFiles), len(hrw.mmappedChunkFiles), "hrw.mmappedChunkFiles")
-		require.Equal(t, len(remainingFiles), len(hrw.closers), "closers")
+		require.Len(t, files, len(remainingFiles), "files on disk")
+		require.Len(t, hrw.mmappedChunkFiles, len(remainingFiles), "hrw.mmappedChunkFiles")
+		require.Len(t, hrw.closers, len(remainingFiles), "closers")
 
 		for _, i := range remainingFiles {
 			_, ok := hrw.mmappedChunkFiles[i]
@@ -325,9 +325,9 @@ func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
 
 		files, err := os.ReadDir(hrw.dir.Name())
 		require.NoError(t, err)
-		require.Equal(t, len(remainingFiles), len(files), "files on disk")
-		require.Equal(t, len(remainingFiles), len(hrw.mmappedChunkFiles), "hrw.mmappedChunkFiles")
-		require.Equal(t, len(remainingFiles), len(hrw.closers), "closers")
+		require.Len(t, files, len(remainingFiles), "files on disk")
+		require.Len(t, hrw.mmappedChunkFiles, len(remainingFiles), "hrw.mmappedChunkFiles")
+		require.Len(t, hrw.closers, len(remainingFiles), "closers")
 
 		for _, i := range remainingFiles {
 			_, ok := hrw.mmappedChunkFiles[i]

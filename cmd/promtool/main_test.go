@@ -510,7 +510,7 @@ func TestCheckRules(t *testing.T) {
 		os.Stdin = r
 
 		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false))
-		require.Equal(t, successExitCode, exitCode, "")
+		require.Equal(t, successExitCode, exitCode)
 	})
 
 	t.Run("rules-bad", func(t *testing.T) {
@@ -532,7 +532,7 @@ func TestCheckRules(t *testing.T) {
 		os.Stdin = r
 
 		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false))
-		require.Equal(t, failureExitCode, exitCode, "")
+		require.Equal(t, failureExitCode, exitCode)
 	})
 
 	t.Run("rules-lint-fatal", func(t *testing.T) {
@@ -554,27 +554,37 @@ func TestCheckRules(t *testing.T) {
 		os.Stdin = r
 
 		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, true, false))
-		require.Equal(t, lintErrExitCode, exitCode, "")
+		require.Equal(t, lintErrExitCode, exitCode)
 	})
+}
+
+func TestCheckRulesWithFeatureFlag(t *testing.T) {
+	// As opposed to TestCheckRules calling CheckRules directly we run promtool
+	// so the feature flag parsing can be tested.
+
+	args := []string{"-test.main", "--enable-feature=promql-experimental-functions", "check", "rules", "testdata/features.yml"}
+	tool := exec.Command(promtoolPath, args...)
+	err := tool.Run()
+	require.NoError(t, err)
 }
 
 func TestCheckRulesWithRuleFiles(t *testing.T) {
 	t.Run("rules-good", func(t *testing.T) {
 		t.Parallel()
 		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false), "./testdata/rules.yml")
-		require.Equal(t, successExitCode, exitCode, "")
+		require.Equal(t, successExitCode, exitCode)
 	})
 
 	t.Run("rules-bad", func(t *testing.T) {
 		t.Parallel()
 		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false), "./testdata/rules-bad.yml")
-		require.Equal(t, failureExitCode, exitCode, "")
+		require.Equal(t, failureExitCode, exitCode)
 	})
 
 	t.Run("rules-lint-fatal", func(t *testing.T) {
 		t.Parallel()
 		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, true, false), "./testdata/prometheus-rules.lint.yml")
-		require.Equal(t, lintErrExitCode, exitCode, "")
+		require.Equal(t, lintErrExitCode, exitCode)
 	})
 }
 

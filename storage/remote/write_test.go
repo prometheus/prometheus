@@ -382,7 +382,118 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 
 func TestOTLPWriteHandler(t *testing.T) {
 	exportRequest := generateOTLPWriteRequest()
+	timestamp := time.Now()
+	for _, testCase := range []struct {
+		name            string
+		otlpCfg         config.OTLPConfig
+		expectedSamples []mockSample
+	}{
+		{
+			name: "NoTranslation",
+			otlpCfg: config.OTLPConfig{
+				TranslationStrategy: config.NoTranslation,
+			},
+			expectedSamples: []mockSample{
+				{
+					l: labels.New(labels.Label{Name: "__name__", Value: "test.counter"},
+						labels.Label{Name: "foo.bar", Value: "baz"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"}),
+					t: timestamp.UnixMilli(),
+					v: 10.0,
+				},
+				{
+					l: labels.New(
+						labels.Label{Name: "__name__", Value: "target_info"},
+						labels.Label{Name: "host.name", Value: "test-host"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"},
+					),
+					t: timestamp.UnixMilli(),
+					v: 1,
+				},
+			},
+		},
+		{
+			name: "UnderscoreEscapingWithSuffixes",
+			otlpCfg: config.OTLPConfig{
+				TranslationStrategy: config.UnderscoreEscapingWithSuffixes,
+			},
+			expectedSamples: []mockSample{
+				{
+					l: labels.New(labels.Label{Name: "__name__", Value: "test_counter_total"},
+						labels.Label{Name: "foo_bar", Value: "baz"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"}),
+					t: timestamp.UnixMilli(),
+					v: 10.0,
+				},
+				{
+					l: labels.New(
+						labels.Label{Name: "__name__", Value: "target_info"},
+						labels.Label{Name: "host_name", Value: "test-host"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"},
+					),
+					t: timestamp.UnixMilli(),
+					v: 1,
+				},
+			},
+		},
 
+		{
+			name: "NoUTF8EscapingWithSuffixes",
+			otlpCfg: config.OTLPConfig{
+				TranslationStrategy: config.NoUTF8EscapingWithSuffixes,
+			},
+			expectedSamples: []mockSample{
+				{
+					l: labels.New(labels.Label{Name: "__name__", Value: "test.counter_total"},
+						labels.Label{Name: "foo.bar", Value: "baz"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"}),
+					t: timestamp.UnixMilli(),
+					v: 10.0,
+				},
+				{
+					l: labels.New(
+						labels.Label{Name: "__name__", Value: "target_info"},
+						labels.Label{Name: "host.name", Value: "test-host"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"},
+					),
+					t: timestamp.UnixMilli(),
+					v: 1,
+				},
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			appendable := handleOTLP(t, exportRequest, testCase.otlpCfg)
+			for _, sample := range testCase.expectedSamples {
+				requireContainsSample(t, appendable.samples, sample)
+			}
+			require.Len(t, appendable.samples, 12)   // 1 (counter) + 1 (gauge) + 1 (target_info) + 7 (hist_bucket) + 2 (hist_sum, hist_count)
+			require.Len(t, appendable.histograms, 1) // 1 (exponential histogram)
+			require.Len(t, appendable.exemplars, 1)  // 1 (exemplar)
+		})
+	}
+}
+
+func requireContainsSample(t *testing.T, actual []mockSample, expected mockSample) {
+	t.Helper()
+
+	for _, got := range actual {
+		if labels.Equal(expected.l, got.l) && expected.t == got.t && expected.v == got.v {
+			return
+		}
+	}
+	require.Fail(t, fmt.Sprintf("Sample not found: \n"+
+		"expected: %v\n"+
+		"actual  : %v", expected, actual))
+}
+
+func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg config.OTLPConfig) *mockAppendable {
 	buf, err := exportRequest.MarshalProto()
 	require.NoError(t, err)
 
@@ -393,19 +504,16 @@ func TestOTLPWriteHandler(t *testing.T) {
 	appendable := &mockAppendable{}
 	handler := NewOTLPWriteHandler(nil, nil, appendable, func() config.Config {
 		return config.Config{
-			OTLPConfig: config.DefaultOTLPConfig,
+			OTLPConfig: otlpCfg,
 		}
 	}, OTLPOptions{})
-
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 
 	resp := recorder.Result()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	require.Len(t, appendable.samples, 12)   // 1 (counter) + 1 (gauge) + 1 (target_info) + 7 (hist_bucket) + 2 (hist_sum, hist_count)
-	require.Len(t, appendable.histograms, 1) // 1 (exponential histogram)
-	require.Len(t, appendable.exemplars, 1)  // 1 (exemplar)
+	return appendable
 }
 
 func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
@@ -426,7 +534,7 @@ func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
 
 	// Generate One Counter
 	counterMetric := scopeMetric.Metrics().AppendEmpty()
-	counterMetric.SetName("test-counter")
+	counterMetric.SetName("test.counter")
 	counterMetric.SetDescription("test-counter-description")
 	counterMetric.SetEmptySum()
 	counterMetric.Sum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
@@ -446,7 +554,7 @@ func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
 
 	// Generate One Gauge
 	gaugeMetric := scopeMetric.Metrics().AppendEmpty()
-	gaugeMetric.SetName("test-gauge")
+	gaugeMetric.SetName("test.gauge")
 	gaugeMetric.SetDescription("test-gauge-description")
 	gaugeMetric.SetEmptyGauge()
 
@@ -457,7 +565,7 @@ func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
 
 	// Generate One Histogram
 	histogramMetric := scopeMetric.Metrics().AppendEmpty()
-	histogramMetric.SetName("test-histogram")
+	histogramMetric.SetName("test.histogram")
 	histogramMetric.SetDescription("test-histogram-description")
 	histogramMetric.SetEmptyHistogram()
 	histogramMetric.Histogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
@@ -472,7 +580,7 @@ func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
 
 	// Generate One Exponential-Histogram
 	exponentialHistogramMetric := scopeMetric.Metrics().AppendEmpty()
-	exponentialHistogramMetric.SetName("test-exponential-histogram")
+	exponentialHistogramMetric.SetName("test.exponential.histogram")
 	exponentialHistogramMetric.SetDescription("test-exponential-histogram-description")
 	exponentialHistogramMetric.SetEmptyExponentialHistogram()
 	exponentialHistogramMetric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)

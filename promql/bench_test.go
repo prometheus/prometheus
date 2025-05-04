@@ -89,8 +89,8 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, in
 		}
 	}
 
-	stor.DB.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
-	stor.DB.Compact(ctx)
+	stor.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
+	stor.Compact(ctx)
 	return nil
 }
 
@@ -269,7 +269,7 @@ func rangeQueryCases() []benchCase {
 
 func BenchmarkRangeQuery(b *testing.B) {
 	stor := teststorage.New(b)
-	stor.DB.DisableCompactions() // Don't want auto-compaction disrupting timings.
+	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
 	defer stor.Close()
 	opts := promql.EngineOpts{
 		Logger:     nil,
@@ -498,8 +498,8 @@ func generateInfoFunctionTestSeries(tb testing.TB, stor *teststorage.TestStorage
 		require.NoError(tb, a.Commit())
 	}
 
-	stor.DB.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
-	stor.DB.Compact(ctx)
+	stor.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
+	stor.Compact(ctx)
 }
 
 func generateNativeHistogramSeries(app storage.Appender, numSeries int) error {

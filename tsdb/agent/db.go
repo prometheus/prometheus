@@ -236,7 +236,8 @@ type DB struct {
 	appenderPool sync.Pool
 	bufPool      sync.Pool
 
-	// These pools are used during WAL replay.
+	// These pools are only used during WAL replay and are reset at the end.
+	// NOTE: Adjust resetWALReplayResources() upon changes to the pools.
 	walReplaySeriesPool          zeropool.Pool[[]record.RefSeries]
 	walReplaySamplesPool         zeropool.Pool[[]record.RefSample]
 	walReplayHistogramsPool      zeropool.Pool[[]record.RefHistogramSample]
@@ -366,6 +367,7 @@ func validateOptions(opts *Options) *Options {
 
 func (db *DB) replayWAL() error {
 	db.logger.Info("replaying WAL, this may take a while", "dir", db.wal.Dir())
+	defer db.resetWALReplayResources()
 	start := time.Now()
 
 	dir, startFrom, err := wlog.LastCheckpoint(db.wal.Dir())
@@ -423,6 +425,13 @@ func (db *DB) replayWAL() error {
 	db.metrics.walTotalReplayDuration.Set(walReplayDuration.Seconds())
 
 	return nil
+}
+
+func (db *DB) resetWALReplayResources() {
+	db.walReplaySeriesPool = zeropool.Pool[[]record.RefSeries]{}
+	db.walReplaySamplesPool = zeropool.Pool[[]record.RefSample]{}
+	db.walReplayHistogramsPool = zeropool.Pool[[]record.RefHistogramSample]{}
+	db.walReplayFloatHistogramsPool = zeropool.Pool[[]record.RefFloatHistogramSample]{}
 }
 
 func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef) (err error) {
