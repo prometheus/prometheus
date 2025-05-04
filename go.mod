@@ -45,7 +45,7 @@ require (
 	github.com/nsf/jsondiff v0.0.0-20230430225905-43f6cf3098c1
 	github.com/oklog/run v1.1.0
 	github.com/oklog/ulid/v2 v2.1.0
-	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.124.1
+	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.125.0
 	github.com/ovh/go-ovh v1.7.0
 	github.com/prometheus/alertmanager v0.28.1
 	github.com/prometheus/client_golang v1.22.0
@@ -162,8 +162,8 @@ require (
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/knadh/koanf/maps v0.1.2 // indirect
-	github.com/knadh/koanf/providers/confmap v0.1.0 // indirect
-	github.com/knadh/koanf/v2 v2.1.2 // indirect
+	github.com/knadh/koanf/providers/confmap v1.0.0 // indirect
+	github.com/knadh/koanf/v2 v2.2.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
@@ -180,8 +180,8 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
-	github.com/open-telemetry/opentelemetry-collector-contrib/internal/exp/metrics v0.124.1 // indirect
-	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatautil v0.124.1 // indirect
+	github.com/open-telemetry/opentelemetry-collector-contrib/internal/exp/metrics v0.125.0 // indirect
+	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatautil v0.125.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.0.2 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
@@ -197,8 +197,8 @@ require (
 	github.com/xhit/go-str2duration/v2 v2.1.0 // indirect
 	go.mongodb.org/mongo-driver v1.14.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
-	go.opentelemetry.io/collector/confmap v1.30.0 // indirect
-	go.opentelemetry.io/collector/confmap/xconfmap v0.124.0 // indirect
+	go.opentelemetry.io/collector/confmap v1.31.0 // indirect
+	go.opentelemetry.io/collector/confmap/xconfmap v0.125.0 // indirect
 	go.opentelemetry.io/collector/pipeline v0.125.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.5.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
