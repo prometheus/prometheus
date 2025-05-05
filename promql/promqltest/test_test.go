@@ -699,7 +699,7 @@ load 5m
 eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
 	expect fail error: something went wrong
 `,
-			expectedError: "error in eval ceil({__name__=~'testmetric1|testmetric2'}) (line 7): invalid expect statement, must match `expect <type> <match_type> <string>` format",
+			expectedError: "error in eval ceil({__name__=~'testmetric1|testmetric2'}) (line 7): invalid expect statement, must match `expect <type> <match_type>: <string>` format",
 		},
 		"instant query expected not to care about annotations (with new eval syntax)": {
 			input: `
