@@ -1404,6 +1404,10 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 
 	// Deal with the native histograms.
 	for _, sample := range enh.nativeHistogramSamples {
+		if sample.H == nil {
+			// Native histogram conflicts with classic histogram at the same timestamp, ignore.
+			continue
+		}
 		if !enh.enableDelayedNameRemoval {
 			sample.Metric = sample.Metric.DropMetricName()
 		}
@@ -1446,6 +1450,10 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 
 	// Deal with the native histograms.
 	for _, sample := range enh.nativeHistogramSamples {
+		if sample.H == nil {
+			// Native histogram conflicts with classic histogram at the same timestamp, ignore.
+			continue
+		}
 		if !enh.enableDelayedNameRemoval {
 			sample.Metric = sample.Metric.DropMetricName()
 		}
