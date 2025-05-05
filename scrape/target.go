@@ -144,7 +144,7 @@ func (t *Target) SetMetadataStore(s MetricMetadataStore) {
 func (t *Target) hash() uint64 {
 	h := fnv.New64a()
 
-	fmt.Fprintf(h, "%016d", t.labels.Hash())
+	h.Write([]byte(fmt.Sprintf("%016d", t.labels.Hash())))
 	h.Write([]byte(t.URL().String()))
 
 	return h.Sum64()
@@ -191,8 +191,8 @@ func (t *Target) LabelsRange(f func(l labels.Label)) {
 // DiscoveredLabels returns a copy of the target's labels before any processing.
 func (t *Target) DiscoveredLabels(lb *labels.Builder) labels.Labels {
 	t.mtx.Lock()
+	defer t.mtx.Unlock()
 	cfg, tLabels, tgLabels := t.scrapeConfig, t.tLabels, t.tgLabels
-	t.mtx.Unlock()
 	PopulateDiscoveredLabels(lb, cfg, tLabels, tgLabels)
 	return lb.Labels()
 }
@@ -209,8 +209,8 @@ func (t *Target) SetScrapeConfig(scrapeConfig *config.ScrapeConfig, tLabels, tgL
 // URL returns a copy of the target's URL.
 func (t *Target) URL() *url.URL {
 	t.mtx.Lock()
+	defer t.mtx.Unlock()
 	configParams := t.scrapeConfig.Params
-	t.mtx.Unlock()
 	params := url.Values{}
 
 	for k, v := range configParams {
