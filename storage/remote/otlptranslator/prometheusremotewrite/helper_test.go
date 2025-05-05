@@ -26,6 +26,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 )
 
@@ -59,7 +60,8 @@ func TestCreateAttributes(t *testing.T) {
 		expectedLabels               []prompb.Label
 	}{
 		{
-			name: "Successful conversion without resource attribute promotion",
+			name:                      "Successful conversion without resource attribute promotion",
+			promoteResourceAttributes: nil,
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -84,8 +86,9 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:        "Successful conversion with some attributes ignored",
-			ignoreAttrs: []string{"metric-attr-other"},
+			name:                      "Successful conversion with some attributes ignored",
+			promoteResourceAttributes: nil,
+			ignoreAttrs:               []string{"metric-attr-other"},
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -196,7 +199,7 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                         "Successful conversion promoting all resource attribute",
+			name:                         "Successful conversion promoting all resource attributes",
 			promoteAllResourceAttributes: true,
 			expectedLabels: []prompb.Label{
 				{
@@ -234,7 +237,7 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                         "Successful conversion promoting all resource attribute, ignoring 'service.instance.id'",
+			name:                         "Successful conversion promoting all resource attributes, ignoring 'service.instance.id'",
 			promoteAllResourceAttributes: true,
 			ignoreResourceAttributes: []string{
 				"service.instance.id",
@@ -274,22 +277,11 @@ func TestCreateAttributes(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			settings := Settings{
-				PromoteResourceAttributes: &PromoteResourceAttributes{
-					promoteAll: tc.promoteAllResourceAttributes,
-				},
-			}
-			if tc.promoteAllResourceAttributes {
-				attr := make(map[string]struct{}, len(tc.ignoreResourceAttributes))
-				for _, a := range tc.ignoreResourceAttributes {
-					attr[a] = struct{}{}
-				}
-				settings.PromoteResourceAttributes.attrs = attr
-			} else {
-				attr := make(map[string]struct{}, len(tc.promoteResourceAttributes))
-				for _, a := range tc.promoteResourceAttributes {
-					attr[a] = struct{}{}
-				}
-				settings.PromoteResourceAttributes.attrs = attr
+				PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
+					PromoteAllResourceAttributes: tc.promoteAllResourceAttributes,
+					PromoteResourceAttributes:    tc.promoteResourceAttributes,
+					IgnoreResourceAttributes:     tc.ignoreResourceAttributes,
+				}),
 			}
 			lbls := createAttributes(resource, attrs, settings, tc.ignoreAttrs, false, model.MetricNameLabel, "test_metric")
 

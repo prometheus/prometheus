@@ -280,24 +280,17 @@ func (c *PrometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Lab
 }
 
 func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAttributes {
-	createAttr := func(attributes []string) map[string]struct{} {
-		attr := make(map[string]struct{}, len(attributes))
-		for _, s := range attributes {
-			attr[s] = struct{}{}
-		}
-		return attr
-	}
-
+	attrs := otlpCfg.PromoteResourceAttributes
 	if otlpCfg.PromoteAllResourceAttributes {
-		return &PromoteResourceAttributes{
-			promoteAll: true,
-			attrs:      createAttr(otlpCfg.IgnoreResourceAttributes),
-		}
+		attrs = otlpCfg.IgnoreResourceAttributes
 	}
-
+	attrsMap := make(map[string]struct{}, len(attrs))
+	for _, s := range attrs {
+		attrsMap[s] = struct{}{}
+	}
 	return &PromoteResourceAttributes{
-		promoteAll: false,
-		attrs:      createAttr(otlpCfg.PromoteResourceAttributes),
+		promoteAll: otlpCfg.PromoteAllResourceAttributes,
+		attrs:      attrsMap,
 	}
 }
 
@@ -306,6 +299,7 @@ func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommo
 	if s == nil {
 		return nil
 	}
+
 	var promotedAttrs []prompb.Label
 	if s.promoteAll {
 		promotedAttrs = make([]prompb.Label, 0, resourceAttributes.Len())

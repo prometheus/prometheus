@@ -1,4 +1,0 @@
-otlp:
-  promote_all_resource_attributes: true
-  promote_resource_attributes: ["k8s.cluster.name", " k8s.job.name ", "k8s.namespace.name"]
-  ignore_resource_attributes: ["k8s.job.name"]
