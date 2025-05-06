@@ -656,6 +656,21 @@ const DefaultGoGCPercentage = 75
 type RuntimeConfig struct {
 	// The Go garbage collection target percentage.
 	GoGC int `yaml:"gogc,omitempty"`
+
+	// Below are guidelines for adding a new field:
+	//
+	// For config that shouldn't change after startup, you might want to use
+	// flags https://prometheus.io/docs/prometheus/latest/command-line/prometheus/.
+	//
+	// Consider when the new field is first applied: at the very beginning of instance
+	// startup, after the TSDB is loaded etc. See https://github.com/prometheus/prometheus/pull/16491
+	// for an example.
+	//
+	// Provide a test covering various scenarios: empty config file, empty or incomplete runtime
+	// config block, precedence over other inputs (e.g., env vars, if applicable) etc.
+	// See TestRuntimeGOGCConfig (or https://github.com/prometheus/prometheus/pull/15238).
+	// The test should also verify behavior on reloads, since this config should be
+	// adjustable at runtime.
 }
 
 // isZero returns true iff the global config is the zero value.
