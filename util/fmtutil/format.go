@@ -154,7 +154,7 @@ func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Me
 		// Add +Inf bucket if not present
 		if !hasInf {
 			bucketLabels[model.MetricNameLabel] = metricName + bucketStr
-			bucketLabels[model.BucketLabel] = fmt.Sprint(math.Inf(1))
+			bucketLabels[model.BucketLabel] = "+Inf"
 			toTimeseries(wr, bucketLabels, timestamp, float64(m.GetHistogram().GetSampleCount()))
 		}
 
