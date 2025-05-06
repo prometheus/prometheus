@@ -144,6 +144,11 @@ global:
   # histograms with custom buckets.
   [ convert_classic_histograms_to_nhcb <bool> | default = false]
 
+  # Specifies whether to scrape a classic histogram, even if it is also exposed as a native
+  # histogram (has no effect without --enable-feature=native-histograms).
+  [ always_scrape_classic_histograms: <boolean> | default = false ]
+
+
 runtime:
   # Configure the Go garbage collector GOGC parameter
   # See: https://tip.golang.org/doc/gc-guide#GOGC
@@ -254,7 +259,8 @@ job_name: <job_name>
 
 # Whether to scrape a classic histogram, even if it is also exposed as a native
 # histogram (has no effect without --enable-feature=native-histograms).
-[ always_scrape_classic_histograms: <boolean> | default = false ]
+[ always_scrape_classic_histograms: <boolean> |
+default = <global.always_scrape_classic_hisotgrams> ]
 
 # The HTTP resource path on which to fetch metrics from targets.
 [ metrics_path: <path> | default = /metrics ]
