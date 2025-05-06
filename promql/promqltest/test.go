@@ -271,7 +271,7 @@ func parseExpect(defLine string) (expectCmdType, expectCmd, error) {
 	expectParts := patExpect.FindStringSubmatch(strings.TrimSpace(defLine))
 	expCmd := expectCmd{}
 	if expectParts == nil {
-		return 0, expCmd, errors.New("invalid expect statement, must match `expect <type> <match_type> <string>` format")
+		return 0, expCmd, errors.New("invalid expect statement, must match `expect <type> <match_type>: <string>` format")
 	}
 	var (
 		mode            = expectParts[1]
