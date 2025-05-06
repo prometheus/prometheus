@@ -138,11 +138,11 @@ global:
   # Specifies the validation scheme for metric and label names. Either blank or
   # "utf8" for full UTF-8 support, or "legacy" for letters, numbers, colons,
   # and underscores.
-  [ metric_name_validation_scheme <string> | default "utf8" ]
+  [ metric_name_validation_scheme: <string> | default "utf8" ]
 
   # Specifies whether to convert all scraped classic histograms into native
   # histograms with custom buckets.
-  [ convert_classic_histograms_to_nhcb <bool> | default = false]
+  [ convert_classic_histograms_to_nhcb: <bool> | default = false]
 
   # Specifies whether to scrape a classic histogram, even if it is also exposed as a native
   # histogram (has no effect without --enable-feature=native-histograms).
@@ -487,7 +487,7 @@ metric_relabel_configs:
 # Specifies the validation scheme for metric and label names. Either blank or 
 # "utf8" for full UTF-8 support, or "legacy" for letters, numbers, colons, and
 # underscores.
-[ metric_name_validation_scheme <string> | default "utf8" ]
+[ metric_name_validation_scheme: <string> | default "utf8" ]
 
 # Specifies the character escaping scheme that will be requested when scraping
 # for metric and label names that do not conform to the legacy Prometheus
@@ -503,7 +503,7 @@ metric_relabel_configs:
 # If this value is left blank, Prometheus will default to `allow-utf-8` if the
 # validation scheme for the current scrape config is set to utf8, or
 # `underscores` if the validation scheme is set to `legacy`.
-[ metric_name_validation_scheme <string> | default "utf8" ]
+[ metric_name_validation_scheme: <string> | default "utf8" ]
 
 # Limit on total number of positive and negative buckets allowed in a single
 # native histogram. The resolution of a histogram with more buckets will be
@@ -554,7 +554,7 @@ metric_relabel_configs:
 
 # Specifies whether to convert classic histograms into native histograms with
 # custom buckets (has no effect without --enable-feature=native-histograms).
-[ convert_classic_histograms_to_nhcb <bool> | default =
+[ convert_classic_histograms_to_nhcb: <bool> | default =
 <global.convert_classic_histograms_to_nhcb>]
 ```
 
