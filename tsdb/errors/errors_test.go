@@ -77,7 +77,7 @@ func TestMultiError_Is(t *testing.T) {
 			target: customErr1,
 			is:     true,
 		},
-		"nested multi-error contains custom error": {
+		"nested multi-error contains customErr2": {
 			sourceErrors: []error{
 				customErr1,
 				NewMulti(
@@ -144,7 +144,7 @@ func TestMultiError_As(t *testing.T) {
 			target:       tE1,
 			as:           true,
 		},
-		"MultiError non containing a testError cannot be cast to a testError": {
+		"MultiError not containing a testError cannot be cast to a testError": {
 			sourceErrors: []error{context.Canceled, context.DeadlineExceeded},
 			as:           false,
 		},
