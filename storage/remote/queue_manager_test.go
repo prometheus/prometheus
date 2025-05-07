@@ -2270,7 +2270,21 @@ func TestBuildTimeSeries(t *testing.T) {
 	// Run the test cases
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			highest, lowest, result, droppedSamples, _, _ := buildTimeSeries(tc.ts, tc.filter)
+			wrappedTS := make([]timeSeriesWrapper, len(tc.ts))
+			for i, ts := range tc.ts {
+				wrappedTS[i] = timeSeriesWrapper{
+					ts: ts,
+				}
+			}
+
+			var wrappedFilter func(w timeSeriesWrapper) bool
+			if tc.filter != nil {
+				wrappedFilter = func(w timeSeriesWrapper) bool {
+					return tc.filter(w.ts)
+				}
+			}
+
+			highest, lowest, result, droppedSamples, _, _ := buildGenericTimeSeries(wrappedTS, wrappedFilter)
 			require.NotNil(t, result)
 			require.Len(t, result, tc.responseLen)
 			require.Equal(t, tc.highestTs, highest)
@@ -2283,10 +2297,21 @@ func TestBuildTimeSeries(t *testing.T) {
 func BenchmarkBuildTimeSeries(b *testing.B) {
 	// Send one sample per series, which is the typical remote_write case
 	const numSamples = 10000
-	filter := func(ts prompb.TimeSeries) bool { return filterTsLimit(99, ts) }
+
 	for i := 0; i < b.N; i++ {
 		samples := createProtoTimeseriesWithOld(numSamples, 100, extraLabels...)
-		_, _, result, _, _, _ := buildTimeSeries(samples, filter)
+		wrappedSamples := make([]timeSeriesWrapper, len(samples))
+		for i, ts := range samples {
+			wrappedSamples[i] = timeSeriesWrapper{
+				ts: ts,
+			}
+		}
+
+		wrappedFilter := func(w timeSeriesWrapper) bool {
+			return w.ts.Samples[0].Timestamp > 99
+		}
+
+		_, _, result, _, _, _ := buildGenericTimeSeries(wrappedSamples, wrappedFilter)
 		require.NotNil(b, result)
 	}
 }
