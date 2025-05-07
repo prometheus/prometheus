@@ -716,52 +716,13 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		return vec, nil
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
-		var (
-			sum, mean, count, kahanC float64
-			incrementalMean          bool
-		)
-		for _, f := range s.Floats {
-			count++
-			if !incrementalMean {
-				newSum, newC := kahanSumInc(f.F, sum, kahanC)
-				// Perform regular mean calculation as long as
-				// the sum doesn't overflow and (in any case)
-				// for the first iteration (even if we start
-				// with ±Inf) to not run into division-by-zero
-				// problems below.
-				if count == 1 || !math.IsInf(newSum, 0) {
-					sum, kahanC = newSum, newC
-					continue
-				}
-				// Handle overflow by reverting to incremental calculation of the mean value.
-				incrementalMean = true
-				mean = sum / (count - 1)
-				kahanC /= count - 1
-			}
-			if math.IsInf(mean, 0) {
-				if math.IsInf(f.F, 0) && (mean > 0) == (f.F > 0) {
-					// The `mean` and `f.F` values are `Inf` of the same sign.  They
-					// can't be subtracted, but the value of `mean` is correct
-					// already.
-					continue
-				}
-				if !math.IsInf(f.F, 0) && !math.IsNaN(f.F) {
-					// At this stage, the mean is an infinite. If the added
-					// value is neither an Inf or a Nan, we can keep that mean
-					// value.
-					// This is required because our calculation below removes
-					// the mean value, which would look like Inf += x - Inf and
-					// end up as a NaN.
-					continue
-				}
-			}
-			correctedMean := mean + kahanC
-			mean, kahanC = kahanSumInc(f.F/count-correctedMean/count, mean, kahanC)
+		var mean, kahanC float64
+		for i, f := range s.Floats {
+			count := float64(i + 1)
+			q := float64(i) / count
+			mean, kahanC = kahanSumInc(f.F/count, q*mean, q*kahanC)
 		}
-		if incrementalMean {
-			return mean + kahanC
-		}
-		return (sum + kahanC) / count
+		return mean + kahanC
 	}), nil
 }
 
