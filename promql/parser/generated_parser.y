@@ -242,9 +242,23 @@ expr            :
  */
 
 aggregate_expr  : aggregate_op aggregate_modifier function_call_body
-                        { $$ = yylex.(*parser).newAggregateExpr($1, $2, $3) }
+                        {
+                        // Need to consume the position of the first RIGHT_PAREN. It might not exist on garbage input
+                        // like 'sum (some_metric) by test'
+                        if len(yylex.(*parser).closingParens) > 1 {
+                                yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
+                        }
+                        $$ = yylex.(*parser).newAggregateExpr($1, $2, $3)
+                        }
                 | aggregate_op function_call_body aggregate_modifier
-                        { $$ = yylex.(*parser).newAggregateExpr($1, $3, $2) }
+                        {
+                        // Need to consume the position of the first RIGHT_PAREN. It might not exist on garbage input
+                        // like 'sum by test (some_metric)'
+                        if len(yylex.(*parser).closingParens) > 1 {
+                                yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
+                        }
+                        $$ = yylex.(*parser).newAggregateExpr($1, $3, $2)
+                        }
                 | aggregate_op function_call_body
                         { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2) }
                 | aggregate_op error
@@ -398,9 +412,10 @@ function_call   : IDENTIFIER function_call_body
                                 Args: $2.(Expressions),
                                 PosRange: posrange.PositionRange{
                                         Start: $1.Pos,
-                                        End:   yylex.(*parser).lastClosing,
+                                        End:   yylex.(*parser).closingParens[0],
                                 },
                         }
+                        yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
                         }
                 ;
 
@@ -426,7 +441,10 @@ function_call_args: function_call_args COMMA expr
  */
 
 paren_expr      : LEFT_PAREN expr RIGHT_PAREN
-                        { $$ = &ParenExpr{Expr: $2.(Expr), PosRange: mergeRanges(&$1, &$3)} }
+                        {
+                        $$ = &ParenExpr{Expr: $2.(Expr), PosRange: mergeRanges(&$1, &$3)}
+                        yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
+                        }
                 ;
 
 /*
