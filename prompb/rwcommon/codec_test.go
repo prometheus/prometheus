@@ -195,23 +195,16 @@ func testFloatHistogram() histogram.FloatHistogram {
 }
 
 func TestFromIntToFloatOrIntHistogram(t *testing.T) {
+	testIntHist := testIntHistogram()
+	testFloatHist := testFloatHistogram()
 	t.Run("v1", func(t *testing.T) {
-		// v1 does not support nhcb.
-		testIntHistWithoutNHCB := testIntHistogram()
-		testIntHistWithoutNHCB.CustomValues = nil
-		testFloatHistWithoutNHCB := testFloatHistogram()
-		testFloatHistWithoutNHCB.CustomValues = nil
-
-		h := prompb.FromIntHistogram(123, &testIntHistWithoutNHCB)
+		h := prompb.FromIntHistogram(123, &testIntHist)
 		require.False(t, h.IsFloatHistogram())
 		require.Equal(t, int64(123), h.Timestamp)
-		require.Equal(t, testIntHistWithoutNHCB, *h.ToIntHistogram())
-		require.Equal(t, testFloatHistWithoutNHCB, *h.ToFloatHistogram())
+		require.Equal(t, testIntHist, *h.ToIntHistogram())
+		require.Equal(t, testFloatHist, *h.ToFloatHistogram())
 	})
 	t.Run("v2", func(t *testing.T) {
-		testIntHist := testIntHistogram()
-		testFloatHist := testFloatHistogram()
-
 		h := writev2.FromIntHistogram(123, &testIntHist)
 		require.False(t, h.IsFloatHistogram())
 		require.Equal(t, int64(123), h.Timestamp)
@@ -221,20 +214,15 @@ func TestFromIntToFloatOrIntHistogram(t *testing.T) {
 }
 
 func TestFromFloatToFloatHistogram(t *testing.T) {
+	testFloatHist := testFloatHistogram()
 	t.Run("v1", func(t *testing.T) {
-		// v1 does not support nhcb.
-		testFloatHistWithoutNHCB := testFloatHistogram()
-		testFloatHistWithoutNHCB.CustomValues = nil
-
-		h := prompb.FromFloatHistogram(123, &testFloatHistWithoutNHCB)
+		h := prompb.FromFloatHistogram(123, &testFloatHist)
 		require.True(t, h.IsFloatHistogram())
 		require.Equal(t, int64(123), h.Timestamp)
 		require.Nil(t, h.ToIntHistogram())
-		require.Equal(t, testFloatHistWithoutNHCB, *h.ToFloatHistogram())
+		require.Equal(t, testFloatHist, *h.ToFloatHistogram())
 	})
 	t.Run("v2", func(t *testing.T) {
-		testFloatHist := testFloatHistogram()
-
 		h := writev2.FromFloatHistogram(123, &testFloatHist)
 		require.True(t, h.IsFloatHistogram())
 		require.Equal(t, int64(123), h.Timestamp)
