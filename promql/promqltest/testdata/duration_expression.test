@@ -9,84 +9,112 @@ load 5m
 
 # Test basic duration with unit: [30m]
 eval instant at 50m changes(http_requests[30m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 3
 	{path="/bar"} 4
 	{path="/biz"} 0
 
 # Test addition in duration: [26m+4m]
 eval instant at 50m changes(http_requests[26m+4m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 3
 	{path="/bar"} 4
 	{path="/biz"} 0
 
 # Test addition with 0 in duration: [30m+0s]
 eval instant at 50m changes(http_requests[30m+0s])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 3
 	{path="/bar"} 4
 	{path="/biz"} 0
 
 # Test raw seconds: [1800]
 eval instant at 50m changes(http_requests[1800])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 3
 	{path="/bar"} 4
 	{path="/biz"} 0
 
 # Test seconds with multiplication: [60*30]
 eval instant at 50m changes(http_requests[60*30])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 3
 	{path="/bar"} 4
 	{path="/biz"} 0
 
 # Test minutes with multiplication: [2m*15]
 eval instant at 50m changes(http_requests[2m*15])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 3
 	{path="/bar"} 4
 	{path="/biz"} 0
 
 # Test complex expression with parentheses: [2m*(10+5)]
 eval instant at 50m changes(http_requests[2m*(10+5)])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 3
 	{path="/bar"} 4
 	{path="/biz"} 0
 
 # Test mixed units: [29m+60s]
 eval instant at 50m changes(http_requests[29m+60s])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 3
 	{path="/bar"} 4
 	{path="/biz"} 0
 
 # Test nested parentheses: [24m+((1.5*2m)+2m)]
 eval instant at 50m changes(http_requests[24m+((1.5*2m)+2m)])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 3
 	{path="/bar"} 4
 	{path="/biz"} 0
 
 # Test start with -: [-5m+35m]
 eval instant at 50m changes(http_requests[-5m+35m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 3
 	{path="/bar"} 4
 	{path="/biz"} 0
 
 # Test division: [1h/2]
 eval instant at 50m changes(http_requests[1h/2])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 3
 	{path="/bar"} 4
 	{path="/biz"} 0
 
 # Test modulo: [1h30m % 1h]
 eval instant at 50m changes(http_requests[1h30m % 1h])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 3
 	{path="/bar"} 4
 	{path="/biz"} 0
 
 # Test modulo and calculation: [30m1s-30m1s % 1m]
 eval instant at 50m changes(http_requests[30m1s-30m1s % 1m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 3
 	{path="/bar"} 4
 	{path="/biz"} 0
 
 # Test combination of operations: [(9m30s+30s)*3]
 eval instant at 50m changes(http_requests[(9m30s+30s)*3])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 3
 	{path="/bar"} 4
 	{path="/biz"} 0
@@ -98,24 +126,36 @@ load 10s
 
 # In subquery expression.
 eval instant at 1000s sum_over_time(metric1_total[29s+1s:5s+5s])
+  expect no_warn
+  expect no_info
   {} 297
 
 # Test complex expressions in subquery ranges.
 eval instant at 1000s sum_over_time(metric1_total[29s+1s:((((8 - 2) / 3) * 7s) % 4) + 8000ms])
+  expect no_warn
+  expect no_info
   {} 297
 
 # Test complex expressions in offset ranges.
 eval instant at 1200s sum_over_time(metric1_total[29s+1s:20*500ms] offset (20*(((((8 - 2) / 3) * 7s) % 4) + 8000ms)))
+  expect no_warn
+  expect no_info
   {} 297
 
 # Test complex expressions in offset ranges with negative offset.
 eval instant at 800s sum_over_time(metric1_total[29s+1s:20*500ms] offset -(20*(((((8 - 2) / 3) * 7s) % 4) + 8000ms)))
+  expect no_warn
+  expect no_info
   {} 297
 
 # Test offset precedence with parentheses: offset (100 + 2)
 eval instant at 1000s metric1_total offset (100 + 2)
+  expect no_warn
+  expect no_info
   {__name__="metric1_total"} 89
 
 # Test offset precedence without parentheses: offset 100 + 2
 eval instant at 1000s metric1_total offset 100 + 2
+  expect no_warn
+  expect no_info
   {} 92

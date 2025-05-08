@@ -3,24 +3,36 @@ load 10s
 
 # Evaluation before 0s gets no sample.
 eval instant at 10s sum_over_time(metric_total[50s:10s])
+  expect no_warn
+  expect no_info
   {} 3
 
 eval instant at 10s sum_over_time(metric_total[50s:5s])
+  expect no_warn
+  expect no_info
   {} 4
 
 # Every evaluation yields the last value, i.e. 2
 eval instant at 5m sum_over_time(metric_total[50s:10s])
+  expect no_warn
+  expect no_info
   {} 10
 
 # Series becomes stale at 5m10s (5m after last sample).
 # Hence subquery gets a single sample at 5m10s.
 eval instant at 5m59s sum_over_time(metric_total[60s:10s])
+  expect no_warn
+  expect no_info
   {} 2
 
 eval instant at 10s rate(metric_total[20s:10s])
+  expect no_warn
+  expect no_info
   {} 0.1
 
 eval instant at 20s rate(metric_total[20s:5s])
+  expect no_warn
+  expect no_info
   {} 0.06666666666666667
 
 clear
@@ -32,10 +44,14 @@ load 10s
   http_requests_total{job="api-server", instance="1", group="canary"}  0+40x2000
 
 eval instant at 8000s rate(http_requests_total{group=~"pro.*"}[1m:10s])
+  expect no_warn
+  expect no_info
   {job="api-server", instance="0", group="production"} 1
   {job="api-server", instance="1", group="production"} 2
 
 eval instant at 20000s avg_over_time(rate(http_requests_total[1m])[1m:1s])
+  expect no_warn
+  expect no_info
   {job="api-server", instance="0", group="canary"}     8
   {job="api-server", instance="1", group="canary"}     4
   {job="api-server", instance="1", group="production"} 3
@@ -49,59 +65,93 @@ load 10s
   metric3_total 0+3x1000
 
 eval instant at 1000s sum_over_time(metric1_total[30s:10s])
+  expect no_warn
+  expect no_info
   {} 297
 
 # This is (97 + 98*2 + 99*2 + 100), because other than 97@975s and 100@1000s,
 # everything else is repeated with the 5s step.
 eval instant at 1000s sum_over_time(metric1_total[30s:5s])
+  expect no_warn
+  expect no_info
   {} 591
 
 # Offset is aligned with the step, so this is from [98@980s, 99@990s, 100@1000s].
 eval instant at 1010s sum_over_time(metric1_total[30s:10s] offset 10s)
+  expect no_warn
+  expect no_info
   {} 297
 
 # Same result for different offsets due to step alignment.
 eval instant at 1010s sum_over_time(metric1_total[30s:10s] offset 9s)
+  expect no_warn
+  expect no_info
   {} 297
 
 eval instant at 1010s sum_over_time(metric1_total[30s:10s] offset 7s)
+  expect no_warn
+  expect no_info
   {} 297
 
 eval instant at 1010s sum_over_time(metric1_total[30s:10s] offset 5s)
+  expect no_warn
+  expect no_info
   {} 297
 
 eval instant at 1010s sum_over_time(metric1_total[30s:10s] offset 3s)
+  expect no_warn
+  expect no_info
   {} 297
 
 eval instant at 1010s sum_over_time((metric1_total)[30s:10s] offset 3s)
+  expect no_warn
+  expect no_info
   {} 297
 
 eval instant at 1010s sum_over_time(metric1_total[30:10] offset 3)
+  expect no_warn
+  expect no_info
   {} 297
 
 eval instant at 1010s sum_over_time((metric1_total)[30:10s] offset 3s)
+  expect no_warn
+  expect no_info
   {} 297
 
 eval instant at 1010s sum_over_time((metric1_total)[30:10s] offset 3s)
+  expect no_warn
+  expect no_info
   {} 297
 
 eval instant at 1010s sum_over_time((metric1_total)[30:10] offset 3s)
+  expect no_warn
+  expect no_info
   {} 297
 
 eval instant at 1010s sum_over_time((metric1_total)[30:10] offset 3)
+  expect no_warn
+  expect no_info
   {} 297
 
 # Nested subqueries.
 eval instant at 1000s rate(sum_over_time(metric1_total[30s:10s])[50s:10s])
+  expect no_warn
+  expect no_info
   {} 0.30000000000000004
 
 eval instant at 1000s rate(sum_over_time(metric2_total[30s:10s])[50s:10s])
+  expect no_warn
+  expect no_info
   {} 0.6000000000000001
   
 eval instant at 1000s rate(sum_over_time(metric3_total[30s:10s])[50s:10s])
+  expect no_warn
+  expect no_info
   {} 0.9
   
 eval instant at 1000s rate(sum_over_time((metric1_total+metric2_total+metric3_total)[30s:10s])[30s:10s])
+  expect no_warn
+  expect no_info
   {} 1.8
 
 clear
@@ -113,25 +163,37 @@ load 7s
 
 # Extrapolated from [3@21, 144@77]: (144 - 3) / (77 - 21)
 eval instant at 80s rate(metric_total[1m])
+  expect no_warn
+  expect no_info
   {} 2.517857143
 
 # Extrapolated to range start for counter, [2@20, 144@80]: (144 - 2) / (80 - 20)
 eval instant at 80s rate(metric_total[1m500ms:10s])
+  expect no_warn
+  expect no_info
   {} 2.3666666666666667
 
 # Extrapolated to zero value for counter, [2@20, 144@80]: (144 - 0) / 61
 eval instant at 80s rate(metric_total[1m1s:10s])
+  expect no_warn
+  expect no_info
   {} 2.360655737704918
 
 # Only one value between 10s and 20s, 2@14
 eval instant at 20s min_over_time(metric_total[10s])
+  expect no_warn
+  expect no_info
   {} 2
 
 # min(2@20)
 eval instant at 20s min_over_time(metric_total[15s:10s])
+  expect no_warn
+  expect no_info
   {} 1
 
 eval instant at 20m min_over_time(rate(metric_total[5m])[20m:1m])
+  expect no_warn
+  expect no_info
   {} 0.12119047619047618
 
 clear
@@ -144,11 +206,15 @@ load 1m
 # This sub-query has to detect the counter reset even if it does
 # not include the exact sample where the counter reset has happened.
 eval instant at 10m increase(native_histogram[10m:3m])
+  expect no_warn
+  expect no_info
   {} {{count:25 sum:25}}
 # This sub-query must not detect the counter reset multiple times
 # even though the sample where the counter reset happened is returned
 # by the sub-query multiple times.
 eval instant at 10m increase(native_histogram[10m:15s])
+  expect no_warn
+  expect no_info
   {} {{count:30.769230769230766 sum:30.769230769230766}}
 
 # When range < resolution and the first evaluation time is out of range.
@@ -156,4 +222,6 @@ load 5m
 	foo 3+0x10
 
 eval instant at 12m min_over_time((topk(1, foo))[1m:5m])
+	expect no_warn
+	expect no_info
 	#empty

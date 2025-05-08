@@ -9,92 +9,132 @@ load 5m
 
 # Tests for resets().
 eval instant at 50m resets(http_requests[5m])
+  expect no_warn
+  expect no_info
 
 eval instant at 50m resets(http_requests[10m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 0
 	{path="/bar"} 0
 	{path="/biz"} 0
 
 eval instant at 50m resets(http_requests[600])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 0
 	{path="/bar"} 0
 	{path="/biz"} 0
 
 eval instant at 50m resets(http_requests[20m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 1
 	{path="/bar"} 0
 	{path="/biz"} 0
 
 eval instant at 50m resets(http_requests[30m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 1
 	{path="/bar"} 0
 	{path="/biz"} 0
 
 eval instant at 50m resets(http_requests[32m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 2
 	{path="/bar"} 1
 	{path="/biz"} 0
 
 eval instant at 50m resets(http_requests[50m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 3
 	{path="/bar"} 1
 	{path="/biz"} 0
 
 eval instant at 50m resets(nonexistent_metric[50m])
+  expect no_warn
+  expect no_info
 
 # Test for mix of floats and histograms.
 
 eval instant at 50m resets(http_requests_histogram[6m])
+    expect no_warn
+    expect no_info
     {path="/foo"} 0
     {path="/bar"} 0
     {path="/biz"} 0
 
 eval instant at 50m resets(http_requests_histogram[60m])
+    expect no_warn
+    expect no_info
     {path="/foo"} 0
     {path="/bar"} 1
     {path="/biz"} 6
 
 # Tests for changes().
 eval instant at 50m changes(http_requests[5m])
+  expect no_warn
+  expect no_info
 
 eval instant at 50m changes(http_requests[6m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 0
 	{path="/bar"} 0
 	{path="/biz"} 0
 
 eval instant at 50m changes(http_requests[20m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 2
 	{path="/bar"} 2
 	{path="/biz"} 0
 
 eval instant at 50m changes(http_requests[30m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 3
 	{path="/bar"} 4
 	{path="/biz"} 0
 
 eval instant at 50m changes(http_requests[50m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 7
 	{path="/bar"} 8
 	{path="/biz"} 1
 
 eval instant at 50m changes((http_requests[50m]))
+	expect no_warn
+	expect no_info
 	{path="/foo"} 7
 	{path="/bar"} 8
 	{path="/biz"} 1
 
 eval instant at 50m changes(nonexistent_metric[50m])
+  expect no_warn
+  expect no_info
 
 # Test for mix of floats and histograms.
 # Because of bug #14172 we are not able to test more complex cases like below:
 # 0 1 2 {{schema:0 sum:1 count:1}} 3 {{schema:0 sum:2 count:2}} 4 {{schema:0 sum:3 count:3}}.
 eval instant at 50m changes(http_requests_histogram[5m])
+  expect no_warn
+  expect no_info
 
 eval instant at 50m changes(http_requests_histogram[6m])
+    expect no_warn
+    expect no_info
     {path="/foo"} 0
     {path="/bar"} 0
     {path="/biz"} 0
 
 eval instant at 50m changes(http_requests_histogram[60m])
+    expect no_warn
+    expect no_info
     {path="/foo"} 0
     {path="/bar"} 1
     {path="/biz"} 9
@@ -106,6 +146,8 @@ load 5m
   x{a="c"} 0 NaN 0
 
 eval instant at 15m changes(x[20m])
+  expect no_warn
+  expect no_info
   {a="b"} 0
   {a="c"} 2
 
@@ -120,6 +162,8 @@ load 5m
 
 # Tests for increase().
 eval instant at 50m increase(http_requests_total[50m])
+	expect no_warn
+	expect no_info
 	{path="/foo"}   100
 	{path="/bar"}   160
 	{path="/dings"} 100
@@ -133,6 +177,8 @@ eval instant at 50m increase(http_requests_total[50m])
 # t=-30s. Here the extrapolation to t=-2m30s would reach a negative
 # value, and therefore the extrapolation happens only by 30s.
 eval instant at 50m increase(http_requests_total[100m])
+	expect no_warn
+	expect no_info
 	{path="/foo"}   100
 	{path="/bar"}   162
 	{path="/dings"} 105
@@ -148,6 +194,8 @@ load 5m
 	http_requests_total{path="/foo"}	0 1 2 3 2 3 4
 
 eval instant at 30m increase(http_requests_total[30m])
+    expect no_warn
+    expect no_info
     {path="/foo"} 7
 
 clear
@@ -159,12 +207,18 @@ load 5m
 
 # Counter resets at in the middle of range are handled correctly by rate().
 eval instant at 50m rate(testcounter_reset_middle_total[50m])
+	expect no_warn
+	expect no_info
 	{} 0.08
 
 # Counter resets at end of range are ignored by rate().
 eval instant at 50m rate(testcounter_reset_end_total[5m])
+  expect no_warn
+  expect no_info
 
 eval instant at 50m rate(testcounter_reset_end_total[6m])
+	expect no_warn
+	expect no_info
 	{} 0
 
 clear
@@ -176,9 +230,13 @@ load 5m
 
 # Rates should calculate per-second rates.
 eval instant at 50m rate(calculate_rate_window_total[50m])
+	expect no_warn
+	expect no_info
 	{} 0.26666666666666666
 
 eval instant at 50m rate(calculate_rate_offset_total[10m] offset 5m)
+	expect no_warn
+	expect no_info
 	{x="a"} 0.03333333333333333
 	{x="b"} 0.06666666666666667
 
@@ -196,6 +254,8 @@ load 4m
 # reach half a sampling interval (2m). Beyond that, we only
 # extrapolate by half a sampling interval.
 eval instant at 10m rate(testcounter_zero_cutoff_total[20m])
+	expect no_warn
+	expect no_info
 	{start="0m"} 0.5
 	{start="1m"} 0.55
 	{start="2m"} 0.6
@@ -205,6 +265,8 @@ eval instant at 10m rate(testcounter_zero_cutoff_total[20m])
 
 # Normal half-interval cutoff for left-side extrapolation.
 eval instant at 50m rate(testcounter_zero_cutoff_total[20m])
+	expect no_warn
+	expect no_info
 	{start="0m"} 0.6
 	{start="1m"} 0.6
 	{start="2m"} 0.6
@@ -228,37 +290,59 @@ load 5m
 	http_requests_histogram{path="/g"} 0 0 {{schema:-53 sum:3 count:3 custom_values:[1] buckets:[3]}} {{schema:-53 sum:3 count:3 custom_values:[5 10] buckets:[3]}}
 
 eval instant at 50m irate(http_requests_total[50m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} .03333333333333333333
 	{path="/bar"} .03333333333333333333
 
 # Counter reset.
 eval instant at 30m irate(http_requests_total[50m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} .03333333333333333333
 	{path="/bar"} 0
 
 eval range from 0 to 20m step 5m irate(http_requests_nan[15m1s])
+	expect no_warn
+	expect no_info
 	{} _ NaN NaN NaN 0.02
 
 eval instant at 20m irate(http_requests_histogram{path="/a"}[20m])
+	expect no_warn
+	expect no_info
 	{path="/a"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
 eval instant at 20m irate(http_requests_histogram{path="/b"}[20m])
+	expect no_warn
+	expect no_info
 	{path="/b"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
 eval instant at 20m irate(http_requests_histogram{path="/b"}[6m])
+  expect no_warn
+  expect no_info
 
-eval_warn instant at 20m irate(http_requests_histogram{path="/c"}[20m])
+eval instant at 20m irate(http_requests_histogram{path="/c"}[20m])
+	expect warn
+	expect no_info
 	{path="/c"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
-eval_warn instant at 20m irate(http_requests_histogram{path="/d"}[20m])
+eval instant at 20m irate(http_requests_histogram{path="/d"}[20m])
+	expect warn
+	expect no_info
 	{path="/d"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
-eval_warn instant at 20m irate(http_requests_histogram{path="/e"}[20m])
+eval instant at 20m irate(http_requests_histogram{path="/e"}[20m])
+  expect warn
+  expect no_info
 
 eval instant at 20m irate(http_requests_histogram{path="/f"}[20m])
+	expect no_warn
+	expect no_info
 	{path="/f"} {{schema:-53 sum:0.01 count:0.01 custom_values:[5 10] buckets:[0.01]}}
 
 eval instant at 20m irate(http_requests_histogram{path="/g"}[20m])
+	expect no_warn
+	expect no_info
 	{path="/g"} {{schema:-53 sum:0.01 count:0.01 custom_values:[5 10] buckets:[0.01]}}
 
 clear
@@ -272,18 +356,26 @@ load 5m
 	http_requests_mix{path="/foo"} 0 50 100 {{schema:0 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:0 sum:1 count:2 buckets:[1 1 1] counter_reset_hint:gauge}}
 
 eval instant at 20m delta(http_requests[20m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 200
 	{path="/bar"} -200
 
 eval instant at 20m delta(http_requests_gauge[20m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} {{schema:0 sum:4 count:8 buckets:[4 4 4]}}
 
 # delta emits warn annotation for non-gauge histogram types.
-eval_warn instant at 20m delta(http_requests_counter[20m])
+eval instant at 20m delta(http_requests_counter[20m])
+	expect warn
+	expect no_info
 	{path="/foo"} {{schema:0 sum:4 count:8 buckets:[4 4 4]}}
 
 # delta emits warn annotation for mix of histogram and floats.
-eval_warn instant at 20m delta(http_requests_mix[20m])
+eval instant at 20m delta(http_requests_mix[20m])
+	expect warn
+	expect no_info
 	#empty
 
 clear
@@ -302,31 +394,51 @@ load 5m
 	http_requests_histogram{path="/g"} 0 0 {{schema:-53 sum:1 count:1 custom_values:[1] buckets:[2] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests[20m])
+	expect no_warn
+	expect no_info
 	{path="/foo"} 50
 	{path="/bar"} -50
 
 eval range from 0 to 20m step 5m idelta(http_requests_nan[15m1s])
+	expect no_warn
+	expect no_info
 	{} _ NaN NaN NaN 6
 
 eval instant at 20m idelta(http_requests_histogram{path="/a"}[20m])
+	expect no_warn
+	expect no_info
 	{path="/a"} {{sum:1 count:3 counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests_histogram{path="/b"}[20m])
+	expect no_warn
+	expect no_info
 	{path="/b"} {{sum:1 count:1 counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests_histogram{path="/b"}[6m])
+  expect no_warn
+  expect no_info
 
-eval_warn instant at 20m idelta(http_requests_histogram{path="/c"}[20m])
+eval instant at 20m idelta(http_requests_histogram{path="/c"}[20m])
+	expect warn
+	expect no_info
 	{path="/c"} {{sum:1 count:1 counter_reset_hint:gauge}}
 
-eval_warn instant at 20m idelta(http_requests_histogram{path="/d"}[20m])
+eval instant at 20m idelta(http_requests_histogram{path="/d"}[20m])
+	expect warn
+	expect no_info
 	{path="/d"} {{sum:1 count:1 counter_reset_hint:gauge}}
 
-eval_warn instant at 20m idelta(http_requests_histogram{path="/e"}[20m])
+eval instant at 20m idelta(http_requests_histogram{path="/e"}[20m])
+  expect warn
+  expect no_info
 
-eval_warn instant at 20m idelta(http_requests_histogram{path="/f"}[20m])
+eval instant at 20m idelta(http_requests_histogram{path="/f"}[20m])
+  expect warn
+  expect no_info
 
-eval_warn instant at 20m idelta(http_requests_histogram{path="/g"}[20m])
+eval instant at 20m idelta(http_requests_histogram{path="/g"}[20m])
+	expect warn
+	expect no_info
 
 clear
 
@@ -341,28 +453,42 @@ load 5m
 
 # deriv should return the same as rate in simple cases.
 eval instant at 50m rate(http_requests_total{group="canary", instance="1", job="app-server"}[50m])
+	expect no_warn
+	expect no_info
 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
 eval instant at 50m deriv(http_requests_total{group="canary", instance="1", job="app-server"}[50m])
+	expect no_warn
+	expect no_info
 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
 # deriv should return correct result.
 eval instant at 50m deriv(testcounter_reset_middle_total[100m])
+	expect no_warn
+	expect no_info
 	{} 0.010606060606060607
 
 # deriv should ignore histograms in a mixed range of floats and histograms, flagged by an info annotation.
-eval_info instant at 110m deriv(http_requests_mix{group="canary", instance="1", job="app-server"}[110m])
+eval instant at 110m deriv(http_requests_mix{group="canary", instance="1", job="app-server"}[110m])
+	expect info
+	expect no_warn
 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
-eval_info instant at 100m deriv(testcounter_reset_middle_mix[110m])
+eval instant at 100m deriv(testcounter_reset_middle_mix[110m])
+	expect info
+	expect no_warn
 	{} 0.010606060606060607
 
 # deriv should silently ignore ranges consisting only of histograms.
 eval instant at 50m deriv(http_requests_histogram[60m])
+	expect no_warn
+	expect no_info
 	#empty
 
 # deriv should return NaN in case of +Inf or -Inf found.
 eval instant at 100m deriv(http_requests_inf[100m])
+	expect no_warn
+	expect no_info
 	{job="app-server", instance="1", group="canary"} NaN
 
 # predict_linear should return correct result.
@@ -380,45 +506,67 @@ eval instant at 100m deriv(http_requests_inf[100m])
 # intercept at t=3000: 38.63636363636364
 # intercept at t=3000+3600: 76.81818181818181
 eval instant at 50m predict_linear(testcounter_reset_middle_total[50m], 3600)
+	expect no_warn
+	expect no_info
 	{} 70
 
 eval instant at 50m predict_linear(testcounter_reset_middle_total[50m], 1h)
+	expect no_warn
+	expect no_info
 	{} 70
 
 # intercept at t = 3000+3600 = 6600
 eval instant at 50m predict_linear(testcounter_reset_middle_total[55m] @ 3000, 3600)
+	expect no_warn
+	expect no_info
 	{} 76.81818181818181
 
 eval instant at 50m predict_linear(testcounter_reset_middle_total[55m] @ 3000, 1h)
+	expect no_warn
+	expect no_info
 	{} 76.81818181818181
 
 # intercept at t = 600+3600 = 4200
 eval instant at 10m predict_linear(testcounter_reset_middle_total[55m] @ 3000, 3600)
+	expect no_warn
+	expect no_info
 	{} 51.36363636363637
 
 # intercept at t = 4200+3600 = 7800
 eval instant at 70m predict_linear(testcounter_reset_middle_total[55m] @ 3000, 3600)
+	expect no_warn
+	expect no_info
 	{} 89.54545454545455
 
 # predict_linear should ignore histograms in a mixed range of floats and histograms, flagged by an info annotation.
-eval_info instant at 60m predict_linear(testcounter_reset_middle_mix[60m], 3000)
+eval instant at 60m predict_linear(testcounter_reset_middle_mix[60m], 3000)
+	expect info
+	expect no_warn
 	{} 70
 
-eval_info instant at 60m predict_linear(testcounter_reset_middle_mix[60m], 50m)
+eval instant at 60m predict_linear(testcounter_reset_middle_mix[60m], 50m)
+	expect info
+	expect no_warn
 	{} 70
 
 # predict_linear should silently ignore ranges consisting only of histograms.
 eval instant at 60m predict_linear(http_requests_histogram[60m], 50m)
+	expect no_warn
+	expect no_info
 	#empty
 
 # predict_linear should return NaN in case of +Inf or -Inf found.
 eval instant at 100m predict_linear(http_requests_inf[100m], 6000)
+	expect no_warn
+	expect no_info
 	{job="app-server", instance="1", group="canary"} NaN
 
 # With http_requests_total, there is a sample value exactly at the end of
 # the range, and it has exactly the predicted value, so predict_linear
 # can be emulated with deriv.
 eval instant at 50m predict_linear(http_requests_total[50m], 3600) - (http_requests_total + deriv(http_requests_total[50m]) * 3600)
+	expect no_warn
+	expect no_info
 	{group="canary", instance="1", job="app-server"} 0
 
 clear
@@ -430,54 +578,79 @@ load 5m
 
 # label_replace does a full-string match and replace.
 eval instant at 0m label_replace(testmetric, "dst", "destination-value-$1", "src", "source-value-(.*)")
+  expect no_warn
+  expect no_info
   testmetric{src="source-value-10",dst="destination-value-10"} 0
   testmetric{src="source-value-20",dst="destination-value-20"} 1
 
 # label_replace does not do a sub-string match.
 eval instant at 0m label_replace(testmetric, "dst", "destination-value-$1", "src", "value-(.*)")
+  expect no_warn
+  expect no_info
   testmetric{src="source-value-10",dst="original-destination-value"} 0
   testmetric{src="source-value-20",dst="original-destination-value"} 1
 
 # label_replace works with multiple capture groups.
 eval instant at 0m label_replace(testmetric, "dst", "$1-value-$2", "src", "(.*)-value-(.*)")
+  expect no_warn
+  expect no_info
   testmetric{src="source-value-10",dst="source-value-10"} 0
   testmetric{src="source-value-20",dst="source-value-20"} 1
 
 # label_replace does not overwrite the destination label if the source label
 # does not exist.
 eval instant at 0m label_replace(testmetric, "dst", "value-$1", "nonexistent-src", "source-value-(.*)")
+  expect no_warn
+  expect no_info
   testmetric{src="source-value-10",dst="original-destination-value"} 0
   testmetric{src="source-value-20",dst="original-destination-value"} 1
 
 # label_replace overwrites the destination label if the source label is empty,
 # but matched.
 eval instant at 0m label_replace(testmetric, "dst", "value-$1", "nonexistent-src", "(.*)")
+  expect no_warn
+  expect no_info
   testmetric{src="source-value-10",dst="value-"} 0
   testmetric{src="source-value-20",dst="value-"} 1
 
 # label_replace does not overwrite the destination label if the source label
 # is not matched.
 eval instant at 0m label_replace(testmetric, "dst", "value-$1", "src", "non-matching-regex")
+  expect no_warn
+  expect no_info
   testmetric{src="source-value-10",dst="original-destination-value"} 0
   testmetric{src="source-value-20",dst="original-destination-value"} 1
 
 eval instant at 0m label_replace((((testmetric))), (("dst")), (("value-$1")), (("src")), (("non-matching-regex")))
+  expect no_warn
+  expect no_info
   testmetric{src="source-value-10",dst="original-destination-value"} 0
   testmetric{src="source-value-20",dst="original-destination-value"} 1
 
 # label_replace drops labels that are set to empty values.
 eval instant at 0m label_replace(testmetric, "dst", "", "dst", ".*")
+  expect no_warn
+  expect no_info
   testmetric{src="source-value-10"} 0
   testmetric{src="source-value-20"} 1
 
 # label_replace fails when the regex is invalid.
-eval_fail instant at 0m label_replace(testmetric, "dst", "value-$1", "src", "(.*")
+eval instant at 0m label_replace(testmetric, "dst", "value-$1", "src", "(.*")
+  expect fail
+  expect no_warn
+  expect no_info
 
 # label_replace fails when the destination label name is not a valid Prometheus label name.
-eval_fail instant at 0m label_replace(testmetric, "\xff", "", "src", "(.*)")
+eval instant at 0m label_replace(testmetric, "\xff", "", "src", "(.*)")
+  expect fail
+  expect no_warn
+  expect no_info
 
 # label_replace fails when there would be duplicated identical output label sets.
-eval_fail instant at 0m label_replace(testmetric, "src", "", "", "")
+eval instant at 0m label_replace(testmetric, "src", "", "", "")
+  expect fail
+  expect no_warn
+  expect no_info
 
 clear
 
@@ -486,21 +659,33 @@ load 10s
   metric 1 1 {{schema:0 sum:1 count:1}}
 
 eval instant at 0s timestamp(metric)
+  expect no_warn
+  expect no_info
   {} 0
 
 eval instant at 5s timestamp(metric)
+  expect no_warn
+  expect no_info
   {} 0
 
 eval instant at 5s timestamp(((metric)))
+  expect no_warn
+  expect no_info
   {} 0
 
 eval instant at 10s timestamp(metric)
+  expect no_warn
+  expect no_info
   {} 10
 
 eval instant at 10s timestamp(((metric)))
+  expect no_warn
+  expect no_info
   {} 10
 
 eval instant at 20s timestamp(metric)
+  expect no_warn
+  expect no_info
   {} 20
 
 # Tests for label_join.
@@ -512,21 +697,29 @@ load 5m
 
 # label_join joins all src values in order.
 eval instant at 0m label_join(testmetric, "dst", "-", "src", "src1", "src2")
+  expect no_warn
+  expect no_info
   testmetric{src="a",src1="b",src2="c",dst="a-b-c"} 0
   testmetric{src="d",src1="e",src2="f",dst="d-e-f"} 1
 
 # label_join treats non existent src labels as empty strings.
 eval instant at 0m label_join(testmetric, "dst", "-", "src", "src3", "src1")
+  expect no_warn
+  expect no_info
   testmetric{src="a",src1="b",src2="c",dst="a--b"} 0
   testmetric{src="d",src1="e",src2="f",dst="d--e"} 1
 
 # label_join overwrites the destination label even if the resulting dst label is empty string
 eval instant at 0m label_join(testmetric, "dst", "", "emptysrc", "emptysrc1", "emptysrc2")
+  expect no_warn
+  expect no_info
   testmetric{src="a",src1="b",src2="c"} 0
   testmetric{src="d",src1="e",src2="f"} 1
 
 # test without src label for label_join
 eval instant at 0m label_join(testmetric, "dst", ", ")
+	  expect no_warn
+	  expect no_info
 	  testmetric{src="a",src1="b",src2="c"} 0
 	  testmetric{src="d",src1="e",src2="f"} 1
 
@@ -537,25 +730,37 @@ load 5m
 
 # label_join creates dst label if not present.
 eval instant at 0m label_join(testmetric1, "dst", ", ", "src", "src1", "src2")
+  expect no_warn
+  expect no_info
   testmetric1{src="foo",src1="bar",src2="foobar",dst="foo, bar, foobar"} 0
   testmetric1{src="fizz",src1="buzz",src2="fizzbuzz",dst="fizz, buzz, fizzbuzz"} 1
 
-eval_fail instant at 0m label_join(dup, "label", "", "this")
-  expected_fail_message vector cannot contain metrics with the same labelset
+eval instant at 0m label_join(dup, "label", "", "this")
+  expect fail msg:vector cannot contain metrics with the same labelset
+  expect no_warn
+  expect no_info
 
 clear
 
 # Tests for vector.
 eval instant at 0m vector(1)
+  expect no_warn
+  expect no_info
   {} 1
 
 eval instant at 0s vector(time())
+  expect no_warn
+  expect no_info
   {} 0
 
 eval instant at 5s vector(time())
+  expect no_warn
+  expect no_info
   {} 5
 
 eval instant at 60m vector(time())
+  expect no_warn
+  expect no_info
   {} 3600
 
 
@@ -567,41 +772,57 @@ load 5m
 	test_clamp{src="histogram"} {{schema:0 sum:1 count:1}}
 
 eval instant at 0m clamp_max(test_clamp, 75)
+	expect no_warn
+	expect no_info
 	{src="clamp-a"}	-50
 	{src="clamp-b"}	0
 	{src="clamp-c"}	75
 
 eval instant at 0m clamp_min(test_clamp, -25)
+	expect no_warn
+	expect no_info
 	{src="clamp-a"}	-25
 	{src="clamp-b"}	0
 	{src="clamp-c"}	100
 
 eval instant at 0m clamp(test_clamp, -25, 75)
+	expect no_warn
+	expect no_info
 	{src="clamp-a"}	-25
 	{src="clamp-b"}	0
 	{src="clamp-c"}	75
 
 eval instant at 0m clamp_max(clamp_min(test_clamp, -20), 70)
+	expect no_warn
+	expect no_info
 	{src="clamp-a"}	-20
 	{src="clamp-b"}	0
 	{src="clamp-c"}	70
 
 eval instant at 0m clamp_max((clamp_min(test_clamp, (-20))), (70))
+	expect no_warn
+	expect no_info
 	{src="clamp-a"}	-20
 	{src="clamp-b"}	0
 	{src="clamp-c"}	70
 
 eval instant at 0m clamp(test_clamp, 0, NaN)
+	expect no_warn
+	expect no_info
 	{src="clamp-a"}	NaN
 	{src="clamp-b"}	NaN
 	{src="clamp-c"}	NaN
 
 eval instant at 0m clamp(test_clamp, NaN, 0)
+	expect no_warn
+	expect no_info
 	{src="clamp-a"}	NaN
 	{src="clamp-b"}	NaN
 	{src="clamp-c"}	NaN
 
 eval instant at 0m clamp(test_clamp, 5, -5)
+	expect no_warn
+	expect no_info
 
 clear
 
@@ -610,12 +831,18 @@ load 1m
 
 # clamp ignores any histograms
 eval range from 0 to 5m step 1m clamp(mixed_metric, 2, 5)
+	expect no_warn
+	expect no_info
 	{} _ 2 2 3
 
 eval range from 0 to 5m step 1m clamp_min(mixed_metric, 2)
+	expect no_warn
+	expect no_info
 	{} _ 2 2 3
 
 eval range from 0 to 5m step 1m clamp_max(mixed_metric, 2)
+	expect no_warn
+	expect no_info
 	{} _ 1 2 2
 
 # Test cases for sgn.
@@ -630,6 +857,8 @@ load 5m
 	test_sgn{src="sgn-histogram"} {{schema:1 sum:1 count:1}}
 
 eval instant at 0m sgn(test_sgn)
+	expect no_warn
+	expect no_info
 	{src="sgn-a"}	-1
 	{src="sgn-b"}	1
 	{src="sgn-c"}	NaN
@@ -652,7 +881,10 @@ load 5m
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
 	http_requests{job="app-server", instance="2", group="canary"}		{{schema:0 sum:1 count:1}}x15
 
-eval_ordered instant at 50m sort(http_requests)
+eval instant at 50m sort(http_requests)
+	expect ordered
+	expect no_warn
+	expect no_info
 	http_requests{group="production", instance="0", job="api-server"} 100
 	http_requests{group="production", instance="1", job="api-server"} 200
 	http_requests{group="canary", instance="0", job="api-server"} 300
@@ -663,7 +895,10 @@ eval_ordered instant at 50m sort(http_requests)
 	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="canary", instance="2", job="api-server"} NaN
 
-eval_ordered instant at 50m sort_desc(http_requests)
+eval instant at 50m sort_desc(http_requests)
+	expect ordered
+	expect no_warn
+	expect no_info
 	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="production", instance="1", job="app-server"} 600
@@ -701,7 +936,10 @@ load 5m
 	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 0+10x10
 	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 0+10x10
 
-eval_ordered instant at 50m sort_by_label(http_requests, "instance")
+eval instant at 50m sort_by_label(http_requests, "instance")
+	expect ordered
+	expect no_warn
+	expect no_info
 	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="production", instance="0", job="api-server"} 100
@@ -713,7 +951,10 @@ eval_ordered instant at 50m sort_by_label(http_requests, "instance")
 	http_requests{group="canary", instance="2", job="api-server"} NaN
 	http_requests{group="production", instance="2", job="api-server"} 100
 
-eval_ordered instant at 50m sort_by_label(http_requests, "instance", "group")
+eval instant at 50m sort_by_label(http_requests, "instance", "group")
+	expect ordered
+	expect no_warn
+	expect no_info
 	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="production", instance="0", job="api-server"} 100
@@ -725,7 +966,10 @@ eval_ordered instant at 50m sort_by_label(http_requests, "instance", "group")
 	http_requests{group="canary", instance="2", job="api-server"} NaN
 	http_requests{group="production", instance="2", job="api-server"} 100
 
-eval_ordered instant at 50m sort_by_label(http_requests, "instance", "group")
+eval instant at 50m sort_by_label(http_requests, "instance", "group")
+	expect ordered
+	expect no_warn
+	expect no_info
 	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="production", instance="0", job="api-server"} 100
@@ -737,7 +981,10 @@ eval_ordered instant at 50m sort_by_label(http_requests, "instance", "group")
 	http_requests{group="canary", instance="2", job="api-server"} NaN
 	http_requests{group="production", instance="2", job="api-server"} 100
 
-eval_ordered instant at 50m sort_by_label(http_requests, "group", "instance", "job")
+eval instant at 50m sort_by_label(http_requests, "group", "instance", "job")
+	expect ordered
+	expect no_warn
+	expect no_info
 	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="canary", instance="1", job="api-server"} 400
@@ -749,7 +996,10 @@ eval_ordered instant at 50m sort_by_label(http_requests, "group", "instance", "j
 	http_requests{group="production", instance="1", job="app-server"} 600
 	http_requests{group="production", instance="2", job="api-server"} 100
 
-eval_ordered instant at 50m sort_by_label(http_requests, "job", "instance", "group")
+eval instant at 50m sort_by_label(http_requests, "job", "instance", "group")
+	expect ordered
+	expect no_warn
+	expect no_info
 	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="production", instance="0", job="api-server"} 100
 	http_requests{group="canary", instance="1", job="api-server"} 400
@@ -761,7 +1011,10 @@ eval_ordered instant at 50m sort_by_label(http_requests, "job", "instance", "gro
 	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="production", instance="1", job="app-server"} 600
 
-eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance")
+eval instant at 50m sort_by_label_desc(http_requests, "instance")
+	expect ordered
+	expect no_warn
+	expect no_info
 	http_requests{group="production", instance="2", job="api-server"} 100
 	http_requests{group="canary", instance="2", job="api-server"} NaN
 	http_requests{group="production", instance="1", job="app-server"} 600
@@ -773,7 +1026,10 @@ eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance")
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="canary", instance="0", job="api-server"} 300
 
-eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance", "group")
+eval instant at 50m sort_by_label_desc(http_requests, "instance", "group")
+	expect ordered
+	expect no_warn
+	expect no_info
 	http_requests{group="production", instance="2", job="api-server"} 100
 	http_requests{group="canary", instance="2", job="api-server"} NaN
 	http_requests{group="production", instance="1", job="app-server"} 600
@@ -785,7 +1041,10 @@ eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance", "group
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="canary", instance="0", job="api-server"} 300
 
-eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance", "group", "job")
+eval instant at 50m sort_by_label_desc(http_requests, "instance", "group", "job")
+	expect ordered
+	expect no_warn
+	expect no_info
 	http_requests{group="production", instance="2", job="api-server"} 100
 	http_requests{group="canary", instance="2", job="api-server"} NaN
 	http_requests{group="production", instance="1", job="app-server"} 600
@@ -797,7 +1056,10 @@ eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance", "group
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="canary", instance="0", job="api-server"} 300
 
-eval_ordered instant at 50m sort_by_label(cpu_time_total, "cpu")
+eval instant at 50m sort_by_label(cpu_time_total, "cpu")
+	expect ordered
+	expect no_warn
+	expect no_info
 	cpu_time_total{job="cpu", cpu="0"} 100
 	cpu_time_total{job="cpu", cpu="1"} 100
 	cpu_time_total{job="cpu", cpu="2"} 100
@@ -809,12 +1071,18 @@ eval_ordered instant at 50m sort_by_label(cpu_time_total, "cpu")
 	cpu_time_total{job="cpu", cpu="21"} 100
 	cpu_time_total{job="cpu", cpu="100"} 100
 
-eval_ordered instant at 50m sort_by_label(node_uname_info, "instance")
+eval instant at 50m sort_by_label(node_uname_info, "instance")
+	expect ordered
+	expect no_warn
+	expect no_info
 	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 100
 	node_uname_info{job="node_exporter", instance="4m600", release="1.2.3"} 100
 	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 100
 
-eval_ordered instant at 50m sort_by_label(node_uname_info, "release")
+eval instant at 50m sort_by_label(node_uname_info, "release")
+	expect ordered
+	expect no_warn
+	expect no_info
 	node_uname_info{job="node_exporter", instance="4m600", release="1.2.3"} 100
 	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 100
 	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 100
@@ -835,13 +1103,17 @@ load 10s
 	http_requests_histogram{job="api-server", instance="1", group="canary"}	{{schema:0 count:1 sum:2}}x1000
 
 eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
+	expect no_warn
+	expect no_info
 	{job="api-server", instance="0", group="production"} 8000
 	{job="api-server", instance="1", group="production"} 16000
 	{job="api-server", instance="0", group="canary"} 24000
 	{job="api-server", instance="1", group="canary"} 32000
 
 # double_exponential_smoothing should ignore histograms in a mixed range of floats and histograms, flagged by an info annotation.
-eval_info instant at 20010s double_exponential_smoothing(http_requests_mix[1m], 0.01, 0.1)
+eval instant at 20010s double_exponential_smoothing(http_requests_mix[1m], 0.01, 0.1)
+	expect info
+	expect no_warn
 	{job="api-server", instance="0", group="production"} 30100
 	{job="api-server", instance="1", group="production"} 30200
 	{job="api-server", instance="0", group="canary"} 80300
@@ -849,6 +1121,8 @@ eval_info instant at 20010s double_exponential_smoothing(http_requests_mix[1m], 
 
 # double_exponential_smoothing should silently ignore ranges consisting only of histograms.
 eval instant at 10000s double_exponential_smoothing(http_requests_histogram[1m], 0.01, 0.1)
+	expect no_warn
+	expect no_info
 	#empty
 
 # negative trends
@@ -860,6 +1134,8 @@ load 10s
 	http_requests{job="api-server", instance="1", group="canary"}		0-40x1000 0+40x1000
 
 eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
+	expect no_warn
+	expect no_info
 	{job="api-server", instance="0", group="production"} 0
 	{job="api-server", instance="1", group="production"} -16000
 	{job="api-server", instance="0", group="canary"} 24000
@@ -887,125 +1163,203 @@ load 10s
   metric13 {{schema:0 sum:1 count:1}}x5
 
 eval instant at 55s avg_over_time(metric[1m])
+  expect no_warn
+  expect no_info
   {} 3
 
 eval instant at 55s sum_over_time(metric[1m])/count_over_time(metric[1m])
+  expect no_warn
+  expect no_info
   {} 3
 
 eval instant at 1m avg_over_time(metric2[1m])
+  expect no_warn
+  expect no_info
   {} Inf
 
 eval instant at 1m sum_over_time(metric2[1m])/count_over_time(metric2[1m])
+  expect no_warn
+  expect no_info
   {} Inf
 
 eval instant at 1m avg_over_time(metric3[1m])
+  expect no_warn
+  expect no_info
   {} -Inf
 
 eval instant at 1m sum_over_time(metric3[1m])/count_over_time(metric3[1m])
+  expect no_warn
+  expect no_info
   {} -Inf
 
 eval instant at 1m avg_over_time(metric4[1m])
+  expect no_warn
+  expect no_info
   {} NaN
 
 eval instant at 1m sum_over_time(metric4[1m])/count_over_time(metric4[1m])
+  expect no_warn
+  expect no_info
   {} NaN
 
 eval instant at 1m avg_over_time(metric5[1m])
+  expect no_warn
+  expect no_info
   {} Inf
 
 eval instant at 1m sum_over_time(metric5[1m])/count_over_time(metric5[1m])
+  expect no_warn
+  expect no_info
   {} Inf
 
 eval instant at 1m avg_over_time(metric5b[1m])
+  expect no_warn
+  expect no_info
   {} Inf
 
 eval instant at 1m sum_over_time(metric5b[1m])/count_over_time(metric5b[1m])
+  expect no_warn
+  expect no_info
   {} Inf
 
 eval instant at 1m avg_over_time(metric5c[1m])
+  expect no_warn
+  expect no_info
   {} NaN
 
 eval instant at 1m sum_over_time(metric5c[1m])/count_over_time(metric5c[1m])
+  expect no_warn
+  expect no_info
   {} NaN
 
 eval instant at 1m avg_over_time(metric6[1m])
+  expect no_warn
+  expect no_info
   {} -Inf
 
 eval instant at 1m sum_over_time(metric6[1m])/count_over_time(metric6[1m])
+  expect no_warn
+  expect no_info
   {} -Inf
 
 eval instant at 1m avg_over_time(metric6b[1m])
+  expect no_warn
+  expect no_info
   {} -Inf
 
 eval instant at 1m sum_over_time(metric6b[1m])/count_over_time(metric6b[1m])
+  expect no_warn
+  expect no_info
   {} -Inf
 
 eval instant at 1m avg_over_time(metric6c[1m])
+  expect no_warn
+  expect no_info
   {} NaN
 
 eval instant at 1m sum_over_time(metric6c[1m])/count_over_time(metric6c[1m])
+  expect no_warn
+  expect no_info
   {} NaN
 
 eval instant at 1m avg_over_time(metric7[1m])
+  expect no_warn
+  expect no_info
   {} NaN
 
 eval instant at 1m sum_over_time(metric7[1m])/count_over_time(metric7[1m])
+  expect no_warn
+  expect no_info
   {} NaN
 
 eval instant at 1m avg_over_time(metric8[1m])
+  expect no_warn
+  expect no_info
   {} 9.988465674311579e+307
 
 # This overflows float64.
 eval instant at 1m sum_over_time(metric8[2m])/count_over_time(metric8[2m])
+  expect no_warn
+  expect no_info
   {} +Inf
 
 eval instant at 1m avg_over_time(metric9[1m])
+  expect no_warn
+  expect no_info
   {} -9.988465674311579e+307
 
 # This overflows float64.
 eval instant at 1m sum_over_time(metric9[1m])/count_over_time(metric9[1m])
+  expect no_warn
+  expect no_info
   {} -Inf
 
 eval instant at 45s avg_over_time(metric10[1m])
+  expect no_warn
+  expect no_info
   {} 0
 
 eval instant at 1m avg_over_time(metric10[2m])
+  expect no_warn
+  expect no_info
   {} 0
 
 eval instant at 45s sum_over_time(metric10[1m])/count_over_time(metric10[1m])
+  expect no_warn
+  expect no_info
   {} 0
 
 eval instant at 1m sum_over_time(metric10[2m])/count_over_time(metric10[2m])
+  expect no_warn
+  expect no_info
   {} 0
 
 # NaN behavior.
 eval instant at 20s avg_over_time(metric11[1m])
+  expect no_warn
+  expect no_info
   {} 2
 
 eval instant at 30s avg_over_time(metric11[1m])
+  expect no_warn
+  expect no_info
   {} NaN
 
 eval instant at 1m avg_over_time(metric11[1m])
+  expect no_warn
+  expect no_info
   {} NaN
 
 eval instant at 1m sum_over_time(metric11[1m])/count_over_time(metric11[1m])
+  expect no_warn
+  expect no_info
   {} NaN
 
 # Tests for samples with mix of floats and histograms.
-eval_warn instant at 1m sum_over_time(metric12[1m])
+eval instant at 1m sum_over_time(metric12[1m])
+	expect warn
+	expect no_info
 	# no result.
 
-eval_warn instant at 1m avg_over_time(metric12[1m])
+eval instant at 1m avg_over_time(metric12[1m])
+	expect warn
+	expect no_info
 	# no result.
 
 # Tests for samples with only histograms.
 eval instant at 1m sum_over_time(metric13[1m])
+	expect no_warn
+	expect no_info
 	{} {{schema:0 sum:5 count:5}}
 
 eval instant at 1m avg_over_time(metric13[1m])
+	expect no_warn
+	expect no_info
 	{} {{schema:0 sum:1 count:1}}
 
 eval instant at 1m sum_over_time(metric13[1m])/count_over_time(metric13[1m])
+	expect no_warn
+	expect no_info
 	{} {{schema:0 sum:1 count:1}}
 
 # Test if very big intermediate values cause loss of detail.
@@ -1014,9 +1368,13 @@ load 10s
   metric 1 1e100 1 -1e100
 
 eval instant at 1m sum_over_time(metric[2m])
+  expect no_warn
+  expect no_info
   {} 2
 
 eval instant at 1m avg_over_time(metric[2m])
+  expect no_warn
+  expect no_info
   {} 0.5
 
 # Tests for stddev_over_time and stdvar_over_time.
@@ -1027,25 +1385,39 @@ load 10s
 	metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
 
 eval instant at 1m stdvar_over_time(metric[2m])
+	expect no_warn
+	expect no_info
 	{} 10.56
 
 eval instant at 1m stddev_over_time(metric[2m])
+	expect no_warn
+	expect no_info
 	{} 3.249615
 
 eval instant at 1m stddev_over_time((metric[2m]))
+	expect no_warn
+	expect no_info
 	{} 3.249615
 
 # Tests for stddev_over_time and stdvar_over_time with histograms.
 eval instant at 1m stddev_over_time(metric_histogram{type="only_histogram"}[2m])
+	expect no_warn
+	expect no_info
 	#empty
 
-eval_info instant at 1m stddev_over_time(metric_histogram{type="mix"}[2m])
+eval instant at 1m stddev_over_time(metric_histogram{type="mix"}[2m])
+	expect info
+	expect no_warn
 	{type="mix"} 0
 
 eval instant at 1m stdvar_over_time(metric_histogram{type="only_histogram"}[2m])
+	expect no_warn
+	expect no_info
 	#empty
 
-eval_info instant at 1m stdvar_over_time(metric_histogram{type="mix"}[2m])
+eval instant at 1m stdvar_over_time(metric_histogram{type="mix"}[2m])
+	expect info
+	expect no_warn
 	{type="mix"} 0
 
 # Tests for stddev_over_time and stdvar_over_time #4927.
@@ -1054,9 +1426,13 @@ load 10s
 	metric 1.5990505637277868 1.5990505637277868 1.5990505637277868
 
 eval instant at 1m stdvar_over_time(metric[1m])
+	expect no_warn
+	expect no_info
 	{} 0
 
 eval instant at 1m stddev_over_time(metric[1m])
+	expect no_warn
+	expect no_info
 	{} 0
 
 # Tests for mad_over_time.
@@ -1067,12 +1443,18 @@ load 10s
 	metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
 
 eval instant at 70s mad_over_time(metric[70s])
+	expect no_warn
+	expect no_info
 	{} 1
 
 eval instant at 70s mad_over_time(metric_histogram{type="only_histogram"}[70s])
+	expect no_warn
+	expect no_info
 	#empty
 
-eval_info instant at 70s mad_over_time(metric_histogram{type="mix"}[70s])
+eval instant at 70s mad_over_time(metric_histogram{type="mix"}[70s])
+	expect info
+	expect no_warn
 	{type="mix"} 0
 
 # Tests for quantile_over_time
@@ -1086,49 +1468,69 @@ load 10s
 	data_histogram{test="mix samples"} 0 1 2 {{schema:0 sum:1 count:2}}x2
 
 eval instant at 1m quantile_over_time(0, data[2m])
+	expect no_warn
+	expect no_info
 	{test="two samples"} 0
 	{test="three samples"} 0
 	{test="uneven samples"} 0
 
 eval instant at 1m quantile_over_time(0.5, data[2m])
+	expect no_warn
+	expect no_info
 	{test="two samples"} 0.5
 	{test="three samples"} 1
 	{test="uneven samples"} 1
 
 eval instant at 1m quantile_over_time(0.75, data[2m])
+	expect no_warn
+	expect no_info
 	{test="two samples"} 0.75
 	{test="three samples"} 1.5
 	{test="uneven samples"} 2.5
 
 eval instant at 1m quantile_over_time(0.8, data[2m])
+	expect no_warn
+	expect no_info
 	{test="two samples"} 0.8
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
 
 eval instant at 1m quantile_over_time(1, data[2m])
+	expect no_warn
+	expect no_info
 	{test="two samples"} 1
 	{test="three samples"} 2
 	{test="uneven samples"} 4
 
-eval_warn instant at 1m quantile_over_time(-1, data[2m])
+eval instant at 1m quantile_over_time(-1, data[2m])
+	expect warn
+	expect no_info
 	{test="two samples"} -Inf
 	{test="three samples"} -Inf
 	{test="uneven samples"} -Inf
 
-eval_warn instant at 1m quantile_over_time(2, data[2m])
+eval instant at 1m quantile_over_time(2, data[2m])
+	expect warn
+	expect no_info
 	{test="two samples"} +Inf
 	{test="three samples"} +Inf
 	{test="uneven samples"} +Inf
 
-eval_warn instant at 1m (quantile_over_time(2, (data[2m])))
+eval instant at 1m (quantile_over_time(2, (data[2m])))
+	expect warn
+	expect no_info
 	{test="two samples"} +Inf
 	{test="three samples"} +Inf
 	{test="uneven samples"} +Inf
 
 eval instant at 1m quantile_over_time(0.5, data_histogram{test="only histogram samples"}[2m])
+	expect no_warn
+	expect no_info
 	#empty
 
-eval_info instant at 1m quantile_over_time(0.5, data_histogram{test="mix samples"}[2m])
+eval instant at 1m quantile_over_time(0.5, data_histogram{test="mix samples"}[2m])
+	expect info
+	expect no_warn
 	{test="mix samples"} 1
 
 clear
@@ -1138,102 +1540,166 @@ load 5m
     histogram_sample {{schema:0 sum:1 count:1}}
 
 eval instant at 0m year()
+  expect no_warn
+  expect no_info
   {} 1970
 
 eval instant at 1ms time()
+  expect no_warn
+  expect no_info
   0.001
 
 eval instant at 50m time()
+  expect no_warn
+  expect no_info
   3000
 
 eval instant at 0m year(vector(1136239445))
+  expect no_warn
+  expect no_info
   {} 2006
 
 eval instant at 0m month()
+  expect no_warn
+  expect no_info
   {} 1
 
 eval instant at 0m month(vector(1136239445))
+  expect no_warn
+  expect no_info
   {} 1
 
 eval instant at 0m day_of_month()
+  expect no_warn
+  expect no_info
   {} 1
 
 eval instant at 0m day_of_month(vector(1136239445))
+  expect no_warn
+  expect no_info
   {} 2
 
 eval instant at 0m day_of_year()
+  expect no_warn
+  expect no_info
   {} 1
 
 eval instant at 0m day_of_year(vector(1136239445))
+  expect no_warn
+  expect no_info
   {} 2
 
 # Thursday.
 eval instant at 0m day_of_week()
+  expect no_warn
+  expect no_info
   {} 4
 
 eval instant at 0m day_of_week(vector(1136239445))
+  expect no_warn
+  expect no_info
   {} 1
 
 eval instant at 0m hour()
+  expect no_warn
+  expect no_info
   {} 0
 
 eval instant at 0m hour(vector(1136239445))
+  expect no_warn
+  expect no_info
   {} 22
 
 eval instant at 0m minute()
+  expect no_warn
+  expect no_info
   {} 0
 
 eval instant at 0m minute(vector(1136239445))
+  expect no_warn
+  expect no_info
   {} 4
 
 # 2008-12-31 23:59:59 just before leap second.
 eval instant at 0m year(vector(1230767999))
+  expect no_warn
+  expect no_info
   {} 2008
 
 # 2009-01-01 00:00:00 just after leap second.
 eval instant at 0m year(vector(1230768000))
+  expect no_warn
+  expect no_info
   {} 2009
 
 # 2016-02-29 23:59:59 February 29th in leap year.
 eval instant at 0m month(vector(1456790399)) + day_of_month(vector(1456790399)) / 100
+  expect no_warn
+  expect no_info
   {} 2.29
 
 # 2016-03-01 00:00:00 March 1st in leap year.
 eval instant at 0m month(vector(1456790400)) + day_of_month(vector(1456790400)) / 100
+  expect no_warn
+  expect no_info
   {} 3.01
 
 # 2016-12-31 13:37:00 366th day in leap year.
 eval instant at 0m day_of_year(vector(1483191420))
+  expect no_warn
+  expect no_info
   {} 366
 
 # 2022-12-31 13:37:00 365th day in non-leap year.
 eval instant at 0m day_of_year(vector(1672493820))
+  expect no_warn
+  expect no_info
   {} 365
 
 # February 1st 2016 in leap year.
 eval instant at 0m days_in_month(vector(1454284800))
+  expect no_warn
+  expect no_info
   {} 29
 
 # February 1st 2017 not in leap year.
 eval instant at 0m days_in_month(vector(1485907200))
+  expect no_warn
+  expect no_info
   {} 28
 
 # Test for histograms.
 eval instant at 0m day_of_month(histogram_sample)
+  expect no_warn
+  expect no_info
 
 eval instant at 0m day_of_week(histogram_sample)
+  expect no_warn
+  expect no_info
 
 eval instant at 0m day_of_year(histogram_sample)
+  expect no_warn
+  expect no_info
 
 eval instant at 0m days_in_month(histogram_sample)
+  expect no_warn
+  expect no_info
 
 eval instant at 0m hour(histogram_sample)
+  expect no_warn
+  expect no_info
 
 eval instant at 0m minute(histogram_sample)
+  expect no_warn
+  expect no_info
 
 eval instant at 0m month(histogram_sample)
+  expect no_warn
+  expect no_info
 
 eval instant at 0m year(histogram_sample)
+  expect no_warn
+  expect no_info
 
 clear
 
@@ -1242,7 +1708,10 @@ load 5m
   testmetric1{src="a",dst="b"} 0
   testmetric2{src="a",dst="b"} 1
 
-eval_fail instant at 0m changes({__name__=~'testmetric1|testmetric2'}[5m])
+eval instant at 0m changes({__name__=~'testmetric1|testmetric2'}[5m])
+	expect fail
+	expect no_warn
+	expect no_info
 
 clear
 
@@ -1257,6 +1726,8 @@ load 10s
 	data_histogram{type="mix_samples"} 0 1 {{schema:0 sum:1 count:2}} {{schema:0 sum:2 count:3}}
 
 eval instant at 1m min_over_time(data[2m])
+	expect no_warn
+	expect no_info
 	{type="numbers"} 0
 	{type="some_nan"} 0
 	{type="some_nan2"} 1
@@ -1264,12 +1735,18 @@ eval instant at 1m min_over_time(data[2m])
 	{type="only_nan"} NaN
 
 eval instant at 1m min_over_time(data_histogram{type="only_histogram"}[2m])
+	expect no_warn
+	expect no_info
 	#empty
 
-eval_info instant at 1m min_over_time(data_histogram{type="mix_samples"}[2m])
+eval instant at 1m min_over_time(data_histogram{type="mix_samples"}[2m])
+	expect info
+	expect no_warn
 	{type="mix_samples"} 0
 
 eval instant at 1m max_over_time(data[2m])
+	expect no_warn
+	expect no_info
 	{type="numbers"} 3
 	{type="some_nan"} 2
 	{type="some_nan2"} 2
@@ -1277,12 +1754,18 @@ eval instant at 1m max_over_time(data[2m])
 	{type="only_nan"} NaN
 
 eval instant at 1m max_over_time(data_histogram{type="only_histogram"}[2m])
+	expect no_warn
+	expect no_info
 	#empty
 
-eval_info instant at 1m max_over_time(data_histogram{type="mix_samples"}[2m])
+eval instant at 1m max_over_time(data_histogram{type="mix_samples"}[2m])
+	expect info
+	expect no_warn
 	{type="mix_samples"} 1
 
 eval instant at 1m last_over_time({__name__=~"data(_histogram)?"}[2m])
+	expect no_warn
+	expect no_info
 	data{type="numbers"} 3
 	data{type="some_nan"} NaN
 	data{type="some_nan2"} 1
@@ -1292,6 +1775,8 @@ eval instant at 1m last_over_time({__name__=~"data(_histogram)?"}[2m])
 	data_histogram{type="mix_samples"} {{schema:0 sum:2 count:3}}
 
 eval instant at 1m count_over_time({__name__=~"data(_histogram)?"}[2m])
+	expect no_warn
+	expect no_info
 	{type="numbers"} 3
 	{type="some_nan"} 3
 	{type="some_nan2"} 3
@@ -1317,6 +1802,8 @@ load 5m
 	data{type="histogram"} {{schema:0 sum:1 count:1}}
 
 eval instant at 0m abs(data)
+	expect no_warn
+	expect no_info
 	{type="positive"} 2.5
 	{type="whole"} 2
 	{type="negative"} 2.5
@@ -1328,6 +1815,8 @@ eval instant at 0m abs(data)
 	{type="nan"} NaN
 
 eval instant at 0m ceil(data)
+	expect no_warn
+	expect no_info
 	{type="positive"} 3
 	{type="whole"} 2
 	{type="negative"} -2
@@ -1339,6 +1828,8 @@ eval instant at 0m ceil(data)
 	{type="nan"} NaN
 
 eval instant at 0m floor(data)
+	expect no_warn
+	expect no_info
 	{type="positive"} 2
 	{type="whole"} 2
 	{type="negative"} -3
@@ -1350,6 +1841,8 @@ eval instant at 0m floor(data)
 	{type="nan"} NaN
 
 eval instant at 0m round(data)
+	expect no_warn
+	expect no_info
 	{type="positive"} 3
 	{type="whole"} 2
 	{type="negative"} -2
@@ -1364,18 +1857,28 @@ clear
 
 # Test for absent().
 eval instant at 50m absent(nonexistent)
+	expect no_warn
+	expect no_info
 	{} 1
 
 eval instant at 50m absent(nonexistent{job="testjob", instance="testinstance", method=~".x"})
+	expect no_warn
+	expect no_info
 	{instance="testinstance", job="testjob"} 1
 
 eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",foo="bar"})
+	expect no_warn
+	expect no_info
 	{foo="bar"} 1
 
 eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",job="three",foo="bar"})
+	expect no_warn
+	expect no_info
 	{foo="bar"} 1
 
 eval instant at 50m absent(nonexistent{job="testjob",job=~"testjob2",foo="bar"})
+	expect no_warn
+	expect no_info
 	{foo="bar"} 1
 
 clear
@@ -1386,52 +1889,84 @@ load 5m
 	http_requests_histogram{job="api-server", instance="0", group="production"} {{schema:0 sum:1 count:1}}x11
 
 eval instant at 50m absent(http_requests)
+  expect no_warn
+  expect no_info
 
 eval instant at 50m absent(sum(http_requests))
+  expect no_warn
+  expect no_info
 
 eval instant at 50m absent(http_requests_histogram)
+  expect no_warn
+  expect no_info
 
 eval instant at 50m absent(sum(http_requests_histogram))
+  expect no_warn
+  expect no_info
 
 clear
 
 eval instant at 50m absent(sum(nonexistent{job="testjob", instance="testinstance"}))
+	expect no_warn
+	expect no_info
 	{} 1
 
 eval instant at 50m absent(max(nonexistent))
+	expect no_warn
+	expect no_info
 	{} 1
 
 eval instant at 50m absent(nonexistent > 1)
+	expect no_warn
+	expect no_info
 	{} 1
 
 eval instant at 50m absent(a + b)
+	expect no_warn
+	expect no_info
 	{} 1
 
 eval instant at 50m absent(a and b)
+	expect no_warn
+	expect no_info
 	{} 1
 
 eval instant at 50m absent(rate(nonexistent[5m]))
+	expect no_warn
+	expect no_info
 	{} 1
 
 clear
 
 # Testdata for absent_over_time()
 eval instant at 1m absent_over_time(http_requests_total[5m])
+    expect no_warn
+    expect no_info
     {} 1
 
 eval instant at 1m absent_over_time(http_requests_total{handler="/foo"}[5m])
+    expect no_warn
+    expect no_info
     {handler="/foo"} 1
 
 eval instant at 1m absent_over_time(http_requests_total{handler!="/foo"}[5m])
+    expect no_warn
+    expect no_info
     {} 1
 
 eval instant at 1m absent_over_time(http_requests_total{handler="/foo", handler="/bar", handler="/foobar"}[5m])
+    expect no_warn
+    expect no_info
     {} 1
 
 eval instant at 1m absent_over_time(rate(nonexistent[5m])[5m:])
+    expect no_warn
+    expect no_info
     {} 1
 
 eval instant at 1m absent_over_time(http_requests_total{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
+    expect no_warn
+    expect no_info
     {instance="127.0.0.1"} 1
 
 load 1m
@@ -1443,71 +1978,125 @@ load 1m
 	http_requests_histogram{path="/foo",instance="127.0.0.1",job="httpd"} {{schema:0 sum:1 count:1}}x11
 
 eval instant at 5m absent_over_time(http_requests_total[5m])
+  expect no_warn
+  expect no_info
 
 eval instant at 5m absent_over_time(rate(http_requests_total[5m])[5m:1m])
+  expect no_warn
+  expect no_info
 
 eval instant at 0m absent_over_time(httpd_log_lines_total[30s])
+  expect no_warn
+  expect no_info
 
 eval instant at 1m absent_over_time(httpd_log_lines_total[30s])
+    expect no_warn
+    expect no_info
     {} 1
 
 eval instant at 15m absent_over_time(http_requests_total[5m])
+    expect no_warn
+    expect no_info
     {} 1
 
 eval instant at 15m absent_over_time(http_requests_total[10m])
+  expect no_warn
+  expect no_info
 
 eval instant at 16m absent_over_time(http_requests_total[6m])
+    expect no_warn
+    expect no_info
     {} 1
 
 eval instant at 16m absent_over_time(http_requests_total[16m])
+  expect no_warn
+  expect no_info
 
 eval instant at 16m absent_over_time(httpd_handshake_failures_total[1m])
+    expect no_warn
+    expect no_info
     {} 1
 
 eval instant at 16m absent_over_time(httpd_handshake_failures_total[2m])
+  expect no_warn
+  expect no_info
 
 eval instant at 16m absent_over_time({instance="127.0.0.1"}[5m])
+  expect no_warn
+  expect no_info
 
 eval instant at 21m absent_over_time({instance="127.0.0.1"}[5m])
+    expect no_warn
+    expect no_info
     {instance="127.0.0.1"} 1
 
 eval instant at 21m absent_over_time({instance="127.0.0.1"}[20m])
+  expect no_warn
+  expect no_info
 
 eval instant at 21m absent_over_time({job="grok"}[20m])
+    expect no_warn
+    expect no_info
     {job="grok"} 1
 
 eval instant at 30m absent_over_time({instance="127.0.0.1"}[5m:5s])
+    expect no_warn
+    expect no_info
     {} 1
 
 eval instant at 5m absent_over_time({job="ingress"}[4m])
+  expect no_warn
+  expect no_info
 
 eval instant at 10m absent_over_time({job="ingress"}[4m])
+	expect no_warn
+	expect no_info
 	{job="ingress"} 1
 
 eval instant at 10m absent_over_time(http_requests_histogram[5m])
+  expect no_warn
+  expect no_info
 
 eval instant at 10m absent_over_time(rate(http_requests_histogram[5m])[5m:1m])
+  expect no_warn
+  expect no_info
 
 eval instant at 20m absent_over_time(http_requests_histogram[5m])
+    expect no_warn
+    expect no_info
     {} 1
 
 eval instant at 20m absent_over_time(rate(http_requests_histogram[5m])[5m:1m])
+    expect no_warn
+    expect no_info
     {} 1
 
 clear
 
 # Testdata for present_over_time()
 eval instant at 1m present_over_time(http_requests_total[5m])
+  expect no_warn
+  expect no_info
 
 eval instant at 1m present_over_time(http_requests_total{handler="/foo"}[5m])
+  expect no_warn
+  expect no_info
 
 eval instant at 1m present_over_time(http_requests_total{handler!="/foo"}[5m])
+  expect no_warn
+  expect no_info
 
 eval instant at 1m present_over_time(http_requests_total{handler="/foo", handler="/bar", handler="/foobar"}[5m])
+  expect no_warn
+  expect no_info
 
 eval instant at 1m present_over_time(rate(nonexistent[5m])[5m:])
+  expect no_warn
+  expect no_info
 
 eval instant at 1m present_over_time(http_requests_total{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
+	expect no_warn
+	expect no_info
 
 load 1m
 	http_requests_total{path="/foo",instance="127.0.0.1",job="httpd"}	1+1x10
@@ -1517,43 +2106,71 @@ load 1m
 	ssl_certificate_expiry_seconds{job="ingress"} NaN NaN NaN NaN NaN
 
 eval instant at 5m present_over_time(http_requests_total[5m])
+    expect no_warn
+    expect no_info
     {instance="127.0.0.1", job="httpd", path="/bar"} 1
     {instance="127.0.0.1", job="httpd", path="/foo"} 1
 
 eval instant at 5m present_over_time(rate(http_requests_total[5m])[5m:1m])
+    expect no_warn
+    expect no_info
     {instance="127.0.0.1", job="httpd", path="/bar"} 1
     {instance="127.0.0.1", job="httpd", path="/foo"} 1
 
 eval instant at 0m present_over_time(httpd_log_lines_total[30s])
+    expect no_warn
+    expect no_info
     {instance="127.0.0.1",job="node"} 1
 
 eval instant at 1m present_over_time(httpd_log_lines_total[30s])
+  expect no_warn
+  expect no_info
 
 eval instant at 15m present_over_time(http_requests_total[5m])
+  expect no_warn
+  expect no_info
 
 eval instant at 15m present_over_time(http_requests_total[10m])
+    expect no_warn
+    expect no_info
     {instance="127.0.0.1", job="httpd", path="/bar"} 1
     {instance="127.0.0.1", job="httpd", path="/foo"} 1
 
 eval instant at 16m present_over_time(http_requests_total[6m])
+  expect no_warn
+  expect no_info
 
 eval instant at 16m present_over_time(http_requests_total[16m])
+    expect no_warn
+    expect no_info
     {instance="127.0.0.1", job="httpd", path="/bar"} 1
     {instance="127.0.0.1", job="httpd", path="/foo"} 1
 
 eval instant at 16m present_over_time(httpd_handshake_failures_total[1m])
+  expect no_warn
+  expect no_info
 
 eval instant at 16m present_over_time({instance="127.0.0.1"}[5m])
+    expect no_warn
+    expect no_info
     {instance="127.0.0.1",job="node"} 1
 
 eval instant at 21m present_over_time({job="grok"}[20m])
+  expect no_warn
+  expect no_info
 
 eval instant at 30m present_over_time({instance="127.0.0.1"}[5m:5s])
+  expect no_warn
+  expect no_info
 
 eval instant at 5m present_over_time({job="ingress"}[4m])
+    expect no_warn
+    expect no_info
     {job="ingress"} 1
 
 eval instant at 10m present_over_time({job="ingress"}[4m])
+	expect no_warn
+	expect no_info
 
 clear
 
@@ -1564,78 +2181,116 @@ load 5m
 	exp_root_log_h{l="z"} {{schema:1 sum:1 count:1}}
 
 eval instant at 1m exp(exp_root_log)
+	expect no_warn
+	expect no_info
 	{l="x"} 22026.465794806718
 	{l="y"} 485165195.4097903
 
 eval instant at 1m exp({__name__=~"exp_root_log(_h)?"})
+	expect no_warn
+	expect no_info
 	{l="x"} 22026.465794806718
 	{l="y"} 485165195.4097903
 
 eval instant at 1m exp(exp_root_log - 10)
+	expect no_warn
+	expect no_info
 	{l="y"} 22026.465794806718
 	{l="x"} 1
 
 eval instant at 1m exp(exp_root_log - 20)
+	expect no_warn
+	expect no_info
 	{l="x"} 4.5399929762484854e-05
 	{l="y"} 1
 
 eval instant at 1m ln(exp_root_log)
+	expect no_warn
+	expect no_info
 	{l="x"} 2.302585092994046
 	{l="y"} 2.995732273553991
 
 eval instant at 1m ln({__name__=~"exp_root_log(_h)?"})
+	expect no_warn
+	expect no_info
 	{l="x"} 2.302585092994046
 	{l="y"} 2.995732273553991
 
 eval instant at 1m ln(exp_root_log - 10)
+	expect no_warn
+	expect no_info
 	{l="y"} 2.302585092994046
 	{l="x"} -Inf
 
 eval instant at 1m ln(exp_root_log - 20)
+	expect no_warn
+	expect no_info
 	{l="y"} -Inf
 	{l="x"} NaN
 
 eval instant at 1m exp(ln(exp_root_log))
+	expect no_warn
+	expect no_info
 	{l="y"} 20
 	{l="x"} 10
 
 eval instant at 1m exp(ln({__name__=~"exp_root_log(_h)?"}))
+	expect no_warn
+	expect no_info
 	{l="y"} 20
 	{l="x"} 10
 
 eval instant at 1m sqrt(exp_root_log)
+	expect no_warn
+	expect no_info
 	{l="x"} 3.1622776601683795
 	{l="y"} 4.47213595499958
 
 eval instant at 1m sqrt({__name__=~"exp_root_log(_h)?"})
+	expect no_warn
+	expect no_info
 	{l="x"} 3.1622776601683795
 	{l="y"} 4.47213595499958
 
 eval instant at 1m log2(exp_root_log)
+	expect no_warn
+	expect no_info
 	{l="x"} 3.3219280948873626
 	{l="y"} 4.321928094887363
 
 eval instant at 1m log2({__name__=~"exp_root_log(_h)?"})
+	expect no_warn
+	expect no_info
 	{l="x"} 3.3219280948873626
 	{l="y"} 4.321928094887363
 
 eval instant at 1m log2(exp_root_log - 10)
+	expect no_warn
+	expect no_info
 	{l="y"} 3.3219280948873626
 	{l="x"} -Inf
 
 eval instant at 1m log2(exp_root_log - 20)
+	expect no_warn
+	expect no_info
 	{l="x"} NaN
 	{l="y"} -Inf
 
 eval instant at 1m log10(exp_root_log)
+	expect no_warn
+	expect no_info
 	{l="x"} 1
 	{l="y"} 1.301029995663981
 
 eval instant at 1m log10({__name__=~"exp_root_log(_h)?"})
+	expect no_warn
+	expect no_info
 	{l="x"} 1
 	{l="y"} 1.301029995663981
 
 eval instant at 1m log10(exp_root_log - 10)
+	expect no_warn
+	expect no_info
 	{l="y"} 1
 	{l="x"} -Inf
 
@@ -1651,6 +2306,8 @@ load 1m
 
 # We expect the value to be 0 for t=0s to t=59s (inclusive), then 60 for t=60s and t=61s.
 eval range from 0 to 61s step 1s timestamp(metric)
+  expect no_warn
+  expect no_info
   {} 0x59 60 60
 
 clear
@@ -1660,6 +2317,8 @@ load 1m
 	mixed_metric {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}}
 
 eval range from 0 to 5m step 1m round(mixed_metric)
+	expect no_warn
+	expect no_info
 	{} _ 1 2 3
 
 # Test scalar() with histograms.
@@ -1671,12 +2330,18 @@ load 1m
 
 # Two floats in the vector.
 eval instant at 0m scalar(metric)
+	expect no_warn
+	expect no_info
 	NaN
 
 # No floats in the vector.
 eval instant at 0m scalar({type="histogram"})
+	expect no_warn
+	expect no_info
 	NaN
 
 # One float in the vector.
 eval instant at 0m scalar({l="x"})
+	expect no_warn
+	expect no_info
 	1
