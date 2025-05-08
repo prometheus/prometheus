@@ -89,6 +89,7 @@ type LeveledCompactor struct {
 	postingsEncoder             index.PostingsEncoder
 	postingsDecoderFactory      PostingsDecoderFactory
 	enableOverlappingCompaction bool
+	cacheAllSymbols             bool
 }
 
 type CompactorMetrics struct {
@@ -171,6 +172,8 @@ type LeveledCompactorOptions struct {
 	EnableOverlappingCompaction bool
 	// Metrics is set of metrics for Compactor. By default, NewCompactorMetrics would be called to initialize metrics unless it is provided.
 	Metrics *CompactorMetrics
+	// CacheAllSymbols enables caching of all TSDB symbols for compaction.
+	CacheAllSymbols bool
 }
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
@@ -179,18 +182,24 @@ func DefaultPostingsDecoderFactory(_ *BlockMeta) index.PostingsDecoder {
 	return index.DecodePostingsRaw
 }
 
+// NewLeveledCompactorWithChunkSize returns a new LeveledCompactor with a certain max block segment chunk size.
+// It's the same as calling NewLeveledCompactorWithOptions with maxBlockChunkSegmentSize, mergeFunc, enabled overlapping compaction, and caching of all symbols during compaction.
 func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
 	return NewLeveledCompactorWithOptions(ctx, r, l, ranges, pool, LeveledCompactorOptions{
 		MaxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
 		MergeFunc:                   mergeFunc,
 		EnableOverlappingCompaction: true,
+		CacheAllSymbols:             true,
 	})
 }
 
+// NewLeveledCompactor returns a new LeveledCompactor.
+// It's the same as calling NewLeveledCompactorWithOptions with mergeFunc, enabled overlapping compaction, and caching of all symbols during compaction.
 func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
 	return NewLeveledCompactorWithOptions(ctx, r, l, ranges, pool, LeveledCompactorOptions{
 		MergeFunc:                   mergeFunc,
 		EnableOverlappingCompaction: true,
+		CacheAllSymbols:             true,
 	})
 }
 
@@ -230,6 +239,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		postingsEncoder:             pe,
 		postingsDecoderFactory:      opts.PD,
 		enableOverlappingCompaction: opts.EnableOverlappingCompaction,
+		cacheAllSymbols:             opts.CacheAllSymbols,
 	}, nil
 }
 
@@ -672,7 +682,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 		}
 	}
 
-	indexw, err := index.NewWriterWithEncoder(c.ctx, filepath.Join(tmp, indexFilename), c.postingsEncoder)
+	indexw, err := index.NewWriterWithEncoder(c.ctx, filepath.Join(tmp, indexFilename), c.postingsEncoder, c.cacheAllSymbols)
 	if err != nil {
 		return fmt.Errorf("open index writer: %w", err)
 	}
