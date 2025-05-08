@@ -1202,7 +1202,7 @@ func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annota
 		mb.buckets = append(mb.buckets, Bucket{upperBound, sample.F})
 	}
 
-	for _, sample := range enh.nativeHistogramSamples {
+	for idx, sample := range enh.nativeHistogramSamples {
 		// We have to reconstruct the exact same signature as above for
 		// a classic histogram, just ignoring any le label.
 		enh.lblBuf = sample.Metric.Bytes(enh.lblBuf)
@@ -1212,6 +1212,7 @@ func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annota
 			// labels. Do not evaluate anything.
 			annos.Add(annotations.NewMixedClassicNativeHistogramsWarning(sample.Metric.Get(labels.MetricName), arg.PositionRange()))
 			delete(enh.signatureToMetricWithBuckets, string(enh.lblBuf))
+			enh.nativeHistogramSamples[idx].H = nil
 			continue
 		}
 	}
