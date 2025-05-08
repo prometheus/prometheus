@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/common/version"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -814,8 +815,7 @@ func acceptEncodingHeader(enableCompression bool) string {
 var UserAgent = version.PrometheusUserAgent()
 
 func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
-	tracer := otel.GetTracerProvider().Tracer("prometheus/scraper")
-	ctx, span := tracer.Start(ctx, "scrape_"+s.URL().String())
+	ctx, span := otel.Tracer("").Start(ctx, "Scrape", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
 	if s.req == nil {
@@ -833,9 +833,7 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 
 	req := s.req.WithContext(ctx)
 
-	propagator := otel.GetTextMapPropagator()
-
-	propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	return s.client.Do(req)
 }
