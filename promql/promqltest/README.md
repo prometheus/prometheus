@@ -164,3 +164,17 @@ There can be multiple `<expect>` lines for a given `<type>`. Each `<type>` valid
 Every `<expect>` line must match at least one corresponding annotation or error.
 
 If at least one `<expect>` line of type `warn` or `info` is present, then all corresponding annotations must have a matching `expect` line.
+
+#### Migrating Test Files to the New Syntax
+- All `.test` files in test directory will be updated in place.
+- Deprecated syntax will be replaced with the recommended `expect` line statements.
+
+Usage:
+```sh
+go run ./promql/promqltest/cmd/migrate/main.go --mode=strict
+```
+
+The --mode flag controls how annotation rules are applied during migration:
+- strict: Adds all recommended expect lines (e.g., expect no_warn, expect no_info).
+- basic: Only adds minimal expect lines for each command.
+- tolerant: Only adds expect fail and expect ordered wherever needed.
