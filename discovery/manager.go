@@ -306,13 +306,13 @@ func (m *Manager) startProvider(ctx context.Context, p *Provider) {
 
 // cleaner cleans resources associated with provider.
 func (m *Manager) cleaner(p *Provider) {
-	m.targetsMtx.Lock()
 	p.mu.RLock()
+	m.targetsMtx.Lock()
 	for s := range p.subs {
 		delete(m.targets, poolKey{s, p.name})
 	}
-	p.mu.RUnlock()
 	m.targetsMtx.Unlock()
+	p.mu.RUnlock()
 	if p.done != nil {
 		p.done()
 	}
