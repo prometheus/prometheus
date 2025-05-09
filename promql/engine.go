@@ -1638,6 +1638,33 @@ func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr
 	return ms, mat.TotalSamples(), ws
 }
 
+// evalBinaryExpr evaluates the binary expression and returns the evaluated
+// MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
+func (ev *evaluator) evalBinaryExpr(ctx context.Context, binexp *parser.BinaryExpr) (*parser.MatrixSelector, int, annotations.Annotations) {
+	val, ws := ev.eval(ctx, binexp)
+	mat := val.(Matrix)
+
+	var ms *parser.MatrixSelector
+	var vs *parser.VectorSelector
+
+	parser.Inspect(binexp, func(node parser.Node, _ []parser.Node) error {
+		if n, ok := node.(*parser.MatrixSelector); ok {
+			ms = n
+		}
+		return nil
+	})
+
+	vs = ms.VectorSelector.(*parser.VectorSelector)
+	vs.Series = make([]storage.Series, 0, len(mat))
+	ms.VectorSelector = vs
+
+	for _, s := range mat {
+		vs.Series = append(vs.Series, NewStorageSeries(s))
+	}
+
+	return ms, mat.TotalSamples(), ws
+}
+
 // eval evaluates the given expression as the given AST expression node requires.
 func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, annotations.Annotations) {
 	// This is the top-level evaluation method.
@@ -1745,6 +1772,24 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				}()
 				break
 			}
+			// binary expr can be used in place of parser.MatrixSelector
+			if binexp, ok := a.(*parser.BinaryExpr); ok {
+				lt, rt := binexp.LHS.Type(), binexp.RHS.Type()
+				if lt == parser.ValueTypeMatrix || rt == parser.ValueTypeMatrix {
+					matrixArgIndex = i
+					matrixArg = true
+
+					val, totalSamples, ws := ev.evalBinaryExpr(ctx, binexp)
+
+					e.Args[i] = val
+					warnings.Merge(ws)
+					defer func() {
+						val.VectorSelector.(*parser.VectorSelector).Series = nil
+						ev.currentSamples -= totalSamples
+					}()
+					break
+				}
+			}
 		}
 
 		// Special handling for functions that work on series not samples.
@@ -1790,6 +1835,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		if err != nil {
 			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), warnings})
 		}
+
 		mat := make(Matrix, 0, len(selVS.Series)) // Output matrix.
 		offset := durationMilliseconds(selVS.Offset)
 		selRange := durationMilliseconds(sel.Range)
@@ -2037,6 +2083,19 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				vec, err := ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].F}, true, e.ReturnBool, enh, e.PositionRange())
 				return vec, handleVectorBinopError(err, e)
 			}, e.LHS, e.RHS)
+
+		case lt == parser.ValueTypeMatrix && rt == parser.ValueTypeScalar:
+			valLHS, _ := ev.eval(ctx, e.LHS)
+			valRHS, ws := ev.eval(ctx, e.RHS)
+			valMatrix := valLHS.(Matrix)
+			valScalar := Scalar{V: valRHS.(Matrix)[0].Floats[0].F}
+
+			val, err := ev.MatrixScalarBinop(e.Op, valMatrix, valScalar, false, e.ReturnBool, e.PositionRange())
+			if err != nil {
+				panic(err)
+			}
+
+			return val, ws
 		}
 
 	case *parser.NumberLiteral:
@@ -2058,10 +2117,18 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		return mat, ws
 
 	case *parser.MatrixSelector:
+
+		vs := e.VectorSelector.(*parser.VectorSelector)
+		offset := durationMilliseconds(vs.Offset)
+		var mint, maxt int64
 		if ev.startTimestamp != ev.endTimestamp {
-			panic(errors.New("cannot do range evaluation of matrix selector"))
+			maxt = ev.endTimestamp - offset
+			mint = ev.startTimestamp - durationMilliseconds(e.Range) - offset
+		} else {
+			maxt = ev.startTimestamp - offset
+			mint = maxt - durationMilliseconds(e.Range)
 		}
-		return ev.matrixSelector(ctx, e)
+		return ev.matrixSelector(ctx, e, mint, maxt)
 
 	case *parser.SubqueryExpr:
 		offsetMillis := durationMilliseconds(e.Offset)
@@ -2348,16 +2415,11 @@ func putMatrixSelectorHPointSlice(p []HPoint) {
 }
 
 // matrixSelector evaluates a *parser.MatrixSelector expression.
-func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSelector) (Matrix, annotations.Annotations) {
+func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSelector, mint, maxt int64) (Matrix, annotations.Annotations) {
 	var (
-		vs = node.VectorSelector.(*parser.VectorSelector)
-
-		offset = durationMilliseconds(vs.Offset)
-		maxt   = ev.startTimestamp - offset
-		mint   = maxt - durationMilliseconds(node.Range)
+		vs     = node.VectorSelector.(*parser.VectorSelector)
 		matrix = make(Matrix, 0, len(vs.Series))
-
-		it = storage.NewBuffer(durationMilliseconds(node.Range))
+		it     = storage.NewBuffer(maxt - mint)
 	)
 	ws, err := checkAndExpandSeriesSet(ctx, node)
 	if err != nil {
@@ -2818,6 +2880,51 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	ret := enh.lb.Labels()
 	enh.resultMetric[str] = ret
 	return ret
+}
+
+func (ev *evaluator) MatrixScalarBinop(op parser.ItemType, lhs Matrix, rhs Scalar, swap, returnBool bool, pos posrange.PositionRange) (Matrix, error) {
+	var lastErr error
+	res := make(Matrix, 0, len(lhs))
+	for _, series := range lhs {
+		floats := make([]FPoint, 0, len(series.Floats))
+		for j, pt := range series.Floats {
+			lf, rf := pt.F, rhs.V
+
+			// lhs always contains the Vector. If the original position was different
+			// swap for calculating the value.
+			if swap {
+				lf, rf = rf, lf
+			}
+
+			float, _, keep, err := vectorElemBinop(op, lf, rf, nil, nil, pos)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			// Catch cases where the scalar is the LHS in a scalar-vector comparison operation.
+			// We want to always keep the vector element value as the output value, even if it's on the RHS.
+			if op.IsComparisonOperator() && swap {
+				float = rf
+			}
+			if returnBool {
+				if keep {
+					float = 1.0
+				} else {
+					float = 0.0
+				}
+				keep = true
+			}
+			if keep {
+				floats = append(floats, FPoint{series.Floats[j].T, float})
+			}
+		}
+
+		if len(floats) != 0 {
+			series.Floats = floats
+			res = append(res, series)
+		}
+	}
+	return res, lastErr
 }
 
 // VectorscalarBinop evaluates a binary operation between a Vector and a Scalar.
