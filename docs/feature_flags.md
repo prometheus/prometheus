@@ -247,3 +247,24 @@ These may not work well if the `<range>` is not a multiple of the collection int
 * It is difficult to figure out whether a metric has delta or cumulative temporality, since there's no indication of temporality in metric names or labels. For now, if you are ingesting a mix of delta and cumulative metrics we advise you to explicitly add your own labels to distinguish them. In the future, we plan to introduce type labels to consistently distinguish metric types and potentially make PromQL functions type-aware (e.g. providing warnings when cumulative-only functions are used with delta metrics).
 
 * If there are multiple samples being ingested at the same timestamp, only one of the points is kept - the samples are **not** summed together (this is how Prometheus works in general - duplicate timestamp samples are rejected). Any aggregation will have to be done before sending samples to Prometheus.
+
+## Type and Unit Labels
+
+`--enable-feature=type-and-unit-labels`
+
+When enabled, Prometheus will start injecting additional, special `__type__`
+and `__unit__` labels that extends the existing `__name__` metric identity.
+
+Those labels are injected from the metadata parts of OpenMetrics and other scrape expositions
+, as well as Remote Write 2.0 and OTLP receive. All user provided labels with
+`__type__` and `__unit__` will be dropped or overridden.
+
+This is useful for users who:
+* Want to be able to select metrics based on type or unit.
+* Want to handle cases of series with the same metric name and different type and units.
+e.g. native histogram migrations or OpenTelemetry metrics from OTLP endpoint, without translation.
+
+In future more work is planned that will depend on this e.g. rich PromQL UX that helps 
+when wrong types are used on wrong functions, automatic renames, delta types and more.
+
+See [proposal](https://github.com/prometheus/proposals/pull/39)

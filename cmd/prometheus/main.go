@@ -290,6 +290,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				// See proposal: https://github.com/prometheus/proposals/pull/48
 				c.web.NativeOTLPDeltaIngestion = true
 				logger.Info("Enabling native ingestion of delta OTLP metrics, storing the raw sample values without conversion. WARNING: Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
+			case "type-and-unit-labels":
+				c.scrape.EnableTypeAndUnitLabels = true
+				logger.Info("Experimental type and unit labels enabled")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}

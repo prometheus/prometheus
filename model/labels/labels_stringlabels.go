@@ -434,6 +434,28 @@ func (ls Labels) DropMetricName() Labels {
 	return ls
 }
 
+// DropMetricDescriptorLabels is like DropMetricName but drops all parts of MetricDescriptor.
+func (ls Labels) DropMetricDescriptorLabels() Labels {
+	for i := 0; i < len(ls.data); {
+		lName, i2 := decodeString(ls.data, i)
+		size, i2 := decodeSize(ls.data, i2)
+		i2 += size
+		if lName[0] > '_' { // Stop looking if we've gone past special labels.
+			break
+		}
+		if IsMetricDescriptorLabel(lName) {
+			if i == 0 { // Make common case fast with no allocations.
+				ls.data = ls.data[i2:]
+			} else {
+				ls.data = ls.data[:i] + ls.data[i2:]
+			}
+			continue
+		}
+		i = i2
+	}
+	return ls
+}
+
 // InternStrings is a no-op because it would only save when the whole set of labels is identical.
 func (ls *Labels) InternStrings(_ func(string) string) {
 }
