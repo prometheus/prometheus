@@ -722,12 +722,12 @@ func (d *Discovery) newEndpointSlicesByNodeInformer(plw *cache.ListWatch, object
 			return nil, errors.New("object is not an endpointslice")
 		}
 
-		svcName, exists := e.ObjectMeta.Labels[disv1.LabelServiceName]
+		svcName, exists := e.Labels[disv1.LabelServiceName]
 		if !exists {
 			return nil, nil
 		}
 
-		return []string{svcName}, nil
+		return []string{namespacedName(e.Namespace, svcName)}, nil
 	}
 	if !d.attachMetadata.Node {
 		return d.mustNewSharedIndexInformer(plw, object, resyncDisabled, indexers)

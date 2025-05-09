@@ -103,7 +103,7 @@ func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, n
 			return
 		}
 
-		endpointSlices, err := e.endpointSliceInf.GetIndexer().ByIndex(serviceIndex, svc.Name)
+		endpointSlices, err := e.endpointSliceInf.GetIndexer().ByIndex(serviceIndex, namespacedName(svc.Namespace, svc.Name))
 		if err != nil {
 			e.logger.Error("getting endpoint slices by service name failed", "err", err)
 			return
