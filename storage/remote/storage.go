@@ -65,7 +65,7 @@ type Storage struct {
 
 // NewStorage returns a remote.Storage.
 func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager) *Storage {
-	// register remote storage metrics in	custom registry
+	// Register remote storage metrics in custom registry.
 	if reg != nil {
 		reg.MustRegister(samplesIn, histogramsIn, exemplarsIn)
 	}
