@@ -1374,11 +1374,11 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 		if params.Max() == 0 && params.Min() == 0 {
 			return nil, annos
 		}
-		if maxVal := params.Max(); maxVal > 1.0 {
-			annos.Add(annotations.NewInvalidRatioWarning(maxVal, 1.0, aggExpr.Param.PositionRange()))
+		if params.Max() > 1.0 {
+			annos.Add(annotations.NewInvalidRatioWarning(params.Max(), 1.0, aggExpr.Param.PositionRange()))
 		}
-		if minVal := params.Min(); minVal < -1.0 {
-			annos.Add(annotations.NewInvalidRatioWarning(minVal, -1.0, aggExpr.Param.PositionRange()))
+		if params.Min() < -1.0 {
+			annos.Add(annotations.NewInvalidRatioWarning(params.Min(), -1.0, aggExpr.Param.PositionRange()))
 		}
 		seriess = make(map[uint64]Series, len(inputMatrix))
 
@@ -1386,16 +1386,16 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 		if params.HasAnyNaN() {
 			annos.Add(annotations.NewInvalidQuantileWarning(math.NaN(), aggExpr.Param.PositionRange()))
 		}
-		if maxVal := params.Max(); maxVal > 1 {
-			annos.Add(annotations.NewInvalidQuantileWarning(maxVal, aggExpr.Param.PositionRange()))
+		if params.Max() > 1 {
+			annos.Add(annotations.NewInvalidQuantileWarning(params.Max(), aggExpr.Param.PositionRange()))
 		}
-		if minVal := params.Min(); minVal < 0 {
-			annos.Add(annotations.NewInvalidQuantileWarning(minVal, aggExpr.Param.PositionRange()))
+		if params.Min() < 0 {
+			annos.Add(annotations.NewInvalidQuantileWarning(params.Min(), aggExpr.Param.PositionRange()))
 		}
 	}
 
 	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
-		fParam := params.Next(ts)
+		fParam := params.Next()
 		if err := contextDone(ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}

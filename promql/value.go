@@ -587,11 +587,12 @@ func (fp *fParams) Max() float64    { return fp.maxValue }
 func (fp *fParams) Min() float64    { return fp.minValue }
 func (fp *fParams) HasAnyNaN() bool { return fp.hasAnyNaN }
 
-func (fp *fParams) Next(ts int64) float64 {
+// Next returns the next value from the series or the constant value, and advances the series if applicable.
+func (fp *fParams) Next() float64 {
 	if fp.isConstant {
 		return fp.constValue
 	}
-	if len(fp.series.Floats) > 0 && fp.series.Floats[0].T == ts {
+	if len(fp.series.Floats) > 0 {
 		val := fp.series.Floats[0].F
 		fp.series.Floats = fp.series.Floats[1:]
 		return val
