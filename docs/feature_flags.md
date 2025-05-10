@@ -114,6 +114,12 @@ metadata changes as WAL records on a per-series basis.
 
 This must be used if you would like to send metadata using the new remote write 2.0.
 
+## Warn Duplicate Targets
+
+`--enable-feature=warn-duplicate-targets`
+
+When enabled, Prometheus will emit a warning log if two targets get relabeled to the same labels.
+
 ## Delay compaction start time
 
 `--enable-feature=delayed-compaction`
