@@ -1835,7 +1835,6 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		if err != nil {
 			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), warnings})
 		}
-
 		mat := make(Matrix, 0, len(selVS.Series)) // Output matrix.
 		offset := durationMilliseconds(selVS.Offset)
 		selRange := durationMilliseconds(sel.Range)
@@ -2085,8 +2084,14 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			}, e.LHS, e.RHS)
 
 		case lt == parser.ValueTypeMatrix && rt == parser.ValueTypeScalar:
-			valLHS, _ := ev.eval(ctx, e.LHS)
-			valRHS, ws := ev.eval(ctx, e.RHS)
+			var allAnons annotations.Annotations
+
+			valLHS, anons := ev.eval(ctx, e.LHS)
+			allAnons.Merge(anons)
+
+			valRHS, anons := ev.eval(ctx, e.RHS)
+			allAnons.Merge(anons)
+
 			valMatrix := valLHS.(Matrix)
 			valScalar := Scalar{V: valRHS.(Matrix)[0].Floats[0].F}
 
@@ -2095,7 +2100,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				panic(err)
 			}
 
-			return val, ws
+			return val, allAnons
 		}
 
 	case *parser.NumberLiteral:
@@ -2896,24 +2901,14 @@ func (ev *evaluator) MatrixScalarBinop(op parser.ItemType, lhs Matrix, rhs Scala
 				lf, rf = rf, lf
 			}
 
-			float, _, keep, err := vectorElemBinop(op, lf, rf, nil, nil, pos)
+			var float float64
+			var keep bool
+			float, _, keep, err := evalElemBinop(op, lf, rf, nil, nil, pos, swap, returnBool)
 			if err != nil {
 				lastErr = err
 				continue
 			}
-			// Catch cases where the scalar is the LHS in a scalar-vector comparison operation.
-			// We want to always keep the vector element value as the output value, even if it's on the RHS.
-			if op.IsComparisonOperator() && swap {
-				float = rf
-			}
-			if returnBool {
-				if keep {
-					float = 1.0
-				} else {
-					float = 0.0
-				}
-				keep = true
-			}
+
 			if keep {
 				floats = append(floats, FPoint{series.Floats[j].T, float})
 			}
@@ -2940,25 +2935,16 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 			lf, rf = rf, lf
 			lh, rh = rh, lh
 		}
-		float, histogram, keep, err := vectorElemBinop(op, lf, rf, lh, rh, pos)
+		var float float64
+		var histogram *histogram.FloatHistogram
+		var keep bool
+
+		float, histogram, keep, err := evalElemBinop(op, lf, rf, lh, rh, pos, swap, returnBool)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		// Catch cases where the scalar is the LHS in a scalar-vector comparison operation.
-		// We want to always keep the vector element value as the output value, even if it's on the RHS.
-		if op.IsComparisonOperator() && swap {
-			float = rf
-			histogram = rh
-		}
-		if returnBool {
-			if keep {
-				float = 1.0
-			} else {
-				float = 0.0
-			}
-			keep = true
-		}
+
 		if keep {
 			lhsSample.F = float
 			lhsSample.H = histogram
@@ -2972,6 +2958,28 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 		}
 	}
 	return enh.Out, lastErr
+}
+
+func evalElemBinop(op parser.ItemType, lf, rf float64, lh, rh *histogram.FloatHistogram, pos posrange.PositionRange, swap, returnBool bool) (float64, *histogram.FloatHistogram, bool, error) {
+	float, histogram, keep, err := vectorElemBinop(op, lf, rf, lh, rh, pos)
+	if err != nil {
+		return float, histogram, keep, err
+	}
+	// Catch cases where the scalar is the LHS in a scalar-vector comparison operation.
+	// We want to always keep the vector element value as the output value, even if it's on the RHS.
+	if op.IsComparisonOperator() && swap {
+		float = rf
+		histogram = rh
+	}
+	if returnBool {
+		if keep {
+			float = 1.0
+		} else {
+			float = 0.0
+		}
+		keep = true
+	}
+	return float, histogram, keep, nil
 }
 
 // scalarBinop evaluates a binary operation between two Scalars.
