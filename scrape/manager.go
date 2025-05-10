@@ -96,7 +96,7 @@ type Options struct {
 	HTTPClientOptions []config_util.HTTPClientOption
 
 	// Option to warn if targets relabelled to same labels
-	EnableWarnIfTargetsRelabelledToSameLabels bool
+	WarnDuplicateTargets bool
 
 	// private option for testability.
 	skipOffsetting bool
@@ -217,7 +217,7 @@ func (m *Manager) reload() {
 	m.mtxScrape.Unlock()
 	wg.Wait()
 
-	if m.opts.EnableWarnIfTargetsRelabelledToSameLabels {
+	if m.opts.WarnDuplicateTargets {
 		m.warnIfTargetsRelabelledToSameLabels()
 	}
 }
@@ -231,15 +231,14 @@ func (m *Manager) warnIfTargetsRelabelledToSameLabels() {
 		totalTargets += len(scrapePool.activeTargets)
 	}
 
-	activeTargets := make(map[string]*Target, totalTargets)
-	buf := [1024]byte{}
+	activeTargets := make(map[uint64]*Target, totalTargets)
 	builder := labels.NewBuilder(labels.EmptyLabels())
 	for _, scrapePool := range m.scrapePools {
 		for _, target := range scrapePool.activeTargets {
-			lStr := string(target.labels.Bytes(buf[:]))
-			t, ok := activeTargets[lStr]
+			tHash := target.hash()
+			t, ok := activeTargets[tHash]
 			if !ok {
-				activeTargets[lStr] = target
+				activeTargets[tHash] = target
 				continue
 			}
 			m.logger.Warn(

@@ -621,7 +621,7 @@ func TestManagerDuplicateAfterRelabellingWarning(t *testing.T) {
 	writer := &buf
 	logger := promslog.New(&promslog.Config{Writer: writer})
 
-	opts := Options{EnableWarnIfTargetsRelabelledToSameLabels: true}
+	opts := Options{WarnDuplicateTargets: true}
 	testRegistry := prometheus.NewRegistry()
 	m, err := NewManager(&opts, logger, nil, nil, testRegistry)
 	require.NoError(t, err)
@@ -637,20 +637,19 @@ func TestManagerDuplicateAfterRelabellingWarning(t *testing.T) {
 		ScrapeInterval: model.Duration(time.Second),
 		ScrapeTimeout:  model.Duration(time.Second),
 	}
+
 	sp.activeTargets[uint64(0)] = &Target{
 		scrapeConfig: targetScrapeCfg,
-		tLabels:      map[model.LabelName]model.LabelValue{model.AddressLabel: "foo"},
+		labels:       labels.FromStrings("key", "value"),
 	}
 	sp.activeTargets[uint64(1)] = &Target{
 		scrapeConfig: targetScrapeCfg,
-		tLabels:      map[model.LabelName]model.LabelValue{model.AddressLabel: "bar"},
+		labels:       labels.FromStrings("key", "value"),
 	}
 	m.scrapePools["default"] = sp
 
 	m.reload()
 	require.Contains(t, buf.String(), "Found targets with same labels after relabelling")
-	require.Contains(t, buf.String(), "foo")
-	require.Contains(t, buf.String(), "bar")
 }
 
 func TestSetOffsetSeed(t *testing.T) {
