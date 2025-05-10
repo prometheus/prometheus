@@ -1,7 +1,6 @@
 # Changelog
 
 ## unreleased
- * [ENHANCEMENT] Scraping: add warning if targets relabel to same labels. This is enabled under the feature-flag `warn-if-targets-relabelled-to-same-labels`. #9589
 
 * [CHANGE] Make setting out-of-order native histograms feature (`--enable-feature=ooo-native-histograms`) a no-op. Out-of-order native histograms are now always enabled when `out_of_order_time_window` is greater than zero and `--enable-feature=native-histograms` is set. #16207
 * [FEATURE] OTLP translate: Add feature flag for optionally translating OTel explicit bucket histograms into native histograms with custom buckets. #15850
