@@ -269,8 +269,8 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				logger.Info("Experimental created timestamp zero ingestion enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
-			case "warn-if-targets-relabelled-to-same-labels":
-				c.scrape.EnableWarnIfTargetsRelabelledToSameLabels = true
+			case "warn-duplicate-targets":
+				c.scrape.WarnDuplicateTargets = true
 				logger.Info("Enabled warning if targets relabelled to same labels")
 			case "delayed-compaction":
 				c.tsdb.EnableDelayedCompaction = true
