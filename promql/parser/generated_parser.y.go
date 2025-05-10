@@ -1087,11 +1087,21 @@ yydefault:
 	case 21:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
+			// Need to consume the position of the first RIGHT_PAREN. It might not exist on garbage input
+			// like 'sum (some_metric) by test'
+			if len(yylex.(*parser).closingParens) > 1 {
+				yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
+			}
 			yyVAL.node = yylex.(*parser).newAggregateExpr(yyDollar[1].item, yyDollar[2].node, yyDollar[3].node)
 		}
 	case 22:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
+			// Need to consume the position of the first RIGHT_PAREN. It might not exist on garbage input
+			// like 'sum by test (some_metric)'
+			if len(yylex.(*parser).closingParens) > 1 {
+				yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
+			}
 			yyVAL.node = yylex.(*parser).newAggregateExpr(yyDollar[1].item, yyDollar[3].node, yyDollar[2].node)
 		}
 	case 23:
@@ -1319,9 +1329,10 @@ yydefault:
 				Args: yyDollar[2].node.(Expressions),
 				PosRange: posrange.PositionRange{
 					Start: yyDollar[1].item.Pos,
-					End:   yylex.(*parser).lastClosing,
+					End:   yylex.(*parser).closingParens[0],
 				},
 			}
+			yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
 		}
 	case 63:
 		yyDollar = yyS[yypt-3 : yypt+1]
@@ -1353,6 +1364,7 @@ yydefault:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yyVAL.node = &ParenExpr{Expr: yyDollar[2].node.(Expr), PosRange: mergeRanges(&yyDollar[1].item, &yyDollar[3].item)}
+			yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
 		}
 	case 69:
 		yyDollar = yyS[yypt-1 : yypt+1]
