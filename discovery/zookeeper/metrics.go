@@ -44,6 +44,9 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 			Help:      "The current number of watcher goroutines.",
 		}),
 	}
+	// NOTE: These metrics are shared by both ServerSet and Nerve SD.
+	// Therefore, we do NOT unregister them during config reloads to avoid unregistering while the other is still using them.
+	// Long-term, this should be split to enable clean registration/unregistration per SD type.
 	// For historical reasons, both ServerSet and Nerve SD share the same zookeeper metrics.
 	// To not cause double registration problems, if both SD mechanisms are instantiated with
 	// the same registry, we are handling the AlreadyRegisteredError accordingly below.
