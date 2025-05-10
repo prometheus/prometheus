@@ -112,7 +112,11 @@ type ReadClient interface {
 	ReadMultiple(ctx context.Context, queries []*prompb.Query, sortSeries bool) (storage.SeriesSet, error)
 }
 
-func newRemoteReadMetrics(name string, url string, reg prometheus.Registerer) (
+func newRemoteReadMetrics(
+	name string,
+	url string,
+	reg prometheus.Registerer,
+) (
 	readQueries prometheus.Gauge,
 	readQueriesTotal *prometheus.CounterVec,
 	readQueryDuration prometheus.ObserverVec,
