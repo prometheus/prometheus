@@ -334,10 +334,13 @@ func Walk(v Visitor, node Node, path []Node) error {
 	if v, err = v.Visit(node, path); v == nil || err != nil {
 		return err
 	}
-	path = append(path, node)
+	var pathToHere []Node // Initialized only when needed.
 
 	for e := range ChildrenIter(node) {
-		if err := Walk(v, e, path); err != nil {
+		if pathToHere == nil {
+			pathToHere = append(path, node)
+		}
+		if err := Walk(v, e, pathToHere); err != nil {
 			return err
 		}
 	}
@@ -371,8 +374,10 @@ func (f inspector) Visit(node Node, path []Node) (Visitor, error) {
 // Inspect traverses an AST in depth-first order: It starts by calling
 // f(node, path); node must not be nil. If f returns a nil error, Inspect invokes f
 // for all the non-nil children of node, recursively.
+// Note: path may be overwritten after f returns; copy path if you need to retain it.
 func Inspect(node Node, f inspector) {
-	Walk(f, node, nil) //nolint:errcheck
+	var pathBuf [4]Node        // To reduce allocations during recursion.
+	Walk(f, node, pathBuf[:0]) //nolint:errcheck
 }
 
 // ChildrenIter returns an iterator over all child nodes of a syntax tree node.
