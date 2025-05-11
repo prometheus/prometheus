@@ -38,6 +38,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/prometheus/prometheus/schema"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -1821,7 +1823,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			it.Reset(chkIter)
 			metric := selVS.Series[i].Labels()
 			if !ev.enableDelayedNameRemoval && dropName {
-				metric = metric.DropMetricDescriptorLabels()
+				metric = metric.DropSpecial(schema.IsMetadataLabel)
 			}
 			ss := Series{
 				Metric:   metric,
@@ -1960,7 +1962,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		if e.Op == parser.SUB {
 			for i := range mat {
 				if !ev.enableDelayedNameRemoval {
-					mat[i].Metric = mat[i].Metric.DropMetricDescriptorLabels()
+					mat[i].Metric = mat[i].Metric.DropSpecial(schema.IsMetadataLabel)
 				}
 				mat[i].DropName = true
 				for j := range mat[i].Floats {
@@ -2709,7 +2711,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		}
 		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
 		if !ev.enableDelayedNameRemoval && returnBool {
-			metric = metric.DropMetricDescriptorLabels()
+			metric = metric.DropSpecial(schema.IsMetadataLabel)
 		}
 		insertedSigs, exists := matchedSigs[sig]
 		if matching.Card == parser.CardOneToOne {
@@ -2776,9 +2778,9 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	}
 	str := string(enh.lblResultBuf)
 
-	if shouldDropMetricIdentity(op) {
-		// Setting to empty fields will cause the deletion of those.
-		enh.lb.SetMetricDescriptor(labels.MetricDescriptor{})
+	if changesMetricSchema(op) {
+		// Setting empty Metadata causes the deletion of those if they exists.
+		schema.Metadata{}.SetToLabels(enh.lb)
 	}
 
 	if matching.Card == parser.CardOneToOne {
@@ -2837,9 +2839,9 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 		if keep {
 			lhsSample.F = float
 			lhsSample.H = histogram
-			if shouldDropMetricIdentity(op) || returnBool {
+			if changesMetricSchema(op) || returnBool {
 				if !ev.enableDelayedNameRemoval {
-					lhsSample.Metric = lhsSample.Metric.DropMetricDescriptorLabels()
+					lhsSample.Metric = lhsSample.Metric.DropSpecial(schema.IsMetadataLabel)
 				}
 				lhsSample.DropName = true
 			}
@@ -3545,7 +3547,7 @@ func (ev *evaluator) cleanupMetricLabels(v parser.Value) {
 		mat := v.(Matrix)
 		for i := range mat {
 			if mat[i].DropName {
-				mat[i].Metric = mat[i].Metric.DropMetricDescriptorLabels()
+				mat[i].Metric = mat[i].Metric.DropSpecial(schema.IsMetadataLabel)
 			}
 		}
 		if mat.ContainsSameLabelset() {
@@ -3555,7 +3557,7 @@ func (ev *evaluator) cleanupMetricLabels(v parser.Value) {
 		vec := v.(Vector)
 		for i := range vec {
 			if vec[i].DropName {
-				vec[i].Metric = vec[i].Metric.DropMetricDescriptorLabels()
+				vec[i].Metric = vec[i].Metric.DropSpecial(schema.IsMetadataLabel)
 			}
 		}
 		if vec.ContainsSameLabelset() {
@@ -3657,9 +3659,9 @@ func btos(b bool) float64 {
 	return 0
 }
 
-// shouldDropMetricIdentity returns whether the metric name, type and unit should be dropped in the
-// result of the op operation.
-func shouldDropMetricIdentity(op parser.ItemType) bool {
+// changesSchema returns true whether the op operation changes the semantic meaning or
+// schema of the metric.
+func changesMetricSchema(op parser.ItemType) bool {
 	switch op {
 	case parser.ADD, parser.SUB, parser.DIV, parser.MUL, parser.POW, parser.MOD, parser.ATAN2:
 		return true

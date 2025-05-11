@@ -29,6 +29,8 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/schema"
+
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -216,28 +218,28 @@ func (p *OpenMetricsParser) Labels(l *labels.Labels) {
 
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
+
+	m := schema.Metadata{
+		Name: metricName,
+		Type: p.mtype,
+		Unit: p.unit,
+	}
 	if p.enableTypeAndUnitLabels {
-		p.builder.AddMetricDescriptor(labels.MetricDescriptor{
-			Name: metricName,
-			Type: p.mtype,
-			Unit: p.unit,
-		})
+		m.AddToLabels(&p.builder)
 	} else {
 		p.builder.Add(labels.MetricName, metricName)
 	}
-
 	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
 		b := p.offsets[i+1] - p.start
 		label := unreplace(s[a:b])
-		if p.enableTypeAndUnitLabels && labels.IsMetricDescriptorLabel(label) {
-			// Dropping user provided id labels if needed.
+		if p.enableTypeAndUnitLabels && !m.IsEmptyFor(label) {
+			// Dropping user provided metadata labels, if found in the OM metadata.
 			continue
 		}
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
 		value := normalizeFloatsInLabelValues(p.mtype, label, unreplace(s[c:d]))
-
 		p.builder.Add(label, value)
 	}
 

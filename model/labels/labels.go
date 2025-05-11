@@ -336,26 +336,20 @@ func (ls Labels) Validate(f func(l Label) error) error {
 	return nil
 }
 
-// DropMetricName returns Labels with "__name__" removed.
+// DropMetricName returns Labels with the "__name__" removed.
+// Deprecated: Use DropSpecial instead.
 func (ls Labels) DropMetricName() Labels {
-	for i, l := range ls {
-		if l.Name == MetricName {
-			if i == 0 { // Make common case fast with no allocations.
-				return ls[1:]
-			}
-			// Avoid modifying original Labels - use [:i:i] so that left slice would not
-			// have any spare capacity and append would have to allocate a new slice for the result.
-			return append(ls[:i:i], ls[i+1:]...)
-		}
-	}
-	return ls
+	return ls.DropSpecial(func(n string) bool { return n == MetricName })
 }
 
-// DropMetricDescriptorLabels is like DropMetricName but drops all parts of MetricDescriptor.
-func (ls Labels) DropMetricDescriptorLabels() Labels {
+// DropSpecial returns Labels without the chosen (via shouldDropFn) special (starting with underscore) labels.
+func (ls Labels) DropSpecial(shouldDropFn func(name string) bool) Labels {
 	rm := 0
 	for i, l := range ls {
-		if IsMetricDescriptorLabel(l.Name) {
+		if l.Name[0] > '_' { // Stop looking if we've gone past special labels.
+			break
+		}
+		if shouldDropFn(l.Name) {
 			i := i - rm // Offsetting after removals.
 			if i == 0 { // Make common case fast with no allocations.
 				ls = ls[1:]

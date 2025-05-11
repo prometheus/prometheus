@@ -27,6 +27,8 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/schema"
+
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -556,12 +558,17 @@ func (p *ProtobufParser) onSeriesOrHistogramUpdate() error {
 
 	if p.enableTypeAndUnitLabels {
 		_, typ := p.Type()
-		p.builder.AddMetricDescriptor(labels.MetricDescriptor{
+
+		m := schema.Metadata{
 			Name: p.getMagicName(),
 			Type: typ,
 			Unit: p.dec.GetUnit(),
-		})
-		if err := p.dec.Label(labels.IgnoreMetricDescriptorLabelsScratchBuilder{ScratchBuilder: &p.builder}); err != nil {
+		}
+		m.AddToLabels(&p.builder)
+		if err := p.dec.Label(schema.IgnoreOverriddenMetadataLabelsScratchBuilder{
+			Overwrite:      m,
+			ScratchBuilder: &p.builder,
+		}); err != nil {
 			return err
 		}
 	} else {
