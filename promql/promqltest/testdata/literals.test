@@ -1,59 +1,99 @@
 eval instant at 50m 12.34e6
+	expect no_warn
+	expect no_info
 	12340000
 
 eval instant at 50m 12.34e+6
+	expect no_warn
+	expect no_info
 	12340000
 
 eval instant at 50m 12.34e-6
+	expect no_warn
+	expect no_info
 	0.00001234
 
 eval instant at 50m 1+1
+	expect no_warn
+	expect no_info
 	2
 
 eval instant at 50m 1-1
+	expect no_warn
+	expect no_info
 	0
 
 eval instant at 50m 1 - -1
+	expect no_warn
+	expect no_info
 	2
 
 eval instant at 50m .2
+	expect no_warn
+	expect no_info
 	0.2
 
 eval instant at 50m +0.2
+	expect no_warn
+	expect no_info
 	0.2
 
 eval instant at 50m -0.2e-6
+	expect no_warn
+	expect no_info
 	-0.0000002
 
 eval instant at 50m +Inf
+	expect no_warn
+	expect no_info
 	+Inf
 
 eval instant at 50m inF
+	expect no_warn
+	expect no_info
 	+Inf
 
 eval instant at 50m -inf
+	expect no_warn
+	expect no_info
 	-Inf
 
 eval instant at 50m NaN
+	expect no_warn
+	expect no_info
 	NaN
 
 eval instant at 50m nan
+	expect no_warn
+	expect no_info
 	NaN
 
 eval instant at 50m 2.
+	expect no_warn
+	expect no_info
 	2
 
 eval instant at 50m 1 / 0
+	expect no_warn
+	expect no_info
 	+Inf
 
 eval instant at 50m ((1) / (0))
+	expect no_warn
+	expect no_info
 	+Inf
 
 eval instant at 50m -1 / 0
+	expect no_warn
+	expect no_info
 	-Inf
 
 eval instant at 50m 0 / 0
+	expect no_warn
+	expect no_info
 	NaN
 
 eval instant at 50m 1 % 0
+	expect no_warn
+	expect no_info
 	NaN
