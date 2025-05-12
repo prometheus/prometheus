@@ -219,6 +219,7 @@ Examples of equivalent durations:
 
 [d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
 
+<<<<<<< HEAD
 ## OTLP Native Delta Support
 
 `--enable-feature=otlp-native-delta-ingestion`
@@ -247,3 +248,17 @@ These may not work well if the `<range>` is not a multiple of the collection int
 * It is difficult to figure out whether a metric has delta or cumulative temporality, since there's no indication of temporality in metric names or labels. For now, if you are ingesting a mix of delta and cumulative metrics we advise you to explicitly add your own labels to distinguish them. In the future, we plan to introduce type labels to consistently distinguish metric types and potentially make PromQL functions type-aware (e.g. providing warnings when cumulative-only functions are used with delta metrics).
 
 * If there are multiple samples being ingested at the same timestamp, only one of the points is kept - the samples are **not** summed together (this is how Prometheus works in general - duplicate timestamp samples are rejected). Any aggregation will have to be done before sending samples to Prometheus.
+
+## Use Uncached IO
+
+`--enable-feature=use-uncached-io`
+
+Experimental and only available on Linux.
+
+When enabled, it makes chunks writing bypass the page cache. Its primary
+goal is to reduce confusion around page‐cache behavior and to prevent over‑allocation of
+memory in response to misleading cache growth.
+
+This is currently implemented using direct I/O.
+
+For more details, see the [proposal](https://github.com/prometheus/proposals/pull/45).
