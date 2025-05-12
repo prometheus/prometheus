@@ -118,11 +118,11 @@ func (node *BinaryExpr) returnBool() string {
 
 func (node *BinaryExpr) String() string {
 	matching := node.getMatchingStr()
-	return fmt.Sprintf("%s %s%s%s %s", node.LHS, node.Op, node.returnBool(), matching, node.RHS)
+	return node.LHS.String() + " " + node.Op.String() + node.returnBool() + matching + " " + node.RHS.String()
 }
 
 func (node *BinaryExpr) ShortString() string {
-	return fmt.Sprintf("%s%s%s", node.Op, node.returnBool(), node.getMatchingStr())
+	return node.Op.String() + node.returnBool() + node.getMatchingStr()
 }
 
 func (node *BinaryExpr) getMatchingStr() string {
@@ -180,7 +180,7 @@ func (node *DurationExpr) ShortString() string {
 }
 
 func (node *Call) String() string {
-	return fmt.Sprintf("%s(%s)", node.Func.Name, node.Args)
+	return node.Func.Name + "(" + node.Args.String() + ")"
 }
 
 func (node *Call) ShortString() string {
@@ -294,15 +294,15 @@ func (node *NumberLiteral) String() string {
 }
 
 func (node *ParenExpr) String() string {
-	return fmt.Sprintf("(%s)", node.Expr)
+	return "(" + node.Expr.String() + ")"
 }
 
 func (node *StringLiteral) String() string {
-	return fmt.Sprintf("%q", node.Val)
+	return strconv.Quote(node.Val)
 }
 
 func (node *UnaryExpr) String() string {
-	return fmt.Sprintf("%s%s", node.Op, node.Expr)
+	return node.Op.String() + node.Expr.String()
 }
 
 func (node *UnaryExpr) ShortString() string {
