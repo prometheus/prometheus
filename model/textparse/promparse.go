@@ -236,8 +236,12 @@ func (p *PromParser) Labels(l *labels.Labels) {
 
 	m := schema.Metadata{
 		Name: metricName,
+		// NOTE(bwplotka): There is a known case where the type is wrong on a broken exposition
+		// (see the TestPromParse windspeed metric). Fixing it would require extra
+		// allocs and benchmarks. Since it was always broken, don't fix for now.
 		Type: p.mtype,
 	}
+
 	if p.enableTypeAndUnitLabels {
 		m.AddToLabels(&p.builder)
 	} else {
@@ -308,6 +312,9 @@ func (p *PromParser) Next() (Entry, error) {
 		return p.Next()
 
 	case tHelp, tType:
+		// New metric, reset the type in case it's not set.
+		p.mtype = model.MetricTypeUnknown
+
 		switch t2 := p.nextToken(); t2 {
 		case tMName:
 			mStart := p.l.start
