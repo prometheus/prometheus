@@ -54,7 +54,7 @@ func (e *AggregateExpr) Pretty(level int) string {
 		return s
 	}
 
-	s += e.getAggOpStr()
+	s += e.ShortString()
 	s += "(\n"
 
 	if e.Op.IsAggregatorWithParam() {
