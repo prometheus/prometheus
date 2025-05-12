@@ -808,6 +808,7 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 		GOMEMLIMIT:     debug.SetMemoryLimit(-1),
 		GOGC:           os.Getenv("GOGC"),
 		GODEBUG:        os.Getenv("GODEBUG"),
+		GOTRACEBACK:    os.Getenv("GOTRACEBACK"),
 	}
 
 	hostname, err := os.Hostname()

@@ -157,6 +157,7 @@ type RuntimeInfo struct {
 	GOMEMLIMIT          int64     `json:"GOMEMLIMIT"`
 	GOGC                string    `json:"GOGC"`
 	GODEBUG             string    `json:"GODEBUG"`
+	GOTRACEBACK         string    `json:"GOTRACEBACK"`
 	StorageRetention    string    `json:"storageRetention"`
 }
 
