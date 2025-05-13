@@ -144,7 +144,7 @@ func (t *Target) SetMetadataStore(s MetricMetadataStore) {
 func (t *Target) hash() uint64 {
 	h := fnv.New64a()
 
-	fmt.Fprintf(h, "%016d", t.labels.Hash())
+	h.Write([]byte(fmt.Sprintf("%016d", t.labels.Hash())))
 	h.Write([]byte(t.URL().String()))
 
 	return h.Sum64()
@@ -154,7 +154,6 @@ func (t *Target) hash() uint64 {
 // It includes the global server offsetSeed for scrapes from multiple Prometheus to try to be at different times.
 func (t *Target) offset(interval time.Duration, offsetSeed uint64) time.Duration {
 	now := time.Now().UnixNano()
-
 	// Base is a pinned to absolute time, no matter how often offset is called.
 	var (
 		base   = int64(interval) - now%int64(interval)
@@ -190,9 +189,9 @@ func (t *Target) LabelsRange(f func(l labels.Label)) {
 
 // DiscoveredLabels returns a copy of the target's labels before any processing.
 func (t *Target) DiscoveredLabels(lb *labels.Builder) labels.Labels {
-	t.mtx.Lock()
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
 	cfg, tLabels, tgLabels := t.scrapeConfig, t.tLabels, t.tgLabels
-	t.mtx.Unlock()
 	PopulateDiscoveredLabels(lb, cfg, tLabels, tgLabels)
 	return lb.Labels()
 }
@@ -201,6 +200,7 @@ func (t *Target) DiscoveredLabels(lb *labels.Builder) labels.Labels {
 func (t *Target) SetScrapeConfig(scrapeConfig *config.ScrapeConfig, tLabels, tgLabels model.LabelSet) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
+	// We rely on atomic swapping of scrapeConfig to allow readers to use localized read locks
 	t.scrapeConfig = scrapeConfig
 	t.tLabels = tLabels
 	t.tgLabels = tgLabels
@@ -208,9 +208,9 @@ func (t *Target) SetScrapeConfig(scrapeConfig *config.ScrapeConfig, tLabels, tgL
 
 // URL returns a copy of the target's URL.
 func (t *Target) URL() *url.URL {
-	t.mtx.Lock()
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
 	configParams := t.scrapeConfig.Params
-	t.mtx.Unlock()
 	params := url.Values{}
 
 	for k, v := range configParams {
