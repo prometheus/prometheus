@@ -175,7 +175,7 @@ var (
 
 	DefaultRuntimeConfig = RuntimeConfig{
 		// Go runtime tuning.
-		GoGC: 75,
+		GoGC: getGoGC(),
 	}
 
 	// DefaultScrapeConfig is the default scrape configuration.
@@ -385,8 +385,6 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// We have to restore it here.
 	if c.Runtime.isZero() {
 		c.Runtime = DefaultRuntimeConfig
-		// Use the GOGC env var value if the runtime section is empty.
-		c.Runtime.GoGC = getGoGCEnv()
 	}
 
 	for _, rf := range c.RuleFiles {
@@ -651,6 +649,8 @@ func (c *GlobalConfig) isZero() bool {
 		!c.ConvertClassicHistogramsToNHCB &&
 		!c.AlwaysScrapeClassicHistograms
 }
+
+const DefaultGoGCPercentage = 75
 
 // RuntimeConfig configures the values for the process behavior.
 type RuntimeConfig struct {
@@ -1494,7 +1494,7 @@ func fileErr(filename string, err error) error {
 	return fmt.Errorf("%q: %w", filePath(filename), err)
 }
 
-func getGoGCEnv() int {
+func getGoGC() int {
 	goGCEnv := os.Getenv("GOGC")
 	// If the GOGC env var is set, use the same logic as upstream Go.
 	if goGCEnv != "" {
@@ -1507,7 +1507,7 @@ func getGoGCEnv() int {
 			return i
 		}
 	}
-	return DefaultRuntimeConfig.GoGC
+	return DefaultGoGCPercentage
 }
 
 type translationStrategyOption string
