@@ -32,7 +32,7 @@ will be returned in the data field.
 
 The JSON response envelope format is as follows:
 
-```
+```json
 {
   "status": "success" | "error",
   "data": <data>,
@@ -96,7 +96,7 @@ query that may breach server-side URL character limits.
 
 The `data` section of the query result has the following format:
 
-```
+```json
 {
   "resultType": "matrix" | "vector" | "scalar" | "string",
   "result": <value>
@@ -110,8 +110,11 @@ formats](#expression-query-result-formats).
 The following example evaluates the expression `up` at the time
 `2015-07-01T20:10:51.781Z`:
 
+```bash
+curl 'http://localhost:9090/api/v1/query?query=up&time=2015-07-01T20:10:51.781Z'
+```
+
 ```json
-$ curl 'http://localhost:9090/api/v1/query?query=up&time=2015-07-01T20:10:51.781Z'
 {
    "status" : "success",
    "data" : {
@@ -163,7 +166,7 @@ query that may breach server-side URL character limits.
 
 The `data` section of the query result has the following format:
 
-```
+```json
 {
   "resultType": "matrix",
   "result": <value>
@@ -176,8 +179,11 @@ format](#range-vectors).
 The following example evaluates the expression `up` over a 30-second range with
 a query resolution of 15 seconds.
 
+```bash
+curl 'http://localhost:9090/api/v1/query_range?query=up&start=2015-07-01T20:10:30.781Z&end=2015-07-01T20:11:00.781Z&step=15s'
+```
+
 ```json
-$ curl 'http://localhost:9090/api/v1/query_range?query=up&start=2015-07-01T20:10:30.781Z&end=2015-07-01T20:11:00.781Z&step=15s'
 {
    "status" : "success",
    "data" : {
@@ -233,8 +239,11 @@ The `data` section of the query result is a string containing the formatted quer
 
 The following example formats the expression `foo/bar`:
 
+```bash
+curl 'http://localhost:9090/api/v1/format_query?query=foo/bar'
+```
+
 ```json
-$ curl 'http://localhost:9090/api/v1/format_query?query=foo/bar'
 {
    "status" : "success",
    "data" : "foo / bar"
@@ -264,8 +273,11 @@ The `data` section of the query result is a string containing the AST of the par
 
 The following example parses the expression `foo/bar`:
 
+```bash
+curl 'http://localhost:9090/api/v1/parse_query?query=foo/bar'
+```
+
 ```json
-$ curl 'http://localhost:9090/api/v1/parse_query?query=foo/bar'
 {
    "data" : {
       "bool" : false,
@@ -343,8 +355,11 @@ contain the label name/value pairs which identify each series.
 The following example returns all series that match either of the selectors
 `up` or `process_start_time_seconds{job="prometheus"}`:
 
+```bash
+curl -g 'http://localhost:9090/api/v1/series?' --data-urlencode 'match[]=up' --data-urlencode 'match[]=process_start_time_seconds{job="prometheus"}'
+```
+
 ```json
-$ curl -g 'http://localhost:9090/api/v1/series?' --data-urlencode 'match[]=up' --data-urlencode 'match[]=process_start_time_seconds{job="prometheus"}'
 {
    "status" : "success",
    "data" : [
@@ -389,8 +404,11 @@ The `data` section of the JSON response is a list of string label names.
 
 Here is an example.
 
+```bash
+curl 'localhost:9090/api/v1/labels'
+```
+
 ```json
-$ curl 'localhost:9090/api/v1/labels'
 {
     "status": "success",
     "data": [
@@ -439,8 +457,11 @@ The `data` section of the JSON response is a list of string label values.
 
 This example queries for all label values for the `http_status_code` label:
 
+```bash
+curl http://localhost:9090/api/v1/label/http_status_code/values
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/label/http_status_code/values
 {
    "status" : "success",
    "data" : [
@@ -462,8 +483,11 @@ Label names can optionally be encoded using the Values Escaping method, and is n
 
 This example queries for all label values for the `http.status_code` label:
 
+```bash
+curl http://localhost:9090/api/v1/label/U__http_2e_status_code/values
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/label/U__http_2e_status_code/values
 {
    "status" : "success",
    "data" : [
@@ -489,8 +513,11 @@ URL query parameters:
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp.
 
+```bash
+curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metric_total&start=2020-09-14T15:22:25.479Z&end=2020-09-14T15:23:25.479Z'
+```
+
 ```json
-$ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metric_total&start=2020-09-14T15:22:25.479Z&end=2020-09-14T15:23:25.479Z'
 {
     "status": "success",
     "data": [
@@ -556,7 +583,7 @@ is explained in detail in its own section below.
 Range vectors are returned as result type `matrix`. The corresponding
 `result` property has the following format:
 
-```
+```json
 [
   {
     "metric": { "<label_name>": "<label_value>", ... },
@@ -578,7 +605,7 @@ and [`sort_by_label`](functions.md#sort_by_label) have no effect for range vecto
 Instant vectors are returned as result type `vector`. The corresponding
 `result` property has the following format:
 
-```
+```json
 [
   {
     "metric": { "<label_name>": "<label_value>", ... },
@@ -600,7 +627,7 @@ is used.
 Scalar results are returned as result type `scalar`. The corresponding
 `result` property has the following format:
 
-```
+```json
 [ <unix_time>, "<scalar_value>" ]
 ```
 
@@ -609,7 +636,7 @@ Scalar results are returned as result type `scalar`. The corresponding
 String results are returned as result type `string`. The corresponding
 `result` property has the following format:
 
-```
+```json
 [ <unix_time>, "<string_value>" ]
 ```
 
@@ -620,7 +647,7 @@ The `<histogram>` placeholder used above is formatted as follows.
 _Note that native histograms are an experimental feature, and the format below
 might still change._
 
-```
+```json
 {
   "count": "<count_of_observations>",
   "sum": "<sum_of_observations>",
@@ -654,8 +681,11 @@ Dropped targets are subject to `keep_dropped_targets` limit, if set.
 `labels` represents the label set after relabeling has occurred.
 `discoveredLabels` represent the unmodified labels retrieved during service discovery before relabeling has occurred.
 
+```bash
+curl http://localhost:9090/api/v1/targets
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/targets
 {
   "status": "success",
   "data": {
@@ -704,9 +734,12 @@ The `state` query parameter allows the caller to filter by active or dropped tar
 Note that an empty array is still returned for targets that are filtered out.
 Other values are ignored.
 
+```bash
+curl 'http://localhost:9090/api/v1/targets?state=active'
+```
+
 ```json
-$ curl 'http://localhost:9090/api/v1/targets?state=active'
-{
+
   "status": "success",
   "data": {
     "activeTargets": [
@@ -737,9 +770,12 @@ $ curl 'http://localhost:9090/api/v1/targets?state=active'
 
 The `scrapePool` query parameter allows the caller to filter by scrape pool name.
 
+```bash
+curl 'http://localhost:9090/api/v1/targets?scrapePool=node_exporter'
+```
+
 ```json
-$ curl 'http://localhost:9090/api/v1/targets?scrapePool=node_exporter'
-{
+
   "status": "success",
   "data": {
     "activeTargets": [
@@ -792,9 +828,11 @@ URL query parameters:
 - `group_limit=<number>`: The `group_limit` parameter allows you to specify a limit for the number of rule groups that is returned in a single response. If the total number of rule groups exceeds the specified `group_limit` value, the response will include a `groupNextToken` property. You can use the value of this `groupNextToken` property in subsequent requests in the `group_next_token` parameter to paginate over the remaining rule groups. The `groupNextToken` property will not be present in the final response, indicating that you have retrieved all the available rule groups. Please note that there are no guarantees regarding the consistency of the response if the rule groups are being modified during the pagination process.
 - `group_next_token`: the pagination token that was returned in previous request when the `group_limit` property is set. The pagination token is used to iteratively paginate over a large number of rule groups. To use the `group_next_token` parameter, the `group_limit` parameter also need to be present. If a rule group that coincides with the next token is removed while you are paginating over the rule groups, a response with status code 400 will be returned.
 
-```json
-$ curl http://localhost:9090/api/v1/rules
+```bash
+curl http://localhost:9090/api/v1/rules
+```
 
+```json
 {
     "data": {
         "groups": [
@@ -857,9 +895,11 @@ guarantees as the overarching API v1.
 GET /api/v1/alerts
 ```
 
-```json
-$ curl http://localhost:9090/api/v1/alerts
+```bash
+curl http://localhost:9090/api/v1/alerts
+```
 
+```json
 {
     "data": {
         "alerts": [
@@ -904,6 +944,9 @@ curl -G http://localhost:9091/api/v1/targets/metadata \
     --data-urlencode 'metric=go_goroutines' \
     --data-urlencode 'match_target={job="prometheus"}' \
     --data-urlencode 'limit=2'
+```
+
+```json
 {
   "status": "success",
   "data": [
@@ -932,9 +975,12 @@ curl -G http://localhost:9091/api/v1/targets/metadata \
 The following example returns metadata for all metrics for all targets with
 label `instance="127.0.0.1:9090"`.
 
-```json
+```bash
 curl -G http://localhost:9091/api/v1/targets/metadata \
     --data-urlencode 'match_target={instance="127.0.0.1:9090"}'
+```
+
+```json
 {
   "status": "success",
   "data": [
@@ -983,9 +1029,11 @@ The `data` section of the query result consists of an object where each key is a
 
 The following example returns two metrics. Note that the metric `http_requests_total` has more than one object in the list. At least one target has a value for `HELP` that do not match with the rest.
 
-```json
+```bash
 curl -G http://localhost:9090/api/v1/metadata?limit=2
+```
 
+```json
 {
   "status": "success",
   "data": {
@@ -1014,9 +1062,11 @@ curl -G http://localhost:9090/api/v1/metadata?limit=2
 
 The following example returns only one metadata entry for each metric.
 
-```json
+```bash
 curl -G http://localhost:9090/api/v1/metadata?limit_per_metric=1
+```
 
+```json
 {
   "status": "success",
   "data": {
@@ -1040,9 +1090,11 @@ curl -G http://localhost:9090/api/v1/metadata?limit_per_metric=1
 
 The following example returns metadata only for the metric `http_requests_total`.
 
-```json
+```bash
 curl -G http://localhost:9090/api/v1/metadata?metric=http_requests_total
+```
 
+```json
 {
   "status": "success",
   "data": {
@@ -1073,8 +1125,11 @@ GET /api/v1/alertmanagers
 
 Both the active and dropped Alertmanagers are part of the response.
 
+```bash
+curl http://localhost:9090/api/v1/alertmanagers
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/alertmanagers
 {
   "status": "success",
   "data": {
@@ -1107,8 +1162,11 @@ GET /api/v1/status/config
 The config is returned as dumped YAML file. Due to limitation of the YAML
 library, YAML comments are not included.
 
+```bash
+curl http://localhost:9090/api/v1/status/config
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/status/config
 {
   "status": "success",
   "data": {
@@ -1127,8 +1185,11 @@ GET /api/v1/status/flags
 
 All values are of the result type `string`.
 
+```bash
+curl http://localhost:9090/api/v1/status/flags
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/status/flags
 {
   "status": "success",
   "data": {
@@ -1154,8 +1215,11 @@ GET /api/v1/status/runtimeinfo
 
 The returned values are of different types, depending on the nature of the runtime property.
 
+```bash
+curl http://localhost:9090/api/v1/status/runtimeinfo
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/status/runtimeinfo
 {
   "status": "success",
   "data": {
@@ -1190,8 +1254,11 @@ GET /api/v1/status/buildinfo
 
 All values are of the result type `string`.
 
+```bash
+curl http://localhost:9090/api/v1/status/buildinfo
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/status/buildinfo
 {
   "status": "success",
   "data": {
@@ -1232,8 +1299,11 @@ The `data` section of the query result consists of:
 - **memoryInBytesByLabelName** This will provide a list of the label names and memory used in bytes. Memory usage is calculated by adding the length of all values for a given label name.
 - **seriesCountByLabelPair** This will provide a list of label value pairs and their series count.
 
+```bash
+curl http://localhost:9090/api/v1/status/tsdb
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/status/tsdb
 {
   "status": "success",
   "data": {
@@ -1305,8 +1375,11 @@ GET /api/v1/status/walreplay
   - **in progress**: The replay is in progress.
   - **done**: The replay has finished.
 
+```bash
+curl http://localhost:9090/api/v1/status/walreplay
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/status/walreplay
 {
   "status": "success",
   "data": {
@@ -1338,8 +1411,11 @@ URL query parameters:
 
 - `skip_head=<bool>`: Skip data present in the head block. Optional.
 
+```bash
+curl -XPOST http://localhost:9090/api/v1/admin/tsdb/snapshot
+```
+
 ```json
-$ curl -XPOST http://localhost:9090/api/v1/admin/tsdb/snapshot
 {
   "status": "success",
   "data": {
@@ -1371,8 +1447,8 @@ Not mentioning both start and end times would clear all the data for the matched
 
 Example:
 
-```json
-$ curl -X POST \
+```bash
+curl -X POST \
   -g 'http://localhost:9090/api/v1/admin/tsdb/delete_series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
 ```
 
@@ -1392,8 +1468,8 @@ PUT /api/v1/admin/tsdb/clean_tombstones
 
 This takes no parameters or body.
 
-```json
-$ curl -XPOST http://localhost:9090/api/v1/admin/tsdb/clean_tombstones
+```bash
+curl -XPOST http://localhost:9090/api/v1/admin/tsdb/clean_tombstones
 ```
 
 *New in v2.1 and supports PUT from v2.9*
@@ -1451,8 +1527,11 @@ GET /api/v1/notifications
 
 Example:
 
+```bash
+curl http://localhost:9090/api/v1/notifications
 ```
-$ curl http://localhost:9090/api/v1/notifications
+
+```
 {
   "status": "success",
   "data": [
@@ -1477,8 +1556,11 @@ GET /api/v1/notifications/live
 
 Example:
 
+```bash
+curl http://localhost:9090/api/v1/notifications/live
 ```
-$ curl http://localhost:9090/api/v1/notifications/live
+
+```
 data: {
   "status": "success",
   "data": [
