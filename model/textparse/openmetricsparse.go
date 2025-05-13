@@ -310,7 +310,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() int64 {
 		return p.ct
 	}
 
-	// Create a new lexer to reset the parser once this function is done executing.
+	// Create a new lexer and other core state details to reset the parser once this function is done executing.
 	resetLexer := &openMetricsLexer{
 		b:     p.l.b,
 		i:     p.l.i,
@@ -318,15 +318,16 @@ func (p *OpenMetricsParser) CreatedTimestamp() int64 {
 		err:   p.l.err,
 		state: p.l.state,
 	}
+	resetStart := p.start
+	resetMType := p.mtype
 
 	p.skipCTSeries = false
-
 	p.ignoreExemplar = true
-	savedStart := p.start
 	defer func() {
-		p.ignoreExemplar = false
-		p.start = savedStart
 		p.l = resetLexer
+		p.start = resetStart
+		p.mtype = resetMType
+		p.ignoreExemplar = false
 	}()
 
 	for {

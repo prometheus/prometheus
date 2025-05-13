@@ -312,9 +312,6 @@ func (p *PromParser) Next() (Entry, error) {
 		return p.Next()
 
 	case tHelp, tType:
-		// New metric, reset the type in case it's not set.
-		p.mtype = model.MetricTypeUnknown
-
 		switch t2 := p.nextToken(); t2 {
 		case tMName:
 			mStart := p.l.start

@@ -32,6 +32,37 @@ func typeAndUnitLabels(typeAndUnitEnabled bool, enabled, disabled labels.Labels)
 	return disabled
 }
 
+// todoDetectFamilySwitch exists because there's a known TODO that require dedicated PR and benchmarks for PROM-39.
+// OM and Prom text format do NOT require TYPE, HELP or UNIT lines. This means that metric families can switch without
+// those metadata entries e.g.:
+// ```
+// TYPE go_goroutines gauge
+// go_goroutines 33 # previous metric
+// different_metric_total 12 # <--- different family!
+// ```
+// The expected type for "different_metric_total" is obviously unknown type and unit, but it's surprisingly expensive and complex
+// to reliably write parser for those cases. Two main issues:
+// a. TYPE and UNIT are associated with "metric family" which is different than resulting metric name (e.g. histograms).
+// b. You have to alloc additional entries to pair TYPE and UNIT with metric families they refer to (nit)
+//
+// This problem is elevated for PROM-39 feature.
+//
+// Current metadata handling is semi broken here for this as the (a) is expensive and currently not fully accurate
+// see: https://github.com/prometheus/prometheus/blob/dbf5d01a62249eddcd202303069f6cf7dd3c4a73/scrape/scrape.go#L1916
+//
+// To iterate, we keep it "knowingly" broken behind the feature flag.
+// TODO(bwplotka): Remove this once we fix the problematic case e.g.
+//   - introduce more accurate isSeriesPartOfFamily shared helper or even parser method that tells when new metric family starts
+func todoDetectFamilySwitch(typeAndUnitEnabled bool, expected labels.Labels, brokenTypeInherited model.MetricType) labels.Labels {
+	if typeAndUnitEnabled && brokenTypeInherited != model.MetricTypeUnknown {
+		// Hack for now.
+		b := labels.NewBuilder(expected)
+		b.Set("__type__", string(brokenTypeInherited))
+		return b.Labels()
+	}
+	return expected
+}
+
 func TestPromParse(t *testing.T) {
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
 # 	TYPE go_gc_duration_seconds summary
@@ -64,6 +95,9 @@ some:aggregate:rate5m{a_b="c"}	1
 # HELP go_goroutines Number of goroutines that currently exist.
 # TYPE go_goroutines gauge
 go_goroutines 33  	123123
+# TYPE some_counter_total counter
+# HELP some_counter_total Help after type.
+some_counter_total 12
 # HELP nohelp3
 _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
@@ -199,32 +233,32 @@ type_and_unit_test2{__type__="counter"} 123`
 				}, {
 					m:    `go_gc_duration_seconds{ quantile="1.0", a="b" }`,
 					v:    8.3835e-05,
-					lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), model.MetricTypeHistogram),
 				}, {
 					m:    `go_gc_duration_seconds { quantile="1.0", a="b" }`,
 					v:    8.3835e-05,
-					lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), model.MetricTypeHistogram),
 				}, {
 					m:    `go_gc_duration_seconds { quantile= "1.0", a= "b", }`,
 					v:    8.3835e-05,
-					lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), model.MetricTypeHistogram),
 				}, {
 					m:    `go_gc_duration_seconds { quantile = "1.0", a = "b" }`,
 					v:    8.3835e-05,
-					lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), model.MetricTypeHistogram),
 				}, {
 					// NOTE: Unlike OpenMetrics, PromParser allows spaces between label terms. This appears to be unintended and should probably be fixed.
 					m:    `go_gc_duration_seconds { quantile = "2.0" a = "b" }`,
 					v:    8.3835e-05,
-					lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "2.0", "a", "b"),
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "2.0", "a", "b"), model.MetricTypeHistogram),
 				}, {
 					m:    `go_gc_duration_seconds_count`,
 					v:    99,
-					lset: labels.FromStrings("__name__", "go_gc_duration_seconds_count"),
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds_count"), model.MetricTypeHistogram),
 				}, {
 					m:    `some:aggregate:rate5m{a_b="c"}`,
 					v:    1,
-					lset: labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"),
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"), model.MetricTypeHistogram),
 				}, {
 					m:    "go_goroutines",
 					help: "Number of goroutines that currently exist.",
@@ -241,24 +275,38 @@ type_and_unit_test2{__type__="counter"} 123`
 						labels.FromStrings("__name__", "go_goroutines"),
 					),
 				}, {
+					m:   "some_counter_total",
+					typ: model.MetricTypeCounter,
+				}, {
+					m:    "some_counter_total",
+					help: "Help after type.",
+				}, {
+					m: `some_counter_total`,
+					v: 12,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "some_counter_total", "__type__", string(model.MetricTypeCounter)),
+						labels.FromStrings("__name__", "some_counter_total"),
+					),
+				}, {
 					m:    "nohelp3",
 					help: "",
 				}, {
 					m:    "_metric_starting_with_underscore",
 					v:    1,
-					lset: labels.FromStrings("__name__", "_metric_starting_with_underscore"),
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "_metric_starting_with_underscore"), model.MetricTypeCounter),
 				}, {
 					m:    "testmetric{_label_starting_with_underscore=\"foo\"}",
 					v:    1,
-					lset: labels.FromStrings("__name__", "testmetric", "_label_starting_with_underscore", "foo"),
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "testmetric", "_label_starting_with_underscore", "foo"), model.MetricTypeCounter),
 				}, {
 					m:    "testmetric{label=\"\\\"bar\\\"\"}",
 					v:    1,
-					lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "testmetric", "label", `"bar"`), model.MetricTypeCounter),
 				}, {
 					m:    `testmetric{le="10"}`,
 					v:    1,
-					lset: labels.FromStrings("__name__", "testmetric", "le", "10"),
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "testmetric", "le", "10"), model.MetricTypeCounter),
 				},
 				{
 					m:    "type_and_unit_test1",
@@ -283,7 +331,7 @@ type_and_unit_test2{__type__="counter"} 123`
 				{
 					m:    "type_and_unit_test2{__type__=\"counter\"}",
 					v:    123,
-					lset: labels.FromStrings("__name__", "type_and_unit_test2", "__type__", string(model.MetricTypeCounter)),
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "type_and_unit_test2", "__type__", string(model.MetricTypeCounter)), model.MetricTypeGauge),
 				},
 				{
 					m:    "metric",
@@ -291,7 +339,7 @@ type_and_unit_test2{__type__="counter"} 123`
 				}, {
 					m:    "null_byte_metric{a=\"abc\x00\"}",
 					v:    1,
-					lset: labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"),
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"), model.MetricTypeGauge),
 				},
 			}
 
