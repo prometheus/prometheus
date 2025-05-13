@@ -184,6 +184,17 @@ func newRemoteReadMetrics(
 	return readQueries, readQueriesTotalVec, readQueryDurationVec
 }
 
+// Unregister metrics for a removed remote_read config.
+func unregisterRemoteReadMetrics(key string) {
+	if val, ok := remoteReadMetricCache.LoadAndDelete(key); ok {
+		if m, ok := val.(*readClientMetrics); ok && m.reg != nil {
+			m.reg.Unregister(m.readQueries)
+			m.reg.Unregister(m.readQueriesTotalVec)
+			m.reg.Unregister(m.readQueryDurationVec)
+		}
+	}
+}
+
 // NewReadClient creates a new client for remote read.
 func NewReadClient(name string, conf *ClientConfig, reg prometheus.Registerer, optFuncs ...config_util.HTTPClientOption) (ReadClient, error) {
 	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client", optFuncs...)
