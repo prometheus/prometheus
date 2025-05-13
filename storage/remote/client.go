@@ -24,6 +24,7 @@ import (
 	"net/http/httptrace"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -63,6 +64,8 @@ var (
 		config.RemoteWriteProtoMsgV1: appProtoContentType, // Also application/x-protobuf;proto=prometheus.WriteRequest but simplified for compatibility with 1.x spec.
 		config.RemoteWriteProtoMsgV2: appProtoContentType + ";proto=io.prometheus.write.v2.Request",
 	}
+
+	remoteReadMetricCache sync.Map // key: remoteName+url, value: *readClientMetrics
 
 	AcceptedResponseTypes = []prompb.ReadRequest_ResponseType{
 		prompb.ReadRequest_STREAMED_XOR_CHUNKS,
@@ -112,21 +115,39 @@ type ReadClient interface {
 	ReadMultiple(ctx context.Context, queries []*prompb.Query, sortSeries bool) (storage.SeriesSet, error)
 }
 
+type readClientMetrics struct {
+	readQueries          prometheus.Gauge
+	readQueriesTotalVec  *prometheus.CounterVec
+	readQueryDurationVec prometheus.ObserverVec
+	reg                  prometheus.Registerer
+}
+
 func newRemoteReadMetrics(
 	name string,
 	url string,
 	reg prometheus.Registerer,
 ) (
-	readQueries prometheus.Gauge,
-	readQueriesTotal *prometheus.CounterVec,
-	readQueryDuration prometheus.ObserverVec,
+	prometheus.Gauge,
+	*prometheus.CounterVec,
+	prometheus.ObserverVec,
 ) {
+	key := name + "|" + url
+
 	wrappedReg := prometheus.WrapRegistererWith(prometheus.Labels{
 		"remote_name": name,
 		"endpoint":    url,
 	}, reg)
 
-	readQueries = prometheus.NewGauge(prometheus.GaugeOpts{
+	// If already registered, unregister from the wrapped registry
+	if oldVal, ok := remoteReadMetricCache.Load(key); ok {
+		if old, ok := oldVal.(*readClientMetrics); ok && old.reg != nil {
+			old.reg.Unregister(old.readQueries)
+			old.reg.Unregister(old.readQueriesTotalVec)
+			old.reg.Unregister(old.readQueryDurationVec)
+		}
+	}
+
+	readQueries := prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Subsystem: "remote_read_client",
 		Name:      "queries",
@@ -152,6 +173,13 @@ func newRemoteReadMetrics(
 	}, []string{"response_type"})
 
 	wrappedReg.MustRegister(readQueries, readQueriesTotalVec, readQueryDurationVec)
+
+	remoteReadMetricCache.Store(key, &readClientMetrics{
+		readQueries:          readQueries,
+		readQueriesTotalVec:  readQueriesTotalVec,
+		readQueryDurationVec: readQueryDurationVec,
+		reg:                  wrappedReg, // ✅ Store wrapped, not base
+	})
 
 	return readQueries, readQueriesTotalVec, readQueryDurationVec
 }
