@@ -290,12 +290,12 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 		wg       sync.WaitGroup
 		toDelete sync.Map // Stores the list of names of pools to delete.
 	)
-	for name, sp := range m.scrapePools {
+	for poolName, pool := range m.scrapePools {
 		wg.Add(1)
-		cfg, ok := m.scrapeConfigs[name]
+		cfg, ok := m.scrapeConfigs[poolName]
 		// Reload each scrape pool in a dedicated goroutine so we don't have to wait a long time
 		// if we have a lot of scrape pools to update.
-		go func(cfg *config.ScrapeConfig, ok bool) {
+		go func(name string, sp *scrapePool, cfg *config.ScrapeConfig, ok bool) {
 			defer wg.Done()
 			switch {
 			case !ok:
@@ -315,7 +315,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 					sp.logger.Error("No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", name)
 				}
 			}
-		}(cfg, ok)
+		}(poolName, pool, cfg, ok)
 	}
 	wg.Wait()
 
