@@ -192,3 +192,10 @@ update-all-go-deps:
 		$(GO) get -d $$m; \
 	done
 	@cd ./documentation/examples/remote_storage/ && $(GO) mod tidy
+
+.PHONY: update-go-version
+update-go-version:
+	@echo ">> updating Go version"
+	@read -p "Current Go version (e.g., 1.22): " current_version && \
+	read -p "New Go version (e.g., 1.23): " new_version && \
+	./scripts/update_go_version.sh $$current_version $$new_version
