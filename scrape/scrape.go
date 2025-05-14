@@ -829,8 +829,10 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	}
 	ctx, span := otel.Tracer("").Start(ctx, "Scrape", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
+
 	req := s.req.WithContext(ctx)
 	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+
 	return s.client.Do(req)
 }
 
