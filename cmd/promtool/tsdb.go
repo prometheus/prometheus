@@ -17,8 +17,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"log/slog"
 	"os"
@@ -636,6 +638,8 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 	histogramChunkSamplesCount := make([]int, 0)
 	histogramChunkSize := make([]int, 0)
 	histogramChunkBucketsCount := make([]int, 0)
+	buf := make([]byte, chunks.MaxChunkLengthFieldSize)
+	diskUsage := map[string]uint64{}
 	var builder labels.ScratchBuilder
 	for postingsr.Next() {
 		var chks []chunks.Meta
@@ -690,6 +694,10 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 				histogramChunkBucketsCount = append(histogramChunkBucketsCount, bucketCount)
 			}
 			totalChunks++
+			chunkDataLength := len(chk.Bytes())
+			chunkDataLengthUvarintLength := binary.PutUvarint(buf, uint64(chunkDataLength))
+			chunkSize := uint64(chunkDataLengthUvarintLength) + chunks.ChunkEncodingSize + uint64(chunkDataLength) + crc32.Size
+			diskUsage[builder.Labels().Get("__name__")] += chunkSize
 		}
 	}
 
@@ -704,6 +712,9 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 	displayHistogram("bytes per histogram chunk", histogramChunkSize, totalChunks)
 
 	displayHistogram("buckets per histogram chunk", histogramChunkBucketsCount, totalChunks)
+
+	displayDiskUsage(diskUsage)
+
 	return nil
 }
 
@@ -893,4 +904,38 @@ func generateBucket(minVal, maxVal int) (start, end, step int) {
 	end = maxVal - maxVal%step + step
 
 	return
+}
+
+func displayDiskUsage(data map[string]uint64) {
+	type kv struct {
+		k string
+		v uint64
+	}
+
+	n := 20
+	if len(data) < n {
+		n = len(data)
+	}
+
+	sorted := make([]kv, 0, len(data))
+	for k, v := range data {
+		sorted = append(sorted, kv{k, v})
+	}
+
+	// sort descending by value
+	slices.SortFunc(sorted, func(a, b kv) int {
+		switch {
+		case a.v < b.v:
+			return 1
+		case a.v > b.v:
+			return -1
+		default:
+			return 0
+		}
+	})
+
+	fmt.Printf("Top %d metric names by disk usage:\n", n)
+	for i := range sorted[:n] {
+		fmt.Printf("%d %s\n", sorted[i].v, sorted[i].k)
+	}
 }
