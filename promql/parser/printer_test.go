@@ -217,6 +217,9 @@ func TestExprString(t *testing.T) {
 		{
 			in: "foo[200 - min(step() + 10s, -max(step() ^ 2, 3))]",
 		},
+		{
+			in: `predict_linear(foo[1h], 3000)`,
+		},
 	}
 
 	for _, test := range inputs {
