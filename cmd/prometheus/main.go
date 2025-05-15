@@ -468,6 +468,9 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.delayed-compaction.max-percent", "Sets the upper limit for the random compaction delay, specified as a percentage of the head chunk range. 100 means the compaction can be delayed by up to the entire head chunk range. Only effective when the delayed-compaction feature flag is enabled.").
 		Default("10").Hidden().IntVar(&cfg.tsdb.CompactionDelayMaxPercent)
 
+	serverOnlyFlag(a, "storage.tsdb.cache-all-symbols-for-compaction", "Enable caching of all symbols for compaction.").
+		Default("true").Hidden().BoolVar(&cfg.tsdb.CacheAllSymbols)
+
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
 
@@ -1841,6 +1844,7 @@ type tsdbOptions struct {
 	EnableDelayedCompaction        bool
 	CompactionDelayMaxPercent      int
 	EnableOverlappingCompaction    bool
+	CacheAllSymbols                bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1864,6 +1868,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
+		CacheAllSymbols:                opts.CacheAllSymbols,
 	}
 }
 
