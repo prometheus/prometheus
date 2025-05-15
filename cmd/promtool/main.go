@@ -34,6 +34,7 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/google/pprof/profile"
 	"github.com/prometheus/client_golang/api"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
 	dto "github.com/prometheus/client_model/go"
@@ -164,7 +165,7 @@ func main() {
 	agentMode := checkConfigCmd.Flag("agent", "Check config file for Prometheus in Agent mode.").Bool()
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
-	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
+	queryCmdFmt := queryCmd.Flag("format", "Output format of the query: promql, json, unittest. Unittest output is experimental.").Short('o').Default("promql").Enum("promql", "json", "unittest")
 	queryCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 
 	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
@@ -312,12 +313,31 @@ func main() {
 
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
+	queryRange := v1.Range{}
+	var err error
+
+	switch parsedCmd {
+	case queryInstantCmd.FullCommand():
+		queryRange, err = newQueryRange(*queryInstantTime, "", time.Second)
+	case queryRangeCmd.FullCommand():
+		queryRange, err = newQueryRange(*queryRangeBegin, *queryRangeEnd, *queryRangeStep)
+	case querySeriesCmd.FullCommand():
+		queryRange, err = newQueryRange(*querySeriesBegin, *querySeriesEnd, 0)
+	case queryLabelsCmd.FullCommand():
+		queryRange, err = newQueryRange(*queryLabelsBegin, *queryLabelsEnd, 0)
+	}
+	if err != nil {
+		kingpin.Fatalf("Failed to parse query range: %v", err)
+	}
+
 	var p printer
 	switch *queryCmdFmt {
 	case "json":
 		p = &jsonPrinter{}
 	case "promql":
 		p = &promqlPrinter{}
+	case "unittest":
+		p = &unittestPrinter{Step: model.Duration(queryRange.Step)}
 	}
 
 	if httpConfigFilePath != "" {
@@ -378,13 +398,13 @@ func main() {
 		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsLabels, *metricFiles...))
 
 	case queryInstantCmd.FullCommand():
-		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantExpr, *queryInstantTime, p))
+		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantExpr, queryRange, p))
 
 	case queryRangeCmd.FullCommand():
-		os.Exit(QueryRange(serverURL, httpRoundTripper, *queryRangeHeaders, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
+		os.Exit(QueryRange(serverURL, httpRoundTripper, *queryRangeHeaders, *queryRangeExpr, queryRange, p))
 
 	case querySeriesCmd.FullCommand():
-		os.Exit(QuerySeries(serverURL, httpRoundTripper, *querySeriesMatch, *querySeriesBegin, *querySeriesEnd, p))
+		os.Exit(QuerySeries(serverURL, httpRoundTripper, *querySeriesMatch, queryRange, p))
 
 	case debugPprofCmd.FullCommand():
 		os.Exit(debugPprof(*debugPprofServer))
@@ -396,7 +416,7 @@ func main() {
 		os.Exit(debugAll(*debugAllServer))
 
 	case queryLabelsCmd.FullCommand():
-		os.Exit(QueryLabels(serverURL, httpRoundTripper, *queryLabelsMatch, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
+		os.Exit(QueryLabels(serverURL, httpRoundTripper, *queryLabelsMatch, *queryLabelsName, queryRange, p))
 
 	case testRulesCmd.FullCommand():
 		results := io.Discard
@@ -1220,6 +1240,64 @@ func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
+
+type unittestPrinter struct {
+	Step model.Duration
+}
+
+func (u *unittestPrinter) printValue(v model.Value) {
+	samples := make(map[string][]string)
+
+	switch modelType := v.(type) {
+	case model.Vector:
+
+		for _, samplePair := range modelType {
+			metricName := samplePair.Metric.String()
+
+			if _, ok := samples[metricName]; !ok {
+				samples[metricName] = []string{}
+			}
+
+			if samplePair.Histogram != nil {
+				panic("histograms are not supported")
+			}
+
+			samples[metricName] = append(samples[metricName], strconv.FormatFloat(float64(samplePair.Value), 'f', -1, 64))
+		}
+
+	case model.Matrix:
+		for _, stream := range modelType {
+			metricName := stream.Metric.String()
+
+			if _, ok := samples[metricName]; !ok {
+				samples[metricName] = []string{}
+			}
+
+			if len(stream.Histograms) > 0 {
+				panic("histograms are not supported")
+			}
+
+			for _, samplePair := range stream.Values {
+				samples[metricName] = append(samples[metricName], strconv.FormatFloat(float64(samplePair.Value), 'f', -1, 64))
+			}
+		}
+	}
+
+	inputSeries := make([]series, 0, len(samples))
+
+	for metric, value := range samples {
+		inputSeries = append(inputSeries, series{Series: metric, Values: strings.Join(value, " ")})
+	}
+
+	if err := yaml.NewEncoder(os.Stdout).Encode(unitTestFile{Tests: []testGroup{{Interval: u.Step, InputSeries: inputSeries}}}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(failureExitCode)
+	}
+}
+
+func (u *unittestPrinter) printSeries(v []model.LabelSet) {}
+
+func (u *unittestPrinter) printLabelValues(v model.LabelValues) {}
 
 // importRules backfills recording rules from the files provided. The output are blocks of data
 // at the outputDir location.
