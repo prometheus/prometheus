@@ -937,12 +937,21 @@ func displayDiskUsage(data map[string]uint64, total uint64) {
 	})
 
 	fmt.Printf("Top %d metric names by disk usage:\n", n)
+
+	var sum uint64
 	for i := range sorted[:n] {
+		sum += sorted[i].v
 		var percent float64
 		if total > 0 {
 			percent = float64(sorted[i].v) / float64(total) * 100
 		}
 		fmt.Printf("%12d bytes (%6.2f%%) %s\n", sorted[i].v, percent, sorted[i].k)
 	}
+
+	var topPercent float64
+	if total > 0 {
+		topPercent = float64(sum) / float64(total) * 100
+	}
+	fmt.Printf("  total (top %8d): %12d bytes (%.2f%%)\n", n, sum, topPercent)
 	fmt.Printf("  total (all %8d): %12d bytes\n", len(data), total)
 }
