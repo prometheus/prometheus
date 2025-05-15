@@ -47,6 +47,7 @@ import (
 	"encoding/binary"
 	"math"
 	"math/bits"
+	"sync"
 
 	"github.com/prometheus/prometheus/model/histogram"
 )
@@ -54,6 +55,13 @@ import (
 const (
 	chunkCompactCapacityThreshold = 32
 )
+
+// appenderIterPool is exclusively used in XORChunk.Appender()
+var appenderIterPool = sync.Pool{
+	New: func() interface{} {
+		return &xorIterator{}
+	},
+}
 
 // XORChunk holds XOR encoded sample data.
 type XORChunk struct {
@@ -98,7 +106,8 @@ func (c *XORChunk) Compact() {
 // It is not valid to call Appender() multiple times concurrently or to use multiple
 // Appenders on the same chunk.
 func (c *XORChunk) Appender() (Appender, error) {
-	it := c.iterator(nil)
+	it := c.iterator(appenderIterPool.Get().(*xorIterator))
+	defer appenderIterPool.Put(it)
 
 	// To get an appender we must know the state it would have if we had
 	// appended all existing data from scratch.
