@@ -413,9 +413,9 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	n := map[string]int{}
 
 	m.mtx.RLock()
-	m.targetsMtx.Lock()
 	for _, p := range m.providers {
 		p.mu.RLock()
+		m.targetsMtx.Lock()
 		for s := range p.subs {
 			// Send empty lists for subs without any targets to make sure old stale targets are dropped by consumers.
 			// See: https://github.com/prometheus/prometheus/issues/12858 for details.
@@ -430,9 +430,9 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 				}
 			}
 		}
+		m.targetsMtx.Unlock()
 		p.mu.RUnlock()
 	}
-	m.targetsMtx.Unlock()
 	m.mtx.RUnlock()
 
 	for setName, v := range n {
