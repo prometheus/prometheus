@@ -3997,6 +3997,7 @@ var testExpr = []struct {
 			},
 		},
 	},
+	// Test that nested parentheses result in the correct position range.
 	{
 		input: `foo[11s+10s-5*2^2]`,
 		expected: &MatrixSelector{
@@ -4294,6 +4295,68 @@ var testExpr = []struct {
 		input:  `foo[9.5e10]`,
 		fail:   true,
 		errMsg: `duration out of range`,
+	},
+	{
+		input: "(sum(foo))",
+		expected: &ParenExpr{
+			Expr: &AggregateExpr{
+				Op: SUM,
+				Expr: &VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 5,
+						End:   8,
+					},
+				},
+				PosRange: posrange.PositionRange{Start: 1, End: 9},
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 10},
+		},
+	},
+	{
+		input: "(sum(foo) by (bar))",
+		expected: &ParenExpr{
+			Expr: &AggregateExpr{
+				Op:       SUM,
+				Grouping: []string{"bar"},
+				Expr: &VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 5,
+						End:   8,
+					},
+				},
+				PosRange: posrange.PositionRange{Start: 1, End: 18},
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 19},
+		},
+	},
+	{
+		input: "(sum by (bar) (foo))",
+		expected: &ParenExpr{
+			Expr: &AggregateExpr{
+				Op:       SUM,
+				Grouping: []string{"bar"},
+				Expr: &VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 15,
+						End:   18,
+					},
+				},
+				PosRange: posrange.PositionRange{Start: 1, End: 19},
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 20},
+		},
 	},
 }
 
