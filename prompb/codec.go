@@ -90,7 +90,7 @@ func (h Histogram) ToIntHistogram() *histogram.Histogram {
 		PositiveBuckets:  h.GetPositiveDeltas(),
 		NegativeSpans:    spansProtoToSpans(h.GetNegativeSpans()),
 		NegativeBuckets:  h.GetNegativeDeltas(),
-		CustomValues:     h.CustomValues,
+		CustomValues:     h.GetCustomValues(),
 	}
 }
 
@@ -110,7 +110,7 @@ func (h Histogram) ToFloatHistogram() *histogram.FloatHistogram {
 			PositiveBuckets:  h.GetPositiveCounts(),
 			NegativeSpans:    spansProtoToSpans(h.GetNegativeSpans()),
 			NegativeBuckets:  h.GetNegativeCounts(),
-			CustomValues:     h.CustomValues,
+			CustomValues:     h.GetCustomValues(),
 		}
 	}
 	// Conversion from integer histogram.
@@ -125,6 +125,7 @@ func (h Histogram) ToFloatHistogram() *histogram.FloatHistogram {
 		PositiveBuckets:  deltasToCounts(h.GetPositiveDeltas()),
 		NegativeSpans:    spansProtoToSpans(h.GetNegativeSpans()),
 		NegativeBuckets:  deltasToCounts(h.GetNegativeDeltas()),
+		CustomValues:     h.GetCustomValues(),
 	}
 }
 
@@ -161,6 +162,7 @@ func FromIntHistogram(timestamp int64, h *histogram.Histogram) Histogram {
 		PositiveDeltas: h.PositiveBuckets,
 		ResetHint:      Histogram_ResetHint(h.CounterResetHint),
 		Timestamp:      timestamp,
+		CustomValues:   h.CustomValues,
 	}
 }
 
@@ -178,6 +180,7 @@ func FromFloatHistogram(timestamp int64, fh *histogram.FloatHistogram) Histogram
 		PositiveCounts: fh.PositiveBuckets,
 		ResetHint:      Histogram_ResetHint(fh.CounterResetHint),
 		Timestamp:      timestamp,
+		CustomValues:   fh.CustomValues,
 	}
 }
 
