@@ -579,7 +579,7 @@ func clamp(vec Vector, minVal, maxVal float64, enh *EvalNodeHelper) (Vector, ann
 			continue
 		}
 		if !enh.enableDelayedNameRemoval {
-			el.Metric = el.Metric.DropSpecial(schema.IsMetadataLabel)
+			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   el.Metric,
@@ -980,7 +980,7 @@ func simpleFloatFunc(vals []parser.Value, enh *EvalNodeHelper, f func(float64) f
 	for _, el := range vals[0].(Vector) {
 		if el.H == nil { // Process only float samples.
 			if !enh.enableDelayedNameRemoval {
-				el.Metric = el.Metric.DropSpecial(schema.IsMetadataLabel)
+				el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 			}
 			enh.Out = append(enh.Out, Sample{
 				Metric:   el.Metric,
@@ -1130,7 +1130,7 @@ func funcTimestamp(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelpe
 	vec := vals[0].(Vector)
 	for _, el := range vec {
 		if !enh.enableDelayedNameRemoval {
-			el.Metric = el.Metric.DropSpecial(schema.IsMetadataLabel)
+			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   el.Metric,
@@ -1349,7 +1349,7 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 			continue
 		}
 		if !enh.enableDelayedNameRemoval {
-			sample.Metric = sample.Metric.DropSpecial(schema.IsMetadataLabel)
+			sample.Metric = sample.Metric.DropReserved(schema.IsMetadataLabel)
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
@@ -1364,7 +1364,7 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 			continue
 		}
 		if !enh.enableDelayedNameRemoval {
-			mb.metric = mb.metric.DropSpecial(schema.IsMetadataLabel)
+			mb.metric = mb.metric.DropReserved(schema.IsMetadataLabel)
 		}
 
 		enh.Out = append(enh.Out, Sample{
@@ -1395,7 +1395,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			continue
 		}
 		if !enh.enableDelayedNameRemoval {
-			sample.Metric = sample.Metric.DropSpecial(schema.IsMetadataLabel)
+			sample.Metric = sample.Metric.DropReserved(schema.IsMetadataLabel)
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
@@ -1413,7 +1413,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			}
 
 			if !enh.enableDelayedNameRemoval {
-				mb.metric = mb.metric.DropSpecial(schema.IsMetadataLabel)
+				mb.metric = mb.metric.DropReserved(schema.IsMetadataLabel)
 			}
 
 			enh.Out = append(enh.Out, Sample{
@@ -1631,7 +1631,7 @@ func dateWrapper(vals []parser.Value, enh *EvalNodeHelper, f func(time.Time) flo
 		}
 		t := time.Unix(int64(el.F), 0).UTC()
 		if !enh.enableDelayedNameRemoval {
-			el.Metric = el.Metric.DropSpecial(schema.IsMetadataLabel)
+			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   el.Metric,

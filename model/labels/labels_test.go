@@ -532,13 +532,13 @@ func TestLabels_DropSpecial(t *testing.T) {
 	shouldDropFn := func(n string) bool {
 		return n == MetricName || n == "__something__"
 	}
-	require.True(t, Equal(FromStrings("aaa", "111", "bbb", "222"), FromStrings("aaa", "111", "bbb", "222").DropSpecial(shouldDropFn)))
-	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "aaa", "111").DropSpecial(shouldDropFn)))
-	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "__something__", string(model.MetricTypeCounter), "aaa", "111").DropSpecial(shouldDropFn)))
+	require.True(t, Equal(FromStrings("aaa", "111", "bbb", "222"), FromStrings("aaa", "111", "bbb", "222").DropReserved(shouldDropFn)))
+	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "aaa", "111").DropReserved(shouldDropFn)))
+	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "__something__", string(model.MetricTypeCounter), "aaa", "111").DropReserved(shouldDropFn)))
 
 	original := FromStrings("__aaa__", "111", MetricName, "myname", "bbb", "222")
 	check := original.Copy()
-	require.True(t, Equal(FromStrings("__aaa__", "111", "bbb", "222"), check.DropSpecial(shouldDropFn)))
+	require.True(t, Equal(FromStrings("__aaa__", "111", "bbb", "222"), check.DropReserved(shouldDropFn)))
 	require.True(t, Equal(original, check))
 }
 

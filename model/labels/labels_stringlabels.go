@@ -414,13 +414,13 @@ func (ls Labels) Validate(f func(l Label) error) error {
 }
 
 // DropMetricName returns Labels with the "__name__" removed.
-// Deprecated: Use DropSpecial instead.
+// Deprecated: Use DropReserved instead.
 func (ls Labels) DropMetricName() Labels {
-	return ls.DropSpecial(func(n string) bool { return n == MetricName })
+	return ls.DropReserved(func(n string) bool { return n == MetricName })
 }
 
-// DropSpecial returns Labels without the chosen (via shouldDropFn) special (starting with underscore) labels.
-func (ls Labels) DropSpecial(shouldDropFn func(name string) bool) Labels {
+// DropReserved returns Labels without the chosen (via shouldDropFn) reserved (starting with underscore) labels.
+func (ls Labels) DropReserved(shouldDropFn func(name string) bool) Labels {
 	for i := 0; i < len(ls.data); {
 		lName, i2 := decodeString(ls.data, i)
 		size, i2 := decodeSize(ls.data, i2)
