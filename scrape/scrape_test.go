@@ -45,6 +45,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -3120,6 +3123,11 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		allowUTF8       bool
 		qValuePattern   = regexp.MustCompile(`q=([0-9]+(\.\d+)?)`)
 	)
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+	)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
 
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3147,6 +3155,9 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 
 			timeout := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds")
 			require.Equal(t, expectedTimeout, timeout, "Expected scrape timeout header.")
+
+			traceparent := r.Header.Get("traceparent")
+			require.NotEmpty(t, traceparent)
 
 			if allowUTF8 {
 				w.Header().Set("Content-Type", `text/plain; version=1.0.0; escaping=allow-utf-8`)
