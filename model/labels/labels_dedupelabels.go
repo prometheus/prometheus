@@ -557,7 +557,7 @@ func (ls Labels) ReleaseStrings(release func(string)) {
 // DropMetricName returns Labels with the "__name__" removed.
 // Deprecated: Use DropReserved instead.
 func (ls Labels) DropMetricName() Labels {
-	return ls.DropSpecial(func(n string) bool { return n == MetricName })
+	return ls.DropReserved(func(n string) bool { return n == MetricName })
 }
 
 // DropReserved returns Labels without the chosen (via shouldDropFn) reserved (starting with underscore) labels.
