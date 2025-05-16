@@ -528,7 +528,7 @@ func TestLabels_DropMetricName(t *testing.T) {
 	require.True(t, Equal(original, check))
 }
 
-func TestLabels_DropSpecial(t *testing.T) {
+func TestLabels_DropReserved(t *testing.T) {
 	shouldDropFn := func(n string) bool {
 		return n == MetricName || n == "__something__"
 	}

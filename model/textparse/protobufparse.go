@@ -27,12 +27,11 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/schema"
-
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
+	"github.com/prometheus/prometheus/schema"
 )
 
 // floatFormatBufPool is exclusively used in formatOpenMetricsFloat.
