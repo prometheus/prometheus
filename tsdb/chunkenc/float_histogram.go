@@ -946,8 +946,8 @@ func (it *floatHistogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 	fh.NegativeBuckets = resize(fh.NegativeBuckets, len(it.nBuckets))
 	copy(fh.NegativeBuckets, it.nBuckets)
 
-	fh.CustomValues = resize(fh.CustomValues, len(it.customValues))
-	copy(fh.CustomValues, it.customValues)
+	// Custom values are interned. The single copy is in this iterator.
+	fh.CustomValues = it.customValues
 
 	return it.t, fh
 }
