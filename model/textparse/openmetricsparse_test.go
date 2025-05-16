@@ -643,7 +643,7 @@ foobar{quantile="0.99"} 150.1`
 				}, {
 					m:    "null_byte_metric{a=\"abc\x00\"}",
 					v:    1,
-					lset: labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"),
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"), model.MetricTypeSummary),
 				},
 			}
 			opts := []OpenMetricsOption{WithOMParserCTSeriesSkipped()}

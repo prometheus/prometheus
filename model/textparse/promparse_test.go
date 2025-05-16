@@ -117,10 +117,12 @@ type_and_unit_test2{__type__="counter"} 123`
 				{
 					m:    "go_gc_duration_seconds",
 					help: "A summary of the GC invocation durations.",
-				}, {
+				},
+				{
 					m:   "go_gc_duration_seconds",
 					typ: model.MetricTypeSummary,
-				}, {
+				},
+				{
 					m: `go_gc_duration_seconds{quantile="0"}`,
 					v: 4.9351e-05,
 					lset: typeAndUnitLabels(
@@ -128,7 +130,8 @@ type_and_unit_test2{__type__="counter"} 123`
 						labels.FromStrings("__name__", "go_gc_duration_seconds", "__type__", string(model.MetricTypeSummary), "quantile", "0.0"),
 						labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.0"),
 					),
-				}, {
+				},
+				{
 					m: `go_gc_duration_seconds{quantile="0.25",}`,
 					v: 7.424100000000001e-05,
 					lset: typeAndUnitLabels(
@@ -136,7 +139,8 @@ type_and_unit_test2{__type__="counter"} 123`
 						labels.FromStrings("__name__", "go_gc_duration_seconds", "__type__", string(model.MetricTypeSummary), "quantile", "0.25"),
 						labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.25"),
 					),
-				}, {
+				},
+				{
 					m: `go_gc_duration_seconds{quantile="0.5",a="b"}`,
 					v: 8.3835e-05,
 					lset: typeAndUnitLabels(
@@ -144,7 +148,8 @@ type_and_unit_test2{__type__="counter"} 123`
 						labels.FromStrings("__name__", "go_gc_duration_seconds", "__type__", string(model.MetricTypeSummary), "quantile", "0.5", "a", "b"),
 						labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.5", "a", "b"),
 					),
-				}, {
+				},
+				{
 					m: `go_gc_duration_seconds{quantile="0.8", a="b"}`,
 					v: 8.3835e-05,
 					lset: typeAndUnitLabels(
@@ -152,7 +157,8 @@ type_and_unit_test2{__type__="counter"} 123`
 						labels.FromStrings("__name__", "go_gc_duration_seconds", "__type__", string(model.MetricTypeSummary), "quantile", "0.8", "a", "b"),
 						labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.8", "a", "b"),
 					),
-				}, {
+				},
+				{
 					m: `go_gc_duration_seconds{ quantile="0.9", a="b"}`,
 					v: 8.3835e-05,
 					lset: typeAndUnitLabels(
@@ -160,13 +166,16 @@ type_and_unit_test2{__type__="counter"} 123`
 						labels.FromStrings("__name__", "go_gc_duration_seconds", "__type__", string(model.MetricTypeSummary), "quantile", "0.9", "a", "b"),
 						labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.9", "a", "b"),
 					),
-				}, {
+				},
+				{
 					m:    "prometheus_http_request_duration_seconds",
 					help: "Histogram of latencies for HTTP requests.",
-				}, {
+				},
+				{
 					m:   "prometheus_http_request_duration_seconds",
 					typ: model.MetricTypeHistogram,
-				}, {
+				},
+				{
 					m: `prometheus_http_request_duration_seconds_bucket{handler="/",le="1"}`,
 					v: 423,
 					lset: typeAndUnitLabels(
@@ -174,7 +183,8 @@ type_and_unit_test2{__type__="counter"} 123`
 						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "__type__", string(model.MetricTypeHistogram), "handler", "/", "le", "1.0"),
 						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "handler", "/", "le", "1.0"),
 					),
-				}, {
+				},
+				{
 					m: `prometheus_http_request_duration_seconds_bucket{handler="/",le="2"}`,
 					v: 1423,
 					lset: typeAndUnitLabels(
@@ -182,7 +192,8 @@ type_and_unit_test2{__type__="counter"} 123`
 						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "__type__", string(model.MetricTypeHistogram), "handler", "/", "le", "2.0"),
 						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "handler", "/", "le", "2.0"),
 					),
-				}, {
+				},
+				{
 					m: `prometheus_http_request_duration_seconds_bucket{handler="/",le="+Inf"}`,
 					v: 1423,
 					lset: typeAndUnitLabels(
@@ -190,7 +201,8 @@ type_and_unit_test2{__type__="counter"} 123`
 						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "__type__", string(model.MetricTypeHistogram), "handler", "/", "le", "+Inf"),
 						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "handler", "/", "le", "+Inf"),
 					),
-				}, {
+				},
+				{
 					m: `prometheus_http_request_duration_seconds_sum{handler="/"}`,
 					v: 2000,
 					lset: typeAndUnitLabels(
@@ -198,7 +210,8 @@ type_and_unit_test2{__type__="counter"} 123`
 						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_sum", "__type__", string(model.MetricTypeHistogram), "handler", "/"),
 						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_sum", "handler", "/"),
 					),
-				}, {
+				},
+				{
 					m: `prometheus_http_request_duration_seconds_count{handler="/"}`,
 					v: 1423,
 					lset: typeAndUnitLabels(
@@ -206,11 +219,14 @@ type_and_unit_test2{__type__="counter"} 123`
 						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_count", "__type__", string(model.MetricTypeHistogram), "handler", "/"),
 						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_count", "handler", "/"),
 					),
-				}, {
+				},
+				{
 					comment: "# Hrandom comment starting with prefix of HELP",
-				}, {
+				},
+				{
 					comment: "#",
-				}, {
+				},
+				{
 					m: `wind_speed{A="2",c="3"}`,
 					v: 12345,
 					lset: typeAndUnitLabels(
@@ -220,52 +236,66 @@ type_and_unit_test2{__type__="counter"} 123`
 						labels.FromStrings("A", "2", "__name__", "wind_speed", "__type__", string(model.MetricTypeHistogram), "c", "3"),
 						labels.FromStrings("A", "2", "__name__", "wind_speed", "c", "3"),
 					),
-				}, {
+				},
+				{
 					comment: "# comment with escaped \\n newline",
-				}, {
+				},
+				{
 					comment: "# comment with escaped \\ escape character",
-				}, {
+				},
+				{
 					m:    "nohelp1",
 					help: "",
-				}, {
+				},
+				{
 					m:    "nohelp2",
 					help: "",
-				}, {
+				},
+				{
 					m:    `go_gc_duration_seconds{ quantile="1.0", a="b" }`,
 					v:    8.3835e-05,
 					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), model.MetricTypeHistogram),
-				}, {
+				},
+				{
 					m:    `go_gc_duration_seconds { quantile="1.0", a="b" }`,
 					v:    8.3835e-05,
 					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), model.MetricTypeHistogram),
-				}, {
+				},
+				{
 					m:    `go_gc_duration_seconds { quantile= "1.0", a= "b", }`,
 					v:    8.3835e-05,
 					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), model.MetricTypeHistogram),
-				}, {
+				},
+				{
 					m:    `go_gc_duration_seconds { quantile = "1.0", a = "b" }`,
 					v:    8.3835e-05,
 					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), model.MetricTypeHistogram),
-				}, {
+				},
+				{
 					// NOTE: Unlike OpenMetrics, PromParser allows spaces between label terms. This appears to be unintended and should probably be fixed.
 					m:    `go_gc_duration_seconds { quantile = "2.0" a = "b" }`,
 					v:    8.3835e-05,
 					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "2.0", "a", "b"), model.MetricTypeHistogram),
-				}, {
+				},
+				{
 					m:    `go_gc_duration_seconds_count`,
 					v:    99,
 					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds_count"), model.MetricTypeHistogram),
-				}, {
+				},
+				{
 					m:    `some:aggregate:rate5m{a_b="c"}`,
 					v:    1,
 					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"), model.MetricTypeHistogram),
-				}, {
+				},
+				{
 					m:    "go_goroutines",
 					help: "Number of goroutines that currently exist.",
-				}, {
+				},
+				{
 					m:   "go_goroutines",
 					typ: model.MetricTypeGauge,
-				}, {
+				},
+				{
 					m: `go_goroutines`,
 					v: 33,
 					t: int64p(123123),
@@ -274,13 +304,16 @@ type_and_unit_test2{__type__="counter"} 123`
 						labels.FromStrings("__name__", "go_goroutines", "__type__", string(model.MetricTypeGauge)),
 						labels.FromStrings("__name__", "go_goroutines"),
 					),
-				}, {
+				},
+				{
 					m:   "some_counter_total",
 					typ: model.MetricTypeCounter,
-				}, {
+				},
+				{
 					m:    "some_counter_total",
 					help: "Help after type.",
-				}, {
+				},
+				{
 					m: `some_counter_total`,
 					v: 12,
 					lset: typeAndUnitLabels(
@@ -288,22 +321,27 @@ type_and_unit_test2{__type__="counter"} 123`
 						labels.FromStrings("__name__", "some_counter_total", "__type__", string(model.MetricTypeCounter)),
 						labels.FromStrings("__name__", "some_counter_total"),
 					),
-				}, {
+				},
+				{
 					m:    "nohelp3",
 					help: "",
-				}, {
+				},
+				{
 					m:    "_metric_starting_with_underscore",
 					v:    1,
 					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "_metric_starting_with_underscore"), model.MetricTypeCounter),
-				}, {
+				},
+				{
 					m:    "testmetric{_label_starting_with_underscore=\"foo\"}",
 					v:    1,
 					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "testmetric", "_label_starting_with_underscore", "foo"), model.MetricTypeCounter),
-				}, {
+				},
+				{
 					m:    "testmetric{label=\"\\\"bar\\\"\"}",
 					v:    1,
 					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "testmetric", "label", `"bar"`), model.MetricTypeCounter),
-				}, {
+				},
+				{
 					m:    `testmetric{le="10"}`,
 					v:    1,
 					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "testmetric", "le", "10"), model.MetricTypeCounter),
@@ -311,7 +349,8 @@ type_and_unit_test2{__type__="counter"} 123`
 				{
 					m:    "type_and_unit_test1",
 					help: "Type specified in metadata overrides.",
-				}, {
+				},
+				{
 					m:   "type_and_unit_test1",
 					typ: model.MetricTypeGauge,
 				},
@@ -336,7 +375,8 @@ type_and_unit_test2{__type__="counter"} 123`
 				{
 					m:    "metric",
 					help: "foo\x00bar",
-				}, {
+				},
+				{
 					m:    "null_byte_metric{a=\"abc\x00\"}",
 					v:    1,
 					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"), model.MetricTypeGauge),
