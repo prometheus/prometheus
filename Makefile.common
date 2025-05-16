@@ -248,8 +248,8 @@ $(PROMU):
 	cp $(PROMU_TMP)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM)/promu $(FIRST_GOPATH)/bin/promu
 	rm -r $(PROMU_TMP)
 
-.PHONY: proto
-proto:
+.PHONY: common-proto
+common-proto:
 	@echo ">> generating code from proto files"
 	@./scripts/genproto.sh
 
