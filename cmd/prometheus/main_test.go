@@ -650,6 +650,16 @@ func TestRwProtoMsgFlagParser(t *testing.T) {
 	}
 }
 
+// reloadPrometheusConfig sends a reload request to the Prometheus server to apply
+// updated configurations.
+func reloadPrometheusConfig(t *testing.T, reloadURL string) {
+	t.Helper()
+
+	r, err := http.Post(reloadURL, "text/plain", nil)
+	require.NoError(t, err, "Failed to reload Prometheus")
+	require.Equal(t, http.StatusOK, r.StatusCode, "Unexpected status code when reloading Prometheus")
+}
+
 func getGaugeValue(t *testing.T, body io.ReadCloser, metricName string) (float64, error) {
 	t.Helper()
 
@@ -679,7 +689,7 @@ func TestRuntimeGOGCConfig(t *testing.T) {
 		name         string
 		config       string
 		gogcEnvVar   string
-		expectedGOGC int
+		expectedGOGC float64
 	}{
 		{
 			name:         "empty config file",
@@ -695,7 +705,7 @@ func TestRuntimeGOGCConfig(t *testing.T) {
 			config: `
 runtime:
   gogc: 77`,
-			expectedGOGC: 77,
+			expectedGOGC: 77.0,
 		},
 		{
 			name: "gogc set through config and env var",
@@ -703,20 +713,20 @@ runtime:
 runtime:
   gogc: 77`,
 			gogcEnvVar:   "88",
-			expectedGOGC: 77,
+			expectedGOGC: 77.0,
 		},
 		{
 			name: "incomplete runtime block",
 			config: `
 runtime:`,
-			expectedGOGC: 75,
+			expectedGOGC: 75.0,
 		},
 		{
 			name: "incomplete runtime block and GOGC env var set",
 			config: `
 runtime:`,
 			gogcEnvVar:   "88",
-			expectedGOGC: 88,
+			expectedGOGC: 88.0,
 		},
 		{
 			name: "unrelated config and GOGC env var set",
@@ -735,7 +745,13 @@ global:
 
 			port := testutil.RandomUnprivilegedPort(t)
 			os.WriteFile(configFile, []byte(tc.config), 0o777)
-			prom := prometheusCommandWithLogging(t, configFile, port, fmt.Sprintf("--storage.tsdb.path=%s", tmpDir))
+			prom := prometheusCommandWithLogging(
+				t,
+				configFile,
+				port,
+				fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
+				"--web.enable-lifecycle",
+			)
 			// Inject GOGC when set.
 			prom.Env = os.Environ()
 			if tc.gogcEnvVar != "" {
@@ -743,24 +759,42 @@ global:
 			}
 			require.NoError(t, prom.Start())
 
-			var (
-				r   *http.Response
-				err error
-			)
-			// Wait for the /metrics endpoint to be ready.
-			require.Eventually(t, func() bool {
-				r, err = http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
-				if err != nil {
-					return false
-				}
-				return r.StatusCode == http.StatusOK
-			}, 5*time.Second, 50*time.Millisecond)
-			defer r.Body.Close()
+			ensureGOGCValue := func(val float64) {
+				var (
+					r   *http.Response
+					err error
+				)
+				// Wait for the /metrics endpoint to be ready.
+				require.Eventually(t, func() bool {
+					r, err = http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+					if err != nil {
+						return false
+					}
+					return r.StatusCode == http.StatusOK
+				}, 5*time.Second, 50*time.Millisecond)
+				defer r.Body.Close()
 
-			// Check the final GOGC that's set, consider go_gc_gogc_percent from /metrics as source of truth.
-			gogc, err := getGaugeValue(t, r.Body, "go_gc_gogc_percent")
-			require.NoError(t, err)
-			require.Equal(t, float64(tc.expectedGOGC), gogc)
+				// Check the final GOGC that's set, consider go_gc_gogc_percent from /metrics as source of truth.
+				gogc, err := getGaugeValue(t, r.Body, "go_gc_gogc_percent")
+				require.NoError(t, err)
+				require.Equal(t, val, gogc)
+			}
+
+			// The value is applied on startup.
+			ensureGOGCValue(tc.expectedGOGC)
+
+			// After a reload with the same config, the value stays the same.
+			reloadURL := fmt.Sprintf("http://127.0.0.1:%d/-/reload", port)
+			reloadPrometheusConfig(t, reloadURL)
+			ensureGOGCValue(tc.expectedGOGC)
+
+			// After a reload with different config, the value gets updated.
+			newConfig := `
+runtime:
+  gogc: 99`
+			os.WriteFile(configFile, []byte(newConfig), 0o777)
+			reloadPrometheusConfig(t, reloadURL)
+			ensureGOGCValue(99.0)
 		})
 	}
 }

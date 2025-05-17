@@ -95,13 +95,6 @@ func (p *queryLogTest) setQueryLog(t *testing.T, queryLogFile string) {
 	require.NoError(t, err)
 }
 
-// reloadConfig reloads the configuration using POST.
-func (p *queryLogTest) reloadConfig(t *testing.T) {
-	r, err := http.Post(fmt.Sprintf("http://%s:%d%s/-/reload", p.host, p.port, p.prefix), "text/plain", nil)
-	require.NoError(t, err)
-	require.Equal(t, 200, r.StatusCode)
-}
-
 // query runs a query according to the test origin.
 func (p *queryLogTest) query(t *testing.T) {
 	switch p.origin {
@@ -308,6 +301,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	}, p.params()...)
 
 	prom := exec.Command(promPath, params...)
+	reloadURL := fmt.Sprintf("http://%s:%d%s/-/reload", p.host, p.port, p.prefix)
 
 	// Log stderr in case of failure.
 	stderr, err := prom.StderrPipe()
@@ -335,7 +329,7 @@ func (p *queryLogTest) run(t *testing.T) {
 		p.query(t)
 		require.Empty(t, readQueryLog(t, queryLogFile.Name()))
 		p.setQueryLog(t, queryLogFile.Name())
-		p.reloadConfig(t)
+		reloadPrometheusConfig(t, reloadURL)
 	}
 
 	p.query(t)
@@ -350,7 +344,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	p.validateLastQuery(t, ql)
 
 	p.setQueryLog(t, "")
-	p.reloadConfig(t)
+	reloadPrometheusConfig(t, reloadURL)
 	if !p.exactQueryCount() {
 		qc = len(readQueryLog(t, queryLogFile.Name()))
 	}
@@ -362,7 +356,7 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	qc = len(ql)
 	p.setQueryLog(t, queryLogFile.Name())
-	p.reloadConfig(t)
+	reloadPrometheusConfig(t, reloadURL)
 
 	p.query(t)
 	qc++
@@ -406,7 +400,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	}
 	p.validateLastQuery(t, ql)
 
-	p.reloadConfig(t)
+	reloadPrometheusConfig(t, reloadURL)
 
 	p.query(t)
 
