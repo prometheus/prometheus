@@ -181,15 +181,9 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "go_gc_duration_seconds_count"),
 					),
 				}, {
-					m: `some:aggregate:rate5m{a_b="c"}`,
-					v: 1,
-					lset: typeAndUnitLabels(
-						typeAndUnitEnabled,
-						// NOTE(bwplotka): This is knowingly broken, inheriting old type when TYPE was not specified on a new metric.
-						// This was broken forever on a case for a broken exposition. Don't fix for now (expensive).
-						labels.FromStrings("__name__", "some:aggregate:rate5m", "__type__", string(model.MetricTypeSummary), "a_b", "c"),
-						labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"),
-					),
+					m:    `some:aggregate:rate5m{a_b="c"}`,
+					v:    1,
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"), model.MetricTypeSummary),
 				}, {
 					m:    "go_goroutines",
 					help: "Number of goroutines that currently exist.",

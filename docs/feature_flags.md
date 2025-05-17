@@ -270,5 +270,5 @@ It's especially useful for users who:
 * Want to handle cases of series with the same metric name and different type and units.
   e.g. native histogram migrations or OpenTelemetry metrics from OTLP endpoint, without translation.
 
-In future more work is planned that will depend on this e.g. rich PromQL UX that helps
+In future more [work is planned](https://github.com/prometheus/prometheus/issues/16610) that will depend on this e.g. rich PromQL UX that helps
 when wrong types are used on wrong functions, automatic renames, delta types and more.
