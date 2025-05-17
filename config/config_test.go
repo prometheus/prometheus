@@ -835,7 +835,9 @@ var expectedConf = &Config{
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&azure.SDConfig{
-					Environment:          "AzurePublicCloud",
+					Environment: azure.AzureCloudConfig{
+						Name: "AzurePublicCloud",
+					},
 					SubscriptionID:       "11AAAA11-A11A-111A-A111-1111A1111A11",
 					ResourceGroup:        "my-resource-group",
 					TenantID:             "BBBB222B-B2B2-2B22-B222-2BB2222BB2B2",
