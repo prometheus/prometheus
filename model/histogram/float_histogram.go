@@ -1016,7 +1016,7 @@ type floatBucketIterator struct {
 
 func (i *floatBucketIterator) At() Bucket[float64] {
 	// Need to use i.targetSchema rather than i.baseBucketIterator.schema.
-	return i.baseBucketIterator.at(i.targetSchema)
+	return i.at(i.targetSchema)
 }
 
 func (i *floatBucketIterator) Next() bool {

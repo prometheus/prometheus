@@ -812,7 +812,7 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		return status, fmt.Errorf("Error getting hostname: %w", err)
+		return status, fmt.Errorf("error getting hostname: %w", err)
 	}
 	status.Hostname = hostname
 	status.ServerTime = time.Now().UTC()

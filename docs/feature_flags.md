@@ -23,7 +23,7 @@ Exemplar storage is implemented as a fixed size circular buffer that stores exem
 
 `--enable-feature=memory-snapshot-on-shutdown`
 
-This takes a snapshot of the chunks that are in memory along with the series information when shutting down and stores it on disk. This will reduce the startup time since the memory state can now be restored with this snapshot 
+This takes a snapshot of the chunks that are in memory along with the series information when shutting down and stores it on disk. This will reduce the startup time since the memory state can now be restored with this snapshot
 and m-mapped chunks, while a WAL replay from disk is only needed for the parts of the WAL that are not part of the snapshot.
 
 ## Extra scrape metrics
@@ -183,7 +183,7 @@ This state is periodically ([`max_stale`][d2c]) cleared of inactive series.
 Enabling this _can_ have negative impact on performance, because the in-memory
 state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
-### PromQL arithmetic expressions in time durations
+## PromQL arithmetic expressions in time durations
 
 `--enable-feature=promql-duration-expr`
 
@@ -203,7 +203,7 @@ The following operators are supported:
 
 * `+` - addition
 * `-` - subtraction
-* `*` - multiplication 
+* `*` - multiplication
 * `/` - division
 * `%` - modulo
 * `^` - exponentiation
@@ -227,7 +227,7 @@ When enabled, allows for the native ingestion of delta OTLP metrics, storing the
 
 Currently, the StartTimeUnixNano field is ignored, and deltas are given the unknown metric metadata type.
 
-Delta support is in a very early stage of development and the ingestion and querying process my change over time. For the open proposal see [prometheus/proposals#48](https://github.com/prometheus/proposals/pull/48). 
+Delta support is in a very early stage of development and the ingestion and querying process my change over time. For the open proposal see [prometheus/proposals#48](https://github.com/prometheus/proposals/pull/48).
 
 ### Querying
 

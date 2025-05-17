@@ -30,6 +30,7 @@ import (
 	goregexp "regexp" //nolint:depguard // The Prometheus client library requires us to pass a regexp from this package.
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -651,6 +652,32 @@ func main() {
 		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
 	}
 
+	// Set Go runtime parameters before we get too far into initialization.
+	updateGoGC(cfgFile, logger)
+	if cfg.maxprocsEnable {
+		l := func(format string, a ...interface{}) {
+			logger.Info(fmt.Sprintf(strings.TrimPrefix(format, "maxprocs: "), a...), "component", "automaxprocs")
+		}
+		if _, err := maxprocs.Set(maxprocs.Logger(l)); err != nil {
+			logger.Warn("Failed to set GOMAXPROCS automatically", "component", "automaxprocs", "err", err)
+		}
+	}
+
+	if cfg.memlimitEnable {
+		if _, err := memlimit.SetGoMemLimitWithOpts(
+			memlimit.WithRatio(cfg.memlimitRatio),
+			memlimit.WithProvider(
+				memlimit.ApplyFallback(
+					memlimit.FromCgroup,
+					memlimit.FromSystem,
+				),
+			),
+			memlimit.WithLogger(logger.With("component", "automemlimit")),
+		); err != nil {
+			logger.Warn("automemlimit", "msg", "Failed to set GOMEMLIMIT automatically", "err", err)
+		}
+	}
+
 	// Now that the validity of the config is established, set the config
 	// success metrics accordingly, although the config isn't really loaded
 	// yet. This will happen later (including setting these metrics again),
@@ -800,29 +827,6 @@ func main() {
 		queryEngine *promql.Engine
 		ruleManager *rules.Manager
 	)
-
-	if cfg.maxprocsEnable {
-		l := func(format string, a ...interface{}) {
-			logger.Info(fmt.Sprintf(strings.TrimPrefix(format, "maxprocs: "), a...), "component", "automaxprocs")
-		}
-		if _, err := maxprocs.Set(maxprocs.Logger(l)); err != nil {
-			logger.Warn("Failed to set GOMAXPROCS automatically", "component", "automaxprocs", "err", err)
-		}
-	}
-
-	if cfg.memlimitEnable {
-		if _, err := memlimit.SetGoMemLimitWithOpts(
-			memlimit.WithRatio(cfg.memlimitRatio),
-			memlimit.WithProvider(
-				memlimit.ApplyFallback(
-					memlimit.FromCgroup,
-					memlimit.FromSystem,
-				),
-			),
-		); err != nil {
-			logger.Warn("automemlimit", "msg", "Failed to set GOMEMLIMIT automatically", "err", err)
-		}
-	}
 
 	if !agentMode {
 		opts := promql.EngineOpts{
@@ -1509,6 +1513,14 @@ func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logg
 		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
 
+	updateGoGC(conf, logger)
+
+	noStepSuqueryInterval.Set(conf.GlobalConfig.EvaluationInterval)
+	timingsLogger.Info("Completed loading of configuration file", "filename", filename, "totalDuration", time.Since(start))
+	return nil
+}
+
+func updateGoGC(conf *config.Config, logger *slog.Logger) {
 	oldGoGC := debug.SetGCPercent(conf.Runtime.GoGC)
 	if oldGoGC != conf.Runtime.GoGC {
 		logger.Info("updated GOGC", "old", oldGoGC, "new", conf.Runtime.GoGC)
@@ -1519,10 +1531,6 @@ func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logg
 	} else {
 		os.Setenv("GOGC", "off")
 	}
-
-	noStepSuqueryInterval.Set(conf.GlobalConfig.EvaluationInterval)
-	timingsLogger.Info("Completed loading of configuration file", "filename", filename, "totalDuration", time.Since(start))
-	return nil
 }
 
 func startsOrEndsWithQuote(s string) bool {
@@ -1914,10 +1922,8 @@ func (p *rwProtoMsgFlagParser) Set(opt string) error {
 	if err := t.Validate(); err != nil {
 		return err
 	}
-	for _, prev := range *p.msgs {
-		if prev == t {
-			return fmt.Errorf("duplicated %v flag value, got %v already", t, *p.msgs)
-		}
+	if slices.Contains(*p.msgs, t) {
+		return fmt.Errorf("duplicated %v flag value, got %v already", t, *p.msgs)
 	}
 	*p.msgs = append(*p.msgs, t)
 	return nil

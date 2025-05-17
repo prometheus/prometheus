@@ -111,7 +111,7 @@ eval range from <start> to <end> step <step> <query>
 ### `expect` Syntax
 
 ```
-expect <type> <match_type> <string>
+expect <type> <match_type>: <string>
 ```
 
 #### Parameters
@@ -139,8 +139,8 @@ eval instant at 1m sum by (env) (my_metric)
     {env="test"} 20
     
 eval range from 0 to 3m step 1m sum by (env) (my_metric)
-    expect warn msg something went wrong
-    expect info regex something went (wrong|boom)
+    expect warn msg: something went wrong
+    expect info regex: something went (wrong|boom)
     {env="prod"} 2 5 10 20
     {env="test"} 10 20 30 45
 
@@ -148,10 +148,10 @@ eval instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
 expect fail
 
 eval instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
-expect fail msg "vector cannot contain metrics with the same labelset"
+expect fail msg: "vector cannot contain metrics with the same labelset"
 
 eval instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
-expect fail regex "vector cannot contain metrics .*|something else went wrong"
+expect fail regex: "vector cannot contain metrics .*|something else went wrong"
 
 eval instant at 1m sum by (env) (my_metric)
 expect ordered
