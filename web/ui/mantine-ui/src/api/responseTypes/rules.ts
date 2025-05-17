@@ -37,7 +37,7 @@ type RecordingRule = {
 
 export type Rule = AlertingRule | RecordingRule;
 
-interface RuleGroup {
+export interface RuleGroup {
   name: string;
   file: string;
   interval: string;
