@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -1821,7 +1822,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			it.Reset(chkIter)
 			metric := selVS.Series[i].Labels()
 			if !ev.enableDelayedNameRemoval && dropName {
-				metric = metric.DropMetricName()
+				metric = metric.DropReserved(schema.IsMetadataLabel)
 			}
 			ss := Series{
 				Metric:   metric,
@@ -1960,7 +1961,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		if e.Op == parser.SUB {
 			for i := range mat {
 				if !ev.enableDelayedNameRemoval {
-					mat[i].Metric = mat[i].Metric.DropMetricName()
+					mat[i].Metric = mat[i].Metric.DropReserved(schema.IsMetadataLabel)
 				}
 				mat[i].DropName = true
 				for j := range mat[i].Floats {
@@ -2709,7 +2710,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		}
 		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
 		if !ev.enableDelayedNameRemoval && returnBool {
-			metric = metric.DropMetricName()
+			metric = metric.DropReserved(schema.IsMetadataLabel)
 		}
 		insertedSigs, exists := matchedSigs[sig]
 		if matching.Card == parser.CardOneToOne {
@@ -2776,8 +2777,9 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	}
 	str := string(enh.lblResultBuf)
 
-	if shouldDropMetricName(op) {
-		enh.lb.Del(labels.MetricName)
+	if changesMetricSchema(op) {
+		// Setting empty Metadata causes the deletion of those if they exists.
+		schema.Metadata{}.SetToLabels(enh.lb)
 	}
 
 	if matching.Card == parser.CardOneToOne {
@@ -2836,9 +2838,9 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 		if keep {
 			lhsSample.F = float
 			lhsSample.H = histogram
-			if shouldDropMetricName(op) || returnBool {
+			if changesMetricSchema(op) || returnBool {
 				if !ev.enableDelayedNameRemoval {
-					lhsSample.Metric = lhsSample.Metric.DropMetricName()
+					lhsSample.Metric = lhsSample.Metric.DropReserved(schema.IsMetadataLabel)
 				}
 				lhsSample.DropName = true
 			}
@@ -3544,7 +3546,7 @@ func (ev *evaluator) cleanupMetricLabels(v parser.Value) {
 		mat := v.(Matrix)
 		for i := range mat {
 			if mat[i].DropName {
-				mat[i].Metric = mat[i].Metric.DropMetricName()
+				mat[i].Metric = mat[i].Metric.DropReserved(schema.IsMetadataLabel)
 			}
 		}
 		if mat.ContainsSameLabelset() {
@@ -3554,7 +3556,7 @@ func (ev *evaluator) cleanupMetricLabels(v parser.Value) {
 		vec := v.(Vector)
 		for i := range vec {
 			if vec[i].DropName {
-				vec[i].Metric = vec[i].Metric.DropMetricName()
+				vec[i].Metric = vec[i].Metric.DropReserved(schema.IsMetadataLabel)
 			}
 		}
 		if vec.ContainsSameLabelset() {
@@ -3656,9 +3658,9 @@ func btos(b bool) float64 {
 	return 0
 }
 
-// shouldDropMetricName returns whether the metric name should be dropped in the
-// result of the op operation.
-func shouldDropMetricName(op parser.ItemType) bool {
+// changesSchema returns true whether the op operation changes the semantic meaning or
+// schema of the metric.
+func changesMetricSchema(op parser.ItemType) bool {
 	switch op {
 	case parser.ADD, parser.SUB, parser.DIV, parser.MUL, parser.POW, parser.MOD, parser.ATAN2:
 		return true

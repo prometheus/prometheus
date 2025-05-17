@@ -247,3 +247,28 @@ These may not work well if the `<range>` is not a multiple of the collection int
 * It is difficult to figure out whether a metric has delta or cumulative temporality, since there's no indication of temporality in metric names or labels. For now, if you are ingesting a mix of delta and cumulative metrics we advise you to explicitly add your own labels to distinguish them. In the future, we plan to introduce type labels to consistently distinguish metric types and potentially make PromQL functions type-aware (e.g. providing warnings when cumulative-only functions are used with delta metrics).
 
 * If there are multiple samples being ingested at the same timestamp, only one of the points is kept - the samples are **not** summed together (this is how Prometheus works in general - duplicate timestamp samples are rejected). Any aggregation will have to be done before sending samples to Prometheus.
+
+## Type and Unit Labels
+
+`--enable-feature=type-and-unit-labels`
+
+When enabled, Prometheus will start injecting additional, reserved `__type__`
+and `__unit__` labels as designed in the [PROM-39 proposal](https://github.com/prometheus/proposals/pull/39).
+
+Those labels are sourced from the metadata structured of the existing scrape and ingestion formats
+like OpenMetrics Text, Prometheus Text, Prometheus Proto, Remote Write 2 and OTLP. All the user provided labels with
+`__type__` and `__unit__` will be overridden.
+
+PromQL layer will handle those labels the same way __name__ is handled, e.g. dropped
+on certain operations like `-` or `+` and affected by `promql-delayed-name-removal` feature.
+
+This feature enables important metadata information to be accessible directly with samples and PromQL layer.
+ 
+It's especially useful for users who:
+
+* Want to be able to select metrics based on type or unit.
+* Want to handle cases of series with the same metric name and different type and units.
+  e.g. native histogram migrations or OpenTelemetry metrics from OTLP endpoint, without translation.
+
+In future more [work is planned](https://github.com/prometheus/prometheus/issues/16610) that will depend on this e.g. rich PromQL UX that helps
+when wrong types are used on wrong functions, automatic renames, delta types and more.
