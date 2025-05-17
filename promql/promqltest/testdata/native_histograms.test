@@ -1319,3 +1319,60 @@ eval instant at 10m histogram_sub_3{idx="0"} - ignoring(idx) histogram_sub_3{idx
     {} {{schema:0 count:-30 sum:-1111.1 z_bucket:-2 z_bucket_w:0.001 buckets:[-1 0 -1 -2 -1 -1 -1] n_buckets:[0 2 -2 -2 -7 0 0 0 0 -5 -5 -2]}}
 
 clear
+
+# Test native histogram with trim operators ("</": TRIM_UPPER, ">/": TRIM_LOWER)
+load 1m
+  h_test {{schema:0 count:34 z_bucket:1 z_bucket_w:0.001 buckets:[2 4 8 16] n_buckets:[1 2]}} 
+  h_test_2 {{schema:2 count:27 z_bucket:1 z_bucket_w:0.001 buckets:[1 2 4 7 3] n_buckets:[1 5 3 1]}}
+  cbh {{schema:-53 sum:5 count:15 custom_values:[5 10 15 20] buckets:[1 6 4 3 1]}}
+  zero_bucket {{schema:0 z_bucket:5 z_bucket_w:0.01 buckets:[2 3] n_buckets:[1 2 3]}}
+
+# Native Histogram: Exponential Bucket Interpolation Tests
+eval instant at 1m h_test_2 </ 1.13
+{__name__="h_test_2"}  {{schema:2 count:13.410582181123704 sum:-9.385798726068233 z_bucket:1 z_bucket_w:0.001 buckets:[1 1.410582181123704] n_buckets:[1 5 3 1]}}
+
+eval instant at 1m h_test_2 >/ 1.13
+{__name__="h_test_2"} {{schema:2 count:14.589417818876296 sum:22.168126492693734 z_bucket_w:0.001 offset:1 buckets:[0.589417818876296 4 7 3]}}
+
+eval instant at 1m h_test_2 >/ -1.3
+{__name__="h_test_2"} {{schema:2 count:25.54213947904476 sum:16.29588491217537 z_bucket:1 z_bucket_w:0.001 buckets:[1 2 4 7 3] n_buckets:[1 5 1.54213947904476]}}
+
+eval instant at 1m h_test_2 </ -1.3
+{__name__="h_test_2"} {{schema:2 count:2.45786052095524 sum:-3.5189307983595066 z_bucket_w:0.001 n_offset:2 n_buckets:[1.45786052095524 1]}}
+
+
+# Native Histogram: Linear Bucket Trimming Tests
+eval instant at 1m h_test </ 2
+{__name__="h_test"}  {{count:10 sum:3.5355339059327373 z_bucket:1 z_bucket_w:0.001 buckets:[2 4] n_buckets:[1 2]}}
+				
+eval instant at 1m h_test >/ 2
+{__name__="h_test"}  {{count:24 sum:113.13708498984761 z_bucket_w:0.001 offset:2 buckets:[8 16]}}
+
+eval instant at 1m h_test >/ -1
+{__name__="h_test"} {{count:32 sum:119.50104602052653 z_bucket:1 z_bucket_w:0.001 buckets:[2 4 8 16] n_buckets:[1]}}
+
+eval instant at 1m h_test </ -1
+{__name__="h_test"} {{count:2 sum:-2.8284271247461903 z_bucket_w:0.001 n_offset:1 n_buckets:[2]}}
+
+
+# Custom Buckets: Trim Operation Tests
+eval instant at 1m cbh </ 13
+{__name__="cbh"} {{schema:-53 count:9.4 sum:75 custom_values:[5 10 15 20] buckets:[1 6 2.4]}}
+
+eval instant at 1m cbh >/ 13
+{__name__="cbh"} {{schema:-53 count:5.6 sum:92.5 custom_values:[5 10 15 20] offset:2 buckets:[1.6 3 1]}}
+
+eval instant at 1m cbh </ 15
+{__name__="cbh"} {{schema:-53 count:11 sum:95 custom_values:[5 10 15 20] buckets:[1 6 4]}}
+
+eval instant at 1m cbh >/ 15
+{__name__="cbh"} {{schema:-53 count:4 sum:72.5 custom_values:[5 10 15 20] offset:3 buckets:[3 1]}}
+
+# Zero Bucket Edge Case: Interpolation Around Zero
+eval instant at 1m zero_bucket </ -0.005
+{__name__="zero_bucket"} {{count:7.25 sum:-12.020815280171309 z_bucket:1.25 z_bucket_w:0.01 n_buckets:[1 2 3]}}
+
+eval instant at 1m zero_bucket >/ 0
+{__name__="zero_bucket"} {{count:7.5 sum:5.656854249492381 z_bucket:2.5 z_bucket_w:0.01 buckets:[2 3]}}
+
+clear
