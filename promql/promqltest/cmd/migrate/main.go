@@ -23,9 +23,10 @@ import (
 
 func main() {
 	mode := flag.String("mode", "strict", "Migration mode: strict, basic, or tolerant")
+	dir := flag.String("dir", "", "Directory to migrate")
 	flag.Parse()
 
-	if err := promqltest.MigrateTestData(*mode); err != nil {
+	if err := promqltest.MigrateTestData(*mode, *dir); err != nil {
 		fmt.Printf("Error migrating test files: %v\n", err)
 		os.Exit(1)
 	}

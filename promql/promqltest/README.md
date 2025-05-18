@@ -175,6 +175,6 @@ go run ./promql/promqltest/cmd/migrate/main.go --mode=strict
 ```
 
 The --mode flag controls how annotation rules are applied during migration:
-- strict: Adds all recommended expect lines (e.g., expect no_warn, expect no_info).
+- strict: Adds all recommended expect lines (e.g., `expect no_warn`, `expect no_info`).
 - basic: Only adds minimal expect lines for each command.
-- tolerant: Only adds expect fail and expect ordered wherever needed.
+- tolerant: Only adds `expect fail` and `expect ordered` wherever needed.

@@ -22,6 +22,13 @@ import (
 	"github.com/grafana/regexp"
 )
 
+const defaultTestDataDir = "promql/promqltest/testdata"
+
+var (
+	evalRegex   = regexp.MustCompile(`^(eval |eval_fail |eval_warn |eval_info |eval_ordered )(.*)$`)
+	indentRegex = regexp.MustCompile(`^([ \t]+)\S`)
+)
+
 type MigrateMode int
 
 const (
@@ -46,8 +53,11 @@ func ParseMigrateMode(s string) (MigrateMode, error) {
 // MigrateTestData migrates all PromQL test files to the new syntax format.
 // It applies annotation rules based on the provided migration mode ("strict", "basic", or "tolerant").
 // The function parses each .test file, converts it to the new syntax and overwrites the file.
-func MigrateTestData(mode string) error {
-	const dir = "promql/promqltest/testdata"
+func MigrateTestData(mode, dir string) error {
+	if dir == "" {
+		dir = defaultTestDataDir
+	}
+
 	migrationMode, err := ParseMigrateMode(mode)
 	if err != nil {
 		return fmt.Errorf("failed to parse mode: %w", err)
@@ -78,8 +88,6 @@ func MigrateTestData(mode string) error {
 		},
 	}
 
-	evalRegex := regexp.MustCompile(`^(eval |eval_fail |eval_warn |eval_info |eval_ordered )(.*)$`)
-
 	for _, file := range files {
 		if file.IsDir() || !strings.HasSuffix(file.Name(), ".test") {
 			continue
@@ -109,48 +117,54 @@ func processTestFileLines(
 	annotationMap map[string][]string,
 	evalRegex *regexp.Regexp,
 ) (result []string, err error) {
-	var inputBlock []string
-	var outputBlock []string
-	for i := 0; i < len(lines); i += len(inputBlock) {
-		inputBlock = nil
-		outputBlock = nil
-		matches := evalRegex.FindStringSubmatch(strings.TrimSpace(lines[i]))
+	for i := 0; i < len(lines); i++ {
+		startLine := lines[i]
+		matches := evalRegex.FindStringSubmatch(strings.TrimSpace(startLine))
 		if matches == nil {
-			inputBlock = append(inputBlock, lines[i])
-			result = append(result, lines[i])
+			result = append(result, startLine)
 			continue
 		}
 
+		var inputBlock []string
+		var outputBlock []string
 		skipBlock := false
-		for j := i + 1; j < len(lines) && !evalRegex.MatchString(strings.TrimSpace(lines[j])); j++ {
-			inputBlock = append(inputBlock, lines[j])
-			if strings.Contains(lines[j], "expect ") {
+		i++
+		for i < len(lines) {
+			inputBlock = append(inputBlock, lines[i])
+			if strings.HasPrefix(strings.TrimSpace(lines[i]), "expect ") {
 				skipBlock = true
 			}
+			if i+1 < len(lines) && evalRegex.MatchString(strings.TrimSpace(lines[i+1])) {
+				break
+			}
+			i++
 		}
 
 		if skipBlock {
-			result = append(result, lines[i])
-			i++
+			result = append(result, startLine)
 			result = append(result, inputBlock...)
 			continue
 		}
 
-		// Detecting indentation style (tab or space) from the first non-empty, indented line
-		indent := "  "
-		indentRegex := regexp.MustCompile(`^([ \t]+)\S`)
-		for _, line := range inputBlock {
-			if match := indentRegex.FindStringSubmatch(line); match != nil {
-				indent = match[1]
-				break
-			}
+		// Get leading whitespace from startLine using indentRegex
+		leadingWS := ""
+		if indentMatch := indentRegex.FindStringSubmatch(startLine); indentMatch != nil {
+			leadingWS = indentMatch[1]
 		}
 
 		command := strings.TrimSpace(matches[1])
 		expression := matches[2]
 		var annotations []string
-		result = append(result, fmt.Sprintf("eval %s", expression))
-		i++
+		result = append(result, leadingWS+fmt.Sprintf("eval %s", expression))
+
+		// Detecting indentation style (tab or space) from the first non-empty, indented line.
+		indent := "  "
+		for _, line := range inputBlock {
+			if indentMatch := indentRegex.FindStringSubmatch(line); indentMatch != nil {
+				indent = indentMatch[1]
+				break
+			}
+		}
 
 		for _, annotation := range annotationMap[command] {
 			annotations = append(annotations, indent+annotation)
