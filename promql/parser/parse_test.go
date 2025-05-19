@@ -2009,6 +2009,57 @@ var testExpr = []struct {
 	},
 	// Test matrix selector.
 	{
+		input: "test[1000ms]",
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "test",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   4,
+				},
+			},
+			Range:  1000 * time.Millisecond,
+			EndPos: 12,
+		},
+	},
+	{
+		input: "test[1001ms]",
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "test",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   4,
+				},
+			},
+			Range:  1001 * time.Millisecond,
+			EndPos: 12,
+		},
+	},
+	{
+		input: "test[1002ms]",
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "test",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   4,
+				},
+			},
+			Range:  1002 * time.Millisecond,
+			EndPos: 12,
+		},
+	},
+	{
 		input: "test[5s]",
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{

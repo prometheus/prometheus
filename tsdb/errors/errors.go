@@ -94,6 +94,11 @@ func (es nonNilMultiError) Is(target error) bool {
 	return false
 }
 
+// Unwrap returns the list of errors contained in the multiError.
+func (es nonNilMultiError) Unwrap() []error {
+	return es.errs
+}
+
 // CloseAll closes all given closers while recording error in MultiError.
 func CloseAll(cs []io.Closer) error {
 	errs := NewMulti()

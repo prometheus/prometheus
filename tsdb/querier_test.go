@@ -263,7 +263,7 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 			rmChunkRefs(chksRes)
 			require.Equal(t, errExp, errRes)
 
-			require.Equal(t, len(chksExp), len(chksRes))
+			require.Len(t, chksRes, len(chksExp))
 			var exp, act [][]chunks.Sample
 			for i := range chksExp {
 				samples, err := storage.ExpandSamples(chksExp[i].Chunk.Iterator(nil), nil)
@@ -2252,19 +2252,22 @@ func (m mockIndex) Close() error {
 	return nil
 }
 
-func (m mockIndex) SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
-	values, _ := m.LabelValues(ctx, name, matchers...)
+func (m mockIndex) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
+	values, _ := m.LabelValues(ctx, name, hints, matchers...)
 	sort.Strings(values)
 	return values, nil
 }
 
-func (m mockIndex) LabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+func (m mockIndex) LabelValues(_ context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	var values []string
 
 	if len(matchers) == 0 {
 		for l := range m.postings {
 			if l.Name == name {
 				values = append(values, l.Value)
+				if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
+					break
+				}
 			}
 		}
 		return values, nil
@@ -2275,6 +2278,9 @@ func (m mockIndex) LabelValues(_ context.Context, name string, matchers ...*labe
 			if matcher.Matches(series.l.Get(matcher.Name)) {
 				// TODO(colega): shouldn't we check all the matchers before adding this to the values?
 				values = append(values, series.l.Get(name))
+				if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
+					break
+				}
 			}
 		}
 	}
@@ -3299,12 +3305,12 @@ func (m mockMatcherIndex) Symbols() index.StringIter { return nil }
 func (m mockMatcherIndex) Close() error { return nil }
 
 // SortedLabelValues will return error if it is called.
-func (m mockMatcherIndex) SortedLabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
+func (m mockMatcherIndex) SortedLabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
 	return []string{}, errors.New("sorted label values called")
 }
 
 // LabelValues will return error if it is called.
-func (m mockMatcherIndex) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
+func (m mockMatcherIndex) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
 	return []string{}, errors.New("label values called")
 }
 
@@ -3736,7 +3742,7 @@ func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 
 	failAfter := uint64(mockReaderOfLabelsSeriesCount / 2 / checkContextEveryNIterations)
 	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
-	_, err := labelValuesWithMatchers(ctx, ir, "__name__", labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
+	_, err := labelValuesWithMatchers(ctx, ir, "__name__", nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
 
 	require.Error(t, err)
 	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
@@ -3746,7 +3752,7 @@ type mockReaderOfLabels struct{}
 
 const mockReaderOfLabelsSeriesCount = checkContextEveryNIterations * 10
 
-func (m mockReaderOfLabels) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
+func (m mockReaderOfLabels) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
 	return make([]string, mockReaderOfLabelsSeriesCount), nil
 }
 
@@ -3754,7 +3760,7 @@ func (m mockReaderOfLabels) LabelValueFor(context.Context, storage.SeriesRef, st
 	panic("LabelValueFor called")
 }
 
-func (m mockReaderOfLabels) SortedLabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
+func (m mockReaderOfLabels) SortedLabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
 	panic("SortedLabelValues called")
 }
 

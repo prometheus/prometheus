@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -169,23 +170,23 @@ var (
 		// changes to DefaultNativeHistogramScrapeProtocols.
 		ScrapeProtocols:                DefaultScrapeProtocols,
 		ConvertClassicHistogramsToNHCB: false,
+		AlwaysScrapeClassicHistograms:  false,
 	}
 
 	DefaultRuntimeConfig = RuntimeConfig{
 		// Go runtime tuning.
-		GoGC: 75,
+		GoGC: getGoGC(),
 	}
 
 	// DefaultScrapeConfig is the default scrape configuration.
 	DefaultScrapeConfig = ScrapeConfig{
-		// ScrapeTimeout, ScrapeInterval and ScrapeProtocols default to the configured globals.
-		AlwaysScrapeClassicHistograms: false,
-		MetricsPath:                   "/metrics",
-		Scheme:                        "http",
-		HonorLabels:                   false,
-		HonorTimestamps:               true,
-		HTTPClientConfig:              config.DefaultHTTPClientConfig,
-		EnableCompression:             true,
+		// ScrapeTimeout, ScrapeInterval, ScrapeProtocols, AlwaysScrapeClassicHistograms, and ConvertClassicHistogramsToNHCB default to the configured globals.
+		MetricsPath:       "/metrics",
+		Scheme:            "http",
+		HonorLabels:       false,
+		HonorTimestamps:   true,
+		HTTPClientConfig:  config.DefaultHTTPClientConfig,
+		EnableCompression: true,
 	}
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
@@ -384,8 +385,6 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// We have to restore it here.
 	if c.Runtime.isZero() {
 		c.Runtime = DefaultRuntimeConfig
-		// Use the GOGC env var value if the runtime section is empty.
-		c.Runtime.GoGC = getGoGCEnv()
 	}
 
 	for _, rf := range c.RuleFiles {
@@ -489,6 +488,8 @@ type GlobalConfig struct {
 	MetricNameEscapingScheme string `yaml:"metric_name_escaping_scheme,omitempty"`
 	// Whether to convert all scraped classic histograms into native histograms with custom buckets.
 	ConvertClassicHistogramsToNHCB bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
+	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
+	AlwaysScrapeClassicHistograms bool `yaml:"always_scrape_classic_histograms,omitempty"`
 }
 
 // ScrapeProtocol represents supported protocol for scraping metrics.
@@ -645,8 +646,11 @@ func (c *GlobalConfig) isZero() bool {
 		c.QueryLogFile == "" &&
 		c.ScrapeFailureLogFile == "" &&
 		c.ScrapeProtocols == nil &&
-		!c.ConvertClassicHistogramsToNHCB
+		!c.ConvertClassicHistogramsToNHCB &&
+		!c.AlwaysScrapeClassicHistograms
 }
+
+const DefaultGoGCPercentage = 75
 
 // RuntimeConfig configures the values for the process behavior.
 type RuntimeConfig struct {
@@ -690,7 +694,7 @@ type ScrapeConfig struct {
 	// OpenMetricsText1.0.0, PrometheusText1.0.0, PrometheusText0.0.4.
 	ScrapeFallbackProtocol ScrapeProtocol `yaml:"fallback_scrape_protocol,omitempty"`
 	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
-	AlwaysScrapeClassicHistograms bool `yaml:"always_scrape_classic_histograms,omitempty"`
+	AlwaysScrapeClassicHistograms *bool `yaml:"always_scrape_classic_histograms,omitempty"`
 	// Whether to convert all scraped classic histograms into a native histogram with custom buckets.
 	ConvertClassicHistogramsToNHCB *bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
 	// File to which scrape failures are logged.
@@ -904,6 +908,11 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		c.ConvertClassicHistogramsToNHCB = &global
 	}
 
+	if c.AlwaysScrapeClassicHistograms == nil {
+		global := globalConfig.AlwaysScrapeClassicHistograms
+		c.AlwaysScrapeClassicHistograms = &global
+	}
+
 	return nil
 }
 
@@ -929,6 +938,11 @@ func ToValidationScheme(s string) (validationScheme model.ValidationScheme, err 
 // ConvertClassicHistogramsToNHCBEnabled returns whether to convert classic histograms to NHCB.
 func (c *ScrapeConfig) ConvertClassicHistogramsToNHCBEnabled() bool {
 	return c.ConvertClassicHistogramsToNHCB != nil && *c.ConvertClassicHistogramsToNHCB
+}
+
+// AlwaysScrapeClassicHistogramsEnabled returns whether to always scrape classic histograms.
+func (c *ScrapeConfig) AlwaysScrapeClassicHistogramsEnabled() bool {
+	return c.AlwaysScrapeClassicHistograms != nil && *c.AlwaysScrapeClassicHistograms
 }
 
 // StorageConfig configures runtime reloadable configuration options.
@@ -1096,13 +1110,11 @@ func (v *AlertmanagerAPIVersion) UnmarshalYAML(unmarshal func(interface{}) error
 		return err
 	}
 
-	for _, supportedVersion := range SupportedAlertmanagerAPIVersions {
-		if *v == supportedVersion {
-			return nil
-		}
+	if !slices.Contains(SupportedAlertmanagerAPIVersions, *v) {
+		return fmt.Errorf("expected Alertmanager api version to be one of %v but got %v", SupportedAlertmanagerAPIVersions, *v)
 	}
 
-	return fmt.Errorf("expected Alertmanager api version to be one of %v but got %v", SupportedAlertmanagerAPIVersions, *v)
+	return nil
 }
 
 const (
@@ -1482,7 +1494,7 @@ func fileErr(filename string, err error) error {
 	return fmt.Errorf("%q: %w", filePath(filename), err)
 }
 
-func getGoGCEnv() int {
+func getGoGC() int {
 	goGCEnv := os.Getenv("GOGC")
 	// If the GOGC env var is set, use the same logic as upstream Go.
 	if goGCEnv != "" {
@@ -1495,7 +1507,7 @@ func getGoGCEnv() int {
 			return i
 		}
 	}
-	return DefaultRuntimeConfig.GoGC
+	return DefaultGoGCPercentage
 }
 
 type translationStrategyOption string

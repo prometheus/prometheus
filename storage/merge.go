@@ -64,10 +64,8 @@ func NewMergeQuerier(primaries, secondaries []Querier, mergeFn VerticalSeriesMer
 		queriers = append(queriers, newSecondaryQuerierFrom(q))
 	}
 
-	concurrentSelect := false
-	if len(secondaries) > 0 {
-		concurrentSelect = true
-	}
+	concurrentSelect := len(secondaries) > 0
+
 	return &querierAdapter{&mergeGenericQuerier{
 		mergeFn:          (&seriesMergerAdapter{VerticalSeriesMergeFunc: mergeFn}).Merge,
 		queriers:         queriers,
@@ -111,10 +109,8 @@ func NewMergeChunkQuerier(primaries, secondaries []ChunkQuerier, mergeFn Vertica
 		queriers = append(queriers, newSecondaryQuerierFromChunk(q))
 	}
 
-	concurrentSelect := false
-	if len(secondaries) > 0 {
-		concurrentSelect = true
-	}
+	concurrentSelect := len(secondaries) > 0
+
 	return &chunkQuerierAdapter{&mergeGenericQuerier{
 		mergeFn:          (&chunkSeriesMergerAdapter{VerticalChunkSeriesMergeFunc: mergeFn}).Merge,
 		queriers:         queriers,
