@@ -80,9 +80,9 @@ global:
   [ rule_query_offset: <duration> | default = 0s ]
 
   # The labels to add to any time series or alerts when communicating with
-  # external systems (federation, remote storage, Alertmanager). 
-  # Environment variable references `${var}` or `$var` are replaced according 
-  # to the values of the current environment variables. 
+  # external systems (federation, remote storage, Alertmanager).
+  # Environment variable references `${var}` or `$var` are replaced according
+  # to the values of the current environment variables.
   # References to undefined variables are replaced by the empty string.
   # The `$` character can be escaped by using `$$`.
   external_labels:
@@ -195,7 +195,7 @@ otlp:
   #   It preserves all special character like dots and won't append special suffixes for metric
   #   unit and type.
   #
-  #   WARNING: The "NoTranslation" setting has significant known risks and limitations (see https://prometheus.io/docs/practices/naming/  
+  #   WARNING: The "NoTranslation" setting has significant known risks and limitations (see https://prometheus.io/docs/practices/naming/
   #   for details):
   #       * Impaired UX when using PromQL in plain YAML (e.g. alerts, rules, dashboard, autoscaling configuration).
   #       * Series collisions which in the best case may result in OOO errors, in the worst case a silently malformed
@@ -484,21 +484,21 @@ metric_relabel_configs:
 # that will be kept in memory. 0 means no limit.
 [ keep_dropped_targets: <int> | default = 0 ]
 
-# Specifies the validation scheme for metric and label names. Either blank or 
+# Specifies the validation scheme for metric and label names. Either blank or
 # "utf8" for full UTF-8 support, or "legacy" for letters, numbers, colons, and
 # underscores.
 [ metric_name_validation_scheme: <string> | default "utf8" ]
 
 # Specifies the character escaping scheme that will be requested when scraping
 # for metric and label names that do not conform to the legacy Prometheus
-# character set. Available options are: 
+# character set. Available options are:
 #   * `allow-utf-8`: Full UTF-8 support, no escaping needed.
 #   * `underscores`: Escape all legacy-invalid characters to underscores.
 #   * `dots`: Escapes dots to `_dot_`, underscores to `__`, and all other
 #     legacy-invalid characters to underscores.
 #   * `values`: Prepend the name with `U__` and replace all invalid
 #     characters with their unicode value, surrounded by underscores. Single
-#     underscores are replaced with double underscores. 
+#     underscores are replaced with double underscores.
 #     e.g. "U__my_2e_dotted_2e_name".
 # If this value is left blank, Prometheus will default to `allow-utf-8` if the
 # validation scheme for the current scrape config is set to utf8, or
@@ -517,7 +517,7 @@ metric_relabel_configs:
 # reduced as much as possible until it is within the limit.
 # To set an upper limit for the schema (equivalent to "scale" in OTel's
 # exponential histograms), use the following factor limits:
-# 
+#
 # +----------------------------+----------------------------+
 # |        growth factor       | resulting schema AKA scale |
 # +----------------------------+----------------------------+
@@ -547,7 +547,7 @@ metric_relabel_configs:
 # +----------------------------+----------------------------+
 # |              1.002         |              8             |
 # +----------------------------+----------------------------+
-# 
+#
 # 0 results in the smallest supported factor (which is currently ~1.0027 or
 # schema 8, but might change in the future).
 [ native_histogram_min_bucket_factor: <float> | default = 0 ]
@@ -564,7 +564,7 @@ Where `<job_name>` must be unique across all scrape configurations.
 
 A `http_config` allows configuring HTTP requests.
 
-```
+```yaml
 # Sets the `Authorization` header on every request with the
 # configured username and password.
 # username and username_file are mutually exclusive.
@@ -795,7 +795,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
 * `__meta_consul_health`: the health status of the service
-* `__meta_consul_partition`: the admin partition name where the service is registered 
+* `__meta_consul_partition`: the admin partition name where the service is registered
 * `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
@@ -942,7 +942,7 @@ host: <string>
 [ host_networking_host: <string> | default = "localhost" ]
 
 # Sort all non-nil networks in ascending order based on network name and
-# get the first network if the container has multiple networks defined, 
+# get the first network if the container has multiple networks defined,
 # thus avoiding collecting duplicate targets.
 [ match_first_network: <boolean> | default = true ]
 
@@ -1258,7 +1258,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 #### `loadbalancer`
 
-The `loadbalancer` role discovers one target per Octavia loadbalancer with a 
+The `loadbalancer` role discovers one target per Octavia loadbalancer with a
 `PROMETHEUS` listener. The target address defaults to the VIP address
 of the load balancer.
 
@@ -1471,7 +1471,7 @@ and serves as an interface to plug in custom service discovery mechanisms.
 
 It reads a set of files containing a list of zero or more
 `<static_config>`s. Changes to all defined files are detected via disk watches
-and applied immediately. 
+and applied immediately.
 
 While those individual files are watched for changes,
 the parent directory is also watched implicitly. This is to handle [atomic
@@ -1984,7 +1984,7 @@ See below for the configuration options for Kuma MonitoringAssignment discovery:
 # Address of the Kuma Control Plane's MADS xDS server.
 server: <string>
 
-# Client id is used by Kuma Control Plane to compute Monitoring Assignment for specific Prometheus backend. 
+# Client id is used by Kuma Control Plane to compute Monitoring Assignment for specific Prometheus backend.
 # This is useful when migrating between multiple Prometheus backends, or having separate backend for each Mesh.
 # When not specified, system hostname/fqdn will be used if available, if not `prometheus` will be used.
 [ client_id: <string> ]
@@ -2082,7 +2082,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_linode_status`: the status of the linode instance
 * `__meta_linode_tags`: a list of tags of the linode instance joined by the tag separator
 * `__meta_linode_group`: the display group a linode instance is a member of
-* `__meta_linode_gpus`: the number of GPU's of the linode instance 
+* `__meta_linode_gpus`: the number of GPU's of the linode instance
 * `__meta_linode_hypervisor`: the virtualization software powering the linode instance
 * `__meta_linode_backups`: the backup service status of the linode instance
 * `__meta_linode_specs_disk_bytes`: the amount of storage space the linode instance has access to
@@ -2603,7 +2603,7 @@ input to a subsequent relabeling step), use the `__tmp` label name prefix. This
 prefix is guaranteed to never be used by Prometheus itself.
 
 ```yaml
-# The source_labels tells the rule what labels to fetch from the series. Any 
+# The source_labels tells the rule what labels to fetch from the series. Any
 # labels which do not exist get a blank value ("").  Their content is concatenated
 # using the configured separator and matched against the configured regular expression
 # for the replace, keep, and drop actions.
@@ -2894,7 +2894,7 @@ write_relabel_configs:
 # For the `io.prometheus.write.v2.Request` message, this option is noop (always true).
 [ send_native_histograms: <boolean> | default = false ]
 
-# When enabled, remote-write will resolve the URL host name via DNS, choose one of the IP addresses at random, and connect to it. 
+# When enabled, remote-write will resolve the URL host name via DNS, choose one of the IP addresses at random, and connect to it.
 # When disabled, remote-write relies on Go's standard behavior, which is to try to connect to each address in turn.
 # The connection timeout applies to the whole operation, i.e. in the latter case it is spread over all attempt.
 # This is an experimental feature, and its behavior might still change, or even get removed.
@@ -2927,7 +2927,7 @@ azuread:
 
   # Azure User-assigned Managed identity.
   [ managed_identity:
-      [ client_id: <string> ] ]  
+      [ client_id: <string> ] ]
 
   # Azure OAuth.
   [ oauth:
@@ -3055,8 +3055,8 @@ with this feature.
 # that is within the out-of-order window, or (b) too-old, i.e. not in-order
 # and before the out-of-order window.
 #
-# When out_of_order_time_window is greater than 0, it also affects experimental agent. It allows 
-# the agent's WAL to accept out-of-order samples that fall within the specified time window relative 
+# When out_of_order_time_window is greater than 0, it also affects experimental agent. It allows
+# the agent's WAL to accept out-of-order samples that fall within the specified time window relative
 # to the timestamp of the last appended sample for the same series.
 [ out_of_order_time_window: <duration> | default = 0s ]
 ```

@@ -11,7 +11,7 @@ to an external service. Whenever the alert expression results in one or more
 vector elements at a given point in time, the alert counts as active for these
 elements' label sets.
 
-### Defining alerting rules
+## Defining alerting rules
 
 Alerting rules are configured in Prometheus in the same way as [recording
 rules](recording_rules.md).
@@ -54,7 +54,7 @@ values can be templated.
 
 The `annotations` clause specifies a set of informational labels that can be used to store longer additional information such as alert descriptions or runbook links. The annotation values can be templated.
 
-#### Templating
+### Templating
 
 Label and annotation values can be templated using [console
 templates](https://prometheus.io/docs/visualization/consoles).  The `$labels`
@@ -93,7 +93,7 @@ groups:
       description: "{{ $labels.instance }} has a median request latency above 1s (current value: {{ $value }}s)"
 ```
 
-### Inspecting alerts during runtime
+## Inspecting alerts during runtime
 
 To manually inspect which alerts are active (pending or firing), navigate to
 the "Alerts" tab of your Prometheus instance. This will show you the exact
@@ -105,7 +105,7 @@ The sample value is set to `1` as long as the alert is in the indicated active
 (pending or firing) state, and the series is marked stale when this is no
 longer the case.
 
-### Sending alert notifications
+## Sending alert notifications
 
 Prometheus's alerting rules are good at figuring what is broken *right now*, but
 they are not a fully-fledged notification solution. Another layer is needed to
@@ -114,6 +114,6 @@ on top of the simple alert definitions. In Prometheus's ecosystem, the
 [Alertmanager](https://prometheus.io/docs/alerting/alertmanager/) takes on this
 role. Thus, Prometheus may be configured to periodically send information about
 alert states to an Alertmanager instance, which then takes care of dispatching
-the right notifications.  
+the right notifications.
 Prometheus can be [configured](configuration.md) to automatically discover available
 Alertmanager instances through its service discovery integrations.

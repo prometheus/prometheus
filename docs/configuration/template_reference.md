@@ -17,8 +17,8 @@ The primary data structure for dealing with time series data is the sample, defi
 
 ```go
 type sample struct {
-        Labels map[string]string
-        Value  interface{}
+  Labels map[string]string
+  Value  interface{}
 }
 ```
 

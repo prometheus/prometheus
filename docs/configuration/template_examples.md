@@ -13,7 +13,7 @@ templating](https://golang.org/pkg/text/template/) system.
 
 ## Simple alert field templates
 
-```
+```yaml
 alert: InstanceDown
 expr: up == 0
 for: 5m
@@ -33,7 +33,7 @@ console instead.
 
 This displays a list of instances, and whether they are up:
 
-```go
+```
 {{ range query "up" }}
   {{ .Labels.instance }} {{ .Value }}
 {{ end }}
@@ -43,7 +43,7 @@ The special `.` variable contains the value of the current sample for each loop 
 
 ## Display one value
 
-```go
+```
 {{ with query "some_metric{instance='someinstance'}" }}
   {{ . | first | value | humanize }}
 {{ end }}
@@ -58,7 +58,7 @@ formatting of results, and linking to the [expression browser](https://prometheu
 
 ## Using console URL parameters
 
-```go
+```
 {{ with printf "node_memory_MemTotal{job='node',instance='%s'}" .Params.instance | query }}
   {{ . | first | value | humanize1024 }}B
 {{ end }}
@@ -95,7 +95,7 @@ powerful when combined with
 [console library](template_reference.md#console-templates) support, allowing
 sharing of templates across consoles.
 
-```go
+```
 {{/* Define the template */}}
 {{define "myTemplate"}}
   do something
@@ -107,7 +107,7 @@ sharing of templates across consoles.
 
 Templates are limited to one argument. The `args` function can be used to wrap multiple arguments.
 
-```go
+```
 {{define "myMultiArgTemplate"}}
   First argument: {{.arg0}}
   Second argument: {{.arg1}}

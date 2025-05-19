@@ -381,8 +381,8 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 }
 
 func TestOTLPWriteHandler(t *testing.T) {
-	exportRequest := generateOTLPWriteRequest()
 	timestamp := time.Now()
+	exportRequest := generateOTLPWriteRequest(timestamp)
 	for _, testCase := range []struct {
 		name            string
 		otlpCfg         config.OTLPConfig
@@ -516,14 +516,12 @@ func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg c
 	return appendable
 }
 
-func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
+func generateOTLPWriteRequest(timestamp time.Time) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
 	// Generate One Counter, One Gauge, One Histogram, One Exponential-Histogram
 	// with resource attributes: service.name="test-service", service.instance.id="test-instance", host.name="test-host"
 	// with metric attribute: foo.bar="baz"
-
-	timestamp := time.Now()
 
 	resourceMetric := d.ResourceMetrics().AppendEmpty()
 	resourceMetric.Resource().Attributes().PutStr("service.name", "test-service")

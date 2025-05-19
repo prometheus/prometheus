@@ -11,52 +11,52 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
 
 ## Flags
 
-- The following feature flags have been removed and they have been added to the 
+- The following feature flags have been removed and they have been added to the
   default behavior of Prometheus v3:
   - `promql-at-modifier`
   - `promql-negative-offset`
   - `new-service-discovery-manager`
   - `expand-external-labels`
-      - Environment variable references `${var}` or `$var` in external label values 
-    are replaced according to the values of the current environment variables.  
+      - Environment variable references `${var}` or `$var` in external label values
+    are replaced according to the values of the current environment variables.
       - References to undefined variables are replaced by the empty string.
     The `$` character can be escaped by using `$$`.
   - `no-default-scrape-port`
-      - Prometheus v3 will no longer add ports to scrape targets according to the 
+      - Prometheus v3 will no longer add ports to scrape targets according to the
     specified scheme. Target will now appear in labels as configured.
-      - If you rely on scrape targets like 
-      `https://example.com/metrics` or `http://example.com/metrics` to be 
-      represented as `https://example.com/metrics:443` and 
+      - If you rely on scrape targets like
+      `https://example.com/metrics` or `http://example.com/metrics` to be
+      represented as `https://example.com/metrics:443` and
       `http://example.com/metrics:80` respectively, add them to your target URLs
   - `agent`
       - Instead use the dedicated `--agent` CLI flag.
   - `remote-write-receiver`
       - Instead use the dedicated `--web.enable-remote-write-receiver` CLI flag to enable the remote write receiver.
   - `auto-gomemlimit`
-      - Prometheus v3 will automatically set `GOMEMLIMIT` to match the Linux 
-      container memory limit. If there is no container limit, or the process is 
-      running outside of containers, the system memory total is used. To disable 
+      - Prometheus v3 will automatically set `GOMEMLIMIT` to match the Linux
+      container memory limit. If there is no container limit, or the process is
+      running outside of containers, the system memory total is used. To disable
       this, `--no-auto-gomemlimit` is available.
   - `auto-gomaxprocs`
-      - Prometheus v3 will automatically set `GOMAXPROCS` to match the Linux 
+      - Prometheus v3 will automatically set `GOMAXPROCS` to match the Linux
       container CPU quota. To disable this, `--no-auto-gomaxprocs` is available.
 
-  Prometheus v3 will log a warning if you continue to pass these to 
+  Prometheus v3 will log a warning if you continue to pass these to
   `--enable-feature`.
 
 ## Configuration
 
-- The scrape job level configuration option `scrape_classic_histograms` has been 
-  renamed to `always_scrape_classic_histograms`. If you use the 
-  `--enable-feature=native-histograms` feature flag to ingest native histograms 
-  and you also want to ingest classic histograms that an endpoint might expose 
-  along with native histograms, be sure to add this configuration or change your 
+- The scrape job level configuration option `scrape_classic_histograms` has been
+  renamed to `always_scrape_classic_histograms`. If you use the
+  `--enable-feature=native-histograms` feature flag to ingest native histograms
+  and you also want to ingest classic histograms that an endpoint might expose
+  along with native histograms, be sure to add this configuration or change your
   configuration from the old name.
-- The `http_config.enable_http2` in `remote_write` items default has been 
-  changed to `false`. In Prometheus v2 the remote write http client would 
-  default to use http2. In order to parallelize multiple remote write queues 
+- The `http_config.enable_http2` in `remote_write` items default has been
+  changed to `false`. In Prometheus v2 the remote write http client would
+  default to use http2. In order to parallelize multiple remote write queues
   across multiple sockets its preferable to not default to http2.
-  If you prefer to use http2 for remote write you must now set 
+  If you prefer to use http2 for remote write you must now set
   `http_config.enable_http2: true` in your `remote_write` configuration section.
 
 ## PromQL
@@ -137,7 +137,7 @@ may now fail if this fallback protocol is not specified.
 
 ### TSDB format and downgrade
 
-The TSDB format has been changed slightly in Prometheus v2.55 in preparation for changes 
+The TSDB format has been changed slightly in Prometheus v2.55 in preparation for changes
 to the index format. Consequently, a Prometheus v3 TSDB can only be read by a
 Prometheus v2.55 or newer. Keep that in mind when upgrading to v3 -- you will be only
 able to downgrade to v2.55, not lower, without losing your TSDB persistent data.
@@ -147,8 +147,8 @@ confirm Prometheus works as expected, before upgrading to v3.
 
 ### TSDB storage contract
 
-TSDB compatible storage is now expected to return results matching the specified 
-selectors. This might impact some third party implementations, most likely 
+TSDB compatible storage is now expected to return results matching the specified
+selectors. This might impact some third party implementations, most likely
 implementing `remote_read`.
 
 This contract is not explicitly enforced, but can cause undefined behavior.
@@ -179,7 +179,7 @@ scrape_configs:
 ```
 
 ### Log message format
-Prometheus v3 has adopted `log/slog` over the previous `go-kit/log`. This 
+Prometheus v3 has adopted `log/slog` over the previous `go-kit/log`. This
 results in a change of log message format. An example of the old log format is:
 
 ```
@@ -198,19 +198,19 @@ time=2024-10-24T00:03:07.542+02:00 level=INFO source=/home/user/go/src/github.co
 ```
 
 ### `le` and `quantile` label values
-In Prometheus v3, the values of the `le` label of classic histograms and the 
+In Prometheus v3, the values of the `le` label of classic histograms and the
 `quantile` label of summaries are normalized upon ingestion. In Prometheus v2
-the value of these labels depended on the scrape protocol (protobuf vs text 
-format) in some situations. This led to label values changing based on the 
-scrape protocol. E.g. a metric exposed as `my_classic_hist{le="1"}` would be 
-ingested as `my_classic_hist{le="1"}` via the text format, but as 
-`my_classic_hist{le="1.0"}` via protobuf. This changed the identity of the 
+the value of these labels depended on the scrape protocol (protobuf vs text
+format) in some situations. This led to label values changing based on the
+scrape protocol. E.g. a metric exposed as `my_classic_hist{le="1"}` would be
+ingested as `my_classic_hist{le="1"}` via the text format, but as
+`my_classic_hist{le="1.0"}` via protobuf. This changed the identity of the
 metric and caused problems when querying the metric.
-In Prometheus v3 these label values will always be normalized to a float like 
-representation. I.e. the above example will always result in 
-`my_classic_hist{le="1.0"}` being ingested into prometheus, no matter via which 
-protocol. The effect of this change is that alerts, recording rules and 
-dashboards that directly reference label values as whole numbers such as 
+In Prometheus v3 these label values will always be normalized to a float like
+representation. I.e. the above example will always result in
+`my_classic_hist{le="1.0"}` being ingested into prometheus, no matter via which
+protocol. The effect of this change is that alerts, recording rules and
+dashboards that directly reference label values as whole numbers such as
 `le="1"` will stop working.
 
 Ways to deal with this change either globally or on a per metric basis:
@@ -236,11 +236,11 @@ This should **only** be applied to metrics that currently produce such labels.
 ```
 
 ### Disallow configuring Alertmanager with the v1 API
-Prometheus 3 no longer supports Alertmanager's v1 API. Effectively Prometheus 3 
+Prometheus 3 no longer supports Alertmanager's v1 API. Effectively Prometheus 3
 requires [Alertmanager 0.16.0](https://github.com/prometheus/alertmanager/releases/tag/v0.16.0) or later. Users with older Alertmanager
-versions or configurations that use `alerting: alertmanagers: [api_version: v1]` 
+versions or configurations that use `alerting: alertmanagers: [api_version: v1]`
 need to upgrade Alertmanager and change their configuration to use `api_version: v2`.
 
-# Prometheus 2.0 migration guide
+## Prometheus 2.0 migration guide
 
-For the Prometheus 1.8 to 2.0 please refer to the [Prometheus v2.55 documentation](https://prometheus.io/docs/prometheus/2.55/migration/).
+For the migration guide from Prometheus 1.8 to 2.0 please refer to the [Prometheus v2.55 documentation](https://prometheus.io/docs/prometheus/2.55/migration/).
