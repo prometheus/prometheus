@@ -146,7 +146,7 @@ func processTestFileLines(
 			continue
 		}
 
-		// Get leading whitespace from startLine using indentRegex
+		// Get leading whitespace from startLine using indentRegex.
 		leadingWS := ""
 		if indentMatch := indentRegex.FindStringSubmatch(startLine); indentMatch != nil {
 			leadingWS = indentMatch[1]
