@@ -382,6 +382,76 @@ func BenchmarkNativeHistograms(b *testing.B) {
 	}
 }
 
+func BenchmarkNativeHistogramsCustomBuckets(b *testing.B) {
+	testStorage := teststorage.New(b)
+	defer testStorage.Close()
+
+	app := testStorage.Appender(context.TODO())
+	if err := generateNativeHistogramCustomBucketsSeries(app, 3000); err != nil {
+		b.Fatal(err)
+	}
+	if err := app.Commit(); err != nil {
+		b.Fatal(err)
+	}
+
+	start := time.Unix(0, 0)
+	end := start.Add(2 * time.Hour)
+	step := time.Second * 30
+
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "sum",
+			query: "sum(native_histogram_custom_bucket_series)",
+		},
+		{
+			name:  "sum rate with short rate interval",
+			query: "sum(rate(native_histogram_custom_bucket_series[2m]))",
+		},
+		{
+			name:  "sum rate with long rate interval",
+			query: "sum(rate(native_histogram_custom_bucket_series[20m]))",
+		},
+		{
+			name:  "histogram_count with short rate interval",
+			query: "histogram_count(sum(rate(native_histogram_custom_bucket_series[2m])))",
+		},
+		{
+			name:  "histogram_count with long rate interval",
+			query: "histogram_count(sum(rate(native_histogram_custom_bucket_series[20m])))",
+		},
+	}
+
+	opts := promql.EngineOpts{
+		Logger:               nil,
+		Reg:                  nil,
+		MaxSamples:           50000000,
+		Timeout:              100 * time.Second,
+		EnableAtModifier:     true,
+		EnableNegativeOffset: true,
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			ng := promqltest.NewTestEngineWithOpts(b, opts)
+			for i := 0; i < b.N; i++ {
+				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if result := qry.Exec(context.Background()); result.Err != nil {
+					b.Fatal(result.Err)
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkInfoFunction(b *testing.B) {
 	// Initialize test storage and generate test series data.
 	testStorage := teststorage.New(b)
@@ -528,6 +598,26 @@ func generateNativeHistogramSeries(app storage.Appender, numSeries int) error {
 					return err
 				}
 			}
+			if _, err := app.AppendHistogram(0, seriesLabels, ts, histograms[i], nil); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func generateNativeHistogramCustomBucketsSeries(app storage.Appender, numSeries int) error {
+	commonLabels := []string{labels.MetricName, "native_histogram_custom_bucket_series", "foo", "bar"}
+	series := make([][]*histogram.Histogram, numSeries)
+	for i := range series {
+		series[i] = tsdbutil.GenerateTestCustomBucketsHistograms(2000)
+	}
+
+	for sid, histograms := range series {
+		seriesLabels := labels.FromStrings(append(commonLabels, "h", strconv.Itoa(sid))...)
+		for i := range histograms {
+			ts := time.Unix(int64(i*15), 0).UnixMilli()
 			if _, err := app.AppendHistogram(0, seriesLabels, ts, histograms[i], nil); err != nil {
 				return err
 			}
