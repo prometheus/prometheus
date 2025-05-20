@@ -715,28 +715,41 @@ func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.Share
 
 func (d *Discovery) newEndpointSlicesByNodeInformer(plw *cache.ListWatch, object runtime.Object) cache.SharedIndexInformer {
 	indexers := make(map[string]cache.IndexFunc)
+	indexers[serviceIndex] = func(obj interface{}) ([]string, error) {
+		e, ok := obj.(*disv1.EndpointSlice)
+		if !ok {
+			return nil, errors.New("object is not an endpointslice")
+		}
+
+		svcName, exists := e.Labels[disv1.LabelServiceName]
+		if !exists {
+			return nil, nil
+		}
+
+		return []string{namespacedName(e.Namespace, svcName)}, nil
+	}
 	if !d.attachMetadata.Node {
 		return d.mustNewSharedIndexInformer(plw, object, resyncDisabled, indexers)
 	}
 
 	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
+		e, ok := obj.(*disv1.EndpointSlice)
+		if !ok {
+			return nil, errors.New("object is not an endpointslice")
+		}
+
 		var nodes []string
-		switch e := obj.(type) {
-		case *disv1.EndpointSlice:
-			for _, target := range e.Endpoints {
-				if target.TargetRef != nil {
-					switch target.TargetRef.Kind {
-					case "Pod":
-						if target.NodeName != nil {
-							nodes = append(nodes, *target.NodeName)
-						}
-					case "Node":
-						nodes = append(nodes, target.TargetRef.Name)
+		for _, target := range e.Endpoints {
+			if target.TargetRef != nil {
+				switch target.TargetRef.Kind {
+				case "Pod":
+					if target.NodeName != nil {
+						nodes = append(nodes, *target.NodeName)
 					}
+				case "Node":
+					nodes = append(nodes, target.TargetRef.Name)
 				}
 			}
-		default:
-			return nil, errors.New("object is not an endpointslice")
 		}
 
 		return nodes, nil
