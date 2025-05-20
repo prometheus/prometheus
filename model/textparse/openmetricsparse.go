@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/schema"
 )
 
 type openMetricsLexer struct {
@@ -81,10 +82,12 @@ type OpenMetricsParser struct {
 	mfNameLen int // length of metric family name to get from series.
 	text      []byte
 	mtype     model.MetricType
-	val       float64
-	ts        int64
-	hasTS     bool
-	start     int
+	unit      string
+
+	val   float64
+	ts    int64
+	hasTS bool
+	start int
 	// offsets is a list of offsets into series that describe the positions
 	// of the metric name and label names and values for this series.
 	// p.offsets[0] is the start character of the metric name.
@@ -106,12 +109,14 @@ type OpenMetricsParser struct {
 	ignoreExemplar bool
 	// visitedMFName is the metric family name of the last visited metric when peeking ahead
 	// for _created series during the execution of the CreatedTimestamp method.
-	visitedMFName []byte
-	skipCTSeries  bool
+	visitedMFName           []byte
+	skipCTSeries            bool
+	enableTypeAndUnitLabels bool
 }
 
 type openMetricsParserOptions struct {
-	SkipCTSeries bool
+	skipCTSeries            bool
+	enableTypeAndUnitLabels bool
 }
 
 type OpenMetricsOption func(*openMetricsParserOptions)
@@ -125,7 +130,15 @@ type OpenMetricsOption func(*openMetricsParserOptions)
 // best-effort compatibility.
 func WithOMParserCTSeriesSkipped() OpenMetricsOption {
 	return func(o *openMetricsParserOptions) {
-		o.SkipCTSeries = true
+		o.skipCTSeries = true
+	}
+}
+
+// WithOMParserTypeAndUnitLabels enables type-and-unit-labels mode
+// in which parser injects __type__ and __unit__ into labels.
+func WithOMParserTypeAndUnitLabels() OpenMetricsOption {
+	return func(o *openMetricsParserOptions) {
+		o.enableTypeAndUnitLabels = true
 	}
 }
 
@@ -138,9 +151,10 @@ func NewOpenMetricsParser(b []byte, st *labels.SymbolTable, opts ...OpenMetricsO
 	}
 
 	parser := &OpenMetricsParser{
-		l:            &openMetricsLexer{b: b},
-		builder:      labels.NewScratchBuilderWithSymbolTable(st, 16),
-		skipCTSeries: options.SkipCTSeries,
+		l:                       &openMetricsLexer{b: b},
+		builder:                 labels.NewScratchBuilderWithSymbolTable(st, 16),
+		skipCTSeries:            options.skipCTSeries,
+		enableTypeAndUnitLabels: options.enableTypeAndUnitLabels,
 	}
 
 	return parser
@@ -187,7 +201,7 @@ func (p *OpenMetricsParser) Type() ([]byte, model.MetricType) {
 // Must only be called after Next returned a unit entry.
 // The returned byte slices become invalid after the next call to Next.
 func (p *OpenMetricsParser) Unit() ([]byte, []byte) {
-	return p.l.b[p.offsets[0]:p.offsets[1]], p.text
+	return p.l.b[p.offsets[0]:p.offsets[1]], []byte(p.unit)
 }
 
 // Comment returns the text of the current comment.
@@ -203,16 +217,28 @@ func (p *OpenMetricsParser) Labels(l *labels.Labels) {
 
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
-	p.builder.Add(labels.MetricName, metricName)
 
+	m := schema.Metadata{
+		Name: metricName,
+		Type: p.mtype,
+		Unit: p.unit,
+	}
+	if p.enableTypeAndUnitLabels {
+		m.AddToLabels(&p.builder)
+	} else {
+		p.builder.Add(labels.MetricName, metricName)
+	}
 	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
 		b := p.offsets[i+1] - p.start
 		label := unreplace(s[a:b])
+		if p.enableTypeAndUnitLabels && !m.IsEmptyFor(label) {
+			// Dropping user provided metadata labels, if found in the OM metadata.
+			continue
+		}
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
 		value := normalizeFloatsInLabelValues(p.mtype, label, unreplace(s[c:d]))
-
 		p.builder.Add(label, value)
 	}
 
@@ -283,7 +309,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() int64 {
 		return p.ct
 	}
 
-	// Create a new lexer to reset the parser once this function is done executing.
+	// Create a new lexer and other core state details to reset the parser once this function is done executing.
 	resetLexer := &openMetricsLexer{
 		b:     p.l.b,
 		i:     p.l.i,
@@ -291,15 +317,16 @@ func (p *OpenMetricsParser) CreatedTimestamp() int64 {
 		err:   p.l.err,
 		state: p.l.state,
 	}
+	resetStart := p.start
+	resetMType := p.mtype
 
 	p.skipCTSeries = false
-
 	p.ignoreExemplar = true
-	savedStart := p.start
 	defer func() {
-		p.ignoreExemplar = false
-		p.start = savedStart
 		p.l = resetLexer
+		p.start = resetStart
+		p.mtype = resetMType
+		p.ignoreExemplar = false
 	}()
 
 	for {
@@ -493,11 +520,11 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		case tType:
 			return EntryType, nil
 		case tUnit:
+			p.unit = string(p.text)
 			m := yoloString(p.l.b[p.offsets[0]:p.offsets[1]])
-			u := yoloString(p.text)
-			if len(u) > 0 {
-				if !strings.HasSuffix(m, u) || len(m) < len(u)+1 || p.l.b[p.offsets[1]-len(u)-1] != '_' {
-					return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", u, m)
+			if len(p.unit) > 0 {
+				if !strings.HasSuffix(m, p.unit) || len(m) < len(p.unit)+1 || p.l.b[p.offsets[1]-len(p.unit)-1] != '_' {
+					return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", p.unit, m)
 				}
 			}
 			return EntryUnit, nil

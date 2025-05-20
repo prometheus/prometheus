@@ -685,12 +685,11 @@ func TestRuntimeGOGCConfig(t *testing.T) {
 			name:         "empty config file",
 			expectedGOGC: 75,
 		},
-		// the GOGC env var is ignored in this case, see https://github.com/prometheus/prometheus/issues/16334
-		/* 		{
+		{
 			name:         "empty config file with GOGC env var set",
 			gogcEnvVar:   "66",
 			expectedGOGC: 66,
-		}, */
+		},
 		{
 			name: "gogc set through config",
 			config: `
@@ -719,15 +718,14 @@ runtime:`,
 			gogcEnvVar:   "88",
 			expectedGOGC: 88,
 		},
-		// the GOGC env var is ignored in this case, see https://github.com/prometheus/prometheus/issues/16334
-		/* 		{
-					name: "unrelated config and GOGC env var set",
-					config: `
-		global:
-		  scrape_interval: 500ms`,
-					gogcEnvVar:   "80",
-					expectedGOGC: 80,
-				}, */
+		{
+			name: "unrelated config and GOGC env var set",
+			config: `
+global:
+  scrape_interval: 500ms`,
+			gogcEnvVar:   "80",
+			expectedGOGC: 80,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

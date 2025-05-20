@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -1202,7 +1203,7 @@ func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annota
 		mb.buckets = append(mb.buckets, Bucket{upperBound, sample.F})
 	}
 
-	for _, sample := range enh.nativeHistogramSamples {
+	for idx, sample := range enh.nativeHistogramSamples {
 		// We have to reconstruct the exact same signature as above for
 		// a classic histogram, just ignoring any le label.
 		enh.lblBuf = sample.Metric.Bytes(enh.lblBuf)
@@ -1212,6 +1213,7 @@ func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annota
 			// labels. Do not evaluate anything.
 			annos.Add(annotations.NewMixedClassicNativeHistogramsWarning(sample.Metric.Get(labels.MetricName), arg.PositionRange()))
 			delete(enh.signatureToMetricWithBuckets, string(enh.lblBuf))
+			enh.nativeHistogramSamples[idx].H = nil
 			continue
 		}
 	}
@@ -1376,7 +1378,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 	return mat, warnings
 }
 
-func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.AggregateExpr, sortedGrouping []string, inputMatrix Matrix, param float64) (Matrix, annotations.Annotations) {
+func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.AggregateExpr, sortedGrouping []string, inputMatrix Matrix, params *fParams) (Matrix, annotations.Annotations) {
 	// Keep a copy of the original point slice so that it can be returned to the pool.
 	origMatrix := slices.Clone(inputMatrix)
 	defer func() {
@@ -1386,7 +1388,7 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 		}
 	}()
 
-	var warnings annotations.Annotations
+	var annos annotations.Annotations
 
 	enh := &EvalNodeHelper{enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
 	tempNumSamples := ev.currentSamples
@@ -1416,46 +1418,43 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 	}
 	groups := make([]groupedAggregation, groupCount)
 
-	var k int64
-	var ratio float64
 	var seriess map[uint64]Series
+
 	switch aggExpr.Op {
 	case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
-		if !convertibleToInt64(param) {
-			ev.errorf("Scalar value %v overflows int64", param)
+		// Return early if all k values are less than one.
+		if params.Max() < 1 {
+			return nil, annos
 		}
-		k = int64(param)
-		if k > int64(len(inputMatrix)) {
-			k = int64(len(inputMatrix))
-		}
-		if k < 1 {
-			return nil, warnings
-		}
-		seriess = make(map[uint64]Series, len(inputMatrix)) // Output series by series hash.
+		seriess = make(map[uint64]Series, len(inputMatrix))
+
 	case parser.LIMIT_RATIO:
-		if math.IsNaN(param) {
-			ev.errorf("Ratio value %v is NaN", param)
+		// Return early if all r values are zero.
+		if params.Max() == 0 && params.Min() == 0 {
+			return nil, annos
 		}
-		switch {
-		case param == 0:
-			return nil, warnings
-		case param < -1.0:
-			ratio = -1.0
-			warnings.Add(annotations.NewInvalidRatioWarning(param, ratio, aggExpr.Param.PositionRange()))
-		case param > 1.0:
-			ratio = 1.0
-			warnings.Add(annotations.NewInvalidRatioWarning(param, ratio, aggExpr.Param.PositionRange()))
-		default:
-			ratio = param
+		if params.Max() > 1.0 {
+			annos.Add(annotations.NewInvalidRatioWarning(params.Max(), 1.0, aggExpr.Param.PositionRange()))
 		}
-		seriess = make(map[uint64]Series, len(inputMatrix)) // Output series by series hash.
+		if params.Min() < -1.0 {
+			annos.Add(annotations.NewInvalidRatioWarning(params.Min(), -1.0, aggExpr.Param.PositionRange()))
+		}
+		seriess = make(map[uint64]Series, len(inputMatrix))
+
 	case parser.QUANTILE:
-		if math.IsNaN(param) || param < 0 || param > 1 {
-			warnings.Add(annotations.NewInvalidQuantileWarning(param, aggExpr.Param.PositionRange()))
+		if params.HasAnyNaN() {
+			annos.Add(annotations.NewInvalidQuantileWarning(math.NaN(), aggExpr.Param.PositionRange()))
+		}
+		if params.Max() > 1 {
+			annos.Add(annotations.NewInvalidQuantileWarning(params.Max(), aggExpr.Param.PositionRange()))
+		}
+		if params.Min() < 0 {
+			annos.Add(annotations.NewInvalidQuantileWarning(params.Min(), aggExpr.Param.PositionRange()))
 		}
 	}
 
 	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
+		fParam := params.Next()
 		if err := contextDone(ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
@@ -1467,17 +1466,17 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 		var ws annotations.Annotations
 		switch aggExpr.Op {
 		case parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
-			result, ws = ev.aggregationK(aggExpr, k, ratio, inputMatrix, seriesToResult, groups, enh, seriess)
+			result, ws = ev.aggregationK(aggExpr, fParam, inputMatrix, seriesToResult, groups, enh, seriess)
 			// If this could be an instant query, shortcut so as not to change sort order.
-			if ev.endTimestamp == ev.startTimestamp {
-				warnings.Merge(ws)
-				return result, warnings
+			if ev.startTimestamp == ev.endTimestamp {
+				annos.Merge(ws)
+				return result, annos
 			}
 		default:
-			ws = ev.aggregation(aggExpr, param, inputMatrix, result, seriesToResult, groups, enh)
+			ws = ev.aggregation(aggExpr, fParam, inputMatrix, result, seriesToResult, groups, enh)
 		}
 
-		warnings.Merge(ws)
+		annos.Merge(ws)
 
 		if ev.currentSamples > ev.maxSamples {
 			ev.error(ErrTooManySamples(env))
@@ -1502,7 +1501,7 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 		}
 		result = result[:dst]
 	}
-	return result, warnings
+	return result, annos
 }
 
 // evalSeries generates a Matrix between ev.startTimestamp and ev.endTimestamp (inclusive), each point spaced ev.interval apart, from series given offset.
@@ -1680,18 +1679,14 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		var warnings annotations.Annotations
 		originalNumSamples := ev.currentSamples
 		// param is the number k for topk/bottomk, or q for quantile.
-		var fParam float64
-		if param != nil {
-			val, ws := ev.eval(ctx, param)
-			warnings.Merge(ws)
-			fParam = val.(Matrix)[0].Floats[0].F
-		}
+		fp, ws := newFParams(ctx, ev, param)
+		warnings.Merge(ws)
 		// Now fetch the data to be aggregated.
 		val, ws := ev.eval(ctx, e.Expr)
 		warnings.Merge(ws)
 		inputMatrix := val.(Matrix)
 
-		result, ws := ev.rangeEvalAgg(ctx, e, sortedGrouping, inputMatrix, fParam)
+		result, ws := ev.rangeEvalAgg(ctx, e, sortedGrouping, inputMatrix, fp)
 		warnings.Merge(ws)
 		ev.currentSamples = originalNumSamples + result.TotalSamples()
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
@@ -1827,7 +1822,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			it.Reset(chkIter)
 			metric := selVS.Series[i].Labels()
 			if !ev.enableDelayedNameRemoval && dropName {
-				metric = metric.DropMetricName()
+				metric = metric.DropReserved(schema.IsMetadataLabel)
 			}
 			ss := Series{
 				Metric:   metric,
@@ -1966,7 +1961,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		if e.Op == parser.SUB {
 			for i := range mat {
 				if !ev.enableDelayedNameRemoval {
-					mat[i].Metric = mat[i].Metric.DropMetricName()
+					mat[i].Metric = mat[i].Metric.DropReserved(schema.IsMetadataLabel)
 				}
 				mat[i].DropName = true
 				for j := range mat[i].Floats {
@@ -2715,7 +2710,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		}
 		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
 		if !ev.enableDelayedNameRemoval && returnBool {
-			metric = metric.DropMetricName()
+			metric = metric.DropReserved(schema.IsMetadataLabel)
 		}
 		insertedSigs, exists := matchedSigs[sig]
 		if matching.Card == parser.CardOneToOne {
@@ -2782,8 +2777,9 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	}
 	str := string(enh.lblResultBuf)
 
-	if shouldDropMetricName(op) {
-		enh.lb.Del(labels.MetricName)
+	if changesMetricSchema(op) {
+		// Setting empty Metadata causes the deletion of those if they exists.
+		schema.Metadata{}.SetToLabels(enh.lb)
 	}
 
 	if matching.Card == parser.CardOneToOne {
@@ -2842,9 +2838,9 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 		if keep {
 			lhsSample.F = float
 			lhsSample.H = histogram
-			if shouldDropMetricName(op) || returnBool {
+			if changesMetricSchema(op) || returnBool {
 				if !ev.enableDelayedNameRemoval {
-					lhsSample.Metric = lhsSample.Metric.DropMetricName()
+					lhsSample.Metric = lhsSample.Metric.DropReserved(schema.IsMetadataLabel)
 				}
 				lhsSample.DropName = true
 			}
@@ -3268,7 +3264,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 // seriesToResult maps inputMatrix indexes to groups indexes.
 // For an instant query, returns a Matrix in descending order for topk or ascending for bottomk, or without any order for limitk / limit_ratio.
 // For a range query, aggregates output in the seriess map.
-func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int64, r float64, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
+func (ev *evaluator) aggregationK(e *parser.AggregateExpr, fParam float64, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
 	op := e.Op
 	var s Sample
 	var annos annotations.Annotations
@@ -3276,6 +3272,14 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int64, r float64, i
 	groupsRemaining := len(groups)
 	for i := range groups {
 		groups[i].seen = false
+	}
+	// advanceRemainingSeries discards any values at the current timestamp `ts`
+	// for the remaining input series. In range queries, if these values are not
+	// consumed now, they will no longer be accessible in the next evaluation step.
+	advanceRemainingSeries := func(ts int64, startIdx int) {
+		for i := startIdx; i < len(inputMatrix); i++ {
+			_, _, _ = ev.nextValues(ts, &inputMatrix[i])
+		}
 	}
 
 seriesLoop:
@@ -3285,6 +3289,42 @@ seriesLoop:
 			continue
 		}
 		s = Sample{Metric: inputMatrix[si].Metric, F: f, H: h, DropName: inputMatrix[si].DropName}
+
+		var k int64
+		var r float64
+		switch op {
+		case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
+			if !convertibleToInt64(fParam) {
+				ev.errorf("Scalar value %v overflows int64", fParam)
+			}
+			k = int64(fParam)
+			if k > int64(len(inputMatrix)) {
+				k = int64(len(inputMatrix))
+			}
+			if k < 1 {
+				if enh.Ts != ev.endTimestamp {
+					advanceRemainingSeries(enh.Ts, si+1)
+				}
+				return nil, annos
+			}
+		case parser.LIMIT_RATIO:
+			if math.IsNaN(fParam) {
+				ev.errorf("Ratio value %v is NaN", fParam)
+			}
+			switch {
+			case fParam == 0:
+				if enh.Ts != ev.endTimestamp {
+					advanceRemainingSeries(enh.Ts, si+1)
+				}
+				return nil, annos
+			case fParam < -1.0:
+				r = -1.0
+			case fParam > 1.0:
+				r = 1.0
+			default:
+				r = fParam
+			}
+		}
 
 		group := &groups[seriesToResult[si]]
 		// Initialize this group if it's the first time we've seen it.
@@ -3376,6 +3416,10 @@ seriesLoop:
 				group.groupAggrComplete = true
 				groupsRemaining--
 				if groupsRemaining == 0 {
+					// Process other values in the series before breaking the loop in case of range query.
+					if enh.Ts != ev.endTimestamp {
+						advanceRemainingSeries(enh.Ts, si+1)
+					}
 					break seriesLoop
 				}
 			}
@@ -3502,7 +3546,7 @@ func (ev *evaluator) cleanupMetricLabels(v parser.Value) {
 		mat := v.(Matrix)
 		for i := range mat {
 			if mat[i].DropName {
-				mat[i].Metric = mat[i].Metric.DropMetricName()
+				mat[i].Metric = mat[i].Metric.DropReserved(schema.IsMetadataLabel)
 			}
 		}
 		if mat.ContainsSameLabelset() {
@@ -3512,7 +3556,7 @@ func (ev *evaluator) cleanupMetricLabels(v parser.Value) {
 		vec := v.(Vector)
 		for i := range vec {
 			if vec[i].DropName {
-				vec[i].Metric = vec[i].Metric.DropMetricName()
+				vec[i].Metric = vec[i].Metric.DropReserved(schema.IsMetadataLabel)
 			}
 		}
 		if vec.ContainsSameLabelset() {
@@ -3614,9 +3658,9 @@ func btos(b bool) float64 {
 	return 0
 }
 
-// shouldDropMetricName returns whether the metric name should be dropped in the
-// result of the op operation.
-func shouldDropMetricName(op parser.ItemType) bool {
+// changesSchema returns true whether the op operation changes the semantic meaning or
+// schema of the metric.
+func changesMetricSchema(op parser.ItemType) bool {
 	switch op {
 	case parser.ADD, parser.SUB, parser.DIV, parser.MUL, parser.POW, parser.MOD, parser.ATAN2:
 		return true

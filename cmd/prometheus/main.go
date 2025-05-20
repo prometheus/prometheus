@@ -30,6 +30,7 @@ import (
 	goregexp "regexp" //nolint:depguard // The Prometheus client library requires us to pass a regexp from this package.
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -289,6 +290,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				// See proposal: https://github.com/prometheus/proposals/pull/48
 				c.web.NativeOTLPDeltaIngestion = true
 				logger.Info("Enabling native ingestion of delta OTLP metrics, storing the raw sample values without conversion. WARNING: Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
+			case "type-and-unit-labels":
+				c.scrape.EnableTypeAndUnitLabels = true
+				logger.Info("Experimental type and unit labels enabled")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -1921,10 +1925,8 @@ func (p *rwProtoMsgFlagParser) Set(opt string) error {
 	if err := t.Validate(); err != nil {
 		return err
 	}
-	for _, prev := range *p.msgs {
-		if prev == t {
-			return fmt.Errorf("duplicated %v flag value, got %v already", t, *p.msgs)
-		}
+	if slices.Contains(*p.msgs, t) {
+		return fmt.Errorf("duplicated %v flag value, got %v already", t, *p.msgs)
 	}
 	*p.msgs = append(*p.msgs, t)
 	return nil
