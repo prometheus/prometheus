@@ -33,6 +33,7 @@ jobs:
       - uses: prometheus/promci@443c7fc2397e946bc9f5029e313a9c3441b9b86d # v0.4.7
       - uses: ./.github/promci/actions/setup_environment
       - run: go test --tags=dedupelabels ./...
+      - run: go test -race ./cmd/prometheus
       - run: GOARCH=386 go test ./...
       - uses: ./.github/promci/actions/check_proto
         with:

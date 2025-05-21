@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +34,7 @@ import (
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -41,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func init() {
@@ -643,6 +646,109 @@ func TestRwProtoMsgFlagParser(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, tcase.expected, opt)
 			}
+		})
+	}
+}
+
+func getMetricValue(t *testing.T, body io.Reader, metricType model.MetricType, metricName string) (float64, error) {
+	t.Helper()
+
+	p := expfmt.TextParser{}
+	metricFamilies, err := p.TextToMetricFamilies(body)
+	if err != nil {
+		return 0, err
+	}
+	metricFamily, ok := metricFamilies[metricName]
+	if !ok {
+		return 0, errors.New("metric family not found")
+	}
+	metric := metricFamily.GetMetric()
+	if len(metric) != 1 {
+		return 0, errors.New("metric not found")
+	}
+	switch metricType {
+	case model.MetricTypeGauge:
+		return metric[0].GetGauge().GetValue(), nil
+	case model.MetricTypeCounter:
+		return metric[0].GetCounter().GetValue(), nil
+	default:
+		t.Fatalf("metric type %s not supported", metricType)
+	}
+
+	return 0, errors.New("cannot get value")
+}
+
+// TestHeadCompactionWhileScraping verifies that running a head compaction
+// concurrently with a scrape does not trigger the data race described in
+// https://github.com/prometheus/prometheus/issues/16490.
+func TestHeadCompactionWhileScraping(t *testing.T) {
+	t.Parallel()
+
+	// To increase the chance of reproducing the data race
+	for i := range 5 {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+
+			tmpDir := t.TempDir()
+			configFile := filepath.Join(tmpDir, "prometheus.yml")
+
+			port := testutil.RandomUnprivilegedPort(t)
+			config := fmt.Sprintf(`
+scrape_configs:
+  - job_name: 'self1'
+    scrape_interval: 61ms
+    static_configs:
+      - targets: ['localhost:%d']
+  - job_name: 'self2'
+    scrape_interval: 67ms
+    static_configs:
+      - targets: ['localhost:%d']
+`, port, port)
+			os.WriteFile(configFile, []byte(config), 0o777)
+
+			prom := prometheusCommandWithLogging(
+				t,
+				configFile,
+				port,
+				fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
+				"--storage.tsdb.min-block-duration=100ms",
+			)
+			require.NoError(t, prom.Start())
+
+			require.Eventually(t, func() bool {
+				r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+				if err != nil {
+					return false
+				}
+				defer r.Body.Close()
+				if r.StatusCode != http.StatusOK {
+					return false
+				}
+				metrics, err := io.ReadAll(r.Body)
+				if err != nil {
+					return false
+				}
+
+				// Wait for some compactions to run
+				compactions, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeCounter, "prometheus_tsdb_compactions_total")
+				if err != nil {
+					return false
+				}
+				if compactions < 3 {
+					return false
+				}
+
+				// Sanity check: Some actual scraping was done.
+				series, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeCounter, "prometheus_tsdb_head_series_created_total")
+				require.NoError(t, err)
+				require.NotZero(t, series)
+
+				// No compaction must have failed
+				failures, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeCounter, "prometheus_tsdb_compactions_failed_total")
+				require.NoError(t, err)
+				require.Zero(t, failures)
+				return true
+			}, 15*time.Second, 500*time.Millisecond)
 		})
 	}
 }
