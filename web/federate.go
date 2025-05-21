@@ -208,7 +208,7 @@ Loop:
 			}
 			if l.Name == labels.MetricName {
 				nameSeen = true
-				if l.Value == lastMetricName && // We already have the name in the current MetricFamily, and we ignore nameless metrics.
+				if l.Value == lastMetricName && // We already have the name in the current MetricDescriptor, and we ignore nameless metrics.
 					lastWasHistogram == isHistogram && // The sample type matches (float vs histogram).
 					// If it was a histogram, the histogram type (counter vs gauge) also matches.
 					(!isHistogram || lastHistogramWasGauge == (s.H.CounterResetHint == histogram.GaugeType)) {
@@ -220,7 +220,7 @@ Loop:
 				// an invalid exposition. But since the consumer of this is Prometheus, and Prometheus can
 				// parse it fine, we allow it and bend the rules to make federation possible in those cases.
 
-				// Need to start a new MetricFamily. Ship off the old one (if any) before
+				// Need to start a new MetricDescriptor. Ship off the old one (if any) before
 				// creating the new one.
 				if protMetricFam != nil {
 					if err := enc.Encode(protMetricFam); err != nil {
@@ -309,7 +309,7 @@ Loop:
 		lastWasHistogram = isHistogram
 		protMetricFam.Metric = append(protMetricFam.Metric, protMetric)
 	}
-	// Still have to ship off the last MetricFamily, if any.
+	// Still have to ship off the last MetricDescriptor, if any.
 	if protMetricFam != nil {
 		if err := enc.Encode(protMetricFam); err != nil {
 			federationErrors.Inc()

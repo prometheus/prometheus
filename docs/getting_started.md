@@ -200,7 +200,7 @@ To record the time series resulting from this expression into a new metric
 called `job_instance_mode:node_cpu_seconds:avg_rate5m`, create a file
 with the following recording rule and save it as `prometheus.rules.yml`:
 
-```
+```yaml
 groups:
 - name: cpu-node
   rules:

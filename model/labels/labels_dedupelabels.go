@@ -140,8 +140,8 @@ func decodeString(t *nameTable, data string, index int) (string, int) {
 	return t.ToName(num), index
 }
 
-// Bytes returns ls as a byte slice.
-// It uses non-printing characters and so should not be used for printing.
+// Bytes returns an opaque, not-human-readable, encoding of ls, usable as a map key.
+// Encoding may change over time or between runs of Prometheus.
 func (ls Labels) Bytes(buf []byte) []byte {
 	b := bytes.NewBuffer(buf[:0])
 	for i := 0; i < len(ls.data); {
@@ -554,20 +554,27 @@ func (ls Labels) ReleaseStrings(release func(string)) {
 	// TODO: remove these calls as there is nothing to do.
 }
 
-// DropMetricName returns Labels with "__name__" removed.
+// DropMetricName returns Labels with the "__name__" removed.
+// Deprecated: Use DropReserved instead.
 func (ls Labels) DropMetricName() Labels {
+	return ls.DropReserved(func(n string) bool { return n == MetricName })
+}
+
+// DropReserved returns Labels without the chosen (via shouldDropFn) reserved (starting with underscore) labels.
+func (ls Labels) DropReserved(shouldDropFn func(name string) bool) Labels {
 	for i := 0; i < len(ls.data); {
 		lName, i2 := decodeString(ls.syms, ls.data, i)
 		_, i2 = decodeVarint(ls.data, i2)
-		if lName == MetricName {
+		if lName[0] > '_' { // Stop looking if we've gone past special labels.
+			break
+		}
+		if shouldDropFn(lName) {
 			if i == 0 { // Make common case fast with no allocations.
 				ls.data = ls.data[i2:]
 			} else {
 				ls.data = ls.data[:i] + ls.data[i2:]
 			}
-			break
-		} else if lName[0] > MetricName[0] { // Stop looking if we've gone past.
-			break
+			continue
 		}
 		i = i2
 	}
