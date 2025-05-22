@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -47,7 +48,7 @@ func TestFromMetrics(t *testing.T) {
 					metricSlice := scopeMetricsSlice.At(j).Metrics()
 					for k := 0; k < metricSlice.Len(); k++ {
 						metric := metricSlice.At(k)
-						promName := converter.metricNameBuilder.Build(metric.Name(), metric.Unit(), otelTypeToTranslatorType(metric))
+						promName := converter.metricNameBuilder.Build(otlptranslator.Metric{Name: metric.Name(), Unit: metric.Unit(), Type: otelTypeToTranslatorType(metric)})
 						expMetadata = append(expMetadata, prompb.MetricMetadata{
 							Type:             otelMetricTypeToPromMetricType(metric),
 							MetricFamilyName: promName,
