@@ -56,14 +56,14 @@ type PrometheusConverter struct {
 	conflicts         map[uint64][]*prompb.TimeSeries
 	everyN            everyNTimes
 	metadata          []prompb.MetricMetadata
-	metricNameBuilder *otlptranslator.MetricNameBuilder
+	metricNameBuilder *otlptranslator.MetricNamer
 }
 
 func NewPrometheusConverter() *PrometheusConverter {
 	return &PrometheusConverter{
 		unique:            map[uint64]*prompb.TimeSeries{},
 		conflicts:         map[uint64][]*prompb.TimeSeries{},
-		metricNameBuilder: &otlptranslator.MetricNameBuilder{},
+		metricNameBuilder: &otlptranslator.MetricNamer{},
 	}
 }
 
@@ -138,9 +138,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					continue
 				}
 
-				var promName string
-				promName = c.metricNameBuilder.Build(metric.Name(), metric.Unit(), otelTypeToTranslatorType(metric))
-
+				promName := c.metricNameBuilder.Build(otlptranslator.Metric{Name: metric.Name(), Unit: metric.Unit(), Type: otelTypeToTranslatorType(metric)})
 				c.metadata = append(c.metadata, prompb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
 					MetricFamilyName: promName,

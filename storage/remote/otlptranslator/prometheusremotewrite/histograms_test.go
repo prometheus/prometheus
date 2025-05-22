@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -768,7 +769,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				Settings{
 					ExportCreatedMetric: true,
 				},
-				converter.metricNameBuilder.Build(metric.Name(), metric.Unit(), otelTypeToTranslatorType(metric)),
+				converter.metricNameBuilder.Build(otlptranslator.Metric{Name: metric.Name(), Unit: metric.Unit(), Type: otelTypeToTranslatorType(metric)}),
 				pmetric.AggregationTemporalityCumulative,
 			)
 			require.NoError(t, err)
@@ -1138,7 +1139,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 					ExportCreatedMetric:     true,
 					ConvertHistogramsToNHCB: true,
 				},
-				converter.metricNameBuilder.Build(metric.Name(), metric.Unit(), otelTypeToTranslatorType(metric)),
+				converter.metricNameBuilder.Build(otlptranslator.Metric{Name: metric.Name(), Unit: metric.Unit(), Type: otelTypeToTranslatorType(metric)}),
 				pmetric.AggregationTemporalityCumulative,
 			)
 
