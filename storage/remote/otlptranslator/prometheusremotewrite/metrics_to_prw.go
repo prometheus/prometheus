@@ -52,17 +52,38 @@ type Settings struct {
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
 type PrometheusConverter struct {
-	unique    map[uint64]*prompb.TimeSeries
-	conflicts map[uint64][]*prompb.TimeSeries
-	everyN    everyNTimes
-	metadata  []prompb.MetricMetadata
+	unique            map[uint64]*prompb.TimeSeries
+	conflicts         map[uint64][]*prompb.TimeSeries
+	everyN            everyNTimes
+	metadata          []prompb.MetricMetadata
+	metricNameBuilder *otlptranslator.MetricNameBuilder
 }
 
 func NewPrometheusConverter() *PrometheusConverter {
 	return &PrometheusConverter{
-		unique:    map[uint64]*prompb.TimeSeries{},
-		conflicts: map[uint64][]*prompb.TimeSeries{},
+		unique:            map[uint64]*prompb.TimeSeries{},
+		conflicts:         map[uint64][]*prompb.TimeSeries{},
+		metricNameBuilder: &otlptranslator.MetricNameBuilder{},
 	}
+}
+
+func otelTypeToTranslatorType(metric pmetric.Metric) otlptranslator.MetricType {
+	switch metric.Type() {
+	case pmetric.MetricTypeGauge:
+		return otlptranslator.MetricTypeGauge
+	case pmetric.MetricTypeSum:
+		if metric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityCumulative {
+			return otlptranslator.MetricTypeMonotonicCounter
+		}
+		return otlptranslator.MetricTypeNonMonotonicCounter
+	case pmetric.MetricTypeSummary:
+		return otlptranslator.MetricTypeSummary
+	case pmetric.MetricTypeHistogram:
+		return otlptranslator.MetricTypeHistogram
+	case pmetric.MetricTypeExponentialHistogram:
+		return otlptranslator.MetricTypeExponentialHistogram
+	}
+	return otlptranslator.MetricTypeUnknown
 }
 
 // FromMetrics converts pmetric.Metrics to Prometheus remote write format.
@@ -115,11 +136,11 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				}
 
 				var promName string
-				if settings.AllowUTF8 {
-					promName = otlptranslator.BuildMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
-				} else {
-					promName = otlptranslator.BuildCompliantMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
-				}
+				c.metricNameBuilder.Namespace = settings.Namespace
+				c.metricNameBuilder.WithMetricSuffixes = settings.AddMetricSuffixes
+				c.metricNameBuilder.UTF8Allowed = settings.AllowUTF8
+				promName = c.metricNameBuilder.Build(metric.Name(), metric.Unit(), otelTypeToTranslatorType(metric))
+
 				c.metadata = append(c.metadata, prompb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
 					MetricFamilyName: promName,
