@@ -1,0 +1,6 @@
+cloud:
+  name: AzureCustom
+  aad_endpoint: https://login.microsoftonline.com/
+  token_audience: https://monitor.azure.com/.default
+managed_identity:
+  client_id: 00000000-0000-0000-0000-000000000000

@@ -34,6 +34,7 @@ const (
 	AzureChina      = "AzureChina"
 	AzureGovernment = "AzureGovernment"
 	AzurePublic     = "AzurePublic"
+	AzureCustom     = "AzureCustom"
 )
 
 // Audiences.
@@ -78,8 +79,20 @@ type AzureADConfig struct { //nolint:revive // exported.
 	// SDK is the SDK config that is being used to authenticate.
 	SDK *SDKConfig `yaml:"sdk,omitempty"`
 
-	// Cloud is the Azure cloud in which the service is running. Example: AzurePublic/AzureGovernment/AzureChina.
-	Cloud string `yaml:"cloud,omitempty"`
+	// Cloud is the Azure cloud in which the service is running
+	Cloud *AzureADCloudConfig `yaml:"cloud,omitempty"`
+}
+
+// AzureADCloudConfig is used to store the AAD config values.
+type AzureADCloudConfig struct { //nolint:revive // exported.
+	// Name is the Azure cloud in which the service is running. Example: AzurePublic/AzureGovernment/AzureChina.
+	Name string `yaml:"name,omitempty"`
+
+	// AAD Endpoint to authenticate against. Example: https://login.microsoftonline.com/
+	AadEndpoint string `yaml:"aad_endpoint,omitempty"`
+
+	// Audience to acquire token for. Example: https://monitor.azure.com/.default
+	TokenAudience string `yaml:"token_audience,omitempty"`
 }
 
 // azureADRoundTripper is used to store the roundtripper and the tokenprovider.
@@ -103,11 +116,11 @@ type tokenProvider struct {
 
 // Validate validates config values provided.
 func (c *AzureADConfig) Validate() error {
-	if c.Cloud == "" {
-		c.Cloud = AzurePublic
+	if c.Cloud == nil {
+		c.Cloud = &AzureADCloudConfig{Name: AzurePublic}
 	}
 
-	if c.Cloud != AzureChina && c.Cloud != AzureGovernment && c.Cloud != AzurePublic {
+	if c.Cloud.Name != AzureChina && c.Cloud.Name != AzureGovernment && c.Cloud.Name != AzurePublic && c.Cloud.Name != AzureCustom {
 		return errors.New("must provide a cloud in the Azure AD config")
 	}
 
@@ -174,6 +187,19 @@ func (c *AzureADConfig) Validate() error {
 	return nil
 }
 
+// Validate validates config values provided.
+func (c *AzureADCloudConfig) Validate() error {
+	if c.Name != AzureCustom {
+		return errors.New("cannot provide cloud name other than AzureCustom in the Azure AD cloud config")
+	}
+
+	if (c.AadEndpoint != "" && c.TokenAudience == "") || (c.AadEndpoint == "" && c.TokenAudience != "") {
+		return errors.New("must provide both AAD Endpoint and Token Audience when either are provided in the Azure AD cloud config")
+	}
+
+	return nil
+}
+
 // UnmarshalYAML unmarshal the Azure AD config yaml.
 func (c *AzureADConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain AzureADConfig
@@ -181,7 +207,35 @@ func (c *AzureADConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
+
 	return c.Validate()
+}
+
+// UnmarshalYAML unmarshal the Azure AD cloud config yaml.
+func (c *AzureADCloudConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var name string
+	if err := unmarshal(&name); err == nil {
+		// Legacy format used, just set the name
+		c.Name = name
+		return nil
+	}
+
+	type plain AzureADCloudConfig
+	*c = AzureADCloudConfig{}
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	return c.Validate()
+}
+
+// MarshalYAML marshal the Azure AD cloud config to yaml.
+func (c AzureADCloudConfig) MarshalYAML() (interface{}, error) {
+	if c.Name != AzureCustom {
+		return c.Name, nil
+	}
+
+	return c, nil
 }
 
 // NewAzureADRoundTripper creates round tripper adding Azure AD authorization to calls.
@@ -223,7 +277,7 @@ func (rt *azureADRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
 	var cred azcore.TokenCredential
 	var err error
-	cloudConfiguration, err := getCloudConfiguration(cfg.Cloud)
+	cloudConfiguration, err := cfg.getCloudConfiguration()
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +342,7 @@ func newSDKTokenCredential(clientOpts *azcore.ClientOptions, sdkConfig *SDKConfi
 // newTokenProvider helps to fetch accessToken for different types of credential. This also takes care of
 // refreshing the accessToken before expiry. This accessToken is attached to the Authorization header while making requests.
 func newTokenProvider(cfg *AzureADConfig, cred azcore.TokenCredential) (*tokenProvider, error) {
-	audience, err := getAudience(cfg.Cloud)
+	audience, err := cfg.getAudience()
 	if err != nil {
 		return nil, err
 	}
@@ -356,29 +410,35 @@ func (tokenProvider *tokenProvider) updateRefreshTime(accessToken azcore.AccessT
 }
 
 // getAudience returns audiences for different clouds.
-func getAudience(cloud string) (string, error) {
-	switch strings.ToLower(cloud) {
+func (c *AzureADConfig) getAudience() (string, error) {
+	switch strings.ToLower(c.Cloud.Name) {
 	case strings.ToLower(AzureChina):
 		return IngestionChinaAudience, nil
 	case strings.ToLower(AzureGovernment):
 		return IngestionGovernmentAudience, nil
 	case strings.ToLower(AzurePublic):
 		return IngestionPublicAudience, nil
+	case strings.ToLower(AzureCustom):
+		return c.Cloud.TokenAudience, nil
 	default:
-		return "", errors.New("Cloud is not specified or is incorrect: " + cloud)
+		return "", errors.New("Cloud is not specified or is incorrect: " + c.Cloud.Name)
 	}
 }
 
 // getCloudConfiguration returns the cloud Configuration which contains AAD endpoint for different clouds.
-func getCloudConfiguration(c string) (cloud.Configuration, error) {
-	switch strings.ToLower(c) {
+func (c *AzureADConfig) getCloudConfiguration() (cloud.Configuration, error) {
+	switch strings.ToLower(c.Cloud.Name) {
 	case strings.ToLower(AzureChina):
 		return cloud.AzureChina, nil
 	case strings.ToLower(AzureGovernment):
 		return cloud.AzureGovernment, nil
 	case strings.ToLower(AzurePublic):
 		return cloud.AzurePublic, nil
+	case strings.ToLower(AzureCustom):
+		return cloud.Configuration{
+			ActiveDirectoryAuthorityHost: c.Cloud.AadEndpoint, Services: map[cloud.ServiceName]cloud.ServiceConfiguration{},
+		}, nil
 	default:
-		return cloud.Configuration{}, errors.New("Cloud is not specified or is incorrect: " + c)
+		return cloud.Configuration{}, errors.New("Cloud is not specified or is incorrect: " + c.Cloud.Name)
 	}
 }
