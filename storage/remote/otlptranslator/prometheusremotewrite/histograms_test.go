@@ -761,6 +761,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			metric := tt.metric()
 
 			converter := NewPrometheusConverter()
+			converter.metricNameBuilder.WithMetricSuffixes = true
 			annots, err := converter.addExponentialHistogramDataPoints(
 				context.Background(),
 				metric.ExponentialHistogram().DataPoints(),
@@ -768,7 +769,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				Settings{
 					ExportCreatedMetric: true,
 				},
-				otlptranslator.BuildCompliantMetricName(metric, "", true),
+				converter.metricNameBuilder.Build(otlptranslator.Metric{Name: metric.Name(), Unit: metric.Unit(), Type: otelTypeToTranslatorType(metric)}),
 				pmetric.AggregationTemporalityCumulative,
 			)
 			require.NoError(t, err)
@@ -1129,6 +1130,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			metric := tt.metric()
 
 			converter := NewPrometheusConverter()
+			converter.metricNameBuilder.WithMetricSuffixes = true
 			annots, err := converter.addCustomBucketsHistogramDataPoints(
 				context.Background(),
 				metric.Histogram().DataPoints(),
@@ -1137,7 +1139,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 					ExportCreatedMetric:     true,
 					ConvertHistogramsToNHCB: true,
 				},
-				otlptranslator.BuildCompliantMetricName(metric, "", true),
+				converter.metricNameBuilder.Build(otlptranslator.Metric{Name: metric.Name(), Unit: metric.Unit(), Type: otelTypeToTranslatorType(metric)}),
 				pmetric.AggregationTemporalityCumulative,
 			)
 
