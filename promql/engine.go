@@ -1255,9 +1255,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 	biggestLen := 1
 	for i := range exprs {
 		vectors[i] = make(Vector, 0, len(matrixes[i]))
-		if len(matrixes[i]) > biggestLen {
-			biggestLen = len(matrixes[i])
-		}
+		biggestLen = max(biggestLen, len(matrixes[i]))
 	}
 	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
 	type seriesAndTimestamp struct {
@@ -1714,6 +1712,12 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			matrixArg      bool
 			warnings       annotations.Annotations
 		)
+
+		// Emit a warning when sort is used for range queries
+		if (e.Func.Name == "sort" || e.Func.Name == "sort_desc") && ev.startTimestamp != ev.endTimestamp {
+			warnings.Add(annotations.NewSortInRangeQueryWarning(e.PositionRange()))
+		}
+
 		for i := range e.Args {
 			unwrapParenExpr(&e.Args[i])
 			a := unwrapStepInvariantExpr(e.Args[i])
