@@ -892,90 +892,90 @@ eval instant at 55s avg_over_time(metric[1m])
 eval instant at 55s sum_over_time(metric[1m])/count_over_time(metric[1m])
   {} 3
 
-eval instant at 1m avg_over_time(metric2[1m])
+eval instant at 55s avg_over_time(metric2[1m])
   {} Inf
 
-eval instant at 1m sum_over_time(metric2[1m])/count_over_time(metric2[1m])
+eval instant at 55s sum_over_time(metric2[1m])/count_over_time(metric2[1m])
   {} Inf
 
-eval instant at 1m avg_over_time(metric3[1m])
+eval instant at 55s avg_over_time(metric3[1m])
   {} -Inf
 
-eval instant at 1m sum_over_time(metric3[1m])/count_over_time(metric3[1m])
+eval instant at 55s sum_over_time(metric3[1m])/count_over_time(metric3[1m])
   {} -Inf
 
-eval instant at 1m avg_over_time(metric4[1m])
+eval instant at 55s avg_over_time(metric4[1m])
   {} NaN
 
-eval instant at 1m sum_over_time(metric4[1m])/count_over_time(metric4[1m])
+eval instant at 55s sum_over_time(metric4[1m])/count_over_time(metric4[1m])
   {} NaN
 
-eval instant at 1m avg_over_time(metric5[1m])
+eval instant at 55s avg_over_time(metric5[1m])
   {} Inf
 
-eval instant at 1m sum_over_time(metric5[1m])/count_over_time(metric5[1m])
+eval instant at 55s sum_over_time(metric5[1m])/count_over_time(metric5[1m])
   {} Inf
 
-eval instant at 1m avg_over_time(metric5b[1m])
+eval instant at 55s avg_over_time(metric5b[1m])
   {} Inf
 
-eval instant at 1m sum_over_time(metric5b[1m])/count_over_time(metric5b[1m])
+eval instant at 55s sum_over_time(metric5b[1m])/count_over_time(metric5b[1m])
   {} Inf
 
-eval instant at 1m avg_over_time(metric5c[1m])
+eval instant at 55s avg_over_time(metric5c[1m])
   {} NaN
 
-eval instant at 1m sum_over_time(metric5c[1m])/count_over_time(metric5c[1m])
+eval instant at 55s sum_over_time(metric5c[1m])/count_over_time(metric5c[1m])
   {} NaN
 
-eval instant at 1m avg_over_time(metric6[1m])
+eval instant at 55s avg_over_time(metric6[1m])
   {} -Inf
 
-eval instant at 1m sum_over_time(metric6[1m])/count_over_time(metric6[1m])
+eval instant at 55s sum_over_time(metric6[1m])/count_over_time(metric6[1m])
   {} -Inf
 
-eval instant at 1m avg_over_time(metric6b[1m])
+eval instant at 55s avg_over_time(metric6b[1m])
   {} -Inf
 
-eval instant at 1m sum_over_time(metric6b[1m])/count_over_time(metric6b[1m])
+eval instant at 55s sum_over_time(metric6b[1m])/count_over_time(metric6b[1m])
   {} -Inf
 
-eval instant at 1m avg_over_time(metric6c[1m])
+eval instant at 55s avg_over_time(metric6c[1m])
   {} NaN
 
-eval instant at 1m sum_over_time(metric6c[1m])/count_over_time(metric6c[1m])
+eval instant at 55s sum_over_time(metric6c[1m])/count_over_time(metric6c[1m])
   {} NaN
 
-eval instant at 1m avg_over_time(metric7[1m])
+eval instant at 55s avg_over_time(metric7[1m])
   {} NaN
 
-eval instant at 1m sum_over_time(metric7[1m])/count_over_time(metric7[1m])
+eval instant at 55s sum_over_time(metric7[1m])/count_over_time(metric7[1m])
   {} NaN
 
-eval instant at 1m avg_over_time(metric8[1m])
+eval instant at 55s avg_over_time(metric8[1m])
   {} 9.988465674311579e+307
 
 # This overflows float64.
-eval instant at 1m sum_over_time(metric8[2m])/count_over_time(metric8[2m])
+eval instant at 55s sum_over_time(metric8[2m])/count_over_time(metric8[2m])
   {} +Inf
 
-eval instant at 1m avg_over_time(metric9[1m])
+eval instant at 55s avg_over_time(metric9[1m])
   {} -9.988465674311579e+307
 
 # This overflows float64.
-eval instant at 1m sum_over_time(metric9[1m])/count_over_time(metric9[1m])
+eval instant at 55s sum_over_time(metric9[1m])/count_over_time(metric9[1m])
   {} -Inf
 
 eval instant at 45s avg_over_time(metric10[1m])
   {} 0
 
-eval instant at 1m avg_over_time(metric10[2m])
+eval instant at 55s avg_over_time(metric10[2m])
   {} 0
 
 eval instant at 45s sum_over_time(metric10[1m])/count_over_time(metric10[1m])
   {} 0
 
-eval instant at 1m sum_over_time(metric10[2m])/count_over_time(metric10[2m])
+eval instant at 55s sum_over_time(metric10[2m])/count_over_time(metric10[2m])
   {} 0
 
 # NaN behavior.
@@ -985,27 +985,27 @@ eval instant at 20s avg_over_time(metric11[1m])
 eval instant at 30s avg_over_time(metric11[1m])
   {} NaN
 
-eval instant at 1m avg_over_time(metric11[1m])
+eval instant at 55s avg_over_time(metric11[1m])
   {} NaN
 
-eval instant at 1m sum_over_time(metric11[1m])/count_over_time(metric11[1m])
+eval instant at 55s sum_over_time(metric11[1m])/count_over_time(metric11[1m])
   {} NaN
 
 # Tests for samples with mix of floats and histograms.
-eval_warn instant at 1m sum_over_time(metric12[1m])
+eval_warn instant at 55s sum_over_time(metric12[1m])
 	# no result.
 
-eval_warn instant at 1m avg_over_time(metric12[1m])
+eval_warn instant at 55s avg_over_time(metric12[1m])
 	# no result.
 
 # Tests for samples with only histograms.
-eval instant at 1m sum_over_time(metric13[1m])
-	{} {{schema:0 sum:5 count:5}}
+eval instant at 55s sum_over_time(metric13[1m])
+	{} {{schema:0 sum:6 count:6}}
 
-eval instant at 1m avg_over_time(metric13[1m])
+eval instant at 55s avg_over_time(metric13[1m])
 	{} {{schema:0 sum:1 count:1}}
 
-eval instant at 1m sum_over_time(metric13[1m])/count_over_time(metric13[1m])
+eval instant at 55s sum_over_time(metric13[1m])/count_over_time(metric13[1m])
 	{} {{schema:0 sum:1 count:1}}
 
 # Test if very big intermediate values cause loss of detail.
