@@ -67,6 +67,7 @@ const (
 	tEqual
 	tTimestamp
 	tValue
+	tCreated
 )
 
 func (t token) String() string {
@@ -113,6 +114,8 @@ func (t token) String() string {
 		return "TIMESTAMP"
 	case tValue:
 		return "VALUE"
+	case tCreated:
+		return "CREATED"
 	}
 	return fmt.Sprintf("<invalid: %d>", t)
 }
