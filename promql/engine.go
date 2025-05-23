@@ -1713,11 +1713,6 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			warnings       annotations.Annotations
 		)
 
-		// Emit a warning when sort is used for range queries
-		if (e.Func.Name == "sort" || e.Func.Name == "sort_desc") && ev.startTimestamp != ev.endTimestamp {
-			warnings.Add(annotations.NewSortInRangeQueryWarning(e.PositionRange()))
-		}
-
 		for i := range e.Args {
 			unwrapParenExpr(&e.Args[i])
 			a := unwrapStepInvariantExpr(e.Args[i])
@@ -1752,6 +1747,11 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			return ev.evalLabelJoin(ctx, e.Args)
 		case "info":
 			return ev.evalInfo(ctx, e.Args)
+		}
+
+		// Emit a warning when sort is used for range queries
+		if (e.Func.Name == "sort" || e.Func.Name == "sort_desc" || e.Func.Name == "sort_by_label" || e.Func.Name == "sort_by_label_desc") && ev.startTimestamp != ev.endTimestamp {
+			warnings.Add(annotations.NewSortInRangeQueryWarning(e.PositionRange()))
 		}
 
 		if !matrixArg {

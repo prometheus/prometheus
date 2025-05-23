@@ -3571,6 +3571,98 @@ func TestHistogramQuantileAnnotations(t *testing.T) {
 	}
 }
 
+func TestSortInRangeQueryAnnotations(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  metric{job="a"} 1 2 3
+  metric{job="b"} 3 2 1
+`)
+	t.Cleanup(func() { storage.Close() })
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+	testCases := []struct {
+		name                       string
+		query                      string
+		isRangeQuery               bool
+		expectedWarningAnnotations []string
+	}{
+		{
+			name:                       "sort in instant query - no warning",
+			query:                      "sort(metric)",
+			isRangeQuery:               false,
+			expectedWarningAnnotations: []string{},
+		},
+		{
+			name:         "sort in range query - warning expected",
+			query:        "sort(metric)",
+			isRangeQuery: true,
+			expectedWarningAnnotations: []string{
+				"PromQL warning: sort is ineffective for range queries since results are always ordered by labels (1:1)",
+			},
+		},
+		{
+			name:         "sort_desc in range query - warning expected",
+			query:        "sort_desc(metric)",
+			isRangeQuery: true,
+			expectedWarningAnnotations: []string{
+				"PromQL warning: sort is ineffective for range queries since results are always ordered by labels (1:1)",
+			},
+		},
+		{
+			name:         "sort_by_label in range query - warning expected",
+			query:        "sort_by_label(metric)",
+			isRangeQuery: true,
+			expectedWarningAnnotations: []string{
+				"PromQL warning: sort is ineffective for range queries since results are always ordered by labels (1:1)",
+			},
+		},
+		{
+			name:         "sort_by_label_desc in range query - warning expected",
+			query:        "sort_by_label_desc(metric)",
+			isRangeQuery: true,
+			expectedWarningAnnotations: []string{
+				"PromQL warning: sort is ineffective for range queries since results are always ordered by labels (1:1)",
+			},
+		},
+		{
+			name:                       "other function in range query - no warning",
+			query:                      "rate(metric[1m])",
+			isRangeQuery:               true,
+			expectedWarningAnnotations: []string{},
+		},
+		{
+			name:         "nested sort in range query - warning expected",
+			query:        "sum(sort(metric))",
+			isRangeQuery: true,
+			expectedWarningAnnotations: []string{
+				"PromQL warning: sort is ineffective for range queries since results are always ordered by labels (1:5)",
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			start := time.Unix(0, 0)
+			end := time.Unix(10, 0)
+			interval := time.Second
+			var qry promql.Query
+			var err error
+
+			if testCase.isRangeQuery {
+				qry, err = engine.NewRangeQuery(context.Background(), storage, nil, testCase.query, start, end, interval)
+			} else {
+				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, testCase.query, start)
+			}
+			require.NoError(t, err)
+
+			res := qry.Exec(context.Background())
+
+			warnings, _ := res.Warnings.AsStrings(testCase.query, 0, 0)
+			testutil.RequireEqual(t, testCase.expectedWarningAnnotations, warnings)
+		})
+	}
+}
+
 func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	// Make a chunk with two normal histograms of the same value.
 	h1 := histogram.Histogram{
@@ -3743,62 +3835,4 @@ eval instant at 10m last_over_time(metric_total{env="1"}[10m])
 eval instant at 10m max_over_time(metric_total{env="1"}[10m])
 	{env="1"} 120
 `, engine)
-}
-
-func TestSortInRangeQueryWarning(t *testing.T) {
-	storage := promqltest.LoadedStorage(t, `
-load 10s
-  metric{job="a"} 1 2 3
-  metric{job="b"} 3 2 1
-`)
-	t.Cleanup(func() { storage.Close() })
-	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
-
-	testCases := []struct {
-		name                       string
-		query                      string
-		expectedWarningAnnotations []string
-	}{
-		{
-			name:  "sort in range query - warning expected",
-			query: "sort(metric)",
-			expectedWarningAnnotations: []string{
-				"PromQL warning: sort is ineffective for range queries since results are always ordered by labels (1:1)",
-			},
-		},
-		{
-			name:  "sort_desc in range query - warning expected",
-			query: "sort_desc(metric)",
-			expectedWarningAnnotations: []string{
-				"PromQL warning: sort is ineffective for range queries since results are always ordered by labels (1:1)",
-			},
-		},
-		{
-			name:                       "other function in range query - no warning",
-			query:                      "rate(metric[1m])",
-			expectedWarningAnnotations: []string{},
-		},
-		{
-			name:  "nested sort in range query - warning expected",
-			query: "sum(sort(metric))",
-			expectedWarningAnnotations: []string{
-				"PromQL warning: sort is ineffective for range queries since results are always ordered by labels (1:5)",
-			},
-		},
-	}
-
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			start := time.Unix(0, 0)
-			end := time.Unix(10, 0)
-			interval := time.Second
-			qry, err := engine.NewRangeQuery(context.Background(), storage, nil, testCase.query, start, end, interval)
-			require.NoError(t, err)
-
-			res := qry.Exec(context.Background())
-
-			warnings, _ := res.Warnings.AsStrings(testCase.query, 0, 0)
-			testutil.RequireEqual(t, testCase.expectedWarningAnnotations, warnings)
-		})
-	}
 }
