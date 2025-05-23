@@ -1,0 +1,106 @@
+{
+  "servers": {
+    "server": [
+      {
+        "uuid": "00798b85-efdc-41ca-8021-f6ef457b8531",
+        "title": "web-server-1",
+        "hostname": "web1.example.com",
+        "zone": "fi-hel1",
+        "plan": "1xCPU-1GB",
+        "state": "started",
+        "core_number": "1",
+        "memory_amount": "1024",
+        "created": 1740658164,
+        "host": 7617135235,
+        "license": 0,
+        "plan_ipv4_bytes": "285493498",
+        "plan_ipv6_bytes": "0",
+        "server_group": "0b1e2bb3-6698-497a-a40b-f3cb730330d5",
+        "simple_backup": "no",
+        "labels": {
+          "label": [
+            {
+              "key": "environment",
+              "value": "production"
+            },
+            {
+              "key": "team",
+              "value": "platform"
+            }
+          ]
+        },
+        "tags": {
+          "tag": ["production", "web"]
+        }
+      },
+      {
+        "uuid": "00898b85-efdc-41ca-8021-f6ef457b8532",
+        "title": "db-server-1",
+        "hostname": "db1.example.com",
+        "zone": "fi-hel2",
+        "plan": "2xCPU-4GB",
+        "state": "started",
+        "core_number": "2",
+        "memory_amount": "4096",
+        "created": 1740658174,
+        "host": 7617135236,
+        "license": 0,
+        "plan_ipv4_bytes": "313451708",
+        "plan_ipv6_bytes": "0",
+        "server_group": "0b1e2bb3-6698-497a-a40b-f3cb730330d5",
+        "simple_backup": "dailies",
+        "labels": {
+          "label": [
+            {
+              "key": "environment",
+              "value": "production"
+            },
+            {
+              "key": "role",
+              "value": "database"
+            },
+            {
+              "key": "backup",
+              "value": "enabled"
+            }
+          ]
+        },
+        "tags": {
+          "tag": ["production", "database"]
+        }
+      },
+      {
+        "uuid": "00998b85-efdc-41ca-8021-f6ef457b8533",
+        "title": "test-server-1",
+        "hostname": "test1.example.com",
+        "zone": "us-chi1",
+        "plan": "1xCPU-2GB",
+        "state": "stopped",
+        "core_number": "1",
+        "memory_amount": "2048",
+        "created": 1740658177,
+        "host": 7617135237,
+        "license": 0,
+        "plan_ipv4_bytes": "276497407",
+        "plan_ipv6_bytes": "0",
+        "server_group": null,
+        "simple_backup": "no",
+        "labels": {
+          "label": [
+            {
+              "key": "environment",
+              "value": "development"
+            },
+            {
+              "key": "temporary",
+              "value": "true"
+            }
+          ]
+        },
+        "tags": {
+          "tag": ["development"]
+        }
+      }
+    ]
+  }
+} 

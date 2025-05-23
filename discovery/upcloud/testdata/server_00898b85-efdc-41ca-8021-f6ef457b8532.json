@@ -1,0 +1,66 @@
+{
+  "server": {
+    "uuid": "00898b85-efdc-41ca-8021-f6ef457b8532",
+    "title": "db-server-1",
+    "hostname": "db1.example.com",
+    "zone": "fi-hel2",
+    "plan": "2xCPU-4GB",
+    "state": "started",
+    "core_number": "2",
+    "memory_amount": "4096",
+    "tags": {
+      "tag": ["production", "database"]
+    },
+    "labels": {
+      "label": [
+        {
+          "key": "environment",
+          "value": "production"
+        },
+        {
+          "key": "role",
+          "value": "database"
+        },
+        {
+          "key": "backup",
+          "value": "enabled"
+        }
+      ]
+    },
+    "ip_addresses": {
+      "ip_address": [
+        {
+          "access": "public",
+          "address": "192.0.2.2",
+          "family": "IPv4"
+        },
+        {
+          "access": "private",
+          "address": "10.0.0.2",
+          "family": "IPv4"
+        },
+        {
+          "access": "public",
+          "address": "2001:db8::2",
+          "family": "IPv6"
+        }
+      ]
+    },
+    "boot_order": "disk",
+    "firewall": "on",
+    "host": 765331108,
+    "license": 0,
+    "nic_model": "virtio",
+    "plan_ipv4_bytes": "0",
+    "plan_ipv6_bytes": "0",
+    "remote_access_enabled": "yes",
+    "remote_access_type": "vnc",
+    "remote_access_host": "fi-hel2.vnc.upcloud.com",
+    "remote_access_password": "eeffgghh",
+    "remote_access_port": "3001",
+    "server_group": "",
+    "simple_backup": "dailies",
+    "timezone": "UTC",
+    "video_model": "vga"
+  }
+} 

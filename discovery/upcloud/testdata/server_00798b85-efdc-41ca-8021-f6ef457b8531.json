@@ -1,0 +1,62 @@
+{
+  "server": {
+    "uuid": "00798b85-efdc-41ca-8021-f6ef457b8531",
+    "title": "web-server-1",
+    "hostname": "web1.example.com",
+    "zone": "fi-hel1",
+    "plan": "1xCPU-1GB",
+    "state": "started",
+    "core_number": "1",
+    "memory_amount": "1024",
+    "tags": {
+      "tag": ["production", "web"]
+    },
+    "labels": {
+      "label": [
+        {
+          "key": "environment",
+          "value": "production"
+        },
+        {
+          "key": "team",
+          "value": "platform"
+        }
+      ]
+    },
+    "ip_addresses": {
+      "ip_address": [
+        {
+          "access": "public",
+          "address": "192.0.2.1",
+          "family": "IPv4"
+        },
+        {
+          "access": "private",
+          "address": "10.0.0.1",
+          "family": "IPv4"
+        },
+        {
+          "access": "public",
+          "address": "2001:db8::1",
+          "family": "IPv6"
+        }
+      ]
+    },
+    "boot_order": "disk",
+    "firewall": "on",
+    "host": 765331107,
+    "license": 0,
+    "nic_model": "virtio",
+    "plan_ipv4_bytes": "0",
+    "plan_ipv6_bytes": "0",
+    "remote_access_enabled": "yes",
+    "remote_access_type": "vnc",
+    "remote_access_host": "fi-hel1.vnc.upcloud.com",
+    "remote_access_password": "aabbccdd",
+    "remote_access_port": "3000",
+    "server_group": "",
+    "simple_backup": "",
+    "timezone": "UTC",
+    "video_model": "vga"
+  }
+} 

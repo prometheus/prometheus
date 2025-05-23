@@ -440,6 +440,11 @@ scrape_configs:
       - authorization:
           credentials: abcdef
 
+  - job_name: upcloud
+    upcloud_sd_configs:
+      - authorization:
+          credentials: abcdef
+
 alerting:
   alertmanagers:
     - scheme: https

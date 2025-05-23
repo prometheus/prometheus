@@ -2917,6 +2917,10 @@ stackit_sd_configs:
 triton_sd_configs:
   [ - <triton_sd_config> ... ]
 
+# List of UpCloud service discovery configurations.
+upcloud_sd_configs:
+  [ - <upcloud_sd_config> ... ]
+
 # List of Uyuni service discovery configurations.
 uyuni_sd_configs:
   [ - <uyuni_sd_config> ... ]
@@ -3198,4 +3202,39 @@ headers:
 # TLS configuration.
 tls_config:
   [ <tls_config> ]
+```
+
+### `<upcloud_sd_config>`
+
+UpCloud SD configurations allow retrieving scrape targets from UpCloud servers.
+The target address defaults to the first existing address in the following priority
+order: public IPv4, public IPv6, private IPv4. This can be changed with relabeling,
+as demonstrated in [the Prometheus upcloud-sd configuration file](/documentation/examples/prometheus-upcloud.yml).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_upcloud_server_uuid`: the UUID of the server
+* `__meta_upcloud_server_title`: the title of the server
+* `__meta_upcloud_server_hostname`: the hostname of the server
+* `__meta_upcloud_server_zone`: the zone of the server
+* `__meta_upcloud_server_plan`: the plan of the server
+* `__meta_upcloud_server_state`: the state of the server
+* `__meta_upcloud_server_core_number`: the number of CPU cores of the server
+* `__meta_upcloud_server_memory_amount`: the amount of memory of the server
+* `__meta_upcloud_server_public_ipv4`: the comma-separated list of public IPv4 addresses of the server
+* `__meta_upcloud_server_private_ipv4`: the comma-separated list of private IPv4 addresses of the server
+* `__meta_upcloud_server_public_ipv6`: the comma-separated list of public IPv6 addresses of the server
+* `__meta_upcloud_server_tag_<tagname>`: each tag of the server, with any unsupported characters converted to an underscore
+* `__meta_upcloud_server_label_<labelname>`: each label of the server, with any unsupported characters converted to an underscore
+
+```yaml
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# The time after which the servers are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+
+# HTTP client settings, including authentication methods (such as basic auth and
+# authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+[ <http_config> ]
 ```

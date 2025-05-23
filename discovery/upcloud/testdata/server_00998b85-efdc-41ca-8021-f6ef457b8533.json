@@ -1,0 +1,52 @@
+{
+  "server": {
+    "uuid": "00998b85-efdc-41ca-8021-f6ef457b8533",
+    "title": "test-server-1",
+    "hostname": "test1.example.com",
+    "zone": "us-chi1",
+    "plan": "1xCPU-2GB",
+    "state": "stopped",
+    "core_number": "1",
+    "memory_amount": "2048",
+    "tags": {
+      "tag": ["development"]
+    },
+    "labels": {
+      "label": [
+        {
+          "key": "environment",
+          "value": "development"
+        },
+        {
+          "key": "temporary",
+          "value": "true"
+        }
+      ]
+    },
+    "ip_addresses": {
+      "ip_address": [
+        {
+          "access": "private",
+          "address": "10.0.0.3",
+          "family": "IPv4"
+        }
+      ]
+    },
+    "boot_order": "disk",
+    "firewall": "off",
+    "host": 765331109,
+    "license": 0,
+    "nic_model": "virtio",
+    "plan_ipv4_bytes": "0",
+    "plan_ipv6_bytes": "0",
+    "remote_access_enabled": "no",
+    "remote_access_type": "",
+    "remote_access_host": "",
+    "remote_access_password": "",
+    "remote_access_port": "0",
+    "server_group": "",
+    "simple_backup": "",
+    "timezone": "UTC",
+    "video_model": "vga"
+  }
+} 
