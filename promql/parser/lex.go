@@ -277,6 +277,7 @@ type Lexer struct {
 	braceOpen   bool // Whether a { is opened.
 	bracketOpen bool // Whether a [ is opened.
 	gotColon    bool // Whether we got a ':' after [ was opened.
+	gotDuration bool // Whether we got a duration after [ was opened.
 	stringOpen  rune // Quote rune of the string currently being read.
 
 	// series description variables for internal PromQL testing framework as well as in promtool rules unit tests.
@@ -491,7 +492,7 @@ func lexStatements(l *Lexer) stateFn {
 			skipSpaces(l)
 		}
 		l.bracketOpen = true
-		return lexNumberOrDuration
+		return lexDurationExpr
 	case r == ']':
 		if !l.bracketOpen {
 			return l.errorf("unexpected right bracket %q", r)
@@ -512,7 +513,7 @@ func lexHistogram(l *Lexer) stateFn {
 		l.histogramState = histogramStateNone
 		l.next()
 		l.emit(TIMES)
-		return lexNumber
+		return lexValueSequence
 	case histogramStateAdd:
 		l.histogramState = histogramStateNone
 		l.next()
@@ -549,6 +550,8 @@ func lexHistogram(l *Lexer) stateFn {
 		return lexNumber
 	case r == '[':
 		l.bracketOpen = true
+		l.gotColon = false
+		l.gotDuration = false
 		l.emit(LEFT_BRACKET)
 		return lexBuckets
 	case r == '}' && l.peek() == '}':
@@ -671,10 +674,10 @@ func lexInsideBraces(l *Lexer) stateFn {
 		l.backup()
 		l.emit(EQL)
 	case r == '!':
-		switch nr := l.next(); {
-		case nr == '~':
+		switch nr := l.next(); nr {
+		case '~':
 			l.emit(NEQ_REGEX)
-		case nr == '=':
+		case '=':
 			l.emit(NEQ)
 		default:
 			return l.errorf("unexpected character after '!' inside braces: %q", nr)
@@ -1076,4 +1079,65 @@ func isDigit(r rune) bool {
 // isAlpha reports whether r is an alphabetic or underscore.
 func isAlpha(r rune) bool {
 	return r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z')
+}
+
+// lexDurationExpr scans arithmetic expressions within brackets for duration expressions.
+func lexDurationExpr(l *Lexer) stateFn {
+	switch r := l.next(); {
+	case r == eof:
+		return l.errorf("unexpected end of input in duration expression")
+	case r == ']':
+		l.emit(RIGHT_BRACKET)
+		l.bracketOpen = false
+		l.gotColon = false
+		return lexStatements
+	case r == ':':
+		l.emit(COLON)
+		if !l.gotDuration {
+			return l.errorf("unexpected colon before duration in duration expression")
+		}
+		if l.gotColon {
+			return l.errorf("unexpected repeated colon in duration expression")
+		}
+		l.gotColon = true
+		return lexDurationExpr
+	case r == '(':
+		l.emit(LEFT_PAREN)
+		l.parenDepth++
+		return lexDurationExpr
+	case r == ')':
+		l.emit(RIGHT_PAREN)
+		l.parenDepth--
+		if l.parenDepth < 0 {
+			return l.errorf("unexpected right parenthesis %q", r)
+		}
+		return lexDurationExpr
+	case isSpace(r):
+		skipSpaces(l)
+		return lexDurationExpr
+	case r == '+':
+		l.emit(ADD)
+		return lexDurationExpr
+	case r == '-':
+		l.emit(SUB)
+		return lexDurationExpr
+	case r == '*':
+		l.emit(MUL)
+		return lexDurationExpr
+	case r == '/':
+		l.emit(DIV)
+		return lexDurationExpr
+	case r == '%':
+		l.emit(MOD)
+		return lexDurationExpr
+	case r == '^':
+		l.emit(POW)
+		return lexDurationExpr
+	case isDigit(r) || (r == '.' && isDigit(l.peek())):
+		l.backup()
+		l.gotDuration = true
+		return lexNumberOrDuration
+	default:
+		return l.errorf("unexpected character in duration expression: %q", r)
+	}
 }

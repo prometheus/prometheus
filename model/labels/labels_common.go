@@ -24,10 +24,12 @@ import (
 )
 
 const (
-	MetricName   = "__name__"
-	AlertName    = "alertname"
-	BucketLabel  = "le"
-	InstanceName = "instance"
+	// MetricName is a special label name that represent a metric name.
+	// Deprecated: Use schema.Metadata structure and its methods.
+	MetricName = "__name__"
+
+	AlertName   = "alertname"
+	BucketLabel = "le"
 
 	labelSep = '\xfe' // Used at beginning of `Bytes` return.
 	sep      = '\xff' // Used between labels in `Bytes` and `Hash`.
@@ -35,7 +37,7 @@ const (
 
 var seps = []byte{sep} // Used with Hash, which has no WriteByte method.
 
-// Label is a key/value pair of strings.
+// Label is a key/value a pair of strings.
 type Label struct {
 	Name, Value string
 }
@@ -167,10 +169,8 @@ func (b *Builder) Del(ns ...string) *Builder {
 // Keep removes all labels from the base except those with the given names.
 func (b *Builder) Keep(ns ...string) *Builder {
 	b.base.Range(func(l Label) {
-		for _, n := range ns {
-			if l.Name == n {
-				return
-			}
+		if slices.Contains(ns, l.Name) {
+			return
 		}
 		b.del = append(b.del, l.Name)
 	})

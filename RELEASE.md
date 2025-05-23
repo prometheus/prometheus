@@ -7,13 +7,15 @@ This page describes the release process and the currently planned schedule for u
 Release cadence of first pre-releases being cut is 6 weeks.
 Please see [the v2.55 RELEASE.md](https://github.com/prometheus/prometheus/blob/release-2.55/RELEASE.md) for the v2 release series schedule.
 
-| release series | date of first pre-release (year-month-day) | release shepherd                  |
-|----------------|--------------------------------------------|-----------------------------------|
-| v3.0           | 2024-11-14                                 | Jan Fajerski (GitHub: @jan--f)    |
-| v3.1           | 2024-12-17                                 | Bryan Boreham (GitHub: @bboreham) |
-| v3.2           | 2025-01-28                                 | Jan Fajerski (GitHub: @jan--f)    |
-| v3.3           | 2025-03-11                                 | Ayoub Mrini (Github: @machine424) |
-| v3.4           | 2025-04-22                                 | **volunteer welcome**             |
+| release series | date of first pre-release (year-month-day) | release shepherd                   |
+|----------------|--------------------------------------------|------------------------------------|
+| v3.0           | 2024-11-14                                 | Jan Fajerski (GitHub: @jan--f)     |
+| v3.1           | 2024-12-17                                 | Bryan Boreham (GitHub: @bboreham)  |
+| v3.2           | 2025-01-28                                 | Jan Fajerski (GitHub: @jan--f)     |
+| v3.3           | 2025-03-11                                 | Ayoub Mrini (Github: @machine424)  |
+| v3.4           | 2025-04-29                                 | Jan-Otto Kröpke (Github: @jkroepke)|
+| v3.5 LTS       | 2025-06-03                                 | Bryan Boreham (GitHub: @bboreham)  |
+| v3.6           | 2025-07-15                                 | **volunteer welcome**              |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
@@ -135,19 +137,7 @@ git tag -s "${tag}" -m "${tag}"
 git push origin "${tag}"
 ```
 
-Go modules versioning requires strict use of semver. Because we do not commit to
-avoid code-level breaking changes for the libraries between minor releases of
-the Prometheus server, we use major version zero releases for the libraries.
-
-Tag the new library release via the following commands:
-
-```bash
-tag="v$(./scripts/get_module_version.sh)"
-git tag -s "${tag}" -m "${tag}"
-git push origin "${tag}"
-```
-
-Optionally, you can use this handy `.gitconfig` alias.
+Alternatively, you can use this handy `.gitconfig` alias.
 
 ```ini
 [alias]
@@ -163,7 +153,22 @@ Once a tag is created, the release process through Github Actions will be trigge
 Finally, wait for the build step for the tag to finish. The point here is to wait for tarballs to be uploaded to the Github release and the container images to be pushed to the Docker Hub and Quay.io. Once that has happened, click _Publish release_, which will make the release publicly visible and create a GitHub notification.
 **Note:** for a release candidate version ensure the _This is a pre-release_ box is checked when drafting the release in the Github UI. The CI job should take care of this but it's a good idea to double check before clicking _Publish release_.`
 
-### 3. Wrapping up
+### 3. Tag the library release
+
+Go modules versioning requires strict use of semver. Because we do not commit to
+avoid code-level breaking changes for the libraries between minor releases of
+the Prometheus server, we use major version zero releases for the libraries.
+
+Tagging the new library release works similar to the normal release tagging,
+but without the subsequent build and publish steps. Use the following commands:
+
+```bash
+tag="v$(./scripts/get_module_version.sh)"
+git tag -s "${tag}" -m "${tag}"
+git push origin "${tag}"
+```
+
+### 4. Wrapping up
 
 For release candidate versions (`v2.16.0-rc.0`), run the benchmark for 3 days using the `/prombench vX.Y.Z` command, `vX.Y.Z` being the latest stable patch release's tag of the previous minor release series, such as `v2.15.2`.
 

@@ -160,6 +160,7 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, errTyp
 		false,
 		false,
 		false,
+		false,
 		errTypeToStatusCode,
 	)
 

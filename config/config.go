@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -110,9 +111,9 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	switch cfg.OTLPConfig.TranslationStrategy {
 	case UnderscoreEscapingWithSuffixes:
 	case "":
-	case NoUTF8EscapingWithSuffixes:
+	case NoTranslation, NoUTF8EscapingWithSuffixes:
 		if cfg.GlobalConfig.MetricNameValidationScheme == LegacyValidationConfig {
-			return nil, errors.New("OTLP translation strategy NoUTF8EscapingWithSuffixes is not allowed when UTF8 is disabled")
+			return nil, fmt.Errorf("OTLP translation strategy %q is not allowed when UTF8 is disabled", cfg.OTLPConfig.TranslationStrategy)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported OTLP translation strategy %q", cfg.OTLPConfig.TranslationStrategy)
@@ -169,23 +170,23 @@ var (
 		// changes to DefaultNativeHistogramScrapeProtocols.
 		ScrapeProtocols:                DefaultScrapeProtocols,
 		ConvertClassicHistogramsToNHCB: false,
+		AlwaysScrapeClassicHistograms:  false,
 	}
 
 	DefaultRuntimeConfig = RuntimeConfig{
 		// Go runtime tuning.
-		GoGC: 75,
+		GoGC: getGoGC(),
 	}
 
 	// DefaultScrapeConfig is the default scrape configuration.
 	DefaultScrapeConfig = ScrapeConfig{
-		// ScrapeTimeout, ScrapeInterval and ScrapeProtocols default to the configured globals.
-		AlwaysScrapeClassicHistograms: false,
-		MetricsPath:                   "/metrics",
-		Scheme:                        "http",
-		HonorLabels:                   false,
-		HonorTimestamps:               true,
-		HTTPClientConfig:              config.DefaultHTTPClientConfig,
-		EnableCompression:             true,
+		// ScrapeTimeout, ScrapeInterval, ScrapeProtocols, AlwaysScrapeClassicHistograms, and ConvertClassicHistogramsToNHCB default to the configured globals.
+		MetricsPath:       "/metrics",
+		Scheme:            "http",
+		HonorLabels:       false,
+		HonorTimestamps:   true,
+		HTTPClientConfig:  config.DefaultHTTPClientConfig,
+		EnableCompression: true,
 	}
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
@@ -384,8 +385,6 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// We have to restore it here.
 	if c.Runtime.isZero() {
 		c.Runtime = DefaultRuntimeConfig
-		// Use the GOGC env var value if the runtime section is empty.
-		c.Runtime.GoGC = getGoGCEnv()
 	}
 
 	for _, rf := range c.RuleFiles {
@@ -489,6 +488,8 @@ type GlobalConfig struct {
 	MetricNameEscapingScheme string `yaml:"metric_name_escaping_scheme,omitempty"`
 	// Whether to convert all scraped classic histograms into native histograms with custom buckets.
 	ConvertClassicHistogramsToNHCB bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
+	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
+	AlwaysScrapeClassicHistograms bool `yaml:"always_scrape_classic_histograms,omitempty"`
 }
 
 // ScrapeProtocol represents supported protocol for scraping metrics.
@@ -645,13 +646,31 @@ func (c *GlobalConfig) isZero() bool {
 		c.QueryLogFile == "" &&
 		c.ScrapeFailureLogFile == "" &&
 		c.ScrapeProtocols == nil &&
-		!c.ConvertClassicHistogramsToNHCB
+		!c.ConvertClassicHistogramsToNHCB &&
+		!c.AlwaysScrapeClassicHistograms
 }
+
+const DefaultGoGCPercentage = 75
 
 // RuntimeConfig configures the values for the process behavior.
 type RuntimeConfig struct {
 	// The Go garbage collection target percentage.
 	GoGC int `yaml:"gogc,omitempty"`
+
+	// Below are guidelines for adding a new field:
+	//
+	// For config that shouldn't change after startup, you might want to use
+	// flags https://prometheus.io/docs/prometheus/latest/command-line/prometheus/.
+	//
+	// Consider when the new field is first applied: at the very beginning of instance
+	// startup, after the TSDB is loaded etc. See https://github.com/prometheus/prometheus/pull/16491
+	// for an example.
+	//
+	// Provide a test covering various scenarios: empty config file, empty or incomplete runtime
+	// config block, precedence over other inputs (e.g., env vars, if applicable) etc.
+	// See TestRuntimeGOGCConfig (or https://github.com/prometheus/prometheus/pull/15238).
+	// The test should also verify behavior on reloads, since this config should be
+	// adjustable at runtime.
 }
 
 // isZero returns true iff the global config is the zero value.
@@ -690,7 +709,7 @@ type ScrapeConfig struct {
 	// OpenMetricsText1.0.0, PrometheusText1.0.0, PrometheusText0.0.4.
 	ScrapeFallbackProtocol ScrapeProtocol `yaml:"fallback_scrape_protocol,omitempty"`
 	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
-	AlwaysScrapeClassicHistograms bool `yaml:"always_scrape_classic_histograms,omitempty"`
+	AlwaysScrapeClassicHistograms *bool `yaml:"always_scrape_classic_histograms,omitempty"`
 	// Whether to convert all scraped classic histograms into a native histogram with custom buckets.
 	ConvertClassicHistogramsToNHCB *bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
 	// File to which scrape failures are logged.
@@ -904,6 +923,11 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		c.ConvertClassicHistogramsToNHCB = &global
 	}
 
+	if c.AlwaysScrapeClassicHistograms == nil {
+		global := globalConfig.AlwaysScrapeClassicHistograms
+		c.AlwaysScrapeClassicHistograms = &global
+	}
+
 	return nil
 }
 
@@ -929,6 +953,11 @@ func ToValidationScheme(s string) (validationScheme model.ValidationScheme, err 
 // ConvertClassicHistogramsToNHCBEnabled returns whether to convert classic histograms to NHCB.
 func (c *ScrapeConfig) ConvertClassicHistogramsToNHCBEnabled() bool {
 	return c.ConvertClassicHistogramsToNHCB != nil && *c.ConvertClassicHistogramsToNHCB
+}
+
+// AlwaysScrapeClassicHistogramsEnabled returns whether to always scrape classic histograms.
+func (c *ScrapeConfig) AlwaysScrapeClassicHistogramsEnabled() bool {
+	return c.AlwaysScrapeClassicHistograms != nil && *c.AlwaysScrapeClassicHistograms
 }
 
 // StorageConfig configures runtime reloadable configuration options.
@@ -1096,13 +1125,11 @@ func (v *AlertmanagerAPIVersion) UnmarshalYAML(unmarshal func(interface{}) error
 		return err
 	}
 
-	for _, supportedVersion := range SupportedAlertmanagerAPIVersions {
-		if *v == supportedVersion {
-			return nil
-		}
+	if !slices.Contains(SupportedAlertmanagerAPIVersions, *v) {
+		return fmt.Errorf("expected Alertmanager api version to be one of %v but got %v", SupportedAlertmanagerAPIVersions, *v)
 	}
 
-	return fmt.Errorf("expected Alertmanager api version to be one of %v but got %v", SupportedAlertmanagerAPIVersions, *v)
+	return nil
 }
 
 const (
@@ -1482,7 +1509,7 @@ func fileErr(filename string, err error) error {
 	return fmt.Errorf("%q: %w", filePath(filename), err)
 }
 
-func getGoGCEnv() int {
+func getGoGC() int {
 	goGCEnv := os.Getenv("GOGC")
 	// If the GOGC env var is set, use the same logic as upstream Go.
 	if goGCEnv != "" {
@@ -1495,7 +1522,7 @@ func getGoGCEnv() int {
 			return i
 		}
 	}
-	return DefaultRuntimeConfig.GoGC
+	return DefaultGoGCPercentage
 }
 
 type translationStrategyOption string
@@ -1509,6 +1536,21 @@ var (
 	// and label name characters that are not alphanumerics/underscores to underscores.
 	// Unit and type suffixes may be appended to metric names, according to certain rules.
 	UnderscoreEscapingWithSuffixes translationStrategyOption = "UnderscoreEscapingWithSuffixes"
+	// NoTranslation (EXPERIMENTAL): disables all translation of incoming metric
+	// and label names. This offers a way for the OTLP users to use native metric names, reducing confusion.
+	//
+	// WARNING: This setting has significant known risks and limitations (see
+	// https://prometheus.io/docs/practices/naming/  for details):
+	// * Impaired UX when using PromQL in plain YAML (e.g. alerts, rules, dashboard, autoscaling configuration).
+	// * Series collisions which in the best case may result in OOO errors, in the worst case a silently malformed
+	// time series. For instance, you may end up in situation of ingesting `foo.bar` series with unit
+	// `seconds` and a separate series `foo.bar` with unit `milliseconds`.
+	//
+	// As a result, this setting is experimental and currently, should not be used in
+	// production systems.
+	//
+	// TODO(ArthurSens): Mention `type-and-unit-labels` feature (https://github.com/prometheus/proposals/pull/39) once released, as potential mitigation of the above risks.
+	NoTranslation translationStrategyOption = "NoTranslation"
 )
 
 // OTLPConfig is the configuration for writing to the OTLP endpoint.

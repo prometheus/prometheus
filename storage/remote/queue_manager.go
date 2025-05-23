@@ -515,10 +515,8 @@ func NewQueueManager(
 		compr:    compression.Snappy, // Hardcoded for now, but scaffolding exists for likely future use.
 	}
 
-	walMetadata := false
-	if t.protoMsg != config.RemoteWriteProtoMsgV1 {
-		walMetadata = true
-	}
+	walMetadata := t.protoMsg != config.RemoteWriteProtoMsgV1
+
 	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata)
 
 	// The current MetadataWatcher implementation is mutually exclusive
@@ -1669,7 +1667,7 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 	if err != nil {
 		s.qm.logger.Error("non-recoverable error", "failedSampleCount", sampleDiff, "failedHistogramCount", histogramDiff, "failedExemplarCount", exemplarDiff, "err", err)
 	} else if sampleDiff+exemplarDiff+histogramDiff > 0 {
-		s.qm.logger.Error("we got 2xx status code from the Receiver yet statistics indicate some dat was not written; investigation needed", "failedSampleCount", sampleDiff, "failedHistogramCount", histogramDiff, "failedExemplarCount", exemplarDiff)
+		s.qm.logger.Error("we got 2xx status code from the Receiver yet statistics indicate some data was not written; investigation needed", "failedSampleCount", sampleDiff, "failedHistogramCount", histogramDiff, "failedExemplarCount", exemplarDiff)
 	}
 
 	// These counters are used to calculate the dynamic sharding, and as such

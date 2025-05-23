@@ -11,15 +11,15 @@ jobs:
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
-      image: quay.io/prometheus/golang-builder:1.23-base
+      image: quay.io/prometheus/golang-builder:1.24-base
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: prometheus/promci@443c7fc2397e946bc9f5029e313a9c3441b9b86d # v0.4.7
       - uses: ./.github/promci/actions/setup_environment
         with:
           enable_npm: true
-      - run: make GOOPTS=--tags=stringlabels GO_ONLY=1 SKIP_GOLANGCI_LINT=1
-      - run: go test --tags=stringlabels ./tsdb/ -test.tsdb-isolation=false
+      - run: make GO_ONLY=1 SKIP_GOLANGCI_LINT=1
+      - run: go test ./tsdb/ -test.tsdb-isolation=false
       - run: make -C documentation/examples/remote_storage
       - run: make -C documentation/examples
 
@@ -27,12 +27,13 @@ jobs:
     name: More Go tests
     runs-on: ubuntu-latest
     container:
-      image: quay.io/prometheus/golang-builder:1.23-base
+      image: quay.io/prometheus/golang-builder:1.24-base
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: prometheus/promci@443c7fc2397e946bc9f5029e313a9c3441b9b86d # v0.4.7
       - uses: ./.github/promci/actions/setup_environment
       - run: go test --tags=dedupelabels ./...
+      - run: go test --tags=forcedirectio,stringlabels -race ./tsdb/
       - run: GOARCH=386 go test ./...
       - uses: ./.github/promci/actions/check_proto
         with:
@@ -59,7 +60,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.23-base
+      image: quay.io/prometheus/golang-builder:1.24-base
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -94,7 +95,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.23-base
+      image: quay.io/prometheus/golang-builder:1.24-base
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - run: go install ./cmd/promtool/.
@@ -202,11 +203,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get -y install libsnmp-dev
         if: github.repository == 'prometheus/snmp_exporter'
       - name: Lint
-        uses: golangci/golangci-lint-action@55c2c1448f86e01eaae002a5a3a9624417608d84 # v6.5.2
+        uses: golangci/golangci-lint-action@1481404843c368bc19ca9406f87d6e0fc97bdcfd # v7.0.0
         with:
           args: --verbose
           # Make sure to sync this with Makefile.common and scripts/golangci-lint.yml.
-          version: v1.64.6
+          version: v2.1.5
   fuzzing:
     uses: ./.github/workflows/fuzzing.yml
     if: github.event_name == 'pull_request'
@@ -254,7 +255,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: prometheus/promci@443c7fc2397e946bc9f5029e313a9c3441b9b86d # v0.4.7
       - name: Install nodejs
-        uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: "web/ui/.nvmrc"
           registry-url: "https://registry.npmjs.org"

@@ -102,10 +102,8 @@ func (h *Histogram) Copy() *Histogram {
 	}
 
 	if h.UsesCustomBuckets() {
-		if len(h.CustomValues) != 0 {
-			c.CustomValues = make([]float64, len(h.CustomValues))
-			copy(c.CustomValues, h.CustomValues)
-		}
+		// Custom values are interned, it's ok to copy by reference.
+		c.CustomValues = h.CustomValues
 	} else {
 		c.ZeroThreshold = h.ZeroThreshold
 		c.ZeroCount = h.ZeroCount
@@ -146,9 +144,8 @@ func (h *Histogram) CopyTo(to *Histogram) {
 
 		to.NegativeSpans = clearIfNotNil(to.NegativeSpans)
 		to.NegativeBuckets = clearIfNotNil(to.NegativeBuckets)
-
-		to.CustomValues = resize(to.CustomValues, len(h.CustomValues))
-		copy(to.CustomValues, h.CustomValues)
+		// Custom values are interned, it's ok to copy by reference.
+		to.CustomValues = h.CustomValues
 	} else {
 		to.ZeroThreshold = h.ZeroThreshold
 		to.ZeroCount = h.ZeroCount
@@ -158,8 +155,8 @@ func (h *Histogram) CopyTo(to *Histogram) {
 
 		to.NegativeBuckets = resize(to.NegativeBuckets, len(h.NegativeBuckets))
 		copy(to.NegativeBuckets, h.NegativeBuckets)
-
-		to.CustomValues = clearIfNotNil(to.CustomValues)
+		// Custom values are interned, no need to reset.
+		to.CustomValues = nil
 	}
 
 	to.PositiveSpans = resize(to.PositiveSpans, len(h.PositiveSpans))
@@ -379,9 +376,8 @@ func (h *Histogram) ToFloat(fh *FloatHistogram) *FloatHistogram {
 		fh.ZeroCount = 0
 		fh.NegativeSpans = clearIfNotNil(fh.NegativeSpans)
 		fh.NegativeBuckets = clearIfNotNil(fh.NegativeBuckets)
-
-		fh.CustomValues = resize(fh.CustomValues, len(h.CustomValues))
-		copy(fh.CustomValues, h.CustomValues)
+		// Custom values are interned, it's ok to copy by reference.
+		fh.CustomValues = h.CustomValues
 	} else {
 		fh.ZeroThreshold = h.ZeroThreshold
 		fh.ZeroCount = float64(h.ZeroCount)
@@ -395,7 +391,8 @@ func (h *Histogram) ToFloat(fh *FloatHistogram) *FloatHistogram {
 			currentNegative += float64(b)
 			fh.NegativeBuckets[i] = currentNegative
 		}
-		fh.CustomValues = clearIfNotNil(fh.CustomValues)
+		// Custom values are interned, no need to reset.
+		fh.CustomValues = nil
 	}
 
 	fh.PositiveSpans = resize(fh.PositiveSpans, len(h.PositiveSpans))

@@ -1,12 +1,60 @@
 # Changelog
 
-## unreleased
+## 3.4.0 / 2025-05-17
 
-* [CHANGE] Make setting out-of-order native histograms feature (`--enable-feature=ooo-native-histograms`) a no-op. Out-of-order native histograms are now always enabled when `out_of_order_time_window` is greater than zero and `--enable-feature=native-histograms` is set. #16207
+* [CHANGE] Config: Make setting out-of-order native histograms feature (`--enable-feature=ooo-native-histograms`) a no-op. Out-of-order native histograms are now always enabled when `out_of_order_time_window` is greater than zero and `--enable-feature=native-histograms` is set. #16207
 * [FEATURE] OTLP translate: Add feature flag for optionally translating OTel explicit bucket histograms into native histograms with custom buckets. #15850
+* [FEATURE] OTLP translate: Add option to receive OTLP metrics without translating names or attributes. #16441
+* [FEATURE] PromQL: allow arithmetic operations in durations in PromQL parser. #16249
+* [FEATURE] OTLP receiver: Add primitive support for ingesting OTLP delta metrics as-is. #16360
+* [ENHANCEMENT] PromQL: histogram_fraction for bucket histograms. #16095
 * [ENHANCEMENT] TSDB: add `prometheus_tsdb_wal_replay_unknown_refs_total` and `prometheus_tsdb_wbl_replay_unknown_refs_total` metrics to track unknown series references during WAL/WBL replay. #16166
+* [ENHANCEMENT] Scraping: Add config option for escaping scheme request. #16066
+* [ENHANCEMENT] Config: Add global config option for convert_classic_histograms_to_nhcb. #16226
+* [ENHANCEMENT] Alerting: make batch size configurable (`--alertmanager.notification-batch-size`). #16254
 * [ENHANCEMENT] API: Allow error response code to be customized. #16257
-* [BUGFIX] TSDB: fix unknown series errors and possible lost data during WAL replay when series are removed from the head due to inactivity and reappear before the next WAL checkpoint. #16060
+* [PERF] Kubernetes SD: make endpointSlice discovery more efficient. #16433
+* [BUGFIX] Config: Fix auto-reload on changes to rule and scrape config files. #16340
+* [BUGFIX] Scraping: Skip native histogram series if ingestion is disabled. #16218
+* [BUGFIX] TSDB: Handle metadata/tombstones/exemplars for duplicate series during WAL replay. #16231
+* [BUGFIX] TSDB: Avoid processing exemplars outside the valid time range during WAL replay. #16242
+* [BUGFIX] Promtool: Add feature flags for PromQL features. #16443
+* [BUGFIX] Rules: correct logging of alert name & template data. #15093
+* [BUGFIX] PromQL: Use arithmetic mean for `histogram_stddev()` and `histogram_stdvar()` . #16444
+
+## 3.3.0 / 2025-04-15
+
+* [FEATURE] PromQL: Implement `idelta()` and `irate()` for native histograms. #15853
+* [ENHANCEMENT] Scaleway SD: Add `__meta_scaleway_instance_public_ipv4_addresses` and `__meta_scaleway_instance_public_ipv6_addresses` labels. #14228
+* [ENHANCEMENT] TSDB: Reduce locking while reloading blocks. #12920
+* [ENHANCEMENT] PromQL: Allow UTF-8 labels in `label_replace()`. #15974
+* [ENHANCEMENT] Promtool: `tsdb create-blocks-from openmetrics` can now read from a Pipe. #16011
+* [ENHANCEMENT] Rules: Add support for anchors and aliases in rule files. #14957
+* [ENHANCEMENT] Dockerfile: Make `/prometheus` writable. #16073
+* [ENHANCEMENT] API: Include scrape pool name for dropped targets in `/api/v1/targets`. #16085
+* [ENHANCEMENT] UI: Improve time formatting and copying of selectors. #15999 #16165
+* [ENHANCEMENT] UI: Bring back vertical grid lines and graph legend series toggling instructions. #16163 #16164
+* [ENHANCEMENT] Mixin: The `cluster` label can be customized using `clusterLabel`. #15826
+* [PERF] TSDB: Optimize some operations on head chunks by taking shortcuts. #12659
+* [PERF] TSDB & Agent: Reduce memory footprint during WL replay. #15778
+* [PERF] Remote-Write: Reduce memory footprint during WAL replay. #16197
+* [PERF] API: Reduce memory footprint during header parsing. #16001
+* [PERF] Rules: Improve dependency evaluation, enabling better concurrency. #16039
+* [PERF] Scraping: Improve scraping performance for native histograms. #15731
+* [PERF] Scraping: Improve parsing of created timestamps. #16072
+* [BUGFIX] Scraping: Bump cache iteration after error to avoid false duplicate detections. #16174
+* [BUGFIX] Scraping: Skip native histograms series when ingestion is disabled. #16218
+* [BUGFIX] PromQL: Fix counter reset detection for native histograms. #15902 #15987
+* [BUGFIX] PromQL: Fix inconsistent behavior with an empty range. #15970
+* [BUGFIX] PromQL: Fix inconsistent annotation in `quantile_over_time()`. #16018
+* [BUGFIX] PromQL: Prevent `label_join()` from producing duplicates. #15975
+* [BUGFIX] PromQL: Ignore native histograms in `scalar()`, `sort()` and `sort_desc()`. #15964
+* [BUGFIX] PromQL: Fix annotations for binary operations between incompatible native histograms. #15895
+* [BUGFIX] Alerting: Consider alert relabeling when deciding whether alerts are dropped. #15979
+* [BUGFIX] Config: Set `GoGC` to the default value in case of an empty configuration. #16052
+* [BUGFIX] TSDB: Fix unknown series errors and potential data loss during WAL replay when inactive series are removed from the head and reappear before the next WAL checkpoint. #16060
+* [BUGFIX] Scaleway SD: The public IP will no longer be set to `__meta_meta_scaleway_instance_public_ipv4` if it is an IPv6 address. #14228
+* [BUGFIX] UI: Display the correct value of Alerting rules' `keep_firing_for`. #16211
 
 ## 3.2.1 / 2025-02-25
 
