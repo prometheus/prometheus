@@ -213,7 +213,9 @@ func (p *OpenMetricsParser) Comment() []byte {
 
 // Labels writes the labels of the current sample into the passed labels.
 func (p *OpenMetricsParser) Labels(l *labels.Labels) {
-	s := yoloString(p.series)
+	// Defensive copy in case the following keeps a reference.
+	// See https://github.com/prometheus/prometheus/issues/16490
+	s := string(p.series)
 
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
