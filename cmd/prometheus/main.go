@@ -648,6 +648,17 @@ func main() {
 		logger.Error(fmt.Sprintf("Error loading dynamic scrape config files from config (--config.file=%q)", cfg.configFile), "file", absPath, "err", err)
 		os.Exit(2)
 	}
+
+	// Parse rule files to verify they exist and contain valid rules.
+	if err := rules.ParseFiles(cfgFile.RuleFiles); err != nil {
+		absPath, pathErr := filepath.Abs(cfg.configFile)
+		if pathErr != nil {
+			absPath = cfg.configFile
+		}
+		logger.Error(fmt.Sprintf("Error loading rule file patterns from config (--config.file=%q)", cfg.configFile), "file", absPath, "err", err)
+		os.Exit(2)
+	}
+
 	if cfg.tsdb.EnableExemplarStorage {
 		if cfgFile.StorageConfig.ExemplarsConfig == nil {
 			cfgFile.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
