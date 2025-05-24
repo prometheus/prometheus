@@ -88,10 +88,7 @@ func newChunkWriteQueue(reg prometheus.Registerer, size int, writeChunk writeChu
 		[]string{"operation"},
 	)
 
-	segmentSize := size
-	if segmentSize > maxChunkQueueSegmentSize {
-		segmentSize = maxChunkQueueSegmentSize
-	}
+	segmentSize := min(size, maxChunkQueueSegmentSize)
 
 	q := &chunkWriteQueue{
 		jobs:                  newWriteJobQueue(size, segmentSize),

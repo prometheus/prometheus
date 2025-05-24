@@ -613,10 +613,7 @@ Loop:
 			//
 			// Subtracting a duration from ts will add a buffer for when series are
 			// considered inactive and safe for deletion.
-			ts := db.rs.LowestSentTimestamp() - db.opts.MinWALTime
-			if ts < 0 {
-				ts = 0
-			}
+			ts := max(db.rs.LowestSentTimestamp()-db.opts.MinWALTime, 0)
 
 			// Network issues can prevent the result of getRemoteWriteTimestamp from
 			// changing. We don't want data in the WAL to grow forever, so we set a cap
