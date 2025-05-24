@@ -195,7 +195,5 @@ update-all-go-deps:
 
 .PHONY: update-go-version
 update-go-version:
-	@echo ">> updating Go version"
-	@read -p "Current Go version (e.g., 1.22): " current_version && \
-	read -p "New Go version (e.g., 1.23): " new_version && \
-	./scripts/update_go_version.sh $$current_version $$new_version
+	@echo ">> updating Go minor version"
+	@./scripts/update_go_version.sh
