@@ -192,3 +192,8 @@ update-all-go-deps:
 		$(GO) get -d $$m; \
 	done
 	@cd ./documentation/examples/remote_storage/ && $(GO) mod tidy
+
+.PHONY: update-go-version
+update-go-version:
+	@echo ">> updating Go minor version"
+	@./scripts/update_go_version.sh
