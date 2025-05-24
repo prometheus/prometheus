@@ -2925,7 +2925,7 @@ azuread:
   # The Azure Cloud. Options are 'AzurePublic', 'AzureChina', or 'AzureGovernment'.
   [ cloud: <string> | default = AzurePublic ]
 
-  # Azure User-assigned Managed identity.
+  # Azure Managed Identity.  Leave 'client_id' blank to use the default managed identity.
   [ managed_identity:
       [ client_id: <string> ] ]
 
