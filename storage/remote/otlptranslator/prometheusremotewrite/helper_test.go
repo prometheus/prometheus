@@ -723,7 +723,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 					PromoteScopeMetadata: tt.promoteScope,
 					ExportCreatedMetric:  true,
 				},
-				metric.Name(),
+				prompb.MetricMetadata{MetricFamilyName: metric.Name()},
 				tt.scope,
 			)
 
@@ -922,7 +922,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 					ExportCreatedMetric:  true,
 					PromoteScopeMetadata: tt.promoteScope,
 				},
-				metric.Name(),
+				prompb.MetricMetadata{MetricFamilyName: metric.Name()},
 				tt.scope,
 			)
 
