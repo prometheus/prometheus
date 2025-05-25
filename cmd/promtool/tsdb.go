@@ -336,7 +336,7 @@ func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
 }
 
 func listBlocks(path string, humanReadable bool) error {
-	db, err := tsdb.OpenDBReadOnly(path, "", true, nil)
+	db, err := tsdb.OpenDBReadOnly(path, "", false, nil)
 	if err != nil {
 		return err
 	}
@@ -391,7 +391,7 @@ func getFormattedBytes(bytes int64, humanReadable bool) string {
 }
 
 func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error) {
-	db, err := tsdb.OpenDBReadOnly(path, "", true, nil)
+	db, err := tsdb.OpenDBReadOnly(path, "", false, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -710,7 +710,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 type SeriesSetFormatter func(series storage.SeriesSet) error
 
 func dumpSamples(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt int64, match []string, formatter SeriesSetFormatter) (err error) {
-	db, err := tsdb.OpenDBReadOnly(dbDir, sandboxDirRoot, true, nil)
+	db, err := tsdb.OpenDBReadOnly(dbDir, sandboxDirRoot, false, nil)
 	if err != nil {
 		return err
 	}

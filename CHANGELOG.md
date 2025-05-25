@@ -1,5 +1,7 @@
 # Changelog
 
+* [ENHANCEMENT] TSDB: Add configuration parameters for only caching series label symbols when writing TSDB indexes. #15836
+
 ## 3.4.0 / 2025-05-17
 
 * [CHANGE] Config: Make setting out-of-order native histograms feature (`--enable-feature=ooo-native-histograms`) a no-op. Out-of-order native histograms are now always enabled when `out_of_order_time_window` is greater than zero and `--enable-feature=native-histograms` is set. #16207
@@ -12,7 +14,6 @@
 * [ENHANCEMENT] Scraping: Add config option for escaping scheme request. #16066
 * [ENHANCEMENT] Config: Add global config option for convert_classic_histograms_to_nhcb. #16226
 * [ENHANCEMENT] Alerting: make batch size configurable (`--alertmanager.notification-batch-size`). #16254
-* [ENHANCEMENT] TSDB: Add hidden flag for disabling caching of all symbols for compaction: `--storage.tsdb.cache-all-symbols-for-compaction`. #15836
 * [PERF] Kubernetes SD: make endpointSlice discovery more efficient. #16433
 * [BUGFIX] Config: Fix auto-reload on changes to rule and scrape config files. #16340
 * [BUGFIX] Scraping: Skip native histogram series if ingestion is disabled. #16218

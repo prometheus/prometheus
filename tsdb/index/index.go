@@ -110,7 +110,7 @@ func newCRC32() hash.Hash32 {
 	return crc32.New(castagnoliTable)
 }
 
-type nameCacheEntry struct {
+type seriesSymbolCacheEntry struct {
 	index          uint32
 	lastValueIndex uint32
 	lastValue      string
@@ -142,16 +142,14 @@ type Writer struct {
 	buf1 encoding.Encbuf
 	buf2 encoding.Encbuf
 
-	numSymbols      int
-	symbols         *Symbols
-	symbolFile      *fileutil.MmapFile
-	lastSymbol      string
-	cacheAllSymbols bool
-	// TODO.
-	// Used when cacheAllSymbols is false.
-	nameCache map[string]nameCacheEntry
-	// From symbol to index in table.
-	// Used when cacheAllSymbols is true.
+	numSymbols             int
+	symbols                *Symbols
+	symbolFile             *fileutil.MmapFile
+	lastSymbol             string
+	cacheOnlySeriesSymbols bool
+	// seriesSymbolCache is used for caching series label symbols when cacheOnlySeriesSymbols is true.
+	seriesSymbolCache map[string]seriesSymbolCacheEntry
+	// symbolToIndex is used for caching symbols with their index when cacheOnlySeriesSymbols is false.
 	symbolToIndex map[string]uint32
 
 	labelIndexes []labelIndexHashEntry // Label index offsets.
@@ -209,7 +207,7 @@ func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 // NewWriterWithEncoder returns a new Writer to the given filename. It
 // serializes data in format version 2. It uses the given encoder to encode each
 // postings list.
-func NewWriterWithEncoder(ctx context.Context, fn string, encoder PostingsEncoder, cacheAllSymbols bool) (*Writer, error) {
+func NewWriterWithEncoder(ctx context.Context, fn string, encoder PostingsEncoder, cacheOnlySeriesSymbols bool) (*Writer, error) {
 	dir := filepath.Dir(fn)
 
 	df, err := fileutil.OpenDir(dir)
@@ -252,15 +250,15 @@ func NewWriterWithEncoder(ctx context.Context, fn string, encoder PostingsEncode
 		buf1: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 		buf2: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 
-		cacheAllSymbols: cacheAllSymbols,
-		labelNames:      make(map[string]uint64, 1<<8),
-		crc32:           newCRC32(),
-		postingsEncoder: encoder,
+		cacheOnlySeriesSymbols: cacheOnlySeriesSymbols,
+		labelNames:             make(map[string]uint64, 1<<8),
+		crc32:                  newCRC32(),
+		postingsEncoder:        encoder,
 	}
-	if cacheAllSymbols {
+	if !cacheOnlySeriesSymbols {
 		iw.symbolToIndex = make(map[string]uint32, 1<<16)
 	} else {
-		iw.nameCache = make(map[string]nameCacheEntry, 1<<8)
+		iw.seriesSymbolCache = make(map[string]seriesSymbolCacheEntry, 1<<8)
 	}
 	if err := iw.writeMeta(); err != nil {
 		return nil, err
@@ -270,8 +268,8 @@ func NewWriterWithEncoder(ctx context.Context, fn string, encoder PostingsEncode
 
 // NewWriter creates a new index writer using the default encoder. See
 // NewWriterWithEncoder.
-func NewWriter(ctx context.Context, fn string, cacheAllSymbols bool) (*Writer, error) {
-	return NewWriterWithEncoder(ctx, fn, EncodePostingsRaw, cacheAllSymbols)
+func NewWriter(ctx context.Context, fn string, cacheOnlySeriesSymbols bool) (*Writer, error) {
+	return NewWriterWithEncoder(ctx, fn, EncodePostingsRaw, cacheOnlySeriesSymbols)
 }
 
 func (w *Writer) write(bufs ...[]byte) error {
@@ -489,45 +487,43 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 	w.buf2.PutUvarint(lset.Len())
 
 	if err := lset.Validate(func(l labels.Label) error {
-		var valueIndex uint32
-		if w.cacheAllSymbols {
-			nameIndex, ok := w.symbolToIndex[l.Name]
-			if !ok {
-				return fmt.Errorf("symbol entry for %q does not exist", l.Name)
+		var (
+			nameIndex  uint32
+			valueIndex uint32
+		)
+		if !w.cacheOnlySeriesSymbols {
+			var err error
+			if nameIndex, err = w.indexForSymbol(l.Name); err != nil {
+				return err
 			}
-			w.labelNames[l.Name]++
-			w.buf2.PutUvarint32(nameIndex)
-
-			valueIndex, ok = w.symbolToIndex[l.Value]
-			if !ok {
-				return fmt.Errorf("symbol entry for %q does not exist", l.Value)
+			if valueIndex, err = w.indexForSymbol(l.Value); err != nil {
+				return err
 			}
 		} else {
 			var err error
-			cacheEntry, ok := w.nameCache[l.Name]
-			nameIndex := cacheEntry.index
-			if !ok {
-				nameIndex, err = w.symbols.ReverseLookup(l.Name)
-				if err != nil {
-					return fmt.Errorf("symbol entry for %q does not exist, %w", l.Name, err)
+			cacheEntry, ok := w.seriesSymbolCache[l.Name]
+			if ok {
+				nameIndex = cacheEntry.index
+				valueIndex = cacheEntry.lastValueIndex
+			} else {
+				if nameIndex, err = w.indexForSymbol(l.Name); err != nil {
+					return err
 				}
 			}
-			w.labelNames[l.Name]++
-			w.buf2.PutUvarint32(nameIndex)
 
-			valueIndex = cacheEntry.lastValueIndex
 			if !ok || cacheEntry.lastValue != l.Value {
-				valueIndex, err = w.symbols.ReverseLookup(l.Value)
-				if err != nil {
-					return fmt.Errorf("symbol entry for %q does not exist, %w", l.Value, err)
+				if valueIndex, err = w.indexForSymbol(l.Value); err != nil {
+					return err
 				}
-				w.nameCache[l.Name] = nameCacheEntry{
+				w.seriesSymbolCache[l.Name] = seriesSymbolCacheEntry{
 					index:          nameIndex,
 					lastValueIndex: valueIndex,
 					lastValue:      l.Value,
 				}
 			}
 		}
+		w.labelNames[l.Name]++
+		w.buf2.PutUvarint32(nameIndex)
 		w.buf2.PutUvarint32(valueIndex)
 		return nil
 	}); err != nil {
@@ -585,7 +581,7 @@ func (w *Writer) AddSymbol(sym string) error {
 		return fmt.Errorf("symbol %q out-of-order", sym)
 	}
 	w.lastSymbol = sym
-	if w.cacheAllSymbols {
+	if !w.cacheOnlySeriesSymbols {
 		w.symbolToIndex[sym] = uint32(w.numSymbols)
 	}
 	w.numSymbols++
@@ -1017,15 +1013,19 @@ func (w *Writer) writePostingsToTmpFiles() error {
 
 // indexForSymbol returns the index corresponding to a symbol, or an error if it's not found.
 func (w *Writer) indexForSymbol(symbol string) (uint32, error) {
-	if w.cacheAllSymbols {
-		var ok bool
-		sid, ok := w.symbolToIndex[symbol]
-		if !ok {
-			return 0, fmt.Errorf("symbol entry for %q does not exist", symbol)
+	if w.cacheOnlySeriesSymbols {
+		sid, err := w.symbols.ReverseLookup(symbol)
+		if err != nil {
+			return 0, fmt.Errorf("symbol entry for %q does not exist, %w", symbol, err)
 		}
 		return sid, nil
 	}
-	return w.symbols.ReverseLookup(symbol)
+
+	sid, ok := w.symbolToIndex[symbol]
+	if !ok {
+		return 0, fmt.Errorf("symbol entry for %q does not exist", symbol)
+	}
+	return sid, nil
 }
 
 // EncodePostingsRaw uses the "basic" postings list encoding format with no compression:
