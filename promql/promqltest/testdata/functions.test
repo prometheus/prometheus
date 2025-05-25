@@ -1019,6 +1019,47 @@ eval instant at 1m sum_over_time(metric[2m])
 eval instant at 1m avg_over_time(metric[2m])
   {} 0.5
 
+# Test per-series aggregation on dense samples.
+clear
+load 1ms
+  metric 1+0x4000
+
+eval instant at 4s sum_over_time(metric[1000ms])
+  {} 1000
+
+eval instant at 4s sum_over_time(metric[1001ms])
+  {} 1001
+
+eval instant at 4s sum_over_time(metric[1002ms])
+  {} 1002
+
+eval instant at 4s sum_over_time(metric[1003ms])
+  {} 1003
+
+eval instant at 4s sum_over_time(metric[2000ms])
+  {} 2000
+
+eval instant at 4s sum_over_time(metric[2001ms])
+  {} 2001
+
+eval instant at 4s sum_over_time(metric[2002ms])
+  {} 2002
+
+eval instant at 4s sum_over_time(metric[2003ms])
+  {} 2003
+
+eval instant at 4s sum_over_time(metric[3000ms])
+  {} 3000
+
+eval instant at 4s sum_over_time(metric[3001ms])
+  {} 3001
+
+eval instant at 4s sum_over_time(metric[3002ms])
+  {} 3002
+
+eval instant at 4s sum_over_time(metric[3003ms])
+  {} 3003
+
 # Tests for stddev_over_time and stdvar_over_time.
 clear
 load 10s

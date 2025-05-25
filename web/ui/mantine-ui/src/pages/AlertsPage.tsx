@@ -217,12 +217,7 @@ export default function AlertsPage() {
   const renderedPageItems = useMemo(
     () =>
       currentPageGroups.map((g) => (
-        <Card
-          shadow="xs"
-          withBorder
-          p="md"
-          key={`${g.file}-${g.name}`}
-        >
+        <Card shadow="xs" withBorder p="md" key={`${g.file}-${g.name}`}>
           <Group mb="sm" justify="space-between">
             <Group align="baseline">
               <Text fz="xl" fw={600} c="var(--mantine-primary-color-filled)">
@@ -460,15 +455,13 @@ export default function AlertsPage() {
           </Alert>
         )
       )}
-      <Stack>
-        <Pagination
-          total={totalPageCount}
-          value={effectiveActivePage}
-          onChange={setActivePage}
-          hideWithOnePage
-        />
-        {renderedPageItems}
-      </Stack>
+      <Pagination
+        total={totalPageCount}
+        value={effectiveActivePage}
+        onChange={setActivePage}
+        hideWithOnePage
+      />
+      {renderedPageItems}
     </Stack>
   );
 }

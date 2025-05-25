@@ -1631,7 +1631,7 @@ func TestHistogramUniqueSpansAfterNextWithAtFloatHistogram(t *testing.T) {
 	require.NotSame(t, &rh1.NegativeSpans[0], &rh2.NegativeSpans[0], "NegativeSpans should be unique between histograms")
 }
 
-func TestHistogramUniqueCustomValuesAfterNextWithAtHistogram(t *testing.T) {
+func TestHistogramCustomValuesInternedAfterNextWithAtHistogram(t *testing.T) {
 	// Create two histograms with the same schema and custom values.
 	h1 := &histogram.Histogram{
 		Schema: -53,
@@ -1674,10 +1674,10 @@ func TestHistogramUniqueCustomValuesAfterNextWithAtHistogram(t *testing.T) {
 
 	// Check that the spans and custom values for h1 and h2 are unique slices.
 	require.NotSame(t, &rh1.PositiveSpans[0], &rh2.PositiveSpans[0], "PositiveSpans should be unique between histograms")
-	require.NotSame(t, &rh1.CustomValues[0], &rh2.CustomValues[0], "CustomValues should be unique between histograms")
+	require.Same(t, &rh1.CustomValues[0], &rh2.CustomValues[0], "CustomValues should be unique between histograms")
 }
 
-func TestHistogramUniqueCustomValuesAfterNextWithAtFloatHistogram(t *testing.T) {
+func TestHistogramCustomValuesInternedAfterNextWithAtFloatHistogram(t *testing.T) {
 	// Create two histograms with the same schema and custom values.
 	h1 := &histogram.Histogram{
 		Schema: -53,
@@ -1720,7 +1720,7 @@ func TestHistogramUniqueCustomValuesAfterNextWithAtFloatHistogram(t *testing.T) 
 
 	// Check that the spans and custom values for h1 and h2 are unique slices.
 	require.NotSame(t, &rh1.PositiveSpans[0], &rh2.PositiveSpans[0], "PositiveSpans should be unique between histograms")
-	require.NotSame(t, &rh1.CustomValues[0], &rh2.CustomValues[0], "CustomValues should be unique between histograms")
+	require.Same(t, &rh1.CustomValues[0], &rh2.CustomValues[0], "CustomValues should be unique between histograms")
 }
 
 func BenchmarkAppendable(b *testing.B) {

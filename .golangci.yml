@@ -2,6 +2,7 @@ formatters:
   enable:
     - gci
     - gofumpt
+    - goimports
   settings:
     gci:
       sections:
@@ -10,6 +11,9 @@ formatters:
         - prefix(github.com/prometheus/prometheus)
     gofumpt:
       extra-rules: true
+    goimports:
+      local-prefixes:
+        - github.com/prometheus/prometheus
 
 issues:
   max-issues-per-linter: 0

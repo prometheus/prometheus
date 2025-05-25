@@ -421,7 +421,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	for k, v := range labelPairs {
 		sort.Strings(v)
 
-		res, err := ir.SortedLabelValues(ctx, k)
+		res, err := ir.SortedLabelValues(ctx, k, nil)
 		require.NoError(t, err)
 
 		require.Len(t, res, len(v))

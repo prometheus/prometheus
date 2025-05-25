@@ -30,8 +30,15 @@ import ScrapePoolList from "./ScrapePoolsList";
 import { useSuspenseAPIQuery } from "../../api/api";
 import { ScrapePoolsResult } from "../../api/responseTypes/scrapePools";
 import { expandIconStyle, inputIconStyle } from "../../styles";
+import { useDebouncedValue } from "@mantine/hooks";
 
 export const targetPoolDisplayLimit = 20;
+
+// Should be defined as a constant here instead of inline as a value
+// to avoid unnecessary re-renders. Otherwise the empty array has
+// a different reference on each render and causes subsequent memoized
+// computations to re-run as long as no state filter is selected.
+const emptyHealthFilter: string[] = [];
 
 export default function TargetsPage() {
   // Load the list of all available scrape pools.
@@ -48,12 +55,13 @@ export default function TargetsPage() {
   const [scrapePool, setScrapePool] = useQueryParam("pool", StringParam);
   const [healthFilter, setHealthFilter] = useQueryParam(
     "health",
-    withDefault(ArrayParam, [])
+    withDefault(ArrayParam, emptyHealthFilter)
   );
   const [searchFilter, setSearchFilter] = useQueryParam(
     "search",
     withDefault(StringParam, "")
   );
+  const [debouncedSearch] = useDebouncedValue<string>(searchFilter.trim(), 250);
 
   const { collapsedPools, showLimitAlert } = useAppSelector(
     (state) => state.targetsPage
@@ -147,7 +155,7 @@ export default function TargetsPage() {
             poolNames={scrapePools}
             selectedPool={(limited && scrapePools[0]) || scrapePool || null}
             healthFilter={healthFilter as string[]}
-            searchFilter={searchFilter}
+            searchFilter={debouncedSearch}
           />
         </Suspense>
       </ErrorBoundary>

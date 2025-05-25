@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -174,7 +175,7 @@ var (
 
 	DefaultRuntimeConfig = RuntimeConfig{
 		// Go runtime tuning.
-		GoGC: 75,
+		GoGC: getGoGC(),
 	}
 
 	// DefaultScrapeConfig is the default scrape configuration.
@@ -384,8 +385,6 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// We have to restore it here.
 	if c.Runtime.isZero() {
 		c.Runtime = DefaultRuntimeConfig
-		// Use the GOGC env var value if the runtime section is empty.
-		c.Runtime.GoGC = getGoGCEnv()
 	}
 
 	for _, rf := range c.RuleFiles {
@@ -651,10 +650,27 @@ func (c *GlobalConfig) isZero() bool {
 		!c.AlwaysScrapeClassicHistograms
 }
 
+const DefaultGoGCPercentage = 75
+
 // RuntimeConfig configures the values for the process behavior.
 type RuntimeConfig struct {
 	// The Go garbage collection target percentage.
 	GoGC int `yaml:"gogc,omitempty"`
+
+	// Below are guidelines for adding a new field:
+	//
+	// For config that shouldn't change after startup, you might want to use
+	// flags https://prometheus.io/docs/prometheus/latest/command-line/prometheus/.
+	//
+	// Consider when the new field is first applied: at the very beginning of instance
+	// startup, after the TSDB is loaded etc. See https://github.com/prometheus/prometheus/pull/16491
+	// for an example.
+	//
+	// Provide a test covering various scenarios: empty config file, empty or incomplete runtime
+	// config block, precedence over other inputs (e.g., env vars, if applicable) etc.
+	// See TestRuntimeGOGCConfig (or https://github.com/prometheus/prometheus/pull/15238).
+	// The test should also verify behavior on reloads, since this config should be
+	// adjustable at runtime.
 }
 
 // isZero returns true iff the global config is the zero value.
@@ -1109,13 +1125,11 @@ func (v *AlertmanagerAPIVersion) UnmarshalYAML(unmarshal func(interface{}) error
 		return err
 	}
 
-	for _, supportedVersion := range SupportedAlertmanagerAPIVersions {
-		if *v == supportedVersion {
-			return nil
-		}
+	if !slices.Contains(SupportedAlertmanagerAPIVersions, *v) {
+		return fmt.Errorf("expected Alertmanager api version to be one of %v but got %v", SupportedAlertmanagerAPIVersions, *v)
 	}
 
-	return fmt.Errorf("expected Alertmanager api version to be one of %v but got %v", SupportedAlertmanagerAPIVersions, *v)
+	return nil
 }
 
 const (
@@ -1495,7 +1509,7 @@ func fileErr(filename string, err error) error {
 	return fmt.Errorf("%q: %w", filePath(filename), err)
 }
 
-func getGoGCEnv() int {
+func getGoGC() int {
 	goGCEnv := os.Getenv("GOGC")
 	// If the GOGC env var is set, use the same logic as upstream Go.
 	if goGCEnv != "" {
@@ -1508,7 +1522,7 @@ func getGoGCEnv() int {
 			return i
 		}
 	}
-	return DefaultRuntimeConfig.GoGC
+	return DefaultGoGCPercentage
 }
 
 type translationStrategyOption string

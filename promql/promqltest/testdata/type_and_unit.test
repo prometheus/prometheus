@@ -1,0 +1,280 @@
+# Test PROM-39 type and unit labels with operators.
+
+# A. Healthy case
+# NOTE: __unit__"request" is not a best practice unit, but keeping that to test the unit handling.
+load 5m
+	http_requests_total{__type__="counter", __unit__="request", job="api-server", instance="0", group="production"}	0+10x10
+	http_requests_total{__type__="counter", __unit__="request", job="api-server", instance="1", group="production"}	0+20x10
+	http_requests_total{__type__="counter", __unit__="request", job="api-server", instance="0", group="canary"}	0+30x10
+	http_requests_total{__type__="counter", __unit__="request", job="api-server", instance="1", group="canary"}	0+40x10
+	http_requests_total{__type__="counter", __unit__="request", job="app-server", instance="0", group="production"}	0+50x10
+	http_requests_total{__type__="counter", __unit__="request", job="app-server", instance="1", group="production"}	0+60x10
+	http_requests_total{__type__="counter", __unit__="request", job="app-server", instance="0", group="canary"}	0+70x10
+	http_requests_total{__type__="counter", __unit__="request", job="app-server", instance="1", group="canary"}	0+80x10
+
+eval instant at 50m SUM(http_requests_total) BY (job)
+	{job="api-server"} 1000
+ 	{job="app-server"} 2600
+
+eval instant at 50m SUM(http_requests_total{__type__="counter", __unit__="request"}) BY (job)
+  {job="api-server"} 1000
+  {job="app-server"} 2600
+
+eval instant at 50m SUM({__type__="counter"}) BY (job)
+  {job="api-server"} 1000
+  {job="app-server"} 2600
+
+eval instant at 50m SUM({__unit__="request"}) BY (job)
+  {job="api-server"} 1000
+  {job="app-server"} 2600
+
+eval instant at 50m SUM({__type__="counter", __unit__="request"}) BY (job)
+  {job="api-server"} 1000
+  {job="app-server"} 2600
+
+eval instant at 50m SUM(http_requests_total) BY (job) - COUNT(http_requests_total) BY (job)
+	{job="api-server"} 996
+	{job="app-server"} 2596
+
+eval instant at 50m -http_requests_total{job="api-server",instance="0",group="production"}
+  {job="api-server",instance="0",group="production"} -100
+
+eval instant at 50m +http_requests_total{job="api-server",instance="0",group="production"}
+  http_requests_total{__type__="counter", __unit__="request", job="api-server",instance="0",group="production"} 100
+
+eval instant at 50m -10^3 * - SUM(http_requests_total) BY (job) ^ -1
+	{job="api-server"} 1
+	{job="app-server"} 0.38461538461538464
+
+eval instant at 50m SUM(http_requests_total) BY (job) / 0
+	{job="api-server"} +Inf
+	{job="app-server"} +Inf
+
+eval instant at 50m http_requests_total{group="canary", instance="0", job="api-server"} / 0
+	{group="canary", instance="0", job="api-server"} +Inf
+
+eval instant at 50m 0 * http_requests_total{group="canary", instance="0", job="api-server"} % 0
+	{group="canary", instance="0", job="api-server"} NaN
+
+eval instant at 50m http_requests_total{job="api-server", group="canary"}
+	http_requests_total{__type__="counter", __unit__="request", group="canary", instance="0", job="api-server"} 300
+	http_requests_total{__type__="counter", __unit__="request", group="canary", instance="1", job="api-server"} 400
+
+eval instant at 50m rate(http_requests_total[25m]) * 25 * 60
+  {group="canary", instance="0", job="api-server"} 150
+  {group="canary", instance="0", job="app-server"} 350
+  {group="canary", instance="1", job="api-server"} 200
+  {group="canary", instance="1", job="app-server"} 400
+  {group="production", instance="0", job="api-server"} 50
+  {group="production", instance="0", job="app-server"} 249.99999999999997
+  {group="production", instance="1", job="api-server"} 100
+  {group="production", instance="1", job="app-server"} 300
+
+eval instant at 50m http_requests_total{group="canary"} and http_requests_total{instance="0"}
+	http_requests_total{__type__="counter", __unit__="request", group="canary", instance="0", job="api-server"} 300
+	http_requests_total{__type__="counter", __unit__="request", group="canary", instance="0", job="app-server"} 700
+
+eval instant at 50m (http_requests_total{group="canary"} + 1) and http_requests_total{instance="0"}
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+
+eval instant at 50m http_requests_total{group="canary"} or http_requests_total{group="production"}
+	http_requests_total{__type__="counter", __unit__="request", group="canary", instance="0", job="api-server"} 300
+	http_requests_total{__type__="counter", __unit__="request", group="canary", instance="0", job="app-server"} 700
+	http_requests_total{__type__="counter", __unit__="request", group="canary", instance="1", job="api-server"} 400
+	http_requests_total{__type__="counter", __unit__="request", group="canary", instance="1", job="app-server"} 800
+	http_requests_total{__type__="counter", __unit__="request", group="production", instance="0", job="api-server"} 100
+	http_requests_total{__type__="counter", __unit__="request", group="production", instance="0", job="app-server"} 500
+	http_requests_total{__type__="counter", __unit__="request", group="production", instance="1", job="api-server"} 200
+	http_requests_total{__type__="counter", __unit__="request", group="production", instance="1", job="app-server"} 600
+
+# On overlap the rhs samples must be dropped.
+eval instant at 50m (http_requests_total{group="canary"} + 1) or http_requests_total{instance="1"}
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+	{group="canary", instance="1", job="api-server"} 401
+	{group="canary", instance="1", job="app-server"} 801
+	http_requests_total{__type__="counter", __unit__="request", group="production", instance="1", job="api-server"} 200
+	http_requests_total{__type__="counter", __unit__="request", group="production", instance="1", job="app-server"} 600
+
+eval instant at 50m http_requests_total{group="canary"} unless http_requests_total{instance="0"}
+	http_requests_total{__type__="counter", __unit__="request", group="canary", instance="1", job="api-server"} 400
+	http_requests_total{__type__="counter", __unit__="request", group="canary", instance="1", job="app-server"} 800
+
+eval instant at 50m http_requests_total{group="canary"} unless on(job) http_requests_total{instance="0"}
+
+eval instant at 50m http_requests_total{group="canary"} unless on(job, instance) http_requests_total{instance="0"}
+	http_requests_total{__type__="counter", __unit__="request", group="canary", instance="1", job="api-server"} 400
+	http_requests_total{__type__="counter", __unit__="request", group="canary", instance="1", job="app-server"} 800
+
+eval instant at 50m http_requests_total{group="canary"} / on(instance,job) http_requests_total{group="production"}
+	{instance="0", job="api-server"} 3
+	{instance="0", job="app-server"} 1.4
+	{instance="1", job="api-server"} 2
+	{instance="1", job="app-server"} 1.3333333333333333
+
+eval instant at 50m http_requests_total{group="canary"} unless ignoring(group, instance) http_requests_total{instance="0"}
+
+eval instant at 50m http_requests_total{group="canary"} unless ignoring(group) http_requests_total{instance="0"}
+	http_requests_total{__type__="counter", __unit__="request", group="canary", instance="1", job="api-server"} 400
+	http_requests_total{__type__="counter", __unit__="request", group="canary", instance="1", job="app-server"} 800
+
+eval instant at 50m http_requests_total{group="canary"} / ignoring(group) http_requests_total{group="production"}
+	{instance="0", job="api-server"} 3
+	{instance="0", job="app-server"} 1.4
+	{instance="1", job="api-server"} 2
+	{instance="1", job="app-server"} 1.3333333333333333
+
+# Comparisons.
+eval instant at 50m SUM(http_requests_total) BY (job) > 1000
+	{job="app-server"} 2600
+
+eval instant at 50m SUM(http_requests_total) BY (job) == bool SUM(http_requests_total) BY (job)
+	{job="api-server"} 1
+	{job="app-server"} 1
+
+eval instant at 50m SUM(http_requests_total) BY (job) != bool SUM(http_requests_total) BY (job)
+	{job="api-server"} 0
+	{job="app-server"} 0
+
+eval instant at 50m http_requests_total{job="api-server", instance="0", group="production"} == bool 100
+	{job="api-server", instance="0", group="production"} 1
+
+clear
+
+# A. Inconsistent type and unit cases for unique series.
+# NOTE: __unit__"request" is not a best practice unit, but keeping that to test the unit handling.
+load 5m
+	http_requests_total{__type__="counter", __unit__="request", job="api-server", instance="0", group="production"}	0+10x10
+	http_requests_total{__type__="gauge", __unit__="request", job="api-server", instance="1", group="production"}	0+20x10
+	http_requests_total{__type__="gauge", __unit__="not-request", job="api-server", instance="0", group="canary"}	0+30x10
+	http_requests_total{__type__="counter", __unit__="not-request", job="api-server", instance="1", group="canary"}	0+40x10
+	http_requests_total{__type__="counter", __unit__="request", job="app-server", instance="0", group="production"}	0+50x10
+	http_requests_total{__type__="counter", __unit__="request", job="app-server", instance="1", group="production"}	0+60x10
+	http_requests_total{__type__="counter", __unit__="", job="app-server", instance="0", group="canary"}	0+70x10
+	http_requests_total{job="app-server", instance="1", group="canary"}	0+80x10
+
+eval instant at 50m SUM(http_requests_total) BY (job)
+	{job="api-server"} 1000
+ 	{job="app-server"} 2600
+
+eval instant at 50m SUM(http_requests_total{__type__="counter", __unit__="request"}) BY (job)
+  {job="api-server"} 100
+  {job="app-server"} 1100
+
+eval instant at 50m SUM({__type__="counter"}) BY (job)
+  {job="api-server"} 500
+  {job="app-server"} 1800
+
+eval instant at 50m SUM({__unit__="request"}) BY (job)
+  {job="api-server"} 300
+  {job="app-server"} 1100
+
+eval instant at 50m SUM({__type__="counter", __unit__="request"}) BY (job)
+  {job="api-server"} 100
+  {job="app-server"} 1100
+
+eval instant at 50m SUM(http_requests_total) BY (job) - COUNT(http_requests_total) BY (job)
+	{job="api-server"} 996
+	{job="app-server"} 2596
+
+eval instant at 50m -http_requests_total{job="api-server",instance="0",group="production"}
+  {job="api-server",instance="0",group="production"} -100
+
+eval instant at 50m +http_requests_total{job="api-server",instance="0",group="production"}
+  http_requests_total{__type__="counter", __unit__="request", job="api-server",instance="0",group="production"} 100
+
+eval instant at 50m -10^3 * - SUM(http_requests_total) BY (job) ^ -1
+	{job="api-server"} 1
+	{job="app-server"} 0.38461538461538464
+
+eval instant at 50m SUM(http_requests_total) BY (job) / 0
+	{job="api-server"} +Inf
+	{job="app-server"} +Inf
+
+eval instant at 50m http_requests_total{group="canary", instance="0", job="api-server"} / 0
+	{group="canary", instance="0", job="api-server"} +Inf
+
+eval instant at 50m 0 * http_requests_total{group="canary", instance="0", job="api-server"} % 0
+	{group="canary", instance="0", job="api-server"} NaN
+
+eval instant at 50m http_requests_total{job="api-server", group="canary"}
+	http_requests_total{__type__="gauge", __unit__="not-request", group="canary", instance="0", job="api-server"} 300
+	http_requests_total{__type__="counter", __unit__="not-request", group="canary", instance="1", job="api-server"} 400
+
+eval instant at 50m http_requests_total{__type__="counter", job="api-server", group="canary"}
+  http_requests_total{__type__="counter", __unit__="not-request", group="canary", instance="1", job="api-server"} 400
+
+eval instant at 50m rate(http_requests_total[25m]) * 25 * 60
+  {group="canary", instance="0", job="api-server"} 150
+  {group="canary", instance="0", job="app-server"} 350
+  {group="canary", instance="1", job="api-server"} 200
+  {group="canary", instance="1", job="app-server"} 400
+  {group="production", instance="0", job="api-server"} 50
+  {group="production", instance="0", job="app-server"} 249.99999999999997
+  {group="production", instance="1", job="api-server"} 100
+  {group="production", instance="1", job="app-server"} 300
+
+eval instant at 50m http_requests_total{group="canary"} and http_requests_total{instance="0"}
+	http_requests_total{__type__="gauge", __unit__="not-request", group="canary", instance="0", job="api-server"} 300
+	http_requests_total{__type__="counter", __unit__="", group="canary", instance="0", job="app-server"} 700
+
+eval instant at 50m (http_requests_total{group="canary"} + 1) and http_requests_total{instance="0"}
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+
+eval instant at 50m http_requests_total{group="canary"} or http_requests_total{group="production"}
+	http_requests_total{__type__="gauge", __unit__="not-request", group="canary", instance="0", job="api-server"} 300
+	http_requests_total{__type__="counter", __unit__="", group="canary", instance="0", job="app-server"} 700
+	http_requests_total{__type__="counter", __unit__="not-request", group="canary", instance="1", job="api-server"} 400
+	http_requests_total{group="canary", instance="1", job="app-server"} 800
+	http_requests_total{__type__="counter", __unit__="request", group="production", instance="0", job="api-server"} 100
+	http_requests_total{__type__="counter", __unit__="request", group="production", instance="0", job="app-server"} 500
+	http_requests_total{__type__="gauge", __unit__="request", group="production", instance="1", job="api-server"} 200
+	http_requests_total{__type__="counter", __unit__="request", group="production", instance="1", job="app-server"} 600
+
+# On overlap the rhs samples must be dropped.
+eval instant at 50m (http_requests_total{group="canary"} + 1) or http_requests_total{instance="1"}
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+	{group="canary", instance="1", job="api-server"} 401
+	{group="canary", instance="1", job="app-server"} 801
+	http_requests_total{__type__="gauge", __unit__="request", group="production", instance="1", job="api-server"} 200
+	http_requests_total{__type__="counter", __unit__="request", group="production", instance="1", job="app-server"} 600
+
+eval instant at 50m http_requests_total{group="canary"} unless http_requests_total{instance="0"}
+	http_requests_total{__type__="counter", __unit__="not-request", group="canary", instance="1", job="api-server"} 400
+	http_requests_total{group="canary", instance="1", job="app-server"} 800
+
+eval instant at 50m http_requests_total{group="canary"} unless on(job) http_requests_total{instance="0"}
+
+eval instant at 50m http_requests_total{group="canary"} unless on(job, instance) http_requests_total{instance="0"}
+	http_requests_total{__type__="counter", __unit__="not-request", group="canary", instance="1", job="api-server"} 400
+	http_requests_total{group="canary", instance="1", job="app-server"} 800
+
+eval instant at 50m http_requests_total{group="canary"} / on(instance,job) http_requests_total{group="production"}
+	{instance="0", job="api-server"} 3
+	{instance="0", job="app-server"} 1.4
+	{instance="1", job="api-server"} 2
+	{instance="1", job="app-server"} 1.3333333333333333
+
+eval instant at 50m http_requests_total{group="canary"} unless ignoring(group) http_requests_total{instance="0"}
+	http_requests_total{__type__="counter", __unit__="not-request", group="canary", instance="1", job="api-server"} 400
+	http_requests_total{group="canary", instance="1", job="app-server"} 800
+
+eval instant at 50m http_requests_total{group="canary"} / ignoring(group) http_requests_total{group="production"}
+
+# Comparisons.
+eval instant at 50m SUM(http_requests_total) BY (job) > 1000
+	{job="app-server"} 2600
+
+eval instant at 50m SUM(http_requests_total) BY (job) == bool SUM(http_requests_total) BY (job)
+	{job="api-server"} 1
+	{job="app-server"} 1
+
+eval instant at 50m SUM(http_requests_total) BY (job) != bool SUM(http_requests_total) BY (job)
+	{job="api-server"} 0
+	{job="app-server"} 0
+
+eval instant at 50m http_requests_total{job="api-server", instance="0", group="production"} == bool 100
+	{job="api-server", instance="0", group="production"} 1
