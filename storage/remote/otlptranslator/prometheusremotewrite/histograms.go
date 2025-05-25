@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -36,8 +37,7 @@ const defaultZeroThreshold = 1e-128
 // addExponentialHistogramDataPoints adds OTel exponential histogram data points to the corresponding time series
 // as native histogram samples.
 func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Context, dataPoints pmetric.ExponentialHistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string, temporality pmetric.AggregationTemporality,
-	scope scope,
+	resource pcommon.Resource, settings Settings, metadata prompb.MetricMetadata, temporality pmetric.AggregationTemporality, scope scope,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 	for x := 0; x < dataPoints.Len(); x++ {
@@ -61,8 +61,14 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			nil,
 			true,
 			model.MetricNameLabel,
-			promName,
+			metadata.MetricFamilyName,
 		)
+
+		if settings.AddTypeAndUnitLabels {
+			lbls = append(lbls, prompb.Label{Name: "__type__", Value: strings.ToLower(metadata.Type.String())})
+			lbls = append(lbls, prompb.Label{Name: "__unit__", Value: metadata.Unit})
+		}
+
 		ts, _ := c.getOrCreateTimeSeries(lbls)
 		ts.Histograms = append(ts.Histograms, histogram)
 
@@ -253,8 +259,7 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 }
 
 func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string, temporality pmetric.AggregationTemporality,
-	scope scope,
+	resource pcommon.Resource, settings Settings, metadata prompb.MetricMetadata, temporality pmetric.AggregationTemporality, scope scope,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 
@@ -279,8 +284,13 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 			nil,
 			true,
 			model.MetricNameLabel,
-			promName,
+			metadata.MetricFamilyName,
 		)
+
+		if settings.AddTypeAndUnitLabels {
+			lbls = append(lbls, prompb.Label{Name: "__type__", Value: strings.ToLower(metadata.Type.String())})
+			lbls = append(lbls, prompb.Label{Name: "__unit__", Value: metadata.Unit})
+		}
 
 		ts, _ := c.getOrCreateTimeSeries(lbls)
 		ts.Histograms = append(ts.Histograms, histogram)
