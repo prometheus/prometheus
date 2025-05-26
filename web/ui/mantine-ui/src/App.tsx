@@ -224,6 +224,7 @@ function App() {
                       leftSection={p.icon}
                       rightSection={<IconChevronDown style={navIconStyle} />}
                       px={navLinkXPadding}
+                      onClick={(e) => e.preventDefault()}
                     >
                       Status <IconChevronRight style={navIconStyle} /> {p.title}
                     </Button>
@@ -236,14 +237,9 @@ function App() {
             element={
               <Menu.Target>
                 <Button
-                  component={NavLink}
-                  to="/"
                   className={classes.link}
                   leftSection={<IconServer style={navIconStyle} />}
                   rightSection={<IconChevronDown style={navIconStyle} />}
-                  onClick={(e) => {
-                    e.preventDefault();
-                  }}
                   px={navLinkXPadding}
                 >
                   Status
@@ -339,8 +335,12 @@ function App() {
                         >
                           <Group gap={10} wrap="nowrap">
                             <img src={PrometheusLogo} height={30} />
-                            <Text hiddenFrom="sm" fz={20}>Prometheus</Text>
-                            <Text visibleFrom="md" fz={20}>Prometheus</Text>
+                            <Text hiddenFrom="sm" fz={20}>
+                              Prometheus
+                            </Text>
+                            <Text visibleFrom="md" fz={20}>
+                              Prometheus
+                            </Text>
                             <Text fz={20}>{agentMode && "Agent"}</Text>
                           </Group>
                         </Link>

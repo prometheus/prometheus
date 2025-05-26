@@ -115,6 +115,7 @@ func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 
 		region, err := metadata.Region()
 		if err != nil {
+			//nolint:staticcheck // Capitalized first word.
 			return errors.New("Lightsail SD configuration requires a region")
 		}
 		c.Region = region

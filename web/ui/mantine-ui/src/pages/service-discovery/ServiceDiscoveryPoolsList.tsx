@@ -39,6 +39,9 @@ type ScrapePool = {
   targets: TargetLabels[];
   active: number;
   total: number;
+  // Can be different from "total" if the "keep_dropped_targets" setting is used
+  // to limit the number of dropped targets for which the server keeps details.
+  serverTotal: number;
 };
 
 type ScrapePools = {
@@ -62,11 +65,11 @@ const droppedTargetKVSearch = new KVSearch<DroppedTarget>({
 
 const buildPoolsData = (
   poolNames: string[],
-  activeTargets: Target[],
-  droppedTargets: DroppedTarget[],
+  targetsData: TargetsResult,
   search: string,
   stateFilter: (string | null)[]
 ): ScrapePools => {
+  const { activeTargets, droppedTargets, droppedTargetCounts } = targetsData;
   const pools: ScrapePools = {};
 
   for (const pn of poolNames) {
@@ -74,6 +77,7 @@ const buildPoolsData = (
       targets: [],
       active: 0,
       total: 0,
+      serverTotal: droppedTargetCounts[pn] || 0,
     };
   }
 
@@ -88,6 +92,7 @@ const buildPoolsData = (
 
     pool.active++;
     pool.total++;
+    pool.serverTotal++;
   }
 
   const filteredActiveTargets =
@@ -160,9 +165,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
 
   // Based on the selected pool (if any), load the list of targets.
   const {
-    data: {
-      data: { activeTargets, droppedTargets },
-    },
+    data: { data: targetsData },
   } = useSuspenseAPIQuery<TargetsResult>({
     path: `/targets`,
     params: {
@@ -180,19 +183,11 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
     () =>
       buildPoolsData(
         selectedPool ? [selectedPool] : poolNames,
-        activeTargets,
-        droppedTargets,
+        targetsData,
         debouncedSearch,
         stateFilter
       ),
-    [
-      selectedPool,
-      poolNames,
-      activeTargets,
-      droppedTargets,
-      debouncedSearch,
-      stateFilter,
-    ]
+    [selectedPool, poolNames, targetsData, debouncedSearch, stateFilter]
   );
   const allPoolNames = Object.keys(allPools);
   const shownPoolNames = showEmptyPools
@@ -250,22 +245,23 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                   <Text>{poolName}</Text>
                   <Group gap="xs">
                     <Text c="gray.6">
-                      {pool.active} / {pool.total}
+                      {pool.active} / {pool.serverTotal}
                     </Text>
                     <RingProgress
                       size={25}
                       thickness={5}
                       sections={
-                        pool.total === 0
+                        pool.serverTotal === 0
                           ? []
                           : [
                               {
-                                value: (pool.active / pool.total) * 100,
+                                value: (pool.active / pool.serverTotal) * 100,
                                 color: "green.4",
                               },
                               {
                                 value:
-                                  ((pool.total - pool.active) / pool.total) *
+                                  ((pool.serverTotal - pool.active) /
+                                    pool.serverTotal) *
                                   100,
                                 color: "blue.6",
                               },
@@ -276,6 +272,19 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                 </Group>
               </Accordion.Control>
               <Accordion.Panel>
+                {pool.total !== pool.serverTotal && (
+                  <Alert
+                    title="Only showing partial dropped targets"
+                    icon={<IconInfoCircle />}
+                    color="yellow"
+                    mb="sm"
+                  >
+                    {pool.serverTotal - pool.total} further dropped targets are
+                    not shown here because the server only kept details on a
+                    maximum of {pool.total - pool.active} dropped targets (
+                    <code>keep_dropped_targets</code> configuration setting).
+                  </Alert>
+                )}
                 {pool.total === 0 ? (
                   <Alert title="No targets" icon={<IconInfoCircle />}>
                     No targets in this scrape pool.

@@ -210,7 +210,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 			log.Println("label " + name + " is overwritten. Check if Prometheus reserved labels are used.")
 		}
 		// internal labels should be maintained
-		if !settings.AllowUTF8 && !(len(name) > 4 && name[:2] == "__" && name[len(name)-2:] == "__") {
+		if !settings.AllowUTF8 && (len(name) <= 4 || name[:2] != "__" || name[len(name)-2:] != "__") {
 			name = otlptranslator.NormalizeLabel(name)
 		}
 		l[name] = extras[i+1]
