@@ -326,6 +326,8 @@ type EngineOpts struct {
 	// This is useful in certain scenarios where the __name__ label must be preserved or where applying a
 	// regex-matcher to the __name__ label may otherwise lead to duplicate labelset errors.
 	EnableDelayedNameRemoval bool
+	// EnableTypeAndUnitLabels will allow PromQL Engine to make decisions based on the type and unit labels.
+	EnableTypeAndUnitLabels bool
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -344,6 +346,7 @@ type Engine struct {
 	enableNegativeOffset     bool
 	enablePerStepStats       bool
 	enableDelayedNameRemoval bool
+	enableTypeAndUnitLabels  bool
 }
 
 // NewEngine returns a new engine.
@@ -435,6 +438,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		enableNegativeOffset:     opts.EnableNegativeOffset,
 		enablePerStepStats:       opts.EnablePerStepStats,
 		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
+		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
 	}
 }
 
@@ -744,6 +748,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			samplesStats:             query.sampleStats,
 			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
+			enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 			querier:                  querier,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
@@ -803,6 +808,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		samplesStats:             query.sampleStats,
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
+		enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 		querier:                  querier,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
@@ -1076,6 +1082,7 @@ type evaluator struct {
 	samplesStats             *stats.QuerySamples
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	enableDelayedNameRemoval bool
+	enableTypeAndUnitLabels  bool
 	querier                  storage.Querier
 }
 
@@ -1890,12 +1897,20 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 			if e.Func.Name == "rate" || e.Func.Name == "increase" {
 				metricName := inMatrix[0].Metric.Get(labels.MetricName)
-				if metricName != "" && len(ss.Floats) > 0 &&
-					!strings.HasSuffix(metricName, "_total") &&
-					!strings.HasSuffix(metricName, "_sum") &&
-					!strings.HasSuffix(metricName, "_count") &&
-					!strings.HasSuffix(metricName, "_bucket") {
-					warnings.Add(annotations.NewPossibleNonCounterInfo(metricName, e.Args[0].PositionRange()))
+				if metricName != "" && len(ss.Floats) > 0 {
+					if ev.enableTypeAndUnitLabels {
+						// When type-and-unit-labels feature is enabled, check __type__ label
+						typeLabel := inMatrix[0].Metric.Get("__type__")
+						if typeLabel != "counter" {
+							warnings.Add(annotations.NewPossibleNonCounterLabelInfo(metricName, e.Args[0].PositionRange()))
+						}
+					} else if !strings.HasSuffix(metricName, "_total") ||
+						!strings.HasSuffix(metricName, "_sum") ||
+						!strings.HasSuffix(metricName, "_count") ||
+						!strings.HasSuffix(metricName, "_bucket") {
+						// Fallback to name suffix checking
+						warnings.Add(annotations.NewPossibleNonCounterInfo(metricName, e.Args[0].PositionRange()))
+					}
 				}
 			}
 		}
@@ -2060,6 +2075,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			samplesStats:             ev.samplesStats.NewChild(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
+			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			querier:                  ev.querier,
 		}
 
@@ -2105,6 +2121,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			samplesStats:             ev.samplesStats.NewChild(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
+			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			querier:                  ev.querier,
 		}
 		res, ws := newEv.eval(ctx, e.Expr)
