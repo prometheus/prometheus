@@ -485,7 +485,7 @@ type ConcurrentRules []int
 // Its purpose is to bound the amount of concurrency in rule evaluations to avoid overwhelming the Prometheus
 // server with additional query load. Concurrency is controlled globally, not on a per-group basis.
 type RuleConcurrencyController interface {
-	// SplitGroupIntoBatches returns an ordered slice of of ConcurrentRules, which are batches of rules that can be evaluated concurrently.
+	// SplitGroupIntoBatches returns an ordered slice of ConcurrentRules, which are batches of rules that can be evaluated concurrently.
 	// The rules are represented by their index from the input rule group.
 	SplitGroupIntoBatches(ctx context.Context, group *Group) []ConcurrentRules
 
