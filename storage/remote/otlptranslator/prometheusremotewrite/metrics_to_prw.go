@@ -52,18 +52,18 @@ type Settings struct {
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
 type PrometheusConverter struct {
-	unique            map[uint64]*prompb.TimeSeries
-	conflicts         map[uint64][]*prompb.TimeSeries
-	everyN            everyNTimes
-	metadata          []prompb.MetricMetadata
-	metricNameBuilder *otlptranslator.MetricNamer
+	unique      map[uint64]*prompb.TimeSeries
+	conflicts   map[uint64][]*prompb.TimeSeries
+	everyN      everyNTimes
+	metadata    []prompb.MetricMetadata
+	metricNamer *otlptranslator.MetricNamer
 }
 
 func NewPrometheusConverter() *PrometheusConverter {
 	return &PrometheusConverter{
-		unique:            map[uint64]*prompb.TimeSeries{},
-		conflicts:         map[uint64][]*prompb.TimeSeries{},
-		metricNameBuilder: &otlptranslator.MetricNamer{},
+		unique:      map[uint64]*prompb.TimeSeries{},
+		conflicts:   map[uint64][]*prompb.TimeSeries{},
+		metricNamer: &otlptranslator.MetricNamer{},
 	}
 }
 
@@ -88,9 +88,9 @@ func otelTypeToTranslatorType(metric pmetric.Metric) otlptranslator.MetricType {
 
 // FromMetrics converts pmetric.Metrics to Prometheus remote write format.
 func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings) (annots annotations.Annotations, errs error) {
-	c.metricNameBuilder.Namespace = settings.Namespace
-	c.metricNameBuilder.WithMetricSuffixes = settings.AddMetricSuffixes
-	c.metricNameBuilder.UTF8Allowed = settings.AllowUTF8
+	c.metricNamer.Namespace = settings.Namespace
+	c.metricNamer.WithMetricSuffixes = settings.AddMetricSuffixes
+	c.metricNamer.UTF8Allowed = settings.AllowUTF8
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
 
@@ -138,7 +138,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					continue
 				}
 
-				promName := c.metricNameBuilder.Build(otlptranslator.Metric{Name: metric.Name(), Unit: metric.Unit(), Type: otelTypeToTranslatorType(metric)})
+				promName := c.metricNamer.Build(otlptranslator.Metric{Name: metric.Name(), Unit: metric.Unit(), Type: otelTypeToTranslatorType(metric)})
 				c.metadata = append(c.metadata, prompb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
 					MetricFamilyName: promName,
