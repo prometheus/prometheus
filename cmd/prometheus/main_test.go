@@ -660,7 +660,7 @@ func reloadPrometheusConfig(t *testing.T, reloadURL string) {
 	require.Equal(t, http.StatusOK, r.StatusCode, "Unexpected status code when reloading Prometheus")
 }
 
-func getGaugeValue(t *testing.T, body io.ReadCloser, metricName string) (float64, error) {
+func getMetricValue(t *testing.T, body io.Reader, metricType model.MetricType, metricName string) (float64, error) {
 	t.Helper()
 
 	p := expfmt.TextParser{}
@@ -676,7 +676,16 @@ func getGaugeValue(t *testing.T, body io.ReadCloser, metricName string) (float64
 	if len(metric) != 1 {
 		return 0, errors.New("metric not found")
 	}
-	return metric[0].GetGauge().GetValue(), nil
+	switch metricType {
+	case model.MetricTypeGauge:
+		return metric[0].GetGauge().GetValue(), nil
+	case model.MetricTypeCounter:
+		return metric[0].GetCounter().GetValue(), nil
+	default:
+		t.Fatalf("metric type %s not supported", metricType)
+	}
+
+	return 0, errors.New("cannot get value")
 }
 
 func TestRuntimeGOGCConfig(t *testing.T) {
@@ -775,7 +784,7 @@ global:
 				defer r.Body.Close()
 
 				// Check the final GOGC that's set, consider go_gc_gogc_percent from /metrics as source of truth.
-				gogc, err := getGaugeValue(t, r.Body, "go_gc_gogc_percent")
+				gogc, err := getMetricValue(t, r.Body, model.MetricTypeGauge, "go_gc_gogc_percent")
 				require.NoError(t, err)
 				require.Equal(t, val, gogc)
 			}
@@ -795,6 +804,81 @@ runtime:
 			os.WriteFile(configFile, []byte(newConfig), 0o777)
 			reloadPrometheusConfig(t, reloadURL)
 			ensureGOGCValue(99.0)
+		})
+	}
+}
+
+// TestHeadCompactionWhileScraping verifies that running a head compaction
+// concurrently with a scrape does not trigger the data race described in
+// https://github.com/prometheus/prometheus/issues/16490.
+func TestHeadCompactionWhileScraping(t *testing.T) {
+	t.Parallel()
+
+	// To increase the chance of reproducing the data race
+	for i := range 5 {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+
+			tmpDir := t.TempDir()
+			configFile := filepath.Join(tmpDir, "prometheus.yml")
+
+			port := testutil.RandomUnprivilegedPort(t)
+			config := fmt.Sprintf(`
+scrape_configs:
+  - job_name: 'self1'
+    scrape_interval: 61ms
+    static_configs:
+      - targets: ['localhost:%d']
+  - job_name: 'self2'
+    scrape_interval: 67ms
+    static_configs:
+      - targets: ['localhost:%d']
+`, port, port)
+			os.WriteFile(configFile, []byte(config), 0o777)
+
+			prom := prometheusCommandWithLogging(
+				t,
+				configFile,
+				port,
+				fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
+				"--storage.tsdb.min-block-duration=100ms",
+			)
+			require.NoError(t, prom.Start())
+
+			require.Eventually(t, func() bool {
+				r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+				if err != nil {
+					return false
+				}
+				defer r.Body.Close()
+				if r.StatusCode != http.StatusOK {
+					return false
+				}
+				metrics, err := io.ReadAll(r.Body)
+				if err != nil {
+					return false
+				}
+
+				// Wait for some compactions to run
+				compactions, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeCounter, "prometheus_tsdb_compactions_total")
+				if err != nil {
+					return false
+				}
+				if compactions < 3 {
+					return false
+				}
+
+				// Sanity check: Some actual scraping was done.
+				series, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeCounter, "prometheus_tsdb_head_series_created_total")
+				require.NoError(t, err)
+				require.NotZero(t, series)
+
+				// No compaction must have failed
+				failures, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeCounter, "prometheus_tsdb_compactions_failed_total")
+				require.NoError(t, err)
+				require.Zero(t, failures)
+				return true
+			}, 15*time.Second, 500*time.Millisecond)
 		})
 	}
 }
