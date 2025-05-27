@@ -429,7 +429,7 @@ Licensed under the MIT license.
   //
   // Each position after the first receives a clone of the original element.
   //
-  // The idea is that that the width, height, and general 'identity' of the
+  // The idea is that the width, height, and general 'identity' of the
   // text is constant no matter where it is placed; the placements are a
   // secondary property.
   //

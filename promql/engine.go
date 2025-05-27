@@ -3658,7 +3658,7 @@ func btos(b bool) float64 {
 	return 0
 }
 
-// changesSchema returns true whether the op operation changes the semantic meaning or
+// changesMetricSchema returns true whether the op operation changes the semantic meaning or
 // schema of the metric.
 func changesMetricSchema(op parser.ItemType) bool {
 	switch op {
