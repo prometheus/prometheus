@@ -52,45 +52,51 @@ type Settings struct {
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
 type PrometheusConverter struct {
-	unique      map[uint64]*prompb.TimeSeries
-	conflicts   map[uint64][]*prompb.TimeSeries
-	everyN      everyNTimes
-	metadata    []prompb.MetricMetadata
-	metricNamer *otlptranslator.MetricNamer
+	unique    map[uint64]*prompb.TimeSeries
+	conflicts map[uint64][]*prompb.TimeSeries
+	everyN    everyNTimes
+	metadata  []prompb.MetricMetadata
 }
 
 func NewPrometheusConverter() *PrometheusConverter {
 	return &PrometheusConverter{
-		unique:      map[uint64]*prompb.TimeSeries{},
-		conflicts:   map[uint64][]*prompb.TimeSeries{},
-		metricNamer: &otlptranslator.MetricNamer{},
+		unique:    map[uint64]*prompb.TimeSeries{},
+		conflicts: map[uint64][]*prompb.TimeSeries{},
 	}
 }
 
-func otelTypeToTranslatorType(metric pmetric.Metric) otlptranslator.MetricType {
+func translatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric {
+	m := otlptranslator.Metric{
+		Name: metric.Name(),
+		Unit: metric.Unit(),
+		Type: otlptranslator.MetricTypeUnknown,
+	}
 	switch metric.Type() {
 	case pmetric.MetricTypeGauge:
-		return otlptranslator.MetricTypeGauge
+		m.Type = otlptranslator.MetricTypeGauge
 	case pmetric.MetricTypeSum:
 		if metric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityCumulative {
-			return otlptranslator.MetricTypeMonotonicCounter
+			m.Type = otlptranslator.MetricTypeMonotonicCounter
+		} else {
+			m.Type = otlptranslator.MetricTypeNonMonotonicCounter
 		}
-		return otlptranslator.MetricTypeNonMonotonicCounter
 	case pmetric.MetricTypeSummary:
-		return otlptranslator.MetricTypeSummary
+		m.Type = otlptranslator.MetricTypeSummary
 	case pmetric.MetricTypeHistogram:
-		return otlptranslator.MetricTypeHistogram
+		m.Type = otlptranslator.MetricTypeHistogram
 	case pmetric.MetricTypeExponentialHistogram:
-		return otlptranslator.MetricTypeExponentialHistogram
+		m.Type = otlptranslator.MetricTypeExponentialHistogram
 	}
-	return otlptranslator.MetricTypeUnknown
+	return m
 }
 
 // FromMetrics converts pmetric.Metrics to Prometheus remote write format.
 func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings) (annots annotations.Annotations, errs error) {
-	c.metricNamer.Namespace = settings.Namespace
-	c.metricNamer.WithMetricSuffixes = settings.AddMetricSuffixes
-	c.metricNamer.UTF8Allowed = settings.AllowUTF8
+	namer := otlptranslator.MetricNamer{
+		Namespace:          settings.Namespace,
+		WithMetricSuffixes: settings.AddMetricSuffixes,
+		UTF8Allowed:        settings.AllowUTF8,
+	}
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
 
@@ -138,7 +144,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					continue
 				}
 
-				promName := c.metricNamer.Build(otlptranslator.Metric{Name: metric.Name(), Unit: metric.Unit(), Type: otelTypeToTranslatorType(metric)})
+				promName := namer.Build(translatorMetricFromOtelMetric(metric))
 				c.metadata = append(c.metadata, prompb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
 					MetricFamilyName: promName,
