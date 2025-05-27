@@ -309,9 +309,6 @@ func WithUncachedIO(enabled bool) WriterOption {
 
 func WithSegmentSize(segmentSize int64) WriterOption {
 	return func(o *writerOptions) {
-		if segmentSize <= 0 {
-			segmentSize = DefaultChunkSegmentSize
-		}
 		o.segmentSize = segmentSize
 	}
 }
@@ -322,6 +319,10 @@ func NewWriter(dir string, opts ...WriterOption) (*Writer, error) {
 
 	for _, opt := range opts {
 		opt(options)
+	}
+
+	if options.segmentSize <= 0 {
+		options.segmentSize = DefaultChunkSegmentSize
 	}
 
 	if err := os.MkdirAll(dir, 0o777); err != nil {
