@@ -925,6 +925,9 @@ func getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path
 		// because wo want to exclude samples that are precisely the
 		// lookback delta before the eval time.
 		start -= durationMilliseconds(s.LookbackDelta) - 1
+		if n.Smoothed {
+			end += durationMilliseconds(s.LookbackDelta)
+		}
 	} else {
 		// For matrix queries, adjust the start and end times to ensure the
 		// correct range of data is selected. For "anchored" selectors, extend
@@ -1515,11 +1518,63 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 	return result, annos
 }
 
+func (ev *evaluator) smoothSeries(ctx context.Context, series []storage.Series, offset time.Duration, recordOrigT bool) Matrix {
+	dur := ev.endTimestamp - ev.startTimestamp
+	it := storage.NewBuffer(dur + 2*durationMilliseconds(ev.lookbackDelta))
+	var chkIter chunkenc.Iterator
+	mat := make(Matrix, 0, len(series))
+	for _, s := range series {
+		ss := Series{
+			Metric: s.Labels(),
+		}
+		chkIter := s.Iterator(chkIter)
+		it.Reset(chkIter)
+
+		var floats []FPoint
+
+		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
+			matrixStart := ts - durationMilliseconds(ev.lookbackDelta)
+			matrixEnd := ts + durationMilliseconds(ev.lookbackDelta)
+			floats, _ = ev.matrixIterSlice(it, matrixStart, matrixEnd, floats, nil)
+
+			step++
+			var havePrev bool
+			var found bool
+			var prevF float64
+			var prevT int64
+			for _, f := range floats {
+				if f.T == ts {
+					ss.Floats = append(ss.Floats, f)
+					found = true
+					break
+				} else if f.T < ts {
+					prevT = f.T
+					prevF = f.F
+					havePrev = true
+					continue
+				}
+				if havePrev {
+					value := linear(prevF, f.F, prevT, f.T, ts)
+					ss.Floats = append(ss.Floats, FPoint{F: value, T: ts})
+					found = true
+					break
+				}
+			}
+			if !found && havePrev {
+				ss.Floats = append(ss.Floats, FPoint{F: prevF, T: ts})
+			}
+		}
+		mat = append(mat, ss)
+	}
+	return mat
+}
+
 // evalSeries generates a Matrix between ev.startTimestamp and ev.endTimestamp (inclusive), each point spaced ev.interval apart, from series given offset.
 // For every storage.Series iterator in series, the method iterates in ev.interval sized steps from ev.startTimestamp until and including ev.endTimestamp,
 // collecting every corresponding sample (obtained via ev.vectorSelectorSingle) into a Series.
 // All of the generated Series are collected into a Matrix, that gets returned.
 func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, offset time.Duration, recordOrigT bool) Matrix {
+
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
 	mat := make(Matrix, 0, len(series))
@@ -2086,6 +2141,10 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		ws, err := checkAndExpandSeriesSet(ctx, e)
 		if err != nil {
 			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
+		}
+		if e.Smoothed {
+			mat := ev.smoothSeries(ctx, e.Series, e.Offset, false)
+			return mat, ws
 		}
 		mat := ev.evalSeries(ctx, e.Series, e.Offset, false)
 		return mat, ws
