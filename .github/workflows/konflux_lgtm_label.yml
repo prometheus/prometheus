@@ -1,0 +1,17 @@
+name: Label PRs by User
+
+on:
+  pull_request:
+    types: [opened, edited, reopened]
+
+jobs:
+  add_labels:
+    if: ${{ github.event.pull_request.user.login == 'red-hat-konflux[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: add labels
+        uses: actions-ecosystem/action-add-labels@v1
+        with:
+          labels: |
+            lgtm
+            approved
