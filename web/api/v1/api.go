@@ -89,7 +89,7 @@ const (
 
 type ErrorTypeToStatusCode map[errorType]func(error) int
 
-var defaultErrorTypeToStatusCode = map[errorType]func(error) int{
+var defaultErrorTypeToStatusCode = ErrorTypeToStatusCode{
 	ErrorBadData: func(_ error) int {
 		return http.StatusBadRequest
 	},
