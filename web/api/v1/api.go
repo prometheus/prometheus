@@ -236,19 +236,19 @@ type API struct {
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 	globalURLOptions      GlobalURLOptions
 
-	db                    TSDBAdminStats
-	dbDir                 string
-	enableAdmin           bool
-	logger                *slog.Logger
-	CORSOrigin            *regexp.Regexp
-	buildInfo             *PrometheusVersion
-	runtimeInfo           func() (RuntimeInfo, error)
-	gatherer              prometheus.Gatherer
-	isAgent               bool
-	statsRenderer         StatsRenderer
-	notificationsGetter   func() []notifications.Notification
-	notificationsSub      func() (<-chan notifications.Notification, func(), bool)
-        // Allows customizing the default mapping
+	db                  TSDBAdminStats
+	dbDir               string
+	enableAdmin         bool
+	logger              *slog.Logger
+	CORSOrigin          *regexp.Regexp
+	buildInfo           *PrometheusVersion
+	runtimeInfo         func() (RuntimeInfo, error)
+	gatherer            prometheus.Gatherer
+	isAgent             bool
+	statsRenderer       StatsRenderer
+	notificationsGetter func() []notifications.Notification
+	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
+	// Allows customizing the default mapping
 	errorTypeToStatusCode ErrorTypeToStatusCode
 
 	remoteWriteHandler http.Handler
