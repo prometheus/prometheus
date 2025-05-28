@@ -248,6 +248,7 @@ type API struct {
 	statsRenderer         StatsRenderer
 	notificationsGetter   func() []notifications.Notification
 	notificationsSub      func() (<-chan notifications.Notification, func(), bool)
+        // Allows customizing the default mapping
 	errorTypeToStatusCode ErrorTypeToStatusCode
 
 	remoteWriteHandler http.Handler
