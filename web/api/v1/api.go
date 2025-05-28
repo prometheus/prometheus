@@ -298,7 +298,7 @@ func NewAPI(
 		statsRenderer:         DefaultStatsRenderer,
 		notificationsGetter:   notificationsGetter,
 		notificationsSub:      notificationsSub,
-		errorTypeToStatusCode: map[errorType]func(error) int{},
+		errorTypeToStatusCode: ErrorTypeToStatusCode{},
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}

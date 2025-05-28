@@ -4140,7 +4140,7 @@ func TestRespondError(t *testing.T) {
 		},
 		"errorTypeToStatusCode override works as expected": {
 			errType: ErrorExec,
-			errTypeToStatusCode: map[errorType]func(error) int{
+			errTypeToStatusCode: ErrorTypeToStatusCode{
 				ErrorExec: func(_ error) int {
 					return http.StatusTooManyRequests
 				},
