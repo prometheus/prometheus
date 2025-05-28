@@ -4057,7 +4057,8 @@ func linear(f1, f2 float64, t1, t2, t int64) float64 {
 	if f1 == f2 {
 		return f1
 	}
-	return f1 + (f2-f1)*float64(t-t1)/float64(t2-t1)
+	ratio := float64(t-t1) / float64(t2-t1)
+	return (1.0-ratio)*f1 + ratio*f2
 }
 
 func smoothFloats(floats []FPoint, mint, maxt int64, counterReset bool) []FPoint {
