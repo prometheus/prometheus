@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"math/rand"
 	"net"
@@ -342,9 +343,8 @@ func NewAPI(
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, ap, configFunc, remote.OTLPOptions{ConvertDelta: otlpDeltaToCumulative, NativeDelta: otlpNativeDeltaIngestion})
 	}
-	for errType, handler := range errorTypeToStatusCode {
-		a.errorTypeToStatusCode[errType] = handler
-	}
+
+	maps.Copy(a.errorTypeToStatusCode, errorTypeToStatusCode)
 
 	return a
 }
