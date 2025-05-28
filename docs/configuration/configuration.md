@@ -3,8 +3,6 @@ title: Configuration
 sort_rank: 1
 ---
 
-# Configuration
-
 Prometheus is configured via command-line flags and a configuration file. While
 the command-line flags configure immutable system parameters (such as storage
 locations, amount of data to keep on disk and in memory, etc.), the

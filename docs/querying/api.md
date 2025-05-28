@@ -3,8 +3,6 @@ title: HTTP API
 sort_rank: 7
 ---
 
-# HTTP API
-
 The current stable HTTP API is reachable under `/api/v1` on a Prometheus
 server. Any non-breaking additions will be added under that endpoint.
 
