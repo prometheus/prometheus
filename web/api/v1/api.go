@@ -90,30 +90,6 @@ const (
 
 type ErrorTypeToStatusCode map[errorType]func(error) int
 
-var defaultErrorTypeToStatusCode = ErrorTypeToStatusCode{
-	ErrorBadData: func(_ error) int {
-		return http.StatusBadRequest
-	},
-	ErrorExec: func(_ error) int {
-		return http.StatusUnprocessableEntity
-	},
-	ErrorCanceled: func(_ error) int {
-		return statusClientClosedConnection
-	},
-	ErrorTimeout: func(_ error) int {
-		return http.StatusServiceUnavailable
-	},
-	ErrorInternal: func(_ error) int {
-		return http.StatusInternalServerError
-	},
-	ErrorNotFound: func(_ error) int {
-		return http.StatusNotFound
-	},
-	ErrorNotAcceptable: func(_ error) int {
-		return http.StatusNotAcceptable
-	},
-}
-
 var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
 
 type apiError struct {
@@ -2051,11 +2027,28 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 		return
 	}
 
-	code := http.StatusInternalServerError
+	var code int
 	if handler, ok := api.errorTypeToStatusCode[apiErr.typ]; ok {
 		code = handler(apiErr.err)
-	} else if handler, ok = defaultErrorTypeToStatusCode[apiErr.typ]; ok {
-		code = handler(apiErr.err)
+	} else {
+		switch apiErr.typ {
+		case ErrorBadData:
+			code = http.StatusBadRequest
+		case ErrorExec:
+			code = http.StatusUnprocessableEntity
+		case ErrorCanceled:
+			code = statusClientClosedConnection
+		case ErrorTimeout:
+			code = http.StatusServiceUnavailable
+		case ErrorInternal:
+			code = http.StatusInternalServerError
+		case ErrorNotFound:
+			code = http.StatusNotFound
+		case ErrorNotAcceptable:
+			code = http.StatusNotAcceptable
+		default:
+			code = http.StatusInternalServerError
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
