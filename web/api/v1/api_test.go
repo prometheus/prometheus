@@ -4125,48 +4125,37 @@ func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
 func TestRespondError(t *testing.T) {
 	type test struct {
 		errType             errorType
-		err                 error
 		resCode             int
-		msg                 string
 		errTypeToStatusCode ErrorTypeToStatusCode
 	}
 
 	tests := map[string]test{
 		"timeout should return 503 (ServiceUnavailable)": {
 			errType: ErrorTimeout,
-			err:     errors.New("message"),
 			resCode: http.StatusServiceUnavailable,
-			msg:     "message",
 		},
 		"execution error without override should return 422 (UnprocessableEntity)": {
 			errType: ErrorExec,
-			err:     errors.New("message"),
 			resCode: http.StatusUnprocessableEntity,
-			msg:     "message",
 		},
 		"errorTypeToStatusCode override works as expected": {
 			errType: ErrorExec,
-			err:     errors.New("message"),
 			errTypeToStatusCode: map[errorType]func(error) int{
 				ErrorExec: func(_ error) int {
 					return http.StatusTooManyRequests
 				},
 			},
 			resCode: http.StatusTooManyRequests,
-			msg:     "message",
 		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				api := API{}
-				err := tc.err
-				api.errorTypeToStatusCode = map[errorType]func(error) int{}
-				for errType, handler := range tc.errTypeToStatusCode {
-					api.errorTypeToStatusCode[errType] = handler
+				api := API{
+					errorTypeToStatusCode: tc.errTypeToStatusCode,
 				}
-				api.respondError(w, &apiError{tc.errType, err}, "test")
+				api.respondError(w, &apiError{tc.errType, errors.New("message")}, "test")
 			}))
 			defer s.Close()
 
@@ -4179,7 +4168,7 @@ func TestRespondError(t *testing.T) {
 			require.Equal(t, want, have, "Return code %d expected in error response but got %d", want, have)
 			h := resp.Header.Get("Content-Type")
 			require.Equal(t, "application/json", h, "Expected Content-Type %q but got %q", "application/json", h)
-			require.JSONEq(t, fmt.Sprintf(`{"status": "error", "data": "test", "errorType": "%s", "error": "%s"}`, tc.errType, tc.msg), string(body))
+			require.JSONEq(t, fmt.Sprintf(`{"status": "error", "data": "test", "errorType": "%s", "error": "message"}`, tc.errType), string(body))
 		})
 	}
 }
