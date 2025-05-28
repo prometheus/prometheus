@@ -56,5 +56,5 @@ func TestWriterWithDefaultSegmentSize(t *testing.T) {
 
 	d, err := os.ReadDir(dir)
 	require.NoError(t, err)
-	require.Len(t, d, 1)
+	require.Len(t, d, 1, "expected only one segment to be created to hold both chunks")
 }
