@@ -12,7 +12,6 @@
 * [ENHANCEMENT] Scraping: Add config option for escaping scheme request. #16066
 * [ENHANCEMENT] Config: Add global config option for convert_classic_histograms_to_nhcb. #16226
 * [ENHANCEMENT] Alerting: make batch size configurable (`--alertmanager.notification-batch-size`). #16254
-* [ENHANCEMENT] API: Allow error response code to be customized. #16257
 * [PERF] Kubernetes SD: make endpointSlice discovery more efficient. #16433
 * [BUGFIX] Config: Fix auto-reload on changes to rule and scrape config files. #16340
 * [BUGFIX] Scraping: Skip native histogram series if ingestion is disabled. #16218
