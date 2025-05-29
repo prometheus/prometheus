@@ -1901,8 +1901,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 					if ev.enableTypeAndUnitLabels {
 						// When type-and-unit-labels feature is enabled, check __type__ label
 						typeLabel := inMatrix[0].Metric.Get("__type__")
-						if typeLabel != "counter" {
-							warnings.Add(annotations.NewPossibleNonCounterLabelInfo(metricName, e.Args[0].PositionRange()))
+						if typeLabel != string(model.MetricTypeCounter) {
+							warnings.Add(annotations.NewPossibleNonCounterLabelInfo(metricName, typeLabel, e.Args[0].PositionRange()))
 						}
 					} else if !strings.HasSuffix(metricName, "_total") ||
 						!strings.HasSuffix(metricName, "_sum") ||
