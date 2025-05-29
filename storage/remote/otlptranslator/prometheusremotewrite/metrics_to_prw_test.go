@@ -48,7 +48,8 @@ func TestFromMetrics(t *testing.T) {
 					metricSlice := scopeMetricsSlice.At(j).Metrics()
 					for k := 0; k < metricSlice.Len(); k++ {
 						metric := metricSlice.At(k)
-						promName := otlptranslator.BuildCompliantMetricName(metric, "", false)
+						namer := otlptranslator.MetricNamer{}
+						promName := namer.Build(translatorMetricFromOtelMetric(metric))
 						expMetadata = append(expMetadata, prompb.MetricMetadata{
 							Type:             otelMetricTypeToPromMetricType(metric),
 							MetricFamilyName: promName,
