@@ -306,7 +306,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 					}()
 					require.NoError(t, h.Init(0))
 
-					s1, _, _ := h.getOrCreate(s1ID, s1Lset)
+					s1, _, _ := h.getOrCreate(s1ID, s1Lset, false)
 					s1.ooo = &memSeriesOOOFields{}
 
 					// define our expected chunks, by looking at the expected ChunkIntervals and setting...
@@ -452,24 +452,24 @@ func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenari
 			// We first want to test using a head index reader that covers the biggest query interval
 			oh := NewHeadAndOOOIndexReader(head, tc.queryMinT, tc.queryMinT, tc.queryMaxT, 0)
 			matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1")}
-			values, err := oh.LabelValues(ctx, "foo", matchers...)
+			values, err := oh.LabelValues(ctx, "foo", nil, matchers...)
 			sort.Strings(values)
 			require.NoError(t, err)
 			require.Equal(t, tc.expValues1, values)
 
 			matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^bar.")}
-			values, err = oh.LabelValues(ctx, "foo", matchers...)
+			values, err = oh.LabelValues(ctx, "foo", nil, matchers...)
 			sort.Strings(values)
 			require.NoError(t, err)
 			require.Equal(t, tc.expValues2, values)
 
 			matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.")}
-			values, err = oh.LabelValues(ctx, "foo", matchers...)
+			values, err = oh.LabelValues(ctx, "foo", nil, matchers...)
 			sort.Strings(values)
 			require.NoError(t, err)
 			require.Equal(t, tc.expValues3, values)
 
-			values, err = oh.LabelValues(ctx, "foo")
+			values, err = oh.LabelValues(ctx, "foo", nil)
 			sort.Strings(values)
 			require.NoError(t, err)
 			require.Equal(t, tc.expValues4, values)
@@ -860,7 +860,7 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 			var b labels.ScratchBuilder
 			err = ir.Series(s1Ref, &b, &chks)
 			require.NoError(t, err)
-			require.Equal(t, len(tc.expChunksSamples), len(chks))
+			require.Len(t, chks, len(tc.expChunksSamples))
 
 			cr := NewHeadAndOOOChunkReader(db.head, tc.queryMinT, tc.queryMaxT, nil, nil, 0)
 			defer cr.Close()
@@ -1030,7 +1030,7 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			var b labels.ScratchBuilder
 			err = ir.Series(s1Ref, &b, &chks)
 			require.NoError(t, err)
-			require.Equal(t, len(tc.expChunksSamples), len(chks))
+			require.Len(t, chks, len(tc.expChunksSamples))
 
 			// Now we keep receiving ooo samples
 			// OOO few samples for s1.

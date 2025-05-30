@@ -112,7 +112,8 @@ scrape_configs:
 	require.NoError(t, err, "Failed to update Prometheus configuration file")
 
 	// Reload Prometheus with the updated configuration.
-	reloadPrometheus(t, port)
+	reloadURL := fmt.Sprintf("http://127.0.0.1:%d/-/reload", port)
+	reloadPrometheusConfig(t, reloadURL)
 
 	// Count the number of lines in the scrape failure log file before any
 	// further requests.
@@ -146,7 +147,7 @@ scrape_configs:
 	require.NoError(t, err, "Failed to update Prometheus configuration file")
 
 	// Reload Prometheus with the updated configuration.
-	reloadPrometheus(t, port)
+	reloadPrometheusConfig(t, reloadURL)
 
 	// Wait for at least two more requests to the mock server and verify that
 	// new log entries are created.
@@ -158,14 +159,6 @@ scrape_configs:
 
 	// Confirm that new lines were added to the scrape failure log file.
 	require.Greater(t, countLinesInFile(scrapeFailureLogFile), postReloadLogLineCount, "New lines should be added to the scrape failure log file after re-adding the log setting")
-}
-
-// reloadPrometheus sends a reload request to the Prometheus server to apply
-// updated configurations.
-func reloadPrometheus(t *testing.T, port int) {
-	resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/-/reload", port), "", nil)
-	require.NoError(t, err, "Failed to reload Prometheus")
-	require.Equal(t, http.StatusOK, resp.StatusCode, "Unexpected status code when reloading Prometheus")
 }
 
 // startGarbageServer sets up a mock server that returns a 500 Internal Server Error

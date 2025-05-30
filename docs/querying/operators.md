@@ -268,7 +268,7 @@ vector of fewer elements with aggregated values:
 * `bottomk` (smallest _k_ elements by sample value)
 * `topk` (largest _k_ elements by sample value)
 * `limitk` (sample _k_ elements, **experimental**, must be enabled with `--enable-feature=promql-experimental-functions`)
-* `limit_ratio` (sample a pseudo-randem ratio _r_ of elements, **experimental**, must be enabled with `--enable-feature=promql-experimental-functions`)
+* `limit_ratio` (sample a pseudo-random ratio _r_ of elements, **experimental**, must be enabled with `--enable-feature=promql-experimental-functions`)
 * `group` (all values in the resulting vector are 1)
 * `count` (count number of elements in the vector)
 * `count_values` (count number of elements with the same value)

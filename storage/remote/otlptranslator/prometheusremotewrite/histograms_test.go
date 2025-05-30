@@ -566,7 +566,7 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			validateExponentialHistogramCount(t, tt.exponentialHist()) // Sanity check.
-			got, annots, err := exponentialToNativeHistogram(tt.exponentialHist())
+			got, annots, err := exponentialToNativeHistogram(tt.exponentialHist(), pmetric.AggregationTemporalityCumulative)
 			if tt.wantErrMessage != "" {
 				require.ErrorContains(t, err, tt.wantErrMessage)
 				return
@@ -761,6 +761,9 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			metric := tt.metric()
 
 			converter := NewPrometheusConverter()
+			namer := otlptranslator.MetricNamer{
+				WithMetricSuffixes: true,
+			}
 			annots, err := converter.addExponentialHistogramDataPoints(
 				context.Background(),
 				metric.ExponentialHistogram().DataPoints(),
@@ -768,7 +771,8 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				Settings{
 					ExportCreatedMetric: true,
 				},
-				otlptranslator.BuildCompliantMetricName(metric, "", true),
+				namer.Build(translatorMetricFromOtelMetric(metric)),
+				pmetric.AggregationTemporalityCumulative,
 			)
 			require.NoError(t, err)
 			require.Empty(t, annots)
@@ -972,7 +976,7 @@ func TestHistogramToCustomBucketsHistogram(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			validateHistogramCount(t, tt.hist())
-			got, annots, err := explicitHistogramToCustomBucketsHistogram(tt.hist())
+			got, annots, err := explicitHistogramToCustomBucketsHistogram(tt.hist(), pmetric.AggregationTemporalityCumulative)
 			if tt.wantErrMessage != "" {
 				require.ErrorContains(t, err, tt.wantErrMessage)
 				return
@@ -1128,6 +1132,9 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			metric := tt.metric()
 
 			converter := NewPrometheusConverter()
+			namer := otlptranslator.MetricNamer{
+				WithMetricSuffixes: true,
+			}
 			annots, err := converter.addCustomBucketsHistogramDataPoints(
 				context.Background(),
 				metric.Histogram().DataPoints(),
@@ -1136,7 +1143,8 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 					ExportCreatedMetric:     true,
 					ConvertHistogramsToNHCB: true,
 				},
-				otlptranslator.BuildCompliantMetricName(metric, "", true),
+				namer.Build(translatorMetricFromOtelMetric(metric)),
+				pmetric.AggregationTemporalityCumulative,
 			)
 
 			require.NoError(t, err)

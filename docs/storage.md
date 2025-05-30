@@ -61,10 +61,10 @@ A Prometheus server's data directory looks something like this:
 Note that a limitation of local storage is that it is not clustered or
 replicated. Thus, it is not arbitrarily scalable or durable in the face of
 drive or node outages and should be managed like any other single node
-database. 
+database.
 
-[Snapshots](querying/api.md#snapshot) are recommended for backups. Backups 
-made without snapshots run the risk of losing data that was recorded since 
+[Snapshots](querying/api.md#snapshot) are recommended for backups. Backups
+made without snapshots run the risk of losing data that was recorded since
 the last WAL sync, which typically happens every two hours. With proper
 architecture, it is possible to retain years of data in local storage.
 
@@ -75,14 +75,14 @@ performance, and efficiency.
 
 For further details on file format, see [TSDB format](/tsdb/docs/format/README.md).
 
-## Compaction
+### Compaction
 
 The initial two-hour blocks are eventually compacted into longer blocks in the background.
 
 Compaction will create larger blocks containing data spanning up to 10% of the retention time,
 or 31 days, whichever is smaller.
 
-## Operational aspects
+### Operational aspects
 
 Prometheus has several flags that configure local storage. The most important are:
 
@@ -134,16 +134,16 @@ will be used.
 Expired block cleanup happens in the background. It may take up to two hours
 to remove expired blocks. Blocks must be fully expired before they are removed.
 
-## Right-Sizing Retention Size
+### Right-Sizing Retention Size
 
-If you are utilizing `storage.tsdb.retention.size` to set a size limit, you 
-will want to consider the right size for this value relative to the storage you 
-have allocated for Prometheus. It is wise to reduce the retention size to provide 
-a buffer, ensuring that older entries will be removed before the allocated storage 
+If you are utilizing `storage.tsdb.retention.size` to set a size limit, you
+will want to consider the right size for this value relative to the storage you
+have allocated for Prometheus. It is wise to reduce the retention size to provide
+a buffer, ensuring that older entries will be removed before the allocated storage
 for Prometheus becomes full.
 
-At present, we recommend setting the retention size to, at most, 80-85% of your 
-allocated Prometheus disk space. This increases the likelihood that older entries 
+At present, we recommend setting the retention size to, at most, 80-85% of your
+allocated Prometheus disk space. This increases the likelihood that older entries
 will be removed prior to hitting any disk limitations.
 
 ## Remote storage integrations

@@ -253,10 +253,23 @@ histogram samples:
 
 ## `histogram_fraction()`
 
-`histogram_fraction(lower scalar, upper scalar, v instant-vector)` returns the
+`histogram_fraction(lower scalar, upper scalar, b instant-vector)` returns the
 estimated fraction of observations between the provided lower and upper values
-for each histogram sample in `v`. Float samples are ignored and do not show up
-in the returned vector.
+for each classic or native histogram contained in `b`. Float samples in `b` are 
+considered the counts of observations in each bucket of one or more classic
+histograms, while native histogram samples in `b` are treated each individually 
+as a separate histogram. This works in the same way as for `histogram_quantile()`.
+(See there for more details.)
+
+If the provided lower and upper values do not coincide with bucket boundaries,
+the calculated fraction is an estimate, using the same interpolation method as for
+`histogram_quantile()`. (See there for more details.) Especially with classic
+histograms, it is easy to accidentally pick lower or upper values that are very
+far away from any bucket boundary, leading to large margins of error. Rather than
+using `histogram_fraction()` with classic histograms, it is often a more robust approach
+to directly act on the bucket series when calculating fractions. See the
+[calculation of the Apdex scare](https://prometheus.io/docs/practices/histograms/#apdex-score)
+as a typical example.
 
 For example, the following expression calculates the fraction of HTTP requests
 over the last hour that took 200ms or less:
@@ -280,8 +293,8 @@ feature inclusive upper boundaries and exclusive lower boundaries for positive
 values, and vice versa for negative values.) Without a precise alignment of
 boundaries, the function uses interpolation to estimate the fraction. With the
 resulting uncertainty, it becomes irrelevant if the boundaries are inclusive or
-exclusive. The interpolation method is the same as the one used for
-`histogram_quantile()`. See there for more details.
+exclusive.
+
 
 ## `histogram_quantile()`
 
@@ -415,9 +428,11 @@ annotation, you should find and remove the source of the invalid data.
 ## `histogram_stddev()` and `histogram_stdvar()`
 
 `histogram_stddev(v instant-vector)` returns the estimated standard deviation
-of observations for each histogram sample in `v`, based on the geometric mean
-of the buckets where the observations lie. Float samples are ignored and do not
-show up in the returned vector.
+of observations for each histogram sample in `v`. For this estimation, all observations
+in a bucket are assumed to have the value of the mean of the bucket boundaries. For 
+the zero bucket and for buckets with custom boundaries, the arithmetic mean is used.
+For the usual exponential buckets, the geometric mean is used. Float samples are ignored
+and do not show up in the returned vector.
 
 Similarly, `histogram_stdvar(v instant-vector)` returns the estimated standard
 variance of observations for each histogram sample in `v`.
