@@ -579,7 +579,7 @@ func TestGetSeries(t *testing.T) {
 	}{
 		{
 			name:              "no matchers",
-			expectedErrorType: ErrorBadData,
+			expectedErrorType: errorBadData,
 			api:               api,
 		},
 		{
@@ -614,7 +614,7 @@ func TestGetSeries(t *testing.T) {
 		{
 			name:              "exec error type",
 			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
-			expectedErrorType: ErrorExec,
+			expectedErrorType: errorExec,
 			api: &API{
 				Queryable: errorTestQueryable{err: errors.New("generic")},
 			},
@@ -622,7 +622,7 @@ func TestGetSeries(t *testing.T) {
 		{
 			name:              "storage error type",
 			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
-			expectedErrorType: ErrorInternal,
+			expectedErrorType: errorInternal,
 			api: &API{
 				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
 			},
@@ -634,7 +634,7 @@ func TestGetSeries(t *testing.T) {
 			require.NoError(t, err)
 			res := tc.api.series(req.WithContext(ctx))
 			assertAPIError(t, res.err, tc.expectedErrorType)
-			if tc.expectedErrorType == ErrorNone {
+			if tc.expectedErrorType == errorNone {
 				r := res.data.([]labels.Labels)
 				sort.Sort(byLabels(tc.expected))
 				sort.Sort(byLabels(r))
@@ -716,7 +716,7 @@ func TestQueryExemplars(t *testing.T) {
 		},
 		{
 			name:              "should return ErrorExec upon genetic error",
-			expectedErrorType: ErrorExec,
+			expectedErrorType: errorExec,
 			api: &API{
 				ExemplarQueryable: errorTestQueryable{err: errors.New("generic")},
 			},
@@ -728,7 +728,7 @@ func TestQueryExemplars(t *testing.T) {
 		},
 		{
 			name:              "should return ErrorInternal err type is ErrStorage",
-			expectedErrorType: ErrorInternal,
+			expectedErrorType: errorInternal,
 			api: &API{
 				ExemplarQueryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
 			},
@@ -755,7 +755,7 @@ func TestQueryExemplars(t *testing.T) {
 			res := tc.api.queryExemplars(req.WithContext(ctx))
 			assertAPIError(t, res.err, tc.expectedErrorType)
 
-			if tc.expectedErrorType == ErrorNone {
+			if tc.expectedErrorType == errorNone {
 				assertAPIResponse(t, res.data, tc.exemplars)
 			}
 		})
@@ -837,7 +837,7 @@ func TestLabelNames(t *testing.T) {
 		{
 			name:              "exec error type",
 			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
-			expectedErrorType: ErrorExec,
+			expectedErrorType: errorExec,
 			api: &API{
 				Queryable: errorTestQueryable{err: errors.New("generic")},
 			},
@@ -845,7 +845,7 @@ func TestLabelNames(t *testing.T) {
 		{
 			name:              "storage error type",
 			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
-			expectedErrorType: ErrorInternal,
+			expectedErrorType: errorInternal,
 			api: &API{
 				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
 			},
@@ -858,7 +858,7 @@ func TestLabelNames(t *testing.T) {
 				require.NoError(t, err)
 				res := tc.api.labelNames(req.WithContext(ctx))
 				assertAPIError(t, res.err, tc.expectedErrorType)
-				if tc.expectedErrorType == ErrorNone {
+				if tc.expectedErrorType == errorNone {
 					assertAPIResponse(t, res.data, tc.expected)
 				}
 			}
@@ -978,11 +978,11 @@ func TestStats(t *testing.T) {
 				req, err := request(method, tc.param)
 				require.NoError(t, err)
 				res := api.query(req.WithContext(ctx))
-				assertAPIError(t, res.err, "")
+				assertAPIError(t, res.err, errorNone)
 				tc.expected(t, res.data)
 
 				res = api.queryRange(req.WithContext(ctx))
-				assertAPIError(t, res.err, "")
+				assertAPIError(t, res.err, errorNone)
 				tc.expected(t, res.data)
 			}
 		})
@@ -1203,7 +1203,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"time":  []string{"123.4"},
 				"limit": []string{"-1"},
 			},
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		{
 			endpoint: api.query,
@@ -1457,7 +1457,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"step":  []string{"1"},
 				"limit": []string{"-1"},
 			},
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		// Test empty matrix result
 		{
@@ -1478,7 +1478,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"end":   []string{"2"},
 				"step":  []string{"1"},
 			},
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		{
 			endpoint: api.queryRange,
@@ -1487,7 +1487,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"start": []string{"0"},
 				"step":  []string{"1"},
 			},
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		{
 			endpoint: api.queryRange,
@@ -1496,7 +1496,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"start": []string{"0"},
 				"end":   []string{"2"},
 			},
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		// Bad query expression.
 		{
@@ -1505,7 +1505,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"query": []string{"invalid][query"},
 				"time":  []string{"1970-01-01T01:02:03+01:00"},
 			},
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		{
 			endpoint: api.queryRange,
@@ -1515,7 +1515,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"end":   []string{"100"},
 				"step":  []string{"1"},
 			},
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		// Invalid step.
 		{
@@ -1526,7 +1526,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"end":   []string{"2"},
 				"step":  []string{"0"},
 			},
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		// Start after end.
 		{
@@ -1537,7 +1537,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"end":   []string{"1"},
 				"step":  []string{"1"},
 			},
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		// Start overflows int64 internally.
 		{
@@ -1548,7 +1548,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"end":   []string{"1489667272.372"},
 				"step":  []string{"1"},
 			},
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		{
 			endpoint: api.formatQuery,
@@ -1562,7 +1562,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			query: url.Values{
 				"query": []string{"invalid_expression/"},
 			},
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		{
 			endpoint: api.series,
@@ -1578,7 +1578,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			query: url.Values{
 				"match[]": []string{`{foo=""}`},
 			},
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		{
 			endpoint: api.series,
@@ -1718,11 +1718,11 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		// Missing match[] query params in series requests.
 		{
 			endpoint: api.series,
-			errType:  ErrorBadData,
+			errType:  errorBadData,
 		},
 		{
 			endpoint: api.dropSeries,
-			errType:  ErrorInternal,
+			errType:  errorInternal,
 		},
 		{
 			endpoint: api.targets,
@@ -3106,7 +3106,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			query: url.Values{
 				"group_next_token": []string{getRuleGroupNextToken("/path/to/file", "grp2")},
 			},
-			errType:  ErrorBadData,
+			errType:  errorBadData,
 			zeroFunc: rulesZeroFunc,
 		},
 		{ // invalid group_limit
@@ -3115,7 +3115,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"group_limit":      []string{"0"},
 				"group_next_token": []string{getRuleGroupNextToken("/path/to/file", "grp2")},
 			},
-			errType:  ErrorBadData,
+			errType:  errorBadData,
 			zeroFunc: rulesZeroFunc,
 		},
 		{ // Pagination token is invalid due to changes in the rule groups
@@ -3124,7 +3124,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"group_limit":      []string{"1"},
 				"group_next_token": []string{getRuleGroupNextToken("/removed/file", "notfound")},
 			},
-			errType:  ErrorBadData,
+			errType:  errorBadData,
 			zeroFunc: rulesZeroFunc,
 		},
 		{ // groupNextToken should not be in empty response
@@ -3251,7 +3251,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				params: map[string]string{
 					"name": "host.name\xff",
 				},
-				errType: ErrorBadData,
+				errType: errorBadData,
 			},
 			// Valid utf8 name parameter for utf8 validation.
 			{
@@ -3340,7 +3340,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"start": []string{"boop"},
 					"end":   []string{"1"},
 				},
-				errType: ErrorBadData,
+				errType: errorBadData,
 			},
 			// Start within LabelValues, end after.
 			{
@@ -3406,7 +3406,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				query: url.Values{
 					"match[]": []string{`{foo=""`, `test_metric2`},
 				},
-				errType: ErrorBadData,
+				errType: errorBadData,
 			},
 			// Label values with empty matchers.
 			{
@@ -3417,7 +3417,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				query: url.Values{
 					"match[]": []string{`{foo=""}`},
 				},
-				errType: ErrorBadData,
+				errType: errorBadData,
 			},
 			// Label values with matcher.
 			{
@@ -3561,7 +3561,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"start": []string{"boop"},
 					"end":   []string{"1"},
 				},
-				errType: ErrorBadData,
+				errType: errorBadData,
 			},
 			// Start within Label names, end after.
 			{
@@ -3603,7 +3603,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				query: url.Values{
 					"match[]": []string{`{foo=""`, `test_metric2`},
 				},
-				errType: ErrorBadData,
+				errType: errorBadData,
 			},
 			// Label values with empty matchers.
 			{
@@ -3614,7 +3614,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				query: url.Values{
 					"match[]": []string{`{foo=""}`},
 				},
-				errType: ErrorBadData,
+				errType: errorBadData,
 			},
 			// Label names with matcher.
 			{
@@ -3759,7 +3759,7 @@ func describeAPIFunc(f apiFunc) string {
 func assertAPIError(t *testing.T, got *apiError, exp errorType) {
 	t.Helper()
 
-	if exp == ErrorNone {
+	if exp.num == ErrorNone {
 		require.Nil(t, got)
 	} else {
 		require.NotNil(t, got)
@@ -3841,14 +3841,14 @@ func TestAdminEndpoints(t *testing.T) {
 			enableAdmin: false,
 			endpoint:    snapshotAPI,
 
-			errType: ErrorUnavailable,
+			errType: errorUnavailable,
 		},
 		{
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    snapshotAPI,
 
-			errType: ErrorNone,
+			errType: errorNone,
 		},
 		{
 			db:          tsdb,
@@ -3856,7 +3856,7 @@ func TestAdminEndpoints(t *testing.T) {
 			endpoint:    snapshotAPI,
 			values:      map[string][]string{"skip_head": {"true"}},
 
-			errType: ErrorNone,
+			errType: errorNone,
 		},
 		{
 			db:          tsdb,
@@ -3864,21 +3864,21 @@ func TestAdminEndpoints(t *testing.T) {
 			endpoint:    snapshotAPI,
 			values:      map[string][]string{"skip_head": {"xxx"}},
 
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		{
 			db:          tsdbWithError,
 			enableAdmin: true,
 			endpoint:    snapshotAPI,
 
-			errType: ErrorInternal,
+			errType: errorInternal,
 		},
 		{
 			db:          tsdbNotReady,
 			enableAdmin: true,
 			endpoint:    snapshotAPI,
 
-			errType: ErrorUnavailable,
+			errType: errorUnavailable,
 		},
 		// Tests for the cleanTombstones endpoint.
 		{
@@ -3886,28 +3886,28 @@ func TestAdminEndpoints(t *testing.T) {
 			enableAdmin: false,
 			endpoint:    cleanAPI,
 
-			errType: ErrorUnavailable,
+			errType: errorUnavailable,
 		},
 		{
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    cleanAPI,
 
-			errType: ErrorNone,
+			errType: errorNone,
 		},
 		{
 			db:          tsdbWithError,
 			enableAdmin: true,
 			endpoint:    cleanAPI,
 
-			errType: ErrorInternal,
+			errType: errorInternal,
 		},
 		{
 			db:          tsdbNotReady,
 			enableAdmin: true,
 			endpoint:    cleanAPI,
 
-			errType: ErrorUnavailable,
+			errType: errorUnavailable,
 		},
 		// Tests for the deleteSeries endpoint.
 		{
@@ -3915,14 +3915,14 @@ func TestAdminEndpoints(t *testing.T) {
 			enableAdmin: false,
 			endpoint:    deleteAPI,
 
-			errType: ErrorUnavailable,
+			errType: errorUnavailable,
 		},
 		{
 			db:          tsdb,
 			enableAdmin: true,
 			endpoint:    deleteAPI,
 
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		{
 			db:          tsdb,
@@ -3930,7 +3930,7 @@ func TestAdminEndpoints(t *testing.T) {
 			endpoint:    deleteAPI,
 			values:      map[string][]string{"match[]": {"123"}},
 
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		{
 			db:          tsdb,
@@ -3938,7 +3938,7 @@ func TestAdminEndpoints(t *testing.T) {
 			endpoint:    deleteAPI,
 			values:      map[string][]string{"match[]": {"up"}, "start": {"xxx"}},
 
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		{
 			db:          tsdb,
@@ -3946,7 +3946,7 @@ func TestAdminEndpoints(t *testing.T) {
 			endpoint:    deleteAPI,
 			values:      map[string][]string{"match[]": {"up"}, "end": {"xxx"}},
 
-			errType: ErrorBadData,
+			errType: errorBadData,
 		},
 		{
 			db:          tsdb,
@@ -3954,7 +3954,7 @@ func TestAdminEndpoints(t *testing.T) {
 			endpoint:    deleteAPI,
 			values:      map[string][]string{"match[]": {"up"}},
 
-			errType: ErrorNone,
+			errType: errorNone,
 		},
 		{
 			db:          tsdb,
@@ -3962,7 +3962,7 @@ func TestAdminEndpoints(t *testing.T) {
 			endpoint:    deleteAPI,
 			values:      map[string][]string{"match[]": {"up{job!=\"foo\"}", "{job=~\"bar.+\"}", "up{instance!~\"fred.+\"}"}},
 
-			errType: ErrorNone,
+			errType: errorNone,
 		},
 		{
 			db:          tsdbWithError,
@@ -3970,7 +3970,7 @@ func TestAdminEndpoints(t *testing.T) {
 			endpoint:    deleteAPI,
 			values:      map[string][]string{"match[]": {"up"}},
 
-			errType: ErrorInternal,
+			errType: errorInternal,
 		},
 		{
 			db:          tsdbNotReady,
@@ -3978,7 +3978,7 @@ func TestAdminEndpoints(t *testing.T) {
 			endpoint:    deleteAPI,
 			values:      map[string][]string{"match[]": {"up"}},
 
-			errType: ErrorUnavailable,
+			errType: errorUnavailable,
 		},
 	} {
 		tc := tc
@@ -4131,15 +4131,15 @@ func TestRespondError(t *testing.T) {
 
 	tests := map[string]test{
 		"timeout should return 503 (ServiceUnavailable)": {
-			errType: ErrorTimeout,
+			errType: errorTimeout,
 			resCode: http.StatusServiceUnavailable,
 		},
 		"execution error without override should return 422 (UnprocessableEntity)": {
-			errType: ErrorExec,
+			errType: errorExec,
 			resCode: http.StatusUnprocessableEntity,
 		},
 		"errorTypeToStatusCode override works as expected": {
-			errType: ErrorExec,
+			errType: errorExec,
 			errTypeToStatusCode: ErrorTypeToStatusCode{
 				ErrorExec: func(_ error) int {
 					return http.StatusTooManyRequests
@@ -4168,7 +4168,7 @@ func TestRespondError(t *testing.T) {
 			require.Equal(t, want, have, "Return code %d expected in error response but got %d", want, have)
 			h := resp.Header.Get("Content-Type")
 			require.Equal(t, "application/json", h, "Expected Content-Type %q but got %q", "application/json", h)
-			require.JSONEq(t, fmt.Sprintf(`{"status": "error", "data": "test", "errorType": "%s", "error": "message"}`, tc.errType), string(body))
+			require.JSONEq(t, fmt.Sprintf(`{"status": "error", "data": "test", "errorType": "%s", "error": "message"}`, tc.errType.str), string(body))
 		})
 	}
 }
@@ -4382,19 +4382,19 @@ func TestTSDBStatus(t *testing.T) {
 		{
 			db:       tsdb,
 			endpoint: tsdbStatusAPI,
-			errType:  ErrorNone,
+			errType:  errorNone,
 		},
 		{
 			db:       tsdb,
 			endpoint: tsdbStatusAPI,
 			values:   map[string][]string{"limit": {"20"}},
-			errType:  ErrorNone,
+			errType:  errorNone,
 		},
 		{
 			db:       tsdb,
 			endpoint: tsdbStatusAPI,
 			values:   map[string][]string{"limit": {"0"}},
-			errType:  ErrorBadData,
+			errType:  errorBadData,
 		},
 	} {
 		tc := tc
@@ -4416,28 +4416,28 @@ func TestReturnAPIError(t *testing.T) {
 	}{
 		{
 			err:      promql.ErrStorage{Err: errors.New("storage error")},
-			expected: ErrorInternal,
+			expected: errorInternal,
 		}, {
 			err:      fmt.Errorf("wrapped: %w", promql.ErrStorage{Err: errors.New("storage error")}),
-			expected: ErrorInternal,
+			expected: errorInternal,
 		}, {
 			err:      promql.ErrQueryTimeout("timeout error"),
-			expected: ErrorTimeout,
+			expected: errorTimeout,
 		}, {
 			err:      fmt.Errorf("wrapped: %w", promql.ErrQueryTimeout("timeout error")),
-			expected: ErrorTimeout,
+			expected: errorTimeout,
 		}, {
 			err:      promql.ErrQueryCanceled("canceled error"),
-			expected: ErrorCanceled,
+			expected: errorCanceled,
 		}, {
 			err:      fmt.Errorf("wrapped: %w", promql.ErrQueryCanceled("canceled error")),
-			expected: ErrorCanceled,
+			expected: errorCanceled,
 		}, {
 			err:      errors.New("exec error"),
-			expected: ErrorExec,
+			expected: errorExec,
 		}, {
 			err:      context.Canceled,
-			expected: ErrorCanceled,
+			expected: errorCanceled,
 		},
 	}
 
@@ -4736,7 +4736,7 @@ func TestQueryTimeout(t *testing.T) {
 			req.RemoteAddr = "127.0.0.1:20201"
 
 			res := api.query(req.WithContext(ctx))
-			assertAPIError(t, res.err, ErrorNone)
+			assertAPIError(t, res.err, errorNone)
 
 			require.Len(t, engine.query.execCalls, 1)
 			deadline, ok := engine.query.execCalls[0].Deadline()

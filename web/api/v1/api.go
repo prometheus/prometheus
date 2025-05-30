@@ -74,21 +74,38 @@ const (
 	checkContextEveryNIterations = 128
 )
 
-type errorType string
+type errorNum int
+
+type errorType struct {
+	num errorNum
+	str string
+}
 
 const (
-	ErrorNone          errorType = ""
-	ErrorTimeout       errorType = "timeout"
-	ErrorCanceled      errorType = "canceled"
-	ErrorExec          errorType = "execution"
-	ErrorBadData       errorType = "bad_data"
-	ErrorInternal      errorType = "internal"
-	ErrorUnavailable   errorType = "unavailable"
-	ErrorNotFound      errorType = "not_found"
-	ErrorNotAcceptable errorType = "not_acceptable"
+	ErrorNone errorNum = iota
+	ErrorTimeout
+	ErrorCanceled
+	ErrorExec
+	ErrorBadData
+	ErrorInternal
+	ErrorUnavailable
+	ErrorNotFound
+	ErrorNotAcceptable
 )
 
-type ErrorTypeToStatusCode map[errorType]func(error) int
+var (
+	errorNone          = errorType{ErrorNone, ""}
+	errorTimeout       = errorType{ErrorTimeout, "timeout"}
+	errorCanceled      = errorType{ErrorCanceled, "canceled"}
+	errorExec          = errorType{ErrorExec, "execution"}
+	errorBadData       = errorType{ErrorBadData, "bad_data"}
+	errorInternal      = errorType{ErrorInternal, "internal"}
+	errorUnavailable   = errorType{ErrorUnavailable, "unavailable"}
+	errorNotFound      = errorType{ErrorNotFound, "not_found"}
+	errorNotAcceptable = errorType{ErrorNotAcceptable, "not_acceptable"}
+)
+
+type ErrorTypeToStatusCode map[errorNum]func(error) int
 
 var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
 
@@ -98,7 +115,7 @@ type apiError struct {
 }
 
 func (e *apiError) Error() string {
-	return fmt.Sprintf("%s: %s", e.typ, e.err)
+	return fmt.Sprintf("%s: %s", e.typ.str, e.err)
 }
 
 // ScrapePoolsRetriever provide the list of all scrape pools.
@@ -167,7 +184,7 @@ type RuntimeInfo struct {
 type Response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
-	ErrorType errorType   `json:"errorType,omitempty"`
+	ErrorType string      `json:"errorType,omitempty"`
 	Error     string      `json:"error,omitempty"`
 	Warnings  []string    `json:"warnings,omitempty"`
 	Infos     []string    `json:"infos,omitempty"`
@@ -339,7 +356,7 @@ func (api *API) ClearCodecs() {
 
 func setUnavailStatusOnTSDBNotReady(r apiFuncResult) apiFuncResult {
 	if r.err != nil && errors.Is(r.err.err, tsdb.ErrNotReady) {
-		r.err.typ = ErrorUnavailable
+		r.err.typ = errorUnavailable
 	}
 	return r
 }
@@ -372,7 +389,7 @@ func (api *API) Register(r *route.Router) {
 	wrapAgent := func(f apiFunc) http.HandlerFunc {
 		return wrap(func(r *http.Request) apiFuncResult {
 			if api.isAgent {
-				return apiFuncResult{nil, &apiError{ErrorExec, errors.New("unavailable with Prometheus Agent")}, nil, nil}
+				return apiFuncResult{nil, &apiError{errorExec, errors.New("unavailable with Prometheus Agent")}, nil, nil}
 			}
 			return f(r)
 		})
@@ -441,7 +458,7 @@ type QueryData struct {
 
 func invalidParamError(err error, parameter string) apiFuncResult {
 	return apiFuncResult{nil, &apiError{
-		ErrorBadData, fmt.Errorf("invalid parameter %q: %w", parameter, err),
+		errorBadData, fmt.Errorf("invalid parameter %q: %w", parameter, err),
 	}, nil, nil}
 }
 
@@ -472,7 +489,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 
 	opts, err := extractQueryOpts(r)
 	if err != nil {
-		return apiFuncResult{nil, &apiError{ErrorBadData, err}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 	qry, err := api.QueryEngine.NewInstantQuery(ctx, api.Queryable, opts, r.FormValue("query"), ts)
 	if err != nil {
@@ -580,7 +597,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	// This is sufficient for 60s resolution for a week or 1h resolution for a year.
 	if end.Sub(start)/step > 11000 {
 		err := errors.New("exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
-		return apiFuncResult{nil, &apiError{ErrorBadData, err}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
 	ctx := r.Context()
@@ -597,7 +614,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 
 	opts, err := extractQueryOpts(r)
 	if err != nil {
-		return apiFuncResult{nil, &apiError{ErrorBadData, err}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 	qry, err := api.QueryEngine.NewRangeQuery(ctx, api.Queryable, opts, r.FormValue("query"), start, end, step)
 	if err != nil {
@@ -654,12 +671,12 @@ func (api *API) queryExemplars(r *http.Request) apiFuncResult {
 	}
 	if end.Before(start) {
 		err := errors.New("end timestamp must not be before start timestamp")
-		return apiFuncResult{nil, &apiError{ErrorBadData, err}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
 	expr, err := parser.ParseExpr(r.FormValue("query"))
 	if err != nil {
-		return apiFuncResult{nil, &apiError{ErrorBadData, err}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
 	selectors := parser.ExtractSelectors(expr)
@@ -691,18 +708,18 @@ func returnAPIError(err error) *apiError {
 	var es promql.ErrStorage
 	switch {
 	case errors.As(err, &eqc):
-		return &apiError{ErrorCanceled, err}
+		return &apiError{errorCanceled, err}
 	case errors.As(err, &eqt):
-		return &apiError{ErrorTimeout, err}
+		return &apiError{errorTimeout, err}
 	case errors.As(err, &es):
-		return &apiError{ErrorInternal, err}
+		return &apiError{errorInternal, err}
 	}
 
 	if errors.Is(err, context.Canceled) {
-		return &apiError{ErrorCanceled, err}
+		return &apiError{errorCanceled, err}
 	}
 
-	return &apiError{ErrorExec, err}
+	return &apiError{errorExec, err}
 }
 
 func (api *API) labelNames(r *http.Request) apiFuncResult {
@@ -722,7 +739,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 
 	matcherSets, err := parseMatchersParam(r.Form["match[]"])
 	if err != nil {
-		return apiFuncResult{nil, &apiError{ErrorBadData, err}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
 	hints := &storage.LabelHints{
@@ -767,7 +784,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		}
 		names, warnings, err = q.LabelNames(r.Context(), hints, matchers...)
 		if err != nil {
-			return apiFuncResult{nil, &apiError{ErrorExec, err}, warnings, nil}
+			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 		}
 	}
 
@@ -792,7 +809,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	label := model.LabelName(name)
 	if !label.IsValid() {
-		return apiFuncResult{nil, &apiError{ErrorBadData, fmt.Errorf("invalid label name: %q", name)}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}, nil, nil}
 	}
 
 	limit, err := parseLimitParam(r.FormValue("limit"))
@@ -811,7 +828,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	matcherSets, err := parseMatchersParam(r.Form["match[]"])
 	if err != nil {
-		return apiFuncResult{nil, &apiError{ErrorBadData, err}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
 	hints := &storage.LabelHints{
@@ -820,7 +837,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	q, err := api.Queryable.Querier(timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
-		return apiFuncResult{nil, &apiError{ErrorExec, err}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
 	// From now on, we must only return with a finalizer in the result (to
 	// be called by the caller) or call q.Close ourselves (which is required
@@ -844,7 +861,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		for _, matchers := range matcherSets {
 			vals, callWarnings, err = q.LabelValues(ctx, name, hints, matchers...)
 			if err != nil {
-				return apiFuncResult{nil, &apiError{ErrorExec, err}, warnings, closer}
+				return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 			}
 			warnings.Merge(callWarnings)
 			for _, val := range vals {
@@ -863,7 +880,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		}
 		vals, warnings, err = q.LabelValues(ctx, name, hints, matchers...)
 		if err != nil {
-			return apiFuncResult{nil, &apiError{ErrorExec, err}, warnings, closer}
+			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 		}
 
 		if vals == nil {
@@ -908,10 +925,10 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	ctx := r.Context()
 
 	if err := r.ParseForm(); err != nil {
-		return apiFuncResult{nil, &apiError{ErrorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
 	}
 	if len(r.Form["match[]"]) == 0 {
-		return apiFuncResult{nil, &apiError{ErrorBadData, errors.New("no match[] parameter provided")}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
 	}
 
 	limit, err := parseLimitParam(r.FormValue("limit"))
@@ -999,7 +1016,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 }
 
 func (api *API) dropSeries(_ *http.Request) apiFuncResult {
-	return apiFuncResult{nil, &apiError{ErrorInternal, errors.New("not implemented")}, nil, nil}
+	return apiFuncResult{nil, &apiError{errorInternal, errors.New("not implemented")}, nil, nil}
 }
 
 // Target has the information for one target.
@@ -1215,7 +1232,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 	if s := r.FormValue("limit"); s != "" {
 		var err error
 		if limit, err = strconv.Atoi(s); err != nil {
-			return apiFuncResult{nil, &apiError{ErrorBadData, errors.New("limit must be a number")}, nil, nil}
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a number")}, nil, nil}
 		}
 	}
 
@@ -1358,14 +1375,14 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	if s := r.FormValue("limit"); s != "" {
 		var err error
 		if limit, err = strconv.Atoi(s); err != nil {
-			return apiFuncResult{nil, &apiError{ErrorBadData, errors.New("limit must be a number")}, nil, nil}
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a number")}, nil, nil}
 		}
 	}
 	limitPerMetric := -1
 	if s := r.FormValue("limit_per_metric"); s != "" {
 		var err error
 		if limitPerMetric, err = strconv.Atoi(s); err != nil {
-			return apiFuncResult{nil, &apiError{ErrorBadData, errors.New("limit_per_metric must be a number")}, nil, nil}
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit_per_metric must be a number")}, nil, nil}
 		}
 	}
 
@@ -1478,7 +1495,7 @@ type RecordingRule struct {
 
 func (api *API) rules(r *http.Request) apiFuncResult {
 	if err := r.ParseForm(); err != nil {
-		return apiFuncResult{nil, &apiError{ErrorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
 	}
 
 	queryFormToSet := func(values []string) map[string]struct{} {
@@ -1495,7 +1512,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 
 	matcherSets, err := parseMatchersParam(r.Form["match[]"])
 	if err != nil {
-		return apiFuncResult{nil, &apiError{ErrorBadData, err}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
 	ruleGroups := api.rulesRetriever(r.Context()).RuleGroups()
@@ -1608,7 +1625,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				}
 			default:
 				err := fmt.Errorf("failed to assert type of rule '%v'", rule.Name())
-				return apiFuncResult{nil, &apiError{ErrorInternal, err}, nil, nil}
+				return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 			}
 
 			if enrichedRule != nil {
@@ -1695,7 +1712,7 @@ type prometheusConfig struct {
 func (api *API) serveRuntimeInfo(_ *http.Request) apiFuncResult {
 	status, err := api.runtimeInfo()
 	if err != nil {
-		return apiFuncResult{status, &apiError{ErrorInternal, err}, nil, nil}
+		return apiFuncResult{status, &apiError{errorInternal, err}, nil, nil}
 	}
 	return apiFuncResult{status, nil, nil, nil}
 }
@@ -1754,16 +1771,16 @@ func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
 	if s := r.FormValue("limit"); s != "" {
 		var err error
 		if limit, err = strconv.Atoi(s); err != nil || limit < 1 {
-			return apiFuncResult{nil, &apiError{ErrorBadData, errors.New("limit must be a positive number")}, nil, nil}
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a positive number")}, nil, nil}
 		}
 	}
 	s, err := api.db.Stats(labels.MetricName, limit)
 	if err != nil {
-		return apiFuncResult{nil, &apiError{ErrorInternal, err}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 	}
 	metrics, err := api.gatherer.Gather()
 	if err != nil {
-		return apiFuncResult{nil, &apiError{ErrorInternal, fmt.Errorf("error gathering runtime status: %w", err)}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error gathering runtime status: %w", err)}, nil, nil}
 	}
 	chunkCount := int64(math.NaN())
 	for _, mF := range metrics {
@@ -1800,7 +1817,7 @@ func (api *API) serveWALReplayStatus(w http.ResponseWriter, r *http.Request) {
 	httputil.SetCORS(w, api.CORSOrigin, r)
 	status, err := api.db.WALReplayStatus()
 	if err != nil {
-		api.respondError(w, &apiError{ErrorInternal, err}, nil)
+		api.respondError(w, &apiError{errorInternal, err}, nil)
 	}
 	api.respond(w, r, walReplayStatus{
 		Min:     status.Min,
@@ -1887,13 +1904,13 @@ func (api *API) otlpWrite(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 	if !api.enableAdmin {
-		return apiFuncResult{nil, &apiError{ErrorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
 	if err := r.ParseForm(); err != nil {
-		return apiFuncResult{nil, &apiError{ErrorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
 	}
 	if len(r.Form["match[]"]) == 0 {
-		return apiFuncResult{nil, &apiError{ErrorBadData, errors.New("no match[] parameter provided")}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
 	}
 
 	start, err := parseTimeParam(r, "start", MinTime)
@@ -1911,7 +1928,7 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 			return invalidParamError(err, "match[]")
 		}
 		if err := api.db.Delete(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end), matchers...); err != nil {
-			return apiFuncResult{nil, &apiError{ErrorInternal, err}, nil, nil}
+			return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 		}
 	}
 
@@ -1920,7 +1937,7 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 
 func (api *API) snapshot(r *http.Request) apiFuncResult {
 	if !api.enableAdmin {
-		return apiFuncResult{nil, &apiError{ErrorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
 	var (
 		skipHead bool
@@ -1941,10 +1958,10 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 		dir = filepath.Join(snapdir, name)
 	)
 	if err := os.MkdirAll(dir, 0o777); err != nil {
-		return apiFuncResult{nil, &apiError{ErrorInternal, fmt.Errorf("create snapshot directory: %w", err)}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("create snapshot directory: %w", err)}, nil, nil}
 	}
 	if err := api.db.Snapshot(dir, !skipHead); err != nil {
-		return apiFuncResult{nil, &apiError{ErrorInternal, fmt.Errorf("create snapshot: %w", err)}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("create snapshot: %w", err)}, nil, nil}
 	}
 
 	return apiFuncResult{struct {
@@ -1954,10 +1971,10 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 
 func (api *API) cleanTombstones(*http.Request) apiFuncResult {
 	if !api.enableAdmin {
-		return apiFuncResult{nil, &apiError{ErrorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
 	if err := api.db.CleanTombstones(); err != nil {
-		return apiFuncResult{nil, &apiError{ErrorInternal, err}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 	}
 
 	return apiFuncResult{nil, nil, nil, nil}
@@ -1978,7 +1995,7 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 
 	codec, err := api.negotiateCodec(req, resp)
 	if err != nil {
-		api.respondError(w, &apiError{ErrorNotAcceptable, err}, nil)
+		api.respondError(w, &apiError{errorNotAcceptable, err}, nil)
 		return
 	}
 
@@ -2017,7 +2034,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	b, err := json.Marshal(&Response{
 		Status:    statusError,
-		ErrorType: apiErr.typ,
+		ErrorType: apiErr.typ.str,
 		Error:     apiErr.err.Error(),
 		Data:      data,
 	})
@@ -2028,23 +2045,23 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	}
 
 	var code int
-	if handler, ok := api.errorTypeToStatusCode[apiErr.typ]; ok {
+	if handler, ok := api.errorTypeToStatusCode[apiErr.typ.num]; ok {
 		code = handler(apiErr.err)
 	} else {
 		switch apiErr.typ {
-		case ErrorBadData:
+		case errorBadData:
 			code = http.StatusBadRequest
-		case ErrorExec:
+		case errorExec:
 			code = http.StatusUnprocessableEntity
-		case ErrorCanceled:
+		case errorCanceled:
 			code = statusClientClosedConnection
-		case ErrorTimeout:
+		case errorTimeout:
 			code = http.StatusServiceUnavailable
-		case ErrorInternal:
+		case errorInternal:
 			code = http.StatusInternalServerError
-		case ErrorNotFound:
+		case errorNotFound:
 			code = http.StatusNotFound
-		case ErrorNotAcceptable:
+		case errorNotAcceptable:
 			code = http.StatusNotAcceptable
 		default:
 			code = http.StatusInternalServerError
