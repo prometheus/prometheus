@@ -715,7 +715,7 @@ func TestQueryExemplars(t *testing.T) {
 			},
 		},
 		{
-			name:              "should return ErrorExec upon genetic error",
+			name:              "should return errorExec upon genetic error",
 			expectedErrorType: errorExec,
 			api: &API{
 				ExemplarQueryable: errorTestQueryable{err: errors.New("generic")},
@@ -727,7 +727,7 @@ func TestQueryExemplars(t *testing.T) {
 			},
 		},
 		{
-			name:              "should return ErrorInternal err type is ErrStorage",
+			name:              "should return errorInternal err type is ErrStorage",
 			expectedErrorType: errorInternal,
 			api: &API{
 				ExemplarQueryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
