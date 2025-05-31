@@ -770,14 +770,14 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			p.addParseErrf(n.PositionRange(), "binary expression does not support operator %q", n.Op)
 		}
 		if lt != ValueTypeScalar && lt != ValueTypeVector && lt != ValueTypeMatrix {
-			p.addParseErrf(n.LHS.PositionRange(), "binary expression must contain only scalar, instant vector types and matrix vector types")
+			p.addParseErrf(n.LHS.PositionRange(), "binary expression must contain only scalar, instant vector, and range vector types")
 		}
 		if rt != ValueTypeScalar && rt != ValueTypeVector && rt != ValueTypeMatrix {
-			p.addParseErrf(n.RHS.PositionRange(), "binary expression must contain only scalar, instant vector types and matrix vector types")
+			p.addParseErrf(n.RHS.PositionRange(), "binary expression must contain only scalar, instant vector, and range vector types")
 		}
 
-		if (lt == ValueTypeVector && rt == ValueTypeMatrix) || (rt == ValueTypeVector && lt == ValueTypeMatrix) || (lt == ValueTypeMatrix && rt == ValueTypeMatrix) {
-			p.addParseErrf(n.RHS.PositionRange(), "binary expression must contain only scalar, instant vector types and matrix vector types")
+		if (lt == ValueTypeVector && rt == ValueTypeMatrix) || (lt == ValueTypeMatrix && rt == ValueTypeVector) || (lt == ValueTypeMatrix && rt == ValueTypeMatrix) {
+			p.addParseErrf(n.RHS.PositionRange(), "binary expression involving a range vector requires a scalar type as the other operand")
 		}
 
 		switch {

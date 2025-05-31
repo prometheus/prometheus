@@ -1655,11 +1655,11 @@ func (ev *evaluator) evalBinaryExpr(ctx context.Context, binexp *parser.BinaryEx
 	})
 
 	vs = ms.VectorSelector.(*parser.VectorSelector)
-	vs.Series = make([]storage.Series, 0, len(mat))
+	vs.Series = make([]storage.Series, len(mat))
 	ms.VectorSelector = vs
 
-	for _, s := range mat {
-		vs.Series = append(vs.Series, NewStorageSeries(s))
+	for i, s := range mat {
+		vs.Series[i] = NewStorageSeries(s)
 	}
 
 	return ms, mat.TotalSamples(), ws
@@ -1772,7 +1772,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				}()
 				break
 			}
-			// binary expr can be used in place of parser.MatrixSelector
+			// parser.BinaryExpr can be used in place of parser.MatrixSelector.
 			if binexp, ok := a.(*parser.BinaryExpr); ok {
 				lt, rt := binexp.LHS.Type(), binexp.RHS.Type()
 				if lt == parser.ValueTypeMatrix || rt == parser.ValueTypeMatrix {
@@ -2084,13 +2084,13 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			}, e.LHS, e.RHS)
 
 		case lt == parser.ValueTypeMatrix && rt == parser.ValueTypeScalar:
-			var allAnons annotations.Annotations
+			var allAnnos annotations.Annotations
 
 			valLHS, anons := ev.eval(ctx, e.LHS)
-			allAnons.Merge(anons)
+			allAnnos.Merge(anons)
 
 			valRHS, anons := ev.eval(ctx, e.RHS)
-			allAnons.Merge(anons)
+			allAnnos.Merge(anons)
 
 			valMatrix := valLHS.(Matrix)
 			valScalar := Scalar{V: valRHS.(Matrix)[0].Floats[0].F}
@@ -2100,7 +2100,26 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				panic(err)
 			}
 
-			return val, allAnons
+			return val, allAnnos
+
+		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeMatrix:
+			var allAnnos annotations.Annotations
+
+			valLHS, anons := ev.eval(ctx, e.LHS)
+			allAnnos.Merge(anons)
+
+			valRHS, anons := ev.eval(ctx, e.RHS)
+			allAnnos.Merge(anons)
+
+			valMatrix := valRHS.(Matrix)
+			valScalar := Scalar{V: valLHS.(Matrix)[0].Floats[0].F}
+
+			val, err := ev.MatrixScalarBinop(e.Op, valMatrix, valScalar, true, e.ReturnBool, e.PositionRange())
+			if err != nil {
+				panic(err)
+			}
+
+			return val, allAnnos
 		}
 
 	case *parser.NumberLiteral:
@@ -2122,18 +2141,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		return mat, ws
 
 	case *parser.MatrixSelector:
-
-		vs := e.VectorSelector.(*parser.VectorSelector)
-		offset := durationMilliseconds(vs.Offset)
-		var mint, maxt int64
-		if ev.startTimestamp != ev.endTimestamp {
-			maxt = ev.endTimestamp - offset
-			mint = ev.startTimestamp - durationMilliseconds(e.Range) - offset
-		} else {
-			maxt = ev.startTimestamp - offset
-			mint = maxt - durationMilliseconds(e.Range)
-		}
-		return ev.matrixSelector(ctx, e, mint, maxt)
+		return ev.matrixSelector(ctx, e)
 
 	case *parser.SubqueryExpr:
 		offsetMillis := durationMilliseconds(e.Offset)
@@ -2420,9 +2428,12 @@ func putMatrixSelectorHPointSlice(p []HPoint) {
 }
 
 // matrixSelector evaluates a *parser.MatrixSelector expression.
-func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSelector, mint, maxt int64) (Matrix, annotations.Annotations) {
+func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSelector) (Matrix, annotations.Annotations) {
 	var (
 		vs     = node.VectorSelector.(*parser.VectorSelector)
+		offset = durationMilliseconds(vs.Offset)
+		maxt   = ev.endTimestamp - offset
+		mint   = ev.startTimestamp - durationMilliseconds(node.Range) - offset
 		matrix = make(Matrix, 0, len(vs.Series))
 		it     = storage.NewBuffer(maxt - mint)
 	)
