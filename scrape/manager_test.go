@@ -51,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/runutil"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -623,33 +624,74 @@ func TestManagerDuplicateAfterRelabellingWarning(t *testing.T) {
 
 	opts := Options{WarnDuplicateTargets: true}
 	testRegistry := prometheus.NewRegistry()
-	m, err := NewManager(&opts, logger, nil, nil, testRegistry)
+	s := teststorage.New(t)
+	defer s.Close()
+	m, err := NewManager(&opts, logger, nil, s, testRegistry)
 	require.NoError(t, err)
 
-	m.scrapePools = map[string]*scrapePool{}
-	sp := &scrapePool{
-		activeTargets: map[uint64]*Target{},
-	}
-	targetScrapeCfg := &config.ScrapeConfig{
-		Scheme:         "https",
-		MetricsPath:    "/metrics",
-		JobName:        "job",
-		ScrapeInterval: model.Duration(time.Second),
-		ScrapeTimeout:  model.Duration(time.Second),
-	}
+	configStr := `
+scrape_configs:
+  - job_name: "jobOne"
+    scheme: https
+    metrics_path: /metrics
+    scrape_interval: 100ms
+    scrape_timeout: 100ms
+    static_configs:
+      - targets:
+          - localhost:9000
+        labels:
+          foo: bar
+    relabel_configs:
+      - action: labeldrop
+        regex: "job|foo"
 
-	sp.activeTargets[uint64(0)] = &Target{
-		scrapeConfig: targetScrapeCfg,
-		labels:       labels.FromStrings("key", "value"),
-	}
-	sp.activeTargets[uint64(1)] = &Target{
-		scrapeConfig: targetScrapeCfg,
-		labels:       labels.FromStrings("key", "value"),
-	}
-	m.scrapePools["default"] = sp
+  - job_name: "jobTwo"
+    scheme: https
+    metrics_path: /metrics
+    scrape_interval: 100ms
+    scrape_timeout: 100ms
+    static_configs:
+      - targets:
+          - localhost:9000
+        labels:
+          foo: baz
+    relabel_configs:
+      - action: labeldrop
+        regex: "job|foo"
+`
+	cfg, err := config.Load(configStr, promslog.NewNopLogger())
+	require.NoError(t, err)
+
+	m.ApplyConfig(cfg)
+	require.Len(t, cfg.ScrapeConfigs, 2)
+
+	scrapeCfgOne := cfg.ScrapeConfigs[0]
+	require.Len(t, scrapeCfgOne.ServiceDiscoveryConfigs, 1)
+	staticDiscoveryOne, ok := scrapeCfgOne.ServiceDiscoveryConfigs[0].(discovery.StaticConfig)
+	require.True(t, ok)
+	require.Len(t, staticDiscoveryOne, 1)
+
+	scrapeCfgTwo := cfg.ScrapeConfigs[1]
+	require.Len(t, scrapeCfgTwo.ServiceDiscoveryConfigs, 1)
+	staticDiscoveryTwo, ok := scrapeCfgTwo.ServiceDiscoveryConfigs[0].(discovery.StaticConfig)
+	require.True(t, ok)
+	require.Len(t, staticDiscoveryTwo, 1)
+
+	tsets := make(chan map[string][]*targetgroup.Group)
+	go func() {
+		err = m.Run(tsets)
+		require.NoError(t, err)
+	}()
+	defer m.Stop()
+
+	tsets <- map[string][]*targetgroup.Group{"jobOne": staticDiscoveryOne, "jobTwo": staticDiscoveryTwo}
 
 	m.reload()
-	require.Contains(t, buf.String(), "Found targets with same labels after relabelling")
+
+	require.Eventually(t, func() bool {
+		require.Contains(t, buf.String(), "Found active targets with same labels after relabelling")
+		return true
+	}, 500*time.Millisecond, 50*time.Millisecond)
 }
 
 func TestSetOffsetSeed(t *testing.T) {

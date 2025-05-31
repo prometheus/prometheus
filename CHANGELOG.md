@@ -1,7 +1,5 @@
 # Changelog
 
-## unreleased
-
 ## 3.4.0 / 2025-05-17
 
 * [CHANGE] Config: Make setting out-of-order native histograms feature (`--enable-feature=ooo-native-histograms`) a no-op. Out-of-order native histograms are now always enabled when `out_of_order_time_window` is greater than zero and `--enable-feature=native-histograms` is set. #16207
