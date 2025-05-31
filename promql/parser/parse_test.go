@@ -562,17 +562,17 @@ var testExpr = []struct {
 	{
 		input:  `test[5m] + test[5m]`,
 		fail:   true,
-		errMsg: `binary expression must contain only scalar, instant vector types and matrix vector types`,
+		errMsg: `binary expression involving a range vector requires a scalar type as the other operand`,
 	},
 	{
 		input:  `test[5m] + test`,
 		fail:   true,
-		errMsg: `binary expression must contain only scalar, instant vector types and matrix vector types`,
+		errMsg: `binary expression involving a range vector requires a scalar type as the other operand`,
 	},
 	{
 		input:  `test + test[5m]`,
 		fail:   true,
-		errMsg: `binary expression must contain only scalar, instant vector types and matrix vector types`,
+		errMsg: `binary expression involving a range vector requires a scalar type as the other operand`,
 	},
 	{
 		input:  "1 == 1",
