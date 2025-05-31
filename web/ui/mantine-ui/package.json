@@ -1,7 +1,7 @@
 {
   "name": "@prometheus-io/mantine-ui",
   "private": true,
-  "version": "0.304.0",
+  "version": "0.304.1",
   "type": "module",
   "scripts": {
     "start": "vite",
@@ -28,7 +28,7 @@
     "@microsoft/fetch-event-source": "^2.0.1",
     "@nexucis/fuzzy": "^0.5.1",
     "@nexucis/kvsearch": "^0.9.1",
-    "@prometheus-io/codemirror-promql": "0.304.0",
+    "@prometheus-io/codemirror-promql": "0.304.1",
     "@reduxjs/toolkit": "^2.7.0",
     "@tabler/icons-react": "^3.31.0",
     "@tanstack/react-query": "^5.74.7",
