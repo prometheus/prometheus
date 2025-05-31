@@ -271,7 +271,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Experimental created timestamp zero ingestion enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "warn-duplicate-targets":
 				c.scrape.WarnDuplicateTargets = true
-				logger.Info("Enabled warning if targets relabelled to same labels")
+				logger.Info("Enabled warning for duplicate active targets")
 			case "delayed-compaction":
 				c.tsdb.EnableDelayedCompaction = true
 				logger.Info("Experimental delayed compaction is enabled.")
