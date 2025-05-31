@@ -860,6 +860,7 @@ func main() {
 			EnableNegativeOffset:     true,
 			EnablePerStepStats:       cfg.enablePerStepStats,
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
+			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
 		}
 
 		queryEngine = promql.NewEngine(opts)
