@@ -78,6 +78,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		rangeEnd           = enh.Ts - durationMilliseconds(vs.Offset)
 		resultFloat        float64
 		resultHistogram    *histogram.FloatHistogram
+		firstH             *histogram.FloatHistogram
 		firstT, lastT      int64
 		numSamplesMinusOne int
 		annos              annotations.Annotations
@@ -102,6 +103,13 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		if resultHistogram == nil {
 			// The histograms are not compatible with each other.
 			return enh.Out, annos
+		}
+		// Find the first histogram sample compatible with our result so we can extrapolate correctly.
+		for _, h := range samples.Histograms {
+			if h.H.UsesCustomBuckets() == resultHistogram.UsesCustomBuckets() {
+				firstH = h.H
+				break
+			}
 		}
 	case len(samples.Floats) > 1:
 		numSamplesMinusOne = len(samples.Floats) - 1
@@ -156,12 +164,24 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		// than the durationToStart, we take the zero point as the start
 		// of the series, thereby avoiding extrapolation to negative
 		// counter values.
-		// TODO(beorn7): Do this for histograms, too.
 		durationToZero := sampledInterval * (samples.Floats[0].F / resultFloat)
 		if durationToZero < durationToStart {
 			durationToStart = durationToZero
 		}
 	}
+
+	// Native histogram counter zero-cutoff logic.
+	var durationToZeroCount float64
+	if isCounter && resultHistogram != nil &&
+		samples.Histograms[0].H.Count > 0 && resultHistogram.Count > 0 {
+		// Find when the total sample count would hit zero (durationToZeroCount)
+		// If that instant lies inside the query range, shift durationToStart to it
+		durationToZeroCount = sampledInterval * (firstH.Count / resultHistogram.Count)
+		if durationToZeroCount < durationToStart {
+			durationToStart = durationToZeroCount
+		}
+	}
+
 	extrapolateToInterval += durationToStart
 
 	if durationToEnd >= extrapolationThreshold {
@@ -179,6 +199,44 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		resultHistogram.Mul(factor)
 	}
 
+	if isCounter && resultHistogram != nil && firstH != nil && resultHistogram.Count > 0 {
+		rangeSeconds := ms.Range.Seconds()
+		// How much we "scaled" sampled interval.
+		deltaScale := sampledInterval / extrapolateToInterval
+		if isRate {
+			deltaScale *= rangeSeconds
+		}
+		for bucketIndex, bucketVal := range resultHistogram.PositiveBuckets {
+			if bucketVal <= 0 {
+				continue
+			}
+			// Get bucket value from the first sample.
+			bucketStartVal := firstH.PositiveBuckets[bucketIndex]
+			// Raw change in bucket value between last and first samples.
+			bucketDelta := bucketVal * deltaScale
+			// Predict bucket value at the lower boundary of the range.
+			predictedAtStart := bucketStartVal - (bucketDelta / sampledInterval * durationToStart)
+			if durationToStart == durationToZeroCount || (predictedAtStart < 0 && bucketStartVal > 0) {
+				// Predict bucket value at the upper boundary of the range.
+				predictedAtEnd := bucketStartVal + (bucketDelta * (1 + durationToEnd/sampledInterval))
+				var countDiff float64
+				if isRate {
+					// Calculate the adjusted per-second rate based on the predicted count at the range end.
+					// This rate reflects the increase from the estimated zero point (clamped at range start)
+					// to the range end, preventing negative extrapolation artifacts.
+					adjustedRate := predictedAtEnd / rangeSeconds
+					countDiff = adjustedRate - bucketVal
+					resultHistogram.PositiveBuckets[bucketIndex] = adjustedRate
+				} else {
+					// For non-rate functions, calculate the total increase from start to end
+					// and use the predicted end value as the adjusted value
+					countDiff = predictedAtEnd - bucketVal
+					resultHistogram.PositiveBuckets[bucketIndex] = predictedAtEnd
+				}
+				resultHistogram.Count += countDiff
+			}
+		}
+	}
 	return append(enh.Out, Sample{F: resultFloat, H: resultHistogram}), annos
 }
 
