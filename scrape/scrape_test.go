@@ -24,6 +24,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"net/url"
 	"os"
 	"sort"
@@ -37,6 +38,14 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/regexp"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
@@ -44,8 +53,6 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -3112,6 +3119,65 @@ func TestAcceptHeader(t *testing.T) {
 	}
 }
 
+// withOTELGlobals temporarily sets the global TracerProvider and Propagator
+// and restores the original state after the test completes.
+func withOTELGlobals(t *testing.T, tp trace.TracerProvider, propagator propagation.TextMapPropagator, testFunc func()) {
+	t.Helper()
+
+	origTracerProvider := otel.GetTracerProvider()
+	origPropagator := otel.GetTextMapPropagator()
+
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagator)
+
+	defer func() {
+		otel.SetTracerProvider(origTracerProvider)
+		otel.SetTextMapPropagator(origPropagator)
+	}()
+
+	testFunc()
+}
+
+// verifies that the HTTP client used by the target scraper propagates the OpenTelemetry "traceparent" header correctly.
+func TestRequestHeaderTraceparent(t *testing.T) {
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	withOTELGlobals(t, tp, propagation.TraceContext{}, func() {
+		server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			traceparent := r.Header.Get("traceparent")
+			require.NotEmpty(t, traceparent)
+		}))
+		defer server.Close()
+
+		serverURL, err := url.Parse(server.URL)
+		require.NoError(t, err)
+
+		client := &http.Client{
+			Transport: otelhttp.NewTransport(
+				http.DefaultTransport,
+				otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
+					return otelhttptrace.NewClientTrace(ctx, otelhttptrace.WithoutSubSpans())
+				}),
+			),
+		}
+
+		ts := &targetScraper{
+			Target: &Target{
+				labels: labels.FromStrings(
+					model.SchemeLabel, serverURL.Scheme,
+					model.AddressLabel, serverURL.Host,
+				),
+				scrapeConfig: &config.ScrapeConfig{},
+			},
+			client: client,
+		}
+
+		resp, err := ts.scrape(context.Background())
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		defer resp.Body.Close()
+	})
+}
+
 func TestTargetScraperScrapeOK(t *testing.T) {
 	const (
 		configTimeout   = 1500 * time.Millisecond
@@ -3123,7 +3189,6 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		allowUTF8       bool
 		qValuePattern   = regexp.MustCompile(`q=([0-9]+(\.\d+)?)`)
 	)
-
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			accept := r.Header.Get("Accept")

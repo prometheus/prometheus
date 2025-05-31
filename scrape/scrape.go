@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"net/http/httptrace"
 	"reflect"
 	"slices"
 	"strconv"
@@ -36,6 +37,10 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -148,7 +153,12 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 	if err != nil {
 		return nil, fmt.Errorf("error creating HTTP client: %w", err)
 	}
-
+	t := client.Transport
+	client.Transport = otelhttp.NewTransport(
+		t,
+		otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
+			return otelhttptrace.NewClientTrace(ctx, otelhttptrace.WithoutSubSpans())
+		}))
 	validationScheme, err := config.ToValidationScheme(cfg.MetricNameValidationScheme)
 	if err != nil {
 		return nil, fmt.Errorf("invalid metric name validation scheme: %w", err)
@@ -320,6 +330,12 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		sp.metrics.targetScrapePoolReloadsFailed.Inc()
 		return fmt.Errorf("error creating HTTP client: %w", err)
 	}
+	t := client.Transport
+	client.Transport = otelhttp.NewTransport(
+		t,
+		otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
+			return otelhttptrace.NewClientTrace(ctx, otelhttptrace.WithoutSubSpans())
+		}))
 
 	reuseCache := reusableCache(sp.config, cfg)
 	sp.config = cfg
@@ -832,6 +848,8 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 
 		s.req = req
 	}
+	ctx, span := otel.Tracer("").Start(ctx, "Scrape", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
 
 	return s.client.Do(s.req.WithContext(ctx))
 }
