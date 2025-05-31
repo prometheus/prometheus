@@ -3,8 +3,6 @@ title: Template reference
 sort_rank: 5
 ---
 
-# Template reference
-
 Prometheus supports templating in the annotations and labels of alerts,
 as well as in served console pages. Templates have the ability to run
 queries against the local database, iterate over data, use conditionals,

@@ -1,9 +1,8 @@
 ---
-title: Migration
+title: Prometheus 3.0 migration guide
+nav_title: Migration
 sort_rank: 10
 ---
-
-# Prometheus 3.0 migration guide
 
 In line with our [stability promise](https://prometheus.io/docs/prometheus/latest/stability/),
 the Prometheus 3.0 release contains a number of backwards incompatible changes.

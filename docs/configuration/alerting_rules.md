@@ -3,8 +3,6 @@ title: Alerting rules
 sort_rank: 3
 ---
 
-# Alerting rules
-
 Alerting rules allow you to define alert conditions based on Prometheus
 expression language expressions and to send notifications about firing alerts
 to an external service. Whenever the alert expression results in one or more

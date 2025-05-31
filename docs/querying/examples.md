@@ -1,10 +1,8 @@
 ---
-title: Querying examples
+title: Query examples
 nav_title: Examples
 sort_rank: 4
 ---
-
-# Query examples
 
 ## Simple time series selection
 
