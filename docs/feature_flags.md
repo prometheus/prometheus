@@ -118,7 +118,7 @@ This must be used if you would like to send metadata using the new remote write 
 
 `--enable-feature=warn-duplicate-targets`
 
-When enabled, Prometheus will emit a warning log if two targets get relabeled to the same labels.
+When enabled, Prometheus will emit a warning log if two targets get relabeled to the same labels. This warning log will contain the labels, do note this if sensitive information is being stored there.
 
 ## Delay compaction start time
 

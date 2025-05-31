@@ -232,19 +232,16 @@ func (m *Manager) warnIfTargetsRelabelledToSameLabels() {
 	}
 
 	activeTargets := make(map[uint64]*Target, totalTargets)
-	builder := labels.NewBuilder(labels.EmptyLabels())
 	for _, scrapePool := range m.scrapePools {
 		for _, target := range scrapePool.activeTargets {
 			tHash := target.hash()
-			t, ok := activeTargets[tHash]
+			_, ok := activeTargets[tHash]
 			if !ok {
 				activeTargets[tHash] = target
 				continue
 			}
 			m.logger.Warn(
-				"Found targets with same labels after relabelling",
-				"target_one", t.DiscoveredLabels(builder).Get(model.AddressLabel),
-				"target_two", target.DiscoveredLabels(builder).Get(model.AddressLabel),
+				"Found active targets with same labels after relabelling",
 				"labels", target.labels.String(),
 			)
 		}
