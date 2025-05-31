@@ -1490,6 +1490,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
