@@ -275,6 +275,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "promql-delayed-name-removal":
 				c.promqlEnableDelayedNameRemoval = true
 				logger.Info("Experimental PromQL delayed name removal enabled.")
+			case "promql-extended-range-selectors":
+				parser.EnableExtendedRangeSelectors = true
+				logger.Info("Experimental PromQL extended range selectors enabled.")
 			case "":
 				continue
 			case "old-ui":
