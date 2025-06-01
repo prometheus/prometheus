@@ -1,0 +1,44 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "extends": [
+      "config:recommended"
+    ],
+    "baseBranches": ["main"],
+    "postUpdateOptions": [
+      "gomodTidy",
+      "gomodUpdateImportPaths"
+    ],
+    "schedule": ["before 9am on Monday"],
+    "packageRules": [
+      {
+        "description": "Don't update replace directives",
+        "matchPackageNames": [
+          "github.com/fsnotify/fsnotify"
+        ],
+        "enabled": false
+      },
+      {
+        "description": "Group Mantine UI dependencies",
+        "matchPaths": [
+          "web/ui/mantine-ui/**"
+        ],
+        "groupName": "Mantine UI",
+        "enabled": true
+      },
+      {
+        "description": "Group react-app dependencies",
+        "matchPaths": [
+          "web/ui/react-app/**"
+        ],
+        "groupName": "React App",
+        "enabled": true
+      }
+    ],
+    "branchPrefix": "deps-update/",
+    "vulnerabilityAlerts": {
+      "enabled": true,
+      "labels": ["security-update"]
+    },
+    "osvVulnerabilityAlerts": true,
+    "dependencyDashboardApproval": false
+}
