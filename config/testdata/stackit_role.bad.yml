@@ -1,3 +1,0 @@
-scrape_configs:
-  - stackit_sd_configs:
-      - role: invalid

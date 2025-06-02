@@ -39,8 +39,7 @@ const (
 	stackitAPIEndpoint = "https://iaas.api.%s.stackit.cloud"
 
 	stackitLabelPrivateIPv4  = stackitLabelPrefix + "private_ipv4_"
-	stackitLabelPrivateIPv6  = stackitLabelPrefix + "private_ipv6_"
-	stackitLabelType         = stackitLabelPrefix + "server_type"
+	stackitLabelType         = stackitLabelPrefix + "type"
 	stackitLabelLabel        = stackitLabelPrefix + "label_"
 	stackitLabelLabelPresent = stackitLabelPrefix + "labelpresent_"
 )
@@ -154,19 +153,18 @@ func (i *iaasDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, erro
 	targets := make([]model.LabelSet, 0, len(*serversResponse.Items))
 	for _, server := range *serversResponse.Items {
 		if server.Nics == nil {
-			i.logger.DebugContext(ctx, "server has no network interfaces. Skipping", slog.String("server_id", server.ID))
+			i.logger.Debug("server has no network interfaces. Skipping", slog.String("server_id", server.ID))
 			continue
 		}
 
 		labels := model.LabelSet{
-			stackitLabelRole:              model.LabelValue(RoleServer),
-			stackitLabelProject:           model.LabelValue(i.project),
-			stackitLabelServerID:          model.LabelValue(server.ID),
-			stackitLabelServerName:        model.LabelValue(server.Name),
-			stackitLabelAvailabilityZone:  model.LabelValue(server.AvailabilityZone),
-			stackitLabelServerStatus:      model.LabelValue(server.Status),
-			stackitLabelServerPowerStatus: model.LabelValue(server.PowerStatus),
-			stackitLabelType:              model.LabelValue(server.MachineType),
+			stackitLabelProject:          model.LabelValue(i.project),
+			stackitLabelID:               model.LabelValue(server.ID),
+			stackitLabelName:             model.LabelValue(server.Name),
+			stackitLabelAvailabilityZone: model.LabelValue(server.AvailabilityZone),
+			stackitLabelStatus:           model.LabelValue(server.Status),
+			stackitLabelPowerStatus:      model.LabelValue(server.PowerStatus),
+			stackitLabelType:             model.LabelValue(server.MachineType),
 		}
 
 		var (
@@ -178,14 +176,6 @@ func (i *iaasDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, erro
 			if nic.PublicIP != nil && *nic.PublicIP != "" && serverPublicIP == "" {
 				serverPublicIP = *nic.PublicIP
 				addressLabel = serverPublicIP
-			}
-
-			if nic.IPv6 != nil && *nic.IPv6 != "" {
-				networkLabel := model.LabelName(stackitLabelPrivateIPv6 + strutil.SanitizeLabelName(nic.NetworkName))
-				labels[networkLabel] = model.LabelValue(*nic.IPv6)
-				if addressLabel == "" {
-					addressLabel = *nic.IPv6
-				}
 			}
 
 			if nic.IPv4 != nil && *nic.IPv4 != "" {

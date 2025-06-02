@@ -20,7 +20,6 @@ type ServerListResponse struct {
 }
 
 type Server struct {
-	AffinityGroup    string                 `json:"affinityGroup"`
 	AvailabilityZone string                 `json:"availabilityZone"`
 	ID               string                 `json:"id"`
 	Labels           map[string]interface{} `json:"labels"`
@@ -35,6 +34,5 @@ type Server struct {
 type ServerNetwork struct {
 	NetworkName string  `json:"networkName"`
 	IPv4        *string `json:"ipv4,omitempty"`
-	IPv6        *string `json:"ipv6,omitempty"`
 	PublicIP    *string `json:"publicIp,omitempty"`
 }

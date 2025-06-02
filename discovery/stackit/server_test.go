@@ -88,6 +88,7 @@ func TestServerSDRefresh(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			suite := &serverSDTestSuite{}
 			suite.SetupTest(t)
+			defer suite.Mock.ShutdownServer()
 
 			tc.cfg.Endpoint = suite.Mock.Endpoint()
 			tc.cfg.tokenURL = suite.Mock.Endpoint() + "token"
@@ -107,20 +108,20 @@ func TestServerSDRefresh(t *testing.T) {
 
 			for i, labelSet := range []model.LabelSet{
 				{
-					"__address__":                                             model.LabelValue("192.0.2.1:80"),
-					"__meta_stackit_role":                                     model.LabelValue("server"),
-					"__meta_stackit_project":                                  model.LabelValue("00000000-0000-0000-0000-000000000000"),
-					"__meta_stackit_server_id":                                model.LabelValue("b4176700-596a-4f80-9fc8-5f9c58a606e1"),
-					"__meta_stackit_server_type":                              model.LabelValue("g1.1"),
-					"__meta_stackit_private_ipv4_test":                        model.LabelValue("10.0.0.153"),
-					"__meta_stackit_public_ipv4":                              model.LabelValue("192.0.2.1"),
+					"__address__":                      model.LabelValue("192.0.2.1:80"),
+					"__meta_stackit_role":              model.LabelValue("server"),
+					"__meta_stackit_project":           model.LabelValue("00000000-0000-0000-0000-000000000000"),
+					"__meta_stackit_id":                model.LabelValue("b4176700-596a-4f80-9fc8-5f9c58a606e1"),
+					"__meta_stackit_type":              model.LabelValue("g1.1"),
+					"__meta_stackit_private_ipv4_test": model.LabelValue("10.0.0.153"),
+					"__meta_stackit_public_ipv4":       model.LabelValue("192.0.2.1"),
 					"__meta_stackit_labelpresent_provisionSTACKITServerAgent": model.LabelValue("true"),
 					"__meta_stackit_label_provisionSTACKITServerAgent":        model.LabelValue("true"),
 					"__meta_stackit_labelpresent_stackit_project_id":          model.LabelValue("true"),
-					"__meta_stackit_server_name":                              model.LabelValue("runcommandtest"),
+					"__meta_stackit_name":                                     model.LabelValue("runcommandtest"),
 					"__meta_stackit_availability_zone":                        model.LabelValue("eu01-3"),
-					"__meta_stackit_server_status":                            model.LabelValue("INACTIVE"),
-					"__meta_stackit_server_power_status":                      model.LabelValue("STOPPED"),
+					"__meta_stackit_status":                                   model.LabelValue("INACTIVE"),
+					"__meta_stackit_power_status":                             model.LabelValue("STOPPED"),
 					"__meta_stackit_label_stackit_project_id":                 model.LabelValue("00000000-0000-0000-0000-000000000000"),
 				},
 			} {

@@ -32,15 +32,15 @@ import (
 )
 
 const (
-	stackitLabelPrefix            = model.MetaLabelPrefix + "stackit_"
-	stackitLabelRole              = stackitLabelPrefix + "role"
-	stackitLabelProject           = stackitLabelPrefix + "project"
-	stackitLabelServerID          = stackitLabelPrefix + "server_id"
-	stackitLabelServerName        = stackitLabelPrefix + "server_name"
-	stackitLabelServerStatus      = stackitLabelPrefix + "server_status"
-	stackitLabelServerPowerStatus = stackitLabelPrefix + "server_power_status"
-	stackitLabelAvailabilityZone  = stackitLabelPrefix + "availability_zone"
-	stackitLabelPublicIPv4        = stackitLabelPrefix + "public_ipv4"
+	stackitLabelPrefix           = model.MetaLabelPrefix + "stackit_"
+	stackitLabelRole             = stackitLabelPrefix + "role"
+	stackitLabelProject          = stackitLabelPrefix + "project"
+	stackitLabelID               = stackitLabelPrefix + "id"
+	stackitLabelName             = stackitLabelPrefix + "name"
+	stackitLabelStatus           = stackitLabelPrefix + "status"
+	stackitLabelPowerStatus      = stackitLabelPrefix + "power_status"
+	stackitLabelAvailabilityZone = stackitLabelPrefix + "availability_zone"
+	stackitLabelPublicIPv4       = stackitLabelPrefix + "public_ipv4"
 )
 
 var userAgent = version.PrometheusUserAgent()
@@ -63,7 +63,6 @@ type SDConfig struct {
 
 	RefreshInterval       model.Duration `yaml:"refresh_interval"`
 	Port                  int            `yaml:"port"`
-	Role                  Role           `yaml:"role"`
 	Region                string         `yaml:"region"`
 	Endpoint              string         `yaml:"endpoint"`
 	Project               string         `yaml:"project"`
@@ -96,27 +95,6 @@ type refresher interface {
 	refresh(context.Context) ([]*targetgroup.Group, error)
 }
 
-// Role is the Role of the target within the STACKIT Ecosystem.
-type Role string
-
-// The valid options for role.
-const (
-	RoleServer Role = "server" // STACKIT IAAS API (Server)
-)
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	if err := unmarshal((*string)(c)); err != nil {
-		return err
-	}
-	switch *c {
-	case RoleServer:
-		return nil
-	default:
-		return fmt.Errorf("unknown role %q", *c)
-	}
-}
-
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultSDConfig
@@ -128,10 +106,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	if c.Endpoint == "" && c.Region == "" {
 		return errors.New("endpoint or region missing")
-	}
-
-	if c.Role == "" {
-		return errors.New("role missing (one of: server)")
 	}
 
 	if _, err = url.Parse(c.Endpoint); err != nil {
@@ -176,8 +150,5 @@ func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.Discove
 }
 
 func newRefresher(conf *SDConfig, l *slog.Logger) (refresher, error) {
-	if conf.Role == RoleServer {
-		return newServerDiscovery(conf, l)
-	}
-	return nil, errors.New("unknown STACKIT discovery role")
+	return newServerDiscovery(conf, l)
 }

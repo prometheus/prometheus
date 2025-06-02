@@ -1493,10 +1493,16 @@ var expectedConf = &Config{
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
-			MetricsPath:      DefaultScrapeConfig.MetricsPath,
-			Scheme:           DefaultScrapeConfig.Scheme,
-			HTTPClientConfig: config.DefaultHTTPClientConfig,
-
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.HTTPClientConfig{
+				Authorization: &config.Authorization{
+					Type:        "Bearer",
+					Credentials: "abcdef",
+				},
+				FollowRedirects: true,
+				EnableHTTP2:     true,
+			},
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&stackit.SDConfig{
 					Project: "11111111-1111-1111-1111-111111111111",
@@ -1507,7 +1513,6 @@ var expectedConf = &Config{
 					},
 					Port:            80,
 					RefreshInterval: model.Duration(60 * time.Second),
-					Role:            "server",
 				},
 			},
 		},
@@ -2446,10 +2451,6 @@ var expectedErrors = []struct {
 	{
 		filename: "scrape_config_utf8_conflicting.bad.yml",
 		errMsg:   `utf8 metric names requested but validation scheme is not set to UTF8`,
-	},
-	{
-		filename: "stackit_role.bad.yml",
-		errMsg:   "unknown role",
 	},
 	{
 		filename: "stackit_endpoint.bad.yml",
