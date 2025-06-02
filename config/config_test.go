@@ -1493,21 +1493,18 @@ var expectedConf = &Config{
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
-			MetricsPath: DefaultScrapeConfig.MetricsPath,
-			Scheme:      DefaultScrapeConfig.Scheme,
-			HTTPClientConfig: config.HTTPClientConfig{
-				Authorization: &config.Authorization{
-					Type:        "Bearer",
-					Credentials: "abcdef",
-				},
-				FollowRedirects: true,
-				EnableHTTP2:     true,
-			},
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&stackit.SDConfig{
 					Project: "11111111-1111-1111-1111-111111111111",
 					Region:  "eu01",
 					HTTPClientConfig: config.HTTPClientConfig{
+						Authorization: &config.Authorization{
+							Type:        "Bearer",
+							Credentials: "abcdef",
+						},
 						FollowRedirects: true,
 						EnableHTTP2:     true,
 					},
@@ -1945,7 +1942,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Len(t, matches, 24, "wrong number of secret matches found")
+	require.Len(t, matches, 25, "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }

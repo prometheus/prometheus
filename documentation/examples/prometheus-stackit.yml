@@ -12,7 +12,6 @@ scrape_configs:
 
     stackit_sd_configs:
       - project: 11111111-1111-1111-1111-111111111111
-        role: "server"
         authorization:
           credentials: "<replace with a STACKIT ServiceAccount Token>"
     relabel_configs:
@@ -26,7 +25,6 @@ scrape_configs:
 
     stackit_sd_configs:
       - project: 11111111-1111-1111-1111-111111111111
-        role: "server"
         authorization:
           credentials: "<replace with a STACKIT ServiceAccount Token>"
     relabel_configs:
