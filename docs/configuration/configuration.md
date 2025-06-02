@@ -2293,7 +2293,7 @@ project: <string>
 
 # The STACKIT role of entities that should be discovered.
 # Currently, only server is supported.
-role: <string>
+role: <stackit_role>
 
 # STACKIT region to use. No automatic discovery of the region is done.
 [ region : <string> | default = "eu01" ]
