@@ -4,11 +4,9 @@ nav_title: Basics
 sort_rank: 1
 ---
 
-# Querying Prometheus
-
 Prometheus provides a functional query language called PromQL (Prometheus Query
 Language) that lets the user select and aggregate time series data in real
-time. 
+time.
 
 When you send a query request to Prometheus, it can be an _instant query_, evaluated at one point in time,
 or a _range query_ at equally-spaced steps between a start and an end time. PromQL works exactly the same
@@ -35,7 +33,7 @@ evaluate to one of four types:
 
 Depending on the use-case (e.g. when graphing vs. displaying the output of an
 expression), only some of these types are legal as the result of a
-user-specified expression. 
+user-specified expression.
 For [instant queries](api.md#instant-queries), any of the above data types are allowed as the root of the expression.
 [Range queries](api.md#range-queries) only support scalar-typed and instant-vector-typed expressions.
 
@@ -217,7 +215,7 @@ and would exclude:
 
     http_requests_total{environment="development"}
 
-Multiple matchers can be used for the same label name; they all must pass for a result to be returned. 
+Multiple matchers can be used for the same label name; they all must pass for a result to be returned.
 
 The query:
 
@@ -307,7 +305,7 @@ Note that this allows a query to look ahead of its evaluation time.
 
 The `@` modifier allows changing the evaluation time for individual instant
 and range vectors in a query. The time supplied to the `@` modifier
-is a unix timestamp and described with a float literal. 
+is a unix timestamp and described with a float literal.
 
 For example, the following expression returns the value of
 `http_requests_total` at `2021-01-04T07:40:00+00:00`:
@@ -403,11 +401,11 @@ as stale, then no value is returned for that time series. If new samples are
 subsequently ingested for that time series, they will be returned as expected.
 
 A time series will go stale when it is no longer exported, or the target no
-longer exists. Such time series will disappear from graphs 
+longer exists. Such time series will disappear from graphs
 at the times of their latest collected sample, and they will not be returned
 in queries after they are marked stale.
 
-Some exporters, which put their own timestamps on samples, get a different behaviour: 
+Some exporters, which put their own timestamps on samples, get a different behaviour:
 series that stop being exported take the last value for (by default) 5 minutes before
 disappearing. The `track_timestamps_staleness` setting can change this.
 
