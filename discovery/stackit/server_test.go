@@ -19,7 +19,6 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -125,9 +124,7 @@ func TestServerSDRefresh(t *testing.T) {
 					"__meta_stackit_label_stackit_project_id":                 model.LabelValue("00000000-0000-0000-0000-000000000000"),
 				},
 			} {
-				t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-					require.Equal(t, labelSet, targetGroup.Targets[i])
-				})
+				require.Equal(t, labelSet, targetGroup.Targets[i])
 			}
 		})
 	}
