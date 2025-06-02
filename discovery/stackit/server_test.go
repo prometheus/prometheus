@@ -109,7 +109,6 @@ func TestServerSDRefresh(t *testing.T) {
 			for i, labelSet := range []model.LabelSet{
 				{
 					"__address__":                      model.LabelValue("192.0.2.1:80"),
-					"__meta_stackit_role":              model.LabelValue("server"),
 					"__meta_stackit_project":           model.LabelValue("00000000-0000-0000-0000-000000000000"),
 					"__meta_stackit_id":                model.LabelValue("b4176700-596a-4f80-9fc8-5f9c58a606e1"),
 					"__meta_stackit_type":              model.LabelValue("g1.1"),
