@@ -60,6 +60,9 @@ const (
 
 // HandleServers mocks the STACKIT IAAS API.
 func (m *SDMock) HandleServers() {
+	// /token endpoint mocks the token endpoint for service account authentication.
+	// It checks if the request body starts with "assertion=ey" to simulate a valid assertion
+	// as defined in RFC 7523.
 	m.Mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		reqBody, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -68,6 +71,8 @@ func (m *SDMock) HandleServers() {
 			return
 		}
 
+		// Expecting HTTP form encoded body with the field assertion.
+		// JWT always start with "ey" (base64url encoded).
 		if !bytes.HasPrefix(reqBody, []byte("assertion=ey")) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
