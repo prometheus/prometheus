@@ -8,7 +8,7 @@
       "gomodTidy",
       "gomodUpdateImportPaths"
     ],
-    "schedule": ["0 0-8 * * 1"],
+    "schedule": ["* 0-8 * * 1"],
     "timezone": "UTC",
     "packageRules": [
       {
