@@ -8,7 +8,8 @@
       "gomodTidy",
       "gomodUpdateImportPaths"
     ],
-    "schedule": ["before 9am on Monday"],
+    "schedule": ["0 0-8 * * 1"],
+    "timezone": "UTC",
     "packageRules": [
       {
         "description": "Don't update replace directives",
