@@ -69,14 +69,17 @@ func TestQueryRange(t *testing.T) {
 	require.NoError(t, err)
 
 	p := &promqlPrinter{}
-	exitCode := QueryRange(urlObject, http.DefaultTransport, map[string]string{}, "up", "0", "300", 0, p)
+	qr, err := newQueryRange("0", "300", 0)
+	require.NoError(t, err)
+	exitCode := QueryRange(urlObject, http.DefaultTransport, map[string]string{}, "up", qr, p)
 	require.Equal(t, "/api/v1/query_range", getRequest().URL.Path)
 	form := getRequest().Form
 	require.Equal(t, "up", form.Get("query"))
 	require.Equal(t, "1", form.Get("step"))
 	require.Equal(t, 0, exitCode)
 
-	exitCode = QueryRange(urlObject, http.DefaultTransport, map[string]string{}, "up", "0", "300", 10*time.Millisecond, p)
+	qr, err = newQueryRange("0", "300", 10*time.Millisecond)
+	exitCode = QueryRange(urlObject, http.DefaultTransport, map[string]string{}, "up", qr, p)
 	require.Equal(t, "/api/v1/query_range", getRequest().URL.Path)
 	form = getRequest().Form
 	require.Equal(t, "up", form.Get("query"))
@@ -93,7 +96,9 @@ func TestQueryInstant(t *testing.T) {
 	require.NoError(t, err)
 
 	p := &promqlPrinter{}
-	exitCode := QueryInstant(urlObject, http.DefaultTransport, "up", "300", p)
+	qr, err := newQueryRange("300", "", time.Second)
+	require.NoError(t, err)
+	exitCode := QueryInstant(urlObject, http.DefaultTransport, "up", qr, p)
 	require.Equal(t, "/api/v1/query", getRequest().URL.Path)
 	form := getRequest().Form
 	require.Equal(t, "up", form.Get("query"))
