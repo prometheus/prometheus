@@ -68,7 +68,7 @@ func TestHistogramStatsDecoding(t *testing.T) {
 				tsdbutil.GenerateTestHistogramWithHint(1, histogram.UnknownCounterReset),
 			},
 			expectedHints: []histogram.CounterResetHint{
-				histogram.NotCounterReset,
+				histogram.UnknownCounterReset,
 			},
 		},
 		{
@@ -78,7 +78,7 @@ func TestHistogramStatsDecoding(t *testing.T) {
 				tsdbutil.GenerateTestHistogramWithHint(1, histogram.UnknownCounterReset),
 			},
 			expectedHints: []histogram.CounterResetHint{
-				histogram.NotCounterReset,
+				histogram.UnknownCounterReset,
 				histogram.CounterReset,
 			},
 		},
@@ -90,7 +90,7 @@ func TestHistogramStatsDecoding(t *testing.T) {
 				tsdbutil.GenerateTestHistogramWithHint(1, histogram.UnknownCounterReset),
 			},
 			expectedHints: []histogram.CounterResetHint{
-				histogram.NotCounterReset,
+				histogram.UnknownCounterReset,
 				histogram.UnknownCounterReset,
 				histogram.CounterReset,
 			},
@@ -139,6 +139,41 @@ func TestHistogramStatsDecoding(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestHistogramStatsMixedUse(t *testing.T) {
+	histograms := []*histogram.Histogram{
+		tsdbutil.GenerateTestHistogramWithHint(2, histogram.UnknownCounterReset),
+		tsdbutil.GenerateTestHistogramWithHint(4, histogram.UnknownCounterReset),
+		tsdbutil.GenerateTestHistogramWithHint(0, histogram.UnknownCounterReset),
+	}
+
+	series := newHistogramSeries(histograms)
+	it := series.Iterator(nil)
+
+	statsIterator := NewHistogramStatsIterator(it)
+
+	expectedHints := []histogram.CounterResetHint{
+		histogram.UnknownCounterReset,
+		histogram.NotCounterReset,
+		histogram.UnknownCounterReset,
+	}
+	actualHints := make([]histogram.CounterResetHint, 3)
+	typ := statsIterator.Next()
+	require.Equal(t, chunkenc.ValHistogram, typ)
+	_, h := statsIterator.AtHistogram(nil)
+	actualHints[0] = h.CounterResetHint
+	typ = statsIterator.Next()
+	require.Equal(t, chunkenc.ValHistogram, typ)
+	_, h = statsIterator.AtHistogram(nil)
+	actualHints[1] = h.CounterResetHint
+	typ = statsIterator.Next()
+	require.Equal(t, chunkenc.ValHistogram, typ)
+	_, fh := statsIterator.AtFloatHistogram(nil)
+	actualHints[2] = fh.CounterResetHint
+
+	require.Equal(t, chunkenc.ValNone, statsIterator.Next())
+	require.Equal(t, expectedHints, actualHints)
 }
 
 type histogramSeries struct {
