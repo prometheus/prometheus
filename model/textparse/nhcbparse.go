@@ -36,6 +36,15 @@ const (
 	stateEmitting
 )
 
+// Keep track of what information we have already loaded about the next series.
+type histogramInfoPreloaded struct {
+	hasName    bool   // The metricName and suffix is loaded.
+	hasHash    bool   // The hash was calculated.
+	metricName string // Without magic suffixes.
+	suffixType convertnhcb.SuffixType
+	hash       uint64
+}
+
 // The NHCBParser wraps a Parser and converts classic histograms to native
 // histograms with custom buckets.
 //
@@ -58,6 +67,9 @@ type NHCBParser struct {
 
 	// State of the parser.
 	state collectionState
+
+	// Preloaded information about classic histogram series.
+	preload histogramInfoPreloaded
 
 	// Caches the values from the underlying parser.
 	// For Series and Histogram.
@@ -188,6 +200,11 @@ func (p *NHCBParser) Next() (Entry, error) {
 			return p.entry, p.err
 		}
 
+		// We are advancing the embedded parser, whatever we knew preloaded
+		// about the previous series is now invalid.
+		p.preload.hasName = false
+		p.preload.hasHash = false
+
 		p.entry, p.err = p.parser.Next()
 		if p.err != nil {
 			if errors.Is(p.err, io.EOF) && p.processNHCB() {
@@ -235,6 +252,7 @@ func (p *NHCBParser) Next() (Entry, error) {
 }
 
 // Return true if labels have changed and we should emit the NHCB.
+// Also store the calculated metric name and hash if possible for future use.
 func (p *NHCBParser) compareLabels() bool {
 	if p.state != stateCollecting {
 		return false
@@ -243,26 +261,38 @@ func (p *NHCBParser) compareLabels() bool {
 		// Different metric type.
 		return true
 	}
-	_, name := convertnhcb.GetHistogramMetricBaseName(p.lset.Get(labels.MetricName))
-	if p.lastHistogramName != name {
+	p.preload.hasName = true
+	p.preload.suffixType, p.preload.metricName = convertnhcb.GetHistogramMetricBaseName(p.lset.Get(labels.MetricName))
+	if p.lastHistogramName != p.preload.metricName {
 		// Different metric name.
 		return true
 	}
-	nextHash, _ := p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
+	p.preload.hasHash = true
+	p.preload.hash, _ = p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
 	// Different label values.
-	return p.lastHistogramLabelsHash != nextHash
+	return p.lastHistogramLabelsHash != p.preload.hash
 }
 
 // Save the label set of the classic histogram without suffix and bucket `le` label.
 func (p *NHCBParser) storeClassicLabels(name string) {
 	p.lastHistogramName = name
-	p.lastHistogramLabelsHash, _ = p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
+	if p.preload.hasHash {
+		p.lastHistogramLabelsHash = p.preload.hash
+	} else {
+		p.lastHistogramLabelsHash, _ = p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
+	}
 	p.lastHistogramExponential = false
 }
 
 func (p *NHCBParser) storeExponentialLabels() {
 	p.lastHistogramName = p.lset.Get(labels.MetricName)
-	p.lastHistogramLabelsHash, _ = p.lset.HashWithoutLabels(p.hBuffer)
+	if p.preload.hasHash {
+		p.lastHistogramLabelsHash = p.preload.hash
+	} else {
+		// In the current model and client_golang, "le" label is not allowed
+		// for histogram so ignoring "le" here is ok.
+		p.lastHistogramLabelsHash, _ = p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
+	}
 	p.lastHistogramExponential = true
 }
 
@@ -274,9 +304,16 @@ func (p *NHCBParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 	if p.typ != model.MetricTypeHistogram {
 		return false
 	}
-	mName := lset.Get(labels.MetricName)
+
+	var name string
+	var suffixType convertnhcb.SuffixType
+	if p.preload.hasName {
+		suffixType, name = p.preload.suffixType, p.preload.metricName
+	} else {
+		suffixType, name = convertnhcb.GetHistogramMetricBaseName(lset.Get(labels.MetricName))
+	}
+
 	// Sanity check to ensure that the TYPE metadata entry name is the same as the base name.
-	suffixType, name := convertnhcb.GetHistogramMetricBaseName(mName)
 	if name != string(p.bName) {
 		return false
 	}
