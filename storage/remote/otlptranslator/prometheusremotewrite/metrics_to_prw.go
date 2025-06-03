@@ -65,7 +65,7 @@ func NewPrometheusConverter() *PrometheusConverter {
 	}
 }
 
-func translatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric {
+func TranslatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric {
 	m := otlptranslator.Metric{
 		Name: metric.Name(),
 		Unit: metric.Unit(),
@@ -144,7 +144,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					continue
 				}
 
-				promName := namer.Build(translatorMetricFromOtelMetric(metric))
+				promName := namer.Build(TranslatorMetricFromOtelMetric(metric))
 				c.metadata = append(c.metadata, prompb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
 					MetricFamilyName: promName,
