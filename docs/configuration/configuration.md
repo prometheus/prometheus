@@ -509,7 +509,7 @@ metric_relabel_configs:
 # If this value is left blank, Prometheus will default to `allow-utf-8` if the
 # validation scheme for the current scrape config is set to utf8, or
 # `underscores` if the validation scheme is set to `legacy`.
-[ metric_name_escaping_scheme: <string> | default "utf8" ]
+[ metric_name_escaping_scheme: <string> | default "allow-utf-8" ]
 
 # Limit on total number of positive and negative buckets allowed in a single
 # native histogram. The resolution of a histogram with more buckets will be
