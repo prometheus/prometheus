@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.4.2 / 2025-06-05
+
+* [BUGFIX] OTLP receiver: Fix default configuration not being respected if the `otlp:` block is unset in the config file. #16693
+
 ## 3.4.1 / 2025-05-31
 
 * [BUGFIX] Parser: Add reproducer for a dangling-reference issue in parsers. #16633
