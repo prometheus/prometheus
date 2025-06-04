@@ -33,7 +33,6 @@ import (
 
 const (
 	stackitLabelPrefix           = model.MetaLabelPrefix + "stackit_"
-	stackitLabelRole             = stackitLabelPrefix + "role"
 	stackitLabelProject          = stackitLabelPrefix + "project"
 	stackitLabelID               = stackitLabelPrefix + "id"
 	stackitLabelName             = stackitLabelPrefix + "name"
