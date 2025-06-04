@@ -27,18 +27,25 @@ type HistogramStatsIterator struct {
 
 	currentFH *histogram.FloatHistogram
 	lastFH    *histogram.FloatHistogram
+
+	haveReadFromCurrentSeries bool
 }
 
 // NewHistogramStatsIterator creates an iterator which returns histogram objects
 // which have only their sum and count values populated. The iterator handles
 // counter reset detection internally and sets the counter reset hint accordingly
 // in each returned histogram objects.
-func NewHistogramStatsIterator(it chunkenc.Iterator) chunkenc.Iterator {
+func NewHistogramStatsIterator(it chunkenc.Iterator) *HistogramStatsIterator {
 	return &HistogramStatsIterator{
 		Iterator:  it,
 		currentH:  &histogram.Histogram{},
 		currentFH: &histogram.FloatHistogram{},
 	}
+}
+
+func (f *HistogramStatsIterator) Reset(it chunkenc.Iterator) {
+	f.Iterator = it
+	f.haveReadFromCurrentSeries = false
 }
 
 // AtHistogram returns the next timestamp/histogram pair. The counter reset
@@ -110,6 +117,8 @@ func (f *HistogramStatsIterator) setLastH(h *histogram.Histogram) {
 	} else {
 		h.CopyTo(f.lastH)
 	}
+
+	f.haveReadFromCurrentSeries = true
 }
 
 func (f *HistogramStatsIterator) setLastFH(fh *histogram.FloatHistogram) {
@@ -118,13 +127,15 @@ func (f *HistogramStatsIterator) setLastFH(fh *histogram.FloatHistogram) {
 	} else {
 		fh.CopyTo(f.lastFH)
 	}
+
+	f.haveReadFromCurrentSeries = true
 }
 
 func (f *HistogramStatsIterator) getFloatResetHint(hint histogram.CounterResetHint) histogram.CounterResetHint {
 	if hint != histogram.UnknownCounterReset {
 		return hint
 	}
-	if f.lastFH == nil {
+	if f.lastFH == nil || !f.haveReadFromCurrentSeries {
 		return histogram.NotCounterReset
 	}
 
@@ -138,7 +149,7 @@ func (f *HistogramStatsIterator) getResetHint(h *histogram.Histogram) histogram.
 	if h.CounterResetHint != histogram.UnknownCounterReset {
 		return h.CounterResetHint
 	}
-	if f.lastH == nil {
+	if f.lastH == nil || !f.haveReadFromCurrentSeries {
 		return histogram.NotCounterReset
 	}
 
