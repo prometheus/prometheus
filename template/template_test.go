@@ -519,8 +519,8 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "3720.01",
 		},
 		{
-			// parseDurationTime (using printf to ensure the return is a string).
-			text:   "{{ printf \"%0.2f\" (parseDurationTime \"1h6m40s\").Minutes }}",
+			// parseGoDuration (using printf to ensure the return is a string).
+			text:   "{{ printf \"%0.2f\" (parseGoDuration \"1h6m40s\").Minutes }}",
 			output: "66.67",
 		},
 		{

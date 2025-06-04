@@ -276,7 +276,7 @@ func NewTemplateExpander(
 				}
 				return float64(time.Duration(v)) / float64(time.Second), nil
 			},
-			"parseDurationTime": func(d string) (time.Duration, error) {
+			"parseGoDuration": func(d string) (time.Duration, error) {
 				v, err := time.ParseDuration(d)
 				if err != nil {
 					return 0, err
