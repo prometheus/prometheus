@@ -368,6 +368,7 @@ func (m *Manager) LoadGroups(
 				QueryOffset:       (*time.Duration)(rg.QueryOffset),
 				done:              m.done,
 				EvalIterationFunc: groupEvalIterationFunc,
+				Labels:            labels.FromMap(rg.Labels),
 			})
 		}
 	}

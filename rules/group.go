@@ -73,6 +73,7 @@ type Group struct {
 	evalIterationFunc GroupEvalIterationFunc
 
 	appOpts *storage.AppendOptions
+	labels  labels.Labels // Labels to be added to all samples in this group.
 }
 
 // GroupEvalIterationFunc is used to implement and extend rule group
@@ -92,6 +93,7 @@ type GroupOptions struct {
 	QueryOffset       *time.Duration
 	done              chan struct{}
 	EvalIterationFunc GroupEvalIterationFunc
+	Labels            labels.Labels
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -143,6 +145,7 @@ func NewGroup(o GroupOptions) *Group {
 		metrics:              metrics,
 		evalIterationFunc:    evalIterationFunc,
 		appOpts:              &storage.AppendOptions{DiscardOutOfOrder: true},
+		labels:               o.Labels,
 	}
 }
 
@@ -574,6 +577,15 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}()
 
 		for _, s := range vector {
+			// Add group labels to the sample's metric labels
+			if g.labels.Len() > 0 {
+				lb := labels.NewBuilder(s.Metric)
+				g.labels.Range(func(l labels.Label) {
+					lb.Set(l.Name, l.Value)
+				})
+				s.Metric = lb.Labels()
+			}
+
 			if s.H != nil {
 				_, err = app.AppendHistogram(0, s.Metric, s.T, nil, s.H)
 			} else {
