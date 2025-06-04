@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.4.2 / 2025-06-05
+## 3.4.2 / 2025-06-04
 
 * [BUGFIX] OTLP receiver: Fix default configuration not being respected if the `otlp:` block is unset in the config file. #16693
 
