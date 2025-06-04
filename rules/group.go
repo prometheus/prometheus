@@ -577,15 +577,6 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}()
 
 		for _, s := range vector {
-			// Add group labels to the sample's metric labels
-			if g.labels.Len() > 0 {
-				lb := labels.NewBuilder(s.Metric)
-				g.labels.Range(func(l labels.Label) {
-					lb.Set(l.Name, l.Value)
-				})
-				s.Metric = lb.Labels()
-			}
-
 			if s.H != nil {
 				_, err = app.AppendHistogram(0, s.Metric, s.T, nil, s.H)
 			} else {
