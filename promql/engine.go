@@ -1293,11 +1293,13 @@ func (ev *evaluator) rangeEval(ctx context.Context, funcCall func([]parser.Value
 	return mat, warnings
 }
 
+type binOpFunc func(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations)
+
 // rangeEvalBinOp evaluates the given expressions, and then for each step calls
 // the given funcCall with the values computed for each expression at that
 // step. The return value is the combination into time series of all the
 // function call results.
-func (ev *evaluator) rangeEvalBinOp(ctx context.Context, matching *parser.VectorMatching, funcCall func([]Vector, [][]EvalSeriesHelper, *EvalNodeHelper) (Vector, annotations.Annotations), exprs ...parser.Expr) (Matrix, annotations.Annotations) {
+func (ev *evaluator) rangeEvalBinOp(ctx context.Context, matching *parser.VectorMatching, funcCall binOpFunc, exprs ...parser.Expr) (Matrix, annotations.Annotations) {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 	matrixes := make([]Matrix, len(exprs))
 	originalNumSamples := ev.currentSamples
@@ -1348,7 +1350,7 @@ func (ev *evaluator) rangeEvalBinOp(ctx context.Context, matching *parser.Vector
 
 		// Make the function call.
 		enh.Ts = ts
-		result, ws := funcCall(vectors, bufHelpers, enh)
+		result, ws := funcCall(vectors[0], vectors[1], matching, bufHelpers[0], bufHelpers[1], enh)
 		enh.Out = result[:0] // Reuse result vector.
 		warnings.Merge(ws)
 
@@ -2054,20 +2056,14 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeVector:
 			switch e.Op {
 			case parser.LAND:
-				return ev.rangeEvalBinOp(ctx, e.VectorMatching, func(v []Vector, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					return ev.VectorAnd(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
-				}, e.LHS, e.RHS)
+				return ev.rangeEvalBinOp(ctx, e.VectorMatching, ev.VectorAnd, e.LHS, e.RHS)
 			case parser.LOR:
-				return ev.rangeEvalBinOp(ctx, e.VectorMatching, func(v []Vector, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					return ev.VectorOr(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
-				}, e.LHS, e.RHS)
+				return ev.rangeEvalBinOp(ctx, e.VectorMatching, ev.VectorOr, e.LHS, e.RHS)
 			case parser.LUNLESS:
-				return ev.rangeEvalBinOp(ctx, e.VectorMatching, func(v []Vector, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					return ev.VectorUnless(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
-				}, e.LHS, e.RHS)
+				return ev.rangeEvalBinOp(ctx, e.VectorMatching, ev.VectorUnless, e.LHS, e.RHS)
 			default:
-				return ev.rangeEvalBinOp(ctx, e.VectorMatching, func(v []Vector, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					vec, err := ev.VectorBinop(e.Op, v[0], v[1], e.VectorMatching, e.ReturnBool, sh[0], sh[1], enh, e.PositionRange())
+				return ev.rangeEvalBinOp(ctx, e.VectorMatching, func(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+					vec, err := ev.VectorBinop(e.Op, lhs, rhs, matching, e.ReturnBool, lhsh, rhsh, enh, e.PositionRange())
 					return vec, handleVectorBinopError(err, e)
 				}, e.LHS, e.RHS)
 			}
@@ -2603,12 +2599,12 @@ loop:
 	return floats, histograms
 }
 
-func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	if matching.Card != parser.CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
 	if len(lhs) == 0 || len(rhs) == 0 {
-		return nil // Short-circuit: AND with nothing is nothing.
+		return nil, nil // Short-circuit: AND with nothing is nothing.
 	}
 
 	// The set of signatures for the right-hand side Vector.
@@ -2624,19 +2620,19 @@ func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching,
 			enh.Out = append(enh.Out, ls)
 		}
 	}
-	return enh.Out
+	return enh.Out, nil
 }
 
-func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	switch {
 	case matching.Card != parser.CardManyToMany:
 		panic("set operations must only use many-to-many matching")
 	case len(lhs) == 0: // Short-circuit.
 		enh.Out = append(enh.Out, rhs...)
-		return enh.Out
+		return enh.Out, nil
 	case len(rhs) == 0:
 		enh.Out = append(enh.Out, lhs...)
-		return enh.Out
+		return enh.Out, nil
 	}
 
 	leftSigs := map[string]struct{}{}
@@ -2651,10 +2647,10 @@ func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, 
 			enh.Out = append(enh.Out, rs)
 		}
 	}
-	return enh.Out
+	return enh.Out, nil
 }
 
-func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	if matching.Card != parser.CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
@@ -2662,7 +2658,7 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatchi
 	// empty lhs means we will return empty - don't need to build a map.
 	if len(lhs) == 0 || len(rhs) == 0 {
 		enh.Out = append(enh.Out, lhs...)
-		return enh.Out
+		return enh.Out, nil
 	}
 
 	rightSigs := map[string]struct{}{}
@@ -2675,7 +2671,7 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatchi
 			enh.Out = append(enh.Out, ls)
 		}
 	}
-	return enh.Out
+	return enh.Out, nil
 }
 
 // VectorBinop evaluates a binary operation between two Vectors, excluding set operators.
