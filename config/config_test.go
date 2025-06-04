@@ -1775,6 +1775,26 @@ func TestOTLPAllowUTF8(t *testing.T) {
 			verify(t, err)
 		})
 	})
+
+	t.Run("good config - missing otlp config uses default", func(t *testing.T) {
+		fpath := filepath.Join("testdata", "otlp_empty.yml")
+		verify := func(t *testing.T, conf *Config, err error) {
+			t.Helper()
+			require.NoError(t, err)
+			require.Equal(t, UnderscoreEscapingWithSuffixes, conf.OTLPConfig.TranslationStrategy)
+		}
+
+		t.Run("LoadFile", func(t *testing.T) {
+			conf, err := LoadFile(fpath, false, promslog.NewNopLogger())
+			verify(t, conf, err)
+		})
+		t.Run("Load", func(t *testing.T) {
+			content, err := os.ReadFile(fpath)
+			require.NoError(t, err)
+			conf, err := Load(string(content), promslog.NewNopLogger())
+			verify(t, conf, err)
+		})
+	})
 }
 
 func TestLoadConfig(t *testing.T) {
