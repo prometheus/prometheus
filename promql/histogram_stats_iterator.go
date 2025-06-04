@@ -126,17 +126,15 @@ func (f *histogramStatsIterator) getFloatResetHint(hint histogram.CounterResetHi
 	if hint != histogram.UnknownCounterReset {
 		return hint
 	}
-	if f.lastFH == nil {
-		// If there was no previous histogram, this will not be used,
-		// and if there was a previous integer histogram, this will
-		// force a reset detection. The later can happen if we used the
-		// iterator to read integer histograms before, but switched to
-		// float histograms for whatever reason.
-		// https://github.com/prometheus/prometheus/issues/16681
-		return histogram.UnknownCounterReset
+	prevFH := f.lastFH
+	if prevFH == nil {
+		if f.lastH == nil {
+			// We don't know if there's a counter reset.
+			return histogram.UnknownCounterReset
+		}
+		prevFH = f.lastH.ToFloat(nil)
 	}
-
-	if f.currentFH.DetectReset(f.lastFH) {
+	if f.currentFH.DetectReset(prevFH) {
 		return histogram.CounterReset
 	}
 	return histogram.NotCounterReset
@@ -146,14 +144,17 @@ func (f *histogramStatsIterator) getResetHint(h *histogram.Histogram) histogram.
 	if h.CounterResetHint != histogram.UnknownCounterReset {
 		return h.CounterResetHint
 	}
+	var prevFH *histogram.FloatHistogram
 	if f.lastH == nil {
-		// If there was no previous histogram, this will not be used,
-		// and if there was a previous float histogram, this will
-		// force a reset detection.
-		return histogram.UnknownCounterReset
+		if f.lastFH == nil {
+			// We don't know if there's a counter reset.
+			return histogram.UnknownCounterReset
+		}
+		prevFH = f.lastFH
+	} else {
+		prevFH = f.lastH.ToFloat(nil)
 	}
-
-	fh, prevFH := h.ToFloat(nil), f.lastH.ToFloat(nil)
+	fh := h.ToFloat(nil)
 	if fh.DetectReset(prevFH) {
 		return histogram.CounterReset
 	}

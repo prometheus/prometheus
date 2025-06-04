@@ -156,7 +156,7 @@ func TestHistogramStatsMixedUse(t *testing.T) {
 	expectedHints := []histogram.CounterResetHint{
 		histogram.UnknownCounterReset,
 		histogram.NotCounterReset,
-		histogram.UnknownCounterReset,
+		histogram.CounterReset,
 	}
 	actualHints := make([]histogram.CounterResetHint, 3)
 	typ := statsIterator.Next()
