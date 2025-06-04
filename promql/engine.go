@@ -1230,6 +1230,11 @@ func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annota
 	return annos
 }
 
+type seriesAndTimestamp struct {
+	Series
+	ts int64
+}
+
 // rangeEval evaluates the given expressions, and then for each step calls
 // the given funcCall with the values computed for each expression at that
 // step. The return value is the combination into time series of all the
@@ -1239,24 +1244,9 @@ func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annota
 func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Labels, *EvalSeriesHelper), funcCall func([]Vector, Matrix, [][]EvalSeriesHelper, *EvalNodeHelper) (Vector, annotations.Annotations), exprs ...parser.Expr) (Matrix, annotations.Annotations) {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 	matrixes := make([]Matrix, len(exprs))
-	origMatrixes := make([]Matrix, len(exprs))
 	originalNumSamples := ev.currentSamples
 
-	var warnings annotations.Annotations
-	for i, e := range exprs {
-		// Functions will take string arguments from the expressions, not the values.
-		if e != nil && e.Type() != parser.ValueTypeString {
-			// ev.currentSamples will be updated to the correct value within the ev.eval call.
-			val, ws := ev.eval(ctx, e)
-			warnings.Merge(ws)
-			matrixes[i] = val.(Matrix)
-
-			// Keep a copy of the original point slices so that they
-			// can be returned to the pool.
-			origMatrixes[i] = make(Matrix, len(matrixes[i]))
-			copy(origMatrixes[i], matrixes[i])
-		}
-	}
+	warnings, origMatrixes := ev.evalInputExpressions(ctx, exprs, nil, matrixes)
 
 	vectors := make([]Vector, len(exprs)) // Input vectors for the function.
 	// Create an output vector that is as big as the input matrix with
@@ -1269,10 +1259,6 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 		}
 	}
 	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
-	type seriesAndTimestamp struct {
-		Series
-		ts int64
-	}
 	seriess := make(map[uint64]seriesAndTimestamp, biggestLen) // Output series by series hash.
 	tempNumSamples := ev.currentSamples
 
@@ -1323,50 +1309,11 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 		enh.Out = result[:0] // Reuse result vector.
 		warnings.Merge(ws)
 
-		vecNumSamples := result.TotalSamples()
-		ev.currentSamples += vecNumSamples
-		// When we reset currentSamples to tempNumSamples during the next iteration of the loop it also
-		// needs to include the samples from the result here, as they're still in memory.
-		tempNumSamples += vecNumSamples
-		ev.samplesStats.UpdatePeak(ev.currentSamples)
-
-		if ev.currentSamples > ev.maxSamples {
-			ev.error(ErrTooManySamples(env))
-		}
-
-		// If this could be an instant query, shortcut so as not to change sort order.
+		tempNumSamples = ev.checkNumSamples(result, tempNumSamples)
 		if ev.endTimestamp == ev.startTimestamp {
-			if !ev.enableDelayedNameRemoval && result.ContainsSameLabelset() {
-				ev.errorf("vector cannot contain metrics with the same labelset")
-			}
-			mat := make(Matrix, len(result))
-			for i, s := range result {
-				if s.H == nil {
-					mat[i] = Series{Metric: s.Metric, Floats: []FPoint{{T: ts, F: s.F}}, DropName: s.DropName}
-				} else {
-					mat[i] = Series{Metric: s.Metric, Histograms: []HPoint{{T: ts, H: s.H}}, DropName: s.DropName}
-				}
-			}
-			ev.currentSamples = originalNumSamples + mat.TotalSamples()
-			ev.samplesStats.UpdatePeak(ev.currentSamples)
-			return mat, warnings
+			return ev.instantResult(result, ts, originalNumSamples, warnings)
 		}
-
-		// Add samples in output vector to output series.
-		for _, sample := range result {
-			h := sample.Metric.Hash()
-			ss, ok := seriess[h]
-			if ok {
-				if ss.ts == ts { // If we've seen this output series before at this timestamp, it's a duplicate.
-					ev.errorf("vector cannot contain metrics with the same labelset")
-				}
-				ss.ts = ts
-			} else {
-				ss = seriesAndTimestamp{Series{Metric: sample.Metric, DropName: sample.DropName}, ts}
-			}
-			addToSeries(&ss.Series, enh.Ts, sample.F, sample.H, numSteps)
-			seriess[h] = ss
-		}
+		ev.collectRangeStep(result, seriess, ts, numSteps)
 	}
 
 	// Reuse the original point slices.
@@ -1384,6 +1331,75 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 	ev.currentSamples = originalNumSamples + mat.TotalSamples()
 	ev.samplesStats.UpdatePeak(ev.currentSamples)
 	return mat, warnings
+}
+
+func (ev *evaluator) evalInputExpressions(ctx context.Context, exprs []parser.Expr, warnings annotations.Annotations, matrixes []Matrix) (annotations.Annotations, []Matrix) {
+	origMatrixes := make([]Matrix, len(exprs))
+	for i, e := range exprs {
+		// Functions will take string arguments from the expressions, not the values.
+		if e != nil && e.Type() != parser.ValueTypeString {
+			// ev.currentSamples will be updated to the correct value within the ev.eval call.
+			val, ws := ev.eval(ctx, e)
+			warnings.Merge(ws)
+			matrixes[i] = val.(Matrix)
+
+			// Keep a copy of the original point slices so that they
+			// can be returned to the pool.
+			origMatrixes[i] = make(Matrix, len(matrixes[i]))
+			copy(origMatrixes[i], matrixes[i])
+		}
+	}
+	return warnings, origMatrixes
+}
+
+func (ev *evaluator) checkNumSamples(result Vector, tempNumSamples int) int {
+	vecNumSamples := result.TotalSamples()
+	ev.currentSamples += vecNumSamples
+	// When we reset currentSamples to tempNumSamples during the next iteration of the loop it also
+	// needs to include the samples from the result here, as they're still in memory.
+	tempNumSamples += vecNumSamples
+	ev.samplesStats.UpdatePeak(ev.currentSamples)
+
+	if ev.currentSamples > ev.maxSamples {
+		ev.error(ErrTooManySamples(env))
+	}
+	return tempNumSamples
+}
+
+// If this could be an instant query, shortcut so as not to change sort order.
+func (ev *evaluator) instantResult(result Vector, ts int64, originalNumSamples int, warnings annotations.Annotations) (Matrix, annotations.Annotations) {
+	if !ev.enableDelayedNameRemoval && result.ContainsSameLabelset() {
+		ev.errorf("vector cannot contain metrics with the same labelset")
+	}
+	mat := make(Matrix, len(result))
+	for i, s := range result {
+		if s.H == nil {
+			mat[i] = Series{Metric: s.Metric, Floats: []FPoint{{T: ts, F: s.F}}, DropName: s.DropName}
+		} else {
+			mat[i] = Series{Metric: s.Metric, Histograms: []HPoint{{T: ts, H: s.H}}, DropName: s.DropName}
+		}
+	}
+	ev.currentSamples = originalNumSamples + mat.TotalSamples()
+	ev.samplesStats.UpdatePeak(ev.currentSamples)
+	return mat, warnings
+}
+
+// Add samples in output vector to output series.
+func (ev *evaluator) collectRangeStep(result Vector, seriess map[uint64]seriesAndTimestamp, ts int64, numSteps int) {
+	for _, sample := range result {
+		h := sample.Metric.Hash()
+		ss, ok := seriess[h]
+		if ok {
+			if ss.ts == ts { // If we've seen this output series before at this timestamp, it's a duplicate.
+				ev.errorf("vector cannot contain metrics with the same labelset")
+			}
+			ss.ts = ts
+		} else {
+			ss = seriesAndTimestamp{Series{Metric: sample.Metric, DropName: sample.DropName}, ts}
+		}
+		addToSeries(&ss.Series, ts, sample.F, sample.H, numSteps)
+		seriess[h] = ss
+	}
 }
 
 func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.AggregateExpr, sortedGrouping []string, inputMatrix Matrix, params *fParams) (Matrix, annotations.Annotations) {
