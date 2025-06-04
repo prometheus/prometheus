@@ -666,7 +666,7 @@ func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 	}
 }
 
-func BenchmarkRemoteWriteHandler(b *testing.B) {
+func BenchmarkRemoteWriteHandler_V1Message(b *testing.B) {
 	const labelValue = "abcdefg'hijlmn234!@#$%^&*()_+~`\"{}[],./<>?hello0123hiOlá你好Dzieńdobry9Zd8ra765v4stvuyte"
 	var reqs []*http.Request
 	for i := 0; i < b.N; i++ {
@@ -685,8 +685,33 @@ func BenchmarkRemoteWriteHandler(b *testing.B) {
 	}
 
 	appendable := &mockAppendable{}
-	// TODO: test with other proto format(s)
 	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+	recorder := httptest.NewRecorder()
+
+	b.ResetTimer()
+	for _, req := range reqs {
+		handler.ServeHTTP(recorder, req)
+	}
+}
+
+func BenchmarkRemoteWriteHandler_V2Message(b *testing.B) {
+	const labelValue = "abcdefg'hijlmn234!@#$%^&*()_+~`\"{}[],./<>?hello0123hiOlá你好Dzieńdobry9Zd8ra765v4stvuyte"
+	var reqs []*http.Request
+	for i := 0; i < b.N; i++ {
+		num := strings.Repeat(strconv.Itoa(i), 16)
+		labels := []string{"__name__", "test_metric", "test_label_name_" + num, labelValue + num}
+		buf, _, _, err := buildV2WriteRequest(nil, []writev2.TimeSeries{{
+			LabelsRefs: []uint32{0, 1, 2, 3},
+			Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, &testHistogram)},
+		}}, labels, nil, nil, nil, "snappy")
+		require.NoError(b, err)
+		req, err := http.NewRequest("", "", bytes.NewReader(buf))
+		require.NoError(b, err)
+		reqs = append(reqs, req)
+	}
+
+	appendable := &mockAppendable{}
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false)
 	recorder := httptest.NewRecorder()
 
 	b.ResetTimer()
