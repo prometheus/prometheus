@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/logging"
@@ -3743,4 +3744,99 @@ eval instant at 10m last_over_time(metric_total{env="1"}[10m])
 eval instant at 10m max_over_time(metric_total{env="1"}[10m])
 	{env="1"} 120
 `, engine)
+}
+
+// TestInconsistentHistogramCount is testing for
+// https://github.com/prometheus/prometheus/issues/16681 which needs mixed
+// integer and float histograms. The promql test framework only uses float
+// histograms, so we cannot move this to promql tests.
+func TestInconsistentHistogramCount(t *testing.T) {
+	dir := t.TempDir()
+
+	opts := tsdb.DefaultHeadOptions()
+	opts.EnableNativeHistograms.Store(true)
+	opts.ChunkDirRoot = dir
+	// We use TSDB head only. By using full TSDB DB, and appending samples to it, closing it would cause unnecessary HEAD compaction, which slows down the test.
+	head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = head.Close()
+	})
+
+	app := head.Appender(context.Background())
+
+	l := labels.FromStrings("__name__", "series_1")
+
+	mint := time.Now().Add(-time.Hour).UnixMilli()
+	maxt := mint
+	dT := int64(15 * 1000) // 15 seconds in milliseconds.
+	inHs := []*histogram.Histogram{
+		{
+			Count: 2,
+			Sum:   100,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 1},
+			},
+			PositiveBuckets: []int64{2},
+		},
+		{
+			Count: 4,
+			Sum:   200,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 1},
+			},
+			PositiveBuckets: []int64{4},
+		},
+		{}, // Empty histogram to trigger counter reset.
+	}
+
+	for i, h := range inHs {
+		maxt = mint + dT*int64(i)
+		_, err = app.AppendHistogram(0, l, maxt, h, nil)
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, app.Commit())
+	queryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+		return tsdb.NewBlockQuerier(head, mint, maxt)
+	})
+
+	engine := promql.NewEngine(promql.EngineOpts{
+		MaxSamples:    1000000,
+		Timeout:       10 * time.Second,
+		LookbackDelta: 5 * time.Minute,
+	})
+
+	var (
+		query       promql.Query
+		queryResult *promql.Result
+		v           promql.Vector
+	)
+
+	query, err = engine.NewInstantQuery(context.Background(), queryable, nil, "(rate(series_1[1m]))", time.UnixMilli(maxt))
+	require.NoError(t, err)
+	queryResult = query.Exec(context.Background())
+	require.NoError(t, queryResult.Err)
+	require.NotNil(t, queryResult)
+	v, err = queryResult.Vector()
+	require.NoError(t, err)
+	require.Len(t, v, 1)
+	require.NotNil(t, v[0].H)
+	require.Greater(t, v[0].H.Count, float64(0))
+	query.Close()
+	countFromHistogram := v[0].H.Count
+
+	query, err = engine.NewInstantQuery(context.Background(), queryable, nil, "histogram_count((rate(series_1[1m])))", time.UnixMilli(maxt))
+	require.NoError(t, err)
+	queryResult = query.Exec(context.Background())
+	require.NoError(t, queryResult.Err)
+	require.NotNil(t, queryResult)
+	v, err = queryResult.Vector()
+	require.NoError(t, err)
+	require.Len(t, v, 1)
+	require.Nil(t, v[0].H)
+	query.Close()
+	countFromFunction := float64(v[0].F)
+
+	require.Equal(t, countFromHistogram, countFromFunction, "histogram_count function should return the same count as the histogram itself")
 }
