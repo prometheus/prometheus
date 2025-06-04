@@ -138,8 +138,8 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					// Cumulative temporality is always valid.
 					// Delta temporality is also valid if AllowDeltaTemporality is true.
 					// All other temporality values are invalid.
-					(temporality != pmetric.AggregationTemporalityCumulative &&
-						(!settings.AllowDeltaTemporality || temporality != pmetric.AggregationTemporalityDelta)) {
+					!(temporality == pmetric.AggregationTemporalityCumulative ||
+						(settings.AllowDeltaTemporality && temporality == pmetric.AggregationTemporalityDelta)) {
 					errs = multierr.Append(errs, fmt.Errorf("invalid temporality and type combination for metric %q", metric.Name()))
 					continue
 				}
