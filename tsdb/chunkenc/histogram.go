@@ -260,6 +260,9 @@ func (a *HistogramAppender) Append(int64, float64) {
 //     including the zero bucket.
 //   - The last sample in the chunk was stale while the current sample is not stale.
 //
+// For the first sample in the series, the counter reset hint is always set to `CounterReset`,
+// as per OpenMetrics guidelines.
+//
 // The method returns an additional boolean set to true if it is not appendable
 // because of a counter reset. If the given sample is stale, it is always ok to
 // append. If counterReset is true, okToAppend is always false.
@@ -274,6 +277,14 @@ func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 	okToAppend bool, counterResetHint CounterResetHeader,
 ) {
 	counterResetHint = NotCounterReset
+
+	if a.NumSamples() == 0 {
+	// This is the first sample of the time series.
+	    counterResetHint = CounterReset
+	    okToAppend = true
+	    return
+    }
+
 	if a.NumSamples() > 0 && a.GetCounterResetHeader() == GaugeType {
 		return
 	}
