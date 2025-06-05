@@ -186,6 +186,7 @@ type TSDBAdminStats interface {
 	Snapshot(dir string, withHead bool) error
 	Stats(statsByLabelName string, limit int) (*tsdb.Stats, error)
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
+	ListBlockMetas() ([]tsdb.BlockMeta, error)
 }
 
 type QueryOpts interface {
@@ -404,6 +405,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrapAgent(api.serveTSDBStatus))
+	r.Get("/status/tsdb/blocks", wrapAgent(api.serveTSDBBlocks))
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Get("/notifications", api.notifications)
 	r.Get("/notifications/live", api.notificationsSSE)
@@ -1738,6 +1740,20 @@ func TSDBStatsFromIndexStats(stats []index.Stat) []TSDBStat {
 		result = append(result, item)
 	}
 	return result
+}
+
+func (api *API) serveTSDBBlocks(_ *http.Request) apiFuncResult {
+	blockMetas, err := api.db.ListBlockMetas()
+
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("meta Error : %w", err)}, nil, nil}
+	}
+
+	return apiFuncResult{
+		data: map[string][]tsdb.BlockMeta{
+			"blocks": blockMetas,
+		},
+	}
 }
 
 func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {

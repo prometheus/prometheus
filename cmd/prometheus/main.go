@@ -1755,6 +1755,20 @@ func (s *readyStorage) CleanTombstones() error {
 	return tsdb.ErrNotReady
 }
 
+func (s *readyStorage) ListBlockMetas() ([]tsdb.BlockMeta, error) {
+	if x := s.get(); x != nil {
+		switch db := x.(type) {
+		case *tsdb.DB:
+			return db.ListBlockMetas(), nil
+		case *agent.DB:
+			return nil, agent.ErrUnsupported
+		default:
+			panic(fmt.Sprintf("unknown storage type %T", db))
+		}
+	}
+	return nil, tsdb.ErrNotReady
+}
+
 // Delete implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
 func (s *readyStorage) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
 	if x := s.get(); x != nil {

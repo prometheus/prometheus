@@ -31,6 +31,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -3796,7 +3797,17 @@ type fakeDB struct {
 	err error
 }
 
-func (f *fakeDB) CleanTombstones() error                                         { return f.err }
+func (f *fakeDB) CleanTombstones() error { return f.err }
+
+func (f *fakeDB) ListBlockMetas() ([]tsdb.BlockMeta, error) {
+	return []tsdb.BlockMeta{
+		{
+			ULID:    ulid.MustNew(ulid.Now(), nil),
+			MinTime: 0,
+			MaxTime: 1000,
+		},
+	}, nil
+}
 func (f *fakeDB) Delete(context.Context, int64, int64, ...*labels.Matcher) error { return f.err }
 func (f *fakeDB) Snapshot(string, bool) error                                    { return f.err }
 func (f *fakeDB) Stats(statsByLabelName string, limit int) (_ *tsdb.Stats, retErr error) {
