@@ -279,11 +279,11 @@ func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 	counterResetHint = NotCounterReset
 
 	if a.NumSamples() == 0 {
-	// This is the first sample of the time series.
-	    counterResetHint = CounterReset
-	    okToAppend = true
-	    return
-    }
+		// This is the first sample of the time series.
+		counterResetHint = CounterReset
+		okToAppend = true
+		return
+	}
 
 	if a.NumSamples() > 0 && a.GetCounterResetHeader() == GaugeType {
 		return
