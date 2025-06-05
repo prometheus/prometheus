@@ -569,6 +569,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		"/query_range":                 {http.MethodGet, http.MethodPost},
 		"/query_exemplars":             {http.MethodGet, http.MethodPost},
 		"/status/tsdb":                 {http.MethodGet},
+		"/status/tsdb/blocks":          {http.MethodGet},
 		"/alerts":                      {http.MethodGet},
 		"/rules":                       {http.MethodGet},
 		"/admin/tsdb/delete_series":    {http.MethodPost, http.MethodPut},

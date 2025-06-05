@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/regexp"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/munnerz/goautoneg"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
@@ -404,6 +405,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrapAgent(api.serveTSDBStatus))
+	r.Get("/status/tsdb/blocks", wrapAgent(api.serveTSDBBlock))
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Get("/notifications", api.notifications)
 	r.Get("/notifications/live", api.notificationsSSE)
@@ -1738,6 +1740,40 @@ func TSDBStatsFromIndexStats(stats []index.Stat) []TSDBStat {
 		result = append(result, item)
 	}
 	return result
+}
+
+func (api *API) serveTSDBBlock(_ *http.Request) apiFuncResult {
+	dirs, err := os.ReadDir(api.dbDir)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("read TSDB dir: %w", err)}, nil, nil}
+	}
+
+	var blocks []tsdb.BlockMeta
+
+	for _, entry := range dirs {
+		if !entry.IsDir() {
+			continue
+		}
+		_, err := ulid.Parse(entry.Name())
+		if err != nil {
+			continue
+		}
+
+		blockPath := filepath.Join(api.dbDir, entry.Name())
+		block, err := tsdb.OpenBlock(api.logger, blockPath, nil, nil)
+		if err != nil {
+			continue
+		}
+		meta := block.Meta()
+		blocks = append(blocks, meta)
+		defer block.Close()
+	}
+
+	return apiFuncResult{
+		data: map[string][]tsdb.BlockMeta{
+			"blocks": blocks,
+		},
+	}
 }
 
 func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
