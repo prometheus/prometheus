@@ -1229,9 +1229,7 @@ type seriesAndTimestamp struct {
 // the given funcCall with the values computed for each expression at that
 // step. The return value is the combination into time series of all the
 // function call results.
-// The prepSeries function (if provided) can be used to prepare the helper
-// for each series, then passed to each call funcCall.
-func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Labels, *EvalSeriesHelper), funcCall func([]parser.Value, [][]EvalSeriesHelper, *EvalNodeHelper) (Vector, annotations.Annotations), exprs ...parser.Expr) (Matrix, annotations.Annotations) {
+func (ev *evaluator) rangeEval(ctx context.Context, funcCall func([]parser.Value, *EvalNodeHelper) (Vector, annotations.Annotations), exprs ...parser.Expr) (Matrix, annotations.Annotations) {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 	matrixes := make([]Matrix, len(exprs))
 	originalNumSamples := ev.currentSamples
@@ -1253,24 +1251,85 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 	seriess := make(map[uint64]seriesAndTimestamp, biggestLen) // Output series by series hash.
 	tempNumSamples := ev.currentSamples
 
-	var (
-		seriesHelpers [][]EvalSeriesHelper
-		bufHelpers    [][]EvalSeriesHelper // Buffer updated on each step
-	)
-
-	// If the series preparation function is provided, we should run it for
-	// every single series in the matrix.
-	if prepSeries != nil {
-		seriesHelpers = make([][]EvalSeriesHelper, len(exprs))
-		bufHelpers = make([][]EvalSeriesHelper, len(exprs))
-
+	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
+		if err := contextDone(ctx, "expression evaluation"); err != nil {
+			ev.error(err)
+		}
+		// Reset number of samples in memory after each timestamp.
+		ev.currentSamples = tempNumSamples
+		// Gather input vectors for this timestamp.
 		for i := range exprs {
-			seriesHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
-			bufHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
+			vectors[i], _ = ev.gatherVector(ts, matrixes[i], vectors[i], nil, nil)
+			args[i] = vectors[i]
+		}
 
-			for si, series := range matrixes[i] {
-				prepSeries(series.Metric, &seriesHelpers[i][si])
-			}
+		// Make the function call.
+		enh.Ts = ts
+		result, ws := funcCall(args, enh)
+		enh.Out = result[:0] // Reuse result vector.
+		warnings.Merge(ws)
+
+		tempNumSamples = ev.checkNumSamples(result, tempNumSamples)
+		if ev.endTimestamp == ev.startTimestamp {
+			return ev.instantResult(result, ts, originalNumSamples, warnings)
+		}
+		ev.collectRangeStep(result, seriess, ts, numSteps)
+	}
+
+	// Reuse the original point slices.
+	for _, m := range origMatrixes {
+		for _, s := range m {
+			putFPointSlice(s.Floats)
+			putHPointSlice(s.Histograms)
+		}
+	}
+	// Assemble the output matrix. By the time we get here we know we don't have too many samples.
+	mat := make(Matrix, 0, len(seriess))
+	for _, ss := range seriess {
+		mat = append(mat, ss.Series)
+	}
+	ev.currentSamples = originalNumSamples + mat.TotalSamples()
+	ev.samplesStats.UpdatePeak(ev.currentSamples)
+	return mat, warnings
+}
+
+// rangeEvalBinOp evaluates the given expressions, and then for each step calls
+// the given funcCall with the values computed for each expression at that
+// step. The return value is the combination into time series of all the
+// function call results.
+func (ev *evaluator) rangeEvalBinOp(ctx context.Context, matching *parser.VectorMatching, funcCall func([]Vector, [][]EvalSeriesHelper, *EvalNodeHelper) (Vector, annotations.Annotations), exprs ...parser.Expr) (Matrix, annotations.Annotations) {
+	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
+	matrixes := make([]Matrix, len(exprs))
+	originalNumSamples := ev.currentSamples
+
+	warnings, origMatrixes := ev.evalInputExpressions(ctx, exprs, nil, matrixes)
+
+	vectors := make([]Vector, len(exprs)) // Input vectors for the function.
+	// Create an output vector that is as big as the input matrix with
+	// the most time series.
+	biggestLen := 1
+	for i := range exprs {
+		vectors[i] = make(Vector, 0, len(matrixes[i]))
+		if len(matrixes[i]) > biggestLen {
+			biggestLen = len(matrixes[i])
+		}
+	}
+	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
+	seriess := make(map[uint64]seriesAndTimestamp, biggestLen) // Output series by series hash.
+	tempNumSamples := ev.currentSamples
+
+	seriesHelpers := make([][]EvalSeriesHelper, len(exprs))
+	bufHelpers := make([][]EvalSeriesHelper, len(exprs))
+
+	// Compute the join signature for each series.
+	buf := make([]byte, 0, 1024)
+	sigf := signatureFunc(matching.On, buf, matching.MatchingLabels...)
+	for i := range exprs {
+		seriesHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
+		bufHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
+
+		for si, series := range matrixes[i] {
+			seriesHelpers[i][si].signature = sigf(series.Metric)
 		}
 	}
 
@@ -1282,22 +1341,14 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 		ev.currentSamples = tempNumSamples
 		// Gather input vectors for this timestamp.
 		for i := range exprs {
-			var bh []EvalSeriesHelper
-			var sh []EvalSeriesHelper
-			if prepSeries != nil {
-				bh = bufHelpers[i][:0]
-				sh = seriesHelpers[i]
-			}
-			vectors[i], bh = ev.gatherVector(ts, matrixes[i], vectors[i], bh, sh)
-			args[i] = vectors[i]
-			if prepSeries != nil {
-				bufHelpers[i] = bh
-			}
+			bh := bufHelpers[i][:0]
+			vectors[i], bh = ev.gatherVector(ts, matrixes[i], vectors[i], bh, seriesHelpers[i])
+			bufHelpers[i] = bh
 		}
 
 		// Make the function call.
 		enh.Ts = ts
-		result, ws := funcCall(args, bufHelpers, enh)
+		result, ws := funcCall(vectors, bufHelpers, enh)
 		enh.Out = result[:0] // Reuse result vector.
 		warnings.Merge(ws)
 
@@ -1687,7 +1738,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				sortedGrouping = append(sortedGrouping, valueLabel.Val)
 				slices.Sort(sortedGrouping)
 			}
-			return ev.rangeEval(ctx, nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, func(v []parser.Value, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				return ev.aggregationCountValues(e, sortedGrouping, valueLabel.Val, v[0].(Vector), enh)
 			}, e.Expr)
 		}
@@ -1768,7 +1819,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		if !matrixArg {
 			// Does not have a matrix argument.
-			return ev.rangeEval(ctx, nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, func(v []parser.Value, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				vec, annos := call(v, e.Args, enh)
 				return vec, warnings.Merge(annos)
 			}, e.Args...)
@@ -1996,45 +2047,39 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 	case *parser.BinaryExpr:
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeScalar:
-			return ev.rangeEval(ctx, nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, func(v []parser.Value, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				val := scalarBinop(e.Op, v[0].(Vector)[0].F, v[1].(Vector)[0].F)
 				return append(enh.Out, Sample{F: val}), nil
 			}, e.LHS, e.RHS)
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeVector:
-			// Function to compute the join signature for each series.
-			buf := make([]byte, 0, 1024)
-			sigf := signatureFunc(e.VectorMatching.On, buf, e.VectorMatching.MatchingLabels...)
-			initSignatures := func(series labels.Labels, h *EvalSeriesHelper) {
-				h.signature = sigf(series)
-			}
 			switch e.Op {
 			case parser.LAND:
-				return ev.rangeEval(ctx, initSignatures, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.VectorMatching, sh[0], sh[1], enh), nil
+				return ev.rangeEvalBinOp(ctx, e.VectorMatching, func(v []Vector, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+					return ev.VectorAnd(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
 				}, e.LHS, e.RHS)
 			case parser.LOR:
-				return ev.rangeEval(ctx, initSignatures, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.VectorMatching, sh[0], sh[1], enh), nil
+				return ev.rangeEvalBinOp(ctx, e.VectorMatching, func(v []Vector, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+					return ev.VectorOr(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
 				}, e.LHS, e.RHS)
 			case parser.LUNLESS:
-				return ev.rangeEval(ctx, initSignatures, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching, sh[0], sh[1], enh), nil
+				return ev.rangeEvalBinOp(ctx, e.VectorMatching, func(v []Vector, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+					return ev.VectorUnless(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
 				}, e.LHS, e.RHS)
 			default:
-				return ev.rangeEval(ctx, initSignatures, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					vec, err := ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, sh[0], sh[1], enh, e.PositionRange())
+				return ev.rangeEvalBinOp(ctx, e.VectorMatching, func(v []Vector, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+					vec, err := ev.VectorBinop(e.Op, v[0], v[1], e.VectorMatching, e.ReturnBool, sh[0], sh[1], enh, e.PositionRange())
 					return vec, handleVectorBinopError(err, e)
 				}, e.LHS, e.RHS)
 			}
 
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeScalar:
-			return ev.rangeEval(ctx, nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, func(v []parser.Value, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				vec, err := ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].F}, false, e.ReturnBool, enh, e.PositionRange())
 				return vec, handleVectorBinopError(err, e)
 			}, e.LHS, e.RHS)
 
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeVector:
-			return ev.rangeEval(ctx, nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, func(v []parser.Value, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				vec, err := ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].F}, true, e.ReturnBool, enh, e.PositionRange())
 				return vec, handleVectorBinopError(err, e)
 			}, e.LHS, e.RHS)
@@ -2042,7 +2087,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 	case *parser.NumberLiteral:
 		span.SetAttributes(attribute.Float64("value", e.Val))
-		return ev.rangeEval(ctx, nil, func(_ []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+		return ev.rangeEval(ctx, func(_ []parser.Value, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 			return append(enh.Out, Sample{F: e.Val, Metric: labels.EmptyLabels()}), nil
 		})
 
@@ -2211,7 +2256,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 		seriesIterators[i] = storage.NewMemoizedIterator(it, durationMilliseconds(ev.lookbackDelta)-1)
 	}
 
-	return ev.rangeEval(ctx, nil, func(_ []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return ev.rangeEval(ctx, func(_ []parser.Value, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 		if vs.Timestamp != nil {
 			// This is a special case for "timestamp()" when the @ modifier is used, to ensure that
 			// we return a point for each time step in this case.
