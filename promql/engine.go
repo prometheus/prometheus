@@ -1833,10 +1833,10 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		if !matrixArg {
 			// Does not have a matrix argument.
-			return ev.rangeEval(ctx, func(v []Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-				vec, annos := call(v, nil, e.Args, enh)
-				return vec, warnings.Merge(annos)
+			mat, annos := ev.rangeEval(ctx, func(v []Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+				return call(v, nil, e.Args, enh)
 			}, e.Args...)
+			return mat, warnings.Merge(annos)
 		}
 
 		// Evaluate any non-matrix arguments.
