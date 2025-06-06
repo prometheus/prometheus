@@ -263,6 +263,9 @@ func NewTemplateExpander(
 
 				return floatToTime(v)
 			},
+			"nowTime": func() time.Time {
+				return time.Now()
+			},
 			"pathPrefix": func() string {
 				return externalURL.Path
 			},
