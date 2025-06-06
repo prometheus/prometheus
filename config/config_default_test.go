@@ -22,6 +22,7 @@ var ruleFilesExpectedConf = &Config{
 
 	GlobalConfig: DefaultGlobalConfig,
 	Runtime:      DefaultRuntimeConfig,
+	OTLPConfig:   DefaultOTLPConfig,
 	RuleFiles: []string{
 		"testdata/first.rules",
 		"testdata/rules/second.rules",
