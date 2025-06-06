@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"strings"
 
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -66,8 +65,7 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 		)
 
 		if settings.AddTypeAndUnitLabels {
-			lbls = append(lbls, prompb.Label{Name: "__type__", Value: strings.ToLower(metadata.Type.String())})
-			lbls = append(lbls, prompb.Label{Name: "__unit__", Value: metadata.Unit})
+			lbls = addTypeAndUnitLabels(lbls, metadata)
 		}
 
 		ts, _ := c.getOrCreateTimeSeries(lbls)
@@ -290,8 +288,7 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 		)
 
 		if settings.AddTypeAndUnitLabels {
-			lbls = append(lbls, prompb.Label{Name: "__type__", Value: strings.ToLower(metadata.Type.String())})
-			lbls = append(lbls, prompb.Label{Name: "__unit__", Value: metadata.Unit})
+			lbls = addTypeAndUnitLabels(lbls, metadata)
 		}
 
 		ts, _ := c.getOrCreateTimeSeries(lbls)

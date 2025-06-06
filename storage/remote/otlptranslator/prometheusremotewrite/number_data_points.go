@@ -19,7 +19,6 @@ package prometheusremotewrite
 import (
 	"context"
 	"math"
-	"strings"
 
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -63,8 +62,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		}
 
 		if settings.AddTypeAndUnitLabels {
-			labels = append(labels, prompb.Label{Name: "__type__", Value: strings.ToLower(metadata.Type.String())})
-			labels = append(labels, prompb.Label{Name: "__unit__", Value: metadata.Unit})
+			labels = addTypeAndUnitLabels(labels, metadata)
 		}
 
 		c.addSample(sample, labels)
@@ -107,8 +105,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		}
 
 		if settings.AddTypeAndUnitLabels {
-			lbls = append(lbls, prompb.Label{Name: "__type__", Value: strings.ToLower(metadata.Type.String())})
-			lbls = append(lbls, prompb.Label{Name: "__unit__", Value: metadata.Unit})
+			lbls = addTypeAndUnitLabels(lbls, metadata)
 		}
 
 		ts := c.addSample(sample, lbls)
