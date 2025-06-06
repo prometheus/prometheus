@@ -2998,7 +2998,6 @@ type groupedAggregation struct {
 	hasHistogram           bool // Has at least 1 histogram sample aggregated.
 	incompatibleHistograms bool // If true, group has seen mixed exponential and custom buckets, or incompatible custom buckets.
 	groupAggrComplete      bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group.
-	incrementalMean        bool // True after reverting to incremental calculation of the mean value.
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.
@@ -3097,6 +3096,21 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			}
 
 		case parser.AVG:
+			// For the average calculation, we use incremental mean
+			// calculation. In particular in combination with Kahan
+			// summation (which we do for floats, but not yet for
+			// histograms, see issue #14105), this is quite accurate
+			// and only breaks in extreme cases (see testdata for
+			// avg_over_time). One might assume that simple direct
+			// mean calculation works better in some cases, but so
+			// far, our conclusion is that we fare best with the
+			// incremental approach plus Kahan summation (for
+			// floats). For a relevant discussion, see
+			// https://stackoverflow.com/questions/61665473/is-it-beneficial-for-precision-to-calculate-the-incremental-mean-average
+			// Additional note: For even better numerical accuracy,
+			// we would need to process the values in a particular
+			// order, but that would be very hard to implement given
+			// how the PromQL engine works.
 			group.groupCount++
 			if h != nil {
 				group.hasHistogram = true
@@ -3121,45 +3135,11 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
-				if !group.incrementalMean {
-					newV, newC := kahanSumInc(f, group.floatValue, group.floatKahanC)
-					if !math.IsInf(newV, 0) {
-						// The sum doesn't overflow, so we propagate it to the
-						// group struct and continue with the regular
-						// calculation of the mean value.
-						group.floatValue, group.floatKahanC = newV, newC
-						break
-					}
-					// If we are here, we know that the sum _would_ overflow. So
-					// instead of continue to sum up, we revert to incremental
-					// calculation of the mean value from here on.
-					group.incrementalMean = true
-					group.floatMean = group.floatValue / (group.groupCount - 1)
-					group.floatKahanC /= group.groupCount - 1
-				}
-				if math.IsInf(group.floatMean, 0) {
-					if math.IsInf(f, 0) && (group.floatMean > 0) == (f > 0) {
-						// The `floatMean` and `s.F` values are `Inf` of the same sign.  They
-						// can't be subtracted, but the value of `floatMean` is correct
-						// already.
-						break
-					}
-					if !math.IsInf(f, 0) && !math.IsNaN(f) {
-						// At this stage, the mean is an infinite. If the added
-						// value is neither an Inf or a Nan, we can keep that mean
-						// value.
-						// This is required because our calculation below removes
-						// the mean value, which would look like Inf += x - Inf and
-						// end up as a NaN.
-						break
-					}
-				}
-				currentMean := group.floatMean + group.floatKahanC
+				q := (group.groupCount - 1) / group.groupCount
 				group.floatMean, group.floatKahanC = kahanSumInc(
-					// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
-					f/group.groupCount-currentMean/group.groupCount,
-					group.floatMean,
-					group.floatKahanC,
+					f/group.groupCount,
+					q*group.floatMean,
+					q*group.floatKahanC,
 				)
 			}
 
@@ -3232,10 +3212,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				continue
 			case aggr.hasHistogram:
 				aggr.histogramValue = aggr.histogramValue.Compact(0)
-			case aggr.incrementalMean:
-				aggr.floatValue = aggr.floatMean + aggr.floatKahanC
 			default:
-				aggr.floatValue = (aggr.floatValue + aggr.floatKahanC) / aggr.groupCount
+				aggr.floatValue = aggr.floatMean + aggr.floatKahanC
 			}
 
 		case parser.COUNT:
