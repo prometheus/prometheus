@@ -178,6 +178,24 @@ load 5m
 eval instant at 50m rate(calculate_rate_window_total[50m])
 	{} 0.26666666666666666
 
+eval instant at 50m rate(calculate_rate_window_total[50m] + 0)
+	{} 0.26666666666666666
+
+eval instant at 50m rate(0 + calculate_rate_window_total[50m])
+	{} 0.26666666666666666
+
+eval instant at 50m rate(calculate_rate_window_total[50m] + 0 - 0)
+	{} 0.26666666666666666
+
+eval instant at 50m rate(0 - 0 + calculate_rate_window_total[50m] + 0 - 0)
+	{} 0.26666666666666666
+
+eval instant at 50m rate(calculate_rate_window_total[50m] + 0 - 0 + 1 > 0)
+	{} 0.26666666666666666
+
+eval instant at 50m rate(0 < calculate_rate_window_total[50m] + 0 - 0 + 1 > 0)
+	{} 0.26666666666666666
+
 eval instant at 50m rate(calculate_rate_offset_total[10m] offset 5m)
 	{x="a"} 0.03333333333333333
 	{x="b"} 0.06666666666666667
