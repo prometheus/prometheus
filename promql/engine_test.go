@@ -3429,6 +3429,7 @@ func TestRateAnnotations(t *testing.T) {
 	testCases := map[string]struct {
 		data                       string
 		expr                       string
+		typeAndUnitLabelsEnabled   bool
 		expectedWarningAnnotations []string
 		expectedInfoAnnotations    []string
 	}{
@@ -3476,13 +3477,85 @@ func TestRateAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		},
+		"info annotation when rate() over series without _total suffix": {
+			data: `
+				series{label="a"} 1 2 3
+			`,
+			expr: "rate(series[1m1s])",
+			expectedInfoAnnotations: []string{
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "series" (1:6)`,
+			},
+			expectedWarningAnnotations: []string{},
+		},
+		"info annotation when increase() over series without _total suffix": {
+			data: `
+				series{label="a"} 1 2 3
+			`,
+			expr: "increase(series[1m1s])",
+			expectedInfoAnnotations: []string{
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "series" (1:10)`,
+			},
+			expectedWarningAnnotations: []string{},
+		},
+		"info annotation when rate() over series without __type__=counter label": {
+			data: `
+				series{label="a"} 1 2 3
+			`,
+			expr:                     "rate(series[1m1s])",
+			typeAndUnitLabelsEnabled: true,
+			expectedInfoAnnotations: []string{
+				`PromQL info: metric might not be a counter, __type__ label is not set to "counter", got "": "series" (1:6)`,
+			},
+			expectedWarningAnnotations: []string{},
+		},
+		"info annotation when increase() over series without __type__=counter label": {
+			data: `
+				series{label="a"} 1 2 3
+			`,
+			expr:                     "increase(series[1m1s])",
+			typeAndUnitLabelsEnabled: true,
+			expectedInfoAnnotations: []string{
+				`PromQL info: metric might not be a counter, __type__ label is not set to "counter", got "": "series" (1:10)`,
+			},
+			expectedWarningAnnotations: []string{},
+		},
+		"no info annotation when rate() over series with __type__=counter label": {
+			data: `
+				series{label="a", __type__="counter"} 1 2 3
+			`,
+			expr:                       "rate(series[1m1s])",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when increase() over series with __type__=counter label": {
+			data: `
+				series{label="a", __type__="counter"} 1 2 3
+			`,
+			expr:                       "increase(series[1m1s])",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
 	}
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
 			t.Cleanup(func() { _ = store.Close() })
 
-			engine := newTestEngine(t)
+			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				Logger:                   nil,
+				Reg:                      nil,
+				MaxSamples:               promqltest.DefaultMaxSamplesPerQuery,
+				Timeout:                  100 * time.Minute,
+				NoStepSubqueryIntervalFn: func(int64) int64 { return int64((1 * time.Minute / time.Millisecond / time.Nanosecond)) },
+				EnableAtModifier:         true,
+				EnableNegativeOffset:     true,
+				EnablePerStepStats:       false,
+				LookbackDelta:            0,
+				EnableDelayedNameRemoval: true,
+				EnableTypeAndUnitLabels:  testCase.typeAndUnitLabelsEnabled,
+			})
 			query, err := engine.NewInstantQuery(context.Background(), store, nil, testCase.expr, timestamp.Time(0).Add(1*time.Minute))
 			require.NoError(t, err)
 			t.Cleanup(query.Close)
