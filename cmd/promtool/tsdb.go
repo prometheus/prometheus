@@ -640,6 +640,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 	histogramChunkBucketsCount := make([]int, 0)
 	buf := make([]byte, chunks.MaxChunkLengthFieldSize)
 	diskUsage := map[string]uint64{}
+	diskUsageTotal := uint64(0)
 	var builder labels.ScratchBuilder
 	for postingsr.Next() {
 		var chks []chunks.Meta
@@ -698,6 +699,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 			chunkDataLengthUvarintLength := binary.PutUvarint(buf, uint64(chunkDataLength))
 			chunkSize := uint64(chunkDataLengthUvarintLength) + chunks.ChunkEncodingSize + uint64(chunkDataLength) + crc32.Size
 			diskUsage[builder.Labels().Get("__name__")] += chunkSize
+			diskUsageTotal += chunkSize
 		}
 	}
 
@@ -713,7 +715,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 
 	displayHistogram("buckets per histogram chunk", histogramChunkBucketsCount, totalChunks)
 
-	displayDiskUsage(diskUsage)
+	displayDiskUsage(diskUsage, diskUsageTotal)
 
 	return nil
 }
@@ -906,7 +908,7 @@ func generateBucket(minVal, maxVal int) (start, end, step int) {
 	return
 }
 
-func displayDiskUsage(data map[string]uint64) {
+func displayDiskUsage(data map[string]uint64, total uint64) {
 	type kv struct {
 		k string
 		v uint64
@@ -938,4 +940,5 @@ func displayDiskUsage(data map[string]uint64) {
 	for i := range sorted[:n] {
 		fmt.Printf("%d %s\n", sorted[i].v, sorted[i].k)
 	}
+	fmt.Printf("  total (all %8d): %12d bytes\n", len(data), total)
 }
