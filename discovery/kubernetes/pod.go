@@ -221,6 +221,8 @@ const (
 	podUID                        = metaLabelPrefix + "pod_uid"
 	podControllerKind             = metaLabelPrefix + "pod_controller_kind"
 	podControllerName             = metaLabelPrefix + "pod_controller_name"
+	podIPv4Label                  = metaLabelPrefix + "pod_ipv4"
+	podIPv6Label                  = metaLabelPrefix + "pod_ipv6"
 )
 
 // GetControllerOf returns a pointer to a copy of the controllerRef if controllee has a controller
@@ -242,6 +244,36 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 		podNodeNameLabel: lv(pod.Spec.NodeName),
 		podHostIPLabel:   lv(pod.Status.HostIP),
 		podUID:           lv(string(pod.UID)),
+	}
+
+	// PodIPs contains all the IP addresses of the eth0 network interface in the Pod container.
+	// The specific number of IP addresses depends on the specific cni plugin response, which means there may be more than two IP addresses.
+	// However, in most cases, there is one IP address (single-stack; IPv4 or IPv6) or two IP addresses (dual-stack; IPv4 and IPv6 co-existing simultaneously).
+	// If there are multiple IP addresses, use the first IPv4 and IPv6 respectively, this way, it can be consistent with the primary IP address (pod.Status.PodIP behavior) and avoid exposing redundant IP information.
+	// Reference1: https://github.com/kubernetes/kubernetes/blob/c8fb7c9174b03ebc9a072913ca12c08ef3ed83c6/pkg/kubelet/kuberuntime/kuberuntime_sandbox.go#L317
+	// Reference2: https://github.com/containerd/containerd/blob/b99b82db7d05dfd257edcdb50bc72769e782d6c2/internal/cri/server/sandbox_run.go#L572
+	var ipv4Exists, ipv6Exists bool
+	for _, podIP := range pod.Status.PodIPs {
+		if podIP.IP == "" {
+			continue
+		}
+		_, ipv4Exists = ls[podIPv4Label]
+		_, ipv6Exists = ls[podIPv6Label]
+		if ipv4Exists && ipv6Exists {
+			break
+		}
+		ip := net.ParseIP(podIP.IP)
+		if ip != nil {
+			if ip.To4() != nil {
+				if !ipv4Exists {
+					ls[podIPv4Label] = lv(podIP.IP)
+				}
+			} else if ip.To16() != nil {
+				if !ipv6Exists {
+					ls[podIPv6Label] = lv(podIP.IP)
+				}
+			}
+		}
 	}
 
 	addObjectMetaLabels(ls, pod.ObjectMeta, RolePod)
@@ -310,8 +342,16 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 		if len(c.Ports) == 0 {
 			// We don't have a port so we just set the address label to the pod IP.
 			// The user has to add a port manually.
+			addr := pod.Status.PodIP
+			ip := net.ParseIP(addr)
+			if ip != nil && ip.To4() == nil {
+				// If pod.Status.PodIP is a IPv6 address, addr should be "[pod.Status.PodIP]".
+				// Contrary to what net.JoinHostPort does when the port is empty, RFC3986 forbids a ":" delimiter as the last character in such cases, leaving us with the following implementation.
+				// Refer https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.3
+				addr = "[" + ip.String() + "]"
+			}
 			tg.Targets = append(tg.Targets, model.LabelSet{
-				model.AddressLabel:     lv(pod.Status.PodIP),
+				model.AddressLabel:     lv(addr),
 				podContainerNameLabel:  lv(c.Name),
 				podContainerIDLabel:    lv(cID),
 				podContainerImageLabel: lv(c.Image),
