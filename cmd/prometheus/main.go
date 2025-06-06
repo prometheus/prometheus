@@ -292,6 +292,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Enabling native ingestion of delta OTLP metrics, storing the raw sample values without conversion. WARNING: Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
 			case "type-and-unit-labels":
 				c.scrape.EnableTypeAndUnitLabels = true
+				c.web.AddTypeAndUnitLabels = true
 				logger.Info("Experimental type and unit labels enabled")
 			case "use-uncached-io":
 				c.tsdb.UseUncachedIO = true
