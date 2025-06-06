@@ -16,6 +16,7 @@
 - github.com/prometheus/prometheus/discovery/ovhcloud
 - github.com/prometheus/prometheus/discovery/puppetdb
 - github.com/prometheus/prometheus/discovery/scaleway
+- github.com/prometheus/prometheus/discovery/stackit
 - github.com/prometheus/prometheus/discovery/triton
 - github.com/prometheus/prometheus/discovery/uyuni
 - github.com/prometheus/prometheus/discovery/vultr

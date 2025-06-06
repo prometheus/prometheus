@@ -417,6 +417,12 @@ scrape_configs:
       - authorization:
           credentials: abcdef
 
+  - job_name: stackit-servers
+    stackit_sd_configs:
+      - project: 11111111-1111-1111-1111-111111111111
+        authorization:
+          credentials: abcdef
+
   - job_name: uyuni
     uyuni_sd_configs:
       - server: https://localhost:1234
