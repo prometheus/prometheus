@@ -1821,10 +1821,10 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		if !matrixArg {
 			// Does not have a matrix argument.
-			return ev.rangeEval(ctx, func(v []parser.Value, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-				vec, annos := call(v, e.Args, enh)
-				return vec, warnings.Merge(annos)
+			mat, annos := ev.rangeEval(ctx, func(v []parser.Value, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+				return call(v, e.Args, enh)
 			}, e.Args...)
+			return mat, warnings.Merge(annos)
 		}
 
 		inArgs := make([]parser.Value, len(e.Args))
