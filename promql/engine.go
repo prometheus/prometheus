@@ -1331,15 +1331,17 @@ func (ev *evaluator) rangeEvalBinOp(ctx context.Context, matching *parser.Vector
 	seriesHelpers := make([][]EvalSeriesHelper, len(exprs))
 	bufHelpers := make([][]EvalSeriesHelper, len(exprs))
 
-	// Compute the join signature for each series.
-	buf := make([]byte, 0, 1024)
-	sigf := signatureFunc(matching.On, buf, matching.MatchingLabels...)
-	for i := range exprs {
-		seriesHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
-		bufHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
+	if matching != nil {
+		// Compute the join signature for each series.
+		buf := make([]byte, 0, 1024)
+		sigf := signatureFunc(matching.On, buf, matching.MatchingLabels...)
+		for i := range exprs {
+			seriesHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
+			bufHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 
-		for si, series := range matrixes[i] {
-			seriesHelpers[i][si].signature = sigf(series.Metric)
+			for si, series := range matrixes[i] {
+				seriesHelpers[i][si].signature = sigf(series.Metric)
+			}
 		}
 	}
 
@@ -2062,8 +2064,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 	case *parser.BinaryExpr:
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeScalar:
-			return ev.rangeEval(ctx, func(v []Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-				val := scalarBinop(e.Op, v[0][0].F, v[1][0].F)
+			return ev.rangeEvalBinOp(ctx, nil, func(lhs, rhs Vector, _ *parser.VectorMatching, _, _ []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+				val := scalarBinop(e.Op, lhs[0].F, rhs[0].F)
 				return append(enh.Out, Sample{F: val}), nil
 			}, e.LHS, e.RHS)
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeVector:
@@ -2082,14 +2084,14 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			}
 
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeScalar:
-			return ev.rangeEval(ctx, func(v []Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-				vec, err := ev.VectorscalarBinop(e.Op, v[0], Scalar{V: v[1][0].F}, false, e.ReturnBool, enh, e.PositionRange())
+			return ev.rangeEvalBinOp(ctx, nil, func(lhs, rhs Vector, _ *parser.VectorMatching, _, _ []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+				vec, err := ev.VectorscalarBinop(e.Op, lhs, Scalar{V: rhs[0].F}, false, e.ReturnBool, enh, e.PositionRange())
 				return vec, handleVectorBinopError(err, e)
 			}, e.LHS, e.RHS)
 
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeVector:
-			return ev.rangeEval(ctx, func(v []Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-				vec, err := ev.VectorscalarBinop(e.Op, v[1], Scalar{V: v[0][0].F}, true, e.ReturnBool, enh, e.PositionRange())
+			return ev.rangeEvalBinOp(ctx, nil, func(lhs, rhs Vector, _ *parser.VectorMatching, _, _ []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+				vec, err := ev.VectorscalarBinop(e.Op, rhs, Scalar{V: lhs[0].F}, true, e.ReturnBool, enh, e.PositionRange())
 				return vec, handleVectorBinopError(err, e)
 			}, e.LHS, e.RHS)
 		}
