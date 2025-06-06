@@ -10,6 +10,7 @@ import {
 } from "@mantine/core";
 import {
   IconChartAreaFilled,
+  IconChartGridDots,
   IconChartLine,
   IconGraph,
   IconInfoCircle,
@@ -279,15 +280,15 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
                       </Center>
                     ),
                   },
-                  // {
-                  //   value: GraphDisplayMode.Heatmap,
-                  //   label: (
-                  //     <Center>
-                  //       <IconChartGridDots style={iconStyle} />
-                  //       <Box ml={10}>Heatmap</Box>
-                  //     </Center>
-                  //   ),
-                  // },
+                  {
+                    value: GraphDisplayMode.Heatmap,
+                    label: (
+                      <Center>
+                        <IconChartGridDots style={iconStyle} />
+                        <Box ml={10}>Heatmap</Box>
+                      </Center>
+                    ),
+                  },
                 ]}
               />
             </Group>
