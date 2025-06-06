@@ -3864,19 +3864,13 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 // required for correctness.
 func detectHistogramStatsDecoding(expr parser.Expr) {
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
-		if n, ok := node.(*parser.BinaryExpr); ok {
-			detectHistogramStatsDecoding(n.LHS)
-			detectHistogramStatsDecoding(n.RHS)
-			return errors.New("stop")
-		}
-
 		n, ok := (node).(*parser.VectorSelector)
 		if !ok {
 			return nil
 		}
 
-		for _, p := range path {
-			call, ok := p.(*parser.Call)
+		for i := len(path) - 1; i > 0; i-- { // Walk backwards up the path.
+			call, ok := path[i].(*parser.Call)
 			if !ok {
 				continue
 			}
