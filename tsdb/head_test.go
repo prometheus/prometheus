@@ -6717,6 +6717,50 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 	}
 }
 
+func TestHeadAppender_AppendHistogramCTZeroSample(t *testing.T) {
+	testHistogram := tsdbutil.GenerateTestHistogram(1)
+	type appendableSamples struct {
+		ts int64
+		h  *histogram.Histogram
+		fh *histogram.FloatHistogram
+		ct int64
+	}
+	for _, tc := range []struct {
+		name              string
+		appendableSamples []appendableSamples
+		expectedError     error
+	}{
+		{
+			name: "CT lower than minValidTime initiates ErrOutOfBounds",
+			appendableSamples: []appendableSamples{
+				{ts: 100, h: testHistogram, ct: -1},
+			},
+			expectedError: storage.ErrOutOfBounds,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+
+			defer func() {
+				require.NoError(t, h.Close())
+			}()
+
+			a := h.Appender(context.Background())
+			lbls := labels.FromStrings("foo", "bar")
+
+			for _, sample := range tc.appendableSamples {
+				ref, err := a.AppendHistogramCTZeroSample(0, lbls, sample.ts, sample.ct, sample.h, sample.fh)
+				require.ErrorIs(t, err, tc.expectedError)
+
+				_, err = a.AppendHistogram(ref, lbls, sample.ts, sample.h, sample.fh)
+				require.NoError(t, err)
+			}
+
+			require.NoError(t, a.Commit())
+		})
+	}
+}
+
 func TestHeadCompactableDoesNotCompactEmptyHead(t *testing.T) {
 	// Use a chunk range of 1 here so that if we attempted to determine if the head
 	// was compactable using default values for min and max times, `Head.compactable()`
