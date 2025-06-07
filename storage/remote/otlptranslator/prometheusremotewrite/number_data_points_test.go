@@ -75,7 +75,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				Settings{
 					ExportCreatedMetric: true,
 				},
-				metric.Name(),
+				prompb.MetricMetadata{MetricFamilyName: metric.Name()},
 			)
 
 			require.Equal(t, tt.want(), converter.unique)
@@ -254,7 +254,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				Settings{
 					ExportCreatedMetric: true,
 				},
-				metric.Name(),
+				prompb.MetricMetadata{MetricFamilyName: metric.Name()},
 			)
 
 			require.Equal(t, tt.want(), converter.unique)

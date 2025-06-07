@@ -36,7 +36,7 @@ const defaultZeroThreshold = 1e-128
 // addExponentialHistogramDataPoints adds OTel exponential histogram data points to the corresponding time series
 // as native histogram samples.
 func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Context, dataPoints pmetric.ExponentialHistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string,
+	resource pcommon.Resource, settings Settings, metadata prompb.MetricMetadata,
 	temporality pmetric.AggregationTemporality,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
@@ -60,8 +60,13 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			nil,
 			true,
 			model.MetricNameLabel,
-			promName,
+			metadata.MetricFamilyName,
 		)
+
+		if settings.AddTypeAndUnitLabels {
+			lbls = addTypeAndUnitLabels(lbls, metadata)
+		}
+
 		ts, _ := c.getOrCreateTimeSeries(lbls)
 		ts.Histograms = append(ts.Histograms, histogram)
 
@@ -252,7 +257,7 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 }
 
 func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string,
+	resource pcommon.Resource, settings Settings, metadata prompb.MetricMetadata,
 	temporality pmetric.AggregationTemporality,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
@@ -277,8 +282,12 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 			nil,
 			true,
 			model.MetricNameLabel,
-			promName,
+			metadata.MetricFamilyName,
 		)
+
+		if settings.AddTypeAndUnitLabels {
+			lbls = addTypeAndUnitLabels(lbls, metadata)
+		}
 
 		ts, _ := c.getOrCreateTimeSeries(lbls)
 		ts.Histograms = append(ts.Histograms, histogram)
