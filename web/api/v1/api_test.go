@@ -978,11 +978,11 @@ func TestStats(t *testing.T) {
 				req, err := request(method, tc.param)
 				require.NoError(t, err)
 				res := api.query(req.WithContext(ctx))
-				assertAPIError(t, res.err, "")
+				assertAPIError(t, res.err, errorNone)
 				tc.expected(t, res.data)
 
 				res = api.queryRange(req.WithContext(ctx))
-				assertAPIError(t, res.err, "")
+				assertAPIError(t, res.err, errorNone)
 				tc.expected(t, res.data)
 			}
 		})
@@ -3759,7 +3759,7 @@ func describeAPIFunc(f apiFunc) string {
 func assertAPIError(t *testing.T, got *apiError, exp errorType) {
 	t.Helper()
 
-	if exp == errorNone {
+	if exp.num == ErrorNone {
 		require.Nil(t, got)
 	} else {
 		require.NotNil(t, got)
@@ -4123,22 +4123,54 @@ func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
 }
 
 func TestRespondError(t *testing.T) {
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		api := API{}
-		api.respondError(w, &apiError{errorTimeout, errors.New("message")}, "test")
-	}))
-	defer s.Close()
+	type test struct {
+		errType             errorType
+		resCode             int
+		errTypeToStatusCode ErrorTypeToStatusCode
+	}
 
-	resp, err := http.Get(s.URL)
-	require.NoError(t, err, "Error on test request")
-	body, err := io.ReadAll(resp.Body)
-	defer resp.Body.Close()
-	require.NoError(t, err, "Error reading response body")
-	want, have := http.StatusServiceUnavailable, resp.StatusCode
-	require.Equal(t, want, have, "Return code %d expected in error response but got %d", want, have)
-	h := resp.Header.Get("Content-Type")
-	require.Equal(t, "application/json", h, "Expected Content-Type %q but got %q", "application/json", h)
-	require.JSONEq(t, `{"status": "error", "data": "test", "errorType": "timeout", "error": "message"}`, string(body))
+	tests := map[string]test{
+		"timeout should return 503 (ServiceUnavailable)": {
+			errType: errorTimeout,
+			resCode: http.StatusServiceUnavailable,
+		},
+		"execution error without override should return 422 (UnprocessableEntity)": {
+			errType: errorExec,
+			resCode: http.StatusUnprocessableEntity,
+		},
+		"errorTypeToStatusCode override works as expected": {
+			errType: errorExec,
+			errTypeToStatusCode: ErrorTypeToStatusCode{
+				ErrorExec: func(_ error) int {
+					return http.StatusTooManyRequests
+				},
+			},
+			resCode: http.StatusTooManyRequests,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				api := API{
+					errorTypeToStatusCode: tc.errTypeToStatusCode,
+				}
+				api.respondError(w, &apiError{tc.errType, errors.New("message")}, "test")
+			}))
+			defer s.Close()
+
+			resp, err := http.Get(s.URL)
+			require.NoError(t, err, "Error on test request")
+			body, err := io.ReadAll(resp.Body)
+			defer resp.Body.Close()
+			require.NoError(t, err, "Error reading response body")
+			want, have := tc.resCode, resp.StatusCode
+			require.Equal(t, want, have, "Return code %d expected in error response but got %d", want, have)
+			h := resp.Header.Get("Content-Type")
+			require.Equal(t, "application/json", h, "Expected Content-Type %q but got %q", "application/json", h)
+			require.JSONEq(t, fmt.Sprintf(`{"status": "error", "data": "test", "errorType": "%s", "error": "message"}`, tc.errType.str), string(body))
+		})
+	}
 }
 
 func TestParseTimeParam(t *testing.T) {
