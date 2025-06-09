@@ -508,19 +508,3 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 	}
 	return failed
 }
-
-// StaticProvider holds a list of target groups that never change.
-type StaticProvider struct {
-	TargetGroups []*targetgroup.Group
-}
-
-// Run implements the Worker interface.
-func (sd *StaticProvider) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	// We still have to consider that the consumer exits right away in which case
-	// the context will be canceled.
-	select {
-	case ch <- sd.TargetGroups:
-	case <-ctx.Done():
-	}
-	close(ch)
-}
