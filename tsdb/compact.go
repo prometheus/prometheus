@@ -182,14 +182,6 @@ func DefaultPostingsDecoderFactory(_ *BlockMeta) index.PostingsDecoder {
 	return index.DecodePostingsRaw
 }
 
-func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
-	return NewLeveledCompactorWithOptions(ctx, r, l, ranges, pool, LeveledCompactorOptions{
-		MaxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
-		MergeFunc:                   mergeFunc,
-		EnableOverlappingCompaction: true,
-	})
-}
-
 func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
 	return NewLeveledCompactorWithOptions(ctx, r, l, ranges, pool, LeveledCompactorOptions{
 		MergeFunc:                   mergeFunc,
