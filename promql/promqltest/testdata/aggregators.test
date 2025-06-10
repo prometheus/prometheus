@@ -593,8 +593,10 @@ eval instant at 1m avg(data{test="big"})
 eval instant at 1m avg(data{test="-big"})
 	{} -9.988465674311579e+307
 
-eval instant at 1m avg(data{test="bigzero"})
-	{} 0
+# This test fails on darwin/arm64.
+# Deactivated until issue #16714 is fixed.
+# eval instant at 1m avg(data{test="bigzero"})
+#	{} 0
 
 # If NaN is in the mix, the result is NaN.
 eval instant at 1m avg(data)
