@@ -682,7 +682,7 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	// https://stackoverflow.com/questions/61665473/is-it-beneficial-for-precision-to-calculate-the-incremental-mean-average
 	// Additional note: For even better numerical accuracy, we would need to
 	// process the values in a particular order. For avg_over_time, that
-	// would be more or less feasible, but it would be more expensivo, and
+	// would be more or less feasible, but it would be more expensive, and
 	// it would also be much harder for the avg aggregator, given how the
 	// PromQL engine works.
 	if len(firstSeries.Floats) == 0 {
