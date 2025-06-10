@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -75,16 +76,10 @@ func newServerDiscovery(conf *SDConfig, logger *slog.Logger) (*iaasDiscovery, er
 	}
 
 	servers := stackitconfig.ServerConfigurations{}
-	noAuth := true
 	servers = append(servers, stackitconfig.ServerConfiguration{
 		URL:         endpoint,
 		Description: "STACKIT IAAS API",
 	})
-
-	// If service account key and private key are set, use SDK authentication.
-	if conf.ServiceAccountKey != "" || conf.ServiceAccountKeyPath != "" {
-		noAuth = false
-	}
 
 	d.httpClient = &http.Client{
 		Timeout:   time.Duration(conf.RefreshInterval),
@@ -120,7 +115,21 @@ func newServerDiscovery(conf *SDConfig, logger *slog.Logger) (*iaasDiscovery, er
 }
 
 func (i *iaasDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/v1/projects/%s/servers?details=true", i.apiEndpoint, i.project), nil)
+	apiURL, err := url.Parse(i.apiEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("XXXX")
+	}
+
+	apiURL.Path, err = url.JoinPath(apiURL.Path, "v1", "projects", i.project, "servers")
+	if err != nil {
+		return nil, fmt.Errorf("XXXX")
+	}
+
+	q := apiURL.Query()
+	q.Set("details", "true")
+	apiURL.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
