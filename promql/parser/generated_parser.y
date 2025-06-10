@@ -186,7 +186,7 @@ START_METRIC_SELECTOR
 %type <int> int
 %type <uint> uint
 %type <float> number series_value signed_number signed_or_unsigned_number
-%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_duration_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector duration_expr paren_duration_expr positive_duration_expr
+%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_duration_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector duration_expr paren_duration_expr positive_duration_expr offset_duration_expr
 
 %start start
 
@@ -467,7 +467,7 @@ positive_duration_expr : duration_expr
                         }
                 ;
 
-offset_expr: expr OFFSET duration_expr
+offset_expr: expr OFFSET offset_duration_expr
                         {
                         if numLit, ok := $3.(*NumberLiteral); ok {
                             yylex.(*parser).addOffset($1, time.Duration(math.Round(numLit.Val*float64(time.Second))))
@@ -1052,6 +1052,36 @@ maybe_grouping_labels: /* empty */ { $$ = nil }
  * Duration expressions.
  */
 
+// offset_duration_expr is needed to handle expressions like "foo offset -2^2" correctly.
+// Without this rule, such expressions would be parsed as "foo offset (-2^2)" due to operator precedence.
+// With this rule, they are parsed as "(foo offset -2)^2", which is the expected behavior without parentheses.
+offset_duration_expr    : number_duration_literal
+                                {
+                                nl := $1.(*NumberLiteral)
+                                if nl.Val > 1<<63/1e9 || nl.Val < -(1<<63)/1e9 {
+                                        yylex.(*parser).addParseErrf(nl.PosRange, "duration out of range")
+                                        $$ = &NumberLiteral{Val: 0}
+                                        break
+                                }
+                                $$ = nl
+                                }
+                        | unary_op number_duration_literal
+                                {
+                                nl := $2.(*NumberLiteral)
+                                if $1.Typ == SUB {
+                                        nl.Val *= -1
+                                }
+                                if nl.Val > 1<<63/1e9 || nl.Val < -(1<<63)/1e9 {
+                                        yylex.(*parser).addParseErrf($1.PositionRange(), "duration out of range")
+                                        $$ = &NumberLiteral{Val: 0}
+                                        break
+                                }
+                                nl.PosRange.Start = $1.Pos
+                                $$ = nl
+                                }
+                        | duration_expr
+                        ;
+                        
 duration_expr   : number_duration_literal
                         {
                         nl := $1.(*NumberLiteral)
