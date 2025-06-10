@@ -16,6 +16,7 @@ package notifier
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 // alertmanagerSet contains a set of Alertmanagers discovered via a group of service
@@ -33,16 +35,19 @@ import (
 type alertmanagerSet struct {
 	cfg    *config.AlertmanagerConfig
 	client *http.Client
+	opts   *Options
 
 	metrics *alertMetrics
 
 	mtx        sync.RWMutex
 	ams        []alertmanager
 	droppedAms []alertmanager
-	logger     *slog.Logger
+	sendLoops  map[string]*sendLoop
+
+	logger *slog.Logger
 }
 
-func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger *slog.Logger, metrics *alertMetrics) (*alertmanagerSet, error) {
+func newAlertmanagerSet(cfg *config.AlertmanagerConfig, opts *Options, logger *slog.Logger, metrics *alertMetrics) (*alertmanagerSet, error) {
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager")
 	if err != nil {
 		return nil, err
@@ -59,10 +64,12 @@ func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger *slog.Logger, met
 	client.Transport = t
 
 	s := &alertmanagerSet{
-		client:  client,
-		cfg:     cfg,
-		logger:  logger,
-		metrics: metrics,
+		client:    client,
+		cfg:       cfg,
+		opts:      opts,
+		sendLoops: make(map[string]*sendLoop),
+		logger:    logger,
+		metrics:   metrics,
 	}
 	return s, nil
 }
@@ -98,24 +105,36 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 			continue
 		}
 
-		// This will initialize the Counters for the AM to 0.
-		s.metrics.sent.WithLabelValues(us)
+		// This will initialize the Counters for the AM to 0 and set the static queue capacity gauge.
+		s.metrics.dropped.WithLabelValues(us)
 		s.metrics.errors.WithLabelValues(us)
+		s.metrics.sent.WithLabelValues(us)
+		// TODO(queueperam): latency??
+		s.metrics.queueLength.WithLabelValues(us)
+		// TODO(queueperam): if it's the same for all ams, why have an am label???
+		s.metrics.queueCapacity.WithLabelValues(us).Set(float64(s.opts.QueueCapacity))
 
 		seen[us] = struct{}{}
 		s.ams = append(s.ams, am)
 	}
+	s.addSendLoops(s.ams)
+
 	// Now remove counters for any removed Alertmanagers.
 	for _, am := range previousAms {
 		us := am.url().String()
 		if _, ok := seen[us]; ok {
 			continue
 		}
-		s.metrics.latency.DeleteLabelValues(us)
-		s.metrics.sent.DeleteLabelValues(us)
+		// TODO(queueperam): how to test this
+		s.metrics.dropped.DeleteLabelValues(us)
 		s.metrics.errors.DeleteLabelValues(us)
+		s.metrics.sent.DeleteLabelValues(us)
+		s.metrics.latency.DeleteLabelValues(us)
+		s.metrics.queueLength.DeleteLabelValues(us)
+		s.metrics.queueCapacity.DeleteLabelValues(us)
 		seen[us] = struct{}{}
 	}
+	s.cleanSendLoops(previousAms)
 }
 
 func (s *alertmanagerSet) configHash() (string, error) {
@@ -125,4 +144,58 @@ func (s *alertmanagerSet) configHash() (string, error) {
 	}
 	hash := md5.Sum(b)
 	return hex.EncodeToString(hash[:]), nil
+}
+
+func (s *alertmanagerSet) send(alerts ...*Alert) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	if len(s.cfg.AlertRelabelConfigs) > 0 {
+		alerts = relabelAlerts(s.cfg.AlertRelabelConfigs, labels.Labels{}, alerts)
+		if len(alerts) == 0 {
+			return
+		}
+	}
+
+	for _, sendLoop := range s.sendLoops {
+		sendLoop.add(alerts...)
+	}
+}
+
+// addSendLoops creates and starts a send loop for newly discovered alertmanager.
+// This function expects the caller to acquire needed locks.
+func (s *alertmanagerSet) addSendLoops(ams []alertmanager) {
+	for _, am := range ams {
+		us := am.url().String()
+		sendLoop := newSendLoop(us, s.client, s.cfg, s.opts, s.logger.With("alertmanager", us), s.metrics)
+		go sendLoop.loop()
+		s.sendLoops[us] = sendLoop
+	}
+}
+
+// cleanSendLoops stops and cleans the send loops for each removed alertmanager.
+// This function expects the caller to acquire needed locks.
+func (s *alertmanagerSet) cleanSendLoops(ams []alertmanager) {
+	for _, am := range ams {
+		us := am.url().String()
+		if sendLoop, ok := s.sendLoops[us]; ok {
+			sendLoop.stop()
+			delete(s.sendLoops, us)
+		}
+	}
+}
+
+// startSendLoops starts a send loop for newly discovered alertmanager.
+// This function expects the caller to acquire needed locks.
+// This is mainly needed for testing where the loops are added as part of the test setup.
+func (s *alertmanagerSet) startSendLoops(ams []alertmanager) {
+	for _, am := range ams {
+		us := am.url().String()
+
+		if l, ok := s.sendLoops[us]; ok {
+			go l.loop()
+			continue
+		}
+		panic(fmt.Sprintf("send loop not found for %s", us))
+	}
 }
