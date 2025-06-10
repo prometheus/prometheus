@@ -95,7 +95,7 @@ func newServerDiscovery(conf *SDConfig, logger *slog.Logger) (*iaasDiscovery, er
 		UserAgent:  userAgent,
 		HTTPClient: d.httpClient,
 		Servers:    servers,
-		NoAuth:     noAuth,
+		NoAuth:     conf.ServiceAccountKey == "" && conf.ServiceAccountKeyPath == "",
 
 		ServiceAccountKey:     conf.ServiceAccountKey,
 		PrivateKey:            conf.PrivateKey,

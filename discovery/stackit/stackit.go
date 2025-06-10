@@ -104,11 +104,11 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	if c.Endpoint == "" && c.Region == "" {
-		return errors.New("endpoint or region missing")
+		return errors.New("stackit_sd: endpoint and region missing")
 	}
 
 	if _, err = url.Parse(c.Endpoint); err != nil {
-		return fmt.Errorf("invalid endpoint %q: %w", c.Endpoint, err)
+		return fmt.Errorf("stackit_sd: invalid endpoint %q: %w", c.Endpoint, err)
 	}
 
 	return c.HTTPClientConfig.Validate()
