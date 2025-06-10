@@ -1086,8 +1086,8 @@ load 5s
 # relevant this scenario is.
 # eval instant at 55s avg_over_time(metric11[1m])
 #   {} -44.848083237000004 <- This is the correct value.
-#   {} -1.881783551706252e+203 <- This is the relust on linux/amd64.
-#   {} 2.303079268822384e+202 <- This is the relust on darwin/arm64.
+#   {} -1.881783551706252e+203 <- This is the result on linux/amd64.
+#   {} 2.303079268822384e+202 <- This is the result on darwin/arm64.
 
 # Test per-series aggregation on dense samples.
 clear
