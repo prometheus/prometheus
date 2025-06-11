@@ -1904,9 +1904,9 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 						if typeLabel != string(model.MetricTypeCounter) {
 							warnings.Add(annotations.NewPossibleNonCounterLabelInfo(metricName, typeLabel, e.Args[0].PositionRange()))
 						}
-					} else if !strings.HasSuffix(metricName, "_total") ||
-						!strings.HasSuffix(metricName, "_sum") ||
-						!strings.HasSuffix(metricName, "_count") ||
+					} else if !strings.HasSuffix(metricName, "_total") &&
+						!strings.HasSuffix(metricName, "_sum") &&
+						!strings.HasSuffix(metricName, "_count") &&
 						!strings.HasSuffix(metricName, "_bucket") {
 						// Fallback to name suffix checking
 						warnings.Add(annotations.NewPossibleNonCounterInfo(metricName, e.Args[0].PositionRange()))
