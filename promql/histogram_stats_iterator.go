@@ -112,6 +112,7 @@ func (f *HistogramStatsIterator) AtFloatHistogram(fh *histogram.FloatHistogram) 
 }
 
 func (f *HistogramStatsIterator) setLastH(h *histogram.Histogram) {
+	f.lastFH = nil
 	if f.lastH == nil {
 		f.lastH = h.Copy()
 	} else {
@@ -122,6 +123,7 @@ func (f *HistogramStatsIterator) setLastH(h *histogram.Histogram) {
 }
 
 func (f *HistogramStatsIterator) setLastFH(fh *histogram.FloatHistogram) {
+	f.lastH = nil
 	if f.lastFH == nil {
 		f.lastFH = fh.Copy()
 	} else {
@@ -135,11 +137,15 @@ func (f *HistogramStatsIterator) getFloatResetHint(hint histogram.CounterResetHi
 	if hint != histogram.UnknownCounterReset {
 		return hint
 	}
-	if f.lastFH == nil || !f.haveReadFromCurrentSeries {
-		return histogram.NotCounterReset
+	prevFH := f.lastFH
+	if prevFH == nil || !f.haveReadFromCurrentSeries {
+		if f.lastH == nil || !f.haveReadFromCurrentSeries {
+			// We don't know if there's a counter reset.
+			return histogram.UnknownCounterReset
+		}
+		prevFH = f.lastH.ToFloat(nil)
 	}
-
-	if f.currentFH.DetectReset(f.lastFH) {
+	if f.currentFH.DetectReset(prevFH) {
 		return histogram.CounterReset
 	}
 	return histogram.NotCounterReset
@@ -149,11 +155,17 @@ func (f *HistogramStatsIterator) getResetHint(h *histogram.Histogram) histogram.
 	if h.CounterResetHint != histogram.UnknownCounterReset {
 		return h.CounterResetHint
 	}
+	var prevFH *histogram.FloatHistogram
 	if f.lastH == nil || !f.haveReadFromCurrentSeries {
-		return histogram.NotCounterReset
+		if f.lastFH == nil || !f.haveReadFromCurrentSeries {
+			// We don't know if there's a counter reset.
+			return histogram.UnknownCounterReset
+		}
+		prevFH = f.lastFH
+	} else {
+		prevFH = f.lastH.ToFloat(nil)
 	}
-
-	fh, prevFH := h.ToFloat(nil), f.lastH.ToFloat(nil)
+	fh := h.ToFloat(nil)
 	if fh.DetectReset(prevFH) {
 		return histogram.CounterReset
 	}

@@ -158,6 +158,7 @@ var (
 	DefaultConfig = Config{
 		GlobalConfig: DefaultGlobalConfig,
 		Runtime:      DefaultRuntimeConfig,
+		OTLPConfig:   DefaultOTLPConfig,
 	}
 
 	// DefaultGlobalConfig is the default global configuration.
