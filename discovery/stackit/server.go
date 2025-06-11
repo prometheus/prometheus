@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/prometheus/common/config"
@@ -70,13 +69,13 @@ func newServerDiscovery(conf *SDConfig, logger *slog.Logger) (*iaasDiscovery, er
 		return nil, err
 	}
 
-	endpoint := conf.Endpoint
-	if endpoint == "" {
-		endpoint = fmt.Sprintf(stackitAPIEndpoint, conf.Region)
+	d.apiEndpoint = conf.Endpoint
+	if d.apiEndpoint == "" {
+		d.apiEndpoint = fmt.Sprintf(stackitAPIEndpoint, conf.Region)
 	}
 
 	servers := stackitconfig.ServerConfigurations{stackitconfig.ServerConfiguration{
-		URL:         endpoint,
+		URL:         d.apiEndpoint,
 		Description: "STACKIT IAAS API",
 	}}
 
@@ -108,7 +107,6 @@ func newServerDiscovery(conf *SDConfig, logger *slog.Logger) (*iaasDiscovery, er
 	}
 
 	d.httpClient.Transport = authRoundTripper
-	d.apiEndpoint = strings.TrimSuffix(stackitConfiguration.Servers[0].URL, "/")
 
 	return d, nil
 }
