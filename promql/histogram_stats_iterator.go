@@ -19,6 +19,10 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
+// HistogramStatsIterator is an iterator that returns histogram objects
+// which have only their sum and count values populated. The iterator handles
+// counter reset detection internally and sets the counter reset hint accordingly
+// in each returned histogram object.
 type HistogramStatsIterator struct {
 	chunkenc.Iterator
 
@@ -31,10 +35,7 @@ type HistogramStatsIterator struct {
 	currentSeriesRead bool
 }
 
-// NewHistogramStatsIterator creates an iterator which returns histogram objects
-// which have only their sum and count values populated. The iterator handles
-// counter reset detection internally and sets the counter reset hint accordingly
-// in each returned histogram object.
+// NewHistogramStatsIterator creates a new HistogramStatsIterator.
 func NewHistogramStatsIterator(it chunkenc.Iterator) *HistogramStatsIterator {
 	return &HistogramStatsIterator{
 		Iterator:  it,
