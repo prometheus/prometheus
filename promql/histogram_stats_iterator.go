@@ -34,7 +34,7 @@ type HistogramStatsIterator struct {
 // NewHistogramStatsIterator creates an iterator which returns histogram objects
 // which have only their sum and count values populated. The iterator handles
 // counter reset detection internally and sets the counter reset hint accordingly
-// in each returned histogram objects.
+// in each returned histogram object.
 func NewHistogramStatsIterator(it chunkenc.Iterator) *HistogramStatsIterator {
 	return &HistogramStatsIterator{
 		Iterator:  it,
@@ -43,6 +43,8 @@ func NewHistogramStatsIterator(it chunkenc.Iterator) *HistogramStatsIterator {
 	}
 }
 
+// Reset resets this iterator for use with a new underlying iterator, reusing
+// objects already allocated where possible.
 func (f *HistogramStatsIterator) Reset(it chunkenc.Iterator) {
 	f.Iterator = it
 	f.haveReadFromCurrentSeries = false
