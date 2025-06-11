@@ -28,7 +28,7 @@ type HistogramStatsIterator struct {
 	currentFH *histogram.FloatHistogram
 	lastFH    *histogram.FloatHistogram
 
-	haveReadFromCurrentSeries bool
+	currentSeriesRead bool
 }
 
 // NewHistogramStatsIterator creates an iterator which returns histogram objects
@@ -47,7 +47,7 @@ func NewHistogramStatsIterator(it chunkenc.Iterator) *HistogramStatsIterator {
 // objects already allocated where possible.
 func (f *HistogramStatsIterator) Reset(it chunkenc.Iterator) {
 	f.Iterator = it
-	f.haveReadFromCurrentSeries = false
+	f.currentSeriesRead = false
 }
 
 // AtHistogram returns the next timestamp/histogram pair. The counter reset
@@ -121,7 +121,7 @@ func (f *HistogramStatsIterator) setLastH(h *histogram.Histogram) {
 		h.CopyTo(f.lastH)
 	}
 
-	f.haveReadFromCurrentSeries = true
+	f.currentSeriesRead = true
 }
 
 func (f *HistogramStatsIterator) setLastFH(fh *histogram.FloatHistogram) {
@@ -132,7 +132,7 @@ func (f *HistogramStatsIterator) setLastFH(fh *histogram.FloatHistogram) {
 		fh.CopyTo(f.lastFH)
 	}
 
-	f.haveReadFromCurrentSeries = true
+	f.currentSeriesRead = true
 }
 
 func (f *HistogramStatsIterator) getFloatResetHint(hint histogram.CounterResetHint) histogram.CounterResetHint {
@@ -140,8 +140,8 @@ func (f *HistogramStatsIterator) getFloatResetHint(hint histogram.CounterResetHi
 		return hint
 	}
 	prevFH := f.lastFH
-	if prevFH == nil || !f.haveReadFromCurrentSeries {
-		if f.lastH == nil || !f.haveReadFromCurrentSeries {
+	if prevFH == nil || !f.currentSeriesRead {
+		if f.lastH == nil || !f.currentSeriesRead {
 			// We don't know if there's a counter reset.
 			return histogram.UnknownCounterReset
 		}
@@ -158,8 +158,8 @@ func (f *HistogramStatsIterator) getResetHint(h *histogram.Histogram) histogram.
 		return h.CounterResetHint
 	}
 	var prevFH *histogram.FloatHistogram
-	if f.lastH == nil || !f.haveReadFromCurrentSeries {
-		if f.lastFH == nil || !f.haveReadFromCurrentSeries {
+	if f.lastH == nil || !f.currentSeriesRead {
+		if f.lastFH == nil || !f.currentSeriesRead {
 			// We don't know if there's a counter reset.
 			return histogram.UnknownCounterReset
 		}
