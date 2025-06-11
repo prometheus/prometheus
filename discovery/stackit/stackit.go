@@ -60,16 +60,16 @@ func init() {
 type SDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 
-	RefreshInterval       model.Duration `yaml:"refresh_interval"`
-	Port                  int            `yaml:"port"`
-	Region                string         `yaml:"region"`
-	Endpoint              string         `yaml:"endpoint"`
 	Project               string         `yaml:"project"`
-	ServiceAccountKey     string         `yaml:"service_account_key"`
-	PrivateKey            string         `yaml:"private_key"`
-	ServiceAccountKeyPath string         `yaml:"service_account_key_path"`
-	PrivateKeyPath        string         `yaml:"private_key_path"`
-	CredentialsFilePath   string         `yaml:"credentials_file_path"`
+	RefreshInterval       model.Duration `yaml:"refresh_interval,omitempty"`
+	Port                  int            `yaml:"port,omitempty"`
+	Region                string         `yaml:"region,omitempty"`
+	Endpoint              string         `yaml:"endpoint,omitempty"`
+	ServiceAccountKey     string         `yaml:"service_account_key,omitempty"`
+	PrivateKey            string         `yaml:"private_key,omitempty"`
+	ServiceAccountKeyPath string         `yaml:"service_account_key_path,omitempty"`
+	PrivateKeyPath        string         `yaml:"private_key_path,omitempty"`
+	CredentialsFilePath   string         `yaml:"credentials_file_path,omitempty"`
 
 	// For testing only
 	tokenURL string

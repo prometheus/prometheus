@@ -2298,13 +2298,16 @@ project: <string>
 [ private_key: <string> ]
 
 # Path to a file containing the raw private key string
-[ private_key_file: <string> ]
+[ private_key_path: <string> ]
 
 # Full JSON-formatted service account key used for authentication
 [ service_account_key: <string> ]
 
 # Path to a file containing the JSON-formatted service account key
 [ service_account_key_path: <string> ]
+
+# Path to a file containing STACKIT credentials.
+[ credentials_file_path: <string> ]
 
 # The time after which the servers are refreshed.
 [ refresh_interval: <duration> | default = 60s ]
