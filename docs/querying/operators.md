@@ -139,6 +139,12 @@ modifier changes the behavior in the following ways:
   than the value `0`.)
 * The metric name is dropped.
 
+If the `bool` modifier is not provided, then the metric name from the left side
+is retained, with some exceptions:
+* If `on` is used, then the metric name is dropped.
+* If `group_right` is used, then the metric name from the right side is retained,
+  to avoid collisions.
+
 ### Logical/set binary operators
 
 These logical/set binary operators are only defined between instant vectors:
