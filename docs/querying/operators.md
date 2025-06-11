@@ -74,7 +74,7 @@ corresponding element from the output vector, flagged by an info-level
 annotation.
 
 **In any arithmetic binary operation involving vectors**, the metric name is
-dropped.
+dropped unless it is explicitly mentioned in `on`.
 
 ### Trigonometric binary operators
 
