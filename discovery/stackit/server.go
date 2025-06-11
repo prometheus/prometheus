@@ -75,11 +75,10 @@ func newServerDiscovery(conf *SDConfig, logger *slog.Logger) (*iaasDiscovery, er
 		endpoint = fmt.Sprintf(stackitAPIEndpoint, conf.Region)
 	}
 
-	servers := stackitconfig.ServerConfigurations{}
-	servers = append(servers, stackitconfig.ServerConfiguration{
+	servers := stackitconfig.ServerConfigurations{stackitconfig.ServerConfiguration{
 		URL:         endpoint,
 		Description: "STACKIT IAAS API",
-	})
+	}}
 
 	d.httpClient = &http.Client{
 		Timeout:   time.Duration(conf.RefreshInterval),
