@@ -133,10 +133,11 @@ comparison binary operations are again invalid.
 
 **In any comparison binary operation involving vectors**, providing the `bool`
 modifier changes the behavior in the following ways: 
-* Vector elements that would be dropped instead have the value `0` and 
-  vector elements that would be kept have the value `1`. (Note that
-  invalid operations involving histogram samples still return no result rather
-  than the value `0`.)
+* Vector elements which find a match on the other side of the expression but for
+  which the expression is false instead have the value `0` and vector elements
+  that do find a match and for which the expression is true have the value `1`. 
+  (Note that elements with no match or invalid operations involving histogram
+  samples still return no result rather than the value `0`.)
 * The metric name is dropped.
 
 If the `bool` modifier is not provided, then the metric name from the left side
