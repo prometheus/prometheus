@@ -34,6 +34,7 @@ const (
 	stateStart collectionState = iota
 	stateCollecting
 	stateEmitting
+	stateInhibiting // Inhibiting NHCB, because there was an exponential histogram with the same labels.
 )
 
 // The NHCBParser wraps a Parser and converts classic histograms to native
@@ -97,9 +98,8 @@ type NHCBParser struct {
 	// Remembers the last base histogram metric name (assuming it's
 	// a classic histogram) so we can tell if the next float series
 	// is part of the same classic histogram.
-	lastHistogramName        string
-	lastHistogramLabelsHash  uint64
-	lastHistogramExponential bool
+	lastHistogramName       string
+	lastHistogramLabelsHash uint64
 	// Reused buffer for hashing labels.
 	hBuffer []byte
 }
@@ -162,7 +162,7 @@ func (p *NHCBParser) Exemplar(ex *exemplar.Exemplar) bool {
 
 func (p *NHCBParser) CreatedTimestamp() int64 {
 	switch p.state {
-	case stateStart:
+	case stateStart, stateInhibiting:
 		if p.entry == EntrySeries || p.entry == EntryHistogram {
 			return p.parser.CreatedTimestamp()
 		}
@@ -209,24 +209,21 @@ func (p *NHCBParser) Next() (Entry, error) {
 					return EntryHistogram, nil
 				}
 				isNHCB = p.handleClassicHistogramSeries(p.lset)
-			case stateStart:
-				if p.lastHistogramExponential {
-					// We are in start state, but after an exponential histogram.
-					if p.differentMetric() {
-						// It has different labels than the next classic histogram,
-						// so we can start collecting classic histogram series.
-						isNHCB = p.handleClassicHistogramSeries(p.lset)
-						p.lastHistogramExponential = false
-					} else {
-						// It has the same labels as the next classic histogram, then
-						// we need to inhibit NHCB until we see a different metric type or labels.
-						// p.lastHistogramExponential is not reset!
-						isNHCB = false
-					}
-				} else {
-					// We are in the start state, so we can start collecting classic histogram series.
+			case stateInhibiting:
+				if p.differentMetric() {
+					// Next has different labels than the previous exponential
+					// histogram so we can start collecting classic histogram
+					// series.
+					p.state = stateStart
 					isNHCB = p.handleClassicHistogramSeries(p.lset)
+				} else {
+					// Next has the same labels as the previous exponential
+					// histogram, so we are still in the inhibiting state and
+					// we should not convert to NHCB.
+					isNHCB = false
 				}
+			case stateStart:
+				isNHCB = p.handleClassicHistogramSeries(p.lset)
 			default:
 				// This should not happen.
 				return EntryInvalid, errors.New("unexpected state in NHCBParser")
@@ -237,7 +234,7 @@ func (p *NHCBParser) Next() (Entry, error) {
 			}
 			return p.entry, p.err
 		case EntryHistogram:
-			p.lastHistogramExponential = true
+			p.state = stateInhibiting
 			p.bytes, p.ts, p.h, p.fh = p.parser.Histogram()
 			p.parser.Labels(&p.lset)
 			p.storeExponentialLabels()
