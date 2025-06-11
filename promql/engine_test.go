@@ -3541,8 +3541,8 @@ func TestRateAnnotations(t *testing.T) {
 			data: `
 				series_total{label="a"} 1 2 3
 			`,
-			expr:                     "rate(series_total[1m1s])",
-			typeAndUnitLabelsEnabled: false,
+			expr:                       "rate(series_total[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		},
@@ -3550,8 +3550,8 @@ func TestRateAnnotations(t *testing.T) {
 			data: `
 				series_sum{label="a"} 1 2 3
 			`,
-			expr:                     "rate(series_sum[1m1s])",
-			typeAndUnitLabelsEnabled: false,
+			expr:                       "rate(series_sum[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		},
@@ -3559,8 +3559,8 @@ func TestRateAnnotations(t *testing.T) {
 			data: `
 				series_count{label="a"} 1 2 3
 			`,
-			expr:                     "rate(series_count[1m1s])",
-			typeAndUnitLabelsEnabled: false,
+			expr:                       "rate(series_count[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		},
@@ -3568,8 +3568,8 @@ func TestRateAnnotations(t *testing.T) {
 			data: `
 				series_bucket{label="a"} 1 2 3
 			`,
-			expr:                     "rate(series_bucket[1m1s])",
-			typeAndUnitLabelsEnabled: false,
+			expr:                       "rate(series_bucket[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		},
@@ -3580,14 +3580,14 @@ func TestRateAnnotations(t *testing.T) {
 			expr:                       "increase(series_total[1m1s])",
 			expectedWarningAnnotations: []string{},
 			typeAndUnitLabelsEnabled:   false,
-			expectedInfoAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
 		},
 		"no info annotation when increase() over series with _sum suffix": {
 			data: `
 				series_sum{label="a"} 1 2 3
 			`,
-			expr:                     "increase(series_sum[1m1s])",
-			typeAndUnitLabelsEnabled: false,
+			expr:                       "increase(series_sum[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		},
@@ -3595,8 +3595,8 @@ func TestRateAnnotations(t *testing.T) {
 			data: `
 				series_count{label="a"} 1 2 3
 			`,
-			expr:                     "increase(series_count[1m1s])",
-			typeAndUnitLabelsEnabled: false,
+			expr:                       "increase(series_count[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		},
@@ -3604,8 +3604,8 @@ func TestRateAnnotations(t *testing.T) {
 			data: `
 				series_bucket{label="a"} 1 2 3
 			`,
-			expr:                     "increase(series_bucket[1m1s])",
-			typeAndUnitLabelsEnabled: false,
+			expr:                       "increase(series_bucket[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		},
