@@ -5114,3 +5114,62 @@ func TestParseCustomFunctions(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "custom_func", call.Func.Name)
 }
+
+func TestParseUDFs(t *testing.T) {
+	tests := []struct {
+		name         string
+		expansionFmt string
+		input        string
+		expected     string
+	}{
+		{
+			name: "kube_pod_labels",
+			expansionFmt: `%s
+* on (pod) group_left ()
+group by (pod) (
+	kube_pod_labels{beacon_clusterwrapper_name=~"${pg_cluster_id}",beacon_project_id=~"${project_ids}",cnpg_instance_role!="",pgd_workload_type=~"|pgd-node-data"}
+)`,
+			input: `kube_pod_labels(rate(http_request_counter_total{}[5m]))`,
+			expected: `
+	rate(http_request_counter_total{}[5m])
+*
+	on (pod) group_left ()
+	group by (pod) (
+		kube_pod_labels{beacon_clusterwrapper_name=~"${pg_cluster_id}",beacon_project_id=~"${project_ids}",cnpg_instance_role!="",pgd_workload_type=~"|pgd-node-data"}
+	)`,
+		},
+		{
+			name: "availability",
+			expansionFmt: `
+  sum(rate(%[1]s{code=~"2.*",handler!~"/metrics",method="GET",service="%[3]s"}[%[2]s]))
+/
+  sum(rate(%[1]s{handler!~"/metrics",method="GET",service="%[3]s"}[%[2]s]))
+`,
+			input: `availability(http_requests_total, 1d, foo)`,
+			expected: `
+  sum(rate(http_requests_total{code=~"2.*",handler!~"/metrics",method="GET",service="foo"}[1d]))
+/
+  sum(rate(http_requests_total{handler!~"/metrics",method="GET",service="foo"}[1d]))
+`,
+		},
+	}
+
+	for _, test := range tests {
+		p := NewParser(test.input, WithUserDefinedFunctions(
+			map[string]*UDF{
+				test.name: {
+					Name:         test.name,
+					ExpansionFmt: test.expansionFmt,
+				},
+			},
+		))
+		expr, err := p.ParseExpr()
+
+		require.NoError(t, err)
+
+		parsedExpected, err := ParseExpr(test.expected)
+		require.NoError(t, err)
+
+		require.Equal(t, Prettify(parsedExpected), Prettify(expr))
+	}
+}

@@ -56,6 +56,9 @@ type parser struct {
 	// functions contains all functions supported by the parser instance.
 	functions map[string]*Function
 
+	// udfs contains all user-defined functions supported by the parser instance.
+	udfs map[string]*UDF
+
 	// Everytime an Item is lexed that could be the end
 	// of certain expressions its end position is stored here.
 	lastClosing posrange.Pos
@@ -78,6 +81,12 @@ type Opt func(p *parser)
 func WithFunctions(functions map[string]*Function) Opt {
 	return func(p *parser) {
 		p.functions = functions
+	}
+}
+
+func WithUserDefinedFunctions(udfs map[string]*UDF) Opt {
+	return func(p *parser) {
+		p.udfs = udfs
 	}
 }
 
@@ -753,10 +762,12 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			n.VectorMatching.Card = CardManyToMany
 		}
 
-		for _, l1 := range n.VectorMatching.MatchingLabels {
-			for _, l2 := range n.VectorMatching.Include {
-				if l1 == l2 && n.VectorMatching.On {
-					p.addParseErrf(opRange(), "label %q must not occur in ON and GROUP clause at once", l1)
+		if n.VectorMatching != nil {
+			for _, l1 := range n.VectorMatching.MatchingLabels {
+				for _, l2 := range n.VectorMatching.Include {
+					if l1 == l2 && n.VectorMatching.On {
+						p.addParseErrf(opRange(), "label %q must not occur in ON and GROUP clause at once", l1)
+					}
 				}
 			}
 		}
