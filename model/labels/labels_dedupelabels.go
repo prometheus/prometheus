@@ -417,6 +417,12 @@ func (ls Labels) WithoutEmpty() Labels {
 	return ls
 }
 
+// ByteSize returns the approximate size of the labels in bytes.
+// String header size is ignored because it should be amortized to zero.
+func (ls Labels) ByteSize() int {
+	return len(ls.data)
+}
+
 // Equal returns whether the two label sets are equal.
 func Equal(a, b Labels) bool {
 	if a.syms == b.syms {
