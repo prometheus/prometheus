@@ -199,21 +199,37 @@ func (p *NHCBParser) Next() (Entry, error) {
 		case EntrySeries:
 			p.bytes, p.ts, p.value = p.parser.Series()
 			p.parser.Labels(&p.lset)
-			// Check the label set to see if we can continue or need to emit the NHCB.
 			var isNHCB bool
-			if p.compareLabels() {
-				// Labels differ. Check if we can emit the NHCB.
-				if p.processNHCB() {
+			switch p.state {
+			case stateCollecting:
+				if p.differentMetric() && p.processNHCB() {
+					// We are collecting classic series, but the next series
+					// has different type or labels. If we can convert what
+					// we have collected so far to NHCB, then we can return it.
 					return EntryHistogram, nil
 				}
 				isNHCB = p.handleClassicHistogramSeries(p.lset)
-			} else {
-				// Labels are the same. Check if after an exponential histogram.
+			case stateStart:
 				if p.lastHistogramExponential {
-					isNHCB = false
+					// We are in start state, but after an exponential histogram.
+					if p.differentMetric() {
+						// It has different labels than the next classic histogram,
+						// so we can start collecting classic histogram series.
+						isNHCB = p.handleClassicHistogramSeries(p.lset)
+						p.lastHistogramExponential = false
+					} else {
+						// It has the same labels as the next classic histogram, then
+						// we need to inhibit NHCB until we see a different metric type or labels.
+						// p.lastHistogramExponential is not reset!
+						isNHCB = false
+					}
 				} else {
+					// We are in the start state, so we can start collecting classic histogram series.
 					isNHCB = p.handleClassicHistogramSeries(p.lset)
 				}
+			default:
+				// This should not happen.
+				return EntryInvalid, errors.New("unexpected state in NHCBParser")
 			}
 			if isNHCB && !p.keepClassicHistograms {
 				// Do not return the classic histogram series if it was converted to NHCB and we are not keeping classic histograms.
@@ -221,6 +237,7 @@ func (p *NHCBParser) Next() (Entry, error) {
 			}
 			return p.entry, p.err
 		case EntryHistogram:
+			p.lastHistogramExponential = true
 			p.bytes, p.ts, p.h, p.fh = p.parser.Histogram()
 			p.parser.Labels(&p.lset)
 			p.storeExponentialLabels()
@@ -235,10 +252,7 @@ func (p *NHCBParser) Next() (Entry, error) {
 }
 
 // Return true if labels have changed and we should emit the NHCB.
-func (p *NHCBParser) compareLabels() bool {
-	if p.state != stateCollecting {
-		return false
-	}
+func (p *NHCBParser) differentMetric() bool {
 	if p.typ != model.MetricTypeHistogram {
 		// Different metric type.
 		return true
@@ -257,13 +271,11 @@ func (p *NHCBParser) compareLabels() bool {
 func (p *NHCBParser) storeClassicLabels(name string) {
 	p.lastHistogramName = name
 	p.lastHistogramLabelsHash, _ = p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
-	p.lastHistogramExponential = false
 }
 
 func (p *NHCBParser) storeExponentialLabels() {
 	p.lastHistogramName = p.lset.Get(labels.MetricName)
 	p.lastHistogramLabelsHash, _ = p.lset.HashWithoutLabels(p.hBuffer)
-	p.lastHistogramExponential = true
 }
 
 // handleClassicHistogramSeries collates the classic histogram series to be converted to NHCB

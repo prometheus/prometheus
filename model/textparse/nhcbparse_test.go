@@ -981,3 +981,148 @@ something_bucket{a="b",le="+Inf"} 9
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
+
+func TestNHCBParserResetLastExponential(t *testing.T) {
+	testMetricFamilies := []string{`name: "test_histogram1"
+help: "Test histogram 1"
+type: HISTOGRAM
+metric: <
+  histogram: <
+		created_timestamp: <
+      seconds: 1
+      nanos: 1
+    >
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count: 2
+    negative_span: <
+      offset: -162
+      length: 1
+    >
+    negative_span: <
+      offset: 23
+      length: 4
+    >
+    negative_delta: 1
+    negative_delta: 3
+    negative_delta: -2
+    negative_delta: -1
+    negative_delta: 1
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: -1
+    positive_delta: -1
+  >
+  timestamp_ms: 1234568
+>
+`, // Regression test to see that state resets after exponential native histogram.
+		`name: "test_histogram2"
+help: "Test histogram 2"
+type: HISTOGRAM
+metric: <
+  histogram: <
+		created_timestamp: <
+      seconds: 1
+      nanos: 1
+    >
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
+    bucket: <
+      cumulative_count: 2
+      upper_bound: -0.0004899999999999998
+    >
+    bucket: <
+      cumulative_count: 4
+      upper_bound: -0.0003899999999999998
+    >
+    bucket: <
+      cumulative_count: 16
+      upper_bound: -0.0002899999999999998
+    >
+  >
+  timestamp_ms: 1234568
+>`}
+
+	varintBuf := make([]byte, binary.MaxVarintLen32)
+	buf := &bytes.Buffer{}
+
+	for _, tmf := range testMetricFamilies {
+		pb := &dto.MetricFamily{}
+		// From text to proto message.
+		require.NoError(t, proto.UnmarshalText(tmf, pb))
+		// From proto message to binary protobuf.
+		protoBuf, err := proto.Marshal(pb)
+		require.NoError(t, err)
+
+		// Write first length, then binary protobuf.
+		varintLength := binary.PutUvarint(varintBuf, uint64(len(protoBuf)))
+		buf.Write(varintBuf[:varintLength])
+		buf.Write(protoBuf)
+	}
+
+	exp := []parsedEntry{
+		{
+			m:    "test_histogram1",
+			help: "Test histogram 1",
+		},
+		{
+			m:   "test_histogram1",
+			typ: model.MetricTypeHistogram,
+		},
+		// The parser should skip the series with non-cumulative buckets.
+		{
+			m: `test_histogram1`,
+			shs: &histogram.Histogram{
+				Schema:          3,
+				Count:           175,
+				Sum:             0.0008280461746287094,
+				ZeroThreshold:   2.938735877055719e-39,
+				ZeroCount:       2,
+				PositiveSpans:   []histogram.Span{{Offset: -161, Length: 1}, {Offset: 8, Length: 3}},
+				NegativeSpans:   []histogram.Span{{Offset: -162, Length: 1}, {Offset: 23, Length: 4}},
+				PositiveBuckets: []int64{1, 2, -1, -1},
+				NegativeBuckets: []int64{1, 3, -2, -1, 1},
+			},
+			lset: labels.FromStrings("__name__", "test_histogram1"),
+			t:    int64p(1234568),
+			ct:   1000,
+		},
+		{
+			m:    "test_histogram2",
+			help: "Test histogram 2",
+		},
+		{
+			m:   "test_histogram2",
+			typ: model.MetricTypeHistogram,
+		},
+		{
+			m: "test_histogram2{}",
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           175,
+				Sum:             0.0008280461746287094,
+				PositiveSpans:   []histogram.Span{{Length: 4}},
+				PositiveBuckets: []int64{2, 0, 10, 147},
+				CustomValues:    []float64{-0.0004899999999999998, -0.0003899999999999998, -0.0002899999999999998},
+			},
+			lset: labels.FromStrings("__name__", "test_histogram2"),
+			t:    int64p(1234568),
+			ct:   1000,
+		},
+	}
+
+	p := NewProtobufParser(buf.Bytes(), false, false, labels.NewSymbolTable())
+	p = NewNHCBParser(p, labels.NewSymbolTable(), false)
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
