@@ -114,12 +114,12 @@ func newServerDiscovery(conf *SDConfig, logger *slog.Logger) (*iaasDiscovery, er
 func (i *iaasDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	apiURL, err := url.Parse(i.apiEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("XXXX")
+		return nil, fmt.Errorf("invalid API endpoint URL %s: %w", i.apiEndpoint, err)
 	}
 
 	apiURL.Path, err = url.JoinPath(apiURL.Path, "v1", "projects", i.project, "servers")
 	if err != nil {
-		return nil, fmt.Errorf("XXXX")
+		return nil, fmt.Errorf("joining URL path: %w", err)
 	}
 
 	q := apiURL.Query()
