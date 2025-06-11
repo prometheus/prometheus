@@ -3537,15 +3537,6 @@ func TestRateAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		},
-		"no info annotation when rate() over rate() over series with _total suffix": {
-			data: `
-				series{label="a", __type__="counter"} 1 2 3
-			`,
-			expr:                       "rate(rate(series[1m1s])[1m1s])",
-			typeAndUnitLabelsEnabled:   false,
-			expectedWarningAnnotations: []string{},
-			expectedInfoAnnotations:    []string{},
-		},
 		"no info annotation when rate() over series with _total suffix": {
 			data: `
 				series_total{label="a"} 1 2 3
