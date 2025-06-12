@@ -1186,6 +1186,28 @@ eval instant at 70s mad_over_time(metric_histogram{type="only_histogram"}[70s])
 eval_info instant at 70s mad_over_time(metric_histogram{type="mix"}[70s])
 	{type="mix"} 0
 
+# Tests for ts_of_max_over_time and ts_of_min_over_time. Using odd scrape interval to test for rounding bugs.
+clear
+load 10s53ms
+	metric 1 2 3 0 5 6 2 1 4
+
+eval instant at 90s ts_of_min_over_time(metric[90s])
+	{} 30.159
+
+eval instant at 90s ts_of_max_over_time(metric[90s])
+	{} 50.265
+
+# Tests for ts_of_last_over_time. Using odd load interval to test for rounding bugs.
+clear
+load 10s53ms
+	metric 1 2 3 _ _
+
+eval instant at 90s ts_of_last_over_time(metric[90s])
+	{} 20.106
+
+eval instant at 95s ts_of_last_over_time(metric[90s])
+	{} 20.106
+
 # Tests for quantile_over_time
 clear
 

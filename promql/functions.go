@@ -784,8 +784,42 @@ func funcMadOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	}), annos
 }
 
+// === ts_of_last_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
+func funcTsOfLastOverTime(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	el := vals[0].(Matrix)[0]
+
+	var tf int64
+	if len(el.Floats) > 0 {
+		tf = el.Floats[len(el.Floats)-1].T
+	}
+
+	var th int64
+	if len(el.Histograms) > 0 {
+		th = el.Floats[len(el.Floats)-1].T
+	}
+
+	return append(enh.Out, Sample{
+		Metric: el.Metric,
+		F:      float64(max(tf, th)) / 1000,
+	}), nil
+}
+
+// === ts_of_max_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
+func funcTsOfMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return compareOverTime(vals, args, enh, func(cur, maxVal float64) bool {
+		return (cur >= maxVal) || math.IsNaN(maxVal)
+	}, true)
+}
+
+// === ts_of_min_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
+func funcTsOfMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return compareOverTime(vals, args, enh, func(cur, maxVal float64) bool {
+		return (cur <= maxVal) || math.IsNaN(maxVal)
+	}, true)
+}
+
 // compareOverTime is a helper used by funcMaxOverTime and funcMinOverTime.
-func compareOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, compareFn func(float64, float64) bool) (Vector, annotations.Annotations) {
+func compareOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, compareFn func(float64, float64) bool, returnTimestamp bool) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
@@ -797,10 +831,15 @@ func compareOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
 		maxVal := s.Floats[0].F
+		tsOfMax := s.Floats[0].T
 		for _, f := range s.Floats {
 			if compareFn(f.F, maxVal) {
 				maxVal = f.F
+				tsOfMax = f.T
 			}
+		}
+		if returnTimestamp {
+			return float64(tsOfMax) / 1000
 		}
 		return maxVal
 	}), annos
@@ -810,14 +849,14 @@ func compareOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return compareOverTime(vals, args, enh, func(cur, maxVal float64) bool {
 		return (cur > maxVal) || math.IsNaN(maxVal)
-	})
+	}, false)
 }
 
 // === min_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return compareOverTime(vals, args, enh, func(cur, maxVal float64) bool {
 		return (cur < maxVal) || math.IsNaN(maxVal)
-	})
+	}, false)
 }
 
 // === sum_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
@@ -1723,6 +1762,9 @@ var FunctionCalls = map[string]FunctionCall{
 	"mad_over_time":                funcMadOverTime,
 	"max_over_time":                funcMaxOverTime,
 	"min_over_time":                funcMinOverTime,
+	"ts_of_last_over_time":         funcTsOfLastOverTime,
+	"ts_of_max_over_time":          funcTsOfMaxOverTime,
+	"ts_of_min_over_time":          funcTsOfMinOverTime,
 	"minute":                       funcMinute,
 	"month":                        funcMonth,
 	"pi":                           funcPi,
