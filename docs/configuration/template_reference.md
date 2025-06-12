@@ -79,6 +79,13 @@ versions.
 | parseDuration | string | float | Parses a duration string such as "1h" into the number of seconds it represents. |
 | stripDomain | string | string | Removes the domain part of a FQDN. Leaves port untouched. |
 
+### Time
+
+| Name            | Arguments  | Returns       |    Notes    |
+| --------------- | ---------- | ------------- | ----------- |
+| parseGoDuration | string     | time.Duration | Converts a Go-style duration string to time.Duration. |
+| now             | none       | time.Time     | Returns the current local time.Time. |
+
 ### Others
 
 | Name          | Arguments     | Returns |    Notes    |
