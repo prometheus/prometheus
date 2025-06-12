@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"math/rand"
 	"net"
@@ -73,19 +74,38 @@ const (
 	checkContextEveryNIterations = 128
 )
 
-type errorType string
+type errorNum int
+
+type errorType struct {
+	num errorNum
+	str string
+}
 
 const (
-	errorNone          errorType = ""
-	errorTimeout       errorType = "timeout"
-	errorCanceled      errorType = "canceled"
-	errorExec          errorType = "execution"
-	errorBadData       errorType = "bad_data"
-	errorInternal      errorType = "internal"
-	errorUnavailable   errorType = "unavailable"
-	errorNotFound      errorType = "not_found"
-	errorNotAcceptable errorType = "not_acceptable"
+	ErrorNone errorNum = iota
+	ErrorTimeout
+	ErrorCanceled
+	ErrorExec
+	ErrorBadData
+	ErrorInternal
+	ErrorUnavailable
+	ErrorNotFound
+	ErrorNotAcceptable
 )
+
+var (
+	errorNone          = errorType{ErrorNone, ""}
+	errorTimeout       = errorType{ErrorTimeout, "timeout"}
+	errorCanceled      = errorType{ErrorCanceled, "canceled"}
+	errorExec          = errorType{ErrorExec, "execution"}
+	errorBadData       = errorType{ErrorBadData, "bad_data"}
+	errorInternal      = errorType{ErrorInternal, "internal"}
+	errorUnavailable   = errorType{ErrorUnavailable, "unavailable"}
+	errorNotFound      = errorType{ErrorNotFound, "not_found"}
+	errorNotAcceptable = errorType{ErrorNotAcceptable, "not_acceptable"}
+)
+
+type ErrorTypeToStatusCode map[errorNum]func(error) int
 
 var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
 
@@ -95,7 +115,7 @@ type apiError struct {
 }
 
 func (e *apiError) Error() string {
-	return fmt.Sprintf("%s: %s", e.typ, e.err)
+	return fmt.Sprintf("%s: %s", e.typ.str, e.err)
 }
 
 // ScrapePoolsRetriever provide the list of all scrape pools.
@@ -164,7 +184,7 @@ type RuntimeInfo struct {
 type Response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
-	ErrorType errorType   `json:"errorType,omitempty"`
+	ErrorType string      `json:"errorType,omitempty"`
 	Error     string      `json:"error,omitempty"`
 	Warnings  []string    `json:"warnings,omitempty"`
 	Infos     []string    `json:"infos,omitempty"`
@@ -222,6 +242,8 @@ type API struct {
 	statsRenderer       StatsRenderer
 	notificationsGetter func() []notifications.Notification
 	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
+	// Allows customizing the default mapping
+	errorTypeToStatusCode ErrorTypeToStatusCode
 
 	remoteWriteHandler http.Handler
 	remoteReadHandler  http.Handler
@@ -264,6 +286,7 @@ func NewAPI(
 	acceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg,
 	otlpEnabled, otlpDeltaToCumulative, otlpNativeDeltaIngestion bool,
 	ctZeroIngestionEnabled bool,
+	errorTypeToStatusCode ErrorTypeToStatusCode,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -274,24 +297,25 @@ func NewAPI(
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
-		now:                 time.Now,
-		config:              configFunc,
-		flagsMap:            flagsMap,
-		ready:               readyFunc,
-		globalURLOptions:    globalURLOptions,
-		db:                  db,
-		dbDir:               dbDir,
-		enableAdmin:         enableAdmin,
-		rulesRetriever:      rr,
-		logger:              logger,
-		CORSOrigin:          corsOrigin,
-		runtimeInfo:         runtimeInfo,
-		buildInfo:           buildInfo,
-		gatherer:            gatherer,
-		isAgent:             isAgent,
-		statsRenderer:       DefaultStatsRenderer,
-		notificationsGetter: notificationsGetter,
-		notificationsSub:    notificationsSub,
+		now:                   time.Now,
+		config:                configFunc,
+		flagsMap:              flagsMap,
+		ready:                 readyFunc,
+		globalURLOptions:      globalURLOptions,
+		db:                    db,
+		dbDir:                 dbDir,
+		enableAdmin:           enableAdmin,
+		rulesRetriever:        rr,
+		logger:                logger,
+		CORSOrigin:            corsOrigin,
+		runtimeInfo:           runtimeInfo,
+		buildInfo:             buildInfo,
+		gatherer:              gatherer,
+		isAgent:               isAgent,
+		statsRenderer:         DefaultStatsRenderer,
+		notificationsGetter:   notificationsGetter,
+		notificationsSub:      notificationsSub,
+		errorTypeToStatusCode: ErrorTypeToStatusCode{},
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -312,6 +336,8 @@ func NewAPI(
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, ap, configFunc, remote.OTLPOptions{ConvertDelta: otlpDeltaToCumulative, NativeDelta: otlpNativeDeltaIngestion})
 	}
+
+	maps.Copy(a.errorTypeToStatusCode, errorTypeToStatusCode)
 
 	return a
 }
@@ -2008,7 +2034,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	b, err := json.Marshal(&Response{
 		Status:    statusError,
-		ErrorType: apiErr.typ,
+		ErrorType: apiErr.typ.str,
 		Error:     apiErr.err.Error(),
 		Data:      data,
 	})
@@ -2019,23 +2045,27 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	}
 
 	var code int
-	switch apiErr.typ {
-	case errorBadData:
-		code = http.StatusBadRequest
-	case errorExec:
-		code = http.StatusUnprocessableEntity
-	case errorCanceled:
-		code = statusClientClosedConnection
-	case errorTimeout:
-		code = http.StatusServiceUnavailable
-	case errorInternal:
-		code = http.StatusInternalServerError
-	case errorNotFound:
-		code = http.StatusNotFound
-	case errorNotAcceptable:
-		code = http.StatusNotAcceptable
-	default:
-		code = http.StatusInternalServerError
+	if handler, ok := api.errorTypeToStatusCode[apiErr.typ.num]; ok {
+		code = handler(apiErr.err)
+	} else {
+		switch apiErr.typ {
+		case errorBadData:
+			code = http.StatusBadRequest
+		case errorExec:
+			code = http.StatusUnprocessableEntity
+		case errorCanceled:
+			code = statusClientClosedConnection
+		case errorTimeout:
+			code = http.StatusServiceUnavailable
+		case errorInternal:
+			code = http.StatusInternalServerError
+		case errorNotFound:
+			code = http.StatusNotFound
+		case errorNotAcceptable:
+			code = http.StatusNotAcceptable
+		default:
+			code = http.StatusInternalServerError
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
