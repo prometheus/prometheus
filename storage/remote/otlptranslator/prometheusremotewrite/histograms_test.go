@@ -771,7 +771,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				Settings{
 					ExportCreatedMetric: true,
 				},
-				namer.Build(TranslatorMetricFromOtelMetric(metric)),
+				prompb.MetricMetadata{MetricFamilyName: namer.Build(TranslatorMetricFromOtelMetric(metric))},
 				pmetric.AggregationTemporalityCumulative,
 			)
 			require.NoError(t, err)
@@ -1143,7 +1143,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 					ExportCreatedMetric:     true,
 					ConvertHistogramsToNHCB: true,
 				},
-				namer.Build(TranslatorMetricFromOtelMetric(metric)),
+				prompb.MetricMetadata{MetricFamilyName: namer.Build(TranslatorMetricFromOtelMetric(metric))},
 				pmetric.AggregationTemporalityCumulative,
 			)
 
