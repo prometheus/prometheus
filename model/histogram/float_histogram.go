@@ -73,10 +73,8 @@ func (h *FloatHistogram) Copy() *FloatHistogram {
 	}
 
 	if h.UsesCustomBuckets() {
-		if len(h.CustomValues) != 0 {
-			c.CustomValues = make([]float64, len(h.CustomValues))
-			copy(c.CustomValues, h.CustomValues)
-		}
+		// Custom values are interned, so no need to copy them.
+		c.CustomValues = h.CustomValues
 	} else {
 		c.ZeroThreshold = h.ZeroThreshold
 		c.ZeroCount = h.ZeroCount
@@ -117,9 +115,8 @@ func (h *FloatHistogram) CopyTo(to *FloatHistogram) {
 
 		to.NegativeSpans = clearIfNotNil(to.NegativeSpans)
 		to.NegativeBuckets = clearIfNotNil(to.NegativeBuckets)
-
-		to.CustomValues = resize(to.CustomValues, len(h.CustomValues))
-		copy(to.CustomValues, h.CustomValues)
+		// Custom values are interned, so no need to copy them.
+		to.CustomValues = h.CustomValues
 	} else {
 		to.ZeroThreshold = h.ZeroThreshold
 		to.ZeroCount = h.ZeroCount
@@ -130,7 +127,8 @@ func (h *FloatHistogram) CopyTo(to *FloatHistogram) {
 		to.NegativeBuckets = resize(to.NegativeBuckets, len(h.NegativeBuckets))
 		copy(to.NegativeBuckets, h.NegativeBuckets)
 
-		to.CustomValues = clearIfNotNil(to.CustomValues)
+		// Custom values are interned, so no need to reset them.
+		to.CustomValues = nil
 	}
 
 	to.PositiveSpans = resize(to.PositiveSpans, len(h.PositiveSpans))
@@ -1016,7 +1014,7 @@ type floatBucketIterator struct {
 
 func (i *floatBucketIterator) At() Bucket[float64] {
 	// Need to use i.targetSchema rather than i.baseBucketIterator.schema.
-	return i.baseBucketIterator.at(i.targetSchema)
+	return i.at(i.targetSchema)
 }
 
 func (i *floatBucketIterator) Next() bool {

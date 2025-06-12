@@ -1216,7 +1216,7 @@ func TestHead_Truncate(t *testing.T) {
 			ss = map[string]struct{}{}
 			values[name] = ss
 		}
-		for _, value := range h.postings.LabelValues(ctx, name) {
+		for _, value := range h.postings.LabelValues(ctx, name, nil) {
 			ss[value] = struct{}{}
 		}
 	}
@@ -3136,7 +3136,7 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 			require.Equal(t, tt.expectedNames, actualLabelNames)
 			if len(tt.expectedValues) > 0 {
 				for i, name := range expectedLabelNames {
-					actualLabelValue, err := headIdxReader.SortedLabelValues(ctx, name)
+					actualLabelValue, err := headIdxReader.SortedLabelValues(ctx, name, nil)
 					require.NoError(t, err)
 					require.Equal(t, []string{tt.expectedValues[i]}, actualLabelValue)
 				}
@@ -3209,11 +3209,11 @@ func TestHeadLabelValuesWithMatchers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			headIdxReader := head.indexRange(0, 200)
 
-			actualValues, err := headIdxReader.SortedLabelValues(ctx, tt.labelName, tt.matchers...)
+			actualValues, err := headIdxReader.SortedLabelValues(ctx, tt.labelName, nil, tt.matchers...)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedValues, actualValues)
 
-			actualValues, err = headIdxReader.LabelValues(ctx, tt.labelName, tt.matchers...)
+			actualValues, err = headIdxReader.LabelValues(ctx, tt.labelName, nil, tt.matchers...)
 			sort.Strings(actualValues)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedValues, actualValues)
@@ -3472,7 +3472,7 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 	b.ReportAllocs()
 
 	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
-		actualValues, err := headIdxReader.LabelValues(ctx, "b_tens", matchers...)
+		actualValues, err := headIdxReader.LabelValues(ctx, "b_tens", nil, matchers...)
 		require.NoError(b, err)
 		require.Len(b, actualValues, 9)
 	}
@@ -4666,7 +4666,7 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 		}
 
 		// We cannot compare StaleNAN with require.Equal, hence checking each histogram manually.
-		require.Equal(t, len(expHistograms), len(actHistograms))
+		require.Len(t, actHistograms, len(expHistograms))
 		actNumStale := 0
 		for i, eh := range expHistograms {
 			ah := actHistograms[i]
@@ -5304,7 +5304,7 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 	// Verify the snapshot.
 	name, idx, offset, err := LastChunkSnapshot(dir)
 	require.NoError(t, err)
-	require.NotEqual(t, "", name)
+	require.NotEmpty(t, name)
 	require.Equal(t, 0, idx)
 	require.Positive(t, offset)
 }
@@ -6372,13 +6372,13 @@ func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 
 func labelsWithHashCollision() (labels.Labels, labels.Labels) {
 	// These two series have the same XXHash; thanks to https://github.com/pstibrany/labels_hash_collisions
-	ls1 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
-	ls2 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
+	ls1 := labels.FromStrings("__name__", "metric", "lbl", "HFnEaGl")
+	ls2 := labels.FromStrings("__name__", "metric", "lbl", "RqcXatm")
 
 	if ls1.Hash() != ls2.Hash() {
-		// These ones are the same when using -tags stringlabels
-		ls1 = labels.FromStrings("__name__", "metric", "lbl", "HFnEaGl")
-		ls2 = labels.FromStrings("__name__", "metric", "lbl", "RqcXatm")
+		// These ones are the same when using -tags slicelabels
+		ls1 = labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
+		ls2 = labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
 	}
 
 	if ls1.Hash() != ls2.Hash() {

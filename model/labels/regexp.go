@@ -95,12 +95,7 @@ func (m *FastRegexMatcher) compileMatchStringFunction() func(string) bool {
 
 	return func(s string) bool {
 		if len(m.setMatches) != 0 {
-			for _, match := range m.setMatches {
-				if match == s {
-					return true
-				}
-			}
-			return false
+			return slices.Contains(m.setMatches, s)
 		}
 		if m.prefix != "" && !strings.HasPrefix(s, m.prefix) {
 			return false
@@ -771,16 +766,11 @@ func (m *equalMultiStringSliceMatcher) setMatches() []string {
 
 func (m *equalMultiStringSliceMatcher) Matches(s string) bool {
 	if m.caseSensitive {
-		for _, v := range m.values {
-			if s == v {
-				return true
-			}
-		}
-	} else {
-		for _, v := range m.values {
-			if strings.EqualFold(s, v) {
-				return true
-			}
+		return slices.Contains(m.values, s)
+	}
+	for _, v := range m.values {
+		if strings.EqualFold(s, v) {
+			return true
 		}
 	}
 	return false

@@ -3,8 +3,6 @@ title: HTTPS and authentication
 sort_rank: 7
 ---
 
-# HTTPS and authentication
-
 Prometheus supports basic authentication and TLS.
 This is **experimental** and might change in the future.
 
@@ -27,7 +25,7 @@ Generic placeholders are defined as follows:
 
 A valid example file can be found [here](/documentation/examples/web-config.yml).
 
-```
+```yaml
 tls_server_config:
   # Certificate and key files for server to use to authenticate to client.
   cert_file: <filename>

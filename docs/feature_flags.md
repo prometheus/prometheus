@@ -3,8 +3,6 @@ title: Feature flags
 sort_rank: 12
 ---
 
-# Feature flags
-
 Here is a list of features that are disabled by default since they are breaking changes or are considered experimental.
 Their behaviour can change in future releases which will be communicated via the [release changelog](https://github.com/prometheus/prometheus/blob/main/CHANGELOG.md).
 
@@ -23,7 +21,7 @@ Exemplar storage is implemented as a fixed size circular buffer that stores exem
 
 `--enable-feature=memory-snapshot-on-shutdown`
 
-This takes a snapshot of the chunks that are in memory along with the series information when shutting down and stores it on disk. This will reduce the startup time since the memory state can now be restored with this snapshot 
+This takes a snapshot of the chunks that are in memory along with the series information when shutting down and stores it on disk. This will reduce the startup time since the memory state can now be restored with this snapshot
 and m-mapped chunks, while a WAL replay from disk is only needed for the parts of the WAL that are not part of the snapshot.
 
 ## Extra scrape metrics
@@ -183,7 +181,7 @@ This state is periodically ([`max_stale`][d2c]) cleared of inactive series.
 Enabling this _can_ have negative impact on performance, because the in-memory
 state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
-### PromQL arithmetic expressions in time durations
+## PromQL arithmetic expressions in time durations
 
 `--enable-feature=promql-duration-expr`
 
@@ -203,7 +201,7 @@ The following operators are supported:
 
 * `+` - addition
 * `-` - subtraction
-* `*` - multiplication 
+* `*` - multiplication
 * `/` - division
 * `%` - modulo
 * `^` - exponentiation
@@ -227,7 +225,7 @@ When enabled, allows for the native ingestion of delta OTLP metrics, storing the
 
 Currently, the StartTimeUnixNano field is ignored, and deltas are given the unknown metric metadata type.
 
-Delta support is in a very early stage of development and the ingestion and querying process my change over time. For the open proposal see [prometheus/proposals#48](https://github.com/prometheus/proposals/pull/48). 
+Delta support is in a very early stage of development and the ingestion and querying process my change over time. For the open proposal see [prometheus/proposals#48](https://github.com/prometheus/proposals/pull/48).
 
 ### Querying
 
@@ -247,3 +245,42 @@ These may not work well if the `<range>` is not a multiple of the collection int
 * It is difficult to figure out whether a metric has delta or cumulative temporality, since there's no indication of temporality in metric names or labels. For now, if you are ingesting a mix of delta and cumulative metrics we advise you to explicitly add your own labels to distinguish them. In the future, we plan to introduce type labels to consistently distinguish metric types and potentially make PromQL functions type-aware (e.g. providing warnings when cumulative-only functions are used with delta metrics).
 
 * If there are multiple samples being ingested at the same timestamp, only one of the points is kept - the samples are **not** summed together (this is how Prometheus works in general - duplicate timestamp samples are rejected). Any aggregation will have to be done before sending samples to Prometheus.
+
+## Type and Unit Labels
+
+`--enable-feature=type-and-unit-labels`
+
+When enabled, Prometheus will start injecting additional, reserved `__type__`
+and `__unit__` labels as designed in the [PROM-39 proposal](https://github.com/prometheus/proposals/pull/39).
+
+Those labels are sourced from the metadata structured of the existing scrape and ingestion formats
+like OpenMetrics Text, Prometheus Text, Prometheus Proto, Remote Write 2 and OTLP. All the user provided labels with
+`__type__` and `__unit__` will be overridden.
+
+PromQL layer will handle those labels the same way __name__ is handled, e.g. dropped
+on certain operations like `-` or `+` and affected by `promql-delayed-name-removal` feature.
+
+This feature enables important metadata information to be accessible directly with samples and PromQL layer.
+ 
+It's especially useful for users who:
+
+* Want to be able to select metrics based on type or unit.
+* Want to handle cases of series with the same metric name and different type and units.
+  e.g. native histogram migrations or OpenTelemetry metrics from OTLP endpoint, without translation.
+
+In future more [work is planned](https://github.com/prometheus/prometheus/issues/16610) that will depend on this e.g. rich PromQL UX that helps
+when wrong types are used on wrong functions, automatic renames, delta types and more.
+
+## Use Uncached IO
+
+`--enable-feature=use-uncached-io`
+
+Experimental and only available on Linux.
+
+When enabled, it makes chunks writing bypass the page cache. Its primary
+goal is to reduce confusion around page‐cache behavior and to prevent over‑allocation of
+memory in response to misleading cache growth.
+
+This is currently implemented using direct I/O.
+
+For more details, see the [proposal](https://github.com/prometheus/proposals/pull/45).
