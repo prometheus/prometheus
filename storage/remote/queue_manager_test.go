@@ -1056,24 +1056,6 @@ func (c *TestWriteClient) expectFloatHistograms(fhs []record.RefFloatHistogramSa
 	}
 }
 
-func (c *TestWriteClient) expectMetadata(metadata []record.RefMetadata, series []record.RefSeries) {
-	c.mtx.Lock()
-	defer c.mtx.Unlock()
-
-	c.expectedMetadata = map[string][]prompb.MetricMetadata{}
-	c.receivedMetadata = map[string][]prompb.MetricMetadata{}
-
-	for _, m := range metadata {
-		tsID := getSeriesIDFromRef(series[m.Ref])
-		c.expectedMetadata[tsID] = append(c.expectedMetadata[tsID], prompb.MetricMetadata{
-			MetricFamilyName: tsID,
-			Type:             prompb.FromMetadataType(record.ToMetricType(m.Type)),
-			Help:             m.Help,
-			Unit:             m.Unit,
-		})
-	}
-}
-
 func (c *TestWriteClient) expectMetadataForBatch(metadata []record.RefMetadata, series []record.RefSeries, samples []record.RefSample, exemplars []record.RefExemplar, histograms []record.RefHistogramSample, floatHistograms []record.RefFloatHistogramSample) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
@@ -1098,7 +1080,7 @@ func (c *TestWriteClient) expectMetadataForBatch(metadata []record.RefMetadata, 
 
 	// Only expect metadata for series that have data in this batch
 	for _, m := range metadata {
-		if !refsWithData[chunks.HeadSeriesRef(m.Ref)] {
+		if !refsWithData[m.Ref] {
 			continue
 		}
 		tsID := getSeriesIDFromRef(series[m.Ref])
