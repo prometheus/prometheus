@@ -37,11 +37,11 @@ func TestByteSize(t *testing.T) {
 	}{
 		{
 			lbls:     FromStrings("__name__", "foo"),
-			expected: 67,
+			expected: 11,
 		},
 		{
 			lbls:     FromStrings("__name__", "foo", "pod", "bar"),
-			expected: 105,
+			expected: 17,
 		},
 	} {
 		require.Equal(t, testCase.expected, testCase.lbls.ByteSize())
