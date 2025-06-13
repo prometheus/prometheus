@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build dedupelabels
+//go:build slicelabels
 
 package labels
 
@@ -21,34 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestVarint(t *testing.T) {
-	cases := []struct {
-		v        int
-		expected []byte
-	}{
-		{0, []byte{0, 0}},
-		{1, []byte{1, 0}},
-		{2, []byte{2, 0}},
-		{0x7FFF, []byte{0xFF, 0x7F}},
-		{0x8000, []byte{0x00, 0x80, 0x01}},
-		{0x8001, []byte{0x01, 0x80, 0x01}},
-		{0x3FFFFF, []byte{0xFF, 0xFF, 0x7F}},
-		{0x400000, []byte{0x00, 0x80, 0x80, 0x01}},
-		{0x400001, []byte{0x01, 0x80, 0x80, 0x01}},
-		{0x1FFFFFFF, []byte{0xFF, 0xFF, 0xFF, 0x7F}},
-	}
-	var buf [16]byte
-	for _, c := range cases {
-		n := encodeVarint(buf[:], len(buf), c.v)
-		require.Equal(t, len(c.expected), len(buf)-n)
-		require.Equal(t, c.expected, buf[n:])
-		got, m := decodeVarint(string(buf[:]), n)
-		require.Equal(t, c.v, got)
-		require.Equal(t, len(buf), m)
-	}
-	require.Panics(t, func() { encodeVarint(buf[:], len(buf), 1<<29) })
-}
-
 func TestByteSize(t *testing.T) {
 	for _, testCase := range []struct {
 		lbls     Labels
@@ -56,11 +28,11 @@ func TestByteSize(t *testing.T) {
 	}{
 		{
 			lbls:     FromStrings("__name__", "foo"),
-			expected: 13,
+			expected: 67,
 		},
 		{
 			lbls:     FromStrings("__name__", "foo", "pod", "bar"),
-			expected: 21,
+			expected: 105,
 		},
 	} {
 		require.Equal(t, testCase.expected, testCase.lbls.ByteSize())
