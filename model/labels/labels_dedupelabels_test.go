@@ -57,3 +57,21 @@ func TestVarint(t *testing.T) {
 	}
 	require.Panics(t, func() { encodeVarint(buf[:], len(buf), 1<<29) })
 }
+
+func TestByteSize(t *testing.T) {
+	for _, testCase := range []struct {
+		lbls     Labels
+		expected int
+	}{
+		{
+			lbls:     FromStrings("__name__", "foo"),
+			expected: 13,
+		},
+		{
+			lbls:     FromStrings("__name__", "foo", "pod", "bar"),
+			expected: 21,
+		},
+	} {
+		require.Equal(t, testCase.expected, testCase.lbls.ByteSize())
+	}
+}

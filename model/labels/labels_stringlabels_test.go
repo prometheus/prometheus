@@ -15,6 +15,12 @@
 
 package labels
 
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
 var expectedSizeOfLabels = []uint64{ // Values must line up with testCaseLabels.
 	12,
 	0,
@@ -22,4 +28,22 @@ var expectedSizeOfLabels = []uint64{ // Values must line up with testCaseLabels.
 	266,
 	270,
 	309,
+}
+
+func TestByteSize(t *testing.T) {
+	for _, testCase := range []struct {
+		lbls     Labels
+		expected int
+	}{
+		{
+			lbls:     FromStrings("__name__", "foo"),
+			expected: 13,
+		},
+		{
+			lbls:     FromStrings("__name__", "foo", "pod", "bar"),
+			expected: 21,
+		},
+	} {
+		require.Equal(t, testCase.expected, testCase.lbls.ByteSize())
+	}
 }
