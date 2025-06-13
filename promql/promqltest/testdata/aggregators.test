@@ -388,6 +388,15 @@ eval_info instant at 50m bottomk by (instance) (1, {__name__=~"http_requests(_hi
     {__name__="http_requests", group="production", instance="1", job="api-server"} 200
     {__name__="http_requests", group="production", instance="2", job="api-server"} NaN
 
+eval instant at 50m topk(NaN, non_existent)
+    expect fail msg: Parameter value is NaN
+
+eval instant at 50m limitk(NaN, non_existent)
+    expect fail msg: Parameter value is NaN
+
+eval instant at 50m limit_ratio(NaN, non_existent)
+    expect fail msg: Ratio value is NaN
+
 clear
 
 # Tests for count_values.

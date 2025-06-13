@@ -222,6 +222,9 @@ eval_warn instant at 50m histogram_quantile(NaN, testhistogram_bucket)
 	{start="positive"} NaN
 	{start="negative"} NaN
 
+eval instant at 50m histogram_quantile(NaN, non_existent)
+  expect warn msg: PromQL warning: quantile value should be between 0 and 1, got NaN
+
 # Quantile value in lowest bucket.
 
 eval instant at 50m histogram_quantile(0, testhistogram)
