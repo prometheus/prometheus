@@ -1433,12 +1433,22 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 		if params.Max() < 1 {
 			return nil, annos
 		}
+		if !convertibleToInt64(params.Max()) {
+			ev.errorf("Scalar value %v overflows int64", params.Max())
+		}
+		if !convertibleToInt64(params.Min()) {
+			ev.errorf("Scalar value %v underflows int64", params.Min())
+		}
+
 		seriess = make(map[uint64]Series, len(inputMatrix))
 
 	case parser.LIMIT_RATIO:
 		// Return early if all r values are zero.
 		if params.Max() == 0 && params.Min() == 0 {
 			return nil, annos
+		}
+		if params.HasAnyNaN() {
+			ev.errorf("Ratio value is NaN")
 		}
 		if params.Max() > 1.0 {
 			annos.Add(annotations.NewInvalidRatioWarning(params.Max(), 1.0, aggExpr.Param.PositionRange()))
@@ -3289,9 +3299,6 @@ seriesLoop:
 		var r float64
 		switch op {
 		case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
-			if !convertibleToInt64(fParam) {
-				ev.errorf("Scalar value %v overflows int64", fParam)
-			}
 			k = int64(fParam)
 			if k > int64(len(inputMatrix)) {
 				k = int64(len(inputMatrix))
@@ -3303,9 +3310,6 @@ seriesLoop:
 				return nil, annos
 			}
 		case parser.LIMIT_RATIO:
-			if math.IsNaN(fParam) {
-				ev.errorf("Ratio value %v is NaN", fParam)
-			}
 			switch {
 			case fParam == 0:
 				if enh.Ts != ev.endTimestamp {
