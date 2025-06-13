@@ -419,6 +419,7 @@ func (ls Labels) WithoutEmpty() Labels {
 
 // ByteSize returns the approximate size of the labels in bytes.
 // String header size is ignored because it should be amortized to zero.
+// TODO: this is not correct yet
 func (ls Labels) ByteSize() int {
 	return len(ls.data)
 }
