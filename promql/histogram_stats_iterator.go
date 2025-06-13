@@ -19,7 +19,11 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
-type histogramStatsIterator struct {
+// HistogramStatsIterator is an iterator that returns histogram objects
+// which have only their sum and count values populated. The iterator handles
+// counter reset detection internally and sets the counter reset hint accordingly
+// in each returned histogram object.
+type HistogramStatsIterator struct {
 	chunkenc.Iterator
 
 	currentH *histogram.Histogram
@@ -27,24 +31,30 @@ type histogramStatsIterator struct {
 
 	currentFH *histogram.FloatHistogram
 	lastFH    *histogram.FloatHistogram
+
+	currentSeriesRead bool
 }
 
-// NewHistogramStatsIterator creates an iterator which returns histogram objects
-// which have only their sum and count values populated. The iterator handles
-// counter reset detection internally and sets the counter reset hint accordingly
-// in each returned histogram objects.
-func NewHistogramStatsIterator(it chunkenc.Iterator) chunkenc.Iterator {
-	return &histogramStatsIterator{
+// NewHistogramStatsIterator creates a new HistogramStatsIterator.
+func NewHistogramStatsIterator(it chunkenc.Iterator) *HistogramStatsIterator {
+	return &HistogramStatsIterator{
 		Iterator:  it,
 		currentH:  &histogram.Histogram{},
 		currentFH: &histogram.FloatHistogram{},
 	}
 }
 
+// Reset resets this iterator for use with a new underlying iterator, reusing
+// objects already allocated where possible.
+func (f *HistogramStatsIterator) Reset(it chunkenc.Iterator) {
+	f.Iterator = it
+	f.currentSeriesRead = false
+}
+
 // AtHistogram returns the next timestamp/histogram pair. The counter reset
 // detection is guaranteed to be correct only when the caller does not switch
 // between AtHistogram and AtFloatHistogram calls.
-func (f *histogramStatsIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
+func (f *HistogramStatsIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
 	var t int64
 	t, f.currentH = f.Iterator.AtHistogram(f.currentH)
 	if value.IsStaleNaN(f.currentH.Sum) {
@@ -76,7 +86,7 @@ func (f *histogramStatsIterator) AtHistogram(h *histogram.Histogram) (int64, *hi
 // AtFloatHistogram returns the next timestamp/float histogram pair. The counter
 // reset detection is guaranteed to be correct only when the caller does not
 // switch between AtHistogram and AtFloatHistogram calls.
-func (f *histogramStatsIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+func (f *HistogramStatsIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	var t int64
 	t, f.currentFH = f.Iterator.AtFloatHistogram(f.currentFH)
 	if value.IsStaleNaN(f.currentFH.Sum) {
@@ -104,31 +114,35 @@ func (f *histogramStatsIterator) AtFloatHistogram(fh *histogram.FloatHistogram) 
 	return t, fh
 }
 
-func (f *histogramStatsIterator) setLastH(h *histogram.Histogram) {
+func (f *HistogramStatsIterator) setLastH(h *histogram.Histogram) {
 	f.lastFH = nil
 	if f.lastH == nil {
 		f.lastH = h.Copy()
 	} else {
 		h.CopyTo(f.lastH)
 	}
+
+	f.currentSeriesRead = true
 }
 
-func (f *histogramStatsIterator) setLastFH(fh *histogram.FloatHistogram) {
+func (f *HistogramStatsIterator) setLastFH(fh *histogram.FloatHistogram) {
 	f.lastH = nil
 	if f.lastFH == nil {
 		f.lastFH = fh.Copy()
 	} else {
 		fh.CopyTo(f.lastFH)
 	}
+
+	f.currentSeriesRead = true
 }
 
-func (f *histogramStatsIterator) getFloatResetHint(hint histogram.CounterResetHint) histogram.CounterResetHint {
+func (f *HistogramStatsIterator) getFloatResetHint(hint histogram.CounterResetHint) histogram.CounterResetHint {
 	if hint != histogram.UnknownCounterReset {
 		return hint
 	}
 	prevFH := f.lastFH
-	if prevFH == nil {
-		if f.lastH == nil {
+	if prevFH == nil || !f.currentSeriesRead {
+		if f.lastH == nil || !f.currentSeriesRead {
 			// We don't know if there's a counter reset.
 			return histogram.UnknownCounterReset
 		}
@@ -140,13 +154,13 @@ func (f *histogramStatsIterator) getFloatResetHint(hint histogram.CounterResetHi
 	return histogram.NotCounterReset
 }
 
-func (f *histogramStatsIterator) getResetHint(h *histogram.Histogram) histogram.CounterResetHint {
+func (f *HistogramStatsIterator) getResetHint(h *histogram.Histogram) histogram.CounterResetHint {
 	if h.CounterResetHint != histogram.UnknownCounterReset {
 		return h.CounterResetHint
 	}
 	var prevFH *histogram.FloatHistogram
-	if f.lastH == nil {
-		if f.lastFH == nil {
+	if f.lastH == nil || !f.currentSeriesRead {
+		if f.lastFH == nil || !f.currentSeriesRead {
 			// We don't know if there's a counter reset.
 			return histogram.UnknownCounterReset
 		}
