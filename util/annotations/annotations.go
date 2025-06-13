@@ -154,6 +154,7 @@ var (
 	HistogramIgnoredInMixedRangeInfo        = fmt.Errorf("%w: ignored histograms in a range containing both floats and histograms for metric name", PromQLInfo)
 	NativeHistogramQuantileNaNResultInfo    = fmt.Errorf("%w: input to histogram_quantile has NaN observations, result is NaN for metric name", PromQLInfo)
 	NativeHistogramQuantileNaNSkewInfo      = fmt.Errorf("%w: input to histogram_quantile has NaN observations, result is skewed higher for metric name", PromQLInfo)
+	NativeHistogramFractionNaNsInfo         = fmt.Errorf("%w: input to histogram_fraction has NaN observations, that are excluded from all fractions for metric name", PromQLInfo)
 )
 
 type annoErr struct {
@@ -338,5 +339,12 @@ func NewNativeHistogramQuantileNaNSkewInfo(metricName string, pos posrange.Posit
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", NativeHistogramQuantileNaNSkewInfo, metricName),
+	}
+}
+
+func NewNativeHistogramFractionNaNsInfo(metricName string, pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %q", NativeHistogramFractionNaNsInfo, metricName),
 	}
 }

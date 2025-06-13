@@ -373,23 +373,29 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string
 //
 // If lower >= upper and the histogram has at least 1 observation, zero is returned.
 //
+// If the histogram has NaN observations, these are not considered in any bucket
+// thus histogram_fraction(-Inf, +Inf, v) might be less than 1.0. The function
+// returns an info level annotation in this case.
+//
 // HistogramFraction is exported as it may be used by other PromQL engine
 // implementations.
-func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram) float64 {
+func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram, metricName string, pos posrange.PositionRange) (float64, annotations.Annotations) {
 	if h.Count == 0 || math.IsNaN(lower) || math.IsNaN(upper) {
-		return math.NaN()
+		return math.NaN(), nil
 	}
 	if lower >= upper {
-		return 0
+		return 0, nil
 	}
 
 	var (
-		rank, lowerRank, upperRank float64
-		lowerSet, upperSet         bool
-		it                         = h.AllBucketIterator()
+		count, rank, lowerRank, upperRank float64
+		lowerSet, upperSet                bool
+		it                                = h.AllBucketIterator()
+		annos                             annotations.Annotations
 	)
 	for it.Next() {
 		b := it.At()
+		count += b.Count
 		zeroBucket := false
 
 		// interpolateLinearly is used for custom buckets to be
@@ -468,14 +474,28 @@ func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram) float6
 		}
 		rank += b.Count
 	}
-	if !lowerSet || lowerRank > h.Count {
-		lowerRank = h.Count
-	}
-	if !upperSet || upperRank > h.Count {
-		upperRank = h.Count
+	if math.IsNaN(h.Sum) {
+		// There might be NaN observations, so we need to adjust
+		// the count to only include non `NaN` observations.
+		for it.Next() {
+			b := it.At()
+			count += b.Count
+		}
+		if count < h.Count {
+			annos.Add(annotations.NewNativeHistogramFractionNaNsInfo(metricName, pos))
+		}
+	} else {
+		count = h.Count
 	}
 
-	return (upperRank - lowerRank) / h.Count
+	if !lowerSet || lowerRank > count {
+		lowerRank = count
+	}
+	if !upperSet || upperRank > count {
+		upperRank = count
+	}
+
+	return (upperRank - lowerRank) / h.Count, annos
 }
 
 // BucketFraction is a version of HistogramFraction for classic histograms.
