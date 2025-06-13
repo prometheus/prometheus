@@ -385,9 +385,16 @@ Special cases for classic histograms:
   is applied within that bucket. Otherwise, the upper bound of the lowest
   bucket is returned for quantiles located in the lowest bucket.
 
-Special cases for native histograms (relevant for the exact interpolation
-happening within the zero bucket):
+Special cases for native histograms:
 
+* If the native histogram with standard exponential buckets has `NaN`
+  observations and the quantile falls into one of the existing exponential
+  buckets, an info level annotation is also returned warning about the result
+  skewing higher then normally, due to `NaN` observations treated as `+Inf`.
+* If the native histogram with standard exponential buckets has `NaN`
+  observations and the quantile falls above all of the existing exponential
+  buckets, `NaN` is returned and an info level annotation is also returned
+  warning about the result being `NaN`.
 * A zero bucket with finite width is assumed to contain no negative
   observations if the histogram has observations in positive buckets, but none
   in negative buckets.
