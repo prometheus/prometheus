@@ -3277,6 +3277,17 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, fParam float64, input
 		}
 	}
 
+	switch op {
+	case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
+		if !convertibleToInt64(fParam) {
+			ev.errorf("Scalar value %v overflows int64", fParam)
+		}
+	case parser.LIMIT_RATIO:
+		if math.IsNaN(fParam) {
+			ev.errorf("Ratio value %v is NaN", fParam)
+		}
+	}
+
 seriesLoop:
 	for si := range inputMatrix {
 		f, h, ok := ev.nextValues(enh.Ts, &inputMatrix[si])
@@ -3289,9 +3300,6 @@ seriesLoop:
 		var r float64
 		switch op {
 		case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
-			if !convertibleToInt64(fParam) {
-				ev.errorf("Scalar value %v overflows int64", fParam)
-			}
 			k = int64(fParam)
 			if k > int64(len(inputMatrix)) {
 				k = int64(len(inputMatrix))
@@ -3303,9 +3311,6 @@ seriesLoop:
 				return nil, annos
 			}
 		case parser.LIMIT_RATIO:
-			if math.IsNaN(fParam) {
-				ev.errorf("Ratio value %v is NaN", fParam)
-			}
 			switch {
 			case fParam == 0:
 				if enh.Ts != ev.endTimestamp {
