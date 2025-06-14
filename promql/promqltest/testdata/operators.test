@@ -16,109 +16,167 @@ load 5m
 
 
 eval instant at 50m SUM(http_requests_total) BY (job) - COUNT(http_requests_total) BY (job)
+	expect no_warn
+	expect no_info
 	{job="api-server"} 996
 	{job="app-server"} 2596
 
 eval instant at 50m 2 - SUM(http_requests_total) BY (job)
+	expect no_warn
+	expect no_info
 	{job="api-server"} -998
 	{job="app-server"} -2598
 
 eval instant at 50m -http_requests_total{job="api-server",instance="0",group="production"}
+  expect no_warn
+  expect no_info
   {job="api-server",instance="0",group="production"} -100
 
 eval instant at 50m +http_requests_total{job="api-server",instance="0",group="production"}
+  expect no_warn
+  expect no_info
   http_requests_total{job="api-server",instance="0",group="production"} 100
 
 eval instant at 50m - - - SUM(http_requests_total) BY (job)
+	expect no_warn
+	expect no_info
 	{job="api-server"} -1000
 	{job="app-server"} -2600
 
 eval instant at 50m - - - 1
+  expect no_warn
+  expect no_info
   -1
 
 eval instant at 50m -2^---1*3
+  expect no_warn
+  expect no_info
   -1.5
 
 eval instant at 50m 2/-2^---1*3+2
+  expect no_warn
+  expect no_info
   -10
 
 eval instant at 50m -10^3 * - SUM(http_requests_total) BY (job) ^ -1
+	expect no_warn
+	expect no_info
 	{job="api-server"} 1
 	{job="app-server"} 0.38461538461538464
 
 eval instant at 50m 1000 / SUM(http_requests_total) BY (job)
+	expect no_warn
+	expect no_info
 	{job="api-server"} 1
 	{job="app-server"} 0.38461538461538464
 
 eval instant at 50m SUM(http_requests_total) BY (job) - 2
+	expect no_warn
+	expect no_info
 	{job="api-server"} 998
 	{job="app-server"} 2598
 
 eval instant at 50m SUM(http_requests_total) BY (job) % 3
+	expect no_warn
+	expect no_info
 	{job="api-server"} 1
 	{job="app-server"} 2
 
 eval instant at 50m SUM(http_requests_total) BY (job) % 0.3
+	expect no_warn
+	expect no_info
 	{job="api-server"} 0.1
 	{job="app-server"} 0.2
 
 eval instant at 50m SUM(http_requests_total) BY (job) ^ 2
+	expect no_warn
+	expect no_info
 	{job="api-server"} 1000000
 	{job="app-server"} 6760000
 
 eval instant at 50m SUM(http_requests_total) BY (job) % 3 ^ 2
+	expect no_warn
+	expect no_info
 	{job="api-server"} 1
 	{job="app-server"} 8
 
 eval instant at 50m SUM(http_requests_total) BY (job) % 2 ^ (3 ^ 2)
+	expect no_warn
+	expect no_info
 	{job="api-server"} 488
 	{job="app-server"} 40
 
 eval instant at 50m SUM(http_requests_total) BY (job) % 2 ^ 3 ^ 2
+	expect no_warn
+	expect no_info
 	{job="api-server"} 488
 	{job="app-server"} 40
 
 eval instant at 50m SUM(http_requests_total) BY (job) % 2 ^ 3 ^ 2 ^ 2
+	expect no_warn
+	expect no_info
 	{job="api-server"} 1000
 	{job="app-server"} 2600
 
 eval instant at 50m COUNT(http_requests_total) BY (job) ^ COUNT(http_requests_total) BY (job)
+	expect no_warn
+	expect no_info
 	{job="api-server"} 256
 	{job="app-server"} 256
 
 eval instant at 50m SUM(http_requests_total) BY (job) / 0
+	expect no_warn
+	expect no_info
 	{job="api-server"} +Inf
 	{job="app-server"} +Inf
 
 eval instant at 50m http_requests_total{group="canary", instance="0", job="api-server"} / 0
+	expect no_warn
+	expect no_info
 	{group="canary", instance="0", job="api-server"} +Inf
 
 eval instant at 50m -1 * http_requests_total{group="canary", instance="0", job="api-server"} / 0
+	expect no_warn
+	expect no_info
 	{group="canary", instance="0", job="api-server"} -Inf
 
 eval instant at 50m 0 * http_requests_total{group="canary", instance="0", job="api-server"} / 0
+	expect no_warn
+	expect no_info
 	{group="canary", instance="0", job="api-server"} NaN
 
 eval instant at 50m 0 * http_requests_total{group="canary", instance="0", job="api-server"} % 0
+	expect no_warn
+	expect no_info
 	{group="canary", instance="0", job="api-server"} NaN
 
 eval instant at 50m SUM(http_requests_total) BY (job) + SUM(http_requests_total) BY (job)
+	expect no_warn
+	expect no_info
 	{job="api-server"} 2000
 	{job="app-server"} 5200
 
 eval instant at 50m (SUM((http_requests_total)) BY (job)) + SUM(http_requests_total) BY (job)
+	expect no_warn
+	expect no_info
 	{job="api-server"} 2000
 	{job="app-server"} 5200
 
 eval instant at 50m http_requests_total{job="api-server", group="canary"}
+	expect no_warn
+	expect no_info
 	http_requests_total{group="canary", instance="0", job="api-server"} 300
 	http_requests_total{group="canary", instance="1", job="api-server"} 400
 
 eval instant at 50m http_requests_total{job="api-server", group="canary"} + rate(http_requests_total{job="api-server"}[10m]) * 5 * 60
+	expect no_warn
+	expect no_info
 	{group="canary", instance="0", job="api-server"} 330
 	{group="canary", instance="1", job="api-server"} 440
 
 eval instant at 50m rate(http_requests_total[25m]) * 25 * 60
+  expect no_warn
+  expect no_info
   {group="canary", instance="0", job="api-server"} 150
   {group="canary", instance="0", job="app-server"} 350
   {group="canary", instance="1", job="api-server"} 200
@@ -129,6 +187,8 @@ eval instant at 50m rate(http_requests_total[25m]) * 25 * 60
   {group="production", instance="1", job="app-server"} 300
 
 eval instant at 50m (rate((http_requests_total[25m])) * 25) * 60
+  expect no_warn
+  expect no_info
   {group="canary", instance="0", job="api-server"} 150
   {group="canary", instance="0", job="app-server"} 350
   {group="canary", instance="1", job="api-server"} 200
@@ -140,30 +200,44 @@ eval instant at 50m (rate((http_requests_total[25m])) * 25) * 60
 
 
 eval instant at 50m http_requests_total{group="canary"} and http_requests_total{instance="0"}
+	expect no_warn
+	expect no_info
 	http_requests_total{group="canary", instance="0", job="api-server"} 300
 	http_requests_total{group="canary", instance="0", job="app-server"} 700
 
 eval instant at 50m (http_requests_total{group="canary"} + 1) and http_requests_total{instance="0"}
+	expect no_warn
+	expect no_info
 	{group="canary", instance="0", job="api-server"} 301
 	{group="canary", instance="0", job="app-server"} 701
 
 eval instant at 50m (http_requests_total{group="canary"} + 1) and on(instance, job) http_requests_total{instance="0", group="production"}
+	expect no_warn
+	expect no_info
 	{group="canary", instance="0", job="api-server"} 301
 	{group="canary", instance="0", job="app-server"} 701
 
 eval instant at 50m (http_requests_total{group="canary"} + 1) and on(instance) http_requests_total{instance="0", group="production"}
+	expect no_warn
+	expect no_info
 	{group="canary", instance="0", job="api-server"} 301
 	{group="canary", instance="0", job="app-server"} 701
 
 eval instant at 50m (http_requests_total{group="canary"} + 1) and ignoring(group) http_requests_total{instance="0", group="production"}
+	expect no_warn
+	expect no_info
 	{group="canary", instance="0", job="api-server"} 301
 	{group="canary", instance="0", job="app-server"} 701
 
 eval instant at 50m (http_requests_total{group="canary"} + 1) and ignoring(group, job) http_requests_total{instance="0", group="production"}
+	expect no_warn
+	expect no_info
 	{group="canary", instance="0", job="api-server"} 301
 	{group="canary", instance="0", job="app-server"} 701
 
 eval instant at 50m http_requests_total{group="canary"} or http_requests_total{group="production"}
+	expect no_warn
+	expect no_info
 	http_requests_total{group="canary", instance="0", job="api-server"} 300
 	http_requests_total{group="canary", instance="0", job="app-server"} 700
 	http_requests_total{group="canary", instance="1", job="api-server"} 400
@@ -175,6 +249,8 @@ eval instant at 50m http_requests_total{group="canary"} or http_requests_total{g
 
 # On overlap the rhs samples must be dropped.
 eval instant at 50m (http_requests_total{group="canary"} + 1) or http_requests_total{instance="1"}
+	expect no_warn
+	expect no_info
 	{group="canary", instance="0", job="api-server"} 301
 	{group="canary", instance="0", job="app-server"} 701
 	{group="canary", instance="1", job="api-server"} 401
@@ -186,6 +262,8 @@ eval instant at 50m (http_requests_total{group="canary"} + 1) or http_requests_t
 # Matching only on instance excludes everything that has instance=0/1 but includes
 # entries without the instance label.
 eval instant at 50m (http_requests_total{group="canary"} + 1) or on(instance) (http_requests_total or cpu_count or vector_matching_a)
+	expect no_warn
+	expect no_info
 	{group="canary", instance="0", job="api-server"} 301
 	{group="canary", instance="0", job="app-server"} 701
 	{group="canary", instance="1", job="api-server"} 401
@@ -194,6 +272,8 @@ eval instant at 50m (http_requests_total{group="canary"} + 1) or on(instance) (h
 	vector_matching_a{l="y"} 20
 
 eval instant at 50m (http_requests_total{group="canary"} + 1) or ignoring(l, group, job) (http_requests_total or cpu_count or vector_matching_a)
+	expect no_warn
+	expect no_info
 	{group="canary", instance="0", job="api-server"} 301
 	{group="canary", instance="0", job="app-server"} 701
 	{group="canary", instance="1", job="api-server"} 401
@@ -202,28 +282,42 @@ eval instant at 50m (http_requests_total{group="canary"} + 1) or ignoring(l, gro
 	vector_matching_a{l="y"} 20
 
 eval instant at 50m http_requests_total{group="canary"} unless http_requests_total{instance="0"}
+	expect no_warn
+	expect no_info
 	http_requests_total{group="canary", instance="1", job="api-server"} 400
 	http_requests_total{group="canary", instance="1", job="app-server"} 800
 
 eval instant at 50m http_requests_total{group="canary"} unless on(job) http_requests_total{instance="0"}
+  expect no_warn
+  expect no_info
 
 eval instant at 50m http_requests_total{group="canary"} unless on(job, instance) http_requests_total{instance="0"}
+	expect no_warn
+	expect no_info
 	http_requests_total{group="canary", instance="1", job="api-server"} 400
 	http_requests_total{group="canary", instance="1", job="app-server"} 800
 
 eval instant at 50m http_requests_total{group="canary"} / on(instance,job) http_requests_total{group="production"}
+	expect no_warn
+	expect no_info
 	{instance="0", job="api-server"} 3
 	{instance="0", job="app-server"} 1.4
 	{instance="1", job="api-server"} 2
 	{instance="1", job="app-server"} 1.3333333333333333
 
 eval instant at 50m http_requests_total{group="canary"} unless ignoring(group, instance) http_requests_total{instance="0"}
+  expect no_warn
+  expect no_info
 
 eval instant at 50m http_requests_total{group="canary"} unless ignoring(group) http_requests_total{instance="0"}
+	expect no_warn
+	expect no_info
 	http_requests_total{group="canary", instance="1", job="api-server"} 400
 	http_requests_total{group="canary", instance="1", job="app-server"} 800
 
 eval instant at 50m http_requests_total{group="canary"} / ignoring(group) http_requests_total{group="production"}
+	expect no_warn
+	expect no_info
 	{instance="0", job="api-server"} 3
 	{instance="0", job="app-server"} 1.4
 	{instance="1", job="api-server"} 2
@@ -231,6 +325,8 @@ eval instant at 50m http_requests_total{group="canary"} / ignoring(group) http_r
 
 # https://github.com/prometheus/prometheus/issues/1489
 eval instant at 50m http_requests_total AND ON (dummy) vector(1)
+	expect no_warn
+	expect no_info
 	http_requests_total{group="canary", instance="0", job="api-server"} 300
 	http_requests_total{group="canary", instance="0", job="app-server"} 700
 	http_requests_total{group="canary", instance="1", job="api-server"} 400
@@ -241,6 +337,8 @@ eval instant at 50m http_requests_total AND ON (dummy) vector(1)
 	http_requests_total{group="production", instance="1", job="app-server"} 600
 
 eval instant at 50m http_requests_total AND IGNORING (group, instance, job) vector(1)
+	expect no_warn
+	expect no_info
 	http_requests_total{group="canary", instance="0", job="api-server"} 300
 	http_requests_total{group="canary", instance="0", job="app-server"} 700
 	http_requests_total{group="canary", instance="1", job="api-server"} 400
@@ -253,60 +351,98 @@ eval instant at 50m http_requests_total AND IGNORING (group, instance, job) vect
 
 # Comparisons.
 eval instant at 50m SUM(http_requests_total) BY (job) > 1000
+	expect no_warn
+	expect no_info
 	{job="app-server"} 2600
 
 eval instant at 50m 1000 < SUM(http_requests_total) BY (job)
+	expect no_warn
+	expect no_info
 	{job="app-server"} 2600
 
 eval instant at 50m SUM(http_requests_total) BY (job) <= 1000
+	expect no_warn
+	expect no_info
 	{job="api-server"} 1000
 
 eval instant at 50m SUM(http_requests_total) BY (job) != 1000
+	expect no_warn
+	expect no_info
 	{job="app-server"} 2600
 
 eval instant at 50m SUM(http_requests_total) BY (job) == 1000
+	expect no_warn
+	expect no_info
 	{job="api-server"} 1000
 
 eval instant at 50m SUM(http_requests_total) BY (job) == bool 1000
+	expect no_warn
+	expect no_info
 	{job="api-server"} 1
 	{job="app-server"} 0
 
 eval instant at 50m SUM(http_requests_total) BY (job) == bool SUM(http_requests_total) BY (job)
+	expect no_warn
+	expect no_info
 	{job="api-server"} 1
 	{job="app-server"} 1
 
 eval instant at 50m SUM(http_requests_total) BY (job) != bool SUM(http_requests_total) BY (job)
+	expect no_warn
+	expect no_info
 	{job="api-server"} 0
 	{job="app-server"} 0
 
 eval instant at 50m 0 == bool 1
+	expect no_warn
+	expect no_info
 	0
 
 eval instant at 50m 1 == bool 1
+	expect no_warn
+	expect no_info
 	1
 
 eval instant at 50m http_requests_total{job="api-server", instance="0", group="production"} == bool 100
+	expect no_warn
+	expect no_info
 	{job="api-server", instance="0", group="production"} 1
 
 # The histogram is ignored here so the result doesn't change but it has an info annotation now.
-eval_info instant at 5m {job="app-server"} == 80
+eval instant at 5m {job="app-server"} == 80
+    expect info
+    expect no_warn
     http_requests_total{group="canary", instance="1", job="app-server"} 80
 
-eval_info instant at 5m http_requests_histogram != 80
+eval instant at 5m http_requests_histogram != 80
+  expect info
+  expect no_warn
 
-eval_info instant at 5m http_requests_histogram > 80
+eval instant at 5m http_requests_histogram > 80
+  expect info
+  expect no_warn
 
-eval_info instant at 5m http_requests_histogram < 80
+eval instant at 5m http_requests_histogram < 80
+  expect info
+  expect no_warn
 
-eval_info instant at 5m http_requests_histogram >= 80
+eval instant at 5m http_requests_histogram >= 80
+  expect info
+  expect no_warn
 
-eval_info instant at 5m http_requests_histogram <= 80
+eval instant at 5m http_requests_histogram <= 80
+  expect info
+  expect no_warn
 
 # Should produce valid results in case of (in)equality between two histograms.
 eval instant at 5m http_requests_histogram == http_requests_histogram
+    expect no_warn
+    expect no_info
     http_requests_histogram{job="app-server", instance="1", group="production"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}}
 
 eval instant at 5m http_requests_histogram != http_requests_histogram
+  expect no_warn
+  expect no_info
 
 # group_left/group_right.
 
@@ -330,64 +466,92 @@ load 5m
 
 # Copy machine role to node variable.
 eval instant at 1m node_role * on (instance) group_right (role) node_var
+  expect no_warn
+  expect no_info
   {instance="abc",job="node",role="prometheus"} 2
 
 eval instant at 1m node_var * on (instance) group_left (role) node_role
+  expect no_warn
+  expect no_info
   {instance="abc",job="node",role="prometheus"} 2
 
 eval instant at 1m node_var * ignoring (role) group_left (role) node_role
+  expect no_warn
+  expect no_info
   {instance="abc",job="node",role="prometheus"} 2
 
 eval instant at 1m node_role * ignoring (role) group_right (role) node_var
+  expect no_warn
+  expect no_info
   {instance="abc",job="node",role="prometheus"} 2
 
 # Copy machine role to node variable with instrumentation labels.
 eval instant at 1m node_cpu * ignoring (role, mode) group_left (role) node_role
+  expect no_warn
+  expect no_info
   {instance="abc",job="node",mode="idle",role="prometheus"} 3
   {instance="abc",job="node",mode="user",role="prometheus"} 1
 
 eval instant at 1m node_cpu * on (instance) group_left (role) node_role
+  expect no_warn
+  expect no_info
   {instance="abc",job="node",mode="idle",role="prometheus"} 3
   {instance="abc",job="node",mode="user",role="prometheus"} 1
 
 
 # Ratio of total.
 eval instant at 1m node_cpu / on (instance) group_left sum by (instance,job)(node_cpu)
+  expect no_warn
+  expect no_info
   {instance="abc",job="node",mode="idle"} .75
   {instance="abc",job="node",mode="user"} .25
   {instance="def",job="node",mode="idle"} .80
   {instance="def",job="node",mode="user"} .20
 
 eval instant at 1m sum by (mode, job)(node_cpu) / on (job) group_left sum by (job)(node_cpu)
+  expect no_warn
+  expect no_info
   {job="node",mode="idle"} 0.7857142857142857
   {job="node",mode="user"} 0.21428571428571427
 
 eval instant at 1m sum(sum by (mode, job)(node_cpu) / on (job) group_left sum by (job)(node_cpu))
+  expect no_warn
+  expect no_info
   {} 1.0
 
 
 eval instant at 1m node_cpu / ignoring (mode) group_left sum without (mode)(node_cpu)
+  expect no_warn
+  expect no_info
   {instance="abc",job="node",mode="idle"} .75
   {instance="abc",job="node",mode="user"} .25
   {instance="def",job="node",mode="idle"} .80
   {instance="def",job="node",mode="user"} .20
 
 eval instant at 1m node_cpu / ignoring (mode) group_left(dummy) sum without (mode)(node_cpu)
+  expect no_warn
+  expect no_info
   {instance="abc",job="node",mode="idle"} .75
   {instance="abc",job="node",mode="user"} .25
   {instance="def",job="node",mode="idle"} .80
   {instance="def",job="node",mode="user"} .20
 
 eval instant at 1m sum without (instance)(node_cpu) / ignoring (mode) group_left sum without (instance, mode)(node_cpu)
+  expect no_warn
+  expect no_info
   {job="node",mode="idle"} 0.7857142857142857
   {job="node",mode="user"} 0.21428571428571427
 
 eval instant at 1m sum(sum without (instance)(node_cpu) / ignoring (mode) group_left sum without (instance, mode)(node_cpu))
+  expect no_warn
+  expect no_info
   {} 1.0
 
 
 # Copy over label from metric with no matching labels, without having to list cross-job target labels ('job' here).
 eval instant at 1m node_cpu + on(dummy) group_left(foo) random*0
+  expect no_warn
+  expect no_info
   {instance="abc",job="node",mode="idle",foo="bar"} 3
   {instance="abc",job="node",mode="user",foo="bar"} 1
   {instance="def",job="node",mode="idle",foo="bar"} 8
@@ -396,11 +560,15 @@ eval instant at 1m node_cpu + on(dummy) group_left(foo) random*0
 
 # Use threshold from metric, and copy over target.
 eval instant at 1m node_cpu > on(job, instance) group_left(target) threshold
+  expect no_warn
+  expect no_info
   node_cpu{instance="abc",job="node",mode="idle",target="a@b.com"} 3
   node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
 
 # Use threshold from metric, and a default (1) if it's not present.
 eval instant at 1m node_cpu > on(job, instance) group_left(target) (threshold or on (job, instance) (sum by (job, instance)(node_cpu) * 0 + 1))
+  expect no_warn
+  expect no_info
   node_cpu{instance="abc",job="node",mode="idle",target="a@b.com"} 3
   node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
   node_cpu{instance="def",job="node",mode="idle"} 8
@@ -409,36 +577,48 @@ eval instant at 1m node_cpu > on(job, instance) group_left(target) (threshold or
 
 # Check that binops drop the metric name.
 eval instant at 1m node_cpu + 2
+  expect no_warn
+  expect no_info
   {instance="abc",job="node",mode="idle"} 5
   {instance="abc",job="node",mode="user"} 3
   {instance="def",job="node",mode="idle"} 10
   {instance="def",job="node",mode="user"} 4
 
 eval instant at 1m node_cpu - 2
+  expect no_warn
+  expect no_info
   {instance="abc",job="node",mode="idle"} 1
   {instance="abc",job="node",mode="user"} -1
   {instance="def",job="node",mode="idle"} 6
   {instance="def",job="node",mode="user"} 0
 
 eval instant at 1m node_cpu / 2
+  expect no_warn
+  expect no_info
   {instance="abc",job="node",mode="idle"} 1.5
   {instance="abc",job="node",mode="user"} 0.5
   {instance="def",job="node",mode="idle"} 4
   {instance="def",job="node",mode="user"} 1
 
 eval instant at 1m node_cpu * 2
+  expect no_warn
+  expect no_info
   {instance="abc",job="node",mode="idle"} 6
   {instance="abc",job="node",mode="user"} 2
   {instance="def",job="node",mode="idle"} 16
   {instance="def",job="node",mode="user"} 4
 
 eval instant at 1m node_cpu ^ 2
+  expect no_warn
+  expect no_info
   {instance="abc",job="node",mode="idle"} 9
   {instance="abc",job="node",mode="user"} 1
   {instance="def",job="node",mode="idle"} 64
   {instance="def",job="node",mode="user"} 4
 
 eval instant at 1m node_cpu % 2
+  expect no_warn
+  expect no_info
   {instance="abc",job="node",mode="idle"} 1
   {instance="abc",job="node",mode="user"} 1
   {instance="def",job="node",mode="idle"} 0
@@ -454,13 +634,19 @@ load 5m
 
 # On with no labels, for metrics with no common labels.
 eval instant at 1m random + on() metricA
+  expect no_warn
+  expect no_info
   {} 5
 
 # Ignoring with no labels is the same as no ignoring.
 eval instant at 1m metricA + ignoring() metricB
+  expect no_warn
+  expect no_info
   {baz="meh"} 7
 
 eval instant at 1m metricA + metricB
+  expect no_warn
+  expect no_info
   {baz="meh"} 7
 
 clear
@@ -470,7 +656,10 @@ load 5m
   testmetric1{src="a",dst="b"} 0
   testmetric2{src="a",dst="b"} 1
 
-eval_fail instant at 0m -{__name__=~'testmetric1|testmetric2'}
+eval instant at 0m -{__name__=~'testmetric1|testmetric2'}
+    expect fail
+    expect no_warn
+    expect no_info
 
 clear
 
@@ -479,15 +668,23 @@ load 5m
     test_smaller{instance="localhost"} 10
 
 eval instant at 1m test_total > bool test_smaller
+    expect no_warn
+    expect no_info
     {instance="localhost"} 1
 
 eval instant at 1m test_total > test_smaller
+    expect no_warn
+    expect no_info
     test_total{instance="localhost"} 50
 
 eval instant at 1m test_total < bool test_smaller
+    expect no_warn
+    expect no_info
     {instance="localhost"} 0
 
 eval instant at 1m test_total < test_smaller
+    expect no_warn
+    expect no_info
 
 clear
 
@@ -498,15 +695,23 @@ load 5m
     trigNaN{} NaN
 
 eval instant at 1m trigy atan2 trigx
+    expect no_warn
+    expect no_info
     {} 0.4636476090008061
 
 eval instant at 1m trigy atan2 trigNaN
+    expect no_warn
+    expect no_info
     {} NaN
 
 eval instant at 1m 10 atan2 20
+    expect no_warn
+    expect no_info
     0.4636476090008061
 
 eval instant at 1m 10 atan2 NaN
+    expect no_warn
+    expect no_info
     NaN
 
 clear
@@ -520,290 +725,480 @@ load 6m
   right_floats_for_histograms 0 -1 2 3 4
 
 eval range from 0 to 60m step 6m left_floats == right_floats
+  expect no_warn
+  expect no_info
   left_floats _ _ _ _ 3 _ _ _ _ Inf -Inf
 
 eval range from 0 to 60m step 6m left_floats == bool right_floats
+  expect no_warn
+  expect no_info
   {} 0 _ _ _ 1 _ 0 0 0 1 1
 
 eval range from 0 to 60m step 6m left_floats == does_not_match
+  expect no_warn
+  expect no_info
   # No results.
 
 eval range from 0 to 24m step 6m left_histograms == right_histograms
+  expect no_warn
+  expect no_info
   left_histograms {{schema:3 sum:4 count:4 buckets:[1 2 1]}} _ _ _ _
 
 eval range from 0 to 24m step 6m left_histograms == bool right_histograms
+  expect no_warn
+  expect no_info
   {} 1 0 _ _ _
 
-eval_info range from 0 to 24m step 6m left_histograms == right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms == right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms == bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms == bool right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
 eval range from 0 to 60m step 6m left_floats != right_floats
+  expect no_warn
+  expect no_info
   left_floats 1 _ _ _ _ _ 4 5 NaN _ _
 
 eval range from 0 to 60m step 6m left_floats != bool right_floats
+  expect no_warn
+  expect no_info
   {} 1 _ _ _ 0 _ 1 1 1 0 0
 
 eval range from 0 to 24m step 6m left_histograms != right_histograms
+  expect no_warn
+  expect no_info
   left_histograms _ {{schema:3 sum:4.5 count:5 buckets:[1 3 1]}} _ _ _
 
 eval range from 0 to 24m step 6m left_histograms != bool right_histograms
+  expect no_warn
+  expect no_info
   {} 0 1 _ _ _
 
-eval_info range from 0 to 24m step 6m left_histograms != right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms != right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms != bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms != bool right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
 eval range from 0 to 60m step 6m left_floats > right_floats
+  expect no_warn
+  expect no_info
   left_floats _ _ _ _ _ _ 4 _ _ _ _
 
 eval range from 0 to 60m step 6m left_floats > bool right_floats
+  expect no_warn
+  expect no_info
   {} 0 _ _ _ 0 _ 1 0 0 0 0
 
-eval_info range from 0 to 24m step 6m left_histograms > right_histograms
+eval range from 0 to 24m step 6m left_histograms > right_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > bool right_histograms
+eval range from 0 to 24m step 6m left_histograms > bool right_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms > right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms > bool right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
 eval range from 0 to 60m step 6m left_floats >= right_floats
+  expect no_warn
+  expect no_info
   left_floats _ _ _ _ 3 _ 4 _ _ Inf -Inf
 
 eval range from 0 to 60m step 6m left_floats >= bool right_floats
+  expect no_warn
+  expect no_info
   {} 0 _ _ _ 1 _ 1 0 0 1 1
 
-eval_info range from 0 to 24m step 6m left_histograms >= right_histograms
+eval range from 0 to 24m step 6m left_histograms >= right_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= bool right_histograms
+eval range from 0 to 24m step 6m left_histograms >= bool right_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms >= right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms >= bool right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
 eval range from 0 to 60m step 6m left_floats < right_floats
+  expect no_warn
+  expect no_info
   left_floats 1 _ _ _ _ _ _ 5 _ _ _
 
 eval range from 0 to 60m step 6m left_floats < bool right_floats
+  expect no_warn
+  expect no_info
   {} 1 _ _ _ 0 _ 0 1 0 0 0
 
-eval_info range from 0 to 24m step 6m left_histograms < right_histograms
+eval range from 0 to 24m step 6m left_histograms < right_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < bool right_histograms
+eval range from 0 to 24m step 6m left_histograms < bool right_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms < right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms < bool right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
 eval range from 0 to 60m step 6m left_floats <= right_floats
+  expect no_warn
+  expect no_info
   left_floats 1 _ _ _ 3 _ _ 5 _ Inf -Inf
 
 eval range from 0 to 60m step 6m left_floats <= bool right_floats
+  expect no_warn
+  expect no_info
   {} 1 _ _ _ 1 _ 0 1 0 1 1
 
-eval_info range from 0 to 24m step 6m left_histograms <= right_histograms
+eval range from 0 to 24m step 6m left_histograms <= right_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= bool right_histograms
+eval range from 0 to 24m step 6m left_histograms <= bool right_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms <= right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms <= bool right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
 # Vector / scalar combinations with scalar on right side
 eval range from 0 to 60m step 6m left_floats == 3
+  expect no_warn
+  expect no_info
   left_floats _ _ _ _ 3 _ _ _ _ _ _
 
 eval range from 0 to 60m step 6m left_floats != 3
+  expect no_warn
+  expect no_info
   left_floats 1 2 _ _ _ _ 4 5 NaN Inf -Inf
 
 eval range from 0 to 60m step 6m left_floats > 3
+  expect no_warn
+  expect no_info
   left_floats _ _ _ _ _ _ 4 5 _ Inf _
 
 eval range from 0 to 60m step 6m left_floats >= 3
+  expect no_warn
+  expect no_info
   left_floats _ _ _ _ 3 _ 4 5 _ Inf _
 
 eval range from 0 to 60m step 6m left_floats < 3
+  expect no_warn
+  expect no_info
   left_floats 1 2 _ _ _ _ _ _ _ _ -Inf
 
 eval range from 0 to 60m step 6m left_floats <= 3
+  expect no_warn
+  expect no_info
   left_floats 1 2 _ _ 3 _ _ _ _ _ -Inf
 
 eval range from 0 to 60m step 6m left_floats == bool 3
+  expect no_warn
+  expect no_info
   {} 0 0 _ _ 1 _ 0 0 0 0 0
 
 eval range from 0 to 60m step 6m left_floats == Inf
+  expect no_warn
+  expect no_info
   left_floats _ _ _ _ _ _ _ _ _ Inf _
 
 eval range from 0 to 60m step 6m left_floats == bool Inf
+  expect no_warn
+  expect no_info
   {} 0 0 _ _ 0 _ 0 0 0 1 0
 
 eval range from 0 to 60m step 6m left_floats == NaN
+  expect no_warn
+  expect no_info
   # No results.
 
 eval range from 0 to 60m step 6m left_floats == bool NaN
+  expect no_warn
+  expect no_info
   {} 0 0 _ _ 0 _ 0 0 0 0 0
 
-eval_info range from 0 to 24m step 6m left_histograms == 3
+eval range from 0 to 24m step 6m left_histograms == 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms == 0
+eval range from 0 to 24m step 6m left_histograms == 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms != 3
+eval range from 0 to 24m step 6m left_histograms != 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms != 0
+eval range from 0 to 24m step 6m left_histograms != 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > 3
+eval range from 0 to 24m step 6m left_histograms > 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > 0
+eval range from 0 to 24m step 6m left_histograms > 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= 3
+eval range from 0 to 24m step 6m left_histograms >= 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= 0
+eval range from 0 to 24m step 6m left_histograms >= 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < 3
+eval range from 0 to 24m step 6m left_histograms < 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < 0
+eval range from 0 to 24m step 6m left_histograms < 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= 3
+eval range from 0 to 24m step 6m left_histograms <= 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= 0
+eval range from 0 to 24m step 6m left_histograms <= 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms == bool 3
+eval range from 0 to 24m step 6m left_histograms == bool 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms == bool 0
+eval range from 0 to 24m step 6m left_histograms == bool 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms != bool 3
+eval range from 0 to 24m step 6m left_histograms != bool 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms != bool 0
+eval range from 0 to 24m step 6m left_histograms != bool 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > bool 3
+eval range from 0 to 24m step 6m left_histograms > bool 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > bool 0
+eval range from 0 to 24m step 6m left_histograms > bool 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= bool 3
+eval range from 0 to 24m step 6m left_histograms >= bool 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= bool 0
+eval range from 0 to 24m step 6m left_histograms >= bool 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < bool 3
+eval range from 0 to 24m step 6m left_histograms < bool 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < bool 0
+eval range from 0 to 24m step 6m left_histograms < bool 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= bool 3
+eval range from 0 to 24m step 6m left_histograms <= bool 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= bool 0
+eval range from 0 to 24m step 6m left_histograms <= bool 0
+  expect info
+  expect no_warn
   # No results.
 
 # Vector / scalar combinations with scalar on left side
 eval range from 0 to 60m step 6m 3 == left_floats
+  expect no_warn
+  expect no_info
   left_floats _ _ _ _ 3 _ _ _ _ _ _
 
 eval range from 0 to 60m step 6m 3 != left_floats
+  expect no_warn
+  expect no_info
   left_floats 1 2 _ _ _ _ 4 5 NaN Inf -Inf
 
 eval range from 0 to 60m step 6m 3 < left_floats
+  expect no_warn
+  expect no_info
   left_floats _ _ _ _ _ _ 4 5 _ Inf _
 
 eval range from 0 to 60m step 6m 3 <= left_floats
+  expect no_warn
+  expect no_info
   left_floats _ _ _ _ 3 _ 4 5 _ Inf _
 
 eval range from 0 to 60m step 6m 3 > left_floats
+  expect no_warn
+  expect no_info
   left_floats 1 2 _ _ _ _ _ _ _ _ -Inf
 
 eval range from 0 to 60m step 6m 3 >= left_floats
+  expect no_warn
+  expect no_info
   left_floats 1 2 _ _ 3 _ _ _ _ _ -Inf
 
 eval range from 0 to 60m step 6m 3 == bool left_floats
+  expect no_warn
+  expect no_info
   {} 0 0 _ _ 1 _ 0 0 0 0 0
 
 eval range from 0 to 60m step 6m Inf == left_floats
+  expect no_warn
+  expect no_info
   left_floats _ _ _ _ _ _ _ _ _ Inf _
 
 eval range from 0 to 60m step 6m Inf == bool left_floats
+  expect no_warn
+  expect no_info
   {} 0 0 _ _ 0 _ 0 0 0 1 0
 
 eval range from 0 to 60m step 6m NaN == left_floats
+  expect no_warn
+  expect no_info
   # No results.
 
 eval range from 0 to 60m step 6m NaN == bool left_floats
+  expect no_warn
+  expect no_info
   {} 0 0 _ _ 0 _ 0 0 0 0 0
 
-eval_info range from 0 to 24m step 6m 3 == left_histograms
+eval range from 0 to 24m step 6m 3 == left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 == left_histograms
+eval range from 0 to 24m step 6m 0 == left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 3 != left_histograms
+eval range from 0 to 24m step 6m 3 != left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 != left_histograms
+eval range from 0 to 24m step 6m 0 != left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 3 < left_histograms
+eval range from 0 to 24m step 6m 3 < left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 < left_histograms
+eval range from 0 to 24m step 6m 0 < left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 3 < left_histograms
+eval range from 0 to 24m step 6m 3 < left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 < left_histograms
+eval range from 0 to 24m step 6m 0 < left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 3 > left_histograms
+eval range from 0 to 24m step 6m 3 > left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 > left_histograms
+eval range from 0 to 24m step 6m 0 > left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 3 >= left_histograms
+eval range from 0 to 24m step 6m 3 >= left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 >= left_histograms
+eval range from 0 to 24m step 6m 0 >= left_histograms
+  expect info
+  expect no_warn
   # No results.
 
 clear
@@ -819,6 +1214,8 @@ load_with_nhcb 5m
 
 # Include all series when "and on" with non-empty vector.
 eval instant at 10m (testhistogram_bucket) and on() (vector(1) == 1)
+  expect no_warn
+  expect no_info
   {__name__="testhistogram_bucket", le="0.1", id="1"} 10.0
 	{__name__="testhistogram_bucket", le="0.2", id="1"} 14.0
 	{__name__="testhistogram_bucket", le="+Inf", id="1"} 24.0
@@ -827,6 +1224,8 @@ eval instant at 10m (testhistogram_bucket) and on() (vector(1) == 1)
 	{__name__="testhistogram_bucket", le="+Inf", id="2"} 22.0
 
 eval range from 0 to 10m step 5m (testhistogram_bucket) and on() (vector(1) == 1)
+  expect no_warn
+  expect no_info
   {__name__="testhistogram_bucket", le="0.1", id="1"} 0.0 5.0 10.0
 	{__name__="testhistogram_bucket", le="0.2", id="1"} 0.0 7.0 14.0
 	{__name__="testhistogram_bucket", le="+Inf", id="1"} 0.0 12.0 24.0
@@ -836,21 +1235,33 @@ eval range from 0 to 10m step 5m (testhistogram_bucket) and on() (vector(1) == 1
 
 # Exclude all series when "and on" with empty vector.
 eval instant at 10m (testhistogram_bucket) and on() (vector(-1) == 1)
+  expect no_warn
+  expect no_info
 
 eval range from 0 to 10m step 5m (testhistogram_bucket) and on() (vector(-1) == 1)
+  expect no_warn
+  expect no_info
 
 # Include all native histogram series when "and on" with non-empty vector.
 eval instant at 10m (testhistogram) and on() (vector(1) == 1)
+  expect no_warn
+  expect no_info
   {__name__="testhistogram", id="1"} {{schema:-53 sum:0 count:24 buckets:[10 4 10] custom_values:[0.1 0.2]}}
 	{__name__="testhistogram", id="2"} {{schema:-53 sum:0 count:22 buckets:[8 4 10] custom_values:[0.1 0.2]}}
 
 eval range from 0 to 10m step 5m (testhistogram) and on() (vector(1) == 1)
+	expect no_warn
+	expect no_info
 	{__name__="testhistogram", id="1"} {{schema:-53 sum:0 count:0 custom_values:[0.1 0.2]}} {{schema:-53 sum:0 count:12 buckets:[5 2 5] custom_values:[0.1 0.2]}} {{schema:-53 sum:0 count:24 buckets:[10 4 10] custom_values:[0.1 0.2]}}
 	{__name__="testhistogram", id="2"} {{schema:-53 sum:0 count:0 custom_values:[0.1 0.2]}} {{schema:-53 sum:0 count:11 buckets:[4 2 5] custom_values:[0.1 0.2]}} {{schema:-53 sum:0 count:22 buckets:[8 4 10] custom_values:[0.1 0.2]}}
 
 # Exclude all native histogram series when "and on" with empty vector.
 eval instant at 10m (testhistogram) and on() (vector(-1) == 1)
+  expect no_warn
+  expect no_info
 
 eval range from 0 to 10m step 5m (testhistogram) and on() (vector(-1) == 1)
+  expect no_warn
+  expect no_info
 
 clear
