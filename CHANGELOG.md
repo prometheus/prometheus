@@ -131,6 +131,7 @@
 ## 3.4.2 / 2025-06-26
 
 * [BUGFIX] OTLP receiver: Fix default configuration not being respected if the `otlp:` block is unset in the config file. #16693
+* [ENHANCEMENT] TSDB: Add Option to configure TSDB Block Reload Interval using `block_reload_interval` #16728
 
 ## 3.4.1 / 2025-05-31
 
