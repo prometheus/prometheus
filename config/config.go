@@ -14,7 +14,6 @@
 package config
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -1089,15 +1088,6 @@ func (t *TSDBConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 
 	t.OutOfOrderTimeWindow = time.Duration(t.OutOfOrderTimeWindowFlag).Milliseconds()
-
-	t.BlockReloadInterval = model.Duration(t.BlockReloadInterval)
-
-	slog.Log(context.Background(), slog.LevelDebug,
-		"TSDBConfig",
-		slog.String("out_of_order_time_window", t.OutOfOrderTimeWindowFlag.String()),
-		slog.Int64("out_of_order_time_window_ms", t.OutOfOrderTimeWindow),
-		slog.Duration("block_reload_interval_ms", time.Duration(t.BlockReloadInterval)),
-	)
 
 	return nil
 }

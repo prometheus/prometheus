@@ -674,6 +674,7 @@ func main() {
 	}
 	if cfgFile.StorageConfig.TSDBConfig != nil {
 		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
+		cfg.tsdb.BlockReloadInterval = cfgFile.StorageConfig.TSDBConfig.BlockReloadInterval
 		if cfgFile.StorageConfig.TSDBConfig.Retention != nil {
 			if cfgFile.StorageConfig.TSDBConfig.Retention.Time > 0 {
 				cfg.tsdb.RetentionDuration = cfgFile.StorageConfig.TSDBConfig.Retention.Time
@@ -1895,7 +1896,6 @@ type tsdbOptions struct {
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
-	slog.Log(context.Background(), slog.LevelDebug, "DEBUGGNG = TSDB options", "BlockReloadInterval", opts.BlockReloadInterval)
 	return tsdb.Options{
 		WALSegmentSize:                 int(opts.WALSegmentSize),
 		MaxBlockChunkSegmentSize:       int64(opts.MaxBlockChunkSegmentSize),

@@ -1040,6 +1040,8 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		opts.CompactionDelay = db.generateCompactionDelay()
 	}
 
+	db.logger.Debug("VALUE IN DB.run", "opts.BlockReloadInterval", opts.BlockReloadInterval)
+
 	go db.run(ctx)
 
 	return db, nil
@@ -1098,16 +1100,9 @@ func (db *DB) run(ctx context.Context) {
 
 	reloadBlockInterval := time.Duration(db.opts.BlockReloadInterval) * time.Millisecond
 	if reloadBlockInterval == 0 {
-		reloadBlockInterval = time.Minute
+		reloadBlockInterval = 1 * time.Minute * time.Millisecond
 	}
 
-	slog.Log(
-		ctx,
-		slog.LevelDebug,
-		"msg", "Block reload interval configured",
-		"interval", reloadBlockInterval,
-		"raw_ms", db.opts.BlockReloadInterval,
-	)
 	for {
 		select {
 		case <-db.stopc:
