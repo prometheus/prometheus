@@ -211,9 +211,12 @@ otlp:
   # Enables adding "service.name", "service.namespace" and "service.instance.id"
   # resource attributes to the "target_info" metric, on top of converting
   # them into the "instance" and "job" labels.
-  [ keep_identifying_resource_attributes: <boolean> | default = false]
+  [ keep_identifying_resource_attributes: <boolean> | default = false ]
   # Configures optional translation of OTLP explicit bucket histograms into native histograms with custom buckets.
-  [ convert_histograms_to_nhcb: <boolean> | default = false]
+  [ convert_histograms_to_nhcb: <boolean> | default = false ]
+  # Enables translation of OTel scope metadata (i.e. name, version, schema URL, and attributes) into metric metadata.
+  # This is disabled by default for backwards compatibility, but according to OTel spec, scope metadata _should_ be identifying, i.e. translated to metric labels.
+  [ convert_scope_metadata: <boolean> | default = false ]
 
 # Settings related to the remote read feature.
 remote_read:

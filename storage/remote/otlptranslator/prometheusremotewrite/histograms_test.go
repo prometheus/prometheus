@@ -620,13 +620,27 @@ func validateNativeHistogramCount(t *testing.T, h prompb.Histogram) {
 }
 
 func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
+	scopeAttrs := pcommon.NewMap()
+	scopeAttrs.FromRaw(map[string]any{
+		"attr1": "value1",
+		"attr2": "value2",
+	})
+	defaultScope := scope{
+		name:       "test-scope",
+		version:    "1.0.0",
+		schemaURL:  "https://schema.com",
+		attributes: scopeAttrs,
+	}
+
 	tests := []struct {
-		name       string
-		metric     func() pmetric.Metric
-		wantSeries func() map[uint64]*prompb.TimeSeries
+		name         string
+		metric       func() pmetric.Metric
+		scope        scope
+		convertScope bool
+		wantSeries   func() map[uint64]*prompb.TimeSeries
 	}{
 		{
-			name: "histogram data points with same labels",
+			name: "histogram data points with same labels and without scope conversion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_hist")
@@ -650,6 +664,8 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 
 				return metric
 			},
+			scope:        defaultScope,
+			convertScope: false,
 			wantSeries: func() map[uint64]*prompb.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist"},
@@ -685,7 +701,73 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "histogram data points with different labels",
+			name: "histogram data points with same labels and with scope conversion",
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist")
+				metric.SetEmptyExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.ExponentialHistogram().DataPoints().AppendEmpty()
+				pt.SetCount(7)
+				pt.SetScale(1)
+				pt.Positive().SetOffset(-1)
+				pt.Positive().BucketCounts().FromRaw([]uint64{4, 2})
+				pt.Exemplars().AppendEmpty().SetDoubleValue(1)
+				pt.Attributes().PutStr("attr", "test_attr")
+
+				pt = metric.ExponentialHistogram().DataPoints().AppendEmpty()
+				pt.SetCount(4)
+				pt.SetScale(1)
+				pt.Positive().SetOffset(-1)
+				pt.Positive().BucketCounts().FromRaw([]uint64{4, 2, 1})
+				pt.Exemplars().AppendEmpty().SetDoubleValue(2)
+				pt.Attributes().PutStr("attr", "test_attr")
+
+				return metric
+			},
+			scope:        defaultScope,
+			convertScope: true,
+			wantSeries: func() map[uint64]*prompb.TimeSeries {
+				labels := []prompb.Label{
+					{Name: model.MetricNameLabel, Value: "test_hist"},
+					{Name: "attr", Value: "test_attr"},
+					{Name: "otel_scope_name", Value: defaultScope.name},
+					{Name: "otel_scope_schema_url", Value: defaultScope.schemaURL},
+					{Name: "otel_scope_version", Value: defaultScope.version},
+					{Name: "otel_scope_attr1", Value: "value1"},
+					{Name: "otel_scope_attr2", Value: "value2"},
+				}
+				return map[uint64]*prompb.TimeSeries{
+					timeSeriesSignature(labels): {
+						Labels: labels,
+						Histograms: []prompb.Histogram{
+							{
+								Count:          &prompb.Histogram_CountInt{CountInt: 7},
+								Schema:         1,
+								ZeroThreshold:  defaultZeroThreshold,
+								ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
+								PositiveDeltas: []int64{4, -2},
+							},
+							{
+								Count:          &prompb.Histogram_CountInt{CountInt: 4},
+								Schema:         1,
+								ZeroThreshold:  defaultZeroThreshold,
+								ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
+								PositiveDeltas: []int64{4, -2, -1},
+							},
+						},
+						Exemplars: []prompb.Exemplar{
+							{Value: 1},
+							{Value: 2},
+						},
+					},
+				}
+			},
+		},
+		{
+			name: "histogram data points with different labels and without scope conversion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_hist")
@@ -709,6 +791,8 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 
 				return metric
 			},
+			scope:        defaultScope,
+			convertScope: false,
 			wantSeries: func() map[uint64]*prompb.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist"},
@@ -769,10 +853,12 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				metric.ExponentialHistogram().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					ExportCreatedMetric: true,
+					ExportCreatedMetric:  true,
+					ConvertScopeMetadata: tt.convertScope,
 				},
 				namer.Build(TranslatorMetricFromOtelMetric(metric)),
 				pmetric.AggregationTemporalityCumulative,
+				tt.scope,
 			)
 			require.NoError(t, err)
 			require.Empty(t, annots)
@@ -991,13 +1077,27 @@ func TestHistogramToCustomBucketsHistogram(t *testing.T) {
 }
 
 func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
+	scopeAttrs := pcommon.NewMap()
+	scopeAttrs.FromRaw(map[string]any{
+		"attr1": "value1",
+		"attr2": "value2",
+	})
+	defaultScope := scope{
+		name:       "test-scope",
+		version:    "1.0.0",
+		schemaURL:  "https://schema.com",
+		attributes: scopeAttrs,
+	}
+
 	tests := []struct {
-		name       string
-		metric     func() pmetric.Metric
-		wantSeries func() map[uint64]*prompb.TimeSeries
+		name         string
+		metric       func() pmetric.Metric
+		scope        scope
+		convertScope bool
+		wantSeries   func() map[uint64]*prompb.TimeSeries
 	}{
 		{
-			name: "histogram data points with same labels",
+			name: "histogram data points with same labels and without scope conversion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_hist_to_nhcb")
@@ -1021,6 +1121,8 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 
 				return metric
 			},
+			scope:        defaultScope,
+			convertScope: false,
 			wantSeries: func() map[uint64]*prompb.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
@@ -1056,7 +1158,73 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "histogram data points with different labels",
+			name: "histogram data points with same labels and with scope conversion",
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist_to_nhcb")
+				metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetCount(3)
+				pt.SetSum(3)
+				pt.BucketCounts().FromRaw([]uint64{2, 0, 1})
+				pt.ExplicitBounds().FromRaw([]float64{5, 10})
+				pt.Exemplars().AppendEmpty().SetDoubleValue(1)
+				pt.Attributes().PutStr("attr", "test_attr")
+
+				pt = metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetCount(11)
+				pt.SetSum(5)
+				pt.BucketCounts().FromRaw([]uint64{3, 8, 0})
+				pt.ExplicitBounds().FromRaw([]float64{0, 1})
+				pt.Exemplars().AppendEmpty().SetDoubleValue(2)
+				pt.Attributes().PutStr("attr", "test_attr")
+
+				return metric
+			},
+			scope:        defaultScope,
+			convertScope: true,
+			wantSeries: func() map[uint64]*prompb.TimeSeries {
+				labels := []prompb.Label{
+					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
+					{Name: "attr", Value: "test_attr"},
+					{Name: "otel_scope_name", Value: defaultScope.name},
+					{Name: "otel_scope_schema_url", Value: defaultScope.schemaURL},
+					{Name: "otel_scope_version", Value: defaultScope.version},
+					{Name: "otel_scope_attr1", Value: "value1"},
+					{Name: "otel_scope_attr2", Value: "value2"},
+				}
+				return map[uint64]*prompb.TimeSeries{
+					timeSeriesSignature(labels): {
+						Labels: labels,
+						Histograms: []prompb.Histogram{
+							{
+								Count:          &prompb.Histogram_CountInt{CountInt: 3},
+								Sum:            3,
+								Schema:         -53,
+								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
+								PositiveDeltas: []int64{2, -2, 1},
+								CustomValues:   []float64{5, 10},
+							},
+							{
+								Count:          &prompb.Histogram_CountInt{CountInt: 11},
+								Sum:            5,
+								Schema:         -53,
+								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
+								PositiveDeltas: []int64{3, 5, -8},
+								CustomValues:   []float64{0, 1},
+							},
+						},
+						Exemplars: []prompb.Exemplar{
+							{Value: 1},
+							{Value: 2},
+						},
+					},
+				}
+			},
+		},
+		{
+			name: "histogram data points with different labels and without scope conversion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_hist_to_nhcb")
@@ -1080,6 +1248,8 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 
 				return metric
 			},
+			scope:        defaultScope,
+			convertScope: false,
 			wantSeries: func() map[uint64]*prompb.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
@@ -1142,9 +1312,11 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 				Settings{
 					ExportCreatedMetric:     true,
 					ConvertHistogramsToNHCB: true,
+					ConvertScopeMetadata:    tt.convertScope,
 				},
 				namer.Build(TranslatorMetricFromOtelMetric(metric)),
 				pmetric.AggregationTemporalityCumulative,
+				tt.scope,
 			)
 
 			require.NoError(t, err)
