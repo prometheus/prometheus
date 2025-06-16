@@ -270,12 +270,7 @@ func (g *Group) run(ctx context.Context) {
 			g.evalIterationFunc(ctx, g, evalTimestamp)
 		}
 
-		restoreStartTime := time.Now()
-		g.RestoreForState(restoreStartTime)
-		totalRestoreTimeSeconds := time.Since(restoreStartTime).Seconds()
-		g.metrics.GroupLastRestoreDuration.WithLabelValues(GroupKey(g.file, g.name)).Set(totalRestoreTimeSeconds)
-		g.logger.Debug("'for' state restoration completed", "duration_seconds", totalRestoreTimeSeconds)
-		g.shouldRestore = false
+		g.RestoreForState(time.Now())
 	}
 
 	for {
@@ -742,6 +737,12 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 // RestoreForState restores the 'for' state of the alerts
 // by looking up last ActiveAt from storage.
 func (g *Group) RestoreForState(ts time.Time) {
+	defer func() {
+		totalRestoreTimeSeconds := time.Since(ts).Seconds()
+		g.metrics.GroupLastRestoreDuration.WithLabelValues(GroupKey(g.file, g.name)).Set(totalRestoreTimeSeconds)
+		g.logger.Debug("'for' state restoration completed", "duration_seconds", totalRestoreTimeSeconds)
+		g.shouldRestore = false
+	}()
 	maxtMS := int64(model.TimeFromUnixNano(ts.UnixNano()))
 	// We allow restoration only if alerts were active before after certain time.
 	mint := ts.Add(-g.opts.OutageTolerance)

@@ -1,9 +1,7 @@
 ---
-title: Unit Testing for Rules
+title: Unit testing for rules
 sort_rank: 6
 ---
-
-# Unit Testing for Rules
 
 You can use `promtool` to test your rules.
 

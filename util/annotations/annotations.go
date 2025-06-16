@@ -147,6 +147,7 @@ var (
 	IncompatibleBucketLayoutInBinOpWarning     = fmt.Errorf("%w: incompatible bucket layout encountered for binary operator", PromQLWarning)
 
 	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
+	PossibleNonCounterLabelInfo             = fmt.Errorf("%w: metric might not be a counter, __type__ label is not set to %q", PromQLInfo, model.MetricTypeCounter)
 	HistogramQuantileForcedMonotonicityInfo = fmt.Errorf("%w: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name", PromQLInfo)
 	IncompatibleTypesInBinOpInfo            = fmt.Errorf("%w: incompatible sample types encountered for binary operator", PromQLInfo)
 	HistogramIgnoredInAggregationInfo       = fmt.Errorf("%w: ignored histogram in", PromQLInfo)
@@ -267,6 +268,15 @@ func NewPossibleNonCounterInfo(metricName string, pos posrange.PositionRange) er
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", PossibleNonCounterInfo, metricName),
+	}
+}
+
+// NewPossibleNonCounterLabelInfo is used when a named counter metric with only float samples does not
+// have the __type__ label set to "counter".
+func NewPossibleNonCounterLabelInfo(metricName, typeLabel string, pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w, got %q: %q", PossibleNonCounterLabelInfo, typeLabel, metricName),
 	}
 }
 

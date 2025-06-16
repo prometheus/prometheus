@@ -4,8 +4,6 @@ nav_title: Functions
 sort_rank: 3
 ---
 
-# Functions
-
 Some functions have default arguments, e.g. `year(v=vector(time())
 instant-vector)`. This means that there is one argument `v` which is an instant
 vector, which if not provided it will default to the value of the expression
@@ -121,7 +119,7 @@ of the week (in UTC) for each of those timestamps. Returned values are from 0
 to 6, where 0 means Sunday etc. Histogram samples in the input vector are
 ignored silently.
 
-## `day_of_year()` 
+## `day_of_year()`
 
 `day_of_year(v=vector(time()) instant-vector)` interpretes float samples in `v`
 as timestamps (number of seconds since January 1, 1970 UTC) and returns the day
@@ -255,9 +253,9 @@ histogram samples:
 
 `histogram_fraction(lower scalar, upper scalar, b instant-vector)` returns the
 estimated fraction of observations between the provided lower and upper values
-for each classic or native histogram contained in `b`. Float samples in `b` are 
+for each classic or native histogram contained in `b`. Float samples in `b` are
 considered the counts of observations in each bucket of one or more classic
-histograms, while native histogram samples in `b` are treated each individually 
+histograms, while native histogram samples in `b` are treated each individually
 as a separate histogram. This works in the same way as for `histogram_quantile()`.
 (See there for more details.)
 
@@ -273,7 +271,7 @@ as a typical example.
 
 For example, the following expression calculates the fraction of HTTP requests
 over the last hour that took 200ms or less:
-    
+
     histogram_fraction(0, 0.2, rate(http_request_duration_seconds[1h]))
 
 The error of the estimation depends on the resolution of the underlying native
@@ -345,7 +343,7 @@ included in the `by` clause. The following expression aggregates the 90th
 percentile by `job` for classic histograms:
 
     histogram_quantile(0.9, sum by (job, le) (rate(http_request_duration_seconds_bucket[10m])))
-	
+
 When aggregating native histograms, the expression simplifies to:
 
     histogram_quantile(0.9, sum by (job) (rate(http_request_duration_seconds[10m])))
@@ -429,7 +427,7 @@ annotation, you should find and remove the source of the invalid data.
 
 `histogram_stddev(v instant-vector)` returns the estimated standard deviation
 of observations for each histogram sample in `v`. For this estimation, all observations
-in a bucket are assumed to have the value of the mean of the bucket boundaries. For 
+in a bucket are assumed to have the value of the mean of the bucket boundaries. For
 the zero bucket and for buckets with custom boundaries, the arithmetic mean is used.
 For the usual exponential buckets, the geometric mean is used. Float samples are ignored
 and do not show up in the returned vector.
@@ -489,10 +487,10 @@ consistently on a per-second basis.
 _The `info` function is an experiment to improve UX
 around including labels from [info metrics](https://grafana.com/blog/2021/08/04/how-to-use-promql-joins-for-more-effective-queries-of-prometheus-metrics-at-scale/#info-metrics).
 The behavior of this function may change in future versions of Prometheus,
-including its removal from PromQL. `info` has to be enabled via the 
+including its removal from PromQL. `info` has to be enabled via the
 [feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`._
 
-`info(v instant-vector, [data-label-selector instant-vector])` finds, for each time 
+`info(v instant-vector, [data-label-selector instant-vector])` finds, for each time
 series in `v`, all info series with matching _identifying_ labels (more on
 this later), and adds the union of their _data_ (i.e., non-identifying) labels
 to the time series. The second argument `data-label-selector` is optional.
@@ -509,8 +507,8 @@ function, we “logically” define info series identity in a different way than
 in the conventional Prometheus view.) The identifying labels of an info series
 are used to join it to regular (non-info) series, i.e. those series that have
 the same labels as the identifying labels of the info series. The data labels, which are
-the ones added to the regular series by the `info` function, effectively encode 
-metadata key value pairs. (This implies that a change in the data labels 
+the ones added to the regular series by the `info` function, effectively encode
+metadata key value pairs. (This implies that a change in the data labels
 in the conventional Prometheus view constitutes the end of one info series and
 the beginning of a new info series, while the “logical” view of the `info` function is
 that the same info series continues to exist, just with different “data”.)
@@ -534,7 +532,7 @@ This query is not only verbose and hard to write, it might also run into an “i
 If any of the data labels of `target_info` changes, Prometheus sees that as a change of series
 (as alluded to above, Prometheus just has no native concept of non-identifying labels).
 If the old `target_info` series is not properly marked as stale (which can happen with certain ingestion paths),
-the query above will fail for up to 5m (the lookback delta) because it will find a conflicting 
+the query above will fail for up to 5m (the lookback delta) because it will find a conflicting
 match with both the old and the new version of `target_info`.
 
 The `info` function not only resolves this conflict in favor of the newer series, it also simplifies the syntax
@@ -565,7 +563,7 @@ restrict them by providing a `__name__` label matcher, e.g.
 In its current iteration, `info` defaults to considering only info series with
 the name `target_info`. It also assumes that the identifying info series labels are
 `instance` and `job`. `info` does support other info series names however, through
-`__name__` label matchers. E.g., one can explicitly say to consider both 
+`__name__` label matchers. E.g., one can explicitly say to consider both
 `target_info` and `build_info` as follows:
 `{__name__=~"(target|build)_info"}`. However, the identifying labels always
 have to be `instance` and `job`.
@@ -849,6 +847,12 @@ additional functions are available:
 
 * `mad_over_time(range-vector)`: the median absolute deviation of all float
   samples in the specified interval.
+* `ts_of_min_over_time(range-vector)`: the timestamp of the last float sample
+  that has the minimum value of all float samples in the specified interval.
+* `ts_of_max_over_time(range-vector)`: the timestamp of the last float sample
+  that has the maximum value of all float samples in the specified interval.
+* `ts_of_last_over_time(range-vector)`: the timestamp of last sample in the
+  specified interval.
 
 Note that all values in the specified interval have the same weight in the
 aggregation even if the values are not equally spaced throughout the interval.

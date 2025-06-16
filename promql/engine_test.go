@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/logging"
@@ -3428,6 +3429,7 @@ func TestRateAnnotations(t *testing.T) {
 	testCases := map[string]struct {
 		data                       string
 		expr                       string
+		typeAndUnitLabelsEnabled   bool
 		expectedWarningAnnotations []string
 		expectedInfoAnnotations    []string
 	}{
@@ -3475,13 +3477,157 @@ func TestRateAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		},
+		"info annotation when rate() over series without _total suffix": {
+			data: `
+				series{label="a"} 1 2 3
+			`,
+			expr: "rate(series[1m1s])",
+			expectedInfoAnnotations: []string{
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "series" (1:6)`,
+			},
+			expectedWarningAnnotations: []string{},
+		},
+		"info annotation when increase() over series without _total suffix": {
+			data: `
+				series{label="a"} 1 2 3
+			`,
+			expr: "increase(series[1m1s])",
+			expectedInfoAnnotations: []string{
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "series" (1:10)`,
+			},
+			expectedWarningAnnotations: []string{},
+		},
+		"info annotation when rate() over series without __type__=counter label": {
+			data: `
+				series{label="a"} 1 2 3
+			`,
+			expr:                     "rate(series[1m1s])",
+			typeAndUnitLabelsEnabled: true,
+			expectedInfoAnnotations: []string{
+				`PromQL info: metric might not be a counter, __type__ label is not set to "counter", got "": "series" (1:6)`,
+			},
+			expectedWarningAnnotations: []string{},
+		},
+		"info annotation when increase() over series without __type__=counter label": {
+			data: `
+				series{label="a"} 1 2 3
+			`,
+			expr:                     "increase(series[1m1s])",
+			typeAndUnitLabelsEnabled: true,
+			expectedInfoAnnotations: []string{
+				`PromQL info: metric might not be a counter, __type__ label is not set to "counter", got "": "series" (1:10)`,
+			},
+			expectedWarningAnnotations: []string{},
+		},
+		"no info annotation when rate() over series with __type__=counter label": {
+			data: `
+				series{label="a", __type__="counter"} 1 2 3
+			`,
+			expr:                       "rate(series[1m1s])",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when increase() over series with __type__=counter label": {
+			data: `
+				series{label="a", __type__="counter"} 1 2 3
+			`,
+			expr:                       "increase(series[1m1s])",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when rate() over series with _total suffix": {
+			data: `
+				series_total{label="a"} 1 2 3
+			`,
+			expr:                       "rate(series_total[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when rate() over series with _sum suffix": {
+			data: `
+				series_sum{label="a"} 1 2 3
+			`,
+			expr:                       "rate(series_sum[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when rate() over series with _count suffix": {
+			data: `
+				series_count{label="a"} 1 2 3
+			`,
+			expr:                       "rate(series_count[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when rate() over series with _bucket suffix": {
+			data: `
+				series_bucket{label="a"} 1 2 3
+			`,
+			expr:                       "rate(series_bucket[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when increase() over series with _total suffix": {
+			data: `
+				series_total{label="a"} 1 2 3
+			`,
+			expr:                       "increase(series_total[1m1s])",
+			expectedWarningAnnotations: []string{},
+			typeAndUnitLabelsEnabled:   false,
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when increase() over series with _sum suffix": {
+			data: `
+				series_sum{label="a"} 1 2 3
+			`,
+			expr:                       "increase(series_sum[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when increase() over series with _count suffix": {
+			data: `
+				series_count{label="a"} 1 2 3
+			`,
+			expr:                       "increase(series_count[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when increase() over series with _bucket suffix": {
+			data: `
+				series_bucket{label="a"} 1 2 3
+			`,
+			expr:                       "increase(series_bucket[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
 	}
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
 			t.Cleanup(func() { _ = store.Close() })
 
-			engine := newTestEngine(t)
+			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				Logger:                   nil,
+				Reg:                      nil,
+				MaxSamples:               promqltest.DefaultMaxSamplesPerQuery,
+				Timeout:                  100 * time.Minute,
+				NoStepSubqueryIntervalFn: func(int64) int64 { return int64((1 * time.Minute / time.Millisecond / time.Nanosecond)) },
+				EnableAtModifier:         true,
+				EnableNegativeOffset:     true,
+				EnablePerStepStats:       false,
+				LookbackDelta:            0,
+				EnableDelayedNameRemoval: true,
+				EnableTypeAndUnitLabels:  testCase.typeAndUnitLabelsEnabled,
+			})
 			query, err := engine.NewInstantQuery(context.Background(), store, nil, testCase.expr, timestamp.Time(0).Add(1*time.Minute))
 			require.NoError(t, err)
 			t.Cleanup(query.Close)
@@ -3743,4 +3889,99 @@ eval instant at 10m last_over_time(metric_total{env="1"}[10m])
 eval instant at 10m max_over_time(metric_total{env="1"}[10m])
 	{env="1"} 120
 `, engine)
+}
+
+// TestInconsistentHistogramCount is testing for
+// https://github.com/prometheus/prometheus/issues/16681 which needs mixed
+// integer and float histograms. The promql test framework only uses float
+// histograms, so we cannot move this to promql tests.
+func TestInconsistentHistogramCount(t *testing.T) {
+	dir := t.TempDir()
+
+	opts := tsdb.DefaultHeadOptions()
+	opts.EnableNativeHistograms.Store(true)
+	opts.ChunkDirRoot = dir
+	// We use TSDB head only. By using full TSDB DB, and appending samples to it, closing it would cause unnecessary HEAD compaction, which slows down the test.
+	head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = head.Close()
+	})
+
+	app := head.Appender(context.Background())
+
+	l := labels.FromStrings("__name__", "series_1")
+
+	mint := time.Now().Add(-time.Hour).UnixMilli()
+	maxt := mint
+	dT := int64(15 * 1000) // 15 seconds in milliseconds.
+	inHs := []*histogram.Histogram{
+		{
+			Count: 2,
+			Sum:   100,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 1},
+			},
+			PositiveBuckets: []int64{2},
+		},
+		{
+			Count: 4,
+			Sum:   200,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 1},
+			},
+			PositiveBuckets: []int64{4},
+		},
+		{}, // Empty histogram to trigger counter reset.
+	}
+
+	for i, h := range inHs {
+		maxt = mint + dT*int64(i)
+		_, err = app.AppendHistogram(0, l, maxt, h, nil)
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, app.Commit())
+	queryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+		return tsdb.NewBlockQuerier(head, mint, maxt)
+	})
+
+	engine := promql.NewEngine(promql.EngineOpts{
+		MaxSamples:    1000000,
+		Timeout:       10 * time.Second,
+		LookbackDelta: 5 * time.Minute,
+	})
+
+	var (
+		query       promql.Query
+		queryResult *promql.Result
+		v           promql.Vector
+	)
+
+	query, err = engine.NewInstantQuery(context.Background(), queryable, nil, "(rate(series_1[1m]))", time.UnixMilli(maxt))
+	require.NoError(t, err)
+	queryResult = query.Exec(context.Background())
+	require.NoError(t, queryResult.Err)
+	require.NotNil(t, queryResult)
+	v, err = queryResult.Vector()
+	require.NoError(t, err)
+	require.Len(t, v, 1)
+	require.NotNil(t, v[0].H)
+	require.Greater(t, v[0].H.Count, float64(0))
+	query.Close()
+	countFromHistogram := v[0].H.Count
+
+	query, err = engine.NewInstantQuery(context.Background(), queryable, nil, "histogram_count((rate(series_1[1m])))", time.UnixMilli(maxt))
+	require.NoError(t, err)
+	queryResult = query.Exec(context.Background())
+	require.NoError(t, queryResult.Err)
+	require.NotNil(t, queryResult)
+	v, err = queryResult.Vector()
+	require.NoError(t, err)
+	require.Len(t, v, 1)
+	require.Nil(t, v[0].H)
+	query.Close()
+	countFromFunction := float64(v[0].F)
+
+	require.Equal(t, countFromHistogram, countFromFunction, "histogram_count function should return the same count as the histogram itself")
 }

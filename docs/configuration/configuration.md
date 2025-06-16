@@ -3,8 +3,6 @@ title: Configuration
 sort_rank: 1
 ---
 
-# Configuration
-
 Prometheus is configured via command-line flags and a configuration file. While
 the command-line flags configure immutable system parameters (such as storage
 locations, amount of data to keep on disk and in memory, etc.), the
@@ -183,7 +181,15 @@ remote_write:
 # Settings related to the OTLP receiver feature.
 # See https://prometheus.io/docs/guides/opentelemetry/ for best practices.
 otlp:
+  # Promote specific list of resource attributes to labels.
+  # It cannot be configured simultaneously with 'promote_all_resource_attributes: true'.
   [ promote_resource_attributes: [<string>, ...] | default = [ ] ]
+  # Promoting all resource attributes to labels, except for the ones configured with 'ignore_resource_attributes'.
+  # Be aware that changes in attributes received by the OTLP endpoint may result in time series churn and lead to high memory usage by the Prometheus server.
+  # It cannot be set to 'true' simultaneously with 'promote_resource_attributes'.
+  [ promote_all_resource_attributes: <boolean> | default = false ]
+  # Which resource attributes to ignore, can only be set when 'promote_all_resource_attributes' is true.
+  [ ignore_resource_attributes: [<string>, ...] | default = [] ]
   # Configures translation of OTLP metrics when received through the OTLP metrics
   # endpoint. Available values:
   # - "UnderscoreEscapingWithSuffixes" refers to commonly agreed normalization used
@@ -503,7 +509,7 @@ metric_relabel_configs:
 # If this value is left blank, Prometheus will default to `allow-utf-8` if the
 # validation scheme for the current scrape config is set to utf8, or
 # `underscores` if the validation scheme is set to `legacy`.
-[ metric_name_escaping_scheme: <string> | default "utf8" ]
+[ metric_name_escaping_scheme: <string> | default "allow-utf-8" ]
 
 # Limit on total number of positive and negative buckets allowed in a single
 # native histogram. The resolution of a histogram with more buckets will be
@@ -1827,6 +1833,9 @@ Available meta labels:
 The `endpoints` role discovers targets from listed endpoints of a service. For each endpoint
 address one target is discovered per port. If the endpoint is backed by a pod, all
 additional container ports of the pod, not bound to an endpoint port, are discovered as targets as well.
+
+Note that the Endpoints API is [deprecated in Kubernetes v1.33+](https://kubernetes.io/blog/2025/04/24/endpoints-deprecation/),
+it is recommended to use EndpointSlices instead and switch to the `endpointslice` role below.
 
 Available meta labels:
 

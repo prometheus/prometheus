@@ -3,8 +3,6 @@ title: Feature flags
 sort_rank: 12
 ---
 
-# Feature flags
-
 Here is a list of features that are disabled by default since they are breaking changes or are considered experimental.
 Their behaviour can change in future releases which will be communicated via the [release changelog](https://github.com/prometheus/prometheus/blob/main/CHANGELOG.md).
 
@@ -187,17 +185,25 @@ state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
 `--enable-feature=promql-duration-expr`
 
-With this flag, arithmetic expressions can be used in time durations in range queries and offset durations. For example:
+With this flag, arithmetic expressions can be used in time durations in range queries and offset durations.
 
 In range queries:
-    rate(http_requests_total[5m * 2])  # 10 minute range
-    rate(http_requests_total[(5+2) * 1m])  # 7 minute range
+```
+rate(http_requests_total[5m * 2])  # 10 minute range
+rate(http_requests_total[(5+2) * 1m])  # 7 minute range
+```
 
 In offset durations:
-    http_requests_total offset (1h / 2)  # 30 minute offset
-    http_requests_total offset ((2 ^ 3) * 1m)  # 8 minute offset
+```
+http_requests_total offset (1h / 2)  # 30 minute offset
+http_requests_total offset ((2 ^ 3) * 1m)  # 8 minute offset
+```
 
-Note: Duration expressions are not supported in the @ timestamp operator.
+When using offset with duration expressions, you must wrap the expression in
+parentheses. Without parentheses, only the first duration value will be used in
+the offset calculation.
+
+**Note**: Duration expressions are not supported in the @ timestamp operator.
 
 The following operators are supported:
 

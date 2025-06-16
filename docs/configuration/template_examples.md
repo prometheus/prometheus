@@ -3,8 +3,6 @@ title: Template examples
 sort_rank: 4
 ---
 
-# Template examples
-
 Prometheus supports templating in the annotations and labels of alerts,
 as well as in served console pages. Templates have the ability to run
 queries against the local database, iterate over data, use conditionals,
