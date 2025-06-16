@@ -36,7 +36,10 @@ ifdef PREBUILT_ASSETS_STATIC_DIR
 endif
 
 help: ## Displays commands and their descriptions.
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[38;2;230;82;44m<target>\033[0m\n\nTargets:\n"} /^[a-z0-9A-Z_-]+:.*?##/ { printf "  \033[38;2;230;82;44m%-20s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[38;2;230;82;44m<target>\033[0m\n\nMain Targets:\n"} /^[a-z0-9A-Z_-]+:.*?##/ { printf "  \033[38;2;230;82;44m%-20s\033[0m %s\n", $$1, $$2 }' Makefile
+	@echo ""
+	@echo "Common Targets:"
+	@awk 'BEGIN {FS = ":.*##"} /^[a-z0-9A-Z_-]+:.*?##/ { printf "  \033[38;2;230;82;44m%-20s\033[0m %s\n", $$1, $$2 }' Makefile.common
 
 .PHONY: update-npm-deps
 update-npm-deps: ## Update Prometheus web UI npm dependencies to minor versions
