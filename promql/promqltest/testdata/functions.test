@@ -1201,12 +1201,20 @@ eval instant at 90s ts_of_max_over_time(metric[90s])
 clear
 load 10s53ms
 	metric 1 2 3 _ _
+	metric_histogram{type="only_histogram"} {{schema:1 sum:2 count:3}}x4
+	metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} 1
 
 eval instant at 90s ts_of_last_over_time(metric[90s])
 	{} 20.106
 
 eval instant at 95s ts_of_last_over_time(metric[90s])
 	{} 20.106
+
+eval instant at 95s ts_of_last_over_time(metric_histogram{type="only_histogram"}[90s])
+	{type="only_histogram"} 40.212
+
+eval instant at 95s ts_of_last_over_time(metric_histogram{type="mix"}[90s])
+	{type="mix"} 50.265
 
 # Tests for quantile_over_time
 clear
