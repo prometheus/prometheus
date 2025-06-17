@@ -1,5 +1,9 @@
 # Changelog
 
+## main / unreleased
+
+* [ENHANCEMENT] TSDB: Add configuration parameters for only caching series label symbols when writing TSDB indexes. #15836
+
 ## 3.4.2 / 2025-06-04
 
 * [BUGFIX] OTLP receiver: Fix default configuration not being respected if the `otlp:` block is unset in the config file. #16693
