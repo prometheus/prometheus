@@ -806,7 +806,7 @@ func main() {
 	var (
 		localStorage    = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper         = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
+		remoteStorage   = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
 		fanoutStorage   = storage.NewFanout(logger, localStorage, remoteStorage)
 		semconvReloader func(*config.Config) error
 	)
@@ -1025,8 +1025,7 @@ func main() {
 				}
 				return discoveryManagerNotify.ApplyConfig(c)
 			},
-		},
-		{
+		}, {
 			name: "semconv",
 			reloader: func(c *config.Config) error {
 				if !cfg.enableSemconvVersionedRead {
