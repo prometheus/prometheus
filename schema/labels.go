@@ -14,6 +14,8 @@
 package schema
 
 import (
+	"strings"
+
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -89,6 +91,21 @@ func NewMetadataFromLabels(ls labels.Labels) Metadata {
 	}
 }
 
+// IsMetricName returns whether labelName is the metric name label.
+func IsMetricName(labelName string) bool {
+	return labelName == metricName
+}
+
+// IsMetricType returns whether labelName is the metric type label.
+func IsMetricType(labelName string) bool {
+	return labelName == metricType
+}
+
+// IsMetricUnit returns whether labelName is the metric unit label.
+func IsMetricUnit(labelName string) bool {
+	return labelName == metricUnit
+}
+
 // IsTypeEmpty returns true if the metric type is empty (not set).
 func (m Metadata) IsTypeEmpty() bool {
 	return m.Type == "" || m.Type == model.MetricTypeUnknown
@@ -137,6 +154,21 @@ func (m Metadata) SetToLabels(b *labels.Builder) {
 		b.Set(metricType, string(m.Type))
 	}
 	b.Set(metricUnit, m.Unit)
+}
+
+// String returns a string representation of the Metadata.
+func (m Metadata) String() string {
+	var b strings.Builder
+	b.WriteString(m.Name)
+	if m.Unit != "" {
+		b.WriteString("~")
+		b.WriteString(m.Unit)
+	}
+	if m.Type != "" && m.Type != model.MetricTypeUnknown {
+		b.WriteString(".")
+		b.WriteString(string(m.Type))
+	}
+	return b.String()
 }
 
 // IgnoreOverriddenMetadataLabelsScratchBuilder is a wrapper over labels scratch builder

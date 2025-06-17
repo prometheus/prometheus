@@ -1337,7 +1337,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 		// If this could be an instant query, shortcut so as not to change sort order.
 		if ev.endTimestamp == ev.startTimestamp {
 			if !ev.enableDelayedNameRemoval && result.ContainsSameLabelset() {
-				ev.errorf("vector cannot contain metrics with the same labelset %v", result.String())
+				ev.errorf("vector cannot contain metrics with the same labelset")
 			}
 			mat := make(Matrix, len(result))
 			for i, s := range result {
@@ -1358,7 +1358,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 			ss, ok := seriess[h]
 			if ok {
 				if ss.ts == ts { // If we've seen this output series before at this timestamp, it's a duplicate.
-					ev.errorf("vector cannot contain metrics with the same labelset %v", result.String())
+					ev.errorf("vector cannot contain metrics with the same labelset")
 				}
 				ss.ts = ts
 			} else {
@@ -1961,7 +1961,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		}
 
 		if !ev.enableDelayedNameRemoval && mat.ContainsSameLabelset() {
-			ev.errorf("vector cannot contain metrics with the same labelset %v", mat.String())
+			ev.errorf("vector cannot contain metrics with the same labelset")
 		}
 		return mat, warnings
 
@@ -1985,7 +1985,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				}
 			}
 			if !ev.enableDelayedNameRemoval && mat.ContainsSameLabelset() {
-				ev.errorf("vector cannot contain metrics with the same labelset %v", mat.String())
+				ev.errorf("vector cannot contain metrics with the same labelset")
 			}
 		}
 		return mat, ws
@@ -3580,7 +3580,7 @@ func (ev *evaluator) cleanupMetricLabels(v parser.Value) {
 			}
 		}
 		if mat.ContainsSameLabelset() {
-			ev.errorf("vector cannot contain metrics with the same labelset %v", mat.String())
+			ev.errorf("vector cannot contain metrics with the same labelset")
 		}
 	} else if v.Type() == parser.ValueTypeVector {
 		vec := v.(Vector)
@@ -3590,7 +3590,7 @@ func (ev *evaluator) cleanupMetricLabels(v parser.Value) {
 			}
 		}
 		if vec.ContainsSameLabelset() {
-			ev.errorf("vector cannot contain metrics with the same labelset %v", vec.String())
+			ev.errorf("vector cannot contain metrics with the same labelset")
 		}
 	}
 }
