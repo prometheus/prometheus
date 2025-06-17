@@ -1493,8 +1493,8 @@ func (r *Reader) SymbolTableSize() uint64 {
 // SortedLabelValues returns value tuples that exist for the given label name.
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
-func (r *Reader) SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
-	values, err := r.LabelValues(ctx, name, matchers...)
+func (r *Reader) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
+	values, err := r.LabelValues(ctx, name, hints, matchers...)
 	if err == nil && r.version == FormatV1 {
 		slices.Sort(values)
 	}
@@ -1505,7 +1505,7 @@ func (r *Reader) SortedLabelValues(ctx context.Context, name string, matchers ..
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
 // TODO(replay): Support filtering by matchers.
-func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) > 0 {
 		return nil, fmt.Errorf("matchers parameter is not implemented: %+v", matchers)
 	}
@@ -1517,6 +1517,9 @@ func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labe
 		}
 		values := make([]string, 0, len(e))
 		for k := range e {
+			if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
+				break
+			}
 			values = append(values, k)
 		}
 		return values, nil
@@ -1529,9 +1532,16 @@ func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labe
 		return nil, nil
 	}
 
-	values := make([]string, 0, len(e)*symbolFactor)
+	valuesLength := len(e) * symbolFactor
+	if hints != nil && hints.Limit > 0 && valuesLength > hints.Limit {
+		valuesLength = hints.Limit
+	}
+	values := make([]string, 0, valuesLength)
 	lastVal := e[len(e)-1].value
 	err := r.traversePostingOffsets(ctx, e[0].off, func(val string, _ uint64) (bool, error) {
+		if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
+			return false, nil
+		}
 		values = append(values, val)
 		return val != lastVal, nil
 	})

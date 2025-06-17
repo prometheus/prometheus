@@ -12,7 +12,7 @@ import {
   IconSearch,
 } from "@tabler/icons-react";
 import { StateMultiSelect } from "../../components/StateMultiSelect";
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import badgeClasses from "../../Badge.module.css";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
@@ -30,8 +30,15 @@ import ScrapePoolList from "./ScrapePoolsList";
 import { useSuspenseAPIQuery } from "../../api/api";
 import { ScrapePoolsResult } from "../../api/responseTypes/scrapePools";
 import { expandIconStyle, inputIconStyle } from "../../styles";
+import { useDebouncedValue } from "@mantine/hooks";
 
 export const targetPoolDisplayLimit = 20;
+
+// Should be defined as a constant here instead of inline as a value
+// to avoid unnecessary re-renders. Otherwise the empty array has
+// a different reference on each render and causes subsequent memoized
+// computations to re-run as long as no state filter is selected.
+const emptyHealthFilter: string[] = [];
 
 export default function TargetsPage() {
   // Load the list of all available scrape pools.
@@ -45,15 +52,20 @@ export default function TargetsPage() {
 
   const dispatch = useAppDispatch();
 
+  const poolDefaultPlaceholder = "Select scrape pool";
+
   const [scrapePool, setScrapePool] = useQueryParam("pool", StringParam);
+  const [poolPlaceholder, setPoolPlaceholder] = useState<string>(poolDefaultPlaceholder);
+  const [poolSelecting, setPoolSelecting] = useState<boolean>(false);
   const [healthFilter, setHealthFilter] = useQueryParam(
     "health",
-    withDefault(ArrayParam, [])
+    withDefault(ArrayParam, emptyHealthFilter)
   );
   const [searchFilter, setSearchFilter] = useQueryParam(
     "search",
     withDefault(StringParam, "")
   );
+  const [debouncedSearch] = useDebouncedValue<string>(searchFilter.trim(), 250);
 
   const { collapsedPools, showLimitAlert } = useAppSelector(
     (state) => state.targetsPage
@@ -78,14 +90,22 @@ export default function TargetsPage() {
     <>
       <Group mb="md" mt="xs">
         <Select
-          placeholder="Select scrape pool"
+          placeholder={poolPlaceholder}
           data={[{ label: "All pools", value: "" }, ...scrapePools]}
-          value={(limited && scrapePools[0]) || scrapePool || null}
+          value={poolSelecting ? null : (limited && scrapePools[0]) || scrapePool || null}
           onChange={(value) => {
             setScrapePool(value);
             if (showLimitAlert) {
               dispatch(setShowLimitAlert(false));
             }
+          }}
+          onDropdownOpen={() => {
+            setPoolPlaceholder(scrapePool || poolDefaultPlaceholder)
+            setPoolSelecting(true)
+          }}
+          onDropdownClose={() => {
+            setPoolPlaceholder(poolDefaultPlaceholder)
+            setPoolSelecting(false)
           }}
           searchable
         />
@@ -147,7 +167,7 @@ export default function TargetsPage() {
             poolNames={scrapePools}
             selectedPool={(limited && scrapePools[0]) || scrapePool || null}
             healthFilter={healthFilter as string[]}
-            searchFilter={searchFilter}
+            searchFilter={debouncedSearch}
           />
         </Suspense>
       </ErrorBoundary>

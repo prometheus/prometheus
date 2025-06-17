@@ -19,7 +19,7 @@ import {
 } from "@tabler/icons-react";
 import { useSuspenseAPIQuery } from "../../api/api";
 import { Target, TargetsResult } from "../../api/responseTypes/targets";
-import React, { FC, useMemo } from "react";
+import React, { FC, memo, useMemo } from "react";
 import {
   humanizeDurationRelative,
   humanizeDuration,
@@ -37,7 +37,6 @@ import CustomInfiniteScroll from "../../components/CustomInfiniteScroll";
 import badgeClasses from "../../Badge.module.css";
 import panelClasses from "../../Panel.module.css";
 import TargetLabels from "./TargetLabels";
-import { useDebouncedValue } from "@mantine/hooks";
 import { targetPoolDisplayLimit } from "./TargetsPage";
 import { badgeIconStyle } from "../../styles";
 
@@ -145,278 +144,280 @@ type ScrapePoolListProp = {
   searchFilter: string;
 };
 
-const ScrapePoolList: FC<ScrapePoolListProp> = ({
-  poolNames,
-  selectedPool,
-  healthFilter,
-  searchFilter,
-}) => {
-  // Based on the selected pool (if any), load the list of targets.
-  const {
-    data: {
-      data: { activeTargets },
-    },
-  } = useSuspenseAPIQuery<TargetsResult>({
-    path: `/targets`,
-    params: {
-      state: "active",
-      scrapePool: selectedPool === null ? "" : selectedPool,
-    },
-  });
+const ScrapePoolList: FC<ScrapePoolListProp> = memo(
+  ({ poolNames, selectedPool, healthFilter, searchFilter }) => {
+    // Based on the selected pool (if any), load the list of targets.
+    const {
+      data: {
+        data: { activeTargets },
+      },
+    } = useSuspenseAPIQuery<TargetsResult>({
+      path: `/targets`,
+      params: {
+        state: "active",
+        scrapePool: selectedPool === null ? "" : selectedPool,
+      },
+    });
 
-  const dispatch = useAppDispatch();
-  const [showEmptyPools, setShowEmptyPools] = useLocalStorage<boolean>({
-    key: "targetsPage.showEmptyPools",
-    defaultValue: false,
-  });
+    const dispatch = useAppDispatch();
+    const [showEmptyPools, setShowEmptyPools] = useLocalStorage<boolean>({
+      key: "targetsPage.showEmptyPools",
+      defaultValue: false,
+    });
 
-  const { collapsedPools, showLimitAlert } = useAppSelector(
-    (state) => state.targetsPage
-  );
+    const { collapsedPools, showLimitAlert } = useAppSelector(
+      (state) => state.targetsPage
+    );
 
-  const [debouncedSearch] = useDebouncedValue<string>(searchFilter.trim(), 250);
+    const allPools = useMemo(
+      () =>
+        buildPoolsData(
+          selectedPool ? [selectedPool] : poolNames,
+          activeTargets,
+          searchFilter,
+          healthFilter
+        ),
+      [selectedPool, poolNames, activeTargets, searchFilter, healthFilter]
+    );
 
-  const allPools = useMemo(
-    () =>
-      buildPoolsData(
-        selectedPool ? [selectedPool] : poolNames,
-        activeTargets,
-        debouncedSearch,
-        healthFilter
-      ),
-    [selectedPool, poolNames, activeTargets, debouncedSearch, healthFilter]
-  );
+    const allPoolNames = Object.keys(allPools);
+    const shownPoolNames = showEmptyPools
+      ? allPoolNames
+      : allPoolNames.filter((pn) => allPools[pn].targets.length !== 0);
 
-  const allPoolNames = Object.keys(allPools);
-  const shownPoolNames = showEmptyPools
-    ? allPoolNames
-    : allPoolNames.filter((pn) => allPools[pn].targets.length !== 0);
-
-  return (
-    <Stack>
-      {allPoolNames.length === 0 ? (
-        <Alert title="No scrape pools found" icon={<IconInfoCircle />}>
-          No scrape pools found.
-        </Alert>
-      ) : (
-        !showEmptyPools &&
-        allPoolNames.length !== shownPoolNames.length && (
-          <Alert
-            title="Hiding pools with no matching targets"
-            icon={<IconInfoCircle />}
-          >
-            Hiding {allPoolNames.length - shownPoolNames.length} empty pools due
-            to filters or no targets.
-            <Anchor ml="md" fz="1em" onClick={() => setShowEmptyPools(true)}>
-              Show empty pools
-            </Anchor>
+    return (
+      <Stack>
+        {allPoolNames.length === 0 ? (
+          <Alert title="No scrape pools found" icon={<IconInfoCircle />}>
+            No scrape pools found.
           </Alert>
-        )
-      )}
-      {showLimitAlert && (
-        <Alert
-          title="Found many pools, showing only one"
-          icon={<IconInfoCircle />}
-          withCloseButton
-          onClose={() => dispatch(setShowLimitAlert(false))}
-        >
-          There are more than {targetPoolDisplayLimit} scrape pools. Showing
-          only the first one. Use the dropdown to select a different pool.
-        </Alert>
-      )}
-      <Accordion
-        multiple
-        variant="separated"
-        value={allPoolNames.filter((p) => !collapsedPools.includes(p))}
-        onChange={(value) =>
-          dispatch(
-            setCollapsedPools(allPoolNames.filter((p) => !value.includes(p)))
-          )
-        }
-      >
-        {shownPoolNames.map((poolName) => {
-          const pool = allPools[poolName];
-          return (
-            <Accordion.Item
-              key={poolName}
-              value={poolName}
-              className={poolPanelHealthClass(pool)}
+        ) : (
+          !showEmptyPools &&
+          allPoolNames.length !== shownPoolNames.length && (
+            <Alert
+              title="Hiding pools with no matching targets"
+              icon={<IconInfoCircle />}
             >
-              <Accordion.Control>
-                <Group wrap="nowrap" justify="space-between" mr="lg">
-                  <Text>{poolName}</Text>
-                  <Group gap="xs">
-                    <Text c="gray.6">
-                      {pool.upCount} / {pool.count} up
-                    </Text>
-                    <RingProgress
-                      size={25}
-                      thickness={5}
-                      sections={
-                        pool.count === 0
-                          ? []
-                          : [
-                              {
-                                value: (pool.upCount / pool.count) * 100,
-                                color: "green.4",
-                              },
-                              {
-                                value: (pool.unknownCount / pool.count) * 100,
-                                color: "gray.4",
-                              },
-                              {
-                                value: (pool.downCount / pool.count) * 100,
-                                color: "red.5",
-                              },
-                            ]
-                      }
-                    />
+              Hiding {allPoolNames.length - shownPoolNames.length} empty pools
+              due to filters or no targets.
+              <Anchor ml="md" fz="1em" onClick={() => setShowEmptyPools(true)}>
+                Show empty pools
+              </Anchor>
+            </Alert>
+          )
+        )}
+        {showLimitAlert && (
+          <Alert
+            title="Found many pools, showing only one"
+            icon={<IconInfoCircle />}
+            withCloseButton
+            onClose={() => dispatch(setShowLimitAlert(false))}
+          >
+            There are more than {targetPoolDisplayLimit} scrape pools. Showing
+            only the first one. Use the dropdown to select a different pool.
+          </Alert>
+        )}
+        <Accordion
+          multiple
+          variant="separated"
+          value={allPoolNames.filter((p) => !collapsedPools.includes(p))}
+          onChange={(value) =>
+            dispatch(
+              setCollapsedPools(allPoolNames.filter((p) => !value.includes(p)))
+            )
+          }
+        >
+          {shownPoolNames.map((poolName) => {
+            const pool = allPools[poolName];
+            return (
+              <Accordion.Item
+                key={poolName}
+                value={poolName}
+                className={poolPanelHealthClass(pool)}
+              >
+                <Accordion.Control>
+                  <Group wrap="nowrap" justify="space-between" mr="lg">
+                    <Text>{poolName}</Text>
+                    <Group gap="xs">
+                      <Text c="gray.6">
+                        {pool.upCount} / {pool.count} up
+                      </Text>
+                      <RingProgress
+                        size={25}
+                        thickness={5}
+                        sections={
+                          pool.count === 0
+                            ? []
+                            : [
+                                {
+                                  value: (pool.upCount / pool.count) * 100,
+                                  color: "green.4",
+                                },
+                                {
+                                  value: (pool.unknownCount / pool.count) * 100,
+                                  color: "gray.4",
+                                },
+                                {
+                                  value: (pool.downCount / pool.count) * 100,
+                                  color: "red.5",
+                                },
+                              ]
+                        }
+                      />
+                    </Group>
                   </Group>
-                </Group>
-              </Accordion.Control>
-              <Accordion.Panel>
-                {pool.count === 0 ? (
-                  <Alert title="No targets" icon={<IconInfoCircle />}>
-                    No active targets in this scrape pool.
-                    <Anchor
-                      ml="md"
-                      fz="1em"
-                      onClick={() => setShowEmptyPools(false)}
+                </Accordion.Control>
+                <Accordion.Panel>
+                  {pool.count === 0 ? (
+                    <Alert title="No targets" icon={<IconInfoCircle />}>
+                      No active targets in this scrape pool.
+                      <Anchor
+                        ml="md"
+                        fz="1em"
+                        onClick={() => setShowEmptyPools(false)}
+                      >
+                        Hide empty pools
+                      </Anchor>
+                    </Alert>
+                  ) : pool.targets.length === 0 ? (
+                    <Alert
+                      title="No matching targets"
+                      icon={<IconInfoCircle />}
                     >
-                      Hide empty pools
-                    </Anchor>
-                  </Alert>
-                ) : pool.targets.length === 0 ? (
-                  <Alert title="No matching targets" icon={<IconInfoCircle />}>
-                    No targets in this pool match your filter criteria (omitted{" "}
-                    {pool.count} filtered targets).
-                    <Anchor
-                      ml="md"
-                      fz="1em"
-                      onClick={() => setShowEmptyPools(false)}
-                    >
-                      Hide empty pools
-                    </Anchor>
-                  </Alert>
-                ) : (
-                  <CustomInfiniteScroll
-                    allItems={pool.targets}
-                    child={({ items }) => (
-                      <Table>
-                        <Table.Thead>
-                          <Table.Tr>
-                            <Table.Th w="25%">Endpoint</Table.Th>
-                            <Table.Th>Labels</Table.Th>
-                            <Table.Th w={230}>Last scrape</Table.Th>
-                            <Table.Th w={100}>State</Table.Th>
-                          </Table.Tr>
-                        </Table.Thead>
-                        <Table.Tbody>
-                          {items.map((target, i) => (
-                            // TODO: Find a stable and definitely unique key.
-                            <React.Fragment key={i}>
-                              <Table.Tr
-                                style={{
-                                  borderBottom: target.lastError
-                                    ? "none"
-                                    : undefined,
-                                }}
-                              >
-                                <Table.Td valign="top">
-                                  <EndpointLink
-                                    endpoint={target.scrapeUrl}
-                                    globalUrl={target.globalUrl}
-                                  />
-                                </Table.Td>
+                      No targets in this pool match your filter criteria
+                      (omitted {pool.count} filtered targets).
+                      <Anchor
+                        ml="md"
+                        fz="1em"
+                        onClick={() => setShowEmptyPools(false)}
+                      >
+                        Hide empty pools
+                      </Anchor>
+                    </Alert>
+                  ) : (
+                    <CustomInfiniteScroll
+                      allItems={pool.targets}
+                      child={({ items }) => (
+                        <Table>
+                          <Table.Thead>
+                            <Table.Tr>
+                              <Table.Th w="25%">Endpoint</Table.Th>
+                              <Table.Th>Labels</Table.Th>
+                              <Table.Th w={230}>Last scrape</Table.Th>
+                              <Table.Th w={100}>State</Table.Th>
+                            </Table.Tr>
+                          </Table.Thead>
+                          <Table.Tbody>
+                            {items.map((target, i) => (
+                              // TODO: Find a stable and definitely unique key.
+                              <React.Fragment key={i}>
+                                <Table.Tr
+                                  style={{
+                                    borderBottom: target.lastError
+                                      ? "none"
+                                      : undefined,
+                                  }}
+                                >
+                                  <Table.Td valign="top">
+                                    <EndpointLink
+                                      endpoint={target.scrapeUrl}
+                                      globalUrl={target.globalUrl}
+                                    />
+                                  </Table.Td>
 
-                                <Table.Td valign="top">
-                                  <TargetLabels
-                                    labels={target.labels}
-                                    discoveredLabels={target.discoveredLabels}
-                                  />
-                                </Table.Td>
-                                <Table.Td valign="top">
-                                  <Group gap="xs" wrap="wrap">
-                                    <Tooltip
-                                      label="Last target scrape"
-                                      withArrow
-                                    >
-                                      <Badge
-                                        variant="light"
-                                        className={badgeClasses.statsBadge}
-                                        styles={{
-                                          label: { textTransform: "none" },
-                                        }}
-                                        leftSection={
-                                          <IconRefresh style={badgeIconStyle} />
-                                        }
+                                  <Table.Td valign="top">
+                                    <TargetLabels
+                                      labels={target.labels}
+                                      discoveredLabels={target.discoveredLabels}
+                                    />
+                                  </Table.Td>
+                                  <Table.Td valign="top">
+                                    <Group gap="xs" wrap="wrap">
+                                      <Tooltip
+                                        label="Last target scrape"
+                                        withArrow
                                       >
-                                        {humanizeDurationRelative(
-                                          target.lastScrape,
-                                          now()
-                                        )}
-                                      </Badge>
-                                    </Tooltip>
+                                        <Badge
+                                          variant="light"
+                                          className={badgeClasses.statsBadge}
+                                          styles={{
+                                            label: { textTransform: "none" },
+                                          }}
+                                          leftSection={
+                                            <IconRefresh
+                                              style={badgeIconStyle}
+                                            />
+                                          }
+                                        >
+                                          {humanizeDurationRelative(
+                                            target.lastScrape,
+                                            now()
+                                          )}
+                                        </Badge>
+                                      </Tooltip>
 
-                                    <Tooltip
-                                      label="Duration of last target scrape"
-                                      withArrow
-                                    >
-                                      <Badge
-                                        variant="light"
-                                        className={badgeClasses.statsBadge}
-                                        styles={{
-                                          label: { textTransform: "none" },
-                                        }}
-                                        leftSection={
-                                          <IconHourglass
-                                            style={badgeIconStyle}
-                                          />
-                                        }
+                                      <Tooltip
+                                        label="Duration of last target scrape"
+                                        withArrow
                                       >
-                                        {humanizeDuration(
-                                          target.lastScrapeDuration * 1000
-                                        )}
-                                      </Badge>
-                                    </Tooltip>
-                                  </Group>
-                                </Table.Td>
-                                <Table.Td valign="top">
-                                  <Badge
-                                    className={healthBadgeClass(target.health)}
-                                  >
-                                    {target.health}
-                                  </Badge>
-                                </Table.Td>
-                              </Table.Tr>
-                              {target.lastError && (
-                                <Table.Tr>
-                                  <Table.Td colSpan={5} valign="top">
-                                    <Alert
-                                      color="red"
-                                      mb="sm"
-                                      icon={<IconAlertTriangle />}
+                                        <Badge
+                                          variant="light"
+                                          className={badgeClasses.statsBadge}
+                                          styles={{
+                                            label: { textTransform: "none" },
+                                          }}
+                                          leftSection={
+                                            <IconHourglass
+                                              style={badgeIconStyle}
+                                            />
+                                          }
+                                        >
+                                          {humanizeDuration(
+                                            target.lastScrapeDuration * 1000
+                                          )}
+                                        </Badge>
+                                      </Tooltip>
+                                    </Group>
+                                  </Table.Td>
+                                  <Table.Td valign="top">
+                                    <Badge
+                                      className={healthBadgeClass(
+                                        target.health
+                                      )}
                                     >
-                                      <strong>Error scraping target:</strong>{" "}
-                                      {target.lastError}
-                                    </Alert>
+                                      {target.health}
+                                    </Badge>
                                   </Table.Td>
                                 </Table.Tr>
-                              )}
-                            </React.Fragment>
-                          ))}
-                        </Table.Tbody>
-                      </Table>
-                    )}
-                  />
-                )}
-              </Accordion.Panel>
-            </Accordion.Item>
-          );
-        })}
-      </Accordion>
-    </Stack>
-  );
-};
+                                {target.lastError && (
+                                  <Table.Tr>
+                                    <Table.Td colSpan={5} valign="top">
+                                      <Alert
+                                        color="red"
+                                        mb="sm"
+                                        icon={<IconAlertTriangle />}
+                                      >
+                                        <strong>Error scraping target:</strong>{" "}
+                                        {target.lastError}
+                                      </Alert>
+                                    </Table.Td>
+                                  </Table.Tr>
+                                )}
+                              </React.Fragment>
+                            ))}
+                          </Table.Tbody>
+                        </Table>
+                      )}
+                    />
+                  )}
+                </Accordion.Panel>
+              </Accordion.Item>
+            );
+          })}
+        </Accordion>
+      </Stack>
+    );
+  }
+);
 
 export default ScrapePoolList;

@@ -3,8 +3,6 @@ title: Template reference
 sort_rank: 5
 ---
 
-# Template reference
-
 Prometheus supports templating in the annotations and labels of alerts,
 as well as in served console pages. Templates have the ability to run
 queries against the local database, iterate over data, use conditionals,
@@ -17,8 +15,8 @@ The primary data structure for dealing with time series data is the sample, defi
 
 ```go
 type sample struct {
-        Labels map[string]string
-        Value  interface{}
+  Labels map[string]string
+  Value  interface{}
 }
 ```
 

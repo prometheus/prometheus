@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -38,8 +39,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
-	// Required to get the GCP auth provider working.
-	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp" // Required to get the GCP auth provider working.
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
@@ -210,18 +210,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		if _, ok := allowedSelectors[c.Role]; !ok {
 			return fmt.Errorf("invalid role: %q, expecting one of: pod, service, endpoints, endpointslice, node or ingress", c.Role)
 		}
-		var allowed bool
-		for _, role := range allowedSelectors[c.Role] {
-			if role == string(selector.Role) {
-				allowed = true
-				break
-			}
-		}
-
-		if !allowed {
+		if !slices.Contains(allowedSelectors[c.Role], string(selector.Role)) {
 			return fmt.Errorf("%s role supports only %s selectors", c.Role, strings.Join(allowedSelectors[c.Role], ", "))
 		}
-
 		_, err := fields.ParseSelector(selector.Field)
 		if err != nil {
 			return err
@@ -724,28 +715,41 @@ func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.Share
 
 func (d *Discovery) newEndpointSlicesByNodeInformer(plw *cache.ListWatch, object runtime.Object) cache.SharedIndexInformer {
 	indexers := make(map[string]cache.IndexFunc)
+	indexers[serviceIndex] = func(obj interface{}) ([]string, error) {
+		e, ok := obj.(*disv1.EndpointSlice)
+		if !ok {
+			return nil, errors.New("object is not an endpointslice")
+		}
+
+		svcName, exists := e.Labels[disv1.LabelServiceName]
+		if !exists {
+			return nil, nil
+		}
+
+		return []string{namespacedName(e.Namespace, svcName)}, nil
+	}
 	if !d.attachMetadata.Node {
 		return d.mustNewSharedIndexInformer(plw, object, resyncDisabled, indexers)
 	}
 
 	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
+		e, ok := obj.(*disv1.EndpointSlice)
+		if !ok {
+			return nil, errors.New("object is not an endpointslice")
+		}
+
 		var nodes []string
-		switch e := obj.(type) {
-		case *disv1.EndpointSlice:
-			for _, target := range e.Endpoints {
-				if target.TargetRef != nil {
-					switch target.TargetRef.Kind {
-					case "Pod":
-						if target.NodeName != nil {
-							nodes = append(nodes, *target.NodeName)
-						}
-					case "Node":
-						nodes = append(nodes, target.TargetRef.Name)
+		for _, target := range e.Endpoints {
+			if target.TargetRef != nil {
+				switch target.TargetRef.Kind {
+				case "Pod":
+					if target.NodeName != nil {
+						nodes = append(nodes, *target.NodeName)
 					}
+				case "Node":
+					nodes = append(nodes, target.TargetRef.Name)
 				}
 			}
-		default:
-			return nil, errors.New("object is not an endpointslice")
 		}
 
 		return nodes, nil

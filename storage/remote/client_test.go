@@ -342,7 +342,7 @@ func TestReadClient(t *testing.T) {
 			httpHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				http.Error(w, "test error", http.StatusBadRequest)
 			}),
-			expectedErrorContains: "test error\n",
+			expectedErrorContains: "test error",
 			unwrap:                true,
 		},
 	}

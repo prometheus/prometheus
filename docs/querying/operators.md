@@ -3,8 +3,6 @@ title: Operators
 sort_rank: 2
 ---
 
-# Operators
-
 ## Binary operators
 
 Prometheus's query language supports basic logical and arithmetic operators.
@@ -268,7 +266,7 @@ vector of fewer elements with aggregated values:
 * `bottomk` (smallest _k_ elements by sample value)
 * `topk` (largest _k_ elements by sample value)
 * `limitk` (sample _k_ elements, **experimental**, must be enabled with `--enable-feature=promql-experimental-functions`)
-* `limit_ratio` (sample a pseudo-randem ratio _r_ of elements, **experimental**, must be enabled with `--enable-feature=promql-experimental-functions`)
+* `limit_ratio` (sample a pseudo-random ratio _r_ of elements, **experimental**, must be enabled with `--enable-feature=promql-experimental-functions`)
 * `group` (all values in the resulting vector are 1)
 * `count` (count number of elements in the vector)
 * `count_values` (count number of elements with the same value)
@@ -319,7 +317,7 @@ the input samples, including the original labels, are returned in the result
 vector. `by` and `without` are only used to bucket the input vector. Similar to
 `min` and `max`, they only operate on float samples, considering `NaN` values
 to be farthest from the top or bottom, respectively. Histogram samples in the
-input vector are ignored, flagged by an info-level annotation. 
+input vector are ignored, flagged by an info-level annotation.
 
 If used in an instant query, `topk` and `bottomk` return series ordered by
 value in descending or ascending order, respectively. If used with `by` or

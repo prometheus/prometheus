@@ -1,0 +1,6 @@
+groups:
+  - name: invalid
+    rules:
+      - record: job:http_requests:rate5m
+        expr: sum by (job)(rate(http_requests_total[5m]))
+        unexpected_field: this_field_should_not_be_here

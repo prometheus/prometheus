@@ -2009,6 +2009,57 @@ var testExpr = []struct {
 	},
 	// Test matrix selector.
 	{
+		input: "test[1000ms]",
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "test",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   4,
+				},
+			},
+			Range:  1000 * time.Millisecond,
+			EndPos: 12,
+		},
+	},
+	{
+		input: "test[1001ms]",
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "test",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   4,
+				},
+			},
+			Range:  1001 * time.Millisecond,
+			EndPos: 12,
+		},
+	},
+	{
+		input: "test[1002ms]",
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "test",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   4,
+				},
+			},
+			Range:  1002 * time.Millisecond,
+			EndPos: 12,
+		},
+	},
+	{
 		input: "test[5s]",
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
@@ -3946,6 +3997,7 @@ var testExpr = []struct {
 			},
 		},
 	},
+	// Test that nested parentheses result in the correct position range.
 	{
 		input: `foo[11s+10s-5*2^2]`,
 		expected: &MatrixSelector{
@@ -4220,6 +4272,188 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `foo offset -1^1`,
+		expected: &BinaryExpr{
+			Op: POW,
+			LHS: &VectorSelector{
+				Name:           "foo",
+				OriginalOffset: -time.Second,
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   13,
+				},
+			},
+			RHS: &NumberLiteral{
+				Val: 1,
+				PosRange: posrange.PositionRange{
+					Start: 14,
+					End:   15,
+				},
+			},
+		},
+	},
+	{
+		input: `foo offset -(1^2)`,
+		expected: &VectorSelector{
+			Name:           "foo",
+			OriginalOffset: 0,
+			OriginalOffsetExpr: &DurationExpr{
+				Op: SUB,
+				RHS: &DurationExpr{
+					Op: POW,
+					LHS: &NumberLiteral{
+						Val: 1,
+						PosRange: posrange.PositionRange{
+							Start: 13,
+							End:   14,
+						},
+					},
+					RHS: &NumberLiteral{
+						Val: 2,
+						PosRange: posrange.PositionRange{
+							Start: 15,
+							End:   16,
+						},
+					},
+					Wrapped: true,
+				},
+				StartPos: 11,
+			},
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   17,
+			},
+		},
+	},
+	{
+		input: `foo offset (-1^2)`,
+		expected: &VectorSelector{
+			Name:           "foo",
+			OriginalOffset: 0,
+			OriginalOffsetExpr: &DurationExpr{
+				Op: SUB,
+				RHS: &DurationExpr{
+					Op: POW,
+					LHS: &NumberLiteral{
+						Val: 1,
+						PosRange: posrange.PositionRange{
+							Start: 13,
+							End:   14,
+						},
+					},
+					RHS: &NumberLiteral{
+						Val: 2,
+						PosRange: posrange.PositionRange{
+							Start: 15,
+							End:   16,
+						},
+					},
+				},
+				Wrapped:  true,
+				StartPos: 12,
+			},
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   17,
+			},
+		},
+	},
+	{
+		input: `foo[-2^2]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			RangeExpr: &DurationExpr{
+				Op:  SUB,
+				LHS: nil,
+				RHS: &DurationExpr{
+					Op: POW,
+					LHS: &NumberLiteral{
+						Val: 2,
+						PosRange: posrange.PositionRange{
+							Start: 5,
+							End:   6,
+						},
+					},
+					RHS: &NumberLiteral{
+						Val: 2,
+						PosRange: posrange.PositionRange{
+							Start: 7,
+							End:   8,
+						},
+					},
+				},
+				StartPos: 4,
+			},
+			EndPos: 9,
+		},
+	},
+	{
+		input: `foo[0+-2^2]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			RangeExpr: &DurationExpr{
+				Op: ADD,
+				LHS: &NumberLiteral{
+					Val: 0,
+					PosRange: posrange.PositionRange{
+						Start: 4,
+						End:   5,
+					},
+				},
+				RHS: &DurationExpr{
+					Op:  SUB,
+					LHS: nil,
+					RHS: &DurationExpr{
+						Op: POW,
+						LHS: &NumberLiteral{
+							Val: 2,
+							PosRange: posrange.PositionRange{
+								Start: 7,
+								End:   8,
+							},
+						},
+						RHS: &NumberLiteral{
+							Val: 2,
+							PosRange: posrange.PositionRange{
+								Start: 9,
+								End:   10,
+							},
+						},
+					},
+					StartPos: 6,
+				},
+			},
+			EndPos: 11,
+		},
+	},
+	{
 		input:  `foo[5s/0d]`,
 		fail:   true,
 		errMsg: `division by zero`,
@@ -4243,6 +4477,68 @@ var testExpr = []struct {
 		input:  `foo[9.5e10]`,
 		fail:   true,
 		errMsg: `duration out of range`,
+	},
+	{
+		input: "(sum(foo))",
+		expected: &ParenExpr{
+			Expr: &AggregateExpr{
+				Op: SUM,
+				Expr: &VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 5,
+						End:   8,
+					},
+				},
+				PosRange: posrange.PositionRange{Start: 1, End: 9},
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 10},
+		},
+	},
+	{
+		input: "(sum(foo) by (bar))",
+		expected: &ParenExpr{
+			Expr: &AggregateExpr{
+				Op:       SUM,
+				Grouping: []string{"bar"},
+				Expr: &VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 5,
+						End:   8,
+					},
+				},
+				PosRange: posrange.PositionRange{Start: 1, End: 18},
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 19},
+		},
+	},
+	{
+		input: "(sum by (bar) (foo))",
+		expected: &ParenExpr{
+			Expr: &AggregateExpr{
+				Op:       SUM,
+				Grouping: []string{"bar"},
+				Expr: &VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 15,
+						End:   18,
+					},
+				},
+				PosRange: posrange.PositionRange{Start: 1, End: 19},
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 20},
+		},
 	},
 }
 
@@ -4283,7 +4579,7 @@ func TestParseExpressions(t *testing.T) {
 
 				// The FastRegexMatcher is not comparable with a deep equal, so only compare its String() version.
 				if actualVector, ok := expr.(*VectorSelector); ok {
-					require.IsType(t, &VectorSelector{}, test.expected, "error on input '%s'", test.input)
+					require.IsType(t, test.expected, actualVector, "error on input '%s'", test.input)
 					expectedVector := test.expected.(*VectorSelector)
 
 					require.Len(t, actualVector.LabelMatchers, len(expectedVector.LabelMatchers), "error on input '%s'", test.input)
@@ -4305,6 +4601,7 @@ func TestParseExpressions(t *testing.T) {
 
 				require.Equal(t, expected, expr, "error on input '%s'", test.input)
 			} else {
+				require.Error(t, err)
 				require.ErrorContains(t, err, test.errMsg, "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
 
 				var errorList ParseErrors
