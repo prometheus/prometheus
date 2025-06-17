@@ -530,6 +530,8 @@ type OTLPOptions struct {
 	// marking the metric type as unknown for now).
 	// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
 	NativeDelta bool
+	// Add type and unit labels to the metrics.
+	AddTypeAndUnitLabels bool
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
@@ -545,8 +547,9 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 			logger:     logger,
 			appendable: appendable,
 		},
-		config:                configFunc,
-		allowDeltaTemporality: opts.NativeDelta,
+		config:                   configFunc,
+		allowDeltaTemporality:    opts.NativeDelta,
+		typeAndUnitLabelsEnabled: opts.AddTypeAndUnitLabels,
 	}
 
 	wh := &otlpWriteHandler{logger: logger, defaultConsumer: ex}
@@ -581,8 +584,9 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 
 type rwExporter struct {
 	*writeHandler
-	config                func() config.Config
-	allowDeltaTemporality bool
+	config                   func() config.Config
+	allowDeltaTemporality    bool
+	typeAndUnitLabelsEnabled bool
 }
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
@@ -596,6 +600,7 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		KeepIdentifyingResourceAttributes: otlpCfg.KeepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:           otlpCfg.ConvertHistogramsToNHCB,
 		AllowDeltaTemporality:             rw.allowDeltaTemporality,
+		AddTypeAndUnitLabels:              rw.typeAndUnitLabelsEnabled,
 	})
 	if err != nil {
 		rw.logger.Warn("Error translating OTLP metrics to Prometheus write request", "err", err)
