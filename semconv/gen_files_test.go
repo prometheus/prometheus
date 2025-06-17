@@ -19,26 +19,43 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var (
-	testdataElementsChanges = []change{
+func TestFetchChangelog(t *testing.T) {
+	testdataElementsChanges := []change{
 		{
-			Forward:  metricGroupChange{MetricName: "my_app_custom_changed_elements_total", Unit: "", ValuePromQL: "", Attributes: []attribute{{Tag: "number"}, {Tag: "class", Members: []attributeMember{{Value: "FIRST"}, {Value: "SECOND"}, {Value: "OTHER"}}}}},
-			Backward: metricGroupChange{MetricName: "my_app_custom_elements_total", Unit: "", ValuePromQL: "", Attributes: []attribute{{Tag: "integer"}, {Tag: "category", Members: []attributeMember{{Value: "first"}, {Value: "second"}, {Value: "other"}}}}},
+			Forward: metricGroupChange{
+				MetricName:  "",
+				Unit:        "",
+				ValuePromQL: "",
+				Attributes:  []attribute{{Tag: "my_number"}},
+			},
+			Backward: metricGroupChange{
+				MetricName:  "",
+				Unit:        "",
+				ValuePromQL: "",
+				Attributes:  []attribute{{Tag: "number"}},
+			},
 		},
 		{
-			Forward:  metricGroupChange{MetricName: "", Unit: "", ValuePromQL: "", Attributes: []attribute{{Tag: "my_number"}}},
-			Backward: metricGroupChange{MetricName: "", Unit: "", ValuePromQL: "", Attributes: []attribute{{Tag: "number"}}},
+			Forward: metricGroupChange{
+				MetricName:  "my_app_custom_changed_elements_total",
+				Unit:        "",
+				ValuePromQL: "",
+				Attributes:  []attribute{{Tag: "number"}, {Tag: "class", Members: []attributeMember{{Value: "FIRST"}, {Value: "SECOND"}, {Value: "OTHER"}}}},
+			},
+			Backward: metricGroupChange{
+				MetricName:  "my_app_custom_elements_total",
+				Unit:        "",
+				ValuePromQL: "",
+				Attributes:  []attribute{{Tag: "integer"}, {Tag: "category", Members: []attributeMember{{Value: "first"}, {Value: "second"}, {Value: "other"}}}},
+			},
 		},
 	}
-	testdataLatencyChanges = []change{
+	testdataLatencyChanges := []change{
 		{
 			Forward:  metricGroupChange{MetricName: "my_app_latency_seconds", Unit: "{second}", ValuePromQL: "value{} / 1000"},
 			Backward: metricGroupChange{MetricName: "my_app_latency_milliseconds", Unit: "{millisecond}", ValuePromQL: "value{} * 1000"},
 		},
 	}
-)
-
-func TestFetchChangelog(t *testing.T) {
 	expected := &changelog{
 		Version: 1,
 		MetricsChangelog: map[semanticMetricID][]change{
@@ -81,8 +98,10 @@ func TestSchemaEngine_FetchIDs(t *testing.T) {
 		Version: 1,
 		MetricsIDs: map[string][]versionedID{
 			"my_app_latency_seconds~seconds.histogram": {
-				{ID: "my_app_latency.2",
-					IntroVersion: "1.1.0"},
+				{
+					ID:           "my_app_latency.2",
+					IntroVersion: "1.1.0",
+				},
 			},
 			"my_app_custom_changed_elements_total~elements.counter": {
 				{

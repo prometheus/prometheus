@@ -275,7 +275,7 @@ func (e *schemaEngine) FindMatcherVariants(schemaURL string, originalMatchers []
 	}
 
 	// Changes are sorted from the newest to the oldest, so reverse this, so
-	// it's matches the revisions order.
+	// it matches the revisions order.
 	slices.Reverse(q.changes)
 
 	// Revision starts with 0, then 2,3,4..., uniform it (0,1,2,3...).
@@ -288,14 +288,14 @@ func (e *schemaEngine) FindMatcherVariants(schemaURL string, originalMatchers []
 		magicSuffix: q.magicSuffix,
 	}
 
-	// Changelog contains changes across revisions, traverse forward and backward.
+	// Changelog contains changes across revisions, traverse backward forward.
 	variants, err = t.traverseForMatchers(rev, false, matchers.Clone(), variants)
 	if err != nil {
-		return nil, q, fmt.Errorf("can't traverse changes for semantic ID %v: %w", sID, err)
+		return nil, q, fmt.Errorf("can't traverse changes for semantic ID %s backward: %w", sID, err)
 	}
 	variants, err = t.traverseForMatchers(rev, true, matchers, variants)
 	if err != nil {
-		return nil, q, fmt.Errorf("can't traverse changes for semantic ID %v: %w", sID, err)
+		return nil, q, fmt.Errorf("can't traverse changes for semantic ID %s forward: %w", sID, err)
 	}
 	return variants, q, nil
 }
@@ -414,7 +414,7 @@ func (e *schemaEngine) TransformSeries(q queryContext, originalLabels labels.Lab
 	// Changelog contains changes across revisions, traverse in the required direction.
 	vt, err = t.traverseForLabels(fromRev, toRev, identity.Type, magicSuffix, builder, valueTransformer{})
 	if err != nil {
-		return originalLabels, vt, fmt.Errorf("can't traverse changes for semantic ID %v: %w", sID, err)
+		return originalLabels, vt, fmt.Errorf("can't traverse changes for semantic ID %s: %w", sID, err)
 	}
 	return builder.Labels(), vt, nil
 }

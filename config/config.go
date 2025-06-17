@@ -287,11 +287,11 @@ type SemConvConfig struct {
 	// (within the process local filesystem) if they don't start with "http" prefix.
 	//
 	// This option is useful when manual adjustments to schema are needed or
-	// for when reaching internet is not an option (local cache).
+	// for when reaching the Internet is not an option (local cache).
 	//
-	// For example, imagine data that use schema URL like https://bwplotka.dev/semconv/1.1.0
+	// For example, imagine data that uses a schema URL like https://bwplotka.dev/semconv/1.1.0.
 	// Setting an override with "https://bwplotka.dev/semconv" -> "./semconv" will
-	// cause Prometheus to look for the schema artifacts (e.g.in current implementation
+	// cause Prometheus to look for the schema artifacts (e.g.in the current implementation
 	// "./semconv/changelog.yaml" and "./semconv/ids.yaml" files) in the local
 	// filesystem.
 	SchemaOverrides map[string]string `yaml:"schema_overrides,omitempty"`

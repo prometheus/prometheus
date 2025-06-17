@@ -87,7 +87,7 @@ type attributeMember struct {
 func fetchChangelog(schemaChangelogURL string) (_ *changelog, err error) {
 	ch := &changelog{}
 	if err := fetchAndUnmarshal(schemaChangelogURL, ch); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetch changelog for __schema_url__=%q: %w", schemaChangelogURL, err)
 	}
 	return ch, nil
 }
@@ -108,7 +108,7 @@ func fetchIDs(schemaIDsURL string) (_ *ids, err error) {
 		uniqueNameToIdentity:     make(map[string]string),
 	}
 	if err := fetchAndUnmarshal(schemaIDsURL, i); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetch IDs for __schema_url__=%q: %w", schemaIDsURL, err)
 	}
 
 	for id := range i.MetricsIDs {
@@ -154,22 +154,23 @@ func fetchAndUnmarshal[T any](url string, out *T) (err error) {
 	if strings.HasPrefix(url, "http") {
 		resp, err := http.Get(url)
 		if err != nil {
-			return fmt.Errorf("http fetch %v: %w", url, err)
+			return fmt.Errorf("http fetch %s: %w", url, err)
 		}
+		defer resp.Body.Close()
 		if resp.StatusCode/100 != 2 {
 			// TODO(bwplotka): Print potential body?
-			return fmt.Errorf("http fetch %v, got non-200 status: %v", url, resp.StatusCode)
+			return fmt.Errorf("http fetch %s, got non-200 status: %d", url, resp.StatusCode)
 		}
 
 		// TODO(bwplotka): Add limit.
 		b, err = io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("read all from http %v: %w", url, err)
+			return fmt.Errorf("read all from http %s: %w", url, err)
 		}
 	} else {
 		b, err = os.ReadFile(url)
 		if err != nil {
-			return fmt.Errorf("read all from file %v: %w", url, err)
+			return fmt.Errorf("read all from file %s: %w", url, err)
 		}
 	}
 	if err := yaml.Unmarshal(b, out); err != nil {
