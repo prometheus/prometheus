@@ -352,7 +352,7 @@ func (c *Client) Endpoint() string {
 // Read reads from a remote endpoint. The sortSeries parameter is only respected in the case of a sampled response;
 // chunked responses arrive already sorted by the server.
 func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
-	return c.performReadQueries(ctx, []*prompb.Query{query}, sortSeries, "Remote Read")
+	return c.ReadMultiple(ctx, []*prompb.Query{query}, sortSeries)
 }
 
 // ReadMultiple reads from a remote endpoint using multiple queries in a single request.
@@ -360,7 +360,20 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 // chunked responses arrive already sorted by the server.
 // Returns a single SeriesSet with interleaved series from all queries.
 func (c *Client) ReadMultiple(ctx context.Context, queries []*prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
-	return c.performReadQueries(ctx, queries, sortSeries, "Remote Read Multiple")
+	c.readQueries.Inc()
+	defer c.readQueries.Dec()
+
+	req := &prompb.ReadRequest{
+		Queries:               queries,
+		AcceptedResponseTypes: c.acceptedResponseTypes,
+	}
+
+	httpResp, cancel, start, err := c.executeReadRequest(ctx, req, "Remote Read Multiple")
+	if err != nil {
+		return nil, err
+	}
+
+	return c.handleReadResponse(httpResp, req, queries, sortSeries, start, cancel)
 }
 
 // executeReadRequest creates and executes an HTTP request for reading data
@@ -439,26 +452,6 @@ func (c *Client) handleReadResponse(httpResp *http.Response, req *prompb.ReadReq
 	}
 }
 
-// performReadQueries is the common implementation for both Read and ReadMultiple methods
-func (c *Client) performReadQueries(ctx context.Context, queries []*prompb.Query, sortSeries bool, spanName string) (storage.SeriesSet, error) {
-	c.readQueries.Inc()
-	defer c.readQueries.Dec()
-
-	req := &prompb.ReadRequest{
-		Queries:               queries,
-		AcceptedResponseTypes: c.acceptedResponseTypes,
-	}
-	
-	httpResp, cancel, start, err := c.executeReadRequest(ctx, req, spanName)
-	if err != nil {
-		return nil, err
-	}
-
-	return c.handleReadResponse(httpResp, req, queries, sortSeries, start, cancel)
-}
-
-// performReadMultipleQueries is the implementation for ReadMultiple method returning multiple SeriesSets
-
 // handleSampledResponseImpl handles sampled responses for both single and multiple queries
 func (c *Client) handleSampledResponseImpl(req *prompb.ReadRequest, httpResp *http.Response, sortSeries bool) (storage.SeriesSet, error) {
 	compressed, err := io.ReadAll(httpResp.Body)
@@ -511,7 +504,7 @@ func (c *Client) handleChunkedResponseImpl(s *ChunkedReader, httpResp *http.Resp
 	// For multiple queries in chunked response, we'll still use the existing infrastructure
 	// but we need to provide the timestamp range that covers all queries
 	var minStartTs, maxEndTs int64 = math.MaxInt64, math.MinInt64
-	
+
 	for _, query := range queries {
 		if query.StartTimestampMs < minStartTs {
 			minStartTs = query.StartTimestampMs
@@ -520,7 +513,7 @@ func (c *Client) handleChunkedResponseImpl(s *ChunkedReader, httpResp *http.Resp
 			maxEndTs = query.EndTimestampMs
 		}
 	}
-	
+
 	return NewChunkedSeriesSet(s, httpResp.Body, minStartTs, maxEndTs, onClose)
 }
 
@@ -550,11 +543,3 @@ func (c *combinedSeriesSet) Err() error {
 func (c *combinedSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
-
-// ChunkedMessage represents a single message from the chunked response stream
-type ChunkedMessage struct {
-	QueryIndex int64
-	Response   *prompb.ChunkedReadResponse
-	Err        error
-}
-
