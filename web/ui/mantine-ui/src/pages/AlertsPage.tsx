@@ -12,6 +12,7 @@ import {
   TextInput,
   Anchor,
   Pagination,
+  rem,
 } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
 import { AlertingRule, AlertingRulesResult } from "../api/responseTypes/rules";
@@ -36,6 +37,7 @@ import { useDebouncedValue } from "@mantine/hooks";
 import { KVSearch } from "@nexucis/kvsearch";
 import { inputIconStyle } from "../styles";
 import CustomInfiniteScroll from "../components/CustomInfiniteScroll";
+import classes from "./AlertsPage.module.css";
 
 type AlertsPageData = {
   // How many rules are in each state across all groups.
@@ -164,7 +166,7 @@ export default function AlertsPage() {
   const [debouncedSearch] = useDebouncedValue<string>(searchFilter.trim(), 250);
   const [showEmptyGroups, setShowEmptyGroups] = useLocalStorage<boolean>({
     key: "alertsPage.showEmptyGroups",
-    defaultValue: true,
+    defaultValue: false,
   });
 
   const { alertGroupsPerPage } = useSettings();
@@ -215,14 +217,9 @@ export default function AlertsPage() {
   // convenient to have in the same file IMO).
   const renderedPageItems = useMemo(
     () =>
-      currentPageGroups.map((g, i) => (
-        <Card
-          shadow="xs"
-          withBorder
-          p="md"
-          key={i} // TODO: Find a stable and definitely unique key.
-        >
-          <Group mb="md" mt="xs" ml="xs" justify="space-between">
+      currentPageGroups.map((g) => (
+        <Card shadow="xs" withBorder p="md" key={`${g.file}-${g.name}`}>
+          <Group mb="sm" justify="space-between">
             <Group align="baseline">
               <Text fz="xl" fw={600} c="var(--mantine-primary-color-filled)">
                 {g.name}
@@ -276,19 +273,11 @@ export default function AlertsPage() {
             <CustomInfiniteScroll
               allItems={g.rules}
               child={({ items }) => (
-                <Accordion multiple variant="separated">
+                <Accordion multiple variant="separated" classNames={classes}>
                   {items.map((r, j) => {
                     return (
                       <Accordion.Item
-                        styles={{
-                          item: {
-                            // TODO: This transparency hack is an OK workaround to make the collapsed items
-                            // have a different background color than their surrounding group card in dark mode,
-                            // but it would be better to use CSS to override the light/dark colors for
-                            // collapsed/expanded accordion items.
-                            backgroundColor: "#c0c0c015",
-                          },
-                        }}
+                        mt={rem(5)}
                         key={j}
                         value={j.toString()}
                         className={
@@ -299,7 +288,9 @@ export default function AlertsPage() {
                               : panelClasses.panelHealthOk
                         }
                       >
-                        <Accordion.Control>
+                        <Accordion.Control
+                          styles={{ label: { paddingBlock: rem(10) } }}
+                        >
                           <Group wrap="nowrap" justify="space-between" mr="lg">
                             <Text>{r.rule.name}</Text>
                             <Group gap="xs">
@@ -423,7 +414,7 @@ export default function AlertsPage() {
               o as keyof typeof alertsPageData.globalCounts
             ]
           }
-          placeholder="Filter by rule state"
+          placeholder="Filter by rule group state"
           values={(stateFilter?.filter((v) => v !== null) as string[]) || []}
           onChange={(values) => setStateFilter(values)}
         />
@@ -456,15 +447,13 @@ export default function AlertsPage() {
           </Alert>
         )
       )}
-      <Stack>
-        <Pagination
-          total={totalPageCount}
-          value={effectiveActivePage}
-          onChange={setActivePage}
-          hideWithOnePage
-        />
-        {renderedPageItems}
-      </Stack>
+      <Pagination
+        total={totalPageCount}
+        value={effectiveActivePage}
+        onChange={setActivePage}
+        hideWithOnePage
+      />
+      {renderedPageItems}
     </Stack>
   );
 }

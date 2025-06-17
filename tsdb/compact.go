@@ -85,6 +85,7 @@ type LeveledCompactor struct {
 	chunkPool                   chunkenc.Pool
 	ctx                         context.Context
 	maxBlockChunkSegmentSize    int64
+	useUncachedIO               bool
 	mergeFunc                   storage.VerticalChunkSeriesMergeFunc
 	postingsEncoder             index.PostingsEncoder
 	postingsDecoderFactory      PostingsDecoderFactory
@@ -169,6 +170,10 @@ type LeveledCompactorOptions struct {
 	// EnableOverlappingCompaction enables compaction of overlapping blocks. In Prometheus it is always enabled.
 	// It is useful for downstream projects like Mimir, Cortex, Thanos where they have a separate component that does compaction.
 	EnableOverlappingCompaction bool
+	// Metrics is set of metrics for Compactor. By default, NewCompactorMetrics would be called to initialize metrics unless it is provided.
+	Metrics *CompactorMetrics
+	// UseUncachedIO allows bypassing the page cache when appropriate.
+	UseUncachedIO bool
 }
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
@@ -214,13 +219,17 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 	if pe == nil {
 		pe = index.EncodePostingsRaw
 	}
+	if opts.Metrics == nil {
+		opts.Metrics = NewCompactorMetrics(r)
+	}
 	return &LeveledCompactor{
 		ranges:                      ranges,
 		chunkPool:                   pool,
 		logger:                      l,
-		metrics:                     NewCompactorMetrics(r),
+		metrics:                     opts.Metrics,
 		ctx:                         ctx,
 		maxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
+		useUncachedIO:               opts.UseUncachedIO,
 		mergeFunc:                   mergeFunc,
 		postingsEncoder:             pe,
 		postingsDecoderFactory:      opts.PD,
@@ -470,6 +479,12 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 	start := time.Now()
 
 	for _, d := range dirs {
+		select {
+		case <-c.ctx.Done():
+			return nil, c.ctx.Err()
+		default:
+		}
+
 		meta, _, err := readMetaFile(d)
 		if err != nil {
 			return nil, err
@@ -646,7 +661,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 	// data of all blocks.
 	var chunkw ChunkWriter
 
-	chunkw, err = chunks.NewWriterWithSegSize(chunkDir(tmp), c.maxBlockChunkSegmentSize)
+	chunkw, err = chunks.NewWriter(chunkDir(tmp), chunks.WithSegmentSize(c.maxBlockChunkSegmentSize), chunks.WithUncachedIO(c.useUncachedIO))
 	if err != nil {
 		return fmt.Errorf("open chunk writer: %w", err)
 	}

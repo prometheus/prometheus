@@ -268,7 +268,7 @@ func TestHistogramChunkBucketChanges(t *testing.T) {
 	require.Empty(t, backwardPositiveInserts)
 	require.Empty(t, backwardNegativeInserts)
 	require.True(t, ok) // Only new buckets came in.
-	require.False(t, cr)
+	require.Equal(t, NotCounterReset, cr)
 	c, app = hApp.recode(posInterjections, negInterjections, h2.PositiveSpans, h2.NegativeSpans)
 	chk, _, _, err = app.AppendHistogram(nil, ts2, h2, false)
 	require.NoError(t, err)
@@ -394,7 +394,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		require.Empty(t, backwardPositiveInserts)
 		require.Empty(t, backwardNegativeInserts)
 		require.True(t, ok) // Only new buckets came in.
-		require.False(t, cr)
+		require.Equal(t, NotCounterReset, cr)
 
 		assertRecodedHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
 	}
@@ -417,7 +417,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		require.Empty(t, backwardPositiveInserts)
 		require.Empty(t, backwardNegativeInserts)
 		require.False(t, ok) // Need to cut a new chunk.
-		require.True(t, cr)
+		require.Equal(t, CounterReset, cr)
 
 		assertNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset, histogram.UnknownCounterReset)
 	}
@@ -443,7 +443,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		require.NotEmpty(t, backwardPositiveInserts)
 		require.Empty(t, backwardNegativeInserts)
 		require.True(t, ok)
-		require.False(t, cr)
+		require.Equal(t, NotCounterReset, cr)
 
 		assertNoNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
 
@@ -474,7 +474,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		require.NotEmpty(t, backwardPositiveInserts)
 		require.Empty(t, backwardNegativeInserts)
 		require.True(t, ok)
-		require.False(t, cr)
+		require.Equal(t, NotCounterReset, cr)
 
 		assertRecodedHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
 
@@ -502,7 +502,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		require.Empty(t, backwardPositiveInserts)
 		require.Empty(t, backwardNegativeInserts)
 		require.False(t, ok) // Need to cut a new chunk.
-		require.True(t, cr)
+		require.Equal(t, CounterReset, cr)
 
 		assertNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset, histogram.UnknownCounterReset)
 	}
@@ -528,7 +528,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		require.Empty(t, backwardPositiveInserts)
 		require.Empty(t, backwardNegativeInserts)
 		require.False(t, ok) // Need to cut a new chunk.
-		require.True(t, cr)
+		require.Equal(t, CounterReset, cr)
 
 		assertNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset, histogram.UnknownCounterReset)
 	}
@@ -560,7 +560,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		require.Empty(t, backwardPositiveInserts)
 		require.Empty(t, backwardNegativeInserts)
 		require.False(t, ok) // Need to cut a new chunk.
-		require.True(t, cr)
+		require.Equal(t, CounterReset, cr)
 
 		assertNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset, histogram.UnknownCounterReset)
 	}
@@ -667,7 +667,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		require.NotEmpty(t, backwardPositiveInserts)
 		require.Empty(t, backwardNegativeInserts)
 		require.True(t, ok)
-		require.False(t, cr)
+		require.Equal(t, NotCounterReset, cr)
 
 		assertNoNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
 	}
@@ -735,9 +735,41 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		require.Empty(t, backwardPositiveInserts)
 		require.Empty(t, backwardNegativeInserts)
 		require.True(t, ok) // Only new buckets came in.
-		require.False(t, cr)
+		require.Equal(t, NotCounterReset, cr)
 
 		assertRecodedHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
+	}
+
+	{ // New histogram with a different schema.
+		c, hApp, ts, h1 := setup(eh)
+		h2 := h1.Copy()
+		h2.Schema = 2
+
+		posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2)
+		require.Empty(t, posInterjections)
+		require.Empty(t, negInterjections)
+		require.Empty(t, backwardPositiveInserts)
+		require.Empty(t, backwardNegativeInserts)
+		require.False(t, ok) // Need to cut a new chunk.
+		require.Equal(t, UnknownCounterReset, cr)
+
+		assertNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset, histogram.UnknownCounterReset)
+	}
+
+	{ // New histogram with a different schema.
+		c, hApp, ts, h1 := setup(eh)
+		h2 := h1.Copy()
+		h2.ZeroThreshold = 1e-120
+
+		posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2)
+		require.Empty(t, posInterjections)
+		require.Empty(t, negInterjections)
+		require.Empty(t, backwardPositiveInserts)
+		require.Empty(t, backwardNegativeInserts)
+		require.False(t, ok) // Need to cut a new chunk.
+		require.Equal(t, UnknownCounterReset, cr)
+
+		assertNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset, histogram.UnknownCounterReset)
 	}
 }
 
@@ -1007,7 +1039,7 @@ func TestHistogramChunkAppendableWithEmptySpan(t *testing.T) {
 			require.Empty(t, bpI)
 			require.Empty(t, bnI)
 			require.True(t, okToAppend)
-			require.False(t, counterReset)
+			require.Equal(t, NotCounterReset, counterReset)
 		})
 	}
 }
@@ -1599,7 +1631,7 @@ func TestHistogramUniqueSpansAfterNextWithAtFloatHistogram(t *testing.T) {
 	require.NotSame(t, &rh1.NegativeSpans[0], &rh2.NegativeSpans[0], "NegativeSpans should be unique between histograms")
 }
 
-func TestHistogramUniqueCustomValuesAfterNextWithAtHistogram(t *testing.T) {
+func TestHistogramCustomValuesInternedAfterNextWithAtHistogram(t *testing.T) {
 	// Create two histograms with the same schema and custom values.
 	h1 := &histogram.Histogram{
 		Schema: -53,
@@ -1642,10 +1674,10 @@ func TestHistogramUniqueCustomValuesAfterNextWithAtHistogram(t *testing.T) {
 
 	// Check that the spans and custom values for h1 and h2 are unique slices.
 	require.NotSame(t, &rh1.PositiveSpans[0], &rh2.PositiveSpans[0], "PositiveSpans should be unique between histograms")
-	require.NotSame(t, &rh1.CustomValues[0], &rh2.CustomValues[0], "CustomValues should be unique between histograms")
+	require.Same(t, &rh1.CustomValues[0], &rh2.CustomValues[0], "CustomValues should be unique between histograms")
 }
 
-func TestHistogramUniqueCustomValuesAfterNextWithAtFloatHistogram(t *testing.T) {
+func TestHistogramCustomValuesInternedAfterNextWithAtFloatHistogram(t *testing.T) {
 	// Create two histograms with the same schema and custom values.
 	h1 := &histogram.Histogram{
 		Schema: -53,
@@ -1688,7 +1720,7 @@ func TestHistogramUniqueCustomValuesAfterNextWithAtFloatHistogram(t *testing.T) 
 
 	// Check that the spans and custom values for h1 and h2 are unique slices.
 	require.NotSame(t, &rh1.PositiveSpans[0], &rh2.PositiveSpans[0], "PositiveSpans should be unique between histograms")
-	require.NotSame(t, &rh1.CustomValues[0], &rh2.CustomValues[0], "CustomValues should be unique between histograms")
+	require.Same(t, &rh1.CustomValues[0], &rh2.CustomValues[0], "CustomValues should be unique between histograms")
 }
 
 func BenchmarkAppendable(b *testing.B) {

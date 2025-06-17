@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/schema"
 )
 
 type openMetricsLexer struct {
@@ -73,7 +74,7 @@ func (l *openMetricsLexer) Error(es string) {
 
 // OpenMetricsParser parses samples from a byte slice of samples in the official
 // OpenMetrics text exposition format.
-// This is based on the working draft https://docs.google.com/document/u/1/d/1KwV0mAXwwbvvifBvDKH_LU1YjyXE_wxCkHNoCGq1GX0/edit
+// Specification can be found at https://prometheus.io/docs/specs/om/open_metrics_spec/
 type OpenMetricsParser struct {
 	l         *openMetricsLexer
 	builder   labels.ScratchBuilder
@@ -212,32 +213,34 @@ func (p *OpenMetricsParser) Comment() []byte {
 
 // Labels writes the labels of the current sample into the passed labels.
 func (p *OpenMetricsParser) Labels(l *labels.Labels) {
-	s := yoloString(p.series)
+	// Defensive copy in case the following keeps a reference.
+	// See https://github.com/prometheus/prometheus/issues/16490
+	s := string(p.series)
 
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
+
+	m := schema.Metadata{
+		Name: metricName,
+		Type: p.mtype,
+		Unit: p.unit,
+	}
 	if p.enableTypeAndUnitLabels {
-		p.builder.AddMetricIdentity(labels.MetricIdentity{
-			Name: metricName,
-			Type: p.mtype,
-			Unit: p.unit,
-		})
+		m.AddToLabels(&p.builder)
 	} else {
 		p.builder.Add(labels.MetricName, metricName)
 	}
-
 	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
 		b := p.offsets[i+1] - p.start
 		label := unreplace(s[a:b])
-		if p.enableTypeAndUnitLabels && labels.IsMetricIdentityLabel(label) {
-			// Dropping user provided id labels if needed.
+		if p.enableTypeAndUnitLabels && !m.IsEmptyFor(label) {
+			// Dropping user provided metadata labels, if found in the OM metadata.
 			continue
 		}
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
 		value := normalizeFloatsInLabelValues(p.mtype, label, unreplace(s[c:d]))
-
 		p.builder.Add(label, value)
 	}
 
@@ -308,7 +311,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() int64 {
 		return p.ct
 	}
 
-	// Create a new lexer to reset the parser once this function is done executing.
+	// Create a new lexer and other core state details to reset the parser once this function is done executing.
 	resetLexer := &openMetricsLexer{
 		b:     p.l.b,
 		i:     p.l.i,
@@ -316,15 +319,16 @@ func (p *OpenMetricsParser) CreatedTimestamp() int64 {
 		err:   p.l.err,
 		state: p.l.state,
 	}
+	resetStart := p.start
+	resetMType := p.mtype
 
 	p.skipCTSeries = false
-
 	p.ignoreExemplar = true
-	savedStart := p.start
 	defer func() {
-		p.ignoreExemplar = false
-		p.start = savedStart
 		p.l = resetLexer
+		p.start = resetStart
+		p.mtype = resetMType
+		p.ignoreExemplar = false
 	}()
 
 	for {

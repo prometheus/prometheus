@@ -22,7 +22,9 @@ Each test file contains a series of commands. There are three kinds of commands:
 
 * `load`
 * `clear`
-* `eval` (including the variants `eval_fail`, `eval_warn`, `eval_info`, and `eval_ordered`)
+* `eval`
+
+> **Note:** The `eval` command variants (`eval_fail`, `eval_warn`, `eval_info`, and `eval_ordered`) are deprecated. Use the new `expect` lines instead (explained in the [`eval` command](#eval-command) section). Additionally, `expected_fail_message` and `expected_fail_regexp` are also deprecated.
 
 Each command is executed in the order given in the file.
 
@@ -73,8 +75,8 @@ When loading a batch of classic histogram float series, you can optionally appen
 
 ## `eval` command
 
-`eval` runs a query against the test environment and asserts that the result is as expected.
-It requires the query to succeed without any (info or warn) annotations.
+`eval` runs a query against the test environment and asserts that the result is as expected. 
+It requires the query to succeed without any failures unless an `expect fail` line is provided. Previously `eval` expected no `info` or `warn` annotation, but now `expect no_info` and `expect no_warn` lines must be explicitly provided.
 
 Both instant and range queries are supported.
 
@@ -83,12 +85,18 @@ The syntax is as follows:
 ```
 # Instant query
 eval instant at <time> <query>
+    <expect>
+    ...
+    <expect>
     <series> <points>
     ...
     <series> <points>
     
 # Range query
 eval range from <start> to <end> step <step> <query>
+    <expect>
+    ...
+    <expect>
     <series> <points>
     ...
     <series> <points>
@@ -96,45 +104,63 @@ eval range from <start> to <end> step <step> <query>
 
 * `<time>` is the timestamp to evaluate the instant query at (eg. `1m`)
 * `<start>` and `<end>` specify the time range of the range query, and use the same syntax as `<time>`
-* `<step>` is the step of the range query, and uses the same syntax as `<time>` (eg. `30s`)
+* `<step>` is the step of the range query, and uses the same syntax as `<time>` (eg. `30s`) 
+* `<expect>`(optional) specifies expected annotations, errors, or result ordering.
 * `<series>` and `<points>` specify the expected values, and follow the same syntax as for `load` above
+
+### `expect` Syntax
+
+```
+expect <type> <match_type>: <string>
+```
+
+#### Parameters
+
+* `<type>` is the expectation type:
+    * `fail` expects the query to fail.
+    * `info` expects the query to return at least one info annotation.
+    * `warn` expects the query to return at least one warn annotation.
+    * `no_info` expects the query to return no info annotation.
+    * `no_warn` expects the query to return no warn annotation.
+    * `ordered` expects the query to return the results in the specified order.
+* `<match_type>` (optional) specifies message matching type for annotations:
+    * `msg` for exact string match.
+    * `regex` for regular expression match.
+    * **Not applicable** for `ordered`, `no_info`, and `no_warn`.
+* `<string>` is the expected annotation message.
 
 For example:
 
 ```
 eval instant at 1m sum by (env) (my_metric)
+    expect warn
+    expect no_info
     {env="prod"} 5
     {env="test"} 20
     
 eval range from 0 to 3m step 1m sum by (env) (my_metric)
+    expect warn msg: something went wrong
+    expect info regex: something went (wrong|boom)
     {env="prod"} 2 5 10 20
     {env="test"} 10 20 30 45
+
+eval instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
+expect fail
+
+eval instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
+expect fail msg: "vector cannot contain metrics with the same labelset"
+
+eval instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
+expect fail regex: "vector cannot contain metrics .*|something else went wrong"
+
+eval instant at 1m sum by (env) (my_metric)
+expect ordered
+{env="prod"} 5
+{env="test"} 20
 ```
 
-To assert that a query succeeds with an info or warn annotation, use the
-`eval_info` or `eval_warn` commands, respectively.
+There can be multiple `<expect>` lines for a given `<type>`. Each `<type>` validates its corresponding annotation, error, or ordering while ignoring others.
 
-Instant queries also support asserting that the series are returned in exactly
-the order specified: use `eval_ordered instant ...` instead of `eval instant
-...`. `eval_ordered` ignores any annotations. The assertion always fails for
-matrix results.
+Every `<expect>` line must match at least one corresponding annotation or error.
 
-To assert that a query fails, use the `eval_fail` command. `eval_fail` does not
-expect any result lines. Instead, it optionally accepts an expected error
-message string or regular expression to assert that the error message is as
-expected.
-
-For example:
-
-```
-# Assert that the query fails for any reason without asserting on the error message.
-eval_fail instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
-
-# Assert that the query fails with exactly the provided error message string.
-eval_fail instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
-    expected_fail_message vector cannot contain metrics with the same labelset
-
-# Assert that the query fails with an error message matching the regexp provided.
-eval_fail instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
-    expected_fail_regexp (vector cannot contain metrics .*|something else went wrong)
-```
+If at least one `<expect>` line of type `warn` or `info` is present, then all corresponding annotations must have a matching `expect` line.

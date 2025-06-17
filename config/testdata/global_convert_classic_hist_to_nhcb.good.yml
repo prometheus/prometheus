@@ -1,0 +1,6 @@
+global:
+  convert_classic_histograms_to_nhcb: true
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:8080']

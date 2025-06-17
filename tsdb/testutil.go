@@ -16,16 +16,14 @@ package tsdb
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 const (
@@ -176,7 +174,7 @@ func requireEqualSamples(t *testing.T, name string, expected, actual []chunks.Sa
 		}
 	}
 
-	require.Equal(t, len(expected), len(actual), "Length not equal to expected for %s", name)
+	require.Len(t, actual, len(expected), "Length not equal to expected for %s", name)
 	for i, s := range expected {
 		expectedSample := s
 		actualSample := actual[i]

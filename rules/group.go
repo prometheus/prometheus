@@ -23,21 +23,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/atomic"
 
-	"github.com/prometheus/prometheus/promql/parser"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/promslog"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
@@ -272,12 +270,7 @@ func (g *Group) run(ctx context.Context) {
 			g.evalIterationFunc(ctx, g, evalTimestamp)
 		}
 
-		restoreStartTime := time.Now()
-		g.RestoreForState(restoreStartTime)
-		totalRestoreTimeSeconds := time.Since(restoreStartTime).Seconds()
-		g.metrics.GroupLastRestoreDuration.WithLabelValues(GroupKey(g.file, g.name)).Set(totalRestoreTimeSeconds)
-		g.logger.Debug("'for' state restoration completed", "duration_seconds", totalRestoreTimeSeconds)
-		g.shouldRestore = false
+		g.RestoreForState(time.Now())
 	}
 
 	for {
@@ -744,6 +737,12 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 // RestoreForState restores the 'for' state of the alerts
 // by looking up last ActiveAt from storage.
 func (g *Group) RestoreForState(ts time.Time) {
+	defer func() {
+		totalRestoreTimeSeconds := time.Since(ts).Seconds()
+		g.metrics.GroupLastRestoreDuration.WithLabelValues(GroupKey(g.file, g.name)).Set(totalRestoreTimeSeconds)
+		g.logger.Debug("'for' state restoration completed", "duration_seconds", totalRestoreTimeSeconds)
+		g.shouldRestore = false
+	}()
 	maxtMS := int64(model.TimeFromUnixNano(ts.UnixNano()))
 	// We allow restoration only if alerts were active before after certain time.
 	mint := ts.Add(-g.opts.OutageTolerance)

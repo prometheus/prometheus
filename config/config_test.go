@@ -69,6 +69,10 @@ func mustParseURL(u string) *config.URL {
 	return &config.URL{URL: parsed}
 }
 
+func boolPtr(b bool) *bool {
+	return &b
+}
+
 const (
 	globBodySizeLimit         = 15 * units.MiB
 	globSampleLimit           = 1500
@@ -91,13 +95,15 @@ var expectedConf = &Config{
 
 		ExternalLabels: labels.FromStrings("foo", "bar", "monitor", "codelab"),
 
-		BodySizeLimit:         globBodySizeLimit,
-		SampleLimit:           globSampleLimit,
-		TargetLimit:           globTargetLimit,
-		LabelLimit:            globLabelLimit,
-		LabelNameLengthLimit:  globLabelNameLengthLimit,
-		LabelValueLengthLimit: globLabelValueLengthLimit,
-		ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+		BodySizeLimit:                  globBodySizeLimit,
+		SampleLimit:                    globSampleLimit,
+		TargetLimit:                    globTargetLimit,
+		LabelLimit:                     globLabelLimit,
+		LabelNameLengthLimit:           globLabelNameLengthLimit,
+		LabelValueLengthLimit:          globLabelValueLengthLimit,
+		ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+		AlwaysScrapeClassicHistograms:  false,
+		ConvertClassicHistogramsToNHCB: false,
 	},
 
 	Runtime: RuntimeConfig{
@@ -202,20 +208,24 @@ var expectedConf = &Config{
 		{
 			JobName: "prometheus",
 
-			HonorLabels:            true,
-			HonorTimestamps:        true,
-			ScrapeInterval:         model.Duration(15 * time.Second),
-			ScrapeTimeout:          DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:      true,
-			BodySizeLimit:          globBodySizeLimit,
-			SampleLimit:            globSampleLimit,
-			TargetLimit:            globTargetLimit,
-			LabelLimit:             globLabelLimit,
-			LabelNameLengthLimit:   globLabelNameLengthLimit,
-			LabelValueLengthLimit:  globLabelValueLengthLimit,
-			ScrapeProtocols:        DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFallbackProtocol: PrometheusText0_0_4,
-			ScrapeFailureLogFile:   "testdata/fail_prom.log",
+			HonorLabels:                    true,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFallbackProtocol:         PrometheusText0_0_4,
+			ScrapeFailureLogFile:           "testdata/fail_prom.log",
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -317,18 +327,22 @@ var expectedConf = &Config{
 		{
 			JobName: "service-x",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(50 * time.Second),
-			ScrapeTimeout:         model.Duration(5 * time.Second),
-			EnableCompression:     true,
-			BodySizeLimit:         10 * units.MiB,
-			SampleLimit:           1000,
-			TargetLimit:           35,
-			LabelLimit:            35,
-			LabelNameLengthLimit:  210,
-			LabelValueLengthLimit: 210,
-			ScrapeProtocols:       []ScrapeProtocol{PrometheusText0_0_4},
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(50 * time.Second),
+			ScrapeTimeout:                  model.Duration(5 * time.Second),
+			EnableCompression:              true,
+			BodySizeLimit:                  10 * units.MiB,
+			SampleLimit:                    1000,
+			TargetLimit:                    35,
+			LabelLimit:                     35,
+			LabelNameLengthLimit:           210,
+			LabelValueLengthLimit:          210,
+			ScrapeProtocols:                []ScrapeProtocol{PrometheusText0_0_4},
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			HTTPClientConfig: config.HTTPClientConfig{
 				BasicAuth: &config.BasicAuth{
@@ -415,18 +429,22 @@ var expectedConf = &Config{
 		{
 			JobName: "service-y",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -471,18 +489,22 @@ var expectedConf = &Config{
 		{
 			JobName: "service-z",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         model.Duration(10 * time.Second),
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  model.Duration(10 * time.Second),
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath: "/metrics",
 			Scheme:      "http",
@@ -505,18 +527,22 @@ var expectedConf = &Config{
 		{
 			JobName: "service-kubernetes",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -545,18 +571,22 @@ var expectedConf = &Config{
 		{
 			JobName: "service-kubernetes-namespaces",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -585,18 +615,22 @@ var expectedConf = &Config{
 		{
 			JobName: "service-kuma",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -615,18 +649,22 @@ var expectedConf = &Config{
 		{
 			JobName: "service-marathon",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -653,18 +691,22 @@ var expectedConf = &Config{
 		{
 			JobName: "service-nomad",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -688,18 +730,22 @@ var expectedConf = &Config{
 		{
 			JobName: "service-ec2",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -730,18 +776,22 @@ var expectedConf = &Config{
 		{
 			JobName: "service-lightsail",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -762,18 +812,22 @@ var expectedConf = &Config{
 		{
 			JobName: "service-azure",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -797,18 +851,22 @@ var expectedConf = &Config{
 		{
 			JobName: "service-nerve",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -825,18 +883,22 @@ var expectedConf = &Config{
 		{
 			JobName: "0123service-xxx",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -856,18 +918,22 @@ var expectedConf = &Config{
 		{
 			JobName: "badfederation",
 
-			HonorTimestamps:       false,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                false,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      "/federate",
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -887,18 +953,22 @@ var expectedConf = &Config{
 		{
 			JobName: "測試",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -918,18 +988,22 @@ var expectedConf = &Config{
 		{
 			JobName: "httpsd",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -946,18 +1020,22 @@ var expectedConf = &Config{
 		{
 			JobName: "service-triton",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -982,18 +1060,22 @@ var expectedConf = &Config{
 		{
 			JobName: "digitalocean-droplets",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1017,18 +1099,22 @@ var expectedConf = &Config{
 		{
 			JobName: "docker",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1049,18 +1135,22 @@ var expectedConf = &Config{
 		{
 			JobName: "dockerswarm",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1080,18 +1170,22 @@ var expectedConf = &Config{
 		{
 			JobName: "service-openstack",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1115,18 +1209,22 @@ var expectedConf = &Config{
 		{
 			JobName: "service-puppetdb",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1152,19 +1250,23 @@ var expectedConf = &Config{
 			},
 		},
 		{
-			JobName:               "hetzner",
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			JobName:                        "hetzner",
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1210,18 +1312,22 @@ var expectedConf = &Config{
 		{
 			JobName: "service-eureka",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1238,18 +1344,22 @@ var expectedConf = &Config{
 		{
 			JobName: "ovhcloud",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1277,18 +1387,22 @@ var expectedConf = &Config{
 		{
 			JobName: "scaleway",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1322,18 +1436,22 @@ var expectedConf = &Config{
 		{
 			JobName: "linode-instances",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1358,18 +1476,22 @@ var expectedConf = &Config{
 		{
 			JobName: "uyuni",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1387,19 +1509,24 @@ var expectedConf = &Config{
 			},
 		},
 		{
-			JobName:               "ionos",
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			JobName: "ionos",
+
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1421,18 +1548,22 @@ var expectedConf = &Config{
 		{
 			JobName: "vultr",
 
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  globScrapeFailureLogFile,
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1530,8 +1661,8 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 }
 
 func TestOTLPSanitizeResourceAttributes(t *testing.T) {
-	t.Run("good config", func(t *testing.T) {
-		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.good.yml"), false, promslog.NewNopLogger())
+	t.Run("good config - default resource attributes", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_default_resource_attributes.good.yml"), false, promslog.NewNopLogger())
 		require.NoError(t, err)
 
 		out, err := yaml.Marshal(want)
@@ -1539,13 +1670,73 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		var got Config
 		require.NoError(t, yaml.UnmarshalStrict(out, &got))
 
+		require.False(t, got.OTLPConfig.PromoteAllResourceAttributes)
+		require.Empty(t, got.OTLPConfig.IgnoreResourceAttributes)
+		require.Empty(t, got.OTLPConfig.PromoteResourceAttributes)
+	})
+
+	t.Run("good config - promote resource attributes", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_promote_resource_attributes.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+
+		require.False(t, got.OTLPConfig.PromoteAllResourceAttributes)
+		require.Empty(t, got.OTLPConfig.IgnoreResourceAttributes)
 		require.Equal(t, []string{"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"}, got.OTLPConfig.PromoteResourceAttributes)
 	})
 
-	t.Run("bad config", func(t *testing.T) {
-		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.bad.yml"), false, promslog.NewNopLogger())
+	t.Run("bad config - promote resource attributes", func(t *testing.T) {
+		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_promote_resource_attributes.bad.yml"), false, promslog.NewNopLogger())
+		require.ErrorContains(t, err, `invalid 'promote_resource_attributes'`)
 		require.ErrorContains(t, err, `duplicated promoted OTel resource attribute "k8s.job.name"`)
 		require.ErrorContains(t, err, `empty promoted OTel resource attribute`)
+	})
+
+	t.Run("good config - promote all resource attributes", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes_promote_all.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.True(t, got.OTLPConfig.PromoteAllResourceAttributes)
+		require.Empty(t, got.OTLPConfig.PromoteResourceAttributes)
+		require.Empty(t, got.OTLPConfig.IgnoreResourceAttributes)
+	})
+
+	t.Run("good config - ignore resource attributes", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_ignore_resource_attributes.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.True(t, got.OTLPConfig.PromoteAllResourceAttributes)
+		require.Empty(t, got.OTLPConfig.PromoteResourceAttributes)
+		require.Equal(t, []string{"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"}, got.OTLPConfig.IgnoreResourceAttributes)
+	})
+
+	t.Run("bad config - ignore resource attributes", func(t *testing.T) {
+		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_ignore_resource_attributes.bad.yml"), false, promslog.NewNopLogger())
+		require.ErrorContains(t, err, `invalid 'ignore_resource_attributes'`)
+		require.ErrorContains(t, err, `duplicated ignored OTel resource attribute "k8s.job.name"`)
+		require.ErrorContains(t, err, `empty ignored OTel resource attribute`)
+	})
+
+	t.Run("bad config - conflict between promote all and promote specific resource attributes", func(t *testing.T) {
+		_, err := LoadFile(filepath.Join("testdata", "otlp_promote_all_resource_attributes.bad.yml"), false, promslog.NewNopLogger())
+		require.ErrorContains(t, err, `'promote_all_resource_attributes' and 'promote_resource_attributes' cannot be configured simultaneously`)
+	})
+
+	t.Run("bad config - configuring ignoring of resource attributes without also enabling promotion of all resource attributes", func(t *testing.T) {
+		_, err := LoadFile(filepath.Join("testdata", "otlp_ignore_resource_attributes_without_promote_all.bad.yml"), false, promslog.NewNopLogger())
+		require.ErrorContains(t, err, `'ignore_resource_attributes' cannot be configured unless 'promote_all_resource_attributes' is true`)
 	})
 }
 
@@ -1563,8 +1754,22 @@ func TestOTLPAllowServiceNameInTargetInfo(t *testing.T) {
 	})
 }
 
-func TestOTLPAllowUTF8(t *testing.T) {
+func TestOTLPConvertHistogramsToNHCB(t *testing.T) {
 	t.Run("good config", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_convert_histograms_to_nhcb.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+
+		require.True(t, got.OTLPConfig.ConvertHistogramsToNHCB)
+	})
+}
+
+func TestOTLPAllowUTF8(t *testing.T) {
+	t.Run("good config - NoUTF8EscapingWithSuffixes", func(t *testing.T) {
 		fpath := filepath.Join("testdata", "otlp_allow_utf8.good.yml")
 		verify := func(t *testing.T, conf *Config, err error) {
 			t.Helper()
@@ -1584,11 +1789,51 @@ func TestOTLPAllowUTF8(t *testing.T) {
 		})
 	})
 
-	t.Run("incompatible config", func(t *testing.T) {
+	t.Run("incompatible config - NoUTF8EscapingWithSuffixes", func(t *testing.T) {
 		fpath := filepath.Join("testdata", "otlp_allow_utf8.incompatible.yml")
 		verify := func(t *testing.T, err error) {
 			t.Helper()
-			require.ErrorContains(t, err, `OTLP translation strategy NoUTF8EscapingWithSuffixes is not allowed when UTF8 is disabled`)
+			require.ErrorContains(t, err, `OTLP translation strategy "NoUTF8EscapingWithSuffixes" is not allowed when UTF8 is disabled`)
+		}
+
+		t.Run("LoadFile", func(t *testing.T) {
+			_, err := LoadFile(fpath, false, promslog.NewNopLogger())
+			verify(t, err)
+		})
+		t.Run("Load", func(t *testing.T) {
+			content, err := os.ReadFile(fpath)
+			require.NoError(t, err)
+			_, err = Load(string(content), promslog.NewNopLogger())
+			t.Log("err", err)
+			verify(t, err)
+		})
+	})
+
+	t.Run("good config - NoTranslation", func(t *testing.T) {
+		fpath := filepath.Join("testdata", "otlp_no_translation.good.yml")
+		verify := func(t *testing.T, conf *Config, err error) {
+			t.Helper()
+			require.NoError(t, err)
+			require.Equal(t, NoTranslation, conf.OTLPConfig.TranslationStrategy)
+		}
+
+		t.Run("LoadFile", func(t *testing.T) {
+			conf, err := LoadFile(fpath, false, promslog.NewNopLogger())
+			verify(t, conf, err)
+		})
+		t.Run("Load", func(t *testing.T) {
+			content, err := os.ReadFile(fpath)
+			require.NoError(t, err)
+			conf, err := Load(string(content), promslog.NewNopLogger())
+			verify(t, conf, err)
+		})
+	})
+
+	t.Run("incompatible config - NoTranslation", func(t *testing.T) {
+		fpath := filepath.Join("testdata", "otlp_no_translation.incompatible.yml")
+		verify := func(t *testing.T, err error) {
+			t.Helper()
+			require.ErrorContains(t, err, `OTLP translation strategy "NoTranslation" is not allowed when UTF8 is disabled`)
 		}
 
 		t.Run("LoadFile", func(t *testing.T) {
@@ -1620,6 +1865,26 @@ func TestOTLPAllowUTF8(t *testing.T) {
 			require.NoError(t, err)
 			_, err = Load(string(content), promslog.NewNopLogger())
 			verify(t, err)
+		})
+	})
+
+	t.Run("good config - missing otlp config uses default", func(t *testing.T) {
+		fpath := filepath.Join("testdata", "otlp_empty.yml")
+		verify := func(t *testing.T, conf *Config, err error) {
+			t.Helper()
+			require.NoError(t, err)
+			require.Equal(t, UnderscoreEscapingWithSuffixes, conf.OTLPConfig.TranslationStrategy)
+		}
+
+		t.Run("LoadFile", func(t *testing.T) {
+			conf, err := LoadFile(fpath, false, promslog.NewNopLogger())
+			verify(t, conf, err)
+		})
+		t.Run("Load", func(t *testing.T) {
+			content, err := os.ReadFile(fpath)
+			require.NoError(t, err)
+			conf, err := Load(string(content), promslog.NewNopLogger())
+			verify(t, conf, err)
 		})
 	})
 }
@@ -2160,6 +2425,10 @@ var expectedErrors = []struct {
 		filename: "scrape_config_files_fallback_scrape_protocol2.bad.yml",
 		errMsg:   `unmarshal errors`,
 	},
+	{
+		filename: "scrape_config_utf8_conflicting.bad.yml",
+		errMsg:   `utf8 metric names requested but validation scheme is not set to UTF8`,
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
@@ -2236,14 +2505,26 @@ func TestEmptyGlobalBlock(t *testing.T) {
 	require.Equal(t, exp, *c)
 }
 
+// ScrapeConfigOptions contains options for creating a scrape config.
+type ScrapeConfigOptions struct {
+	JobName                       string
+	ScrapeInterval                model.Duration
+	ScrapeTimeout                 model.Duration
+	AlwaysScrapeClassicHistograms bool
+	ConvertClassicHistToNHCB      bool
+}
+
 func TestGetScrapeConfigs(t *testing.T) {
-	sc := func(jobName string, scrapeInterval, scrapeTimeout model.Duration) *ScrapeConfig {
+	// Helper function to create a scrape config with the given options.
+	sc := func(opts ScrapeConfigOptions) *ScrapeConfig {
 		return &ScrapeConfig{
-			JobName:         jobName,
-			HonorTimestamps: true,
-			ScrapeInterval:  scrapeInterval,
-			ScrapeTimeout:   scrapeTimeout,
-			ScrapeProtocols: DefaultGlobalConfig.ScrapeProtocols,
+			JobName:                    opts.JobName,
+			HonorTimestamps:            true,
+			ScrapeInterval:             opts.ScrapeInterval,
+			ScrapeTimeout:              opts.ScrapeTimeout,
+			ScrapeProtocols:            DefaultGlobalConfig.ScrapeProtocols,
+			MetricNameValidationScheme: UTF8ValidationConfig,
+			MetricNameEscapingScheme:   model.AllowUTF8,
 
 			MetricsPath:       "/metrics",
 			Scheme:            "http",
@@ -2261,6 +2542,8 @@ func TestGetScrapeConfigs(t *testing.T) {
 					},
 				},
 			},
+			AlwaysScrapeClassicHistograms:  boolPtr(opts.AlwaysScrapeClassicHistograms),
+			ConvertClassicHistogramsToNHCB: boolPtr(opts.ConvertClassicHistToNHCB),
 		}
 	}
 
@@ -2273,33 +2556,37 @@ func TestGetScrapeConfigs(t *testing.T) {
 		{
 			name:           "An included config file should be a valid global config.",
 			configFile:     "testdata/scrape_config_files.good.yml",
-			expectedResult: []*ScrapeConfig{sc("prometheus", model.Duration(60*time.Second), model.Duration(10*time.Second))},
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false})},
 		},
 		{
-			name:           "An global config that only include a scrape config file.",
+			name:           "A global config that only include a scrape config file.",
 			configFile:     "testdata/scrape_config_files_only.good.yml",
-			expectedResult: []*ScrapeConfig{sc("prometheus", model.Duration(60*time.Second), model.Duration(10*time.Second))},
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false})},
 		},
 		{
-			name:       "An global config that combine scrape config files and scrape configs.",
+			name:       "A global config that combine scrape config files and scrape configs.",
 			configFile: "testdata/scrape_config_files_combined.good.yml",
 			expectedResult: []*ScrapeConfig{
-				sc("node", model.Duration(60*time.Second), model.Duration(10*time.Second)),
-				sc("prometheus", model.Duration(60*time.Second), model.Duration(10*time.Second)),
-				sc("alertmanager", model.Duration(60*time.Second), model.Duration(10*time.Second)),
+				sc(ScrapeConfigOptions{JobName: "node", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false}),
+				sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false}),
+				sc(ScrapeConfigOptions{JobName: "alertmanager", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false}),
 			},
 		},
 		{
-			name:       "An global config that includes a scrape config file with globs",
+			name:       "A global config that includes a scrape config file with globs",
 			configFile: "testdata/scrape_config_files_glob.good.yml",
 			expectedResult: []*ScrapeConfig{
 				{
 					JobName: "prometheus",
 
-					HonorTimestamps: true,
-					ScrapeInterval:  model.Duration(60 * time.Second),
-					ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
-					ScrapeProtocols: DefaultGlobalConfig.ScrapeProtocols,
+					HonorTimestamps:                true,
+					ScrapeInterval:                 model.Duration(60 * time.Second),
+					ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+					ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+					MetricNameValidationScheme:     UTF8ValidationConfig,
+					MetricNameEscapingScheme:       model.AllowUTF8,
+					AlwaysScrapeClassicHistograms:  boolPtr(false),
+					ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 					MetricsPath: DefaultScrapeConfig.MetricsPath,
 					Scheme:      DefaultScrapeConfig.Scheme,
@@ -2329,10 +2616,14 @@ func TestGetScrapeConfigs(t *testing.T) {
 				{
 					JobName: "node",
 
-					HonorTimestamps: true,
-					ScrapeInterval:  model.Duration(15 * time.Second),
-					ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
-					ScrapeProtocols: DefaultGlobalConfig.ScrapeProtocols,
+					HonorTimestamps:                true,
+					ScrapeInterval:                 model.Duration(15 * time.Second),
+					ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+					ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+					MetricNameValidationScheme:     UTF8ValidationConfig,
+					MetricNameEscapingScheme:       model.AllowUTF8,
+					AlwaysScrapeClassicHistograms:  boolPtr(false),
+					ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 					HTTPClientConfig: config.HTTPClientConfig{
 						TLSConfig: config.TLSConfig{
@@ -2366,19 +2657,54 @@ func TestGetScrapeConfigs(t *testing.T) {
 			},
 		},
 		{
-			name:          "An global config that includes twice the same scrape configs.",
+			name:          "A global config that includes twice the same scrape configs.",
 			configFile:    "testdata/scrape_config_files_double_import.bad.yml",
 			expectedError: `found multiple scrape configs with job name "prometheus"`,
 		},
 		{
-			name:          "An global config that includes a scrape config identical to a scrape config in the main file.",
+			name:          "A global config that includes a scrape config identical to a scrape config in the main file.",
 			configFile:    "testdata/scrape_config_files_duplicate.bad.yml",
 			expectedError: `found multiple scrape configs with job name "prometheus"`,
 		},
 		{
-			name:          "An global config that includes a scrape config file with errors.",
+			name:          "A global config that includes a scrape config file with errors.",
 			configFile:    "testdata/scrape_config_files_global.bad.yml",
 			expectedError: `scrape timeout greater than scrape interval for scrape config with job name "prometheus"`,
+		},
+		{
+			name:           "A global config that enables convert classic histograms to nhcb.",
+			configFile:     "testdata/global_convert_classic_hist_to_nhcb.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: true})},
+		},
+		{
+			name:           "A global config that enables convert classic histograms to nhcb and scrape config that disables the conversion",
+			configFile:     "testdata/local_disable_convert_classic_hist_to_nhcb.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false})},
+		},
+		{
+			name:           "A global config that disables convert classic histograms to nhcb and scrape config that enables the conversion",
+			configFile:     "testdata/local_convert_classic_hist_to_nhcb.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: true})},
+		},
+		{
+			name:           "A global config that enables always scrape classic histograms",
+			configFile:     "testdata/global_enable_always_scrape_classic_hist.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: true, ConvertClassicHistToNHCB: false})},
+		},
+		{
+			name:           "A global config that disables always scrape classic histograms",
+			configFile:     "testdata/global_disable_always_scrape_classic_hist.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false})},
+		},
+		{
+			name:           "A global config that disables always scrape classic histograms and scrape config that enables it",
+			configFile:     "testdata/local_enable_always_scrape_classic_hist.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: true, ConvertClassicHistToNHCB: false})},
+		},
+		{
+			name:           "A global config that enables always scrape classic histograms and scrape config that disables it",
+			configFile:     "testdata/local_disable_always_scrape_classic_hist.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false})},
 		},
 	}
 
@@ -2423,7 +2749,7 @@ func TestScrapeConfigNameValidationSettings(t *testing.T) {
 		{
 			name:         "blank config implies default",
 			inputFile:    "scrape_config_default_validation_mode",
-			expectScheme: "",
+			expectScheme: "utf8",
 		},
 		{
 			name:         "global setting implies local settings",
@@ -2454,6 +2780,56 @@ func TestScrapeConfigNameValidationSettings(t *testing.T) {
 			require.NoError(t, yaml.UnmarshalStrict(out, got))
 
 			require.Equal(t, tc.expectScheme, got.ScrapeConfigs[0].MetricNameValidationScheme)
+		})
+	}
+}
+
+func TestScrapeConfigNameEscapingSettings(t *testing.T) {
+	tests := []struct {
+		name                   string
+		inputFile              string
+		expectValidationScheme string
+		expectEscapingScheme   string
+	}{
+		{
+			name:                   "blank config implies default",
+			inputFile:              "scrape_config_default_validation_mode",
+			expectValidationScheme: "utf8",
+			expectEscapingScheme:   "allow-utf-8",
+		},
+		{
+			name:                   "global setting implies local settings",
+			inputFile:              "scrape_config_global_validation_mode",
+			expectValidationScheme: "legacy",
+			expectEscapingScheme:   "dots",
+		},
+		{
+			name:                   "local setting",
+			inputFile:              "scrape_config_local_validation_mode",
+			expectValidationScheme: "legacy",
+			expectEscapingScheme:   "values",
+		},
+		{
+			name:                   "local setting overrides global setting",
+			inputFile:              "scrape_config_local_global_validation_mode",
+			expectValidationScheme: "utf8",
+			expectEscapingScheme:   "dots",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			want, err := LoadFile(fmt.Sprintf("testdata/%s.yml", tc.inputFile), false, promslog.NewNopLogger())
+			require.NoError(t, err)
+
+			out, err := yaml.Marshal(want)
+
+			require.NoError(t, err)
+			got := &Config{}
+			require.NoError(t, yaml.UnmarshalStrict(out, got))
+
+			require.Equal(t, tc.expectValidationScheme, got.ScrapeConfigs[0].MetricNameValidationScheme)
+			require.Equal(t, tc.expectEscapingScheme, got.ScrapeConfigs[0].MetricNameEscapingScheme)
 		})
 	}
 }

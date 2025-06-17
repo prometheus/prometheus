@@ -22,9 +22,9 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
-
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -211,7 +211,8 @@ type awareIterator struct {
 }
 
 func (s *awareSeries) Iterator(i chunkenc.Iterator) chunkenc.Iterator {
-	return &awareIterator{Iterator: s.Series.Iterator(i), typ: s.lbls.MetricIdentity().Type, vt: s.vt, magicSuffix: s.magicSuffix}
+	metadata := schema.NewMetadataFromLabels(s.lbls)
+	return &awareIterator{Iterator: s.Series.Iterator(i), typ: metadata.Type, vt: s.vt, magicSuffix: s.magicSuffix}
 }
 
 func (i *awareIterator) At() (int64, float64) {

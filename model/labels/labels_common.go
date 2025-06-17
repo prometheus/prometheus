@@ -18,136 +18,28 @@ import (
 	"encoding/json"
 	"slices"
 	"strconv"
-	"strings"
 	"unsafe"
 
 	"github.com/prometheus/common/model"
 )
 
 const (
-	// MetricName is a special label name and selector for MetricIdentity.Name.
+	// MetricName is a special label name that represent a metric name.
+	// Deprecated: Use schema.Metadata structure and its methods.
 	MetricName = "__name__"
 
-	// metricType is a special label name and selector for MetricIdentity.Type.
-	// Private to ensure __name__, __type__ and __unit__ are used together
-	// and remain extensible in Prometheus. See Labels.MetricIdentity,
-	// Builder.SetMetricIdentity and ScratchBuilder.AddMetricIdentity for access.
-	metricType = "__type__"
-	// MetricUnit is a special label name and selector for MetricIdentity.Unit,
-	// which in the past used to be stored in metadata.
-	// Private to ensure __name__, __type__ and __unit__ are used together
-	// and remain extensible in Prometheus. See Labels.MetricIdentity,
-	// Builder.SetMetricIdentity and ScratchBuilder.AddMetricIdentity for access.
-	metricUnit = "__unit__"
-
-	AlertName    = "alertname"
-	BucketLabel  = "le"
-	InstanceName = "instance"
+	AlertName   = "alertname"
+	BucketLabel = "le"
 
 	labelSep = '\xfe' // Used at beginning of `Bytes` return.
 	sep      = '\xff' // Used between labels in `Bytes` and `Hash`.
 )
 
-// IsMetricIdentityLabel returns true if the given label name is a special
-// metric identity label.
-func IsMetricIdentityLabel(name string) bool {
-	return name == MetricName || name == metricType || name == metricUnit
-}
-
-// MetricIdentity represents extended metric identity parts beyond the metric name.
-// Each "time series" is identifiable by MetricIdentity and other labels e.g. job.
-type MetricIdentity struct {
-	// Name represents metric name (not always the same as metric family, until we
-	// have native, structured metric representation for all types).
-	// Empty means nameless metric (e.g. result of the PromQL function).
-	Name string
-	// Type, empty ("") is equivalent to model.UnknownMetricType.
-	// In the past Prometheus used to be stored it n metadata.
-	Type model.MetricType
-	// Unit of the metric, regardless if encoded in the metric name. Empty means
-	// unitless metric (e.g. result of the PromQL function).
-	// In the past Prometheus used to be stored it n metadata.
-	Unit string
-}
-
-func (m MetricIdentity) String() string {
-	b := strings.Builder{}
-	b.WriteString(m.Name)
-	if m.Unit != "" {
-		b.WriteString("~")
-		b.WriteString(m.Unit)
-	}
-	if m.Type != "" && m.Type != model.MetricTypeUnknown {
-		b.WriteString(".")
-		b.WriteString(string(m.Type))
-	}
-	return b.String()
-}
-
 var seps = []byte{sep} // Used with Hash, which has no WriteByte method.
 
-// Label is a key/value pair of strings.
+// Label is a key/value a pair of strings.
 type Label struct {
 	Name, Value string
-}
-
-// MetricIdentity returns the metric identity parts.
-func (ls Labels) MetricIdentity() MetricIdentity {
-	typ := model.MetricTypeUnknown
-	if got := ls.Get(metricType); got != "" {
-		typ = model.MetricType(got)
-	}
-	return MetricIdentity{
-		Name: ls.Get(MetricName),
-		Type: typ,
-		Unit: ls.Get(metricUnit),
-	}
-}
-
-// SetMetricIdentity injects metric identity parts into labels.
-// Empty fields of the given MetricIdentity (or unknown metric type), will
-// cause removal of the existing part labels.
-func (b *Builder) SetMetricIdentity(mid MetricIdentity) *Builder {
-	b.Set(MetricName, mid.Name)
-	if mid.Type == model.MetricTypeUnknown {
-		// Unknown equals empty semantically, so remove the label on unknown too as per
-		// method signature comment.
-		mid.Type = ""
-	}
-	b.Set(metricType, string(mid.Type))
-	b.Set(metricUnit, mid.Unit)
-	return b
-}
-
-// IgnoreIdentityLabelsScratchBuilder is a wrapper over scratch builder
-// that ignores subsequent additions of special metric identity labels.
-type IgnoreIdentityLabelsScratchBuilder struct {
-	*ScratchBuilder
-}
-
-// Add a name/value pair, unless it's a special metric identity label e.g. __name__, __type__, __unit__.
-// Note if you Add the same name twice you will get a duplicate label, which is invalid.
-func (b IgnoreIdentityLabelsScratchBuilder) Add(name, value string) {
-	if IsMetricIdentityLabel(name) {
-		return
-	}
-	b.ScratchBuilder.Add(name, value)
-}
-
-// AddMetricIdentity adds metric identity parts into labels.
-// Empty fields of the given MetricIdentity (or unknown metric type), will be ignored.
-//
-//nolint:revive // unexported type
-func (b *ScratchBuilder) AddMetricIdentity(mid MetricIdentity) {
-	if mid.Name != "" {
-		b.Add(MetricName, mid.Name)
-	}
-	if mid.Type != "" && mid.Type != model.MetricTypeUnknown {
-		b.Add(metricType, string(mid.Type))
-	}
-	if mid.Unit != "" {
-		b.Add(metricUnit, mid.Unit)
-	}
 }
 
 func (ls Labels) String() string {
@@ -277,10 +169,8 @@ func (b *Builder) Del(ns ...string) *Builder {
 // Keep removes all labels from the base except those with the given names.
 func (b *Builder) Keep(ns ...string) *Builder {
 	b.base.Range(func(l Label) {
-		for _, n := range ns {
-			if l.Name == n {
-				return
-			}
+		if slices.Contains(ns, l.Name) {
+			return
 		}
 		b.del = append(b.del, l.Name)
 	})

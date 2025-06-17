@@ -21,12 +21,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
-	"github.com/prometheus/common/model"
-
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 )
 
@@ -52,10 +52,12 @@ func TestCreateAttributes(t *testing.T) {
 	attrs.PutStr("metric-attr-other", "metric value other")
 
 	testCases := []struct {
-		name                      string
-		promoteResourceAttributes []string
-		ignoreAttrs               []string
-		expectedLabels            []prompb.Label
+		name                         string
+		promoteAllResourceAttributes bool
+		promoteResourceAttributes    []string
+		ignoreResourceAttributes     []string
+		ignoreAttrs                  []string
+		expectedLabels               []prompb.Label
 	}{
 		{
 			name:                      "Successful conversion without resource attribute promotion",
@@ -196,15 +198,94 @@ func TestCreateAttributes(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                         "Successful conversion promoting all resource attributes",
+			promoteAllResourceAttributes: true,
+			expectedLabels: []prompb.Label{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service name",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "metric value",
+				},
+				{
+					Name:  "metric_attr_other",
+					Value: "metric value other",
+				},
+				{
+					Name:  "service_name",
+					Value: "service name",
+				},
+				{
+					Name:  "service_instance_id",
+					Value: "service ID",
+				},
+			},
+		},
+		{
+			name:                         "Successful conversion promoting all resource attributes, ignoring 'service.instance.id'",
+			promoteAllResourceAttributes: true,
+			ignoreResourceAttributes: []string{
+				"service.instance.id",
+			},
+			expectedLabels: []prompb.Label{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service name",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "metric value",
+				},
+				{
+					Name:  "metric_attr_other",
+					Value: "metric value other",
+				},
+				{
+					Name:  "service_name",
+					Value: "service name",
+				},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			settings := Settings{
-				PromoteResourceAttributes: tc.promoteResourceAttributes,
+				PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
+					PromoteAllResourceAttributes: tc.promoteAllResourceAttributes,
+					PromoteResourceAttributes:    tc.promoteResourceAttributes,
+					IgnoreResourceAttributes:     tc.ignoreResourceAttributes,
+				}),
 			}
 			lbls := createAttributes(resource, attrs, settings, tc.ignoreAttrs, false, model.MetricNameLabel, "test_metric")
 
-			assert.ElementsMatch(t, lbls, tc.expectedLabels)
+			require.ElementsMatch(t, lbls, tc.expectedLabels)
 		})
 	}
 }
@@ -222,7 +303,7 @@ func Test_convertTimeStamp(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := convertTimeStamp(tt.arg)
-			assert.Equal(t, tt.want, got)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -330,8 +411,8 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				metric.Name(),
 			)
 
-			assert.Equal(t, tt.want(), converter.unique)
-			assert.Empty(t, converter.conflicts)
+			require.Equal(t, tt.want(), converter.unique)
+			require.Empty(t, converter.conflicts)
 		})
 	}
 }
@@ -441,8 +522,8 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				metric.Name(),
 			)
 
-			assert.Equal(t, tt.want(), converter.unique)
-			assert.Empty(t, converter.conflicts)
+			require.Equal(t, tt.want(), converter.unique)
+			require.Empty(t, converter.conflicts)
 		})
 	}
 }
@@ -457,9 +538,9 @@ func TestGetPromExemplars(t *testing.T) {
 		exemplar.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
 		exemplar.SetIntValue(42)
 		exemplars, err := getPromExemplars(ctx, everyN, pt)
-		assert.NoError(t, err)
-		assert.Len(t, exemplars, 1)
-		assert.Equal(t, float64(42), exemplars[0].Value)
+		require.NoError(t, err)
+		require.Len(t, exemplars, 1)
+		require.Equal(t, float64(42), exemplars[0].Value)
 	})
 
 	t.Run("Exemplars with double value", func(t *testing.T) {
@@ -468,9 +549,9 @@ func TestGetPromExemplars(t *testing.T) {
 		exemplar.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
 		exemplar.SetDoubleValue(69.420)
 		exemplars, err := getPromExemplars(ctx, everyN, pt)
-		assert.NoError(t, err)
-		assert.Len(t, exemplars, 1)
-		assert.Equal(t, 69.420, exemplars[0].Value)
+		require.NoError(t, err)
+		require.Len(t, exemplars, 1)
+		require.Equal(t, 69.420, exemplars[0].Value)
 	})
 
 	t.Run("Exemplars with unsupported value type", func(t *testing.T) {
@@ -478,6 +559,6 @@ func TestGetPromExemplars(t *testing.T) {
 		exemplar := pt.Exemplars().AppendEmpty()
 		exemplar.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
 		_, err := getPromExemplars(ctx, everyN, pt)
-		assert.Error(t, err)
+		require.Error(t, err)
 	})
 }

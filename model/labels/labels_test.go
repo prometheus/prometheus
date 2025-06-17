@@ -27,6 +27,8 @@ import (
 )
 
 func TestLabels_String(t *testing.T) {
+	s254 := strings.Repeat("x", 254) // Edge cases for stringlabels encoding.
+	s255 := strings.Repeat("x", 255)
 	cases := []struct {
 		labels   Labels
 		expected string
@@ -42,6 +44,14 @@ func TestLabels_String(t *testing.T) {
 		{
 			labels:   FromStrings("service.name", "t1", "whatever\\whatever", "t2"),
 			expected: `{"service.name"="t1", "whatever\\whatever"="t2"}`,
+		},
+		{
+			labels:   FromStrings("aaa", "111", "xx", s254),
+			expected: `{aaa="111", xx="` + s254 + `"}`,
+		},
+		{
+			labels:   FromStrings("aaa", "111", "xx", s255),
+			expected: `{aaa="111", xx="` + s255 + `"}`,
 		},
 	}
 	for _, c := range cases {
@@ -503,7 +513,7 @@ func TestLabels_Has(t *testing.T) {
 }
 
 func TestLabels_Get(t *testing.T) {
-	require.Equal(t, "", FromStrings("aaa", "111", "bbb", "222").Get("foo"))
+	require.Empty(t, FromStrings("aaa", "111", "bbb", "222").Get("foo"))
 	require.Equal(t, "111", FromStrings("aaaa", "111", "bbb", "222").Get("aaaa"))
 	require.Equal(t, "222", FromStrings("aaaa", "111", "bbb", "222").Get("bbb"))
 }
@@ -518,15 +528,17 @@ func TestLabels_DropMetricName(t *testing.T) {
 	require.True(t, Equal(original, check))
 }
 
-func TestLabels_DropMetricIdentity(t *testing.T) {
-	require.True(t, Equal(FromStrings("aaa", "111", "bbb", "222"), FromStrings("aaa", "111", "bbb", "222").DropMetricIdentity()))
-	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "aaa", "111").DropMetricIdentity()))
-	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", metricType, string(model.MetricTypeCounter), "aaa", "111").DropMetricIdentity()))
-	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", metricType, string(model.MetricTypeCounter), metricUnit, "seconds", "aaa", "111").DropMetricIdentity()))
+func TestLabels_DropReserved(t *testing.T) {
+	shouldDropFn := func(n string) bool {
+		return n == MetricName || n == "__something__"
+	}
+	require.True(t, Equal(FromStrings("aaa", "111", "bbb", "222"), FromStrings("aaa", "111", "bbb", "222").DropReserved(shouldDropFn)))
+	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "aaa", "111").DropReserved(shouldDropFn)))
+	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "__something__", string(model.MetricTypeCounter), "aaa", "111").DropReserved(shouldDropFn)))
 
 	original := FromStrings("__aaa__", "111", MetricName, "myname", "bbb", "222")
 	check := original.Copy()
-	require.True(t, Equal(FromStrings("__aaa__", "111", "bbb", "222"), check.DropMetricIdentity()))
+	require.True(t, Equal(FromStrings("__aaa__", "111", "bbb", "222"), check.DropReserved(shouldDropFn)))
 	require.True(t, Equal(original, check))
 }
 

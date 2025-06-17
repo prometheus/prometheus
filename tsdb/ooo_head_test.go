@@ -17,12 +17,12 @@ import (
 	"math"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-
-	"github.com/stretchr/testify/require"
 )
 
 const testMaxSize int = 32
@@ -246,7 +246,7 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			// Sanity check.
-			require.Equal(t, len(tc.samples), len(tc.expectedCounterResets), "number of samples and counter resets")
+			require.Len(t, tc.expectedCounterResets, len(tc.samples), "number of samples and counter resets")
 
 			oooChunk := OOOChunk{}
 			for _, s := range tc.samples {
@@ -264,7 +264,7 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 
 			chunks, err := oooChunk.ToEncodedChunks(math.MinInt64, math.MaxInt64)
 			require.NoError(t, err)
-			require.Equal(t, len(tc.expectedChunks), len(chunks), "number of chunks")
+			require.Len(t, chunks, len(tc.expectedChunks), "number of chunks")
 			sampleIndex := 0
 			for i, c := range chunks {
 				require.Equal(t, tc.expectedChunks[i].encoding, c.chunk.Encoding(), "chunk %d encoding", i)

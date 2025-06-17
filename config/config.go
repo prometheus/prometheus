@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -110,9 +111,9 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	switch cfg.OTLPConfig.TranslationStrategy {
 	case UnderscoreEscapingWithSuffixes:
 	case "":
-	case NoUTF8EscapingWithSuffixes:
+	case NoTranslation, NoUTF8EscapingWithSuffixes:
 		if cfg.GlobalConfig.MetricNameValidationScheme == LegacyValidationConfig {
-			return nil, errors.New("OTLP translation strategy NoUTF8EscapingWithSuffixes is not allowed when UTF8 is disabled")
+			return nil, fmt.Errorf("OTLP translation strategy %q is not allowed when UTF8 is disabled", cfg.OTLPConfig.TranslationStrategy)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported OTLP translation strategy %q", cfg.OTLPConfig.TranslationStrategy)
@@ -157,6 +158,7 @@ var (
 	DefaultConfig = Config{
 		GlobalConfig: DefaultGlobalConfig,
 		Runtime:      DefaultRuntimeConfig,
+		OTLPConfig:   DefaultOTLPConfig,
 	}
 
 	// DefaultGlobalConfig is the default global configuration.
@@ -167,24 +169,25 @@ var (
 		RuleQueryOffset:    model.Duration(0 * time.Minute),
 		// When native histogram feature flag is enabled, ScrapeProtocols default
 		// changes to DefaultNativeHistogramScrapeProtocols.
-		ScrapeProtocols: DefaultScrapeProtocols,
+		ScrapeProtocols:                DefaultScrapeProtocols,
+		ConvertClassicHistogramsToNHCB: false,
+		AlwaysScrapeClassicHistograms:  false,
 	}
 
 	DefaultRuntimeConfig = RuntimeConfig{
 		// Go runtime tuning.
-		GoGC: 75,
+		GoGC: getGoGC(),
 	}
 
 	// DefaultScrapeConfig is the default scrape configuration.
 	DefaultScrapeConfig = ScrapeConfig{
-		// ScrapeTimeout, ScrapeInterval and ScrapeProtocols default to the configured globals.
-		AlwaysScrapeClassicHistograms: false,
-		MetricsPath:                   "/metrics",
-		Scheme:                        "http",
-		HonorLabels:                   false,
-		HonorTimestamps:               true,
-		HTTPClientConfig:              config.DefaultHTTPClientConfig,
-		EnableCompression:             true,
+		// ScrapeTimeout, ScrapeInterval, ScrapeProtocols, AlwaysScrapeClassicHistograms, and ConvertClassicHistogramsToNHCB default to the configured globals.
+		MetricsPath:       "/metrics",
+		Scheme:            "http",
+		HonorLabels:       false,
+		HonorTimestamps:   true,
+		HTTPClientConfig:  config.DefaultHTTPClientConfig,
+		EnableCompression: true,
 	}
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
@@ -401,8 +404,6 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// We have to restore it here.
 	if c.Runtime.isZero() {
 		c.Runtime = DefaultRuntimeConfig
-		// Use the GOGC env var value if the runtime section is empty.
-		c.Runtime.GoGC = getGoGCEnv()
 	}
 
 	for _, rf := range c.RuleFiles {
@@ -497,8 +498,17 @@ type GlobalConfig struct {
 	// Keep no more than this many dropped targets per job.
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
-	// Allow UTF8 Metric and Label Names.
+	// Allow UTF8 Metric and Label Names. Can be blank in config files but must
+	// have a value if a ScrepeConfig is created programmatically.
 	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
+	// Metric name escaping mode to request through content negotiation. Can be
+	// blank in config files but must have a value if a ScrepeConfig is created
+	// programmatically.
+	MetricNameEscapingScheme string `yaml:"metric_name_escaping_scheme,omitempty"`
+	// Whether to convert all scraped classic histograms into native histograms with custom buckets.
+	ConvertClassicHistogramsToNHCB bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
+	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
+	AlwaysScrapeClassicHistograms bool `yaml:"always_scrape_classic_histograms,omitempty"`
 }
 
 // ScrapeProtocol represents supported protocol for scraping metrics.
@@ -654,13 +664,32 @@ func (c *GlobalConfig) isZero() bool {
 		c.RuleQueryOffset == 0 &&
 		c.QueryLogFile == "" &&
 		c.ScrapeFailureLogFile == "" &&
-		c.ScrapeProtocols == nil
+		c.ScrapeProtocols == nil &&
+		!c.ConvertClassicHistogramsToNHCB &&
+		!c.AlwaysScrapeClassicHistograms
 }
+
+const DefaultGoGCPercentage = 75
 
 // RuntimeConfig configures the values for the process behavior.
 type RuntimeConfig struct {
 	// The Go garbage collection target percentage.
 	GoGC int `yaml:"gogc,omitempty"`
+
+	// Below are guidelines for adding a new field:
+	//
+	// For config that shouldn't change after startup, you might want to use
+	// flags https://prometheus.io/docs/prometheus/latest/command-line/prometheus/.
+	//
+	// Consider when the new field is first applied: at the very beginning of instance
+	// startup, after the TSDB is loaded etc. See https://github.com/prometheus/prometheus/pull/16491
+	// for an example.
+	//
+	// Provide a test covering various scenarios: empty config file, empty or incomplete runtime
+	// config block, precedence over other inputs (e.g., env vars, if applicable) etc.
+	// See TestRuntimeGOGCConfig (or https://github.com/prometheus/prometheus/pull/15238).
+	// The test should also verify behavior on reloads, since this config should be
+	// adjustable at runtime.
 }
 
 // isZero returns true iff the global config is the zero value.
@@ -699,9 +728,9 @@ type ScrapeConfig struct {
 	// OpenMetricsText1.0.0, PrometheusText1.0.0, PrometheusText0.0.4.
 	ScrapeFallbackProtocol ScrapeProtocol `yaml:"fallback_scrape_protocol,omitempty"`
 	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
-	AlwaysScrapeClassicHistograms bool `yaml:"always_scrape_classic_histograms,omitempty"`
+	AlwaysScrapeClassicHistograms *bool `yaml:"always_scrape_classic_histograms,omitempty"`
 	// Whether to convert all scraped classic histograms into a native histogram with custom buckets.
-	ConvertClassicHistogramsToNHCB bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
+	ConvertClassicHistogramsToNHCB *bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
 	// File to which scrape failures are logged.
 	ScrapeFailureLogFile string `yaml:"scrape_failure_log_file,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.
@@ -737,8 +766,13 @@ type ScrapeConfig struct {
 	// Keep no more than this many dropped targets per job.
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
-	// Allow UTF8 Metric and Label Names.
+	// Allow UTF8 Metric and Label Names. Can be blank in config files but must
+	// have a value if a ScrepeConfig is created programmatically.
 	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
+	// Metric name escaping mode to request through content negotiation. Can be
+	// blank in config files but must have a value if a ScrepeConfig is created
+	// programmatically.
+	MetricNameEscapingScheme string `yaml:"metric_name_escaping_scheme,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -859,13 +893,58 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	if model.NameValidationScheme != model.UTF8Validation {
 		return errors.New("model.NameValidationScheme must be set to UTF8")
 	}
+
 	switch globalConfig.MetricNameValidationScheme {
-	case "", LegacyValidationConfig, UTF8ValidationConfig:
+	case "":
+		globalConfig.MetricNameValidationScheme = UTF8ValidationConfig
+	case LegacyValidationConfig, UTF8ValidationConfig:
 	default:
-		return fmt.Errorf("unknown name validation method specified, must be either 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
+		return fmt.Errorf("unknown global name validation method specified, must be either 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
 	}
-	if c.MetricNameValidationScheme == "" {
+	// Scrapeconfig validation scheme matches global if left blank.
+	switch c.MetricNameValidationScheme {
+	case "":
 		c.MetricNameValidationScheme = globalConfig.MetricNameValidationScheme
+	case LegacyValidationConfig, UTF8ValidationConfig:
+	default:
+		return fmt.Errorf("unknown scrape config name validation method specified, must be either 'legacy' or 'utf8', got %s", c.MetricNameValidationScheme)
+	}
+
+	// Escaping scheme is based on the validation scheme if left blank.
+	switch globalConfig.MetricNameEscapingScheme {
+	case "":
+		if globalConfig.MetricNameValidationScheme == LegacyValidationConfig {
+			globalConfig.MetricNameEscapingScheme = model.EscapeUnderscores
+		} else {
+			globalConfig.MetricNameEscapingScheme = model.AllowUTF8
+		}
+	case model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues:
+	default:
+		return fmt.Errorf("unknown global name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got %s", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, globalConfig.MetricNameValidationScheme)
+	}
+
+	if c.MetricNameEscapingScheme == "" {
+		c.MetricNameEscapingScheme = globalConfig.MetricNameEscapingScheme
+	}
+
+	switch c.MetricNameEscapingScheme {
+	case model.AllowUTF8:
+		if c.MetricNameValidationScheme != UTF8ValidationConfig {
+			return errors.New("utf8 metric names requested but validation scheme is not set to UTF8")
+		}
+	case model.EscapeUnderscores, model.EscapeDots, model.EscapeValues:
+	default:
+		return fmt.Errorf("unknown scrape config name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got %s", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, c.MetricNameValidationScheme)
+	}
+
+	if c.ConvertClassicHistogramsToNHCB == nil {
+		global := globalConfig.ConvertClassicHistogramsToNHCB
+		c.ConvertClassicHistogramsToNHCB = &global
+	}
+
+	if c.AlwaysScrapeClassicHistograms == nil {
+		global := globalConfig.AlwaysScrapeClassicHistograms
+		c.AlwaysScrapeClassicHistograms = &global
 	}
 
 	return nil
@@ -874,6 +953,30 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 // MarshalYAML implements the yaml.Marshaler interface.
 func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
+}
+
+// ToValidationScheme returns the validation scheme for the given string config value.
+func ToValidationScheme(s string) (validationScheme model.ValidationScheme, err error) {
+	switch s {
+	case UTF8ValidationConfig:
+		validationScheme = model.UTF8Validation
+	case LegacyValidationConfig:
+		validationScheme = model.LegacyValidation
+	default:
+		return model.UTF8Validation, fmt.Errorf("invalid metric name validation scheme, %s", s)
+	}
+
+	return validationScheme, nil
+}
+
+// ConvertClassicHistogramsToNHCBEnabled returns whether to convert classic histograms to NHCB.
+func (c *ScrapeConfig) ConvertClassicHistogramsToNHCBEnabled() bool {
+	return c.ConvertClassicHistogramsToNHCB != nil && *c.ConvertClassicHistogramsToNHCB
+}
+
+// AlwaysScrapeClassicHistogramsEnabled returns whether to always scrape classic histograms.
+func (c *ScrapeConfig) AlwaysScrapeClassicHistogramsEnabled() bool {
+	return c.AlwaysScrapeClassicHistograms != nil && *c.AlwaysScrapeClassicHistograms
 }
 
 // StorageConfig configures runtime reloadable configuration options.
@@ -1041,13 +1144,11 @@ func (v *AlertmanagerAPIVersion) UnmarshalYAML(unmarshal func(interface{}) error
 		return err
 	}
 
-	for _, supportedVersion := range SupportedAlertmanagerAPIVersions {
-		if *v == supportedVersion {
-			return nil
-		}
+	if !slices.Contains(SupportedAlertmanagerAPIVersions, *v) {
+		return fmt.Errorf("expected Alertmanager api version to be one of %v but got %v", SupportedAlertmanagerAPIVersions, *v)
 	}
 
-	return fmt.Errorf("expected Alertmanager api version to be one of %v but got %v", SupportedAlertmanagerAPIVersions, *v)
+	return nil
 }
 
 const (
@@ -1427,7 +1528,7 @@ func fileErr(filename string, err error) error {
 	return fmt.Errorf("%q: %w", filePath(filename), err)
 }
 
-func getGoGCEnv() int {
+func getGoGC() int {
 	goGCEnv := os.Getenv("GOGC")
 	// If the GOGC env var is set, use the same logic as upstream Go.
 	if goGCEnv != "" {
@@ -1440,7 +1541,7 @@ func getGoGCEnv() int {
 			return i
 		}
 	}
-	return DefaultRuntimeConfig.GoGC
+	return DefaultGoGCPercentage
 }
 
 type translationStrategyOption string
@@ -1454,13 +1555,31 @@ var (
 	// and label name characters that are not alphanumerics/underscores to underscores.
 	// Unit and type suffixes may be appended to metric names, according to certain rules.
 	UnderscoreEscapingWithSuffixes translationStrategyOption = "UnderscoreEscapingWithSuffixes"
+	// NoTranslation (EXPERIMENTAL): disables all translation of incoming metric
+	// and label names. This offers a way for the OTLP users to use native metric names, reducing confusion.
+	//
+	// WARNING: This setting has significant known risks and limitations (see
+	// https://prometheus.io/docs/practices/naming/  for details):
+	// * Impaired UX when using PromQL in plain YAML (e.g. alerts, rules, dashboard, autoscaling configuration).
+	// * Series collisions which in the best case may result in OOO errors, in the worst case a silently malformed
+	// time series. For instance, you may end up in situation of ingesting `foo.bar` series with unit
+	// `seconds` and a separate series `foo.bar` with unit `milliseconds`.
+	//
+	// As a result, this setting is experimental and currently, should not be used in
+	// production systems.
+	//
+	// TODO(ArthurSens): Mention `type-and-unit-labels` feature (https://github.com/prometheus/proposals/pull/39) once released, as potential mitigation of the above risks.
+	NoTranslation translationStrategyOption = "NoTranslation"
 )
 
 // OTLPConfig is the configuration for writing to the OTLP endpoint.
 type OTLPConfig struct {
+	PromoteAllResourceAttributes      bool                      `yaml:"promote_all_resource_attributes,omitempty"`
 	PromoteResourceAttributes         []string                  `yaml:"promote_resource_attributes,omitempty"`
+	IgnoreResourceAttributes          []string                  `yaml:"ignore_resource_attributes,omitempty"`
 	TranslationStrategy               translationStrategyOption `yaml:"translation_strategy,omitempty"`
 	KeepIdentifyingResourceAttributes bool                      `yaml:"keep_identifying_resource_attributes,omitempty"`
+	ConvertHistogramsToNHCB           bool                      `yaml:"convert_histograms_to_nhcb,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -1471,21 +1590,41 @@ func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
+	if c.PromoteAllResourceAttributes {
+		if len(c.PromoteResourceAttributes) > 0 {
+			return errors.New("'promote_all_resource_attributes' and 'promote_resource_attributes' cannot be configured simultaneously")
+		}
+		if err := sanitizeAttributes(c.IgnoreResourceAttributes, "ignored"); err != nil {
+			return fmt.Errorf("invalid 'ignore_resource_attributes': %w", err)
+		}
+	} else {
+		if len(c.IgnoreResourceAttributes) > 0 {
+			return errors.New("'ignore_resource_attributes' cannot be configured unless 'promote_all_resource_attributes' is true")
+		}
+		if err := sanitizeAttributes(c.PromoteResourceAttributes, "promoted"); err != nil {
+			return fmt.Errorf("invalid 'promote_resource_attributes': %w", err)
+		}
+	}
+
+	return nil
+}
+
+func sanitizeAttributes(attributes []string, adjective string) error {
 	seen := map[string]struct{}{}
 	var err error
-	for i, attr := range c.PromoteResourceAttributes {
+	for i, attr := range attributes {
 		attr = strings.TrimSpace(attr)
 		if attr == "" {
-			err = errors.Join(err, errors.New("empty promoted OTel resource attribute"))
+			err = errors.Join(err, fmt.Errorf("empty %s OTel resource attribute", adjective))
 			continue
 		}
 		if _, exists := seen[attr]; exists {
-			err = errors.Join(err, fmt.Errorf("duplicated promoted OTel resource attribute %q", attr))
+			err = errors.Join(err, fmt.Errorf("duplicated %s OTel resource attribute %q", adjective, attr))
 			continue
 		}
 
 		seen[attr] = struct{}{}
-		c.PromoteResourceAttributes[i] = attr
+		attributes[i] = attr
 	}
 	return err
 }

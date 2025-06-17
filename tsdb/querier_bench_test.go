@@ -19,11 +19,11 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
-
-	"github.com/stretchr/testify/require"
 )
 
 // Make entries ~50B in size, to emulate real-world high cardinality.
@@ -228,7 +228,7 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_, err := labelValuesWithMatchers(ctx, ir, c.labelName, c.matchers...)
+				_, err := labelValuesWithMatchers(ctx, ir, c.labelName, nil, c.matchers...)
 				require.NoError(b, err)
 			}
 		})

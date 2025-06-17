@@ -38,8 +38,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
-	"github.com/prometheus/prometheus/util/compression"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -51,6 +49,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -1932,27 +1931,31 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 }
 
 func TestDropOldTimeSeries(t *testing.T) {
-	size := 10
-	nSeries := 6
-	nSamples := config.DefaultQueueConfig.Capacity * size
-	samples, newSamples, series := createTimeseriesWithOldSamples(nSamples, nSeries)
+	// Test both v1 and v2 remote write protocols
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			size := 10
+			nSeries := 6
+			nSamples := config.DefaultQueueConfig.Capacity * size
+			samples, newSamples, series := createTimeseriesWithOldSamples(nSamples, nSeries)
 
-	// TODO(alexg): test with new version
-	c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
-	c.expectSamples(newSamples, series)
+			c := NewTestWriteClient(protoMsg)
+			c.expectSamples(newSamples, series)
 
-	cfg := config.DefaultQueueConfig
-	mcfg := config.DefaultMetadataConfig
-	cfg.MaxShards = 1
-	cfg.SampleAgeLimit = model.Duration(60 * time.Second)
-	m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, config.RemoteWriteProtoMsgV1)
-	m.StoreSeries(series, 0)
+			cfg := config.DefaultQueueConfig
+			mcfg := config.DefaultMetadataConfig
+			cfg.MaxShards = 1
+			cfg.SampleAgeLimit = model.Duration(60 * time.Second)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m.StoreSeries(series, 0)
 
-	m.Start()
-	defer m.Stop()
+			m.Start()
+			defer m.Stop()
 
-	m.Append(samples)
-	c.waitForExpectedData(t, 30*time.Second)
+			m.Append(samples)
+			c.waitForExpectedData(t, 30*time.Second)
+		})
+	}
 }
 
 func TestIsSampleOld(t *testing.T) {

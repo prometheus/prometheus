@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -532,4 +533,69 @@ func (ssi *storageSeriesIterator) Next() chunkenc.ValueType {
 
 func (ssi *storageSeriesIterator) Err() error {
 	return nil
+}
+
+type fParams struct {
+	series     Series
+	constValue float64
+	isConstant bool
+	minValue   float64
+	maxValue   float64
+	hasAnyNaN  bool
+}
+
+// newFParams evaluates the expression and returns an fParams object,
+// which holds the parameter values (constant or series) along with min, max, and NaN info.
+func newFParams(ctx context.Context, ev *evaluator, expr parser.Expr) (*fParams, annotations.Annotations) {
+	if expr == nil {
+		return &fParams{}, nil
+	}
+	var constParam bool
+	if _, ok := expr.(*parser.NumberLiteral); ok {
+		constParam = true
+	}
+	val, ws := ev.eval(ctx, expr)
+	mat, ok := val.(Matrix)
+	if !ok || len(mat) == 0 {
+		return &fParams{}, ws
+	}
+	fp := &fParams{
+		series:     mat[0],
+		isConstant: constParam,
+		minValue:   math.MaxFloat64,
+		maxValue:   -math.MaxFloat64,
+	}
+
+	if constParam {
+		fp.constValue = fp.series.Floats[0].F
+		fp.minValue, fp.maxValue = fp.constValue, fp.constValue
+		fp.hasAnyNaN = math.IsNaN(fp.constValue)
+		return fp, ws
+	}
+
+	for _, v := range fp.series.Floats {
+		fp.maxValue = math.Max(fp.maxValue, v.F)
+		fp.minValue = math.Min(fp.minValue, v.F)
+		if math.IsNaN(v.F) {
+			fp.hasAnyNaN = true
+		}
+	}
+	return fp, ws
+}
+
+func (fp *fParams) Max() float64    { return fp.maxValue }
+func (fp *fParams) Min() float64    { return fp.minValue }
+func (fp *fParams) HasAnyNaN() bool { return fp.hasAnyNaN }
+
+// Next returns the next value from the series or the constant value, and advances the series if applicable.
+func (fp *fParams) Next() float64 {
+	if fp.isConstant {
+		return fp.constValue
+	}
+	if len(fp.series.Floats) > 0 {
+		val := fp.series.Floats[0].F
+		fp.series.Floats = fp.series.Floats[1:]
+		return val
+	}
+	return 0
 }

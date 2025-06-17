@@ -116,25 +116,27 @@ export class Parser {
       case ParenExpr:
         this.checkAST(node.getChild('Expr'));
         break;
-      case UnaryExpr:
+      case UnaryExpr: {
         const unaryExprType = this.checkAST(node.getChild('Expr'));
         if (unaryExprType !== ValueType.scalar && unaryExprType !== ValueType.vector) {
           this.addDiagnostic(node, `unary expression only allowed on expressions of type scalar or instant vector, got ${unaryExprType}`);
         }
         break;
-      case SubqueryExpr:
+      }
+      case SubqueryExpr: {
         const subQueryExprType = this.checkAST(node.getChild('Expr'));
         if (subQueryExprType !== ValueType.vector) {
           this.addDiagnostic(node, `subquery is only allowed on instant vector, got ${subQueryExprType} in ${node.name} instead`);
         }
         break;
+      }
       case MatrixSelector:
         this.checkAST(node.getChild('Expr'));
         break;
       case VectorSelector:
         this.checkVectorSelector(node);
         break;
-      case StepInvariantExpr:
+      case StepInvariantExpr: {
         const exprValue = this.checkAST(node.getChild('Expr'));
         if (exprValue !== ValueType.vector && exprValue !== ValueType.matrix) {
           this.addDiagnostic(node, `@ modifier must be preceded by an instant selector vector or range vector selector or a subquery`);
@@ -148,6 +150,7 @@ export class Parser {
         //     So far I didn't find the way to fix it. I think it's likely due to the fact we are building an ESM package which is now something stable in nodeJS/javascript but still experimental in typescript.
         // For the above reason, we decided to drop these checks.
         break;
+      }
     }
 
     return getType(node);

@@ -168,10 +168,14 @@ func (p *MemPostings) LabelNames() []string {
 }
 
 // LabelValues returns label values for the given name.
-func (p *MemPostings) LabelValues(_ context.Context, name string) []string {
+func (p *MemPostings) LabelValues(_ context.Context, name string, hints *storage.LabelHints) []string {
 	p.mtx.RLock()
 	values := p.lvs[name]
 	p.mtx.RUnlock()
+
+	if hints != nil && hints.Limit > 0 && len(values) > hints.Limit {
+		values = values[:hints.Limit]
+	}
 
 	// The slice from p.lvs[name] is shared between all readers, and it is append-only.
 	// Since it's shared, we need to make a copy of it before returning it to make
@@ -595,10 +599,8 @@ func Intersect(its ...Postings) Postings {
 	if len(its) == 1 {
 		return its[0]
 	}
-	for _, p := range its {
-		if p == EmptyPostings() {
-			return EmptyPostings()
-		}
+	if slices.Contains(its, EmptyPostings()) {
+		return EmptyPostings()
 	}
 
 	return newIntersectPostings(its...)

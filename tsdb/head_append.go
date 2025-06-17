@@ -319,7 +319,8 @@ type headAppender struct {
 	headMaxt      int64 // We track it here to not take the lock for every sample appended.
 	oooTimeWindow int64 // Use the same for the entire append, and don't load the atomic for each sample.
 
-	series               []record.RefSeries               // New series held by this appender.
+	seriesRefs           []record.RefSeries               // New series records held by this appender.
+	series               []*memSeries                     // New series held by this appender (using corresponding slices indexes from seriesRefs)
 	samples              []record.RefSample               // New float samples held by this appender.
 	sampleSeries         []*memSeries                     // Float series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
 	histograms           []record.RefHistogramSample      // New histogram samples held by this appender.
@@ -461,15 +462,16 @@ func (a *headAppender) getOrCreate(lset labels.Labels) (s *memSeries, created bo
 	if l, dup := lset.HasDuplicateLabelNames(); dup {
 		return nil, false, fmt.Errorf(`label name "%s" is not unique: %w`, l, ErrInvalidSample)
 	}
-	s, created, err = a.head.getOrCreate(lset.Hash(), lset)
+	s, created, err = a.head.getOrCreate(lset.Hash(), lset, true)
 	if err != nil {
 		return nil, false, err
 	}
 	if created {
-		a.series = append(a.series, record.RefSeries{
+		a.seriesRefs = append(a.seriesRefs, record.RefSeries{
 			Ref:    s.ref,
 			Labels: lset,
 		})
+		a.series = append(a.series, s)
 	}
 	return s, created, nil
 }
@@ -523,7 +525,7 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 // appendableHistogram checks whether the given histogram sample is valid for appending to the series. (if we return false and no error)
 // The sample belongs to the out of order chunk if we return true and no error.
 // An error signifies the sample cannot be handled.
-func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMaxt, minValidTime, oooTimeWindow int64, oooHistogramsEnabled bool) (isOOO bool, oooDelta int64, err error) {
+func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
 		if s.headChunks == nil {
@@ -549,9 +551,6 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMax
 
 	// The sample cannot go in the in-order chunk. Check if it can go in the out-of-order chunk.
 	if oooTimeWindow > 0 && t >= headMaxt-oooTimeWindow {
-		if !oooHistogramsEnabled {
-			return true, headMaxt - t, storage.ErrOOONativeHistogramsDisabled
-		}
 		return true, headMaxt - t, nil
 	}
 
@@ -568,7 +567,7 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMax
 // appendableFloatHistogram checks whether the given float histogram sample is valid for appending to the series. (if we return false and no error)
 // The sample belongs to the out of order chunk if we return true and no error.
 // An error signifies the sample cannot be handled.
-func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogram, headMaxt, minValidTime, oooTimeWindow int64, oooHistogramsEnabled bool) (isOOO bool, oooDelta int64, err error) {
+func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogram, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
 		if s.headChunks == nil {
@@ -594,9 +593,6 @@ func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogr
 
 	// The sample cannot go in the in-order chunk. Check if it can go in the out-of-order chunk.
 	if oooTimeWindow > 0 && t >= headMaxt-oooTimeWindow {
-		if !oooHistogramsEnabled {
-			return true, headMaxt - t, storage.ErrOOONativeHistogramsDisabled
-		}
 		return true, headMaxt - t, nil
 	}
 
@@ -654,7 +650,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.
-	if (a.oooTimeWindow == 0 || !a.head.opts.EnableOOONativeHistograms.Load()) && t < a.minValidTime {
+	if a.oooTimeWindow == 0 && t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 		return 0, storage.ErrOutOfBounds
 	}
@@ -694,7 +690,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
-		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head.opts.EnableOOONativeHistograms.Load())
+		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
 			s.pendingCommit = true
 		}
@@ -705,8 +701,6 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		if err != nil {
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample):
-				fallthrough
-			case errors.Is(err, storage.ErrOOONativeHistogramsDisabled):
 				a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 			case errors.Is(err, storage.ErrTooOldSample):
 				a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
@@ -731,7 +725,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
-		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head.opts.EnableOOONativeHistograms.Load())
+		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err == nil {
 			s.pendingCommit = true
 		}
@@ -742,8 +736,6 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		if err != nil {
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample):
-				fallthrough
-			case errors.Is(err, storage.ErrOOONativeHistogramsDisabled):
 				a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 			case errors.Is(err, storage.ErrTooOldSample):
 				a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
@@ -799,9 +791,9 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 			s.lastHistogramValue = zeroHistogram
 		}
 
-		// Although we call `appendableHistogram` with oooHistogramsEnabled=true, for CTZeroSamples OOO is not allowed.
+		// For CTZeroSamples OOO is not allowed.
 		// We set it to true to make this implementation as close as possible to the float implementation.
-		isOOO, _, err := s.appendableHistogram(ct, zeroHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow, true)
+		isOOO, _, err := s.appendableHistogram(ct, zeroHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
 			s.Unlock()
 			if errors.Is(err, storage.ErrOutOfOrderSample) {
@@ -833,9 +825,8 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 			s.lastFloatHistogramValue = zeroFloatHistogram
 		}
 
-		// Although we call `appendableFloatHistogram` with oooHistogramsEnabled=true, for CTZeroSamples OOO is not allowed.
 		// We set it to true to make this implementation as close as possible to the float implementation.
-		isOOO, _, err := s.appendableFloatHistogram(ct, zeroFloatHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow, true) // OOO is not allowed for CTZeroSamples.
+		isOOO, _, err := s.appendableFloatHistogram(ct, zeroFloatHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow) // OOO is not allowed for CTZeroSamples.
 		if err != nil {
 			s.Unlock()
 			if errors.Is(err, storage.ErrOutOfOrderSample) {
@@ -918,8 +909,8 @@ func (a *headAppender) log() error {
 	var rec []byte
 	var enc record.Encoder
 
-	if len(a.series) > 0 {
-		rec = enc.Series(a.series, buf)
+	if len(a.seriesRefs) > 0 {
+		rec = enc.Series(a.seriesRefs, buf)
 		buf = rec[:0]
 
 		if err := a.head.wal.Log(rec); err != nil {
@@ -1256,7 +1247,7 @@ func (a *headAppender) commitHistograms(acc *appenderCommitContext) {
 		series = a.histogramSeries[i]
 		series.Lock()
 
-		oooSample, _, err := series.appendableHistogram(s.T, s.H, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head.opts.EnableOOONativeHistograms.Load())
+		oooSample, _, err := series.appendableHistogram(s.T, s.H, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
@@ -1344,7 +1335,7 @@ func (a *headAppender) commitFloatHistograms(acc *appenderCommitContext) {
 		series = a.floatHistogramSeries[i]
 		series.Lock()
 
-		oooSample, _, err := series.appendableFloatHistogram(s.T, s.FH, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head.opts.EnableOOONativeHistograms.Load())
+		oooSample, _, err := series.appendableFloatHistogram(s.T, s.FH, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
@@ -1437,6 +1428,14 @@ func (a *headAppender) commitMetadata() {
 	}
 }
 
+func (a *headAppender) unmarkCreatedSeriesAsPendingCommit() {
+	for _, s := range a.series {
+		s.Lock()
+		s.pendingCommit = false
+		s.Unlock()
+	}
+}
+
 // Commit writes to the WAL and adds the data to the Head.
 // TODO(codesome): Refactor this method to reduce indentation and make it more readable.
 func (a *headAppender) Commit() (err error) {
@@ -1490,6 +1489,8 @@ func (a *headAppender) Commit() (err error) {
 	a.commitHistograms(acc)
 	a.commitFloatHistograms(acc)
 	a.commitMetadata()
+	// Unmark all series as pending commit after all samples have been committed.
+	a.unmarkCreatedSeriesAsPendingCommit()
 
 	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatOOORejected))
 	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histoOOORejected))
@@ -1963,6 +1964,7 @@ func (a *headAppender) Rollback() (err error) {
 	defer a.head.metrics.activeAppenders.Dec()
 	defer a.head.iso.closeAppend(a.appendID)
 	defer a.head.putSeriesBuffer(a.sampleSeries)
+	defer a.unmarkCreatedSeriesAsPendingCommit()
 
 	var series *memSeries
 	for i := range a.samples {

@@ -57,7 +57,7 @@ clear
 
 # Repeat the same histogram 10 times.
 load 5m
-	multi_histogram	{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x10
+	multi_histogram	{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x10 {{schema:0 sum:5 count:4 buckets:[1 2 1]}}+{{}}x10
 
 eval instant at 5m histogram_count(multi_histogram)
 	{} 4
@@ -337,7 +337,7 @@ load 10m
    histogram_stddev_stdvar_3 {{schema:3 count:7 sum:62 z_bucket:1 buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ] n_buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ]}}x1
 
 eval instant at 10m histogram_stddev(histogram_stddev_stdvar_3)
-    {} 42.947236400258
+    {} 42.94723640026
 
 eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_3)
     {} 1844.4651144196398

@@ -21,13 +21,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grafana/regexp"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/google/uuid"
+	"github.com/grafana/regexp"
 )
 
 // Clouds.
@@ -129,13 +128,11 @@ func (c *AzureADConfig) Validate() error {
 	}
 
 	if c.ManagedIdentity != nil {
-		if c.ManagedIdentity.ClientID == "" {
-			return errors.New("must provide an Azure Managed Identity client_id in the Azure AD config")
-		}
-
-		_, err := uuid.Parse(c.ManagedIdentity.ClientID)
-		if err != nil {
-			return errors.New("the provided Azure Managed Identity client_id is invalid")
+		if c.ManagedIdentity.ClientID != "" {
+			_, err := uuid.Parse(c.ManagedIdentity.ClientID)
+			if err != nil {
+				return errors.New("the provided Azure Managed Identity client_id is invalid")
+			}
 		}
 	}
 
@@ -269,8 +266,13 @@ func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
 
 // newManagedIdentityTokenCredential returns new Managed Identity token credential.
 func newManagedIdentityTokenCredential(clientOpts *azcore.ClientOptions, managedIdentityConfig *ManagedIdentityConfig) (azcore.TokenCredential, error) {
-	clientID := azidentity.ClientID(managedIdentityConfig.ClientID)
-	opts := &azidentity.ManagedIdentityCredentialOptions{ClientOptions: *clientOpts, ID: clientID}
+	var opts *azidentity.ManagedIdentityCredentialOptions
+	if managedIdentityConfig.ClientID != "" {
+		clientID := azidentity.ClientID(managedIdentityConfig.ClientID)
+		opts = &azidentity.ManagedIdentityCredentialOptions{ClientOptions: *clientOpts, ID: clientID}
+	} else {
+		opts = &azidentity.ManagedIdentityCredentialOptions{ClientOptions: *clientOpts}
+	}
 	return azidentity.NewManagedIdentityCredential(opts)
 }
 

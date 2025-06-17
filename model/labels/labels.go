@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !stringlabels && !dedupelabels
+//go:build slicelabels
 
 package labels
 
@@ -32,8 +32,8 @@ func (ls Labels) Len() int           { return len(ls) }
 func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
 func (ls Labels) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
 
-// Bytes returns ls as a byte slice.
-// It uses an byte invalid character as a separator and so should not be used for printing.
+// Bytes returns an opaque, not-human-readable, encoding of ls, usable as a map key.
+// Encoding may change over time or between runs of Prometheus.
 func (ls Labels) Bytes(buf []byte) []byte {
 	b := bytes.NewBuffer(buf[:0])
 	b.WriteByte(labelSep)
@@ -250,15 +250,7 @@ func (ls Labels) WithoutEmpty() Labels {
 
 // Equal returns whether the two label sets are equal.
 func Equal(ls, o Labels) bool {
-	if len(ls) != len(o) {
-		return false
-	}
-	for i, l := range ls {
-		if l != o[i] {
-			return false
-		}
-	}
-	return true
+	return slices.Equal(ls, o)
 }
 
 // EmptyLabels returns n empty Labels value, for convenience.
@@ -344,26 +336,20 @@ func (ls Labels) Validate(f func(l Label) error) error {
 	return nil
 }
 
-// DropMetricName returns Labels with "__name__" removed.
+// DropMetricName returns Labels with the "__name__" removed.
+// Deprecated: Use DropReserved instead.
 func (ls Labels) DropMetricName() Labels {
-	for i, l := range ls {
-		if l.Name == MetricName {
-			if i == 0 { // Make common case fast with no allocations.
-				return ls[1:]
-			}
-			// Avoid modifying original Labels - use [:i:i] so that left slice would not
-			// have any spare capacity and append would have to allocate a new slice for the result.
-			return append(ls[:i:i], ls[i+1:]...)
-		}
-	}
-	return ls
+	return ls.DropReserved(func(n string) bool { return n == MetricName })
 }
 
-// DropMetricIdentity is like DropMetricName but drops all parts of MetricIdentity.
-func (ls Labels) DropMetricIdentity() Labels {
+// DropReserved returns Labels without the chosen (via shouldDropFn) reserved (starting with underscore) labels.
+func (ls Labels) DropReserved(shouldDropFn func(name string) bool) Labels {
 	rm := 0
 	for i, l := range ls {
-		if IsMetricIdentityLabel(l.Name) {
+		if l.Name[0] > '_' { // Stop looking if we've gone past special labels.
+			break
+		}
+		if shouldDropFn(l.Name) {
 			i := i - rm // Offsetting after removals.
 			if i == 0 { // Make common case fast with no allocations.
 				ls = ls[1:]
@@ -480,7 +466,7 @@ func (b *ScratchBuilder) Add(name, value string) {
 }
 
 // UnsafeAddBytes adds a name/value pair, using []byte instead of string.
-// The '-tags stringlabels' version of this function is unsafe, hence the name.
+// The default version of this function is unsafe, hence the name.
 // This version is safe - it copies the strings immediately - but we keep the same name so everything compiles.
 func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
 	b.add = append(b.add, Label{Name: string(name), Value: string(value)})

@@ -179,12 +179,6 @@ type Options struct {
 	// EnableNativeHistograms enables the ingestion of native histograms.
 	EnableNativeHistograms bool
 
-	// EnableOOONativeHistograms enables the ingestion of OOO native histograms.
-	// It will only take effect if EnableNativeHistograms is set to true and the
-	// OutOfOrderTimeWindow is > 0. This flag will be removed after testing of
-	// OOO Native Histogram ingestion is complete.
-	EnableOOONativeHistograms bool
-
 	// OutOfOrderTimeWindow specifies how much out of order is allowed, if any.
 	// This can change during run-time, so this value from here should only be used
 	// while initialising.
@@ -225,6 +219,9 @@ type Options struct {
 	// PostingsDecoderFactory allows users to customize postings decoders based on BlockMeta.
 	// By default, DefaultPostingsDecoderFactory will be used to create raw posting decoder.
 	PostingsDecoderFactory PostingsDecoderFactory
+
+	// UseUncachedIO allows bypassing the page cache when appropriate.
+	UseUncachedIO bool
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -909,6 +906,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			MaxBlockChunkSegmentSize:    opts.MaxBlockChunkSegmentSize,
 			EnableOverlappingCompaction: opts.EnableOverlappingCompaction,
 			PD:                          opts.PostingsDecoderFactory,
+			UseUncachedIO:               opts.UseUncachedIO,
 		})
 	}
 	if err != nil {
@@ -967,7 +965,6 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
 	headOpts.EnableNativeHistograms.Store(opts.EnableNativeHistograms)
-	headOpts.EnableOOONativeHistograms.Store(opts.EnableOOONativeHistograms)
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
@@ -986,10 +983,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 
 	// Register metrics after assigning the head block.
 	db.metrics = newDBMetrics(db, r)
-	maxBytes := opts.MaxBytes
-	if maxBytes < 0 {
-		maxBytes = 0
-	}
+	maxBytes := max(opts.MaxBytes, 0)
 	db.metrics.maxBytes.Set(float64(maxBytes))
 	db.metrics.retentionDuration.Set((time.Duration(opts.RetentionDuration) * time.Millisecond).Seconds())
 
@@ -1195,16 +1189,6 @@ func (db *DB) EnableNativeHistograms() {
 // DisableNativeHistograms disables the native histogram feature.
 func (db *DB) DisableNativeHistograms() {
 	db.head.DisableNativeHistograms()
-}
-
-// EnableOOONativeHistograms enables the ingestion of out-of-order native histograms.
-func (db *DB) EnableOOONativeHistograms() {
-	db.head.EnableOOONativeHistograms()
-}
-
-// DisableOOONativeHistograms disables the ingestion of out-of-order native histograms.
-func (db *DB) DisableOOONativeHistograms() {
-	db.head.DisableOOONativeHistograms()
 }
 
 // dbAppender wraps the DB's head appender and triggers compactions on commit
@@ -1503,7 +1487,7 @@ func (db *DB) compactBlocks() (err error) {
 		// long enough that we end up with a HEAD block that needs to be written.
 		// Check if that's the case and stop compactions early.
 		if db.head.compactable() && !db.waitingForCompactionDelay() {
-			db.logger.Warn("aborting block compactions to persit the head block")
+			db.logger.Warn("aborting block compactions to persist the head block")
 			return nil
 		}
 
@@ -2297,10 +2281,9 @@ func (db *DB) CleanTombstones() (err error) {
 					db.logger.Error("failed to delete block after failed `CleanTombstones`", "dir", dir, "err", err)
 				}
 			}
-			if err != nil {
-				return fmt.Errorf("reload blocks: %w", err)
-			}
-			return nil
+
+			// This should only be reached if an error occurred.
+			return fmt.Errorf("reload blocks: %w", err)
 		}
 	}
 	return nil

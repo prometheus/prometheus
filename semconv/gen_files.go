@@ -31,14 +31,16 @@ type semanticMetricID string
 
 func (id metricID) semanticID() (_ semanticMetricID, revision int) {
 	parts := strings.Split(string(id), ".")
-	if len(parts) == 0 {
+	if len(parts) == 1 {
 		return semanticMetricID(id), 0
 	}
+
 	var err error
 	revision, err = strconv.Atoi(parts[len(parts)-1])
 	if err != nil {
 		return semanticMetricID(id), 0
 	}
+
 	// Number, assume revision.
 	return semanticMetricID(strings.Join(parts[:len(parts)-1], ".")), revision
 }
@@ -56,7 +58,7 @@ type change struct {
 	Backward metricGroupChange
 }
 
-// metricGroupChange represents semconv metric group.
+// metricGroupChange represents a semconv metric group.
 // NOTE(bwplotka): Only implementing fields that matter for querying.
 type metricGroupChange struct {
 	MetricName  string      `yaml:"metric_name"`

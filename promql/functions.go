@@ -20,7 +20,6 @@ import (
 	"math"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -578,7 +578,7 @@ func clamp(vec Vector, minVal, maxVal float64, enh *EvalNodeHelper) (Vector, ann
 			continue
 		}
 		if !enh.enableDelayedNameRemoval {
-			el.Metric = el.Metric.DropMetricIdentity()
+			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   el.Metric,
@@ -613,7 +613,6 @@ func funcClampMin(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper
 
 // === round(Vector parser.ValueTypeVector, toNearest=1 Scalar) (Vector, Annotations) ===
 func funcRound(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	vec := vals[0].(Vector)
 	// round returns a number rounded to toNearest.
 	// Ties are solved by rounding up.
 	toNearest := float64(1)
@@ -622,23 +621,9 @@ func funcRound(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	}
 	// Invert as it seems to cause fewer floating point accuracy issues.
 	toNearestInverse := 1.0 / toNearest
-
-	for _, el := range vec {
-		if el.H != nil {
-			// Process only float samples.
-			continue
-		}
-		f := math.Floor(el.F*toNearestInverse+0.5) / toNearestInverse
-		if !enh.enableDelayedNameRemoval {
-			el.Metric = el.Metric.DropMetricIdentity()
-		}
-		enh.Out = append(enh.Out, Sample{
-			Metric:   el.Metric,
-			F:        f,
-			DropName: true,
-		})
-	}
-	return enh.Out, nil
+	return simpleFloatFunc(vals, enh, func(f float64) float64 {
+		return math.Floor(f*toNearestInverse+0.5) / toNearestInverse
+	}), nil
 }
 
 // === Scalar(node parser.ValueTypeVector) Scalar ===
@@ -686,6 +671,20 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		metricName := firstSeries.Metric.Get(labels.MetricName)
 		return enh.Out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
 	}
+	// For the average calculation, we use incremental mean calculation. In
+	// particular in combination with Kahan summation (which we do for
+	// floats, but not yet for histograms, see issue #14105), this is quite
+	// accurate and only breaks in extreme cases (see testdata). One might
+	// assume that simple direct mean calculation works better in some
+	// cases, but so far, our conclusion is that we fare best with the
+	// incremental approach plus Kahan summation (for floats). For a
+	// relevant discussion, see
+	// https://stackoverflow.com/questions/61665473/is-it-beneficial-for-precision-to-calculate-the-incremental-mean-average
+	// Additional note: For even better numerical accuracy, we would need to
+	// process the values in a particular order. For avg_over_time, that
+	// would be more or less feasible, but it would be more expensive, and
+	// it would also be much harder for the avg aggregator, given how the
+	// PromQL engine works.
 	if len(firstSeries.Floats) == 0 {
 		// The passed values only contain histograms.
 		vec, err := aggrHistOverTime(vals, enh, func(s Series) (*histogram.FloatHistogram, error) {
@@ -717,52 +716,13 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		return vec, nil
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
-		var (
-			sum, mean, count, kahanC float64
-			incrementalMean          bool
-		)
-		for _, f := range s.Floats {
-			count++
-			if !incrementalMean {
-				newSum, newC := kahanSumInc(f.F, sum, kahanC)
-				// Perform regular mean calculation as long as
-				// the sum doesn't overflow and (in any case)
-				// for the first iteration (even if we start
-				// with ±Inf) to not run into division-by-zero
-				// problems below.
-				if count == 1 || !math.IsInf(newSum, 0) {
-					sum, kahanC = newSum, newC
-					continue
-				}
-				// Handle overflow by reverting to incremental calculation of the mean value.
-				incrementalMean = true
-				mean = sum / (count - 1)
-				kahanC /= count - 1
-			}
-			if math.IsInf(mean, 0) {
-				if math.IsInf(f.F, 0) && (mean > 0) == (f.F > 0) {
-					// The `mean` and `f.F` values are `Inf` of the same sign.  They
-					// can't be subtracted, but the value of `mean` is correct
-					// already.
-					continue
-				}
-				if !math.IsInf(f.F, 0) && !math.IsNaN(f.F) {
-					// At this stage, the mean is an infinite. If the added
-					// value is neither an Inf or a Nan, we can keep that mean
-					// value.
-					// This is required because our calculation below removes
-					// the mean value, which would look like Inf += x - Inf and
-					// end up as a NaN.
-					continue
-				}
-			}
-			correctedMean := mean + kahanC
-			mean, kahanC = kahanSumInc(f.F/count-correctedMean/count, mean, kahanC)
+		var mean, kahanC float64
+		for i, f := range s.Floats {
+			count := float64(i + 1)
+			q := float64(i) / count
+			mean, kahanC = kahanSumInc(f.F/count, q*mean, q*kahanC)
 		}
-		if incrementalMean {
-			return mean + kahanC
-		}
-		return (sum + kahanC) / count
+		return mean + kahanC
 	}), nil
 }
 
@@ -824,8 +784,42 @@ func funcMadOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	}), annos
 }
 
-// === max_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+// === ts_of_last_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
+func funcTsOfLastOverTime(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	el := vals[0].(Matrix)[0]
+
+	var tf int64
+	if len(el.Floats) > 0 {
+		tf = el.Floats[len(el.Floats)-1].T
+	}
+
+	var th int64
+	if len(el.Histograms) > 0 {
+		th = el.Histograms[len(el.Histograms)-1].T
+	}
+
+	return append(enh.Out, Sample{
+		Metric: el.Metric,
+		F:      float64(max(tf, th)) / 1000,
+	}), nil
+}
+
+// === ts_of_max_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
+func funcTsOfMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return compareOverTime(vals, args, enh, func(cur, maxVal float64) bool {
+		return (cur >= maxVal) || math.IsNaN(maxVal)
+	}, true)
+}
+
+// === ts_of_min_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
+func funcTsOfMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return compareOverTime(vals, args, enh, func(cur, maxVal float64) bool {
+		return (cur <= maxVal) || math.IsNaN(maxVal)
+	}, true)
+}
+
+// compareOverTime is a helper used by funcMaxOverTime and funcMinOverTime.
+func compareOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, compareFn func(float64, float64) bool, returnTimestamp bool) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
@@ -837,35 +831,32 @@ func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
 		maxVal := s.Floats[0].F
+		tsOfMax := s.Floats[0].T
 		for _, f := range s.Floats {
-			if f.F > maxVal || math.IsNaN(maxVal) {
+			if compareFn(f.F, maxVal) {
 				maxVal = f.F
+				tsOfMax = f.T
 			}
+		}
+		if returnTimestamp {
+			return float64(tsOfMax) / 1000
 		}
 		return maxVal
 	}), annos
 }
 
+// === max_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
+func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return compareOverTime(vals, args, enh, func(cur, maxVal float64) bool {
+		return (cur > maxVal) || math.IsNaN(maxVal)
+	}, false)
+}
+
 // === min_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	samples := vals[0].(Matrix)[0]
-	var annos annotations.Annotations
-	if len(samples.Floats) == 0 {
-		return enh.Out, nil
-	}
-	if len(samples.Histograms) > 0 {
-		metricName := samples.Metric.Get(labels.MetricName)
-		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
-	}
-	return aggrOverTime(vals, enh, func(s Series) float64 {
-		minVal := s.Floats[0].F
-		for _, f := range s.Floats {
-			if f.F < minVal || math.IsNaN(minVal) {
-				minVal = f.F
-			}
-		}
-		return minVal
-	}), annos
+	return compareOverTime(vals, args, enh, func(cur, maxVal float64) bool {
+		return (cur < maxVal) || math.IsNaN(maxVal)
+	}, false)
 }
 
 // === sum_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
@@ -932,8 +923,7 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 	return append(enh.Out, Sample{F: quantile(q, values)}), annos
 }
 
-// === stddev_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcStddevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func varianceOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, varianceToResult func(float64) float64) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
@@ -953,33 +943,22 @@ func funcStddevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalN
 			mean, cMean = kahanSumInc(delta/count, mean, cMean)
 			aux, cAux = kahanSumInc(delta*(f.F-(mean+cMean)), aux, cAux)
 		}
-		return math.Sqrt((aux + cAux) / count)
+		variance := (aux + cAux) / count
+		if varianceToResult == nil {
+			return variance
+		}
+		return varianceToResult(variance)
 	}), annos
+}
+
+// === stddev_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
+func funcStddevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return varianceOverTime(vals, args, enh, math.Sqrt)
 }
 
 // === stdvar_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcStdvarOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	samples := vals[0].(Matrix)[0]
-	var annos annotations.Annotations
-	if len(samples.Floats) == 0 {
-		return enh.Out, nil
-	}
-	if len(samples.Histograms) > 0 {
-		metricName := samples.Metric.Get(labels.MetricName)
-		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
-	}
-	return aggrOverTime(vals, enh, func(s Series) float64 {
-		var count float64
-		var mean, cMean float64
-		var aux, cAux float64
-		for _, f := range s.Floats {
-			count++
-			delta := f.F - (mean + cMean)
-			mean, cMean = kahanSumInc(delta/count, mean, cMean)
-			aux, cAux = kahanSumInc(delta*(f.F-(mean+cMean)), aux, cAux)
-		}
-		return (aux + cAux) / count
-	}), annos
+	return varianceOverTime(vals, args, enh, nil)
 }
 
 // === absent(Vector parser.ValueTypeVector) (Vector, Annotations) ===
@@ -1010,11 +989,11 @@ func funcPresentOverTime(vals []parser.Value, _ parser.Expressions, enh *EvalNod
 	}), nil
 }
 
-func simpleFunc(vals []parser.Value, enh *EvalNodeHelper, f func(float64) float64) Vector {
+func simpleFloatFunc(vals []parser.Value, enh *EvalNodeHelper, f func(float64) float64) Vector {
 	for _, el := range vals[0].(Vector) {
 		if el.H == nil { // Process only float samples.
 			if !enh.enableDelayedNameRemoval {
-				el.Metric = el.Metric.DropMetricIdentity()
+				el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 			}
 			enh.Out = append(enh.Out, Sample{
 				Metric:   el.Metric,
@@ -1028,114 +1007,114 @@ func simpleFunc(vals []parser.Value, enh *EvalNodeHelper, f func(float64) float6
 
 // === abs(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcAbs(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Abs), nil
+	return simpleFloatFunc(vals, enh, math.Abs), nil
 }
 
 // === ceil(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcCeil(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Ceil), nil
+	return simpleFloatFunc(vals, enh, math.Ceil), nil
 }
 
 // === floor(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcFloor(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Floor), nil
+	return simpleFloatFunc(vals, enh, math.Floor), nil
 }
 
 // === exp(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcExp(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Exp), nil
+	return simpleFloatFunc(vals, enh, math.Exp), nil
 }
 
 // === sqrt(Vector VectorNode) (Vector, Annotations) ===
 func funcSqrt(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Sqrt), nil
+	return simpleFloatFunc(vals, enh, math.Sqrt), nil
 }
 
 // === ln(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcLn(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Log), nil
+	return simpleFloatFunc(vals, enh, math.Log), nil
 }
 
 // === log2(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcLog2(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Log2), nil
+	return simpleFloatFunc(vals, enh, math.Log2), nil
 }
 
 // === log10(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcLog10(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Log10), nil
+	return simpleFloatFunc(vals, enh, math.Log10), nil
 }
 
 // === sin(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcSin(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Sin), nil
+	return simpleFloatFunc(vals, enh, math.Sin), nil
 }
 
 // === cos(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcCos(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Cos), nil
+	return simpleFloatFunc(vals, enh, math.Cos), nil
 }
 
 // === tan(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcTan(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Tan), nil
+	return simpleFloatFunc(vals, enh, math.Tan), nil
 }
 
 // === asin(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcAsin(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Asin), nil
+	return simpleFloatFunc(vals, enh, math.Asin), nil
 }
 
 // === acos(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcAcos(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Acos), nil
+	return simpleFloatFunc(vals, enh, math.Acos), nil
 }
 
 // === atan(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcAtan(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Atan), nil
+	return simpleFloatFunc(vals, enh, math.Atan), nil
 }
 
 // === sinh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcSinh(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Sinh), nil
+	return simpleFloatFunc(vals, enh, math.Sinh), nil
 }
 
 // === cosh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcCosh(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Cosh), nil
+	return simpleFloatFunc(vals, enh, math.Cosh), nil
 }
 
 // === tanh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcTanh(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Tanh), nil
+	return simpleFloatFunc(vals, enh, math.Tanh), nil
 }
 
 // === asinh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcAsinh(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Asinh), nil
+	return simpleFloatFunc(vals, enh, math.Asinh), nil
 }
 
 // === acosh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcAcosh(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Acosh), nil
+	return simpleFloatFunc(vals, enh, math.Acosh), nil
 }
 
 // === atanh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcAtanh(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, math.Atanh), nil
+	return simpleFloatFunc(vals, enh, math.Atanh), nil
 }
 
 // === rad(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcRad(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, func(v float64) float64 {
+	return simpleFloatFunc(vals, enh, func(v float64) float64 {
 		return v * math.Pi / 180
 	}), nil
 }
 
 // === deg(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcDeg(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, func(v float64) float64 {
+	return simpleFloatFunc(vals, enh, func(v float64) float64 {
 		return v * 180 / math.Pi
 	}), nil
 }
@@ -1147,7 +1126,7 @@ func funcPi(_ []parser.Value, _ parser.Expressions, _ *EvalNodeHelper) (Vector, 
 
 // === sgn(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcSgn(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFunc(vals, enh, func(v float64) float64 {
+	return simpleFloatFunc(vals, enh, func(v float64) float64 {
 		switch {
 		case v < 0:
 			return -1
@@ -1164,7 +1143,7 @@ func funcTimestamp(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelpe
 	vec := vals[0].(Vector)
 	for _, el := range vec {
 		if !enh.enableDelayedNameRemoval {
-			el.Metric = el.Metric.DropMetricIdentity()
+			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   el.Metric,
@@ -1284,168 +1263,106 @@ func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNo
 	return append(enh.Out, Sample{F: slope*duration + intercept}), nil
 }
 
+func simpleHistogramFunc(vals []parser.Value, enh *EvalNodeHelper, f func(h *histogram.FloatHistogram) float64) Vector {
+	for _, el := range vals[0].(Vector) {
+		if el.H != nil { // Process only histogram samples.
+			if !enh.enableDelayedNameRemoval {
+				el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
+			}
+			enh.Out = append(enh.Out, Sample{
+				Metric:   el.Metric,
+				F:        f(el.H),
+				DropName: true,
+			})
+		}
+	}
+	return enh.Out
+}
+
 // === histogram_count(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcHistogramCount(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	inVec := vals[0].(Vector)
-
-	for _, sample := range inVec {
-		// Skip non-histogram samples.
-		if sample.H == nil {
-			continue
-		}
-		if !enh.enableDelayedNameRemoval {
-			sample.Metric = sample.Metric.DropMetricIdentity()
-		}
-		enh.Out = append(enh.Out, Sample{
-			Metric:   sample.Metric,
-			F:        sample.H.Count,
-			DropName: true,
-		})
-	}
-	return enh.Out, nil
+	return simpleHistogramFunc(vals, enh, func(h *histogram.FloatHistogram) float64 {
+		return h.Count
+	}), nil
 }
 
 // === histogram_sum(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcHistogramSum(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	inVec := vals[0].(Vector)
-
-	for _, sample := range inVec {
-		// Skip non-histogram samples.
-		if sample.H == nil {
-			continue
-		}
-		if !enh.enableDelayedNameRemoval {
-			sample.Metric = sample.Metric.DropMetricIdentity()
-		}
-		enh.Out = append(enh.Out, Sample{
-			Metric:   sample.Metric,
-			F:        sample.H.Sum,
-			DropName: true,
-		})
-	}
-	return enh.Out, nil
+	return simpleHistogramFunc(vals, enh, func(h *histogram.FloatHistogram) float64 {
+		return h.Sum
+	}), nil
 }
 
 // === histogram_avg(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcHistogramAvg(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	inVec := vals[0].(Vector)
+	return simpleHistogramFunc(vals, enh, func(h *histogram.FloatHistogram) float64 {
+		return h.Sum / h.Count
+	}), nil
+}
 
-	for _, sample := range inVec {
-		// Skip non-histogram samples.
-		if sample.H == nil {
-			continue
+func histogramVariance(vals []parser.Value, enh *EvalNodeHelper, varianceToResult func(float64) float64) (Vector, annotations.Annotations) {
+	return simpleHistogramFunc(vals, enh, func(h *histogram.FloatHistogram) float64 {
+		mean := h.Sum / h.Count
+		var variance, cVariance float64
+		it := h.AllBucketIterator()
+		for it.Next() {
+			bucket := it.At()
+			if bucket.Count == 0 {
+				continue
+			}
+			var val float64
+			switch {
+			case h.UsesCustomBuckets():
+				// Use arithmetic mean in case of custom buckets.
+				val = (bucket.Upper + bucket.Lower) / 2.0
+			case bucket.Lower <= 0 && bucket.Upper >= 0:
+				// Use zero (effectively the arithmetic mean) in the zero bucket of a standard exponential histogram.
+				val = 0
+			default:
+				// Use geometric mean in case of standard exponential buckets.
+				val = math.Sqrt(bucket.Upper * bucket.Lower)
+				if bucket.Upper < 0 {
+					val = -val
+				}
+			}
+			delta := val - mean
+			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
 		}
-		if !enh.enableDelayedNameRemoval {
-			sample.Metric = sample.Metric.DropMetricIdentity()
+		variance += cVariance
+		variance /= h.Count
+		if varianceToResult != nil {
+			variance = varianceToResult(variance)
 		}
-		enh.Out = append(enh.Out, Sample{
-			Metric:   sample.Metric,
-			F:        sample.H.Sum / sample.H.Count,
-			DropName: true,
-		})
-	}
-	return enh.Out, nil
+		return variance
+	}), nil
 }
 
 // === histogram_stddev(Vector parser.ValueTypeVector) (Vector, Annotations)  ===
 func funcHistogramStdDev(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	inVec := vals[0].(Vector)
-
-	for _, sample := range inVec {
-		// Skip non-histogram samples.
-		if sample.H == nil {
-			continue
-		}
-		mean := sample.H.Sum / sample.H.Count
-		var variance, cVariance float64
-		it := sample.H.AllBucketIterator()
-		for it.Next() {
-			bucket := it.At()
-			if bucket.Count == 0 {
-				continue
-			}
-			var val float64
-			if bucket.Lower <= 0 && 0 <= bucket.Upper {
-				val = 0
-			} else {
-				val = math.Sqrt(bucket.Upper * bucket.Lower)
-				if bucket.Upper < 0 {
-					val = -val
-				}
-			}
-			delta := val - mean
-			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
-		}
-		variance += cVariance
-		variance /= sample.H.Count
-		if !enh.enableDelayedNameRemoval {
-			sample.Metric = sample.Metric.DropMetricIdentity()
-		}
-		enh.Out = append(enh.Out, Sample{
-			Metric:   sample.Metric,
-			F:        math.Sqrt(variance),
-			DropName: true,
-		})
-	}
-	return enh.Out, nil
+	return histogramVariance(vals, enh, math.Sqrt)
 }
 
 // === histogram_stdvar(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcHistogramStdVar(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	inVec := vals[0].(Vector)
-
-	for _, sample := range inVec {
-		// Skip non-histogram samples.
-		if sample.H == nil {
-			continue
-		}
-		mean := sample.H.Sum / sample.H.Count
-		var variance, cVariance float64
-		it := sample.H.AllBucketIterator()
-		for it.Next() {
-			bucket := it.At()
-			if bucket.Count == 0 {
-				continue
-			}
-			var val float64
-			if bucket.Lower <= 0 && 0 <= bucket.Upper {
-				val = 0
-			} else {
-				val = math.Sqrt(bucket.Upper * bucket.Lower)
-				if bucket.Upper < 0 {
-					val = -val
-				}
-			}
-			delta := val - mean
-			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
-		}
-		variance += cVariance
-		variance /= sample.H.Count
-		if !enh.enableDelayedNameRemoval {
-			sample.Metric = sample.Metric.DropMetricIdentity()
-		}
-		enh.Out = append(enh.Out, Sample{
-			Metric:   sample.Metric,
-			F:        variance,
-			DropName: true,
-		})
-	}
-	return enh.Out, nil
+	return histogramVariance(vals, enh, nil)
 }
 
 // === histogram_fraction(lower, upper parser.ValueTypeScalar, Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcHistogramFraction(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	lower := vals[0].(Vector)[0].F
 	upper := vals[1].(Vector)[0].F
 	inVec := vals[2].(Vector)
 
-	for _, sample := range inVec {
-		// Skip non-histogram samples.
+	annos := enh.resetHistograms(inVec, args[2])
+
+	// Deal with the native histograms.
+	for _, sample := range enh.nativeHistogramSamples {
 		if sample.H == nil {
+			// Native histogram conflicts with classic histogram at the same timestamp, ignore.
 			continue
 		}
 		if !enh.enableDelayedNameRemoval {
-			sample.Metric = sample.Metric.DropMetricIdentity()
+			sample.Metric = sample.Metric.DropReserved(schema.IsMetadataLabel)
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
@@ -1453,7 +1370,24 @@ func funcHistogramFraction(vals []parser.Value, _ parser.Expressions, enh *EvalN
 			DropName: true,
 		})
 	}
-	return enh.Out, nil
+
+	// Deal with classic histograms that have already been filtered for conflicting native histograms.
+	for _, mb := range enh.signatureToMetricWithBuckets {
+		if len(mb.buckets) == 0 {
+			continue
+		}
+		if !enh.enableDelayedNameRemoval {
+			mb.metric = mb.metric.DropReserved(schema.IsMetadataLabel)
+		}
+
+		enh.Out = append(enh.Out, Sample{
+			Metric:   mb.metric,
+			F:        BucketFraction(lower, upper, mb.buckets),
+			DropName: true,
+		})
+	}
+
+	return enh.Out, annos
 }
 
 // === histogram_quantile(k parser.ValueTypeScalar, Vector parser.ValueTypeVector) (Vector, Annotations) ===
@@ -1465,60 +1399,16 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 	if math.IsNaN(q) || q < 0 || q > 1 {
 		annos.Add(annotations.NewInvalidQuantileWarning(q, args[0].PositionRange()))
 	}
+	annos.Merge(enh.resetHistograms(inVec, args[1]))
 
-	if enh.signatureToMetricWithBuckets == nil {
-		enh.signatureToMetricWithBuckets = map[string]*metricWithBuckets{}
-	} else {
-		for _, v := range enh.signatureToMetricWithBuckets {
-			v.buckets = v.buckets[:0]
-		}
-	}
-
-	var histogramSamples []Sample
-
-	for _, sample := range inVec {
-		// We are only looking for classic buckets here. Remember
-		// the histograms for later treatment.
-		if sample.H != nil {
-			histogramSamples = append(histogramSamples, sample)
+	// Deal with the native histograms.
+	for _, sample := range enh.nativeHistogramSamples {
+		if sample.H == nil {
+			// Native histogram conflicts with classic histogram at the same timestamp, ignore.
 			continue
 		}
-
-		upperBound, err := strconv.ParseFloat(
-			sample.Metric.Get(model.BucketLabel), 64,
-		)
-		if err != nil {
-			annos.Add(annotations.NewBadBucketLabelWarning(sample.Metric.Get(labels.MetricName), sample.Metric.Get(model.BucketLabel), args[1].PositionRange()))
-			continue
-		}
-		enh.lblBuf = sample.Metric.BytesWithoutLabels(enh.lblBuf, labels.BucketLabel)
-		mb, ok := enh.signatureToMetricWithBuckets[string(enh.lblBuf)]
-		if !ok {
-			sample.Metric = labels.NewBuilder(sample.Metric).
-				Del(excludedLabels...).
-				Labels()
-			mb = &metricWithBuckets{sample.Metric, nil}
-			enh.signatureToMetricWithBuckets[string(enh.lblBuf)] = mb
-		}
-		mb.buckets = append(mb.buckets, Bucket{upperBound, sample.F})
-	}
-
-	// Now deal with the native histograms.
-	for _, sample := range histogramSamples {
-		// We have to reconstruct the exact same signature as above for
-		// a classic histogram, just ignoring any le label.
-		enh.lblBuf = sample.Metric.Bytes(enh.lblBuf)
-		if mb, ok := enh.signatureToMetricWithBuckets[string(enh.lblBuf)]; ok && len(mb.buckets) > 0 {
-			// At this data point, we have classic histogram
-			// buckets and a native histogram with the same name and
-			// labels. Do not evaluate anything.
-			annos.Add(annotations.NewMixedClassicNativeHistogramsWarning(sample.Metric.Get(labels.MetricName), args[1].PositionRange()))
-			delete(enh.signatureToMetricWithBuckets, string(enh.lblBuf))
-			continue
-		}
-
 		if !enh.enableDelayedNameRemoval {
-			sample.Metric = sample.Metric.DropMetricIdentity()
+			sample.Metric = sample.Metric.DropReserved(schema.IsMetadataLabel)
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
@@ -1527,7 +1417,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		})
 	}
 
-	// Now do classic histograms that have already been filtered for conflicting native histograms.
+	// Deal with classic histograms that have already been filtered for conflicting native histograms.
 	for _, mb := range enh.signatureToMetricWithBuckets {
 		if len(mb.buckets) > 0 {
 			res, forcedMonotonicity, _ := BucketQuantile(q, mb.buckets)
@@ -1536,7 +1426,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			}
 
 			if !enh.enableDelayedNameRemoval {
-				mb.metric = mb.metric.DropMetricIdentity()
+				mb.metric = mb.metric.DropReserved(schema.IsMetadataLabel)
 			}
 
 			enh.Out = append(enh.Out, Sample{
@@ -1754,7 +1644,7 @@ func dateWrapper(vals []parser.Value, enh *EvalNodeHelper, f func(time.Time) flo
 		}
 		t := time.Unix(int64(el.F), 0).UTC()
 		if !enh.enableDelayedNameRemoval {
-			el.Metric = el.Metric.DropMetricIdentity()
+			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   el.Metric,
@@ -1872,6 +1762,9 @@ var FunctionCalls = map[string]FunctionCall{
 	"mad_over_time":                funcMadOverTime,
 	"max_over_time":                funcMaxOverTime,
 	"min_over_time":                funcMinOverTime,
+	"ts_of_last_over_time":         funcTsOfLastOverTime,
+	"ts_of_max_over_time":          funcTsOfMaxOverTime,
+	"ts_of_min_over_time":          funcTsOfMinOverTime,
 	"minute":                       funcMinute,
 	"month":                        funcMonth,
 	"pi":                           funcPi,

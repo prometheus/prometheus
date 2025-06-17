@@ -33,9 +33,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"go.uber.org/atomic"
-
 	"github.com/prometheus/common/promslog"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -553,7 +552,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		values, err := ir.SortedLabelValues(ctx, n, selectors...)
+		values, err := ir.SortedLabelValues(ctx, n, nil, selectors...)
 		if err != nil {
 			return err
 		}
@@ -569,7 +568,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		lv, err := ir.SortedLabelValues(ctx, n, selectors...)
+		lv, err := ir.SortedLabelValues(ctx, n, nil, selectors...)
 		if err != nil {
 			return err
 		}
@@ -579,7 +578,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 	printInfo(postingInfos)
 
 	postingInfos = postingInfos[:0]
-	lv, err := ir.SortedLabelValues(ctx, "__name__", selectors...)
+	lv, err := ir.SortedLabelValues(ctx, "__name__", nil, selectors...)
 	if err != nil {
 		return err
 	}

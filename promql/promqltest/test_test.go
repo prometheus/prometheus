@@ -374,6 +374,7 @@ eval_info instant at 50m sort(rate(http_requests[10m]))
 		"instant query with unexpected info annotation": {
 			input: testData + `
 eval instant at 50m sort(rate(http_requests[10m]))
+	expect no_info
 	{group="production", instance="0", job="api-server"} 0.03333333333333333
 	{group="production", instance="1", job="api-server"} 0.06666666666666667
 	{group="canary", instance="0", job="api-server"} 0.1
@@ -636,6 +637,316 @@ eval range from 0 to 5m step 5m testmetric
 3 @[0]
 3 @[30000]
 3 @[60000]`,
+		},
+		"instant query expected to fail with specific error message, and query fails with that error (with new eval syntax)": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+	expect fail msg: vector cannot contain metrics with the same labelset
+`,
+		},
+		"instant query expected to fail with specific error message, and query does not fail with that error (with new eval syntax)": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+	expect fail msg: something went wrong
+`,
+			expectedError: `expected error matching "something went wrong" evaluating query "ceil({__name__=~'testmetric1|testmetric2'})" (line 6), but got: vector cannot contain metrics with the same labelset`,
+		},
+		"instant query expected to fail with specific error regex, and query fails with that error (with new eval syntax)": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+	expect fail regex: .*labelset.*
+`,
+		},
+		"instant query expected to fail with specific error regex, and query does not fail with that error (with new eval syntax)": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+	expect fail regex: something went (wrong|boom)
+`,
+			expectedError: `expected error matching "something went (wrong|boom)" evaluating query "ceil({__name__=~'testmetric1|testmetric2'})" (line 6), but got: vector cannot contain metrics with the same labelset`,
+		},
+		"instant query expected to only to fail (with new eval syntax)": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+	expect fail
+`,
+		},
+		"invalid fail syntax with error as token instead of regex or msg(with new eval syntax)": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+	expect fail error: something went wrong
+`,
+			expectedError: "error in eval ceil({__name__=~'testmetric1|testmetric2'}) (line 7): invalid expect statement, must match `expect <type> <match_type>: <string>` format",
+		},
+		"instant query expected not to care about annotations (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_warn instant at 0m sum(metric)
+`,
+		},
+		"instant query expected to only have warn annotation (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_warn instant at 0m sum(metric)
+	expect warn
+`,
+		},
+		"instant query expected to have warn annotation with specific message (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_warn instant at 0m sum(metric)
+	expect warn msg: PromQL warning: encountered a mix of histograms and floats for aggregation
+`,
+		},
+		"instant query expected to have warn but not with the specific message (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_warn instant at 0m sum(metric)
+	expect warn msg: PromQL warning: encountered a mix
+`,
+			expectedError: `expected warn annotation matching message "PromQL warning: encountered a mix" but no matching annotation was found for query "sum(metric)" (line 6), found: [PromQL warning: encountered a mix of histograms and floats for aggregation]`,
+		},
+		"instant query expected to have warn annotation with specific regex (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_warn instant at 0m sum(metric)
+	expect warn regex: PromQL warning: encountered a mix
+`,
+		},
+		"instant query expected to have warn but not with the specific regex (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_warn instant at 0m sum(metric)
+	expect warn regex: PromQL warning: something went (wrong|boom)
+`,
+			expectedError: `expected warn annotation matching pattern "PromQL warning: something went (wrong|boom)" but no matching annotation was found for query "sum(metric)" (line 6), found: [PromQL warning: encountered a mix of histograms and floats for aggregation]`,
+		},
+		"instant query expected to have warn annotation and no info annotation (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_warn instant at 0m sum(metric)
+	expect warn
+	expect no_info
+`,
+		},
+		"instant query expected to warn and info annotation but got only warn annotation (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_warn instant at 0m sum(metric)
+	expect warn
+	expect info
+`,
+			expectedError: `expected info annotations but none were found for query "sum(metric)" (line 6)`,
+		},
+		"instant query expected to have no warn but got warn annotation (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_warn instant at 0m sum(metric)
+	expect no_warn
+`,
+			expectedError: `unexpected warning annotations evaluating query "sum(metric)" (line 6): [PromQL warning: encountered a mix of histograms and floats for aggregation]`,
+		},
+		"instant query expected to only have info annotation (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_info instant at 0m min(metric)
+	expect info
+	{} 1
+`,
+		},
+		"instant query expected have info annotation with specific message (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_info instant at 0m min(metric)
+	expect info msg: PromQL info: ignored histogram in min aggregation
+	{} 1
+`,
+		},
+		"instant query expected to have info annotation but not with the specific message (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_info instant at 0m min(metric)
+	expect info msg: something went wrong
+	{} 1
+`,
+			expectedError: `expected info annotation matching message "something went wrong" but no matching annotation was found for query "min(metric)" (line 6), found: [PromQL info: ignored histogram in min aggregation]`,
+		},
+		"instant query expected to have info annotation with specific regex (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_info instant at 0m min(metric)
+	expect info regex: PromQL info: ignored histogram
+	{} 1
+`,
+		},
+		"instant query expected to only have warn but not with the specific regex (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_info instant at 0m min(metric)
+	expect info regex: something went (wrong|boom)
+	{} 1
+`,
+			expectedError: `expected info annotation matching pattern "something went (wrong|boom)" but no matching annotation was found for query "min(metric)" (line 6), found: [PromQL info: ignored histogram in min aggregation]`,
+		},
+		"instant query expected to have info annotation and no warn annotation (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_info instant at 0m min(metric)
+	expect info
+	expect no_warn
+	{} 1
+`,
+		},
+		"instant query expected to have warn and info annotation but got only info annotation (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_info instant at 0m min(metric)
+	expect info
+	expect warn
+	{} 1
+`,
+			expectedError: `expected warn annotations but none were found for query "min(metric)" (line 6)`,
+		},
+		"instant query expected to have no info annotation but got info annotation (with new eval syntax)": {
+			input: `
+load 5m
+	metric{src="a"} {{schema:0 sum:1 count:2}}
+	metric{src="b"} 1
+
+eval_info instant at 0m min(metric)
+	expect no_info
+	{} 1
+`,
+			expectedError: `unexpected info annotations evaluating query "min(metric)" (line 6): [PromQL info: ignored histogram in min aggregation]`,
+		},
+		"instant query with results expected to match provided order, and result is in expected order (with new eval syntax)": {
+			input: testData + `
+eval_ordered instant at 50m sort(http_requests)
+	expect ordered
+	http_requests{group="production", instance="0", job="api-server"} 100
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="canary", instance="0", job="api-server"} 300
+	http_requests{group="canary", instance="1", job="api-server"} 400
+`,
+		},
+		"instant query with results expected to match provided order, but result is out of order (with new eval syntax)": {
+			input: testData + `
+eval_ordered instant at 50m sort(http_requests)
+	expect ordered
+	http_requests{group="production", instance="0", job="api-server"} 100
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="canary", instance="1", job="api-server"} 400
+	http_requests{group="canary", instance="0", job="api-server"} 300
+`,
+			expectedError: `error in eval sort(http_requests) (line 10): expected metric {__name__="http_requests", group="canary", instance="0", job="api-server"} with [300.000000] at position 4 but was at 3`,
+		},
+		"instant query with `expect` as the metric name in `expect{}` format expected not to throw any error, and no error occurred (with the new eval syntax).": {
+			input: `
+load 5m
+	expect 0 1
+
+eval instant at 0m expect
+	expect no_info
+	expect{} 0
+`,
+		},
+		"instant query with both `expect info` and `expect no_info` lines expected to fail to parse (with the new eval syntax).": {
+			input: testData + `
+eval instant at 0m http_requests
+	expect no_info
+	expect info
+	http_requests
+`,
+			expectedError: `error in eval http_requests (line 12): invalid expect lines, info and no_info cannot be used together`,
+		},
+		"instant query with both `expect warn` and `expect no_warn` lines expected to fail to parse (with the new eval syntax).": {
+			input: testData + `
+eval instant at 0m http_requests
+	expect no_warn
+	expect warn
+	http_requests
+`,
+			expectedError: `error in eval http_requests (line 12): invalid expect lines, warn and no_warn cannot be used together`,
+		},
+		"instant query with more than one `expect fail` lines expected to fail to parse (with the new eval syntax).": {
+			input: testData + `
+eval instant at 0m http_requests
+	expect fail
+	expect fail msg: something went wrong
+	http_requests
+`,
+			expectedError: `error in eval http_requests (line 12): invalid expect lines, multiple expect fail lines are not allowed`,
 		},
 	}
 

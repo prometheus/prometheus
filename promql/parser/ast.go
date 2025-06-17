@@ -19,9 +19,8 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
-
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/storage"
 )
 
 // Node is a generic interface for all nodes in an AST.
@@ -111,6 +110,15 @@ type BinaryExpr struct {
 	ReturnBool bool
 }
 
+// DurationExpr represents a binary expression between two duration expressions.
+type DurationExpr struct {
+	Op       ItemType // The operation of the expression.
+	LHS, RHS Expr     // The operands on the respective sides of the operator.
+	Wrapped  bool     // Set when the duration is wrapped in parentheses.
+
+	StartPos posrange.Pos // For unary operations, the position of the operator.
+}
+
 // Call represents a function call.
 type Call struct {
 	Func *Function   // The function that was called.
@@ -125,24 +133,27 @@ type MatrixSelector struct {
 	// if the parser hasn't returned an error.
 	VectorSelector Expr
 	Range          time.Duration
-
-	EndPos posrange.Pos
+	RangeExpr      *DurationExpr
+	EndPos         posrange.Pos
 }
 
 // SubqueryExpr represents a subquery.
 type SubqueryExpr struct {
-	Expr  Expr
-	Range time.Duration
+	Expr      Expr
+	Range     time.Duration
+	RangeExpr *DurationExpr
 	// OriginalOffset is the actual offset that was set in the query.
-	// This never changes.
 	OriginalOffset time.Duration
+	// OriginalOffsetExpr is the actual offset expression that was set in the query.
+	OriginalOffsetExpr *DurationExpr
 	// Offset is the offset used during the query execution
-	// which is calculated using the original offset, at modifier time,
+	// which is calculated using the original offset, offset expression, at modifier time,
 	// eval time, and subquery offsets in the AST tree.
 	Offset     time.Duration
 	Timestamp  *int64
 	StartOrEnd ItemType // Set when @ is used with start() or end()
 	Step       time.Duration
+	StepExpr   *DurationExpr
 
 	EndPos posrange.Pos
 }
@@ -151,6 +162,7 @@ type SubqueryExpr struct {
 type NumberLiteral struct {
 	Val float64
 
+	Duration bool // Used to format the number as a duration.
 	PosRange posrange.PositionRange
 }
 
@@ -192,9 +204,10 @@ func (e *StepInvariantExpr) PositionRange() posrange.PositionRange {
 // VectorSelector represents a Vector selection.
 type VectorSelector struct {
 	Name string
-	// OriginalOffset is the actual offset that was set in the query.
-	// This never changes.
+	// OriginalOffset is the actual offset calculated from OriginalOffsetExpr.
 	OriginalOffset time.Duration
+	// OriginalOffsetExpr is the actual offset that was set in the query.
+	OriginalOffsetExpr *DurationExpr
 	// Offset is the offset used during the query execution
 	// which is calculated using the original offset, at modifier time,
 	// eval time, and subquery offsets in the AST tree.
@@ -245,6 +258,7 @@ func (e *BinaryExpr) Type() ValueType {
 	return ValueTypeVector
 }
 func (e *StepInvariantExpr) Type() ValueType { return e.Expr.Type() }
+func (e *DurationExpr) Type() ValueType      { return ValueTypeScalar }
 
 func (*AggregateExpr) PromQLExpr()     {}
 func (*BinaryExpr) PromQLExpr()        {}
@@ -257,6 +271,7 @@ func (*StringLiteral) PromQLExpr()     {}
 func (*UnaryExpr) PromQLExpr()         {}
 func (*VectorSelector) PromQLExpr()    {}
 func (*StepInvariantExpr) PromQLExpr() {}
+func (*DurationExpr) PromQLExpr()      {}
 
 // VectorMatchCardinality describes the cardinality relationship
 // of two Vectors in a binary operation.
@@ -436,6 +451,16 @@ func (e *AggregateExpr) PositionRange() posrange.PositionRange {
 }
 
 func (e *BinaryExpr) PositionRange() posrange.PositionRange {
+	return mergeRanges(e.LHS, e.RHS)
+}
+
+func (e *DurationExpr) PositionRange() posrange.PositionRange {
+	if e.LHS == nil {
+		return posrange.PositionRange{
+			Start: e.StartPos,
+			End:   e.RHS.PositionRange().End,
+		}
+	}
 	return mergeRanges(e.LHS, e.RHS)
 }
 

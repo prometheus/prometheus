@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/schema"
 )
 
 type promlexer struct {
@@ -228,31 +229,36 @@ func (p *PromParser) Comment() []byte {
 
 // Labels writes the labels of the current sample into the passed labels.
 func (p *PromParser) Labels(l *labels.Labels) {
-	s := yoloString(p.series)
-
+	// Defensive copy in case the following keeps a reference.
+	// See https://github.com/prometheus/prometheus/issues/16490
+	s := string(p.series)
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
+
+	m := schema.Metadata{
+		Name: metricName,
+		// NOTE(bwplotka): There is a known case where the type is wrong on a broken exposition
+		// (see the TestPromParse windspeed metric). Fixing it would require extra
+		// allocs and benchmarks. Since it was always broken, don't fix for now.
+		Type: p.mtype,
+	}
+
 	if p.enableTypeAndUnitLabels {
-		p.builder.AddMetricIdentity(labels.MetricIdentity{
-			Name: metricName,
-			Type: p.mtype,
-		})
+		m.AddToLabels(&p.builder)
 	} else {
 		p.builder.Add(labels.MetricName, metricName)
 	}
-
 	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
 		b := p.offsets[i+1] - p.start
 		label := unreplace(s[a:b])
-		if p.enableTypeAndUnitLabels && labels.IsMetricIdentityLabel(label) {
-			// Dropping user provided id labels if needed.
+		if p.enableTypeAndUnitLabels && !m.IsEmptyFor(label) {
+			// Dropping user provided metadata labels, if found in the OM metadata.
 			continue
 		}
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
 		value := normalizeFloatsInLabelValues(p.mtype, label, unreplace(s[c:d]))
-
 		p.builder.Add(label, value)
 	}
 

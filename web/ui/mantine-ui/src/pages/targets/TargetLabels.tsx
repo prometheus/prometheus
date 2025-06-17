@@ -35,10 +35,21 @@ const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels }) => {
       </Group>
 
       <Collapse in={showDiscovered}>
-        <Text fw={700} size="1em" my="lg" c="gray.7">
-          Discovered labels:
-        </Text>
-        <LabelBadges color="blue" labels={discoveredLabels} />
+        {/* Additionally remove DOM elements when not expanded (helps performance) */}
+        {showDiscovered && (
+          <>
+            <Text fw={700} size="1em" my="lg" c="gray.7">
+              Discovered labels:
+            </Text>
+            <LabelBadges
+              labels={discoveredLabels}
+              style={{
+                color: "var(--mantine-color-blue-light-color)",
+                backgroundColor: "var(--mantine-color-blue-light)",
+              }}
+            />
+          </>
+        )}
       </Collapse>
     </Stack>
   );

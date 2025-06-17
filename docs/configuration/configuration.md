@@ -3,8 +3,6 @@ title: Configuration
 sort_rank: 1
 ---
 
-# Configuration
-
 Prometheus is configured via command-line flags and a configuration file. While
 the command-line flags configure immutable system parameters (such as storage
 locations, amount of data to keep on disk and in memory, etc.), the
@@ -80,9 +78,9 @@ global:
   [ rule_query_offset: <duration> | default = 0s ]
 
   # The labels to add to any time series or alerts when communicating with
-  # external systems (federation, remote storage, Alertmanager). 
-  # Environment variable references `${var}` or `$var` are replaced according 
-  # to the values of the current environment variables. 
+  # external systems (federation, remote storage, Alertmanager).
+  # Environment variable references `${var}` or `$var` are replaced according
+  # to the values of the current environment variables.
   # References to undefined variables are replaced by the empty string.
   # The `$` character can be escaped by using `$$`.
   external_labels:
@@ -138,7 +136,16 @@ global:
   # Specifies the validation scheme for metric and label names. Either blank or
   # "utf8" for full UTF-8 support, or "legacy" for letters, numbers, colons,
   # and underscores.
-  [ metric_name_validation_scheme <string> | default "utf8" ]
+  [ metric_name_validation_scheme: <string> | default "utf8" ]
+
+  # Specifies whether to convert all scraped classic histograms into native
+  # histograms with custom buckets.
+  [ convert_classic_histograms_to_nhcb: <bool> | default = false]
+
+  # Specifies whether to scrape a classic histogram, even if it is also exposed as a native
+  # histogram (has no effect without --enable-feature=native-histograms).
+  [ always_scrape_classic_histograms: <boolean> | default = false ]
+
 
 runtime:
   # Configure the Go garbage collector GOGC parameter
@@ -174,7 +181,15 @@ remote_write:
 # Settings related to the OTLP receiver feature.
 # See https://prometheus.io/docs/guides/opentelemetry/ for best practices.
 otlp:
+  # Promote specific list of resource attributes to labels.
+  # It cannot be configured simultaneously with 'promote_all_resource_attributes: true'.
   [ promote_resource_attributes: [<string>, ...] | default = [ ] ]
+  # Promoting all resource attributes to labels, except for the ones configured with 'ignore_resource_attributes'.
+  # Be aware that changes in attributes received by the OTLP endpoint may result in time series churn and lead to high memory usage by the Prometheus server.
+  # It cannot be set to 'true' simultaneously with 'promote_resource_attributes'.
+  [ promote_all_resource_attributes: <boolean> | default = false ]
+  # Which resource attributes to ignore, can only be set when 'promote_all_resource_attributes' is true.
+  [ ignore_resource_attributes: [<string>, ...] | default = [] ]
   # Configures translation of OTLP metrics when received through the OTLP metrics
   # endpoint. Available values:
   # - "UnderscoreEscapingWithSuffixes" refers to commonly agreed normalization used
@@ -182,11 +197,23 @@ otlp:
   # - "NoUTF8EscapingWithSuffixes" is a mode that relies on UTF-8 support in Prometheus.
   #   It preserves all special characters like dots, but still adds required metric name suffixes
   #   for units and _total, as UnderscoreEscapingWithSuffixes does.
+  # - (EXPERIMENTAL) "NoTranslation" is a mode that relies on UTF-8 support in Prometheus.
+  #   It preserves all special character like dots and won't append special suffixes for metric
+  #   unit and type.
+  #
+  #   WARNING: The "NoTranslation" setting has significant known risks and limitations (see https://prometheus.io/docs/practices/naming/
+  #   for details):
+  #       * Impaired UX when using PromQL in plain YAML (e.g. alerts, rules, dashboard, autoscaling configuration).
+  #       * Series collisions which in the best case may result in OOO errors, in the worst case a silently malformed
+  #         time series. For instance, you may end up in situation of ingesting `foo.bar` series with unit
+  #         `seconds` and a separate series `foo.bar` with unit `milliseconds`.
   [ translation_strategy: <string> | default = "UnderscoreEscapingWithSuffixes" ]
   # Enables adding "service.name", "service.namespace" and "service.instance.id"
   # resource attributes to the "target_info" metric, on top of converting
   # them into the "instance" and "job" labels.
   [ keep_identifying_resource_attributes: <boolean> | default = false]
+  # Configures optional translation of OTLP explicit bucket histograms into native histograms with custom buckets.
+  [ convert_histograms_to_nhcb: <boolean> | default = false]
 
 # Settings related to the remote read feature.
 remote_read:
@@ -238,7 +265,8 @@ job_name: <job_name>
 
 # Whether to scrape a classic histogram, even if it is also exposed as a native
 # histogram (has no effect without --enable-feature=native-histograms).
-[ always_scrape_classic_histograms: <boolean> | default = false ]
+[ always_scrape_classic_histograms: <boolean> |
+default = <global.always_scrape_classic_hisotgrams> ]
 
 # The HTTP resource path on which to fetch metrics from targets.
 [ metrics_path: <path> | default = /metrics ]
@@ -462,10 +490,26 @@ metric_relabel_configs:
 # that will be kept in memory. 0 means no limit.
 [ keep_dropped_targets: <int> | default = 0 ]
 
-# Specifies the validation scheme for metric and label names. Either blank or 
+# Specifies the validation scheme for metric and label names. Either blank or
 # "utf8" for full UTF-8 support, or "legacy" for letters, numbers, colons, and
 # underscores.
-[ metric_name_validation_scheme <string> | default "utf8" ]
+[ metric_name_validation_scheme: <string> | default "utf8" ]
+
+# Specifies the character escaping scheme that will be requested when scraping
+# for metric and label names that do not conform to the legacy Prometheus
+# character set. Available options are:
+#   * `allow-utf-8`: Full UTF-8 support, no escaping needed.
+#   * `underscores`: Escape all legacy-invalid characters to underscores.
+#   * `dots`: Escapes dots to `_dot_`, underscores to `__`, and all other
+#     legacy-invalid characters to underscores.
+#   * `values`: Prepend the name with `U__` and replace all invalid
+#     characters with their unicode value, surrounded by underscores. Single
+#     underscores are replaced with double underscores.
+#     e.g. "U__my_2e_dotted_2e_name".
+# If this value is left blank, Prometheus will default to `allow-utf-8` if the
+# validation scheme for the current scrape config is set to utf8, or
+# `underscores` if the validation scheme is set to `legacy`.
+[ metric_name_escaping_scheme: <string> | default "allow-utf-8" ]
 
 # Limit on total number of positive and negative buckets allowed in a single
 # native histogram. The resolution of a histogram with more buckets will be
@@ -479,7 +523,7 @@ metric_relabel_configs:
 # reduced as much as possible until it is within the limit.
 # To set an upper limit for the schema (equivalent to "scale" in OTel's
 # exponential histograms), use the following factor limits:
-# 
+#
 # +----------------------------+----------------------------+
 # |        growth factor       | resulting schema AKA scale |
 # +----------------------------+----------------------------+
@@ -509,10 +553,15 @@ metric_relabel_configs:
 # +----------------------------+----------------------------+
 # |              1.002         |              8             |
 # +----------------------------+----------------------------+
-# 
+#
 # 0 results in the smallest supported factor (which is currently ~1.0027 or
 # schema 8, but might change in the future).
 [ native_histogram_min_bucket_factor: <float> | default = 0 ]
+
+# Specifies whether to convert classic histograms into native histograms with
+# custom buckets (has no effect without --enable-feature=native-histograms).
+[ convert_classic_histograms_to_nhcb: <bool> | default =
+<global.convert_classic_histograms_to_nhcb>]
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.
@@ -521,7 +570,7 @@ Where `<job_name>` must be unique across all scrape configurations.
 
 A `http_config` allows configuring HTTP requests.
 
-```
+```yaml
 # Sets the `Authorization` header on every request with the
 # configured username and password.
 # username and username_file are mutually exclusive.
@@ -622,7 +671,7 @@ A `tls_config` allows configuring TLS connections.
 
 ### `<oauth2>`
 
-OAuth 2.0 authentication using the client credentials grant type.
+OAuth 2.0 authentication using the client credentials or password grant type.
 Prometheus fetches an access token from the specified endpoint with
 the given client access and secret keys.
 
@@ -642,6 +691,11 @@ scopes:
 token_url: <string>
 
 # Optional parameters to append to the token URL.
+# To set 'password' grant type, add it to params:
+# endpoint_params:
+#   grant_type: 'password'
+#   username: 'username@example.com'
+#   password: 'strongpassword'
 endpoint_params:
   [ <string>: <string> ... ]
 
@@ -747,7 +801,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
 * `__meta_consul_health`: the health status of the service
-* `__meta_consul_partition`: the admin partition name where the service is registered 
+* `__meta_consul_partition`: the admin partition name where the service is registered
 * `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
@@ -894,7 +948,7 @@ host: <string>
 [ host_networking_host: <string> | default = "localhost" ]
 
 # Sort all non-nil networks in ascending order based on network name and
-# get the first network if the container has multiple networks defined, 
+# get the first network if the container has multiple networks defined,
 # thus avoiding collecting duplicate targets.
 [ match_first_network: <boolean> | default = true ]
 
@@ -1210,7 +1264,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 #### `loadbalancer`
 
-The `loadbalancer` role discovers one target per Octavia loadbalancer with a 
+The `loadbalancer` role discovers one target per Octavia loadbalancer with a
 `PROMETHEUS` listener. The target address defaults to the VIP address
 of the load balancer.
 
@@ -1423,7 +1477,7 @@ and serves as an interface to plug in custom service discovery mechanisms.
 
 It reads a set of files containing a list of zero or more
 `<static_config>`s. Changes to all defined files are detected via disk watches
-and applied immediately. 
+and applied immediately.
 
 While those individual files are watched for changes,
 the parent directory is also watched implicitly. This is to handle [atomic
@@ -1595,6 +1649,10 @@ role: <string>
 
 # The time after which the servers are refreshed.
 [ refresh_interval: <duration> | default = 60s ]
+
+# Label selector used to filter the servers when fetching them from the API. See https://docs.hetzner.cloud/#label-selector for more details.
+# Only used when role is hcloud.
+[ label_selector: <string> ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
@@ -1776,6 +1834,9 @@ The `endpoints` role discovers targets from listed endpoints of a service. For e
 address one target is discovered per port. If the endpoint is backed by a pod, all
 additional container ports of the pod, not bound to an endpoint port, are discovered as targets as well.
 
+Note that the Endpoints API is [deprecated in Kubernetes v1.33+](https://kubernetes.io/blog/2025/04/24/endpoints-deprecation/),
+it is recommended to use EndpointSlices instead and switch to the `endpointslice` role below.
+
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
@@ -1932,7 +1993,7 @@ See below for the configuration options for Kuma MonitoringAssignment discovery:
 # Address of the Kuma Control Plane's MADS xDS server.
 server: <string>
 
-# Client id is used by Kuma Control Plane to compute Monitoring Assignment for specific Prometheus backend. 
+# Client id is used by Kuma Control Plane to compute Monitoring Assignment for specific Prometheus backend.
 # This is useful when migrating between multiple Prometheus backends, or having separate backend for each Mesh.
 # When not specified, system hostname/fqdn will be used if available, if not `prometheus` will be used.
 [ client_id: <string> ]
@@ -2030,7 +2091,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_linode_status`: the status of the linode instance
 * `__meta_linode_tags`: a list of tags of the linode instance joined by the tag separator
 * `__meta_linode_group`: the display group a linode instance is a member of
-* `__meta_linode_gpus`: the number of GPU's of the linode instance 
+* `__meta_linode_gpus`: the number of GPU's of the linode instance
 * `__meta_linode_hypervisor`: the virtualization software powering the linode instance
 * `__meta_linode_backups`: the backup service status of the linode instance
 * `__meta_linode_specs_disk_bytes`: the amount of storage space the linode instance has access to
@@ -2551,7 +2612,7 @@ input to a subsequent relabeling step), use the `__tmp` label name prefix. This
 prefix is guaranteed to never be used by Prometheus itself.
 
 ```yaml
-# The source_labels tells the rule what labels to fetch from the series. Any 
+# The source_labels tells the rule what labels to fetch from the series. Any
 # labels which do not exist get a blank value ("").  Their content is concatenated
 # using the configured separator and matched against the configured regular expression
 # for the replace, keep, and drop actions.
@@ -2842,7 +2903,7 @@ write_relabel_configs:
 # For the `io.prometheus.write.v2.Request` message, this option is noop (always true).
 [ send_native_histograms: <boolean> | default = false ]
 
-# When enabled, remote-write will resolve the URL host name via DNS, choose one of the IP addresses at random, and connect to it. 
+# When enabled, remote-write will resolve the URL host name via DNS, choose one of the IP addresses at random, and connect to it.
 # When disabled, remote-write relies on Go's standard behavior, which is to try to connect to each address in turn.
 # The connection timeout applies to the whole operation, i.e. in the latter case it is spread over all attempt.
 # This is an experimental feature, and its behavior might still change, or even get removed.
@@ -2873,9 +2934,9 @@ azuread:
   # The Azure Cloud. Options are 'AzurePublic', 'AzureChina', or 'AzureGovernment'.
   [ cloud: <string> | default = AzurePublic ]
 
-  # Azure User-assigned Managed identity.
+  # Azure Managed Identity.  Leave 'client_id' blank to use the default managed identity.
   [ managed_identity:
-      [ client_id: <string> ] ]  
+      [ client_id: <string> ] ]
 
   # Azure OAuth.
   [ oauth:
@@ -3003,8 +3064,8 @@ with this feature.
 # that is within the out-of-order window, or (b) too-old, i.e. not in-order
 # and before the out-of-order window.
 #
-# When out_of_order_time_window is greater than 0, it also affects experimental agent. It allows 
-# the agent's WAL to accept out-of-order samples that fall within the specified time window relative 
+# When out_of_order_time_window is greater than 0, it also affects experimental agent. It allows
+# the agent's WAL to accept out-of-order samples that fall within the specified time window relative
 # to the timestamp of the last appended sample for the same series.
 [ out_of_order_time_window: <duration> | default = 0s ]
 ```

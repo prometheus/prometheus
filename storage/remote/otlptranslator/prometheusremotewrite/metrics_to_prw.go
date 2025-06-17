@@ -22,14 +22,20 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 	"github.com/prometheus/prometheus/util/annotations"
 )
+
+type PromoteResourceAttributes struct {
+	promoteAll bool
+	attrs      map[string]struct{}
+}
 
 type Settings struct {
 	Namespace                         string
@@ -38,8 +44,10 @@ type Settings struct {
 	ExportCreatedMetric               bool
 	AddMetricSuffixes                 bool
 	AllowUTF8                         bool
-	PromoteResourceAttributes         []string
+	PromoteResourceAttributes         *PromoteResourceAttributes
 	KeepIdentifyingResourceAttributes bool
+	ConvertHistogramsToNHCB           bool
+	AllowDeltaTemporality             bool
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
@@ -57,8 +65,38 @@ func NewPrometheusConverter() *PrometheusConverter {
 	}
 }
 
+func TranslatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric {
+	m := otlptranslator.Metric{
+		Name: metric.Name(),
+		Unit: metric.Unit(),
+		Type: otlptranslator.MetricTypeUnknown,
+	}
+	switch metric.Type() {
+	case pmetric.MetricTypeGauge:
+		m.Type = otlptranslator.MetricTypeGauge
+	case pmetric.MetricTypeSum:
+		if metric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityCumulative {
+			m.Type = otlptranslator.MetricTypeMonotonicCounter
+		} else {
+			m.Type = otlptranslator.MetricTypeNonMonotonicCounter
+		}
+	case pmetric.MetricTypeSummary:
+		m.Type = otlptranslator.MetricTypeSummary
+	case pmetric.MetricTypeHistogram:
+		m.Type = otlptranslator.MetricTypeHistogram
+	case pmetric.MetricTypeExponentialHistogram:
+		m.Type = otlptranslator.MetricTypeExponentialHistogram
+	}
+	return m
+}
+
 // FromMetrics converts pmetric.Metrics to Prometheus remote write format.
 func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings) (annots annotations.Annotations, errs error) {
+	namer := otlptranslator.MetricNamer{
+		Namespace:          settings.Namespace,
+		WithMetricSuffixes: settings.AddMetricSuffixes,
+		UTF8Allowed:        settings.AllowUTF8,
+	}
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
 
@@ -90,18 +128,23 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 
 				metric := metricSlice.At(k)
 				mostRecentTimestamp = max(mostRecentTimestamp, mostRecentTimestampInMetric(metric))
+				temporality, hasTemporality, err := aggregationTemporality(metric)
+				if err != nil {
+					errs = multierr.Append(errs, err)
+					continue
+				}
 
-				if !isValidAggregationTemporality(metric) {
+				if hasTemporality &&
+					// Cumulative temporality is always valid.
+					// Delta temporality is also valid if AllowDeltaTemporality is true.
+					// All other temporality values are invalid.
+					(temporality != pmetric.AggregationTemporalityCumulative &&
+						(!settings.AllowDeltaTemporality || temporality != pmetric.AggregationTemporalityDelta)) {
 					errs = multierr.Append(errs, fmt.Errorf("invalid temporality and type combination for metric %q", metric.Name()))
 					continue
 				}
 
-				var promName string
-				if settings.AllowUTF8 {
-					promName = prometheustranslator.BuildMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
-				} else {
-					promName = prometheustranslator.BuildCompliantMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
-				}
+				promName := namer.Build(TranslatorMetricFromOtelMetric(metric))
 				c.metadata = append(c.metadata, prompb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
 					MetricFamilyName: promName,
@@ -142,10 +185,21 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName); err != nil {
-						errs = multierr.Append(errs, err)
-						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-							return
+					if settings.ConvertHistogramsToNHCB {
+						ws, err := c.addCustomBucketsHistogramDataPoints(ctx, dataPoints, resource, settings, promName, temporality)
+						annots.Merge(ws)
+						if err != nil {
+							errs = multierr.Append(errs, err)
+							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+								return
+							}
+						}
+					} else {
+						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName); err != nil {
+							errs = multierr.Append(errs, err)
+							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+								return
+							}
 						}
 					}
 				case pmetric.MetricTypeExponentialHistogram:
@@ -160,6 +214,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						resource,
 						settings,
 						promName,
+						temporality,
 					)
 					annots.Merge(ws)
 					if err != nil {
@@ -247,4 +302,47 @@ func (c *PrometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Lab
 	ts, _ := c.getOrCreateTimeSeries(lbls)
 	ts.Samples = append(ts.Samples, *sample)
 	return ts
+}
+
+func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAttributes {
+	attrs := otlpCfg.PromoteResourceAttributes
+	if otlpCfg.PromoteAllResourceAttributes {
+		attrs = otlpCfg.IgnoreResourceAttributes
+	}
+	attrsMap := make(map[string]struct{}, len(attrs))
+	for _, s := range attrs {
+		attrsMap[s] = struct{}{}
+	}
+	return &PromoteResourceAttributes{
+		promoteAll: otlpCfg.PromoteAllResourceAttributes,
+		attrs:      attrsMap,
+	}
+}
+
+// promotedAttributes returns labels for promoted resourceAttributes.
+func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommon.Map) []prompb.Label {
+	if s == nil {
+		return nil
+	}
+
+	var promotedAttrs []prompb.Label
+	if s.promoteAll {
+		promotedAttrs = make([]prompb.Label, 0, resourceAttributes.Len())
+		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+			if _, exists := s.attrs[name]; !exists {
+				promotedAttrs = append(promotedAttrs, prompb.Label{Name: name, Value: value.AsString()})
+			}
+			return true
+		})
+	} else {
+		promotedAttrs = make([]prompb.Label, 0, len(s.attrs))
+		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+			if _, exists := s.attrs[name]; exists {
+				promotedAttrs = append(promotedAttrs, prompb.Label{Name: name, Value: value.AsString()})
+			}
+			return true
+		})
+	}
+	sort.Stable(ByLabelName(promotedAttrs))
+	return promotedAttrs
 }
