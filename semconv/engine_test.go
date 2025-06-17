@@ -31,6 +31,47 @@ func mustNewValueTransformerFromPromQL(p string) valueTransformer {
 	return ret
 }
 
+// Change logs in order old to new.
+// On disk change logs are in order new to old.
+var (
+	testdataElementsChangesOldToNew = []change{
+		{
+			Forward: metricGroupChange{
+				MetricName:  "my_app_custom_changed_elements_total",
+				Unit:        "",
+				ValuePromQL: "",
+				Attributes:  []attribute{{Tag: "number"}, {Tag: "class", Members: []attributeMember{{Value: "FIRST"}, {Value: "SECOND"}, {Value: "OTHER"}}}},
+			},
+			Backward: metricGroupChange{
+				MetricName:  "my_app_custom_elements_total",
+				Unit:        "",
+				ValuePromQL: "",
+				Attributes:  []attribute{{Tag: "integer"}, {Tag: "category", Members: []attributeMember{{Value: "first"}, {Value: "second"}, {Value: "other"}}}},
+			},
+		},
+		{
+			Forward: metricGroupChange{
+				MetricName:  "",
+				Unit:        "",
+				ValuePromQL: "",
+				Attributes:  []attribute{{Tag: "my_number"}},
+			},
+			Backward: metricGroupChange{
+				MetricName:  "",
+				Unit:        "",
+				ValuePromQL: "",
+				Attributes:  []attribute{{Tag: "number"}},
+			},
+		},
+	}
+	testdataLatencyChangesOldToNew = []change{
+		{
+			Forward:  metricGroupChange{MetricName: "my_app_latency_seconds", Unit: "{second}", ValuePromQL: "value{} / 1000"},
+			Backward: metricGroupChange{MetricName: "my_app_latency_milliseconds", Unit: "{millisecond}", ValuePromQL: "value{} * 1000"},
+		},
+	}
+)
+
 // TODO(bwplotka): Test ambiguous matcher errors etc.
 func TestEngine_FindMatcherVariants(t *testing.T) {
 	for _, tcase := range []struct {
@@ -81,7 +122,7 @@ func TestEngine_FindMatcherVariants(t *testing.T) {
 			},
 			expectedQueryContext: queryContext{
 				mID:     "my_app_latency.2",
-				changes: testdataLatencyChanges,
+				changes: testdataLatencyChangesOldToNew,
 			},
 		},
 		// Asking for my_app_latency_seconds should give us original and one forward variant.
@@ -106,7 +147,7 @@ func TestEngine_FindMatcherVariants(t *testing.T) {
 			},
 			expectedQueryContext: queryContext{
 				mID:     "my_app_latency",
-				changes: testdataLatencyChanges,
+				changes: testdataLatencyChangesOldToNew,
 			},
 		},
 		// Asking for my_app_custom_elements.2 should give us the original and one backward and one forward variant.
@@ -143,7 +184,7 @@ func TestEngine_FindMatcherVariants(t *testing.T) {
 			},
 			expectedQueryContext: queryContext{
 				mID:     "my_app_custom_elements.2",
-				changes: testdataElementsChanges,
+				changes: testdataElementsChangesOldToNew,
 			},
 		},
 		// Asking for my_app_custom_elements.3 should give us the original and 2 backward variants.
@@ -180,7 +221,7 @@ func TestEngine_FindMatcherVariants(t *testing.T) {
 			},
 			expectedQueryContext: queryContext{
 				mID:     "my_app_custom_elements.3",
-				changes: testdataElementsChanges,
+				changes: testdataElementsChangesOldToNew,
 			},
 		},
 		// Asking for my_app_custom_elements should give us the original and 2 forward variants.
@@ -217,7 +258,7 @@ func TestEngine_FindMatcherVariants(t *testing.T) {
 			},
 			expectedQueryContext: queryContext{
 				mID:     "my_app_custom_elements",
-				changes: testdataElementsChanges,
+				changes: testdataElementsChangesOldToNew,
 			},
 		},
 	} {
@@ -253,7 +294,7 @@ func TestEngine_TransformSeries(t *testing.T) {
 		{
 			q: queryContext{
 				mID:     "my_app_latency.2",
-				changes: testdataLatencyChanges,
+				changes: testdataLatencyChangesOldToNew,
 			},
 			lbls: labels.FromStrings(
 				schemaURLLabel, testSchemaURL("1.1.0"),
@@ -269,7 +310,7 @@ func TestEngine_TransformSeries(t *testing.T) {
 			// Same but with unit label.
 			q: queryContext{
 				mID:     "my_app_latency.2",
-				changes: testdataLatencyChanges,
+				changes: testdataLatencyChangesOldToNew,
 			},
 			lbls: testdataLatencySeriesNew,
 			expectedLabels: labels.FromStrings(
@@ -283,7 +324,7 @@ func TestEngine_TransformSeries(t *testing.T) {
 		{
 			q: queryContext{
 				mID:     "my_app_latency.2",
-				changes: testdataLatencyChanges,
+				changes: testdataLatencyChangesOldToNew,
 			},
 			lbls: testdataLatencySeriesOld,
 			expectedLabels: labels.FromStrings(
@@ -293,12 +334,12 @@ func TestEngine_TransformSeries(t *testing.T) {
 				"code", "200",
 				"test", "old",
 			),
-			expectedVT: mustNewValueTransformerFromPromQL(testdataLatencyChanges[0].Forward.ValuePromQL),
+			expectedVT: mustNewValueTransformerFromPromQL(testdataLatencyChangesOldToNew[0].Forward.ValuePromQL),
 		},
 		{
 			q: queryContext{
 				mID:     "my_app_latency",
-				changes: testdataLatencyChanges,
+				changes: testdataLatencyChangesOldToNew,
 			},
 			lbls: testdataLatencySeriesOld,
 			expectedLabels: labels.FromStrings(
@@ -312,7 +353,7 @@ func TestEngine_TransformSeries(t *testing.T) {
 		{
 			q: queryContext{
 				mID:     "my_app_latency",
-				changes: testdataLatencyChanges,
+				changes: testdataLatencyChangesOldToNew,
 			},
 			lbls: testdataLatencySeriesNew,
 			expectedLabels: labels.FromStrings(
@@ -322,12 +363,12 @@ func TestEngine_TransformSeries(t *testing.T) {
 				"code", "200",
 				"test", "new",
 			),
-			expectedVT: mustNewValueTransformerFromPromQL(testdataLatencyChanges[0].Backward.ValuePromQL),
+			expectedVT: mustNewValueTransformerFromPromQL(testdataLatencyChangesOldToNew[0].Backward.ValuePromQL),
 		},
 		{
 			q: queryContext{
 				mID:     "my_app_custom_elements",
-				changes: testdataElementsChanges,
+				changes: testdataElementsChangesOldToNew,
 			},
 			lbls: testdataElementsSeriesOld,
 			expectedLabels: labels.FromStrings(
@@ -342,7 +383,7 @@ func TestEngine_TransformSeries(t *testing.T) {
 		{
 			q: queryContext{
 				mID:     "my_app_custom_elements",
-				changes: testdataElementsChanges,
+				changes: testdataElementsChangesOldToNew,
 			},
 			lbls: testdataElementsSeriesNew,
 			expectedLabels: labels.FromStrings(
@@ -357,7 +398,7 @@ func TestEngine_TransformSeries(t *testing.T) {
 		{
 			q: queryContext{
 				mID:     "my_app_custom_elements.2",
-				changes: testdataElementsChanges,
+				changes: testdataElementsChangesOldToNew,
 			},
 			lbls: testdataElementsSeriesNew,
 			expectedLabels: labels.FromStrings(
@@ -372,7 +413,7 @@ func TestEngine_TransformSeries(t *testing.T) {
 		{
 			q: queryContext{
 				mID:     "my_app_custom_elements.2",
-				changes: testdataElementsChanges,
+				changes: testdataElementsChangesOldToNew,
 			},
 			lbls: testdataElementsSeriesOld,
 			expectedLabels: labels.FromStrings(
@@ -387,7 +428,7 @@ func TestEngine_TransformSeries(t *testing.T) {
 		{
 			q: queryContext{
 				mID:     "my_app_custom_elements.3",
-				changes: testdataElementsChanges,
+				changes: testdataElementsChangesOldToNew,
 			},
 			lbls: testdataElementsSeriesOld,
 			expectedLabels: labels.FromStrings(
@@ -402,7 +443,7 @@ func TestEngine_TransformSeries(t *testing.T) {
 		{
 			q: queryContext{
 				mID:     "my_app_custom_elements.3",
-				changes: testdataElementsChanges,
+				changes: testdataElementsChangesOldToNew,
 			},
 			lbls: testdataElementsSeriesNew,
 			expectedLabels: labels.FromStrings(
