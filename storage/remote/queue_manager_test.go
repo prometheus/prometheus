@@ -1063,24 +1063,24 @@ func (c *TestWriteClient) expectMetadataForBatch(metadata []record.RefMetadata, 
 	c.expectedMetadata = map[string][]prompb.MetricMetadata{}
 	c.receivedMetadata = map[string][]prompb.MetricMetadata{}
 
-	// Collect refs that have data in this batch
-	refsWithData := make(map[chunks.HeadSeriesRef]bool)
+	// Collect refs that have data in this batch.
+	refsWithData := make(map[chunks.HeadSeriesRef]struct{})
 	for _, s := range samples {
-		refsWithData[s.Ref] = true
+		refsWithData[s.Ref] = struct{}{}
 	}
 	for _, e := range exemplars {
-		refsWithData[e.Ref] = true
+		refsWithData[e.Ref] = struct{}{}
 	}
 	for _, h := range histograms {
-		refsWithData[h.Ref] = true
+		refsWithData[h.Ref] = struct{}{}
 	}
 	for _, fh := range floatHistograms {
-		refsWithData[fh.Ref] = true
+		refsWithData[fh.Ref] = struct{}{}
 	}
 
-	// Only expect metadata for series that have data in this batch
+	// Only expect metadata for series that have data in this batch.
 	for _, m := range metadata {
-		if !refsWithData[m.Ref] {
+		if _, ok := refsWithData[m.Ref]; !ok {
 			continue
 		}
 		tsID := getSeriesIDFromRef(series[m.Ref])
