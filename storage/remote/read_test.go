@@ -195,6 +195,7 @@ func TestSeriesSetFilter(t *testing.T) {
 
 type mockedRemoteClient struct {
 	got   *prompb.Query
+	gotMultiple []*prompb.Query
 	store []*prompb.TimeSeries
 	b     labels.ScratchBuilder
 }
@@ -231,8 +232,80 @@ func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query, sortSe
 	return FromQueryResult(sortSeries, q), nil
 }
 
+func (c *mockedRemoteClient) ReadMultiple(_ context.Context, queries []*prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
+	// Store the queries for verification
+	c.gotMultiple = make([]*prompb.Query, len(queries))
+	copy(c.gotMultiple, queries)
+	
+	// Process all queries and combine results
+	var allSeries []storage.Series
+	for _, query := range queries {
+		matchers, err := FromLabelMatchers(query.Matchers)
+		if err != nil {
+			return nil, err
+		}
+
+		q := &prompb.QueryResult{}
+		for _, s := range c.store {
+			l := s.ToLabels(&c.b, nil)
+			var match bool = true
+
+			for _, m := range matchers {
+				v := l.Get(m.Name)
+				if !m.Matches(v) {
+					match = false
+					break
+				}
+			}
+
+			if match {
+				q.Timeseries = append(q.Timeseries, &prompb.TimeSeries{Labels: s.Labels})
+			}
+		}
+		
+		// Add series from this query to the combined result
+		seriesSet := FromQueryResult(sortSeries, q)
+		for seriesSet.Next() {
+			allSeries = append(allSeries, seriesSet.At())
+		}
+		if err := seriesSet.Err(); err != nil {
+			return nil, err
+		}
+	}
+	
+	return &combinedSeriesSetMock{series: allSeries, index: -1}, nil
+}
+
 func (c *mockedRemoteClient) reset() {
 	c.got = nil
+	c.gotMultiple = nil
+}
+
+// combinedSeriesSetMock implements storage.SeriesSet for testing multiple series
+type combinedSeriesSetMock struct {
+	series []storage.Series
+	index  int
+	err    error
+}
+
+func (c *combinedSeriesSetMock) Next() bool {
+	c.index++
+	return c.index < len(c.series)
+}
+
+func (c *combinedSeriesSetMock) At() storage.Series {
+	if c.index < 0 || c.index >= len(c.series) {
+		return nil
+	}
+	return c.series[c.index]
+}
+
+func (c *combinedSeriesSetMock) Err() error {
+	return c.err
+}
+
+func (c *combinedSeriesSetMock) Warnings() annotations.Annotations {
+	return nil
 }
 
 // NOTE: We don't need to test ChunkQuerier as it's uses querier for all operations anyway.
@@ -493,4 +566,177 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			testutil.RequireEqual(t, tc.expectedSeries, got)
 		})
 	}
+}
+
+func TestReadMultiple(t *testing.T) {
+	m := &mockedRemoteClient{
+		store: []*prompb.TimeSeries{
+			{Labels: []prompb.Label{{Name: "job", Value: "prometheus"}}},
+			{Labels: []prompb.Label{{Name: "job", Value: "node_exporter"}}},
+			{Labels: []prompb.Label{{Name: "job", Value: "cadvisor"}, {Name: "region", Value: "us"}}},
+			{Labels: []prompb.Label{{Name: "instance", Value: "localhost:9090"}}},
+		},
+		b: labels.NewScratchBuilder(0),
+	}
+
+	testCases := []struct {
+		name            string
+		queries         []*prompb.Query
+		expectedResults []labels.Labels
+	}{
+		{
+			name: "single query",
+			queries: []*prompb.Query{
+				{
+					StartTimestampMs: 1000,
+					EndTimestampMs:   2000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "job", Value: "prometheus"},
+					},
+				},
+			},
+			expectedResults: []labels.Labels{
+				labels.FromStrings("job", "prometheus"),
+			},
+		},
+		{
+			name: "multiple queries - different matchers",
+			queries: []*prompb.Query{
+				{
+					StartTimestampMs: 1000,
+					EndTimestampMs:   2000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "job", Value: "prometheus"},
+					},
+				},
+				{
+					StartTimestampMs: 1500,
+					EndTimestampMs:   2500,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "job", Value: "node_exporter"},
+					},
+				},
+			},
+			expectedResults: []labels.Labels{
+				labels.FromStrings("job", "prometheus"),
+				labels.FromStrings("job", "node_exporter"),
+			},
+		},
+		{
+			name: "multiple queries - overlapping results",
+			queries: []*prompb.Query{
+				{
+					StartTimestampMs: 1000,
+					EndTimestampMs:   2000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_RE, Name: "job", Value: "prometheus|node_exporter"},
+					},
+				},
+				{
+					StartTimestampMs: 1500,
+					EndTimestampMs:   2500,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "region", Value: "us"},
+					},
+				},
+			},
+			expectedResults: []labels.Labels{
+				labels.FromStrings("job", "node_exporter"),
+				labels.FromStrings("job", "prometheus"),
+				labels.FromStrings("job", "cadvisor", "region", "us"),
+			},
+		},
+		{
+			name: "query with no results",
+			queries: []*prompb.Query{
+				{
+					StartTimestampMs: 1000,
+					EndTimestampMs:   2000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "job", Value: "nonexistent"},
+					},
+				},
+			},
+			expectedResults: nil, // empty result
+		},
+		{
+			name: "empty query list",
+			queries: []*prompb.Query{},
+			expectedResults: nil,
+		},
+		{
+			name: "three queries with mixed results",
+			queries: []*prompb.Query{
+				{
+					StartTimestampMs: 1000,
+					EndTimestampMs:   2000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "job", Value: "prometheus"},
+					},
+				},
+				{
+					StartTimestampMs: 1500,
+					EndTimestampMs:   2500,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "job", Value: "nonexistent"},
+					},
+				},
+				{
+					StartTimestampMs: 2000,
+					EndTimestampMs:   3000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "instance", Value: "localhost:9090"},
+					},
+				},
+			},
+			expectedResults: []labels.Labels{
+				labels.FromStrings("job", "prometheus"),
+				labels.FromStrings("instance", "localhost:9090"),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			m.reset()
+
+			result, err := m.ReadMultiple(context.Background(), tc.queries, true)
+			require.NoError(t, err)
+
+			// Verify the queries were stored correctly
+			require.Equal(t, tc.queries, m.gotMultiple)
+
+			// Verify the combined result matches expected
+			var got []labels.Labels
+			for result.Next() {
+				got = append(got, result.At().Labels())
+			}
+			require.NoError(t, result.Err())
+			testutil.RequireEqual(t, tc.expectedResults, got)
+		})
+	}
+}
+
+func TestReadMultipleErrorHandling(t *testing.T) {
+	m := &mockedRemoteClient{
+		store: []*prompb.TimeSeries{
+			{Labels: []prompb.Label{{Name: "job", Value: "prometheus"}}},
+		},
+		b: labels.NewScratchBuilder(0),
+	}
+
+	// Test with invalid matcher - should return error
+	queries := []*prompb.Query{
+		{
+			StartTimestampMs: 1000,
+			EndTimestampMs:   2000,
+			Matchers: []*prompb.LabelMatcher{
+				{Type: prompb.LabelMatcher_Type(999), Name: "job", Value: "prometheus"}, // invalid matcher type
+			},
+		},
+	}
+
+	result, err := m.ReadMultiple(context.Background(), queries, true)
+	require.Error(t, err)
+	require.Nil(t, result)
 }
