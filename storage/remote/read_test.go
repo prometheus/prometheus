@@ -194,10 +194,10 @@ func TestSeriesSetFilter(t *testing.T) {
 }
 
 type mockedRemoteClient struct {
-	got   *prompb.Query
+	got         *prompb.Query
 	gotMultiple []*prompb.Query
-	store []*prompb.TimeSeries
-	b     labels.ScratchBuilder
+	store       []*prompb.TimeSeries
+	b           labels.ScratchBuilder
 }
 
 func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
@@ -236,7 +236,7 @@ func (c *mockedRemoteClient) ReadMultiple(_ context.Context, queries []*prompb.Q
 	// Store the queries for verification
 	c.gotMultiple = make([]*prompb.Query, len(queries))
 	copy(c.gotMultiple, queries)
-	
+
 	// Process all queries and combine results
 	var allSeries []storage.Series
 	for _, query := range queries {
@@ -262,7 +262,7 @@ func (c *mockedRemoteClient) ReadMultiple(_ context.Context, queries []*prompb.Q
 				q.Timeseries = append(q.Timeseries, &prompb.TimeSeries{Labels: s.Labels})
 			}
 		}
-		
+
 		// Add series from this query to the combined result
 		seriesSet := FromQueryResult(sortSeries, q)
 		for seriesSet.Next() {
@@ -272,7 +272,7 @@ func (c *mockedRemoteClient) ReadMultiple(_ context.Context, queries []*prompb.Q
 			return nil, err
 		}
 	}
-	
+
 	return &combinedSeriesSetMock{series: allSeries, index: -1}, nil
 }
 
@@ -660,8 +660,8 @@ func TestReadMultiple(t *testing.T) {
 			expectedResults: nil, // empty result
 		},
 		{
-			name: "empty query list",
-			queries: []*prompb.Query{},
+			name:            "empty query list",
+			queries:         []*prompb.Query{},
 			expectedResults: nil,
 		},
 		{
