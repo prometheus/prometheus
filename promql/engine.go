@@ -998,7 +998,6 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			evalRange = 0
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
 			n.UnexpandedSeriesSet = querier.Select(ctx, false, hints, n.LabelMatchers...)
-
 		case *parser.MatrixSelector:
 			evalRange = n.Range
 		}
@@ -1869,7 +1868,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		offset := durationMilliseconds(selVS.Offset)
 		selRange := durationMilliseconds(sel.Range)
 		stepRange := selRange
-		if stepRange > ev.interval {
+		if stepRange > ev.interval || selVS.Smoothed || selVS.Anchored {
 			stepRange = ev.interval
 		}
 		// Reuse objects across steps to save memory allocations.
@@ -4129,7 +4128,7 @@ func smoothFloats(floats []FPoint, mint, maxt int64, counterReset bool) []FPoint
 	}
 
 	// If all points are before mint or first after maxt, nothing to do.
-	if i == n || floats[i].T > maxt {
+	if i == n {
 		return out
 	}
 
