@@ -3,6 +3,7 @@
 ## main / unreleased
 
 * [FEATURE] OTLP receiver: Support promoting OTel scope name/version/schema URL/attributes as metric labels, enable via configuration parameter `otlp.promote_scope_metadata`. #16730 #16760
+* [BUGFIX] OTLP receiver: Generate `target_info` samples between the earliest and latest samples per resource. #16737
 
 ## 3.4.2 / 2025-06-04
 
