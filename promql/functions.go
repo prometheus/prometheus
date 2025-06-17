@@ -795,7 +795,7 @@ func funcTsOfLastOverTime(vals []parser.Value, _ parser.Expressions, enh *EvalNo
 
 	var th int64
 	if len(el.Histograms) > 0 {
-		th = el.Floats[len(el.Floats)-1].T
+		th = el.Histograms[len(el.Histograms)-1].T
 	}
 
 	return append(enh.Out, Sample{
