@@ -3931,6 +3931,12 @@ func newHistogramStatsSeries(series storage.Series) *histogramStatsSeries {
 }
 
 func (s histogramStatsSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	// Try to reuse the iterator if we can.
+	if statsIterator, ok := it.(*HistogramStatsIterator); ok {
+		statsIterator.Reset(s.Series.Iterator(statsIterator.Iterator))
+		return statsIterator
+	}
+
 	return NewHistogramStatsIterator(s.Series.Iterator(it))
 }
 
