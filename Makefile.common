@@ -107,10 +107,10 @@ endif
 %: common-% ;
 
 .PHONY: common-all
-common-all: precheck style check_license lint yamllint unused build test ## Run all Prometheus quality checks and build
+common-all: precheck style check_license lint yamllint unused build test ## Run all Prometheus quality checks and build.
 
 .PHONY: common-style
-common-style: ## Check Go code formatting with gofmt
+common-style: ## Check Go code formatting with gofmt.
 	@echo ">> checking code style"
 	@fmtRes=$$($(GOFMT) -d $$(find . -path ./vendor -prune -o -name '*.go' -print)); \
 	if [ -n "$${fmtRes}" ]; then \
@@ -120,7 +120,7 @@ common-style: ## Check Go code formatting with gofmt
 	fi
 
 .PHONY: common-check_license
-common-check_license: ## Verify Prometheus license headers in Go files
+common-check_license: ## Verify Prometheus license headers in Go files.
 	@echo ">> checking license header"
 	@licRes=$$(for file in $$(find . -type f -iname '*.go' ! -path './vendor/*') ; do \
                awk 'NR<=3' $$file | grep -Eq "(Copyright|generated|GENERATED)" || echo $$file; \
@@ -131,12 +131,12 @@ common-check_license: ## Verify Prometheus license headers in Go files
        fi
 
 .PHONY: common-deps
-common-deps: ## Download Go module dependencies
+common-deps: ## Download Go module dependencies.
 	@echo ">> getting dependencies"
 	$(GO) mod download
 
 .PHONY: update-go-deps
-update-go-deps: ## Update all Go dependencies to latest versions
+update-go-deps: ## Update all Go dependencies to latest versions.
 	@echo ">> updating Go dependencies"
 	@for m in $$($(GO) list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
 		$(GO) get -d $$m; \
@@ -144,12 +144,12 @@ update-go-deps: ## Update all Go dependencies to latest versions
 	$(GO) mod tidy
 
 .PHONY: common-test-short
-common-test-short: $(GOTEST_DIR) ## Run short Go tests only
+common-test-short: $(GOTEST_DIR) ## Run short Go tests only.
 	@echo ">> running short tests"
 	$(GOTEST) -short $(GOOPTS) $(pkgs)
 
 .PHONY: common-test
-common-test: $(GOTEST_DIR) ## Run all Go tests including race detection
+common-test: $(GOTEST_DIR) ## Run all Go tests including race detection.
 	@echo ">> running all tests"
 	$(GOTEST) $(test-flags) $(GOOPTS) $(pkgs)
 
@@ -157,7 +157,7 @@ $(GOTEST_DIR):
 	@mkdir -p $@
 
 .PHONY: common-format
-common-format: $(GOLANGCI_LINT) ## Format Go code with gofmt and golangci-lint
+common-format: $(GOLANGCI_LINT) ## Format Go code with gofmt and golangci-lint.
 	@echo ">> formatting code"
 	$(GO) fmt $(pkgs)
 ifdef GOLANGCI_LINT
@@ -166,26 +166,26 @@ ifdef GOLANGCI_LINT
 endif
 
 .PHONY: common-vet
-common-vet: ## Run Go vet static analysis
+common-vet: ## Run Go vet static analysis.
 	@echo ">> vetting code"
 	$(GO) vet $(GOOPTS) $(pkgs)
 
 .PHONY: common-lint
-common-lint: $(GOLANGCI_LINT) ## Run golangci-lint code analysis
+common-lint: $(GOLANGCI_LINT) ## Run golangci-lint code analysis.
 ifdef GOLANGCI_LINT
 	@echo ">> running golangci-lint"
 	$(GOLANGCI_LINT) run $(GOLANGCI_LINT_OPTS) $(pkgs)
 endif
 
 .PHONY: common-lint-fix
-common-lint-fix: $(GOLANGCI_LINT) ## Run golangci-lint with auto-fix enabled
+common-lint-fix: $(GOLANGCI_LINT) ## Run golangci-lint with auto-fix enabled.
 ifdef GOLANGCI_LINT
 	@echo ">> running golangci-lint fix"
 	$(GOLANGCI_LINT) run --fix $(GOLANGCI_LINT_OPTS) $(pkgs)
 endif
 
 .PHONY: common-yamllint
-common-yamllint: ## Lint all YAML files in repository
+common-yamllint: ## Lint all YAML files in repository.
 	@echo ">> running yamllint on all YAML files in the repository"
 ifeq (, $(shell command -v yamllint 2> /dev/null))
 	@echo "yamllint not installed so skipping"
@@ -195,30 +195,30 @@ endif
 
 # For backward-compatibility.
 .PHONY: common-staticcheck
-common-staticcheck: lint ## Run static code analysis (deprecated, use lint)
+common-staticcheck: lint ## Run static code analysis (deprecated, use lint).
 
 .PHONY: common-unused
-common-unused: ## Check for unused dependencies in go.mod
+common-unused: ## Check for unused dependencies in go.mod.
 	@echo ">> running check for unused/missing packages in go.mod"
 	$(GO) mod tidy
 	@git diff --exit-code -- go.sum go.mod
 
 .PHONY: common-build
-common-build: promu ## Build Prometheus project binaries using promu
+common-build: promu ## Build Prometheus project binaries using promu.
 	@echo ">> building binaries"
 	$(PROMU) build --prefix $(PREFIX) $(PROMU_BINARIES)
 
 .PHONY: common-tarball
-common-tarball: promu ## Create Prometheus release tarball with binaries
+common-tarball: promu ## Create Prometheus release tarball with binaries.
 	@echo ">> building release tarball"
 	$(PROMU) tarball --prefix $(PREFIX) $(BIN_DIR)
 
 .PHONY: common-docker-repo-name
-common-docker-repo-name: ## Print Prometheus Docker repository name
+common-docker-repo-name: ## Print Prometheus Docker repository name.
 	@echo "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)"
 
 .PHONY: common-docker $(BUILD_DOCKER_ARCHS)
-common-docker: $(BUILD_DOCKER_ARCHS) ## Build Prometheus Docker images for all architectures
+common-docker: $(BUILD_DOCKER_ARCHS) ## Build Prometheus Docker images for all architectures.
 $(BUILD_DOCKER_ARCHS): common-docker-%:
 	docker build -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)" \
 		-f $(DOCKERFILE_PATH) \
@@ -227,24 +227,24 @@ $(BUILD_DOCKER_ARCHS): common-docker-%:
 		$(DOCKERBUILD_CONTEXT)
 
 .PHONY: common-docker-publish $(PUBLISH_DOCKER_ARCHS)
-common-docker-publish: $(PUBLISH_DOCKER_ARCHS) ## Push Prometheus Docker images to registry
+common-docker-publish: $(PUBLISH_DOCKER_ARCHS) ## Push Prometheus Docker images to registry.
 $(PUBLISH_DOCKER_ARCHS): common-docker-publish-%:
 	docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)"
 
 DOCKER_MAJOR_VERSION_TAG = $(firstword $(subst ., ,$(shell cat VERSION)))
 .PHONY: common-docker-tag-latest $(TAG_DOCKER_ARCHS)
-common-docker-tag-latest: $(TAG_DOCKER_ARCHS) ## Tag Prometheus Docker images as latest and version
+common-docker-tag-latest: $(TAG_DOCKER_ARCHS) ## Tag Prometheus Docker images as latest and version.
 $(TAG_DOCKER_ARCHS): common-docker-tag-latest-%:
 	docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:latest"
 	docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:v$(DOCKER_MAJOR_VERSION_TAG)"
 
 .PHONY: common-docker-manifest
-common-docker-manifest: ## Create and push multi-arch Prometheus Docker manifest
+common-docker-manifest: ## Create and push multi-arch Prometheus Docker manifest.
 	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(SANITIZED_DOCKER_IMAGE_TAG)" $(foreach ARCH,$(DOCKER_ARCHS),$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$(ARCH):$(SANITIZED_DOCKER_IMAGE_TAG))
 	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(SANITIZED_DOCKER_IMAGE_TAG)"
 
 .PHONY: promu
-promu: $(PROMU) ## Install or ensure promu Prometheus build tool is available
+promu: $(PROMU) ## Install or ensure promu Prometheus build tool is available.
 
 $(PROMU):
 	$(eval PROMU_TMP := $(shell mktemp -d))
@@ -254,7 +254,7 @@ $(PROMU):
 	rm -r $(PROMU_TMP)
 
 .PHONY: common-proto
-common-proto: ## Generate Go code from protobuf files
+common-proto: ## Generate Go code from protobuf files.
 	@echo ">> generating code from proto files"
 	@./scripts/genproto.sh
 
@@ -267,7 +267,7 @@ $(GOLANGCI_LINT):
 endif
 
 .PHONY: precheck
-precheck:: ## Run prerequisite checks for required Prometheus tools
+precheck:: ## Run prerequisite checks for required Prometheus tools.
 
 define PRECHECK_COMMAND_template =
 precheck:: $(1)_precheck
@@ -281,8 +281,8 @@ $(1)_precheck:
 	fi
 endef
 
-govulncheck: install-govulncheck ## Run Go vulnerability scanner
+govulncheck: install-govulncheck ## Run Go vulnerability scanner.
 	govulncheck ./...
 
-install-govulncheck: ## Install Go vulnerability checker tool
+install-govulncheck: ## Install Go vulnerability checker tool.
 	command -v govulncheck > /dev/null || go install golang.org/x/vuln/cmd/govulncheck@latest
