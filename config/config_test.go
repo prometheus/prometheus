@@ -1808,6 +1808,20 @@ func TestOTLPConvertHistogramsToNHCB(t *testing.T) {
 	})
 }
 
+func TestOTLPConvertScopeMetadata(t *testing.T) {
+	t.Run("good config", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_convert_scope_metadata.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+
+		require.True(t, got.OTLPConfig.ConvertScopeMetadata)
+	})
+}
+
 func TestOTLPAllowUTF8(t *testing.T) {
 	t.Run("good config - NoUTF8EscapingWithSuffixes", func(t *testing.T) {
 		fpath := filepath.Join("testdata", "otlp_allow_utf8.good.yml")

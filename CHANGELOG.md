@@ -1,5 +1,9 @@
 # Changelog
 
+## main / unreleased
+
+* [FEATURE] OTLP receiver: Support including scope attributes/name/version/schema URL as metric labels, via configuration parameter `otlp.convert_scope_metadata`. #16730
+
 ## 3.4.2 / 2025-06-04
 
 * [BUGFIX] OTLP receiver: Fix default configuration not being respected if the `otlp:` block is unset in the config file. #16693
