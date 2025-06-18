@@ -7,7 +7,6 @@
 ## 3.4.1 / 2025-05-31
 
 * [BUGFIX] Parser: Add reproducer for a dangling-reference issue in parsers. #16633
-* [ENHANCEMENT] Add `make help` command to list available Makefile targets and descriptions #16731
 
 ## 3.4.0 / 2025-05-17
 
