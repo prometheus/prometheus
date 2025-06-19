@@ -483,6 +483,52 @@ func TestAgentFailedStartupWithInvalidConfig(t *testing.T) {
 	require.Equal(t, 2, actualExitStatus)
 }
 
+func TestAgentModeDoesNotExposeAlertingMetrics(t *testing.T) {
+	t.Parallel()
+
+	port := testutil.RandomUnprivilegedPort(t)
+	dataDir := t.TempDir()
+	prom := exec.Command(promPath, "-test.main", "--agent", "--web.listen-address=0.0.0.0:"+strconv.Itoa(port), "--config.file="+agentConfig, "--storage.agent.path="+dataDir)
+	prom.Stdout = os.Stdout
+	prom.Stderr = os.Stderr
+	require.NoError(t, prom.Start())
+	defer prom.Process.Kill()
+
+	var resp *http.Response
+	var err error
+
+	require.Eventually(t, func() bool {
+		resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+		if err != nil {
+			return false
+		}
+
+		return resp.StatusCode == http.StatusOK
+	}, 30*time.Second, 200*time.Millisecond)
+
+	defer resp.Body.Close()
+
+	metricNames := []string{
+		"prometheus_notifications_alertmanagers_discovered",
+		"prometheus_rule_evaluations_total",
+		"prometheus_rule_evaluation_failures_total",
+		"prometheus_rule_group_interval_seconds",
+		"prometheus_rule_group_last_duration_seconds",
+		"prometheus_rule_group_last_evaluation_timestamp_seconds",
+		"prometheus_rule_group_rules",
+	}
+	p := expfmt.TextParser{}
+	metricFamilies, err := p.TextToMetricFamilies(resp.Body)
+	if err != nil {
+		t.Error("failed to parse metrics:", err)
+	}
+
+	for _, metricName := range metricNames {
+		_, ok := metricFamilies[metricName]
+		require.False(t, ok)
+	}
+}
+
 func TestModeSpecificFlags(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
