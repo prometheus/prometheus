@@ -67,6 +67,24 @@ Use `clear` to remove all loaded data.
 
 ### Native histograms with custom buckets (NHCB)
 
+You can also create native histograms with custom buckets manually using the `custom_values` field in the `load` command.  
+This provides an alternative to using the `_with_nhcb` suffix and gives you full control over the histogram structure.
+
+The `custom_values` field allows you to specify the schema, sum, count, and an array of bucket boundaries with corresponding counts.
+
+> **Note:** Bucket values defined in `custom_values` are **absolute** — meaning each value represents the count *within that bucket only*. They are **not cumulative**.
+
+Each key in `custom_values` corresponds to a bucket boundary, and its value represents the count of samples that fall **strictly within that bucket range**, excluding lower buckets.
+
+This approach is useful when writing or verifying unit tests for native histogram behavior where exact bucket distribution is needed.
+
+### Example:
+
+```text
+load 1m
+    http_request_duration_seconds{job="api"} {{schema:2 sum:10 count:5 custom_values:[0.1:2 0.5:1 1.0:2]}}
+```
+
 When loading a batch of classic histogram float series, you can optionally append the suffix `_with_nhcb` to convert them to native histograms with custom buckets and load both the original float series and the new histogram series.
 
 ## `clear` command
