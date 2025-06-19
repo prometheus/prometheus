@@ -87,10 +87,12 @@ ui-lint: ## Lint Prometheus web UI code.
 
 .PHONY: assets
 ifndef SKIP_UI_BUILD
-assets: ui-install ui-build ## Build and embed Prometheus web UI assets (Skipped if using pre-built assets).
+assets: ## Build and embed Prometheus web UI assets (Skipped if using pre-built assets).
+assets: ui-install ui-build
 
 .PHONY: npm_licenses
-npm_licenses: ui-install ## Bundle npm license files for Prometheus web UI (Skipped if using pre-built assets).
+npm_licenses: ## Bundle npm license files for Prometheus web UI (Skipped if using pre-built assets).
+npm_licenses: ui-install
 	@echo ">> bundling npm licenses"
 	rm -f $(REACT_APP_NPM_LICENSES_TARBALL) npm_licenses
 	ln -s . npm_licenses
@@ -105,12 +107,14 @@ npm_licenses:
 endif
 
 .PHONY: assets-compress
-assets-compress: assets ## Compress Prometheus web UI assets for distribution.
+assets-compress: ## Compress Prometheus web UI assets for distribution.
+assets-compress: assets
 	@echo '>> compressing assets'
 	scripts/compress_assets.sh
 
 .PHONY: assets-tarball
-assets-tarball: assets ## Package Prometheus web UI assets into tarball.
+assets-tarball: ## Package Prometheus web UI assets into a tarball for distribution.
+assets-tarball: assets
 	@echo '>> packaging assets'
 	scripts/package_assets.sh
 
@@ -153,23 +157,28 @@ test: check-generated-parser common-test ui-build-module ui-test ui-lint check-g
 endif
 
 .PHONY: tarball
-tarball: npm_licenses common-tarball ## Create Prometheus release tarball with licenses.
+tarball: ## Create Prometheus release tarball with licenses.
+tarball: npm_licenses common-tarball
 
 .PHONY: docker
-docker: npm_licenses common-docker ## Build Prometheus Docker image with licenses.
+docker: ## Build Prometheus Docker image with licenses.
+docker: npm_licenses common-docker
 
 plugins/plugins.go: plugins.yml plugins/generate.go
 	@echo ">> creating plugins list"
 	$(GO) generate -tags plugins ./plugins
 
 .PHONY: plugins
-plugins: plugins/plugins.go ## Generate Prometheus plugins list from plugins.yml.
+plugins:  ## Generate Prometheus plugins list from plugins.yml.
+plugins: plugins/plugins.go
 
 .PHONY: build
-build: assets npm_licenses assets-compress plugins common-build ## Build complete Prometheus binary with UI, licenses, and plugins.
+build: ## Build complete Prometheus binary with UI, licenses, and plugins.
+build: assets npm_licenses assets-compress plugins common-build
 
 .PHONY: bench_tsdb
-bench_tsdb: $(PROMU) ## Run Prometheus TSDB benchmarks and generate profiling reports.
+bench_tsdb: ## Run Prometheus TSDB benchmarks and generate profiling reports.
+bench_tsdb: $(PROMU)
 	@echo ">> building promtool"
 	@GO111MODULE=$(GO111MODULE) $(PROMU) build --prefix $(PREFIX) promtool
 	@echo ">> running benchmark, writing result to $(TSDB_BENCHMARK_OUTPUT_DIR)"

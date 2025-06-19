@@ -107,7 +107,8 @@ endif
 %: common-% ;
 
 .PHONY: common-all
-common-all: precheck style check_license lint yamllint unused build test ## Run all Prometheus quality checks and build.
+common-all: ## Run all Prometheus quality checks and build.
+common-all: precheck style check_license lint yamllint unused build test
 
 .PHONY: common-style
 common-style: ## Check Go code formatting with gofmt.
@@ -144,12 +145,14 @@ update-go-deps: ## Update all Go dependencies to latest versions.
 	$(GO) mod tidy
 
 .PHONY: common-test-short
-common-test-short: $(GOTEST_DIR) ## Run short Go tests only.
+common-test-short: ## Run short Go tests only.
+common-test-short: $(GOTEST_DIR)
 	@echo ">> running short tests"
 	$(GOTEST) -short $(GOOPTS) $(pkgs)
 
 .PHONY: common-test
-common-test: $(GOTEST_DIR) ## Run all Go tests including race detection.
+common-test: ## Run all Go tests including race detection.
+common-test: $(GOTEST_DIR)
 	@echo ">> running all tests"
 	$(GOTEST) $(test-flags) $(GOOPTS) $(pkgs)
 
@@ -157,7 +160,8 @@ $(GOTEST_DIR):
 	@mkdir -p $@
 
 .PHONY: common-format
-common-format: $(GOLANGCI_LINT) ## Format Go code with gofmt and golangci-lint.
+common-format: ## Format Go code with gofmt and golangci-lint.
+common-format: $(GOLANGCI_LINT)
 	@echo ">> formatting code"
 	$(GO) fmt $(pkgs)
 ifdef GOLANGCI_LINT
@@ -171,14 +175,16 @@ common-vet: ## Run Go vet static analysis.
 	$(GO) vet $(GOOPTS) $(pkgs)
 
 .PHONY: common-lint
-common-lint: $(GOLANGCI_LINT) ## Run golangci-lint code analysis.
+common-lint: ## Run golangci-lint code analysis.
+common-lint: $(GOLANGCI_LINT)
 ifdef GOLANGCI_LINT
 	@echo ">> running golangci-lint"
 	$(GOLANGCI_LINT) run $(GOLANGCI_LINT_OPTS) $(pkgs)
 endif
 
 .PHONY: common-lint-fix
-common-lint-fix: $(GOLANGCI_LINT) ## Run golangci-lint with auto-fix enabled.
+common-lint-fix: ## Run golangci-lint with auto-fix enabled.
+common-lint-fix: $(GOLANGCI_LINT)
 ifdef GOLANGCI_LINT
 	@echo ">> running golangci-lint fix"
 	$(GOLANGCI_LINT) run --fix $(GOLANGCI_LINT_OPTS) $(pkgs)
@@ -195,7 +201,8 @@ endif
 
 # For backward-compatibility.
 .PHONY: common-staticcheck
-common-staticcheck: lint ## Run static code analysis (deprecated, use lint).
+common-staticcheck: ## Run static code analysis (deprecated, use lint).
+common-staticcheck: lint 
 
 .PHONY: common-unused
 common-unused: ## Check for unused dependencies in go.mod.
@@ -204,12 +211,14 @@ common-unused: ## Check for unused dependencies in go.mod.
 	@git diff --exit-code -- go.sum go.mod
 
 .PHONY: common-build
-common-build: promu ## Build Prometheus project binaries using promu.
+common-build: ## Build Prometheus project binaries using promu.
+common-build: promu
 	@echo ">> building binaries"
 	$(PROMU) build --prefix $(PREFIX) $(PROMU_BINARIES)
 
 .PHONY: common-tarball
-common-tarball: promu ## Create Prometheus release tarball with binaries.
+common-tarball: ## Create Prometheus release tarball with binaries.
+common-tarball: promu
 	@echo ">> building release tarball"
 	$(PROMU) tarball --prefix $(PREFIX) $(BIN_DIR)
 
@@ -218,7 +227,8 @@ common-docker-repo-name: ## Print Prometheus Docker repository name.
 	@echo "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)"
 
 .PHONY: common-docker $(BUILD_DOCKER_ARCHS)
-common-docker: $(BUILD_DOCKER_ARCHS) ## Build Prometheus Docker images for all architectures.
+common-docker: ## Build Prometheus Docker images for all architectures.
+common-docker: $(BUILD_DOCKER_ARCHS)
 $(BUILD_DOCKER_ARCHS): common-docker-%:
 	docker build -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)" \
 		-f $(DOCKERFILE_PATH) \
@@ -227,13 +237,15 @@ $(BUILD_DOCKER_ARCHS): common-docker-%:
 		$(DOCKERBUILD_CONTEXT)
 
 .PHONY: common-docker-publish $(PUBLISH_DOCKER_ARCHS)
-common-docker-publish: $(PUBLISH_DOCKER_ARCHS) ## Push Prometheus Docker images to registry.
+common-docker-publish: ## Push Prometheus Docker images to registry.
+common-docker-publish: $(PUBLISH_DOCKER_ARCHS)
 $(PUBLISH_DOCKER_ARCHS): common-docker-publish-%:
 	docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)"
 
 DOCKER_MAJOR_VERSION_TAG = $(firstword $(subst ., ,$(shell cat VERSION)))
 .PHONY: common-docker-tag-latest $(TAG_DOCKER_ARCHS)
-common-docker-tag-latest: $(TAG_DOCKER_ARCHS) ## Tag Prometheus Docker images as latest and version.
+common-docker-tag-latest: ## Tag Prometheus Docker images as latest and version.
+common-docker-tag-latest: $(TAG_DOCKER_ARCHS)
 $(TAG_DOCKER_ARCHS): common-docker-tag-latest-%:
 	docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:latest"
 	docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:v$(DOCKER_MAJOR_VERSION_TAG)"
@@ -244,7 +256,8 @@ common-docker-manifest: ## Create and push multi-arch Prometheus Docker manifest
 	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(SANITIZED_DOCKER_IMAGE_TAG)"
 
 .PHONY: promu
-promu: $(PROMU) ## Install or ensure promu Prometheus build tool is available.
+promu: ## Install or ensure promu Prometheus build tool is available.
+promu: $(PROMU)
 
 $(PROMU):
 	$(eval PROMU_TMP := $(shell mktemp -d))
@@ -281,7 +294,8 @@ $(1)_precheck:
 	fi
 endef
 
-govulncheck: install-govulncheck ## Run Go vulnerability scanner.
+govulncheck: ## Run Go vulnerability scanner.
+govulncheck: install-govulncheck
 	govulncheck ./...
 
 install-govulncheck: ## Install Go vulnerability checker tool.
