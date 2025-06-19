@@ -1285,7 +1285,7 @@ func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, erro
 			req.Timeseries[i].Histograms[j] = prompb.FromIntHistogram(h.Timestamp, h.ToIntHistogram())
 		}
 
-		// Convert v2 metadata to v1 format
+		// Convert v2 metadata to v1 format.
 		if rts.Metadata.Type != writev2.Metadata_METRIC_TYPE_UNSPECIFIED {
 			labels := rts.ToLabels(&b, v2Req.Symbols)
 			metadata := rts.ToMetadata(v2Req.Symbols)
