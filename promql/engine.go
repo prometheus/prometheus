@@ -719,6 +719,24 @@ func durationMilliseconds(d time.Duration) int64 {
 
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.EvalStmt) (parser.Value, annotations.Annotations, error) {
+	var ws annotations.Annotations
+
+	// If this is not an instant query, look for smoothed matrix selectors
+	// and check if the range is smaller than the interval.
+	if !s.Start.Equal(s.End) || s.Interval > 0 {
+		parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
+			if n, ok := node.(*parser.MatrixSelector); ok {
+				if vs := n.VectorSelector.(*parser.VectorSelector); vs.Smoothed {
+					if n.Range < s.Interval {
+						ws.Add(annotations.NewChangedStepRangeWarning(n.PositionRange(), n.String(), s.Interval))
+						n.Range = s.Interval
+					}
+				}
+			}
+			return nil
+		})
+	}
+
 	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime)
 	mint, maxt := FindMinMaxTime(s)
 	querier, err := query.queryable.Querier(mint, maxt)
@@ -813,6 +831,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
 	val, warnings, err := evaluator.Eval(ctxInnerEval, s.Expr)
+	warnings.Merge(ws)
 
 	evalSpanTimer.Finish()
 
