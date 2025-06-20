@@ -124,9 +124,9 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 
 	promotedAttrs := settings.PromoteResourceAttributes.promotedAttributes(resourceAttrs)
 
-	convertScope := settings.ConvertScopeMetadata && scope.name != ""
+	promoteScope := settings.PromoteScopeMetadata && scope.name != ""
 	scopeLabelCount := 0
-	if convertScope {
+	if promoteScope {
 		// Include name, version and schema URL.
 		scopeLabelCount = scope.attributes.Len() + 3
 	}
@@ -176,7 +176,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 			l[normalized] = lbl.Value
 		}
 	}
-	if convertScope {
+	if promoteScope {
 		l["otel_scope_name"] = scope.name
 		l["otel_scope_version"] = scope.version
 		l["otel_scope_schema_url"] = scope.schemaURL
