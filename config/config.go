@@ -481,10 +481,10 @@ type GlobalConfig struct {
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 	// Allow UTF8 Metric and Label Names. Can be blank in config files but must
-	// have a value if a ScrepeConfig is created programmatically.
+	// have a value if a ScrapeConfig is created programmatically.
 	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
 	// Metric name escaping mode to request through content negotiation. Can be
-	// blank in config files but must have a value if a ScrepeConfig is created
+	// blank in config files but must have a value if a ScrapeConfig is created
 	// programmatically.
 	MetricNameEscapingScheme string `yaml:"metric_name_escaping_scheme,omitempty"`
 	// Whether to convert all scraped classic histograms into native histograms with custom buckets.
@@ -749,10 +749,10 @@ type ScrapeConfig struct {
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 	// Allow UTF8 Metric and Label Names. Can be blank in config files but must
-	// have a value if a ScrepeConfig is created programmatically.
+	// have a value if a ScrapeConfig is created programmatically.
 	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
 	// Metric name escaping mode to request through content negotiation. Can be
-	// blank in config files but must have a value if a ScrepeConfig is created
+	// blank in config files but must have a value if a ScrapeConfig is created
 	// programmatically.
 	MetricNameEscapingScheme string `yaml:"metric_name_escaping_scheme,omitempty"`
 
@@ -1562,6 +1562,9 @@ type OTLPConfig struct {
 	TranslationStrategy               translationStrategyOption `yaml:"translation_strategy,omitempty"`
 	KeepIdentifyingResourceAttributes bool                      `yaml:"keep_identifying_resource_attributes,omitempty"`
 	ConvertHistogramsToNHCB           bool                      `yaml:"convert_histograms_to_nhcb,omitempty"`
+	// ConvertScopeMetadata controls whether to convert OTel scope metadata (i.e. name, version, schema URL, and attributes) to metric labels.
+	// As per OTel spec, the aforementioned scope metadata should be identifying, i.e. made into metric labels.
+	ConvertScopeMetadata bool `yaml:"convert_scope_metadata,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
