@@ -293,11 +293,10 @@ boundaries, the function uses interpolation to estimate the fraction. With the
 resulting uncertainty, it becomes irrelevant if the boundaries are inclusive or
 exclusive.
 
-Special case for native histograms:
-
-* If the native histogram with standard exponential buckets contains `NaN`
-observations, these are considered outside any bucket. This means that
-`histogram_fraction(-Inf, +Inf, b)` will be less than 1.
+Special case for native histograms with standard exponential buckets:
+`NaN` observations are considered outside of any buckets in this case.
+`histogram_fraction(-Inf, +Inf, b)` effectively returns the fraction of
+non-`NaN` observations and may therefore be less than 1.
 
 ## `histogram_quantile()`
 
