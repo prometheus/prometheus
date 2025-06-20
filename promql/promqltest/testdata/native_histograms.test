@@ -1356,11 +1356,11 @@ eval instant at 1m histogram_quantile(0.4, histogram_nan{case="20% NaNs"})
     {case="20% NaNs"} 0.7071067811865475
 
 eval instant at 1m histogram_fraction(-Inf, 0.7071067811865475, histogram_nan)
-    expect info msg: PromQL info: input to histogram_fraction has NaN observations, that are excluded from all fractions for metric name "histogram_nan"
+    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name "histogram_nan"
     {case="100% NaNs"} 0.0
     {case="20% NaNs"} 0.4
 
 eval instant at 1m histogram_fraction(-Inf, +Inf, histogram_nan)
-    expect info msg: PromQL info: input to histogram_fraction has NaN observations, that are excluded from all fractions for metric name "histogram_nan"
+    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name "histogram_nan"
     {case="100% NaNs"} 0.0
     {case="20% NaNs"} 0.8
