@@ -200,7 +200,8 @@ func BucketQuantile(q float64, buckets Buckets) (float64, bool, bool) {
 //
 // If the native histogram has NaN observations and the quantile falls into
 // an existing bucket, then an additional info level annotation is returned
-// informing the user about possbile skew.
+// informing the user about possible skew to higher values as NaNs are
+// considered +Inf in this case.
 //
 // If the native histogram has NaN observations and the quantile falls above
 // all existing buckets, then NaN is returned along with an additional info
