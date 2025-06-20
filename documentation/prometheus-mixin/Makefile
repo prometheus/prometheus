@@ -35,4 +35,5 @@ jb_install: ## Install Jsonnet dependencies using jsonnet-bundler.
 	jb install
 
 clean: ## Remove generated files (dashboards and alert rules).
-clean: rm -rf dashboards_out prometheus_alerts.yaml
+clean: 
+		rm -rf dashboards_out prometheus_alerts.yaml
