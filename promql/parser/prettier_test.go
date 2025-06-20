@@ -131,6 +131,20 @@ func TestBinaryExprPretty(t *testing.T) {
 			out: `a + b`,
 		},
 		{
+			in:  `a[5m]+1`,
+			out: `a[5m] + 1`,
+		},
+		{
+			in: `a[5m]+1+2+3>4`,
+			out: `      a[5m] + 1
+    +
+      2
+  +
+    3
+>
+  4`,
+		},
+		{
 			in: `a == bool 1`,
 			out: `  a
 == bool
