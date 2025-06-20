@@ -46,7 +46,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 		name         string
 		metric       func() pmetric.Metric
 		scope        scope
-		convertScope bool
+		promoteScope bool
 		want         func() map[uint64]*prompb.TimeSeries
 	}{
 		{
@@ -59,7 +59,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				)
 			},
 			scope:        defaultScope,
-			convertScope: false,
+			promoteScope: false,
 			want: func() map[uint64]*prompb.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
@@ -87,7 +87,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				)
 			},
 			scope:        defaultScope,
-			convertScope: true,
+			promoteScope: true,
 			want: func() map[uint64]*prompb.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
@@ -122,7 +122,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				pcommon.NewResource(),
 				Settings{
 					ExportCreatedMetric:  true,
-					ConvertScopeMetadata: tt.convertScope,
+					PromoteScopeMetadata: tt.promoteScope,
 				},
 				metric.Name(),
 				tt.scope,
@@ -151,7 +151,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 		name         string
 		metric       func() pmetric.Metric
 		scope        scope
-		convertScope bool
+		promoteScope bool
 		want         func() map[uint64]*prompb.TimeSeries
 	}{
 		{
@@ -165,7 +165,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				)
 			},
 			scope:        defaultScope,
-			convertScope: false,
+			promoteScope: false,
 			want: func() map[uint64]*prompb.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
@@ -194,7 +194,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				)
 			},
 			scope:        defaultScope,
-			convertScope: true,
+			promoteScope: true,
 			want: func() map[uint64]*prompb.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
@@ -230,7 +230,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				return m
 			},
 			scope:        defaultScope,
-			convertScope: false,
+			promoteScope: false,
 			want: func() map[uint64]*prompb.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
@@ -265,7 +265,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				return metric
 			},
 			scope:        defaultScope,
-			convertScope: false,
+			promoteScope: false,
 			want: func() map[uint64]*prompb.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_sum"},
@@ -303,7 +303,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				return metric
 			},
 			scope:        defaultScope,
-			convertScope: false,
+			promoteScope: false,
 			want: func() map[uint64]*prompb.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_sum"},
@@ -332,7 +332,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				return metric
 			},
 			scope:        defaultScope,
-			convertScope: false,
+			promoteScope: false,
 			want: func() map[uint64]*prompb.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_sum"},
@@ -360,7 +360,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				metric,
 				Settings{
 					ExportCreatedMetric:  true,
-					ConvertScopeMetadata: tt.convertScope,
+					PromoteScopeMetadata: tt.promoteScope,
 				},
 				metric.Name(),
 				tt.scope,

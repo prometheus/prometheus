@@ -506,7 +506,7 @@ func TestCreateAttributes(t *testing.T) {
 					PromoteResourceAttributes:    tc.promoteResourceAttributes,
 					IgnoreResourceAttributes:     tc.ignoreResourceAttributes,
 				}),
-				ConvertScopeMetadata: tc.convertScope,
+				PromoteScopeMetadata: tc.convertScope,
 			}
 			lbls := createAttributes(resource, attrs, tc.scope, settings, tc.ignoreAttrs, false, model.MetricNameLabel, "test_metric")
 
@@ -720,7 +720,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				metric.Summary().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					ConvertScopeMetadata: tt.convertScope,
+					PromoteScopeMetadata: tt.convertScope,
 					ExportCreatedMetric:  true,
 				},
 				metric.Name(),
@@ -920,7 +920,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				pcommon.NewResource(),
 				Settings{
 					ExportCreatedMetric:  true,
-					ConvertScopeMetadata: tt.convertScope,
+					PromoteScopeMetadata: tt.convertScope,
 				},
 				metric.Name(),
 				tt.scope,

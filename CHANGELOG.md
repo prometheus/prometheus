@@ -2,7 +2,7 @@
 
 ## main / unreleased
 
-* [FEATURE] OTLP receiver: Support including scope attributes/name/version/schema URL as metric labels, via configuration parameter `otlp.convert_scope_metadata`. #16730
+* [FEATURE] OTLP receiver: Support promoting OTel scope name/version/schema URL/attributes as metric labels, enable via configuration parameter `otlp.promote_scope_metadata`. #16730 #16760
 
 ## 3.4.2 / 2025-06-04
 
