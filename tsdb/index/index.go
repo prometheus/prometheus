@@ -423,7 +423,7 @@ func (w *Writer) ensureStage(s indexWriterStage) error {
 func (w *Writer) writeMeta() error {
 	w.buf1.Reset()
 	w.buf1.PutBE32(MagicIndex)
-	w.buf1.PutByte(FormatV2)
+	w.buf1.PutByte(FormatV3) // Testing compatibility.
 
 	return w.write(w.buf1.Get())
 }
