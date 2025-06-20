@@ -169,14 +169,16 @@ eval instant at 110s increase(metric[1m] smoothed)
 eval instant at 125s increase(metric[1m] smoothed)
     {} 4.666666666
 
-# Test that inverval is left-open.
 
 clear
 load 1m
     metric 1 2 _ 4 5
 
+# Test smoothed without a point in the range.
 eval instant at 2m increase(metric[1m] smoothed)
+    {} 1
 
+# Test that inverval is left-open.
 eval instant at 2m increase(metric[1m] anchored)
 
 # Basic test with counter resets
@@ -213,3 +215,8 @@ eval instant at 5m increase(metric[5m] anchored)
     {id="1"} 5
     {id="2"} 10
     {id="3"} 15
+
+# Test that range is changed with a low step.
+eval range from 1m5s to 1m10s step 1s 60*rate(metric{id="1"}[1ms] smoothed)
+    expect warn msg: PromQL warning: range is smaller than the step, using the step instead: metric{id="1"}[1ms] smoothed range changed to 1s
+    {id="1"} 1 1 1 1 1 1
