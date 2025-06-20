@@ -451,6 +451,11 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateE
 	ret = modifier.(*AggregateExpr)
 	arguments := args.(Expressions)
 
+	if len(p.closingParens) == 0 {
+		// Prevents invalid array accesses.
+		// The error is already captured by the parser.
+		return
+	}
 	ret.PosRange = posrange.PositionRange{
 		Start: op.Pos,
 		End:   p.closingParens[0],
