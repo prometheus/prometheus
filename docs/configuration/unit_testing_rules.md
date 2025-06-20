@@ -123,6 +123,9 @@ series: <string>
 #         The starting index of the first entry in the negative buckets.
 #     - counter_reset_hint (one of 'unknown', 'reset', 'not_reset' or 'gauge')
 #         The counter reset hint associated with this histogram. Defaults to 'unknown' if not set.
+
+- custom_values: Optional field to specify native histogram bucket values manually. Bucket counts are always absolute (not cumulative).
+
 values: <string>
 ```
 
