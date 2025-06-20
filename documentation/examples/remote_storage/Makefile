@@ -11,12 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 include ../../../Makefile.common
-
-help: ## Display available commands and their descriptions.
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[38;2;230;82;44m<target>\033[0m\n\nTargets:\n"} /^[a-z0-9A-Z_-]+:.*?##/ { printf "  \033[38;2;230;82;44m%-20s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
-	
 
 build: ## Build Prometheus remote storage adapter examples.
 	@echo ">> building example_write_adapter"
