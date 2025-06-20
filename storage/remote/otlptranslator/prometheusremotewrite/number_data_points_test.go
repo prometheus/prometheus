@@ -50,7 +50,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 		want         func() map[uint64]*prompb.TimeSeries
 	}{
 		{
-			name: "gauge without scope conversion",
+			name: "gauge without scope promotion",
 			metric: func() pmetric.Metric {
 				return getIntGaugeMetric(
 					"test",
@@ -78,7 +78,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "gauge with scope conversion",
+			name: "gauge with scope promotion",
 			metric: func() pmetric.Metric {
 				return getIntGaugeMetric(
 					"test",
@@ -155,7 +155,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 		want         func() map[uint64]*prompb.TimeSeries
 	}{
 		{
-			name: "sum without scope conversion",
+			name: "sum without scope promotion",
 			metric: func() pmetric.Metric {
 				return getIntSumMetric(
 					"test",
@@ -184,7 +184,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "sum with scope conversion",
+			name: "sum with scope promotion",
 			metric: func() pmetric.Metric {
 				return getIntSumMetric(
 					"test",
@@ -218,7 +218,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "sum with exemplars and without scope conversion",
+			name: "sum with exemplars and without scope promotion",
 			metric: func() pmetric.Metric {
 				m := getIntSumMetric(
 					"test",
@@ -250,7 +250,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "monotonic cumulative sum with start timestamp and without scope conversion",
+			name: "monotonic cumulative sum with start timestamp and without scope promotion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_sum")
@@ -290,7 +290,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "monotonic cumulative sum with no start time and without scope conversion",
+			name: "monotonic cumulative sum with no start time and without scope promotion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_sum")
@@ -319,7 +319,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "non-monotonic cumulative sum with start time and without scope conversion",
+			name: "non-monotonic cumulative sum with start time and without scope promotion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_sum")

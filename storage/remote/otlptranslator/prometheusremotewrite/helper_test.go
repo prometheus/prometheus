@@ -74,7 +74,7 @@ func TestCreateAttributes(t *testing.T) {
 		expectedLabels               []prompb.Label
 	}{
 		{
-			name:                      "Successful conversion without resource attribute promotion and without scope conversion",
+			name:                      "Successful conversion without resource attribute promotion and without scope promotion",
 			scope:                     defaultScope,
 			promoteResourceAttributes: nil,
 			promoteScope:              false,
@@ -102,7 +102,7 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion without resource attribute promotion and with scope conversion",
+			name:                      "Successful conversion without resource attribute promotion and with scope promotion",
 			scope:                     defaultScope,
 			promoteResourceAttributes: nil,
 			promoteScope:              true,
@@ -150,7 +150,7 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion without resource attribute promotion and with scope conversion, but without scope",
+			name:                      "Successful conversion without resource attribute promotion and with scope promotion, but without scope",
 			scope:                     scope{},
 			promoteResourceAttributes: nil,
 			promoteScope:              true,
@@ -178,7 +178,7 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion with some attributes ignored and with scope conversion",
+			name:                      "Successful conversion with some attributes ignored and with scope promotion",
 			scope:                     defaultScope,
 			promoteResourceAttributes: nil,
 			promoteScope:              true,
@@ -223,7 +223,7 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion with resource attribute promotion and with scope conversion",
+			name:                      "Successful conversion with resource attribute promotion and with scope promotion",
 			scope:                     defaultScope,
 			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr"},
 			promoteScope:              true,
@@ -275,7 +275,7 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion with resource attribute promotion and with scope conversion, conflicting resource attributes are ignored",
+			name:                      "Successful conversion with resource attribute promotion and with scope promotion, conflicting resource attributes are ignored",
 			scope:                     defaultScope,
 			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr", "metric-attr", "job", "instance"},
 			promoteScope:              true,
@@ -327,7 +327,7 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion with resource attribute promotion and with scope conversion, attributes are only promoted once",
+			name:                      "Successful conversion with resource attribute promotion and with scope promotion, attributes are only promoted once",
 			scope:                     defaultScope,
 			promoteResourceAttributes: []string{"existent-attr", "existent-attr"},
 			promoteScope:              true,
@@ -379,7 +379,7 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                         "Successful conversion promoting all resource attributes and with scope conversion",
+			name:                         "Successful conversion promoting all resource attributes and with scope promotion",
 			scope:                        defaultScope,
 			promoteAllResourceAttributes: true,
 			promoteScope:                 true,
@@ -439,7 +439,7 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                         "Successful conversion promoting all resource attributes and with scope conversion, ignoring 'service.instance.id'",
+			name:                         "Successful conversion promoting all resource attributes and with scope promotion, ignoring 'service.instance.id'",
 			scope:                        defaultScope,
 			promoteAllResourceAttributes: true,
 			promoteScope:                 true,
@@ -555,7 +555,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 		want         func() map[uint64]*prompb.TimeSeries
 	}{
 		{
-			name: "summary with start time and without scope conversion",
+			name: "summary with start time and without scope promotion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_summary")
@@ -602,7 +602,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "summary with start time and with scope conversion",
+			name: "summary with start time and with scope promotion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_summary")
@@ -674,7 +674,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "summary without start time and without scope conversion",
+			name: "summary without start time and without scope promotion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_summary")
@@ -755,7 +755,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 		want         func() map[uint64]*prompb.TimeSeries
 	}{
 		{
-			name: "histogram with start time and without scope conversion",
+			name: "histogram with start time and without scope promotion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_hist")
@@ -803,7 +803,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "histogram with start time and with scope conversion",
+			name: "histogram with start time and with scope promotion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_hist")
