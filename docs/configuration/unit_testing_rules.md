@@ -98,7 +98,9 @@ series: <string>
 #     Native histograms support the same expanding notation as floating point numbers, i.e. 'axn', 'a+bxn' and 'a-bxn'.
 #     All properties are optional and default to 0. The order is not important. The following properties are supported:
 #     - schema (int):
-#         Currently valid schema numbers are -4 <= n <= 8. They are all for
+#         Currently valid schema numbers are -4 <= n <= 8.
+#         For schema = -53, upper bucket boundaries are defined in custom_values
+#         like for classic histograms, and you shouldn't use z_bucket, z_bucket_w, n_buckets, n_offset.
 #         base-2 bucket schemas, where 1 is a bucket boundary in each case, and
 #         then each power of two is divided into 2^n logarithmic buckets.  Or
 #         in other words, each bucket boundary is the previous boundary times
