@@ -68,7 +68,7 @@ func TestCreateAttributes(t *testing.T) {
 		scope                        scope
 		promoteAllResourceAttributes bool
 		promoteResourceAttributes    []string
-		convertScope                 bool
+		promoteScope                 bool
 		ignoreResourceAttributes     []string
 		ignoreAttrs                  []string
 		expectedLabels               []prompb.Label
@@ -77,7 +77,7 @@ func TestCreateAttributes(t *testing.T) {
 			name:                      "Successful conversion without resource attribute promotion and without scope conversion",
 			scope:                     defaultScope,
 			promoteResourceAttributes: nil,
-			convertScope:              false,
+			promoteScope:              false,
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -105,7 +105,7 @@ func TestCreateAttributes(t *testing.T) {
 			name:                      "Successful conversion without resource attribute promotion and with scope conversion",
 			scope:                     defaultScope,
 			promoteResourceAttributes: nil,
-			convertScope:              true,
+			promoteScope:              true,
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -153,7 +153,7 @@ func TestCreateAttributes(t *testing.T) {
 			name:                      "Successful conversion without resource attribute promotion and with scope conversion, but without scope",
 			scope:                     scope{},
 			promoteResourceAttributes: nil,
-			convertScope:              true,
+			promoteScope:              true,
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -181,7 +181,7 @@ func TestCreateAttributes(t *testing.T) {
 			name:                      "Successful conversion with some attributes ignored and with scope conversion",
 			scope:                     defaultScope,
 			promoteResourceAttributes: nil,
-			convertScope:              true,
+			promoteScope:              true,
 			ignoreAttrs:               []string{"metric-attr-other"},
 			expectedLabels: []prompb.Label{
 				{
@@ -226,7 +226,7 @@ func TestCreateAttributes(t *testing.T) {
 			name:                      "Successful conversion with resource attribute promotion and with scope conversion",
 			scope:                     defaultScope,
 			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr"},
-			convertScope:              true,
+			promoteScope:              true,
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -278,7 +278,7 @@ func TestCreateAttributes(t *testing.T) {
 			name:                      "Successful conversion with resource attribute promotion and with scope conversion, conflicting resource attributes are ignored",
 			scope:                     defaultScope,
 			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr", "metric-attr", "job", "instance"},
-			convertScope:              true,
+			promoteScope:              true,
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -330,7 +330,7 @@ func TestCreateAttributes(t *testing.T) {
 			name:                      "Successful conversion with resource attribute promotion and with scope conversion, attributes are only promoted once",
 			scope:                     defaultScope,
 			promoteResourceAttributes: []string{"existent-attr", "existent-attr"},
-			convertScope:              true,
+			promoteScope:              true,
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -382,7 +382,7 @@ func TestCreateAttributes(t *testing.T) {
 			name:                         "Successful conversion promoting all resource attributes and with scope conversion",
 			scope:                        defaultScope,
 			promoteAllResourceAttributes: true,
-			convertScope:                 true,
+			promoteScope:                 true,
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -442,7 +442,7 @@ func TestCreateAttributes(t *testing.T) {
 			name:                         "Successful conversion promoting all resource attributes and with scope conversion, ignoring 'service.instance.id'",
 			scope:                        defaultScope,
 			promoteAllResourceAttributes: true,
-			convertScope:                 true,
+			promoteScope:                 true,
 			ignoreResourceAttributes: []string{
 				"service.instance.id",
 			},
@@ -506,7 +506,7 @@ func TestCreateAttributes(t *testing.T) {
 					PromoteResourceAttributes:    tc.promoteResourceAttributes,
 					IgnoreResourceAttributes:     tc.ignoreResourceAttributes,
 				}),
-				PromoteScopeMetadata: tc.convertScope,
+				PromoteScopeMetadata: tc.promoteScope,
 			}
 			lbls := createAttributes(resource, attrs, tc.scope, settings, tc.ignoreAttrs, false, model.MetricNameLabel, "test_metric")
 
@@ -551,7 +551,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 		name         string
 		metric       func() pmetric.Metric
 		scope        scope
-		convertScope bool
+		promoteScope bool
 		want         func() map[uint64]*prompb.TimeSeries
 	}{
 		{
@@ -568,7 +568,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				return metric
 			},
 			scope:        defaultScope,
-			convertScope: false,
+			promoteScope: false,
 			want: func() map[uint64]*prompb.TimeSeries {
 				countLabels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
@@ -615,7 +615,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				return metric
 			},
 			scope:        defaultScope,
-			convertScope: true,
+			promoteScope: true,
 			want: func() map[uint64]*prompb.TimeSeries {
 				scopeLabels := []prompb.Label{
 					{
@@ -685,7 +685,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 
 				return metric
 			},
-			convertScope: false,
+			promoteScope: false,
 			want: func() map[uint64]*prompb.TimeSeries {
 				countLabels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
@@ -720,7 +720,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				metric.Summary().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					PromoteScopeMetadata: tt.convertScope,
+					PromoteScopeMetadata: tt.promoteScope,
 					ExportCreatedMetric:  true,
 				},
 				metric.Name(),
@@ -751,7 +751,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 		name         string
 		metric       func() pmetric.Metric
 		scope        scope
-		convertScope bool
+		promoteScope bool
 		want         func() map[uint64]*prompb.TimeSeries
 	}{
 		{
@@ -768,7 +768,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				return metric
 			},
 			scope:        defaultScope,
-			convertScope: false,
+			promoteScope: false,
 			want: func() map[uint64]*prompb.TimeSeries {
 				countLabels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist" + countStr},
@@ -816,7 +816,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				return metric
 			},
 			scope:        defaultScope,
-			convertScope: true,
+			promoteScope: true,
 			want: func() map[uint64]*prompb.TimeSeries {
 				scopeLabels := []prompb.Label{
 					{
@@ -920,7 +920,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				pcommon.NewResource(),
 				Settings{
 					ExportCreatedMetric:  true,
-					PromoteScopeMetadata: tt.convertScope,
+					PromoteScopeMetadata: tt.promoteScope,
 				},
 				metric.Name(),
 				tt.scope,
