@@ -124,7 +124,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 
 	promotedAttrs := settings.PromoteResourceAttributes.promotedAttributes(resourceAttrs)
 
-	convertScope := settings.PromoteScopeMetadata && scope.name != ""
+	promoteScope := settings.PromoteScopeMetadata && scope.name != ""
 	scopeLabelCount := 0
 	if convertScope {
 		// Include name, version and schema URL.
