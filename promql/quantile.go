@@ -302,7 +302,7 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string
 	}
 	// We recognize histograms containing NaN observations by checking if their
 	// h.Sum is NaN and total number of observations is higher than the h.Count.
-	// If the later is lost in precision, then the skew isn't worth reporting
+	// If the latter is lost in precision, then the skew isn't worth reporting
 	// anyway. If the number is not greater, then the histogram observed -Inf
 	// and +Inf at some point, which made the Sum == NaN.
 	if math.IsNaN(h.Sum) {
