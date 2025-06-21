@@ -530,6 +530,9 @@ type OTLPOptions struct {
 	// marking the metric type as unknown for now).
 	// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
 	NativeDelta bool
+	// LookbackDelta is the query lookback delta.
+	// Used to calculate the target_info sample timestamp interval.
+	LookbackDelta time.Duration
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
@@ -547,6 +550,7 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 		},
 		config:                configFunc,
 		allowDeltaTemporality: opts.NativeDelta,
+		lookbackDelta:         opts.LookbackDelta,
 	}
 
 	wh := &otlpWriteHandler{logger: logger, defaultConsumer: ex}
@@ -583,6 +587,7 @@ type rwExporter struct {
 	*writeHandler
 	config                func() config.Config
 	allowDeltaTemporality bool
+	lookbackDelta         time.Duration
 }
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
@@ -597,6 +602,7 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		ConvertHistogramsToNHCB:           otlpCfg.ConvertHistogramsToNHCB,
 		AllowDeltaTemporality:             rw.allowDeltaTemporality,
 		PromoteScopeMetadata:              otlpCfg.PromoteScopeMetadata,
+		LookbackDelta:                     rw.lookbackDelta,
 	})
 	if err != nil {
 		rw.logger.Warn("Error translating OTLP metrics to Prometheus write request", "err", err)
