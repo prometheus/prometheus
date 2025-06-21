@@ -694,6 +694,42 @@ func TestRelabel(t *testing.T) {
 				"label2_line1": "val_line2",
 			}),
 		},
+		{
+			input: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"__name__"},
+					Regex:        MustNewRegexp(".*_total$"),
+					TargetLabel:  "__type__",
+					Replacement:  "counter",
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+				"__type__": "counter",
+			}),
+		},
+		{
+			input: labels.FromMap(map[string]string{
+				"__name__": "disk_usage_bytes",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"__name__"},
+					Regex:        MustNewRegexp(".*_bytes$"),
+					TargetLabel:  "__unit__",
+					Replacement:  "bytes",
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__": "disk_usage_bytes",
+				"__unit__": "bytes",
+			}),
+		},
 	}
 
 	for _, test := range tests {

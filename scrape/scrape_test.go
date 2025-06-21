@@ -4800,6 +4800,91 @@ metric: <
 	}
 }
 
+func TestTypeUnitReLabel(t *testing.T) {
+	simpleStorage := teststorage.New(t)
+	defer simpleStorage.Close()
+
+	config := &config.ScrapeConfig{
+		JobName: "test",
+		MetricRelabelConfigs: []*relabel.Config{
+			{
+				SourceLabels: model.LabelNames{"__name__"},
+				Regex:        relabel.MustNewRegexp(".*_total$"),
+				Replacement:  "counter",
+				TargetLabel:  "__type__",
+				Action:       relabel.Replace,
+			},
+			{
+				SourceLabels: model.LabelNames{"__name__"},
+				Regex:        relabel.MustNewRegexp(".*_bytes$"),
+				Replacement:  "bytes",
+				TargetLabel:  "__unit__",
+				Action:       relabel.Replace,
+			},
+		},
+		SampleLimit:                100,
+		Scheme:                     "http",
+		ScrapeInterval:             model.Duration(100 * time.Millisecond),
+		ScrapeTimeout:              model.Duration(100 * time.Millisecond),
+		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameEscapingScheme:   model.AllowUTF8,
+	}
+
+	metricsText := `
+# HELP test_metric_1_total This is a counter
+# TYPE test_metric_1_total counter
+test_metric_1_total 123
+
+# HELP test_metric_2_total This is a counter
+# TYPE test_metric_2_total counter
+test_metric_2_total 234
+
+# HELP disk_usage_bytes This is a gauge
+# TYPE disk_usage_bytes gauge
+disk_usage_bytes 456
+`
+
+	ts, scrapedTwice := newScrapableServer(metricsText)
+	defer ts.Close()
+
+	sp, err := newScrapePool(config, simpleStorage, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+	require.NoError(t, err)
+	defer sp.stop()
+
+	testURL, err := url.Parse(ts.URL)
+	require.NoError(t, err)
+	sp.Sync([]*targetgroup.Group{
+		{
+			Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(testURL.Host)}},
+		},
+	})
+	require.Len(t, sp.ActiveTargets(), 1)
+
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatalf("target was not scraped")
+	case <-scrapedTwice:
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q, err := simpleStorage.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
+	require.NoError(t, err)
+	defer q.Close()
+
+	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*_total$"))
+	for series.Next() {
+		s := series.At()
+		require.Equal(t, "counter", s.Labels().Get("__type__"))
+	}
+
+	series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "disk_usage_bytes"))
+	for series.Next() {
+		s := series.At()
+		require.Equal(t, "bytes", s.Labels().Get("__unit__"))
+	}
+}
+
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *testing.T) {
 	appender := &collectResultAppender{}
 	var (
