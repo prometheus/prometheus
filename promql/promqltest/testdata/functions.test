@@ -370,7 +370,10 @@ eval instant at 100m deriv(testcounter_reset_middle_mix[110m])
 	{} 0.010606060606060607
 
 # deriv should silently ignore ranges consisting only of histograms.
+# expects both an empty result and no info/warn annotations.
 eval instant at 50m deriv(http_requests_histogram[60m])
+	expect no_info
+	expect no_warn
 	#empty
 
 # deriv should return NaN in case of +Inf or -Inf found.
@@ -423,6 +426,8 @@ eval instant at 60m predict_linear(testcounter_reset_middle_mix[60m], 50m)
 
 # predict_linear should silently ignore ranges consisting only of histograms.
 eval instant at 60m predict_linear(http_requests_histogram[60m], 50m)
+	expect no_info
+	expect no_warn
 	#empty
 
 # predict_linear should return NaN in case of +Inf or -Inf found.
