@@ -979,6 +979,9 @@ type TSDBConfig struct {
 	// During unmarshall, this is converted into milliseconds and stored in OutOfOrderTimeWindow.
 	// This should not be used directly and must be converted into OutOfOrderTimeWindow.
 	OutOfOrderTimeWindowFlag model.Duration `yaml:"out_of_order_time_window,omitempty"`
+
+	// ReloadOnChange sets if a TSDB Block should be reloaded when new data is written to it.
+	ReloadOnChange bool `yaml:"reload_on_change,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -988,6 +991,11 @@ func (t *TSDBConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(t)); err != nil {
 		return err
 	}
+
+	slog.Debug("TSDBConfig",
+		"out_of_order_time_window", t.OutOfOrderTimeWindowFlag,
+		"reload_on_change", t.ReloadOnChange,
+	)
 
 	t.OutOfOrderTimeWindow = time.Duration(t.OutOfOrderTimeWindowFlag).Milliseconds()
 
