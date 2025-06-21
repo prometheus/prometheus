@@ -172,6 +172,8 @@ var (
 		ScrapeProtocols:                DefaultScrapeProtocols,
 		ConvertClassicHistogramsToNHCB: false,
 		AlwaysScrapeClassicHistograms:  false,
+		MetricNameValidationScheme:     UTF8ValidationConfig,
+		MetricNameEscapingScheme:       model.AllowUTF8,
 	}
 
 	DefaultRuntimeConfig = RuntimeConfig{
@@ -940,6 +942,13 @@ func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 // ToValidationScheme returns the validation scheme for the given string config value.
 func ToValidationScheme(s string) (validationScheme model.ValidationScheme, err error) {
 	switch s {
+	case "":
+		// This is a workaround for third party exporters that don't set the validation scheme.
+		if DefaultGlobalConfig.MetricNameValidationScheme == "" {
+			// Prevents infinite recursion.
+			panic("global metric name validation scheme is not set")
+		}
+		return ToValidationScheme(DefaultGlobalConfig.MetricNameValidationScheme)
 	case UTF8ValidationConfig:
 		validationScheme = model.UTF8Validation
 	case LegacyValidationConfig:
@@ -949,6 +958,21 @@ func ToValidationScheme(s string) (validationScheme model.ValidationScheme, err 
 	}
 
 	return validationScheme, nil
+}
+
+// ToEscapingScheme wraps the equivalent common library function with the
+// desired default behavior based on the given validation scheme. This is a
+// workaround for third party exporters that don't set the escaping scheme.
+func ToEscapingScheme(s string, v model.ValidationScheme) (model.EscapingScheme, error) {
+	if s == "" {
+		switch v {
+		case model.UTF8Validation:
+			return model.NoEscaping, nil
+		case model.LegacyValidation:
+			return model.UnderscoreEscaping, nil
+		}
+	}
+	return model.ToEscapingScheme(s)
 }
 
 // ConvertClassicHistogramsToNHCBEnabled returns whether to convert classic histograms to NHCB.
