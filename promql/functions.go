@@ -747,7 +747,7 @@ func funcLastOverTime(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHe
 		h = el.Histograms[len(el.Histograms)-1]
 	}
 
-	if h.H == nil || h.T < f.T {
+	if h.H == nil || (len(el.Floats) > 0 && h.T < f.T) {
 		return append(enh.Out, Sample{
 			Metric: el.Metric,
 			F:      f.F,

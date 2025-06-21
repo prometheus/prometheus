@@ -1319,3 +1319,12 @@ eval instant at 10m histogram_sub_3{idx="0"} - ignoring(idx) histogram_sub_3{idx
     {} {{schema:0 count:-30 sum:-1111.1 z_bucket:-2 z_bucket_w:0.001 buckets:[-1 0 -1 -2 -1 -1 -1] n_buckets:[0 2 -2 -2 -7 0 0 0 0 -5 -5 -2]}}
 
 clear
+
+# Test native histograms with last_over_time subquery
+load 2m
+    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}x20
+
+eval range from 0s to 60s step 15s last_over_time({__name__="http_request_duration_seconds"} @ start()[1h:1m] offset 1m16s)
+    {__name__="http_request_duration_seconds", pod="nginx-1"} {{count:3 sum:14 buckets:[1 2]}}x4
+
+clear
