@@ -263,6 +263,9 @@ func NewTemplateExpander(
 
 				return floatToTime(v)
 			},
+			"now": func() time.Time {
+				return time.Now()
+			},
 			"pathPrefix": func() string {
 				return externalURL.Path
 			},
@@ -275,6 +278,13 @@ func NewTemplateExpander(
 					return 0, err
 				}
 				return float64(time.Duration(v)) / float64(time.Second), nil
+			},
+			"parseGoDuration": func(d string) (time.Duration, error) {
+				v, err := model.ParseDuration(d)
+				if err != nil {
+					return 0, err
+				}
+				return time.Duration(v), nil
 			},
 		},
 		options: options,
