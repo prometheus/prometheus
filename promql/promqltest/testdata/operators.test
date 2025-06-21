@@ -289,18 +289,24 @@ eval instant at 50m http_requests_total{job="api-server", instance="0", group="p
 	{job="api-server", instance="0", group="production"} 1
 
 # The histogram is ignored here so the result doesn't change but it has an info annotation now.
-eval_info instant at 5m {job="app-server"} == 80
+eval instant at 5m {job="app-server"} == 80
+    expect info
     http_requests_total{group="canary", instance="1", job="app-server"} 80
 
-eval_info instant at 5m http_requests_histogram != 80
+eval instant at 5m http_requests_histogram != 80
+  expect info
 
-eval_info instant at 5m http_requests_histogram > 80
+eval instant at 5m http_requests_histogram > 80
+  expect info
 
-eval_info instant at 5m http_requests_histogram < 80
+eval instant at 5m http_requests_histogram < 80
+  expect info
 
-eval_info instant at 5m http_requests_histogram >= 80
+eval instant at 5m http_requests_histogram >= 80
+  expect info
 
-eval_info instant at 5m http_requests_histogram <= 80
+eval instant at 5m http_requests_histogram <= 80
+  expect info
 
 # Should produce valid results in case of (in)equality between two histograms.
 eval instant at 5m http_requests_histogram == http_requests_histogram
@@ -470,7 +476,8 @@ load 5m
   testmetric1{src="a",dst="b"} 0
   testmetric2{src="a",dst="b"} 1
 
-eval_fail instant at 0m -{__name__=~'testmetric1|testmetric2'}
+eval instant at 0m -{__name__=~'testmetric1|testmetric2'}
+    expect fail
 
 clear
 
@@ -534,10 +541,12 @@ eval range from 0 to 24m step 6m left_histograms == right_histograms
 eval range from 0 to 24m step 6m left_histograms == bool right_histograms
   {} 1 0 _ _ _
 
-eval_info range from 0 to 24m step 6m left_histograms == right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms == right_floats_for_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms == bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms == bool right_floats_for_histograms
+  expect info
   # No results.
 
 eval range from 0 to 60m step 6m left_floats != right_floats
@@ -552,10 +561,12 @@ eval range from 0 to 24m step 6m left_histograms != right_histograms
 eval range from 0 to 24m step 6m left_histograms != bool right_histograms
   {} 0 1 _ _ _
 
-eval_info range from 0 to 24m step 6m left_histograms != right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms != right_floats_for_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms != bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms != bool right_floats_for_histograms
+  expect info
   # No results.
 
 eval range from 0 to 60m step 6m left_floats > right_floats
@@ -564,16 +575,20 @@ eval range from 0 to 60m step 6m left_floats > right_floats
 eval range from 0 to 60m step 6m left_floats > bool right_floats
   {} 0 _ _ _ 0 _ 1 0 0 0 0
 
-eval_info range from 0 to 24m step 6m left_histograms > right_histograms
+eval range from 0 to 24m step 6m left_histograms > right_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > bool right_histograms
+eval range from 0 to 24m step 6m left_histograms > bool right_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms > right_floats_for_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms > bool right_floats_for_histograms
+  expect info
   # No results.
 
 eval range from 0 to 60m step 6m left_floats >= right_floats
@@ -582,16 +597,20 @@ eval range from 0 to 60m step 6m left_floats >= right_floats
 eval range from 0 to 60m step 6m left_floats >= bool right_floats
   {} 0 _ _ _ 1 _ 1 0 0 1 1
 
-eval_info range from 0 to 24m step 6m left_histograms >= right_histograms
+eval range from 0 to 24m step 6m left_histograms >= right_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= bool right_histograms
+eval range from 0 to 24m step 6m left_histograms >= bool right_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms >= right_floats_for_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms >= bool right_floats_for_histograms
+  expect info
   # No results.
 
 eval range from 0 to 60m step 6m left_floats < right_floats
@@ -600,16 +619,20 @@ eval range from 0 to 60m step 6m left_floats < right_floats
 eval range from 0 to 60m step 6m left_floats < bool right_floats
   {} 1 _ _ _ 0 _ 0 1 0 0 0
 
-eval_info range from 0 to 24m step 6m left_histograms < right_histograms
+eval range from 0 to 24m step 6m left_histograms < right_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < bool right_histograms
+eval range from 0 to 24m step 6m left_histograms < bool right_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms < right_floats_for_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms < bool right_floats_for_histograms
+  expect info
   # No results.
 
 eval range from 0 to 60m step 6m left_floats <= right_floats
@@ -618,16 +641,20 @@ eval range from 0 to 60m step 6m left_floats <= right_floats
 eval range from 0 to 60m step 6m left_floats <= bool right_floats
   {} 1 _ _ _ 1 _ 0 1 0 1 1
 
-eval_info range from 0 to 24m step 6m left_histograms <= right_histograms
+eval range from 0 to 24m step 6m left_histograms <= right_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= bool right_histograms
+eval range from 0 to 24m step 6m left_histograms <= bool right_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms <= right_floats_for_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms <= bool right_floats_for_histograms
+  expect info
   # No results.
 
 # Vector / scalar combinations with scalar on right side
@@ -664,76 +691,100 @@ eval range from 0 to 60m step 6m left_floats == NaN
 eval range from 0 to 60m step 6m left_floats == bool NaN
   {} 0 0 _ _ 0 _ 0 0 0 0 0
 
-eval_info range from 0 to 24m step 6m left_histograms == 3
+eval range from 0 to 24m step 6m left_histograms == 3
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms == 0
+eval range from 0 to 24m step 6m left_histograms == 0
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms != 3
+eval range from 0 to 24m step 6m left_histograms != 3
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms != 0
+eval range from 0 to 24m step 6m left_histograms != 0
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > 3
+eval range from 0 to 24m step 6m left_histograms > 3
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > 0
+eval range from 0 to 24m step 6m left_histograms > 0
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= 3
+eval range from 0 to 24m step 6m left_histograms >= 3
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= 0
+eval range from 0 to 24m step 6m left_histograms >= 0
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < 3
+eval range from 0 to 24m step 6m left_histograms < 3
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < 0
+eval range from 0 to 24m step 6m left_histograms < 0
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= 3
+eval range from 0 to 24m step 6m left_histograms <= 3
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= 0
+eval range from 0 to 24m step 6m left_histograms <= 0
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms == bool 3
+eval range from 0 to 24m step 6m left_histograms == bool 3
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms == bool 0
+eval range from 0 to 24m step 6m left_histograms == bool 0
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms != bool 3
+eval range from 0 to 24m step 6m left_histograms != bool 3
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms != bool 0
+eval range from 0 to 24m step 6m left_histograms != bool 0
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > bool 3
+eval range from 0 to 24m step 6m left_histograms > bool 3
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > bool 0
+eval range from 0 to 24m step 6m left_histograms > bool 0
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= bool 3
+eval range from 0 to 24m step 6m left_histograms >= bool 3
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= bool 0
+eval range from 0 to 24m step 6m left_histograms >= bool 0
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < bool 3
+eval range from 0 to 24m step 6m left_histograms < bool 3
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < bool 0
+eval range from 0 to 24m step 6m left_histograms < bool 0
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= bool 3
+eval range from 0 to 24m step 6m left_histograms <= bool 3
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= bool 0
+eval range from 0 to 24m step 6m left_histograms <= bool 0
+  expect info
   # No results.
 
 # Vector / scalar combinations with scalar on left side
@@ -770,40 +821,52 @@ eval range from 0 to 60m step 6m NaN == left_floats
 eval range from 0 to 60m step 6m NaN == bool left_floats
   {} 0 0 _ _ 0 _ 0 0 0 0 0
 
-eval_info range from 0 to 24m step 6m 3 == left_histograms
+eval range from 0 to 24m step 6m 3 == left_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 == left_histograms
+eval range from 0 to 24m step 6m 0 == left_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m 3 != left_histograms
+eval range from 0 to 24m step 6m 3 != left_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 != left_histograms
+eval range from 0 to 24m step 6m 0 != left_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m 3 < left_histograms
+eval range from 0 to 24m step 6m 3 < left_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 < left_histograms
+eval range from 0 to 24m step 6m 0 < left_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m 3 < left_histograms
+eval range from 0 to 24m step 6m 3 < left_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 < left_histograms
+eval range from 0 to 24m step 6m 0 < left_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m 3 > left_histograms
+eval range from 0 to 24m step 6m 3 > left_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 > left_histograms
+eval range from 0 to 24m step 6m 0 > left_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m 3 >= left_histograms
+eval range from 0 to 24m step 6m 3 >= left_histograms
+  expect info
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 >= left_histograms
+eval range from 0 to 24m step 6m 0 >= left_histograms
+  expect info
   # No results.
 
 clear
