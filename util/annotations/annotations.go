@@ -16,6 +16,7 @@ package annotations
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/prometheus/common/model"
 
@@ -145,6 +146,9 @@ var (
 	MixedExponentialCustomHistogramsWarning    = fmt.Errorf("%w: vector contains a mix of histograms with exponential and custom buckets schemas for metric name", PromQLWarning)
 	IncompatibleCustomBucketsHistogramsWarning = fmt.Errorf("%w: vector contains histograms with incompatible custom buckets for metric name", PromQLWarning)
 	IncompatibleBucketLayoutInBinOpWarning     = fmt.Errorf("%w: incompatible bucket layout encountered for binary operator", PromQLWarning)
+	AnchoredWithUnsupportedFunctionWarning     = fmt.Errorf("%w: anchored vector with unsupported function:", PromQLWarning)
+	SmoothedWithUnsupportedFunctionWarning     = fmt.Errorf("%w: smoothed vector with unsupported function:", PromQLWarning)
+	ChangedStepRangeWarning                    = fmt.Errorf("%w: range is smaller than the step, using the step instead:", PromQLWarning)
 
 	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
 	PossibleNonCounterLabelInfo             = fmt.Errorf("%w: metric might not be a counter, __type__ label is not set to %q", PromQLInfo, model.MetricTypeCounter)
@@ -322,5 +326,26 @@ func NewIncompatibleBucketLayoutInBinOpWarning(operator string, pos posrange.Pos
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %s", IncompatibleBucketLayoutInBinOpWarning, operator),
+	}
+}
+
+func NewAnchoredWithUnsupportedFunctionWarning(function string, pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %s", AnchoredWithUnsupportedFunctionWarning, function),
+	}
+}
+
+func NewSmoothedWithUnsupportedFunctionWarning(function string, pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %s", SmoothedWithUnsupportedFunctionWarning, function),
+	}
+}
+
+func NewChangedStepRangeWarning(pos posrange.PositionRange, node string, interval time.Duration) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %s range changed to %s", ChangedStepRangeWarning, node, interval),
 	}
 }
