@@ -30,6 +30,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
@@ -93,6 +94,7 @@ func DefaultOptions() *Options {
 		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
 		CompactionDelay:             time.Duration(0),
 		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
+		ReloadOnChange:              false,
 	}
 }
 
@@ -222,6 +224,9 @@ type Options struct {
 
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
+
+	// ReloadOnChange indicates whether the DB should reload blocks when the block layout changes.
+	ReloadOnChange bool
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -1079,6 +1084,30 @@ func (db *DB) run(ctx context.Context) {
 
 	backoff := time.Duration(0)
 
+	// check if reload on bool is on
+	// no forget else we need init a fsnotifier on db.dir
+	// now add the reloadBlocks call to the run loop
+
+	var watcher *fsnotify.Watcher
+	var watcherEvents <-chan fsnotify.Event
+	if db.opts.ReloadOnChange {
+		var err error
+		watcher, err = fsnotify.NewWatcher()
+		if err != nil {
+			db.logger.Error("failed to create fsnotify watcher", "err", err)
+		} else {
+			err = watcher.Add(db.dir)
+			if err != nil {
+				db.logger.Error("failed to add watcher to dir", "err", err)
+				watcher.Close()
+				watcher = nil
+			} else {
+				watcherEvents = watcher.Events
+				defer watcher.Close()
+			}
+		}
+	}
+
 	for {
 		select {
 		case <-db.stopc:
@@ -1098,8 +1127,25 @@ func (db *DB) run(ctx context.Context) {
 			case db.compactc <- struct{}{}:
 			default:
 			}
-			// We attempt mmapping of head chunks regularly.
 			db.head.mmapHeadChunks()
+		case ev, ok := <-watcherEvents:
+			if !ok {
+				continue
+			}
+			if ev.Op&fsnotify.Create == fsnotify.Create || ev.Op&fsnotify.Remove == fsnotify.Remove || ev.Op&fsnotify.Write == fsnotify.Write {
+				db.logger.Debug("filesystem event triggered reload", "op", ev.Op, "name", ev.Name)
+				db.cmtx.Lock()
+				if err := db.reloadBlocks(); err != nil {
+					db.logger.Error("reloadBlocks", "err", err)
+				}
+				db.cmtx.Unlock()
+
+				select {
+				case db.compactc <- struct{}{}:
+				default:
+				}
+				db.head.mmapHeadChunks()
+			}
 		case <-db.compactc:
 			db.metrics.compactionsTriggered.Inc()
 
