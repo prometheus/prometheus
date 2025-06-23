@@ -2086,11 +2086,11 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		case lt == parser.ValueTypeMatrix && rt == parser.ValueTypeScalar:
 			var allAnnos annotations.Annotations
 
-			valLHS, anons := ev.eval(ctx, e.LHS)
-			allAnnos.Merge(anons)
+			valLHS, annons := ev.eval(ctx, e.LHS)
+			allAnnos.Merge(annons)
 
-			valRHS, anons := ev.eval(ctx, e.RHS)
-			allAnnos.Merge(anons)
+			valRHS, annons := ev.eval(ctx, e.RHS)
+			allAnnos.Merge(annons)
 
 			valMatrix := valLHS.(Matrix)
 			valScalar := Scalar{V: valRHS.(Matrix)[0].Floats[0].F}
@@ -2105,11 +2105,11 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeMatrix:
 			var allAnnos annotations.Annotations
 
-			valLHS, anons := ev.eval(ctx, e.LHS)
-			allAnnos.Merge(anons)
+			valLHS, annons := ev.eval(ctx, e.LHS)
+			allAnnos.Merge(annons)
 
-			valRHS, anons := ev.eval(ctx, e.RHS)
-			allAnnos.Merge(anons)
+			valRHS, annons := ev.eval(ctx, e.RHS)
+			allAnnos.Merge(annons)
 
 			valMatrix := valRHS.(Matrix)
 			valScalar := Scalar{V: valLHS.(Matrix)[0].Floats[0].F}
