@@ -207,11 +207,21 @@ func (node *MatrixSelector) String() string {
 	vecSelector.Timestamp = nil
 	vecSelector.StartOrEnd = 0
 
+	extendedAttribute := ""
+	if vecSelector.Anchored {
+		extendedAttribute = " anchored"
+	} else if vecSelector.Smoothed {
+		extendedAttribute = " smoothed"
+	}
+	vecSelector.Anchored = false
+	vecSelector.Smoothed = false
+
 	rangeStr := model.Duration(node.Range).String()
 	if node.RangeExpr != nil {
 		rangeStr = node.RangeExpr.String()
 	}
-	str := fmt.Sprintf("%s[%s]%s%s", vecSelector.String(), rangeStr, at, offset)
+	fmt.Printf("vecSelector.String(): %s\n", vecSelector.String())
+	str := fmt.Sprintf("%s[%s]%s%s%s", vecSelector.String(), rangeStr, extendedAttribute, at, offset)
 
 	vecSelector.OriginalOffset, vecSelector.OriginalOffsetExpr, vecSelector.Timestamp, vecSelector.StartOrEnd = offsetVal, offsetExprVal, atVal, preproc
 
@@ -306,6 +316,12 @@ func (node *VectorSelector) String() string {
 		}
 		labelStrings = append(labelStrings, matcher.String())
 	}
+	extendedAttribute := ""
+	if node.Anchored {
+		extendedAttribute = " anchored"
+	} else if node.Smoothed {
+		extendedAttribute = " smoothed"
+	}
 	offset := ""
 	switch {
 	case node.OriginalOffsetExpr != nil:
@@ -326,8 +342,8 @@ func (node *VectorSelector) String() string {
 	}
 
 	if len(labelStrings) == 0 {
-		return fmt.Sprintf("%s%s%s", node.Name, at, offset)
+		return fmt.Sprintf("%s%s%s%s", node.Name, extendedAttribute, at, offset)
 	}
 	sort.Strings(labelStrings)
-	return fmt.Sprintf("%s{%s}%s%s", node.Name, strings.Join(labelStrings, ","), at, offset)
+	return fmt.Sprintf("%s{%s}%s%s%s", node.Name, strings.Join(labelStrings, ","), extendedAttribute, at, offset)
 }

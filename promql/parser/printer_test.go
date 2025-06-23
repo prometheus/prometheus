@@ -15,6 +15,7 @@ package parser
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -22,6 +23,10 @@ import (
 )
 
 func TestExprString(t *testing.T) {
+	EnableExtendedRangeSelectors = true
+	t.Cleanup(func() {
+		EnableExtendedRangeSelectors = false
+	})
 	// A list of valid expressions that are expected to be
 	// returned as out when calling String(). If out is empty the output
 	// is expected to equal the input.
@@ -167,6 +172,14 @@ func TestExprString(t *testing.T) {
 			in:  "1048576",
 			out: "1048576",
 		},
+		{
+			in:  "foo[5m] smoothed offset 40s",
+			out: "foo[5m] smoothed offset 40s",
+		},
+		{
+			in:  "foo[5m] offset 40s smoothed",
+			out: "foo[5m] smoothed offset 40s",
+		},
 	}
 
 	for _, test := range inputs {
@@ -179,6 +192,44 @@ func TestExprString(t *testing.T) {
 		}
 
 		require.Equal(t, exp, expr.String())
+	}
+}
+
+func TestMatrixSelector_String(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		ms       MatrixSelector
+		expected string
+	}{
+		{
+			name: "smoothed with range",
+			ms: MatrixSelector{
+				VectorSelector: &VectorSelector{
+					Name:     "foo",
+					Smoothed: true,
+				},
+				Range: 10 * time.Second,
+			},
+			expected: `foo[10s] smoothed`,
+		},
+		{
+			name: "smoothed with labels and range",
+			ms: MatrixSelector{
+				VectorSelector: &VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, "a", "x"),
+					},
+					Smoothed: true,
+				},
+				Range: 10 * time.Second,
+			},
+			expected: `foo{a="x"}[10s] smoothed`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, tc.ms.String())
+		})
 	}
 }
 
