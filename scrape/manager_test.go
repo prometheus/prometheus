@@ -632,10 +632,6 @@ func TestManagerDuplicateAfterRelabellingWarning(t *testing.T) {
 	configStr := `
 scrape_configs:
   - job_name: "jobOne"
-    scheme: https
-    metrics_path: /metrics
-    scrape_interval: 100ms
-    scrape_timeout: 100ms
     static_configs:
       - targets:
           - localhost:9000
@@ -646,10 +642,6 @@ scrape_configs:
         regex: "job|foo"
 
   - job_name: "jobTwo"
-    scheme: https
-    metrics_path: /metrics
-    scrape_interval: 100ms
-    scrape_timeout: 100ms
     static_configs:
       - targets:
           - localhost:9000
