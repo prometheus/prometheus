@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus/web/ui/mantine-ui/src/promql/tools
 
-go 1.23.0
+go 1.24.0
 
 require (
 	github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc
