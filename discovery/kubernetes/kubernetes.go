@@ -758,16 +758,16 @@ func (d *Discovery) newEndpointSlicesByNodeInformer(plw *cache.ListWatch, object
 	return d.mustNewSharedIndexInformer(plw, object, resyncDisabled, indexers)
 }
 
-func (d *Discovery) informerWatchErrorHandler(r *cache.Reflector, err error) {
+func (d *Discovery) informerWatchErrorHandler(ctx context.Context, r *cache.Reflector, err error) {
 	d.metrics.failuresCount.Inc()
-	cache.DefaultWatchErrorHandler(r, err)
+	cache.DefaultWatchErrorHandler(ctx, r, err)
 }
 
 func (d *Discovery) mustNewSharedInformer(lw cache.ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration) cache.SharedInformer {
 	informer := cache.NewSharedInformer(lw, exampleObject, defaultEventHandlerResyncPeriod)
-	// Invoking SetWatchErrorHandler should fail only if the informer has been started beforehand.
+	// Invoking SetWatchErrorHandlerWithContext should fail only if the informer has been started beforehand.
 	// Such a scenario would suggest an incorrect use of the API, thus the panic.
-	if err := informer.SetWatchErrorHandler(d.informerWatchErrorHandler); err != nil {
+	if err := informer.SetWatchErrorHandlerWithContext(d.informerWatchErrorHandler); err != nil {
 		panic(err)
 	}
 	return informer
@@ -775,9 +775,9 @@ func (d *Discovery) mustNewSharedInformer(lw cache.ListerWatcher, exampleObject 
 
 func (d *Discovery) mustNewSharedIndexInformer(lw cache.ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	informer := cache.NewSharedIndexInformer(lw, exampleObject, defaultEventHandlerResyncPeriod, indexers)
-	// Invoking SetWatchErrorHandler should fail only if the informer has been started beforehand.
+	// Invoking SetWatchErrorHandlerWithContext should fail only if the informer has been started beforehand.
 	// Such a scenario would suggest an incorrect use of the API, thus the panic.
-	if err := informer.SetWatchErrorHandler(d.informerWatchErrorHandler); err != nil {
+	if err := informer.SetWatchErrorHandlerWithContext(d.informerWatchErrorHandler); err != nil {
 		panic(err)
 	}
 	return informer
