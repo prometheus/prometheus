@@ -1060,11 +1060,6 @@ eval instant at 55s avg_over_time(metric8[1m])
 eval instant at 55s avg_over_time(metric9[1m])
   {} 3.225714285714286e+219
 
-# Interestingly, before PR #16569, this test failed with a result of
-# 3.225714285714286e+219, so the incremental calculation combined with
-# Kahan summation (in the improved way as introduced by PR #16569)
-# seems to be more accurate than the simple mean calculation with
-# Kahan summation.
 eval instant at 55s avg_over_time(metric10[1m])
   {} 2.5088888888888888e+219
 
