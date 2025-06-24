@@ -24,8 +24,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 )
 
@@ -115,7 +115,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 				return nil
 			}
 
-			createdLabels := make([]prompb.Label, len(lbls))
+			createdLabels := make([]labels.Label, len(lbls))
 			copy(createdLabels, lbls)
 			for i, l := range createdLabels {
 				if l.Name == model.MetricNameLabel {

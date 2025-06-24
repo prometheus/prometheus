@@ -28,7 +28,7 @@ import (
 	"go.uber.org/multierr"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/model/labels"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -170,10 +170,9 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 
 				promName := namer.Build(TranslatorMetricFromOtelMetric(metric))
 				c.metadata = append(c.metadata, writev2.Metadata{
-					Type:             otelMetricTypeToPromMetricType(metric),
-					MetricFamilyName: promName,
-					Help:             metric.Description(),
-					Unit:             metric.Unit(),
+					Type:    otelMetricTypeToPromMetricType(metric),
+					HelpRef: c.symbolTable.Symbolize(metric.Description()),
+					UnitRef: c.symbolTable.Symbolize(metric.Unit()),
 				})
 
 				// handle individual metrics based on type
@@ -273,7 +272,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	return annots, errs
 }
 
-func isSameMetric(ts *writev2.TimeSeries, lbls []prompb.Label) bool {
+func isSameMetric(ts *writev2.TimeSeries, lbls []labels.Label) bool {
 	if len(ts.Labels) != len(lbls) {
 		return false
 	}
@@ -320,7 +319,7 @@ func (c *PrometheusConverter) addExemplars(ctx context.Context, dataPoint pmetri
 // If there is no corresponding TimeSeries already, it's created.
 // The corresponding TimeSeries is returned.
 // If either lbls is nil/empty or sample is nil, nothing is done.
-func (c *PrometheusConverter) addSample(sample *writev2.Sample, lbls []prompb.Label) *writev2.TimeSeries {
+func (c *PrometheusConverter) addSample(sample *writev2.Sample, lbls []labels.Label) *writev2.TimeSeries {
 	if sample == nil || len(lbls) == 0 {
 		// This shouldn't happen
 		return nil
@@ -347,25 +346,25 @@ func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAtt
 }
 
 // promotedAttributes returns labels for promoted resourceAttributes.
-func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommon.Map) []prompb.Label {
+func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommon.Map) []labels.Label {
 	if s == nil {
 		return nil
 	}
 
-	var promotedAttrs []prompb.Label
+	var promotedAttrs []labels.Label
 	if s.promoteAll {
-		promotedAttrs = make([]prompb.Label, 0, resourceAttributes.Len())
+		promotedAttrs = make([]labels.Label, 0, resourceAttributes.Len())
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 			if _, exists := s.attrs[name]; !exists {
-				promotedAttrs = append(promotedAttrs, prompb.Label{Name: name, Value: value.AsString()})
+				promotedAttrs = append(promotedAttrs, labels.Label{Name: name, Value: value.AsString()})
 			}
 			return true
 		})
 	} else {
-		promotedAttrs = make([]prompb.Label, 0, len(s.attrs))
+		promotedAttrs = make([]labels.Label, 0, len(s.attrs))
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 			if _, exists := s.attrs[name]; exists {
-				promotedAttrs = append(promotedAttrs, prompb.Label{Name: name, Value: value.AsString()})
+				promotedAttrs = append(promotedAttrs, labels.Label{Name: name, Value: value.AsString()})
 			}
 			return true
 		})

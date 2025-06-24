@@ -26,7 +26,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
-	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/model/labels"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 )
 
@@ -62,7 +62,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*writev2.TimeSeries {
-				labels := []prompb.Label{
+				labels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
 				}
 				return map[uint64]*writev2.TimeSeries{
@@ -90,7 +90,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: true,
 			want: func() map[uint64]*writev2.TimeSeries {
-				labels := []prompb.Label{
+				labels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
 					{Name: "otel_scope_name", Value: defaultScope.name},
 					{Name: "otel_scope_schema_url", Value: defaultScope.schemaURL},
@@ -168,7 +168,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*writev2.TimeSeries {
-				labels := []prompb.Label{
+				labels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
 				}
 				return map[uint64]*writev2.TimeSeries{
@@ -197,7 +197,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: true,
 			want: func() map[uint64]*writev2.TimeSeries {
-				labels := []prompb.Label{
+				labels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
 					{Name: "otel_scope_name", Value: defaultScope.name},
 					{Name: "otel_scope_schema_url", Value: defaultScope.schemaURL},
@@ -233,7 +233,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*writev2.TimeSeries {
-				labels := []prompb.Label{
+				labels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
 				}
 				return map[uint64]*writev2.TimeSeries{
@@ -268,10 +268,10 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*writev2.TimeSeries {
-				labels := []prompb.Label{
+				labels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_sum"},
 				}
-				createdLabels := []prompb.Label{
+				createdLabels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_sum" + createdSuffix},
 				}
 				return map[uint64]*writev2.TimeSeries{
@@ -306,7 +306,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*writev2.TimeSeries {
-				labels := []prompb.Label{
+				labels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_sum"},
 				}
 				return map[uint64]*writev2.TimeSeries{
@@ -335,7 +335,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*writev2.TimeSeries {
-				labels := []prompb.Label{
+				labels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_sum"},
 				}
 				return map[uint64]*writev2.TimeSeries{

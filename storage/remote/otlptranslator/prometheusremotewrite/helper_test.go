@@ -27,7 +27,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/model/labels"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -72,14 +72,14 @@ func TestCreateAttributes(t *testing.T) {
 		promoteScope                 bool
 		ignoreResourceAttributes     []string
 		ignoreAttrs                  []string
-		expectedLabels               []prompb.Label
+		expectedLabels               []labels.Label
 	}{
 		{
 			name:                      "Successful conversion without resource attribute promotion and without scope promotion",
 			scope:                     defaultScope,
 			promoteResourceAttributes: nil,
 			promoteScope:              false,
-			expectedLabels: []prompb.Label{
+			expectedLabels: []labels.Label{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -107,7 +107,7 @@ func TestCreateAttributes(t *testing.T) {
 			scope:                     defaultScope,
 			promoteResourceAttributes: nil,
 			promoteScope:              true,
-			expectedLabels: []prompb.Label{
+			expectedLabels: []labels.Label{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -155,7 +155,7 @@ func TestCreateAttributes(t *testing.T) {
 			scope:                     scope{},
 			promoteResourceAttributes: nil,
 			promoteScope:              true,
-			expectedLabels: []prompb.Label{
+			expectedLabels: []labels.Label{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -184,7 +184,7 @@ func TestCreateAttributes(t *testing.T) {
 			promoteResourceAttributes: nil,
 			promoteScope:              true,
 			ignoreAttrs:               []string{"metric-attr-other"},
-			expectedLabels: []prompb.Label{
+			expectedLabels: []labels.Label{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -228,7 +228,7 @@ func TestCreateAttributes(t *testing.T) {
 			scope:                     defaultScope,
 			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr"},
 			promoteScope:              true,
-			expectedLabels: []prompb.Label{
+			expectedLabels: []labels.Label{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -280,7 +280,7 @@ func TestCreateAttributes(t *testing.T) {
 			scope:                     defaultScope,
 			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr", "metric-attr", "job", "instance"},
 			promoteScope:              true,
-			expectedLabels: []prompb.Label{
+			expectedLabels: []labels.Label{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -332,7 +332,7 @@ func TestCreateAttributes(t *testing.T) {
 			scope:                     defaultScope,
 			promoteResourceAttributes: []string{"existent-attr", "existent-attr"},
 			promoteScope:              true,
-			expectedLabels: []prompb.Label{
+			expectedLabels: []labels.Label{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -384,7 +384,7 @@ func TestCreateAttributes(t *testing.T) {
 			scope:                        defaultScope,
 			promoteAllResourceAttributes: true,
 			promoteScope:                 true,
-			expectedLabels: []prompb.Label{
+			expectedLabels: []labels.Label{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -447,7 +447,7 @@ func TestCreateAttributes(t *testing.T) {
 			ignoreResourceAttributes: []string{
 				"service.instance.id",
 			},
-			expectedLabels: []prompb.Label{
+			expectedLabels: []labels.Label{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -571,13 +571,13 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*writev2.TimeSeries {
-				countLabels := []prompb.Label{
+				countLabels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
 				}
-				sumLabels := []prompb.Label{
+				sumLabels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + sumStr},
 				}
-				createdLabels := []prompb.Label{
+				createdLabels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + createdSuffix},
 				}
 				return map[uint64]*writev2.TimeSeries{
@@ -618,7 +618,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: true,
 			want: func() map[uint64]*writev2.TimeSeries {
-				scopeLabels := []prompb.Label{
+				scopeLabels := []labels.Label{
 					{
 						Name:  "otel_scope_attr1",
 						Value: "value1",
@@ -640,13 +640,13 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 						Value: defaultScope.version,
 					},
 				}
-				countLabels := append([]prompb.Label{
+				countLabels := append([]labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
 				}, scopeLabels...)
-				sumLabels := append([]prompb.Label{
+				sumLabels := append([]labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + sumStr},
 				}, scopeLabels...)
-				createdLabels := append([]prompb.Label{
+				createdLabels := append([]labels.Label{
 					{
 						Name:  model.MetricNameLabel,
 						Value: "test_summary" + createdSuffix,
@@ -688,10 +688,10 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			},
 			promoteScope: false,
 			want: func() map[uint64]*writev2.TimeSeries {
-				countLabels := []prompb.Label{
+				countLabels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
 				}
-				sumLabels := []prompb.Label{
+				sumLabels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + sumStr},
 				}
 				return map[uint64]*writev2.TimeSeries{
@@ -771,13 +771,13 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*writev2.TimeSeries {
-				countLabels := []prompb.Label{
+				countLabels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist" + countStr},
 				}
-				createdLabels := []prompb.Label{
+				createdLabels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist" + createdSuffix},
 				}
-				infLabels := []prompb.Label{
+				infLabels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist_bucket"},
 					{Name: model.BucketLabel, Value: "+Inf"},
 				}
@@ -819,7 +819,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: true,
 			want: func() map[uint64]*writev2.TimeSeries {
-				scopeLabels := []prompb.Label{
+				scopeLabels := []labels.Label{
 					{
 						Name:  "otel_scope_attr1",
 						Value: "value1",
@@ -841,14 +841,14 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 						Value: defaultScope.version,
 					},
 				}
-				countLabels := append([]prompb.Label{
+				countLabels := append([]labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist" + countStr},
 				}, scopeLabels...)
-				infLabels := append([]prompb.Label{
+				infLabels := append([]labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist_bucket"},
 					{Name: model.BucketLabel, Value: "+Inf"},
 				}, scopeLabels...)
-				createdLabels := append([]prompb.Label{
+				createdLabels := append([]labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist" + createdSuffix},
 				}, scopeLabels...)
 				return map[uint64]*writev2.TimeSeries{
@@ -886,10 +886,10 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				return metric
 			},
 			want: func() map[uint64]*writev2.TimeSeries {
-				labels := []prompb.Label{
+				labels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist" + countStr},
 				}
-				infLabels := []prompb.Label{
+				infLabels := []labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist_bucket"},
 					{Name: model.BucketLabel, Value: "+Inf"},
 				}
