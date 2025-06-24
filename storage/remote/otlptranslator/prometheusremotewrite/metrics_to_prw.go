@@ -55,16 +55,18 @@ type Settings struct {
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
 type PrometheusConverter struct {
-	unique    map[uint64]*writev2.TimeSeries
-	conflicts map[uint64][]*writev2.TimeSeries
-	everyN    everyNTimes
-	metadata  []writev2.Metadata
+	unique      map[uint64]*writev2.TimeSeries
+	conflicts   map[uint64][]*writev2.TimeSeries
+	everyN      everyNTimes
+	metadata    []writev2.Metadata
+	symbolTable writev2.SymbolsTable
 }
 
 func NewPrometheusConverter() *PrometheusConverter {
 	return &PrometheusConverter{
-		unique:    map[uint64]*writev2.TimeSeries{},
-		conflicts: map[uint64][]*writev2.TimeSeries{},
+		unique:      map[uint64]*writev2.TimeSeries{},
+		conflicts:   map[uint64][]*writev2.TimeSeries{},
+		symbolTable: writev2.NewSymbolTable(),
 	}
 }
 
