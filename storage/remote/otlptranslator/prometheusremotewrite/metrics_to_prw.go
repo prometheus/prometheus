@@ -318,7 +318,7 @@ func (c *PrometheusConverter) addExemplars(ctx context.Context, dataPoint pmetri
 // If there is no corresponding TimeSeries already, it's created.
 // The corresponding TimeSeries is returned.
 // If either lbls is nil/empty or sample is nil, nothing is done.
-func (c *PrometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Label) *writev2.TimeSeries {
+func (c *PrometheusConverter) addSample(sample *writev2.Sample, lbls []prompb.Label) *writev2.TimeSeries {
 	if sample == nil || len(lbls) == 0 {
 		// This shouldn't happen
 		return nil

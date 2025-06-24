@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 )
 
 func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
@@ -47,7 +48,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 			model.MetricNameLabel,
 			name,
 		)
-		sample := &prompb.Sample{
+		sample := &writev2.Sample{
 			// convert ns to ms
 			Timestamp: convertTimeStamp(pt.Timestamp()),
 		}
@@ -85,7 +86,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			model.MetricNameLabel,
 			name,
 		)
-		sample := &prompb.Sample{
+		sample := &writev2.Sample{
 			// convert ns to ms
 			Timestamp: convertTimeStamp(pt.Timestamp()),
 		}

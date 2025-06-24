@@ -583,19 +583,19 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(countLabels): {
 						Labels: countLabels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(sumLabels): {
 						Labels: sumLabels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(createdLabels): {
 						Labels: createdLabels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
 						},
 					},
@@ -655,19 +655,19 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(countLabels): {
 						Labels: countLabels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(sumLabels): {
 						Labels: sumLabels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(createdLabels): {
 						Labels: createdLabels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
 						},
 					},
@@ -697,13 +697,13 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(countLabels): {
 						Labels: countLabels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(sumLabels): {
 						Labels: sumLabels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
@@ -784,19 +784,19 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(countLabels): {
 						Labels: countLabels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(infLabels): {
 						Labels: infLabels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(createdLabels): {
 						Labels: createdLabels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
 						},
 					},
@@ -854,19 +854,19 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(countLabels): {
 						Labels: countLabels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(infLabels): {
 						Labels: infLabels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(createdLabels): {
 						Labels: createdLabels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
 						},
 					},
@@ -896,13 +896,13 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(infLabels): {
 						Labels: infLabels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},

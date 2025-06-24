@@ -68,7 +68,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{
 								Value:     1,
 								Timestamp: convertTimeStamp(pcommon.Timestamp(ts)),
@@ -101,7 +101,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{
 								Value:     1,
 								Timestamp: convertTimeStamp(pcommon.Timestamp(ts)),
@@ -174,7 +174,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{
 								Value:     1,
 								Timestamp: convertTimeStamp(ts),
@@ -208,7 +208,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{
 								Value:     1,
 								Timestamp: convertTimeStamp(ts),
@@ -239,7 +239,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{{
+						Samples: []writev2.Sample{{
 							Value:     1,
 							Timestamp: convertTimeStamp(ts),
 						}},
@@ -277,13 +277,13 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: 1, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(createdLabels): {
 						Labels: createdLabels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
 						},
 					},
@@ -312,7 +312,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
@@ -341,7 +341,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},

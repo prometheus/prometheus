@@ -275,7 +275,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		// omitted
 		if pt.HasSum() {
 			// treat sum as a sample in an individual TimeSeries
-			sum := &prompb.Sample{
+			sum := &writev2.Sample{
 				Value:     pt.Sum(),
 				Timestamp: timestamp,
 			}
@@ -288,7 +288,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		}
 
 		// treat count as a sample in an individual TimeSeries
-		count := &prompb.Sample{
+		count := &writev2.Sample{
 			Value:     float64(pt.Count()),
 			Timestamp: timestamp,
 		}
@@ -312,7 +312,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 
 			bound := pt.ExplicitBounds().At(i)
 			cumulativeCount += pt.BucketCounts().At(i)
-			bucket := &prompb.Sample{
+			bucket := &writev2.Sample{
 				Value:     float64(cumulativeCount),
 				Timestamp: timestamp,
 			}
@@ -326,7 +326,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: bound})
 		}
 		// add le=+Inf bucket
-		infBucket := &prompb.Sample{
+		infBucket := &writev2.Sample{
 			Timestamp: timestamp,
 		}
 		if pt.Flags().NoRecordedValue() {
@@ -472,7 +472,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
 		// treat sum as a sample in an individual TimeSeries
-		sum := &prompb.Sample{
+		sum := &writev2.Sample{
 			Value:     pt.Sum(),
 			Timestamp: timestamp,
 		}
@@ -484,7 +484,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		c.addSample(sum, sumlabels)
 
 		// treat count as a sample in an individual TimeSeries
-		count := &prompb.Sample{
+		count := &writev2.Sample{
 			Value:     float64(pt.Count()),
 			Timestamp: timestamp,
 		}
@@ -497,7 +497,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		// process each percentile/quantile
 		for i := 0; i < pt.QuantileValues().Len(); i++ {
 			qt := pt.QuantileValues().At(i)
-			quantile := &prompb.Sample{
+			quantile := &writev2.Sample{
 				Value:     qt.Value(),
 				Timestamp: timestamp,
 			}
@@ -578,7 +578,7 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls []prompb.Label) (*write
 func (c *PrometheusConverter) addTimeSeriesIfNeeded(lbls []prompb.Label, startTimestamp, timestamp pcommon.Timestamp) {
 	ts, created := c.getOrCreateTimeSeries(lbls)
 	if created {
-		ts.Samples = []prompb.Sample{
+		ts.Samples = []writev2.Sample{
 			{
 				// convert ns to ms
 				Value:     float64(convertTimeStamp(startTimestamp)),
@@ -636,7 +636,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		return
 	}
 
-	sample := &prompb.Sample{
+	sample := &writev2.Sample{
 		Value: float64(1),
 		// convert ns to ms
 		Timestamp: convertTimeStamp(timestamp),
