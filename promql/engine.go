@@ -2998,6 +2998,7 @@ type groupedAggregation struct {
 	hasHistogram           bool // Has at least 1 histogram sample aggregated.
 	incompatibleHistograms bool // If true, group has seen mixed exponential and custom buckets, or incompatible custom buckets.
 	groupAggrComplete      bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group.
+	incrementalMean        bool // True after reverting to incremental calculation of the mean value.
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.
@@ -3096,21 +3097,38 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			}
 
 		case parser.AVG:
-			// For the average calculation, we use incremental mean
-			// calculation. In particular in combination with Kahan
-			// summation (which we do for floats, but not yet for
-			// histograms, see issue #14105), this is quite accurate
-			// and only breaks in extreme cases (see testdata for
-			// avg_over_time). One might assume that simple direct
-			// mean calculation works better in some cases, but so
-			// far, our conclusion is that we fare best with the
-			// incremental approach plus Kahan summation (for
-			// floats). For a relevant discussion, see
+			// For the average calculation of histograms, we use
+			// incremental mean calculation without the help of
+			// Kahan summation (but this should change, see
+			// https://github.com/prometheus/prometheus/issues/14105
+			// ). For floats, we improve the accuracy with the help
+			// of Kahan summation. For a while, we assumed that
+			// incremental mean calculation combined with Kahan
+			// summation (see
 			// https://stackoverflow.com/questions/61665473/is-it-beneficial-for-precision-to-calculate-the-incremental-mean-average
-			// Additional note: For even better numerical accuracy,
-			// we would need to process the values in a particular
-			// order, but that would be very hard to implement given
-			// how the PromQL engine works.
+			// for inspiration) is generally the preferred solution.
+			// However, it then turned out that direct mean
+			// calculation (still in combination with Kahan
+			// summation) is often more accurate. See discussion in
+			// https://github.com/prometheus/prometheus/issues/16714
+			// . The problem with the direct mean calculation is
+			// that it can overflow float64 for inputs on which the
+			// incremental mean calculation works just fine. Our
+			// current approach is therefore to use direct mean
+			// calculation as long as we do not overflow (or
+			// underflow) the running sum. Once the latter would
+			// happen, we switch to incremental mean calculation.
+			// This seems to work reasonably well, but note that a
+			// deeper understanding would be needed to find out if
+			// maybe an earlier switch to incremental mean
+			// calculation would be better in terms of accuracy.
+			// Also, we could apply a number of additional means to
+			// improve the accuracy, like processing the values in a
+			// particular order. For now, we decided that the
+			// current implementation is accurate enough for
+			// practical purposes, in particular given that changing
+			// the order of summation would be hard, given how the
+			// PromQL engine implements aggregations.
 			group.groupCount++
 			if h != nil {
 				group.hasHistogram = true
@@ -3135,6 +3153,22 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
+				if !group.incrementalMean {
+					newV, newC := kahanSumInc(f, group.floatValue, group.floatKahanC)
+					if !math.IsInf(newV, 0) {
+						// The sum doesn't overflow, so we propagate it to the
+						// group struct and continue with the regular
+						// calculation of the mean value.
+						group.floatValue, group.floatKahanC = newV, newC
+						break
+					}
+					// If we are here, we know that the sum _would_ overflow. So
+					// instead of continue to sum up, we revert to incremental
+					// calculation of the mean value from here on.
+					group.incrementalMean = true
+					group.floatMean = group.floatValue / (group.groupCount - 1)
+					group.floatKahanC /= group.groupCount - 1
+				}
 				q := (group.groupCount - 1) / group.groupCount
 				group.floatMean, group.floatKahanC = kahanSumInc(
 					f/group.groupCount,
@@ -3212,8 +3246,10 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				continue
 			case aggr.hasHistogram:
 				aggr.histogramValue = aggr.histogramValue.Compact(0)
-			default:
+			case aggr.incrementalMean:
 				aggr.floatValue = aggr.floatMean + aggr.floatKahanC
+			default:
+				aggr.floatValue = aggr.floatValue/aggr.groupCount + aggr.floatKahanC/aggr.groupCount
 			}
 
 		case parser.COUNT:
