@@ -602,7 +602,7 @@ func createPromNHCBSeries(name string, hint writev2.Histogram_ResetHint, ts time
 				Schema:        -53,
 				ZeroThreshold: 0,
 				ZeroCount:     nil,
-				PositiveSpans: []prompb.BucketSpan{
+				PositiveSpans: []writev2.BucketSpan{
 					{
 						Length: 3,
 					},

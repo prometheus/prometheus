@@ -33,7 +33,7 @@ import (
 )
 
 type expectedBucketLayout struct {
-	wantSpans  []prompb.BucketSpan
+	wantSpans  []writev2.BucketSpan
 	wantDeltas []int64
 }
 
@@ -53,7 +53,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 			},
 			wantLayout: map[int32]expectedBucketLayout{
 				0: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 1,
 							Length: 4,
@@ -62,7 +62,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{4, -1, -1, -1},
 				},
 				1: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 1,
 							Length: 2,
@@ -72,7 +72,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{7, -4},
 				},
 				2: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 1,
 							Length: 1,
@@ -93,7 +93,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 			},
 			wantLayout: map[int32]expectedBucketLayout{
 				0: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 2,
 							Length: 4,
@@ -102,7 +102,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{4, -1, -1, -1},
 				},
 				1: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 1,
 							Length: 3,
@@ -111,7 +111,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{4, 1, -4}, // 0+4, 3+2, 1+0 = 4, 5, 1
 				},
 				2: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 1,
 							Length: 2,
@@ -131,7 +131,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 			},
 			wantLayout: map[int32]expectedBucketLayout{
 				0: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 5,
 							Length: 4,
@@ -144,7 +144,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{4, -2, -2, 2, -1},
 				},
 				1: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 3,
 							Length: 2,
@@ -159,7 +159,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{6, -4, -1},
 				},
 				2: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 2,
 							Length: 1,
@@ -186,7 +186,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 			},
 			wantLayout: map[int32]expectedBucketLayout{
 				0: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 5,
 							Length: 4,
@@ -199,7 +199,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{4, -2, -2, 2, -1},
 				},
 				1: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 3,
 							Length: 2,
@@ -214,7 +214,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{6, -4, -1},
 				},
 				2: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 2,
 							Length: 4,
@@ -237,7 +237,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 			},
 			wantLayout: map[int32]expectedBucketLayout{
 				0: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: -1,
 							Length: 2,
@@ -250,7 +250,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{3, -2, 0},
 				},
 				1: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 0,
 							Length: 3,
@@ -261,7 +261,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{4, -4, 1},
 				},
 				2: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 0,
 							Length: 2,
@@ -283,7 +283,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 			},
 			wantLayout: map[int32]expectedBucketLayout{
 				0: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: -1,
 							Length: 6,
@@ -292,7 +292,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{3, -2, -1, 1, -1, 1},
 				},
 				1: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 0,
 							Length: 3,
@@ -303,7 +303,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{4, -3, 0},
 				},
 				2: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 0,
 							Length: 2,
@@ -325,7 +325,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 			},
 			wantLayout: map[int32]expectedBucketLayout{
 				0: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: -1,
 							Length: 7,
@@ -334,7 +334,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{3, -3, 0, 1, -1, 0, 1},
 				},
 				1: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 0,
 							Length: 4,
@@ -345,7 +345,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{3, -2, -1, 1},
 				},
 				2: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []writev2.BucketSpan{
 						{
 							Offset: 0,
 							Length: 3,
@@ -448,9 +448,9 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 					Schema:         1,
 					ZeroThreshold:  defaultZeroThreshold,
 					ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 1},
-					NegativeSpans:  []prompb.BucketSpan{{Offset: 2, Length: 2}},
+					NegativeSpans:  []writev2.BucketSpan{{Offset: 2, Length: 2}},
 					NegativeDeltas: []int64{1, 0},
-					PositiveSpans:  []prompb.BucketSpan{{Offset: 2, Length: 2}},
+					PositiveSpans:  []writev2.BucketSpan{{Offset: 2, Length: 2}},
 					PositiveDeltas: []int64{1, 0},
 					Timestamp:      500,
 				}
@@ -481,9 +481,9 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 					Schema:         1,
 					ZeroThreshold:  defaultZeroThreshold,
 					ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 1},
-					NegativeSpans:  []prompb.BucketSpan{{Offset: 2, Length: 2}},
+					NegativeSpans:  []writev2.BucketSpan{{Offset: 2, Length: 2}},
 					NegativeDeltas: []int64{1, 0},
-					PositiveSpans:  []prompb.BucketSpan{{Offset: 2, Length: 2}},
+					PositiveSpans:  []writev2.BucketSpan{{Offset: 2, Length: 2}},
 					PositiveDeltas: []int64{1, 0},
 					Timestamp:      500,
 				}
@@ -523,9 +523,9 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 					Schema:         8,
 					ZeroThreshold:  defaultZeroThreshold,
 					ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 1},
-					PositiveSpans:  []prompb.BucketSpan{{Offset: 2, Length: 3}},
+					PositiveSpans:  []writev2.BucketSpan{{Offset: 2, Length: 3}},
 					PositiveDeltas: []int64{1, 0, 0}, // 1, 1, 1
-					NegativeSpans:  []prompb.BucketSpan{{Offset: 3, Length: 3}},
+					NegativeSpans:  []writev2.BucketSpan{{Offset: 3, Length: 3}},
 					NegativeDeltas: []int64{1, 0, 0}, // 1, 1, 1
 					Timestamp:      500,
 				}
@@ -555,9 +555,9 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 					Schema:         8,
 					ZeroThreshold:  defaultZeroThreshold,
 					ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 1},
-					PositiveSpans:  []prompb.BucketSpan{{Offset: 1, Length: 2}},
+					PositiveSpans:  []writev2.BucketSpan{{Offset: 1, Length: 2}},
 					PositiveDeltas: []int64{1, 1}, // 0+1, 1+1 = 1, 2
-					NegativeSpans:  []prompb.BucketSpan{{Offset: 2, Length: 2}},
+					NegativeSpans:  []writev2.BucketSpan{{Offset: 2, Length: 2}},
 					NegativeDeltas: []int64{2, -1}, // 1+1, 1+0 = 2, 1
 					Timestamp:      500,
 				}
@@ -681,7 +681,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 								Schema:         1,
 								ZeroThreshold:  defaultZeroThreshold,
 								ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 0},
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
+								PositiveSpans:  []writev2.BucketSpan{{Offset: 0, Length: 2}},
 								PositiveDeltas: []int64{4, -2},
 							},
 							{
@@ -689,7 +689,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 								Schema:         1,
 								ZeroThreshold:  defaultZeroThreshold,
 								ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 0},
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
+								PositiveSpans:  []writev2.BucketSpan{{Offset: 0, Length: 3}},
 								PositiveDeltas: []int64{4, -2, -1},
 							},
 						},
@@ -747,7 +747,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 								Schema:         1,
 								ZeroThreshold:  defaultZeroThreshold,
 								ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 0},
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
+								PositiveSpans:  []writev2.BucketSpan{{Offset: 0, Length: 2}},
 								PositiveDeltas: []int64{4, -2},
 							},
 							{
@@ -755,7 +755,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 								Schema:         1,
 								ZeroThreshold:  defaultZeroThreshold,
 								ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 0},
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
+								PositiveSpans:  []writev2.BucketSpan{{Offset: 0, Length: 3}},
 								PositiveDeltas: []int64{4, -2, -1},
 							},
 						},
@@ -813,7 +813,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 								Schema:         1,
 								ZeroThreshold:  defaultZeroThreshold,
 								ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 0},
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
+								PositiveSpans:  []writev2.BucketSpan{{Offset: 0, Length: 2}},
 								PositiveDeltas: []int64{4, -2},
 							},
 						},
@@ -829,7 +829,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 								Schema:         1,
 								ZeroThreshold:  defaultZeroThreshold,
 								ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 0},
-								NegativeSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
+								NegativeSpans:  []writev2.BucketSpan{{Offset: 0, Length: 3}},
 								NegativeDeltas: []int64{4, -2, -1},
 							},
 						},
@@ -880,7 +880,7 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 			name:    "zero offset",
 			buckets: []uint64{4, 3, 2, 1},
 			wantLayout: expectedBucketLayout{
-				wantSpans: []prompb.BucketSpan{
+				wantSpans: []writev2.BucketSpan{
 					{
 						Offset: 0,
 						Length: 4,
@@ -893,7 +893,7 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 			name:    "leading empty buckets",
 			buckets: []uint64{0, 0, 1, 1, 2, 3},
 			wantLayout: expectedBucketLayout{
-				wantSpans: []prompb.BucketSpan{
+				wantSpans: []writev2.BucketSpan{
 					{
 						Offset: 2,
 						Length: 4,
@@ -906,7 +906,7 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 			name:    "trailing empty buckets",
 			buckets: []uint64{0, 0, 1, 1, 2, 3, 0, 0}, // TODO: add tests for 3 trailing buckets
 			wantLayout: expectedBucketLayout{
-				wantSpans: []prompb.BucketSpan{
+				wantSpans: []writev2.BucketSpan{
 					{
 						Offset: 2,
 						Length: 6,
@@ -919,7 +919,7 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 			name:    "bucket gap of 2",
 			buckets: []uint64{1, 2, 0, 0, 2},
 			wantLayout: expectedBucketLayout{
-				wantSpans: []prompb.BucketSpan{
+				wantSpans: []writev2.BucketSpan{
 					{
 						Offset: 0,
 						Length: 5,
@@ -932,7 +932,7 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 			name:    "bucket gap > 2",
 			buckets: []uint64{1, 2, 0, 0, 0, 2, 4, 4},
 			wantLayout: expectedBucketLayout{
-				wantSpans: []prompb.BucketSpan{
+				wantSpans: []writev2.BucketSpan{
 					{
 						Offset: 0,
 						Length: 2,
@@ -949,7 +949,7 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 			name:    "multiple bucket gaps",
 			buckets: []uint64{0, 0, 1, 2, 0, 0, 0, 2, 4, 4, 0, 0},
 			wantLayout: expectedBucketLayout{
-				wantSpans: []prompb.BucketSpan{
+				wantSpans: []writev2.BucketSpan{
 					{
 						Offset: 2,
 						Length: 2,
@@ -1029,7 +1029,7 @@ func TestHistogramToCustomBucketsHistogram(t *testing.T) {
 					Count:          &writev2.Histogram_CountInt{CountInt: 2},
 					Sum:            10.1,
 					Schema:         -53,
-					PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
+					PositiveSpans:  []writev2.BucketSpan{{Offset: 0, Length: 2}},
 					PositiveDeltas: []int64{1, 0},
 					CustomValues:   []float64{0, 1},
 					Timestamp:      500,
@@ -1052,7 +1052,7 @@ func TestHistogramToCustomBucketsHistogram(t *testing.T) {
 				return writev2.Histogram{
 					Count:          &writev2.Histogram_CountInt{CountInt: 4},
 					Schema:         -53,
-					PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
+					PositiveSpans:  []writev2.BucketSpan{{Offset: 0, Length: 2}},
 					PositiveDeltas: []int64{2, 0},
 					CustomValues:   []float64{0, 1},
 					Timestamp:      500,
@@ -1137,7 +1137,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 								Count:          &writev2.Histogram_CountInt{CountInt: 3},
 								Sum:            3,
 								Schema:         -53,
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
+								PositiveSpans:  []writev2.BucketSpan{{Offset: 0, Length: 3}},
 								PositiveDeltas: []int64{2, -2, 1},
 								CustomValues:   []float64{5, 10},
 							},
@@ -1145,7 +1145,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 								Count:          &writev2.Histogram_CountInt{CountInt: 11},
 								Sum:            5,
 								Schema:         -53,
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
+								PositiveSpans:  []writev2.BucketSpan{{Offset: 0, Length: 3}},
 								PositiveDeltas: []int64{3, 5, -8},
 								CustomValues:   []float64{0, 1},
 							},
@@ -1203,7 +1203,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 								Count:          &writev2.Histogram_CountInt{CountInt: 3},
 								Sum:            3,
 								Schema:         -53,
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
+								PositiveSpans:  []writev2.BucketSpan{{Offset: 0, Length: 3}},
 								PositiveDeltas: []int64{2, -2, 1},
 								CustomValues:   []float64{5, 10},
 							},
@@ -1211,7 +1211,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 								Count:          &writev2.Histogram_CountInt{CountInt: 11},
 								Sum:            5,
 								Schema:         -53,
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
+								PositiveSpans:  []writev2.BucketSpan{{Offset: 0, Length: 3}},
 								PositiveDeltas: []int64{3, 5, -8},
 								CustomValues:   []float64{0, 1},
 							},
@@ -1269,7 +1269,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 								Count:          &writev2.Histogram_CountInt{CountInt: 6},
 								Sum:            3,
 								Schema:         -53,
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
+								PositiveSpans:  []writev2.BucketSpan{{Offset: 0, Length: 2}},
 								PositiveDeltas: []int64{4, -2},
 								CustomValues:   []float64{0, 1},
 							},
@@ -1285,7 +1285,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 								Count:          &writev2.Histogram_CountInt{CountInt: 11},
 								Sum:            5,
 								Schema:         -53,
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
+								PositiveSpans:  []writev2.BucketSpan{{Offset: 0, Length: 2}},
 								PositiveDeltas: []int64{3, 5},
 								CustomValues:   []float64{0, 1},
 							},

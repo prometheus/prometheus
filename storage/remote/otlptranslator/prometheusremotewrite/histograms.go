@@ -27,7 +27,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -165,13 +164,13 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, tempo
 //
 // When converting from OTel Explicit Histograms to Native Histograms with Custom Buckets,
 // the bucket indexes are not scaled, and the indices are not adjusted by 1.
-func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjustOffset bool) ([]prompb.BucketSpan, []int64) {
+func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjustOffset bool) ([]writev2.BucketSpan, []int64) {
 	if len(bucketCounts) == 0 {
 		return nil, nil
 	}
 
 	var (
-		spans     []prompb.BucketSpan
+		spans     []writev2.BucketSpan
 		deltas    []int64
 		count     int64
 		prevCount int64
@@ -194,7 +193,7 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 		initialOffset = initialOffset>>scaleDown + 1
 	}
 
-	spans = append(spans, prompb.BucketSpan{
+	spans = append(spans, writev2.BucketSpan{
 		Offset: initialOffset,
 		Length: 0,
 	})
@@ -215,7 +214,7 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 			// We have to create a new span, because we have found a gap
 			// of more than two buckets. The constant 2 is copied from the logic in
 			// https://github.com/prometheus/client_golang/blob/27f0506d6ebbb117b6b697d0552ee5be2502c5f2/prometheus/histogram.go#L1296
-			spans = append(spans, prompb.BucketSpan{
+			spans = append(spans, writev2.BucketSpan{
 				Offset: gap,
 				Length: 0,
 			})
@@ -237,7 +236,7 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 		// We have to create a new span, because we have found a gap
 		// of more than two buckets. The constant 2 is copied from the logic in
 		// https://github.com/prometheus/client_golang/blob/27f0506d6ebbb117b6b697d0552ee5be2502c5f2/prometheus/histogram.go#L1296
-		spans = append(spans, prompb.BucketSpan{
+		spans = append(spans, writev2.BucketSpan{
 			Offset: gap,
 			Length: 0,
 		})
