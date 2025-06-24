@@ -58,7 +58,7 @@ type PrometheusConverter struct {
 	unique    map[uint64]*writev2.TimeSeries
 	conflicts map[uint64][]*writev2.TimeSeries
 	everyN    everyNTimes
-	metadata  []prompb.MetricMetadata
+	metadata  []writev2.Metadata
 }
 
 func NewPrometheusConverter() *PrometheusConverter {
@@ -127,7 +127,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 			numMetrics += scopeMetricsSlice.At(j).Metrics().Len()
 		}
 	}
-	c.metadata = make([]prompb.MetricMetadata, 0, numMetrics)
+	c.metadata = make([]writev2.Metadata, 0, numMetrics)
 
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
@@ -167,7 +167,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				}
 
 				promName := namer.Build(TranslatorMetricFromOtelMetric(metric))
-				c.metadata = append(c.metadata, prompb.MetricMetadata{
+				c.metadata = append(c.metadata, writev2.Metadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
 					MetricFamilyName: promName,
 					Help:             metric.Description(),

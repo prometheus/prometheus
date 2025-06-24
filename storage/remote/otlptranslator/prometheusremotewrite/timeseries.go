@@ -18,7 +18,6 @@
 package prometheusremotewrite
 
 import (
-	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 )
 
@@ -42,6 +41,6 @@ func (c *PrometheusConverter) TimeSeries() []writev2.TimeSeries {
 }
 
 // Metadata returns a slice of the prompb.Metadata that were converted from OTel format.
-func (c *PrometheusConverter) Metadata() []prompb.MetricMetadata {
+func (c *PrometheusConverter) Metadata() []writev2.Metadata {
 	return c.metadata
 }
