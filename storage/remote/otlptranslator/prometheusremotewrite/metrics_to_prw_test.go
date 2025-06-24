@@ -515,7 +515,7 @@ func createOtelSum(name string, temporality pmetric.AggregationTemporality, ts t
 
 func createPromFloatSeries(name string, ts time.Time) writev2.TimeSeries {
 	return writev2.TimeSeries{
-		Labels: []labels.Label{
+		Labels: labels.Labels{
 			{Name: "__name__", Value: name},
 			{Name: "test_label", Value: "test_value"},
 		},
@@ -554,7 +554,7 @@ func createOtelExponentialHistogram(name string, temporality pmetric.Aggregation
 
 func createPromNativeHistogramSeries(name string, hint writev2.Histogram_ResetHint, ts time.Time) writev2.TimeSeries {
 	return writev2.TimeSeries{
-		Labels: []labels.Label{
+		Labels: labels.Labels{
 			{Name: "__name__", Value: name},
 			{Name: "test_label", Value: "test_value"},
 		},
@@ -590,7 +590,7 @@ func createOtelExplicitHistogram(name string, temporality pmetric.AggregationTem
 
 func createPromNHCBSeries(name string, hint writev2.Histogram_ResetHint, ts time.Time) writev2.TimeSeries {
 	return writev2.TimeSeries{
-		Labels: []labels.Label{
+		Labels: labels.Labels{
 			{Name: "__name__", Value: name},
 			{Name: "test_label", Value: "test_value"},
 		},
@@ -618,7 +618,7 @@ func createPromNHCBSeries(name string, hint writev2.Histogram_ResetHint, ts time
 func createPromClassicHistogramSeries(name string, ts time.Time) []writev2.TimeSeries {
 	return []writev2.TimeSeries{
 		{
-			Labels: []labels.Label{
+			Labels: labels.Labels{
 				{Name: "__name__", Value: name + "_bucket"},
 				{Name: "le", Value: "1"},
 				{Name: "test_label", Value: "test_value"},
@@ -626,7 +626,7 @@ func createPromClassicHistogramSeries(name string, ts time.Time) []writev2.TimeS
 			Samples: []writev2.Sample{{Value: 10, Timestamp: ts.UnixMilli()}},
 		},
 		{
-			Labels: []labels.Label{
+			Labels: labels.Labels{
 				{Name: "__name__", Value: name + "_bucket"},
 				{Name: "le", Value: "2"},
 				{Name: "test_label", Value: "test_value"},
@@ -634,7 +634,7 @@ func createPromClassicHistogramSeries(name string, ts time.Time) []writev2.TimeS
 			Samples: []writev2.Sample{{Value: 20, Timestamp: ts.UnixMilli()}},
 		},
 		{
-			Labels: []labels.Label{
+			Labels: labels.Labels{
 				{Name: "__name__", Value: name + "_bucket"},
 				{Name: "le", Value: "+Inf"},
 				{Name: "test_label", Value: "test_value"},
@@ -642,14 +642,14 @@ func createPromClassicHistogramSeries(name string, ts time.Time) []writev2.TimeS
 			Samples: []writev2.Sample{{Value: 20, Timestamp: ts.UnixMilli()}},
 		},
 		{
-			Labels: []labels.Label{
+			Labels: labels.Labels{
 				{Name: "__name__", Value: name + "_count"},
 				{Name: "test_label", Value: "test_value"},
 			},
 			Samples: []writev2.Sample{{Value: 20, Timestamp: ts.UnixMilli()}},
 		},
 		{
-			Labels: []labels.Label{
+			Labels: labels.Labels{
 				{Name: "__name__", Value: name + "_sum"},
 				{Name: "test_label", Value: "test_value"},
 			},
@@ -677,7 +677,7 @@ func createOtelSummary(name string, ts time.Time) pmetric.Metric {
 func createPromSummarySeries(name string, ts time.Time) []writev2.TimeSeries {
 	return []writev2.TimeSeries{
 		{
-			Labels: []labels.Label{
+			Labels: labels.Labels{
 				{Name: "__name__", Value: name + "_sum"},
 				{Name: "test_label", Value: "test_value"},
 			},
@@ -687,7 +687,7 @@ func createPromSummarySeries(name string, ts time.Time) []writev2.TimeSeries {
 			}},
 		},
 		{
-			Labels: []labels.Label{
+			Labels: labels.Labels{
 				{Name: "__name__", Value: name + "_count"},
 				{Name: "test_label", Value: "test_value"},
 			},
@@ -697,7 +697,7 @@ func createPromSummarySeries(name string, ts time.Time) []writev2.TimeSeries {
 			}},
 		},
 		{
-			Labels: []labels.Label{
+			Labels: labels.Labels{
 				{Name: "__name__", Value: name},
 				{Name: "quantile", Value: "0.5"},
 				{Name: "test_label", Value: "test_value"},

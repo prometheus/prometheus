@@ -27,7 +27,6 @@ import (
 	"strconv"
 	"unicode/utf8"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -72,53 +71,13 @@ func (m byBucketBoundsData) Len() int           { return len(m) }
 func (m byBucketBoundsData) Less(i, j int) bool { return m[i].bound < m[j].bound }
 func (m byBucketBoundsData) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 
-// ByLabelName enables the usage of sort.Sort() with a slice of labels.
-type ByLabelName []labels.Label
-
-func (a ByLabelName) Len() int           { return len(a) }
-func (a ByLabelName) Less(i, j int) bool { return a[i].Name < a[j].Name }
-func (a ByLabelName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-
-// timeSeriesSignature returns a hashed label set signature.
-// The label slice should not contain duplicate label names; this method sorts the slice by label name before creating
-// the signature.
-// The algorithm is the same as in Prometheus' labels.StableHash function.
-func timeSeriesSignature(labels []labels.Label) uint64 {
-	sort.Sort(ByLabelName(labels))
-
-	// Use xxhash.Sum64(b) for fast path as it's faster.
-	b := make([]byte, 0, 1024)
-	for i, v := range labels {
-		if len(b)+len(v.Name)+len(v.Value)+2 >= cap(b) {
-			// If labels entry is 1KB+ do not allocate whole entry.
-			h := xxhash.New()
-			_, _ = h.Write(b)
-			for _, v := range labels[i:] {
-				_, _ = h.WriteString(v.Name)
-				_, _ = h.Write(seps)
-				_, _ = h.WriteString(v.Value)
-				_, _ = h.Write(seps)
-			}
-			return h.Sum64()
-		}
-
-		b = append(b, v.Name...)
-		b = append(b, seps[0])
-		b = append(b, v.Value...)
-		b = append(b, seps[0])
-	}
-	return xxhash.Sum64(b)
-}
-
-var seps = []byte{'\xff'}
-
 // createAttributes creates a slice of Prometheus Labels with OTLP attributes and pairs of string values.
 // Unpaired string values are ignored. String pairs overwrite OTLP labels if collisions happen and
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
 func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope scope, settings Settings,
 	ignoreAttrs []string, logOnOverwrite bool, extras ...string,
-) []labels.Label {
+) labels.Labels {
 	resourceAttrs := resource.Attributes()
 	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
 	instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
@@ -143,7 +102,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 
 	// Ensure attributes are sorted by key for consistent merging of keys which
 	// collide when sanitized.
-	labels := make([]labels.Label, 0, maxLabelCount)
+	labels := make(labels.Labels, 0, maxLabelCount)
 	// XXX: Should we always drop service namespace/service name/service instance ID from the labels
 	// (as they get mapped to other Prometheus labels)?
 	attributes.Range(func(key string, value pcommon.Value) bool {
@@ -399,7 +358,7 @@ func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, 
 		}
 
 		attrs := exemplar.FilteredAttributes()
-		labelsFromAttributes := make([]labels.Label, 0, attrs.Len())
+		labelsFromAttributes := make(labels.Labels, 0, attrs.Len())
 		attrs.Range(func(key string, value pcommon.Value) bool {
 			val := value.AsString()
 			exemplarRunes += utf8.RuneCountInString(key) + utf8.RuneCountInString(val)
@@ -522,9 +481,9 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 // createLabels returns a copy of baseLabels, adding to it the pair model.MetricNameLabel=name.
 // If extras are provided, corresponding label pairs are also added to the returned slice.
 // If extras is uneven length, the last (unpaired) extra will be ignored.
-func createLabels(name string, baseLabels []labels.Label, extras ...string) []labels.Label {
+func createLabels(name string, baseLabels labels.Labels, extras ...string) labels.Labels {
 	extraLabelCount := len(extras) / 2
-	labels := make([]labels.Label, len(baseLabels), len(baseLabels)+extraLabelCount+1) // +1 for name
+	labels := make(labels.Labels, len(baseLabels), len(baseLabels)+extraLabelCount+1) // +1 for name
 	copy(labels, baseLabels)
 
 	n := len(extras)
@@ -539,8 +498,8 @@ func createLabels(name string, baseLabels []labels.Label, extras ...string) []la
 
 // getOrCreateTimeSeries returns the time series corresponding to the label set if existent, and false.
 // Otherwise it creates a new one and returns that, and true.
-func (c *PrometheusConverter) getOrCreateTimeSeries(lbls []labels.Label) (*writev2.TimeSeries, bool) {
-	h := timeSeriesSignature(lbls)
+func (c *PrometheusConverter) getOrCreateTimeSeries(lbls labels.Labels) (*writev2.TimeSeries, bool) {
+	h := lbls.Hash()
 	ts := c.unique[h]
 	if ts != nil {
 		if isSameMetric(ts, lbls) {
@@ -575,7 +534,7 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls []labels.Label) (*write
 // addTimeSeriesIfNeeded adds a corresponding time series if it doesn't already exist.
 // If the time series doesn't already exist, it gets added with startTimestamp for its value and timestamp for its timestamp,
 // both converted to milliseconds.
-func (c *PrometheusConverter) addTimeSeriesIfNeeded(lbls []labels.Label, startTimestamp, timestamp pcommon.Timestamp) {
+func (c *PrometheusConverter) addTimeSeriesIfNeeded(lbls labels.Labels, startTimestamp, timestamp pcommon.Timestamp) {
 	ts, created := c.getOrCreateTimeSeries(lbls)
 	if created {
 		ts.Samples = []writev2.Sample{

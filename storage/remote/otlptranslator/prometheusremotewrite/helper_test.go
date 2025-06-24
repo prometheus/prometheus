@@ -72,14 +72,14 @@ func TestCreateAttributes(t *testing.T) {
 		promoteScope                 bool
 		ignoreResourceAttributes     []string
 		ignoreAttrs                  []string
-		expectedLabels               []labels.Label
+		expectedLabels               labels.Labels
 	}{
 		{
 			name:                      "Successful conversion without resource attribute promotion and without scope promotion",
 			scope:                     defaultScope,
 			promoteResourceAttributes: nil,
 			promoteScope:              false,
-			expectedLabels: []labels.Label{
+			expectedLabels: labels.Labels{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -107,7 +107,7 @@ func TestCreateAttributes(t *testing.T) {
 			scope:                     defaultScope,
 			promoteResourceAttributes: nil,
 			promoteScope:              true,
-			expectedLabels: []labels.Label{
+			expectedLabels: labels.Labels{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -155,7 +155,7 @@ func TestCreateAttributes(t *testing.T) {
 			scope:                     scope{},
 			promoteResourceAttributes: nil,
 			promoteScope:              true,
-			expectedLabels: []labels.Label{
+			expectedLabels: labels.Labels{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -184,7 +184,7 @@ func TestCreateAttributes(t *testing.T) {
 			promoteResourceAttributes: nil,
 			promoteScope:              true,
 			ignoreAttrs:               []string{"metric-attr-other"},
-			expectedLabels: []labels.Label{
+			expectedLabels: labels.Labels{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -228,7 +228,7 @@ func TestCreateAttributes(t *testing.T) {
 			scope:                     defaultScope,
 			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr"},
 			promoteScope:              true,
-			expectedLabels: []labels.Label{
+			expectedLabels: labels.Labels{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -280,7 +280,7 @@ func TestCreateAttributes(t *testing.T) {
 			scope:                     defaultScope,
 			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr", "metric-attr", "job", "instance"},
 			promoteScope:              true,
-			expectedLabels: []labels.Label{
+			expectedLabels: labels.Labels{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -332,7 +332,7 @@ func TestCreateAttributes(t *testing.T) {
 			scope:                     defaultScope,
 			promoteResourceAttributes: []string{"existent-attr", "existent-attr"},
 			promoteScope:              true,
-			expectedLabels: []labels.Label{
+			expectedLabels: labels.Labels{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -384,7 +384,7 @@ func TestCreateAttributes(t *testing.T) {
 			scope:                        defaultScope,
 			promoteAllResourceAttributes: true,
 			promoteScope:                 true,
-			expectedLabels: []labels.Label{
+			expectedLabels: labels.Labels{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -447,7 +447,7 @@ func TestCreateAttributes(t *testing.T) {
 			ignoreResourceAttributes: []string{
 				"service.instance.id",
 			},
-			expectedLabels: []labels.Label{
+			expectedLabels: labels.Labels{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -571,29 +571,29 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*writev2.TimeSeries {
-				countLabels := []labels.Label{
+				countLabels := labels.Labels{
 					{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
 				}
-				sumLabels := []labels.Label{
+				sumLabels := labels.Labels{
 					{Name: model.MetricNameLabel, Value: "test_summary" + sumStr},
 				}
-				createdLabels := []labels.Label{
+				createdLabels := labels.Labels{
 					{Name: model.MetricNameLabel, Value: "test_summary" + createdSuffix},
 				}
 				return map[uint64]*writev2.TimeSeries{
-					timeSeriesSignature(countLabels): {
+					countLabels.Hash(): {
 						Labels: countLabels,
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
-					timeSeriesSignature(sumLabels): {
+					sumLabels.Hash(): {
 						Labels: sumLabels,
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
-					timeSeriesSignature(createdLabels): {
+					createdLabels.Hash(): {
 						Labels: createdLabels,
 						Samples: []writev2.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
@@ -618,7 +618,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: true,
 			want: func() map[uint64]*writev2.TimeSeries {
-				scopeLabels := []labels.Label{
+				scopeLabels := labels.Labels{
 					{
 						Name:  "otel_scope_attr1",
 						Value: "value1",
@@ -640,32 +640,32 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 						Value: defaultScope.version,
 					},
 				}
-				countLabels := append([]labels.Label{
+				countLabels := append(labels.Labels{
 					{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
 				}, scopeLabels...)
-				sumLabels := append([]labels.Label{
+				sumLabels := append(labels.Labels{
 					{Name: model.MetricNameLabel, Value: "test_summary" + sumStr},
 				}, scopeLabels...)
-				createdLabels := append([]labels.Label{
+				createdLabels := append(labels.Labels{
 					{
 						Name:  model.MetricNameLabel,
 						Value: "test_summary" + createdSuffix,
 					},
 				}, scopeLabels...)
 				return map[uint64]*writev2.TimeSeries{
-					timeSeriesSignature(countLabels): {
+					countLabels.Hash(): {
 						Labels: countLabels,
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
-					timeSeriesSignature(sumLabels): {
+					sumLabels.Hash(): {
 						Labels: sumLabels,
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
-					timeSeriesSignature(createdLabels): {
+					createdLabels.Hash(): {
 						Labels: createdLabels,
 						Samples: []writev2.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
@@ -688,20 +688,20 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			},
 			promoteScope: false,
 			want: func() map[uint64]*writev2.TimeSeries {
-				countLabels := []labels.Label{
+				countLabels := labels.Labels{
 					{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
 				}
-				sumLabels := []labels.Label{
+				sumLabels := labels.Labels{
 					{Name: model.MetricNameLabel, Value: "test_summary" + sumStr},
 				}
 				return map[uint64]*writev2.TimeSeries{
-					timeSeriesSignature(countLabels): {
+					countLabels.Hash(): {
 						Labels: countLabels,
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
-					timeSeriesSignature(sumLabels): {
+					sumLabels.Hash(): {
 						Labels: sumLabels,
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
@@ -771,30 +771,30 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*writev2.TimeSeries {
-				countLabels := []labels.Label{
+				countLabels := labels.Labels{
 					{Name: model.MetricNameLabel, Value: "test_hist" + countStr},
 				}
-				createdLabels := []labels.Label{
+				createdLabels := labels.Labels{
 					{Name: model.MetricNameLabel, Value: "test_hist" + createdSuffix},
 				}
-				infLabels := []labels.Label{
+				infLabels := labels.Labels{
 					{Name: model.MetricNameLabel, Value: "test_hist_bucket"},
 					{Name: model.BucketLabel, Value: "+Inf"},
 				}
 				return map[uint64]*writev2.TimeSeries{
-					timeSeriesSignature(countLabels): {
+					countLabels.Hash(): {
 						Labels: countLabels,
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
-					timeSeriesSignature(infLabels): {
+					infLabels.Hash(): {
 						Labels: infLabels,
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
-					timeSeriesSignature(createdLabels): {
+					createdLabels.Hash(): {
 						Labels: createdLabels,
 						Samples: []writev2.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
@@ -819,7 +819,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: true,
 			want: func() map[uint64]*writev2.TimeSeries {
-				scopeLabels := []labels.Label{
+				scopeLabels := labels.Labels{
 					{
 						Name:  "otel_scope_attr1",
 						Value: "value1",
@@ -841,30 +841,30 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 						Value: defaultScope.version,
 					},
 				}
-				countLabels := append([]labels.Label{
+				countLabels := append(labels.Labels{
 					{Name: model.MetricNameLabel, Value: "test_hist" + countStr},
 				}, scopeLabels...)
-				infLabels := append([]labels.Label{
+				infLabels := append(labels.Labels{
 					{Name: model.MetricNameLabel, Value: "test_hist_bucket"},
 					{Name: model.BucketLabel, Value: "+Inf"},
 				}, scopeLabels...)
-				createdLabels := append([]labels.Label{
+				createdLabels := append(labels.Labels{
 					{Name: model.MetricNameLabel, Value: "test_hist" + createdSuffix},
 				}, scopeLabels...)
 				return map[uint64]*writev2.TimeSeries{
-					timeSeriesSignature(countLabels): {
+					countLabels.Hash(): {
 						Labels: countLabels,
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
-					timeSeriesSignature(infLabels): {
+					infLabels.Hash(): {
 						Labels: infLabels,
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
-					timeSeriesSignature(createdLabels): {
+					createdLabels.Hash(): {
 						Labels: createdLabels,
 						Samples: []writev2.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
@@ -886,21 +886,21 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				return metric
 			},
 			want: func() map[uint64]*writev2.TimeSeries {
-				labels := []labels.Label{
+				labels := labels.Labels{
 					{Name: model.MetricNameLabel, Value: "test_hist" + countStr},
 				}
-				infLabels := []labels.Label{
+				infLabels := labels.Labels{
 					{Name: model.MetricNameLabel, Value: "test_hist_bucket"},
 					{Name: model.BucketLabel, Value: "+Inf"},
 				}
 				return map[uint64]*writev2.TimeSeries{
-					timeSeriesSignature(infLabels): {
+					infLabels.Hash(): {
 						Labels: infLabels,
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
-					timeSeriesSignature(labels): {
+					labels.Hash(): {
 						Labels: labels,
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},

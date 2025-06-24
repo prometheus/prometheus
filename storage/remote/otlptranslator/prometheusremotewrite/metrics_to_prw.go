@@ -272,7 +272,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	return annots, errs
 }
 
-func isSameMetric(ts *writev2.TimeSeries, lbls []labels.Label) bool {
+func isSameMetric(ts *writev2.TimeSeries, lbls labels.Labels) bool {
 	if len(ts.Labels) != len(lbls) {
 		return false
 	}
@@ -319,7 +319,7 @@ func (c *PrometheusConverter) addExemplars(ctx context.Context, dataPoint pmetri
 // If there is no corresponding TimeSeries already, it's created.
 // The corresponding TimeSeries is returned.
 // If either lbls is nil/empty or sample is nil, nothing is done.
-func (c *PrometheusConverter) addSample(sample *writev2.Sample, lbls []labels.Label) *writev2.TimeSeries {
+func (c *PrometheusConverter) addSample(sample *writev2.Sample, lbls labels.Labels) *writev2.TimeSeries {
 	if sample == nil || len(lbls) == 0 {
 		// This shouldn't happen
 		return nil
@@ -346,14 +346,14 @@ func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAtt
 }
 
 // promotedAttributes returns labels for promoted resourceAttributes.
-func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommon.Map) []labels.Label {
+func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommon.Map) labels.Labels {
 	if s == nil {
 		return nil
 	}
 
-	var promotedAttrs []labels.Label
+	var promotedAttrs labels.Labels
 	if s.promoteAll {
-		promotedAttrs = make([]labels.Label, 0, resourceAttributes.Len())
+		promotedAttrs = make(labels.Labels, 0, resourceAttributes.Len())
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 			if _, exists := s.attrs[name]; !exists {
 				promotedAttrs = append(promotedAttrs, labels.Label{Name: name, Value: value.AsString()})
@@ -361,7 +361,7 @@ func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommo
 			return true
 		})
 	} else {
-		promotedAttrs = make([]labels.Label, 0, len(s.attrs))
+		promotedAttrs = make(labels.Labels, 0, len(s.attrs))
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 			if _, exists := s.attrs[name]; exists {
 				promotedAttrs = append(promotedAttrs, labels.Label{Name: name, Value: value.AsString()})
