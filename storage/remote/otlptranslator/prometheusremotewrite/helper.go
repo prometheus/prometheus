@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 )
 
 const (
@@ -60,7 +61,7 @@ const (
 )
 
 type bucketBoundsData struct {
-	ts    *prompb.TimeSeries
+	ts    *writev2.TimeSeries
 	bound float64
 }
 
@@ -538,7 +539,7 @@ func createLabels(name string, baseLabels []prompb.Label, extras ...string) []pr
 
 // getOrCreateTimeSeries returns the time series corresponding to the label set if existent, and false.
 // Otherwise it creates a new one and returns that, and true.
-func (c *PrometheusConverter) getOrCreateTimeSeries(lbls []prompb.Label) (*prompb.TimeSeries, bool) {
+func (c *PrometheusConverter) getOrCreateTimeSeries(lbls []prompb.Label) (*writev2.TimeSeries, bool) {
 	h := timeSeriesSignature(lbls)
 	ts := c.unique[h]
 	if ts != nil {
@@ -556,7 +557,7 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls []prompb.Label) (*promp
 		}
 
 		// New conflict
-		ts = &prompb.TimeSeries{
+		ts = &writev2.TimeSeries{
 			Labels: lbls,
 		}
 		c.conflicts[h] = append(c.conflicts[h], ts)
@@ -564,7 +565,7 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls []prompb.Label) (*promp
 	}
 
 	// This metric is new
-	ts = &prompb.TimeSeries{
+	ts = &writev2.TimeSeries{
 		Labels: lbls,
 	}
 	c.unique[h] = ts

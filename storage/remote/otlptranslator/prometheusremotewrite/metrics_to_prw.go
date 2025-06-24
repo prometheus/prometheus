@@ -29,6 +29,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -54,16 +55,16 @@ type Settings struct {
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
 type PrometheusConverter struct {
-	unique    map[uint64]*prompb.TimeSeries
-	conflicts map[uint64][]*prompb.TimeSeries
+	unique    map[uint64]*writev2.TimeSeries
+	conflicts map[uint64][]*writev2.TimeSeries
 	everyN    everyNTimes
 	metadata  []prompb.MetricMetadata
 }
 
 func NewPrometheusConverter() *PrometheusConverter {
 	return &PrometheusConverter{
-		unique:    map[uint64]*prompb.TimeSeries{},
-		conflicts: map[uint64][]*prompb.TimeSeries{},
+		unique:    map[uint64]*writev2.TimeSeries{},
+		conflicts: map[uint64][]*writev2.TimeSeries{},
 	}
 }
 
@@ -270,7 +271,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	return annots, errs
 }
 
-func isSameMetric(ts *prompb.TimeSeries, lbls []prompb.Label) bool {
+func isSameMetric(ts *writev2.TimeSeries, lbls []prompb.Label) bool {
 	if len(ts.Labels) != len(lbls) {
 		return false
 	}
@@ -317,7 +318,7 @@ func (c *PrometheusConverter) addExemplars(ctx context.Context, dataPoint pmetri
 // If there is no corresponding TimeSeries already, it's created.
 // The corresponding TimeSeries is returned.
 // If either lbls is nil/empty or sample is nil, nothing is done.
-func (c *PrometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Label) *prompb.TimeSeries {
+func (c *PrometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Label) *writev2.TimeSeries {
 	if sample == nil || len(lbls) == 0 {
 		// This shouldn't happen
 		return nil

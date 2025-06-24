@@ -19,15 +19,16 @@ package prometheusremotewrite
 
 import (
 	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 )
 
-// TimeSeries returns a slice of the prompb.TimeSeries that were converted from OTel format.
-func (c *PrometheusConverter) TimeSeries() []prompb.TimeSeries {
+// TimeSeries returns a slice of the writev2.TimeSeries that were converted from OTel format.
+func (c *PrometheusConverter) TimeSeries() []writev2.TimeSeries {
 	conflicts := 0
 	for _, ts := range c.conflicts {
 		conflicts += len(ts)
 	}
-	allTS := make([]prompb.TimeSeries, 0, len(c.unique)+conflicts)
+	allTS := make([]writev2.TimeSeries, 0, len(c.unique)+conflicts)
 	for _, ts := range c.unique {
 		allTS = append(allTS, *ts)
 	}

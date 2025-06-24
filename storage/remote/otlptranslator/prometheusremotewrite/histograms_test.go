@@ -29,6 +29,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 )
 
 type expectedBucketLayout struct {
@@ -637,7 +638,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		wantSeries   func() map[uint64]*prompb.TimeSeries
+		wantSeries   func() map[uint64]*writev2.TimeSeries
 	}{
 		{
 			name: "histogram data points with same labels and without scope promotion",
@@ -666,12 +667,12 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			wantSeries: func() map[uint64]*prompb.TimeSeries {
+			wantSeries: func() map[uint64]*writev2.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist"},
 					{Name: "attr", Value: "test_attr"},
 				}
-				return map[uint64]*prompb.TimeSeries{
+				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
 						Histograms: []prompb.Histogram{
@@ -727,7 +728,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			wantSeries: func() map[uint64]*prompb.TimeSeries {
+			wantSeries: func() map[uint64]*writev2.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist"},
 					{Name: "attr", Value: "test_attr"},
@@ -737,7 +738,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 					{Name: "otel_scope_attr1", Value: "value1"},
 					{Name: "otel_scope_attr2", Value: "value2"},
 				}
-				return map[uint64]*prompb.TimeSeries{
+				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
 						Histograms: []prompb.Histogram{
@@ -793,7 +794,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			wantSeries: func() map[uint64]*prompb.TimeSeries {
+			wantSeries: func() map[uint64]*writev2.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist"},
 					{Name: "attr", Value: "test_attr"},
@@ -803,7 +804,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 					{Name: "attr", Value: "test_attr_two"},
 				}
 
-				return map[uint64]*prompb.TimeSeries{
+				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
 						Histograms: []prompb.Histogram{
@@ -1094,7 +1095,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		wantSeries   func() map[uint64]*prompb.TimeSeries
+		wantSeries   func() map[uint64]*writev2.TimeSeries
 	}{
 		{
 			name: "histogram data points with same labels and without scope promotion",
@@ -1123,12 +1124,12 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			wantSeries: func() map[uint64]*prompb.TimeSeries {
+			wantSeries: func() map[uint64]*writev2.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
 					{Name: "attr", Value: "test_attr"},
 				}
-				return map[uint64]*prompb.TimeSeries{
+				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
 						Histograms: []prompb.Histogram{
@@ -1184,7 +1185,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			wantSeries: func() map[uint64]*prompb.TimeSeries {
+			wantSeries: func() map[uint64]*writev2.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
 					{Name: "attr", Value: "test_attr"},
@@ -1194,7 +1195,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 					{Name: "otel_scope_attr1", Value: "value1"},
 					{Name: "otel_scope_attr2", Value: "value2"},
 				}
-				return map[uint64]*prompb.TimeSeries{
+				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
 						Histograms: []prompb.Histogram{
@@ -1250,7 +1251,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			wantSeries: func() map[uint64]*prompb.TimeSeries {
+			wantSeries: func() map[uint64]*writev2.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
 					{Name: "attr", Value: "test_attr"},
@@ -1260,7 +1261,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 					{Name: "attr", Value: "test_attr_two"},
 				}
 
-				return map[uint64]*prompb.TimeSeries{
+				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
 						Histograms: []prompb.Histogram{

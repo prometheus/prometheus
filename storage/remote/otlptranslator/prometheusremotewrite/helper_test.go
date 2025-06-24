@@ -28,6 +28,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -552,7 +553,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		want         func() map[uint64]*prompb.TimeSeries
+		want         func() map[uint64]*writev2.TimeSeries
 	}{
 		{
 			name: "summary with start time and without scope promotion",
@@ -569,7 +570,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*prompb.TimeSeries {
+			want: func() map[uint64]*writev2.TimeSeries {
 				countLabels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
 				}
@@ -579,7 +580,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				createdLabels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + createdSuffix},
 				}
-				return map[uint64]*prompb.TimeSeries{
+				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(countLabels): {
 						Labels: countLabels,
 						Samples: []prompb.Sample{
@@ -616,7 +617,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			want: func() map[uint64]*prompb.TimeSeries {
+			want: func() map[uint64]*writev2.TimeSeries {
 				scopeLabels := []prompb.Label{
 					{
 						Name:  "otel_scope_attr1",
@@ -651,7 +652,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 						Value: "test_summary" + createdSuffix,
 					},
 				}, scopeLabels...)
-				return map[uint64]*prompb.TimeSeries{
+				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(countLabels): {
 						Labels: countLabels,
 						Samples: []prompb.Sample{
@@ -686,14 +687,14 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				return metric
 			},
 			promoteScope: false,
-			want: func() map[uint64]*prompb.TimeSeries {
+			want: func() map[uint64]*writev2.TimeSeries {
 				countLabels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
 				}
 				sumLabels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + sumStr},
 				}
-				return map[uint64]*prompb.TimeSeries{
+				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(countLabels): {
 						Labels: countLabels,
 						Samples: []prompb.Sample{
@@ -752,7 +753,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		want         func() map[uint64]*prompb.TimeSeries
+		want         func() map[uint64]*writev2.TimeSeries
 	}{
 		{
 			name: "histogram with start time and without scope promotion",
@@ -769,7 +770,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*prompb.TimeSeries {
+			want: func() map[uint64]*writev2.TimeSeries {
 				countLabels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist" + countStr},
 				}
@@ -780,7 +781,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 					{Name: model.MetricNameLabel, Value: "test_hist_bucket"},
 					{Name: model.BucketLabel, Value: "+Inf"},
 				}
-				return map[uint64]*prompb.TimeSeries{
+				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(countLabels): {
 						Labels: countLabels,
 						Samples: []prompb.Sample{
@@ -817,7 +818,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			want: func() map[uint64]*prompb.TimeSeries {
+			want: func() map[uint64]*writev2.TimeSeries {
 				scopeLabels := []prompb.Label{
 					{
 						Name:  "otel_scope_attr1",
@@ -850,7 +851,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				createdLabels := append([]prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist" + createdSuffix},
 				}, scopeLabels...)
-				return map[uint64]*prompb.TimeSeries{
+				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(countLabels): {
 						Labels: countLabels,
 						Samples: []prompb.Sample{
@@ -884,7 +885,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 
 				return metric
 			},
-			want: func() map[uint64]*prompb.TimeSeries {
+			want: func() map[uint64]*writev2.TimeSeries {
 				labels := []prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist" + countStr},
 				}
@@ -892,7 +893,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 					{Name: model.MetricNameLabel, Value: "test_hist_bucket"},
 					{Name: model.BucketLabel, Value: "+Inf"},
 				}
-				return map[uint64]*prompb.TimeSeries{
+				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(infLabels): {
 						Labels: infLabels,
 						Samples: []prompb.Sample{
