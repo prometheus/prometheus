@@ -355,7 +355,7 @@ func TestTemporality(t *testing.T) {
 				createOtelExponentialHistogram("test_histogram", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []writev2.TimeSeries{
-				createPromNativeHistogramSeries("test_histogram", prompb.Histogram_UNKNOWN, ts),
+				createPromNativeHistogramSeries("test_histogram", writev2.Histogram_RESET_HINT_UNSPECIFIED, ts),
 			},
 		},
 		{
@@ -366,8 +366,8 @@ func TestTemporality(t *testing.T) {
 				createOtelExponentialHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []writev2.TimeSeries{
-				createPromNativeHistogramSeries("test_histogram_1", prompb.Histogram_GAUGE, ts),
-				createPromNativeHistogramSeries("test_histogram_2", prompb.Histogram_UNKNOWN, ts),
+				createPromNativeHistogramSeries("test_histogram_1", writev2.Histogram_RESET_HINT_GAUGE, ts),
+				createPromNativeHistogramSeries("test_histogram_2", writev2.Histogram_RESET_HINT_UNSPECIFIED, ts),
 			},
 		},
 		{
@@ -378,7 +378,7 @@ func TestTemporality(t *testing.T) {
 				createOtelExponentialHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []writev2.TimeSeries{
-				createPromNativeHistogramSeries("test_histogram_2", prompb.Histogram_UNKNOWN, ts),
+				createPromNativeHistogramSeries("test_histogram_2", writev2.Histogram_RESET_HINT_UNSPECIFIED, ts),
 			},
 			expectedError: `invalid temporality and type combination for metric "test_histogram_1"`,
 		},
@@ -390,7 +390,7 @@ func TestTemporality(t *testing.T) {
 				createOtelExplicitHistogram("test_histogram", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []writev2.TimeSeries{
-				createPromNHCBSeries("test_histogram", prompb.Histogram_UNKNOWN, ts),
+				createPromNHCBSeries("test_histogram", writev2.Histogram_RESET_HINT_UNSPECIFIED, ts),
 			},
 		},
 		{
@@ -402,8 +402,8 @@ func TestTemporality(t *testing.T) {
 				createOtelExplicitHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []writev2.TimeSeries{
-				createPromNHCBSeries("test_histogram_1", prompb.Histogram_GAUGE, ts),
-				createPromNHCBSeries("test_histogram_2", prompb.Histogram_UNKNOWN, ts),
+				createPromNHCBSeries("test_histogram_1", writev2.Histogram_RESET_HINT_GAUGE, ts),
+				createPromNHCBSeries("test_histogram_2", writev2.Histogram_RESET_HINT_UNSPECIFIED, ts),
 			},
 		},
 		{
@@ -415,7 +415,7 @@ func TestTemporality(t *testing.T) {
 				createOtelExplicitHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []writev2.TimeSeries{
-				createPromNHCBSeries("test_histogram_2", prompb.Histogram_UNKNOWN, ts),
+				createPromNHCBSeries("test_histogram_2", writev2.Histogram_RESET_HINT_UNSPECIFIED, ts),
 			},
 			expectedError: `invalid temporality and type combination for metric "test_histogram_1"`,
 		},
@@ -553,19 +553,19 @@ func createOtelExponentialHistogram(name string, temporality pmetric.Aggregation
 	return m
 }
 
-func createPromNativeHistogramSeries(name string, hint prompb.Histogram_ResetHint, ts time.Time) writev2.TimeSeries {
+func createPromNativeHistogramSeries(name string, hint writev2.Histogram_ResetHint, ts time.Time) writev2.TimeSeries {
 	return writev2.TimeSeries{
 		Labels: []prompb.Label{
 			{Name: "__name__", Value: name},
 			{Name: "test_label", Value: "test_value"},
 		},
-		Histograms: []prompb.Histogram{
+		Histograms: []writev2.Histogram{
 			{
-				Count:         &prompb.Histogram_CountInt{CountInt: 1},
+				Count:         &writev2.Histogram_CountInt{CountInt: 1},
 				Sum:           5,
 				Schema:        0,
 				ZeroThreshold: 1e-128,
-				ZeroCount:     &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+				ZeroCount:     &writev2.Histogram_ZeroCountInt{ZeroCountInt: 0},
 				Timestamp:     ts.UnixMilli(),
 				ResetHint:     hint,
 			},
@@ -589,15 +589,15 @@ func createOtelExplicitHistogram(name string, temporality pmetric.AggregationTem
 	return m
 }
 
-func createPromNHCBSeries(name string, hint prompb.Histogram_ResetHint, ts time.Time) writev2.TimeSeries {
+func createPromNHCBSeries(name string, hint writev2.Histogram_ResetHint, ts time.Time) writev2.TimeSeries {
 	return writev2.TimeSeries{
 		Labels: []prompb.Label{
 			{Name: "__name__", Value: name},
 			{Name: "test_label", Value: "test_value"},
 		},
-		Histograms: []prompb.Histogram{
+		Histograms: []writev2.Histogram{
 			{
-				Count:         &prompb.Histogram_CountInt{CountInt: 20},
+				Count:         &writev2.Histogram_CountInt{CountInt: 20},
 				Sum:           30,
 				Schema:        -53,
 				ZeroThreshold: 0,

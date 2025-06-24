@@ -419,7 +419,7 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 	tests := []struct {
 		name            string
 		exponentialHist func() pmetric.ExponentialHistogramDataPoint
-		wantNativeHist  func() prompb.Histogram
+		wantNativeHist  func() writev2.Histogram
 		wantErrMessage  string
 	}{
 		{
@@ -441,13 +441,13 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 
 				return pt
 			},
-			wantNativeHist: func() prompb.Histogram {
-				return prompb.Histogram{
-					Count:          &prompb.Histogram_CountInt{CountInt: 4},
+			wantNativeHist: func() writev2.Histogram {
+				return writev2.Histogram{
+					Count:          &writev2.Histogram_CountInt{CountInt: 4},
 					Sum:            10.1,
 					Schema:         1,
 					ZeroThreshold:  defaultZeroThreshold,
-					ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 1},
+					ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 1},
 					NegativeSpans:  []prompb.BucketSpan{{Offset: 2, Length: 2}},
 					NegativeDeltas: []int64{1, 0},
 					PositiveSpans:  []prompb.BucketSpan{{Offset: 2, Length: 2}},
@@ -475,12 +475,12 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 
 				return pt
 			},
-			wantNativeHist: func() prompb.Histogram {
-				return prompb.Histogram{
-					Count:          &prompb.Histogram_CountInt{CountInt: 4},
+			wantNativeHist: func() writev2.Histogram {
+				return writev2.Histogram{
+					Count:          &writev2.Histogram_CountInt{CountInt: 4},
 					Schema:         1,
 					ZeroThreshold:  defaultZeroThreshold,
-					ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 1},
+					ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 1},
 					NegativeSpans:  []prompb.BucketSpan{{Offset: 2, Length: 2}},
 					NegativeDeltas: []int64{1, 0},
 					PositiveSpans:  []prompb.BucketSpan{{Offset: 2, Length: 2}},
@@ -516,13 +516,13 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 				pt.Negative().SetOffset(2)
 				return pt
 			},
-			wantNativeHist: func() prompb.Histogram {
-				return prompb.Histogram{
-					Count:          &prompb.Histogram_CountInt{CountInt: 6},
+			wantNativeHist: func() writev2.Histogram {
+				return writev2.Histogram{
+					Count:          &writev2.Histogram_CountInt{CountInt: 6},
 					Sum:            10.1,
 					Schema:         8,
 					ZeroThreshold:  defaultZeroThreshold,
-					ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 1},
+					ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 1},
 					PositiveSpans:  []prompb.BucketSpan{{Offset: 2, Length: 3}},
 					PositiveDeltas: []int64{1, 0, 0}, // 1, 1, 1
 					NegativeSpans:  []prompb.BucketSpan{{Offset: 3, Length: 3}},
@@ -548,13 +548,13 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 				pt.Negative().SetOffset(2)
 				return pt
 			},
-			wantNativeHist: func() prompb.Histogram {
-				return prompb.Histogram{
-					Count:          &prompb.Histogram_CountInt{CountInt: 6},
+			wantNativeHist: func() writev2.Histogram {
+				return writev2.Histogram{
+					Count:          &writev2.Histogram_CountInt{CountInt: 6},
 					Sum:            10.1,
 					Schema:         8,
 					ZeroThreshold:  defaultZeroThreshold,
-					ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 1},
+					ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 1},
 					PositiveSpans:  []prompb.BucketSpan{{Offset: 1, Length: 2}},
 					PositiveDeltas: []int64{1, 1}, // 0+1, 1+1 = 1, 2
 					NegativeSpans:  []prompb.BucketSpan{{Offset: 2, Length: 2}},
@@ -600,10 +600,10 @@ func validateExponentialHistogramCount(t *testing.T, h pmetric.ExponentialHistog
 	require.Equal(t, h.Count(), actualCount, "exponential histogram count mismatch")
 }
 
-func validateNativeHistogramCount(t *testing.T, h prompb.Histogram) {
+func validateNativeHistogramCount(t *testing.T, h writev2.Histogram) {
 	require.NotNil(t, h.Count)
-	require.IsType(t, &prompb.Histogram_CountInt{}, h.Count)
-	want := h.Count.(*prompb.Histogram_CountInt).CountInt
+	require.IsType(t, &writev2.Histogram_CountInt{}, h.Count)
+	want := h.Count.(*writev2.Histogram_CountInt).CountInt
 	var (
 		actualCount uint64
 		prevBucket  int64
@@ -675,20 +675,20 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Histograms: []prompb.Histogram{
+						Histograms: []writev2.Histogram{
 							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 7},
+								Count:          &writev2.Histogram_CountInt{CountInt: 7},
 								Schema:         1,
 								ZeroThreshold:  defaultZeroThreshold,
-								ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+								ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 0},
 								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
 								PositiveDeltas: []int64{4, -2},
 							},
 							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 4},
+								Count:          &writev2.Histogram_CountInt{CountInt: 4},
 								Schema:         1,
 								ZeroThreshold:  defaultZeroThreshold,
-								ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+								ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 0},
 								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
 								PositiveDeltas: []int64{4, -2, -1},
 							},
@@ -741,20 +741,20 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Histograms: []prompb.Histogram{
+						Histograms: []writev2.Histogram{
 							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 7},
+								Count:          &writev2.Histogram_CountInt{CountInt: 7},
 								Schema:         1,
 								ZeroThreshold:  defaultZeroThreshold,
-								ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+								ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 0},
 								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
 								PositiveDeltas: []int64{4, -2},
 							},
 							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 4},
+								Count:          &writev2.Histogram_CountInt{CountInt: 4},
 								Schema:         1,
 								ZeroThreshold:  defaultZeroThreshold,
-								ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+								ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 0},
 								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
 								PositiveDeltas: []int64{4, -2, -1},
 							},
@@ -807,12 +807,12 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Histograms: []prompb.Histogram{
+						Histograms: []writev2.Histogram{
 							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 7},
+								Count:          &writev2.Histogram_CountInt{CountInt: 7},
 								Schema:         1,
 								ZeroThreshold:  defaultZeroThreshold,
-								ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+								ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 0},
 								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
 								PositiveDeltas: []int64{4, -2},
 							},
@@ -823,12 +823,12 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 					},
 					timeSeriesSignature(labelsAnother): {
 						Labels: labelsAnother,
-						Histograms: []prompb.Histogram{
+						Histograms: []writev2.Histogram{
 							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 4},
+								Count:          &writev2.Histogram_CountInt{CountInt: 4},
 								Schema:         1,
 								ZeroThreshold:  defaultZeroThreshold,
-								ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+								ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: 0},
 								NegativeSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
 								NegativeDeltas: []int64{4, -2, -1},
 							},
@@ -1008,7 +1008,7 @@ func TestHistogramToCustomBucketsHistogram(t *testing.T) {
 	tests := []struct {
 		name           string
 		hist           func() pmetric.HistogramDataPoint
-		wantNativeHist func() prompb.Histogram
+		wantNativeHist func() writev2.Histogram
 		wantErrMessage string
 	}{
 		{
@@ -1024,9 +1024,9 @@ func TestHistogramToCustomBucketsHistogram(t *testing.T) {
 				pt.ExplicitBounds().FromRaw([]float64{0, 1})
 				return pt
 			},
-			wantNativeHist: func() prompb.Histogram {
-				return prompb.Histogram{
-					Count:          &prompb.Histogram_CountInt{CountInt: 2},
+			wantNativeHist: func() writev2.Histogram {
+				return writev2.Histogram{
+					Count:          &writev2.Histogram_CountInt{CountInt: 2},
 					Sum:            10.1,
 					Schema:         -53,
 					PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
@@ -1048,9 +1048,9 @@ func TestHistogramToCustomBucketsHistogram(t *testing.T) {
 				pt.ExplicitBounds().FromRaw([]float64{0, 1})
 				return pt
 			},
-			wantNativeHist: func() prompb.Histogram {
-				return prompb.Histogram{
-					Count:          &prompb.Histogram_CountInt{CountInt: 4},
+			wantNativeHist: func() writev2.Histogram {
+				return writev2.Histogram{
+					Count:          &writev2.Histogram_CountInt{CountInt: 4},
 					Schema:         -53,
 					PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
 					PositiveDeltas: []int64{2, 0},
@@ -1132,9 +1132,9 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Histograms: []prompb.Histogram{
+						Histograms: []writev2.Histogram{
 							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 3},
+								Count:          &writev2.Histogram_CountInt{CountInt: 3},
 								Sum:            3,
 								Schema:         -53,
 								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
@@ -1142,7 +1142,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 								CustomValues:   []float64{5, 10},
 							},
 							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 11},
+								Count:          &writev2.Histogram_CountInt{CountInt: 11},
 								Sum:            5,
 								Schema:         -53,
 								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
@@ -1198,9 +1198,9 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Histograms: []prompb.Histogram{
+						Histograms: []writev2.Histogram{
 							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 3},
+								Count:          &writev2.Histogram_CountInt{CountInt: 3},
 								Sum:            3,
 								Schema:         -53,
 								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
@@ -1208,7 +1208,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 								CustomValues:   []float64{5, 10},
 							},
 							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 11},
+								Count:          &writev2.Histogram_CountInt{CountInt: 11},
 								Sum:            5,
 								Schema:         -53,
 								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
@@ -1264,9 +1264,9 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 				return map[uint64]*writev2.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Histograms: []prompb.Histogram{
+						Histograms: []writev2.Histogram{
 							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 6},
+								Count:          &writev2.Histogram_CountInt{CountInt: 6},
 								Sum:            3,
 								Schema:         -53,
 								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
@@ -1280,9 +1280,9 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 					},
 					timeSeriesSignature(labelsAnother): {
 						Labels: labelsAnother,
-						Histograms: []prompb.Histogram{
+						Histograms: []writev2.Histogram{
 							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 11},
+								Count:          &writev2.Histogram_CountInt{CountInt: 11},
 								Sum:            5,
 								Schema:         -53,
 								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},

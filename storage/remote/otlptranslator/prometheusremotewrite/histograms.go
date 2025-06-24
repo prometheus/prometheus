@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -78,11 +79,11 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 
 // exponentialToNativeHistogram translates an OTel Exponential Histogram data point
 // to a Prometheus Native Histogram.
-func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, temporality pmetric.AggregationTemporality) (prompb.Histogram, annotations.Annotations, error) {
+func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, temporality pmetric.AggregationTemporality) (writev2.Histogram, annotations.Annotations, error) {
 	var annots annotations.Annotations
 	scale := p.Scale()
 	if scale < -4 {
-		return prompb.Histogram{}, annots,
+		return writev2.Histogram{}, annots,
 			fmt.Errorf("cannot convert exponential to native histogram."+
 				" Scale must be >= -4, was %d", scale)
 	}
@@ -105,21 +106,21 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, tempo
 	// need to know here if it was used for the detection.
 	// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
 	// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
-	resetHint := prompb.Histogram_UNKNOWN
+	resetHint := writev2.Histogram_RESET_HINT_UNSPECIFIED
 
 	if temporality == pmetric.AggregationTemporalityDelta {
 		// If the histogram has delta temporality, set the reset hint to gauge to avoid unnecessary chunk cutting.
 		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/).
 		// This might be changed to a different hint name as gauge type might be misleading for samples that should be
 		// summed over time.
-		resetHint = prompb.Histogram_GAUGE
+		resetHint = writev2.Histogram_RESET_HINT_GAUGE
 	}
 
-	h := prompb.Histogram{
+	h := writev2.Histogram{
 		ResetHint: resetHint,
 		Schema:    scale,
 
-		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: p.ZeroCount()},
+		ZeroCount: &writev2.Histogram_ZeroCountInt{ZeroCountInt: p.ZeroCount()},
 		// TODO use zero_threshold, if set, see
 		// https://github.com/open-telemetry/opentelemetry-proto/pull/441
 		ZeroThreshold: defaultZeroThreshold,
@@ -134,12 +135,12 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, tempo
 
 	if p.Flags().NoRecordedValue() {
 		h.Sum = math.Float64frombits(value.StaleNaN)
-		h.Count = &prompb.Histogram_CountInt{CountInt: value.StaleNaN}
+		h.Count = &writev2.Histogram_CountInt{CountInt: value.StaleNaN}
 	} else {
 		if p.HasSum() {
 			h.Sum = p.Sum()
 		}
-		h.Count = &prompb.Histogram_CountInt{CountInt: p.Count()}
+		h.Count = &writev2.Histogram_CountInt{CountInt: p.Count()}
 		if p.Count() == 0 && h.Sum != 0 {
 			annots.Add(fmt.Errorf("exponential histogram data point has zero count, but non-zero sum: %f", h.Sum))
 		}
@@ -295,7 +296,7 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 	return annots, nil
 }
 
-func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint, temporality pmetric.AggregationTemporality) (prompb.Histogram, annotations.Annotations, error) {
+func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint, temporality pmetric.AggregationTemporality) (writev2.Histogram, annotations.Annotations, error) {
 	var annots annotations.Annotations
 
 	buckets := p.BucketCounts().AsRaw()
@@ -312,18 +313,18 @@ func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint, tem
 	// need to know here if it was used for the detection.
 	// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
 	// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
-	resetHint := prompb.Histogram_UNKNOWN
+	resetHint := writev2.Histogram_RESET_HINT_UNSPECIFIED
 
 	if temporality == pmetric.AggregationTemporalityDelta {
 		// If the histogram has delta temporality, set the reset hint to gauge to avoid unnecessary chunk cutting.
 		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/).
 		// This might be changed to a different hint name as gauge type might be misleading for samples that should be
 		// summed over time.
-		resetHint = prompb.Histogram_GAUGE
+		resetHint = writev2.Histogram_RESET_HINT_GAUGE
 	}
 
 	// TODO(carrieedwards): Add setting to limit maximum bucket count
-	h := prompb.Histogram{
+	h := writev2.Histogram{
 		ResetHint: resetHint,
 		Schema:    histogram.CustomBucketsSchema,
 
@@ -342,12 +343,12 @@ func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint, tem
 
 	if p.Flags().NoRecordedValue() {
 		h.Sum = math.Float64frombits(value.StaleNaN)
-		h.Count = &prompb.Histogram_CountInt{CountInt: value.StaleNaN}
+		h.Count = &writev2.Histogram_CountInt{CountInt: value.StaleNaN}
 	} else {
 		if p.HasSum() {
 			h.Sum = p.Sum()
 		}
-		h.Count = &prompb.Histogram_CountInt{CountInt: p.Count()}
+		h.Count = &writev2.Histogram_CountInt{CountInt: p.Count()}
 		if p.Count() == 0 && h.Sum != 0 {
 			annots.Add(fmt.Errorf("histogram data point has zero count, but non-zero sum: %f", h.Sum))
 		}
