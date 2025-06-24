@@ -554,6 +554,7 @@ func main() {
 	if cfgFile.StorageConfig.TSDBConfig != nil {
 		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
 	}
+	updateGoGC(cfgFile, logger)
 
 	// Now that the validity of the config is established, set the config
 	// success metrics accordingly, although the config isn't really loaded
@@ -1386,6 +1387,15 @@ func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage b
 		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
 
+	updateGoGC(conf, logger)
+
+	noStepSuqueryInterval.Set(conf.GlobalConfig.EvaluationInterval)
+	l := []interface{}{"msg", "Completed loading of configuration file", "filename", filename, "totalDuration", time.Since(start)}
+	level.Info(logger).Log(append(l, timings...)...)
+	return nil
+}
+
+func updateGoGC(conf *config.Config, logger log.Logger) {
 	oldGoGC := debug.SetGCPercent(conf.Runtime.GoGC)
 	if oldGoGC != conf.Runtime.GoGC {
 		level.Info(logger).Log("msg", "updated GOGC", "old", oldGoGC, "new", conf.Runtime.GoGC)
@@ -1396,11 +1406,6 @@ func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage b
 	} else {
 		os.Setenv("GOGC", "off")
 	}
-
-	noStepSuqueryInterval.Set(conf.GlobalConfig.EvaluationInterval)
-	l := []interface{}{"msg", "Completed loading of configuration file", "filename", filename, "totalDuration", time.Since(start)}
-	level.Info(logger).Log(append(l, timings...)...)
-	return nil
 }
 
 func startsOrEndsWithQuote(s string) bool {
