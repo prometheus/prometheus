@@ -663,6 +663,63 @@ eval instant at 1m avg by (group) (data{test="nan"})
 
 clear
 
+# Demonstrate robustness of direct mean calculation vs. incremental mean calculation.
+# The tests below are prone to small inaccuracies with incremental mean calculation.
+# The exact number of aggregated values that trigger an inaccuracy depends on the
+# hardware.
+# See also discussion in https://github.com/prometheus/prometheus/issues/16714
+load 5m
+  foo{idx="0"} 52
+  foo{idx="1"} 52
+  foo{idx="2"} 52
+  foo{idx="3"} 52
+  foo{idx="4"} 52
+  foo{idx="5"} 52
+  foo{idx="6"} 52
+  foo{idx="7"} 52
+  foo{idx="8"} 52
+  foo{idx="9"} 52
+  foo{idx="10"} 52
+  foo{idx="11"} 52
+
+eval instant at 0 avg(foo) - 52
+  {} 0
+
+eval instant at 0 avg(topk(11, foo)) - 52
+  {} 0
+
+eval instant at 0 avg(topk(10, foo)) - 52
+  {} 0
+
+eval instant at 0 avg(topk(9, foo)) - 52
+  {} 0
+
+eval instant at 0 avg(topk(8, foo)) - 52
+  {} 0
+
+# The following tests do not utilize the tolerance built into the
+# testing framework but rely on the exact equality implemented in
+# PromQL. They currently pass, but we should keep in mind that this is
+# not a hard requirement, and generally it is a bad idea in practice
+# to rely on exact equality like this in alerting rules etc.
+
+eval instant at 0 avg(foo) == 52
+  {} 52
+
+eval instant at 0 avg(topk(11, foo)) == 52
+  {} 52
+
+eval instant at 0 avg(topk(10, foo)) == 52
+  {} 52
+
+eval instant at 0 avg(topk(9, foo)) == 52
+  {} 52
+
+eval instant at 0 avg(topk(8, foo)) == 52
+  {} 52
+
+clear
+
 # Test that aggregations are deterministic.
 # Commented because it is flaky in range mode.
 #load 10s

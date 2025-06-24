@@ -1089,6 +1089,45 @@ load 5s
 #   {} -1.881783551706252e+203 <- This is the result on linux/amd64.
 #   {} 2.303079268822384e+202 <- This is the result on darwin/arm64.
 
+# Demonstrate robustness of direct mean calculation vs. incremental mean calculation.
+# The tests below are prone to small inaccuracies with incremental mean calculation.
+# The exact number of aggregated values that trigger an inaccuracy depends on the
+# hardware.
+# See also discussion in https://github.com/prometheus/prometheus/issues/16714
+clear
+load 10s
+  foo 52+0x100
+
+eval instant at 10m avg_over_time(foo[100s]) - 52
+  {} 0
+
+eval instant at 10m avg_over_time(foo[110s]) - 52
+  {} 0
+
+eval instant at 10m avg_over_time(foo[120s]) - 52
+  {} 0
+
+eval instant at 10m avg_over_time(foo[130s]) - 52
+  {} 0
+
+# The following tests do not utilize the tolerance built into the
+# testing framework but rely on the exact equality implemented in
+# PromQL. They currently pass, but we should keep in mind that this is
+# not a hard requirement, and generally it is a bad idea in practice
+# to rely on exact equality like this in alerting rules etc.
+
+eval instant at 10m avg_over_time(foo[100s]) == 52
+  {} 52
+
+eval instant at 10m avg_over_time(foo[110s]) == 52
+  {} 52
+
+eval instant at 10m avg_over_time(foo[120s]) == 52
+  {} 52
+
+eval instant at 10m avg_over_time(foo[130s]) == 52
+  {} 52
+
 # Test per-series aggregation on dense samples.
 clear
 load 1ms
