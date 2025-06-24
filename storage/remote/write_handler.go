@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 	"github.com/prometheus/prometheus/util/compression"
@@ -55,7 +56,8 @@ type writeHandler struct {
 
 	acceptedProtoMsgs map[config.RemoteWriteProtoMsg]struct{}
 
-	ingestCTZeroSample bool
+	ingestCTZeroSample      bool
+	enableTypeAndUnitLabels bool
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -65,7 +67,7 @@ const maxAheadTime = 10 * time.Minute
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedProtoMsgs []config.RemoteWriteProtoMsg, ingestCTZeroSample bool) http.Handler {
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedProtoMsgs []config.RemoteWriteProtoMsg, ingestCTZeroSample, enableTypeAndUnitLabels bool) http.Handler {
 	protoMsgs := map[config.RemoteWriteProtoMsg]struct{}{}
 	for _, acc := range acceptedProtoMsgs {
 		protoMsgs[acc] = struct{}{}
@@ -87,7 +89,8 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable 
 			Help:      "The total number of received remote write samples (and histogram samples) which were ingested without corresponding metadata.",
 		}),
 
-		ingestCTZeroSample: ingestCTZeroSample,
+		ingestCTZeroSample:      ingestCTZeroSample,
+		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 	}
 	return h
 }
@@ -387,6 +390,17 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 	)
 	for _, ts := range req.Timeseries {
 		ls := ts.ToLabels(&b, req.Symbols)
+		if h.enableTypeAndUnitLabels {
+			builder := labels.NewBuilder(ls)
+			modelMd := ts.ToMetadata(req.Symbols)
+			m := schema.Metadata{
+				Name: ls.Get(labels.MetricName),
+				Type: modelMd.Type,
+				Unit: modelMd.Unit,
+			}
+			m.SetToLabels(builder)
+			ls = builder.Labels()
+		}
 		// Validate series labels early.
 		// NOTE(bwplotka): While spec allows UTF-8, Prometheus Receiver may impose
 		// specific limits and follow https://prometheus.io/docs/specs/remote_write_spec_2_0/#invalid-samples case.
