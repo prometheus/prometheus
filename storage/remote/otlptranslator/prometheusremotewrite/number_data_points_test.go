@@ -243,7 +243,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 							Value:     1,
 							Timestamp: convertTimeStamp(ts),
 						}},
-						Exemplars: []prompb.Exemplar{
+						Exemplars: []writev2.Exemplar{
 							{Value: 2},
 						},
 					},

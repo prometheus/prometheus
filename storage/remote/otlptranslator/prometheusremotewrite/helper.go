@@ -357,8 +357,8 @@ type exemplarType interface {
 	Exemplars() pmetric.ExemplarSlice
 }
 
-func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, pt T) ([]prompb.Exemplar, error) {
-	promExemplars := make([]prompb.Exemplar, 0, pt.Exemplars().Len())
+func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, pt T) ([]writev2.Exemplar, error) {
+	promExemplars := make([]writev2.Exemplar, 0, pt.Exemplars().Len())
 	for i := 0; i < pt.Exemplars().Len(); i++ {
 		if err := everyN.checkContext(ctx); err != nil {
 			return nil, err
@@ -367,7 +367,7 @@ func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, 
 		exemplar := pt.Exemplars().At(i)
 		exemplarRunes := 0
 
-		promExemplar := prompb.Exemplar{
+		promExemplar := writev2.Exemplar{
 			Timestamp: timestamp.FromTime(exemplar.Timestamp().AsTime()),
 		}
 		switch exemplar.ValueType() {

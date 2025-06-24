@@ -693,7 +693,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 								PositiveDeltas: []int64{4, -2, -1},
 							},
 						},
-						Exemplars: []prompb.Exemplar{
+						Exemplars: []writev2.Exemplar{
 							{Value: 1},
 							{Value: 2},
 						},
@@ -759,7 +759,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 								PositiveDeltas: []int64{4, -2, -1},
 							},
 						},
-						Exemplars: []prompb.Exemplar{
+						Exemplars: []writev2.Exemplar{
 							{Value: 1},
 							{Value: 2},
 						},
@@ -817,7 +817,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 								PositiveDeltas: []int64{4, -2},
 							},
 						},
-						Exemplars: []prompb.Exemplar{
+						Exemplars: []writev2.Exemplar{
 							{Value: 1},
 						},
 					},
@@ -833,7 +833,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 								NegativeDeltas: []int64{4, -2, -1},
 							},
 						},
-						Exemplars: []prompb.Exemplar{
+						Exemplars: []writev2.Exemplar{
 							{Value: 2},
 						},
 					},
@@ -1150,7 +1150,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 								CustomValues:   []float64{0, 1},
 							},
 						},
-						Exemplars: []prompb.Exemplar{
+						Exemplars: []writev2.Exemplar{
 							{Value: 1},
 							{Value: 2},
 						},
@@ -1216,7 +1216,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 								CustomValues:   []float64{0, 1},
 							},
 						},
-						Exemplars: []prompb.Exemplar{
+						Exemplars: []writev2.Exemplar{
 							{Value: 1},
 							{Value: 2},
 						},
@@ -1274,7 +1274,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 								CustomValues:   []float64{0, 1},
 							},
 						},
-						Exemplars: []prompb.Exemplar{
+						Exemplars: []writev2.Exemplar{
 							{Value: 1},
 						},
 					},
@@ -1290,7 +1290,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 								CustomValues:   []float64{0, 1},
 							},
 						},
-						Exemplars: []prompb.Exemplar{
+						Exemplars: []writev2.Exemplar{
 							{Value: 2},
 						},
 					},
