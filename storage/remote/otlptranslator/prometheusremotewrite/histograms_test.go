@@ -668,10 +668,10 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			wantSeries: func() map[uint64]*writev2.TimeSeries {
-				labels := labels.Labels{
-					{Name: model.MetricNameLabel, Value: "test_hist"},
-					{Name: "attr", Value: "test_attr"},
-				}
+				labels := labels.New(
+					labels.Label{Name: model.MetricNameLabel, Value: "test_hist"},
+					labels.Label{Name: "attr", Value: "test_attr"},
+				)
 				return map[uint64]*writev2.TimeSeries{
 					labels.Hash(): {
 						Labels: labels,
@@ -729,7 +729,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: true,
 			wantSeries: func() map[uint64]*writev2.TimeSeries {
-				labels := labels.Labels{
+				labels := labels.New([]labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist"},
 					{Name: "attr", Value: "test_attr"},
 					{Name: "otel_scope_name", Value: defaultScope.name},
@@ -737,7 +737,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 					{Name: "otel_scope_version", Value: defaultScope.version},
 					{Name: "otel_scope_attr1", Value: "value1"},
 					{Name: "otel_scope_attr2", Value: "value2"},
-				}
+				}...)
 				return map[uint64]*writev2.TimeSeries{
 					labels.Hash(): {
 						Labels: labels,
@@ -795,14 +795,14 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			wantSeries: func() map[uint64]*writev2.TimeSeries {
-				labels := labels.Labels{
-					{Name: model.MetricNameLabel, Value: "test_hist"},
-					{Name: "attr", Value: "test_attr"},
-				}
-				labelsAnother := labels.Labels{
-					{Name: model.MetricNameLabel, Value: "test_hist"},
-					{Name: "attr", Value: "test_attr_two"},
-				}
+				labels := labels.New(
+					labels.Label{Name: model.MetricNameLabel, Value: "test_hist"},
+					labels.Label{Name: "attr", Value: "test_attr"},
+				)
+				labelsAnother := labels.New(
+					labels.Label{Name: model.MetricNameLabel, Value: "test_hist"},
+					labels.Label{Name: "attr", Value: "test_attr_two"},
+				)
 
 				return map[uint64]*writev2.TimeSeries{
 					labels.Hash(): {
@@ -1125,10 +1125,10 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			wantSeries: func() map[uint64]*writev2.TimeSeries {
-				labels := labels.Labels{
-					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
-					{Name: "attr", Value: "test_attr"},
-				}
+				labels := labels.New(
+					labels.Label{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
+					labels.Label{Name: "attr", Value: "test_attr"},
+				)
 				return map[uint64]*writev2.TimeSeries{
 					labels.Hash(): {
 						Labels: labels,
@@ -1186,7 +1186,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: true,
 			wantSeries: func() map[uint64]*writev2.TimeSeries {
-				labels := labels.Labels{
+				labels := labels.New([]labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
 					{Name: "attr", Value: "test_attr"},
 					{Name: "otel_scope_name", Value: defaultScope.name},
@@ -1194,7 +1194,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 					{Name: "otel_scope_version", Value: defaultScope.version},
 					{Name: "otel_scope_attr1", Value: "value1"},
 					{Name: "otel_scope_attr2", Value: "value2"},
-				}
+				}...)
 				return map[uint64]*writev2.TimeSeries{
 					labels.Hash(): {
 						Labels: labels,
@@ -1252,18 +1252,18 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			wantSeries: func() map[uint64]*writev2.TimeSeries {
-				labels := labels.Labels{
-					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
-					{Name: "attr", Value: "test_attr"},
-				}
-				labelsAnother := labels.Labels{
-					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
-					{Name: "attr", Value: "test_attr_two"},
-				}
+				lbls := labels.New(
+					labels.Label{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
+					labels.Label{Name: "attr", Value: "test_attr"},
+				)
+				labelsAnother := labels.New(
+					labels.Label{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
+					labels.Label{Name: "attr", Value: "test_attr_two"},
+				)
 
 				return map[uint64]*writev2.TimeSeries{
-					labels.Hash(): {
-						Labels: labels,
+					lbls.Hash(): {
+						Labels: lbls,
 						Histograms: []writev2.Histogram{
 							{
 								Count:          &writev2.Histogram_CountInt{CountInt: 6},

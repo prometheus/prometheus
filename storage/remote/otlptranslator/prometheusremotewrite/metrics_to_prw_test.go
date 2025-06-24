@@ -515,10 +515,10 @@ func createOtelSum(name string, temporality pmetric.AggregationTemporality, ts t
 
 func createPromFloatSeries(name string, ts time.Time) writev2.TimeSeries {
 	return writev2.TimeSeries{
-		Labels: labels.Labels{
-			{Name: "__name__", Value: name},
-			{Name: "test_label", Value: "test_value"},
-		},
+		Labels: labels.New(
+			labels.Label{Name: "__name__", Value: name},
+			labels.Label{Name: "test_label", Value: "test_value"},
+		),
 		Samples: []writev2.Sample{{
 			Value:     5,
 			Timestamp: ts.UnixMilli(),
@@ -554,10 +554,10 @@ func createOtelExponentialHistogram(name string, temporality pmetric.Aggregation
 
 func createPromNativeHistogramSeries(name string, hint writev2.Histogram_ResetHint, ts time.Time) writev2.TimeSeries {
 	return writev2.TimeSeries{
-		Labels: labels.Labels{
-			{Name: "__name__", Value: name},
-			{Name: "test_label", Value: "test_value"},
-		},
+		Labels: labels.New(
+			labels.Label{Name: "__name__", Value: name},
+			labels.Label{Name: "test_label", Value: "test_value"},
+		),
 		Histograms: []writev2.Histogram{
 			{
 				Count:         &writev2.Histogram_CountInt{CountInt: 1},
@@ -590,10 +590,10 @@ func createOtelExplicitHistogram(name string, temporality pmetric.AggregationTem
 
 func createPromNHCBSeries(name string, hint writev2.Histogram_ResetHint, ts time.Time) writev2.TimeSeries {
 	return writev2.TimeSeries{
-		Labels: labels.Labels{
-			{Name: "__name__", Value: name},
-			{Name: "test_label", Value: "test_value"},
-		},
+		Labels: labels.New(
+			labels.Label{Name: "__name__", Value: name},
+			labels.Label{Name: "test_label", Value: "test_value"},
+		),
 		Histograms: []writev2.Histogram{
 			{
 				Count:         &writev2.Histogram_CountInt{CountInt: 20},
@@ -618,41 +618,41 @@ func createPromNHCBSeries(name string, hint writev2.Histogram_ResetHint, ts time
 func createPromClassicHistogramSeries(name string, ts time.Time) []writev2.TimeSeries {
 	return []writev2.TimeSeries{
 		{
-			Labels: labels.Labels{
+			Labels: labels.New([]labels.Label{
 				{Name: "__name__", Value: name + "_bucket"},
 				{Name: "le", Value: "1"},
 				{Name: "test_label", Value: "test_value"},
-			},
+			}...),
 			Samples: []writev2.Sample{{Value: 10, Timestamp: ts.UnixMilli()}},
 		},
 		{
-			Labels: labels.Labels{
+			Labels: labels.New([]labels.Label{
 				{Name: "__name__", Value: name + "_bucket"},
 				{Name: "le", Value: "2"},
 				{Name: "test_label", Value: "test_value"},
-			},
+			}...),
 			Samples: []writev2.Sample{{Value: 20, Timestamp: ts.UnixMilli()}},
 		},
 		{
-			Labels: labels.Labels{
+			Labels: labels.New([]labels.Label{
 				{Name: "__name__", Value: name + "_bucket"},
 				{Name: "le", Value: "+Inf"},
 				{Name: "test_label", Value: "test_value"},
-			},
+			}...),
 			Samples: []writev2.Sample{{Value: 20, Timestamp: ts.UnixMilli()}},
 		},
 		{
-			Labels: labels.Labels{
+			Labels: labels.New([]labels.Label{
 				{Name: "__name__", Value: name + "_count"},
 				{Name: "test_label", Value: "test_value"},
-			},
+			}...),
 			Samples: []writev2.Sample{{Value: 20, Timestamp: ts.UnixMilli()}},
 		},
 		{
-			Labels: labels.Labels{
+			Labels: labels.New([]labels.Label{
 				{Name: "__name__", Value: name + "_sum"},
 				{Name: "test_label", Value: "test_value"},
-			},
+			}...),
 			Samples: []writev2.Sample{{Value: 30, Timestamp: ts.UnixMilli()}},
 		},
 	}
@@ -677,31 +677,31 @@ func createOtelSummary(name string, ts time.Time) pmetric.Metric {
 func createPromSummarySeries(name string, ts time.Time) []writev2.TimeSeries {
 	return []writev2.TimeSeries{
 		{
-			Labels: labels.Labels{
+			Labels: labels.New([]labels.Label{
 				{Name: "__name__", Value: name + "_sum"},
 				{Name: "test_label", Value: "test_value"},
-			},
+			}...),
 			Samples: []writev2.Sample{{
 				Value:     18,
 				Timestamp: ts.UnixMilli(),
 			}},
 		},
 		{
-			Labels: labels.Labels{
+			Labels: labels.New([]labels.Label{
 				{Name: "__name__", Value: name + "_count"},
 				{Name: "test_label", Value: "test_value"},
-			},
+			}...),
 			Samples: []writev2.Sample{{
 				Value:     9,
 				Timestamp: ts.UnixMilli(),
 			}},
 		},
 		{
-			Labels: labels.Labels{
+			Labels: labels.New([]labels.Label{
 				{Name: "__name__", Value: name},
 				{Name: "quantile", Value: "0.5"},
 				{Name: "test_label", Value: "test_value"},
-			},
+			}...),
 			Samples: []writev2.Sample{{
 				Value:     2,
 				Timestamp: ts.UnixMilli(),
