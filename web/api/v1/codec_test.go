@@ -21,12 +21,14 @@ import (
 )
 
 func TestMIMEType_String(t *testing.T) {
+	t.Parallel()
 	m := MIMEType{Type: "application", SubType: "json"}
 
 	require.Equal(t, "application/json", m.String())
 }
 
 func TestMIMEType_Satisfies(t *testing.T) {
+	t.Parallel()
 	m := MIMEType{Type: "application", SubType: "json"}
 
 	scenarios := map[string]struct {
@@ -61,6 +63,7 @@ func TestMIMEType_Satisfies(t *testing.T) {
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			actual := m.Satisfies(scenario.accept)
 			require.Equal(t, scenario.expected, actual)
 		})
