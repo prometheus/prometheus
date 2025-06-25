@@ -693,6 +693,146 @@ func sortTimeSeries(series []prompb.TimeSeries) []prompb.TimeSeries {
 	return series
 }
 
+func TestTranslatorMetricFromOtelMetric(t *testing.T) {
+	tests := []struct {
+		name           string
+		inputMetric    pmetric.Metric
+		expectedMetric otlptranslator.Metric
+	}{
+		{
+			name:        "gauge metric",
+			inputMetric: createOTelGaugeForTranslator("test_gauge", "bytes", "Test gauge metric"),
+			expectedMetric: otlptranslator.Metric{
+				Name: "test_gauge",
+				Unit: "bytes",
+				Type: otlptranslator.MetricTypeGauge,
+			},
+		},
+		{
+			name:        "monotonic sum metric",
+			inputMetric: createOTelSumForTranslator("test_sum", "count", "Test sum metric", true),
+			expectedMetric: otlptranslator.Metric{
+				Name: "test_sum",
+				Unit: "count",
+				Type: otlptranslator.MetricTypeMonotonicCounter,
+			},
+		},
+		{
+			name:        "non-monotonic sum metric",
+			inputMetric: createOTelSumForTranslator("test_sum", "count", "Test sum metric", false),
+			expectedMetric: otlptranslator.Metric{
+				Name: "test_sum",
+				Unit: "count",
+				Type: otlptranslator.MetricTypeNonMonotonicCounter,
+			},
+		},
+		{
+			name:        "histogram metric",
+			inputMetric: createOTelHistogramForTranslator("test_histogram", "seconds", "Test histogram metric"),
+			expectedMetric: otlptranslator.Metric{
+				Name: "test_histogram",
+				Unit: "seconds",
+				Type: otlptranslator.MetricTypeHistogram,
+			},
+		},
+		{
+			name:        "exponential histogram metric",
+			inputMetric: createOTelExponentialHistogramForTranslator("test_exp_histogram", "milliseconds", "Test exponential histogram metric"),
+			expectedMetric: otlptranslator.Metric{
+				Name: "test_exp_histogram",
+				Unit: "milliseconds",
+				Type: otlptranslator.MetricTypeExponentialHistogram,
+			},
+		},
+		{
+			name:        "summary metric",
+			inputMetric: createOTelSummaryForTranslator("test_summary", "duration", "Test summary metric"),
+			expectedMetric: otlptranslator.Metric{
+				Name: "test_summary",
+				Unit: "duration",
+				Type: otlptranslator.MetricTypeSummary,
+			},
+		},
+		{
+			name:        "empty metric name and unit",
+			inputMetric: createOTelGaugeForTranslator("", "", ""),
+			expectedMetric: otlptranslator.Metric{
+				Name: "",
+				Unit: "",
+				Type: otlptranslator.MetricTypeGauge,
+			},
+		},
+		{
+			name:        "empty metric type defaults to unknown",
+			inputMetric: createOTelEmptyMetricForTranslator("test_empty"),
+			expectedMetric: otlptranslator.Metric{
+				Name: "test_empty",
+				Unit: "",
+				Type: otlptranslator.MetricTypeUnknown,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := TranslatorMetricFromOtelMetric(tc.inputMetric)
+			require.Equal(t, tc.expectedMetric, result)
+		})
+	}
+}
+
+func createOTelGaugeForTranslator(name, unit, description string) pmetric.Metric {
+	m := pmetric.NewMetric()
+	m.SetName(name)
+	m.SetUnit(unit)
+	m.SetDescription(description)
+	m.SetEmptyGauge()
+	return m
+}
+
+func createOTelSumForTranslator(name, unit, description string, isMonotonic bool) pmetric.Metric {
+	m := pmetric.NewMetric()
+	m.SetName(name)
+	m.SetUnit(unit)
+	m.SetDescription(description)
+	sum := m.SetEmptySum()
+	sum.SetIsMonotonic(isMonotonic)
+	return m
+}
+
+func createOTelHistogramForTranslator(name, unit, description string) pmetric.Metric {
+	m := pmetric.NewMetric()
+	m.SetName(name)
+	m.SetUnit(unit)
+	m.SetDescription(description)
+	m.SetEmptyHistogram()
+	return m
+}
+
+func createOTelExponentialHistogramForTranslator(name, unit, description string) pmetric.Metric {
+	m := pmetric.NewMetric()
+	m.SetName(name)
+	m.SetUnit(unit)
+	m.SetDescription(description)
+	m.SetEmptyExponentialHistogram()
+	return m
+}
+
+func createOTelSummaryForTranslator(name, unit, description string) pmetric.Metric {
+	m := pmetric.NewMetric()
+	m.SetName(name)
+	m.SetUnit(unit)
+	m.SetDescription(description)
+	m.SetEmptySummary()
+	return m
+}
+
+func createOTelEmptyMetricForTranslator(name string) pmetric.Metric {
+	m := pmetric.NewMetric()
+	m.SetName(name)
+	return m
+}
+
 func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 	for _, resourceAttributeCount := range []int{0, 5, 50} {
 		b.Run(fmt.Sprintf("resource attribute count: %v", resourceAttributeCount), func(b *testing.B) {
