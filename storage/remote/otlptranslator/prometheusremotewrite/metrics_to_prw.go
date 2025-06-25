@@ -273,15 +273,8 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 }
 
 func isSameMetric(ts *writev2.TimeSeries, lbls labels.Labels) bool {
-	if len(ts.Labels) != len(lbls) {
-		return false
-	}
-	for i, l := range ts.Labels {
-		if l.Name != ts.Labels[i].Name || l.Value != ts.Labels[i].Value {
-			return false
-		}
-	}
-	return true
+	b := labels.NewScratchBuilder(len(ts.LabelsRefs))
+	return labels.Equal(ts.ToLabels(&b, nil), lbls)
 }
 
 // addExemplars adds exemplars for the dataPoint. For each exemplar, if it can find a bucket bound corresponding to its value,
