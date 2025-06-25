@@ -23,7 +23,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -38,29 +37,48 @@ import (
 func TestFromMetrics(t *testing.T) {
 	t.Run("Successful", func(t *testing.T) {
 		for _, tc := range []struct {
-			name     string
-			settings Settings
+			name        string
+			settings    Settings
+			temporality pmetric.AggregationTemporality
 		}{
 			{
-				name:     "Default",
-				settings: Settings{},
+				name:        "Default with cumulative temporality",
+				settings:    Settings{},
+				temporality: pmetric.AggregationTemporalityCumulative,
+			},
+			{
+				name: "Default with delta temporality",
+				settings: Settings{
+					AllowDeltaTemporality: true,
+				},
+				temporality: pmetric.AggregationTemporalityDelta,
 			},
 			{
 				name: "Keep identifying attributes",
 				settings: Settings{
 					KeepIdentifyingResourceAttributes: true,
 				},
+				temporality: pmetric.AggregationTemporalityCumulative,
 			},
 			{
-				name: "Add metric suffixes",
+				name: "Add metric suffixes with cumulative temporality",
 				settings: Settings{
 					AddMetricSuffixes: true,
 				},
+				temporality: pmetric.AggregationTemporalityCumulative,
+			},
+			{
+				name: "Add metric suffixes with delta temporality",
+				settings: Settings{
+					AddMetricSuffixes:     true,
+					AllowDeltaTemporality: true,
+				},
+				temporality: pmetric.AggregationTemporalityDelta,
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				converter := NewPrometheusConverter()
-				payload, wantPromMetrics := createExportRequest(5, 128, 128, 2, 0, tc.settings)
+				payload, wantPromMetrics := createExportRequest(5, 128, 128, 2, 0, tc.settings, tc.temporality)
 				var expMetadata []prompb.MetricMetadata
 				seenFamilyNames := map[string]struct{}{}
 				for _, wantMetric := range wantPromMetrics {
@@ -88,9 +106,7 @@ func TestFromMetrics(t *testing.T) {
 				require.NoError(t, err)
 				require.Empty(t, annots)
 
-				if diff := cmp.Diff(expMetadata, converter.Metadata()); diff != "" {
-					t.Errorf("mismatch (-want +got):\n%s", diff)
-				}
+				testutil.RequireEqual(t, expMetadata, converter.Metadata())
 
 				ts := converter.TimeSeries()
 				require.Len(t, ts, 1536+1) // +1 for the target_info.
@@ -170,7 +186,7 @@ func TestFromMetrics(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		// Verify that converter.FromMetrics respects cancellation.
 		cancel()
-		payload, _ := createExportRequest(5, 128, 128, 2, 0, settings)
+		payload, _ := createExportRequest(5, 128, 128, 2, 0, settings, pmetric.AggregationTemporalityCumulative)
 
 		annots, err := converter.FromMetrics(ctx, payload.Metrics(), settings)
 		require.ErrorIs(t, err, context.Canceled)
@@ -183,7 +199,7 @@ func TestFromMetrics(t *testing.T) {
 		// Verify that converter.FromMetrics respects timeout.
 		ctx, cancel := context.WithTimeout(context.Background(), 0)
 		t.Cleanup(cancel)
-		payload, _ := createExportRequest(5, 128, 128, 2, 0, settings)
+		payload, _ := createExportRequest(5, 128, 128, 2, 0, settings, pmetric.AggregationTemporalityCumulative)
 
 		annots, err := converter.FromMetrics(ctx, payload.Metrics(), settings)
 		require.ErrorIs(t, err, context.DeadlineExceeded)
@@ -875,6 +891,7 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 												labelsPerMetric,
 												exemplarsPerSeries,
 												settings,
+												pmetric.AggregationTemporalityCumulative,
 											)
 											b.ResetTimer()
 
@@ -906,7 +923,7 @@ type wantPrometheusMetric struct {
 	unit        string
 }
 
-func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCount, labelsPerMetric, exemplarsPerSeries int, settings Settings) (pmetricotlp.ExportRequest, []wantPrometheusMetric) {
+func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCount, labelsPerMetric, exemplarsPerSeries int, settings Settings, temporality pmetric.AggregationTemporality) (pmetricotlp.ExportRequest, []wantPrometheusMetric) {
 	request := pmetricotlp.NewExportRequest()
 
 	rm := request.Metrics().ResourceMetrics().AppendEmpty()
@@ -935,7 +952,7 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 		m.SetName(fmt.Sprintf("histogram-%v", i))
 		m.SetDescription("histogram")
 		m.SetUnit("unit")
-		m.Histogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+		m.Histogram().SetAggregationTemporality(temporality)
 		h := m.Histogram().DataPoints().AppendEmpty()
 		h.SetTimestamp(ts)
 
@@ -948,24 +965,30 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 		generateAttributes(h.Attributes(), "series", labelsPerMetric)
 		generateExemplars(h.Exemplars(), exemplarsPerSeries, ts)
 
+		metricType := prompb.MetricMetadata_HISTOGRAM
+		if temporality != pmetric.AggregationTemporalityCumulative {
+			// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
+			// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
+			metricType = prompb.MetricMetadata_UNKNOWN
+		}
 		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
 			name:        fmt.Sprintf("histogram_%d%s_bucket", i, suffix),
 			familyName:  fmt.Sprintf("histogram_%d%s", i, suffix),
-			metricType:  prompb.MetricMetadata_HISTOGRAM,
+			metricType:  metricType,
 			unit:        "unit",
 			description: "histogram",
 		})
 		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
 			name:        fmt.Sprintf("histogram_%d%s_count", i, suffix),
 			familyName:  fmt.Sprintf("histogram_%d%s", i, suffix),
-			metricType:  prompb.MetricMetadata_HISTOGRAM,
+			metricType:  metricType,
 			unit:        "unit",
 			description: "histogram",
 		})
 		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
 			name:        fmt.Sprintf("histogram_%d%s_sum", i, suffix),
 			familyName:  fmt.Sprintf("histogram_%d%s", i, suffix),
-			metricType:  prompb.MetricMetadata_HISTOGRAM,
+			metricType:  metricType,
 			unit:        "unit",
 			description: "histogram",
 		})
@@ -977,17 +1000,23 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 		m.SetName(fmt.Sprintf("non.monotonic.sum-%v", i))
 		m.SetDescription("sum")
 		m.SetUnit("unit")
-		m.Sum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+		m.Sum().SetAggregationTemporality(temporality)
 		point := m.Sum().DataPoints().AppendEmpty()
 		point.SetTimestamp(ts)
 		point.SetDoubleValue(1.23)
 		generateAttributes(point.Attributes(), "series", labelsPerMetric)
 		generateExemplars(point.Exemplars(), exemplarsPerSeries, ts)
 
+		metricType := prompb.MetricMetadata_GAUGE
+		if temporality != pmetric.AggregationTemporalityCumulative {
+			// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
+			// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
+			metricType = prompb.MetricMetadata_UNKNOWN
+		}
 		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
 			name:        fmt.Sprintf("non_monotonic_sum_%d%s", i, suffix),
 			familyName:  fmt.Sprintf("non_monotonic_sum_%d%s", i, suffix),
-			metricType:  prompb.MetricMetadata_GAUGE,
+			metricType:  metricType,
 			unit:        "unit",
 			description: "sum",
 		})
@@ -999,7 +1028,7 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 		m.SetName(fmt.Sprintf("monotonic.sum-%v", i))
 		m.SetDescription("sum")
 		m.SetUnit("unit")
-		m.Sum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+		m.Sum().SetAggregationTemporality(temporality)
 		m.Sum().SetIsMonotonic(true)
 		point := m.Sum().DataPoints().AppendEmpty()
 		point.SetTimestamp(ts)
@@ -1012,10 +1041,16 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 			counterSuffix = suffix + "_total"
 		}
 
+		metricType := prompb.MetricMetadata_COUNTER
+		if temporality != pmetric.AggregationTemporalityCumulative {
+			// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
+			// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
+			metricType = prompb.MetricMetadata_UNKNOWN
+		}
 		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
 			name:        fmt.Sprintf("monotonic_sum_%d%s", i, counterSuffix),
 			familyName:  fmt.Sprintf("monotonic_sum_%d%s", i, counterSuffix),
-			metricType:  prompb.MetricMetadata_COUNTER,
+			metricType:  metricType,
 			unit:        "unit",
 			description: "sum",
 		})
