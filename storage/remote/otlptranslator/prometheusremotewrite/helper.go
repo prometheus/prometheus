@@ -300,6 +300,7 @@ func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, 
 		promExemplar := writev2.Exemplar{
 			Timestamp: timestamp.FromTime(exemplar.Timestamp().AsTime()),
 		}
+		b := labels.NewScratchBuilder(exemplar.FilteredAttributes().Len() + 2)
 		switch exemplar.ValueType() {
 		case pmetric.ExemplarValueTypeInt:
 			promExemplar.Value = float64(exemplar.IntValue())
@@ -312,40 +313,27 @@ func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, 
 		if traceID := exemplar.TraceID(); !traceID.IsEmpty() {
 			val := hex.EncodeToString(traceID[:])
 			exemplarRunes += utf8.RuneCountInString(traceIDKey) + utf8.RuneCountInString(val)
-			promLabel := labels.Label{
-				Name:  traceIDKey,
-				Value: val,
-			}
-			promExemplar.Labels = append(promExemplar.Labels, promLabel)
+			b.Add(traceIDKey, val)
 		}
 		if spanID := exemplar.SpanID(); !spanID.IsEmpty() {
 			val := hex.EncodeToString(spanID[:])
 			exemplarRunes += utf8.RuneCountInString(spanIDKey) + utf8.RuneCountInString(val)
-			promLabel := labels.Label{
-				Name:  spanIDKey,
-				Value: val,
-			}
-			promExemplar.Labels = append(promExemplar.Labels, promLabel)
+			b.Add(spanIDKey, val)
 		}
 
 		attrs := exemplar.FilteredAttributes()
-		labelsFromAttributes := make(labels.Labels, 0, attrs.Len())
 		attrs.Range(func(key string, value pcommon.Value) bool {
-			val := value.AsString()
-			exemplarRunes += utf8.RuneCountInString(key) + utf8.RuneCountInString(val)
-			promLabel := labels.Label{
-				Name:  key,
-				Value: val,
-			}
-
-			labelsFromAttributes = append(labelsFromAttributes, promLabel)
-
+			exemplarRunes += utf8.RuneCountInString(key) + utf8.RuneCountInString(value.AsString())
 			return true
 		})
+
+		// only append filtered attributes if it does not cause exemplar
+		// labels to exceed the max number of runes
 		if exemplarRunes <= maxExemplarRunes {
-			// only append filtered attributes if it does not cause exemplar
-			// labels to exceed the max number of runes
-			promExemplar.Labels = append(promExemplar.Labels, labelsFromAttributes...)
+			attrs.Range(func(key string, value pcommon.Value) bool {
+				b.Add(key, value.AsString())
+				return true
+			})
 		}
 
 		promExemplars = append(promExemplars, promExemplar)
@@ -453,18 +441,15 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 // If extras are provided, corresponding label pairs are also added to the returned slice.
 // If extras is uneven length, the last (unpaired) extra will be ignored.
 func createLabels(name string, baseLabels labels.Labels, extras ...string) labels.Labels {
-	extraLabelCount := len(extras) / 2
-	labels := make(labels.Labels, len(baseLabels), len(baseLabels)+extraLabelCount+1) // +1 for name
-	copy(labels, baseLabels)
+	b := labels.NewBuilder(baseLabels)
 
 	n := len(extras)
 	n -= n % 2
 	for extrasIdx := 0; extrasIdx < n; extrasIdx += 2 {
-		labels = append(labels, labels.Label{Name: extras[extrasIdx], Value: extras[extrasIdx+1]})
+		b.Set(extras[extrasIdx], extras[extrasIdx+1])
 	}
-
-	labels = append(labels, labels.Label{Name: model.MetricNameLabel, Value: name})
-	return labels
+	b.Set(model.MetricNameLabel, name)
+	return b.Labels()
 }
 
 // getOrCreateTimeSeries returns the time series corresponding to the label set if existent, and false.
@@ -488,7 +473,7 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls labels.Labels) (*writev
 
 		// New conflict
 		ts = &writev2.TimeSeries{
-			Labels: lbls,
+			LabelsRefs: c.symbolTable.SymbolizeLabels(lbls, nil), // TODO: optimize--reuse slice
 		}
 		c.conflicts[h] = append(c.conflicts[h], ts)
 		return ts, true
@@ -496,7 +481,7 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls labels.Labels) (*writev
 
 	// This metric is new
 	ts = &writev2.TimeSeries{
-		Labels: lbls,
+		LabelsRefs: c.symbolTable.SymbolizeLabels(lbls, nil), // TODO: optimize--reuse slice
 	}
 	c.unique[h] = ts
 	return ts, true
