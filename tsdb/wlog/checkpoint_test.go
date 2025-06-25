@@ -78,38 +78,77 @@ func TestLastCheckpoint(t *testing.T) {
 }
 
 func TestDeleteCheckpoints(t *testing.T) {
-	dir := t.TempDir()
-
-	require.NoError(t, DeleteCheckpoints(dir, 0))
-
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.00"), 0o777))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.01"), 0o777))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.02"), 0o777))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.03"), 0o777))
-
-	require.NoError(t, DeleteCheckpoints(dir, 2))
-
-	files, err := os.ReadDir(dir)
-	require.NoError(t, err)
-	fns := []string{}
-	for _, f := range files {
-		fns = append(fns, f.Name())
+	testCases := []struct {
+		name              string
+		fileNamesToCreate []string
+		maxIndex          int
+		expectedFiles     []string
+		expectedErr       require.ErrorAssertionFunc
+	}{
+		{
+			name:              "no checkpoints",
+			fileNamesToCreate: nil,
+			maxIndex:          0,
+			expectedFiles:     nil,
+			expectedErr:       require.NoError,
+		},
+		{
+			name:              "leaves checkpoints with index >= maxIndex",
+			fileNamesToCreate: []string{"checkpoint.00", "checkpoint.01", "checkpoint.02", "checkpoint.03"},
+			maxIndex:          2,
+			expectedFiles:     []string{"checkpoint.02", "checkpoint.03"},
+			expectedErr:       require.NoError,
+		},
+		{
+			name:              "remove temporary checkpoints even if they are >= maxIndex",
+			fileNamesToCreate: []string{"checkpoint.00", "checkpoint.01", "checkpoint.02.tmp", "checkpoint.03"},
+			maxIndex:          2,
+			expectedFiles:     []string{"checkpoint.03"},
+			expectedErr:       require.NoError,
+		},
+		{
+			name:              "leaves most recent temporary checkpoint if no future checkpoint is present",
+			fileNamesToCreate: []string{"checkpoint.00", "checkpoint.01", "checkpoint.02.tmp"},
+			maxIndex:          2,
+			expectedFiles:     []string{"checkpoint.02.tmp"},
+			expectedErr:       require.NoError,
+		},
+		{
+			name:              "will clean all temporary checkpoints if a future checkpoint is present",
+			fileNamesToCreate: []string{"checkpoint.00.tmp", "checkpoint.01.tmp", "checkpoint.02.tmp", "checkpoint.03"},
+			maxIndex:          0,
+			expectedFiles:     []string{"checkpoint.03"},
+			expectedErr:       require.NoError,
+		},
+		{
+			name:              "leaves most recent temporary checkpoint if all checkpoints are temporary",
+			fileNamesToCreate: []string{"checkpoint.00.tmp", "checkpoint.01.tmp", "checkpoint.02.tmp", "checkpoint.03.tmp"},
+			maxIndex:          0,
+			expectedFiles:     []string{"checkpoint.03.tmp"},
+			expectedErr:       require.NoError,
+		},
 	}
-	require.Equal(t, []string{"checkpoint.02", "checkpoint.03"}, fns)
 
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.99999999"), 0o777))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.100000000"), 0o777))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.100000001"), 0o777))
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, fn := range tc.fileNamesToCreate {
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, fn), 0o777))
+			}
 
-	require.NoError(t, DeleteCheckpoints(dir, 100000000))
+			err := DeleteCheckpoints(dir, tc.maxIndex)
+			tc.expectedErr(t, err)
 
-	files, err = os.ReadDir(dir)
-	require.NoError(t, err)
-	fns = []string{}
-	for _, f := range files {
-		fns = append(fns, f.Name())
+			files, err := os.ReadDir(dir)
+			require.NoError(t, err)
+
+			var actualFiles []string
+			for _, f := range files {
+				actualFiles = append(actualFiles, f.Name())
+			}
+			require.Equal(t, tc.expectedFiles, actualFiles)
+		})
 	}
-	require.Equal(t, []string{"checkpoint.100000000", "checkpoint.100000001"}, fns)
 }
 
 func TestCheckpoint(t *testing.T) {
