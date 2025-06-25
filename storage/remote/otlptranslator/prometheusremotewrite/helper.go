@@ -537,14 +537,13 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		// Do not pass identifying attributes as ignoreAttrs below.
 		identifyingAttrs = nil
 	}
-	labels := createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, model.MetricNameLabel, name)
+	lbls := createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, model.MetricNameLabel, name)
 	haveIdentifier := false
-	for _, l := range labels {
+	lbls.Range(func(l labels.Label) {
 		if l.Name == model.JobLabel || l.Name == model.InstanceLabel {
 			haveIdentifier = true
-			break
 		}
-	}
+	})
 
 	if !haveIdentifier {
 		// We need at least one identifying label to generate target_info.
@@ -556,7 +555,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		// convert ns to ms
 		Timestamp: convertTimeStamp(timestamp),
 	}
-	converter.addSample(sample, labels)
+	converter.addSample(sample, lbls)
 }
 
 // convertTimeStamp converts OTLP timestamp in ns to timestamp in ms.
