@@ -283,14 +283,18 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string
 	}
 	// We could have hit the highest bucket without even reaching the rank
 	// (this should only happen if the histogram contains observations of
-	// the value NaN), in which case we simply return NaN.
+	// the value NaN, in which case Sum is also NaN), in which case we simply
+	// return NaN.
 	// See https://github.com/prometheus/prometheus/issues/16578
 	if count < rank {
 		if math.IsNaN(h.Sum) {
 			return math.NaN(), annos.Add(annotations.NewNativeHistogramQuantileNaNResultInfo(metricName, pos))
 		}
-		// Engine recovery will catch this.
-		panic(fmt.Sprintf("histogram_quantile outside all buckets for metric name %s", metricName))
+		// This should not happen. Either NaNs are in the +Inf bucket (NHCB) and
+		// then count >= rank, or Sum is set to NaN. Might be a precision issue
+		// or something wrong with the histogram, fall back to returning the
+		// upper bound of the highest explicit bucket.
+	    return bucket.Upper, annos
 	}
 
 	// NaN observations increase h.Count but not the total number of
