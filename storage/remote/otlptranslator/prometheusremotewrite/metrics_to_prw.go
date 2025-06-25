@@ -58,7 +58,6 @@ type PrometheusConverter struct {
 	unique      map[uint64]*writev2.TimeSeries
 	conflicts   map[uint64][]*writev2.TimeSeries
 	everyN      everyNTimes
-	metadata    []writev2.Metadata
 	symbolTable writev2.SymbolsTable
 }
 
@@ -129,7 +128,6 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 			numMetrics += scopeMetricsSlice.At(j).Metrics().Len()
 		}
 	}
-	c.metadata = make([]writev2.Metadata, 0, numMetrics)
 
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
@@ -169,11 +167,11 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				}
 
 				promName := namer.Build(TranslatorMetricFromOtelMetric(metric))
-				c.metadata = append(c.metadata, writev2.Metadata{
+				metadata := writev2.Metadata{
 					Type:    otelMetricTypeToPromMetricType(metric),
 					HelpRef: c.symbolTable.Symbolize(metric.Description()),
 					UnitRef: c.symbolTable.Symbolize(metric.Unit()),
-				})
+				}
 
 				// handle individual metrics based on type
 				//exhaustive:enforce
@@ -184,7 +182,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, promName, scope); err != nil {
+					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, promName, scope, metadata); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -196,7 +194,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, promName, scope); err != nil {
+					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, promName, scope, metadata); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -210,7 +208,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					}
 					if settings.ConvertHistogramsToNHCB {
 						ws, err := c.addCustomBucketsHistogramDataPoints(
-							ctx, dataPoints, resource, settings, promName, temporality, scope,
+							ctx, dataPoints, resource, settings, promName, temporality, scope, metadata,
 						)
 						annots.Merge(ws)
 						if err != nil {
@@ -220,7 +218,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 							}
 						}
 					} else {
-						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName, scope); err != nil {
+						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName, scope, metadata); err != nil {
 							errs = multierr.Append(errs, err)
 							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 								return
@@ -241,6 +239,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						promName,
 						temporality,
 						scope,
+						metadata,
 					)
 					annots.Merge(ws)
 					if err != nil {
@@ -255,7 +254,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, promName, scope); err != nil {
+					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, promName, scope, metadata); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -307,13 +306,13 @@ func (c *PrometheusConverter) addExemplars(ctx context.Context, dataPoint pmetri
 // If there is no corresponding TimeSeries already, it's created.
 // The corresponding TimeSeries is returned.
 // If either lbls is nil/empty or sample is nil, nothing is done.
-func (c *PrometheusConverter) addSample(sample *writev2.Sample, lbls labels.Labels) *writev2.TimeSeries {
+func (c *PrometheusConverter) addSample(sample *writev2.Sample, lbls labels.Labels, metadata writev2.Metadata) *writev2.TimeSeries {
 	if sample == nil || lbls.Len() == 0 {
 		// This shouldn't happen
 		return nil
 	}
 
-	ts, _ := c.getOrCreateTimeSeries(lbls)
+	ts, _ := c.getOrCreateTimeSeries(lbls, metadata)
 	ts.Samples = append(ts.Samples, *sample)
 	return ts
 }

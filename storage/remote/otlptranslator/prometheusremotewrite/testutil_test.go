@@ -26,6 +26,8 @@ import (
 func getIntGaugeMetric(name string, attributes pcommon.Map, value int64, ts uint64) pmetric.Metric {
 	metric := pmetric.NewMetric()
 	metric.SetName(name)
+	metric.SetUnit("s")
+	metric.SetDescription("a test gauge")
 	dp := metric.SetEmptyGauge().DataPoints().AppendEmpty()
 	if strings.HasPrefix(name, "staleNaN") {
 		dp.SetFlags(pmetric.DefaultDataPointFlags.WithNoRecordedValue(true))
@@ -41,6 +43,8 @@ func getIntGaugeMetric(name string, attributes pcommon.Map, value int64, ts uint
 func getIntSumMetric(name string, attributes pcommon.Map, value int64, ts uint64) pmetric.Metric {
 	metric := pmetric.NewMetric()
 	metric.SetName(name)
+	metric.SetUnit("s")
+	metric.SetDescription("a test counter")
 	metric.SetEmptySum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 	dp := metric.Sum().DataPoints().AppendEmpty()
 	if strings.HasPrefix(name, "staleNaN") {

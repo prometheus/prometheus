@@ -44,8 +44,3 @@ func (c *PrometheusConverter) TimeSeries() []writev2.TimeSeries {
 func (c *PrometheusConverter) Symbols() []string {
 	return c.symbolTable.Symbols()
 }
-
-// Metadata returns a slice of the prompb.Metadata that were converted from OTel format.
-func (c *PrometheusConverter) Metadata() []writev2.Metadata {
-	return c.metadata
-}

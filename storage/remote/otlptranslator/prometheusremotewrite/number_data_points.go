@@ -30,7 +30,7 @@ import (
 )
 
 func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, settings Settings, name string, scope scope,
+	resource pcommon.Resource, settings Settings, name string, scope scope, metadata writev2.Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -61,14 +61,14 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		if pt.Flags().NoRecordedValue() {
 			sample.Value = math.Float64frombits(value.StaleNaN)
 		}
-		c.addSample(sample, labels)
+		c.addSample(sample, labels, metadata)
 	}
 
 	return nil
 }
 
 func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string, scope scope,
+	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string, scope scope, metadata writev2.Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -99,7 +99,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		if pt.Flags().NoRecordedValue() {
 			sample.Value = math.Float64frombits(value.StaleNaN)
 		}
-		ts := c.addSample(sample, lbls)
+		ts := c.addSample(sample, lbls, metadata)
 		if ts != nil {
 			exemplars, err := getPromExemplars[pmetric.NumberDataPoint](ctx, &c.everyN, pt)
 			if err != nil {
@@ -118,7 +118,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			b := labels.NewBuilder(lbls)
 			// add created suffix to the metric name
 			b.Set(model.MetricNameLabel, b.Get(model.MetricNameLabel)+createdSuffix)
-			c.addTimeSeriesIfNeeded(b.Labels(), startTimestamp, pt.Timestamp())
+			c.addTimeSeriesIfNeeded(b.Labels(), startTimestamp, pt.Timestamp(), metadata)
 		}
 	}
 

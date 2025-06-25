@@ -48,7 +48,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		want         func(*writev2.SymbolsTable) map[uint64]*writev2.TimeSeries
+		want         func(*writev2.SymbolsTable, writev2.Metadata) map[uint64]*writev2.TimeSeries
 	}{
 		{
 			name: "gauge without scope promotion",
@@ -61,7 +61,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test"},
 				)
@@ -74,6 +74,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 								Timestamp: convertTimeStamp(pcommon.Timestamp(ts)),
 							},
 						},
+						Metadata: metadata,
 					},
 				}
 			},
@@ -89,7 +90,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New([]labels.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
 					{Name: "otel_scope_name", Value: defaultScope.name},
@@ -107,6 +108,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 								Timestamp: convertTimeStamp(pcommon.Timestamp(ts)),
 							},
 						},
+						Metadata: metadata,
 					},
 				}
 			},
@@ -116,6 +118,12 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := tt.metric()
 			converter := NewPrometheusConverter()
+
+			metadata := writev2.Metadata{
+				Type:    writev2.Metadata_METRIC_TYPE_GAUGE,
+				UnitRef: converter.symbolTable.Symbolize("s"),
+				HelpRef: converter.symbolTable.Symbolize("a test gauge"),
+			}
 
 			converter.addGaugeNumberDataPoints(
 				context.Background(),
@@ -127,9 +135,10 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				},
 				metric.Name(),
 				tt.scope,
+				metadata,
 			)
 
-			require.Equal(t, tt.want(&converter.symbolTable), converter.unique)
+			require.Equal(t, tt.want(&converter.symbolTable, metadata), converter.unique)
 			require.Empty(t, converter.conflicts)
 		})
 	}
@@ -153,7 +162,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		want         func(*writev2.SymbolsTable) map[uint64]*writev2.TimeSeries
+		want         func(*writev2.SymbolsTable, writev2.Metadata) map[uint64]*writev2.TimeSeries
 	}{
 		{
 			name: "sum without scope promotion",
@@ -167,7 +176,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test"},
 				)
@@ -180,6 +189,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 								Timestamp: convertTimeStamp(ts),
 							},
 						},
+						Metadata: metadata,
 					},
 				}
 			},
@@ -196,7 +206,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New([]labels.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
 					{Name: "otel_scope_name", Value: defaultScope.name},
@@ -214,6 +224,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 								Timestamp: convertTimeStamp(ts),
 							},
 						},
+						Metadata: metadata,
 					},
 				}
 			},
@@ -232,7 +243,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test"},
 				)
@@ -246,6 +257,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 						Exemplars: []writev2.Exemplar{
 							{Value: 2},
 						},
+						Metadata: metadata,
 					},
 				}
 			},
@@ -255,6 +267,8 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_sum")
+				metric.SetUnit("s")
+				metric.SetDescription("a test counter")
 				metric.SetEmptySum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 				metric.SetEmptySum().SetIsMonotonic(true)
 
@@ -267,7 +281,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test_sum"},
 				)
@@ -280,12 +294,14 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 						Samples: []writev2.Sample{
 							{Value: 1, Timestamp: convertTimeStamp(ts)},
 						},
+						Metadata: metadata,
 					},
 					createdlbls.Hash(): {
 						LabelsRefs: symbolTable.SymbolizeLabels(createdlbls, nil),
 						Samples: []writev2.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
 						},
+						Metadata: metadata,
 					},
 				}
 			},
@@ -295,6 +311,8 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_sum")
+				metric.SetUnit("s")
+				metric.SetDescription("a test histogram")
 				metric.SetEmptySum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 				metric.SetEmptySum().SetIsMonotonic(true)
 
@@ -305,7 +323,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test_sum"},
 				)
@@ -315,6 +333,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
+						Metadata: metadata,
 					},
 				}
 			},
@@ -324,6 +343,8 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_sum")
+				metric.SetUnit("s")
+				metric.SetDescription("a test histogram")
 				metric.SetEmptySum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 				metric.SetEmptySum().SetIsMonotonic(false)
 
@@ -334,7 +355,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test_sum"},
 				)
@@ -344,6 +365,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
+						Metadata: metadata,
 					},
 				}
 			},
@@ -353,6 +375,12 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := tt.metric()
 			converter := NewPrometheusConverter()
+
+			metadata := writev2.Metadata{
+				Type:    writev2.Metadata_METRIC_TYPE_COUNTER,
+				UnitRef: converter.symbolTable.Symbolize("s"),
+				HelpRef: converter.symbolTable.Symbolize("a test counter"),
+			}
 
 			converter.addSumNumberDataPoints(
 				context.Background(),
@@ -365,9 +393,10 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				},
 				metric.Name(),
 				tt.scope,
+				metadata,
 			)
 
-			require.Equal(t, tt.want(&converter.symbolTable), converter.unique)
+			require.Equal(t, tt.want(&converter.symbolTable, metadata), converter.unique)
 			require.Empty(t, converter.conflicts)
 		})
 	}

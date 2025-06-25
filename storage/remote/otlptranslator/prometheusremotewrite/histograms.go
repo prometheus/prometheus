@@ -37,7 +37,7 @@ const defaultZeroThreshold = 1e-128
 // as native histogram samples.
 func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Context, dataPoints pmetric.ExponentialHistogramDataPointSlice,
 	resource pcommon.Resource, settings Settings, promName string, temporality pmetric.AggregationTemporality,
-	scope scope,
+	scope scope, metadata writev2.Metadata,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 	for x := 0; x < dataPoints.Len(); x++ {
@@ -63,7 +63,7 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			model.MetricNameLabel,
 			promName,
 		)
-		ts, _ := c.getOrCreateTimeSeries(lbls)
+		ts, _ := c.getOrCreateTimeSeries(lbls, metadata)
 		ts.Histograms = append(ts.Histograms, histogram)
 
 		exemplars, err := getPromExemplars[pmetric.ExponentialHistogramDataPoint](ctx, &c.everyN, pt)
@@ -254,7 +254,7 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 
 func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
 	resource pcommon.Resource, settings Settings, promName string, temporality pmetric.AggregationTemporality,
-	scope scope,
+	scope scope, metadata writev2.Metadata,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 
@@ -282,7 +282,7 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 			promName,
 		)
 
-		ts, _ := c.getOrCreateTimeSeries(lbls)
+		ts, _ := c.getOrCreateTimeSeries(lbls, metadata)
 		ts.Histograms = append(ts.Histograms, histogram)
 
 		exemplars, err := getPromExemplars[pmetric.HistogramDataPoint](ctx, &c.everyN, pt)
