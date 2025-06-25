@@ -348,27 +348,28 @@ func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAtt
 // promotedAttributes returns labels for promoted resourceAttributes.
 func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommon.Map) labels.Labels {
 	if s == nil {
-		return nil
+		return labels.New()
 	}
 
-	var promotedAttrs labels.Labels
 	if s.promoteAll {
-		promotedAttrs = make(labels.Labels, 0, resourceAttributes.Len())
+		b := labels.NewScratchBuilder(resourceAttributes.Len())
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 			if _, exists := s.attrs[name]; !exists {
-				promotedAttrs = append(promotedAttrs, labels.Label{Name: name, Value: value.AsString()})
+				b.Add(name, value.AsString())
 			}
 			return true
 		})
+		b.Sort()
+		return b.Labels()
 	} else {
-		promotedAttrs = make(labels.Labels, 0, len(s.attrs))
+		b := labels.NewScratchBuilder(len(s.attrs))
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 			if _, exists := s.attrs[name]; exists {
-				promotedAttrs = append(promotedAttrs, labels.Label{Name: name, Value: value.AsString()})
+				b.Add(name, value.AsString())
 			}
 			return true
 		})
+		b.Sort()
+		return b.Labels()
 	}
-	sort.Stable(ByLabelName(promotedAttrs))
-	return promotedAttrs
 }
