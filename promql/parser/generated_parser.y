@@ -150,6 +150,7 @@ WITHOUT
 %token <item>
 START
 END
+STEP
 %token preprocessorEnd
 
 // Counter reset hints.
@@ -478,7 +479,7 @@ offset_expr: expr OFFSET offset_duration_expr
                         $$ = $1
                         }
                 | expr OFFSET error
-                        { yylex.(*parser).unexpected("offset", "number or duration"); $$ = $1 }
+                        { yylex.(*parser).unexpected("offset", "number, duration, or step()"); $$ = $1 }
                 ;
 
 /*
@@ -574,11 +575,11 @@ subquery_expr   : expr LEFT_BRACKET positive_duration_expr COLON positive_durati
                 | expr LEFT_BRACKET positive_duration_expr COLON positive_duration_expr error
                         { yylex.(*parser).unexpected("subquery selector", "\"]\""); $$ = $1 }
                 | expr LEFT_BRACKET positive_duration_expr COLON error
-                        { yylex.(*parser).unexpected("subquery selector", "number or duration or \"]\""); $$ = $1 }
+                        { yylex.(*parser).unexpected("subquery selector", "number, duration, or step() or \"]\""); $$ = $1 }
                 | expr LEFT_BRACKET positive_duration_expr error
                         { yylex.(*parser).unexpected("subquery or range", "\":\" or \"]\""); $$ = $1 }
                 | expr LEFT_BRACKET error
-		        { yylex.(*parser).unexpected("subquery selector", "number or duration"); $$ = $1 }
+		        { yylex.(*parser).unexpected("subquery or range selector", "number, duration, or step()"); $$ = $1 }
                 ;
 
 /*
@@ -1079,6 +1080,22 @@ offset_duration_expr    : number_duration_literal
                                 nl.PosRange.Start = $1.Pos
                                 $$ = nl
                                 }
+                        | STEP LEFT_PAREN RIGHT_PAREN
+                        {
+                            de := &DurationExpr{Step: true, RHS: &NumberLiteral{PosRange: $1.PositionRange()}}
+                            de.RHS.(*NumberLiteral).PosRange.End = $3.Pos
+                            $$ = de
+                        }
+                        | unary_op STEP LEFT_PAREN RIGHT_PAREN
+                                {
+                                de := &DurationExpr{
+                                        Op: SUB,
+                                        RHS: &DurationExpr{Step: true, RHS: &NumberLiteral{PosRange: $2.PositionRange()}},
+                                        StartPos: $1.Pos,
+                                }
+                                de.RHS.(*DurationExpr).RHS.(*NumberLiteral).PosRange.End = $4.Pos
+                                $$ = de
+                                }
                         | duration_expr
                         ;
                         
@@ -1163,6 +1180,12 @@ duration_expr   : number_duration_literal
                         {
                             yylex.(*parser).experimentalDurationExpr($1.(Expr))
                             $$ = &DurationExpr{Op: POW, LHS: $1.(Expr), RHS: $3.(Expr)}
+                        }
+                | STEP LEFT_PAREN RIGHT_PAREN
+                        {
+                            de := &DurationExpr{Step: true, RHS: &NumberLiteral{PosRange: $1.PositionRange()}}
+                            de.RHS.(*NumberLiteral).PosRange.End = $3.Pos
+                            $$ = de
                         }
                 | paren_duration_expr
                 ;

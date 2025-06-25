@@ -140,6 +140,7 @@ var key = map[string]ItemType{
 	// Preprocessors.
 	"start": START,
 	"end":   END,
+	"step":  STEP,
 }
 
 var histogramDesc = map[string]ItemType{
@@ -461,6 +462,11 @@ func lexStatements(l *Lexer) stateFn {
 		if !l.bracketOpen {
 			l.backup()
 			return lexKeywordOrIdentifier
+		}
+		if r == 's' || r == 'S' {
+			if l.scanStep() {
+				return lexStatements
+			}
 		}
 		if l.gotColon {
 			return l.errorf("unexpected colon %q", r)
@@ -889,6 +895,23 @@ func lexNumber(l *Lexer) stateFn {
 	return lexStatements
 }
 
+func (l *Lexer) scanStep() bool {
+	for {
+		switch r := l.next(); {
+		case isAlpha(r):
+			// absorb.
+		default:
+			l.backup()
+			word := l.input[l.start:l.pos]
+			if strings.ToLower(word) == "step" {
+				l.emit(STEP)
+				return true
+			}
+			return false
+		}
+	}
+}
+
 // lexNumberOrDuration scans a number or a duration Item.
 func lexNumberOrDuration(l *Lexer) stateFn {
 	if l.scanNumber() {
@@ -1133,6 +1156,11 @@ func lexDurationExpr(l *Lexer) stateFn {
 	case r == '^':
 		l.emit(POW)
 		return lexDurationExpr
+	case r == 's' || r == 'S':
+		if l.scanStep() {
+			return lexDurationExpr
+		}
+		return l.errorf("unexpected character in duration expression: %q", r)
 	case isDigit(r) || (r == '.' && isDigit(l.peek())):
 		l.backup()
 		l.gotDuration = true

@@ -2388,7 +2388,7 @@ var testExpr = []struct {
 	{
 		input:  `foo[]`,
 		fail:   true,
-		errMsg: "unexpected \"]\" in subquery selector, expected number or duration",
+		errMsg: "unexpected \"]\" in subquery or range selector, expected number, duration, or step()",
 	},
 	{
 		input:  `foo[-1]`,
@@ -2403,7 +2403,7 @@ var testExpr = []struct {
 	{
 		input:  `some_metric[5m] OFFSET`,
 		fail:   true,
-		errMsg: "unexpected end of input in offset, expected number or duration",
+		errMsg: "1:23: parse error: unexpected end of input in offset, expected number, duration, or step()",
 	},
 	{
 		input:  `some_metric OFFSET 1m[5m]`,
@@ -4132,6 +4132,63 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `foo[-step()]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			RangeExpr: &DurationExpr{
+				Op:       SUB,
+				StartPos: 4,
+				RHS: &DurationExpr{
+					RHS: &NumberLiteral{
+						Val: 0,
+						PosRange: posrange.PositionRange{
+							Start: 5,
+							End:   10,
+						},
+					},
+					Step: true,
+				},
+			},
+			EndPos: 12,
+		},
+	},
+	{
+		input: `foo offset -step()`,
+		expected: &VectorSelector{
+			Name: "foo",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   18,
+			},
+			OriginalOffsetExpr: &DurationExpr{
+				Op:       SUB,
+				StartPos: 11,
+				RHS: &DurationExpr{
+					RHS: &NumberLiteral{
+						Val: 0,
+						PosRange: posrange.PositionRange{
+							Start: 12,
+							End:   17,
+						},
+					},
+					Step: true,
+				},
+			},
+		},
+	},
+	{
 		input: `foo[4s+4s:1s*2] offset (5s-8)`,
 		expected: &SubqueryExpr{
 			Expr: &VectorSelector{
@@ -4452,6 +4509,16 @@ var testExpr = []struct {
 			},
 			EndPos: 11,
 		},
+	},
+	{
+		input:  `foo[step]`,
+		fail:   true,
+		errMsg: `1:9: parse error: unexpected "]" in subquery or range selector, expected number, duration, or step()`,
+	},
+	{
+		input:  `foo[step()/0d]`,
+		fail:   true,
+		errMsg: `division by zero`,
 	},
 	{
 		input:  `foo[5s/0d]`,

@@ -115,6 +115,7 @@ type DurationExpr struct {
 	Op       ItemType // The operation of the expression.
 	LHS, RHS Expr     // The operands on the respective sides of the operator.
 	Wrapped  bool     // Set when the duration is wrapped in parentheses.
+	Step     bool     // Set when the duration is step().
 
 	StartPos posrange.Pos // For unary operations, the position of the operator.
 }

@@ -181,6 +181,8 @@ This state is periodically ([`max_stale`][d2c]) cleared of inactive series.
 Enabling this _can_ have negative impact on performance, because the in-memory
 state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
+[d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
+
 ## PromQL arithmetic expressions in time durations
 
 `--enable-feature=promql-duration-expr`
@@ -203,6 +205,10 @@ When using offset with duration expressions, you must wrap the expression in
 parentheses. Without parentheses, only the first duration value will be used in
 the offset calculation.
 
+An additinal keyword, `step()`, is available in duration expressions. In range
+queries, this represents the resolution step width. It is `0s` for instant
+queries. 
+
 **Note**: Duration expressions are not supported in the @ timestamp operator.
 
 The following operators are supported:
@@ -222,8 +228,8 @@ Examples of equivalent durations:
 * `1h / 2` is the equivalent to `30m` or `1800s`
 * `4h % 3h` is the equivalent to `1h` or `3600s`
 * `(2 ^ 3) * 1m` is the equivalent to `8m` or `480s`
+* `step()+1` is the equivalent to the query step witdh increased by 1s.
 
-[d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
 
 ## OTLP Native Delta Support
 
