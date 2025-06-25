@@ -36,67 +36,88 @@ import (
 )
 
 func TestFromMetrics(t *testing.T) {
-	for _, keepIdentifyingResourceAttributes := range []bool{false, true} {
-		t.Run(fmt.Sprintf("successful/keepIdentifyingAttributes=%v", keepIdentifyingResourceAttributes), func(t *testing.T) {
-			converter := NewPrometheusConverter()
-			payload := createExportRequest(5, 128, 128, 2, 0)
-			var expMetadata []prompb.MetricMetadata
-			resourceMetricsSlice := payload.Metrics().ResourceMetrics()
-			for i := 0; i < resourceMetricsSlice.Len(); i++ {
-				scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
-				for j := 0; j < scopeMetricsSlice.Len(); j++ {
-					metricSlice := scopeMetricsSlice.At(j).Metrics()
-					for k := 0; k < metricSlice.Len(); k++ {
-						metric := metricSlice.At(k)
-						namer := otlptranslator.MetricNamer{}
-						promName := namer.Build(TranslatorMetricFromOtelMetric(metric))
-						expMetadata = append(expMetadata, prompb.MetricMetadata{
-							Type:             otelMetricTypeToPromMetricType(metric),
-							MetricFamilyName: promName,
-							Help:             metric.Description(),
-							Unit:             metric.Unit(),
-						})
+	t.Run("Successful", func(t *testing.T) {
+		for _, tc := range []struct {
+			name     string
+			settings Settings
+		}{
+			{
+				name:     "Default",
+				settings: Settings{},
+			},
+			{
+				name: "Keep identifying attributes",
+				settings: Settings{
+					KeepIdentifyingResourceAttributes: true,
+				},
+			},
+			{
+				name: "Add metric suffixes",
+				settings: Settings{
+					AddMetricSuffixes: true,
+				},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				converter := NewPrometheusConverter()
+				payload, wantPromMetrics := createExportRequest(5, 128, 128, 2, 0, tc.settings)
+				var expMetadata []prompb.MetricMetadata
+				seenFamilyNames := map[string]struct{}{}
+				for _, wantMetric := range wantPromMetrics {
+					if _, exists := seenFamilyNames[wantMetric.familyName]; exists {
+						continue
+					}
+					if wantMetric.familyName == "target_info" {
+						continue
+					}
+
+					seenFamilyNames[wantMetric.familyName] = struct{}{}
+					expMetadata = append(expMetadata, prompb.MetricMetadata{
+						Type:             wantMetric.metricType,
+						MetricFamilyName: wantMetric.familyName,
+						Help:             wantMetric.description,
+						Unit:             wantMetric.unit,
+					})
+				}
+
+				annots, err := converter.FromMetrics(
+					context.Background(),
+					payload.Metrics(),
+					tc.settings,
+				)
+				require.NoError(t, err)
+				require.Empty(t, annots)
+
+				if diff := cmp.Diff(expMetadata, converter.Metadata()); diff != "" {
+					t.Errorf("mismatch (-want +got):\n%s", diff)
+				}
+
+				ts := converter.TimeSeries()
+				require.Len(t, ts, 1536+1) // +1 for the target_info.
+
+				tgtInfoCount := 0
+				for _, s := range ts {
+					b := labels.NewScratchBuilder(2)
+					lbls := s.ToLabels(&b, nil)
+					if lbls.Get(labels.MetricName) == "target_info" {
+						tgtInfoCount++
+						require.Equal(t, "test-namespace/test-service", lbls.Get("job"))
+						require.Equal(t, "id1234", lbls.Get("instance"))
+						if tc.settings.KeepIdentifyingResourceAttributes {
+							require.Equal(t, "test-service", lbls.Get("service_name"))
+							require.Equal(t, "test-namespace", lbls.Get("service_namespace"))
+							require.Equal(t, "id1234", lbls.Get("service_instance_id"))
+						} else {
+							require.False(t, lbls.Has("service_name"))
+							require.False(t, lbls.Has("service_namespace"))
+							require.False(t, lbls.Has("service_instance_id"))
+						}
 					}
 				}
-			}
-
-			annots, err := converter.FromMetrics(
-				context.Background(),
-				payload.Metrics(),
-				Settings{KeepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes},
-			)
-			require.NoError(t, err)
-			require.Empty(t, annots)
-
-			if diff := cmp.Diff(expMetadata, converter.Metadata()); diff != "" {
-				t.Errorf("mismatch (-want +got):\n%s", diff)
-			}
-
-			ts := converter.TimeSeries()
-			require.Len(t, ts, 1408+1) // +1 for the target_info.
-
-			tgtInfoCount := 0
-			for _, s := range ts {
-				b := labels.NewScratchBuilder(2)
-				lbls := s.ToLabels(&b, nil)
-				if lbls.Get(labels.MetricName) == "target_info" {
-					tgtInfoCount++
-					require.Equal(t, "test-namespace/test-service", lbls.Get("job"))
-					require.Equal(t, "id1234", lbls.Get("instance"))
-					if keepIdentifyingResourceAttributes {
-						require.Equal(t, "test-service", lbls.Get("service_name"))
-						require.Equal(t, "test-namespace", lbls.Get("service_namespace"))
-						require.Equal(t, "id1234", lbls.Get("service_instance_id"))
-					} else {
-						require.False(t, lbls.Has("service_name"))
-						require.False(t, lbls.Has("service_namespace"))
-						require.False(t, lbls.Has("service_instance_id"))
-					}
-				}
-			}
-			require.Equal(t, 1, tgtInfoCount)
-		})
-	}
+				require.Equal(t, 1, tgtInfoCount)
+			})
+		}
+	})
 
 	for _, convertHistogramsToNHCB := range []bool{false, true} {
 		t.Run(fmt.Sprintf("successful/convertHistogramsToNHCB=%v", convertHistogramsToNHCB), func(t *testing.T) {
@@ -144,25 +165,27 @@ func TestFromMetrics(t *testing.T) {
 	}
 
 	t.Run("context cancellation", func(t *testing.T) {
+		settings := Settings{}
 		converter := NewPrometheusConverter()
 		ctx, cancel := context.WithCancel(context.Background())
 		// Verify that converter.FromMetrics respects cancellation.
 		cancel()
-		payload := createExportRequest(5, 128, 128, 2, 0)
+		payload, _ := createExportRequest(5, 128, 128, 2, 0, settings)
 
-		annots, err := converter.FromMetrics(ctx, payload.Metrics(), Settings{})
+		annots, err := converter.FromMetrics(ctx, payload.Metrics(), settings)
 		require.ErrorIs(t, err, context.Canceled)
 		require.Empty(t, annots)
 	})
 
 	t.Run("context timeout", func(t *testing.T) {
+		settings := Settings{}
 		converter := NewPrometheusConverter()
 		// Verify that converter.FromMetrics respects timeout.
 		ctx, cancel := context.WithTimeout(context.Background(), 0)
 		t.Cleanup(cancel)
-		payload := createExportRequest(5, 128, 128, 2, 0)
+		payload, _ := createExportRequest(5, 128, 128, 2, 0, settings)
 
-		annots, err := converter.FromMetrics(ctx, payload.Metrics(), Settings{})
+		annots, err := converter.FromMetrics(ctx, payload.Metrics(), settings)
 		require.ErrorIs(t, err, context.DeadlineExceeded)
 		require.Empty(t, annots)
 	})
@@ -851,12 +874,20 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 								b.Run(fmt.Sprintf("labels per metric: %v", labelsPerMetric), func(b *testing.B) {
 									for _, exemplarsPerSeries := range []int{0, 5, 10} {
 										b.Run(fmt.Sprintf("exemplars per series: %v", exemplarsPerSeries), func(b *testing.B) {
-											payload := createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCount, labelsPerMetric, exemplarsPerSeries)
+											settings := Settings{}
+											payload, _ := createExportRequest(
+												resourceAttributeCount,
+												histogramCount,
+												nonHistogramCount,
+												labelsPerMetric,
+												exemplarsPerSeries,
+												settings,
+											)
 											b.ResetTimer()
 
 											for range b.N {
 												converter := NewPrometheusConverter()
-												annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), Settings{})
+												annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
 												require.NoError(b, err)
 												require.Empty(b, annots)
 												require.NotNil(b, converter.TimeSeries())
@@ -874,7 +905,15 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 	}
 }
 
-func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCount, labelsPerMetric, exemplarsPerSeries int) pmetricotlp.ExportRequest {
+type wantPrometheusMetric struct {
+	name        string
+	familyName  string
+	metricType  prompb.MetricMetadata_MetricType
+	description string
+	unit        string
+}
+
+func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCount, labelsPerMetric, exemplarsPerSeries int, settings Settings) (pmetricotlp.ExportRequest, []wantPrometheusMetric) {
 	request := pmetricotlp.NewExportRequest()
 
 	rm := request.Metrics().ResourceMetrics().AppendEmpty()
@@ -892,6 +931,11 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 	metrics := rm.ScopeMetrics().AppendEmpty().Metrics()
 	ts := pcommon.NewTimestampFromTime(time.Now())
 
+	var suffix string
+	if settings.AddMetricSuffixes {
+		suffix = "_unit"
+	}
+	var wantPromMetrics []wantPrometheusMetric
 	for i := 1; i <= histogramCount; i++ {
 		m := metrics.AppendEmpty()
 		m.SetEmptyHistogram()
@@ -910,12 +954,34 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 
 		generateAttributes(h.Attributes(), "series", labelsPerMetric)
 		generateExemplars(h.Exemplars(), exemplarsPerSeries, ts)
+
+		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
+			name:        fmt.Sprintf("histogram_%d%s_bucket", i, suffix),
+			familyName:  fmt.Sprintf("histogram_%d%s", i, suffix),
+			metricType:  prompb.MetricMetadata_HISTOGRAM,
+			unit:        "unit",
+			description: "histogram",
+		})
+		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
+			name:        fmt.Sprintf("histogram_%d%s_count", i, suffix),
+			familyName:  fmt.Sprintf("histogram_%d%s", i, suffix),
+			metricType:  prompb.MetricMetadata_HISTOGRAM,
+			unit:        "unit",
+			description: "histogram",
+		})
+		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
+			name:        fmt.Sprintf("histogram_%d%s_sum", i, suffix),
+			familyName:  fmt.Sprintf("histogram_%d%s", i, suffix),
+			metricType:  prompb.MetricMetadata_HISTOGRAM,
+			unit:        "unit",
+			description: "histogram",
+		})
 	}
 
 	for i := 1; i <= nonHistogramCount; i++ {
 		m := metrics.AppendEmpty()
 		m.SetEmptySum()
-		m.SetName(fmt.Sprintf("sum-%v", i))
+		m.SetName(fmt.Sprintf("non.monotonic.sum-%v", i))
 		m.SetDescription("sum")
 		m.SetUnit("unit")
 		m.Sum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
@@ -924,6 +990,42 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 		point.SetDoubleValue(1.23)
 		generateAttributes(point.Attributes(), "series", labelsPerMetric)
 		generateExemplars(point.Exemplars(), exemplarsPerSeries, ts)
+
+		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
+			name:        fmt.Sprintf("non_monotonic_sum_%d%s", i, suffix),
+			familyName:  fmt.Sprintf("non_monotonic_sum_%d%s", i, suffix),
+			metricType:  prompb.MetricMetadata_GAUGE,
+			unit:        "unit",
+			description: "sum",
+		})
+	}
+
+	for i := 1; i <= nonHistogramCount; i++ {
+		m := metrics.AppendEmpty()
+		m.SetEmptySum()
+		m.SetName(fmt.Sprintf("monotonic.sum-%v", i))
+		m.SetDescription("sum")
+		m.SetUnit("unit")
+		m.Sum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+		m.Sum().SetIsMonotonic(true)
+		point := m.Sum().DataPoints().AppendEmpty()
+		point.SetTimestamp(ts)
+		point.SetDoubleValue(1.23)
+		generateAttributes(point.Attributes(), "series", labelsPerMetric)
+		generateExemplars(point.Exemplars(), exemplarsPerSeries, ts)
+
+		var counterSuffix string
+		if settings.AddMetricSuffixes {
+			counterSuffix = suffix + "_total"
+		}
+
+		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
+			name:        fmt.Sprintf("monotonic_sum_%d%s", i, counterSuffix),
+			familyName:  fmt.Sprintf("monotonic_sum_%d%s", i, counterSuffix),
+			metricType:  prompb.MetricMetadata_COUNTER,
+			unit:        "unit",
+			description: "sum",
+		})
 	}
 
 	for i := 1; i <= nonHistogramCount; i++ {
@@ -937,9 +1039,21 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 		point.SetDoubleValue(1.23)
 		generateAttributes(point.Attributes(), "series", labelsPerMetric)
 		generateExemplars(point.Exemplars(), exemplarsPerSeries, ts)
+
+		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
+			name:        fmt.Sprintf("gauge_%d%s", i, suffix),
+			familyName:  fmt.Sprintf("gauge_%d%s", i, suffix),
+			metricType:  prompb.MetricMetadata_GAUGE,
+			unit:        "unit",
+			description: "gauge",
+		})
 	}
 
-	return request
+	wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
+		name:       "target_info",
+		familyName: "target_info",
+	})
+	return request, wantPromMetrics
 }
 
 func generateAttributes(m pcommon.Map, prefix string, count int) {
