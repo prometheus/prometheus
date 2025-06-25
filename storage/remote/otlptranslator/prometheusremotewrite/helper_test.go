@@ -511,7 +511,7 @@ func TestCreateAttributes(t *testing.T) {
 			}
 			lbls := createAttributes(resource, attrs, tc.scope, settings, tc.ignoreAttrs, false, model.MetricNameLabel, "test_metric")
 
-			require.ElementsMatch(t, lbls, tc.expectedLabels)
+			testutil.RequireEqual(t, lbls, tc.expectedLabels)
 		})
 	}
 }
@@ -553,7 +553,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		want         func() map[uint64]*writev2.TimeSeries
+		want         func(*writev2.SymbolsTable) map[uint64]*writev2.TimeSeries
 	}{
 		{
 			name: "summary with start time and without scope promotion",
@@ -570,7 +570,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
 				countLabels := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
 				)
@@ -582,19 +582,19 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				)
 				return map[uint64]*writev2.TimeSeries{
 					countLabels.Hash(): {
-						Labels: countLabels,
+						LabelsRefs: symbolTable.SymbolizeLabels(countLabels, nil),
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					sumLabels.Hash(): {
-						Labels: sumLabels,
+						LabelsRefs: symbolTable.SymbolizeLabels(sumLabels, nil),
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					createdLabels.Hash(): {
-						Labels: createdLabels,
+						LabelsRefs: symbolTable.SymbolizeLabels(createdLabels, nil),
 						Samples: []writev2.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
 						},
@@ -617,8 +617,8 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			want: func() map[uint64]*writev2.TimeSeries {
-				scopeLabels := labels.New([]labels.Label{
+			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
+				scopeLabels := []labels.Label{
 					{
 						Name:  "otel_scope_attr1",
 						Value: "value1",
@@ -639,34 +639,31 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 						Name:  "otel_scope_version",
 						Value: defaultScope.version,
 					},
-				}...)
-				countLabels := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
-					scopeLabels...)
-				sumLabels := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_summary" + sumStr},
-					scopeLabels...)
-				createdLabels := labels.New(
+				}
+				countLabels := labels.New(append(scopeLabels,
+					labels.Label{Name: model.MetricNameLabel, Value: "test_summary" + countStr})...)
+				sumLabels := labels.New(append(scopeLabels,
+					labels.Label{Name: model.MetricNameLabel, Value: "test_summary" + sumStr})...)
+				createdLabels := labels.New(append(scopeLabels,
 					labels.Label{
 						Name:  model.MetricNameLabel,
 						Value: "test_summary" + createdSuffix,
-					},
-					scopeLabels...)
+					})...)
 				return map[uint64]*writev2.TimeSeries{
 					countLabels.Hash(): {
-						Labels: countLabels,
+						LabelsRefs: symbolTable.SymbolizeLabels(countLabels, nil),
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					sumLabels.Hash(): {
-						Labels: sumLabels,
+						LabelsRefs: symbolTable.SymbolizeLabels(sumLabels, nil),
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					createdLabels.Hash(): {
-						Labels: createdLabels,
+						LabelsRefs: symbolTable.SymbolizeLabels(createdLabels, nil),
 						Samples: []writev2.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
 						},
@@ -687,7 +684,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				return metric
 			},
 			promoteScope: false,
-			want: func() map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
 				countLabels := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
 				)
@@ -696,13 +693,13 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				)
 				return map[uint64]*writev2.TimeSeries{
 					countLabels.Hash(): {
-						Labels: countLabels,
+						LabelsRefs: symbolTable.SymbolizeLabels(countLabels, nil),
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					sumLabels.Hash(): {
-						Labels: sumLabels,
+						LabelsRefs: symbolTable.SymbolizeLabels(sumLabels, nil),
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
@@ -728,7 +725,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				tt.scope,
 			)
 
-			testutil.RequireEqual(t, tt.want(), converter.unique)
+			testutil.RequireEqual(t, tt.want(&converter.symbolTable), converter.unique)
 			require.Empty(t, converter.conflicts)
 		})
 	}
@@ -753,7 +750,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		want         func() map[uint64]*writev2.TimeSeries
+		want         func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries
 	}{
 		{
 			name: "histogram with start time and without scope promotion",
@@ -770,7 +767,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
 				countLabels := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test_hist" + countStr},
 				)
@@ -783,19 +780,19 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				)
 				return map[uint64]*writev2.TimeSeries{
 					countLabels.Hash(): {
-						Labels: countLabels,
+						LabelsRefs: symbolTable.SymbolizeLabels(countLabels, nil),
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					infLabels.Hash(): {
-						Labels: infLabels,
+						LabelsRefs: symbolTable.SymbolizeLabels(infLabels, nil),
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					createdLabels.Hash(): {
-						Labels: createdLabels,
+						LabelsRefs: symbolTable.SymbolizeLabels(createdLabels, nil),
 						Samples: []writev2.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
 						},
@@ -818,8 +815,8 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			want: func() map[uint64]*writev2.TimeSeries {
-				scopeLabels := labels.New([]labels.Label{
+			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
+				scopeLabels := []labels.Label{
 					{
 						Name:  "otel_scope_attr1",
 						Value: "value1",
@@ -840,32 +837,29 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 						Name:  "otel_scope_version",
 						Value: defaultScope.version,
 					},
-				}...)
-				countLabels := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_hist" + countStr},
-					scopeLabels...)
-				infLabels := labels.New(
+				}
+				countLabels := labels.New(append(scopeLabels,
+					labels.Label{Name: model.MetricNameLabel, Value: "test_hist" + countStr})...)
+				infLabels := labels.New(append(scopeLabels,
 					labels.Label{Name: model.MetricNameLabel, Value: "test_hist_bucket"},
-					labels.Label{Name: model.BucketLabel, Value: "+Inf"},
-					scopeLabels...)
-				createdLabels := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_hist" + createdSuffix},
-					scopeLabels...)
+					labels.Label{Name: model.BucketLabel, Value: "+Inf"})...)
+				createdLabels := labels.New(append(scopeLabels,
+					labels.Label{Name: model.MetricNameLabel, Value: "test_hist" + createdSuffix})...)
 				return map[uint64]*writev2.TimeSeries{
 					countLabels.Hash(): {
-						Labels: countLabels,
+						LabelsRefs: symbolTable.SymbolizeLabels(countLabels, nil),
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					infLabels.Hash(): {
-						Labels: infLabels,
+						LabelsRefs: symbolTable.SymbolizeLabels(infLabels, nil),
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					createdLabels.Hash(): {
-						Labels: createdLabels,
+						LabelsRefs: symbolTable.SymbolizeLabels(createdLabels, nil),
 						Samples: []writev2.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
 						},
@@ -885,8 +879,8 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 
 				return metric
 			},
-			want: func() map[uint64]*writev2.TimeSeries {
-				labels := labels.New(
+			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
+				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test_hist" + countStr},
 				)
 				infLabels := labels.New(
@@ -895,13 +889,13 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				)
 				return map[uint64]*writev2.TimeSeries{
 					infLabels.Hash(): {
-						Labels: infLabels,
+						LabelsRefs: symbolTable.SymbolizeLabels(infLabels, nil),
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
-					labels.Hash(): {
-						Labels: labels,
+					lbls.Hash(): {
+						LabelsRefs: symbolTable.SymbolizeLabels(lbls, nil),
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
@@ -927,7 +921,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				tt.scope,
 			)
 
-			require.Equal(t, tt.want(), converter.unique)
+			require.Equal(t, tt.want(&converter.symbolTable), converter.unique)
 			require.Empty(t, converter.conflicts)
 		})
 	}

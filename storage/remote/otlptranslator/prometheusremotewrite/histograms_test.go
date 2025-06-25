@@ -638,7 +638,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		wantSeries   func() map[uint64]*writev2.TimeSeries
+		wantSeries   func(*writev2.SymbolsTable) map[uint64]*writev2.TimeSeries
 	}{
 		{
 			name: "histogram data points with same labels and without scope promotion",
@@ -667,14 +667,14 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			wantSeries: func() map[uint64]*writev2.TimeSeries {
-				labels := labels.New(
+			wantSeries: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
+				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test_hist"},
 					labels.Label{Name: "attr", Value: "test_attr"},
 				)
 				return map[uint64]*writev2.TimeSeries{
-					labels.Hash(): {
-						Labels: labels,
+					lbls.Hash(): {
+						LabelsRefs: symbolTable.SymbolizeLabels(lbls, nil),
 						Histograms: []writev2.Histogram{
 							{
 								Count:          &writev2.Histogram_CountInt{CountInt: 7},
@@ -728,8 +728,8 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			wantSeries: func() map[uint64]*writev2.TimeSeries {
-				labels := labels.New([]labels.Label{
+			wantSeries: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
+				lbls := labels.New([]labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist"},
 					{Name: "attr", Value: "test_attr"},
 					{Name: "otel_scope_name", Value: defaultScope.name},
@@ -739,8 +739,8 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 					{Name: "otel_scope_attr2", Value: "value2"},
 				}...)
 				return map[uint64]*writev2.TimeSeries{
-					labels.Hash(): {
-						Labels: labels,
+					lbls.Hash(): {
+						LabelsRefs: symbolTable.SymbolizeLabels(lbls, nil),
 						Histograms: []writev2.Histogram{
 							{
 								Count:          &writev2.Histogram_CountInt{CountInt: 7},
@@ -794,8 +794,8 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			wantSeries: func() map[uint64]*writev2.TimeSeries {
-				labels := labels.New(
+			wantSeries: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
+				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test_hist"},
 					labels.Label{Name: "attr", Value: "test_attr"},
 				)
@@ -805,8 +805,8 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				)
 
 				return map[uint64]*writev2.TimeSeries{
-					labels.Hash(): {
-						Labels: labels,
+					lbls.Hash(): {
+						LabelsRefs: symbolTable.SymbolizeLabels(lbls, nil),
 						Histograms: []writev2.Histogram{
 							{
 								Count:          &writev2.Histogram_CountInt{CountInt: 7},
@@ -822,7 +822,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						},
 					},
 					labelsAnother.Hash(): {
-						Labels: labelsAnother,
+						LabelsRefs: symbolTable.SymbolizeLabels(labelsAnother, nil),
 						Histograms: []writev2.Histogram{
 							{
 								Count:          &writev2.Histogram_CountInt{CountInt: 4},
@@ -864,7 +864,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, annots)
 
-			require.Equal(t, tt.wantSeries(), converter.unique)
+			require.Equal(t, tt.wantSeries(&converter.symbolTable), converter.unique)
 			require.Empty(t, converter.conflicts)
 		})
 	}
@@ -1095,7 +1095,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		wantSeries   func() map[uint64]*writev2.TimeSeries
+		wantSeries   func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries
 	}{
 		{
 			name: "histogram data points with same labels and without scope promotion",
@@ -1124,14 +1124,14 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			wantSeries: func() map[uint64]*writev2.TimeSeries {
-				labels := labels.New(
+			wantSeries: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
+				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
 					labels.Label{Name: "attr", Value: "test_attr"},
 				)
 				return map[uint64]*writev2.TimeSeries{
-					labels.Hash(): {
-						Labels: labels,
+					lbls.Hash(): {
+						LabelsRefs: symbolTable.SymbolizeLabels(lbls, nil),
 						Histograms: []writev2.Histogram{
 							{
 								Count:          &writev2.Histogram_CountInt{CountInt: 3},
@@ -1185,7 +1185,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			wantSeries: func() map[uint64]*writev2.TimeSeries {
+			wantSeries: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
 				labels := labels.New([]labels.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
 					{Name: "attr", Value: "test_attr"},
@@ -1197,7 +1197,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 				}...)
 				return map[uint64]*writev2.TimeSeries{
 					labels.Hash(): {
-						Labels: labels,
+						LabelsRefs: symbolTable.SymbolizeLabels(labels, nil),
 						Histograms: []writev2.Histogram{
 							{
 								Count:          &writev2.Histogram_CountInt{CountInt: 3},
@@ -1251,7 +1251,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			wantSeries: func() map[uint64]*writev2.TimeSeries {
+			wantSeries: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
 					labels.Label{Name: "attr", Value: "test_attr"},
@@ -1263,7 +1263,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 
 				return map[uint64]*writev2.TimeSeries{
 					lbls.Hash(): {
-						Labels: lbls,
+						LabelsRefs: symbolTable.SymbolizeLabels(lbls, nil),
 						Histograms: []writev2.Histogram{
 							{
 								Count:          &writev2.Histogram_CountInt{CountInt: 6},
@@ -1279,7 +1279,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 						},
 					},
 					labelsAnother.Hash(): {
-						Labels: labelsAnother,
+						LabelsRefs: symbolTable.SymbolizeLabels(labelsAnother, nil),
 						Histograms: []writev2.Histogram{
 							{
 								Count:          &writev2.Histogram_CountInt{CountInt: 11},
@@ -1323,7 +1323,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, annots)
 
-			require.Equal(t, tt.wantSeries(), converter.unique)
+			require.Equal(t, tt.wantSeries(&converter.symbolTable), converter.unique)
 			require.Empty(t, converter.conflicts)
 		})
 	}

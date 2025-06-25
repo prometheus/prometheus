@@ -48,7 +48,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		want         func() map[uint64]*writev2.TimeSeries
+		want         func(*writev2.SymbolsTable) map[uint64]*writev2.TimeSeries
 	}{
 		{
 			name: "gauge without scope promotion",
@@ -61,13 +61,13 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test"},
 				)
 				return map[uint64]*writev2.TimeSeries{
 					lbls.Hash(): {
-						Labels: lbls,
+						LabelsRefs: symbolTable.SymbolizeLabels(lbls, nil),
 						Samples: []writev2.Sample{
 							{
 								Value:     1,
@@ -89,7 +89,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			want: func() map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New([]labels.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
 					{Name: "otel_scope_name", Value: defaultScope.name},
@@ -100,7 +100,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				}...)
 				return map[uint64]*writev2.TimeSeries{
 					lbls.Hash(): {
-						Labels: lbls,
+						LabelsRefs: symbolTable.SymbolizeLabels(lbls, nil),
 						Samples: []writev2.Sample{
 							{
 								Value:     1,
@@ -129,7 +129,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				tt.scope,
 			)
 
-			require.Equal(t, tt.want(), converter.unique)
+			require.Equal(t, tt.want(&converter.symbolTable), converter.unique)
 			require.Empty(t, converter.conflicts)
 		})
 	}
@@ -153,7 +153,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		want         func() map[uint64]*writev2.TimeSeries
+		want         func(*writev2.SymbolsTable) map[uint64]*writev2.TimeSeries
 	}{
 		{
 			name: "sum without scope promotion",
@@ -167,13 +167,13 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test"},
 				)
 				return map[uint64]*writev2.TimeSeries{
 					lbls.Hash(): {
-						Labels: lbls,
+						LabelsRefs: symbolTable.SymbolizeLabels(lbls, nil),
 						Samples: []writev2.Sample{
 							{
 								Value:     1,
@@ -196,7 +196,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			want: func() map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New([]labels.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
 					{Name: "otel_scope_name", Value: defaultScope.name},
@@ -207,7 +207,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				}...)
 				return map[uint64]*writev2.TimeSeries{
 					lbls.Hash(): {
-						Labels: lbls,
+						LabelsRefs: symbolTable.SymbolizeLabels(lbls, nil),
 						Samples: []writev2.Sample{
 							{
 								Value:     1,
@@ -232,13 +232,13 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test"},
 				)
 				return map[uint64]*writev2.TimeSeries{
 					lbls.Hash(): {
-						Labels: lbls,
+						LabelsRefs: symbolTable.SymbolizeLabels(lbls, nil),
 						Samples: []writev2.Sample{{
 							Value:     1,
 							Timestamp: convertTimeStamp(ts),
@@ -267,7 +267,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test_sum"},
 				)
@@ -276,13 +276,13 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				)
 				return map[uint64]*writev2.TimeSeries{
 					lbls.Hash(): {
-						Labels: lbls,
+						LabelsRefs: symbolTable.SymbolizeLabels(lbls, nil),
 						Samples: []writev2.Sample{
 							{Value: 1, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					createdlbls.Hash(): {
-						Labels: createdLabels,
+						LabelsRefs: symbolTable.SymbolizeLabels(createdlbls, nil),
 						Samples: []writev2.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
 						},
@@ -305,13 +305,13 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test_sum"},
 				)
 				return map[uint64]*writev2.TimeSeries{
 					lbls.Hash(): {
-						Labels: lbls,
+						LabelsRefs: symbolTable.SymbolizeLabels(lbls, nil),
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
@@ -334,13 +334,13 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*writev2.TimeSeries {
+			want: func(symbolTable *writev2.SymbolsTable) map[uint64]*writev2.TimeSeries {
 				lbls := labels.New(
 					labels.Label{Name: model.MetricNameLabel, Value: "test_sum"},
 				)
 				return map[uint64]*writev2.TimeSeries{
 					lbls.Hash(): {
-						Labels: lbls,
+						LabelsRefs: symbolTable.SymbolizeLabels(lbls, nil),
 						Samples: []writev2.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
@@ -367,7 +367,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				tt.scope,
 			)
 
-			require.Equal(t, tt.want(), converter.unique)
+			require.Equal(t, tt.want(&converter.symbolTable), converter.unique)
 			require.Empty(t, converter.conflicts)
 		})
 	}
