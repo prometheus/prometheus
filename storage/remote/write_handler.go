@@ -534,7 +534,7 @@ type OTLPOptions struct {
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
 // writes them to the provided appendable.
-func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendable storage.Appendable, configFunc func() config.Config, opts OTLPOptions) http.Handler {
+func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, configFunc func() config.Config, opts OTLPOptions) http.Handler {
 	if opts.NativeDelta && opts.ConvertDelta {
 		// This should be validated when iterating through feature flags, so not expected to fail here.
 		panic("cannot enable native delta ingestion and delta2cumulative conversion at the same time")
@@ -544,6 +544,18 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 		writeHandler: &writeHandler{
 			logger:     logger,
 			appendable: appendable,
+			samplesWithInvalidLabelsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+				Namespace: "prometheus",
+				Subsystem: "api/otlp",
+				Name:      "remote_write_invalid_labels_samples_total",
+				Help:      "The total number of received remote write samples and histogram samples which were rejected due to invalid labels.",
+			}),
+			samplesAppendedWithoutMetadata: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+				Namespace: "prometheus",
+				Subsystem: "api/otlp",
+				Name:      "remote_write_without_metadata_appended_samples_total",
+				Help:      "The total number of received remote write samples (and histogram samples) which were ingested without corresponding metadata.",
+			}),
 		},
 		config:                configFunc,
 		allowDeltaTemporality: opts.NativeDelta,
@@ -606,9 +618,9 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		rw.logger.Warn("Warnings translating OTLP metrics to Prometheus write request", "warnings", ws)
 	}
 
-	err = rw.write(ctx, &prompb.WriteRequest{
+	_, _, err = rw.writeV2(ctx, &writev2.Request{
+		Symbols:    converter.Symbols(),
 		Timeseries: converter.TimeSeries(),
-		Metadata:   converter.Metadata(),
 	})
 	return err
 }

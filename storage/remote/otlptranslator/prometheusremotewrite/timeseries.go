@@ -40,6 +40,11 @@ func (c *PrometheusConverter) TimeSeries() []writev2.TimeSeries {
 	return allTS
 }
 
+// Symbols returns the symbols used by timeseries for labels and other strings.
+func (c *PrometheusConverter) Symbols() []string {
+	return c.symbolTable.Symbols()
+}
+
 // Metadata returns a slice of the prompb.Metadata that were converted from OTel format.
 func (c *PrometheusConverter) Metadata() []writev2.Metadata {
 	return c.metadata
