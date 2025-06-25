@@ -85,17 +85,31 @@ const Graph: FC<GraphProps> = ({
   } | null>(null);
 
   // Helper function to render warnings.
-  const renderWarnings = (warnings?: string[]) => {
-    return warnings?.map((w, idx) => (
-      <Alert
-        key={idx}
-        color="red"
-        title="Query warning"
-        icon={<IconAlertTriangle />}
-      >
-        {w}
-      </Alert>
-    ));
+  const renderAlerts = (warnings?: string[], infos?: string[]) => {
+    return (
+      <>
+        {warnings?.map((w, idx) => (
+          <Alert
+            key={idx}
+            color="red"
+            title="Query warning"
+            icon={<IconAlertTriangle />}
+          >
+            {w}
+          </Alert>
+        ))}
+        {infos?.map((w, idx) => (
+          <Alert
+            key={idx}
+            color="yellow"
+            title="Query notice"
+            icon={<IconInfoCircle />}
+          >
+            {w}
+          </Alert>
+        ))}
+      </>
+    );
   };
 
   useEffect(() => {
@@ -166,7 +180,7 @@ const Graph: FC<GraphProps> = ({
         <Alert title="Empty query result" icon={<IconInfoCircle />}>
           This query returned no data.
         </Alert>
-        {renderWarnings(dataAndRange.data.warnings)}
+        {renderAlerts(dataAndRange.data.warnings)}
       </Stack>
     );
   }
@@ -183,7 +197,7 @@ const Graph: FC<GraphProps> = ({
           graphing the equivalent instant vector selector instead.
         </Alert>
       )}
-      {renderWarnings(dataAndRange.data.warnings)}
+      {renderAlerts(dataAndRange.data.warnings, dataAndRange.data.infos)}
       <Box pos="relative" ref={ref} className={classes.chartWrapper}>
         <LoadingOverlay
           visible={isFetching}

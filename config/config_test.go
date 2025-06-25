@@ -1808,9 +1808,9 @@ func TestOTLPConvertHistogramsToNHCB(t *testing.T) {
 	})
 }
 
-func TestOTLPConvertScopeMetadata(t *testing.T) {
+func TestOTLPPromoteScopeMetadata(t *testing.T) {
 	t.Run("good config", func(t *testing.T) {
-		want, err := LoadFile(filepath.Join("testdata", "otlp_convert_scope_metadata.good.yml"), false, promslog.NewNopLogger())
+		want, err := LoadFile(filepath.Join("testdata", "otlp_promote_scope_metadata.good.yml"), false, promslog.NewNopLogger())
 		require.NoError(t, err)
 
 		out, err := yaml.Marshal(want)
@@ -1818,7 +1818,7 @@ func TestOTLPConvertScopeMetadata(t *testing.T) {
 		var got Config
 		require.NoError(t, yaml.UnmarshalStrict(out, &got))
 
-		require.True(t, got.OTLPConfig.ConvertScopeMetadata)
+		require.True(t, got.OTLPConfig.PromoteScopeMetadata)
 	})
 }
 

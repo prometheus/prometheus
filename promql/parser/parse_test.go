@@ -4540,6 +4540,11 @@ var testExpr = []struct {
 			PosRange: posrange.PositionRange{Start: 0, End: 20},
 		},
 	},
+	{
+		input:  "sum(rate(",
+		fail:   true,
+		errMsg: "unclosed left parenthesis",
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {

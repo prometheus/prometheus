@@ -1322,6 +1322,15 @@ eval instant at 10m histogram_sub_3{idx="0"} - ignoring(idx) histogram_sub_3{idx
 
 clear
 
+# Test native histograms with last_over_time subquery
+load 2m
+    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}x20
+
+eval range from 0s to 60s step 15s last_over_time({__name__="http_request_duration_seconds"} @ start()[1h:1m] offset 1m16s)
+    {__name__="http_request_duration_seconds", pod="nginx-1"} {{count:3 sum:14 buckets:[1 2]}}x4
+
+clear
+
 # Test native histogram quantile and fraction when the native histogram with exponential
 # buckets has NaN observations.
 load 1m
