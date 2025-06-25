@@ -3088,7 +3088,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 		t.Run(test.input, func(t *testing.T) {
 			expr, err := parser.ParseExpr(test.input)
 			require.NoError(t, err)
-			expr, err = promql.PreprocessExpr(expr, startTime, endTime)
+			expr, err = promql.PreprocessExpr(expr, startTime, endTime, 0)
 			require.NoError(t, err)
 			if test.outputTest {
 				require.Equal(t, test.input, expr.String(), "error on input '%s'", test.input)
