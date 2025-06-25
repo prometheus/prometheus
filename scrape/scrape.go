@@ -154,7 +154,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 		return nil, fmt.Errorf("invalid metric name validation scheme: %w", err)
 	}
 	var escapingScheme model.EscapingScheme
-	escapingScheme, err = model.ToEscapingScheme(cfg.MetricNameEscapingScheme)
+	escapingScheme, err = config.ToEscapingScheme(cfg.MetricNameEscapingScheme, validationScheme)
 	if err != nil {
 		return nil, fmt.Errorf("invalid metric name escaping scheme, %w", err)
 	}

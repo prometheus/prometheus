@@ -172,6 +172,8 @@ var (
 		ScrapeProtocols:                DefaultScrapeProtocols,
 		ConvertClassicHistogramsToNHCB: false,
 		AlwaysScrapeClassicHistograms:  false,
+		MetricNameValidationScheme:     UTF8ValidationConfig,
+		MetricNameEscapingScheme:       model.AllowUTF8,
 	}
 
 	DefaultRuntimeConfig = RuntimeConfig{
@@ -179,7 +181,10 @@ var (
 		GoGC: getGoGC(),
 	}
 
-	// DefaultScrapeConfig is the default scrape configuration.
+	// DefaultScrapeConfig is the default scrape configuration. Users of this
+	// default MUST call Validate() on the config after creation, even if it's
+	// used unaltered, to check for parameter correctness and fill out default
+	// values that can't be set inline in this declaration.
 	DefaultScrapeConfig = ScrapeConfig{
 		// ScrapeTimeout, ScrapeInterval, ScrapeProtocols, AlwaysScrapeClassicHistograms, and ConvertClassicHistogramsToNHCB default to the configured globals.
 		MetricsPath:       "/metrics",
@@ -940,6 +945,12 @@ func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 // ToValidationScheme returns the validation scheme for the given string config value.
 func ToValidationScheme(s string) (validationScheme model.ValidationScheme, err error) {
 	switch s {
+	case "":
+		// This is a workaround for third party exporters that don't set the validation scheme.
+		if DefaultGlobalConfig.MetricNameValidationScheme == "" {
+			return model.UTF8Validation, errors.New("global metric name validation scheme is not set")
+		}
+		return ToValidationScheme(DefaultGlobalConfig.MetricNameValidationScheme)
 	case UTF8ValidationConfig:
 		validationScheme = model.UTF8Validation
 	case LegacyValidationConfig:
@@ -949,6 +960,21 @@ func ToValidationScheme(s string) (validationScheme model.ValidationScheme, err 
 	}
 
 	return validationScheme, nil
+}
+
+// ToEscapingScheme wraps the equivalent common library function with the
+// desired default behavior based on the given validation scheme. This is a
+// workaround for third party exporters that don't set the escaping scheme.
+func ToEscapingScheme(s string, v model.ValidationScheme) (model.EscapingScheme, error) {
+	if s == "" {
+		switch v {
+		case model.UTF8Validation:
+			return model.NoEscaping, nil
+		case model.LegacyValidation:
+			return model.UnderscoreEscaping, nil
+		}
+	}
+	return model.ToEscapingScheme(s)
 }
 
 // ConvertClassicHistogramsToNHCBEnabled returns whether to convert classic histograms to NHCB.
