@@ -14,7 +14,6 @@
 package promql
 
 import (
-	"fmt"
 	"math"
 	"slices"
 	"sort"
@@ -294,7 +293,7 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string
 		// then count >= rank, or Sum is set to NaN. Might be a precision issue
 		// or something wrong with the histogram, fall back to returning the
 		// upper bound of the highest explicit bucket.
-	    return bucket.Upper, annos
+		return bucket.Upper, annos
 	}
 
 	// NaN observations increase h.Count but not the total number of
