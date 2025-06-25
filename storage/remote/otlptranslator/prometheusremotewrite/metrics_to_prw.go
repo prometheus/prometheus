@@ -272,11 +272,6 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	return annots, errs
 }
 
-func isSameMetric(ts *writev2.TimeSeries, lbls labels.Labels) bool {
-	b := labels.NewScratchBuilder(len(ts.LabelsRefs))
-	return labels.Equal(ts.ToLabels(&b, nil), lbls)
-}
-
 // addExemplars adds exemplars for the dataPoint. For each exemplar, if it can find a bucket bound corresponding to its value,
 // the exemplar is added to the bucket bound's time series, provided that the time series' has samples.
 func (c *PrometheusConverter) addExemplars(ctx context.Context, dataPoint pmetric.HistogramDataPoint, bucketBounds []bucketBoundsData) error {

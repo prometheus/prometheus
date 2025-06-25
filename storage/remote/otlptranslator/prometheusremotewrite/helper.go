@@ -458,14 +458,15 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls labels.Labels) (*writev
 	h := lbls.Hash()
 	ts := c.unique[h]
 	if ts != nil {
-		if isSameMetric(ts, lbls) {
+		b := labels.NewScratchBuilder(len(ts.LabelsRefs))
+		if labels.Equal(ts.ToLabels(&b, c.symbolTable.Symbols()), lbls) {
 			// We already have this metric
 			return ts, false
 		}
 
 		// Look for a matching conflict
 		for _, cTS := range c.conflicts[h] {
-			if isSameMetric(cTS, lbls) {
+			if labels.Equal(cTS.ToLabels(&b, c.symbolTable.Symbols()), lbls) {
 				// We already have this metric
 				return cTS, false
 			}
