@@ -23,7 +23,6 @@ import (
 	"log"
 	"math"
 	"slices"
-	"sort"
 	"strconv"
 	"unicode/utf8"
 
@@ -85,67 +84,45 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 	promotedAttrs := settings.PromoteResourceAttributes.promotedAttributes(resourceAttrs)
 
 	promoteScope := settings.PromoteScopeMetadata && scope.name != ""
-	scopeLabelCount := 0
-	if promoteScope {
-		// Include name, version and schema URL.
-		scopeLabelCount = scope.attributes.Len() + 3
-	}
-	// Calculate the maximum possible number of labels we could return so we can preallocate l.
-	maxLabelCount := attributes.Len() + len(settings.ExternalLabels) + len(promotedAttrs) + scopeLabelCount + len(extras)/2
+	lbls := labels.NewBuilder(labels.New())
 
-	if haveServiceName {
-		maxLabelCount++
-	}
-	if haveInstanceID {
-		maxLabelCount++
-	}
-
-	// Ensure attributes are sorted by key for consistent merging of keys which
-	// collide when sanitized.
-	labels := make(labels.Labels, 0, maxLabelCount)
 	// XXX: Should we always drop service namespace/service name/service instance ID from the labels
 	// (as they get mapped to other Prometheus labels)?
 	attributes.Range(func(key string, value pcommon.Value) bool {
 		if !slices.Contains(ignoreAttrs, key) {
-			labels = append(labels, labels.Label{Name: key, Value: value.AsString()})
+			finalKey := key
+			if !settings.AllowUTF8 {
+				finalKey = otlptranslator.NormalizeLabel(finalKey)
+			}
+			if existingValue := lbls.Get(finalKey); existingValue != "" {
+				lbls.Set(finalKey, existingValue+";"+value.AsString())
+			} else {
+				lbls.Set(finalKey, value.AsString())
+			}
 		}
 		return true
 	})
-	sort.Stable(ByLabelName(labels))
 
-	// map ensures no duplicate label names.
-	l := make(map[string]string, maxLabelCount)
-	for _, label := range labels {
-		finalKey := label.Name
-		if !settings.AllowUTF8 {
-			finalKey = otlptranslator.NormalizeLabel(finalKey)
-		}
-		if existingValue, alreadyExists := l[finalKey]; alreadyExists {
-			l[finalKey] = existingValue + ";" + label.Value
-		} else {
-			l[finalKey] = label.Value
-		}
-	}
-
-	for _, lbl := range promotedAttrs {
-		normalized := lbl.Name
+	promotedAttrs.Range(func(l labels.Label) {
+		normalized := l.Name
 		if !settings.AllowUTF8 {
 			normalized = otlptranslator.NormalizeLabel(normalized)
 		}
-		if _, exists := l[normalized]; !exists {
-			l[normalized] = lbl.Value
+		if existingValue := lbls.Get(normalized); existingValue == "" {
+			lbls.Set(normalized, l.Value)
 		}
-	}
+	})
+
 	if promoteScope {
-		l["otel_scope_name"] = scope.name
-		l["otel_scope_version"] = scope.version
-		l["otel_scope_schema_url"] = scope.schemaURL
+		lbls.Set("otel_scope_name", scope.name)
+		lbls.Set("otel_scope_version", scope.version)
+		lbls.Set("otel_scope_schema_url", scope.schemaURL)
 		scope.attributes.Range(func(k string, v pcommon.Value) bool {
 			name := "otel_scope_" + k
 			if !settings.AllowUTF8 {
 				name = otlptranslator.NormalizeLabel(name)
 			}
-			l[name] = v.AsString()
+			lbls.Set(name, v.AsString())
 			return true
 		})
 	}
@@ -156,19 +133,19 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 		if serviceNamespace, ok := resourceAttrs.Get(conventions.AttributeServiceNamespace); ok {
 			val = fmt.Sprintf("%s/%s", serviceNamespace.AsString(), val)
 		}
-		l[model.JobLabel] = val
+		lbls.Set(model.JobLabel, val)
 	}
 	// Map service.instance.id to instance.
 	if haveInstanceID {
-		l[model.InstanceLabel] = instance.AsString()
+		lbls.Set(model.InstanceLabel, instance.AsString())
 	}
 	for key, value := range settings.ExternalLabels {
 		// External labels have already been sanitized.
-		if _, alreadyExists := l[key]; alreadyExists {
+		if existingValue := lbls.Get(key); existingValue != "" {
 			// Skip external labels if they are overridden by metric attributes.
 			continue
 		}
-		l[key] = value
+		lbls.Set(key, value)
 	}
 
 	for i := 0; i < len(extras); i += 2 {
@@ -177,23 +154,17 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 		}
 
 		name := extras[i]
-		_, found := l[name]
-		if found && logOnOverwrite {
+		if existingValue := lbls.Get(name); existingValue != "" && logOnOverwrite {
 			log.Println("label " + name + " is overwritten. Check if Prometheus reserved labels are used.")
 		}
 		// internal labels should be maintained.
 		if !settings.AllowUTF8 && (len(name) <= 4 || name[:2] != "__" || name[len(name)-2:] != "__") {
 			name = otlptranslator.NormalizeLabel(name)
 		}
-		l[name] = extras[i+1]
+		lbls.Set(name, extras[i+1])
 	}
 
-	labels = labels[:0]
-	for k, v := range l {
-		labels = append(labels, labels.Label{Name: k, Value: v})
-	}
-
-	return labels
+	return lbls.Labels()
 }
 
 func aggregationTemporality(metric pmetric.Metric) (pmetric.AggregationTemporality, bool, error) {
