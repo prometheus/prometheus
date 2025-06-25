@@ -313,7 +313,7 @@ func (c *PrometheusConverter) addExemplars(ctx context.Context, dataPoint pmetri
 // The corresponding TimeSeries is returned.
 // If either lbls is nil/empty or sample is nil, nothing is done.
 func (c *PrometheusConverter) addSample(sample *writev2.Sample, lbls labels.Labels) *writev2.TimeSeries {
-	if sample == nil || len(lbls) == 0 {
+	if sample == nil || lbls.Len() == 0 {
 		// This shouldn't happen
 		return nil
 	}
