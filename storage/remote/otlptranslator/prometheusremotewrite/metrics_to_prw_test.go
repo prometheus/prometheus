@@ -804,48 +804,41 @@ func TestTranslatorMetricFromOtelMetric(t *testing.T) {
 	}
 }
 
-func createOTelGaugeForTranslator(name, unit, description string) pmetric.Metric {
+func createOTelMetricForTranslator(name, unit, description string) pmetric.Metric {
 	m := pmetric.NewMetric()
 	m.SetName(name)
 	m.SetUnit(unit)
 	m.SetDescription(description)
+	return m
+}
+
+func createOTelGaugeForTranslator(name, unit, description string) pmetric.Metric {
+	m := createOTelMetricForTranslator(name, unit, description)
 	m.SetEmptyGauge()
 	return m
 }
 
 func createOTelSumForTranslator(name, unit, description string, isMonotonic bool) pmetric.Metric {
-	m := pmetric.NewMetric()
-	m.SetName(name)
-	m.SetUnit(unit)
-	m.SetDescription(description)
+	m := createOTelMetricForTranslator(name, unit, description)
 	sum := m.SetEmptySum()
 	sum.SetIsMonotonic(isMonotonic)
 	return m
 }
 
 func createOTelHistogramForTranslator(name, unit, description string) pmetric.Metric {
-	m := pmetric.NewMetric()
-	m.SetName(name)
-	m.SetUnit(unit)
-	m.SetDescription(description)
+	m := createOTelMetricForTranslator(name, unit, description)
 	m.SetEmptyHistogram()
 	return m
 }
 
 func createOTelExponentialHistogramForTranslator(name, unit, description string) pmetric.Metric {
-	m := pmetric.NewMetric()
-	m.SetName(name)
-	m.SetUnit(unit)
-	m.SetDescription(description)
+	m := createOTelMetricForTranslator(name, unit, description)
 	m.SetEmptyExponentialHistogram()
 	return m
 }
 
 func createOTelSummaryForTranslator(name, unit, description string) pmetric.Metric {
-	m := pmetric.NewMetric()
-	m.SetName(name)
-	m.SetUnit(unit)
-	m.SetDescription(description)
+	m := createOTelMetricForTranslator(name, unit, description)
 	m.SetEmptySummary()
 	return m
 }
