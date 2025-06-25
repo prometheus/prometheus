@@ -115,15 +115,10 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 				return nil
 			}
 
-			createdLabels := make(labels.Labels, len(lbls))
-			copy(createdLabels, lbls)
-			for i, l := range createdLabels {
-				if l.Name == model.MetricNameLabel {
-					createdLabels[i].Value = name + createdSuffix
-					break
-				}
-			}
-			c.addTimeSeriesIfNeeded(createdLabels, startTimestamp, pt.Timestamp())
+			b := labels.NewBuilder(lbls)
+			// add created suffix to the metric name
+			b.Set(model.MetricNameLabel, b.Get(model.MetricNameLabel)+createdSuffix)
+			c.addTimeSeriesIfNeeded(b.Labels(), startTimestamp, pt.Timestamp())
 		}
 	}
 
