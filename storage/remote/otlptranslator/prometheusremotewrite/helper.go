@@ -74,7 +74,7 @@ func (m byBucketBoundsData) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 // Unpaired string values are ignored. String pairs overwrite OTLP labels if collisions happen and
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
-func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope scope, settings Settings,
+func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope scope, settings Settings,
 	ignoreAttrs []string, logOnOverwrite bool, extras ...string,
 ) labels.Labels {
 	resourceAttrs := resource.Attributes()
@@ -84,7 +84,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 	promotedAttrs := settings.PromoteResourceAttributes.promotedAttributes(resourceAttrs)
 
 	promoteScope := settings.PromoteScopeMetadata && scope.name != ""
-	lbls := labels.NewBuilder(labels.New())
+	c.builder.Reset(labels.EmptyLabels())
 
 	// XXX: Should we always drop service namespace/service name/service instance ID from the labels
 	// (as they get mapped to other Prometheus labels)?
@@ -94,10 +94,10 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 			if !settings.AllowUTF8 {
 				finalKey = otlptranslator.NormalizeLabel(finalKey)
 			}
-			if existingValue := lbls.Get(finalKey); existingValue != "" {
-				lbls.Set(finalKey, existingValue+";"+value.AsString())
+			if existingValue := c.builder.Get(finalKey); existingValue != "" {
+				c.builder.Set(finalKey, existingValue+";"+value.AsString())
 			} else {
-				lbls.Set(finalKey, value.AsString())
+				c.builder.Set(finalKey, value.AsString())
 			}
 		}
 		return true
@@ -108,21 +108,21 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 		if !settings.AllowUTF8 {
 			normalized = otlptranslator.NormalizeLabel(normalized)
 		}
-		if existingValue := lbls.Get(normalized); existingValue == "" {
-			lbls.Set(normalized, l.Value)
+		if existingValue := c.builder.Get(normalized); existingValue == "" {
+			c.builder.Set(normalized, l.Value)
 		}
 	})
 
 	if promoteScope {
-		lbls.Set("otel_scope_name", scope.name)
-		lbls.Set("otel_scope_version", scope.version)
-		lbls.Set("otel_scope_schema_url", scope.schemaURL)
+		c.builder.Set("otel_scope_name", scope.name)
+		c.builder.Set("otel_scope_version", scope.version)
+		c.builder.Set("otel_scope_schema_url", scope.schemaURL)
 		scope.attributes.Range(func(k string, v pcommon.Value) bool {
 			name := "otel_scope_" + k
 			if !settings.AllowUTF8 {
 				name = otlptranslator.NormalizeLabel(name)
 			}
-			lbls.Set(name, v.AsString())
+			c.builder.Set(name, v.AsString())
 			return true
 		})
 	}
@@ -133,19 +133,19 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 		if serviceNamespace, ok := resourceAttrs.Get(conventions.AttributeServiceNamespace); ok {
 			val = fmt.Sprintf("%s/%s", serviceNamespace.AsString(), val)
 		}
-		lbls.Set(model.JobLabel, val)
+		c.builder.Set(model.JobLabel, val)
 	}
 	// Map service.instance.id to instance.
 	if haveInstanceID {
-		lbls.Set(model.InstanceLabel, instance.AsString())
+		c.builder.Set(model.InstanceLabel, instance.AsString())
 	}
 	for key, value := range settings.ExternalLabels {
 		// External labels have already been sanitized.
-		if existingValue := lbls.Get(key); existingValue != "" {
+		if existingValue := c.builder.Get(key); existingValue != "" {
 			// Skip external labels if they are overridden by metric attributes.
 			continue
 		}
-		lbls.Set(key, value)
+		c.builder.Set(key, value)
 	}
 
 	for i := 0; i < len(extras); i += 2 {
@@ -154,17 +154,17 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 		}
 
 		name := extras[i]
-		if existingValue := lbls.Get(name); existingValue != "" && logOnOverwrite {
+		if existingValue := c.builder.Get(name); existingValue != "" && logOnOverwrite {
 			log.Println("label " + name + " is overwritten. Check if Prometheus reserved labels are used.")
 		}
 		// internal labels should be maintained.
 		if !settings.AllowUTF8 && (len(name) <= 4 || name[:2] != "__" || name[len(name)-2:] != "__") {
 			name = otlptranslator.NormalizeLabel(name)
 		}
-		lbls.Set(name, extras[i+1])
+		c.builder.Set(name, extras[i+1])
 	}
 
-	return lbls.Labels()
+	return c.builder.Labels()
 }
 
 func aggregationTemporality(metric pmetric.Metric) (pmetric.AggregationTemporality, bool, error) {
@@ -199,7 +199,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
-		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
+		baseLabels := c.createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
 		// If the sum is unset, it indicates the _sum metric point should be
 		// omitted
@@ -213,7 +213,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 				sum.Value = math.Float64frombits(value.StaleNaN)
 			}
 
-			sumlabels := createLabels(baseName+sumStr, baseLabels)
+			sumlabels := c.createLabels(baseName+sumStr, baseLabels)
 			c.addSample(sum, sumlabels, metadata)
 		}
 
@@ -226,7 +226,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			count.Value = math.Float64frombits(value.StaleNaN)
 		}
 
-		countlabels := createLabels(baseName+countStr, baseLabels)
+		countlabels := c.createLabels(baseName+countStr, baseLabels)
 		c.addSample(count, countlabels, metadata)
 
 		// cumulative count for conversion to cumulative histogram
@@ -250,7 +250,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 				bucket.Value = math.Float64frombits(value.StaleNaN)
 			}
 			boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
-			labels := createLabels(baseName+bucketStr, baseLabels, leStr, boundStr)
+			labels := c.createLabels(baseName+bucketStr, baseLabels, leStr, boundStr)
 			ts := c.addSample(bucket, labels, metadata)
 
 			bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: bound})
@@ -264,7 +264,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		} else {
 			infBucket.Value = float64(pt.Count())
 		}
-		infLabels := createLabels(baseName+bucketStr, baseLabels, leStr, pInfStr)
+		infLabels := c.createLabels(baseName+bucketStr, baseLabels, leStr, pInfStr)
 		ts := c.addSample(infBucket, infLabels, metadata)
 
 		bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: math.Inf(1)})
@@ -274,7 +274,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 
 		startTimestamp := pt.StartTimestamp()
 		if settings.ExportCreatedMetric && startTimestamp != 0 {
-			labels := createLabels(baseName+createdSuffix, baseLabels)
+			labels := c.createLabels(baseName+createdSuffix, baseLabels)
 			c.addTimeSeriesIfNeeded(labels, startTimestamp, pt.Timestamp(), metadata)
 		}
 	}
@@ -287,20 +287,20 @@ type exemplarType interface {
 	Exemplars() pmetric.ExemplarSlice
 }
 
-func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, pt T) ([]writev2.Exemplar, error) {
-	promExemplars := make([]writev2.Exemplar, 0, pt.Exemplars().Len())
-	for i := 0; i < pt.Exemplars().Len(); i++ {
-		if err := everyN.checkContext(ctx); err != nil {
+func (c *PrometheusConverter) getPromExemplars(ctx context.Context, exemplars pmetric.ExemplarSlice) ([]writev2.Exemplar, error) {
+	promExemplars := make([]writev2.Exemplar, 0, exemplars.Len())
+	for i := 0; i < exemplars.Len(); i++ {
+		if err := c.everyN.checkContext(ctx); err != nil {
 			return nil, err
 		}
 
-		exemplar := pt.Exemplars().At(i)
+		exemplar := exemplars.At(i)
 		exemplarRunes := 0
 
 		promExemplar := writev2.Exemplar{
 			Timestamp: timestamp.FromTime(exemplar.Timestamp().AsTime()),
 		}
-		b := labels.NewScratchBuilder(exemplar.FilteredAttributes().Len() + 2)
+		c.scratchBuilder.Reset()
 		switch exemplar.ValueType() {
 		case pmetric.ExemplarValueTypeInt:
 			promExemplar.Value = float64(exemplar.IntValue())
@@ -313,12 +313,12 @@ func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, 
 		if traceID := exemplar.TraceID(); !traceID.IsEmpty() {
 			val := hex.EncodeToString(traceID[:])
 			exemplarRunes += utf8.RuneCountInString(traceIDKey) + utf8.RuneCountInString(val)
-			b.Add(traceIDKey, val)
+			c.scratchBuilder.Add(traceIDKey, val)
 		}
 		if spanID := exemplar.SpanID(); !spanID.IsEmpty() {
 			val := hex.EncodeToString(spanID[:])
 			exemplarRunes += utf8.RuneCountInString(spanIDKey) + utf8.RuneCountInString(val)
-			b.Add(spanIDKey, val)
+			c.scratchBuilder.Add(spanIDKey, val)
 		}
 
 		attrs := exemplar.FilteredAttributes()
@@ -331,10 +331,12 @@ func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, 
 		// labels to exceed the max number of runes
 		if exemplarRunes <= maxExemplarRunes {
 			attrs.Range(func(key string, value pcommon.Value) bool {
-				b.Add(key, value.AsString())
+				c.scratchBuilder.Add(key, value.AsString())
 				return true
 			})
 		}
+		c.scratchBuilder.Sort()
+		promExemplar.LabelsRefs = c.symbolTable.SymbolizeLabels(c.scratchBuilder.Labels(), promExemplar.LabelsRefs)
 
 		promExemplars = append(promExemplars, promExemplar)
 	}
@@ -387,7 +389,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
-		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
+		baseLabels := c.createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
 		// treat sum as a sample in an individual TimeSeries
 		sum := &writev2.Sample{
@@ -398,7 +400,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 			sum.Value = math.Float64frombits(value.StaleNaN)
 		}
 		// sum and count of the summary should append suffix to baseName
-		sumlabels := createLabels(baseName+sumStr, baseLabels)
+		sumlabels := c.createLabels(baseName+sumStr, baseLabels)
 		c.addSample(sum, sumlabels, metadata)
 
 		// treat count as a sample in an individual TimeSeries
@@ -409,7 +411,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		if pt.Flags().NoRecordedValue() {
 			count.Value = math.Float64frombits(value.StaleNaN)
 		}
-		countlabels := createLabels(baseName+countStr, baseLabels)
+		countlabels := c.createLabels(baseName+countStr, baseLabels)
 		c.addSample(count, countlabels, metadata)
 
 		// process each percentile/quantile
@@ -423,13 +425,13 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 				quantile.Value = math.Float64frombits(value.StaleNaN)
 			}
 			percentileStr := strconv.FormatFloat(qt.Quantile(), 'f', -1, 64)
-			qtlabels := createLabels(baseName, baseLabels, quantileStr, percentileStr)
+			qtlabels := c.createLabels(baseName, baseLabels, quantileStr, percentileStr)
 			c.addSample(quantile, qtlabels, metadata)
 		}
 
 		startTimestamp := pt.StartTimestamp()
 		if settings.ExportCreatedMetric && startTimestamp != 0 {
-			createdLabels := createLabels(baseName+createdSuffix, baseLabels)
+			createdLabels := c.createLabels(baseName+createdSuffix, baseLabels)
 			c.addTimeSeriesIfNeeded(createdLabels, startTimestamp, pt.Timestamp(), metadata)
 		}
 	}
@@ -440,16 +442,16 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 // createLabels returns a copy of baseLabels, adding to it the pair model.MetricNameLabel=name.
 // If extras are provided, corresponding label pairs are also added to the returned slice.
 // If extras is uneven length, the last (unpaired) extra will be ignored.
-func createLabels(name string, baseLabels labels.Labels, extras ...string) labels.Labels {
-	b := labels.NewBuilder(baseLabels)
+func (c *PrometheusConverter) createLabels(name string, baseLabels labels.Labels, extras ...string) labels.Labels {
+	c.builder.Reset(baseLabels)
 
 	n := len(extras)
 	n -= n % 2
 	for extrasIdx := 0; extrasIdx < n; extrasIdx += 2 {
-		b.Set(extras[extrasIdx], extras[extrasIdx+1])
+		c.builder.Set(extras[extrasIdx], extras[extrasIdx+1])
 	}
-	b.Set(model.MetricNameLabel, name)
-	return b.Labels()
+	c.builder.Set(model.MetricNameLabel, name)
+	return c.builder.Labels()
 }
 
 // getOrCreateTimeSeries returns the time series corresponding to the label set if existent, and false.
@@ -458,15 +460,14 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls labels.Labels, metadata
 	h := lbls.Hash()
 	ts := c.unique[h]
 	if ts != nil {
-		b := labels.NewScratchBuilder(len(ts.LabelsRefs))
-		if labels.Equal(ts.ToLabels(&b, c.symbolTable.Symbols()), lbls) {
+		if labels.Equal(ts.ToLabels(&c.scratchBuilder, c.symbolTable.Symbols()), lbls) {
 			// We already have this metric
 			return ts, false
 		}
 
 		// Look for a matching conflict
 		for _, cTS := range c.conflicts[h] {
-			if labels.Equal(cTS.ToLabels(&b, c.symbolTable.Symbols()), lbls) {
+			if labels.Equal(cTS.ToLabels(&c.scratchBuilder, c.symbolTable.Symbols()), lbls) {
 				// We already have this metric
 				return cTS, false
 			}
@@ -474,7 +475,7 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls labels.Labels, metadata
 
 		// New conflict
 		ts = &writev2.TimeSeries{
-			LabelsRefs: c.symbolTable.SymbolizeLabels(lbls, nil), // TODO: optimize--reuse slice
+			LabelsRefs: c.symbolTable.SymbolizeLabels(lbls, nil),
 			Metadata:   metadata,
 		}
 		c.conflicts[h] = append(c.conflicts[h], ts)
@@ -483,7 +484,7 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls labels.Labels, metadata
 
 	// This metric is new
 	ts = &writev2.TimeSeries{
-		LabelsRefs: c.symbolTable.SymbolizeLabels(lbls, nil), // TODO: optimize--reuse slice
+		LabelsRefs: c.symbolTable.SymbolizeLabels(lbls, nil),
 		Metadata:   metadata,
 	}
 	c.unique[h] = ts
@@ -507,7 +508,7 @@ func (c *PrometheusConverter) addTimeSeriesIfNeeded(lbls labels.Labels, startTim
 }
 
 // addResourceTargetInfo converts the resource to the target info metric.
-func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp, converter *PrometheusConverter) {
+func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp) {
 	if settings.DisableTargetInfo || timestamp == 0 {
 		return
 	}
@@ -540,7 +541,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		// Do not pass identifying attributes as ignoreAttrs below.
 		identifyingAttrs = nil
 	}
-	lbls := createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, model.MetricNameLabel, name)
+	lbls := c.createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, model.MetricNameLabel, name)
 	haveIdentifier := false
 	lbls.Range(func(l labels.Label) {
 		if l.Name == model.JobLabel || l.Name == model.InstanceLabel {
@@ -558,9 +559,11 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		// convert ns to ms
 		Timestamp: convertTimeStamp(timestamp),
 	}
-	// TODO: add metadata for target_info
-	metadata := writev2.Metadata{}
-	converter.addSample(sample, lbls, metadata)
+	metadata := writev2.Metadata{
+		Type:    writev2.Metadata_METRIC_TYPE_GAUGE,
+		HelpRef: c.symbolTable.Symbolize("Target metadata"),
+	}
+	c.addSample(sample, lbls, metadata)
 }
 
 // convertTimeStamp converts OTLP timestamp in ns to timestamp in ms.

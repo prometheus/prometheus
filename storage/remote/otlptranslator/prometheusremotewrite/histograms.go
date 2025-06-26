@@ -53,7 +53,7 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			return annots, err
 		}
 
-		lbls := createAttributes(
+		lbls := c.createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
@@ -66,7 +66,7 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 		ts, _ := c.getOrCreateTimeSeries(lbls, metadata)
 		ts.Histograms = append(ts.Histograms, histogram)
 
-		exemplars, err := getPromExemplars[pmetric.ExponentialHistogramDataPoint](ctx, &c.everyN, pt)
+		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return annots, err
 		}
@@ -271,7 +271,7 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 			return annots, err
 		}
 
-		lbls := createAttributes(
+		lbls := c.createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
@@ -285,7 +285,7 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 		ts, _ := c.getOrCreateTimeSeries(lbls, metadata)
 		ts.Histograms = append(ts.Histograms, histogram)
 
-		exemplars, err := getPromExemplars[pmetric.HistogramDataPoint](ctx, &c.everyN, pt)
+		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return annots, err
 		}

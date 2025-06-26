@@ -501,6 +501,7 @@ func TestCreateAttributes(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			c := NewPrometheusConverter()
 			settings := Settings{
 				PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
 					PromoteAllResourceAttributes: tc.promoteAllResourceAttributes,
@@ -509,7 +510,7 @@ func TestCreateAttributes(t *testing.T) {
 				}),
 				PromoteScopeMetadata: tc.promoteScope,
 			}
-			lbls := createAttributes(resource, attrs, tc.scope, settings, tc.ignoreAttrs, false, model.MetricNameLabel, "test_metric")
+			lbls := c.createAttributes(resource, attrs, tc.scope, settings, tc.ignoreAttrs, false, model.MetricNameLabel, "test_metric")
 
 			testutil.RequireEqual(t, lbls, tc.expectedLabels)
 		})
@@ -969,14 +970,14 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 
 func TestGetPromExemplars(t *testing.T) {
 	ctx := context.Background()
-	everyN := &everyNTimes{n: 1}
+	converter := NewPrometheusConverter()
 
 	t.Run("Exemplars with int value", func(t *testing.T) {
 		pt := pmetric.NewNumberDataPoint()
 		exemplar := pt.Exemplars().AppendEmpty()
 		exemplar.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
 		exemplar.SetIntValue(42)
-		exemplars, err := getPromExemplars(ctx, everyN, pt)
+		exemplars, err := converter.getPromExemplars(ctx, pt.Exemplars())
 		require.NoError(t, err)
 		require.Len(t, exemplars, 1)
 		require.Equal(t, float64(42), exemplars[0].Value)
@@ -987,7 +988,7 @@ func TestGetPromExemplars(t *testing.T) {
 		exemplar := pt.Exemplars().AppendEmpty()
 		exemplar.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
 		exemplar.SetDoubleValue(69.420)
-		exemplars, err := getPromExemplars(ctx, everyN, pt)
+		exemplars, err := converter.getPromExemplars(ctx, pt.Exemplars())
 		require.NoError(t, err)
 		require.Len(t, exemplars, 1)
 		require.Equal(t, 69.420, exemplars[0].Value)
@@ -997,7 +998,7 @@ func TestGetPromExemplars(t *testing.T) {
 		pt := pmetric.NewNumberDataPoint()
 		exemplar := pt.Exemplars().AppendEmpty()
 		exemplar.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
-		_, err := getPromExemplars(ctx, everyN, pt)
+		_, err := converter.getPromExemplars(ctx, pt.Exemplars())
 		require.Error(t, err)
 	})
 }

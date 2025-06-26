@@ -34,8 +34,9 @@ import (
 )
 
 type PromoteResourceAttributes struct {
-	promoteAll bool
-	attrs      map[string]struct{}
+	promoteAll     bool
+	attrs          map[string]struct{}
+	scratchBuilder labels.ScratchBuilder
 }
 
 type Settings struct {
@@ -55,17 +56,21 @@ type Settings struct {
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
 type PrometheusConverter struct {
-	unique      map[uint64]*writev2.TimeSeries
-	conflicts   map[uint64][]*writev2.TimeSeries
-	everyN      everyNTimes
-	symbolTable writev2.SymbolsTable
+	unique         map[uint64]*writev2.TimeSeries
+	conflicts      map[uint64][]*writev2.TimeSeries
+	everyN         everyNTimes
+	symbolTable    writev2.SymbolsTable
+	scratchBuilder labels.ScratchBuilder
+	builder        *labels.Builder
 }
 
 func NewPrometheusConverter() *PrometheusConverter {
 	return &PrometheusConverter{
-		unique:      map[uint64]*writev2.TimeSeries{},
-		conflicts:   map[uint64][]*writev2.TimeSeries{},
-		symbolTable: writev2.NewSymbolTable(),
+		unique:         map[uint64]*writev2.TimeSeries{},
+		conflicts:      map[uint64][]*writev2.TimeSeries{},
+		symbolTable:    writev2.NewSymbolTable(),
+		scratchBuilder: labels.NewScratchBuilder(16),
+		builder:        labels.NewBuilder(labels.EmptyLabels()),
 	}
 }
 
@@ -265,7 +270,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				}
 			}
 		}
-		addResourceTargetInfo(resource, settings, mostRecentTimestamp, c)
+		c.addResourceTargetInfo(resource, settings, mostRecentTimestamp)
 	}
 
 	return annots, errs
@@ -278,7 +283,7 @@ func (c *PrometheusConverter) addExemplars(ctx context.Context, dataPoint pmetri
 		return nil
 	}
 
-	exemplars, err := getPromExemplars(ctx, &c.everyN, dataPoint)
+	exemplars, err := c.getPromExemplars(ctx, dataPoint.Exemplars())
 	if err != nil {
 		return err
 	}
@@ -327,36 +332,37 @@ func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAtt
 		attrsMap[s] = struct{}{}
 	}
 	return &PromoteResourceAttributes{
-		promoteAll: otlpCfg.PromoteAllResourceAttributes,
-		attrs:      attrsMap,
+		promoteAll:     otlpCfg.PromoteAllResourceAttributes,
+		attrs:          attrsMap,
+		scratchBuilder: labels.NewScratchBuilder(16),
 	}
 }
 
 // promotedAttributes returns labels for promoted resourceAttributes.
 func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommon.Map) labels.Labels {
 	if s == nil {
-		return labels.New()
+		return labels.EmptyLabels()
 	}
 
 	if s.promoteAll {
-		b := labels.NewScratchBuilder(resourceAttributes.Len())
+		s.scratchBuilder.Reset()
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 			if _, exists := s.attrs[name]; !exists {
-				b.Add(name, value.AsString())
+				s.scratchBuilder.Add(name, value.AsString())
 			}
 			return true
 		})
-		b.Sort()
-		return b.Labels()
+		s.scratchBuilder.Sort()
+		return s.scratchBuilder.Labels()
 	} else {
-		b := labels.NewScratchBuilder(len(s.attrs))
+		s.scratchBuilder.Reset()
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 			if _, exists := s.attrs[name]; exists {
-				b.Add(name, value.AsString())
+				s.scratchBuilder.Add(name, value.AsString())
 			}
 			return true
 		})
-		b.Sort()
-		return b.Labels()
+		s.scratchBuilder.Sort()
+		return s.scratchBuilder.Labels()
 	}
 }

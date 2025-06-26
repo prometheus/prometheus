@@ -24,7 +24,6 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 )
@@ -38,7 +37,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		}
 
 		pt := dataPoints.At(x)
-		labels := createAttributes(
+		labels := c.createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
@@ -76,7 +75,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		}
 
 		pt := dataPoints.At(x)
-		lbls := createAttributes(
+		lbls := c.createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
@@ -101,7 +100,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		}
 		ts := c.addSample(sample, lbls, metadata)
 		if ts != nil {
-			exemplars, err := getPromExemplars[pmetric.NumberDataPoint](ctx, &c.everyN, pt)
+			exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 			if err != nil {
 				return err
 			}
@@ -115,10 +114,10 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 				return nil
 			}
 
-			b := labels.NewBuilder(lbls)
+			c.builder.Reset(lbls)
 			// add created suffix to the metric name
-			b.Set(model.MetricNameLabel, b.Get(model.MetricNameLabel)+createdSuffix)
-			c.addTimeSeriesIfNeeded(b.Labels(), startTimestamp, pt.Timestamp(), metadata)
+			c.builder.Set(model.MetricNameLabel, c.builder.Get(model.MetricNameLabel)+createdSuffix)
+			c.addTimeSeriesIfNeeded(c.builder.Labels(), startTimestamp, pt.Timestamp(), metadata)
 		}
 	}
 
