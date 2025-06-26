@@ -43,10 +43,38 @@ const (
 	IngestionPublicAudience     = "https://monitor.azure.com//.default"
 )
 
+// Default paths
+const (
+	// DefaultWorkloadIdentityTokenPath is the default path where the Azure Workload Identity
+	// webhook projects the service account token. This path is automatically configured
+	// by the webhook when a pod has the label azure.workload.identity/use: "true"
+	DefaultWorkloadIdentityTokenPath = "/var/run/secrets/azure/tokens/azure-identity-token"
+)
+
 // ManagedIdentityConfig is used to store managed identity config values.
 type ManagedIdentityConfig struct {
 	// ClientID is the clientId of the managed identity that is being used to authenticate.
 	ClientID string `yaml:"client_id,omitempty"`
+}
+
+// WorkloadIdentityConfig is used to store workload identity config values.
+type WorkloadIdentityConfig struct {
+	// ClientID is the clientId of the Microsoft Entra application or user-assigned managed identity.
+	// This should match the azure.workload.identity/client-id annotation on the Kubernetes service account.
+	ClientID string `yaml:"client_id,omitempty"`
+	
+	// TenantID is the tenantId of the Microsoft Entra application or user-assigned managed identity.
+	// This should match the tenant ID where your application or managed identity is registered.
+	TenantID string `yaml:"tenant_id,omitempty"`
+	
+	// TokenFilePath is the path to the token file provided by the Kubernetes service account projected volume.
+	// If not specified, it defaults to DefaultWorkloadIdentityTokenPath.
+	// 
+	// Note: The token file is automatically mounted by the Azure Workload Identity webhook
+	// when the pod has the label azure.workload.identity/use: "true". This field only needs
+	// to be specified if you have a non-standard setup or the webhook is mounting the token
+	// in a custom location.
+	TokenFilePath string `yaml:"token_file_path,omitempty"`
 }
 
 // OAuthConfig is used to store azure oauth config values.
@@ -71,6 +99,9 @@ type SDKConfig struct {
 type AzureADConfig struct { //nolint:revive // exported.
 	// ManagedIdentity is the managed identity that is being used to authenticate.
 	ManagedIdentity *ManagedIdentityConfig `yaml:"managed_identity,omitempty"`
+
+	// WorkloadIdentity is the workload identity that is being used to authenticate.
+	WorkloadIdentity *WorkloadIdentityConfig `yaml:"workload_identity,omitempty"`
 
 	// OAuth is the oauth config that is being used to authenticate.
 	OAuth *OAuthConfig `yaml:"oauth,omitempty"`
@@ -111,20 +142,27 @@ func (c *AzureADConfig) Validate() error {
 		return errors.New("must provide a cloud in the Azure AD config")
 	}
 
-	if c.ManagedIdentity == nil && c.OAuth == nil && c.SDK == nil {
-		return errors.New("must provide an Azure Managed Identity, Azure OAuth or Azure SDK in the Azure AD config")
+	if c.ManagedIdentity == nil && c.WorkloadIdentity == nil && c.OAuth == nil && c.SDK == nil {
+		return errors.New("must provide an Azure Managed Identity, Azure Workload Identity, Azure OAuth or Azure SDK in the Azure AD config")
 	}
 
-	if c.ManagedIdentity != nil && c.OAuth != nil {
-		return errors.New("cannot provide both Azure Managed Identity and Azure OAuth in the Azure AD config")
+	// Check for mutually exclusive configurations
+	authenticators := 0
+	if c.ManagedIdentity != nil {
+		authenticators++
 	}
-
-	if c.ManagedIdentity != nil && c.SDK != nil {
-		return errors.New("cannot provide both Azure Managed Identity and Azure SDK in the Azure AD config")
+	if c.WorkloadIdentity != nil {
+		authenticators++
 	}
-
-	if c.OAuth != nil && c.SDK != nil {
-		return errors.New("cannot provide both Azure OAuth and Azure SDK in the Azure AD config")
+	if c.OAuth != nil {
+		authenticators++
+	}
+	if c.SDK != nil {
+		authenticators++
+	}
+	
+	if authenticators > 1 {
+		return errors.New("cannot provide multiple authentication methods in the Azure AD config")
 	}
 
 	if c.ManagedIdentity != nil {
@@ -133,6 +171,34 @@ func (c *AzureADConfig) Validate() error {
 			if err != nil {
 				return errors.New("the provided Azure Managed Identity client_id is invalid")
 			}
+		}
+	}
+	
+	if c.WorkloadIdentity != nil {
+		if c.WorkloadIdentity.ClientID == "" {
+			return errors.New("must provide an Azure Workload Identity client_id in the Azure AD config")
+		}
+		
+		if c.WorkloadIdentity.TenantID == "" {
+			return errors.New("must provide an Azure Workload Identity tenant_id in the Azure AD config")
+		}
+		
+		// Validate client ID format
+		_, err := uuid.Parse(c.WorkloadIdentity.ClientID)
+		if err != nil {
+			return errors.New("the provided Azure Workload Identity client_id is invalid")
+		}
+		
+		// Validate tenant ID format
+		_, err = regexp.MatchString("^[0-9a-zA-Z-.]+$", c.WorkloadIdentity.TenantID)
+		if err != nil {
+			return errors.New("the provided Azure Workload Identity tenant_id is invalid")
+		}
+		
+		// Set default token file path when not specified - this matches the path used
+		// by the Azure Workload Identity webhook
+		if c.WorkloadIdentity.TokenFilePath == "" {
+			c.WorkloadIdentity.TokenFilePath = DefaultWorkloadIdentityTokenPath
 		}
 	}
 
@@ -217,7 +283,7 @@ func (rt *azureADRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 	return rt.next.RoundTrip(req)
 }
 
-// newTokenCredential returns a TokenCredential of different kinds like Azure Managed Identity and Azure AD application.
+// newTokenCredential returns a TokenCredential of different kinds like Azure Managed Identity, Workload Identity and Azure AD application.
 func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
 	var cred azcore.TokenCredential
 	var err error
@@ -234,6 +300,18 @@ func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
 			ClientID: cfg.ManagedIdentity.ClientID,
 		}
 		cred, err = newManagedIdentityTokenCredential(clientOpts, managedIdentityConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if cfg.WorkloadIdentity != nil {
+		workloadIdentityConfig := &WorkloadIdentityConfig{
+			ClientID:      cfg.WorkloadIdentity.ClientID,
+			TenantID:      cfg.WorkloadIdentity.TenantID,
+			TokenFilePath: cfg.WorkloadIdentity.TokenFilePath,
+		}
+		cred, err = newWorkloadIdentityTokenCredential(clientOpts, workloadIdentityConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -274,6 +352,35 @@ func newManagedIdentityTokenCredential(clientOpts *azcore.ClientOptions, managed
 		opts = &azidentity.ManagedIdentityCredentialOptions{ClientOptions: *clientOpts}
 	}
 	return azidentity.NewManagedIdentityCredential(opts)
+}
+
+// newWorkloadIdentityTokenCredential returns new Microsoft Entra Workload Identity token credential.
+// This is used for Kubernetes Pods that have been configured with the azure.workload.identity/use: "true" label
+// and a service account annotated with azure.workload.identity/client-id annotation.
+// 
+// For this to work properly, the Kubernetes pod must:
+// 1. Have the label azure.workload.identity/use: "true"
+// 2. Use a service account with annotation azure.workload.identity/client-id matching the ClientID
+// 3. Have the Azure Workload Identity webhook installed in the cluster
+// 4. Have federated identity credentials established between the identity and service account
+//
+// The token file path (typically DefaultWorkloadIdentityTokenPath) is mounted automatically
+// by the Azure Workload Identity webhook when it mutates the pod. The webhook:
+// - Projects the service account token to this path
+// - Sets environment variables like AZURE_AUTHORITY_HOST and AZURE_FEDERATED_TOKEN_FILE
+// - Adds the necessary volume mounts to the pod
+//
+// For detailed setup instructions, see: 
+// https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/prometheus-metrics-enable-workload-identity
+func newWorkloadIdentityTokenCredential(clientOpts *azcore.ClientOptions, workloadIdentityConfig *WorkloadIdentityConfig) (azcore.TokenCredential, error) {
+	opts := &azidentity.WorkloadIdentityCredentialOptions{
+		ClientOptions: *clientOpts,
+		ClientID:      workloadIdentityConfig.ClientID,
+		TenantID:      workloadIdentityConfig.TenantID, 
+		TokenFilePath: workloadIdentityConfig.TokenFilePath,
+	}
+	
+	return azidentity.NewWorkloadIdentityCredential(opts)
 }
 
 // newOAuthTokenCredential returns new OAuth token credential.
