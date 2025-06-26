@@ -546,14 +546,14 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 			appendable: appendable,
 			samplesWithInvalidLabelsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 				Namespace: "prometheus",
-				Subsystem: "api/otlp",
-				Name:      "remote_write_invalid_labels_samples_total",
+				Subsystem: "api",
+				Name:      "otlp_invalid_labels_samples_total",
 				Help:      "The total number of received remote write samples and histogram samples which were rejected due to invalid labels.",
 			}),
 			samplesAppendedWithoutMetadata: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 				Namespace: "prometheus",
-				Subsystem: "api/otlp",
-				Name:      "remote_write_without_metadata_appended_samples_total",
+				Subsystem: "api",
+				Name:      "otlp_without_metadata_appended_samples_total",
 				Help:      "The total number of received remote write samples (and histogram samples) which were ingested without corresponding metadata.",
 			}),
 		},
