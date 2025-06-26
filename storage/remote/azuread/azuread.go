@@ -62,14 +62,14 @@ type WorkloadIdentityConfig struct {
 	// ClientID is the clientId of the Microsoft Entra application or user-assigned managed identity.
 	// This should match the azure.workload.identity/client-id annotation on the Kubernetes service account.
 	ClientID string `yaml:"client_id,omitempty"`
-	
+
 	// TenantID is the tenantId of the Microsoft Entra application or user-assigned managed identity.
 	// This should match the tenant ID where your application or managed identity is registered.
 	TenantID string `yaml:"tenant_id,omitempty"`
-	
+
 	// TokenFilePath is the path to the token file provided by the Kubernetes service account projected volume.
 	// If not specified, it defaults to DefaultWorkloadIdentityTokenPath.
-	// 
+	//
 	// Note: The token file is automatically mounted by the Azure Workload Identity webhook
 	// when the pod has the label azure.workload.identity/use: "true". This field only needs
 	// to be specified if you have a non-standard setup or the webhook is mounting the token
@@ -160,7 +160,7 @@ func (c *AzureADConfig) Validate() error {
 	if c.SDK != nil {
 		authenticators++
 	}
-	
+
 	if authenticators > 1 {
 		return errors.New("cannot provide multiple authentication methods in the Azure AD config")
 	}
@@ -173,28 +173,28 @@ func (c *AzureADConfig) Validate() error {
 			}
 		}
 	}
-	
+
 	if c.WorkloadIdentity != nil {
 		if c.WorkloadIdentity.ClientID == "" {
 			return errors.New("must provide an Azure Workload Identity client_id in the Azure AD config")
 		}
-		
+
 		if c.WorkloadIdentity.TenantID == "" {
 			return errors.New("must provide an Azure Workload Identity tenant_id in the Azure AD config")
 		}
-		
+
 		// Validate client ID format
 		_, err := uuid.Parse(c.WorkloadIdentity.ClientID)
 		if err != nil {
 			return errors.New("the provided Azure Workload Identity client_id is invalid")
 		}
-		
+
 		// Validate tenant ID format
 		_, err = regexp.MatchString("^[0-9a-zA-Z-.]+$", c.WorkloadIdentity.TenantID)
 		if err != nil {
 			return errors.New("the provided Azure Workload Identity tenant_id is invalid")
 		}
-		
+
 		// Set default token file path when not specified - this matches the path used
 		// by the Azure Workload Identity webhook
 		if c.WorkloadIdentity.TokenFilePath == "" {
@@ -357,7 +357,7 @@ func newManagedIdentityTokenCredential(clientOpts *azcore.ClientOptions, managed
 // newWorkloadIdentityTokenCredential returns new Microsoft Entra Workload Identity token credential.
 // This is used for Kubernetes Pods that have been configured with the azure.workload.identity/use: "true" label
 // and a service account annotated with azure.workload.identity/client-id annotation.
-// 
+//
 // For this to work properly, the Kubernetes pod must:
 // 1. Have the label azure.workload.identity/use: "true"
 // 2. Use a service account with annotation azure.workload.identity/client-id matching the ClientID
@@ -370,16 +370,16 @@ func newManagedIdentityTokenCredential(clientOpts *azcore.ClientOptions, managed
 // - Sets environment variables like AZURE_AUTHORITY_HOST and AZURE_FEDERATED_TOKEN_FILE
 // - Adds the necessary volume mounts to the pod
 //
-// For detailed setup instructions, see: 
+// For detailed setup instructions, see:
 // https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/prometheus-metrics-enable-workload-identity
 func newWorkloadIdentityTokenCredential(clientOpts *azcore.ClientOptions, workloadIdentityConfig *WorkloadIdentityConfig) (azcore.TokenCredential, error) {
 	opts := &azidentity.WorkloadIdentityCredentialOptions{
 		ClientOptions: *clientOpts,
 		ClientID:      workloadIdentityConfig.ClientID,
-		TenantID:      workloadIdentityConfig.TenantID, 
+		TenantID:      workloadIdentityConfig.TenantID,
 		TokenFilePath: workloadIdentityConfig.TokenFilePath,
 	}
-	
+
 	return azidentity.NewWorkloadIdentityCredential(opts)
 }
 
