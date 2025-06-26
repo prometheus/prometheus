@@ -354,15 +354,14 @@ func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommo
 		})
 		s.scratchBuilder.Sort()
 		return s.scratchBuilder.Labels()
-	} else {
-		s.scratchBuilder.Reset()
-		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
-			if _, exists := s.attrs[name]; exists {
-				s.scratchBuilder.Add(name, value.AsString())
-			}
-			return true
-		})
-		s.scratchBuilder.Sort()
-		return s.scratchBuilder.Labels()
 	}
+	s.scratchBuilder.Reset()
+	resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+		if _, exists := s.attrs[name]; exists {
+			s.scratchBuilder.Add(name, value.AsString())
+		}
+		return true
+	})
+	s.scratchBuilder.Sort()
+	return s.scratchBuilder.Labels()
 }

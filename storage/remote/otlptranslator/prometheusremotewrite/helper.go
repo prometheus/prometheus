@@ -282,11 +282,6 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 	return nil
 }
 
-type exemplarType interface {
-	pmetric.ExponentialHistogramDataPoint | pmetric.HistogramDataPoint | pmetric.NumberDataPoint
-	Exemplars() pmetric.ExemplarSlice
-}
-
 func (c *PrometheusConverter) getPromExemplars(ctx context.Context, exemplars pmetric.ExemplarSlice) ([]writev2.Exemplar, error) {
 	promExemplars := make([]writev2.Exemplar, 0, exemplars.Len())
 	for i := 0; i < exemplars.Len(); i++ {

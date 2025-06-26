@@ -79,7 +79,6 @@ func TestFromMetrics(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				converter := NewPrometheusConverter()
 				payload, wantPromMetrics := createExportRequest(5, 128, 128, 2, 0, tc.settings, tc.temporality)
-				var expMetadata []writev2.Metadata
 				seenFamilyNames := map[string]struct{}{}
 				for _, wantMetric := range wantPromMetrics {
 					if _, exists := seenFamilyNames[wantMetric.familyName]; exists {
@@ -90,11 +89,6 @@ func TestFromMetrics(t *testing.T) {
 					}
 
 					seenFamilyNames[wantMetric.familyName] = struct{}{}
-					expMetadata = append(expMetadata, writev2.Metadata{
-						Type:    wantMetric.metricType,
-						HelpRef: converter.symbolTable.Symbolize(wantMetric.description),
-						UnitRef: converter.symbolTable.Symbolize(wantMetric.unit),
-					})
 				}
 
 				annots, err := converter.FromMetrics(
@@ -742,7 +736,7 @@ func createPromClassicHistogramSeries(name string, ts time.Time, symbolTable *wr
 		},
 	}
 	if delta {
-		for i, _ := range timeseries {
+		for i := range timeseries {
 			timeseries[i].Metadata.Type = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
 		}
 	}
