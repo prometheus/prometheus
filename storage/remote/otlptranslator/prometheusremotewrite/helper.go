@@ -84,23 +84,35 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 	promotedAttrs := settings.PromoteResourceAttributes.promotedAttributes(resourceAttrs)
 
 	promoteScope := settings.PromoteScopeMetadata && scope.name != ""
-	c.builder.Reset(labels.EmptyLabels())
+
+	// Ensure attributes are sorted by key for consistent merging of keys which
+	// collide when sanitized.
+	c.scratchBuilder.Reset()
 
 	// XXX: Should we always drop service namespace/service name/service instance ID from the labels
 	// (as they get mapped to other Prometheus labels)?
 	attributes.Range(func(key string, value pcommon.Value) bool {
 		if !slices.Contains(ignoreAttrs, key) {
-			finalKey := key
-			if !settings.AllowUTF8 {
-				finalKey = otlptranslator.NormalizeLabel(finalKey)
-			}
-			if existingValue := c.builder.Get(finalKey); existingValue != "" {
-				c.builder.Set(finalKey, existingValue+";"+value.AsString())
-			} else {
-				c.builder.Set(finalKey, value.AsString())
-			}
+			c.scratchBuilder.Add(key, value.AsString())
 		}
 		return true
+	})
+	c.scratchBuilder.Sort()
+	sortedLabels := c.scratchBuilder.Labels()
+
+	// now that we have sorted and filtered the labels, build the actual list
+	// of labels, and handle conflicts by appending values.
+	c.builder.Reset(labels.EmptyLabels())
+	sortedLabels.Range(func(l labels.Label) {
+		finalKey := l.Name
+		if !settings.AllowUTF8 {
+			finalKey = otlptranslator.NormalizeLabel(finalKey)
+		}
+		if existingValue := c.builder.Get(finalKey); existingValue != "" {
+			c.builder.Set(finalKey, existingValue+";"+l.Value)
+		} else {
+			c.builder.Set(finalKey, l.Value)
+		}
 	})
 
 	promotedAttrs.Range(func(l labels.Label) {
