@@ -19,6 +19,7 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"reflect"
+	"runtime"
 	"sync"
 	"time"
 
@@ -293,7 +294,13 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 		wg       sync.WaitGroup
 		toDelete sync.Map // Stores the list of names of pools to delete.
 	)
+
+	// Use a buffered channel to limit reload concurrency.
+	// Each scrape pool writes the channel before we start to reload it and read from it at the end.
+	// This means only N pools can be reloaded at the same time.
+	canReload := make(chan int, runtime.GOMAXPROCS(0))
 	for poolName, pool := range m.scrapePools {
+		canReload <- 1
 		wg.Add(1)
 		cfg, ok := m.scrapeConfigs[poolName]
 		// Reload each scrape pool in a dedicated goroutine so we don't have to wait a long time
@@ -318,6 +325,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 					sp.logger.Error("No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", name)
 				}
 			}
+			<-canReload
 		}(poolName, pool, cfg, ok)
 	}
 	wg.Wait()
