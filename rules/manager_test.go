@@ -20,6 +20,7 @@ import (
 	"math"
 	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -2547,6 +2548,17 @@ func TestLabels_FromMaps(t *testing.T) {
 	)
 
 	require.Equal(t, expected, mLabels, "unexpected labelset")
+}
+
+func TestParseFiles(t *testing.T) {
+	t.Run("good files", func(t *testing.T) {
+		err := ParseFiles([]string{filepath.Join("fixtures", "rules.y*ml")})
+		require.NoError(t, err)
+	})
+	t.Run("bad files", func(t *testing.T) {
+		err := ParseFiles([]string{filepath.Join("fixtures", "invalid_rules.y*ml")})
+		require.ErrorContains(t, err, "field unexpected_field not found in type rulefmt.Rule")
+	})
 }
 
 func TestRuleDependencyController_AnalyseRules(t *testing.T) {

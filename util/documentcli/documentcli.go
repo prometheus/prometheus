@@ -58,11 +58,8 @@ func header(title, help string) []byte {
 title: %s
 ---
 
-# %s
-
 %s
-
-`, title, title, help))
+`, title, help))
 }
 
 func createFlagRow(flag *kingpin.FlagModel) []string {

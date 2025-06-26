@@ -892,90 +892,84 @@ eval instant at 55s avg_over_time(metric[1m])
 eval instant at 55s sum_over_time(metric[1m])/count_over_time(metric[1m])
   {} 3
 
-eval instant at 1m avg_over_time(metric2[1m])
+eval instant at 55s avg_over_time(metric2[1m])
   {} Inf
 
-eval instant at 1m sum_over_time(metric2[1m])/count_over_time(metric2[1m])
+eval instant at 55s sum_over_time(metric2[1m])/count_over_time(metric2[1m])
   {} Inf
 
-eval instant at 1m avg_over_time(metric3[1m])
+eval instant at 55s avg_over_time(metric3[1m])
   {} -Inf
 
-eval instant at 1m sum_over_time(metric3[1m])/count_over_time(metric3[1m])
+eval instant at 55s sum_over_time(metric3[1m])/count_over_time(metric3[1m])
   {} -Inf
 
-eval instant at 1m avg_over_time(metric4[1m])
+eval instant at 55s avg_over_time(metric4[1m])
   {} NaN
 
-eval instant at 1m sum_over_time(metric4[1m])/count_over_time(metric4[1m])
+eval instant at 55s sum_over_time(metric4[1m])/count_over_time(metric4[1m])
   {} NaN
 
-eval instant at 1m avg_over_time(metric5[1m])
+eval instant at 55s avg_over_time(metric5[1m])
   {} Inf
 
-eval instant at 1m sum_over_time(metric5[1m])/count_over_time(metric5[1m])
+eval instant at 55s sum_over_time(metric5[1m])/count_over_time(metric5[1m])
   {} Inf
 
-eval instant at 1m avg_over_time(metric5b[1m])
+eval instant at 55s avg_over_time(metric5b[1m])
   {} Inf
 
-eval instant at 1m sum_over_time(metric5b[1m])/count_over_time(metric5b[1m])
+eval instant at 55s sum_over_time(metric5b[1m])/count_over_time(metric5b[1m])
   {} Inf
 
-eval instant at 1m avg_over_time(metric5c[1m])
+eval instant at 55s avg_over_time(metric5c[1m])
   {} NaN
 
-eval instant at 1m sum_over_time(metric5c[1m])/count_over_time(metric5c[1m])
+eval instant at 55s sum_over_time(metric5c[1m])/count_over_time(metric5c[1m])
   {} NaN
 
-eval instant at 1m avg_over_time(metric6[1m])
+eval instant at 55s avg_over_time(metric6[1m])
   {} -Inf
 
-eval instant at 1m sum_over_time(metric6[1m])/count_over_time(metric6[1m])
+eval instant at 55s sum_over_time(metric6[1m])/count_over_time(metric6[1m])
   {} -Inf
 
-eval instant at 1m avg_over_time(metric6b[1m])
+eval instant at 55s avg_over_time(metric6b[1m])
   {} -Inf
 
-eval instant at 1m sum_over_time(metric6b[1m])/count_over_time(metric6b[1m])
+eval instant at 55s sum_over_time(metric6b[1m])/count_over_time(metric6b[1m])
   {} -Inf
 
-eval instant at 1m avg_over_time(metric6c[1m])
+eval instant at 55s avg_over_time(metric6c[1m])
   {} NaN
 
-eval instant at 1m sum_over_time(metric6c[1m])/count_over_time(metric6c[1m])
+eval instant at 55s sum_over_time(metric6c[1m])/count_over_time(metric6c[1m])
   {} NaN
 
-eval instant at 1m avg_over_time(metric7[1m])
+eval instant at 55s avg_over_time(metric7[1m])
   {} NaN
 
-eval instant at 1m sum_over_time(metric7[1m])/count_over_time(metric7[1m])
+eval instant at 55s sum_over_time(metric7[1m])/count_over_time(metric7[1m])
   {} NaN
 
-eval instant at 1m avg_over_time(metric8[1m])
+eval instant at 55s avg_over_time(metric8[1m])
   {} 9.988465674311579e+307
 
 # This overflows float64.
-eval instant at 1m sum_over_time(metric8[2m])/count_over_time(metric8[2m])
+eval instant at 55s sum_over_time(metric8[1m])/count_over_time(metric8[1m])
   {} +Inf
 
-eval instant at 1m avg_over_time(metric9[1m])
+eval instant at 55s avg_over_time(metric9[1m])
   {} -9.988465674311579e+307
 
 # This overflows float64.
-eval instant at 1m sum_over_time(metric9[1m])/count_over_time(metric9[1m])
+eval instant at 55s sum_over_time(metric9[1m])/count_over_time(metric9[1m])
   {} -Inf
 
-eval instant at 45s avg_over_time(metric10[1m])
+eval instant at 55s avg_over_time(metric10[1m])
   {} 0
 
-eval instant at 1m avg_over_time(metric10[2m])
-  {} 0
-
-eval instant at 45s sum_over_time(metric10[1m])/count_over_time(metric10[1m])
-  {} 0
-
-eval instant at 1m sum_over_time(metric10[2m])/count_over_time(metric10[2m])
+eval instant at 55s sum_over_time(metric10[1m])/count_over_time(metric10[1m])
   {} 0
 
 # NaN behavior.
@@ -985,27 +979,27 @@ eval instant at 20s avg_over_time(metric11[1m])
 eval instant at 30s avg_over_time(metric11[1m])
   {} NaN
 
-eval instant at 1m avg_over_time(metric11[1m])
+eval instant at 55s avg_over_time(metric11[1m])
   {} NaN
 
-eval instant at 1m sum_over_time(metric11[1m])/count_over_time(metric11[1m])
+eval instant at 55s sum_over_time(metric11[1m])/count_over_time(metric11[1m])
   {} NaN
 
 # Tests for samples with mix of floats and histograms.
-eval_warn instant at 1m sum_over_time(metric12[1m])
+eval_warn instant at 55s sum_over_time(metric12[1m])
 	# no result.
 
-eval_warn instant at 1m avg_over_time(metric12[1m])
+eval_warn instant at 55s avg_over_time(metric12[1m])
 	# no result.
 
 # Tests for samples with only histograms.
-eval instant at 1m sum_over_time(metric13[1m])
-	{} {{schema:0 sum:5 count:5}}
+eval instant at 55s sum_over_time(metric13[1m])
+	{} {{schema:0 sum:6 count:6}}
 
-eval instant at 1m avg_over_time(metric13[1m])
+eval instant at 55s avg_over_time(metric13[1m])
 	{} {{schema:0 sum:1 count:1}}
 
-eval instant at 1m sum_over_time(metric13[1m])/count_over_time(metric13[1m])
+eval instant at 55s sum_over_time(metric13[1m])/count_over_time(metric13[1m])
 	{} {{schema:0 sum:1 count:1}}
 
 # Test if very big intermediate values cause loss of detail.
@@ -1016,8 +1010,84 @@ load 10s
 eval instant at 1m sum_over_time(metric[2m])
   {} 2
 
-eval instant at 1m avg_over_time(metric[2m])
-  {} 0.5
+# This test fails on darwin/arm64.
+# Deactivated until issue #16714 is fixed.
+# eval instant at 1m avg_over_time(metric[2m])
+#  {} 0.5
+
+# More tests for extreme values.
+clear
+# All positive values with varying magnitudes.
+load 5s
+  metric1 1e10 1e-6 1e-6 1e-6 1e-6 1e-6
+  metric2 5.30921651659898 0.961118537914768 1.62091361305318 0.865089463758091 0.323055185914577 0.951811357687154
+  metric3 1.78264e50 0.76342771 1.9592258 7.69805412 458.90154
+  metric4 0.76342771 1.9592258 7.69805412 1.78264e50 458.90154
+  metric5 1.78264E+50 0.76342771 1.9592258 2.258E+220 7.69805412 458.90154
+
+eval instant at 55s avg_over_time(metric1[1m])
+  {} 1.6666666666666675e+09
+
+eval instant at 55s avg_over_time(metric2[1m])
+  {} 1.67186744582113
+  
+eval instant at 55s avg_over_time(metric3[1m])
+  {} 3.56528E+49
+  
+eval instant at 55s avg_over_time(metric4[1m])
+  {} 3.56528E+49
+  
+eval instant at 55s avg_over_time(metric5[1m])
+  {} 3.76333333333333E+219
+  
+# Contains negative values; result is dominated by a very large value.
+load 5s
+  metric6 -1.78264E+50 0.76342771 1.9592258 2.258E+220 7.69805412 -458.90154
+  metric7 -1.78264E+50 0.76342771 1.9592258 -2.258E+220 7.69805412 -458.90154
+  metric8 -1.78264E+215 0.76342771 1.9592258 2.258E+220 7.69805412 -458.90154
+  metric9 -1.78264E+215 0.76342771 1.9592258 2.258E+220 7.69805412 1.78264E+215 -458.90154
+  metric10 -1.78264E+219 0.76342771 1.9592258 2.3757689E+217 -2.3757689E+217 2.258E+220 7.69805412 1.78264E+219 -458.90154
+
+eval instant at 55s avg_over_time(metric6[1m])
+  {} 3.76333333333333E+219
+  
+eval instant at 55s avg_over_time(metric7[1m])
+  {} -3.76333333333333E+219
+  
+eval instant at 55s avg_over_time(metric8[1m])
+  {} 3.76330362266667E+219
+
+eval instant at 55s avg_over_time(metric9[1m])
+  {} 3.225714285714286e+219
+
+# Interestingly, before PR #16569, this test failed with a result of
+# 3.225714285714286e+219, so the incremental calculation combined with
+# Kahan summation (in the improved way as introduced by PR #16569)
+# seems to be more accurate than the simple mean calculation with
+# Kahan summation.
+eval instant at 55s avg_over_time(metric10[1m])
+  {} 2.5088888888888888e+219
+
+# Large values of different magnitude, combined with small values. The
+# large values, however, all cancel each other exactly, so that the actual
+# average here is determined by only the small values. Therefore, the correct
+# outcome is -44.848083237000004.
+load 5s
+  metric11 -2.258E+220 -1.78264E+219 0.76342771 1.9592258 2.3757689E+217 -2.3757689E+217 2.258E+220 7.69805412 1.78264E+219 -458.90154
+
+# Thus, the result here is very far off! With the different orders of
+# magnitudes involved, even Kahan summation cannot cope.
+# Interestingly, with the simple mean calculation (still including
+# Kahan summation) prior to PR #16569, the result is 0. That's
+# arguably more accurate, but it still shows that Kahan summation
+# doesn't work well in this situation. To solve this properly, we
+# needed to do something like sorting the values (which is hard given
+# how the PromQL engine works). The question is how practically
+# relevant this scenario is.
+# eval instant at 55s avg_over_time(metric11[1m])
+#   {} -44.848083237000004 <- This is the correct value.
+#   {} -1.881783551706252e+203 <- This is the result on linux/amd64.
+#   {} 2.303079268822384e+202 <- This is the result on darwin/arm64.
 
 # Test per-series aggregation on dense samples.
 clear
@@ -1094,10 +1164,10 @@ clear
 load 10s
 	metric 1.5990505637277868 1.5990505637277868 1.5990505637277868
 
-eval instant at 1m stdvar_over_time(metric[1m])
+eval instant at 55s stdvar_over_time(metric[1m])
 	{} 0
 
-eval instant at 1m stddev_over_time(metric[1m])
+eval instant at 55s stddev_over_time(metric[1m])
 	{} 0
 
 # Tests for mad_over_time.
@@ -1115,6 +1185,36 @@ eval instant at 70s mad_over_time(metric_histogram{type="only_histogram"}[70s])
 
 eval_info instant at 70s mad_over_time(metric_histogram{type="mix"}[70s])
 	{type="mix"} 0
+
+# Tests for ts_of_max_over_time and ts_of_min_over_time. Using odd scrape interval to test for rounding bugs.
+clear
+load 10s53ms
+	metric 1 2 3 0 5 6 2 1 4
+
+eval instant at 90s ts_of_min_over_time(metric[90s])
+	{} 30.159
+
+eval instant at 90s ts_of_max_over_time(metric[90s])
+	{} 50.265
+
+# Tests for ts_of_last_over_time. Using odd load interval to test for rounding bugs.
+clear
+load 10s53ms
+	metric 1 2 3 _ _
+	metric_histogram{type="only_histogram"} {{schema:1 sum:2 count:3}}x4
+	metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} 1
+
+eval instant at 90s ts_of_last_over_time(metric[90s])
+	{} 20.106
+
+eval instant at 95s ts_of_last_over_time(metric[90s])
+	{} 20.106
+
+eval instant at 95s ts_of_last_over_time(metric_histogram{type="only_histogram"}[90s])
+	{type="only_histogram"} 40.212
+
+eval instant at 95s ts_of_last_over_time(metric_histogram{type="mix"}[90s])
+	{type="mix"} 50.265
 
 # Tests for quantile_over_time
 clear

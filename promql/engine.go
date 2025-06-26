@@ -326,6 +326,8 @@ type EngineOpts struct {
 	// This is useful in certain scenarios where the __name__ label must be preserved or where applying a
 	// regex-matcher to the __name__ label may otherwise lead to duplicate labelset errors.
 	EnableDelayedNameRemoval bool
+	// EnableTypeAndUnitLabels will allow PromQL Engine to make decisions based on the type and unit labels.
+	EnableTypeAndUnitLabels bool
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -344,6 +346,7 @@ type Engine struct {
 	enableNegativeOffset     bool
 	enablePerStepStats       bool
 	enableDelayedNameRemoval bool
+	enableTypeAndUnitLabels  bool
 }
 
 // NewEngine returns a new engine.
@@ -435,6 +438,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		enableNegativeOffset:     opts.EnableNegativeOffset,
 		enablePerStepStats:       opts.EnablePerStepStats,
 		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
+		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
 	}
 }
 
@@ -744,6 +748,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			samplesStats:             query.sampleStats,
 			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
+			enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 			querier:                  querier,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
@@ -803,6 +808,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		samplesStats:             query.sampleStats,
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
+		enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 		querier:                  querier,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
@@ -1076,6 +1082,7 @@ type evaluator struct {
 	samplesStats             *stats.QuerySamples
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	enableDelayedNameRemoval bool
+	enableTypeAndUnitLabels  bool
 	querier                  storage.Querier
 }
 
@@ -1894,12 +1901,20 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 			if e.Func.Name == "rate" || e.Func.Name == "increase" {
 				metricName := inMatrix[0].Metric.Get(labels.MetricName)
-				if metricName != "" && len(ss.Floats) > 0 &&
-					!strings.HasSuffix(metricName, "_total") &&
-					!strings.HasSuffix(metricName, "_sum") &&
-					!strings.HasSuffix(metricName, "_count") &&
-					!strings.HasSuffix(metricName, "_bucket") {
-					warnings.Add(annotations.NewPossibleNonCounterInfo(metricName, e.Args[0].PositionRange()))
+				if metricName != "" && len(ss.Floats) > 0 {
+					if ev.enableTypeAndUnitLabels {
+						// When type-and-unit-labels feature is enabled, check __type__ label
+						typeLabel := inMatrix[0].Metric.Get("__type__")
+						if typeLabel != string(model.MetricTypeCounter) {
+							warnings.Add(annotations.NewPossibleNonCounterLabelInfo(metricName, typeLabel, e.Args[0].PositionRange()))
+						}
+					} else if !strings.HasSuffix(metricName, "_total") &&
+						!strings.HasSuffix(metricName, "_sum") &&
+						!strings.HasSuffix(metricName, "_count") &&
+						!strings.HasSuffix(metricName, "_bucket") {
+						// Fallback to name suffix checking
+						warnings.Add(annotations.NewPossibleNonCounterInfo(metricName, e.Args[0].PositionRange()))
+					}
 				}
 			}
 		}
@@ -2064,6 +2079,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			samplesStats:             ev.samplesStats.NewChild(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
+			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			querier:                  ev.querier,
 		}
 
@@ -2109,6 +2125,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			samplesStats:             ev.samplesStats.NewChild(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
+			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			querier:                  ev.querier,
 		}
 		res, ws := newEv.eval(ctx, e.Expr)
@@ -2985,7 +3002,6 @@ type groupedAggregation struct {
 	hasHistogram           bool // Has at least 1 histogram sample aggregated.
 	incompatibleHistograms bool // If true, group has seen mixed exponential and custom buckets, or incompatible custom buckets.
 	groupAggrComplete      bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group.
-	incrementalMean        bool // True after reverting to incremental calculation of the mean value.
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.
@@ -3084,6 +3100,21 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			}
 
 		case parser.AVG:
+			// For the average calculation, we use incremental mean
+			// calculation. In particular in combination with Kahan
+			// summation (which we do for floats, but not yet for
+			// histograms, see issue #14105), this is quite accurate
+			// and only breaks in extreme cases (see testdata for
+			// avg_over_time). One might assume that simple direct
+			// mean calculation works better in some cases, but so
+			// far, our conclusion is that we fare best with the
+			// incremental approach plus Kahan summation (for
+			// floats). For a relevant discussion, see
+			// https://stackoverflow.com/questions/61665473/is-it-beneficial-for-precision-to-calculate-the-incremental-mean-average
+			// Additional note: For even better numerical accuracy,
+			// we would need to process the values in a particular
+			// order, but that would be very hard to implement given
+			// how the PromQL engine works.
 			group.groupCount++
 			if h != nil {
 				group.hasHistogram = true
@@ -3108,45 +3139,11 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
-				if !group.incrementalMean {
-					newV, newC := kahanSumInc(f, group.floatValue, group.floatKahanC)
-					if !math.IsInf(newV, 0) {
-						// The sum doesn't overflow, so we propagate it to the
-						// group struct and continue with the regular
-						// calculation of the mean value.
-						group.floatValue, group.floatKahanC = newV, newC
-						break
-					}
-					// If we are here, we know that the sum _would_ overflow. So
-					// instead of continue to sum up, we revert to incremental
-					// calculation of the mean value from here on.
-					group.incrementalMean = true
-					group.floatMean = group.floatValue / (group.groupCount - 1)
-					group.floatKahanC /= group.groupCount - 1
-				}
-				if math.IsInf(group.floatMean, 0) {
-					if math.IsInf(f, 0) && (group.floatMean > 0) == (f > 0) {
-						// The `floatMean` and `s.F` values are `Inf` of the same sign.  They
-						// can't be subtracted, but the value of `floatMean` is correct
-						// already.
-						break
-					}
-					if !math.IsInf(f, 0) && !math.IsNaN(f) {
-						// At this stage, the mean is an infinite. If the added
-						// value is neither an Inf or a Nan, we can keep that mean
-						// value.
-						// This is required because our calculation below removes
-						// the mean value, which would look like Inf += x - Inf and
-						// end up as a NaN.
-						break
-					}
-				}
-				currentMean := group.floatMean + group.floatKahanC
+				q := (group.groupCount - 1) / group.groupCount
 				group.floatMean, group.floatKahanC = kahanSumInc(
-					// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
-					f/group.groupCount-currentMean/group.groupCount,
-					group.floatMean,
-					group.floatKahanC,
+					f/group.groupCount,
+					q*group.floatMean,
+					q*group.floatKahanC,
 				)
 			}
 
@@ -3219,10 +3216,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				continue
 			case aggr.hasHistogram:
 				aggr.histogramValue = aggr.histogramValue.Compact(0)
-			case aggr.incrementalMean:
-				aggr.floatValue = aggr.floatMean + aggr.floatKahanC
 			default:
-				aggr.floatValue = (aggr.floatValue + aggr.floatKahanC) / aggr.groupCount
+				aggr.floatValue = aggr.floatMean + aggr.floatKahanC
 			}
 
 		case parser.COUNT:
@@ -3662,7 +3657,7 @@ func btos(b bool) float64 {
 	return 0
 }
 
-// changesSchema returns true whether the op operation changes the semantic meaning or
+// changesMetricSchema returns true whether the op operation changes the semantic meaning or
 // schema of the metric.
 func changesMetricSchema(op parser.ItemType) bool {
 	switch op {
@@ -3851,19 +3846,13 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 // required for correctness.
 func detectHistogramStatsDecoding(expr parser.Expr) {
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
-		if n, ok := node.(*parser.BinaryExpr); ok {
-			detectHistogramStatsDecoding(n.LHS)
-			detectHistogramStatsDecoding(n.RHS)
-			return errors.New("stop")
-		}
-
 		n, ok := (node).(*parser.VectorSelector)
 		if !ok {
 			return nil
 		}
 
-		for _, p := range path {
-			call, ok := p.(*parser.Call)
+		for i := len(path) - 1; i > 0; i-- { // Walk backwards up the path.
+			call, ok := path[i].(*parser.Call)
 			if !ok {
 				continue
 			}
@@ -3946,6 +3935,12 @@ func newHistogramStatsSeries(series storage.Series) *histogramStatsSeries {
 }
 
 func (s histogramStatsSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	// Try to reuse the iterator if we can.
+	if statsIterator, ok := it.(*HistogramStatsIterator); ok {
+		statsIterator.Reset(s.Series.Iterator(statsIterator.Iterator))
+		return statsIterator
+	}
+
 	return NewHistogramStatsIterator(s.Series.Iterator(it))
 }
 

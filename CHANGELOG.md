@@ -1,5 +1,17 @@
 # Changelog
 
+## main / unreleased
+
+* [FEATURE] OTLP receiver: Support promoting OTel scope name/version/schema URL/attributes as metric labels, enable via configuration parameter `otlp.promote_scope_metadata`. #16730 #16760
+
+## 3.4.2 / 2025-06-04
+
+* [BUGFIX] OTLP receiver: Fix default configuration not being respected if the `otlp:` block is unset in the config file. #16693
+
+## 3.4.1 / 2025-05-31
+
+* [BUGFIX] Parser: Add reproducer for a dangling-reference issue in parsers. #16633
+
 ## 3.4.0 / 2025-05-17
 
 * [CHANGE] Config: Make setting out-of-order native histograms feature (`--enable-feature=ooo-native-histograms`) a no-op. Out-of-order native histograms are now always enabled when `out_of_order_time_window` is greater than zero and `--enable-feature=native-histograms` is set. #16207

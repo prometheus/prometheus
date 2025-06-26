@@ -238,7 +238,7 @@ local row = panel.row;
         + panel.timeSeries.options.tooltip.withSort('desc')
         + panel.timeSeries.standardOptions.withMin(0)
         + panelTimeSeriesStacking
-        + panel.timeSeries.standardOptions.withUnit('ms')
+        + panel.timeSeries.standardOptions.withUnit('short')
         + if showMultiCluster then
           panel.timeSeries.queryOptions.withTargets([
             prometheus.new(

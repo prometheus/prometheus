@@ -3,8 +3,6 @@ title: Getting started
 sort_rank: 1
 ---
 
-# Getting started
-
 This guide is a "Hello World"-style tutorial which shows how to install,
 configure, and use a simple Prometheus instance. You will download and run
 Prometheus locally, configure it to scrape itself and an example application,
