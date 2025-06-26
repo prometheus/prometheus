@@ -30,7 +30,6 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -1022,7 +1021,7 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 type wantPrometheusMetric struct {
 	name        string
 	familyName  string
-	metricType  writev2.MetricMetadata_MetricType
+	metricType  writev2.Metadata_MetricType
 	description string
 	unit        string
 }
@@ -1069,11 +1068,11 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 		generateAttributes(h.Attributes(), "series", labelsPerMetric)
 		generateExemplars(h.Exemplars(), exemplarsPerSeries, ts)
 
-		metricType := prompb.MetricMetadata_HISTOGRAM
+		metricType := writev2.Metadata_METRIC_TYPE_HISTOGRAM
 		if temporality != pmetric.AggregationTemporalityCumulative {
 			// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
 			// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
-			metricType = prompb.MetricMetadata_UNKNOWN
+			metricType = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
 		}
 		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
 			name:        fmt.Sprintf("histogram_%d%s_bucket", i, suffix),
@@ -1111,11 +1110,11 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 		generateAttributes(point.Attributes(), "series", labelsPerMetric)
 		generateExemplars(point.Exemplars(), exemplarsPerSeries, ts)
 
-		metricType := prompb.MetricMetadata_GAUGE
+		metricType := writev2.Metadata_METRIC_TYPE_GAUGE
 		if temporality != pmetric.AggregationTemporalityCumulative {
 			// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
 			// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
-			metricType = prompb.MetricMetadata_UNKNOWN
+			metricType = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
 		}
 		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
 			name:        fmt.Sprintf("non_monotonic_sum_%d%s", i, suffix),
@@ -1145,11 +1144,11 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 			counterSuffix = suffix + "_total"
 		}
 
-		metricType := prompb.MetricMetadata_COUNTER
+		metricType := writev2.Metadata_METRIC_TYPE_COUNTER
 		if temporality != pmetric.AggregationTemporalityCumulative {
 			// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
 			// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
-			metricType = prompb.MetricMetadata_UNKNOWN
+			metricType = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
 		}
 		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
 			name:        fmt.Sprintf("monotonic_sum_%d%s", i, counterSuffix),
@@ -1175,7 +1174,7 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
 			name:        fmt.Sprintf("gauge_%d%s", i, suffix),
 			familyName:  fmt.Sprintf("gauge_%d%s", i, suffix),
-			metricType:  prompb.MetricMetadata_GAUGE,
+			metricType:  writev2.Metadata_METRIC_TYPE_GAUGE,
 			unit:        "unit",
 			description: "gauge",
 		})
