@@ -80,9 +80,6 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 	resourceAttrs := resource.Attributes()
 	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
 	instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
-
-	promotedAttrs := settings.PromoteResourceAttributes.promotedAttributes(resourceAttrs)
-
 	promoteScope := settings.PromoteScopeMetadata && scope.name != ""
 
 	// Ensure attributes are sorted by key for consistent merging of keys which
@@ -115,15 +112,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		}
 	})
 
-	promotedAttrs.Range(func(l labels.Label) {
-		normalized := l.Name
-		if !settings.AllowUTF8 {
-			normalized = otlptranslator.NormalizeLabel(normalized)
-		}
-		if existingValue := c.builder.Get(normalized); existingValue == "" {
-			c.builder.Set(normalized, l.Value)
-		}
-	})
+	settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, settings.AllowUTF8)
 
 	if promoteScope {
 		c.builder.Set("otel_scope_name", scope.name)

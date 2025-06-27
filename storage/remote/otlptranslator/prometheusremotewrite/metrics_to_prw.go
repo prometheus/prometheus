@@ -34,9 +34,8 @@ import (
 )
 
 type PromoteResourceAttributes struct {
-	promoteAll     bool
-	attrs          map[string]struct{}
-	scratchBuilder labels.ScratchBuilder
+	promoteAll bool
+	attrs      map[string]struct{}
 }
 
 type Settings struct {
@@ -332,36 +331,42 @@ func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAtt
 		attrsMap[s] = struct{}{}
 	}
 	return &PromoteResourceAttributes{
-		promoteAll:     otlpCfg.PromoteAllResourceAttributes,
-		attrs:          attrsMap,
-		scratchBuilder: labels.NewScratchBuilder(16),
+		promoteAll: otlpCfg.PromoteAllResourceAttributes,
+		attrs:      attrsMap,
 	}
 }
 
-// promotedAttributes returns labels for promoted resourceAttributes.
-func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommon.Map) labels.Labels {
+// addPromotedAttributes adds labels for promoted resourceAttributes to the builder.
+func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builder, resourceAttributes pcommon.Map, allowUTF8 bool) {
 	if s == nil {
-		return labels.EmptyLabels()
+		return
 	}
 
 	if s.promoteAll {
-		s.scratchBuilder.Reset()
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 			if _, exists := s.attrs[name]; !exists {
-				s.scratchBuilder.Add(name, value.AsString())
+				normalized := name
+				if !allowUTF8 {
+					normalized = otlptranslator.NormalizeLabel(normalized)
+				}
+				if builder.Get(normalized) == "" {
+					builder.Set(normalized, value.AsString())
+				}
 			}
 			return true
 		})
-		s.scratchBuilder.Sort()
-		return s.scratchBuilder.Labels()
+		return
 	}
-	s.scratchBuilder.Reset()
 	resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 		if _, exists := s.attrs[name]; exists {
-			s.scratchBuilder.Add(name, value.AsString())
+			normalized := name
+			if !allowUTF8 {
+				normalized = otlptranslator.NormalizeLabel(normalized)
+			}
+			if builder.Get(normalized) == "" {
+				builder.Set(normalized, value.AsString())
+			}
 		}
 		return true
 	})
-	s.scratchBuilder.Sort()
-	return s.scratchBuilder.Labels()
 }
