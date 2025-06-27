@@ -110,6 +110,10 @@ func (v *durationVisitor) evaluateDurationExpr(expr parser.Expr) (float64, error
 		}
 
 		switch n.Op {
+		case parser.MIN:
+			return math.Min(lhs, rhs), nil
+		case parser.MAX:
+			return math.Max(lhs, rhs), nil
 		case parser.ADD:
 			return lhs + rhs, nil
 		case parser.SUB:

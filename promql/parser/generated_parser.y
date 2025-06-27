@@ -175,7 +175,7 @@ START_METRIC_SELECTOR
 // Type definitions for grammar rules.
 %type <matchers> label_match_list
 %type <matcher> label_matcher
-%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors string_identifier counter_reset_hint
+%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors string_identifier counter_reset_hint min_max
 %type <labels> label_set metric
 %type <lblList> label_set_list
 %type <label> label_set_item
@@ -1091,18 +1091,45 @@ offset_duration_expr    : number_duration_literal
                         | unary_op STEP LEFT_PAREN RIGHT_PAREN
                                 {
                                 $$ = &DurationExpr{
-                                        Op:  SUB,
+                                        Op:  $1.Typ,
                                         RHS: &DurationExpr{
-                                                Op: STEP,
+                                                Op:       STEP,
                                                 StartPos: $2.PositionRange().Start,
-                                                EndPos: $4.PositionRange().End,
+                                                EndPos:   $4.PositionRange().End,
                                         },
                                         StartPos: $1.Pos,
                                 }
                                 }
+                        | min_max LEFT_PAREN duration_expr COMMA duration_expr RIGHT_PAREN
+                                {
+                                    $$ = &DurationExpr{
+                                        Op:       $1.Typ,
+                                        StartPos: $1.PositionRange().Start,
+                                        EndPos:   $6.PositionRange().End,
+                                        LHS:      $3.(Expr),
+                                        RHS:      $5.(Expr),
+                                    }
+                                }
+                        | unary_op min_max LEFT_PAREN duration_expr COMMA duration_expr RIGHT_PAREN
+                                {
+                                    $$ = &DurationExpr{
+                                        Op:       $1.Typ,
+                                        StartPos: $1.Pos,
+                                        EndPos:   $6.PositionRange().End,
+                                        RHS: &DurationExpr{
+                                                Op:       $2.Typ,
+                                                StartPos: $2.PositionRange().Start,
+                                                EndPos:   $6.PositionRange().End,
+                                                LHS:      $4.(Expr),
+                                                RHS:      $6.(Expr),
+                                        },
+                                    }
+                                }
                         | duration_expr
                         ;
                         
+min_max: MIN | MAX ;
+
 duration_expr   : number_duration_literal
                         {
                         nl := $1.(*NumberLiteral)
@@ -1191,6 +1218,16 @@ duration_expr   : number_duration_literal
                                 Op:       STEP,
                                 StartPos: $1.PositionRange().Start,
                                 EndPos:   $3.PositionRange().Start,
+                            }
+                        }
+                | min_max LEFT_PAREN duration_expr COMMA duration_expr RIGHT_PAREN
+                        {
+                            $$ = &DurationExpr{
+                                Op:       $1.Typ,
+                                StartPos: $1.PositionRange().Start,
+                                EndPos:   $6.PositionRange().Start,
+                                LHS: $3.(Expr),
+                                RHS: $5.(Expr),
                             }
                         }
                 | paren_duration_expr

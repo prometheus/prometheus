@@ -1170,7 +1170,10 @@ func lexDurationExpr(l *Lexer) stateFn {
 	case r == '^':
 		l.emit(POW)
 		return lexDurationExpr
-	case r == 's' || r == 'S':
+	case r == ',':
+		l.emit(COMMA)
+		return lexDurationExpr
+	case r == 's' || r == 'S' || r == 'm' || r == 'M':
 		if l.scanDurationKeyword() {
 			return lexDurationExpr
 		}
