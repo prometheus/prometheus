@@ -614,6 +614,43 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "1:11: parse error: unexpected <ignoring>",
 	},
+	// Vector selectors.
+	{
+		input: `offset{step="1s"}[5m]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "offset",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, "step", "1s"),
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "offset"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   17,
+				},
+			},
+			Range:  5 * time.Minute,
+			EndPos: 21,
+		},
+	},
+	{
+		input: `step{offset="1s"}[5m]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "step",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, "offset", "1s"),
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "step"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   17,
+				},
+			},
+			Range:  5 * time.Minute,
+			EndPos: 21,
+		},
+	},
 	// Vector binary operations.
 	{
 		input: "foo * bar",
