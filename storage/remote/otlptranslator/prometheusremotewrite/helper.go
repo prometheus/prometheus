@@ -467,6 +467,7 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls labels.Labels, metadata
 	h := lbls.Hash()
 	ts := c.unique[h]
 	if ts != nil {
+		// TODO: Opportunity for optimization - symbolize lbls and check refs.
 		if labels.Equal(ts.ToLabels(&c.scratchBuilder, c.symbolTable.Symbols()), lbls) {
 			// We already have this metric.
 			return ts, false
@@ -474,6 +475,7 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls labels.Labels, metadata
 
 		// Look for a matching conflict.
 		for _, cTS := range c.conflicts[h] {
+			// TODO: Opportunity for optimization - symbolize lbls and check refs.
 			if labels.Equal(cTS.ToLabels(&c.scratchBuilder, c.symbolTable.Symbols()), lbls) {
 				// We already have this metric.
 				return cTS, false
