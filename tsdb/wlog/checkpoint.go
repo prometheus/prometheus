@@ -82,27 +82,15 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 		return nil
 	}
 
-	// We only delete temporary checkpoints that are older than the most recent successful checkpoint. This prevents us
-	// from deleting a temporary checkpoint that might be in the process of being created.
-	lastSuccessfulCheckpointIndex := -1
-	for _, v := range slices.Backward(checkpoints) {
-		if !isTempCheckpoint(v) {
-			lastSuccessfulCheckpointIndex = v.index
-			break
-		}
-	}
-
-	// If we didn't find any successful checkpoints, leave the last temporary checkpoint
-	if lastSuccessfulCheckpointIndex == -1 {
-		lastSuccessfulCheckpointIndex = checkpoints[len(checkpoints)-1].index
-	}
-
+	lastCheckpointIndex := checkpoints[len(checkpoints)-1].index
 	errs := tsdb_errors.NewMulti()
 	for _, checkpoint := range checkpoints {
 		if checkpoint.index >= maxIndex && !isTempCheckpoint(checkpoint) {
 			continue
 		}
-		if isTempCheckpoint(checkpoint) && checkpoint.index >= lastSuccessfulCheckpointIndex {
+		// It's possible the latest checkpoint is a temporary checkpoint currently being created, so ignore the latest
+		// checkpoint when looking for temporary checkpoints to delete.
+		if isTempCheckpoint(checkpoint) && checkpoint.index == lastCheckpointIndex {
 			continue
 		}
 		errs.Add(os.RemoveAll(filepath.Join(dir, checkpoint.name)))

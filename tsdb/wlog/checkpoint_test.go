@@ -121,7 +121,14 @@ func TestDeleteCheckpoints(t *testing.T) {
 			expectedErr:       require.NoError,
 		},
 		{
-			name:              "leaves most recent temporary checkpoint if all checkpoints are temporary",
+			name:              "will clean any temporary checkpoint even if a successful checkpoint exists before it",
+			fileNamesToCreate: []string{"checkpoint.1000.tmp", "checkpoint.1001", "checkpoint.1002.tmp", "checkpoint.1003.tmp", "checkpoint.1004.tmp"},
+			maxIndex:          0,
+			expectedFiles:     []string{"checkpoint.1001", "checkpoint.1004.tmp"},
+			expectedErr:       require.NoError,
+		},
+		{
+			name:              "leaves most recent checkpoint if all checkpoints are temporary",
 			fileNamesToCreate: []string{"checkpoint.1000.tmp", "checkpoint.1001.tmp", "checkpoint.1002.tmp", "checkpoint.1003.tmp"},
 			maxIndex:          0,
 			expectedFiles:     []string{"checkpoint.1003.tmp"},
