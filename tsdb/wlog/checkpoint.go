@@ -82,30 +82,36 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 		return nil
 	}
 
-	// We can't guarantee that Checkpoint() will not be called at the same time as DeleteCheckpoints() so we only delete
-	// temporary checkpoints that are older than the most recent successful checkpoint.
-	var lastSuccessfulCheckpointIndex int
-	for lastSuccessfulCheckpointIndex = len(checkpoints) - 1; lastSuccessfulCheckpointIndex >= 0; lastSuccessfulCheckpointIndex-- {
-		if !strings.HasSuffix(checkpoints[lastSuccessfulCheckpointIndex].name, CheckpointTempFileSuffix) {
+	// We only delete temporary checkpoints that are older than the most recent successful checkpoint. This prevents us
+	// from deleting a temporary checkpoint that might be in the process of being created.
+	lastSuccessfulCheckpointIndex := -1
+	for _, v := range slices.Backward(checkpoints) {
+		if !isTempCheckpoint(v) {
+			lastSuccessfulCheckpointIndex = v.index
 			break
 		}
 	}
-	// We didn't find a successful checkpoint, keep the most recent temporary checkpoint.
+
+	// If we didn't find any successful checkpoints, leave the last temporary checkpoint
 	if lastSuccessfulCheckpointIndex == -1 {
 		lastSuccessfulCheckpointIndex = checkpoints[len(checkpoints)-1].index
 	}
 
 	errs := tsdb_errors.NewMulti()
 	for _, checkpoint := range checkpoints {
-		if checkpoint.index >= maxIndex && !strings.HasSuffix(checkpoint.name, CheckpointTempFileSuffix) {
+		if checkpoint.index >= maxIndex && !isTempCheckpoint(checkpoint) {
 			continue
 		}
-		if strings.HasSuffix(checkpoint.name, CheckpointTempFileSuffix) && checkpoint.index >= lastSuccessfulCheckpointIndex {
+		if isTempCheckpoint(checkpoint) && checkpoint.index >= lastSuccessfulCheckpointIndex {
 			continue
 		}
 		errs.Add(os.RemoveAll(filepath.Join(dir, checkpoint.name)))
 	}
 	return errs.Err()
+}
+
+func isTempCheckpoint(checkpoint checkpointRef) bool {
+	return strings.HasSuffix(checkpoint.name, CheckpointTempFileSuffix)
 }
 
 // Checkpoint creates a compacted checkpoint of segments in range [from, to] in the given WAL.
@@ -445,9 +451,10 @@ func listCheckpoints(dir string, includeTemporaryCheckpoints bool) (refs []check
 
 		idxString := strings.TrimPrefix(fi.Name(), CheckpointPrefix)
 		if includeTemporaryCheckpoints {
+			// Removing the suffix acts as the temporary checkpoint filter because the temporary checkpoint suffix cannot
+			// be parsed as an integer causing it to be skipped.
 			idxString = strings.TrimSuffix(idxString, CheckpointTempFileSuffix)
 		}
-		// If we don't remove the temporary suffix, this will fail and act as the includeTemporaryCheckpoints filter.
 		idx, err := strconv.Atoi(idxString)
 		if err != nil {
 			continue
