@@ -463,19 +463,20 @@ func lexStatements(l *Lexer) stateFn {
 			l.backup()
 			return lexKeywordOrIdentifier
 		}
-		if r == 's' || r == 'S' {
+		switch r {
+		case ':':
+			if l.gotColon {
+				return l.errorf("unexpected colon %q", r)
+			}
+			l.emit(COLON)
+			l.gotColon = true
+			return lexStatements
+		case 's', 'S':
 			if l.scanStep() {
 				return lexStatements
 			}
 		}
-		if r != ':' {
-			return l.errorf("unexpected character: %q, expected %q", r, ':')
-		}
-		if l.gotColon {
-			return l.errorf("unexpected colon %q", r)
-		}
-		l.emit(COLON)
-		l.gotColon = true
+		return l.errorf("unexpected character: %q, expected %q", r, ':')
 	case r == '(':
 		l.emit(LEFT_PAREN)
 		l.parenDepth++
