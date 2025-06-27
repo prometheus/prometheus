@@ -115,6 +115,10 @@ func (v *durationVisitor) evaluateDurationExpr(expr parser.Expr) (float64, error
 		case parser.MAX:
 			return math.Max(lhs, rhs), nil
 		case parser.ADD:
+			if n.LHS == nil {
+				// Unary positive duration expression.
+				return rhs, nil
+			}
 			return lhs + rhs, nil
 		case parser.SUB:
 			if n.LHS == nil {
