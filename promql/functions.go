@@ -149,6 +149,9 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	if durationToStart >= extrapolationThreshold {
 		durationToStart = averageDurationBetweenSamples / 2
 	}
+
+	durationToZero := math.NaN()
+
 	if isCounter && resultFloat > 0 && len(samples.Floats) > 0 && samples.Floats[0].F >= 0 {
 		// Counters cannot be negative. If we have any slope at all
 		// (i.e. resultFloat went up), we can extrapolate the zero point
@@ -156,30 +159,98 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		// than the durationToStart, we take the zero point as the start
 		// of the series, thereby avoiding extrapolation to negative
 		// counter values.
-		// TODO(beorn7): Do this for histograms, too.
-		durationToZero := sampledInterval * (samples.Floats[0].F / resultFloat)
-		if durationToZero < durationToStart {
-			durationToStart = durationToZero
-		}
+		durationToZero = sampledInterval * (samples.Floats[0].F / resultFloat)
 	}
-	extrapolateToInterval += durationToStart
-
+	if isCounter && resultHistogram != nil && resultHistogram.Count > 0 && len(samples.Histograms) > 0 && samples.Histograms[0].H.Count >= 0 {
+		// Counters cannot be negative. If we have any slope at all
+		// (i.e. resultHistogram.Count went up), we can extrapolate the zero
+		// point of the counter. If the duration to the zero point is shorter
+		// than the durationToStart, we take the zero point as the start
+		// of the series, thereby avoiding extrapolation to negative
+		// counter values.
+		durationToZero = sampledInterval * (samples.Histograms[0].H.Count / resultHistogram.Count)
+	}
+	if durationToZero < durationToStart {
+		durationToStart = durationToZero
+	}
 	if durationToEnd >= extrapolationThreshold {
 		durationToEnd = averageDurationBetweenSamples / 2
 	}
-	extrapolateToInterval += durationToEnd
 
-	factor := extrapolateToInterval / sampledInterval
+	if len(samples.Floats) > 0 {
+		extrapolateToInterval += durationToStart + durationToEnd
+
+		factor := extrapolateToInterval / sampledInterval
+		if isRate {
+			factor /= ms.Range.Seconds()
+		}
+
+		resultFloat *= factor
+
+		return append(enh.Out, Sample{F: resultFloat}), annos
+	}
+
+	extrapolateToIntervalRight := extrapolateToInterval + durationToEnd
+	factorRight := extrapolateToIntervalRight / sampledInterval
+
+	factor := (extrapolateToInterval + durationToStart + durationToEnd) / sampledInterval
+
 	if isRate {
 		factor /= ms.Range.Seconds()
-	}
-	if resultHistogram == nil {
-		resultFloat *= factor
-	} else {
-		resultHistogram.Mul(factor)
+		factorRight /= ms.Range.Seconds()
 	}
 
-	return append(enh.Out, Sample{F: resultFloat, H: resultHistogram}), annos
+	extrapolateBucket := func(firstValue, resultValue float64) float64 {
+		if firstValue < 0 || resultValue <= 0 {
+			return resultValue * factor
+		}
+		bucketDurationToStart := sampledInterval * (firstValue / resultValue)
+		switch {
+		case bucketDurationToStart < durationToStart:
+			// This bucket extrapolates to zero later (more to the right on the
+			// timeline) than the predicted start, avoid interpolating below
+			// zero.
+			factorLeft := bucketDurationToStart / sampledInterval
+			if isRate {
+				factorRight /= ms.Range.Seconds()
+			}
+			return resultValue*factorLeft + resultValue*factorRight
+		case durationToZero < bucketDurationToStart:
+			// This bucket extrapolates to zero earlier (more to the left on the
+			// timeline) than the overall count, avoid underestimating.
+			// Note if we don't know the duration to Zero, than that's NaN and
+			// this is skipped.
+			compensateLeft := durationToStart / durationToZero
+			if isRate {
+				compensateLeft /= ms.Range.Seconds()
+			}
+			return firstValue*compensateLeft + resultValue*factorRight
+		default:
+			return resultValue * factor
+		}
+	}
+
+	resultHistogram.ZeroCount = extrapolateBucket(samples.Histograms[0].H.ZeroCount, resultHistogram.ZeroCount)
+
+	resultHistogram.Count *= factor
+	resultHistogram.Sum *= factor
+
+	if len(resultHistogram.PositiveBuckets) != len(samples.Histograms[0].H.PositiveBuckets) {
+		panic("extrapolatedRate: Cannot handle different number of positive buckets")
+	}
+	if len(resultHistogram.NegativeBuckets) != len(samples.Histograms[0].H.NegativeBuckets) {
+		panic("extrapolatedRate: Cannot handle different number of negative buckets")
+	}
+
+	for i := range resultHistogram.PositiveBuckets {
+		resultHistogram.PositiveBuckets[i] = extrapolateBucket(samples.Histograms[0].H.PositiveBuckets[i], resultHistogram.PositiveBuckets[i])
+	}
+
+	for i := range resultHistogram.NegativeBuckets {
+		resultHistogram.NegativeBuckets[i] = extrapolateBucket(samples.Histograms[0].H.NegativeBuckets[i], resultHistogram.NegativeBuckets[i])
+	}
+
+	return append(enh.Out, Sample{H: resultHistogram}), annos
 }
 
 // histogramRate is a helper function for extrapolatedRate. It requires
