@@ -100,7 +100,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 	c.scratchBuilder.Sort()
 	sortedLabels := c.scratchBuilder.Labels()
 
-	// now that we have sorted and filtered the labels, build the actual list
+	// Now that we have sorted and filtered the labels, build the actual list
 	// of labels, and handle conflicts by appending values.
 	c.builder.Reset(labels.EmptyLabels())
 	sortedLabels.Range(func(l labels.Label) {
@@ -334,8 +334,8 @@ func (c *PrometheusConverter) getPromExemplars(ctx context.Context, exemplars pm
 			return true
 		})
 
-		// only append filtered attributes if it does not cause exemplar
-		// labels to exceed the max number of runes
+		// Only append filtered attributes if it does not cause exemplar
+		// labels to exceed the max number of runes.
 		if exemplarRunes <= maxExemplarRunes {
 			attrs.Range(func(key string, value pcommon.Value) bool {
 				c.scratchBuilder.Add(key, value.AsString())
@@ -472,7 +472,7 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls labels.Labels, metadata
 			return ts, false
 		}
 
-		// Look for a matching conflict
+		// Look for a matching conflict.
 		for _, cTS := range c.conflicts[h] {
 			if labels.Equal(cTS.ToLabels(&c.scratchBuilder, c.symbolTable.Symbols()), lbls) {
 				// We already have this metric

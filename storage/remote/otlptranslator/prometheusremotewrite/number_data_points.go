@@ -115,7 +115,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			}
 
 			c.builder.Reset(lbls)
-			// add created suffix to the metric name
+			// Add created suffix to the metric name for CT series.
 			c.builder.Set(model.MetricNameLabel, c.builder.Get(model.MetricNameLabel)+createdSuffix)
 			c.addTimeSeriesIfNeeded(c.builder.Labels(), startTimestamp, pt.Timestamp(), metadata)
 		}
