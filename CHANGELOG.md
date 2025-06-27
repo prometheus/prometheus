@@ -26,6 +26,7 @@
 * [PERF] TSDB: Optionally use Direct IO for chunks writing. #15365
 * [PERF] TSDB: When fetching label values, stop work earlier if the limit is reached. #16158
 * [PERF] Labels: Simpler/faster stringlabels encoding. #16069
+* [PERF] Scraping: Reload scrape pools concurrently. #16595 #16783
 * [BUGFIX] Top-level: Update GOGC before loading TSDB. #16491
 * [BUGFIX] Config: Respect GOGC environment variable if no "runtime" block exists. #16558
 * [BUGFIX] PromQL: Fix native histogram `last_over_time`. #16744
@@ -33,7 +34,9 @@
 * [BUGFIX] PromQL: Don't emit a value from `histogram_fraction` or `histogram_quantile` if classic and native histograms are present at the same timestamp. #16552
 * [BUGFIX] PromQL: Incorrect rounding of `[1001ms]` to `[1s]` and similar. #16478
 * [BUGFIX] PromQL: Fix inconsistent / sometimes negative `histogram_count` and `histogram_sum`. #16682
+* [BUGFIX] PromQL: Improve handling of NaNs in native histograms. #16724
 * [BUGFIX] PromQL: Fix unary operator precedence in duration expressions. #16713
+* [BUGFIX] PromQL: Improve consistency of `avg` aggregation and `avg_over_time`. #16569 #16773
 * [BUGFIX] UI: Add query warnings and info to graph view. #16753 #16759
 * [BUGFIX] API: Add HTTP `Vary: Origin` header to responses to avoid cache poisoning. #16008
 * [BUGFIX] Discovery: Avoid deadlocks by taking locks in consistent order. #16587
@@ -42,11 +45,6 @@
 * [BUGFIX] Scraping: continue handling custom-bucket histograms after an exponential histogram is encountered. #16720
 * [BUGFIX] OTLP: Default config not respected when `otlp:` block is unset. #16693
 
-These changes may need further fixes:
- * Reload all scrape pools concurrently. #16595
- * promql: Simplify avg aggregation and avg_over_time. #16569
- * Update otlptranslator with new API. #16626
- 
 ## 3.4.2 / 2025-06-26
 
 * [BUGFIX] OTLP receiver: Fix default configuration not being respected if the `otlp:` block is unset in the config file. #16693
