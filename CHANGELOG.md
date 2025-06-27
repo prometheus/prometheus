@@ -4,7 +4,7 @@
 
 * [FEATURE] OTLP receiver: Support promoting OTel scope name/version/schema URL/attributes as metric labels, enable via configuration parameter `otlp.promote_scope_metadata`. #16730 #16760
 
-## 3.4.2 / 2025-06-04
+## 3.4.2 / 2025-06-26
 
 * [BUGFIX] OTLP receiver: Fix default configuration not being respected if the `otlp:` block is unset in the config file. #16693
 
