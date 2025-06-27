@@ -306,7 +306,10 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 		// Reload each scrape pool in a dedicated goroutine so we don't have to wait a long time
 		// if we have a lot of scrape pools to update.
 		go func(name string, sp *scrapePool, cfg *config.ScrapeConfig, ok bool) {
-			defer wg.Done()
+			defer func() {
+				wg.Done()
+				<-canReload
+			}()
 			switch {
 			case !ok:
 				sp.stop()
@@ -325,7 +328,6 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 					sp.logger.Error("No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", name)
 				}
 			}
-			<-canReload
 		}(poolName, pool, cfg, ok)
 	}
 	wg.Wait()
