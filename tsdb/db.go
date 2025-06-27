@@ -1074,6 +1074,17 @@ func (db *DB) Dir() string {
 	return db.dir
 }
 
+func (db *DB) ListBlockMetas() []BlockMeta {
+	db.mtx.RLock()
+	defer db.mtx.RUnlock()
+
+	metas := make([]BlockMeta, 0, len(db.blocks))
+	for _, b := range db.blocks {
+		metas = append(metas, b.Meta())
+	}
+	return metas
+}
+
 func (db *DB) run(ctx context.Context) {
 	defer close(db.donec)
 
