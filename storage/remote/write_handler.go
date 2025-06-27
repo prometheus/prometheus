@@ -389,18 +389,18 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		b = labels.NewScratchBuilder(0)
 	)
 	for _, ts := range req.Timeseries {
-		ls := ts.ToLabels(&b, req.Symbols)
+		b.Reset()
+		ts.AddToLabels(&b, req.Symbols)
 		if h.enableTypeAndUnitLabels {
-			builder := labels.NewBuilder(ls)
 			modelMd := ts.ToMetadata(req.Symbols)
 			m := schema.Metadata{
-				Name: ls.Get(labels.MetricName),
 				Type: modelMd.Type,
 				Unit: modelMd.Unit,
 			}
-			m.SetToLabels(builder)
-			ls = builder.Labels()
+			m.AddToLabels(&b)
 		}
+		b.Sort()
+		ls := b.Labels()
 		// Validate series labels early.
 		// NOTE(bwplotka): While spec allows UTF-8, Prometheus Receiver may impose
 		// specific limits and follow https://prometheus.io/docs/specs/remote_write_spec_2_0/#invalid-samples case.
