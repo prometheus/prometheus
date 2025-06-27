@@ -468,6 +468,9 @@ func lexStatements(l *Lexer) stateFn {
 				return lexStatements
 			}
 		}
+		if r != ':' {
+			return l.errorf("unexpected character: %q, expected %q", r, ':')
+		}
 		if l.gotColon {
 			return l.errorf("unexpected colon %q", r)
 		}

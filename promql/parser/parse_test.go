@@ -4679,6 +4679,16 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "unclosed left parenthesis",
 	},
+	{
+		input:  "foo[5s x 5s]",
+		fail:   true,
+		errMsg: "unexpected character: 'x', expected ':'",
+	},
+	{
+		input:  "foo[5s s 5s]",
+		fail:   true,
+		errMsg: "unexpected character: 's', expected ':'",
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
