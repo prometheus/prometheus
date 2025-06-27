@@ -11,7 +11,7 @@
 * [FEATURE] OTLP: New config options `promote_all_resource_attributes` and `ignore_resource_attributes`. #16426
 * [FEATURE] Discovery: New service discovery for STACKIT Cloud. #16401
 
-* [ENHANCEMENT] Hezner SD: Add `label_selector` to filter servers. #16512
+* [ENHANCEMENT] Hetzner SD: Add `label_selector` to filter servers. #16512
 * [ENHANCEMENT] PromQL: support non-constant parameter in aggregations like `quantile` and `topk`. #16404
 * [ENHANCEMENT] UI: Better total target count display when using `keep_dropped_targets` option. #16604
 * [ENHANCEMENT] UI: Add simple filtering on the `/rules` page. #16605
@@ -31,17 +31,17 @@
 
 * [BUGFIX] Top-level: Update GOGC before loading TSDB. #16491
 * [BUGFIX] Config: Respect GOGC environment variable if no "runtime" block exists. #16558
-* [BUGFIX] PromQL: Fix native histogram last_over_time. #16744
-* [BUGFIX] PromQL: Error reports wrong position for aggregation wrapped in ParenExpr #16041 #16754
+* [BUGFIX] PromQL: Fix native histogram `last_over_time`. #16744
+* [BUGFIX] PromQL: Fix reported parser position range in errors for aggregations wrapped in ParenExpr #16041 #16754
 * [BUGFIX] PromQL: Don't emit a value from `histogram_fraction` or `histogram_quantile` if classic and native histograms are present at the same timestamp. #16552
 * [BUGFIX] PromQL: Incorrect rounding of `[1001ms]` to `[1s]` and similar. #16478
 * [BUGFIX] PromQL: Fix inconsistent / sometimes negative `histogram_count` and `histogram_sum`. #16682
 * [BUGFIX] PromQL: Fix unary operator precedence in duration expressions. #16713
 * [BUGFIX] UI: Add query warnings and info to graph view. #16753 #16759
-* [BUGFIX] UI: Fix `/alerts` accordian theme colors. #16043
-* [BUGFIX] API: Add http Vary: Origin header to responses to avoid cache poisoning. #16008
+* [BUGFIX] UI: Fix `/alerts` accordion theme colors. #16043
+* [BUGFIX] API: Add HTTP `Vary: Origin` header to responses to avoid cache poisoning. #16008
 * [BUGFIX] Discovery: Avoid deadlocks by taking locks in consistent order. #16587
-* [BUGFIX] Remote-write: For Azure AD auth, allow empty client_id to suppport system assigned managed identity. #16421
+* [BUGFIX] Remote-write: For Azure AD auth, allow empty `client_id` to suppport system assigned managed identity. #16421
 * [BUGFIX] Scraping: Fix rare memory corruption bug. #16623
 * [BUGFIX] Scraping: continue handling custom-bucket histograms after an exponential histogram is encountered. #16720
 * [BUGFIX] OTLP: Default config not respected when `otlp:` block is unset. #16693
