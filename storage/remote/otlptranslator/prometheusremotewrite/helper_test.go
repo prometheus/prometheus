@@ -79,104 +79,44 @@ func TestCreateAttributes(t *testing.T) {
 			scope:                     defaultScope,
 			promoteResourceAttributes: nil,
 			promoteScope:              false,
-			expectedLabels: labels.New([]labels.Label{
-				{
-					Name:  "__name__",
-					Value: "test_metric",
-				},
-				{
-					Name:  "instance",
-					Value: "service ID",
-				},
-				{
-					Name:  "job",
-					Value: "service name",
-				},
-				{
-					Name:  "metric_attr",
-					Value: "metric value",
-				},
-				{
-					Name:  "metric_attr_other",
-					Value: "metric value other",
-				},
-			}...),
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"metric_attr", "metric value",
+				"metric_attr_other", "metric value other",
+			),
 		},
 		{
 			name:                      "Successful conversion without resource attribute promotion and with scope promotion",
 			scope:                     defaultScope,
 			promoteResourceAttributes: nil,
 			promoteScope:              true,
-			expectedLabels: labels.New([]labels.Label{
-				{
-					Name:  "__name__",
-					Value: "test_metric",
-				},
-				{
-					Name:  "instance",
-					Value: "service ID",
-				},
-				{
-					Name:  "job",
-					Value: "service name",
-				},
-				{
-					Name:  "metric_attr",
-					Value: "metric value",
-				},
-				{
-					Name:  "metric_attr_other",
-					Value: "metric value other",
-				},
-				{
-					Name:  "otel_scope_name",
-					Value: defaultScope.name,
-				},
-				{
-					Name:  "otel_scope_schema_url",
-					Value: defaultScope.schemaURL,
-				},
-				{
-					Name:  "otel_scope_version",
-					Value: defaultScope.version,
-				},
-				{
-					Name:  "otel_scope_attr1",
-					Value: "value1",
-				},
-				{
-					Name:  "otel_scope_attr2",
-					Value: "value2",
-				},
-			}...),
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"metric_attr", "metric value",
+				"metric_attr_other", "metric value other",
+				"otel_scope_name", defaultScope.name,
+				"otel_scope_schema_url", defaultScope.schemaURL,
+				"otel_scope_version", defaultScope.version,
+				"otel_scope_attr1", "value1",
+				"otel_scope_attr2", "value2",
+			),
 		},
 		{
 			name:                      "Successful conversion without resource attribute promotion and with scope promotion, but without scope",
 			scope:                     scope{},
 			promoteResourceAttributes: nil,
 			promoteScope:              true,
-			expectedLabels: labels.New([]labels.Label{
-				{
-					Name:  "__name__",
-					Value: "test_metric",
-				},
-				{
-					Name:  "instance",
-					Value: "service ID",
-				},
-				{
-					Name:  "job",
-					Value: "service name",
-				},
-				{
-					Name:  "metric_attr",
-					Value: "metric value",
-				},
-				{
-					Name:  "metric_attr_other",
-					Value: "metric value other",
-				},
-			}...),
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"metric_attr", "metric value",
+				"metric_attr_other", "metric value other",
+			),
 		},
 		{
 			name:                      "Successful conversion with some attributes ignored and with scope promotion",
@@ -184,260 +124,95 @@ func TestCreateAttributes(t *testing.T) {
 			promoteResourceAttributes: nil,
 			promoteScope:              true,
 			ignoreAttrs:               []string{"metric-attr-other"},
-			expectedLabels: labels.New([]labels.Label{
-				{
-					Name:  "__name__",
-					Value: "test_metric",
-				},
-				{
-					Name:  "instance",
-					Value: "service ID",
-				},
-				{
-					Name:  "job",
-					Value: "service name",
-				},
-				{
-					Name:  "metric_attr",
-					Value: "metric value",
-				},
-				{
-					Name:  "otel_scope_name",
-					Value: defaultScope.name,
-				},
-				{
-					Name:  "otel_scope_schema_url",
-					Value: defaultScope.schemaURL,
-				},
-				{
-					Name:  "otel_scope_version",
-					Value: defaultScope.version,
-				},
-				{
-					Name:  "otel_scope_attr1",
-					Value: "value1",
-				},
-				{
-					Name:  "otel_scope_attr2",
-					Value: "value2",
-				},
-			}...),
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"metric_attr", "metric value",
+				"otel_scope_name", defaultScope.name,
+				"otel_scope_schema_url", defaultScope.schemaURL,
+				"otel_scope_version", defaultScope.version,
+				"otel_scope_attr1", "value1",
+				"otel_scope_attr2", "value2",
+			),
 		},
 		{
 			name:                      "Successful conversion with resource attribute promotion and with scope promotion",
 			scope:                     defaultScope,
 			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr"},
 			promoteScope:              true,
-			expectedLabels: labels.New([]labels.Label{
-				{
-					Name:  "__name__",
-					Value: "test_metric",
-				},
-				{
-					Name:  "instance",
-					Value: "service ID",
-				},
-				{
-					Name:  "job",
-					Value: "service name",
-				},
-				{
-					Name:  "metric_attr",
-					Value: "metric value",
-				},
-				{
-					Name:  "metric_attr_other",
-					Value: "metric value other",
-				},
-				{
-					Name:  "existent_attr",
-					Value: "resource value",
-				},
-				{
-					Name:  "otel_scope_name",
-					Value: defaultScope.name,
-				},
-				{
-					Name:  "otel_scope_schema_url",
-					Value: defaultScope.schemaURL,
-				},
-				{
-					Name:  "otel_scope_version",
-					Value: defaultScope.version,
-				},
-				{
-					Name:  "otel_scope_attr1",
-					Value: "value1",
-				},
-				{
-					Name:  "otel_scope_attr2",
-					Value: "value2",
-				},
-			}...),
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"metric_attr", "metric value",
+				"metric_attr_other", "metric value other",
+				"existent_attr", "resource value",
+				"otel_scope_name", defaultScope.name,
+				"otel_scope_schema_url", defaultScope.schemaURL,
+				"otel_scope_version", defaultScope.version,
+				"otel_scope_attr1", "value1",
+				"otel_scope_attr2", "value2",
+			),
 		},
 		{
 			name:                      "Successful conversion with resource attribute promotion and with scope promotion, conflicting resource attributes are ignored",
 			scope:                     defaultScope,
 			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr", "metric-attr", "job", "instance"},
 			promoteScope:              true,
-			expectedLabels: labels.New([]labels.Label{
-				{
-					Name:  "__name__",
-					Value: "test_metric",
-				},
-				{
-					Name:  "instance",
-					Value: "service ID",
-				},
-				{
-					Name:  "job",
-					Value: "service name",
-				},
-				{
-					Name:  "existent_attr",
-					Value: "resource value",
-				},
-				{
-					Name:  "metric_attr",
-					Value: "metric value",
-				},
-				{
-					Name:  "metric_attr_other",
-					Value: "metric value other",
-				},
-				{
-					Name:  "otel_scope_name",
-					Value: defaultScope.name,
-				},
-				{
-					Name:  "otel_scope_schema_url",
-					Value: defaultScope.schemaURL,
-				},
-				{
-					Name:  "otel_scope_version",
-					Value: defaultScope.version,
-				},
-				{
-					Name:  "otel_scope_attr1",
-					Value: "value1",
-				},
-				{
-					Name:  "otel_scope_attr2",
-					Value: "value2",
-				},
-			}...),
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"existent_attr", "resource value",
+				"metric_attr", "metric value",
+				"metric_attr_other", "metric value other",
+				"otel_scope_name", defaultScope.name,
+				"otel_scope_schema_url", defaultScope.schemaURL,
+				"otel_scope_version", defaultScope.version,
+				"otel_scope_attr1", "value1",
+				"otel_scope_attr2", "value2",
+			),
 		},
 		{
 			name:                      "Successful conversion with resource attribute promotion and with scope promotion, attributes are only promoted once",
 			scope:                     defaultScope,
 			promoteResourceAttributes: []string{"existent-attr", "existent-attr"},
 			promoteScope:              true,
-			expectedLabels: labels.New([]labels.Label{
-				{
-					Name:  "__name__",
-					Value: "test_metric",
-				},
-				{
-					Name:  "instance",
-					Value: "service ID",
-				},
-				{
-					Name:  "job",
-					Value: "service name",
-				},
-				{
-					Name:  "existent_attr",
-					Value: "resource value",
-				},
-				{
-					Name:  "metric_attr",
-					Value: "metric value",
-				},
-				{
-					Name:  "metric_attr_other",
-					Value: "metric value other",
-				},
-				{
-					Name:  "otel_scope_name",
-					Value: defaultScope.name,
-				},
-				{
-					Name:  "otel_scope_schema_url",
-					Value: defaultScope.schemaURL,
-				},
-				{
-					Name:  "otel_scope_version",
-					Value: defaultScope.version,
-				},
-				{
-					Name:  "otel_scope_attr1",
-					Value: "value1",
-				},
-				{
-					Name:  "otel_scope_attr2",
-					Value: "value2",
-				},
-			}...),
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"existent_attr", "resource value",
+				"metric_attr", "metric value",
+				"metric_attr_other", "metric value other",
+				"otel_scope_name", defaultScope.name,
+				"otel_scope_schema_url", defaultScope.schemaURL,
+				"otel_scope_version", defaultScope.version,
+				"otel_scope_attr1", "value1",
+				"otel_scope_attr2", "value2",
+			),
 		},
 		{
 			name:                         "Successful conversion promoting all resource attributes and with scope promotion",
 			scope:                        defaultScope,
 			promoteAllResourceAttributes: true,
 			promoteScope:                 true,
-			expectedLabels: labels.New([]labels.Label{
-				{
-					Name:  "__name__",
-					Value: "test_metric",
-				},
-				{
-					Name:  "instance",
-					Value: "service ID",
-				},
-				{
-					Name:  "job",
-					Value: "service name",
-				},
-				{
-					Name:  "existent_attr",
-					Value: "resource value",
-				},
-				{
-					Name:  "metric_attr",
-					Value: "metric value",
-				},
-				{
-					Name:  "metric_attr_other",
-					Value: "metric value other",
-				},
-				{
-					Name:  "service_name",
-					Value: "service name",
-				},
-				{
-					Name:  "service_instance_id",
-					Value: "service ID",
-				},
-				{
-					Name:  "otel_scope_name",
-					Value: defaultScope.name,
-				},
-				{
-					Name:  "otel_scope_schema_url",
-					Value: defaultScope.schemaURL,
-				},
-				{
-					Name:  "otel_scope_version",
-					Value: defaultScope.version,
-				},
-				{
-					Name:  "otel_scope_attr1",
-					Value: "value1",
-				},
-				{
-					Name:  "otel_scope_attr2",
-					Value: "value2",
-				},
-			}...),
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"existent_attr", "resource value",
+				"metric_attr", "metric value",
+				"metric_attr_other", "metric value other",
+				"service_name", "service name",
+				"service_instance_id", "service ID",
+				"otel_scope_name", defaultScope.name,
+				"otel_scope_schema_url", defaultScope.schemaURL,
+				"otel_scope_version", defaultScope.version,
+				"otel_scope_attr1", "value1",
+				"otel_scope_attr2", "value2",
+			),
 		},
 		{
 			name:                         "Successful conversion promoting all resource attributes and with scope promotion, ignoring 'service.instance.id'",
@@ -447,56 +222,20 @@ func TestCreateAttributes(t *testing.T) {
 			ignoreResourceAttributes: []string{
 				"service.instance.id",
 			},
-			expectedLabels: labels.New([]labels.Label{
-				{
-					Name:  "__name__",
-					Value: "test_metric",
-				},
-				{
-					Name:  "instance",
-					Value: "service ID",
-				},
-				{
-					Name:  "job",
-					Value: "service name",
-				},
-				{
-					Name:  "existent_attr",
-					Value: "resource value",
-				},
-				{
-					Name:  "metric_attr",
-					Value: "metric value",
-				},
-				{
-					Name:  "metric_attr_other",
-					Value: "metric value other",
-				},
-				{
-					Name:  "service_name",
-					Value: "service name",
-				},
-				{
-					Name:  "otel_scope_name",
-					Value: defaultScope.name,
-				},
-				{
-					Name:  "otel_scope_schema_url",
-					Value: defaultScope.schemaURL,
-				},
-				{
-					Name:  "otel_scope_version",
-					Value: defaultScope.version,
-				},
-				{
-					Name:  "otel_scope_attr1",
-					Value: "value1",
-				},
-				{
-					Name:  "otel_scope_attr2",
-					Value: "value2",
-				},
-			}...),
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"existent_attr", "resource value",
+				"metric_attr", "metric value",
+				"metric_attr_other", "metric value other",
+				"service_name", "service name",
+				"otel_scope_name", defaultScope.name,
+				"otel_scope_schema_url", defaultScope.schemaURL,
+				"otel_scope_version", defaultScope.version,
+				"otel_scope_attr1", "value1",
+				"otel_scope_attr2", "value2",
+			),
 		},
 	}
 	for _, tc := range testCases {
@@ -574,14 +313,14 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
-				countLabels := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
+				countLabels := labels.FromStrings(
+					model.MetricNameLabel, "test_summary"+countStr,
 				)
-				sumLabels := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_summary" + sumStr},
+				sumLabels := labels.FromStrings(
+					model.MetricNameLabel, "test_summary"+sumStr,
 				)
-				createdLabels := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_summary" + createdSuffix},
+				createdLabels := labels.FromStrings(
+					model.MetricNameLabel, "test_summary"+createdSuffix,
 				)
 				return map[uint64]*writev2.TimeSeries{
 					countLabels.Hash(): {
@@ -626,37 +365,20 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: true,
 			want: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
-				scopeLabels := []labels.Label{
-					{
-						Name:  "otel_scope_attr1",
-						Value: "value1",
-					},
-					{
-						Name:  "otel_scope_attr2",
-						Value: "value2",
-					},
-					{
-						Name:  "otel_scope_name",
-						Value: defaultScope.name,
-					},
-					{
-						Name:  "otel_scope_schema_url",
-						Value: defaultScope.schemaURL,
-					},
-					{
-						Name:  "otel_scope_version",
-						Value: defaultScope.version,
-					},
+				scopeLabels := []string{
+					"otel_scope_attr1", "value1",
+					"otel_scope_attr2", "value2",
+					"otel_scope_name", defaultScope.name,
+					"otel_scope_schema_url", defaultScope.schemaURL,
+					"otel_scope_version", defaultScope.version,
 				}
-				countLabels := labels.New(append(scopeLabels,
-					labels.Label{Name: model.MetricNameLabel, Value: "test_summary" + countStr})...)
-				sumLabels := labels.New(append(scopeLabels,
-					labels.Label{Name: model.MetricNameLabel, Value: "test_summary" + sumStr})...)
-				createdLabels := labels.New(append(scopeLabels,
-					labels.Label{
-						Name:  model.MetricNameLabel,
-						Value: "test_summary" + createdSuffix,
-					})...)
+				countLabels := labels.FromStrings(append(scopeLabels,
+					model.MetricNameLabel, "test_summary"+countStr)...)
+				sumLabels := labels.FromStrings(append(scopeLabels,
+					model.MetricNameLabel, "test_summary"+sumStr)...)
+				createdLabels := labels.FromStrings(append(scopeLabels,
+					model.MetricNameLabel, "test_summary"+createdSuffix,
+				)...)
 				return map[uint64]*writev2.TimeSeries{
 					countLabels.Hash(): {
 						LabelsRefs: symbolTable.SymbolizeLabels(countLabels, nil),
@@ -698,11 +420,11 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			},
 			promoteScope: false,
 			want: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
-				countLabels := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
+				countLabels := labels.FromStrings(
+					model.MetricNameLabel, "test_summary"+countStr,
 				)
-				sumLabels := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_summary" + sumStr},
+				sumLabels := labels.FromStrings(
+					model.MetricNameLabel, "test_summary"+sumStr,
 				)
 				return map[uint64]*writev2.TimeSeries{
 					countLabels.Hash(): {
@@ -791,15 +513,15 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
-				countLabels := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_hist" + countStr},
+				countLabels := labels.FromStrings(
+					model.MetricNameLabel, "test_hist"+countStr,
 				)
-				createdLabels := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_hist" + createdSuffix},
+				createdLabels := labels.FromStrings(
+					model.MetricNameLabel, "test_hist"+createdSuffix,
 				)
-				infLabels := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_hist_bucket"},
-					labels.Label{Name: model.BucketLabel, Value: "+Inf"},
+				infLabels := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_bucket",
+					model.BucketLabel, "+Inf",
 				)
 				return map[uint64]*writev2.TimeSeries{
 					countLabels.Hash(): {
@@ -844,35 +566,20 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: true,
 			want: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
-				scopeLabels := []labels.Label{
-					{
-						Name:  "otel_scope_attr1",
-						Value: "value1",
-					},
-					{
-						Name:  "otel_scope_attr2",
-						Value: "value2",
-					},
-					{
-						Name:  "otel_scope_name",
-						Value: defaultScope.name,
-					},
-					{
-						Name:  "otel_scope_schema_url",
-						Value: defaultScope.schemaURL,
-					},
-					{
-						Name:  "otel_scope_version",
-						Value: defaultScope.version,
-					},
+				scopeLabels := []string{
+					"otel_scope_attr1", "value1",
+					"otel_scope_attr2", "value2",
+					"otel_scope_name", defaultScope.name,
+					"otel_scope_schema_url", defaultScope.schemaURL,
+					"otel_scope_version", defaultScope.version,
 				}
-				countLabels := labels.New(append(scopeLabels,
-					labels.Label{Name: model.MetricNameLabel, Value: "test_hist" + countStr})...)
-				infLabels := labels.New(append(scopeLabels,
-					labels.Label{Name: model.MetricNameLabel, Value: "test_hist_bucket"},
-					labels.Label{Name: model.BucketLabel, Value: "+Inf"})...)
-				createdLabels := labels.New(append(scopeLabels,
-					labels.Label{Name: model.MetricNameLabel, Value: "test_hist" + createdSuffix})...)
+				countLabels := labels.FromStrings(append(scopeLabels,
+					model.MetricNameLabel, "test_hist"+countStr)...)
+				infLabels := labels.FromStrings(append(scopeLabels,
+					model.MetricNameLabel, "test_hist_bucket",
+					model.BucketLabel, "+Inf")...)
+				createdLabels := labels.FromStrings(append(scopeLabels,
+					model.MetricNameLabel, "test_hist"+createdSuffix)...)
 				return map[uint64]*writev2.TimeSeries{
 					countLabels.Hash(): {
 						LabelsRefs: symbolTable.SymbolizeLabels(countLabels, nil),
@@ -913,12 +620,12 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				return metric
 			},
 			want: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
-				lbls := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_hist" + countStr},
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist"+countStr,
 				)
-				infLabels := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_hist_bucket"},
-					labels.Label{Name: model.BucketLabel, Value: "+Inf"},
+				infLabels := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_bucket",
+					model.BucketLabel, "+Inf",
 				)
 				return map[uint64]*writev2.TimeSeries{
 					infLabels.Hash(): {

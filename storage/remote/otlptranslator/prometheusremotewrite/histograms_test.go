@@ -670,9 +670,9 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			wantSeries: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
-				lbls := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_hist_seconds"},
-					labels.Label{Name: "attr", Value: "test_attr"},
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_seconds",
+					"attr", "test_attr",
 				)
 				return map[uint64]*writev2.TimeSeries{
 					lbls.Hash(): {
@@ -734,15 +734,15 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: true,
 			wantSeries: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
-				lbls := labels.New([]labels.Label{
-					{Name: model.MetricNameLabel, Value: "test_hist_seconds"},
-					{Name: "attr", Value: "test_attr"},
-					{Name: "otel_scope_name", Value: defaultScope.name},
-					{Name: "otel_scope_schema_url", Value: defaultScope.schemaURL},
-					{Name: "otel_scope_version", Value: defaultScope.version},
-					{Name: "otel_scope_attr1", Value: "value1"},
-					{Name: "otel_scope_attr2", Value: "value2"},
-				}...)
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_seconds",
+					"attr", "test_attr",
+					"otel_scope_name", defaultScope.name,
+					"otel_scope_schema_url", defaultScope.schemaURL,
+					"otel_scope_version", defaultScope.version,
+					"otel_scope_attr1", "value1",
+					"otel_scope_attr2", "value2",
+				)
 				return map[uint64]*writev2.TimeSeries{
 					lbls.Hash(): {
 						LabelsRefs: symbolTable.SymbolizeLabels(lbls, nil),
@@ -803,13 +803,13 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			wantSeries: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
-				lbls := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_hist_seconds"},
-					labels.Label{Name: "attr", Value: "test_attr"},
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_seconds",
+					"attr", "test_attr",
 				)
-				labelsAnother := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_hist_seconds"},
-					labels.Label{Name: "attr", Value: "test_attr_two"},
+				labelsAnother := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_seconds",
+					"attr", "test_attr_two",
 				)
 
 				return map[uint64]*writev2.TimeSeries{
@@ -1143,9 +1143,9 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			wantSeries: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
-				lbls := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb_seconds"},
-					labels.Label{Name: "attr", Value: "test_attr"},
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_to_nhcb_seconds",
+					"attr", "test_attr",
 				)
 				return map[uint64]*writev2.TimeSeries{
 					lbls.Hash(): {
@@ -1207,15 +1207,15 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: true,
 			wantSeries: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
-				labels := labels.New([]labels.Label{
-					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb_seconds"},
-					{Name: "attr", Value: "test_attr"},
-					{Name: "otel_scope_name", Value: defaultScope.name},
-					{Name: "otel_scope_schema_url", Value: defaultScope.schemaURL},
-					{Name: "otel_scope_version", Value: defaultScope.version},
-					{Name: "otel_scope_attr1", Value: "value1"},
-					{Name: "otel_scope_attr2", Value: "value2"},
-				}...)
+				labels := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_to_nhcb_seconds",
+					"attr", "test_attr",
+					"otel_scope_name", defaultScope.name,
+					"otel_scope_schema_url", defaultScope.schemaURL,
+					"otel_scope_version", defaultScope.version,
+					"otel_scope_attr1", "value1",
+					"otel_scope_attr2", "value2",
+				)
 				return map[uint64]*writev2.TimeSeries{
 					labels.Hash(): {
 						LabelsRefs: symbolTable.SymbolizeLabels(labels, nil),
@@ -1276,13 +1276,13 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			wantSeries: func(symbolTable *writev2.SymbolsTable, metadata writev2.Metadata) map[uint64]*writev2.TimeSeries {
-				lbls := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb_seconds"},
-					labels.Label{Name: "attr", Value: "test_attr"},
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_to_nhcb_seconds",
+					"attr", "test_attr",
 				)
-				labelsAnother := labels.New(
-					labels.Label{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb_seconds"},
-					labels.Label{Name: "attr", Value: "test_attr_two"},
+				labelsAnother := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_to_nhcb_seconds",
+					"attr", "test_attr_two",
 				)
 
 				return map[uint64]*writev2.TimeSeries{

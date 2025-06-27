@@ -518,9 +518,9 @@ func createOtelSum(name string, temporality pmetric.AggregationTemporality, ts t
 
 func createPromCounterSeries(name string, ts time.Time, symbolTable *writev2.SymbolsTable, delta bool) writev2.TimeSeries {
 	timeseries := writev2.TimeSeries{
-		LabelsRefs: symbolTable.SymbolizeLabels(labels.New(
-			labels.Label{Name: "__name__", Value: name},
-			labels.Label{Name: "test_label", Value: "test_value"},
+		LabelsRefs: symbolTable.SymbolizeLabels(labels.FromStrings(
+			"__name__", name,
+			"test_label", "test_value",
 		), nil),
 		Samples: []writev2.Sample{{
 			Value:     5,
@@ -554,9 +554,9 @@ func createOtelGauge(name string, ts time.Time) pmetric.Metric {
 
 func createPromGaugeSeries(name string, ts time.Time, symbolTable *writev2.SymbolsTable) writev2.TimeSeries {
 	return writev2.TimeSeries{
-		LabelsRefs: symbolTable.SymbolizeLabels(labels.New(
-			labels.Label{Name: "__name__", Value: name},
-			labels.Label{Name: "test_label", Value: "test_value"},
+		LabelsRefs: symbolTable.SymbolizeLabels(labels.FromStrings(
+			"__name__", name,
+			"test_label", "test_value",
 		), nil),
 		Samples: []writev2.Sample{{
 			Value:     5,
@@ -588,9 +588,9 @@ func createOtelExponentialHistogram(name string, temporality pmetric.Aggregation
 
 func createPromNativeHistogramSeries(name string, hint writev2.Histogram_ResetHint, ts time.Time, symbolTable *writev2.SymbolsTable, delta bool) writev2.TimeSeries {
 	timeseries := writev2.TimeSeries{
-		LabelsRefs: symbolTable.SymbolizeLabels(labels.New(
-			labels.Label{Name: "__name__", Value: name},
-			labels.Label{Name: "test_label", Value: "test_value"},
+		LabelsRefs: symbolTable.SymbolizeLabels(labels.FromStrings(
+			"__name__", name,
+			"test_label", "test_value",
 		), nil),
 		Histograms: []writev2.Histogram{
 			{
@@ -635,9 +635,9 @@ func createOtelExplicitHistogram(name string, temporality pmetric.AggregationTem
 
 func createPromNHCBSeries(name string, hint writev2.Histogram_ResetHint, ts time.Time, symbolTable *writev2.SymbolsTable, delta bool) writev2.TimeSeries {
 	timeseries := writev2.TimeSeries{
-		LabelsRefs: symbolTable.SymbolizeLabels(labels.New(
-			labels.Label{Name: "__name__", Value: name},
-			labels.Label{Name: "test_label", Value: "test_value"},
+		LabelsRefs: symbolTable.SymbolizeLabels(labels.FromStrings(
+			"__name__", name,
+			"test_label", "test_value",
 		), nil),
 		Histograms: []writev2.Histogram{
 			{
@@ -672,11 +672,11 @@ func createPromNHCBSeries(name string, hint writev2.Histogram_ResetHint, ts time
 func createPromClassicHistogramSeries(name string, ts time.Time, symbolTable *writev2.SymbolsTable, delta bool) []writev2.TimeSeries {
 	timeseries := []writev2.TimeSeries{
 		{
-			LabelsRefs: symbolTable.SymbolizeLabels(labels.New([]labels.Label{
-				{Name: "__name__", Value: name + "_bucket"},
-				{Name: "le", Value: "1"},
-				{Name: "test_label", Value: "test_value"},
-			}...), nil),
+			LabelsRefs: symbolTable.SymbolizeLabels(labels.FromStrings(
+				"__name__", name+"_bucket",
+				"le", "1",
+				"test_label", "test_value",
+			), nil),
 			Samples: []writev2.Sample{{Value: 10, Timestamp: ts.UnixMilli()}},
 			Metadata: writev2.Metadata{
 				Type:    writev2.Metadata_METRIC_TYPE_HISTOGRAM,
@@ -685,11 +685,11 @@ func createPromClassicHistogramSeries(name string, ts time.Time, symbolTable *wr
 			},
 		},
 		{
-			LabelsRefs: symbolTable.SymbolizeLabels(labels.New([]labels.Label{
-				{Name: "__name__", Value: name + "_bucket"},
-				{Name: "le", Value: "2"},
-				{Name: "test_label", Value: "test_value"},
-			}...), nil),
+			LabelsRefs: symbolTable.SymbolizeLabels(labels.FromStrings(
+				"__name__", name+"_bucket",
+				"le", "2",
+				"test_label", "test_value",
+			), nil),
 			Samples: []writev2.Sample{{Value: 20, Timestamp: ts.UnixMilli()}},
 			Metadata: writev2.Metadata{
 				Type:    writev2.Metadata_METRIC_TYPE_HISTOGRAM,
@@ -698,11 +698,11 @@ func createPromClassicHistogramSeries(name string, ts time.Time, symbolTable *wr
 			},
 		},
 		{
-			LabelsRefs: symbolTable.SymbolizeLabels(labels.New([]labels.Label{
-				{Name: "__name__", Value: name + "_bucket"},
-				{Name: "le", Value: "+Inf"},
-				{Name: "test_label", Value: "test_value"},
-			}...), nil),
+			LabelsRefs: symbolTable.SymbolizeLabels(labels.FromStrings(
+				"__name__", name+"_bucket",
+				"le", "+Inf",
+				"test_label", "test_value",
+			), nil),
 			Samples: []writev2.Sample{{Value: 20, Timestamp: ts.UnixMilli()}},
 			Metadata: writev2.Metadata{
 				Type:    writev2.Metadata_METRIC_TYPE_HISTOGRAM,
@@ -711,10 +711,10 @@ func createPromClassicHistogramSeries(name string, ts time.Time, symbolTable *wr
 			},
 		},
 		{
-			LabelsRefs: symbolTable.SymbolizeLabels(labels.New([]labels.Label{
-				{Name: "__name__", Value: name + "_count"},
-				{Name: "test_label", Value: "test_value"},
-			}...), nil),
+			LabelsRefs: symbolTable.SymbolizeLabels(labels.FromStrings(
+				"__name__", name+"_count",
+				"test_label", "test_value",
+			), nil),
 			Samples: []writev2.Sample{{Value: 20, Timestamp: ts.UnixMilli()}},
 			Metadata: writev2.Metadata{
 				Type:    writev2.Metadata_METRIC_TYPE_HISTOGRAM,
@@ -723,10 +723,10 @@ func createPromClassicHistogramSeries(name string, ts time.Time, symbolTable *wr
 			},
 		},
 		{
-			LabelsRefs: symbolTable.SymbolizeLabels(labels.New([]labels.Label{
-				{Name: "__name__", Value: name + "_sum"},
-				{Name: "test_label", Value: "test_value"},
-			}...), nil),
+			LabelsRefs: symbolTable.SymbolizeLabels(labels.FromStrings(
+				"__name__", name+"_sum",
+				"test_label", "test_value",
+			), nil),
 			Samples: []writev2.Sample{{Value: 30, Timestamp: ts.UnixMilli()}},
 			Metadata: writev2.Metadata{
 				Type:    writev2.Metadata_METRIC_TYPE_HISTOGRAM,
@@ -764,10 +764,10 @@ func createOtelSummary(name string, ts time.Time) pmetric.Metric {
 func createPromSummarySeries(name string, ts time.Time, symbolTable *writev2.SymbolsTable) []writev2.TimeSeries {
 	return []writev2.TimeSeries{
 		{
-			LabelsRefs: symbolTable.SymbolizeLabels(labels.New([]labels.Label{
-				{Name: "__name__", Value: name + "_sum"},
-				{Name: "test_label", Value: "test_value"},
-			}...), nil),
+			LabelsRefs: symbolTable.SymbolizeLabels(labels.FromStrings(
+				"__name__", name+"_sum",
+				"test_label", "test_value",
+			), nil),
 			Samples: []writev2.Sample{{
 				Value:     18,
 				Timestamp: ts.UnixMilli(),
@@ -779,10 +779,10 @@ func createPromSummarySeries(name string, ts time.Time, symbolTable *writev2.Sym
 			},
 		},
 		{
-			LabelsRefs: symbolTable.SymbolizeLabels(labels.New([]labels.Label{
-				{Name: "__name__", Value: name + "_count"},
-				{Name: "test_label", Value: "test_value"},
-			}...), nil),
+			LabelsRefs: symbolTable.SymbolizeLabels(labels.FromStrings(
+				"__name__", name+"_count",
+				"test_label", "test_value",
+			), nil),
 			Samples: []writev2.Sample{{
 				Value:     9,
 				Timestamp: ts.UnixMilli(),
@@ -794,11 +794,11 @@ func createPromSummarySeries(name string, ts time.Time, symbolTable *writev2.Sym
 			},
 		},
 		{
-			LabelsRefs: symbolTable.SymbolizeLabels(labels.New([]labels.Label{
-				{Name: "__name__", Value: name},
-				{Name: "quantile", Value: "0.5"},
-				{Name: "test_label", Value: "test_value"},
-			}...), nil),
+			LabelsRefs: symbolTable.SymbolizeLabels(labels.FromStrings(
+				"__name__", name,
+				"quantile", "0.5",
+				"test_label", "test_value",
+			), nil),
 			Samples: []writev2.Sample{{
 				Value:     2,
 				Timestamp: ts.UnixMilli(),
