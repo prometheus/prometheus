@@ -1081,20 +1081,24 @@ offset_duration_expr    : number_duration_literal
                                 $$ = nl
                                 }
                         | STEP LEFT_PAREN RIGHT_PAREN
-                        {
-                            de := &DurationExpr{Step: true, RHS: &NumberLiteral{PosRange: $1.PositionRange()}}
-                            de.RHS.(*NumberLiteral).PosRange.End = $3.Pos
-                            $$ = de
-                        }
+                                {
+                                $$ = &DurationExpr{
+                                        Step: true,
+                                        StartPos: $1.PositionRange().Start,
+                                        EndPos: $3.PositionRange().End,
+                                }
+                                }
                         | unary_op STEP LEFT_PAREN RIGHT_PAREN
                                 {
-                                de := &DurationExpr{
-                                        Op: SUB,
-                                        RHS: &DurationExpr{Step: true, RHS: &NumberLiteral{PosRange: $2.PositionRange()}},
+                                $$ = &DurationExpr{
+                                        Op:  SUB,
+                                        RHS: &DurationExpr{
+                                                Step: true,
+                                                StartPos: $2.PositionRange().Start,
+                                                EndPos: $4.PositionRange().End,
+                                        },
                                         StartPos: $1.Pos,
                                 }
-                                de.RHS.(*DurationExpr).RHS.(*NumberLiteral).PosRange.End = $4.Pos
-                                $$ = de
                                 }
                         | duration_expr
                         ;
@@ -1183,9 +1187,11 @@ duration_expr   : number_duration_literal
                         }
                 | STEP LEFT_PAREN RIGHT_PAREN
                         {
-                            de := &DurationExpr{Step: true, RHS: &NumberLiteral{PosRange: $1.PositionRange()}}
-                            de.RHS.(*NumberLiteral).PosRange.End = $3.Pos
-                            $$ = de
+                            $$ = &DurationExpr{
+                                Step:     true,
+                                StartPos: $1.PositionRange().Start,
+                                EndPos:   $3.PositionRange().Start,
+                            }
                         }
                 | paren_duration_expr
                 ;

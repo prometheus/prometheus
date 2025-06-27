@@ -2073,20 +2073,24 @@ yydefault:
 	case 251:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			de := &DurationExpr{Step: true, RHS: &NumberLiteral{PosRange: yyDollar[1].item.PositionRange()}}
-			de.RHS.(*NumberLiteral).PosRange.End = yyDollar[3].item.Pos
-			yyVAL.node = de
+			yyVAL.node = &DurationExpr{
+				Step:     true,
+				StartPos: yyDollar[1].item.PositionRange().Start,
+				EndPos:   yyDollar[3].item.PositionRange().End,
+			}
 		}
 	case 252:
 		yyDollar = yyS[yypt-4 : yypt+1]
 		{
-			de := &DurationExpr{
-				Op:       SUB,
-				RHS:      &DurationExpr{Step: true, RHS: &NumberLiteral{PosRange: yyDollar[2].item.PositionRange()}},
+			yyVAL.node = &DurationExpr{
+				Op: SUB,
+				RHS: &DurationExpr{
+					Step:     true,
+					StartPos: yyDollar[2].item.PositionRange().Start,
+					EndPos:   yyDollar[4].item.PositionRange().End,
+				},
 				StartPos: yyDollar[1].item.Pos,
 			}
-			de.RHS.(*DurationExpr).RHS.(*NumberLiteral).PosRange.End = yyDollar[4].item.Pos
-			yyVAL.node = de
 		}
 	case 254:
 		yyDollar = yyS[yypt-1 : yypt+1]
@@ -2181,9 +2185,11 @@ yydefault:
 	case 262:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			de := &DurationExpr{Step: true, RHS: &NumberLiteral{PosRange: yyDollar[1].item.PositionRange()}}
-			de.RHS.(*NumberLiteral).PosRange.End = yyDollar[3].item.Pos
-			yyVAL.node = de
+			yyVAL.node = &DurationExpr{
+				Step:     true,
+				StartPos: yyDollar[1].item.PositionRange().Start,
+				EndPos:   yyDollar[3].item.PositionRange().Start,
+			}
 		}
 	case 264:
 		yyDollar = yyS[yypt-3 : yypt+1]

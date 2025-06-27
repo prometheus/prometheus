@@ -4132,6 +4132,73 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `foo[step()]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			RangeExpr: &DurationExpr{
+				Step:     true,
+				StartPos: 4,
+				EndPos:   9,
+			},
+			EndPos: 11,
+		},
+	},
+	{
+		input: `foo[  -  step  (  )  ]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			RangeExpr: &DurationExpr{
+				Op:       SUB,
+				StartPos: 6,
+				RHS: &DurationExpr{
+					Step:     true,
+					StartPos: 9,
+					EndPos:   18,
+				},
+			},
+			EndPos: 22,
+		},
+	},
+	{
+		input: `foo[   step  (  )  ]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			RangeExpr: &DurationExpr{
+				Step:     true,
+				StartPos: 7,
+				EndPos:   16,
+			},
+			EndPos: 20,
+		},
+	},
+	{
 		input: `foo[-step()]`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
@@ -4147,18 +4214,27 @@ var testExpr = []struct {
 			RangeExpr: &DurationExpr{
 				Op:       SUB,
 				StartPos: 4,
-				RHS: &DurationExpr{
-					RHS: &NumberLiteral{
-						Val: 0,
-						PosRange: posrange.PositionRange{
-							Start: 5,
-							End:   10,
-						},
-					},
-					Step: true,
-				},
+				RHS:      &DurationExpr{Step: true, StartPos: 5, EndPos: 10},
 			},
 			EndPos: 12,
+		},
+	},
+	{
+		input: `foo offset step()`,
+		expected: &VectorSelector{
+			Name: "foo",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   17,
+			},
+			OriginalOffsetExpr: &DurationExpr{
+				Step:     true,
+				StartPos: 11,
+				EndPos:   17,
+			},
 		},
 	},
 	{
@@ -4175,16 +4251,7 @@ var testExpr = []struct {
 			OriginalOffsetExpr: &DurationExpr{
 				Op:       SUB,
 				StartPos: 11,
-				RHS: &DurationExpr{
-					RHS: &NumberLiteral{
-						Val: 0,
-						PosRange: posrange.PositionRange{
-							Start: 12,
-							End:   17,
-						},
-					},
-					Step: true,
-				},
+				RHS:      &DurationExpr{Step: true, StartPos: 12, EndPos: 18},
 			},
 		},
 	},

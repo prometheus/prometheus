@@ -152,7 +152,10 @@ clear
 load 1s
   metric1_total 0+1x100
 
-eval range from 50s to 60s step 10s count_over_time(metric1_total[step()+1])
+eval range from 50s to 60s step 10s count_over_time(metric1_total[step()])
+	{} 10 10
+	
+eval range from 50s to 60s step 10s count_over_time(metric1_total[step()+1ms])
 	{} 11 11
 
 eval range from 50s to 60s step 10s count_over_time(metric1_total[(step())+1])

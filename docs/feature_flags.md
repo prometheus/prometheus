@@ -205,9 +205,9 @@ When using offset with duration expressions, you must wrap the expression in
 parentheses. Without parentheses, only the first duration value will be used in
 the offset calculation.
 
-An additinal keyword, `step()`, is available in duration expressions. In range
-queries, this represents the resolution step width. It is `0s` for instant
-queries. 
+Additionally, `step()` can be used in duration expressions.
+For a **range query**, it resolves to the step width of the range query.
+For an **instant query**, it resolves to `0s`. 
 
 **Note**: Duration expressions are not supported in the @ timestamp operator.
 
@@ -228,7 +228,7 @@ Examples of equivalent durations:
 * `1h / 2` is the equivalent to `30m` or `1800s`
 * `4h % 3h` is the equivalent to `1h` or `3600s`
 * `(2 ^ 3) * 1m` is the equivalent to `8m` or `480s`
-* `step()+1` is the equivalent to the query step witdh increased by 1s.
+* `step() + 1` is the equivalent to the query step width increased by 1s.
 
 
 ## OTLP Native Delta Support
