@@ -214,9 +214,9 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		baseLabels := c.createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
 		// If the sum is unset, it indicates the _sum metric point should be
-		// omitted
+		// omitted.
 		if pt.HasSum() {
-			// treat sum as a sample in an individual TimeSeries
+			// treat sum as a sample in an individual TimeSeries.
 			sum := &writev2.Sample{
 				Value:     pt.Sum(),
 				Timestamp: timestamp,
@@ -229,7 +229,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			c.addSample(sum, sumlabels, metadata)
 		}
 
-		// treat count as a sample in an individual TimeSeries
+		// treat count as a sample in an individual TimeSeries.
 		count := &writev2.Sample{
 			Value:     float64(pt.Count()),
 			Timestamp: timestamp,
@@ -241,12 +241,12 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		countlabels := c.createLabels(baseName+countStr, baseLabels)
 		c.addSample(count, countlabels, metadata)
 
-		// cumulative count for conversion to cumulative histogram
+		// cumulative count for conversion to cumulative histogram.
 		var cumulativeCount uint64
 
 		var bucketBounds []bucketBoundsData
 
-		// process each bound, based on histograms proto definition, # of buckets = # of explicit bounds + 1
+		// process each bound, based on histograms proto definition, # of buckets = # of explicit bounds + 1.
 		for i := 0; i < pt.ExplicitBounds().Len() && i < pt.BucketCounts().Len(); i++ {
 			if err := c.everyN.checkContext(ctx); err != nil {
 				return err
@@ -267,7 +267,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 
 			bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: bound})
 		}
-		// add le=+Inf bucket
+		// add le=+Inf bucket.
 		infBucket := &writev2.Sample{
 			Timestamp: timestamp,
 		}
@@ -354,7 +354,7 @@ func (c *PrometheusConverter) getPromExemplars(ctx context.Context, exemplars pm
 // mostRecentTimestampInMetric returns the latest timestamp in a batch of metrics.
 func mostRecentTimestampInMetric(metric pmetric.Metric) pcommon.Timestamp {
 	var ts pcommon.Timestamp
-	// handle individual metric based on type
+	// handle individual metric based on type.
 	//exhaustive:enforce
 	switch metric.Type() {
 	case pmetric.MetricTypeGauge:
@@ -398,7 +398,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		timestamp := convertTimeStamp(pt.Timestamp())
 		baseLabels := c.createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
-		// treat sum as a sample in an individual TimeSeries
+		// treat sum as a sample in an individual TimeSeries.
 		sum := &writev2.Sample{
 			Value:     pt.Sum(),
 			Timestamp: timestamp,
@@ -406,11 +406,11 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		if pt.Flags().NoRecordedValue() {
 			sum.Value = math.Float64frombits(value.StaleNaN)
 		}
-		// sum and count of the summary should append suffix to baseName
+		// sum and count of the summary should append suffix to baseName.
 		sumlabels := c.createLabels(baseName+sumStr, baseLabels)
 		c.addSample(sum, sumlabels, metadata)
 
-		// treat count as a sample in an individual TimeSeries
+		// treat count as a sample in an individual TimeSeries.
 		count := &writev2.Sample{
 			Value:     float64(pt.Count()),
 			Timestamp: timestamp,
@@ -421,7 +421,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		countlabels := c.createLabels(baseName+countStr, baseLabels)
 		c.addSample(count, countlabels, metadata)
 
-		// process each percentile/quantile
+		// process each percentile/quantile.
 		for i := 0; i < pt.QuantileValues().Len(); i++ {
 			qt := pt.QuantileValues().At(i)
 			quantile := &writev2.Sample{
@@ -468,19 +468,19 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls labels.Labels, metadata
 	ts := c.unique[h]
 	if ts != nil {
 		if labels.Equal(ts.ToLabels(&c.scratchBuilder, c.symbolTable.Symbols()), lbls) {
-			// We already have this metric
+			// We already have this metric.
 			return ts, false
 		}
 
 		// Look for a matching conflict.
 		for _, cTS := range c.conflicts[h] {
 			if labels.Equal(cTS.ToLabels(&c.scratchBuilder, c.symbolTable.Symbols()), lbls) {
-				// We already have this metric
+				// We already have this metric.
 				return cTS, false
 			}
 		}
 
-		// New conflict
+		// New conflict.
 		ts = &writev2.TimeSeries{
 			LabelsRefs: c.symbolTable.SymbolizeLabels(lbls, nil),
 			Metadata:   metadata,
@@ -489,7 +489,7 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls labels.Labels, metadata
 		return ts, true
 	}
 
-	// This metric is new
+	// This metric is new.
 	ts = &writev2.TimeSeries{
 		LabelsRefs: c.symbolTable.SymbolizeLabels(lbls, nil),
 		Metadata:   metadata,
@@ -506,7 +506,7 @@ func (c *PrometheusConverter) addTimeSeriesIfNeeded(lbls labels.Labels, startTim
 	if created {
 		ts.Samples = []writev2.Sample{
 			{
-				// convert ns to ms
+				// convert ns to ms.
 				Value:     float64(convertTimeStamp(startTimestamp)),
 				Timestamp: convertTimeStamp(timestamp),
 			},
