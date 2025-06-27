@@ -225,7 +225,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 				sum.Value = math.Float64frombits(value.StaleNaN)
 			}
 
-			sumlabels := c.createLabels(baseName+sumStr, baseLabels)
+			sumlabels := c.addLabels(baseName+sumStr, baseLabels)
 			c.addSample(sum, sumlabels, metadata)
 		}
 
@@ -238,7 +238,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			count.Value = math.Float64frombits(value.StaleNaN)
 		}
 
-		countlabels := c.createLabels(baseName+countStr, baseLabels)
+		countlabels := c.addLabels(baseName+countStr, baseLabels)
 		c.addSample(count, countlabels, metadata)
 
 		// cumulative count for conversion to cumulative histogram.
@@ -262,7 +262,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 				bucket.Value = math.Float64frombits(value.StaleNaN)
 			}
 			boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
-			labels := c.createLabels(baseName+bucketStr, baseLabels, leStr, boundStr)
+			labels := c.addLabels(baseName+bucketStr, baseLabels, leStr, boundStr)
 			ts := c.addSample(bucket, labels, metadata)
 
 			bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: bound})
@@ -276,7 +276,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		} else {
 			infBucket.Value = float64(pt.Count())
 		}
-		infLabels := c.createLabels(baseName+bucketStr, baseLabels, leStr, pInfStr)
+		infLabels := c.addLabels(baseName+bucketStr, baseLabels, leStr, pInfStr)
 		ts := c.addSample(infBucket, infLabels, metadata)
 
 		bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: math.Inf(1)})
@@ -286,7 +286,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 
 		startTimestamp := pt.StartTimestamp()
 		if settings.ExportCreatedMetric && startTimestamp != 0 {
-			labels := c.createLabels(baseName+createdSuffix, baseLabels)
+			labels := c.addLabels(baseName+createdSuffix, baseLabels)
 			c.addTimeSeriesIfNeeded(labels, startTimestamp, pt.Timestamp(), metadata)
 		}
 	}
@@ -407,7 +407,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 			sum.Value = math.Float64frombits(value.StaleNaN)
 		}
 		// sum and count of the summary should append suffix to baseName.
-		sumlabels := c.createLabels(baseName+sumStr, baseLabels)
+		sumlabels := c.addLabels(baseName+sumStr, baseLabels)
 		c.addSample(sum, sumlabels, metadata)
 
 		// treat count as a sample in an individual TimeSeries.
@@ -418,7 +418,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		if pt.Flags().NoRecordedValue() {
 			count.Value = math.Float64frombits(value.StaleNaN)
 		}
-		countlabels := c.createLabels(baseName+countStr, baseLabels)
+		countlabels := c.addLabels(baseName+countStr, baseLabels)
 		c.addSample(count, countlabels, metadata)
 
 		// process each percentile/quantile.
@@ -432,13 +432,13 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 				quantile.Value = math.Float64frombits(value.StaleNaN)
 			}
 			percentileStr := strconv.FormatFloat(qt.Quantile(), 'f', -1, 64)
-			qtlabels := c.createLabels(baseName, baseLabels, quantileStr, percentileStr)
+			qtlabels := c.addLabels(baseName, baseLabels, quantileStr, percentileStr)
 			c.addSample(quantile, qtlabels, metadata)
 		}
 
 		startTimestamp := pt.StartTimestamp()
 		if settings.ExportCreatedMetric && startTimestamp != 0 {
-			createdLabels := c.createLabels(baseName+createdSuffix, baseLabels)
+			createdLabels := c.addLabels(baseName+createdSuffix, baseLabels)
 			c.addTimeSeriesIfNeeded(createdLabels, startTimestamp, pt.Timestamp(), metadata)
 		}
 	}
@@ -446,10 +446,10 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 	return nil
 }
 
-// createLabels returns a copy of baseLabels, adding to it the pair model.MetricNameLabel=name.
+// addLabels returns a copy of baseLabels, adding to it the pair model.MetricNameLabel=name.
 // If extras are provided, corresponding label pairs are also added to the returned slice.
 // If extras is uneven length, the last (unpaired) extra will be ignored.
-func (c *PrometheusConverter) createLabels(name string, baseLabels labels.Labels, extras ...string) labels.Labels {
+func (c *PrometheusConverter) addLabels(name string, baseLabels labels.Labels, extras ...string) labels.Labels {
 	c.builder.Reset(baseLabels)
 
 	n := len(extras)
