@@ -148,7 +148,7 @@ func (node *BinaryExpr) getMatchingStr() string {
 
 func (node *DurationExpr) String() string {
 	var expr string
-	if node.Step {
+	if node.Op == STEP {
 		expr = "step()"
 	} else if node.LHS == nil {
 		// This is a unary negative duration expression.

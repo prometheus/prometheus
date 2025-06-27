@@ -115,7 +115,6 @@ type DurationExpr struct {
 	Op       ItemType // The operation of the expression.
 	LHS, RHS Expr     // The operands on the respective sides of the operator.
 	Wrapped  bool     // Set when the duration is wrapped in parentheses.
-	Step     bool     // Set when the duration is step().
 
 	StartPos posrange.Pos // For unary operations and step(), the start position of the operator.
 	EndPos   posrange.Pos // For step(), the end position of the operator.
@@ -457,7 +456,7 @@ func (e *BinaryExpr) PositionRange() posrange.PositionRange {
 }
 
 func (e *DurationExpr) PositionRange() posrange.PositionRange {
-	if e.Step {
+	if e.Op == STEP {
 		return posrange.PositionRange{
 			Start: e.StartPos,
 			End:   e.EndPos,

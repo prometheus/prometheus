@@ -471,8 +471,8 @@ func lexStatements(l *Lexer) stateFn {
 			l.emit(COLON)
 			l.gotColon = true
 			return lexStatements
-		case 's', 'S':
-			if l.scanStep() {
+		case 's', 'S', 'm', 'M':
+			if l.scanDurationKeyword() {
 				return lexStatements
 			}
 		}
@@ -899,7 +899,7 @@ func lexNumber(l *Lexer) stateFn {
 	return lexStatements
 }
 
-func (l *Lexer) scanStep() bool {
+func (l *Lexer) scanDurationKeyword() bool {
 	for {
 		switch r := l.next(); {
 		case isAlpha(r):
@@ -907,9 +907,19 @@ func (l *Lexer) scanStep() bool {
 		default:
 			l.backup()
 			word := l.input[l.start:l.pos]
-			if strings.ToLower(word) == "step" {
+			kw := strings.ToLower(word)
+			switch kw {
+			case "step":
 				l.emit(STEP)
 				return true
+			case "min":
+				l.emit(MIN)
+				return true
+			case "max":
+				l.emit(MAX)
+				return true
+			default:
+				return false
 			}
 			return false
 		}
@@ -1161,7 +1171,7 @@ func lexDurationExpr(l *Lexer) stateFn {
 		l.emit(POW)
 		return lexDurationExpr
 	case r == 's' || r == 'S':
-		if l.scanStep() {
+		if l.scanDurationKeyword() {
 			return lexDurationExpr
 		}
 		return l.errorf("unexpected character in duration expression: %q", r)

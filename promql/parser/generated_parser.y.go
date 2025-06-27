@@ -2085,7 +2085,7 @@ yydefault:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yyVAL.node = &DurationExpr{
-				Step:     true,
+				Op:       STEP,
 				StartPos: yyDollar[1].item.PositionRange().Start,
 				EndPos:   yyDollar[3].item.PositionRange().End,
 			}
@@ -2096,7 +2096,7 @@ yydefault:
 			yyVAL.node = &DurationExpr{
 				Op: SUB,
 				RHS: &DurationExpr{
-					Step:     true,
+					Op:       STEP,
 					StartPos: yyDollar[2].item.PositionRange().Start,
 					EndPos:   yyDollar[4].item.PositionRange().End,
 				},
@@ -2197,7 +2197,7 @@ yydefault:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yyVAL.node = &DurationExpr{
-				Step:     true,
+				Op:       STEP,
 				StartPos: yyDollar[1].item.PositionRange().Start,
 				EndPos:   yyDollar[3].item.PositionRange().Start,
 			}

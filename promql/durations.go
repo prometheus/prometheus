@@ -91,7 +91,7 @@ func (v *durationVisitor) evaluateDurationExpr(expr parser.Expr) (float64, error
 	case *parser.NumberLiteral:
 		return n.Val, nil
 	case *parser.DurationExpr:
-		if n.Step {
+		if n.Op == parser.STEP {
 			return float64(v.step.Seconds()), nil
 		}
 		var lhs, rhs float64

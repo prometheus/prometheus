@@ -198,7 +198,7 @@ func TestCalculateDuration(t *testing.T) {
 		{
 			name: "step",
 			expr: &parser.DurationExpr{
-				Step: true,
+				Op: parser.STEP,
 			},
 			expected: 1 * time.Second,
 		},
@@ -206,7 +206,7 @@ func TestCalculateDuration(t *testing.T) {
 			name: "step multiplication",
 			expr: &parser.DurationExpr{
 				LHS: &parser.DurationExpr{
-					Step: true,
+					Op: parser.STEP,
 				},
 				RHS: &parser.NumberLiteral{Val: 3},
 				Op:  parser.MUL,

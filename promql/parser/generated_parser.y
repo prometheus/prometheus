@@ -1083,7 +1083,7 @@ offset_duration_expr    : number_duration_literal
                         | STEP LEFT_PAREN RIGHT_PAREN
                                 {
                                 $$ = &DurationExpr{
-                                        Step: true,
+                                        Op:  STEP,
                                         StartPos: $1.PositionRange().Start,
                                         EndPos: $3.PositionRange().End,
                                 }
@@ -1093,7 +1093,7 @@ offset_duration_expr    : number_duration_literal
                                 $$ = &DurationExpr{
                                         Op:  SUB,
                                         RHS: &DurationExpr{
-                                                Step: true,
+                                                Op: STEP,
                                                 StartPos: $2.PositionRange().Start,
                                                 EndPos: $4.PositionRange().End,
                                         },
@@ -1188,7 +1188,7 @@ duration_expr   : number_duration_literal
                 | STEP LEFT_PAREN RIGHT_PAREN
                         {
                             $$ = &DurationExpr{
-                                Step:     true,
+                                Op:       STEP,
                                 StartPos: $1.PositionRange().Start,
                                 EndPos:   $3.PositionRange().Start,
                             }

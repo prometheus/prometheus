@@ -4182,7 +4182,7 @@ var testExpr = []struct {
 				},
 			},
 			RangeExpr: &DurationExpr{
-				Step:     true,
+				Op:       STEP,
 				StartPos: 4,
 				EndPos:   9,
 			},
@@ -4206,7 +4206,7 @@ var testExpr = []struct {
 				Op:       SUB,
 				StartPos: 6,
 				RHS: &DurationExpr{
-					Step:     true,
+					Op:       STEP,
 					StartPos: 9,
 					EndPos:   18,
 				},
@@ -4228,7 +4228,7 @@ var testExpr = []struct {
 				},
 			},
 			RangeExpr: &DurationExpr{
-				Step:     true,
+				Op:       STEP,
 				StartPos: 7,
 				EndPos:   16,
 			},
@@ -4251,7 +4251,7 @@ var testExpr = []struct {
 			RangeExpr: &DurationExpr{
 				Op:       SUB,
 				StartPos: 4,
-				RHS:      &DurationExpr{Step: true, StartPos: 5, EndPos: 10},
+				RHS:      &DurationExpr{Op: STEP, StartPos: 5, EndPos: 10},
 			},
 			EndPos: 12,
 		},
@@ -4268,7 +4268,7 @@ var testExpr = []struct {
 				End:   17,
 			},
 			OriginalOffsetExpr: &DurationExpr{
-				Step:     true,
+				Op:       STEP,
 				StartPos: 11,
 				EndPos:   17,
 			},
@@ -4288,7 +4288,7 @@ var testExpr = []struct {
 			OriginalOffsetExpr: &DurationExpr{
 				Op:       SUB,
 				StartPos: 11,
-				RHS:      &DurationExpr{Step: true, StartPos: 12, EndPos: 18},
+				RHS:      &DurationExpr{Op: STEP, StartPos: 12, EndPos: 18},
 			},
 		},
 	},
