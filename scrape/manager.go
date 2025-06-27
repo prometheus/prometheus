@@ -19,6 +19,7 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"reflect"
+	"runtime"
 	"sync"
 	"time"
 
@@ -293,13 +294,22 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 		wg       sync.WaitGroup
 		toDelete sync.Map // Stores the list of names of pools to delete.
 	)
+
+	// Use a buffered channel to limit reload concurrency.
+	// Each scrape pool writes the channel before we start to reload it and read from it at the end.
+	// This means only N pools can be reloaded at the same time.
+	canReload := make(chan int, runtime.GOMAXPROCS(0))
 	for poolName, pool := range m.scrapePools {
+		canReload <- 1
 		wg.Add(1)
 		cfg, ok := m.scrapeConfigs[poolName]
 		// Reload each scrape pool in a dedicated goroutine so we don't have to wait a long time
 		// if we have a lot of scrape pools to update.
 		go func(name string, sp *scrapePool, cfg *config.ScrapeConfig, ok bool) {
-			defer wg.Done()
+			defer func() {
+				wg.Done()
+				<-canReload
+			}()
 			switch {
 			case !ok:
 				sp.stop()
