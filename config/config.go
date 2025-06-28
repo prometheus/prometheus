@@ -771,6 +771,9 @@ type ScrapeConfig struct {
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
 	// List of metric relabel configurations.
 	MetricRelabelConfigs []*relabel.Config `yaml:"metric_relabel_configs,omitempty"`
+
+	// Add namespace enrichment configuration to ScrapeConfig
+	NamespaceEnrichment *NamespaceEnrichmentConfig `yaml:"namespace_enrichment,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -934,6 +937,13 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		c.AlwaysScrapeClassicHistograms = &global
 	}
 
+	// Validate namespace enrichment configuration
+	if c.NamespaceEnrichment != nil {
+		if err := c.validateNamespaceEnrichment(); err != nil {
+			return fmt.Errorf("invalid namespace_enrichment configuration for scrape config with job name %q: %w", c.JobName, err)
+		}
+	}
+
 	return nil
 }
 
@@ -985,6 +995,50 @@ func (c *ScrapeConfig) ConvertClassicHistogramsToNHCBEnabled() bool {
 // AlwaysScrapeClassicHistogramsEnabled returns whether to always scrape classic histograms.
 func (c *ScrapeConfig) AlwaysScrapeClassicHistogramsEnabled() bool {
 	return c.AlwaysScrapeClassicHistograms != nil && *c.AlwaysScrapeClassicHistograms
+}
+
+// validateNamespaceEnrichment validates the namespace enrichment configuration.
+func (c *ScrapeConfig) validateNamespaceEnrichment() error {
+	cfg := c.NamespaceEnrichment
+
+	// If label_prefix is empty, use default
+	if cfg.LabelPrefix == "" {
+		cfg.LabelPrefix = "ns_"
+	}
+
+	// Validate label_prefix format (should be valid label prefix)
+	if cfg.LabelPrefix != "" {
+		// Check that prefix ends with underscore for proper label naming
+		if !strings.HasSuffix(cfg.LabelPrefix, "_") {
+			return fmt.Errorf("label_prefix must end with underscore, got %q", cfg.LabelPrefix)
+		}
+		// Check for valid characters in prefix
+		for _, r := range cfg.LabelPrefix {
+			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_') {
+				return fmt.Errorf("label_prefix contains invalid character %q, only alphanumeric and underscore allowed", r)
+			}
+		}
+	}
+
+	// At least one of label_selector or annotation_selector must be specified when enabled
+	if cfg.Enabled && len(cfg.LabelSelector) == 0 && len(cfg.AnnotationSelector) == 0 {
+		return errors.New("at least one of label_selector or annotation_selector must be specified when enabled is true")
+	}
+
+	// Validate selector entries are non-empty
+	for _, selector := range cfg.LabelSelector {
+		if strings.TrimSpace(selector) == "" {
+			return errors.New("label_selector entries cannot be empty")
+		}
+	}
+
+	for _, selector := range cfg.AnnotationSelector {
+		if strings.TrimSpace(selector) == "" {
+			return errors.New("annotation_selector entries cannot be empty")
+		}
+	}
+
+	return nil
 }
 
 // StorageConfig configures runtime reloadable configuration options.
@@ -1638,4 +1692,12 @@ func sanitizeAttributes(attributes []string, adjective string) error {
 		attributes[i] = attr
 	}
 	return err
+}
+
+// Add namespace enrichment configuration to ScrapeConfig
+type NamespaceEnrichmentConfig struct {
+	Enabled            bool     `yaml:"enabled"`
+	AnnotationSelector []string `yaml:"annotation_selector,omitempty"`
+	LabelSelector      []string `yaml:"label_selector,omitempty"`
+	LabelPrefix        string   `yaml:"label_prefix,omitempty"`
 }

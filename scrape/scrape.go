@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -105,6 +106,9 @@ type scrapePool struct {
 
 	validationScheme model.ValidationScheme
 	escapingScheme   model.EscapingScheme
+
+	// Namespace enricher for adding namespace annotations to metrics
+	enricher *NamespaceEnricher
 }
 
 type labelLimits struct {
@@ -132,6 +136,7 @@ type scrapeLoopOptions struct {
 	mrc               []*relabel.Config
 	cache             *scrapeCache
 	enableCompression bool
+	enricher          *NamespaceEnricher
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -159,6 +164,18 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 		return nil, fmt.Errorf("invalid metric name escaping scheme, %w", err)
 	}
 
+	// Create namespace enricher if configured
+	var enricher *NamespaceEnricher
+	if cfg.NamespaceEnrichment != nil && cfg.NamespaceEnrichment.Enabled {
+		// For now, we pass nil for the Kubernetes client - this will be set up later
+		// when we have access to the Kubernetes client in the scrape manager
+		enricher, err = NewNamespaceEnricher(cfg.NamespaceEnrichment, nil, logger.With("component", "namespace_enricher"))
+		if err != nil {
+			logger.Warn("Failed to create namespace enricher, continuing without it", "err", err)
+			enricher = nil
+		}
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
 		cancel:               cancel,
@@ -174,6 +191,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 		httpOpts:             options.HTTPClientOptions,
 		validationScheme:     validationScheme,
 		escapingScheme:       escapingScheme,
+		enricher:             enricher,
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -189,7 +207,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			logger.With("target", opts.target),
 			buffers,
 			func(l labels.Labels) labels.Labels {
-				return mutateSampleLabels(l, opts.target, opts.honorLabels, opts.mrc)
+				return mutateSampleLabelsWithEnricher(l, opts.target, opts.honorLabels, opts.mrc, opts.enricher)
 			},
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
 			func(ctx context.Context) storage.Appender { return app.Appender(ctx) },
@@ -270,6 +288,35 @@ func (sp *scrapePool) getScrapeFailureLogger() FailureLogger {
 	return sp.scrapeFailureLogger
 }
 
+// SetKubernetesClient sets the Kubernetes client for namespace enrichment
+func (sp *scrapePool) SetKubernetesClient(client kubernetes.Interface) error {
+	// Check if namespace enrichment is configured for this scrape pool
+	if sp.config.NamespaceEnrichment == nil || !sp.config.NamespaceEnrichment.Enabled {
+		return nil // Nothing to do
+	}
+
+	// Create a new enricher with the Kubernetes client
+	enricher, err := NewNamespaceEnricher(sp.config.NamespaceEnrichment, client, sp.logger.With("component", "namespace_enricher"))
+	if err != nil {
+		return fmt.Errorf("failed to create namespace enricher with Kubernetes client: %w", err)
+	}
+
+	// Stop the old enricher if it exists
+	if sp.enricher != nil {
+		sp.enricher.Stop()
+	}
+
+	sp.enricher = enricher
+
+	// Start the enricher
+	ctx, cancel := context.WithCancel(context.Background())
+	_ = cancel // We'll manage this lifecycle properly later
+	sp.enricher.Start(ctx)
+
+	sp.logger.Info("Namespace enricher initialized with Kubernetes client")
+	return nil
+}
+
 // stop terminates all scrape loops and returns after they all terminated.
 func (sp *scrapePool) stop() {
 	sp.mtx.Lock()
@@ -295,6 +342,11 @@ func (sp *scrapePool) stop() {
 
 	wg.Wait()
 	sp.client.CloseIdleConnections()
+
+	// Stop namespace enricher if it exists
+	if sp.enricher != nil {
+		sp.enricher.Stop()
+	}
 
 	if sp.config != nil {
 		sp.metrics.targetScrapePoolSyncsCounter.DeleteLabelValues(sp.config.JobName)
@@ -413,6 +465,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 				fallbackScrapeProtocol:   fallbackScrapeProtocol,
 				alwaysScrapeClassicHist:  alwaysScrapeClassicHist,
 				convertClassicHistToNHCB: convertClassicHistToNHCB,
+				enricher:                 sp.enricher,
 			})
 		)
 		if err != nil {
@@ -563,6 +616,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				alwaysScrapeClassicHist:  alwaysScrapeClassicHist,
 				convertClassicHistToNHCB: convertClassicHistToNHCB,
 				fallbackScrapeProtocol:   fallbackScrapeProtocol,
+				enricher:                 sp.enricher,
 			})
 			if err != nil {
 				l.setForcedError(err)
@@ -668,6 +722,10 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 }
 
 func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*relabel.Config) labels.Labels {
+	return mutateSampleLabelsWithEnricher(lset, target, honor, rc, nil)
+}
+
+func mutateSampleLabelsWithEnricher(lset labels.Labels, target *Target, honor bool, rc []*relabel.Config, enricher *NamespaceEnricher) labels.Labels {
 	lb := labels.NewBuilder(lset)
 
 	if honor {
@@ -696,6 +754,11 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 
 	if len(rc) > 0 {
 		res, _ = relabel.Process(res, rc...)
+	}
+
+	// Apply namespace enrichment after relabeling but before returning
+	if enricher != nil {
+		res = enricher.EnrichWithNamespaceMetadata(res)
 	}
 
 	return res
