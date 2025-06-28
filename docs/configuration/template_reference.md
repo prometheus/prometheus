@@ -79,10 +79,10 @@ versions.
 
 ### Time
 
-| Name            | Arguments  | Returns       |    Notes    |
-| --------------- | ---------- | ------------- | ----------- |
-| parseGoDuration | string     | time.Duration | Converts a Go-style duration string to time.Duration. |
-| now             | none       | time.Time     | Returns the current local time.Time. |
+| Name            | Arguments        | Returns        |    Notes    |
+| --------------- | ----------       | -------------  | ----------- |
+| now             | none             | model.Time     | Returns the current Prometheus model.Time (current time). |
+| toDuration      | number or string | *time.Duration | Converts input seconds (float or string) to a *time.Duration pointer. |
 
 ### Others
 
