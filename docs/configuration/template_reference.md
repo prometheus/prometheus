@@ -77,6 +77,13 @@ versions.
 | parseDuration | string | float | Parses a duration string such as "1h" into the number of seconds it represents. |
 | stripDomain | string | string | Removes the domain part of a FQDN. Leaves port untouched. |
 
+### Time
+
+| Name            | Arguments        | Returns        |    Notes    |
+| --------------- | ----------       | -------------  | ----------- |
+| now             | none             | model.Time     | Returns the current Prometheus model.Time (current time). |
+| toDuration      | number or string | *time.Duration | Converts input seconds (float or string) to a *time.Duration pointer. |
+
 ### Others
 
 | Name          | Arguments     | Returns |    Notes    |

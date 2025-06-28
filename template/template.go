@@ -263,6 +263,18 @@ func NewTemplateExpander(
 
 				return floatToTime(v)
 			},
+			"toDuration": func(i interface{}) (*time.Duration, error) {
+				v, err := common_templates.ConvertToFloat(i)
+				if err != nil {
+					return nil, err
+				}
+				d := time.Duration(v * float64(time.Second))
+				return &d, nil
+			},
+			//nolint:gocritic // must be a function to avoid template panics (as in Loki).
+			"now": func() model.Time {
+				return model.Now()
+			},
 			"pathPrefix": func() string {
 				return externalURL.Path
 			},
@@ -270,7 +282,7 @@ func NewTemplateExpander(
 				return externalURL.String()
 			},
 			"parseDuration": func(d string) (float64, error) {
-				v, err := model.ParseDuration(d)
+				v, err := model.ParseDurationAllowNegative(d)
 				if err != nil {
 					return 0, err
 				}
