@@ -1373,3 +1373,14 @@ eval instant at 1m histogram_fraction(-Inf, +Inf, histogram_nan)
     expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name "histogram_nan"
     {case="100% NaNs"} 0.0
     {case="20% NaNs"} 0.8
+
+clear
+
+# Carefully chosen interval and range so that the zero point of the count is inside the
+# interpolation period.
+load 1m
+  metric {{schema:0 count:15.0 sum:25.0 buckets:[5 10]}} {{schema:0 count:2490.0 sum:75.0 buckets:[15 2475]}}x55
+
+eval instant at 55m increase(metric[90m])
+  {} {{count:2490 sum:50.303030303030305 counter_reset_hint:gauge buckets:[15 2475]}}
+# old result:    {} {{count:2497.5 sum:50.45454545454545 counter_reset_hint:gauge buckets:[10.09090909090909 2487.409090909091]}}
