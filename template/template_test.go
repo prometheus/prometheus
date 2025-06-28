@@ -468,6 +468,16 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "2015",
 		},
 		{
+			// toDuration - input as float64 seconds, returns *time.Duration.
+			text:   `{{ (1800 | toDuration).String }}`,
+			output: "30m0s",
+		},
+		{
+			// toDuration - input as string seconds, returns *time.Duration.
+			text:   `{{ ("1800" | toDuration).String }}`,
+			output: "30m0s",
+		},
+		{
 			// Title.
 			text:   "{{ \"aa bb CC\" | title }}",
 			output: "Aa Bb CC",
@@ -514,14 +524,14 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "http://testhost:9090/path/prefix",
 		},
 		{
-			// parseDuration (using printf to ensure the return is a string).
+			// parseDuration with positive duration (using printf to ensure the return is a string).
 			text:   "{{ printf \"%0.2f\" (parseDuration \"1h2m10ms\") }}",
 			output: "3720.01",
 		},
 		{
-			// parseGoDuration (using printf to ensure the return is a string).
-			text:   "{{ printf \"%0.2f\" (parseGoDuration \"1h6m40s\").Minutes }}",
-			output: "66.67",
+			// parseDuration with negative duration (using printf to ensure the return is a string).
+			text:   "{{ printf \"%0.2f\" (parseDuration \"-1h2m10ms\") }}",
+			output: "-3720.01",
 		},
 		{
 			// Simple hostname.

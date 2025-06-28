@@ -263,8 +263,16 @@ func NewTemplateExpander(
 
 				return floatToTime(v)
 			},
-			"now": func() time.Time {
-				return time.Now()
+			"toDuration": func(i interface{}) (*time.Duration, error) {
+				v, err := common_templates.ConvertToFloat(i)
+				if err != nil {
+					return nil, err
+				}
+				d := time.Duration(v * float64(time.Second))
+				return &d, nil
+			},
+			"now": func() model.Time {
+				return model.Now()
 			},
 			"pathPrefix": func() string {
 				return externalURL.Path
@@ -273,18 +281,11 @@ func NewTemplateExpander(
 				return externalURL.String()
 			},
 			"parseDuration": func(d string) (float64, error) {
-				v, err := model.ParseDuration(d)
+				v, err := model.ParseDurationAllowNegative(d)
 				if err != nil {
 					return 0, err
 				}
 				return float64(time.Duration(v)) / float64(time.Second), nil
-			},
-			"parseGoDuration": func(d string) (time.Duration, error) {
-				v, err := model.ParseDuration(d)
-				if err != nil {
-					return 0, err
-				}
-				return time.Duration(v), nil
 			},
 		},
 		options: options,
