@@ -1,0 +1,102 @@
+# Example Prometheus configuration with namespace enrichment
+# This demonstrates how to enrich metrics with Kubernetes namespace labels and annotations
+
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  # Kubernetes Pod Discovery with Namespace Enrichment
+  - job_name: 'kubernetes-pods'
+    kubernetes_sd_configs:
+      - role: pod
+
+    # Enable namespace enrichment
+    namespace_enrichment:
+      enabled: true
+      label_selector:
+        - "tier"                    # Environment tier (dev, staging, prod)
+        - "team"                    # Team responsible for the namespace
+        - "app.kubernetes.io/name"  # Application name from standard labels
+      annotation_selector:
+        - "application_owner"       # Team or person responsible
+        - "cost_center"             # Cost center for billing/chargeback
+        - "environment"             # Environment designation
+        - "compliance_level"        # Security/compliance requirements
+      label_prefix: "ns_"           # Prefix for namespace metadata labels
+
+    relabel_configs:
+      # Keep only pods with prometheus.io/scrape annotation
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+
+      # Use custom port if specified
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+
+      # Set namespace label
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+
+  # cAdvisor metrics with namespace enrichment
+  - job_name: 'kubernetes-cadvisor'
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+    kubernetes_sd_configs:
+      - role: node
+
+    # Enable namespace enrichment for container metrics
+    namespace_enrichment:
+      enabled: true
+      label_selector:
+        - "tier"
+        - "team"
+      annotation_selector:
+        - "application_owner"
+        - "cost_center"
+      label_prefix: "ns_"
+
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+      - target_label: __address__
+        replacement: kubernetes.default.svc:443
+      - source_labels: [__meta_kubernetes_node_name]
+        regex: (.+)
+        target_label: __metrics_path__
+        replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
+
+# Example namespace configuration that would be enriched:
+#
+# apiVersion: v1
+# kind: Namespace
+# metadata:
+#   name: production
+#   labels:
+#     tier: production
+#     team: backend
+#     app.kubernetes.io/name: web-service
+#   annotations:
+#     application_owner: team-alpha
+#     cost_center: engineering
+#     environment: prod
+#     compliance_level: high
+#
+# Results in enriched metrics like:
+# container_memory_working_set_bytes{
+#   namespace="production",
+#   container="web-app",
+#   ns_tier="production",           # from namespace label
+#   ns_team="backend",              # from namespace label
+#   ns_app_kubernetes_io_name="web-service",  # from namespace label
+#   ns_application_owner="team-alpha",        # from namespace annotation
+#   ns_cost_center="engineering",             # from namespace annotation
+#   ns_environment="prod",                    # from namespace annotation
+#   ns_compliance_level="high"                # from namespace annotation
+# } 268435456 

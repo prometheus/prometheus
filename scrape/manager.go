@@ -28,6 +28,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"go.uber.org/atomic"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -67,7 +69,28 @@ func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(str
 
 	m.metrics.setTargetMetadataCacheGatherer(m)
 
+	// Initialize Kubernetes client if running in cluster
+	m.initializeKubernetesClient()
+
 	return m, nil
+}
+
+// initializeKubernetesClient attempts to create a Kubernetes client if running in-cluster
+func (m *Manager) initializeKubernetesClient() {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		m.logger.Debug("Not running in Kubernetes cluster, namespace enrichment will use static configs only", "err", err)
+		return
+	}
+
+	client, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		m.logger.Warn("Failed to create Kubernetes client, namespace enrichment disabled", "err", err)
+		return
+	}
+
+	m.kubernetesClient = client
+	m.logger.Info("Kubernetes client initialized for namespace enrichment")
 }
 
 // Options are the configuration parameters to the scrape manager.
@@ -119,6 +142,9 @@ type Manager struct {
 	triggerReload chan struct{}
 
 	metrics *scrapeMetrics
+
+	// Kubernetes client for namespace enrichment
+	kubernetesClient kubernetes.Interface
 }
 
 // Run receives and saves target set updates and triggers the scraping loops reloading.
@@ -194,6 +220,14 @@ func (m *Manager) reload() {
 				continue
 			}
 			m.scrapePools[setName] = sp
+
+			// Set up namespace enrichment with Kubernetes client if available
+			if m.kubernetesClient != nil {
+				if err := sp.SetKubernetesClient(m.kubernetesClient); err != nil {
+					m.logger.Warn("Failed to set up namespace enrichment for scrape pool", "err", err, "scrape_pool", setName)
+				}
+			}
+
 			if l, ok := m.scrapeFailureLoggers[scrapeConfig.ScrapeFailureLogFile]; ok {
 				sp.SetScrapeFailureLogger(l)
 			} else {
@@ -322,6 +356,13 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 				}
 				fallthrough
 			case ok:
+				// Set up namespace enrichment with Kubernetes client if available
+				if m.kubernetesClient != nil {
+					if err := sp.SetKubernetesClient(m.kubernetesClient); err != nil {
+						m.logger.Warn("Failed to set up namespace enrichment for scrape pool", "err", err, "scrape_pool", name)
+					}
+				}
+
 				if l, ok := m.scrapeFailureLoggers[cfg.ScrapeFailureLogFile]; ok {
 					sp.SetScrapeFailureLogger(l)
 				} else {
