@@ -19,40 +19,40 @@ package prometheusremotewrite
 import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
-	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 )
 
-func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric) prompb.MetricMetadata_MetricType {
+func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric) writev2.Metadata_MetricType {
 	switch otelMetric.Type() {
 	case pmetric.MetricTypeGauge:
-		return prompb.MetricMetadata_GAUGE
+		return writev2.Metadata_METRIC_TYPE_GAUGE
 	case pmetric.MetricTypeSum:
-		metricType := prompb.MetricMetadata_GAUGE
+		metricType := writev2.Metadata_METRIC_TYPE_GAUGE
 		if otelMetric.Sum().IsMonotonic() {
-			metricType = prompb.MetricMetadata_COUNTER
+			metricType = writev2.Metadata_METRIC_TYPE_COUNTER
 		}
 		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
 		// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
 		if otelMetric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
-			metricType = prompb.MetricMetadata_UNKNOWN
+			metricType = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
 		}
 		return metricType
 	case pmetric.MetricTypeHistogram:
 		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
 		// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
 		if otelMetric.Histogram().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
-			return prompb.MetricMetadata_UNKNOWN
+			return writev2.Metadata_METRIC_TYPE_UNSPECIFIED
 		}
-		return prompb.MetricMetadata_HISTOGRAM
+		return writev2.Metadata_METRIC_TYPE_HISTOGRAM
 	case pmetric.MetricTypeSummary:
-		return prompb.MetricMetadata_SUMMARY
+		return writev2.Metadata_METRIC_TYPE_SUMMARY
 	case pmetric.MetricTypeExponentialHistogram:
 		if otelMetric.ExponentialHistogram().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
 			// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
 			// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
-			return prompb.MetricMetadata_UNKNOWN
+			return writev2.Metadata_METRIC_TYPE_UNSPECIFIED
 		}
-		return prompb.MetricMetadata_HISTOGRAM
+		return writev2.Metadata_METRIC_TYPE_HISTOGRAM
 	}
-	return prompb.MetricMetadata_UNKNOWN
+	return writev2.Metadata_METRIC_TYPE_UNSPECIFIED
 }
