@@ -997,3 +997,10 @@ func TestMarshaling(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, f, gotFY)
 }
+
+func TestLabels_FromStringBytes(t *testing.T) {
+	lbls := FromStrings("foo", "bar", "baz", "qux")
+	bytes := lbls.Bytes(nil)
+	newLbls := FromByteString(string(bytes))
+	require.Equal(t, lbls, newLbls)
+}

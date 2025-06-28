@@ -320,6 +320,11 @@ func FromStrings(ss ...string) Labels {
 	return New(ls...)
 }
 
+// FromByteString creates new labels from byte string.
+func FromByteString(b string) Labels {
+	return Labels{data: b}
+}
+
 // Compare compares the two label sets.
 // The result will be 0 if a==b, <0 if a < b, and >0 if a > b.
 func Compare(a, b Labels) int {
