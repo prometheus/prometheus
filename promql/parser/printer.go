@@ -148,10 +148,17 @@ func (node *BinaryExpr) getMatchingStr() string {
 
 func (node *DurationExpr) String() string {
 	var expr string
-	if node.LHS == nil {
-		// This is a unary negative duration expression.
+	switch {
+	case node.Op == STEP:
+		expr = "step()"
+	case node.Op == MIN:
+		expr = fmt.Sprintf("min(%s, %s)", node.LHS, node.RHS)
+	case node.Op == MAX:
+		expr = fmt.Sprintf("max(%s, %s)", node.LHS, node.RHS)
+	case node.LHS == nil:
+		// This is a unary duration expression.
 		expr = fmt.Sprintf("%s%s", node.Op, node.RHS)
-	} else {
+	default:
 		expr = fmt.Sprintf("%s %s %s", node.LHS, node.Op, node.RHS)
 	}
 	if node.Wrapped {

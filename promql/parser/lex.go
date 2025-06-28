@@ -140,6 +140,7 @@ var key = map[string]ItemType{
 	// Preprocessors.
 	"start": START,
 	"end":   END,
+	"step":  STEP,
 }
 
 var histogramDesc = map[string]ItemType{
@@ -462,11 +463,20 @@ func lexStatements(l *Lexer) stateFn {
 			l.backup()
 			return lexKeywordOrIdentifier
 		}
-		if l.gotColon {
-			return l.errorf("unexpected colon %q", r)
+		switch r {
+		case ':':
+			if l.gotColon {
+				return l.errorf("unexpected colon %q", r)
+			}
+			l.emit(COLON)
+			l.gotColon = true
+			return lexStatements
+		case 's', 'S', 'm', 'M':
+			if l.scanDurationKeyword() {
+				return lexStatements
+			}
 		}
-		l.emit(COLON)
-		l.gotColon = true
+		return l.errorf("unexpected character: %q, expected %q", r, ':')
 	case r == '(':
 		l.emit(LEFT_PAREN)
 		l.parenDepth++
@@ -889,6 +899,32 @@ func lexNumber(l *Lexer) stateFn {
 	return lexStatements
 }
 
+func (l *Lexer) scanDurationKeyword() bool {
+	for {
+		switch r := l.next(); {
+		case isAlpha(r):
+			// absorb.
+		default:
+			l.backup()
+			word := l.input[l.start:l.pos]
+			kw := strings.ToLower(word)
+			switch kw {
+			case "step":
+				l.emit(STEP)
+				return true
+			case "min":
+				l.emit(MIN)
+				return true
+			case "max":
+				l.emit(MAX)
+				return true
+			default:
+				return false
+			}
+		}
+	}
+}
+
 // lexNumberOrDuration scans a number or a duration Item.
 func lexNumberOrDuration(l *Lexer) stateFn {
 	if l.scanNumber() {
@@ -1133,6 +1169,14 @@ func lexDurationExpr(l *Lexer) stateFn {
 	case r == '^':
 		l.emit(POW)
 		return lexDurationExpr
+	case r == ',':
+		l.emit(COMMA)
+		return lexDurationExpr
+	case r == 's' || r == 'S' || r == 'm' || r == 'M':
+		if l.scanDurationKeyword() {
+			return lexDurationExpr
+		}
+		return l.errorf("unexpected character in duration expression: %q", r)
 	case isDigit(r) || (r == '.' && isDigit(l.peek())):
 		l.backup()
 		l.gotDuration = true
