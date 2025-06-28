@@ -19,6 +19,7 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"reflect"
+	"runtime"
 	"sync"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -287,29 +289,55 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	}
 
 	// Cleanup and reload pool if the configuration has changed.
-	var failed bool
-	for name, sp := range m.scrapePools {
-		switch cfg, ok := m.scrapeConfigs[name]; {
-		case !ok:
-			sp.stop()
-			delete(m.scrapePools, name)
-		case !reflect.DeepEqual(sp.config, cfg):
-			err := sp.reload(cfg)
-			if err != nil {
-				m.logger.Error("error reloading scrape pool", "err", err, "scrape_pool", name)
-				failed = true
-			}
-			fallthrough
-		case ok:
-			if l, ok := m.scrapeFailureLoggers[cfg.ScrapeFailureLogFile]; ok {
-				sp.SetScrapeFailureLogger(l)
-			} else {
-				sp.logger.Error("No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", name)
-			}
-		}
-	}
+	var (
+		failed   atomic.Bool
+		wg       sync.WaitGroup
+		toDelete sync.Map // Stores the list of names of pools to delete.
+	)
 
-	if failed {
+	// Use a buffered channel to limit reload concurrency.
+	// Each scrape pool writes the channel before we start to reload it and read from it at the end.
+	// This means only N pools can be reloaded at the same time.
+	canReload := make(chan int, runtime.GOMAXPROCS(0))
+	for poolName, pool := range m.scrapePools {
+		canReload <- 1
+		wg.Add(1)
+		cfg, ok := m.scrapeConfigs[poolName]
+		// Reload each scrape pool in a dedicated goroutine so we don't have to wait a long time
+		// if we have a lot of scrape pools to update.
+		go func(name string, sp *scrapePool, cfg *config.ScrapeConfig, ok bool) {
+			defer func() {
+				wg.Done()
+				<-canReload
+			}()
+			switch {
+			case !ok:
+				sp.stop()
+				toDelete.Store(name, struct{}{})
+			case !reflect.DeepEqual(sp.config, cfg):
+				err := sp.reload(cfg)
+				if err != nil {
+					m.logger.Error("error reloading scrape pool", "err", err, "scrape_pool", name)
+					failed.Store(true)
+				}
+				fallthrough
+			case ok:
+				if l, ok := m.scrapeFailureLoggers[cfg.ScrapeFailureLogFile]; ok {
+					sp.SetScrapeFailureLogger(l)
+				} else {
+					sp.logger.Error("No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", name)
+				}
+			}
+		}(poolName, pool, cfg, ok)
+	}
+	wg.Wait()
+
+	toDelete.Range(func(name, _ any) bool {
+		delete(m.scrapePools, name.(string))
+		return true
+	})
+
+	if failed.Load() {
 		return errors.New("failed to apply the new configuration")
 	}
 	return nil

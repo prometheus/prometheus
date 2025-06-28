@@ -44,6 +44,7 @@ eval instant at 1m histogram_fraction(1, 2, single_histogram)
 
 # We expect all values to fall in the range 0 < x <= 8.
 eval instant at 1m histogram_fraction(0, 8, single_histogram)
+    expect no_info
 	{} 1
 
 # Median is 1.414213562373095 (2**2**-1, or sqrt(2)) due to
@@ -51,6 +52,7 @@ eval instant at 1m histogram_fraction(0, 8, single_histogram)
 # 2 is assumed where the bucket boundary would be if we increased the
 # resolution of the histogram by one step.
 eval instant at 1m histogram_quantile(0.5, single_histogram)
+	expect no_info
 	{} 1.414213562373095
 
 clear
@@ -1319,3 +1321,55 @@ eval instant at 10m histogram_sub_3{idx="0"} - ignoring(idx) histogram_sub_3{idx
     {} {{schema:0 count:-30 sum:-1111.1 z_bucket:-2 z_bucket_w:0.001 buckets:[-1 0 -1 -2 -1 -1 -1] n_buckets:[0 2 -2 -2 -7 0 0 0 0 -5 -5 -2]}}
 
 clear
+
+# Test native histograms with last_over_time subquery
+load 2m
+    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}x20
+
+eval range from 0s to 60s step 15s last_over_time({__name__="http_request_duration_seconds"} @ start()[1h:1m] offset 1m16s)
+    {__name__="http_request_duration_seconds", pod="nginx-1"} {{count:3 sum:14 buckets:[1 2]}}x4
+
+clear
+
+# Test native histogram quantile and fraction when the native histogram with exponential
+# buckets has NaN observations.
+load 1m
+    histogram_nan{case="100% NaNs"} {{schema:0 count:0 sum:0}} {{schema:0 count:3 sum:NaN}}
+    histogram_nan{case="20% NaNs"} {{schema:0 count:0 sum:0}} {{schema:0 count:15 sum:NaN buckets:[12]}}
+
+eval instant at 1m histogram_quantile(1, histogram_nan)
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN for metric name "histogram_nan"
+    {case="100% NaNs"} NaN
+    {case="20% NaNs"} NaN
+
+eval instant at 1m histogram_quantile(0.81, histogram_nan)
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN for metric name "histogram_nan"
+    {case="100% NaNs"} NaN
+    {case="20% NaNs"} NaN
+
+eval instant at 1m histogram_quantile(0.8, histogram_nan{case="100% NaNs"})
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN for metric name "histogram_nan"
+    {case="100% NaNs"} NaN
+
+eval instant at 1m histogram_quantile(0.8, histogram_nan{case="20% NaNs"})
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher for metric name "histogram_nan"
+    {case="20% NaNs"} 1
+
+eval instant at 1m histogram_quantile(0.4, histogram_nan{case="100% NaNs"})
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN for metric name "histogram_nan"
+    {case="100% NaNs"} NaN
+
+# histogram_quantile and histogram_fraction equivalence if quantile is not NaN
+eval instant at 1m histogram_quantile(0.4, histogram_nan{case="20% NaNs"})
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher for metric name "histogram_nan"
+    {case="20% NaNs"} 0.7071067811865475
+
+eval instant at 1m histogram_fraction(-Inf, 0.7071067811865475, histogram_nan)
+    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name "histogram_nan"
+    {case="100% NaNs"} 0.0
+    {case="20% NaNs"} 0.4
+
+eval instant at 1m histogram_fraction(-Inf, +Inf, histogram_nan)
+    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name "histogram_nan"
+    {case="100% NaNs"} 0.0
+    {case="20% NaNs"} 0.8

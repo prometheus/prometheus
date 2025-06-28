@@ -59,6 +59,13 @@ type parser struct {
 	// Everytime an Item is lexed that could be the end
 	// of certain expressions its end position is stored here.
 	lastClosing posrange.Pos
+	// Keep track of closing parentheses in addition, because sometimes the
+	// parser needs to read past a closing parenthesis to find the end of an
+	// expression, e.g. reading ony '(sum(foo)' cannot tell the end of the
+	// aggregation expression, since it could continue with either
+	// '(sum(foo))' or '(sum(foo) by (bar))' by which time we set lastClosing
+	// to the last paren.
+	closingParens []posrange.Pos
 
 	yyParser yyParserImpl
 
@@ -82,6 +89,7 @@ func NewParser(input string, opts ...Opt) *parser { //nolint:revive // unexporte
 	p.injecting = false
 	p.parseErrors = nil
 	p.generatedParserResult = nil
+	p.closingParens = make([]posrange.Pos, 0)
 
 	// Clear lexer struct before reusing.
 	p.lex = Lexer{
@@ -171,6 +179,11 @@ func EnrichParseError(err error, enrich func(parseErr *ParseErr)) {
 func ParseExpr(input string) (expr Expr, err error) {
 	p := NewParser(input)
 	defer p.Close()
+
+	if len(p.closingParens) > 0 {
+		return nil, fmt.Errorf("internal parser error, not all closing parens consumed: %v", p.closingParens)
+	}
+
 	return p.ParseExpr()
 }
 
@@ -374,7 +387,10 @@ func (p *parser) Lex(lval *yySymType) int {
 	case EOF:
 		lval.item.Typ = EOF
 		p.InjectItem(0)
-	case RIGHT_BRACE, RIGHT_PAREN, RIGHT_BRACKET, DURATION, NUMBER:
+	case RIGHT_PAREN:
+		p.closingParens = append(p.closingParens, lval.item.Pos+posrange.Pos(len(lval.item.Val)))
+		fallthrough
+	case RIGHT_BRACE, RIGHT_BRACKET, DURATION, NUMBER:
 		p.lastClosing = lval.item.Pos + posrange.Pos(len(lval.item.Val))
 	}
 
@@ -435,10 +451,16 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateE
 	ret = modifier.(*AggregateExpr)
 	arguments := args.(Expressions)
 
+	if len(p.closingParens) == 0 {
+		// Prevents invalid array accesses.
+		// The error is already captured by the parser.
+		return
+	}
 	ret.PosRange = posrange.PositionRange{
 		Start: op.Pos,
-		End:   p.lastClosing,
+		End:   p.closingParens[0],
 	}
+	p.closingParens = p.closingParens[1:]
 
 	ret.Op = op.Typ
 

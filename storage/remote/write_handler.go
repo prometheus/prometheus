@@ -592,10 +592,11 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
 		AddMetricSuffixes:                 otlpCfg.TranslationStrategy != config.NoTranslation,
 		AllowUTF8:                         otlpCfg.TranslationStrategy != config.UnderscoreEscapingWithSuffixes,
-		PromoteResourceAttributes:         otlpCfg.PromoteResourceAttributes,
+		PromoteResourceAttributes:         otlptranslator.NewPromoteResourceAttributes(otlpCfg),
 		KeepIdentifyingResourceAttributes: otlpCfg.KeepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:           otlpCfg.ConvertHistogramsToNHCB,
 		AllowDeltaTemporality:             rw.allowDeltaTemporality,
+		PromoteScopeMetadata:              otlpCfg.PromoteScopeMetadata,
 	})
 	if err != nil {
 		rw.logger.Warn("Error translating OTLP metrics to Prometheus write request", "err", err)

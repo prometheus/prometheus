@@ -52,6 +52,8 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/puppetdb"
 	// Register scaleway plugin.
 	_ "github.com/prometheus/prometheus/discovery/scaleway"
+	// Register stackit plugin.
+	_ "github.com/prometheus/prometheus/discovery/stackit"
 	// Register triton plugin.
 	_ "github.com/prometheus/prometheus/discovery/triton"
 	// Register uyuni plugin.
