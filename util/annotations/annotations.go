@@ -145,6 +145,7 @@ var (
 	MixedExponentialCustomHistogramsWarning    = fmt.Errorf("%w: vector contains a mix of histograms with exponential and custom buckets schemas for metric name", PromQLWarning)
 	IncompatibleCustomBucketsHistogramsWarning = fmt.Errorf("%w: vector contains histograms with incompatible custom buckets for metric name", PromQLWarning)
 	IncompatibleBucketLayoutInBinOpWarning     = fmt.Errorf("%w: incompatible bucket layout encountered for binary operator", PromQLWarning)
+	SortInRangeQueryWarning                    = fmt.Errorf("%w: sort is ineffective for range queries since results are always ordered by labels", PromQLWarning)
 
 	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
 	PossibleNonCounterLabelInfo             = fmt.Errorf("%w: metric might not be a counter, __type__ label is not set to %q", PromQLInfo, model.MetricTypeCounter)
@@ -328,6 +329,15 @@ func NewIncompatibleBucketLayoutInBinOpWarning(operator string, pos posrange.Pos
 	}
 }
 
+// NewSortInRangeQueryWarning is used when sort or sort_desc functions are used
+// in range queries where they have no effect since results are always ordered by labels.
+func NewSortInRangeQueryWarning(pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w", SortInRangeQueryWarning),
+	}
+}
+    
 func NewNativeHistogramQuantileNaNResultInfo(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
