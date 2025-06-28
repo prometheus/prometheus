@@ -271,6 +271,7 @@ func NewTemplateExpander(
 				d := time.Duration(v * float64(time.Second))
 				return &d, nil
 			},
+			//nolint:gocritic // must be a function to avoid template panics (as in Loki).
 			"now": func() model.Time {
 				return model.Now()
 			},

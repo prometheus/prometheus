@@ -72,10 +72,6 @@ linters:
       - linters:
           - godot
         source: "^// ==="
-      - linters:
-          - gocritic
-        # Exclude "now" must be a function to avoid template panics (as in Loki).
-        text: "replace `func() model.Time { return model.Now() }` with `model.Now`"
     warn-unused: true
   settings:
     depguard:
