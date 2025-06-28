@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright 2025 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build dedupelabels
+//go:build stringlabels
 
 package labels
 
@@ -21,34 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestVarint(t *testing.T) {
-	cases := []struct {
-		v        int
-		expected []byte
-	}{
-		{0, []byte{0, 0}},
-		{1, []byte{1, 0}},
-		{2, []byte{2, 0}},
-		{0x7FFF, []byte{0xFF, 0x7F}},
-		{0x8000, []byte{0x00, 0x80, 0x01}},
-		{0x8001, []byte{0x01, 0x80, 0x01}},
-		{0x3FFFFF, []byte{0xFF, 0xFF, 0x7F}},
-		{0x400000, []byte{0x00, 0x80, 0x80, 0x01}},
-		{0x400001, []byte{0x01, 0x80, 0x80, 0x01}},
-		{0x1FFFFFFF, []byte{0xFF, 0xFF, 0xFF, 0x7F}},
-	}
-	var buf [16]byte
-	for _, c := range cases {
-		n := encodeVarint(buf[:], len(buf), c.v)
-		require.Equal(t, len(c.expected), len(buf)-n)
-		require.Equal(t, c.expected, buf[n:])
-		got, m := decodeVarint(string(buf[:]), n)
-		require.Equal(t, c.v, got)
-		require.Equal(t, len(buf), m)
-	}
-	require.Panics(t, func() { encodeVarint(buf[:], len(buf), 1<<29) })
-}
-
 func TestByteSize(t *testing.T) {
 	for _, testCase := range []struct {
 		lbls     Labels
@@ -56,15 +28,15 @@ func TestByteSize(t *testing.T) {
 	}{
 		{
 			lbls:     FromStrings("__name__", "foo"),
-			expected: 4,
+			expected: 13,
 		},
 		{
 			lbls:     FromStrings("__name__", "foo", "pod", "bar"),
-			expected: 8,
+			expected: 21,
 		},
 		{
 			lbls:     FromStrings("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
-			expected: 32,
+			expected: 309,
 		},
 	} {
 		require.Equal(t, testCase.expected, testCase.lbls.ByteSize())
