@@ -17,9 +17,9 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"regexp"
 	"sync"
 
+	"github.com/grafana/regexp"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -119,7 +119,7 @@ func NewNamespaceMetadataCache(client kubernetes.Interface, cfg *config.Namespac
 }
 
 // Start starts the namespace metadata cache.
-func (nmc *NamespaceMetadataCache) Start(ctx context.Context) {
+func (nmc *NamespaceMetadataCache) Start(_ context.Context) {
 	go nmc.informer.Run(nmc.stopCh)
 
 	// Wait for initial sync
@@ -183,17 +183,17 @@ func (nmc *NamespaceMetadataCache) GetMetadata(namespaceName string) *NamespaceM
 	}
 
 	// Return copy to avoid data races
-	copy := &NamespaceMetadata{
+	result := &NamespaceMetadata{
 		Labels:      make(map[string]string),
 		Annotations: make(map[string]string),
 	}
 	for k, v := range metadata.Labels {
-		copy.Labels[k] = v
+		result.Labels[k] = v
 	}
 	for k, v := range metadata.Annotations {
-		copy.Annotations[k] = v
+		result.Annotations[k] = v
 	}
-	return copy
+	return result
 }
 
 // Start starts the namespace enricher.
