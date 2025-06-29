@@ -60,7 +60,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/util/testutil"
-	"github.com/stretchr/testify/assert"
 )
 
 func mustParseURL(u string) *config.URL {
@@ -3139,11 +3138,11 @@ func TestNamespaceEnrichmentValidation(t *testing.T) {
 			if tt.expectError {
 				require.Error(t, err, "Expected validation to fail")
 				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains,
+					require.Contains(t, err.Error(), tt.errorContains,
 						"Error should contain expected message")
 				}
 			} else {
-				assert.NoError(t, err, "Expected validation to pass")
+				require.NoError(t, err, "Expected validation to pass")
 			}
 		})
 	}
@@ -3195,10 +3194,10 @@ func TestValidateSelectorSecurity(t *testing.T) {
 			if tt.expectError {
 				require.Error(t, err)
 				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
+					require.Contains(t, err.Error(), tt.errorContains)
 				}
 			} else {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			}
 		})
 	}

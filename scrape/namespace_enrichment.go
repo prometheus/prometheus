@@ -15,24 +15,21 @@ package scrape
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log/slog"
+	"regexp"
 	"sync"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/util/strutil"
 )
 
-// NamespaceEnricher handles enriching metrics with namespace labels and annotations
+// NamespaceEnricher handles enriching metrics with namespace labels and annotations.
 type NamespaceEnricher struct {
 	config      *config.NamespaceEnrichmentConfig
 	cache       *NamespaceMetadataCache
@@ -40,232 +37,237 @@ type NamespaceEnricher struct {
 	labelPrefix string
 }
 
-// NamespaceMetadata holds both labels and annotations for a namespace
+// NamespaceMetadata holds both labels and annotations for a namespace.
 type NamespaceMetadata struct {
 	Labels      map[string]string
 	Annotations map[string]string
 }
 
-// NamespaceMetadataCache caches namespace metadata to avoid frequent Kubernetes API calls
+// NamespaceMetadataCache caches namespace metadata to avoid frequent Kubernetes API calls.
 type NamespaceMetadataCache struct {
 	mu         sync.RWMutex
-	namespaces map[string]*NamespaceMetadata // namespace -> metadata
-	client     kubernetes.Interface
-	informer   cache.SharedInformer
+	namespaces map[string]*NamespaceMetadata
+	informer   cache.SharedIndexInformer
 	stopCh     chan struct{}
-	logger     *slog.Logger
 }
 
-// NewNamespaceEnricher creates a new namespace enricher
+// NewNamespaceEnricher creates a new namespace enricher.
 func NewNamespaceEnricher(cfg *config.NamespaceEnrichmentConfig, client kubernetes.Interface, logger *slog.Logger) (*NamespaceEnricher, error) {
 	if cfg == nil || !cfg.Enabled {
 		return nil, nil
 	}
 
-	nsCache, err := NewNamespaceMetadataCache(client, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create namespace metadata cache: %w", err)
+	if client == nil {
+		return nil, errors.New("kubernetes client is required")
 	}
 
-	labelPrefix := cfg.LabelPrefix
-	if labelPrefix == "" {
-		labelPrefix = "ns_"
+	prefix := cfg.LabelPrefix
+	if prefix == "" {
+		prefix = "ns_"
+	}
+
+	cache, err := NewNamespaceMetadataCache(client, cfg, logger)
+	if err != nil {
+		return nil, err
 	}
 
 	return &NamespaceEnricher{
 		config:      cfg,
-		cache:       nsCache,
+		cache:       cache,
 		logger:      logger,
-		labelPrefix: labelPrefix,
+		labelPrefix: prefix,
 	}, nil
 }
 
-// NewNamespaceMetadataCache creates a new namespace metadata cache
-func NewNamespaceMetadataCache(client kubernetes.Interface, logger *slog.Logger) (*NamespaceMetadataCache, error) {
+// NewNamespaceMetadataCache creates a new namespace metadata cache.
+func NewNamespaceMetadataCache(client kubernetes.Interface, cfg *config.NamespaceEnrichmentConfig, logger *slog.Logger) (*NamespaceMetadataCache, error) {
 	if client == nil {
-		return nil, fmt.Errorf("kubernetes client is required")
+		return nil, errors.New("kubernetes client is required")
 	}
 
-	nsCache := &NamespaceMetadataCache{
+	factory := informers.NewSharedInformerFactory(client, 0)
+	informer := factory.Core().V1().Namespaces().Informer()
+
+	nmc := &NamespaceMetadataCache{
 		namespaces: make(map[string]*NamespaceMetadata),
-		client:     client,
+		informer:   informer,
 		stopCh:     make(chan struct{}),
-		logger:     logger,
 	}
 
-	// Create informer for watching namespace changes
-	listWatcher := &cache.ListWatch{
-		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-			return client.CoreV1().Namespaces().List(context.TODO(), options)
-		},
-		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-			return client.CoreV1().Namespaces().Watch(context.TODO(), options)
-		},
-	}
-
-	informer := cache.NewSharedInformer(listWatcher, &corev1.Namespace{}, 5*time.Minute)
-
-	// Add event handlers
-	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			if ns, ok := obj.(*corev1.Namespace); ok {
-				nsCache.updateNamespace(ns)
+				nmc.updateNamespace(ns, cfg, logger)
 			}
 		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
+		UpdateFunc: func(_, newObj interface{}) {
 			if ns, ok := newObj.(*corev1.Namespace); ok {
-				nsCache.updateNamespace(ns)
+				nmc.updateNamespace(ns, cfg, logger)
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
 			if ns, ok := obj.(*corev1.Namespace); ok {
-				nsCache.deleteNamespace(ns.Name)
+				nmc.deleteNamespace(ns.Name)
 			}
 		},
 	})
+	if err != nil {
+		return nil, err
+	}
 
-	nsCache.informer = informer
-	return nsCache, nil
+	return nmc, nil
 }
 
-// Start starts the namespace metadata cache
+// Start starts the namespace metadata cache.
 func (nmc *NamespaceMetadataCache) Start(ctx context.Context) {
 	go nmc.informer.Run(nmc.stopCh)
 
-	// Wait for cache to sync
+	// Wait for initial sync
 	if !cache.WaitForCacheSync(nmc.stopCh, nmc.informer.HasSynced) {
-		nmc.logger.Error("Failed to sync namespace cache")
+		close(nmc.stopCh)
 		return
 	}
-
-	nmc.logger.Info("Namespace metadata cache synced successfully")
 }
 
-// Stop stops the namespace metadata cache
+// Stop stops the namespace metadata cache.
 func (nmc *NamespaceMetadataCache) Stop() {
 	close(nmc.stopCh)
 }
 
-// updateNamespace updates the cached namespace metadata
-func (nmc *NamespaceMetadataCache) updateNamespace(ns *corev1.Namespace) {
+// updateNamespace updates the cached namespace metadata.
+func (nmc *NamespaceMetadataCache) updateNamespace(ns *corev1.Namespace, cfg *config.NamespaceEnrichmentConfig, logger *slog.Logger) {
+	metadata := &NamespaceMetadata{
+		Labels:      make(map[string]string),
+		Annotations: make(map[string]string),
+	}
+
+	// Extract selected labels
+	for _, labelKey := range cfg.LabelSelector {
+		if value, exists := ns.Labels[labelKey]; exists {
+			metadata.Labels[labelKey] = value
+		}
+	}
+
+	// Extract selected annotations
+	for _, annotationKey := range cfg.AnnotationSelector {
+		if value, exists := ns.Annotations[annotationKey]; exists {
+			metadata.Annotations[annotationKey] = value
+		}
+	}
+
 	nmc.mu.Lock()
-	defer nmc.mu.Unlock()
+	nmc.namespaces[ns.Name] = metadata
+	nmc.mu.Unlock()
 
-	labels := make(map[string]string)
-	for k, v := range ns.Labels {
-		labels[k] = v
-	}
-
-	annotations := make(map[string]string)
-	for k, v := range ns.Annotations {
-		annotations[k] = v
-	}
-
-	nmc.namespaces[ns.Name] = &NamespaceMetadata{
-		Labels:      labels,
-		Annotations: annotations,
-	}
-	nmc.logger.Debug("Updated namespace metadata", "namespace", ns.Name, "labels", len(labels), "annotations", len(annotations))
+	logger.Debug("Updated namespace metadata", "namespace", ns.Name, "labels", len(metadata.Labels), "annotations", len(metadata.Annotations))
 }
 
-// deleteNamespace removes namespace from cache
+// deleteNamespace removes namespace from cache.
 func (nmc *NamespaceMetadataCache) deleteNamespace(name string) {
 	nmc.mu.Lock()
-	defer nmc.mu.Unlock()
-
 	delete(nmc.namespaces, name)
-	nmc.logger.Debug("Deleted namespace metadata", "namespace", name)
+	nmc.mu.Unlock()
 }
 
-// GetMetadata returns metadata (labels and annotations) for a namespace
-func (nmc *NamespaceMetadataCache) GetMetadata(namespace string) *NamespaceMetadata {
+// GetMetadata returns metadata (labels and annotations) for a namespace.
+func (nmc *NamespaceMetadataCache) GetMetadata(namespaceName string) *NamespaceMetadata {
 	nmc.mu.RLock()
 	defer nmc.mu.RUnlock()
 
-	metadata, exists := nmc.namespaces[namespace]
-	if !exists {
-		return nil
+	metadata := nmc.namespaces[namespaceName]
+	if metadata == nil {
+		return &NamespaceMetadata{
+			Labels:      make(map[string]string),
+			Annotations: make(map[string]string),
+		}
 	}
 
-	// Return a copy to avoid race conditions
-	result := &NamespaceMetadata{
-		Labels:      make(map[string]string, len(metadata.Labels)),
-		Annotations: make(map[string]string, len(metadata.Annotations)),
+	// Return copy to avoid data races
+	copy := &NamespaceMetadata{
+		Labels:      make(map[string]string),
+		Annotations: make(map[string]string),
 	}
-
 	for k, v := range metadata.Labels {
-		result.Labels[k] = v
+		copy.Labels[k] = v
 	}
-
 	for k, v := range metadata.Annotations {
-		result.Annotations[k] = v
+		copy.Annotations[k] = v
 	}
-
-	return result
+	return copy
 }
 
-// Start starts the namespace enricher
+// Start starts the namespace enricher.
 func (ne *NamespaceEnricher) Start(ctx context.Context) {
-	if ne.cache != nil {
-		ne.cache.Start(ctx)
+	if ne == nil || ne.cache == nil {
+		return
 	}
+	ne.cache.Start(ctx)
 }
 
-// Stop stops the namespace enricher
+// Stop stops the namespace enricher.
 func (ne *NamespaceEnricher) Stop() {
-	if ne.cache != nil {
-		ne.cache.Stop()
+	if ne == nil || ne.cache == nil {
+		return
 	}
+	ne.cache.Stop()
 }
 
-// EnrichWithNamespaceMetadata enriches labels with namespace labels and annotations
+// EnrichWithNamespaceMetadata enriches labels with namespace labels and annotations.
 func (ne *NamespaceEnricher) EnrichWithNamespaceMetadata(lset labels.Labels) labels.Labels {
 	if ne == nil || ne.config == nil || !ne.config.Enabled {
 		return lset
 	}
 
-	// Extract namespace from labels
-	namespace := lset.Get("namespace")
-	if namespace == "" {
-		// Try alternative namespace label names
-		namespace = lset.Get("__meta_kubernetes_namespace")
+	// Look for namespace in various label keys
+	namespaceName := ""
+	for _, namespaceLabel := range []string{
+		"__meta_kubernetes_namespace",
+		"namespace",
+		"exported_namespace",
+		"__meta_kubernetes_pod_namespace",
+		"kubernetes_namespace",
+	} {
+		if val := lset.Get(namespaceLabel); val != "" {
+			namespaceName = val
+			break
+		}
 	}
 
-	if namespace == "" {
+	if namespaceName == "" {
 		return lset
 	}
 
-	// Get namespace metadata (labels and annotations)
-	metadata := ne.cache.GetMetadata(namespace)
+	metadata := ne.cache.GetMetadata(namespaceName)
 	if metadata == nil {
 		return lset
 	}
 
-	// Build enriched labels
-	lb := labels.NewBuilder(lset)
+	// Build new label set
+	builder := labels.NewBuilder(lset)
 
-	// Add selected namespace labels as metric labels
-	for _, labelKey := range ne.config.LabelSelector {
-		if labelValue, exists := metadata.Labels[labelKey]; exists {
-			// Sanitize label key to be a valid label name
-			labelName := ne.labelPrefix + strutil.SanitizeLabelName(labelKey)
-			lb.Set(labelName, labelValue)
-		}
+	// Add namespace labels
+	for labelKey, labelValue := range metadata.Labels {
+		enrichedLabelName := ne.labelPrefix + sanitizeLabelName(labelKey)
+		builder.Set(enrichedLabelName, labelValue)
 	}
 
-	// Add selected annotations as labels
-	for _, annotationKey := range ne.config.AnnotationSelector {
-		if annotationValue, exists := metadata.Annotations[annotationKey]; exists {
-			// Sanitize annotation key to be a valid label name
-			labelName := ne.labelPrefix + strutil.SanitizeLabelName(annotationKey)
-			lb.Set(labelName, annotationValue)
-		}
+	// Add namespace annotations
+	for annotationKey, annotationValue := range metadata.Annotations {
+		enrichedLabelName := ne.labelPrefix + sanitizeLabelName(annotationKey)
+		builder.Set(enrichedLabelName, annotationValue)
 	}
 
-	return lb.Labels()
+	return builder.Labels()
 }
 
-// EnrichWithNamespaceAnnotations is maintained for backward compatibility
+// sanitizeLabelName converts annotation keys to valid Prometheus label names.
+var labelNameRegex = regexp.MustCompile(`[^a-zA-Z0-9_]`)
+
+func sanitizeLabelName(name string) string {
+	return labelNameRegex.ReplaceAllString(name, "_")
+}
+
+// EnrichWithNamespaceAnnotations is maintained for backward compatibility.
 func (ne *NamespaceEnricher) EnrichWithNamespaceAnnotations(lset labels.Labels) labels.Labels {
 	return ne.EnrichWithNamespaceMetadata(lset)
 }

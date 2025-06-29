@@ -1100,7 +1100,7 @@ func (c *ScrapeConfig) validateNamespaceEnrichment() error {
 	return nil
 }
 
-// validateSelectorSecurity checks if a selector contains dangerous patterns that could expose sensitive data
+// validateSelectorSecurity checks if a selector contains dangerous patterns that could expose sensitive data.
 func validateSelectorSecurity(selector, selectorType string, dangerousPatterns []string) error {
 	selectorLower := strings.ToLower(selector)
 
@@ -1796,7 +1796,7 @@ func sanitizeAttributes(attributes []string, adjective string) error {
 	return err
 }
 
-// Add namespace enrichment configuration to ScrapeConfig
+// NamespaceEnrichmentConfig configures namespace metadata enrichment for scrape jobs.
 type NamespaceEnrichmentConfig struct {
 	Enabled            bool     `yaml:"enabled"`
 	AnnotationSelector []string `yaml:"annotation_selector,omitempty"`
