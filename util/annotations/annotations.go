@@ -136,6 +136,7 @@ var (
 	PromQLWarning = errors.New("PromQL warning")
 
 	InvalidRatioWarning                        = fmt.Errorf("%w: ratio value should be between -1 and 1", PromQLWarning)
+	RangeTooShortWarning                       = fmt.Errorf("%w: range too short; does not contain enough samples to extrapolate rate", PromQLWarning)
 	InvalidQuantileWarning                     = fmt.Errorf("%w: quantile value should be between 0 and 1", PromQLWarning)
 	BadBucketLabelWarning                      = fmt.Errorf("%w: bucket label %q is missing or has a malformed value", PromQLWarning, model.BucketLabel)
 	MixedFloatsHistogramsWarning               = fmt.Errorf("%w: encountered a mix of histograms and floats for", PromQLWarning)
@@ -189,6 +190,15 @@ func NewInvalidRatioWarning(q, to float64, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w, got %g, capping to %g", InvalidRatioWarning, q, to),
+	}
+}
+
+// NewRangeTooShortWarning is used when the user specifies a range that is too
+// short, such that it does not contain enough samples to extrapolate rate.
+func NewRangeTooShortWarning(pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           RangeTooShortWarning,
 	}
 }
 
