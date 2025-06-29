@@ -771,6 +771,9 @@ type ScrapeConfig struct {
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
 	// List of metric relabel configurations.
 	MetricRelabelConfigs []*relabel.Config `yaml:"metric_relabel_configs,omitempty"`
+
+	// Add namespace enrichment configuration to ScrapeConfig
+	NamespaceEnrichment *NamespaceEnrichmentConfig `yaml:"namespace_enrichment,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -934,6 +937,13 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		c.AlwaysScrapeClassicHistograms = &global
 	}
 
+	// Validate namespace enrichment configuration
+	if c.NamespaceEnrichment != nil {
+		if err := c.validateNamespaceEnrichment(); err != nil {
+			return fmt.Errorf("invalid namespace_enrichment configuration for scrape config with job name %q: %w", c.JobName, err)
+		}
+	}
+
 	return nil
 }
 
@@ -985,6 +995,152 @@ func (c *ScrapeConfig) ConvertClassicHistogramsToNHCBEnabled() bool {
 // AlwaysScrapeClassicHistogramsEnabled returns whether to always scrape classic histograms.
 func (c *ScrapeConfig) AlwaysScrapeClassicHistogramsEnabled() bool {
 	return c.AlwaysScrapeClassicHistograms != nil && *c.AlwaysScrapeClassicHistograms
+}
+
+// validateNamespaceEnrichment validates the namespace enrichment configuration.
+func (c *ScrapeConfig) validateNamespaceEnrichment() error {
+	cfg := c.NamespaceEnrichment
+
+	// If label_prefix is empty, use default
+	if cfg.LabelPrefix == "" {
+		cfg.LabelPrefix = "ns_"
+	}
+
+	// Validate label_prefix format (should be valid label prefix)
+	if cfg.LabelPrefix != "" {
+		// Check that prefix ends with underscore for proper label naming
+		if !strings.HasSuffix(cfg.LabelPrefix, "_") {
+			return fmt.Errorf("label_prefix must end with underscore, got %q", cfg.LabelPrefix)
+		}
+		// Check for valid characters in prefix
+		for _, r := range cfg.LabelPrefix {
+			if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
+				return fmt.Errorf("label_prefix contains invalid character %q, only alphanumeric and underscore allowed", r)
+			}
+		}
+	}
+
+	// At least one of label_selector or annotation_selector must be specified when enabled
+	if cfg.Enabled && len(cfg.LabelSelector) == 0 && len(cfg.AnnotationSelector) == 0 {
+		return errors.New("at least one of label_selector or annotation_selector must be specified when enabled is true")
+	}
+
+	// Only perform security validation if enrichment is enabled
+	if cfg.Enabled {
+		// SECURITY: Define dangerous patterns that could expose sensitive data
+		dangerousPatterns := []string{
+			// Wildcard patterns (checked first)
+			"*", ".*",
+			// Obvious secrets and credentials
+			"secret", "password", "pwd", "pass", "key", "token", "credential", "cred",
+			"auth", "authorization", "bearer", "oauth", "jwt", "cookie", "session",
+			// Certificate and crypto materials
+			"cert", "certificate", "tls", "ssl", "private", "public", "rsa", "ecdsa",
+			"x509", "pem", "der", "p12", "pkcs", "csr", "crt",
+			// Vault and secrets management
+			"vault", "sealed", "unsealed", "kv", "consul", "etcd",
+			// Database and service credentials
+			"db", "database", "mysql", "postgres", "redis", "mongo", "sql",
+			"username", "user", "login", "admin", "root",
+			// API and webhook secrets
+			"api", "webhook", "callback", "endpoint", "url", "uri",
+			// Cloud provider secrets
+			"aws", "azure", "gcp", "google", "s3", "ec2", "iam",
+			// Classification and sensitivity markers
+			"confidential", "internal", "restricted", "classified", "sensitive",
+			"pii", "phi", "gdpr", "hipaa", "sox", "pci",
+			// Financial and business sensitive
+			"salary", "wage", "budget", "price", "billing", "payment",
+			"ssn", "social", "tax", "account", "routing", "swift", "iban",
+		}
+
+		// SECURITY: Check annotation selectors for dangerous patterns
+		for _, selector := range cfg.AnnotationSelector {
+			if err := validateSelectorSecurity(selector, "annotation_selector", dangerousPatterns); err != nil {
+				return err
+			}
+		}
+
+		// SECURITY: Check label selectors for dangerous patterns
+		for _, selector := range cfg.LabelSelector {
+			if err := validateSelectorSecurity(selector, "label_selector", dangerousPatterns); err != nil {
+				return err
+			}
+		}
+
+		// SECURITY: Limit total number of selectors to prevent DoS
+		maxSelectors := 50
+		totalSelectors := len(cfg.LabelSelector) + len(cfg.AnnotationSelector)
+		if totalSelectors > maxSelectors {
+			return fmt.Errorf("too many selectors (%d), maximum allowed: %d - this could impact performance and security", totalSelectors, maxSelectors)
+		}
+	}
+
+	// Validate selector entries are non-empty and within length limits
+	for _, selector := range cfg.LabelSelector {
+		if strings.TrimSpace(selector) == "" {
+			return errors.New("label_selector entries cannot be empty")
+		}
+		// SECURITY: Validate selector length to prevent buffer attacks
+		if len(selector) > 253 { // Kubernetes label key limit
+			return fmt.Errorf("label_selector %q exceeds maximum length of 253 characters", selector)
+		}
+	}
+
+	for _, selector := range cfg.AnnotationSelector {
+		if strings.TrimSpace(selector) == "" {
+			return errors.New("annotation_selector entries cannot be empty")
+		}
+		// SECURITY: Validate selector length to prevent buffer attacks
+		if len(selector) > 253 { // Kubernetes annotation key limit
+			return fmt.Errorf("annotation_selector %q exceeds maximum length of 253 characters", selector)
+		}
+	}
+
+	return nil
+}
+
+// validateSelectorSecurity checks if a selector contains dangerous patterns that could expose sensitive data.
+func validateSelectorSecurity(selector, selectorType string, dangerousPatterns []string) error {
+	selectorLower := strings.ToLower(selector)
+
+	// SECURITY: Check for regex-like patterns first (more specific error)
+	regexPatterns := []string{".*", ".+", "\\*", "\\?", "\\[", "\\]", "\\{", "\\}"}
+	for _, regexPattern := range regexPatterns {
+		if strings.Contains(selector, regexPattern) {
+			return fmt.Errorf("potentially dangerous %s %q contains regex-like pattern %q - wildcards and regex patterns are not supported and may indicate misconfiguration",
+				selectorType, selector, regexPattern)
+		}
+	}
+
+	// SECURITY: Check for Kubernetes system annotations/labels first (more specific error)
+	systemPrefixes := []string{
+		"kubernetes.io/",
+		"k8s.io/",
+		"kubectl.kubernetes.io/",
+		"node.kubernetes.io/",
+		"control-plane.alpha.kubernetes.io/",
+		"controller.kubernetes.io/",
+		"pod-security.kubernetes.io/",
+		"topology.kubernetes.io/",
+	}
+
+	for _, prefix := range systemPrefixes {
+		if strings.HasPrefix(selectorLower, prefix) {
+			return fmt.Errorf("potentially dangerous %s %q targets Kubernetes system metadata with prefix %q - system annotations may contain sensitive operational data. Consider using application-specific annotations instead",
+				selectorType, selector, prefix)
+		}
+	}
+
+	// Check for exact matches or dangerous substrings (after more specific checks)
+	for _, pattern := range dangerousPatterns {
+		if strings.Contains(selectorLower, pattern) {
+			return fmt.Errorf("potentially dangerous %s %q contains sensitive pattern %q - this may expose sensitive data in metrics. Consider using more specific selectors like 'team', 'environment', 'tier', or 'cost-center'",
+				selectorType, selector, pattern)
+		}
+	}
+
+	return nil
 }
 
 // StorageConfig configures runtime reloadable configuration options.
@@ -1638,4 +1794,12 @@ func sanitizeAttributes(attributes []string, adjective string) error {
 		attributes[i] = attr
 	}
 	return err
+}
+
+// NamespaceEnrichmentConfig configures namespace metadata enrichment for scrape jobs.
+type NamespaceEnrichmentConfig struct {
+	Enabled            bool     `yaml:"enabled"`
+	AnnotationSelector []string `yaml:"annotation_selector,omitempty"`
+	LabelSelector      []string `yaml:"label_selector,omitempty"`
+	LabelPrefix        string   `yaml:"label_prefix,omitempty"`
 }
