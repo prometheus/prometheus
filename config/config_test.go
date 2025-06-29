@@ -60,6 +60,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func mustParseURL(u string) *config.URL {
@@ -2956,4 +2957,249 @@ func TestGetScrapeConfigs_Loaded(t *testing.T) {
 		_, err = c.GetScrapeConfigs()
 		require.NoError(t, err)
 	})
+}
+
+func TestNamespaceEnrichmentValidation(t *testing.T) {
+	tests := []struct {
+		name          string
+		config        *NamespaceEnrichmentConfig
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "safe configuration",
+			config: &NamespaceEnrichmentConfig{
+				Enabled:            true,
+				LabelSelector:      []string{"team", "environment", "tier"},
+				AnnotationSelector: []string{"contact-email", "application-owner", "department"},
+				LabelPrefix:        "ns_",
+			},
+			expectError: false,
+		},
+		{
+			name: "dangerous wildcard annotation",
+			config: &NamespaceEnrichmentConfig{
+				Enabled:            true,
+				AnnotationSelector: []string{"*"},
+				LabelPrefix:        "ns_",
+			},
+			expectError:   true,
+			errorContains: "potentially dangerous annotation_selector \"*\" contains sensitive pattern \"*\"",
+		},
+		{
+			name: "dangerous secret pattern",
+			config: &NamespaceEnrichmentConfig{
+				Enabled:            true,
+				AnnotationSelector: []string{"database-password"},
+				LabelPrefix:        "ns_",
+			},
+			expectError:   true,
+			errorContains: "potentially dangerous annotation_selector \"database-password\" contains sensitive pattern \"password\"",
+		},
+		{
+			name: "dangerous vault pattern",
+			config: &NamespaceEnrichmentConfig{
+				Enabled:       true,
+				LabelSelector: []string{"vault.hashicorp.com/role"},
+				LabelPrefix:   "ns_",
+			},
+			expectError:   true,
+			errorContains: "potentially dangerous label_selector \"vault.hashicorp.com/role\" contains sensitive pattern \"vault\"",
+		},
+		{
+			name: "kubernetes system annotation",
+			config: &NamespaceEnrichmentConfig{
+				Enabled:            true,
+				AnnotationSelector: []string{"kubernetes.io/managed-by"},
+				LabelPrefix:        "ns_",
+			},
+			expectError:   true,
+			errorContains: "potentially dangerous annotation_selector \"kubernetes.io/managed-by\" targets Kubernetes system metadata with prefix \"kubernetes.io/\"",
+		},
+		{
+			name: "regex-like pattern",
+			config: &NamespaceEnrichmentConfig{
+				Enabled:            true,
+				AnnotationSelector: []string{"app.*"},
+				LabelPrefix:        "ns_",
+			},
+			expectError:   true,
+			errorContains: "potentially dangerous annotation_selector \"app.*\" contains regex-like pattern \".*\"",
+		},
+		{
+			name: "too many selectors",
+			config: &NamespaceEnrichmentConfig{
+				Enabled:            true,
+				LabelSelector:      make([]string, 30),
+				AnnotationSelector: make([]string, 25), // Total 55 > 50 limit
+				LabelPrefix:        "ns_",
+			},
+			expectError:   true,
+			errorContains: "too many selectors (55), maximum allowed: 50",
+		},
+		{
+			name: "selector too long",
+			config: &NamespaceEnrichmentConfig{
+				Enabled:            true,
+				AnnotationSelector: []string{string(make([]byte, 254))}, // > 253 limit
+				LabelPrefix:        "ns_",
+			},
+			expectError:   true,
+			errorContains: "exceeds maximum length of 253 characters",
+		},
+		{
+			name: "invalid label prefix without underscore",
+			config: &NamespaceEnrichmentConfig{
+				Enabled:       true,
+				LabelSelector: []string{"team"},
+				LabelPrefix:   "namespace",
+			},
+			expectError:   true,
+			errorContains: "label_prefix must end with underscore",
+		},
+		{
+			name: "invalid label prefix with special chars",
+			config: &NamespaceEnrichmentConfig{
+				Enabled:       true,
+				LabelSelector: []string{"team"},
+				LabelPrefix:   "ns-prefix_",
+			},
+			expectError:   true,
+			errorContains: "label_prefix contains invalid character '-', only alphanumeric and underscore allowed",
+		},
+		{
+			name: "disabled configuration bypasses validation",
+			config: &NamespaceEnrichmentConfig{
+				Enabled:            false,
+				AnnotationSelector: []string{"*", "password", "secret"}, // These would normally fail
+				LabelPrefix:        "ns_",
+			},
+			expectError: false, // Disabled configs don't get validated
+		},
+		{
+			name: "case sensitivity test",
+			config: &NamespaceEnrichmentConfig{
+				Enabled:            true,
+				AnnotationSelector: []string{"DATABASE-PASSWORD"}, // Uppercase should still be caught
+				LabelPrefix:        "ns_",
+			},
+			expectError:   true,
+			errorContains: "potentially dangerous annotation_selector \"DATABASE-PASSWORD\" contains sensitive pattern \"password\"",
+		},
+		{
+			name: "edge case - partial matches",
+			config: &NamespaceEnrichmentConfig{
+				Enabled:            true,
+				AnnotationSelector: []string{"encrypted-data"}, // Contains "secret" pattern but in different context
+				LabelPrefix:        "ns_",
+			},
+			expectError: false, // "encrypted" is not in dangerous patterns as standalone
+		},
+		{
+			name: "financial sensitive data",
+			config: &NamespaceEnrichmentConfig{
+				Enabled:            true,
+				AnnotationSelector: []string{"salary-band"},
+				LabelPrefix:        "ns_",
+			},
+			expectError:   true,
+			errorContains: "potentially dangerous annotation_selector \"salary-band\" contains sensitive pattern \"salary\"",
+		},
+		{
+			name: "cloud provider sensitive",
+			config: &NamespaceEnrichmentConfig{
+				Enabled:       true,
+				LabelSelector: []string{"aws-iam-role"},
+				LabelPrefix:   "ns_",
+			},
+			expectError:   true,
+			errorContains: "potentially dangerous label_selector \"aws-iam-role\" contains sensitive pattern \"aws\"",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Fill in safe default values for slice tests
+			if tt.name == "too many selectors" {
+				for i := range tt.config.LabelSelector {
+					tt.config.LabelSelector[i] = "safe-label-" + string(rune(i))
+				}
+				for i := range tt.config.AnnotationSelector {
+					tt.config.AnnotationSelector[i] = "safe-annotation-" + string(rune(i))
+				}
+			}
+
+			scrapeConfig := &ScrapeConfig{
+				JobName:             "test-job",
+				NamespaceEnrichment: tt.config,
+			}
+
+			err := scrapeConfig.validateNamespaceEnrichment()
+
+			if tt.expectError {
+				require.Error(t, err, "Expected validation to fail")
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains,
+						"Error should contain expected message")
+				}
+			} else {
+				assert.NoError(t, err, "Expected validation to pass")
+			}
+		})
+	}
+}
+
+func TestValidateSelectorSecurity(t *testing.T) {
+	dangerousPatterns := []string{"secret", "password", "key", "token", "*"}
+
+	tests := []struct {
+		name          string
+		selector      string
+		selectorType  string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:         "safe selector",
+			selector:     "team",
+			selectorType: "label_selector",
+			expectError:  false,
+		},
+		{
+			name:          "dangerous pattern",
+			selector:      "api-key",
+			selectorType:  "annotation_selector",
+			expectError:   true,
+			errorContains: "contains sensitive pattern \"key\"",
+		},
+		{
+			name:          "kubernetes system prefix",
+			selector:      "kubernetes.io/arch",
+			selectorType:  "label_selector",
+			expectError:   true,
+			errorContains: "targets Kubernetes system metadata with prefix \"kubernetes.io/\"",
+		},
+		{
+			name:          "regex pattern",
+			selector:      "app.*",
+			selectorType:  "annotation_selector",
+			expectError:   true,
+			errorContains: "contains regex-like pattern \".*\"",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateSelectorSecurity(tt.selector, tt.selectorType, dangerousPatterns)
+
+			if tt.expectError {
+				require.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
