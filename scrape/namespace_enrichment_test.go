@@ -18,13 +18,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/common/promslog"
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+
+	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 func TestNamespaceEnricherBasicFunctionality(t *testing.T) {

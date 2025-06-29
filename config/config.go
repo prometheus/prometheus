@@ -1014,7 +1014,7 @@ func (c *ScrapeConfig) validateNamespaceEnrichment() error {
 		}
 		// Check for valid characters in prefix
 		for _, r := range cfg.LabelPrefix {
-			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_') {
+			if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
 				return fmt.Errorf("label_prefix contains invalid character %q, only alphanumeric and underscore allowed", r)
 			}
 		}
