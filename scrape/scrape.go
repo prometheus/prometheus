@@ -288,7 +288,7 @@ func (sp *scrapePool) getScrapeFailureLogger() FailureLogger {
 	return sp.scrapeFailureLogger
 }
 
-// SetKubernetesClient sets the Kubernetes client for namespace enrichment
+// SetKubernetesClient sets the Kubernetes client for namespace enrichment.
 func (sp *scrapePool) SetKubernetesClient(client kubernetes.Interface) error {
 	// Check if namespace enrichment is configured for this scrape pool
 	if sp.config.NamespaceEnrichment == nil || !sp.config.NamespaceEnrichment.Enabled {

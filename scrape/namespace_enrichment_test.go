@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -81,13 +80,13 @@ func TestNamespaceEnricherBasicFunctionality(t *testing.T) {
 	enrichedLabels := enricher.EnrichWithNamespaceAnnotations(originalLabels)
 
 	// Verify enrichment
-	assert.Equal(t, "cpu_usage", enrichedLabels.Get("__name__"))
-	assert.Equal(t, "production", enrichedLabels.Get("__meta_kubernetes_namespace"))
-	assert.Equal(t, "test-pod", enrichedLabels.Get("pod"))
-	assert.Equal(t, "team-a", enrichedLabels.Get("ns_application_owner"))
-	assert.Equal(t, "prod", enrichedLabels.Get("ns_environment"))
-	assert.Equal(t, "engineering", enrichedLabels.Get("ns_cost_center"))
-	assert.Equal(t, "", enrichedLabels.Get("ns_other_annotation")) // Not in selector
+	require.Equal(t, "cpu_usage", enrichedLabels.Get("__name__"))
+	require.Equal(t, "production", enrichedLabels.Get("__meta_kubernetes_namespace"))
+	require.Equal(t, "test-pod", enrichedLabels.Get("pod"))
+	require.Equal(t, "team-a", enrichedLabels.Get("ns_application_owner"))
+	require.Equal(t, "prod", enrichedLabels.Get("ns_environment"))
+	require.Equal(t, "engineering", enrichedLabels.Get("ns_cost_center"))
+	require.Empty(t, enrichedLabels.Get("ns_other_annotation")) // Not in selector
 
 	// Stop enricher
 	enricher.Stop()
@@ -129,7 +128,7 @@ func TestNamespaceEnricherWithAlternativeNamespaceLabel(t *testing.T) {
 	)
 
 	enrichedLabels := enricher.EnrichWithNamespaceAnnotations(originalLabels)
-	assert.Equal(t, "backend", enrichedLabels.Get("namespace_team"))
+	require.Equal(t, "backend", enrichedLabels.Get("namespace_team"))
 
 	enricher.Stop()
 }
@@ -157,7 +156,7 @@ func TestNamespaceEnricherNoNamespaceLabel(t *testing.T) {
 
 	enrichedLabels := enricher.EnrichWithNamespaceAnnotations(originalLabels)
 	// Should return unchanged labels
-	assert.Equal(t, originalLabels, enrichedLabels)
+	require.Equal(t, originalLabels, enrichedLabels)
 
 	enricher.Stop()
 }
@@ -186,7 +185,7 @@ func TestNamespaceEnricherNonExistentNamespace(t *testing.T) {
 
 	enrichedLabels := enricher.EnrichWithNamespaceAnnotations(originalLabels)
 	// Should return unchanged labels since namespace doesn't exist
-	assert.Equal(t, originalLabels, enrichedLabels)
+	require.Equal(t, originalLabels, enrichedLabels)
 
 	enricher.Stop()
 }
@@ -226,7 +225,7 @@ func TestNamespaceEnricherUpdate(t *testing.T) {
 	)
 
 	enrichedLabels := enricher.EnrichWithNamespaceAnnotations(originalLabels)
-	assert.Equal(t, "initial-team", enrichedLabels.Get("ns_team"))
+	require.Equal(t, "initial-team", enrichedLabels.Get("ns_team"))
 
 	// Update namespace annotations
 	ns.Annotations["team"] = "updated-team"
@@ -238,7 +237,7 @@ func TestNamespaceEnricherUpdate(t *testing.T) {
 
 	// Test updated enrichment
 	enrichedLabels = enricher.EnrichWithNamespaceAnnotations(originalLabels)
-	assert.Equal(t, "updated-team", enrichedLabels.Get("ns_team"))
+	require.Equal(t, "updated-team", enrichedLabels.Get("ns_team"))
 
 	enricher.Stop()
 }
@@ -277,7 +276,7 @@ func TestNamespaceEnricherDelete(t *testing.T) {
 
 	// Test enrichment before deletion
 	enrichedLabels := enricher.EnrichWithNamespaceAnnotations(originalLabels)
-	assert.Equal(t, "temp-team", enrichedLabels.Get("ns_team"))
+	require.Equal(t, "temp-team", enrichedLabels.Get("ns_team"))
 
 	// Delete namespace
 	err = client.CoreV1().Namespaces().Delete(context.TODO(), "temp-ns", metav1.DeleteOptions{})
@@ -288,7 +287,7 @@ func TestNamespaceEnricherDelete(t *testing.T) {
 
 	// Test enrichment after deletion
 	enrichedLabels = enricher.EnrichWithNamespaceAnnotations(originalLabels)
-	assert.Equal(t, originalLabels, enrichedLabels) // Should be unchanged
+	require.Equal(t, originalLabels, enrichedLabels) // Should be unchanged
 
 	enricher.Stop()
 }
@@ -302,8 +301,8 @@ func TestNamespaceEnricherDisabled(t *testing.T) {
 	}
 
 	enricher, err := NewNamespaceEnricher(cfg, client, promslog.NewNopLogger())
-	assert.NoError(t, err)
-	assert.Nil(t, enricher) // Should return nil when disabled
+	require.NoError(t, err)
+	require.Nil(t, enricher) // Should return nil when disabled
 
 	// Test with nil enricher (should work gracefully)
 	originalLabels := labels.FromStrings(
@@ -313,7 +312,7 @@ func TestNamespaceEnricherDisabled(t *testing.T) {
 
 	var nilEnricher *NamespaceEnricher
 	enrichedLabels := nilEnricher.EnrichWithNamespaceAnnotations(originalLabels)
-	assert.Equal(t, originalLabels, enrichedLabels)
+	require.Equal(t, originalLabels, enrichedLabels)
 }
 
 func TestNamespaceEnricherLabelSanitization(t *testing.T) {
@@ -358,9 +357,9 @@ func TestNamespaceEnricherLabelSanitization(t *testing.T) {
 	enrichedLabels := enricher.EnrichWithNamespaceAnnotations(originalLabels)
 
 	// Test that annotation keys are properly sanitized for label names
-	assert.Equal(t, "my-app", enrichedLabels.Get("ns_app_kubernetes_io_name"))
-	assert.Equal(t, "v1.2.3", enrichedLabels.Get("ns_deployment_version"))
-	assert.Equal(t, "value", enrichedLabels.Get("ns_special_char_annotation"))
+	require.Equal(t, "my-app", enrichedLabels.Get("ns_app_kubernetes_io_name"))
+	require.Equal(t, "v1.2.3", enrichedLabels.Get("ns_deployment_version"))
+	require.Equal(t, "value", enrichedLabels.Get("ns_special_char_annotation"))
 
 	enricher.Stop()
 }
@@ -407,17 +406,17 @@ func TestMutateSampleLabelsWithEnricher(t *testing.T) {
 	mutatedLabels := mutateSampleLabelsWithEnricher(originalLabels, target, false, nil, enricher)
 
 	// Verify original labels are preserved
-	assert.Equal(t, "http_requests_total", mutatedLabels.Get("__name__"))
-	assert.Equal(t, "production", mutatedLabels.Get("namespace"))
-	assert.Equal(t, "GET", mutatedLabels.Get("method"))
+	require.Equal(t, "http_requests_total", mutatedLabels.Get("__name__"))
+	require.Equal(t, "production", mutatedLabels.Get("namespace"))
+	require.Equal(t, "GET", mutatedLabels.Get("method"))
 
 	// Verify target labels are added
-	assert.Equal(t, "test-job", mutatedLabels.Get("job"))
-	assert.Equal(t, "localhost:9090", mutatedLabels.Get("instance"))
+	require.Equal(t, "test-job", mutatedLabels.Get("job"))
+	require.Equal(t, "localhost:9090", mutatedLabels.Get("instance"))
 
 	// Verify namespace enrichment
-	assert.Equal(t, "backend", mutatedLabels.Get("ns_team"))
-	assert.Equal(t, "prod", mutatedLabels.Get("ns_env"))
+	require.Equal(t, "backend", mutatedLabels.Get("ns_team"))
+	require.Equal(t, "prod", mutatedLabels.Get("ns_env"))
 
 	enricher.Stop()
 }
@@ -482,18 +481,18 @@ func TestNamespaceEnricherWithLabels(t *testing.T) {
 	enrichedLabels := enricher.EnrichWithNamespaceMetadata(originalLabels)
 
 	// Verify original labels are preserved
-	assert.Equal(t, "cpu_usage", enrichedLabels.Get("__name__"))
-	assert.Equal(t, "production", enrichedLabels.Get("__meta_kubernetes_namespace"))
-	assert.Equal(t, "test-pod", enrichedLabels.Get("pod"))
+	require.Equal(t, "cpu_usage", enrichedLabels.Get("__name__"))
+	require.Equal(t, "production", enrichedLabels.Get("__meta_kubernetes_namespace"))
+	require.Equal(t, "test-pod", enrichedLabels.Get("pod"))
 
 	// Verify namespace labels are added
-	assert.Equal(t, "production", enrichedLabels.Get("ns_tier"))
-	assert.Equal(t, "backend", enrichedLabels.Get("ns_team"))
-	assert.Equal(t, "prod", enrichedLabels.Get("ns_environment"))
+	require.Equal(t, "production", enrichedLabels.Get("ns_tier"))
+	require.Equal(t, "backend", enrichedLabels.Get("ns_team"))
+	require.Equal(t, "prod", enrichedLabels.Get("ns_environment"))
 
 	// Verify namespace annotations are added
-	assert.Equal(t, "team-a", enrichedLabels.Get("ns_application_owner"))
-	assert.Equal(t, "engineering", enrichedLabels.Get("ns_cost_center"))
+	require.Equal(t, "team-a", enrichedLabels.Get("ns_application_owner"))
+	require.Equal(t, "engineering", enrichedLabels.Get("ns_cost_center"))
 
 	// Stop enricher
 	enricher.Stop()
@@ -539,8 +538,8 @@ func TestNamespaceEnricherLabelsOnly(t *testing.T) {
 	enrichedLabels := enricher.EnrichWithNamespaceMetadata(originalLabels)
 
 	// Verify namespace labels are added
-	assert.Equal(t, "development", enrichedLabels.Get("namespace_tier"))
-	assert.Equal(t, "frontend", enrichedLabels.Get("namespace_team"))
+	require.Equal(t, "development", enrichedLabels.Get("namespace_tier"))
+	require.Equal(t, "frontend", enrichedLabels.Get("namespace_team"))
 
 	enricher.Stop()
 }

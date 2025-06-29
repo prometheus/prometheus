@@ -99,4 +99,4 @@ scrape_configs:
 #   ns_cost_center="engineering",             # from namespace annotation
 #   ns_environment="prod",                    # from namespace annotation
 #   ns_compliance_level="high"                # from namespace annotation
-# } 268435456 
+# } 268435456

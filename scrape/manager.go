@@ -75,7 +75,7 @@ func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(str
 	return m, nil
 }
 
-// initializeKubernetesClient attempts to create a Kubernetes client if running in-cluster
+// initializeKubernetesClient attempts to create a Kubernetes client if running in-cluster.
 func (m *Manager) initializeKubernetesClient() {
 	config, err := rest.InClusterConfig()
 	if err != nil {
