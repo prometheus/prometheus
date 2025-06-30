@@ -907,7 +907,7 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		}
 	case model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues:
 	default:
-		return fmt.Errorf("unknown global name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got '%s'", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, globalConfig.MetricNameEscapingScheme)
+		return fmt.Errorf("unknown global name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got %q", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, globalConfig.MetricNameEscapingScheme)
 	}
 
 	if c.MetricNameEscapingScheme == "" {
@@ -921,7 +921,7 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		}
 	case model.EscapeUnderscores, model.EscapeDots, model.EscapeValues:
 	default:
-		return fmt.Errorf("unknown scrape config name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got '%s'", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, c.MetricNameEscapingScheme)
+		return fmt.Errorf("unknown scrape config name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got %q", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, c.MetricNameEscapingScheme)
 	}
 
 	if c.ConvertClassicHistogramsToNHCB == nil {
