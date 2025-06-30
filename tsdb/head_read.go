@@ -307,6 +307,12 @@ func (h *headIndexReader) LabelNamesFor(ctx context.Context, series index.Postin
 	return names, nil
 }
 
+// IndexLookupPlanner returns the index lookup planner for this reader.
+// Head readers use the default index-only planner.
+func (h *headIndexReader) IndexLookupPlanner() index.LookupPlanner {
+	return &index.OnlyIndexLookupPlanner{}
+}
+
 // Chunks returns a ChunkReader against the block.
 func (h *Head) Chunks() (ChunkReader, error) {
 	return h.chunksRange(math.MinInt64, math.MaxInt64, h.iso.State(math.MinInt64, math.MaxInt64))

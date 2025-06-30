@@ -1114,6 +1114,10 @@ type Reader struct {
 	version int
 }
 
+func (r *Reader) IndexLookupPlanner() LookupPlanner {
+	return &OnlyIndexLookupPlanner{}
+}
+
 type postingOffset struct {
 	value string
 	off   int

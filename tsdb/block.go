@@ -111,6 +111,9 @@ type IndexReader interface {
 	// The names returned are sorted.
 	LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error)
 
+	// IndexLookupPlanner returns the index lookup planner for this reader.
+	IndexLookupPlanner() index.LookupPlanner
+
 	// Close releases the underlying resources of the reader.
 	Close() error
 }
@@ -502,7 +505,7 @@ func (r blockIndexReader) LabelValues(ctx context.Context, name string, hints *s
 		return st, nil
 	}
 
-	return labelValuesWithMatchers(ctx, r.ir, name, hints, matchers...)
+	return labelValuesWithMatchers(ctx, r, name, hints, matchers...)
 }
 
 func (r blockIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error) {
@@ -510,7 +513,7 @@ func (r blockIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Ma
 		return r.b.LabelNames(ctx)
 	}
 
-	return labelNamesWithMatchers(ctx, r.ir, matchers...)
+	return labelNamesWithMatchers(ctx, r, matchers...)
 }
 
 func (r blockIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
@@ -558,6 +561,12 @@ func (r blockIndexReader) LabelValueFor(ctx context.Context, id storage.SeriesRe
 // The names returned are sorted.
 func (r blockIndexReader) LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error) {
 	return r.ir.LabelNamesFor(ctx, postings)
+}
+
+// IndexLookupPlanner returns the index lookup planner for this reader.
+// Block readers use the default index-only planner.
+func (r blockIndexReader) IndexLookupPlanner() index.LookupPlanner {
+	return &index.OnlyIndexLookupPlanner{}
 }
 
 type blockTombstoneReader struct {
