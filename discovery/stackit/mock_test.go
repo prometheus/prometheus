@@ -69,6 +69,9 @@ func (m *SDMock) tokenHandler() http.HandlerFunc {
 			_, _ = fmt.Fprint(w, err)
 			return
 		}
+
+		// Expecting HTTP form encoded body with the field assertion.
+		// JWT always start with "ey" (base64url encoded).
 		if !bytes.HasPrefix(reqBody, []byte("assertion=ey")) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return

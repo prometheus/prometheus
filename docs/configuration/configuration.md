@@ -2291,7 +2291,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 The postgres_flex role dynamically discovers scrape targets using the [PostgresFlex API](https://docs.api.eu01.stackit.cloud/documentation/postgres-flex-service/version/v2#tag/instance).
 
-To enable this scrape configuration, a valid Authorization Bearer Token must be provided. Refer to [this example configuration](../../documentation/examples/prometheus-stackit.yml) for guidance.
+To enable this scrape configuration, a valid Authorization Bearer Token must be provided. Refer to [this example configuration](../../documentation/examples/prometheus-stackit.yml) for guidance. 
+Note that authentication using Service Account Keys is not supported at this time.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
@@ -2308,7 +2309,7 @@ project: <string>
 
 # STACKIT role of entities that should be discovered.
 # postgres_flex and server are supported.
-[ role : <string> ]
+role: <string>
 
 # STACKIT region to use. No automatic discovery of the region is done.
 [ region : <string> | default = "eu01" ]
