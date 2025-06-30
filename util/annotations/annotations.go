@@ -337,7 +337,7 @@ func NewSortInRangeQueryWarning(pos posrange.PositionRange) error {
 		Err:           fmt.Errorf("%w", SortInRangeQueryWarning),
 	}
 }
-    
+
 func NewNativeHistogramQuantileNaNResultInfo(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
