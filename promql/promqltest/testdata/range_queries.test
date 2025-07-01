@@ -71,3 +71,10 @@ eval range from 0 to 2m step 1m requests * 2
   {job="1", __address__="bar"} 200 200 200
 
 clear
+
+# rate with counter reset and step larger than window
+load 30s
+  http_requests_total{pod="nginx-1", series="1"} 1 2 3 4 5 6
+
+eval range from 0 to 180s step 90s rate(http_requests_total[1m])
+  {pod="nginx-1", series="1"}
