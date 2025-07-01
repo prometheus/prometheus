@@ -20,7 +20,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
 )
@@ -418,11 +417,11 @@ func (ls Labels) WithoutEmpty() Labels {
 	return ls
 }
 
-// ByteSize returns the approximate size of the labels in bytes including
-// the string header size of data.
+// ByteSize returns the approximate size of the labels in bytes.
+// String header size is ignored because it should be amortized to zero.
 // SymbolTable size is also not taken into account.
 func (ls Labels) ByteSize() int {
-	return len(ls.data) + int(unsafe.Sizeof(""))
+	return len(ls.data)
 }
 
 // Equal returns whether the two label sets are equal.
