@@ -36,7 +36,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
-	"k8s.io/client-go/kubernetes"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -64,6 +63,56 @@ var AlignScrapeTimestamps = true
 var errNameLabelMandatory = fmt.Errorf("missing metric name (%s label)", labels.MetricName)
 
 var _ FailureLogger = (*logging.JSONFileLogger)(nil)
+
+// MetadataEnricher provides platform-agnostic metadata enrichment for scraped metrics.
+type MetadataEnricher interface {
+	// EnrichWithMetadata enriches the given label set with additional metadata.
+	EnrichWithMetadata(labels.Labels) labels.Labels
+	// Start starts the enricher with the given context.
+	Start(context.Context)
+	// Stop stops the enricher.
+	Stop()
+}
+
+// noopEnricher is a no-op implementation of MetadataEnricher.
+type noopEnricher struct{}
+
+func (noopEnricher) EnrichWithMetadata(lset labels.Labels) labels.Labels { return lset }
+func (noopEnricher) Start(context.Context)                               {}
+func (noopEnricher) Stop()                                               {}
+
+// NewNoopEnricher returns a no-op enricher that doesn't modify labels.
+func NewNoopEnricher() MetadataEnricher {
+	return noopEnricher{}
+}
+
+// EnricherFactory is a function that creates a MetadataEnricher.
+type EnricherFactory func(*config.NamespaceEnrichmentConfig, *slog.Logger) (MetadataEnricher, error)
+
+// enricherFactories holds registered enricher factories.
+var enricherFactories = make(map[string]EnricherFactory)
+
+// RegisterEnricherFactory registers an enricher factory for a given platform.
+func RegisterEnricherFactory(platform string, factory EnricherFactory) {
+	enricherFactories[platform] = factory
+}
+
+// createKubernetesEnricher creates a Kubernetes enricher using the registered factory.
+func createKubernetesEnricher(config *config.NamespaceEnrichmentConfig, logger *slog.Logger) (MetadataEnricher, error) {
+	if factory, exists := enricherFactories["kubernetes"]; exists {
+		return factory(config, logger)
+	}
+	logger.Info("No Kubernetes enricher factory registered - falling back to no-op enricher")
+	return nil, fmt.Errorf("no enricher factory registered for kubernetes platform")
+}
+
+// CreateEnricher creates a new enricher for the specified platform.
+// This is a simplified approach - for now, enricher creation is handled
+// at the manager level where platform-specific imports are available.
+func CreateEnricher(platform string, config interface{}, logger *slog.Logger) (MetadataEnricher, error) {
+	// For now, return an error indicating enrichers should be created elsewhere
+	return nil, fmt.Errorf("enricher creation for platform %s should be handled at manager level", platform)
+}
 
 // FailureLogger is an interface that can be used to log all failed
 // scrapes.
@@ -107,8 +156,8 @@ type scrapePool struct {
 	validationScheme model.ValidationScheme
 	escapingScheme   model.EscapingScheme
 
-	// Namespace enricher for adding namespace annotations to metrics
-	enricher *NamespaceEnricher
+	// Metadata enricher for adding platform-specific metadata to metrics
+	enricher MetadataEnricher
 }
 
 type labelLimits struct {
@@ -136,7 +185,7 @@ type scrapeLoopOptions struct {
 	mrc               []*relabel.Config
 	cache             *scrapeCache
 	enableCompression bool
-	enricher          *NamespaceEnricher
+	enricher          MetadataEnricher
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -164,15 +213,17 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 		return nil, fmt.Errorf("invalid metric name escaping scheme, %w", err)
 	}
 
-	// Create namespace enricher if configured
-	var enricher *NamespaceEnricher
+	// Create metadata enricher if configured
+	var enricher MetadataEnricher = NewNoopEnricher()
 	if cfg.NamespaceEnrichment != nil && cfg.NamespaceEnrichment.Enabled {
-		// For now, we pass nil for the Kubernetes client - this will be set up later
-		// when we have access to the Kubernetes client in the scrape manager
-		enricher, err = NewNamespaceEnricher(cfg.NamespaceEnrichment, nil, logger.With("component", "namespace_enricher"))
-		if err != nil {
-			logger.Warn("Failed to create namespace enricher, continuing without it", "err", err)
-			enricher = nil
+		logger.Info("Creating Kubernetes namespace enricher")
+
+		// Use a simple factory function to avoid import cycles
+		if kubernetesEnricher, err := createKubernetesEnricher(cfg.NamespaceEnrichment, logger); err != nil {
+			logger.Warn("Failed to create Kubernetes namespace enricher, falling back to no-op", "error", err)
+		} else if kubernetesEnricher != nil {
+			enricher = kubernetesEnricher
+			logger.Info("Kubernetes namespace enricher created successfully")
 		}
 	}
 
@@ -286,35 +337,6 @@ func (sp *scrapePool) getScrapeFailureLogger() FailureLogger {
 	sp.scrapeFailureLoggerMtx.RLock()
 	defer sp.scrapeFailureLoggerMtx.RUnlock()
 	return sp.scrapeFailureLogger
-}
-
-// SetKubernetesClient sets the Kubernetes client for namespace enrichment.
-func (sp *scrapePool) SetKubernetesClient(client kubernetes.Interface) error {
-	// Check if namespace enrichment is configured for this scrape pool
-	if sp.config.NamespaceEnrichment == nil || !sp.config.NamespaceEnrichment.Enabled {
-		return nil // Nothing to do
-	}
-
-	// Create a new enricher with the Kubernetes client
-	enricher, err := NewNamespaceEnricher(sp.config.NamespaceEnrichment, client, sp.logger.With("component", "namespace_enricher"))
-	if err != nil {
-		return fmt.Errorf("failed to create namespace enricher with Kubernetes client: %w", err)
-	}
-
-	// Stop the old enricher if it exists
-	if sp.enricher != nil {
-		sp.enricher.Stop()
-	}
-
-	sp.enricher = enricher
-
-	// Start the enricher
-	ctx, cancel := context.WithCancel(context.Background())
-	_ = cancel // We'll manage this lifecycle properly later
-	sp.enricher.Start(ctx)
-
-	sp.logger.Info("Namespace enricher initialized with Kubernetes client")
-	return nil
 }
 
 // stop terminates all scrape loops and returns after they all terminated.
@@ -725,7 +747,7 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 	return mutateSampleLabelsWithEnricher(lset, target, honor, rc, nil)
 }
 
-func mutateSampleLabelsWithEnricher(lset labels.Labels, target *Target, honor bool, rc []*relabel.Config, enricher *NamespaceEnricher) labels.Labels {
+func mutateSampleLabelsWithEnricher(lset labels.Labels, target *Target, honor bool, rc []*relabel.Config, enricher MetadataEnricher) labels.Labels {
 	lb := labels.NewBuilder(lset)
 
 	if honor {
@@ -756,9 +778,9 @@ func mutateSampleLabelsWithEnricher(lset labels.Labels, target *Target, honor bo
 		res, _ = relabel.Process(res, rc...)
 	}
 
-	// Apply namespace enrichment after relabeling but before returning
+	// Apply metadata enrichment after relabeling but before returning
 	if enricher != nil {
-		res = enricher.EnrichWithNamespaceMetadata(res)
+		res = enricher.EnrichWithMetadata(res)
 	}
 
 	return res

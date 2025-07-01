@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package scrape
+package kubernetes
 
 import (
 	"context"
@@ -23,13 +23,43 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// NamespaceEnricher handles enriching metrics with namespace labels and annotations.
+// MetadataEnricher is a local interface to avoid import cycles.
+type MetadataEnricher interface {
+	EnrichWithMetadata(labels.Labels) labels.Labels
+	Start(context.Context)
+	Stop()
+}
+
+// ScrapeMetadataEnricherAdapter adapts the local MetadataEnricher to work with external packages
+type ScrapeMetadataEnricherAdapter struct {
+	enricher MetadataEnricher
+}
+
+func (s *ScrapeMetadataEnricherAdapter) EnrichWithMetadata(lset labels.Labels) labels.Labels {
+	return s.enricher.EnrichWithMetadata(lset)
+}
+
+func (s *ScrapeMetadataEnricherAdapter) Start(ctx context.Context) {
+	s.enricher.Start(ctx)
+}
+
+func (s *ScrapeMetadataEnricherAdapter) Stop() {
+	s.enricher.Stop()
+}
+
+// NewScrapeMetadataEnricherAdapter creates an adapter for external use
+func NewScrapeMetadataEnricherAdapter(enricher MetadataEnricher) *ScrapeMetadataEnricherAdapter {
+	return &ScrapeMetadataEnricherAdapter{enricher: enricher}
+}
+
+// NamespaceEnricher implements the MetadataEnricher interface for Kubernetes namespaces.
 type NamespaceEnricher struct {
 	config      *config.NamespaceEnrichmentConfig
 	cache       *NamespaceMetadataCache
@@ -51,7 +81,7 @@ type NamespaceMetadataCache struct {
 	stopCh     chan struct{}
 }
 
-// NewNamespaceEnricher creates a new namespace enricher.
+// NewNamespaceEnricher creates a new Kubernetes namespace enricher.
 func NewNamespaceEnricher(cfg *config.NamespaceEnrichmentConfig, client kubernetes.Interface, logger *slog.Logger) (*NamespaceEnricher, error) {
 	if cfg == nil || !cfg.Enabled {
 		return nil, nil
@@ -212,8 +242,8 @@ func (ne *NamespaceEnricher) Stop() {
 	ne.cache.Stop()
 }
 
-// EnrichWithNamespaceMetadata enriches labels with namespace labels and annotations.
-func (ne *NamespaceEnricher) EnrichWithNamespaceMetadata(lset labels.Labels) labels.Labels {
+// EnrichWithMetadata enriches labels with namespace labels and annotations.
+func (ne *NamespaceEnricher) EnrichWithMetadata(lset labels.Labels) labels.Labels {
 	if ne == nil || ne.config == nil || !ne.config.Enabled {
 		return lset
 	}
@@ -267,7 +297,55 @@ func sanitizeLabelName(name string) string {
 	return labelNameRegex.ReplaceAllString(name, "_")
 }
 
-// EnrichWithNamespaceAnnotations is maintained for backward compatibility.
-func (ne *NamespaceEnricher) EnrichWithNamespaceAnnotations(lset labels.Labels) labels.Labels {
-	return ne.EnrichWithNamespaceMetadata(lset)
+// KubernetesEnricherFactory implements enricher factory for Kubernetes.
+type KubernetesEnricherFactory struct{}
+
+// CreateEnricher creates a new Kubernetes namespace enricher.
+func (f *KubernetesEnricherFactory) CreateEnricher(cfg interface{}, logger *slog.Logger) (interface{}, error) {
+	namespaceCfg, ok := cfg.(*config.NamespaceEnrichmentConfig)
+	if !ok {
+		return nil, errors.New("invalid configuration type for Kubernetes enricher")
+	}
+
+	if namespaceCfg == nil || !namespaceCfg.Enabled {
+		return nil, nil
+	}
+
+	client, err := f.createKubernetesClient()
+	if err != nil {
+		return nil, err
+	}
+
+	enricher, err := NewNamespaceEnricher(namespaceCfg, client, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	if enricher == nil {
+		return nil, nil
+	}
+
+	// Return adapter that can be used by external packages
+	return NewScrapeMetadataEnricherAdapter(enricher), nil
+}
+
+// createKubernetesClient attempts to create a Kubernetes client if running in-cluster.
+func (f *KubernetesEnricherFactory) createKubernetesClient() (kubernetes.Interface, error) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	return kubernetes.NewForConfig(config)
+}
+
+// KubernetesEnricherFactoryFunc is the factory function for creating Kubernetes enrichers.
+// It matches the EnricherFactory signature from the scrape package.
+func KubernetesEnricherFactoryFunc(cfg *config.NamespaceEnrichmentConfig, logger *slog.Logger) (interface{}, error) {
+	if cfg == nil || !cfg.Enabled {
+		return nil, nil
+	}
+
+	factory := &KubernetesEnricherFactory{}
+	return factory.CreateEnricher(cfg, logger)
 }

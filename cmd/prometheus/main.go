@@ -58,6 +58,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -152,6 +153,26 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+
+	// Register Kubernetes enricher factory for namespace enrichment at application level
+	// This respects Prometheus architectural separation of platform-specific functionality
+	scrape.RegisterEnricherFactory("kubernetes", func(cfg *config.NamespaceEnrichmentConfig, logger *slog.Logger) (scrape.MetadataEnricher, error) {
+		factory := &kubernetes.KubernetesEnricherFactory{}
+		enricherInterface, err := factory.CreateEnricher(cfg, logger)
+		if err != nil {
+			return nil, err
+		}
+		if enricherInterface == nil {
+			return nil, nil
+		}
+		// Cast the interface{} to scrape.MetadataEnricher
+		if enricher, ok := enricherInterface.(scrape.MetadataEnricher); ok {
+			// Start the enricher with background context
+			enricher.Start(context.Background())
+			return enricher, nil
+		}
+		return nil, fmt.Errorf("kubernetes enricher does not implement scrape.MetadataEnricher interface")
+	})
 }
 
 // serverOnlyFlag creates server-only kingpin flag.
