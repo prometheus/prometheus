@@ -65,15 +65,15 @@ func TestByteSize(t *testing.T) {
 	}{
 		{
 			lbls:     FromStrings("__name__", "foo"),
-			expected: 4,
+			expected: 20,
 		},
 		{
 			lbls:     FromStrings("__name__", "foo", "pod", "bar"),
-			expected: 8,
+			expected: 24,
 		},
 		{
 			lbls:     FromStrings("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
-			expected: 32,
+			expected: 48,
 		},
 	} {
 		require.Equal(t, testCase.expected, testCase.lbls.ByteSize())
