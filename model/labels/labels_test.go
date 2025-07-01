@@ -26,37 +26,31 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+var (
+	s254 = strings.Repeat("x", 254) // Edge cases for stringlabels encoding.
+	s255 = strings.Repeat("x", 255)
+)
+
+var testCaseLabels = []Labels{
+	FromStrings("t1", "t1", "t2", "t2"),
+	{},
+	FromStrings("service.name", "t1", "whatever\\whatever", "t2"),
+	FromStrings("aaa", "111", "xx", s254),
+	FromStrings("aaa", "111", "xx", s255),
+}
+
 func TestLabels_String(t *testing.T) {
-	s254 := strings.Repeat("x", 254) // Edge cases for stringlabels encoding.
-	s255 := strings.Repeat("x", 255)
-	cases := []struct {
-		labels   Labels
-		expected string
-	}{
-		{
-			labels:   FromStrings("t1", "t1", "t2", "t2"),
-			expected: "{t1=\"t1\", t2=\"t2\"}",
-		},
-		{
-			labels:   Labels{},
-			expected: "{}",
-		},
-		{
-			labels:   FromStrings("service.name", "t1", "whatever\\whatever", "t2"),
-			expected: `{"service.name"="t1", "whatever\\whatever"="t2"}`,
-		},
-		{
-			labels:   FromStrings("aaa", "111", "xx", s254),
-			expected: `{aaa="111", xx="` + s254 + `"}`,
-		},
-		{
-			labels:   FromStrings("aaa", "111", "xx", s255),
-			expected: `{aaa="111", xx="` + s255 + `"}`,
-		},
+	expected := []string{ // Values must line up with testCaseLabels.
+		"{t1=\"t1\", t2=\"t2\"}",
+		"{}",
+		`{"service.name"="t1", "whatever\\whatever"="t2"}`,
+		`{aaa="111", xx="` + s254 + `"}`,
+		`{aaa="111", xx="` + s255 + `"}`,
 	}
-	for _, c := range cases {
-		str := c.labels.String()
-		require.Equal(t, c.expected, str)
+	require.Equal(t, len(testCaseLabels), len(expected))
+	for i, c := range expected {
+		str := testCaseLabels[i].String()
+		require.Equal(t, c, str)
 	}
 }
 
