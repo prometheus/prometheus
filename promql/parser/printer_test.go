@@ -200,6 +200,10 @@ func TestExprString(t *testing.T) {
 			out: "foo offset (5 * 2)",
 		},
 		{
+			in:  "foo offset +min(10s, 20s)",
+			out: "foo offset min(10s, 20s)",
+		},
+		{
 			in: "foo offset -min(10s, 20s)",
 		},
 		{
