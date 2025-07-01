@@ -75,7 +75,8 @@ corresponding element from the output vector, flagged by an info-level
 annotation.
 
 **In any arithmetic binary operation involving vectors**, the metric name is
-dropped unless it is explicitly mentioned in `on`.
+dropped. This occurs even if `__name__` is explicitly mentioned in `on` 
+(see https://github.com/prometheus/prometheus/issues/16631 for further discussion).
 
 ### Trigonometric binary operators
 
