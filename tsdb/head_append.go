@@ -1552,7 +1552,7 @@ type chunkOpts struct {
 // isolation for this append.)
 // Series lock must be held when calling.
 func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncXOR, o)
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, value.IsStaleNaN(v), chunkenc.EncXOR, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1583,7 +1583,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 	prevApp, _ := s.app.(*chunkenc.HistogramAppender)
 
-	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.EncHistogram, o)
+	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, value.IsStaleNaN(h.Sum), chunkenc.EncHistogram, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1640,7 +1640,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 	prevApp, _ := s.app.(*chunkenc.FloatHistogramAppender)
 
-	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.EncFloatHistogram, o)
+	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, value.IsStaleNaN(fh.Sum), chunkenc.EncFloatHistogram, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1689,7 +1689,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 // number of samples they contain with a soft cap in bytes.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 // This should be called only when appending data.
-func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts) (c *memChunk, sampleInOrder, chunkCreated bool) {
+func (s *memSeries) appendPreprocessor(t int64, isStale bool, e chunkenc.Encoding, o chunkOpts) (c *memChunk, sampleInOrder, chunkCreated bool) {
 	// We target chunkenc.MaxBytesPerXORChunk as a hard for the size of an XOR chunk. We must determine whether to cut
 	// a new head chunk without knowing the size of the next sample, however, so we assume the next sample will be a
 	// maximally-sized sample (19 bytes).
@@ -1721,6 +1721,13 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 	if c.chunk.Encoding() != e {
 		// The chunk encoding expected by this append is different than the head chunk's
 		// encoding. So we cut a new chunk with the expected encoding.
+		c = s.cutNewHeadChunk(t, e, o.chunkRange)
+		chunkCreated = true
+	}
+
+	if isStale && !chunkCreated {
+		// This series has gone stale, we can save some memory and just flush its
+		// data to the disk.
 		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
 	}
@@ -1757,7 +1764,7 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 // cut based on their size in bytes.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 // This should be called only when appending data.
-func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts) (c *memChunk, sampleInOrder, chunkCreated bool) {
+func (s *memSeries) histogramsAppendPreprocessor(t int64, isStale bool, e chunkenc.Encoding, o chunkOpts) (c *memChunk, sampleInOrder, chunkCreated bool) {
 	c = s.headChunks
 
 	if c == nil {
@@ -1778,6 +1785,13 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 	if c.chunk.Encoding() != e {
 		// The chunk encoding expected by this append is different than the head chunk's
 		// encoding. So we cut a new chunk with the expected encoding.
+		c = s.cutNewHeadChunk(t, e, o.chunkRange)
+		chunkCreated = true
+	}
+
+	if isStale && !chunkCreated {
+		// This series has gone stale, we can save some memory and just flush its
+		// data to the disk.
 		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
 	}
