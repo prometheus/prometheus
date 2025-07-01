@@ -38,6 +38,7 @@ the original vector is multiplied by 2.
 
 For vector elements that are histogram samples, the behavior is the
 following:
+
 * For `*`, all bucket populations and the count and the sum of observations 
   are multiplied by the scalar.
 
@@ -132,7 +133,8 @@ Between two histogram samples, `==` and `!=` work as expected, but all other
 comparison binary operations are again invalid.
 
 **In any comparison binary operation involving vectors**, providing the `bool`
-modifier changes the behavior in the following ways: 
+modifier changes the behavior in the following ways:
+
 * Vector elements which find a match on the other side of the expression but for
   which the expression is false instead have the value `0` and vector elements
   that do find a match and for which the expression is true have the value `1`. 
@@ -142,6 +144,7 @@ modifier changes the behavior in the following ways:
 
 If the `bool` modifier is not provided, then the metric name from the left side
 is retained, with some exceptions:
+
 * If `on` is used, then the metric name is dropped.
 * If `group_right` is used, then the metric name from the right side is retained,
   to avoid collisions.
