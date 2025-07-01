@@ -2257,7 +2257,7 @@ yydefault:
 			yyVAL.node = &DurationExpr{
 				Op:       STEP,
 				StartPos: yyDollar[1].item.PositionRange().Start,
-				EndPos:   yyDollar[3].item.PositionRange().Start,
+				EndPos:   yyDollar[3].item.PositionRange().End,
 			}
 		}
 	case 270:
@@ -2266,7 +2266,7 @@ yydefault:
 			yyVAL.node = &DurationExpr{
 				Op:       yyDollar[1].item.Typ,
 				StartPos: yyDollar[1].item.PositionRange().Start,
-				EndPos:   yyDollar[6].item.PositionRange().Start,
+				EndPos:   yyDollar[6].item.PositionRange().End,
 				LHS:      yyDollar[3].node.(Expr),
 				RHS:      yyDollar[5].node.(Expr),
 			}

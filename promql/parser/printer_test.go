@@ -195,18 +195,38 @@ func TestExprString(t *testing.T) {
 		{
 			in: "foo offset -(step())",
 		},
+		{
+			in:  "foo offset +(5*2)",
+			out: "foo offset (5 * 2)",
+		},
+		{
+			in: "foo offset -min(10s, 20s)",
+		},
+		{
+			in:  "foo offset -min(10s, +max(step() ^ 2, 2))",
+			out: "foo offset -min(10s, max(step() ^ 2, 2))",
+		},
+		{
+			in:  "foo[200-min(-step()^+step(),1)]",
+			out: "foo[200 - min(-step() ^ step(), 1)]",
+		},
+		{
+			in: "foo[200 - min(step() + 10s, -max(step() ^ 2, 3))]",
+		},
 	}
 
 	for _, test := range inputs {
-		expr, err := ParseExpr(test.in)
-		require.NoError(t, err)
+		t.Run(test.in, func(t *testing.T) {
+			expr, err := ParseExpr(test.in)
+			require.NoError(t, err)
 
-		exp := test.in
-		if test.out != "" {
-			exp = test.out
-		}
+			exp := test.in
+			if test.out != "" {
+				exp = test.out
+			}
 
-		require.Equal(t, exp, expr.String())
+			require.Equal(t, exp, expr.String())
+		})
 	}
 }
 

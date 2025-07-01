@@ -4184,7 +4184,7 @@ var testExpr = []struct {
 			RangeExpr: &DurationExpr{
 				Op:       STEP,
 				StartPos: 4,
-				EndPos:   9,
+				EndPos:   10,
 			},
 			EndPos: 11,
 		},
@@ -4208,7 +4208,7 @@ var testExpr = []struct {
 				RHS: &DurationExpr{
 					Op:       STEP,
 					StartPos: 9,
-					EndPos:   18,
+					EndPos:   19,
 				},
 			},
 			EndPos: 22,
@@ -4230,7 +4230,7 @@ var testExpr = []struct {
 			RangeExpr: &DurationExpr{
 				Op:       STEP,
 				StartPos: 7,
-				EndPos:   16,
+				EndPos:   17,
 			},
 			EndPos: 20,
 		},
@@ -4251,7 +4251,7 @@ var testExpr = []struct {
 			RangeExpr: &DurationExpr{
 				Op:       SUB,
 				StartPos: 4,
-				RHS:      &DurationExpr{Op: STEP, StartPos: 5, EndPos: 10},
+				RHS:      &DurationExpr{Op: STEP, StartPos: 5, EndPos: 11},
 			},
 			EndPos: 12,
 		},
@@ -4310,7 +4310,7 @@ var testExpr = []struct {
 				LHS: &DurationExpr{
 					Op:       STEP,
 					StartPos: 8,
-					EndPos:   13,
+					EndPos:   14,
 				},
 				RHS: &NumberLiteral{
 					Val:      5,
@@ -4321,7 +4321,7 @@ var testExpr = []struct {
 					},
 				},
 				StartPos: 4,
-				EndPos:   17,
+				EndPos:   18,
 			},
 			EndPos: 19,
 		},
@@ -4342,7 +4342,7 @@ var testExpr = []struct {
 				LHS: &DurationExpr{
 					Op:       STEP,
 					StartPos: 15,
-					EndPos:   20,
+					EndPos:   21,
 				},
 				RHS: &NumberLiteral{
 					Val:      5,
@@ -4385,7 +4385,7 @@ var testExpr = []struct {
 						LHS: &DurationExpr{
 							Op:       STEP,
 							StartPos: 19,
-							EndPos:   24,
+							EndPos:   25,
 						},
 						RHS: &NumberLiteral{
 							Val:      8,

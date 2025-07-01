@@ -1231,7 +1231,7 @@ duration_expr   : number_duration_literal
                             $$ = &DurationExpr{
                                 Op:       STEP,
                                 StartPos: $1.PositionRange().Start,
-                                EndPos:   $3.PositionRange().Start,
+                                EndPos:   $3.PositionRange().End,
                             }
                         }
                 | min_max LEFT_PAREN duration_expr COMMA duration_expr RIGHT_PAREN
@@ -1239,7 +1239,7 @@ duration_expr   : number_duration_literal
                             $$ = &DurationExpr{
                                 Op:       $1.Typ,
                                 StartPos: $1.PositionRange().Start,
-                                EndPos:   $6.PositionRange().Start,
+                                EndPos:   $6.PositionRange().End,
                                 LHS: $3.(Expr),
                                 RHS: $5.(Expr),
                             }

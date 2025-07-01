@@ -215,6 +215,12 @@ eval range from 50s to 60s step 5s metric1_total offset -(min(step(), 1s))+8000
 eval range from 50s to 60s step 5s metric1_total offset -min(step(), 1s)^0
 	{} 1 1 1
 
+eval range from 50s to 60s step 5s metric1_total offset +min(step(), 1s)^0
+	{} 1 1 1
+
+eval range from 50s to 60s step 5s metric1_total offset min(step(), 1s)^0
+	{} 1 1 1
+
 eval range from 50s to 60s step 5s metric1_total offset max(3s,min(step(), 1s))+8000
 	{} 8047 8052 8057
 
