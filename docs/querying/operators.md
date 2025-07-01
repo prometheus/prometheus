@@ -46,8 +46,8 @@ following:
   by the scalar on the right hand side (RHS). All bucket populations and the count 
   and the sum of observations are then divided by the scalar. A division by zero
   results in a histogram with no regular buckets and the zero bucket population 
-  and the count and sum of observations all set to +Inf, -Inf, or NaN, depending 
-  on their values in the input histogram (positive, negative, or zero/NaN, respectively). 
+  and the count and sum of observations all set to `+Inf`, `-Inf`, or `NaN`, depending 
+  on their values in the input histogram (positive, negative, or zero/`NaN`, respectively). 
 
 * For `/` with a scalar on the LHS and a histogram sample on the RHS, and similarly for all
   other arithmetic binary operators in any combination of a scalar and a
