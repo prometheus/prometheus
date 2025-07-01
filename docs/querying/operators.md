@@ -61,7 +61,7 @@ the RHS vector. The result is propagated into the result vector with the
 grouping labels becoming the output label set. Entries for which no matching
 entry in the right-hand vector can be found are not part of the result.
 
-If two float samples are matched, the behavior is obvious. 
+If two float samples are matched, the arithmetic operator is applied to the two input values.
 
 If a float sample is matched with a histogram sample, the behavior follows the same
 logic as between a scalar and a histogram sample (see above), i.e. `*` and `/` 
