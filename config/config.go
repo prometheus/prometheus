@@ -172,6 +172,8 @@ var (
 		ScrapeProtocols:                DefaultScrapeProtocols,
 		ConvertClassicHistogramsToNHCB: false,
 		AlwaysScrapeClassicHistograms:  false,
+		MetricNameValidationScheme:     UTF8ValidationConfig,
+		MetricNameEscapingScheme:       model.AllowUTF8,
 	}
 
 	DefaultRuntimeConfig = RuntimeConfig{
@@ -179,7 +181,10 @@ var (
 		GoGC: getGoGC(),
 	}
 
-	// DefaultScrapeConfig is the default scrape configuration.
+	// DefaultScrapeConfig is the default scrape configuration. Users of this
+	// default MUST call Validate() on the config after creation, even if it's
+	// used unaltered, to check for parameter correctness and fill out default
+	// values that can't be set inline in this declaration.
 	DefaultScrapeConfig = ScrapeConfig{
 		// ScrapeTimeout, ScrapeInterval, ScrapeProtocols, AlwaysScrapeClassicHistograms, and ConvertClassicHistogramsToNHCB default to the configured globals.
 		MetricsPath:       "/metrics",
@@ -481,10 +486,10 @@ type GlobalConfig struct {
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 	// Allow UTF8 Metric and Label Names. Can be blank in config files but must
-	// have a value if a ScrepeConfig is created programmatically.
+	// have a value if a ScrapeConfig is created programmatically.
 	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
 	// Metric name escaping mode to request through content negotiation. Can be
-	// blank in config files but must have a value if a ScrepeConfig is created
+	// blank in config files but must have a value if a ScrapeConfig is created
 	// programmatically.
 	MetricNameEscapingScheme string `yaml:"metric_name_escaping_scheme,omitempty"`
 	// Whether to convert all scraped classic histograms into native histograms with custom buckets.
@@ -749,10 +754,10 @@ type ScrapeConfig struct {
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 	// Allow UTF8 Metric and Label Names. Can be blank in config files but must
-	// have a value if a ScrepeConfig is created programmatically.
+	// have a value if a ScrapeConfig is created programmatically.
 	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
 	// Metric name escaping mode to request through content negotiation. Can be
-	// blank in config files but must have a value if a ScrepeConfig is created
+	// blank in config files but must have a value if a ScrapeConfig is created
 	// programmatically.
 	MetricNameEscapingScheme string `yaml:"metric_name_escaping_scheme,omitempty"`
 
@@ -902,7 +907,7 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		}
 	case model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues:
 	default:
-		return fmt.Errorf("unknown global name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got %s", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, globalConfig.MetricNameValidationScheme)
+		return fmt.Errorf("unknown global name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got %q", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, globalConfig.MetricNameEscapingScheme)
 	}
 
 	if c.MetricNameEscapingScheme == "" {
@@ -916,7 +921,7 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		}
 	case model.EscapeUnderscores, model.EscapeDots, model.EscapeValues:
 	default:
-		return fmt.Errorf("unknown scrape config name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got %s", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, c.MetricNameValidationScheme)
+		return fmt.Errorf("unknown scrape config name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got %q", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, c.MetricNameEscapingScheme)
 	}
 
 	if c.ConvertClassicHistogramsToNHCB == nil {
@@ -940,6 +945,12 @@ func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 // ToValidationScheme returns the validation scheme for the given string config value.
 func ToValidationScheme(s string) (validationScheme model.ValidationScheme, err error) {
 	switch s {
+	case "":
+		// This is a workaround for third party exporters that don't set the validation scheme.
+		if DefaultGlobalConfig.MetricNameValidationScheme == "" {
+			return model.UTF8Validation, errors.New("global metric name validation scheme is not set")
+		}
+		return ToValidationScheme(DefaultGlobalConfig.MetricNameValidationScheme)
 	case UTF8ValidationConfig:
 		validationScheme = model.UTF8Validation
 	case LegacyValidationConfig:
@@ -949,6 +960,21 @@ func ToValidationScheme(s string) (validationScheme model.ValidationScheme, err 
 	}
 
 	return validationScheme, nil
+}
+
+// ToEscapingScheme wraps the equivalent common library function with the
+// desired default behavior based on the given validation scheme. This is a
+// workaround for third party exporters that don't set the escaping scheme.
+func ToEscapingScheme(s string, v model.ValidationScheme) (model.EscapingScheme, error) {
+	if s == "" {
+		switch v {
+		case model.UTF8Validation:
+			return model.NoEscaping, nil
+		case model.LegacyValidation:
+			return model.UnderscoreEscaping, nil
+		}
+	}
+	return model.ToEscapingScheme(s)
 }
 
 // ConvertClassicHistogramsToNHCBEnabled returns whether to convert classic histograms to NHCB.
@@ -1562,6 +1588,9 @@ type OTLPConfig struct {
 	TranslationStrategy               translationStrategyOption `yaml:"translation_strategy,omitempty"`
 	KeepIdentifyingResourceAttributes bool                      `yaml:"keep_identifying_resource_attributes,omitempty"`
 	ConvertHistogramsToNHCB           bool                      `yaml:"convert_histograms_to_nhcb,omitempty"`
+	// PromoteScopeMetadata controls whether to promote OTel scope metadata (i.e. name, version, schema URL, and attributes) to metric labels.
+	// As per OTel spec, the aforementioned scope metadata should be identifying, i.e. made into metric labels.
+	PromoteScopeMetadata bool `yaml:"promote_scope_metadata,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

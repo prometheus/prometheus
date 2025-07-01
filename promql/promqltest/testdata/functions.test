@@ -886,6 +886,14 @@ load 10s
   metric12 1 2 3 {{schema:0 sum:1 count:1}} {{schema:0 sum:3 count:3}}
   metric13 {{schema:0 sum:1 count:1}}x5
 
+# No samples in the range.
+eval instant at 55s avg_over_time(metric[10s])
+
+# One sample in the range.
+eval instant at 55s avg_over_time(metric[20s])
+  {} 5
+
+# All samples in the range.
 eval instant at 55s avg_over_time(metric[1m])
   {} 3
 
@@ -1010,10 +1018,8 @@ load 10s
 eval instant at 1m sum_over_time(metric[2m])
   {} 2
 
-# This test fails on darwin/arm64.
-# Deactivated until issue #16714 is fixed.
-# eval instant at 1m avg_over_time(metric[2m])
-#  {} 0.5
+eval instant at 1m avg_over_time(metric[2m])
+  {} 0.5
 
 # More tests for extreme values.
 clear
@@ -1060,11 +1066,6 @@ eval instant at 55s avg_over_time(metric8[1m])
 eval instant at 55s avg_over_time(metric9[1m])
   {} 3.225714285714286e+219
 
-# Interestingly, before PR #16569, this test failed with a result of
-# 3.225714285714286e+219, so the incremental calculation combined with
-# Kahan summation (in the improved way as introduced by PR #16569)
-# seems to be more accurate than the simple mean calculation with
-# Kahan summation.
 eval instant at 55s avg_over_time(metric10[1m])
   {} 2.5088888888888888e+219
 
@@ -1075,19 +1076,52 @@ eval instant at 55s avg_over_time(metric10[1m])
 load 5s
   metric11 -2.258E+220 -1.78264E+219 0.76342771 1.9592258 2.3757689E+217 -2.3757689E+217 2.258E+220 7.69805412 1.78264E+219 -458.90154
 
-# Thus, the result here is very far off! With the different orders of
-# magnitudes involved, even Kahan summation cannot cope.
-# Interestingly, with the simple mean calculation (still including
-# Kahan summation) prior to PR #16569, the result is 0. That's
-# arguably more accurate, but it still shows that Kahan summation
-# doesn't work well in this situation. To solve this properly, we
-# needed to do something like sorting the values (which is hard given
-# how the PromQL engine works). The question is how practically
-# relevant this scenario is.
-# eval instant at 55s avg_over_time(metric11[1m])
-#   {} -44.848083237000004 <- This is the correct value.
-#   {} -1.881783551706252e+203 <- This is the result on linux/amd64.
-#   {} 2.303079268822384e+202 <- This is the result on darwin/arm64.
+# Even Kahan summation cannot cope with values from a number of different
+# orders of magnitude and comes up with a result of zero here.
+# (Note that incremental mean calculation comes up with different but still
+# wrong values that also depend on the used hardware architecture.)
+eval instant at 55s avg_over_time(metric11[1m])
+  {} 0
+#   {} -44.848083237000004 <- This would be the correct value.
+
+# Demonstrate robustness of direct mean calculation vs. incremental mean calculation.
+# The tests below are prone to small inaccuracies with incremental mean calculation.
+# The exact number of aggregated values that trigger an inaccuracy depends on the
+# hardware.
+# See also discussion in https://github.com/prometheus/prometheus/issues/16714
+clear
+load 10s
+  foo 52+0x100
+
+eval instant at 10m avg_over_time(foo[100s]) - 52
+  {} 0
+
+eval instant at 10m avg_over_time(foo[110s]) - 52
+  {} 0
+
+eval instant at 10m avg_over_time(foo[120s]) - 52
+  {} 0
+
+eval instant at 10m avg_over_time(foo[130s]) - 52
+  {} 0
+
+# The following tests do not utilize the tolerance built into the
+# testing framework but rely on the exact equality implemented in
+# PromQL. They currently pass, but we should keep in mind that this is
+# not a hard requirement, and generally it is a bad idea in practice
+# to rely on exact equality like this in alerting rules etc.
+
+eval instant at 10m avg_over_time(foo[100s]) == 52
+  {} 52
+
+eval instant at 10m avg_over_time(foo[110s]) == 52
+  {} 52
+
+eval instant at 10m avg_over_time(foo[120s]) == 52
+  {} 52
+
+eval instant at 10m avg_over_time(foo[130s]) == 52
+  {} 52
 
 # Test per-series aggregation on dense samples.
 clear
@@ -1201,12 +1235,20 @@ eval instant at 90s ts_of_max_over_time(metric[90s])
 clear
 load 10s53ms
 	metric 1 2 3 _ _
+	metric_histogram{type="only_histogram"} {{schema:1 sum:2 count:3}}x4
+	metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} 1
 
 eval instant at 90s ts_of_last_over_time(metric[90s])
 	{} 20.106
 
 eval instant at 95s ts_of_last_over_time(metric[90s])
 	{} 20.106
+
+eval instant at 95s ts_of_last_over_time(metric_histogram{type="only_histogram"}[90s])
+	{type="only_histogram"} 40.212
+
+eval instant at 95s ts_of_last_over_time(metric_histogram{type="mix"}[90s])
+	{type="mix"} 50.265
 
 # Tests for quantile_over_time
 clear
