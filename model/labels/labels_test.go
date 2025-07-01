@@ -80,7 +80,7 @@ func BenchmarkSize(b *testing.B) {
 	lb := New(benchmarkLabels...)
 	b.Run("SizeOfLabels", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			var total uint64 = 0
+			var total uint64
 			lb.Range(func(l Label) {
 				total += SizeOfLabels(l.Name, l.Value, 1)
 			})
