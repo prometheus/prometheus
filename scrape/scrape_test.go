@@ -84,7 +84,7 @@ func TestNewScrapePool(t *testing.T) {
 	var (
 		app = &nopAppendable{}
 		cfg = &config.ScrapeConfig{
-			MetricNameValidationScheme: config.UTF8ValidationConfig,
+			MetricNameValidationScheme: model.UTF8Validation,
 			MetricNameEscapingScheme:   model.AllowUTF8,
 		}
 		sp, err = newScrapePool(cfg, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
@@ -327,7 +327,7 @@ func TestDroppedTargetsList(t *testing.T) {
 		cfg = &config.ScrapeConfig{
 			JobName:                    "dropMe",
 			ScrapeInterval:             model.Duration(1),
-			MetricNameValidationScheme: config.UTF8ValidationConfig,
+			MetricNameValidationScheme: model.UTF8Validation,
 			MetricNameEscapingScheme:   model.AllowUTF8,
 			RelabelConfigs: []*relabel.Config{
 				{
@@ -374,7 +374,7 @@ func TestDiscoveredLabelsUpdate(t *testing.T) {
 	sp.config = &config.ScrapeConfig{
 		ScrapeInterval:             model.Duration(1),
 		ScrapeTimeout:              model.Duration(1),
-		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameValidationScheme: model.UTF8Validation,
 		MetricNameEscapingScheme:   model.AllowUTF8,
 	}
 	sp.activeTargets = make(map[uint64]*Target)
@@ -506,7 +506,7 @@ func TestScrapePoolReload(t *testing.T) {
 	reloadCfg := &config.ScrapeConfig{
 		ScrapeInterval:             model.Duration(3 * time.Second),
 		ScrapeTimeout:              model.Duration(2 * time.Second),
-		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameValidationScheme: model.UTF8Validation,
 		MetricNameEscapingScheme:   model.AllowUTF8,
 	}
 	// On starting to run, new loops created on reload check whether their preceding
@@ -600,7 +600,7 @@ func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
 	reloadCfg := &config.ScrapeConfig{
 		ScrapeInterval:             model.Duration(3 * time.Second),
 		ScrapeTimeout:              model.Duration(2 * time.Second),
-		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameValidationScheme: model.UTF8Validation,
 		MetricNameEscapingScheme:   model.AllowUTF8,
 	}
 	newLoop := func(opts scrapeLoopOptions) loop {
@@ -701,7 +701,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 		require.NoError(t, sp.reload(&config.ScrapeConfig{
 			ScrapeInterval:             model.Duration(3 * time.Second),
 			ScrapeTimeout:              model.Duration(2 * time.Second),
-			MetricNameValidationScheme: config.UTF8ValidationConfig,
+			MetricNameValidationScheme: model.UTF8Validation,
 			MetricNameEscapingScheme:   model.AllowUTF8,
 			TargetLimit:                l,
 		}))
@@ -791,7 +791,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 
 func TestScrapePoolAppender(t *testing.T) {
 	cfg := &config.ScrapeConfig{
-		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameValidationScheme: model.UTF8Validation,
 		MetricNameEscapingScheme:   model.AllowUTF8,
 	}
 	app := &nopAppendable{}
@@ -869,7 +869,7 @@ func TestScrapePoolRaces(t *testing.T) {
 		return &config.ScrapeConfig{
 			ScrapeInterval:             interval,
 			ScrapeTimeout:              timeout,
-			MetricNameValidationScheme: config.UTF8ValidationConfig,
+			MetricNameValidationScheme: model.UTF8Validation,
 			MetricNameEscapingScheme:   model.AllowUTF8,
 		}
 	}
@@ -943,7 +943,7 @@ func TestScrapePoolScrapeLoopsStarted(t *testing.T) {
 	require.NoError(t, sp.reload(&config.ScrapeConfig{
 		ScrapeInterval:             model.Duration(3 * time.Second),
 		ScrapeTimeout:              model.Duration(2 * time.Second),
-		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameValidationScheme: model.UTF8Validation,
 		MetricNameEscapingScheme:   model.AllowUTF8,
 	}))
 	sp.Sync(tgs)
@@ -3621,14 +3621,14 @@ func TestReuseScrapeCache(t *testing.T) {
 			ScrapeTimeout:              model.Duration(5 * time.Second),
 			ScrapeInterval:             model.Duration(5 * time.Second),
 			MetricsPath:                "/metrics",
-			MetricNameValidationScheme: config.UTF8ValidationConfig,
+			MetricNameValidationScheme: model.UTF8Validation,
 			MetricNameEscapingScheme:   model.AllowUTF8,
 		}
 		sp, _ = newScrapePool(cfg, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 		t1    = &Target{
 			labels: labels.FromStrings("labelNew", "nameNew", "labelNew1", "nameNew1", "labelNew2", "nameNew2"),
 			scrapeConfig: &config.ScrapeConfig{
-				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameValidationScheme: model.UTF8Validation,
 				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		}
@@ -3648,7 +3648,7 @@ func TestReuseScrapeCache(t *testing.T) {
 				ScrapeInterval:             model.Duration(5 * time.Second),
 				ScrapeTimeout:              model.Duration(5 * time.Second),
 				MetricsPath:                "/metrics",
-				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameValidationScheme: model.UTF8Validation,
 				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
@@ -3659,7 +3659,7 @@ func TestReuseScrapeCache(t *testing.T) {
 				ScrapeInterval:             model.Duration(5 * time.Second),
 				ScrapeTimeout:              model.Duration(15 * time.Second),
 				MetricsPath:                "/metrics2",
-				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameValidationScheme: model.UTF8Validation,
 				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
@@ -3671,7 +3671,7 @@ func TestReuseScrapeCache(t *testing.T) {
 				ScrapeInterval:             model.Duration(5 * time.Second),
 				ScrapeTimeout:              model.Duration(15 * time.Second),
 				MetricsPath:                "/metrics2",
-				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameValidationScheme: model.UTF8Validation,
 				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
@@ -3684,7 +3684,7 @@ func TestReuseScrapeCache(t *testing.T) {
 				ScrapeInterval:             model.Duration(5 * time.Second),
 				ScrapeTimeout:              model.Duration(15 * time.Second),
 				MetricsPath:                "/metrics2",
-				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameValidationScheme: model.UTF8Validation,
 				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
@@ -3700,7 +3700,7 @@ func TestReuseScrapeCache(t *testing.T) {
 				ScrapeInterval:             model.Duration(5 * time.Second),
 				ScrapeTimeout:              model.Duration(15 * time.Second),
 				MetricsPath:                "/metrics2",
-				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameValidationScheme: model.UTF8Validation,
 				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
@@ -3714,7 +3714,7 @@ func TestReuseScrapeCache(t *testing.T) {
 				ScrapeInterval:             model.Duration(5 * time.Second),
 				ScrapeTimeout:              model.Duration(15 * time.Second),
 				MetricsPath:                "/metrics2",
-				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameValidationScheme: model.UTF8Validation,
 				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
@@ -3726,7 +3726,7 @@ func TestReuseScrapeCache(t *testing.T) {
 				ScrapeTimeout:              model.Duration(15 * time.Second),
 				MetricsPath:                "/metrics",
 				LabelLimit:                 1,
-				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameValidationScheme: model.UTF8Validation,
 				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
@@ -3738,7 +3738,7 @@ func TestReuseScrapeCache(t *testing.T) {
 				ScrapeTimeout:              model.Duration(15 * time.Second),
 				MetricsPath:                "/metrics",
 				LabelLimit:                 15,
-				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameValidationScheme: model.UTF8Validation,
 				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
@@ -3751,7 +3751,7 @@ func TestReuseScrapeCache(t *testing.T) {
 				MetricsPath:                "/metrics",
 				LabelLimit:                 15,
 				LabelNameLengthLimit:       5,
-				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameValidationScheme: model.UTF8Validation,
 				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
@@ -3765,7 +3765,7 @@ func TestReuseScrapeCache(t *testing.T) {
 				LabelLimit:                 15,
 				LabelNameLengthLimit:       5,
 				LabelValueLengthLimit:      7,
-				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameValidationScheme: model.UTF8Validation,
 				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
@@ -3830,7 +3830,7 @@ func TestReuseCacheRace(t *testing.T) {
 			ScrapeTimeout:              model.Duration(5 * time.Second),
 			ScrapeInterval:             model.Duration(5 * time.Second),
 			MetricsPath:                "/metrics",
-			MetricNameValidationScheme: config.UTF8ValidationConfig,
+			MetricNameValidationScheme: model.UTF8Validation,
 			MetricNameEscapingScheme:   model.AllowUTF8,
 		}
 		buffers = pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
@@ -3854,7 +3854,7 @@ func TestReuseCacheRace(t *testing.T) {
 			ScrapeInterval:             model.Duration(1 * time.Millisecond),
 			MetricsPath:                "/metrics",
 			SampleLimit:                i,
-			MetricNameValidationScheme: config.UTF8ValidationConfig,
+			MetricNameValidationScheme: model.UTF8Validation,
 			MetricNameEscapingScheme:   model.AllowUTF8,
 		})
 	}
@@ -3932,7 +3932,7 @@ func TestScrapeReportLimit(t *testing.T) {
 		Scheme:                     "http",
 		ScrapeInterval:             model.Duration(100 * time.Millisecond),
 		ScrapeTimeout:              model.Duration(100 * time.Millisecond),
-		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameValidationScheme: model.UTF8Validation,
 		MetricNameEscapingScheme:   model.AllowUTF8,
 	}
 
@@ -3988,7 +3988,7 @@ func TestScrapeUTF8(t *testing.T) {
 		Scheme:                     "http",
 		ScrapeInterval:             model.Duration(100 * time.Millisecond),
 		ScrapeTimeout:              model.Duration(100 * time.Millisecond),
-		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameValidationScheme: model.UTF8Validation,
 		MetricNameEscapingScheme:   model.AllowUTF8,
 	}
 	ts, scrapedTwice := newScrapableServer("{\"with.dots\"} 42\n")
@@ -4124,7 +4124,7 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 	config := &config.ScrapeConfig{
 		ScrapeInterval:             interval,
 		ScrapeTimeout:              timeout,
-		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameValidationScheme: model.UTF8Validation,
 		MetricNameEscapingScheme:   model.AllowUTF8,
 		RelabelConfigs: []*relabel.Config{
 			{
@@ -4186,7 +4186,7 @@ func TestLeQuantileReLabel(t *testing.T) {
 		Scheme:                     "http",
 		ScrapeInterval:             model.Duration(100 * time.Millisecond),
 		ScrapeTimeout:              model.Duration(100 * time.Millisecond),
-		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameValidationScheme: model.UTF8Validation,
 		MetricNameEscapingScheme:   model.AllowUTF8,
 	}
 
@@ -4698,7 +4698,7 @@ metric: <
 					ScrapeTimeout:                  model.Duration(25 * time.Millisecond),
 					AlwaysScrapeClassicHistograms:  tc.alwaysScrapeClassicHistograms,
 					ConvertClassicHistogramsToNHCB: tc.convertClassicHistToNHCB,
-					MetricNameValidationScheme:     config.UTF8ValidationConfig,
+					MetricNameValidationScheme:     model.UTF8Validation,
 					MetricNameEscapingScheme:       model.AllowUTF8,
 				}
 
@@ -4826,7 +4826,7 @@ func TestTypeUnitReLabel(t *testing.T) {
 		Scheme:                     "http",
 		ScrapeInterval:             model.Duration(100 * time.Millisecond),
 		ScrapeTimeout:              model.Duration(100 * time.Millisecond),
-		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameValidationScheme: model.UTF8Validation,
 		MetricNameEscapingScheme:   model.AllowUTF8,
 	}
 
@@ -4967,7 +4967,7 @@ func TestScrapeLoopCompression(t *testing.T) {
 				ScrapeInterval:             model.Duration(100 * time.Millisecond),
 				ScrapeTimeout:              model.Duration(100 * time.Millisecond),
 				EnableCompression:          tc.enableCompression,
-				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameValidationScheme: model.UTF8Validation,
 				MetricNameEscapingScheme:   model.AllowUTF8,
 			}
 
@@ -5123,7 +5123,7 @@ func BenchmarkTargetScraperGzip(b *testing.B) {
 						model.AddressLabel, serverURL.Host,
 					),
 					scrapeConfig: &config.ScrapeConfig{
-						MetricNameValidationScheme: config.UTF8ValidationConfig,
+						MetricNameValidationScheme: model.UTF8Validation,
 						MetricNameEscapingScheme:   model.AllowUTF8,
 						Params:                     url.Values{"count": []string{strconv.Itoa(scenario.metricsCount)}},
 					},
@@ -5379,7 +5379,7 @@ func TestTargetScrapeConfigWithLabels(t *testing.T) {
 				JobName:                    jobName,
 				Scheme:                     httpScheme,
 				MetricsPath:                expectedPath,
-				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameValidationScheme: model.UTF8Validation,
 				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 			targets: []*targetgroup.Group{
@@ -5398,7 +5398,7 @@ func TestTargetScrapeConfigWithLabels(t *testing.T) {
 				JobName:                    jobName,
 				Scheme:                     httpScheme,
 				MetricsPath:                secondPath,
-				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameValidationScheme: model.UTF8Validation,
 				MetricNameEscapingScheme:   model.AllowUTF8,
 				Params:                     url.Values{"param": []string{secondParam}},
 			},
@@ -5423,7 +5423,7 @@ func TestTargetScrapeConfigWithLabels(t *testing.T) {
 				JobName:                    jobName,
 				Scheme:                     httpScheme,
 				MetricsPath:                secondPath,
-				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameValidationScheme: model.UTF8Validation,
 				MetricNameEscapingScheme:   model.AllowUTF8,
 				Params:                     url.Values{"param": []string{secondParam}},
 				RelabelConfigs: []*relabel.Config{
@@ -5504,7 +5504,7 @@ func TestScrapePoolScrapeAfterReload(t *testing.T) {
 		Scheme:                     "http",
 		ScrapeInterval:             model.Duration(100 * time.Millisecond),
 		ScrapeTimeout:              model.Duration(100 * time.Millisecond),
-		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameValidationScheme: model.UTF8Validation,
 		MetricNameEscapingScheme:   model.AllowUTF8,
 		EnableCompression:          false,
 		ServiceDiscoveryConfigs: discovery.Configs{

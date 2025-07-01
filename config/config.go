@@ -68,11 +68,6 @@ var (
 	}
 )
 
-const (
-	LegacyValidationConfig = "legacy"
-	UTF8ValidationConfig   = "utf8"
-)
-
 // Load parses the YAML input s into a Config.
 func Load(s string, logger *slog.Logger) (*Config, error) {
 	cfg := &Config{}
@@ -112,7 +107,7 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	case UnderscoreEscapingWithSuffixes:
 	case "":
 	case NoTranslation, NoUTF8EscapingWithSuffixes:
-		if cfg.GlobalConfig.MetricNameValidationScheme == LegacyValidationConfig {
+		if cfg.GlobalConfig.MetricNameValidationScheme == model.LegacyValidation {
 			return nil, fmt.Errorf("OTLP translation strategy %q is not allowed when UTF8 is disabled", cfg.OTLPConfig.TranslationStrategy)
 		}
 	default:
@@ -172,7 +167,7 @@ var (
 		ScrapeProtocols:                DefaultScrapeProtocols,
 		ConvertClassicHistogramsToNHCB: false,
 		AlwaysScrapeClassicHistograms:  false,
-		MetricNameValidationScheme:     UTF8ValidationConfig,
+		MetricNameValidationScheme:     model.UTF8Validation,
 		MetricNameEscapingScheme:       model.AllowUTF8,
 	}
 
@@ -486,8 +481,8 @@ type GlobalConfig struct {
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 	// Allow UTF8 Metric and Label Names. Can be blank in config files but must
-	// have a value if a ScrapeConfig is created programmatically.
-	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
+	// have a value if a GlobalConfig is created programmatically.
+	MetricNameValidationScheme model.ValidationScheme `yaml:"metric_name_validation_scheme,omitempty"`
 	// Metric name escaping mode to request through content negotiation. Can be
 	// blank in config files but must have a value if a ScrapeConfig is created
 	// programmatically.
@@ -755,7 +750,7 @@ type ScrapeConfig struct {
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 	// Allow UTF8 Metric and Label Names. Can be blank in config files but must
 	// have a value if a ScrapeConfig is created programmatically.
-	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
+	MetricNameValidationScheme model.ValidationScheme `yaml:"metric_name_validation_scheme,omitempty"`
 	// Metric name escaping mode to request through content negotiation. Can be
 	// blank in config files but must have a value if a ScrapeConfig is created
 	// programmatically.
@@ -882,25 +877,25 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 
 	switch globalConfig.MetricNameValidationScheme {
-	case "":
-		globalConfig.MetricNameValidationScheme = UTF8ValidationConfig
-	case LegacyValidationConfig, UTF8ValidationConfig:
+	case model.UnsetValidation:
+		globalConfig.MetricNameValidationScheme = model.UTF8Validation
+	case model.LegacyValidation, model.UTF8Validation:
 	default:
-		return fmt.Errorf("unknown global name validation method specified, must be either 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
+		return fmt.Errorf("unknown global name validation method specified, must be either '', 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
 	}
 	// Scrapeconfig validation scheme matches global if left blank.
 	switch c.MetricNameValidationScheme {
-	case "":
+	case model.UnsetValidation:
 		c.MetricNameValidationScheme = globalConfig.MetricNameValidationScheme
-	case LegacyValidationConfig, UTF8ValidationConfig:
+	case model.LegacyValidation, model.UTF8Validation:
 	default:
-		return fmt.Errorf("unknown scrape config name validation method specified, must be either 'legacy' or 'utf8', got %s", c.MetricNameValidationScheme)
+		return fmt.Errorf("unknown scrape config name validation method specified, must be either '', 'legacy' or 'utf8', got %s", c.MetricNameValidationScheme)
 	}
 
 	// Escaping scheme is based on the validation scheme if left blank.
 	switch globalConfig.MetricNameEscapingScheme {
 	case "":
-		if globalConfig.MetricNameValidationScheme == LegacyValidationConfig {
+		if globalConfig.MetricNameValidationScheme == model.LegacyValidation {
 			globalConfig.MetricNameEscapingScheme = model.EscapeUnderscores
 		} else {
 			globalConfig.MetricNameEscapingScheme = model.AllowUTF8
@@ -916,7 +911,7 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 
 	switch c.MetricNameEscapingScheme {
 	case model.AllowUTF8:
-		if c.MetricNameValidationScheme != UTF8ValidationConfig {
+		if c.MetricNameValidationScheme != model.UTF8Validation {
 			return errors.New("utf8 metric names requested but validation scheme is not set to UTF8")
 		}
 	case model.EscapeUnderscores, model.EscapeDots, model.EscapeValues:
@@ -942,26 +937,6 @@ func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
 }
 
-// ToValidationScheme returns the validation scheme for the given string config value.
-func ToValidationScheme(s string) (validationScheme model.ValidationScheme, err error) {
-	switch s {
-	case "":
-		// This is a workaround for third party exporters that don't set the validation scheme.
-		if DefaultGlobalConfig.MetricNameValidationScheme == "" {
-			return model.UTF8Validation, errors.New("global metric name validation scheme is not set")
-		}
-		return ToValidationScheme(DefaultGlobalConfig.MetricNameValidationScheme)
-	case UTF8ValidationConfig:
-		validationScheme = model.UTF8Validation
-	case LegacyValidationConfig:
-		validationScheme = model.LegacyValidation
-	default:
-		return model.UTF8Validation, fmt.Errorf("invalid metric name validation scheme, %s", s)
-	}
-
-	return validationScheme, nil
-}
-
 // ToEscapingScheme wraps the equivalent common library function with the
 // desired default behavior based on the given validation scheme. This is a
 // workaround for third party exporters that don't set the escaping scheme.
@@ -972,6 +947,10 @@ func ToEscapingScheme(s string, v model.ValidationScheme) (model.EscapingScheme,
 			return model.NoEscaping, nil
 		case model.LegacyValidation:
 			return model.UnderscoreEscaping, nil
+		case model.UnsetValidation:
+			return model.NoEscaping, fmt.Errorf("v is unset: %s", v)
+		default:
+			panic(fmt.Errorf("unhandled validation scheme: %s", v))
 		}
 	}
 	return model.ToEscapingScheme(s)

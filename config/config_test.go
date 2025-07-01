@@ -2581,7 +2581,7 @@ func TestGetScrapeConfigs(t *testing.T) {
 			ScrapeInterval:             opts.ScrapeInterval,
 			ScrapeTimeout:              opts.ScrapeTimeout,
 			ScrapeProtocols:            DefaultGlobalConfig.ScrapeProtocols,
-			MetricNameValidationScheme: UTF8ValidationConfig,
+			MetricNameValidationScheme: model.UTF8Validation,
 			MetricNameEscapingScheme:   model.AllowUTF8,
 
 			MetricsPath:       "/metrics",
@@ -2641,7 +2641,7 @@ func TestGetScrapeConfigs(t *testing.T) {
 					ScrapeInterval:                 model.Duration(60 * time.Second),
 					ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
 					ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
-					MetricNameValidationScheme:     UTF8ValidationConfig,
+					MetricNameValidationScheme:     model.UTF8Validation,
 					MetricNameEscapingScheme:       model.AllowUTF8,
 					AlwaysScrapeClassicHistograms:  boolPtr(false),
 					ConvertClassicHistogramsToNHCB: boolPtr(false),
@@ -2678,7 +2678,7 @@ func TestGetScrapeConfigs(t *testing.T) {
 					ScrapeInterval:                 model.Duration(15 * time.Second),
 					ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
 					ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
-					MetricNameValidationScheme:     UTF8ValidationConfig,
+					MetricNameValidationScheme:     model.UTF8Validation,
 					MetricNameEscapingScheme:       model.AllowUTF8,
 					AlwaysScrapeClassicHistograms:  boolPtr(false),
 					ConvertClassicHistogramsToNHCB: boolPtr(false),
@@ -2802,27 +2802,27 @@ func TestScrapeConfigNameValidationSettings(t *testing.T) {
 	tests := []struct {
 		name         string
 		inputFile    string
-		expectScheme string
+		expectScheme model.ValidationScheme
 	}{
 		{
 			name:         "blank config implies default",
 			inputFile:    "scrape_config_default_validation_mode",
-			expectScheme: "utf8",
+			expectScheme: model.UTF8Validation,
 		},
 		{
 			name:         "global setting implies local settings",
 			inputFile:    "scrape_config_global_validation_mode",
-			expectScheme: "legacy",
+			expectScheme: model.LegacyValidation,
 		},
 		{
 			name:         "local setting",
 			inputFile:    "scrape_config_local_validation_mode",
-			expectScheme: "legacy",
+			expectScheme: model.LegacyValidation,
 		},
 		{
 			name:         "local setting overrides global setting",
 			inputFile:    "scrape_config_local_global_validation_mode",
-			expectScheme: "utf8",
+			expectScheme: model.UTF8Validation,
 		},
 	}
 
@@ -2846,31 +2846,31 @@ func TestScrapeConfigNameEscapingSettings(t *testing.T) {
 	tests := []struct {
 		name                   string
 		inputFile              string
-		expectValidationScheme string
+		expectValidationScheme model.ValidationScheme
 		expectEscapingScheme   string
 	}{
 		{
 			name:                   "blank config implies default",
 			inputFile:              "scrape_config_default_validation_mode",
-			expectValidationScheme: "utf8",
+			expectValidationScheme: model.UTF8Validation,
 			expectEscapingScheme:   "allow-utf-8",
 		},
 		{
 			name:                   "global setting implies local settings",
 			inputFile:              "scrape_config_global_validation_mode",
-			expectValidationScheme: "legacy",
+			expectValidationScheme: model.LegacyValidation,
 			expectEscapingScheme:   "dots",
 		},
 		{
 			name:                   "local setting",
 			inputFile:              "scrape_config_local_validation_mode",
-			expectValidationScheme: "legacy",
+			expectValidationScheme: model.LegacyValidation,
 			expectEscapingScheme:   "values",
 		},
 		{
 			name:                   "local setting overrides global setting",
 			inputFile:              "scrape_config_local_global_validation_mode",
-			expectValidationScheme: "utf8",
+			expectValidationScheme: model.UTF8Validation,
 			expectEscapingScheme:   "dots",
 		},
 	}
