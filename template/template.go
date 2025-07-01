@@ -271,9 +271,9 @@ func NewTemplateExpander(
 				d := time.Duration(v * float64(time.Second))
 				return &d, nil
 			},
-			//nolint:gocritic // must be a function to avoid template panics (as in Loki).
-			"now": func() model.Time {
-				return model.Now()
+			"now": func() float64 {
+				now := time.Now()
+				return float64(now.Unix()) + float64(now.Nanosecond())/float64(time.Second)
 			},
 			"pathPrefix": func() string {
 				return externalURL.Path
