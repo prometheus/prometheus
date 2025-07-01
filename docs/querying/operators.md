@@ -25,14 +25,14 @@ and vector/vector value pairs. They follow the usual [IEEE 754 floating point
 arithmetic](https://en.wikipedia.org/wiki/IEEE_754), including the handling of
 special values like `NaN`, `+Inf`, and `-Inf`.
 
-**Between two scalars**, the behavior is obvious: they evaluate to another
+**Between two scalars**, the behavior is straightforward: they evaluate to another
 scalar that is the result of the operator applied to both scalar operands.
 
 **Between an instant vector and a scalar**, the operator is applied to the
 value of every data sample in the vector. 
 
-If the data sample is a float, the operation performed on the data sample is
-again obvious, e.g. if an instant vector of float samples is multiplied by 2,
+If the data sample is a float, the operation is performed between that float and the scalar. 
+For example, if an instant vector of float samples is multiplied by 2,
 the result is another vector of float samples in which every sample value of
 the original vector is multiplied by 2.
 
