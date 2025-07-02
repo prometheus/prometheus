@@ -78,20 +78,18 @@ type Head struct {
 	// This should be typecasted to chunks.ChunkDiskMapperRef after loading.
 	minOOOMmapRef atomic.Uint64
 
-	metrics             *headMetrics
-	opts                *HeadOptions
-	wal, wbl            *wlog.WL
-	exemplarMetrics     *ExemplarMetrics
-	exemplars           ExemplarStorage
-	logger              *slog.Logger
-	appendPool          zeropool.Pool[[]record.RefSample]
-	exemplarsPool       zeropool.Pool[[]exemplarWithSeriesRef]
-	histogramsPool      zeropool.Pool[[]record.RefHistogramSample]
-	floatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
-	metadataPool        zeropool.Pool[[]record.RefMetadata]
-	seriesPool          zeropool.Pool[[]*memSeries]
-	bytesPool           zeropool.Pool[[]byte]
-	memChunkPool        sync.Pool
+	metrics         *headMetrics
+	opts            *HeadOptions
+	wal, wbl        *wlog.WL
+	exemplarMetrics *ExemplarMetrics
+	exemplars       ExemplarStorage
+	logger          *slog.Logger
+	appendPool      zeropool.Pool[[]refUnionSample]
+	exemplarsPool   zeropool.Pool[[]exemplarWithSeriesRef]
+	metadataPool    zeropool.Pool[[]record.RefMetadata]
+	seriesPool      zeropool.Pool[[]*memSeries]
+	bytesPool       zeropool.Pool[[]byte]
+	memChunkPool    sync.Pool
 
 	// These pools are only used during WAL/WBL replay and are reset at the end.
 	// NOTE: Adjust resetWLReplayResources() upon changes to the pools.

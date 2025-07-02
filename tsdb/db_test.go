@@ -4838,11 +4838,6 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	require.Equal(t, *reopenDB.head.series.getByHash(s4.Hash(), s4).meta, m4)
 }
 
-// TestMultipleEncodingsCommitOrder mainly serves to demonstrate when happens when committing a batch of samples for the
-// same series when there are multiple encodings. Commit() will process all float samples before histogram samples. This
-// means that if histograms are appended before floats, the histograms could be marked as OOO when they are committed.
-// While possible, this shouldn't happen very often - you need the same series to be ingested as both a float and a
-// histogram in a single write request.
 func TestMultipleEncodingsCommitOrder(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
@@ -4916,26 +4911,18 @@ func TestMultipleEncodingsCommitOrder(t *testing.T) {
 		s := addSample(app, int64(i), chunkenc.ValFloat)
 		expSamples = append(expSamples, s)
 	}
-	// These samples will be marked as OOO as their timestamps are less than the max timestamp for float samples in the
-	// same batch.
 	for i := 110; i < 120; i++ {
 		s := addSample(app, int64(i), chunkenc.ValHistogram)
 		expSamples = append(expSamples, s)
 	}
-	// These samples will be marked as OOO as their timestamps are less than the max timestamp for float samples in the
-	// same batch.
 	for i := 120; i < 130; i++ {
 		s := addSample(app, int64(i), chunkenc.ValFloatHistogram)
 		expSamples = append(expSamples, s)
 	}
-	// These samples will be marked as in-order as their timestamps are greater than the max timestamp for float
-	// samples in the same batch.
 	for i := 140; i < 150; i++ {
 		s := addSample(app, int64(i), chunkenc.ValFloatHistogram)
 		expSamples = append(expSamples, s)
 	}
-	// These samples will be marked as in-order, even though they're appended after the float histograms from ts 140-150
-	// because float samples are processed first and these samples are in-order wrt to the float samples in the batch.
 	for i := 130; i < 135; i++ {
 		s := addSample(app, int64(i), chunkenc.ValFloat)
 		expSamples = append(expSamples, s)
@@ -4947,8 +4934,7 @@ func TestMultipleEncodingsCommitOrder(t *testing.T) {
 		return expSamples[i].T() < expSamples[j].T()
 	})
 
-	// oooCount = 20 because the histograms from 120 - 130 and float histograms from 120 - 130 are detected as OOO.
-	verifySamples(100, 150, expSamples, 20)
+	verifySamples(100, 150, expSamples, 5)
 
 	// Append and commit some in-order histograms by themselves.
 	app = db.Appender(context.Background())
@@ -4958,8 +4944,8 @@ func TestMultipleEncodingsCommitOrder(t *testing.T) {
 	}
 	require.NoError(t, app.Commit())
 
-	// oooCount remains at 20 as no new OOO samples have been added.
-	verifySamples(100, 160, expSamples, 20)
+	// oooCount remains at 5 as no new OOO samples have been added.
+	verifySamples(100, 160, expSamples, 5)
 
 	// Append and commit samples for all encoding types. This time all samples will be treated as OOO because samples
 	// with newer timestamps have already been committed.
@@ -4987,8 +4973,8 @@ func TestMultipleEncodingsCommitOrder(t *testing.T) {
 		return expSamples[i].T() < expSamples[j].T()
 	})
 
-	// oooCount = 50 as we've added 30 more OOO samples.
-	verifySamples(50, 160, expSamples, 50)
+	// oooCount = 35 as we've added 30 more OOO samples.
+	verifySamples(50, 160, expSamples, 35)
 }
 
 // TODO(codesome): test more samples incoming once compaction has started. To verify new samples after the start
