@@ -114,7 +114,33 @@ func rangeQueryCases() []benchCase {
 			steps: 10000,
 		},
 		{
+			expr: "rate(a_X[1m])",
+		},
+		{
+			expr:  "rate(a_X[1m])",
+			steps: 10000,
+		},
+		{
 			expr:  "rate(sparse[1m])",
+			steps: 10000,
+		},
+		// Smoothed rate.
+		{
+			expr: "rate(a_X[1m] smoothed)",
+		},
+		{
+			expr:  "rate(a_X[1m] smoothed)",
+			steps: 10000,
+		},
+		{
+			expr: "rate(a_X[1m] smoothed)",
+		},
+		{
+			expr:  "rate(a_X[1m] smoothed)",
+			steps: 10000,
+		},
+		{
+			expr:  "rate(sparse[1m] smoothed)",
 			steps: 10000,
 		},
 		// Holt-Winters and long ranges.
@@ -266,6 +292,10 @@ func rangeQueryCases() []benchCase {
 }
 
 func BenchmarkRangeQuery(b *testing.B) {
+	parser.EnableExtendedRangeSelectors = true
+	b.Cleanup(func() {
+		parser.EnableExtendedRangeSelectors = false
+	})
 	stor := teststorage.New(b)
 	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
 	defer stor.Close()
