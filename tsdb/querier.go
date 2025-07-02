@@ -1113,47 +1113,54 @@ func newBlockSeriesSetWithScanMatchers(i IndexReader, c ChunkReader, t tombstone
 	if len(scanMatchers) == 0 {
 		return base
 	}
-	return &scanMatcherSeriesSet{
+	return &scanMatcherSeriesSet[storage.Series]{
 		base:         base,
 		scanMatchers: scanMatchers,
 	}
 }
 
+type genericSeriesSet[S storage.Labels] interface {
+	Next() bool
+	At() S
+	Err() error
+	Warnings() annotations.Annotations
+}
+
 // scanMatcherSeriesSet wraps a SeriesSet and applies additional matchers during series scanning.
-type scanMatcherSeriesSet struct {
-	base         storage.SeriesSet
+type scanMatcherSeriesSet[S storage.Labels] struct {
+	base         genericSeriesSet[S]
 	scanMatchers []*labels.Matcher
 }
 
-func (s *scanMatcherSeriesSet) Next() bool {
+func (s *scanMatcherSeriesSet[S]) Next() bool {
 	for s.base.Next() {
 		series := s.base.At()
-		if s.matchesScanMatchers(series.Labels()) {
+		if labelsMatchMatchers(series.Labels(), s.scanMatchers) {
 			return true
 		}
 	}
 	return false
 }
 
-func (s *scanMatcherSeriesSet) At() storage.Series {
-	return s.base.At()
-}
-
-func (s *scanMatcherSeriesSet) Err() error {
-	return s.base.Err()
-}
-
-func (s *scanMatcherSeriesSet) Warnings() annotations.Annotations {
-	return s.base.Warnings()
-}
-
-func (s *scanMatcherSeriesSet) matchesScanMatchers(lbls labels.Labels) bool {
-	for _, matcher := range s.scanMatchers {
+func labelsMatchMatchers(lbls labels.Labels, matchers []*labels.Matcher) bool {
+	for _, matcher := range matchers {
 		if !matcher.Matches(lbls.Get(matcher.Name)) {
 			return false
 		}
 	}
 	return true
+}
+
+func (s *scanMatcherSeriesSet[S]) At() S {
+	return s.base.At()
+}
+
+func (s *scanMatcherSeriesSet[S]) Err() error {
+	return s.base.Err()
+}
+
+func (s *scanMatcherSeriesSet[S]) Warnings() annotations.Annotations {
+	return s.base.Warnings()
 }
 
 // blockChunkSeriesSet allows to iterate over sorted, populated series with applied tombstones.
@@ -1193,47 +1200,10 @@ func NewBlockChunkSeriesSetWithScanMatchers(id ulid.ULID, i IndexReader, c Chunk
 	if len(scanMatchers) == 0 {
 		return base
 	}
-	return &scanMatcherChunkSeriesSet{
+	return &scanMatcherSeriesSet[storage.ChunkSeries]{
 		base:         base,
 		scanMatchers: scanMatchers,
 	}
-}
-
-// scanMatcherChunkSeriesSet wraps a ChunkSeriesSet and applies additional matchers during series scanning.
-type scanMatcherChunkSeriesSet struct {
-	base         storage.ChunkSeriesSet
-	scanMatchers []*labels.Matcher
-}
-
-func (s *scanMatcherChunkSeriesSet) Next() bool {
-	for s.base.Next() {
-		series := s.base.At()
-		if s.matchesScanMatchers(series.Labels()) {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *scanMatcherChunkSeriesSet) At() storage.ChunkSeries {
-	return s.base.At()
-}
-
-func (s *scanMatcherChunkSeriesSet) Err() error {
-	return s.base.Err()
-}
-
-func (s *scanMatcherChunkSeriesSet) Warnings() annotations.Annotations {
-	return s.base.Warnings()
-}
-
-func (s *scanMatcherChunkSeriesSet) matchesScanMatchers(lbls labels.Labels) bool {
-	for _, matcher := range s.scanMatchers {
-		if !matcher.Matches(lbls.Get(matcher.Name)) {
-			return false
-		}
-	}
-	return true
 }
 
 // NewMergedStringIter returns string iterator that allows to merge symbols on demand and stream result.
