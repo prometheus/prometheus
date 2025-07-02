@@ -28,6 +28,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 )
 
@@ -667,13 +668,13 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			wantSeries: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_hist"},
-					{Name: "attr", Value: "test_attr"},
-				}
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist",
+					"attr", "test_attr",
+				)
 				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
+					lbls.Hash(): {
+						Labels: prompb.FromLabels(lbls, nil),
 						Histograms: []prompb.Histogram{
 							{
 								Count:          &prompb.Histogram_CountInt{CountInt: 7},
@@ -728,18 +729,18 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: true,
 			wantSeries: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_hist"},
-					{Name: "attr", Value: "test_attr"},
-					{Name: "otel_scope_name", Value: defaultScope.name},
-					{Name: "otel_scope_schema_url", Value: defaultScope.schemaURL},
-					{Name: "otel_scope_version", Value: defaultScope.version},
-					{Name: "otel_scope_attr1", Value: "value1"},
-					{Name: "otel_scope_attr2", Value: "value2"},
-				}
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist",
+					"attr", "test_attr",
+					"otel_scope_name", defaultScope.name,
+					"otel_scope_schema_url", defaultScope.schemaURL,
+					"otel_scope_version", defaultScope.version,
+					"otel_scope_attr1", "value1",
+					"otel_scope_attr2", "value2",
+				)
 				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
+					lbls.Hash(): {
+						Labels: prompb.FromLabels(lbls, nil),
 						Histograms: []prompb.Histogram{
 							{
 								Count:          &prompb.Histogram_CountInt{CountInt: 7},
@@ -794,18 +795,18 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			wantSeries: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_hist"},
-					{Name: "attr", Value: "test_attr"},
-				}
-				labelsAnother := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_hist"},
-					{Name: "attr", Value: "test_attr_two"},
-				}
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist",
+					"attr", "test_attr",
+				)
+				labelsAnother := labels.FromStrings(
+					model.MetricNameLabel, "test_hist",
+					"attr", "test_attr_two",
+				)
 
 				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
+					lbls.Hash(): {
+						Labels: prompb.FromLabels(lbls, nil),
 						Histograms: []prompb.Histogram{
 							{
 								Count:          &prompb.Histogram_CountInt{CountInt: 7},
@@ -820,8 +821,8 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 							{Value: 1},
 						},
 					},
-					timeSeriesSignature(labelsAnother): {
-						Labels: labelsAnother,
+					labelsAnother.Hash(): {
+						Labels: prompb.FromLabels(labelsAnother, nil),
 						Histograms: []prompb.Histogram{
 							{
 								Count:          &prompb.Histogram_CountInt{CountInt: 4},
@@ -1124,13 +1125,13 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			wantSeries: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
-					{Name: "attr", Value: "test_attr"},
-				}
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_to_nhcb",
+					"attr", "test_attr",
+				)
 				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
+					lbls.Hash(): {
+						Labels: prompb.FromLabels(lbls, nil),
 						Histograms: []prompb.Histogram{
 							{
 								Count:          &prompb.Histogram_CountInt{CountInt: 3},
@@ -1185,18 +1186,18 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: true,
 			wantSeries: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
-					{Name: "attr", Value: "test_attr"},
-					{Name: "otel_scope_name", Value: defaultScope.name},
-					{Name: "otel_scope_schema_url", Value: defaultScope.schemaURL},
-					{Name: "otel_scope_version", Value: defaultScope.version},
-					{Name: "otel_scope_attr1", Value: "value1"},
-					{Name: "otel_scope_attr2", Value: "value2"},
-				}
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_to_nhcb",
+					"attr", "test_attr",
+					"otel_scope_name", defaultScope.name,
+					"otel_scope_schema_url", defaultScope.schemaURL,
+					"otel_scope_version", defaultScope.version,
+					"otel_scope_attr1", "value1",
+					"otel_scope_attr2", "value2",
+				)
 				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
+					lbls.Hash(): {
+						Labels: prompb.FromLabels(lbls, nil),
 						Histograms: []prompb.Histogram{
 							{
 								Count:          &prompb.Histogram_CountInt{CountInt: 3},
@@ -1251,18 +1252,18 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			wantSeries: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
-					{Name: "attr", Value: "test_attr"},
-				}
-				labelsAnother := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
-					{Name: "attr", Value: "test_attr_two"},
-				}
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_to_nhcb",
+					"attr", "test_attr",
+				)
+				labelsAnother := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_to_nhcb",
+					"attr", "test_attr_two",
+				)
 
 				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
+					lbls.Hash(): {
+						Labels: prompb.FromLabels(lbls, nil),
 						Histograms: []prompb.Histogram{
 							{
 								Count:          &prompb.Histogram_CountInt{CountInt: 6},
@@ -1277,8 +1278,8 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 							{Value: 1},
 						},
 					},
-					timeSeriesSignature(labelsAnother): {
-						Labels: labelsAnother,
+					labelsAnother.Hash(): {
+						Labels: prompb.FromLabels(labelsAnother, nil),
 						Histograms: []prompb.Histogram{
 							{
 								Count:          &prompb.Histogram_CountInt{CountInt: 11},

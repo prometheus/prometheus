@@ -37,7 +37,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		}
 
 		pt := dataPoints.At(x)
-		labels := createAttributes(
+		labels := c.createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
@@ -75,7 +75,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		}
 
 		pt := dataPoints.At(x)
-		lbls := createAttributes(
+		lbls := c.createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
@@ -100,7 +100,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		}
 		ts := c.addSample(sample, lbls)
 		if ts != nil {
-			exemplars, err := getPromExemplars[pmetric.NumberDataPoint](ctx, &c.everyN, pt)
+			exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 			if err != nil {
 				return err
 			}
@@ -114,15 +114,10 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 				return nil
 			}
 
-			createdLabels := make([]prompb.Label, len(lbls))
-			copy(createdLabels, lbls)
-			for i, l := range createdLabels {
-				if l.Name == model.MetricNameLabel {
-					createdLabels[i].Value = name + createdSuffix
-					break
-				}
-			}
-			c.addTimeSeriesIfNeeded(createdLabels, startTimestamp, pt.Timestamp())
+			c.builder.Reset(lbls)
+			// Add created suffix to the metric name for CT series.
+			c.builder.Set(model.MetricNameLabel, c.builder.Get(model.MetricNameLabel)+createdSuffix)
+			c.addTimeSeriesIfNeeded(c.builder.Labels(), startTimestamp, pt.Timestamp())
 		}
 	}
 

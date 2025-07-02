@@ -26,6 +26,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 )
 
@@ -61,12 +62,12 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test"},
-				}
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test",
+				)
 				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
+					lbls.Hash(): {
+						Labels: prompb.FromLabels(lbls, nil),
 						Samples: []prompb.Sample{
 							{
 								Value:     1,
@@ -89,17 +90,17 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: true,
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test"},
-					{Name: "otel_scope_name", Value: defaultScope.name},
-					{Name: "otel_scope_schema_url", Value: defaultScope.schemaURL},
-					{Name: "otel_scope_version", Value: defaultScope.version},
-					{Name: "otel_scope_attr1", Value: "value1"},
-					{Name: "otel_scope_attr2", Value: "value2"},
-				}
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test",
+					"otel_scope_name", defaultScope.name,
+					"otel_scope_schema_url", defaultScope.schemaURL,
+					"otel_scope_version", defaultScope.version,
+					"otel_scope_attr1", "value1",
+					"otel_scope_attr2", "value2",
+				)
 				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
+					lbls.Hash(): {
+						Labels: prompb.FromLabels(lbls, nil),
 						Samples: []prompb.Sample{
 							{
 								Value:     1,
@@ -167,12 +168,12 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test"},
-				}
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test",
+				)
 				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
+					lbls.Hash(): {
+						Labels: prompb.FromLabels(lbls, nil),
 						Samples: []prompb.Sample{
 							{
 								Value:     1,
@@ -196,17 +197,17 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: true,
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test"},
-					{Name: "otel_scope_name", Value: defaultScope.name},
-					{Name: "otel_scope_schema_url", Value: defaultScope.schemaURL},
-					{Name: "otel_scope_version", Value: defaultScope.version},
-					{Name: "otel_scope_attr1", Value: "value1"},
-					{Name: "otel_scope_attr2", Value: "value2"},
-				}
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test",
+					"otel_scope_name", defaultScope.name,
+					"otel_scope_schema_url", defaultScope.schemaURL,
+					"otel_scope_version", defaultScope.version,
+					"otel_scope_attr1", "value1",
+					"otel_scope_attr2", "value2",
+				)
 				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
+					lbls.Hash(): {
+						Labels: prompb.FromLabels(lbls, nil),
 						Samples: []prompb.Sample{
 							{
 								Value:     1,
@@ -232,12 +233,12 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test"},
-				}
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test",
+				)
 				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
+					lbls.Hash(): {
+						Labels: prompb.FromLabels(lbls, nil),
 						Samples: []prompb.Sample{{
 							Value:     1,
 							Timestamp: convertTimeStamp(ts),
@@ -267,21 +268,21 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_sum"},
-				}
-				createdLabels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_sum" + createdSuffix},
-				}
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_sum",
+				)
+				createdLabels := labels.FromStrings(
+					model.MetricNameLabel, "test_sum"+createdSuffix,
+				)
 				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
+					lbls.Hash(): {
+						Labels: prompb.FromLabels(lbls, nil),
 						Samples: []prompb.Sample{
 							{Value: 1, Timestamp: convertTimeStamp(ts)},
 						},
 					},
-					timeSeriesSignature(createdLabels): {
-						Labels: createdLabels,
+					createdLabels.Hash(): {
+						Labels: prompb.FromLabels(createdLabels, nil),
 						Samples: []prompb.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
 						},
@@ -305,12 +306,12 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_sum"},
-				}
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_sum",
+				)
 				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
+					lbls.Hash(): {
+						Labels: prompb.FromLabels(lbls, nil),
 						Samples: []prompb.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
@@ -334,12 +335,12 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_sum"},
-				}
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_sum",
+				)
 				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
+					lbls.Hash(): {
+						Labels: prompb.FromLabels(lbls, nil),
 						Samples: []prompb.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
