@@ -49,7 +49,7 @@ func TestLabels_String(t *testing.T) {
 		`{aaa="111", xx="` + s255 + `"}`,
 		`{" container"="prometheus", " namespace"="observability-prometheus", __name__="kube_pod_container_status_last_terminated_exitcode", cluster="prod-af-north-0", instance="kube-state-metrics-0:kube-state-metrics:ksm", job="kube-state-metrics/kube-state-metrics", pod="observability-prometheus-0", uid="d3ec90b2-4975-4607-b45d-b9ad64bb417e"}`,
 	}
-	require.Equal(t, len(testCaseLabels), len(expected))
+	require.Len(t, expected, len(testCaseLabels))
 	for i, c := range expected {
 		str := testCaseLabels[i].String()
 		require.Equal(t, c, str)
@@ -64,7 +64,7 @@ func BenchmarkString(b *testing.B) {
 }
 
 func TestSizeOfLabels(t *testing.T) {
-	require.Equal(t, len(testCaseLabels), len(expectedSizeOfLabels))
+	require.Len(t, expectedSizeOfLabels, len(testCaseLabels))
 	for i, c := range expectedSizeOfLabels { // Declared in build-tag-specific files, e.g. labels_slicelabels_test.go.
 		var total uint64
 		testCaseLabels[i].Range(func(l Label) {
