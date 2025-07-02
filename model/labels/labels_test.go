@@ -89,7 +89,7 @@ func BenchmarkSize(b *testing.B) {
 	})
 	b.Run("ByteSize", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			GlobalTotal = uint64(lb.ByteSize())
+			GlobalTotal = lb.ByteSize()
 		}
 	})
 }
