@@ -106,7 +106,7 @@ var (
 
 // OverrideErrorCode can be used to override status code for different error types.
 // Return false to fall back to default status code.
-type OverrideErrorCode func(errorNum, error) (override bool, code int)
+type OverrideErrorCode func(errorNum, error) (code int, override bool)
 
 var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
 
@@ -2045,7 +2045,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 
 	var code int
 	if api.overrideErrorCode != nil {
-		if ok, newCode := api.overrideErrorCode(apiErr.typ.num, apiErr.err); ok {
+		if newCode, override := api.overrideErrorCode(apiErr.typ.num, apiErr.err); override {
 			code = newCode
 		} else {
 			code = getDefaultErrorCode(apiErr.typ)
