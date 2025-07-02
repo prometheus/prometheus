@@ -24,8 +24,6 @@ import (
 	"time"
 
 	"github.com/grafana/regexp"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -36,42 +34,13 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 )
 
-// Metrics for monitoring namespace enricher performance and health
-var (
-	enrichmentDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "prometheus_namespace_enrichment_duration_seconds",
-		Help:    "Time spent enriching metrics with namespace metadata.",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"result"})
+func init() {
+	// Register the Kubernetes enricher factory with the scrape package
+	scrape.RegisterEnricherFactory("kubernetes", KubernetesEnricherFactoryFunc)
+}
 
-	enrichmentTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "prometheus_namespace_enrichment_total",
-		Help: "Total number of namespace enrichments attempted.",
-	}, []string{"result"})
-
-	cacheOperationsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "prometheus_namespace_enrichment_cache_operations_total",
-		Help: "Total number of namespace cache operations.",
-	}, []string{"operation"})
-
-	cacheSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "prometheus_namespace_enrichment_cache_size",
-		Help: "Current number of namespaces in cache.",
-	}, []string{})
-
-	enricherHealth = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "prometheus_namespace_enrichment_healthy",
-		Help: "Whether the namespace enricher is healthy (1) or unhealthy (0).",
-	}, []string{})
-
-	errorRate = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "prometheus_namespace_enrichment_errors_total",
-		Help: "Total number of enrichment errors by type.",
-	}, []string{"error_type"})
-)
-
-// NamespaceEnrichmentConfigInterface defines the contract for namespace enrichment configuration
-// This avoids import cycles while providing type safety
+// NamespaceEnrichmentConfigInterface provides an interface for enrichment configuration
+// This helps avoid import cycles between packages
 type NamespaceEnrichmentConfigInterface interface {
 	IsEnabled() bool
 	GetLabelPrefix() string
@@ -82,58 +51,25 @@ type NamespaceEnrichmentConfigInterface interface {
 	GetMaxSelectors() int
 }
 
-func init() {
-	// Register Kubernetes enricher factory using clean interface approach
-	scrape.RegisterEnricherFactory("kubernetes", func(cfg interface{}, logger *slog.Logger) (scrape.MetadataEnricher, error) {
-		// Type assert to our interface instead of using reflection
-		enrichmentConfig, ok := cfg.(NamespaceEnrichmentConfigInterface)
-		if !ok {
-			return nil, fmt.Errorf("invalid configuration type for Kubernetes enricher - expected NamespaceEnrichmentConfigInterface")
-		}
-
-		if !enrichmentConfig.IsEnabled() {
-			return scrape.NewNoopEnricher(), nil
-		}
-
-		// Convert to local config type
-		localConfig := &NamespaceEnrichmentConfig{
-			Enabled:            enrichmentConfig.IsEnabled(),
-			LabelPrefix:        enrichmentConfig.GetLabelPrefix(),
-			LabelSelector:      enrichmentConfig.GetLabelSelector(),
-			AnnotationSelector: enrichmentConfig.GetAnnotationSelector(),
-			MaxCacheSize:       enrichmentConfig.GetMaxCacheSize(),
-			CacheTTL:           enrichmentConfig.GetCacheTTL(),
-			MaxSelectors:       enrichmentConfig.GetMaxSelectors(),
-		}
-
-		// Validate configuration before creating enricher
-		if err := validateEnrichmentConfig(localConfig); err != nil {
-			return nil, fmt.Errorf("invalid enrichment configuration: %w", err)
-		}
-
-		// Create the actual Kubernetes enricher
-		factory := &KubernetesEnricherFactory{}
-		enricherInterface, err := factory.CreateEnricher(localConfig, logger)
-		if err != nil {
-			logger.Warn("Failed to create Kubernetes enricher, using no-op", "error", err)
-			return scrape.NewNoopEnricher(), nil
-		}
-
-		// Convert the interface{} back to scrape.MetadataEnricher
-		if enricher, ok := enricherInterface.(scrape.MetadataEnricher); ok {
-			logger.Info("Kubernetes namespace enricher created successfully (experimental)")
-			return enricher, nil
-		}
-
-		logger.Warn("Created enricher is not compatible with scrape.MetadataEnricher interface")
-		return scrape.NewNoopEnricher(), nil
-	})
-}
-
 // validateEnrichmentConfig performs comprehensive validation of enrichment configuration
 func validateEnrichmentConfig(cfg *NamespaceEnrichmentConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("configuration is nil")
+	}
+
+	// Skip validation if not enabled
+	if !cfg.Enabled {
+		return nil
+	}
+
+	// When enabled, must have at least one selector
+	if len(cfg.LabelSelector) == 0 && len(cfg.AnnotationSelector) == 0 {
+		return fmt.Errorf("at least one label or annotation selector is required when enrichment is enabled")
+	}
+
+	// Validate label prefix format
+	if cfg.LabelPrefix != "" && !strings.HasSuffix(cfg.LabelPrefix, "_") {
+		return fmt.Errorf("label_prefix must end with underscore")
 	}
 
 	// Validate cache size limits - prevent memory exhaustion
@@ -148,8 +84,11 @@ func validateEnrichmentConfig(cfg *NamespaceEnrichmentConfig) error {
 	if cfg.CacheTTL < 0 {
 		return fmt.Errorf("cache_ttl cannot be negative")
 	}
+	if cfg.CacheTTL > 0 && cfg.CacheTTL < 30 {
+		return fmt.Errorf("cache_ttl below minimum (30s), got: %ds", cfg.CacheTTL)
+	}
 	if cfg.CacheTTL > 3600 {
-		return fmt.Errorf("cache_ttl too large (max: 3600s), got: %d", cfg.CacheTTL)
+		return fmt.Errorf("cache_ttl exceeds maximum (3600s), got: %ds", cfg.CacheTTL)
 	}
 
 	// Validate selector limits - prevent cardinality explosion
@@ -166,7 +105,7 @@ func validateEnrichmentConfig(cfg *NamespaceEnrichmentConfig) error {
 	allSelectors := append(cfg.LabelSelector, cfg.AnnotationSelector...)
 	for _, selector := range allSelectors {
 		if isSecuritySensitive(selector) {
-			return fmt.Errorf("selector '%s' is not allowed for security reasons", selector)
+			return fmt.Errorf("selector '%s' potentially dangerous for security reasons", selector)
 		}
 	}
 
@@ -294,7 +233,7 @@ type NamespaceMetadataCache struct {
 	cacheTTL      int64
 	sharedManager *SharedInformerManager
 
-	// Metrics for monitoring
+	// Internal tracking
 	cacheSize   int
 	evictions   int64
 	lastCleanup int64
@@ -457,19 +396,20 @@ func (nmc *NamespaceMetadataCache) updateNamespace(ns *corev1.Namespace, cfg *Na
 	nmc.mu.Lock()
 	defer nmc.mu.Unlock()
 
-	// Cleanup expired entries and enforce size limits before adding new entry
+	// Add/update the namespace first
+	nmc.namespaces[ns.Name] = metadata
+
+	// Cleanup expired entries and enforce size limits after adding new entry
 	now := time.Now().Unix()
 	if now-nmc.lastCleanup > 60 { // Cleanup every minute
 		nmc.cleanupExpiredEntries(now, cacheTTL, logger)
-		nmc.enforceSizeLimit(maxCacheSize, logger)
 		nmc.lastCleanup = now
 	}
 
-	// Add/update the namespace
-	nmc.namespaces[ns.Name] = metadata
+	// Always enforce size limit when adding entries
+	nmc.enforceSizeLimit(maxCacheSize, logger)
+
 	nmc.cacheSize = len(nmc.namespaces)
-	cacheSize.WithLabelValues().Set(float64(nmc.cacheSize))
-	cacheOperationsTotal.WithLabelValues("update").Inc()
 
 	logger.Debug("Updated namespace metadata",
 		"namespace", ns.Name,
@@ -523,62 +463,49 @@ func (nmc *NamespaceMetadataCache) enforceSizeLimit(maxCacheSize int, logger *sl
 
 	if toRemove > 0 {
 		logger.Warn("Evicted oldest namespace cache entries due to size limit",
-			"evicted", toRemove,
-			"max_cache_size", maxCacheSize)
+			"evicted", toRemove, "cache_size", len(nmc.namespaces))
 	}
 }
 
-// deleteNamespace removes namespace from cache.
+// deleteNamespace removes a namespace from the cache.
 func (nmc *NamespaceMetadataCache) deleteNamespace(name string) {
 	nmc.mu.Lock()
+	defer nmc.mu.Unlock()
 	delete(nmc.namespaces, name)
-	nmc.mu.Unlock()
+	nmc.cacheSize = len(nmc.namespaces)
 }
 
-// GetMetadata returns metadata (labels and annotations) for a namespace.
+// GetMetadata retrieves namespace metadata from cache.
 func (nmc *NamespaceMetadataCache) GetMetadata(namespaceName string) *NamespaceMetadata {
+	if nmc == nil {
+		return nil
+	}
+
 	nmc.mu.RLock()
 	defer nmc.mu.RUnlock()
 
-	metadata := nmc.namespaces[namespaceName]
-	if metadata == nil {
-		cacheOperationsTotal.WithLabelValues("miss").Inc()
-		return &NamespaceMetadata{
-			Labels:      make(map[string]string),
-			Annotations: make(map[string]string),
+	// Check if namespace exists in cache
+	if metadata, exists := nmc.namespaces[namespaceName]; exists {
+		// Check if entry has expired
+		if nmc.cacheTTL > 0 {
+			age := time.Now().Unix() - metadata.LastUpdated
+			if age > nmc.cacheTTL {
+				// Entry expired but don't remove here (will be cleaned up later)
+				return nil
+			}
 		}
+		return metadata
 	}
 
-	// Check if entry has expired (use default TTL if not configured)
-	cacheTTL := nmc.cacheTTL
-	if cacheTTL <= 0 {
-		cacheTTL = 300 // 5 minutes default
-	}
+	return nil
+}
 
-	now := time.Now().Unix()
-	if now-metadata.LastUpdated > cacheTTL {
-		cacheOperationsTotal.WithLabelValues("expired").Inc()
-		// Entry expired, return empty metadata
-		return &NamespaceMetadata{
-			Labels:      make(map[string]string),
-			Annotations: make(map[string]string),
-		}
+// hasSyncedNamespaces checks if the informer has synced the initial list
+func (nmc *NamespaceMetadataCache) hasSyncedNamespaces() bool {
+	if nmc.informer != nil {
+		return nmc.informer.HasSynced()
 	}
-
-	cacheOperationsTotal.WithLabelValues("hit").Inc()
-	// Return copy to avoid data races
-	result := &NamespaceMetadata{
-		Labels:      make(map[string]string),
-		Annotations: make(map[string]string),
-		LastUpdated: metadata.LastUpdated,
-	}
-	for k, v := range metadata.Labels {
-		result.Labels[k] = v
-	}
-	for k, v := range metadata.Annotations {
-		result.Annotations[k] = v
-	}
-	return result
+	return false
 }
 
 // Start starts the namespace enricher.
@@ -587,38 +514,17 @@ func (ne *NamespaceEnricher) Start(ctx context.Context) {
 		return
 	}
 
-	// Use graceful degradation
-	defer func() {
-		if r := recover(); r != nil {
-			ne.recordError(fmt.Errorf("panic in enricher start: %v", r))
-			ne.logger.Error("Namespace enricher start panic recovered", "panic", r)
-		}
-	}()
-
-	if ne.cache == nil {
-		ne.recordError(fmt.Errorf("cannot start enricher: cache is nil"))
-		return
-	}
-
-	// Try to start cache with timeout
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
+	// Start cache informer
+	if ne.cache != nil {
 		ne.cache.Start(ctx)
-	}()
-
-	// Wait for start with timeout
-	select {
-	case <-done:
-		ne.recordSuccess()
-		ne.logger.Info("Namespace enricher started successfully")
-	case <-time.After(30 * time.Second):
-		ne.recordError(fmt.Errorf("timeout starting namespace enricher"))
-		ne.logger.Error("Timeout starting namespace enricher")
-	case <-ctx.Done():
-		ne.recordError(fmt.Errorf("context cancelled during start"))
-		ne.logger.Info("Context cancelled during namespace enricher start")
 	}
+
+	ne.logger.Info("Started namespace enricher",
+		"label_prefix", ne.labelPrefix,
+		"label_selectors", len(ne.config.LabelSelector),
+		"annotation_selectors", len(ne.config.AnnotationSelector),
+		"max_cache_size", ne.config.MaxCacheSize,
+		"cache_ttl", ne.config.CacheTTL)
 }
 
 // Stop stops the namespace enricher.
@@ -627,30 +533,17 @@ func (ne *NamespaceEnricher) Stop() {
 		return
 	}
 
-	// Use graceful degradation
-	defer func() {
-		if r := recover(); r != nil {
-			ne.logger.Error("Namespace enricher stop panic recovered", "panic", r)
-		}
-	}()
-
+	// Stop cache informer
 	if ne.cache != nil {
 		ne.cache.Stop()
 	}
 
-	ne.logger.Info("Namespace enricher stopped")
+	ne.logger.Info("Stopped namespace enricher")
 }
 
 // EnrichWithMetadata enriches labels with namespace metadata.
 func (ne *NamespaceEnricher) EnrichWithMetadata(lset labels.Labels) labels.Labels {
-	start := time.Now()
-	defer func() {
-		duration := time.Since(start)
-		enrichmentDuration.WithLabelValues("success").Observe(duration.Seconds())
-	}()
-
 	if ne == nil || !ne.isHealthyToEnrich() {
-		enrichmentTotal.WithLabelValues("skipped_unhealthy").Inc()
 		return lset
 	}
 
@@ -659,182 +552,180 @@ func (ne *NamespaceEnricher) EnrichWithMetadata(lset labels.Labels) labels.Label
 		if r := recover(); r != nil {
 			ne.recordError(fmt.Errorf("panic in enrichment: %v", r))
 			ne.logger.Error("Namespace enrichment panic recovered", "panic", r)
-			enrichmentTotal.WithLabelValues("panic").Inc()
-			errorRate.WithLabelValues("panic").Inc()
 		}
 	}()
 
-	metricName := lset.Get(labels.MetricName)
-	if metricName == "" {
-		enrichmentTotal.WithLabelValues("no_metric_name").Inc()
-		return lset
-	}
+	// Extract namespace from various possible label formats
+	var namespaceName string
+	lset.Range(func(l labels.Label) {
+		switch l.Name {
+		case "namespace":
+			namespaceName = l.Value
+		case "__meta_kubernetes_namespace":
+			namespaceName = l.Value
+		}
+	})
 
-	// Skip node-level and cluster-level metrics
-	if isNodeLevelMetric(metricName, lset) {
-		enrichmentTotal.WithLabelValues("skipped_node_level").Inc()
-		return lset
-	}
-
-	namespaceName := lset.Get("namespace")
 	if namespaceName == "" {
-		enrichmentTotal.WithLabelValues("no_namespace").Inc()
 		return lset
 	}
 
+	// Skip enrichment for node-level metrics
+	metricNameLabel := lset.Get("__name__")
+	if isNodeLevelMetric(metricNameLabel, lset) {
+		return lset
+	}
+
+	// Get namespace metadata with error handling
 	metadata, err := ne.getMetadataWithErrorHandling(namespaceName)
 	if err != nil {
 		ne.recordError(err)
-		enrichmentTotal.WithLabelValues("metadata_error").Inc()
-		errorRate.WithLabelValues("metadata_fetch").Inc()
+		return lset // Return original labels on error (graceful degradation)
+	}
+
+	if metadata == nil {
 		return lset
 	}
 
+	// Build enriched labels with error handling
 	enrichedLabels, err := ne.buildEnrichedLabels(lset, metadata)
 	if err != nil {
 		ne.recordError(err)
-		enrichmentTotal.WithLabelValues("build_error").Inc()
-		errorRate.WithLabelValues("label_build").Inc()
-		return lset
+		return lset // Return original labels on error
 	}
 
-	enrichmentTotal.WithLabelValues("success").Inc()
+	ne.recordSuccess()
 	return enrichedLabels
 }
 
-// getMetadataWithErrorHandling safely retrieves metadata with error handling
+// getMetadataWithErrorHandling safely retrieves namespace metadata
 func (ne *NamespaceEnricher) getMetadataWithErrorHandling(namespaceName string) (*NamespaceMetadata, error) {
-	defer func() {
-		if r := recover(); r != nil {
-			ne.logger.Error("Panic in metadata retrieval", "namespace", namespaceName, "panic", r)
-		}
-	}()
-
 	if ne.cache == nil {
-		return nil, fmt.Errorf("cache is nil")
+		return nil, fmt.Errorf("cache not initialized")
 	}
 
-	metadata := ne.cache.GetMetadata(namespaceName)
-	return metadata, nil
+	return ne.cache.GetMetadata(namespaceName), nil
 }
 
-// buildEnrichedLabels safely builds the enriched label set
+// buildEnrichedLabels safely builds enriched labels with namespace metadata
 func (ne *NamespaceEnricher) buildEnrichedLabels(lset labels.Labels, metadata *NamespaceMetadata) (labels.Labels, error) {
-	defer func() {
-		if r := recover(); r != nil {
-			ne.logger.Error("Panic in label building", "panic", r)
-		}
-	}()
-
+	// Use object pooling to reduce GC pressure
 	builder := getLabelBuilder(lset)
+	defer putLabelBuilder(builder)
 
-	// Add namespace labels with safety checks
-	for labelKey, labelValue := range metadata.Labels {
-		if labelKey == "" || labelValue == "" {
-			continue // Skip invalid labels
+	// Add namespace labels with configured prefix
+	for key, value := range metadata.Labels {
+		if key == "" || value == "" {
+			continue // Skip empty keys or values
 		}
-		enrichedLabelName := ne.labelPrefix + sanitizeLabelName(labelKey)
-		if len(enrichedLabelName) > 253 { // Prometheus label name limit
-			ne.logger.Warn("Skipping label due to length limit", "label", enrichedLabelName)
-			continue
-		}
-		builder.Set(enrichedLabelName, labelValue)
+		enrichedKey := ne.labelPrefix + sanitizeLabelName(key)
+		builder.Set(enrichedKey, value)
 	}
 
-	// Add namespace annotations with safety checks
-	for annotationKey, annotationValue := range metadata.Annotations {
-		if annotationKey == "" || annotationValue == "" {
-			continue // Skip invalid annotations
+	// Add namespace annotations with configured prefix
+	for key, value := range metadata.Annotations {
+		if key == "" || value == "" {
+			continue // Skip empty keys or values
 		}
-		enrichedLabelName := ne.labelPrefix + sanitizeLabelName(annotationKey)
-		if len(enrichedLabelName) > 253 { // Prometheus label name limit
-			ne.logger.Warn("Skipping annotation due to length limit", "annotation", enrichedLabelName)
-			continue
-		}
-		builder.Set(enrichedLabelName, annotationValue)
+		enrichedKey := ne.labelPrefix + sanitizeLabelName(key)
+		builder.Set(enrichedKey, value)
 	}
 
-	result := builder.Labels()
-	putLabelBuilder(builder)
-	return result, nil
+	return builder.Labels(), nil
 }
 
-// isNodeLevelMetric determines if a metric represents node-level (global) data
-// rather than namespace-scoped data that should be enriched.
+// isNodeLevelMetric determines if a metric represents node-level information
+// Node-level metrics should not be enriched with namespace metadata
 func isNodeLevelMetric(metricName string, lset labels.Labels) bool {
-	// Skip metrics that start with node_ as they represent global node resources
-	if len(metricName) >= 5 && metricName[:5] == "node_" {
-		return true
+	// Node-level metric patterns
+	nodeMetricPrefixes := []string{
+		"node_",
+		"kube_node_",
+		"kubelet_",
+		"container_fs_",
+		"container_network_",
+		"machine_",
+		"cadvisor_version_info",
 	}
 
-	// Skip metrics from kubernetes-nodes job as they're typically node-level
-	job := lset.Get("job")
-	if job == "kubernetes-nodes" || job == "kubernetes-node-exporter" {
-		return true
+	for _, prefix := range nodeMetricPrefixes {
+		if strings.HasPrefix(metricName, prefix) {
+			return true
+		}
 	}
 
-	// Skip well-known node-level and cluster-level metric patterns
+	// Check for cluster-level kube-state-metrics (not namespace-scoped)
 	clusterLevelPrefixes := []string{
-		"kube_node_",               // Node-specific kube-state-metrics
 		"kube_persistentvolume_",   // Cluster-level storage (not namespace-scoped)
 		"kube_storageclass_",       // Cluster-level storage classes
 		"kube_clusterrole_",        // Cluster-level RBAC
 		"kube_clusterrolebinding_", // Cluster-level RBAC
 		"kube_namespace_",          // Metrics ABOUT namespaces (not scoped TO them)
-		"machine_",                 // Machine-level metrics
-		"kubelet_node_",            // Kubelet node metrics
-		"kubernetes_build_",        // Kubernetes build info (cluster-level)
 	}
 
 	for _, prefix := range clusterLevelPrefixes {
-		if len(metricName) >= len(prefix) && metricName[:len(prefix)] == prefix {
+		if strings.HasPrefix(metricName, prefix) {
 			return true
 		}
+	}
+
+	// Check for node-related jobs
+	job := lset.Get("job")
+	if job == "kubernetes-nodes" || job == "kubernetes-node-exporter" {
+		return true
+	}
+
+	// Check for node-exporter style metrics
+	nodeLabel := lset.Get("node")
+	instanceLabel := lset.Get("instance")
+	if nodeLabel != "" && instanceLabel != "" {
+		// Metrics with both node and instance labels are typically node-level
+		return true
 	}
 
 	return false
 }
 
-// sanitizeLabelName converts annotation keys to valid Prometheus label names.
-var labelNameRegex = regexp.MustCompile(`[^a-zA-Z0-9_]`)
-
+// sanitizeLabelName ensures label names conform to Prometheus requirements
 func sanitizeLabelName(name string) string {
-	return labelNameRegex.ReplaceAllString(name, "_")
+	// Basic sanitization - replace invalid characters with underscores
+	return regexp.MustCompile(`[^a-zA-Z0-9_:]`).ReplaceAllString(name, "_")
 }
 
-// KubernetesEnricherFactory implements enricher factory for Kubernetes.
+// KubernetesEnricherFactory implements enricher factory for registration
 type KubernetesEnricherFactory struct{}
 
-// CreateEnricher creates a new Kubernetes namespace enricher.
 func (f *KubernetesEnricherFactory) CreateEnricher(cfg interface{}, logger *slog.Logger) (interface{}, error) {
-	namespaceCfg, ok := cfg.(*NamespaceEnrichmentConfig)
+	config, ok := cfg.(*NamespaceEnrichmentConfig)
 	if !ok {
-		return nil, errors.New("invalid configuration type for Kubernetes enricher")
+		return nil, fmt.Errorf("invalid config type for Kubernetes enricher")
 	}
 
-	if namespaceCfg == nil || !namespaceCfg.Enabled {
+	if !config.Enabled {
 		return nil, nil
 	}
 
+	// Validate configuration
+	if err := validateEnrichmentConfig(config); err != nil {
+		return nil, fmt.Errorf("invalid enrichment configuration: %w", err)
+	}
+
+	// Create Kubernetes client
 	client, err := f.createKubernetesClient()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
 	}
 
-	enricher, err := NewNamespaceEnricher(namespaceCfg, client, logger)
+	// Create enricher
+	enricher, err := NewNamespaceEnricher(config, client, logger)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create namespace enricher: %w", err)
 	}
 
-	if enricher == nil {
-		return nil, nil
-	}
-
-	// Return adapter that can be used by external packages
+	// Return adapter for external use
 	return NewScrapeMetadataEnricherAdapter(enricher), nil
 }
 
-// createKubernetesClient attempts to create a Kubernetes client if running in-cluster.
 func (f *KubernetesEnricherFactory) createKubernetesClient() (kubernetes.Interface, error) {
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -844,91 +735,126 @@ func (f *KubernetesEnricherFactory) createKubernetesClient() (kubernetes.Interfa
 	return kubernetes.NewForConfig(config)
 }
 
-// KubernetesEnricherFactoryFunc is the factory function for creating Kubernetes enrichers.
-// It matches the EnricherFactory signature from the scrape package.
-func KubernetesEnricherFactoryFunc(cfg interface{}, logger *slog.Logger) (interface{}, error) {
-	namespaceCfg, ok := cfg.(*NamespaceEnrichmentConfig)
-	if !ok {
-		return nil, errors.New("invalid configuration type for Kubernetes enricher")
+// KubernetesEnricherFactoryFunc provides a function-based factory for registration
+func KubernetesEnricherFactoryFunc(cfg interface{}, logger *slog.Logger) (scrape.MetadataEnricher, error) {
+	// Handle both config package type and local type for flexibility
+	var config *NamespaceEnrichmentConfig
+
+	switch c := cfg.(type) {
+	case *NamespaceEnrichmentConfig:
+		config = c
+	case NamespaceEnrichmentConfigInterface:
+		// Convert from config package type to local type
+		config = &NamespaceEnrichmentConfig{
+			Enabled:            c.IsEnabled(),
+			LabelPrefix:        c.GetLabelPrefix(),
+			LabelSelector:      c.GetLabelSelector(),
+			AnnotationSelector: c.GetAnnotationSelector(),
+			MaxCacheSize:       c.GetMaxCacheSize(),
+			CacheTTL:           c.GetCacheTTL(),
+			MaxSelectors:       c.GetMaxSelectors(),
+		}
+	default:
+		return nil, fmt.Errorf("invalid config type for Kubernetes enricher: expected NamespaceEnrichmentConfig or NamespaceEnrichmentConfigInterface, got %T", cfg)
 	}
 
-	if namespaceCfg == nil || !namespaceCfg.Enabled {
+	if !config.Enabled {
 		return nil, nil
 	}
 
-	factory := &KubernetesEnricherFactory{}
-	return factory.CreateEnricher(namespaceCfg, logger)
-}
-
-// recordError tracks errors for circuit breaker functionality
-func (ne *NamespaceEnricher) recordError(err error) {
-	if ne == nil {
-		return
+	// Validate configuration
+	if err := validateEnrichmentConfig(config); err != nil {
+		return nil, fmt.Errorf("invalid enrichment configuration: %w", err)
 	}
 
+	// Create Kubernetes client
+	client, err := createKubernetesClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+
+	// Create enricher
+	enricher, err := NewNamespaceEnricher(config, client, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create namespace enricher: %w", err)
+	}
+
+	// Return adapter for external use
+	return NewScrapeMetadataEnricherAdapter(enricher), nil
+}
+
+func createKubernetesClient() (kubernetes.Interface, error) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	return kubernetes.NewForConfig(config)
+}
+
+// Error handling and health checking methods
+
+// recordError records an error and updates health status
+func (ne *NamespaceEnricher) recordError(err error) {
 	ne.mu.Lock()
 	defer ne.mu.Unlock()
 
 	ne.lastError = err
-	ne.lastErrorTime = time.Now()
 	ne.errorCount++
+	ne.lastErrorTime = time.Now()
 
-	// Implement circuit breaker: mark unhealthy after too many errors
+	// Mark as unhealthy if too many errors
 	if ne.errorCount >= ne.maxErrors {
 		ne.isHealthy = false
-		enricherHealth.WithLabelValues().Set(0)
-		ne.logger.Warn("Namespace enricher marked unhealthy due to excessive errors",
+		ne.logger.Warn("Namespace enricher marked unhealthy due to errors",
 			"error_count", ne.errorCount,
 			"max_errors", ne.maxErrors,
 			"last_error", err)
 	}
 }
 
-// recordSuccess resets error state on successful operation
+// recordSuccess records a successful operation and may restore health
 func (ne *NamespaceEnricher) recordSuccess() {
-	if ne == nil {
-		return
-	}
-
 	ne.mu.Lock()
 	defer ne.mu.Unlock()
 
-	// Reset error state on success
+	// Reset error count on success and restore health
 	if ne.errorCount > 0 {
+		ne.logger.Debug("Namespace enricher recovering",
+			"previous_error_count", ne.errorCount)
 		ne.errorCount = 0
 		ne.lastError = nil
-	}
-
-	// Mark as healthy if not already
-	if !ne.isHealthy {
 		ne.isHealthy = true
-		enricherHealth.WithLabelValues().Set(1)
-		ne.logger.Info("Namespace enricher marked healthy after successful operation")
 	}
 }
 
-// isHealthyToEnrich checks if enricher is in a healthy state
+// isHealthyToEnrich checks if the enricher is healthy enough to perform enrichment
 func (ne *NamespaceEnricher) isHealthyToEnrich() bool {
-	if ne == nil {
-		return false
-	}
-
 	ne.mu.RLock()
 	defer ne.mu.RUnlock()
 
-	// If unhealthy, check if we should try to recover (every 5 minutes)
-	if !ne.isHealthy {
-		if time.Since(ne.lastErrorTime) > 5*time.Minute {
-			ne.logger.Info("Attempting to recover namespace enricher after cooldown period")
-			return true // Allow one attempt to recover
-		}
-		return false
+	// Allow enrichment if healthy or if enough time has passed since last error
+	if ne.isHealthy {
+		return true
 	}
 
-	return true
+	// Auto-recovery after 5 minutes of no errors
+	if time.Since(ne.lastErrorTime) > 5*time.Minute {
+		ne.mu.RUnlock()
+		ne.mu.Lock()
+		ne.isHealthy = true
+		ne.errorCount = 0
+		ne.lastError = nil
+		ne.mu.Unlock()
+		ne.mu.RLock()
+		ne.logger.Info("Namespace enricher auto-recovered after timeout")
+		return true
+	}
+
+	return false
 }
 
-// SharedInformerManager manages shared namespace informers to optimize API usage
+// SharedInformerManager manages a shared namespace informer to avoid multiple watchers
 type SharedInformerManager struct {
 	mu              sync.RWMutex
 	informerFactory informers.SharedInformerFactory
@@ -940,49 +866,39 @@ type SharedInformerManager struct {
 	logger          *slog.Logger
 }
 
-var sharedInformerManager *SharedInformerManager
-var sharedInformerOnce sync.Once
+var (
+	sharedInformerMutex sync.Mutex
+	sharedInformerMap   = make(map[kubernetes.Interface]*SharedInformerManager)
+)
 
-// getSharedInformerManager returns the singleton shared informer manager
 func getSharedInformerManager(client kubernetes.Interface, logger *slog.Logger) *SharedInformerManager {
-	sharedInformerOnce.Do(func() {
-		sharedInformerManager = &SharedInformerManager{
-			client: client,
-			logger: logger,
-			stopCh: make(chan struct{}),
-		}
-	})
+	sharedInformerMutex.Lock()
+	defer sharedInformerMutex.Unlock()
 
-	// Update client if different (for testing scenarios)
-	sharedInformerManager.mu.Lock()
-	if sharedInformerManager.client != client {
-		sharedInformerManager.client = client
-		// Reset factory to use new client
-		sharedInformerManager.informerFactory = nil
-		sharedInformerManager.informer = nil
+	if manager, exists := sharedInformerMap[client]; exists {
+		return manager
 	}
-	sharedInformerManager.mu.Unlock()
 
-	return sharedInformerManager
+	// Create new shared informer manager
+	factory := informers.NewSharedInformerFactory(client, 5*time.Minute)
+	manager := &SharedInformerManager{
+		informerFactory: factory,
+		informer:        factory.Core().V1().Namespaces().Informer(),
+		stopCh:          make(chan struct{}),
+		client:          client,
+		logger:          logger,
+	}
+
+	sharedInformerMap[client] = manager
+	return manager
 }
 
-// getInformer returns a shared namespace informer, creating it if necessary
+// getInformer returns the shared informer and increments reference count
 func (sim *SharedInformerManager) getInformer() (cache.SharedIndexInformer, error) {
 	sim.mu.Lock()
 	defer sim.mu.Unlock()
 
-	if sim.informer == nil {
-		if sim.client == nil {
-			return nil, fmt.Errorf("kubernetes client is nil")
-		}
-
-		sim.informerFactory = informers.NewSharedInformerFactory(sim.client, 0)
-		sim.informer = sim.informerFactory.Core().V1().Namespaces().Informer()
-	}
-
 	sim.refCount++
-	sim.logger.Debug("Informer reference acquired", "ref_count", sim.refCount)
-
 	return sim.informer, nil
 }
 
@@ -995,41 +911,34 @@ func (sim *SharedInformerManager) startInformer(ctx context.Context) error {
 		return nil
 	}
 
-	if sim.informerFactory == nil {
-		return fmt.Errorf("informer factory is nil")
-	}
-
 	// Start the informer factory
-	go sim.informerFactory.Start(sim.stopCh)
+	sim.informerFactory.Start(sim.stopCh)
 
-	// Wait for cache sync with timeout
-	synced := sim.informerFactory.WaitForCacheSync(sim.stopCh)
-	for informerType, hasSynced := range synced {
-		if !hasSynced {
-			return fmt.Errorf("failed to sync informer %v", informerType)
-		}
+	// Wait for cache to sync
+	if !cache.WaitForCacheSync(ctx.Done(), sim.informer.HasSynced) {
+		return fmt.Errorf("failed to sync namespace informer cache")
 	}
 
 	sim.isStarted = true
-	sim.logger.Info("Shared namespace informer started successfully")
+	sim.logger.Debug("Started shared namespace informer")
 	return nil
 }
 
-// releaseInformer decrements the reference count and stops the informer if no longer needed
+// releaseInformer decrements reference count and stops if no more references
 func (sim *SharedInformerManager) releaseInformer() {
 	sim.mu.Lock()
 	defer sim.mu.Unlock()
 
-	if sim.refCount > 0 {
-		sim.refCount--
-		sim.logger.Debug("Informer reference released", "ref_count", sim.refCount)
-	}
-
-	// Stop informer when no more references
-	if sim.refCount == 0 && sim.isStarted {
+	sim.refCount--
+	if sim.refCount <= 0 {
 		close(sim.stopCh)
 		sim.isStarted = false
-		sim.stopCh = make(chan struct{}) // Reset for potential restart
-		sim.logger.Info("Shared namespace informer stopped - no more references")
+
+		// Remove from global map
+		sharedInformerMutex.Lock()
+		delete(sharedInformerMap, sim.client)
+		sharedInformerMutex.Unlock()
+
+		sim.logger.Debug("Stopped shared namespace informer")
 	}
 }

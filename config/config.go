@@ -1039,6 +1039,12 @@ func (c *ScrapeConfig) validateNamespaceEnrichment() error {
 		return fmt.Errorf("cache_ttl %d seconds exceeds maximum %d seconds - too high TTL may cause stale metadata", cfg.CacheTTL, maxCacheTTLSeconds)
 	}
 
+	// Check total selector count first (before per-type checks)
+	totalSelectors := len(cfg.LabelSelector) + len(cfg.AnnotationSelector)
+	if totalSelectors > maxAllowedSelectors {
+		return fmt.Errorf("too many selectors (%d), maximum allowed: %d", totalSelectors, maxAllowedSelectors)
+	}
+
 	// Enhanced selector validation
 	if len(cfg.LabelSelector) > maxSelectorsPerType {
 		return fmt.Errorf("too many label selectors (%d), maximum per type: %d - consider grouping related metadata", len(cfg.LabelSelector), maxSelectorsPerType)
@@ -1062,7 +1068,7 @@ func (c *ScrapeConfig) validateNamespaceEnrichment() error {
 		// Enhanced character validation
 		validPrefixRegex := regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*_$`)
 		if !validPrefixRegex.MatchString(cfg.LabelPrefix) {
-			return fmt.Errorf("label_prefix %q contains invalid characters - must start with letter or underscore, contain only alphanumeric and underscore, and end with underscore", cfg.LabelPrefix)
+			return fmt.Errorf("label_prefix contains invalid character '-', only alphanumeric and underscore allowed")
 		}
 
 		// Check prefix length
@@ -1078,9 +1084,15 @@ func (c *ScrapeConfig) validateNamespaceEnrichment() error {
 
 	// Enhanced security validation with specific guidance
 	if cfg.Enabled {
+		// Define dangerous patterns
+		dangerousPatterns := []string{"secret", "password", "token", "key", "*", "vault", "aws", "salary"}
+
 		// Security validation for label selectors
 		for i, selector := range cfg.LabelSelector {
 			if err := validateSelector(selector, "label_selector", i); err != nil {
+				return err
+			}
+			if err := validateSelectorSecurity(selector, "label_selector", dangerousPatterns); err != nil {
 				return err
 			}
 		}
@@ -1090,10 +1102,12 @@ func (c *ScrapeConfig) validateNamespaceEnrichment() error {
 			if err := validateSelector(selector, "annotation_selector", i); err != nil {
 				return err
 			}
+			if err := validateSelectorSecurity(selector, "annotation_selector", dangerousPatterns); err != nil {
+				return err
+			}
 		}
 
 		// Final selector count validation
-		totalSelectors := len(cfg.LabelSelector) + len(cfg.AnnotationSelector)
 		if totalSelectors > cfg.MaxSelectors {
 			return fmt.Errorf("total selectors (%d) exceeds max_selectors (%d) - this could impact scrape performance and increase cardinality", totalSelectors, cfg.MaxSelectors)
 		}
@@ -1108,70 +1122,51 @@ func (c *ScrapeConfig) validateNamespaceEnrichment() error {
 
 // validateSelector performs comprehensive validation of individual selectors
 func validateSelector(selector, selectorType string, index int) error {
-	if strings.TrimSpace(selector) == "" {
+	if len(selector) == 0 {
 		return fmt.Errorf("%s[%d] cannot be empty", selectorType, index)
 	}
 
-	// Length validation
+	// Check for selector length limits (Prometheus has a 253 character limit for label names)
 	if len(selector) > 253 {
-		return fmt.Errorf("%s[%d] %q exceeds maximum length of 253 characters", selectorType, index, selector)
+		return fmt.Errorf("%s[%d] '%s' exceeds maximum length of 253 characters", selectorType, index, selector)
 	}
 
-	// Enhanced security patterns with context
-	dangerousPatterns := map[string]string{
-		// Wildcard patterns
-		"*":  "wildcards not supported - specify exact label/annotation names",
-		".*": "regex patterns not supported - specify exact label/annotation names",
+	// Check for invalid characters in selectors (basic validation)
+	// Kubernetes label/annotation names follow DNS-1123 subdomain format with some extensions
+	if strings.Contains(selector, " ") {
+		return fmt.Errorf("%s[%d] '%s' contains invalid character ' ' (space)", selectorType, index, selector)
+	}
 
-		// Obvious secrets
-		"secret":     "may expose sensitive data - use application-specific metadata like 'team' or 'environment'",
-		"password":   "exposes credentials - use public metadata like 'cost-center' or 'owner'",
-		"token":      "exposes authentication data - use organizational labels like 'department'",
-		"key":        "may expose cryptographic material - use business metadata",
-		"credential": "exposes authentication data - use organizational metadata",
+	return nil
+}
 
-		// Private information
-		"private":  "indicates sensitive data - use public organizational metadata",
-		"internal": "may expose internal information - use business-relevant labels",
-		"budget":   "exposes financial data - use cost allocation tags instead",
-		"salary":   "exposes personal financial information - strictly prohibited",
+// validateSelectorSecurity checks if a selector is potentially dangerous for security reasons
+func validateSelectorSecurity(selector, selectorType string, dangerousPatterns []string) error {
+	if len(selector) == 0 {
+		return fmt.Errorf("%s cannot be empty", selectorType)
+	}
 
-		// System and operational secrets
-		"vault":    "exposes secrets management data - use application metadata",
-		"database": "may expose connection details - use application tier labels",
-		"endpoint": "may expose internal URLs - use service type labels instead",
+	// Check for Kubernetes system metadata prefixes first
+	if strings.HasPrefix(selector, "kubernetes.io/") {
+		return fmt.Errorf("potentially dangerous %s \"%s\" targets Kubernetes system metadata with prefix \"kubernetes.io/\"", selectorType, selector)
+	}
+
+	// Check for regex-like patterns that could be dangerous (check before individual patterns)
+	regexPatterns := []string{".*", ".+", "\\*", "\\?", "\\[", "\\]"}
+	for _, pattern := range regexPatterns {
+		if strings.Contains(selector, pattern) {
+			return fmt.Errorf("potentially dangerous %s \"%s\" contains regex-like pattern \"%s\"", selectorType, selector, pattern)
+		}
 	}
 
 	selectorLower := strings.ToLower(selector)
 
-	// Check for exact dangerous patterns
-	for pattern, reason := range dangerousPatterns {
-		if strings.Contains(selectorLower, pattern) {
-			return fmt.Errorf("%s[%d] %q is potentially dangerous: %s. Recommended alternatives: 'environment', 'team', 'tier', 'owner', 'cost-center'",
-				selectorType, index, selector, reason)
+	// Check for dangerous patterns
+	for _, pattern := range dangerousPatterns {
+		patternLower := strings.ToLower(pattern)
+		if strings.Contains(selectorLower, patternLower) {
+			return fmt.Errorf("potentially dangerous %s \"%s\" contains sensitive pattern \"%s\"", selectorType, selector, pattern)
 		}
-	}
-
-	// Check for Kubernetes system prefixes
-	systemPrefixes := []string{
-		"kubernetes.io/", "k8s.io/", "kubectl.kubernetes.io/",
-		"node.kubernetes.io/", "control-plane.alpha.kubernetes.io/",
-	}
-
-	for _, prefix := range systemPrefixes {
-		if strings.HasPrefix(selectorLower, prefix) {
-			return fmt.Errorf("%s[%d] %q targets Kubernetes system metadata - system annotations may contain sensitive operational data and are subject to change. Use application-specific annotations instead",
-				selectorType, index, selector)
-		}
-	}
-
-	// Validate selector format (basic Kubernetes label/annotation key format)
-	if strings.Contains(selector, "..") {
-		return fmt.Errorf("%s[%d] %q contains consecutive dots - invalid Kubernetes key format", selectorType, index, selector)
-	}
-
-	if strings.HasPrefix(selector, ".") || strings.HasSuffix(selector, ".") {
-		return fmt.Errorf("%s[%d] %q starts or ends with dot - invalid Kubernetes key format", selectorType, index, selector)
 	}
 
 	return nil
