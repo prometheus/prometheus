@@ -453,19 +453,18 @@ func (c *PrometheusConverter) addLabels(name string, baseLabels labels.Labels, e
 // getOrCreateTimeSeries returns the time series corresponding to the label set if existent, and false.
 // Otherwise it creates a new one and returns that, and true.
 func (c *PrometheusConverter) getOrCreateTimeSeries(lbls labels.Labels, metadata writev2.Metadata) (*writev2.TimeSeries, bool) {
+	labelsRefs := c.symbolTable.SymbolizeLabels(lbls, nil)
 	h := lbls.Hash()
 	ts := c.unique[h]
 	if ts != nil {
-		// TODO: Opportunity for optimization - symbolize lbls and check refs.
-		if labels.Equal(ts.ToLabels(&c.scratchBuilder, c.symbolTable.Symbols()), lbls) {
+		if symbolsEqual(ts.GetLabelsRefs(), labelsRefs) {
 			// We already have this metric.
 			return ts, false
 		}
 
 		// Look for a matching conflict.
 		for _, cTS := range c.conflicts[h] {
-			// TODO: Opportunity for optimization - symbolize lbls and check refs.
-			if labels.Equal(cTS.ToLabels(&c.scratchBuilder, c.symbolTable.Symbols()), lbls) {
+			if symbolsEqual(cTS.GetLabelsRefs(), labelsRefs) {
 				// We already have this metric.
 				return cTS, false
 			}
@@ -473,7 +472,7 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls labels.Labels, metadata
 
 		// New conflict.
 		ts = &writev2.TimeSeries{
-			LabelsRefs: c.symbolTable.SymbolizeLabels(lbls, nil),
+			LabelsRefs: labelsRefs,
 			Metadata:   metadata,
 		}
 		c.conflicts[h] = append(c.conflicts[h], ts)
@@ -482,11 +481,23 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls labels.Labels, metadata
 
 	// This metric is new.
 	ts = &writev2.TimeSeries{
-		LabelsRefs: c.symbolTable.SymbolizeLabels(lbls, nil),
+		LabelsRefs: labelsRefs,
 		Metadata:   metadata,
 	}
 	c.unique[h] = ts
 	return ts, true
+}
+
+func symbolsEqual(a, b []uint32) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range len(a) {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // addTimeSeriesIfNeeded adds a corresponding time series if it doesn't already exist.
