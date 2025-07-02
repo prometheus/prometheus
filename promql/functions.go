@@ -65,6 +65,88 @@ func funcTime(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (
 	}}, nil
 }
 
+func pickOrInterpolateLeft(floats []FPoint, first int, rangeStart int64, smoothed, isCounter bool) float64 {
+	if smoothed && floats[first].T < rangeStart {
+		return interpolate(floats[first], floats[first+1], rangeStart, isCounter)
+	}
+	return floats[first].F
+}
+
+func pickOrInterpolateRight(floats []FPoint, last int, rangeEnd int64, smoothed, isCounter bool) float64 {
+	if smoothed && last > 0 && floats[last].T > rangeEnd {
+		return interpolate(floats[last-1], floats[last], rangeEnd, isCounter)
+	}
+	return floats[last].F
+}
+
+func interpolate(p1, p2 FPoint, t int64, isCounter bool) float64 {
+	y1 := p1.F
+	y2 := p2.F
+	if isCounter && y2 < y1 {
+		y1 += y1
+	}
+
+	t1 := float64(p1.T)
+	t2 := float64(p2.T)
+	tf := float64(t)
+
+	return y1 + (y2-y1)*(tf-t1)/(t2-t1)
+}
+
+func counterCorrection(points []FPoint) float64 {
+	if len(points) < 2 {
+		return 0
+	}
+
+	var correction float64
+	prev := points[0].F
+	for _, p := range points[1:] {
+		if p.F < prev {
+			correction += prev
+		}
+		prev = p.F
+	}
+	return correction
+}
+
+func extendedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isCounter, isRate bool) (Vector, annotations.Annotations) {
+	var (
+		ms                 = args[0].(*parser.MatrixSelector)
+		vs                 = ms.VectorSelector.(*parser.VectorSelector)
+		samples            = vals[0]
+		f                  = samples.Floats
+		numSamplesMinusOne = len(f) - 1
+		rangeStart         = enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
+		rangeEnd           = enh.Ts - durationMilliseconds(vs.Offset)
+		annos              annotations.Annotations
+		smoothed           = vs.Smoothed
+	)
+
+	firstSampleIndex := max(0, sort.Search(numSamplesMinusOne, func(i int) bool { return f[i].T > rangeStart })-1)
+	lastSampleIndex := numSamplesMinusOne
+	if smoothed {
+		lastSampleIndex = sort.Search(numSamplesMinusOne, func(i int) bool { return f[i].T >= rangeEnd })
+	}
+
+	if f[lastSampleIndex].T <= rangeStart {
+		return enh.Out, annos
+	}
+
+	left := pickOrInterpolateLeft(f, firstSampleIndex, rangeStart, smoothed, isCounter)
+	right := pickOrInterpolateRight(f, lastSampleIndex, rangeEnd, smoothed, isCounter)
+
+	resultFloat := right - left
+
+	if isCounter {
+		resultFloat += counterCorrection(f[firstSampleIndex : lastSampleIndex+1])
+	}
+	if isRate {
+		resultFloat /= ms.Range.Seconds()
+	}
+
+	return append(enh.Out, Sample{F: resultFloat}), annos
+}
+
 // extrapolatedRate is a utility function for rate/increase/delta.
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // extrapolates if the first/last sample is close to the boundary, and returns
@@ -72,6 +154,10 @@ func funcTime(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (
 func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isCounter, isRate bool) (Vector, annotations.Annotations) {
 	ms := args[0].(*parser.MatrixSelector)
 	vs := ms.VectorSelector.(*parser.VectorSelector)
+	if vs.Anchored || vs.Smoothed {
+		return extendedRate(vals, args, enh, isCounter, isRate)
+	}
+
 	var (
 		samples            = vals[0]
 		rangeStart         = enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
@@ -1481,8 +1567,18 @@ func funcHistogramQuantile(vectorVals []Vector, _ Matrix, args parser.Expression
 	return enh.Out, annos
 }
 
+func pickFirstSampleIndex(floats []FPoint, args parser.Expressions, enh *EvalNodeHelper) int {
+	ms := args[0].(*parser.MatrixSelector)
+	vs := ms.VectorSelector.(*parser.VectorSelector)
+	if !vs.Anchored {
+		return 0
+	}
+	rangeStart := enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
+	return max(0, sort.Search(len(floats)-1, func(i int) bool { return floats[i].T > rangeStart })-1)
+}
+
 // === resets(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcResets(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcResets(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	floats := matrixVal[0].Floats
 	histograms := matrixVal[0].Histograms
 	resets := 0
@@ -1491,7 +1587,8 @@ func funcResets(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNod
 	}
 
 	var prevSample, curSample Sample
-	for iFloat, iHistogram := 0, 0; iFloat < len(floats) || iHistogram < len(histograms); {
+	firstSampleIndex := pickFirstSampleIndex(floats, args, enh)
+	for iFloat, iHistogram := firstSampleIndex, 0; iFloat < len(floats) || iHistogram < len(histograms); {
 		switch {
 		// Process a float sample if no histogram sample remains or its timestamp is earlier.
 		// Process a histogram sample if no float sample remains or its timestamp is earlier.
@@ -1504,7 +1601,7 @@ func funcResets(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNod
 			iHistogram++
 		}
 		// Skip the comparison for the first sample, just initialize prevSample.
-		if iFloat+iHistogram == 1 {
+		if iFloat+iHistogram == 1+firstSampleIndex {
 			prevSample = curSample
 			continue
 		}
@@ -1527,7 +1624,7 @@ func funcResets(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNod
 }
 
 // === changes(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcChanges(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcChanges(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	floats := matrixVal[0].Floats
 	histograms := matrixVal[0].Histograms
 	changes := 0
@@ -1536,7 +1633,8 @@ func funcChanges(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNo
 	}
 
 	var prevSample, curSample Sample
-	for iFloat, iHistogram := 0, 0; iFloat < len(floats) || iHistogram < len(histograms); {
+	firstSampleIndex := pickFirstSampleIndex(floats, args, enh)
+	for iFloat, iHistogram := firstSampleIndex, 0; iFloat < len(floats) || iHistogram < len(histograms); {
 		switch {
 		// Process a float sample if no histogram sample remains or its timestamp is earlier.
 		// Process a histogram sample if no float sample remains or its timestamp is earlier.
@@ -1549,7 +1647,7 @@ func funcChanges(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNo
 			iHistogram++
 		}
 		// Skip the comparison for the first sample, just initialize prevSample.
-		if iFloat+iHistogram == 1 {
+		if iFloat+iHistogram == 1+firstSampleIndex {
 			prevSample = curSample
 			continue
 		}
@@ -1849,6 +1947,26 @@ var AtModifierUnsafeFunctions = map[string]struct{}{
 	// Uses timestamp of the argument for the result,
 	// hence unsafe to use with @ modifier.
 	"timestamp": {},
+}
+
+// AnchoredSafeFunctions are the functions that can be used with the anchored
+// modifier.  Anchored modifier returns matrices with samples outside of the
+// boundaries, so not every function can be used with it.
+var AnchoredSafeFunctions = map[string]struct{}{
+	"resets":   {},
+	"changes":  {},
+	"rate":     {},
+	"increase": {},
+	"delta":    {},
+}
+
+// SmoothedSafeFunctions are the functions that can be used with the smoothed
+// modifier.  Smoothed modifier returns matrices with samples outside of the
+// boundaries, so not every function can be used with it.
+var SmoothedSafeFunctions = map[string]struct{}{
+	"rate":     {},
+	"increase": {},
+	"delta":    {},
 }
 
 type vectorByValueHeap Vector
