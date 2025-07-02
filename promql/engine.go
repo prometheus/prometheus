@@ -481,7 +481,7 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
 func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, ts time.Time) (Query, error) {
-	pExpr, qry := ng.newQuery(q, qs, opts, ts, ts, 0)
+	pExpr, qry := ng.newQuery(q, qs, opts, ts, ts, 0*time.Second)
 	finishQueue, err := ng.queueActive(ctx, qry)
 	if err != nil {
 		return nil, err
@@ -494,7 +494,7 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
-	*pExpr, err = PreprocessExpr(expr, ts, ts)
+	*pExpr, err = PreprocessExpr(expr, ts, ts, 0)
 
 	return qry, err
 }
@@ -518,7 +518,7 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
-	*pExpr, err = PreprocessExpr(expr, start, end)
+	*pExpr, err = PreprocessExpr(expr, start, end, interval)
 
 	return qry, err
 }
@@ -3730,10 +3730,10 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
 // StepInvariantExpr. It also resolves the preprocessors and evaluates duration expressions
 // into their numeric values.
-func PreprocessExpr(expr parser.Expr, start, end time.Time) (parser.Expr, error) {
+func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) (parser.Expr, error) {
 	detectHistogramStatsDecoding(expr)
 
-	if err := parser.Walk(&durationVisitor{}, expr, nil); err != nil {
+	if err := parser.Walk(&durationVisitor{step: step}, expr, nil); err != nil {
 		return nil, err
 	}
 
