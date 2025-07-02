@@ -420,8 +420,8 @@ func (ls Labels) WithoutEmpty() Labels {
 // ByteSize returns the approximate size of the labels in bytes.
 // String header size is ignored because it should be amortized to zero.
 // SymbolTable size is also not taken into account.
-func (ls Labels) ByteSize() int {
-	return len(ls.data)
+func (ls Labels) ByteSize() uint64 {
+	return uint64(len(ls.data))
 }
 
 // Equal returns whether the two label sets are equal.

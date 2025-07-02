@@ -33,7 +33,7 @@ var expectedSizeOfLabels = []uint64{ // Values must line up with testCaseLabels.
 func TestByteSize(t *testing.T) {
 	for _, testCase := range []struct {
 		lbls     Labels
-		expected int
+		expected uint64
 	}{
 		{
 			lbls:     FromStrings("__name__", "foo"),

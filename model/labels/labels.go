@@ -251,10 +251,10 @@ func (ls Labels) WithoutEmpty() Labels {
 // ByteSize returns the approximate size of the labels in bytes including
 // the two string headers size for name and value.
 // Slice header size is ignored because it should be amortized to zero.
-func (ls Labels) ByteSize() int {
-	var size = 0
+func (ls Labels) ByteSize() uint64 {
+	var size uint64 = 0
 	for _, l := range ls {
-		size += len(l.Name) + len(l.Value) + 2*int(unsafe.Sizeof(""))
+		size += uint64(len(l.Name)+len(l.Value)) + 2*uint64(unsafe.Sizeof(""))
 	}
 	return size
 }
