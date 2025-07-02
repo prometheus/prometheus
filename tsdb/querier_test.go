@@ -2413,7 +2413,7 @@ func (m mockIndex) LabelNames(_ context.Context, matchers ...*labels.Matcher) ([
 }
 
 func (m mockIndex) IndexLookupPlanner() index.LookupPlanner {
-	return &index.OnlyIndexLookupPlanner{}
+	return &index.ScanEmptyMatchersLookupPlanner{}
 }
 
 func BenchmarkQueryIterator(b *testing.B) {
@@ -3355,7 +3355,7 @@ func (m mockMatcherIndex) PostingsForAllLabelValues(context.Context, string) ind
 }
 
 func (m mockMatcherIndex) IndexLookupPlanner() index.LookupPlanner {
-	return &index.OnlyIndexLookupPlanner{}
+	return &index.ScanEmptyMatchersLookupPlanner{}
 }
 
 func TestPostingsForMatcher(t *testing.T) {
@@ -3813,7 +3813,7 @@ func (m mockReaderOfLabels) Symbols() index.StringIter {
 }
 
 func (m mockReaderOfLabels) IndexLookupPlanner() index.LookupPlanner {
-	return &index.OnlyIndexLookupPlanner{}
+	return &index.ScanEmptyMatchersLookupPlanner{}
 }
 
 // TestMergeQuerierConcurrentSelectMatchers reproduces the data race bug from

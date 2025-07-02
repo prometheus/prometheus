@@ -1112,10 +1112,12 @@ type Reader struct {
 	dec *Decoder
 
 	version int
+
+	lookupPlanner LookupPlanner
 }
 
 func (r *Reader) IndexLookupPlanner() LookupPlanner {
-	return &OnlyIndexLookupPlanner{}
+	return r.lookupPlanner
 }
 
 type postingOffset struct {
@@ -1146,16 +1148,20 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 // NewReader returns a new index reader on the given byte slice. It automatically
 // handles different format versions.
 func NewReader(b ByteSlice, decoder PostingsDecoder) (*Reader, error) {
-	return newReader(b, io.NopCloser(nil), decoder)
+	return newReader(b, io.NopCloser(nil), decoder, &ScanEmptyMatchersLookupPlanner{})
 }
 
 // NewFileReader returns a new index reader against the given index file.
 func NewFileReader(path string, decoder PostingsDecoder) (*Reader, error) {
+	return NewFileReaderWithPlanner(path, decoder, &ScanEmptyMatchersLookupPlanner{})
+}
+
+func NewFileReaderWithPlanner(path string, decoder PostingsDecoder, planner LookupPlanner) (*Reader, error) {
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return nil, err
 	}
-	r, err := newReader(realByteSlice(f.Bytes()), f, decoder)
+	r, err := newReader(realByteSlice(f.Bytes()), f, decoder, planner)
 	if err != nil {
 		return nil, tsdb_errors.NewMulti(
 			err,
@@ -1166,12 +1172,13 @@ func NewFileReader(path string, decoder PostingsDecoder) (*Reader, error) {
 	return r, nil
 }
 
-func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder) (*Reader, error) {
+func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder, planner LookupPlanner) (*Reader, error) {
 	r := &Reader{
-		b:        b,
-		c:        c,
-		postings: map[string][]postingOffset{},
-		st:       labels.NewSymbolTable(),
+		b:             b,
+		c:             c,
+		postings:      map[string][]postingOffset{},
+		st:            labels.NewSymbolTable(),
+		lookupPlanner: planner,
 	}
 
 	// Verify header.

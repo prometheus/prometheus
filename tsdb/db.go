@@ -94,7 +94,7 @@ func DefaultOptions() *Options {
 		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
 		CompactionDelay:             time.Duration(0),
 		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
-		IndexLookupPlanner:          &index.OnlyIndexLookupPlanner{},
+		IndexLookupPlanner:          &index.ScanEmptyMatchersLookupPlanner{},
 	}
 }
 
@@ -225,8 +225,7 @@ type Options struct {
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
 
-	// IndexLookupPlanner plans how to execute index lookups by deciding which matchers
-	// to apply during index lookup versus after series retrieval.
+	// IndexLookupPlanner can be optionally used when querying the index of blocks.
 	IndexLookupPlanner index.LookupPlanner
 }
 
@@ -642,7 +641,7 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 		return nil, ErrClosed
 	default:
 	}
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, DefaultPostingsDecoderFactory)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, DefaultPostingsDecoderFactory, &index.ScanEmptyMatchersLookupPlanner{})
 	if err != nil {
 		return nil, err
 	}
@@ -974,6 +973,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
+	headOpts.IndexLookupPlanner = opts.IndexLookupPlanner
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}
@@ -1569,7 +1569,7 @@ func (db *DB) reloadBlocks() (err error) {
 	}()
 
 	db.mtx.RLock()
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.PostingsDecoderFactory)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.PostingsDecoderFactory, db.opts.IndexLookupPlanner)
 	db.mtx.RUnlock()
 	if err != nil {
 		return err
@@ -1669,7 +1669,7 @@ func (db *DB) reloadBlocks() (err error) {
 	return nil
 }
 
-func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
+func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, planner index.LookupPlanner) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
 	bDirs, err := blockDirs(dir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("find blocks: %w", err)
@@ -1686,7 +1686,7 @@ func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.
 		// See if we already have the block in memory or open it otherwise.
 		block, open := getBlock(loaded, meta.ULID)
 		if !open {
-			block, err = OpenBlock(l, bDir, chunkPool, postingsDecoderFactory)
+			block, err = OpenBlockWithPlanner(l, bDir, chunkPool, postingsDecoderFactory, planner)
 			if err != nil {
 				corrupted[meta.ULID] = err
 				continue
