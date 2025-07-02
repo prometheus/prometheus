@@ -209,7 +209,7 @@ the offset calculation.
 For a **range query**, it resolves to the step width of the range query.
 For an **instant query**, it resolves to `0s`. 
 
-`min(<duration>, <duration>)` and `max(<duration>, <duration>)` functions can be used to find the minimum or maximum of two duration expressions.
+`min(<duration>, <duration>)` and `max(<duration>, <duration>)` can be used to find the minimum or maximum of two duration expressions.
 
 **Note**: Duration expressions are not supported in the @ timestamp operator.
 
@@ -224,15 +224,15 @@ The following operators are supported:
 
 Examples of equivalent durations:
 
-* `5m * 2` is the equivalent to `10m` or `600s`
-* `10m - 1m` is the equivalent to `9m` or `540s`
-* `(5+2) * 1m` is the equivalent to `7m` or `420s`
-* `1h / 2` is the equivalent to `30m` or `1800s`
-* `4h % 3h` is the equivalent to `1h` or `3600s`
-* `(2 ^ 3) * 1m` is the equivalent to `8m` or `480s`
-* `step() + 1` is the equivalent to the query step width increased by 1s.
-* `max(step(), 5s)` is the equivalent to the maximum value between the query step width and `5s`.
-* `min(2 * step() + 5s, 5m)` is the equivalent to the minimum value between the query step increased by `5s` and `5m`.
+* `5m * 2` is equivalent to `10m` or `600s`
+* `10m - 1m` is equivalent to `9m` or `540s`
+* `(5+2) * 1m` is equivalent to `7m` or `420s`
+* `1h / 2` is equivalent to `30m` or `1800s`
+* `4h % 3h` is equivalent to `1h` or `3600s`
+* `(2 ^ 3) * 1m` is equivalent to `8m` or `480s`
+* `step() + 1` is equivalent to the query step width increased by 1s.
+* `max(step(), 5s)` is equivalent to the larger of the query step width and `5s`.
+* `min(2 * step() + 5s, 5m)` is equivalent to the smaller of twice the query step increased by `5s` and `5m`.
 
 
 ## OTLP Native Delta Support
