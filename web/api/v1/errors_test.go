@@ -42,10 +42,10 @@ import (
 
 func TestApiStatusCodes(t *testing.T) {
 	for name, tc := range map[string]struct {
-		err                 error
-		expectedString      string
-		expectedCode        int
-		errTypeToStatusCode ErrorTypeToStatusCode
+		err               error
+		expectedString    string
+		expectedCode      int
+		overrideErrorCode OverrideErrorCode
 	}{
 		"random error": {
 			err:            errors.New("some random error"),
@@ -62,7 +62,7 @@ func TestApiStatusCodes(t *testing.T) {
 		"overridden error code for engine error": {
 			err:            promql.ErrTooManySamples("some error"),
 			expectedString: "too many samples",
-			errTypeToStatusCode: func(errNum errorNum, err error) (codeOverride bool, code int) {
+			overrideErrorCode: func(errNum errorNum, err error) (override bool, code int) {
 				if errNum == ErrorExec {
 					if strings.Contains(err.Error(), "some error") {
 						return true, 999
@@ -105,7 +105,7 @@ func TestApiStatusCodes(t *testing.T) {
 			"error from seriesset": errorTestQueryable{q: errorTestQuerier{s: errorTestSeriesSet{err: tc.err}}},
 		} {
 			t.Run(fmt.Sprintf("%s/%s", name, k), func(t *testing.T) {
-				r := createPrometheusAPI(t, q, tc.errTypeToStatusCode)
+				r := createPrometheusAPI(t, q, tc.overrideErrorCode)
 				rec := httptest.NewRecorder()
 
 				req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
@@ -119,7 +119,7 @@ func TestApiStatusCodes(t *testing.T) {
 	}
 }
 
-func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, errTypeToStatusCode ErrorTypeToStatusCode) *route.Router {
+func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overrideErrorCode OverrideErrorCode) *route.Router {
 	t.Helper()
 
 	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
@@ -163,7 +163,7 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, errTyp
 		false,
 		false,
 		false,
-		errTypeToStatusCode,
+		overrideErrorCode,
 	)
 
 	promRouter := route.New().WithPrefix("/api/v1")

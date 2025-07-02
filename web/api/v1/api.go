@@ -104,9 +104,9 @@ var (
 	errorNotAcceptable = errorType{ErrorNotAcceptable, "not_acceptable"}
 )
 
-// ErrorTypeToStatusCode can be used to override status code for different error types.
+// OverrideErrorCode can be used to override status code for different error types.
 // Return false to fall back to default status code.
-type ErrorTypeToStatusCode func(errorNum, error) (codeOverride bool, code int)
+type OverrideErrorCode func(errorNum, error) (override bool, code int)
 
 var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
 
@@ -244,7 +244,7 @@ type API struct {
 	notificationsGetter func() []notifications.Notification
 	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
 	// Allows customizing the default mapping
-	errorTypeToStatusCode ErrorTypeToStatusCode
+	overrideErrorCode OverrideErrorCode
 
 	remoteWriteHandler http.Handler
 	remoteReadHandler  http.Handler
@@ -287,7 +287,7 @@ func NewAPI(
 	acceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg,
 	otlpEnabled, otlpDeltaToCumulative, otlpNativeDeltaIngestion bool,
 	ctZeroIngestionEnabled bool,
-	errorTypeToStatusCode ErrorTypeToStatusCode,
+	overrideErrorCode OverrideErrorCode,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -298,25 +298,25 @@ func NewAPI(
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
-		now:                   time.Now,
-		config:                configFunc,
-		flagsMap:              flagsMap,
-		ready:                 readyFunc,
-		globalURLOptions:      globalURLOptions,
-		db:                    db,
-		dbDir:                 dbDir,
-		enableAdmin:           enableAdmin,
-		rulesRetriever:        rr,
-		logger:                logger,
-		CORSOrigin:            corsOrigin,
-		runtimeInfo:           runtimeInfo,
-		buildInfo:             buildInfo,
-		gatherer:              gatherer,
-		isAgent:               isAgent,
-		statsRenderer:         DefaultStatsRenderer,
-		notificationsGetter:   notificationsGetter,
-		notificationsSub:      notificationsSub,
-		errorTypeToStatusCode: errorTypeToStatusCode,
+		now:                 time.Now,
+		config:              configFunc,
+		flagsMap:            flagsMap,
+		ready:               readyFunc,
+		globalURLOptions:    globalURLOptions,
+		db:                  db,
+		dbDir:               dbDir,
+		enableAdmin:         enableAdmin,
+		rulesRetriever:      rr,
+		logger:              logger,
+		CORSOrigin:          corsOrigin,
+		runtimeInfo:         runtimeInfo,
+		buildInfo:           buildInfo,
+		gatherer:            gatherer,
+		isAgent:             isAgent,
+		statsRenderer:       DefaultStatsRenderer,
+		notificationsGetter: notificationsGetter,
+		notificationsSub:    notificationsSub,
+		overrideErrorCode:   overrideErrorCode,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -2044,8 +2044,8 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	}
 
 	var code int
-	if api.errorTypeToStatusCode != nil {
-		if ok, newCode := api.errorTypeToStatusCode(apiErr.typ.num, apiErr.err); ok {
+	if api.overrideErrorCode != nil {
+		if ok, newCode := api.overrideErrorCode(apiErr.typ.num, apiErr.err); ok {
 			code = newCode
 		} else {
 			code = getDefaultErrorCode(apiErr.typ)
