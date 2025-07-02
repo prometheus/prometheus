@@ -63,6 +63,12 @@ func (p *ScanEmptyMatchersLookupPlanner) PlanIndexLookup(_ context.Context, matc
 		}
 	}
 
+	if len(indexMatchers) == 0 {
+		// Zero index matchers match no series. We retain one index matchers so that we have a base set of series which we can scan.
+		indexMatchers = scanMatchers[:1]
+		scanMatchers = scanMatchers[1:]
+	}
+
 	return &concreteLookupPlan{
 		indexMatchers: indexMatchers,
 		scanMatchers:  scanMatchers,

@@ -64,13 +64,30 @@ func TestScanEmptyMatchersLookupPlanner(t *testing.T) {
 			expectedScan: []*labels.Matcher{},
 		},
 		{
-			name: "all non-selective matchers go to scan",
+			name: "even with only non-selective matchers, there is still one which stays as index matcher",
 			matchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, "job", ""),
 				labels.MustNewMatcher(labels.MatchRegexp, "instance", ".*"),
 				labels.MustNewMatcher(labels.MatchRegexp, "env", ".+"),
 			},
-			expectedIndex: []*labels.Matcher{},
+			expectedIndex: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "job", ""),
+			},
+			expectedScan: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "env", ".+"),
+			},
+		},
+		{
+			name: "all non-selective matchers go to scan",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "job", "prometheus"),
+				labels.MustNewMatcher(labels.MatchEqual, "job", ""),
+				labels.MustNewMatcher(labels.MatchRegexp, "instance", ".*"),
+				labels.MustNewMatcher(labels.MatchRegexp, "env", ".+"),
+			},
+			expectedIndex: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "job", "prometheus"),
+			},
 			expectedScan: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, "job", ""),
 				labels.MustNewMatcher(labels.MatchRegexp, "env", ".+"),
