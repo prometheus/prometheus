@@ -1,19 +1,17 @@
 ---
-title: HTTP Configuration for promtool
+title: HTTP configuration for promtool
 sort_rank: 6
 ---
 
-# HTTP Configuration File for promtool
+Promtool is a versatile CLI tool for Prometheus that supports validation, debugging, querying, unit testing, tsdb management, pushing data, and experimental PromQL editing.
 
-Promtool is a versatile CLI tool for Prometheus that supports validation, debugging, querying, unit testing, tsdb management, pushing data and experimental PromQL editing.
-
-Prometheus supports basic authentication and TLS and since promtool needs to connect to Prometheus, we need to provide the authentication details. To specify those authentication details, use the `--http.config.file` for all requests that need to communicate with Prometheus.
+Prometheus supports basic authentication and TLS. Since promtool needs to connect to Prometheus, we need to provide the authentication details. To specify those authentication details, use the `--http.config.file` for all requests that need to communicate with Prometheus.
 For instance, if you would like to check whether your local Prometheus server is healthy, you would use:
 ```bash
 promtool check healthy --url=http://localhost:9090 --http.config.file=http-config-file.yml
 ```
 
-The file is written in [YAML format](https://en.wikipedia.org/wiki/YAML), defined by the scheme described below.
+The file is written in [YAML format](https://en.wikipedia.org/wiki/YAML), defined by the schema described below.
 Brackets indicate that a parameter is optional. For non-list parameters the value is set to the specified default.
 
 The file is read upon every http request, such as any change in the
@@ -28,8 +26,6 @@ Generic placeholders are defined as follows:
 
 A valid example file can be found [here](/documentation/examples/promtool-http-config-file.yml).
 
-## <http_config>
-`http_config` allows configuring the HTTP client that promtool uses to communicate with Prometheus.
 ```yaml
 # Note that `basic_auth` and `authorization` options are mutually exclusive.
 
@@ -84,7 +80,7 @@ http_headers:
   [ <string>: <header> ]
 ```
 
-## <oauth2>
+## \<oauth2\>
 OAuth 2.0 authentication using the client credentials grant type.
 ```yaml
 # `client_id` and `client_secret` are used to authenticate your
@@ -165,7 +161,7 @@ tls_config:
 [ max_version: <string> ]
 ```
 
-## <header>
+## \<header\>
 `header` represents the configuration for a single HTTP header.
 ```yaml
 [ values:
@@ -176,4 +172,4 @@ tls_config:
 
 [ files:
   [ - <filename> ... ] ]
-``
+```

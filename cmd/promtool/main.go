@@ -89,8 +89,7 @@ var (
 	lintConfigOptions = append(append([]string{}, lintRulesOptions...), lintOptionTooLongScrapeInterval)
 )
 
-const httpConfigFileDescription = "HTTP client configuration file for promtool to connect to Prometheus." + " " +
-	"For more information, please visit the following page: https://prometheus.io/docs/prometheus/latest/configuration/promtool"
+const httpConfigFileDescription = "HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool"
 
 func main() {
 	var (
