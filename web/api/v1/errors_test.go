@@ -62,13 +62,15 @@ func TestApiStatusCodes(t *testing.T) {
 		"overridden error code for engine error": {
 			err:            promql.ErrTooManySamples("some error"),
 			expectedString: "too many samples",
-			errTypeToStatusCode: ErrorTypeToStatusCode{
-				ErrorExec: func(err error) int {
+			errTypeToStatusCode: func(errNum errorNum, err error) (codeOverride bool, code int) {
+				if errNum == ErrorExec {
 					if strings.Contains(err.Error(), "some error") {
-						return 999
+						return true, 999
 					}
-					return 998
-				},
+					return true, 998
+				}
+
+				return false, 0
 			},
 			expectedCode: 999,
 		},

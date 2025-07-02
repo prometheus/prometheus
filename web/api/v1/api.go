@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"math"
 	"math/rand"
 	"net"
@@ -105,7 +104,9 @@ var (
 	errorNotAcceptable = errorType{ErrorNotAcceptable, "not_acceptable"}
 )
 
-type ErrorTypeToStatusCode map[errorNum]func(error) int
+// ErrorTypeToStatusCode can be used to override status code for different error types.
+// Return false to fall back to default status code.
+type ErrorTypeToStatusCode func(errorNum, error) (codeOverride bool, code int)
 
 var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
 
@@ -315,7 +316,7 @@ func NewAPI(
 		statsRenderer:         DefaultStatsRenderer,
 		notificationsGetter:   notificationsGetter,
 		notificationsSub:      notificationsSub,
-		errorTypeToStatusCode: ErrorTypeToStatusCode{},
+		errorTypeToStatusCode: errorTypeToStatusCode,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -336,8 +337,6 @@ func NewAPI(
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, ap, configFunc, remote.OTLPOptions{ConvertDelta: otlpDeltaToCumulative, NativeDelta: otlpNativeDeltaIngestion})
 	}
-
-	maps.Copy(a.errorTypeToStatusCode, errorTypeToStatusCode)
 
 	return a
 }
@@ -2045,33 +2044,41 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	}
 
 	var code int
-	if handler, ok := api.errorTypeToStatusCode[apiErr.typ.num]; ok {
-		code = handler(apiErr.err)
-	} else {
-		switch apiErr.typ {
-		case errorBadData:
-			code = http.StatusBadRequest
-		case errorExec:
-			code = http.StatusUnprocessableEntity
-		case errorCanceled:
-			code = statusClientClosedConnection
-		case errorTimeout:
-			code = http.StatusServiceUnavailable
-		case errorInternal:
-			code = http.StatusInternalServerError
-		case errorNotFound:
-			code = http.StatusNotFound
-		case errorNotAcceptable:
-			code = http.StatusNotAcceptable
-		default:
-			code = http.StatusInternalServerError
+	if api.errorTypeToStatusCode != nil {
+		if ok, newCode := api.errorTypeToStatusCode(apiErr.typ.num, apiErr.err); ok {
+			code = newCode
+		} else {
+			code = getDefaultErrorCode(apiErr.typ)
 		}
+	} else {
+		code = getDefaultErrorCode(apiErr.typ)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	if n, err := w.Write(b); err != nil {
 		api.logger.Error("error writing response", "bytesWritten", n, "err", err)
+	}
+}
+
+func getDefaultErrorCode(errType errorType) int {
+	switch errType {
+	case errorBadData:
+		return http.StatusBadRequest
+	case errorExec:
+		return http.StatusUnprocessableEntity
+	case errorCanceled:
+		return statusClientClosedConnection
+	case errorTimeout:
+		return http.StatusServiceUnavailable
+	case errorInternal:
+		return http.StatusInternalServerError
+	case errorNotFound:
+		return http.StatusNotFound
+	case errorNotAcceptable:
+		return http.StatusNotAcceptable
+	default:
+		return http.StatusInternalServerError
 	}
 }
 
