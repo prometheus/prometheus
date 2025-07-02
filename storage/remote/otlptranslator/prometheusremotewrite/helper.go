@@ -97,20 +97,22 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 	c.scratchBuilder.Sort()
 	sortedLabels := c.scratchBuilder.Labels()
 
-	// Now that we have sorted and filtered the labels, build the actual list
-	// of labels, and handle conflicts by appending values.
-	c.builder.Reset(labels.EmptyLabels())
-	sortedLabels.Range(func(l labels.Label) {
-		finalKey := l.Name
-		if !settings.AllowUTF8 {
-			finalKey = otlptranslator.NormalizeLabel(finalKey)
-		}
-		if existingValue := c.builder.Get(finalKey); existingValue != "" {
-			c.builder.Set(finalKey, existingValue+";"+l.Value)
-		} else {
-			c.builder.Set(finalKey, l.Value)
-		}
-	})
+	if settings.AllowUTF8 {
+		// UTF8 is allowed, so conflicts aren't possible.
+		c.builder.Reset(sortedLabels)
+	} else {
+		// Now that we have sorted and filtered the labels, build the actual list
+		// of labels, and handle conflicts by appending values.
+		c.builder.Reset(labels.EmptyLabels())
+		sortedLabels.Range(func(l labels.Label) {
+			finalKey := otlptranslator.NormalizeLabel(l.Name)
+			if existingValue := c.builder.Get(finalKey); existingValue != "" {
+				c.builder.Set(finalKey, existingValue+";"+l.Value)
+			} else {
+				c.builder.Set(finalKey, l.Value)
+			}
+		})
+	}
 
 	settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, settings.AllowUTF8)
 

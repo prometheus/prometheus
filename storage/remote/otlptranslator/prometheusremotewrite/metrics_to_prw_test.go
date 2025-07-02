@@ -980,7 +980,7 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 								b.Run(fmt.Sprintf("labels per metric: %v", labelsPerMetric), func(b *testing.B) {
 									for _, exemplarsPerSeries := range []int{0, 5, 10} {
 										b.Run(fmt.Sprintf("exemplars per series: %v", exemplarsPerSeries), func(b *testing.B) {
-											settings := Settings{}
+											settings := Settings{AllowUTF8: true}
 											payload, _ := createExportRequest(
 												resourceAttributeCount,
 												histogramCount,
