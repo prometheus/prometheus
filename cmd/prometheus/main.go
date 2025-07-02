@@ -58,7 +58,8 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/kubernetes"
+	_ "github.com/prometheus/prometheus/discovery/install"    // Register service discovery implementations.
+	_ "github.com/prometheus/prometheus/discovery/kubernetes" // Register namespace enrichment experimental feature.
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -154,25 +155,6 @@ func init() {
 		panic(err)
 	}
 
-	// Register Kubernetes enricher factory for namespace enrichment at application level
-	// This respects Prometheus architectural separation of platform-specific functionality
-	scrape.RegisterEnricherFactory("kubernetes", func(cfg *config.NamespaceEnrichmentConfig, logger *slog.Logger) (scrape.MetadataEnricher, error) {
-		factory := &kubernetes.KubernetesEnricherFactory{}
-		enricherInterface, err := factory.CreateEnricher(cfg, logger)
-		if err != nil {
-			return nil, err
-		}
-		if enricherInterface == nil {
-			return nil, nil
-		}
-		// Cast the interface{} to scrape.MetadataEnricher
-		if enricher, ok := enricherInterface.(scrape.MetadataEnricher); ok {
-			// Start the enricher with background context
-			enricher.Start(context.Background())
-			return enricher, nil
-		}
-		return nil, fmt.Errorf("kubernetes enricher does not implement scrape.MetadataEnricher interface")
-	})
 }
 
 // serverOnlyFlag creates server-only kingpin flag.
@@ -317,6 +299,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "use-uncached-io":
 				c.tsdb.UseUncachedIO = true
 				logger.Info("Experimental Uncached IO is enabled.")
+			case "namespace-enrichment":
+				c.scrape.EnableNamespaceEnrichment = true
+				logger.Warn("Experimental namespace enrichment enabled. This feature is in early development and may impact performance and security. Use with caution in production environments.")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -581,7 +566,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative, promql-duration-expr, use-uncached-io. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative, promql-duration-expr, use-uncached-io, namespace-enrichment. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)

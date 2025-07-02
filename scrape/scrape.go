@@ -87,18 +87,19 @@ func NewNoopEnricher() MetadataEnricher {
 }
 
 // EnricherFactory is a function that creates a MetadataEnricher.
-type EnricherFactory func(*config.NamespaceEnrichmentConfig, *slog.Logger) (MetadataEnricher, error)
+// Uses interface{} to avoid import cycles with platform-specific config types.
+type EnricherFactory func(interface{}, *slog.Logger) (MetadataEnricher, error)
 
-// enricherFactories holds registered enricher factories.
+// enricherFactories holds the registered enricher factories.
 var enricherFactories = make(map[string]EnricherFactory)
 
-// RegisterEnricherFactory registers an enricher factory for a given platform.
+// RegisterEnricherFactory registers an enricher factory for a platform.
 func RegisterEnricherFactory(platform string, factory EnricherFactory) {
 	enricherFactories[platform] = factory
 }
 
 // createKubernetesEnricher creates a Kubernetes enricher using the registered factory.
-func createKubernetesEnricher(config *config.NamespaceEnrichmentConfig, logger *slog.Logger) (MetadataEnricher, error) {
+func createKubernetesEnricher(config interface{}, logger *slog.Logger) (MetadataEnricher, error) {
 	if factory, exists := enricherFactories["kubernetes"]; exists {
 		return factory(config, logger)
 	}
@@ -106,12 +107,12 @@ func createKubernetesEnricher(config *config.NamespaceEnrichmentConfig, logger *
 	return nil, fmt.Errorf("no enricher factory registered for kubernetes platform")
 }
 
-// CreateEnricher creates a new enricher for the specified platform.
-// This is a simplified approach - for now, enricher creation is handled
-// at the manager level where platform-specific imports are available.
+// CreateEnricher creates an enricher for the specified platform.
 func CreateEnricher(platform string, config interface{}, logger *slog.Logger) (MetadataEnricher, error) {
-	// For now, return an error indicating enrichers should be created elsewhere
-	return nil, fmt.Errorf("enricher creation for platform %s should be handled at manager level", platform)
+	if factory, exists := enricherFactories[platform]; exists {
+		return factory(config, logger)
+	}
+	return nil, fmt.Errorf("no enricher factory registered for platform: %s", platform)
 }
 
 // FailureLogger is an interface that can be used to log all failed
@@ -213,21 +214,30 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 		return nil, fmt.Errorf("invalid metric name escaping scheme, %w", err)
 	}
 
-	// Create metadata enricher if configured
+	// Create metadata enricher if configured and experimental flag is enabled
 	var enricher MetadataEnricher = NewNoopEnricher()
-	if cfg.NamespaceEnrichment != nil && cfg.NamespaceEnrichment.Enabled {
-		logger.Info("Creating Kubernetes namespace enricher")
+	if options.EnableNamespaceEnrichment && cfg.NamespaceEnrichment != nil && cfg.NamespaceEnrichment.Enabled {
+		logger.Warn("EXPERIMENTAL: Creating Kubernetes namespace enricher. This feature may impact performance.")
 
-		// Use a simple factory function to avoid import cycles
+		// Graceful degradation: if enricher creation fails, continue with no-op enricher
 		if kubernetesEnricher, err := createKubernetesEnricher(cfg.NamespaceEnrichment, logger); err != nil {
-			logger.Warn("Failed to create Kubernetes namespace enricher, falling back to no-op", "error", err)
+			logger.Warn("Failed to create Kubernetes namespace enricher, continuing without enrichment", "error", err)
+			// enricher remains as no-op
 		} else if kubernetesEnricher != nil {
 			enricher = kubernetesEnricher
 			logger.Info("Kubernetes namespace enricher created successfully")
 		}
+	} else if cfg.NamespaceEnrichment != nil && cfg.NamespaceEnrichment.Enabled {
+		logger.Warn("Namespace enrichment is configured but experimental feature flag 'namespace-enrichment' is not enabled. Add --enable-feature=namespace-enrichment to enable this experimental feature.")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+
+	// Start the enricher after creating the context
+	if enricher != nil {
+		enricher.Start(ctx)
+		logger.Info("Started namespace enricher")
+	}
 	sp := &scrapePool{
 		cancel:               cancel,
 		appendable:           app,

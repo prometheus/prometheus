@@ -1001,143 +1001,177 @@ func (c *ScrapeConfig) AlwaysScrapeClassicHistogramsEnabled() bool {
 func (c *ScrapeConfig) validateNamespaceEnrichment() error {
 	cfg := c.NamespaceEnrichment
 
+	// Set realistic defaults for resource limits based on production usage
+	if cfg.MaxCacheSize <= 0 {
+		cfg.MaxCacheSize = 1000 // Default: cache up to 1000 namespaces (covers most clusters)
+	}
+	if cfg.CacheTTL == 0 {
+		cfg.CacheTTL = int64(time.Duration(5 * time.Minute).Seconds()) // Default: 5 minute TTL in seconds
+	}
+	if cfg.MaxSelectors <= 0 {
+		cfg.MaxSelectors = 20 // Default: max 20 selectors total (realistic for most use cases)
+	}
+
+	// Enhanced validation for realistic production limits
+	const (
+		maxAllowedCacheSize   = 50000 // Increased for large clusters (50k namespaces)
+		maxAllowedSelectors   = 50    // Increased but still safe limit
+		minCacheTTLSeconds    = 30    // Reduced minimum for faster updates
+		maxCacheTTLSeconds    = 3600  // 1 hour maximum
+		maxSelectorNameLength = 253   // Kubernetes label/annotation key limit
+		maxSelectorsPerType   = 25    // Per type (labels vs annotations)
+	)
+
+	// Validate cache size with progressive warnings
+	if cfg.MaxCacheSize > maxAllowedCacheSize {
+		return fmt.Errorf("max_cache_size %d exceeds maximum allowed %d - this could cause memory exhaustion in large clusters", cfg.MaxCacheSize, maxAllowedCacheSize)
+	}
+	if cfg.MaxCacheSize > 10000 {
+		// Warning for large cache sizes (but still allow)
+		fmt.Printf("WARNING: max_cache_size %d is quite large - monitor memory usage in production\n", cfg.MaxCacheSize)
+	}
+
+	// Enhanced TTL validation with context
+	if cfg.CacheTTL < minCacheTTLSeconds {
+		return fmt.Errorf("cache_ttl %d seconds is below minimum %d seconds - too low TTL increases Kubernetes API load", cfg.CacheTTL, minCacheTTLSeconds)
+	}
+	if cfg.CacheTTL > maxCacheTTLSeconds {
+		return fmt.Errorf("cache_ttl %d seconds exceeds maximum %d seconds - too high TTL may cause stale metadata", cfg.CacheTTL, maxCacheTTLSeconds)
+	}
+
+	// Enhanced selector validation
+	if len(cfg.LabelSelector) > maxSelectorsPerType {
+		return fmt.Errorf("too many label selectors (%d), maximum per type: %d - consider grouping related metadata", len(cfg.LabelSelector), maxSelectorsPerType)
+	}
+	if len(cfg.AnnotationSelector) > maxSelectorsPerType {
+		return fmt.Errorf("too many annotation selectors (%d), maximum per type: %d - consider grouping related metadata", len(cfg.AnnotationSelector), maxSelectorsPerType)
+	}
+
 	// If label_prefix is empty, use default
 	if cfg.LabelPrefix == "" {
 		cfg.LabelPrefix = "ns_"
 	}
 
-	// Validate label_prefix format (should be valid label prefix)
+	// Enhanced label_prefix validation with examples
 	if cfg.LabelPrefix != "" {
 		// Check that prefix ends with underscore for proper label naming
 		if !strings.HasSuffix(cfg.LabelPrefix, "_") {
-			return fmt.Errorf("label_prefix must end with underscore, got %q", cfg.LabelPrefix)
+			return fmt.Errorf("label_prefix must end with underscore for proper Prometheus label naming, got %q - example: \"ns_\"", cfg.LabelPrefix)
 		}
-		// Check for valid characters in prefix
-		for _, r := range cfg.LabelPrefix {
-			if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
-				return fmt.Errorf("label_prefix contains invalid character %q, only alphanumeric and underscore allowed", r)
-			}
+
+		// Enhanced character validation
+		validPrefixRegex := regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*_$`)
+		if !validPrefixRegex.MatchString(cfg.LabelPrefix) {
+			return fmt.Errorf("label_prefix %q contains invalid characters - must start with letter or underscore, contain only alphanumeric and underscore, and end with underscore", cfg.LabelPrefix)
+		}
+
+		// Check prefix length
+		if len(cfg.LabelPrefix) > 20 {
+			return fmt.Errorf("label_prefix %q is too long (%d chars), maximum 20 characters - keeps label names readable", cfg.LabelPrefix, len(cfg.LabelPrefix))
 		}
 	}
 
-	// At least one of label_selector or annotation_selector must be specified when enabled
+	// At least one selector required when enabled
 	if cfg.Enabled && len(cfg.LabelSelector) == 0 && len(cfg.AnnotationSelector) == 0 {
-		return errors.New("at least one of label_selector or annotation_selector must be specified when enabled is true")
+		return errors.New("at least one of label_selector or annotation_selector must be specified when enrichment is enabled - example: label_selector: [\"environment\", \"team\"]")
 	}
 
-	// Only perform security validation if enrichment is enabled
+	// Enhanced security validation with specific guidance
 	if cfg.Enabled {
-		// SECURITY: Define dangerous patterns that could expose sensitive data
-		dangerousPatterns := []string{
-			// Wildcard patterns (checked first)
-			"*", ".*",
-			// Obvious secrets and credentials
-			"secret", "password", "pwd", "pass", "key", "token", "credential", "cred",
-			"auth", "authorization", "bearer", "oauth", "jwt", "cookie", "session",
-			// Certificate and crypto materials
-			"cert", "certificate", "tls", "ssl", "private", "public", "rsa", "ecdsa",
-			"x509", "pem", "der", "p12", "pkcs", "csr", "crt",
-			// Vault and secrets management
-			"vault", "sealed", "unsealed", "kv", "consul", "etcd",
-			// Database and service credentials
-			"db", "database", "mysql", "postgres", "redis", "mongo", "sql",
-			"username", "user", "login", "admin", "root",
-			// API and webhook secrets
-			"api", "webhook", "callback", "endpoint", "url", "uri",
-			// Cloud provider secrets
-			"aws", "azure", "gcp", "google", "s3", "ec2", "iam",
-			// Classification and sensitivity markers
-			"confidential", "internal", "restricted", "classified", "sensitive",
-			"pii", "phi", "gdpr", "hipaa", "sox", "pci",
-			// Financial and business sensitive
-			"salary", "wage", "budget", "price", "billing", "payment",
-			"ssn", "social", "tax", "account", "routing", "swift", "iban",
-		}
-
-		// SECURITY: Check annotation selectors for dangerous patterns
-		for _, selector := range cfg.AnnotationSelector {
-			if err := validateSelectorSecurity(selector, "annotation_selector", dangerousPatterns); err != nil {
+		// Security validation for label selectors
+		for i, selector := range cfg.LabelSelector {
+			if err := validateSelector(selector, "label_selector", i); err != nil {
 				return err
 			}
 		}
 
-		// SECURITY: Check label selectors for dangerous patterns
-		for _, selector := range cfg.LabelSelector {
-			if err := validateSelectorSecurity(selector, "label_selector", dangerousPatterns); err != nil {
+		// Security validation for annotation selectors
+		for i, selector := range cfg.AnnotationSelector {
+			if err := validateSelector(selector, "annotation_selector", i); err != nil {
 				return err
 			}
 		}
 
-		// SECURITY: Limit total number of selectors to prevent DoS
-		maxSelectors := 50
+		// Final selector count validation
 		totalSelectors := len(cfg.LabelSelector) + len(cfg.AnnotationSelector)
-		if totalSelectors > maxSelectors {
-			return fmt.Errorf("too many selectors (%d), maximum allowed: %d - this could impact performance and security", totalSelectors, maxSelectors)
+		if totalSelectors > cfg.MaxSelectors {
+			return fmt.Errorf("total selectors (%d) exceeds max_selectors (%d) - this could impact scrape performance and increase cardinality", totalSelectors, cfg.MaxSelectors)
 		}
-	}
 
-	// Validate selector entries are non-empty and within length limits
-	for _, selector := range cfg.LabelSelector {
-		if strings.TrimSpace(selector) == "" {
-			return errors.New("label_selector entries cannot be empty")
-		}
-		// SECURITY: Validate selector length to prevent buffer attacks
-		if len(selector) > 253 { // Kubernetes label key limit
-			return fmt.Errorf("label_selector %q exceeds maximum length of 253 characters", selector)
-		}
-	}
-
-	for _, selector := range cfg.AnnotationSelector {
-		if strings.TrimSpace(selector) == "" {
-			return errors.New("annotation_selector entries cannot be empty")
-		}
-		// SECURITY: Validate selector length to prevent buffer attacks
-		if len(selector) > 253 { // Kubernetes annotation key limit
-			return fmt.Errorf("annotation_selector %q exceeds maximum length of 253 characters", selector)
+		if cfg.MaxSelectors > maxAllowedSelectors {
+			return fmt.Errorf("max_selectors %d exceeds maximum allowed %d - too many selectors increase metric cardinality and impact performance", cfg.MaxSelectors, maxAllowedSelectors)
 		}
 	}
 
 	return nil
 }
 
-// validateSelectorSecurity checks if a selector contains dangerous patterns that could expose sensitive data.
-func validateSelectorSecurity(selector, selectorType string, dangerousPatterns []string) error {
+// validateSelector performs comprehensive validation of individual selectors
+func validateSelector(selector, selectorType string, index int) error {
+	if strings.TrimSpace(selector) == "" {
+		return fmt.Errorf("%s[%d] cannot be empty", selectorType, index)
+	}
+
+	// Length validation
+	if len(selector) > 253 {
+		return fmt.Errorf("%s[%d] %q exceeds maximum length of 253 characters", selectorType, index, selector)
+	}
+
+	// Enhanced security patterns with context
+	dangerousPatterns := map[string]string{
+		// Wildcard patterns
+		"*":  "wildcards not supported - specify exact label/annotation names",
+		".*": "regex patterns not supported - specify exact label/annotation names",
+
+		// Obvious secrets
+		"secret":     "may expose sensitive data - use application-specific metadata like 'team' or 'environment'",
+		"password":   "exposes credentials - use public metadata like 'cost-center' or 'owner'",
+		"token":      "exposes authentication data - use organizational labels like 'department'",
+		"key":        "may expose cryptographic material - use business metadata",
+		"credential": "exposes authentication data - use organizational metadata",
+
+		// Private information
+		"private":  "indicates sensitive data - use public organizational metadata",
+		"internal": "may expose internal information - use business-relevant labels",
+		"budget":   "exposes financial data - use cost allocation tags instead",
+		"salary":   "exposes personal financial information - strictly prohibited",
+
+		// System and operational secrets
+		"vault":    "exposes secrets management data - use application metadata",
+		"database": "may expose connection details - use application tier labels",
+		"endpoint": "may expose internal URLs - use service type labels instead",
+	}
+
 	selectorLower := strings.ToLower(selector)
 
-	// SECURITY: Check for regex-like patterns first (more specific error)
-	regexPatterns := []string{".*", ".+", "\\*", "\\?", "\\[", "\\]", "\\{", "\\}"}
-	for _, regexPattern := range regexPatterns {
-		if strings.Contains(selector, regexPattern) {
-			return fmt.Errorf("potentially dangerous %s %q contains regex-like pattern %q - wildcards and regex patterns are not supported and may indicate misconfiguration",
-				selectorType, selector, regexPattern)
+	// Check for exact dangerous patterns
+	for pattern, reason := range dangerousPatterns {
+		if strings.Contains(selectorLower, pattern) {
+			return fmt.Errorf("%s[%d] %q is potentially dangerous: %s. Recommended alternatives: 'environment', 'team', 'tier', 'owner', 'cost-center'",
+				selectorType, index, selector, reason)
 		}
 	}
 
-	// SECURITY: Check for Kubernetes system annotations/labels first (more specific error)
+	// Check for Kubernetes system prefixes
 	systemPrefixes := []string{
-		"kubernetes.io/",
-		"k8s.io/",
-		"kubectl.kubernetes.io/",
-		"node.kubernetes.io/",
-		"control-plane.alpha.kubernetes.io/",
-		"controller.kubernetes.io/",
-		"pod-security.kubernetes.io/",
-		"topology.kubernetes.io/",
+		"kubernetes.io/", "k8s.io/", "kubectl.kubernetes.io/",
+		"node.kubernetes.io/", "control-plane.alpha.kubernetes.io/",
 	}
 
 	for _, prefix := range systemPrefixes {
 		if strings.HasPrefix(selectorLower, prefix) {
-			return fmt.Errorf("potentially dangerous %s %q targets Kubernetes system metadata with prefix %q - system annotations may contain sensitive operational data. Consider using application-specific annotations instead",
-				selectorType, selector, prefix)
+			return fmt.Errorf("%s[%d] %q targets Kubernetes system metadata - system annotations may contain sensitive operational data and are subject to change. Use application-specific annotations instead",
+				selectorType, index, selector)
 		}
 	}
 
-	// Check for exact matches or dangerous substrings (after more specific checks)
-	for _, pattern := range dangerousPatterns {
-		if strings.Contains(selectorLower, pattern) {
-			return fmt.Errorf("potentially dangerous %s %q contains sensitive pattern %q - this may expose sensitive data in metrics. Consider using more specific selectors like 'team', 'environment', 'tier', or 'cost-center'",
-				selectorType, selector, pattern)
-		}
+	// Validate selector format (basic Kubernetes label/annotation key format)
+	if strings.Contains(selector, "..") {
+		return fmt.Errorf("%s[%d] %q contains consecutive dots - invalid Kubernetes key format", selectorType, index, selector)
+	}
+
+	if strings.HasPrefix(selector, ".") || strings.HasSuffix(selector, ".") {
+		return fmt.Errorf("%s[%d] %q starts or ends with dot - invalid Kubernetes key format", selectorType, index, selector)
 	}
 
 	return nil
@@ -1799,7 +1833,41 @@ func sanitizeAttributes(attributes []string, adjective string) error {
 // NamespaceEnrichmentConfig configures namespace metadata enrichment for scrape jobs.
 type NamespaceEnrichmentConfig struct {
 	Enabled            bool     `yaml:"enabled"`
-	AnnotationSelector []string `yaml:"annotation_selector,omitempty"`
-	LabelSelector      []string `yaml:"label_selector,omitempty"`
-	LabelPrefix        string   `yaml:"label_prefix,omitempty"`
+	LabelPrefix        string   `yaml:"label_prefix"`
+	LabelSelector      []string `yaml:"label_selector"`
+	AnnotationSelector []string `yaml:"annotation_selector"`
+
+	// Resource limits for experimental feature safety
+	MaxCacheSize int   `yaml:"max_cache_size,omitempty"` // Maximum number of namespaces to cache (default: 1000)
+	CacheTTL     int64 `yaml:"cache_ttl,omitempty"`      // TTL for cache entries in seconds (default: 300)
+	MaxSelectors int   `yaml:"max_selectors,omitempty"`  // Maximum total selectors (default: 20)
+}
+
+// Interface implementation for Kubernetes enricher factory (avoids import cycles)
+func (c *NamespaceEnrichmentConfig) IsEnabled() bool {
+	return c.Enabled
+}
+
+func (c *NamespaceEnrichmentConfig) GetLabelPrefix() string {
+	return c.LabelPrefix
+}
+
+func (c *NamespaceEnrichmentConfig) GetLabelSelector() []string {
+	return c.LabelSelector
+}
+
+func (c *NamespaceEnrichmentConfig) GetAnnotationSelector() []string {
+	return c.AnnotationSelector
+}
+
+func (c *NamespaceEnrichmentConfig) GetMaxCacheSize() int {
+	return c.MaxCacheSize
+}
+
+func (c *NamespaceEnrichmentConfig) GetCacheTTL() int64 {
+	return c.CacheTTL
+}
+
+func (c *NamespaceEnrichmentConfig) GetMaxSelectors() int {
+	return c.MaxSelectors
 }

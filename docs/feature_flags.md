@@ -292,3 +292,110 @@ memory in response to misleading cache growth.
 This is currently implemented using direct I/O.
 
 For more details, see the [proposal](https://github.com/prometheus/proposals/pull/45).
+
+## `namespace-enrichment` (Experimental)
+
+**Status: Experimental - Do not use in production**
+
+**Warning**: This feature is in early development and may significantly impact Prometheus performance, memory usage, and security. It should only be used in development/testing environments.
+
+When enabled with `--enable-feature=namespace-enrichment`, Prometheus can automatically enrich scraped metrics with Kubernetes namespace metadata (labels and annotations).
+
+### Configuration
+
+Add namespace enrichment configuration to your scrape job:
+
+```yaml
+scrape_configs:
+  - job_name: 'kubernetes-pods-with-enrichment'
+    kubernetes_sd_configs:
+      - role: pod
+    namespace_enrichment:
+      enabled: true
+      label_prefix: "ns_"
+      label_selector:
+        - environment
+        - team
+        - tier
+      annotation_selector:
+        - owner
+        - slack-channel
+      # Resource limits for safety
+      max_cache_size: 1000      # Maximum namespaces to cache
+      cache_ttl: 5m            # TTL for cache entries  
+      max_selectors: 20        # Maximum total selectors
+```
+
+### How It Works
+
+1. Prometheus connects to the Kubernetes API to watch namespace changes
+2. Namespace metadata is cached with configurable TTL and size limits
+3. During metric ingestion, namespace labels/annotations are added to metrics
+4. Label names are sanitized and prefixed (default: `ns_`)
+
+### Example Result
+
+Original metric:
+```
+http_requests_total{container="web-app", namespace="production", method="GET"} 1547
+```
+
+After enrichment:
+```
+http_requests_total{
+  container="web-app", 
+  namespace="production",
+  method="GET",
+  ns_environment="production",
+  ns_team="backend", 
+  ns_owner="team-backend@company.com"
+} 1547
+```
+
+### Security Considerations
+
+- **Validation**: Dangerous selectors like "secret", "password", "token" are automatically rejected
+- **RBAC**: Requires `get`, `list`, `watch` permissions on namespaces
+- **Resource Limits**: Configurable cache size and TTL prevent unbounded resource usage
+- **Graceful Degradation**: Automatically disables on errors to prevent impact on metric collection
+
+### Resource Limits
+
+| Setting | Default | Max | Purpose |
+|---------|---------|-----|---------|
+| `max_cache_size` | 1000 | 10000 | Prevent memory exhaustion |
+| `cache_ttl` | 5m | 1h | Balance freshness vs API load |
+| `max_selectors` | 20 | 100 | Limit API query complexity |
+
+### Performance Impact
+
+**WARNING**: This feature can significantly impact Prometheus performance:
+
+- **Memory**: ~1KB per cached namespace (up to max_cache_size)
+- **CPU**: Label enrichment runs for every metric sample
+- **Network**: Kubernetes API calls for namespace discovery
+- **Cardinality**: Each enriched label increases metric cardinality
+
+### Troubleshooting
+
+**Enrichment not working:**
+1. Verify experimental flag: `--enable-feature=namespace-enrichment`
+2. Check RBAC permissions for namespace access
+3. Review Prometheus logs for enricher errors
+4. Confirm namespace has the configured labels/annotations
+
+**Performance issues:**
+1. Reduce `max_selectors` and `max_cache_size`
+2. Increase `cache_ttl` to reduce API load
+3. Monitor Prometheus memory usage and query latency
+4. Consider disabling feature if impact is too high
+
+### Future Plans
+
+This experimental feature may evolve significantly:
+- Configuration format may change
+- Performance optimizations planned
+- May be moved to a separate component
+- Could be removed if determined unsuitable for Prometheus core
+
+**Do not rely on this feature for production workloads.**
