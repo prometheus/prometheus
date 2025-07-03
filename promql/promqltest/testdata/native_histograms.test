@@ -1373,3 +1373,40 @@ eval instant at 1m histogram_fraction(-Inf, +Inf, histogram_nan)
     expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name "histogram_nan"
     {case="100% NaNs"} 0.0
     {case="20% NaNs"} 0.8
+
+clear
+
+# Tests to demonstrate how an extrapolation below zero is prevented for a float counter, but not for native histograms.
+# I.e. the float counter that behaves the same as the histogram count might yield a different result after `increase`.
+
+load 1m
+  metric{type="histogram"} {{schema:0 count:15 sum:25 buckets:[5 10]}} {{schema:0 count:2490 sum:75 buckets:[15 2475]}}x55
+  metric{type="counter"} 15 2490x55
+
+# End of range coincides with sample. Zero point of count is reached within the range.
+eval instant at 55m increase(metric[90m])
+    {type="histogram"} {{count:2497.5 sum:50.45454545454545 counter_reset_hint:gauge buckets:[10.09090909090909 2487.409090909091]}}
+    {type="counter"} 2490
+
+# End of range does not coincide with sample. Zero point of count is reached within the range.
+eval instant at 54m30s increase(metric[90m])
+    {type="histogram"} {{count:2520.8333333333335 sum:50.92592592592593 counter_reset_hint:gauge buckets:[10.185185185185187 2510.6481481481483]}}
+    {type="counter"} 2512.9166666666665
+    
+# End of range coincides with sample. Zero point of count is reached outside of (i.e. before) the range.
+# This means no change of extrapolation is required for the histogram count (and neither for the float counter),
+# however, the 2nd bucket's extrapolation will reach zero within the range. The overestimation is visible
+# easily here because the last sample in the range coincides with the boundary, where the 2nd bucket has
+# a value of 2475 but has increased by 2476.2045454545455 according to the returned result.
+eval instant at 55m increase(metric[55m15s])
+    {type="histogram"} {{count:2486.25 sum:50.227272727272734 counter_reset_hint:gauge buckets:[10.045454545454547 2476.2045454545455]}}
+    {type="counter"} 2486.25
+
+# End of range does not coincide with sample. Zero point of count is reached outside of (i.e. before) the range.
+# This means no change of extrapolation is required for the histogram count (and neither for the float counter),
+# however, the 2nd bucket's extrapolation will reach zero within the range.
+eval instant at 54m30s increase(metric[54m45s])
+    {type="histogram"} {{count:2509.375 sum:50.69444444444444 counter_reset_hint:gauge buckets:[10.13888888888889 2499.236111111111]}}
+    {type="counter"} 2509.375
+
+    
