@@ -3,6 +3,7 @@
 ## main / unreleased
 
 * [FEATURE] OTLP receiver: Support promoting OTel scope name/version/schema URL/attributes as metric labels, enable via configuration parameter `otlp.promote_scope_metadata`. #16730 #16760
+* [ENHANCEMENT] TSDB: Add configuration parameters for only caching series label symbols when writing TSDB indexes. #15836
 
 ## 3.4.2 / 2025-06-26
 

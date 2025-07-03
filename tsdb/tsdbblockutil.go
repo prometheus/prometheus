@@ -27,7 +27,7 @@ import (
 var ErrInvalidTimes = errors.New("max time is lesser than min time")
 
 // CreateBlock creates a chunkrange block from the samples passed to it, and writes it to disk.
-func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger *slog.Logger) (string, error) {
+func CreateBlock(series []storage.Series, dir string, chunkRange int64, cacheOnlySeriesSymbols bool, logger *slog.Logger) (string, error) {
 	if chunkRange == 0 {
 		chunkRange = DefaultBlockDuration
 	}
@@ -35,7 +35,7 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger *
 		return "", ErrInvalidTimes
 	}
 
-	w, err := NewBlockWriter(logger, dir, chunkRange)
+	w, err := NewBlockWriter(logger, dir, chunkRange, cacheOnlySeriesSymbols)
 	if err != nil {
 		return "", err
 	}
