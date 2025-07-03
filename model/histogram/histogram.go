@@ -48,23 +48,6 @@ const (
 //
 // Which bucket indices are actually used is determined by the spans.
 type Histogram struct {
-	// Counter reset information.
-	CounterResetHint CounterResetHint
-	// Currently valid schema numbers are -4 <= n <= 8 for exponential buckets,
-	// They are all for base-2 bucket schemas, where 1 is a bucket boundary in
-	// each case, and then each power of two is divided into 2^n logarithmic buckets.
-	// Or in other words, each bucket boundary is the previous boundary times
-	// 2^(2^-n). Another valid schema number is -53 for custom buckets, defined by
-	// the CustomValues field.
-	Schema int32
-	// Width of the zero bucket.
-	ZeroThreshold float64
-	// Observations falling into the zero bucket.
-	ZeroCount uint64
-	// Total number of observations.
-	Count uint64
-	// Sum of observations. This is also used as the stale marker.
-	Sum float64
 	// Spans for positive and negative buckets (see Span below).
 	PositiveSpans, NegativeSpans []Span
 	// Observation counts in buckets. The first element is an absolute
@@ -77,6 +60,23 @@ type Histogram struct {
 	// schema is for custom buckets, and the ZeroThreshold, ZeroCount, NegativeSpans
 	// and NegativeBuckets fields are not used in that case.
 	CustomValues []float64
+	// Width of the zero bucket.
+	ZeroThreshold float64
+	// Observations falling into the zero bucket.
+	ZeroCount uint64
+	// Total number of observations.
+	Count uint64
+	// Sum of observations. This is also used as the stale marker.
+	Sum float64
+	// Currently valid schema numbers are -4 <= n <= 8 for exponential buckets,
+	// They are all for base-2 bucket schemas, where 1 is a bucket boundary in
+	// each case, and then each power of two is divided into 2^n logarithmic buckets.
+	// Or in other words, each bucket boundary is the previous boundary times
+	// 2^(2^-n). Another valid schema number is -53 for custom buckets, defined by
+	// the CustomValues field.
+	Schema int32
+	// Counter reset information.
+	CounterResetHint CounterResetHint
 }
 
 // A Span defines a continuous sequence of buckets.
@@ -522,21 +522,23 @@ func (r *regularBucketIterator) Next() bool {
 type cumulativeBucketIterator struct {
 	h *Histogram
 
-	posSpansIdx   int    // Index in h.PositiveSpans we are in. -1 means 0 bucket.
-	posBucketsIdx int    // Index in h.PositiveBuckets.
-	idxInSpan     uint32 // Index in the current span. 0 <= idxInSpan < span.Length.
-
-	initialized         bool
-	currIdx             int32   // The actual bucket index after decoding from spans.
+	posSpansIdx         int     // Index in h.PositiveSpans we are in. -1 means 0 bucket.
+	posBucketsIdx       int     // Index in h.PositiveBuckets.
 	currUpper           float64 // The upper boundary of the current bucket.
 	currCount           int64   // Current non-cumulative count for the current bucket. Does not apply for empty bucket.
 	currCumulativeCount uint64  // Current "cumulative" count for the current bucket.
+
+	idxInSpan uint32 // Index in the current span. 0 <= idxInSpan < span.Length.
+
+	currIdx int32 // The actual bucket index after decoding from spans.
 
 	// Between 2 spans there could be some empty buckets which
 	// still needs to be counted for cumulative buckets.
 	// When we hit the end of a span, we use this to iterate
 	// through the empty buckets.
 	emptyBucketCount int32
+
+	initialized bool
 }
 
 func (c *cumulativeBucketIterator) Next() bool {

@@ -72,13 +72,14 @@ type InternalBucketCount interface {
 // To represent cumulative buckets, Lower is set to -Inf, and the Count is then
 // cumulative (including the counts of all buckets for smaller values).
 type Bucket[BC BucketCount] struct {
-	Lower, Upper                   float64
-	LowerInclusive, UpperInclusive bool
-	Count                          BC
+	Count BC
+
+	Lower, Upper float64
 
 	// Index within schema. To easily compare buckets that share the same
 	// schema and sign (positive or negative). Irrelevant for the zero bucket.
-	Index int32
+	Index                          int32
+	LowerInclusive, UpperInclusive bool
 }
 
 // strippedBucket is Bucket without bound values (which are expensive to calculate
@@ -122,20 +123,20 @@ type BucketIterator[BC BucketCount] interface {
 // iterator can be embedded in full implementations of BucketIterator to save on
 // code replication.
 type baseBucketIterator[BC BucketCount, IBC InternalBucketCount] struct {
-	schema  int32
-	spans   []Span
-	buckets []IBC
-
-	positive bool // Whether this is for positive buckets.
-
-	spansIdx   int    // Current span within spans slice.
-	idxInSpan  uint32 // Index in the current span. 0 <= idxInSpan < span.Length.
-	bucketsIdx int    // Current bucket within buckets slice.
-
-	currCount IBC   // Count in the current bucket.
-	currIdx   int32 // The actual bucket index.
+	currCount IBC // Count in the current bucket.
+	spans     []Span
+	buckets   []IBC
 
 	customValues []float64 // Bounds (usually upper) for histograms with custom buckets.
+
+	spansIdx   int // Current span within spans slice.
+	bucketsIdx int // Current bucket within buckets slice.
+
+	schema    int32
+	idxInSpan uint32 // Index in the current span. 0 <= idxInSpan < span.Length.
+	currIdx   int32  // The actual bucket index.
+
+	positive bool // Whether this is for positive buckets.
 }
 
 func (b *baseBucketIterator[BC, IBC]) At() Bucket[BC] {
