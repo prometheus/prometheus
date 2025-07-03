@@ -149,26 +149,34 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	if durationToStart >= extrapolationThreshold {
 		durationToStart = averageDurationBetweenSamples / 2
 	}
-	if isCounter && resultFloat > 0 && len(samples.Floats) > 0 && samples.Floats[0].F >= 0 {
+	durationToZero := math.NaN() // Will fail all comparisons below if not changed.
+	if isCounter {
 		// Counters cannot be negative. If we have any slope at all
 		// (i.e. resultFloat went up), we can extrapolate the zero point
 		// of the counter. If the duration to the zero point is shorter
 		// than the durationToStart, we take the zero point as the start
 		// of the series, thereby avoiding extrapolation to negative
 		// counter values.
-		// TODO(beorn7): Do this for histograms, too.
-		durationToZero := sampledInterval * (samples.Floats[0].F / resultFloat)
+		if resultFloat > 0 &&
+			len(samples.Floats) > 0 &&
+			samples.Floats[0].F >= 0 {
+			durationToZero = sampledInterval * (samples.Floats[0].F / resultFloat)
+		} else if resultHistogram != nil &&
+			resultHistogram.Count > 0 &&
+			len(samples.Histograms) > 0 &&
+			samples.Histograms[0].H.Count >= 0 {
+			durationToZero = sampledInterval * (samples.Histograms[0].H.Count / resultHistogram.Count)
+		}
 		if durationToZero < durationToStart {
 			durationToStart = durationToZero
 		}
 	}
-	extrapolateToInterval += durationToStart
 
 	if durationToEnd >= extrapolationThreshold {
 		durationToEnd = averageDurationBetweenSamples / 2
 	}
-	extrapolateToInterval += durationToEnd
 
+	extrapolateToInterval += durationToStart + durationToEnd
 	factor := extrapolateToInterval / sampledInterval
 	if isRate {
 		factor /= ms.Range.Seconds()
