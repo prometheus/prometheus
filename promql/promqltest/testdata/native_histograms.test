@@ -1041,11 +1041,15 @@ eval_warn instant at 1m rate(some_metric[1m30s])
 eval_warn instant at 1m30s rate(some_metric[1m30s])
     # Should produce no results.
 
-# Start with custom, end with exponential. Return the exponential histogram divided by 30.
+# Start with custom, end with exponential. Return the exponential histogram divided by 48.
+# (The 1st sample is the NHCB with count:1. It is mostly ignored with the exception of the
+# count, which means the rate calculation extrapolates until the count hits 0.)
 eval instant at 1m rate(some_metric[1m])
-    {} {{schema:0 sum:0.16666666666666666 count:0.13333333333333333 buckets:[0.03333333333333333 0.06666666666666667 0.03333333333333333]}}
+    {} {{count:0.08333333333333333 sum:0.10416666666666666 counter_reset_hint:gauge buckets:[0.020833333333333332 0.041666666666666664 0.020833333333333332]}}
 
 # Start with exponential, end with custom. Return the custom buckets histogram divided by 30.
+# (With the 2nd sample having a count of 1, the extrapolation to zero lands exactly at the
+# left boundary of the range, so no extrapolation limitation needed.)
 eval instant at 30s rate(some_metric[1m])
     {} {{schema:-53 sum:0.03333333333333333 count:0.03333333333333333 custom_values:[5 10] buckets:[0.03333333333333333]}}
 
@@ -1376,21 +1380,22 @@ eval instant at 1m histogram_fraction(-Inf, +Inf, histogram_nan)
 
 clear
 
-# Tests to demonstrate how an extrapolation below zero is prevented for a float counter, but not for native histograms.
-# I.e. the float counter that behaves the same as the histogram count might yield a different result after `increase`.
+# Tests to demonstrate how an extrapolation below zero is prevented for both float counters and native counter histograms.
+# Note that the float counter behaves the same as the histogram count after `increase`.
 
 load 1m
   metric{type="histogram"} {{schema:0 count:15 sum:25 buckets:[5 10]}} {{schema:0 count:2490 sum:75 buckets:[15 2475]}}x55
   metric{type="counter"} 15 2490x55
 
 # End of range coincides with sample. Zero point of count is reached within the range.
+# As a result, we get the same as the last sample in the range as a result.
 eval instant at 55m increase(metric[90m])
-    {type="histogram"} {{count:2497.5 sum:50.45454545454545 counter_reset_hint:gauge buckets:[10.09090909090909 2487.409090909091]}}
+    {type="histogram"} {{count:2490 sum:75 counter_reset_hint:gauge buckets:[15 2475]}}
     {type="counter"} 2490
 
 # End of range does not coincide with sample. Zero point of count is reached within the range.
 eval instant at 54m30s increase(metric[90m])
-    {type="histogram"} {{count:2520.8333333333335 sum:50.92592592592593 counter_reset_hint:gauge buckets:[10.185185185185187 2510.6481481481483]}}
+    {type="histogram"} {{count:2512.9166666666665 sum:75.46296296296296 counter_reset_hint:gauge buckets:[15.092592592592593 2497.8240740740744]}}
     {type="counter"} 2512.9166666666665
     
 # End of range coincides with sample. Zero point of count is reached outside of (i.e. before) the range.
