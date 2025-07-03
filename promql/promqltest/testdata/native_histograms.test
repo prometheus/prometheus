@@ -1373,3 +1373,19 @@ eval instant at 1m histogram_fraction(-Inf, +Inf, histogram_nan)
     expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name "histogram_nan"
     {case="100% NaNs"} 0.0
     {case="20% NaNs"} 0.8
+
+clear
+
+# Regression test for:
+# https://github.com/prometheus/prometheus/issues/14172
+# https://github.com/prometheus/prometheus/issues/15177
+load 1m
+	mixed_metric1 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}} 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+    mixed_metric2 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}}
+
+# The order of the float vs native histograms is preserved
+eval range from 0 to 8m step 1m mixed_metric1
+	mixed_metric1{} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+
+eval range from 0 to 5m step 1m mixed_metric2
+	mixed_metric2 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} {{count:6 sum:8 buckets:[1 4 1]}}
