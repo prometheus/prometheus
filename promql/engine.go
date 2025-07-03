@@ -186,21 +186,21 @@ type QueryOpts interface {
 type query struct {
 	// Underlying data provider.
 	queryable storage.Queryable
-	// The original query string.
-	q string
 	// Statement of the parsed query.
 	stmt parser.Statement
 	// Timer stats for the query execution.
 	stats *stats.QueryTimers
 	// Sample stats for the query execution.
 	sampleStats *stats.QuerySamples
-	// Result matrix for reuse.
-	matrix Matrix
 	// Cancellation function for the query.
 	cancel func()
 
 	// The engine against which the query is executed.
 	ng *Engine
+	// The original query string.
+	q string
+	// Result matrix for reuse.
+	matrix Matrix
 }
 
 type QueryOrigin struct{}
@@ -293,18 +293,19 @@ type QueryTracker interface {
 
 // EngineOpts contains configuration options used when creating a new Engine.
 type EngineOpts struct {
-	Logger             *slog.Logger
 	Reg                prometheus.Registerer
-	MaxSamples         int
-	Timeout            time.Duration
 	ActiveQueryTracker QueryTracker
-	// LookbackDelta determines the time since the last sample after which a time
-	// series is considered stale.
-	LookbackDelta time.Duration
+	Logger             *slog.Logger
 
 	// NoStepSubqueryIntervalFn is the default evaluation interval of
 	// a subquery in milliseconds if no step in range vector was specified `[30m:<step>]`.
 	NoStepSubqueryIntervalFn func(rangeMillis int64) int64
+
+	MaxSamples int
+	Timeout    time.Duration
+	// LookbackDelta determines the time since the last sample after which a time
+	// series is considered stale.
+	LookbackDelta time.Duration
 
 	// EnableAtModifier if true enables @ modifier. Disabled otherwise. This
 	// is supposed to be enabled for regular PromQL (as of Prometheus v2.33)
@@ -333,15 +334,15 @@ type EngineOpts struct {
 // Engine handles the lifetime of queries from beginning to end.
 // It is connected to a querier.
 type Engine struct {
-	logger                   *slog.Logger
-	metrics                  *engineMetrics
-	timeout                  time.Duration
-	maxSamplesPerQuery       int
 	activeQueryTracker       QueryTracker
 	queryLogger              QueryLogger
-	queryLoggerLock          sync.RWMutex
-	lookbackDelta            time.Duration
+	logger                   *slog.Logger
+	metrics                  *engineMetrics
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+	timeout                  time.Duration
+	maxSamplesPerQuery       int
+	lookbackDelta            time.Duration
+	queryLoggerLock          sync.RWMutex
 	enableAtModifier         bool
 	enableNegativeOffset     bool
 	enablePerStepStats       bool
@@ -1071,19 +1072,19 @@ func (e errWithWarnings) Error() string { return e.err.Error() }
 // querier and reports errors. On timeout or cancellation of its context it
 // terminates.
 type evaluator struct {
-	startTimestamp int64 // Start time in milliseconds.
-	endTimestamp   int64 // End time in milliseconds.
-	interval       int64 // Interval in milliseconds.
+	querier                  storage.Querier
+	logger                   *slog.Logger
+	samplesStats             *stats.QuerySamples
+	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+	startTimestamp           int64 // Start time in milliseconds.
+	endTimestamp             int64 // End time in milliseconds.
+	interval                 int64 // Interval in milliseconds.
 
 	maxSamples               int
 	currentSamples           int
-	logger                   *slog.Logger
 	lookbackDelta            time.Duration
-	samplesStats             *stats.QuerySamples
-	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
-	querier                  storage.Querier
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1139,24 +1140,27 @@ type EvalSeriesHelper struct {
 
 // EvalNodeHelper stores extra information and caches for evaluating a single node across steps.
 type EvalNodeHelper struct {
-	// Evaluation timestamp.
-	Ts int64
-	// Vector that can be used for output.
-	Out Vector
-
 	// Caches.
 	// funcHistogramQuantile and funcHistogramFraction for classic histograms.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
-	nativeHistogramSamples       []Sample
 
-	lb           *labels.Builder
-	lblBuf       []byte
-	lblResultBuf []byte
+	lb *labels.Builder
 
 	// For binary vector matching.
 	rightSigs    map[string]Sample
 	matchedSigs  map[string]map[uint64]struct{}
 	resultMetric map[string]labels.Labels
+
+	// Vector that can be used for output.
+	Out Vector
+
+	nativeHistogramSamples []Sample
+
+	lblBuf       []byte
+	lblResultBuf []byte
+
+	// Evaluation timestamp.
+	Ts int64
 
 	// Additional options for the evaluation.
 	enableDelayedNameRemoval bool
@@ -2985,12 +2989,13 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 }
 
 type groupedAggregation struct {
-	floatValue     float64
 	histogramValue *histogram.FloatHistogram
-	floatMean      float64
-	floatKahanC    float64 // "Compensating value" for Kahan summation.
-	groupCount     float64
 	heap           vectorByValueHeap
+
+	floatValue  float64
+	floatMean   float64
+	floatKahanC float64 // "Compensating value" for Kahan summation.
+	groupCount  float64
 
 	// All bools together for better packing within the struct.
 	seen                   bool // Was this output groups seen in the input at this timestamp.
