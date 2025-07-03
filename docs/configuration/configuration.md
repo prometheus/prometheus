@@ -1967,6 +1967,9 @@ attach_metadata:
 # Attaches node metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice.
 # When set to true, Prometheus must have permissions to get Nodes.
   [ node: <boolean> | default = false ]
+# Attaches namespace metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice.
+# When set to true, Prometheus must have permissions to list/watch Namespaces.
+  [ namespace: <boolean> | default = false ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
