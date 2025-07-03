@@ -35,19 +35,19 @@ const (
 )
 
 type FastRegexMatcher struct {
-	// Under some conditions, re is nil because the expression is never parsed.
-	// We store the original string to be able to return it in GetRegexString().
-	reString string
-	re       *regexp.Regexp
-
-	setMatches    []string
 	stringMatcher StringMatcher
-	prefix        string
-	suffix        string
-	contains      []string
+	re            *regexp.Regexp
 
 	// matchString is the "compiled" function to run by MatchString().
 	matchString func(string) bool
+	// Under some conditions, re is nil because the expression is never parsed.
+	// We store the original string to be able to return it in GetRegexString().
+	reString string
+	prefix   string
+	suffix   string
+
+	setMatches []string
+	contains   []string
 }
 
 func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
@@ -576,11 +576,11 @@ type containsStringMatcher struct {
 	// The matcher that must match the left side. Can be nil.
 	left StringMatcher
 
-	// At least one of these strings must match in the "middle", between left and right matchers.
-	substrings []string
-
 	// The matcher that must match the right side. Can be nil.
 	right StringMatcher
+
+	// At least one of these strings must match in the "middle", between left and right matchers.
+	substrings []string
 }
 
 func (m *containsStringMatcher) Matches(s string) bool {
@@ -638,10 +638,9 @@ func newLiteralPrefixStringMatcher(prefix string, prefixCaseSensitive bool, righ
 
 // literalPrefixSensitiveStringMatcher matches a string with the given literal case-sensitive prefix and right side matcher.
 type literalPrefixSensitiveStringMatcher struct {
-	prefix string
-
 	// The matcher that must match the right side. Can be nil.
-	right StringMatcher
+	right  StringMatcher
+	prefix string
 }
 
 func (m *literalPrefixSensitiveStringMatcher) Matches(s string) bool {
@@ -655,10 +654,9 @@ func (m *literalPrefixSensitiveStringMatcher) Matches(s string) bool {
 
 // literalPrefixInsensitiveStringMatcher matches a string with the given literal case-insensitive prefix and right side matcher.
 type literalPrefixInsensitiveStringMatcher struct {
-	prefix string
-
 	// The matcher that must match the right side. Can be nil.
-	right StringMatcher
+	right  StringMatcher
+	prefix string
 }
 
 func (m *literalPrefixInsensitiveStringMatcher) Matches(s string) bool {

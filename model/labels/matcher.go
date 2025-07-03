@@ -45,11 +45,11 @@ func (m MatchType) String() string {
 
 // Matcher models the matching of a label.
 type Matcher struct {
-	Type  MatchType
+	re    *FastRegexMatcher
 	Name  string
 	Value string
 
-	re *FastRegexMatcher
+	Type MatchType
 }
 
 // NewMatcher returns a matcher object.
