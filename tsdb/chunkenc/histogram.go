@@ -197,25 +197,28 @@ func (c *HistogramChunk) Iterator(it Iterator) Iterator {
 type HistogramAppender struct {
 	b *bstream
 
-	// Layout:
-	schema         int32
-	zThreshold     float64
 	pSpans, nSpans []histogram.Span
 	// customValues is read only after the first sample is appended.
 	customValues []float64
+
+	pBuckets, nBuckets           []int64
+	pBucketsDelta, nBucketsDelta []int64
+
+	zThreshold float64
 
 	// Although we intend to start new chunks on counter resets, we still
 	// have to handle negative deltas for gauge histograms. Therefore, even
 	// deltas are signed types here (even for tDelta to not treat that one
 	// specially).
-	t                            int64
-	cnt, zCnt                    uint64
-	tDelta, cntDelta, zCntDelta  int64
-	pBuckets, nBuckets           []int64
-	pBucketsDelta, nBucketsDelta []int64
+	t                           int64
+	cnt, zCnt                   uint64
+	tDelta, cntDelta, zCntDelta int64
 
 	// The sum is Gorilla xor encoded.
-	sum      float64
+	sum float64
+
+	// Layout:
+	schema   int32
 	leading  uint8
 	trailing uint8
 }
@@ -906,28 +909,32 @@ func CounterResetHintToHeader(hint histogram.CounterResetHint) CounterResetHeade
 }
 
 type histogramIterator struct {
-	br       bstreamReader
+	err            error
+	pSpans, nSpans []histogram.Span
+	customValues   []float64
+
+	pBuckets, nBuckets           []int64   // Delta between buckets.
+	pFloatBuckets, nFloatBuckets []float64 // Absolute counts.
+	pBucketsDelta, nBucketsDelta []int64
+
+	br         bstreamReader
+	zThreshold float64
+
+	// For the fields that are tracked as deltas and ultimately dod's.
+	t                           int64
+	cnt, zCnt                   uint64
+	tDelta, cntDelta, zCntDelta int64
+
+	// The sum is Gorilla xor encoded.
+	sum float64
+
+	// Layout:
+	schema   int32
 	numTotal uint16
 	numRead  uint16
 
 	counterResetHeader CounterResetHeader
 
-	// Layout:
-	schema         int32
-	zThreshold     float64
-	pSpans, nSpans []histogram.Span
-	customValues   []float64
-
-	// For the fields that are tracked as deltas and ultimately dod's.
-	t                            int64
-	cnt, zCnt                    uint64
-	tDelta, cntDelta, zCntDelta  int64
-	pBuckets, nBuckets           []int64   // Delta between buckets.
-	pFloatBuckets, nFloatBuckets []float64 // Absolute counts.
-	pBucketsDelta, nBucketsDelta []int64
-
-	// The sum is Gorilla xor encoded.
-	sum      float64
 	leading  uint8
 	trailing uint8
 
@@ -935,8 +942,6 @@ type histogramIterator struct {
 	// cannot recycle the bucket slices anymore because we have returned
 	// them in the histogram.
 	atHistogramCalled, atFloatHistogramCalled bool
-
-	err error
 }
 
 func (it *histogramIterator) Seek(t int64) ValueType {

@@ -190,15 +190,17 @@ func (c *FloatHistogramChunk) Iterator(it Iterator) Iterator {
 type FloatHistogramAppender struct {
 	b *bstream
 
-	// Layout:
-	schema         int32
-	zThreshold     float64
 	pSpans, nSpans []histogram.Span
 	customValues   []float64
 
-	t, tDelta          int64
-	sum, cnt, zCnt     xorValue
 	pBuckets, nBuckets []xorValue
+	sum, cnt, zCnt     xorValue
+	zThreshold         float64
+
+	t, tDelta int64
+
+	// Layout:
+	schema int32
 }
 
 func (a *FloatHistogramAppender) GetCounterResetHeader() CounterResetHeader {
@@ -852,24 +854,10 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 }
 
 type floatHistogramIterator struct {
-	br       bstreamReader
-	numTotal uint16
-	numRead  uint16
+	err error
 
-	counterResetHeader CounterResetHeader
-
-	// Layout:
-	schema         int32
-	zThreshold     float64
 	pSpans, nSpans []histogram.Span
 	customValues   []float64
-
-	// For the fields that are tracked as deltas and ultimately dod's.
-	t      int64
-	tDelta int64
-
-	// All Gorilla xor encoded.
-	sum, cnt, zCnt xorValue
 
 	// Buckets are not of type xorValue to avoid creating
 	// new slices for every AtFloatHistogram call.
@@ -877,7 +865,23 @@ type floatHistogramIterator struct {
 	pBucketsLeading, nBucketsLeading   []uint8
 	pBucketsTrailing, nBucketsTrailing []uint8
 
-	err error
+	br bstreamReader
+
+	// All Gorilla xor encoded.
+	sum, cnt, zCnt xorValue
+
+	zThreshold float64
+
+	// For the fields that are tracked as deltas and ultimately dod's.
+	t      int64
+	tDelta int64
+
+	// Layout:
+	schema   int32
+	numTotal uint16
+	numRead  uint16
+
+	counterResetHeader CounterResetHeader
 
 	// Track calls to retrieve methods. Once they have been called, we
 	// cannot recycle the bucket slices anymore because we have returned
