@@ -1,5 +1,5 @@
 {
-  "baseBranches": ["main", "/^release-\\d+\\.\\d+/"],
+  "baseBranches": ["/^release-\\d+\\.\\d+/"],
   "gomod": {
     "updatePinnedDependencies": false
   },
