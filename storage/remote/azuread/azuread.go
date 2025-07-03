@@ -43,11 +43,11 @@ const (
 	IngestionPublicAudience     = "https://monitor.azure.com//.default"
 )
 
-// Default paths
+// Default paths.
 const (
-	// DefaultWorkloadIdentityTokenPath is the default path where the Azure Workload Identity
-	// webhook projects the service account token. This path is automatically configured
-	// by the webhook when a pod has the label azure.workload.identity/use: "true"
+	// DefaultWorkloadIdentityTokenPath is the default path where the Azure Workload Identity.
+	// webhook projects the service account token. This path is automatically configured.
+	// by the webhook when a pod has the label azure.workload.identity/use: "true".
 	DefaultWorkloadIdentityTokenPath = "/var/run/secrets/azure/tokens/azure-identity-token"
 )
 
@@ -70,9 +70,9 @@ type WorkloadIdentityConfig struct {
 	// TokenFilePath is the path to the token file provided by the Kubernetes service account projected volume.
 	// If not specified, it defaults to DefaultWorkloadIdentityTokenPath.
 	//
-	// Note: The token file is automatically mounted by the Azure Workload Identity webhook
-	// when the pod has the label azure.workload.identity/use: "true". This field only needs
-	// to be specified if you have a non-standard setup or the webhook is mounting the token
+	// Note: The token file is automatically mounted by the Azure Workload Identity webhook.
+	// when the pod has the label azure.workload.identity/use: "true". This field only needs.
+	// to be specified if you have a non-standard setup or the webhook is mounting the token.
 	// in a custom location.
 	TokenFilePath string `yaml:"token_file_path,omitempty"`
 }
