@@ -81,7 +81,7 @@ ui-lint:
 
 .PHONY: assets
 ifndef SKIP_UI_BUILD
-assets: ui-install ui-build
+assets: check-node-version ui-install ui-build
 
 .PHONY: npm_licenses
 npm_licenses: ui-install
@@ -143,7 +143,7 @@ install-goyacc:
 ifeq ($(GO_ONLY),1)
 test: common-test check-go-mod-version
 else
-test: check-generated-parser common-test ui-build-module ui-test ui-lint check-go-mod-version
+test: check-generated-parser common-test check-node-version ui-build-module ui-test ui-lint check-go-mod-version
 endif
 
 .PHONY: tarball
@@ -192,3 +192,7 @@ update-all-go-deps:
 		$(GO) get -d $$m; \
 	done
 	@cd ./documentation/examples/remote_storage/ && $(GO) mod tidy
+
+.PHONY: check-node-version
+check-node-version:
+	@./scripts/check-node-version.sh
