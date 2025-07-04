@@ -16,6 +16,7 @@
 package labels
 
 import (
+	"iter"
 	"slices"
 	"strings"
 	"unsafe"
@@ -403,6 +404,20 @@ func (ls Labels) Range(f func(l Label)) {
 		lName, i = decodeString(ls.data, i)
 		lValue, i = decodeString(ls.data, i)
 		f(Label{Name: lName, Value: lValue})
+	}
+}
+
+// Iter is an iterator over all labels.
+func (ls Labels) Iter() iter.Seq[Label] {
+	return func(yield func(Label) bool) {
+		for i := 0; i < len(ls.data); {
+			var lName, lValue string
+			lName, i = decodeString(ls.data, i)
+			lValue, i = decodeString(ls.data, i)
+			if !yield(Label{Name: lName, Value: lValue}) {
+				return
+			}
+		}
 	}
 }
 
