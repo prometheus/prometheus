@@ -142,7 +142,7 @@ Check if the Prometheus server is healthy.
 
 | Flag | Description | Default |
 | --- | --- | --- |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool |  |
 | <code class="text-nowrap">--url</code> | The URL for the Prometheus server. | `http://localhost:9090` |
 
 
@@ -158,7 +158,7 @@ Check if the Prometheus server is ready.
 
 | Flag | Description | Default |
 | --- | --- | --- |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool |  |
 | <code class="text-nowrap">--url</code> | The URL for the Prometheus server. | `http://localhost:9090` |
 
 
@@ -213,7 +213,7 @@ Run query against a Prometheus server.
 | Flag | Description | Default |
 | --- | --- | --- |
 | <code class="text-nowrap">-o</code>, <code class="text-nowrap">--format</code> | Output format of the query. | `promql` |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool |  |
 
 
 
@@ -404,7 +404,7 @@ Push to a Prometheus server.
 
 | Flag | Description |
 | --- | --- |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool |
 
 
 
@@ -672,7 +672,7 @@ Create blocks of data for new recording rules.
 
 | Flag | Description | Default |
 | --- | --- | --- |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool |  |
 | <code class="text-nowrap">--url</code> | The URL for the Prometheus API with the data where the rule will be backfilled from. | `http://localhost:9090` |
 | <code class="text-nowrap">--start</code> | The time to start backfilling the new rule from. Must be a RFC3339 formatted date or Unix timestamp. Required. |  |
 | <code class="text-nowrap">--end</code> | If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hours ago. Must be a RFC3339 formatted date or Unix timestamp. |  |
