@@ -20,7 +20,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
+	"time"
 
 	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -50,6 +52,8 @@ type Settings struct {
 	AllowDeltaTemporality             bool
 	// PromoteScopeMetadata controls whether to promote OTel scope metadata to metric labels.
 	PromoteScopeMetadata bool
+	// LookbackDelta is the PromQL engine lookback delta.
+	LookbackDelta time.Duration
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
@@ -132,9 +136,10 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		resourceMetrics := resourceMetricsSlice.At(i)
 		resource := resourceMetrics.Resource()
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
-		// keep track of the most recent timestamp in the ResourceMetrics for
+		// keep track of the earliest and latest timestamp in the ResourceMetrics for
 		// use with the "target" info metric
-		var mostRecentTimestamp pcommon.Timestamp
+		earliestTimestamp := pcommon.Timestamp(math.MaxUint64)
+		latestTimestamp := pcommon.Timestamp(0)
 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
 			scopeMetrics := scopeMetricsSlice.At(j)
 			scope := newScopeFromScopeMetrics(scopeMetrics)
@@ -148,7 +153,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				}
 
 				metric := metricSlice.At(k)
-				mostRecentTimestamp = max(mostRecentTimestamp, mostRecentTimestampInMetric(metric))
+				earliestTimestamp, latestTimestamp = findMinAndMaxTimestamps(metric, earliestTimestamp, latestTimestamp)
 				temporality, hasTemporality, err := aggregationTemporality(metric)
 				if err != nil {
 					errs = multierr.Append(errs, err)
@@ -264,7 +269,11 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				}
 			}
 		}
-		addResourceTargetInfo(resource, settings, mostRecentTimestamp, c)
+		if earliestTimestamp < pcommon.Timestamp(math.MaxUint64) {
+			// We have at least one metric sample for this resource.
+			// Generate a corresponding target_info series.
+			addResourceTargetInfo(resource, settings, earliestTimestamp.AsTime(), latestTimestamp.AsTime(), c)
+		}
 	}
 
 	return annots, errs
