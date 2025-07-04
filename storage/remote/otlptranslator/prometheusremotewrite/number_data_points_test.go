@@ -124,7 +124,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 					ExportCreatedMetric:  true,
 					PromoteScopeMetadata: tt.promoteScope,
 				},
-				metric.Name(),
+				prompb.MetricMetadata{MetricFamilyName: metric.Name()},
 				tt.scope,
 			)
 
@@ -362,7 +362,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 					ExportCreatedMetric:  true,
 					PromoteScopeMetadata: tt.promoteScope,
 				},
-				metric.Name(),
+				prompb.MetricMetadata{MetricFamilyName: metric.Name()},
 				tt.scope,
 			)
 
