@@ -189,6 +189,6 @@ update-all-go-deps:
 	@$(MAKE) update-go-deps
 	@echo ">> updating Go dependencies in ./documentation/examples/remote_storage/"
 	@cd ./documentation/examples/remote_storage/ && for m in $$($(GO) list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
-		$(GO) get -d $$m; \
+		$(GO) get $$m; \
 	done
 	@cd ./documentation/examples/remote_storage/ && $(GO) mod tidy
