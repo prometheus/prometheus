@@ -1,9 +1,8 @@
 ---
-title: API Stability
+title: API stability guarantees
+nav_title: API stability
 sort_rank: 11
 ---
-
-# API Stability Guarantees
 
 Prometheus promises API stability within a major version, and strives to avoid
 breaking changes for key features. Some features, which are cosmetic, still

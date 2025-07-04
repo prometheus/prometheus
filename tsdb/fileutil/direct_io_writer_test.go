@@ -27,7 +27,7 @@ import (
 func directIORqmtsForTest(tb testing.TB) *directIORqmts {
 	f, err := os.OpenFile(path.Join(tb.TempDir(), "foo"), os.O_CREATE|os.O_WRONLY, 0o666)
 	require.NoError(tb, err)
-	alignmentRqmts, err := fetchDirectIORqmts(f.Fd())
+	alignmentRqmts, err := fileDirectIORqmts(f)
 	require.NoError(tb, err)
 	return alignmentRqmts
 }

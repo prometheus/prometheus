@@ -12,7 +12,7 @@ import {
   IconSearch,
 } from "@tabler/icons-react";
 import { StateMultiSelect } from "../../components/StateMultiSelect";
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import badgeClasses from "../../Badge.module.css";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
@@ -52,7 +52,11 @@ export default function TargetsPage() {
 
   const dispatch = useAppDispatch();
 
+  const poolDefaultPlaceholder = "Select scrape pool";
+
   const [scrapePool, setScrapePool] = useQueryParam("pool", StringParam);
+  const [poolPlaceholder, setPoolPlaceholder] = useState<string>(poolDefaultPlaceholder);
+  const [poolSelecting, setPoolSelecting] = useState<boolean>(false);
   const [healthFilter, setHealthFilter] = useQueryParam(
     "health",
     withDefault(ArrayParam, emptyHealthFilter)
@@ -86,14 +90,22 @@ export default function TargetsPage() {
     <>
       <Group mb="md" mt="xs">
         <Select
-          placeholder="Select scrape pool"
+          placeholder={poolPlaceholder}
           data={[{ label: "All pools", value: "" }, ...scrapePools]}
-          value={(limited && scrapePools[0]) || scrapePool || null}
+          value={poolSelecting ? null : (limited && scrapePools[0]) || scrapePool || null}
           onChange={(value) => {
             setScrapePool(value);
             if (showLimitAlert) {
               dispatch(setShowLimitAlert(false));
             }
+          }}
+          onDropdownOpen={() => {
+            setPoolPlaceholder(scrapePool || poolDefaultPlaceholder)
+            setPoolSelecting(true)
+          }}
+          onDropdownClose={() => {
+            setPoolPlaceholder(poolDefaultPlaceholder)
+            setPoolSelecting(false)
           }}
           searchable
         />

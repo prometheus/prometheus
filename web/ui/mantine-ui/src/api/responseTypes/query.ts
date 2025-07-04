@@ -23,9 +23,14 @@ export interface RangeSamples {
 export type SampleValue = [number, string];
 export type SampleHistogram = [number, Histogram];
 
+export type QueryStats = {
+  timings: Record<string, number>;
+  samples: Record<string, number>;
+};
+
 // Result type for /api/v1/query endpoint.
 // See: https://prometheus.io/docs/prometheus/latest/querying/api/#instant-queries
-export type InstantQueryResult =
+export type InstantQueryResult = (
   | {
       resultType: "vector";
       result: InstantSample[];
@@ -41,11 +46,13 @@ export type InstantQueryResult =
   | {
       resultType: "string";
       result: SampleValue;
-    };
+    }
+) & { stats?: QueryStats };
 
 // Result type for /api/v1/query_range endpoint.
 // See: https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries
 export type RangeQueryResult = {
   resultType: "matrix";
   result: RangeSamples[];
+  stats?: QueryStats;
 };

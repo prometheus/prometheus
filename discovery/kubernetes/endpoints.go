@@ -49,6 +49,7 @@ type Endpoints struct {
 }
 
 // NewEndpoints returns a new endpoints discovery.
+// Endpoints API is deprecated in k8s v1.33+, but we should still support it.
 func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer, eventCount *prometheus.CounterVec) *Endpoints {
 	if l == nil {
 		l = promslog.NewNopLogger()

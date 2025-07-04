@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -484,7 +485,7 @@ type ConcurrentRules []int
 // Its purpose is to bound the amount of concurrency in rule evaluations to avoid overwhelming the Prometheus
 // server with additional query load. Concurrency is controlled globally, not on a per-group basis.
 type RuleConcurrencyController interface {
-	// SplitGroupIntoBatches returns an ordered slice of of ConcurrentRules, which are batches of rules that can be evaluated concurrently.
+	// SplitGroupIntoBatches returns an ordered slice of ConcurrentRules, which are batches of rules that can be evaluated concurrently.
 	// The rules are represented by their index from the input rule group.
 	SplitGroupIntoBatches(ctx context.Context, group *Group) []ConcurrentRules
 
@@ -578,4 +579,33 @@ func FromMaps(maps ...map[string]string) labels.Labels {
 	}
 
 	return labels.FromMap(mLables)
+}
+
+// ParseFiles parses the rule files corresponding to glob patterns.
+func ParseFiles(patterns []string) error {
+	files := map[string]string{}
+	for _, pat := range patterns {
+		fns, err := filepath.Glob(pat)
+		if err != nil {
+			return fmt.Errorf("failed retrieving rule files for %q: %w", pat, err)
+		}
+		for _, fn := range fns {
+			absPath, err := filepath.Abs(fn)
+			if err != nil {
+				absPath = fn
+			}
+			cleanPath, err := filepath.EvalSymlinks(absPath)
+			if err != nil {
+				return fmt.Errorf("failed evaluating rule file path %q (pattern: %q): %w", absPath, pat, err)
+			}
+			files[cleanPath] = pat
+		}
+	}
+	for fn, pat := range files {
+		_, errs := rulefmt.ParseFile(fn, false)
+		if len(errs) > 0 {
+			return fmt.Errorf("parse rules from file %q (pattern: %q): %w", fn, pat, errors.Join(errs...))
+		}
+	}
+	return nil
 }

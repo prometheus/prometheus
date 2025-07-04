@@ -348,6 +348,24 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'ts_of_max_over_time',
+    detail: 'function',
+    info: 'Return the timestamp of the maximum value over time for input series',
+    type: 'function',
+  },
+  {
+    label: 'ts_of_min_over_time',
+    detail: 'function',
+    info: 'Return the timestamp of the minimum value over time for input series',
+    type: 'function',
+  },
+  {
+    label: 'ts_of_last_over_time',
+    detail: 'function',
+    info: 'Return the timestamp of the last value over time for input series',
+    type: 'function',
+  },
+  {
     label: 'minute',
     detail: 'function',
     info: 'Return the minute of the hour for provided timestamps',

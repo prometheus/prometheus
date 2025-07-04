@@ -238,7 +238,7 @@ local row = panel.row;
         + panel.timeSeries.options.tooltip.withSort('desc')
         + panel.timeSeries.standardOptions.withMin(0)
         + panelTimeSeriesStacking
-        + panel.timeSeries.standardOptions.withUnit('ms')
+        + panel.timeSeries.standardOptions.withUnit('short')
         + if showMultiCluster then
           panel.timeSeries.queryOptions.withTargets([
             prometheus.new(
@@ -445,6 +445,7 @@ local row = panel.row;
       dashboard.new('%(prefix)sOverview' % $._config.grafanaPrometheus)
       + dashboard.time.withFrom('now-1h')
       + dashboard.withTags($._config.grafanaPrometheus.tags)
+      + dashboard.withUid('9fa0d141-d019-4ad7-8bc5-42196ee308bd')
       + dashboard.timepicker.withRefreshIntervals($._config.grafanaPrometheus.refresh)
       + dashboard.withVariables(std.prune([
         datasourceVariable,

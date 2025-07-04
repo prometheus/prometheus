@@ -3,8 +3,6 @@ title: Configuration
 sort_rank: 1
 ---
 
-# Configuration
-
 Prometheus is configured via command-line flags and a configuration file. While
 the command-line flags configure immutable system parameters (such as storage
 locations, amount of data to keep on disk and in memory, etc.), the
@@ -183,7 +181,15 @@ remote_write:
 # Settings related to the OTLP receiver feature.
 # See https://prometheus.io/docs/guides/opentelemetry/ for best practices.
 otlp:
+  # Promote specific list of resource attributes to labels.
+  # It cannot be configured simultaneously with 'promote_all_resource_attributes: true'.
   [ promote_resource_attributes: [<string>, ...] | default = [ ] ]
+  # Promoting all resource attributes to labels, except for the ones configured with 'ignore_resource_attributes'.
+  # Be aware that changes in attributes received by the OTLP endpoint may result in time series churn and lead to high memory usage by the Prometheus server.
+  # It cannot be set to 'true' simultaneously with 'promote_resource_attributes'.
+  [ promote_all_resource_attributes: <boolean> | default = false ]
+  # Which resource attributes to ignore, can only be set when 'promote_all_resource_attributes' is true.
+  [ ignore_resource_attributes: [<string>, ...] | default = [] ]
   # Configures translation of OTLP metrics when received through the OTLP metrics
   # endpoint. Available values:
   # - "UnderscoreEscapingWithSuffixes" refers to commonly agreed normalization used
@@ -205,9 +211,12 @@ otlp:
   # Enables adding "service.name", "service.namespace" and "service.instance.id"
   # resource attributes to the "target_info" metric, on top of converting
   # them into the "instance" and "job" labels.
-  [ keep_identifying_resource_attributes: <boolean> | default = false]
+  [ keep_identifying_resource_attributes: <boolean> | default = false ]
   # Configures optional translation of OTLP explicit bucket histograms into native histograms with custom buckets.
-  [ convert_histograms_to_nhcb: <boolean> | default = false]
+  [ convert_histograms_to_nhcb: <boolean> | default = false ]
+  # Enables promotion of OTel scope metadata (i.e. name, version, schema URL, and attributes) to metric labels.
+  # This is disabled by default for backwards compatibility, but according to OTel spec, scope metadata _should_ be identifying, i.e. translated to metric labels.
+  [ promote_scope_metadata: <boolean> | default = false ]
 
 # Settings related to the remote read feature.
 remote_read:
@@ -425,6 +434,10 @@ scaleway_sd_configs:
 serverset_sd_configs:
   [ - <serverset_sd_config> ... ]
 
+# List of STACKIT service discovery configurations.
+stackit_sd_configs:
+  [ - <stackit_sd_config> ... ]
+
 # List of Triton service discovery configurations.
 triton_sd_configs:
   [ - <triton_sd_config> ... ]
@@ -503,7 +516,7 @@ metric_relabel_configs:
 # If this value is left blank, Prometheus will default to `allow-utf-8` if the
 # validation scheme for the current scrape config is set to utf8, or
 # `underscores` if the validation scheme is set to `legacy`.
-[ metric_name_escaping_scheme: <string> | default "utf8" ]
+[ metric_name_escaping_scheme: <string> | default "allow-utf-8" ]
 
 # Limit on total number of positive and negative buckets allowed in a single
 # native histogram. The resolution of a histogram with more buckets will be
@@ -1828,6 +1841,9 @@ The `endpoints` role discovers targets from listed endpoints of a service. For e
 address one target is discovered per port. If the endpoint is backed by a pod, all
 additional container ports of the pod, not bound to an endpoint port, are discovered as targets as well.
 
+Note that the Endpoints API is [deprecated in Kubernetes v1.33+](https://kubernetes.io/blog/2025/04/24/endpoints-deprecation/),
+it is recommended to use EndpointSlices instead and switch to the `endpointslice` role below.
+
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
@@ -2248,6 +2264,70 @@ paths:
 ```
 
 Serverset data must be in the JSON format, the Thrift format is not currently supported.
+
+### `<stackit_sd_config>`
+
+[STACKIT](https://www.stackit.de/de/) SD configurations allow retrieving
+scrape targets from various APIs.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_stackit_availability_zone`: The availability zone of the server.
+* `__meta_stackit_label_<labelname>`: Each server label, with unsupported characters replaced by underscores.</labelname>
+* `__meta_stackit_labelpresent_<labelname>`: "true" for each label of the server, with unsupported characters replaced by underscores.</labelname>
+* `__meta_stackit_private_ipv4_<networkname>`: the private ipv4 address of the server within a given network
+* `__meta_stackit_public_ipv4`: the public ipv4 address of the server
+* `__meta_stackit_id`: The ID of the target.
+* `__meta_stackit_type`: The type or brand of the target.
+* `__meta_stackit_name`: The server name.
+* `__meta_stackit_status`: The current status of the server.
+* `__meta_stackit_power_status`: The power status of the server.
+
+See below for the configuration options for STACKIT discovery:
+
+```yaml
+# The STACKIT project 
+project: <string>
+
+# STACKIT region to use. No automatic discovery of the region is done.
+[ region : <string> | default = "eu01" ]
+
+# Custom API endpoint to be used. Format scheme://host:port
+[ endpoint : <string>  ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# Raw private key string used for authenticating a service account
+[ private_key: <string> ]
+
+# Path to a file containing the raw private key string
+[ private_key_path: <string> ]
+
+# Full JSON-formatted service account key used for authentication
+[ service_account_key: <string> ]
+
+# Path to a file containing the JSON-formatted service account key
+[ service_account_key_path: <string> ]
+
+# Path to a file containing STACKIT credentials.
+[ credentials_file_path: <string> ]
+
+# The time after which the servers are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+
+# HTTP client settings, including authentication methods (such as basic auth and
+# authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+[ <http_config> ]
+```
+
+A Service Account Token can be set through `http_config`.
+
+```yaml
+stackit_sd_config:
+- authorization:
+    credentials: <token>
+```
 
 ### `<triton_sd_config>`
 
@@ -2821,6 +2901,10 @@ scaleway_sd_configs:
 serverset_sd_configs:
   [ - <serverset_sd_config> ... ]
 
+# List of STACKIT service discovery configurations.
+stackit_sd_configs:
+  [ - <stackit_sd_config> ... ]
+
 # List of Triton service discovery configurations.
 triton_sd_configs:
   [ - <triton_sd_config> ... ]
@@ -2925,7 +3009,7 @@ azuread:
   # The Azure Cloud. Options are 'AzurePublic', 'AzureChina', or 'AzureGovernment'.
   [ cloud: <string> | default = AzurePublic ]
 
-  # Azure User-assigned Managed identity.
+  # Azure Managed Identity.  Leave 'client_id' blank to use the default managed identity.
   [ managed_identity:
       [ client_id: <string> ] ]
 

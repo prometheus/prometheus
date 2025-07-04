@@ -1,5 +1,5 @@
 import { FC, useEffect, useId, useLayoutEffect, useState } from "react";
-import { Alert, Skeleton, Box, Group, Stack, Text } from "@mantine/core";
+import { Alert, Skeleton, Box, Group, Stack } from "@mantine/core";
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import { InstantQueryResult } from "../../api/responseTypes/query";
 import { useAPIQuery } from "../../api/api";
@@ -9,6 +9,7 @@ import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import { setVisualizer } from "../../state/queryPageSlice";
 import TimeInput from "./TimeInput";
 import DataTable from "./DataTable";
+import QueryStatsDisplay from "./QueryStatsDisplay";
 dayjs.extend(timezone);
 
 export interface TableTabProps {
@@ -34,6 +35,7 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
     params: {
       query: expr,
       time: `${(endTime !== null ? endTime : Date.now()) / 1000}`,
+      stats: "true",
     },
     enabled: expr !== "",
     recordResponseTime: setResponseTime,
@@ -66,10 +68,11 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
           }
         />
         {!isFetching && data !== undefined && (
-          <Text size="xs" c="gray">
-            Load time: {responseTime}ms &ensp; Result series:{" "}
-            {data.data.result.length}
-          </Text>
+          <QueryStatsDisplay
+            numResults={data.data.result.length}
+            responseTime={responseTime}
+            stats={data.data.stats!}
+          />
         )}
       </Group>
       {isFetching ? (

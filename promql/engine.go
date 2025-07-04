@@ -326,6 +326,8 @@ type EngineOpts struct {
 	// This is useful in certain scenarios where the __name__ label must be preserved or where applying a
 	// regex-matcher to the __name__ label may otherwise lead to duplicate labelset errors.
 	EnableDelayedNameRemoval bool
+	// EnableTypeAndUnitLabels will allow PromQL Engine to make decisions based on the type and unit labels.
+	EnableTypeAndUnitLabels bool
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -344,6 +346,7 @@ type Engine struct {
 	enableNegativeOffset     bool
 	enablePerStepStats       bool
 	enableDelayedNameRemoval bool
+	enableTypeAndUnitLabels  bool
 }
 
 // NewEngine returns a new engine.
@@ -435,6 +438,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		enableNegativeOffset:     opts.EnableNegativeOffset,
 		enablePerStepStats:       opts.EnablePerStepStats,
 		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
+		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
 	}
 }
 
@@ -477,7 +481,7 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
 func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, ts time.Time) (Query, error) {
-	pExpr, qry := ng.newQuery(q, qs, opts, ts, ts, 0)
+	pExpr, qry := ng.newQuery(q, qs, opts, ts, ts, 0*time.Second)
 	finishQueue, err := ng.queueActive(ctx, qry)
 	if err != nil {
 		return nil, err
@@ -490,7 +494,7 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
-	*pExpr, err = PreprocessExpr(expr, ts, ts)
+	*pExpr, err = PreprocessExpr(expr, ts, ts, 0)
 
 	return qry, err
 }
@@ -514,7 +518,7 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
-	*pExpr, err = PreprocessExpr(expr, start, end)
+	*pExpr, err = PreprocessExpr(expr, start, end, interval)
 
 	return qry, err
 }
@@ -744,6 +748,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			samplesStats:             query.sampleStats,
 			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
+			enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 			querier:                  querier,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
@@ -803,6 +808,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		samplesStats:             query.sampleStats,
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
+		enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 		querier:                  querier,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
@@ -1076,6 +1082,7 @@ type evaluator struct {
 	samplesStats             *stats.QuerySamples
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	enableDelayedNameRemoval bool
+	enableTypeAndUnitLabels  bool
 	querier                  storage.Querier
 }
 
@@ -1890,12 +1897,20 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 			if e.Func.Name == "rate" || e.Func.Name == "increase" {
 				metricName := inMatrix[0].Metric.Get(labels.MetricName)
-				if metricName != "" && len(ss.Floats) > 0 &&
-					!strings.HasSuffix(metricName, "_total") &&
-					!strings.HasSuffix(metricName, "_sum") &&
-					!strings.HasSuffix(metricName, "_count") &&
-					!strings.HasSuffix(metricName, "_bucket") {
-					warnings.Add(annotations.NewPossibleNonCounterInfo(metricName, e.Args[0].PositionRange()))
+				if metricName != "" && len(ss.Floats) > 0 {
+					if ev.enableTypeAndUnitLabels {
+						// When type-and-unit-labels feature is enabled, check __type__ label
+						typeLabel := inMatrix[0].Metric.Get("__type__")
+						if typeLabel != string(model.MetricTypeCounter) {
+							warnings.Add(annotations.NewPossibleNonCounterLabelInfo(metricName, typeLabel, e.Args[0].PositionRange()))
+						}
+					} else if !strings.HasSuffix(metricName, "_total") &&
+						!strings.HasSuffix(metricName, "_sum") &&
+						!strings.HasSuffix(metricName, "_count") &&
+						!strings.HasSuffix(metricName, "_bucket") {
+						// Fallback to name suffix checking
+						warnings.Add(annotations.NewPossibleNonCounterInfo(metricName, e.Args[0].PositionRange()))
+					}
 				}
 			}
 		}
@@ -2060,6 +2075,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			samplesStats:             ev.samplesStats.NewChild(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
+			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			querier:                  ev.querier,
 		}
 
@@ -2105,6 +2121,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			samplesStats:             ev.samplesStats.NewChild(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
+			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			querier:                  ev.querier,
 		}
 		res, ws := newEv.eval(ctx, e.Expr)
@@ -3080,6 +3097,38 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			}
 
 		case parser.AVG:
+			// For the average calculation of histograms, we use
+			// incremental mean calculation without the help of
+			// Kahan summation (but this should change, see
+			// https://github.com/prometheus/prometheus/issues/14105
+			// ). For floats, we improve the accuracy with the help
+			// of Kahan summation. For a while, we assumed that
+			// incremental mean calculation combined with Kahan
+			// summation (see
+			// https://stackoverflow.com/questions/61665473/is-it-beneficial-for-precision-to-calculate-the-incremental-mean-average
+			// for inspiration) is generally the preferred solution.
+			// However, it then turned out that direct mean
+			// calculation (still in combination with Kahan
+			// summation) is often more accurate. See discussion in
+			// https://github.com/prometheus/prometheus/issues/16714
+			// . The problem with the direct mean calculation is
+			// that it can overflow float64 for inputs on which the
+			// incremental mean calculation works just fine. Our
+			// current approach is therefore to use direct mean
+			// calculation as long as we do not overflow (or
+			// underflow) the running sum. Once the latter would
+			// happen, we switch to incremental mean calculation.
+			// This seems to work reasonably well, but note that a
+			// deeper understanding would be needed to find out if
+			// maybe an earlier switch to incremental mean
+			// calculation would be better in terms of accuracy.
+			// Also, we could apply a number of additional means to
+			// improve the accuracy, like processing the values in a
+			// particular order. For now, we decided that the
+			// current implementation is accurate enough for
+			// practical purposes, in particular given that changing
+			// the order of summation would be hard, given how the
+			// PromQL engine implements aggregations.
 			group.groupCount++
 			if h != nil {
 				group.hasHistogram = true
@@ -3120,29 +3169,11 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					group.floatMean = group.floatValue / (group.groupCount - 1)
 					group.floatKahanC /= group.groupCount - 1
 				}
-				if math.IsInf(group.floatMean, 0) {
-					if math.IsInf(f, 0) && (group.floatMean > 0) == (f > 0) {
-						// The `floatMean` and `s.F` values are `Inf` of the same sign.  They
-						// can't be subtracted, but the value of `floatMean` is correct
-						// already.
-						break
-					}
-					if !math.IsInf(f, 0) && !math.IsNaN(f) {
-						// At this stage, the mean is an infinite. If the added
-						// value is neither an Inf or a Nan, we can keep that mean
-						// value.
-						// This is required because our calculation below removes
-						// the mean value, which would look like Inf += x - Inf and
-						// end up as a NaN.
-						break
-					}
-				}
-				currentMean := group.floatMean + group.floatKahanC
+				q := (group.groupCount - 1) / group.groupCount
 				group.floatMean, group.floatKahanC = kahanSumInc(
-					// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
-					f/group.groupCount-currentMean/group.groupCount,
-					group.floatMean,
-					group.floatKahanC,
+					f/group.groupCount,
+					q*group.floatMean,
+					q*group.floatKahanC,
 				)
 			}
 
@@ -3218,7 +3249,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			case aggr.incrementalMean:
 				aggr.floatValue = aggr.floatMean + aggr.floatKahanC
 			default:
-				aggr.floatValue = (aggr.floatValue + aggr.floatKahanC) / aggr.groupCount
+				aggr.floatValue = aggr.floatValue/aggr.groupCount + aggr.floatKahanC/aggr.groupCount
 			}
 
 		case parser.COUNT:
@@ -3658,7 +3689,7 @@ func btos(b bool) float64 {
 	return 0
 }
 
-// changesSchema returns true whether the op operation changes the semantic meaning or
+// changesMetricSchema returns true whether the op operation changes the semantic meaning or
 // schema of the metric.
 func changesMetricSchema(op parser.ItemType) bool {
 	switch op {
@@ -3699,10 +3730,10 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
 // StepInvariantExpr. It also resolves the preprocessors and evaluates duration expressions
 // into their numeric values.
-func PreprocessExpr(expr parser.Expr, start, end time.Time) (parser.Expr, error) {
+func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) (parser.Expr, error) {
 	detectHistogramStatsDecoding(expr)
 
-	if err := parser.Walk(&durationVisitor{}, expr, nil); err != nil {
+	if err := parser.Walk(&durationVisitor{step: step}, expr, nil); err != nil {
 		return nil, err
 	}
 
@@ -3847,19 +3878,13 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 // required for correctness.
 func detectHistogramStatsDecoding(expr parser.Expr) {
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
-		if n, ok := node.(*parser.BinaryExpr); ok {
-			detectHistogramStatsDecoding(n.LHS)
-			detectHistogramStatsDecoding(n.RHS)
-			return errors.New("stop")
-		}
-
 		n, ok := (node).(*parser.VectorSelector)
 		if !ok {
 			return nil
 		}
 
-		for _, p := range path {
-			call, ok := p.(*parser.Call)
+		for i := len(path) - 1; i > 0; i-- { // Walk backwards up the path.
+			call, ok := path[i].(*parser.Call)
 			if !ok {
 				continue
 			}
@@ -3942,6 +3967,12 @@ func newHistogramStatsSeries(series storage.Series) *histogramStatsSeries {
 }
 
 func (s histogramStatsSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	// Try to reuse the iterator if we can.
+	if statsIterator, ok := it.(*HistogramStatsIterator); ok {
+		statsIterator.Reset(s.Series.Iterator(statsIterator.Iterator))
+		return statsIterator
+	}
+
 	return NewHistogramStatsIterator(s.Series.Iterator(it))
 }
 

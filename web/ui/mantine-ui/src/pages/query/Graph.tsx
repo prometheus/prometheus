@@ -84,6 +84,34 @@ const Graph: FC<GraphProps> = ({
     range: UPlotChartRange;
   } | null>(null);
 
+  // Helper function to render warnings.
+  const renderAlerts = (warnings?: string[], infos?: string[]) => {
+    return (
+      <>
+        {warnings?.map((w, idx) => (
+          <Alert
+            key={idx}
+            color="red"
+            title="Query warning"
+            icon={<IconAlertTriangle />}
+          >
+            {w}
+          </Alert>
+        ))}
+        {infos?.map((w, idx) => (
+          <Alert
+            key={idx}
+            color="yellow"
+            title="Query notice"
+            icon={<IconInfoCircle />}
+          >
+            {w}
+          </Alert>
+        ))}
+      </>
+    );
+  };
+
   useEffect(() => {
     if (data !== undefined) {
       setDataAndRange({
@@ -148,9 +176,12 @@ const Graph: FC<GraphProps> = ({
 
   if (result.length === 0) {
     return (
-      <Alert title="Empty query result" icon={<IconInfoCircle />}>
-        This query returned no data.
-      </Alert>
+      <Stack>
+        <Alert title="Empty query result" icon={<IconInfoCircle />}>
+          This query returned no data.
+        </Alert>
+        {renderAlerts(dataAndRange.data.warnings)}
+      </Stack>
     );
   }
 
@@ -166,6 +197,7 @@ const Graph: FC<GraphProps> = ({
           graphing the equivalent instant vector selector instead.
         </Alert>
       )}
+      {renderAlerts(dataAndRange.data.warnings, dataAndRange.data.infos)}
       <Box pos="relative" ref={ref} className={classes.chartWrapper}>
         <LoadingOverlay
           visible={isFetching}

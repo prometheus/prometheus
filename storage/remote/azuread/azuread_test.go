@@ -142,7 +142,7 @@ func TestAzureAdConfig(t *testing.T) {
 		filename string
 		err      string
 	}{
-		// Missing managedidentiy or oauth field.
+		// Missing managedidentity or oauth field.
 		{
 			filename: "testdata/azuread_bad_configmissing.yaml",
 			err:      "must provide an Azure Managed Identity, Azure OAuth or Azure SDK in the Azure AD config",
@@ -171,9 +171,13 @@ func TestAzureAdConfig(t *testing.T) {
 		{
 			filename: "testdata/azuread_good_cloudmissing.yaml",
 		},
-		// Valid managed identity config.
+		// Valid specific managed identity config.
 		{
-			filename: "testdata/azuread_good_managedidentity.yaml",
+			filename: "testdata/azuread_good_specificmanagedidentity.yaml",
+		},
+		// Valid default managed identity config.
+		{
+			filename: "testdata/azuread_good_defaultmanagedidentity.yaml",
 		},
 		// Valid Oauth config.
 		{
