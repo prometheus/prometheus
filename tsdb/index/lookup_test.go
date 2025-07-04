@@ -143,7 +143,7 @@ func TestScanEmptyMatchersLookupPlanner(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			plan := planner.PlanIndexLookup(context.TODO(), tc.matchers, 0, 1000)
+			plan, _ := planner.PlanIndexLookup(context.TODO(), NewIndexOnlyLookupPlan(tc.matchers), 0, 1000)
 
 			require.Equal(t, matchersToString(tc.expectedScan), matchersToString(plan.ScanMatchers()))
 			require.Equal(t, matchersToString(tc.expectedIndex), matchersToString(plan.IndexMatchers()))

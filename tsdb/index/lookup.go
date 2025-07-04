@@ -22,7 +22,28 @@ import (
 // LookupPlanner plans how to execute index lookups by deciding which matchers
 // to apply during index lookup versus after series retrieval.
 type LookupPlanner interface {
-	PlanIndexLookup(ctx context.Context, matchers []*labels.Matcher, minT, maxT int64) LookupPlan
+	PlanIndexLookup(ctx context.Context, plan LookupPlan, minT, maxT int64) (LookupPlan, error)
+}
+
+// ChainLookupPlanners is useful to break up the planning logic into multiple independent planners and connect them in sequence.
+// The returned LookupPlanner calls the planners in sequence and feeds the output of one planner as the input of the next.
+func ChainLookupPlanners(planners ...LookupPlanner) LookupPlanner {
+	return chainedLookupPlanner{planners: planners}
+}
+
+type chainedLookupPlanner struct {
+	planners []LookupPlanner
+}
+
+func (c chainedLookupPlanner) PlanIndexLookup(ctx context.Context, plan LookupPlan, minT, maxT int64) (LookupPlan, error) {
+	var err error
+	for _, p := range c.planners {
+		plan, err = p.PlanIndexLookup(ctx, plan, minT, maxT)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return plan, nil
 }
 
 // LookupPlan represents the decision of which matchers to apply during
@@ -34,20 +55,24 @@ type LookupPlan interface {
 	IndexMatchers() []*labels.Matcher
 }
 
+// NewIndexOnlyLookupPlan creates a new LookupPlan which is based on the
+func NewIndexOnlyLookupPlan(matchers []*labels.Matcher) LookupPlan {
+	return &concreteLookupPlan{indexMatchers: matchers}
+}
+
 // ScanEmptyMatchersLookupPlanner implements LookupPlanner by deferring empty matchers such as l="", l=~".+" to scan matchers.
 type ScanEmptyMatchersLookupPlanner struct{}
 
-func (p *ScanEmptyMatchersLookupPlanner) PlanIndexLookup(_ context.Context, matchers []*labels.Matcher, _, _ int64) LookupPlan {
-	if len(matchers) <= 1 {
+func (p *ScanEmptyMatchersLookupPlanner) PlanIndexLookup(_ context.Context, plan LookupPlan, _, _ int64) (LookupPlan, error) {
+	if len(plan.IndexMatchers()) <= 1 {
 		// If there is only one matcher, then using the index is usually more efficient.
 		// This also covers test cases which use matchers such as {""=""} or {""=~".*"} to mean "match all series"
-		return &concreteLookupPlan{
-			indexMatchers: matchers,
-		}
+		return plan, nil
 	}
-	var scanMatchers, indexMatchers []*labels.Matcher
+	var indexMatchers []*labels.Matcher
+	scanMatchers := plan.ScanMatchers()
 
-	for _, matcher := range matchers {
+	for _, matcher := range plan.IndexMatchers() {
 		if matcher.Type == labels.MatchRegexp && matcher.Value == ".*" {
 			// This matches everything (empty and arbitrary values), so it doesn't reduce the selectivity of the whole set of matchers.
 			continue
@@ -63,7 +88,7 @@ func (p *ScanEmptyMatchersLookupPlanner) PlanIndexLookup(_ context.Context, matc
 		}
 	}
 
-	if len(indexMatchers) == 0 {
+	if len(indexMatchers) == 0 && len(scanMatchers) > 0 {
 		// Zero index matchers match no series. We retain one index matchers so that we have a base set of series which we can scan.
 		indexMatchers = scanMatchers[:1]
 		scanMatchers = scanMatchers[1:]
@@ -72,7 +97,7 @@ func (p *ScanEmptyMatchersLookupPlanner) PlanIndexLookup(_ context.Context, matc
 	return &concreteLookupPlan{
 		indexMatchers: indexMatchers,
 		scanMatchers:  scanMatchers,
-	}
+	}, nil
 }
 
 // concreteLookupPlan implements LookupPlan by storing pre-computed index and scan matchers.
