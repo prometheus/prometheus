@@ -25,47 +25,58 @@ and vector/vector value pairs. They follow the usual [IEEE 754 floating point
 arithmetic](https://en.wikipedia.org/wiki/IEEE_754), including the handling of
 special values like `NaN`, `+Inf`, and `-Inf`.
 
-**Between two scalars**, the behavior is obvious: they evaluate to another
+**Between two scalars**, the behavior is straightforward: they evaluate to another
 scalar that is the result of the operator applied to both scalar operands.
 
 **Between an instant vector and a scalar**, the operator is applied to the
-value of every data sample in the vector. If the data sample is a float, the
-operation performed on the data sample is again obvious, e.g. if an instant
-vector of float samples is multiplied by 2, the result is another vector of
-float samples in which every sample value of the original vector is multiplied
-by 2. For vector elements that are histogram samples, the behavior is the
-following: For `*`, all bucket populations and the count and the sum of
-observations are multiplied by the scalar. For `/`, the histogram sample has to
-be on the left hand side (LHS), followed by the scalar on the right hand side
-(RHS). All bucket populations and the count and the sum of observations are
-then divided by the scalar. A division by zero results in a histogram with no
-regular buckets and the zero bucket population and the count and sum of
-observations all set to +Inf, -Inf, or NaN, depending on their values in the
-input histogram (positive, negative, or zero/NaN, respectively). For `/` with a
-scalar on the LHS and a histogram sample on the RHS, and similarly for all
-other arithmetic binary operators in any combination of a scalar and a
-histogram sample, there is no result and the corresponding element is removed
-from the resulting vector. Such a removal is flagged by an info-level
-annotation.
+value of every data sample in the vector. 
+
+If the data sample is a float, the operation is performed between that float and the scalar. 
+For example, if an instant vector of float samples is multiplied by 2,
+the result is another vector of float samples in which every sample value of
+the original vector is multiplied by 2.
+
+For vector elements that are histogram samples, the behavior is the
+following:
+
+* For `*`, all bucket populations and the count and the sum of observations 
+  are multiplied by the scalar.
+
+* For `/`, the histogram sample has to be on the left hand side (LHS), followed 
+  by the scalar on the right hand side (RHS). All bucket populations and the count 
+  and the sum of observations are then divided by the scalar. A division by zero
+  results in a histogram with no regular buckets and the zero bucket population 
+  and the count and sum of observations all set to `+Inf`, `-Inf`, or `NaN`, depending 
+  on their values in the input histogram (positive, negative, or zero/`NaN`, respectively). 
+
+* For `/` with a scalar on the LHS and a histogram sample on the RHS, and similarly for all
+  other arithmetic binary operators in any combination of a scalar and a
+  histogram sample, there is no result and the corresponding element is removed
+  from the resulting vector. Such a removal is flagged by an info-level
+  annotation.
 
 **Between two instant vectors**, a binary arithmetic operator is applied to
 each entry in the LHS vector and its [matching element](#vector-matching) in
 the RHS vector. The result is propagated into the result vector with the
 grouping labels becoming the output label set. Entries for which no matching
-entry in the right-hand vector can be found are not part of the result. If two
-float samples are matched, the behavior is obvious. If a float sample is
-matched with a histogram sample, the behavior follows the same logic as between
-a scalar and a histogram sample (see above), i.e. `*` and `/` (the latter with
-the histogram sample on the LHS) are valid operations, while all others lead to
-the removal of the corresponding element from the resulting vector. If two
-histogram samples are matched, only `+` and `-` are valid operations, each
-adding or substracting all matching bucket populations and the count and the
+entry in the right-hand vector can be found are not part of the result.
+
+If two float samples are matched, the arithmetic operator is applied to the two input values.
+
+If a float sample is matched with a histogram sample, the behavior follows the same
+logic as between a scalar and a histogram sample (see above), i.e. `*` and `/` 
+(the latter with the histogram sample on the LHS) are valid operations, while all 
+others lead to the removal of the corresponding element from the resulting vector. 
+
+If two histogram samples are matched, only `+` and `-` are valid operations, each
+adding or subtracting all matching bucket populations and the count and the
 sum of observations. All other operations result in the removal of the
 corresponding element from the output vector, flagged by an info-level
 annotation.
 
 **In any arithmetic binary operation involving vectors**, the metric name is
-dropped.
+dropped. This occurs even if `__name__` is explicitly mentioned in `on` 
+(see https://github.com/prometheus/prometheus/issues/16631 for further discussion).
 
 ### Trigonometric binary operators
 
@@ -102,8 +113,8 @@ operators result in another scalar that is either `0` (`false`) or `1`
 
 **Between an instant vector and a scalar**, these operators are applied to the
 value of every data sample in the vector, and vector elements between which the
-comparison result is `false` get dropped from the result vector. These
-operation only work with float samples in the vector. For histogram samples,
+comparison result is false get dropped from the result vector. These
+operations only work with float samples in the vector. For histogram samples,
 the corresponding element is removed from the result vector, flagged by an
 info-level annotation.
 
@@ -111,19 +122,33 @@ info-level annotation.
 applied to matching entries. Vector elements for which the expression is not
 true or which do not find a match on the other side of the expression get
 dropped from the result, while the others are propagated into a result vector
-with the grouping labels becoming the output label set. Matches between two
-float samples work as usual, while matches between a float sample and a
-histogram sample are invalid. The corresponding element is removed from the
-result vector, flagged by an info-level annotation. Between two histogram
-samples, `==` and `!=` work as expected, but all other comparison binary
-operations are again invalid.
+with the grouping labels becoming the output label set. 
+
+Matches between two float samples work as usual. 
+
+Matches between a float sample and a histogram sample are invalid, and the
+corresponding element is removed from the result vector, flagged by an info-level
+annotation.
+
+Between two histogram samples, `==` and `!=` work as expected, but all other
+comparison binary operations are again invalid.
 
 **In any comparison binary operation involving vectors**, providing the `bool`
-modifier changes the behavior in the following way: Vector elements that would
-be dropped instead have the value `0` and vector elements that would be kept
-have the value `1`. Additionally, the metric name is dropped. (Note that
-invalid operations involving histogram samples still return no result rather
-than the value `0`.)
+modifier changes the behavior in the following ways:
+
+* Vector elements which find a match on the other side of the expression but for
+  which the expression is false instead have the value `0` and vector elements
+  that do find a match and for which the expression is true have the value `1`. 
+  (Note that elements with no match or invalid operations involving histogram
+  samples still return no result rather than the value `0`.)
+* The metric name is dropped.
+
+If the `bool` modifier is not provided, then the metric name from the left side
+is retained, with some exceptions:
+
+* If `on` is used, then the metric name is dropped.
+* If `group_right` is used, then the metric name from the right side is retained,
+  to avoid collisions.
 
 ### Logical/set binary operators
 

@@ -5,7 +5,7 @@
 * [FEATURE] OTLP receiver: Support promoting OTel scope name/version/schema URL/attributes as metric labels, enable via configuration parameter `otlp.promote_scope_metadata`. #16730 #16760
 * [BUGFIX] OTLP receiver: Generate `target_info` samples between the earliest and latest samples per resource. #16737
 
-## 3.4.2 / 2025-06-04
+## 3.4.2 / 2025-06-26
 
 * [BUGFIX] OTLP receiver: Fix default configuration not being respected if the `otlp:` block is unset in the config file. #16693
 
@@ -207,6 +207,11 @@ This release includes new features such as a brand new UI and UTF-8 support enab
 * [BUGFIX] Autoreload: Reload invalid yaml files. #14947
 * [BUGFIX] Scrape: Do not override target parameter labels with config params. #11029
 
+## 2.53.5 / 2025-06-30
+
+* [ENHANCEMENT] TSDB: Add backward compatibility with the upcoming TSDB block index v3 #16762
+* [BUGFIX] Top-level: Update GOGC before loading TSDB #16521
+
 ## 2.53.4 / 2025-03-18
 
 * [BUGFIX] Runtime: fix GOGC is being set to 0 when installed with empty prometheus.yml file resulting high cpu usage. #16090
@@ -221,7 +226,7 @@ This release includes new features such as a brand new UI and UTF-8 support enab
 Fix a bug where Prometheus would crash with a segmentation fault if a remote-read
 request accessed a block on disk at about the same time as TSDB created a new block.
 
-[BUGFIX] Remote-Read: Resolve occasional segmentation fault on query. #14515,#14523
+* [BUGFIX] Remote-Read: Resolve occasional segmentation fault on query. #14515,#14523
 
 ## 2.55.1 / 2024-11-04
 

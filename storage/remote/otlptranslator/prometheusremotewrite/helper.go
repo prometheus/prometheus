@@ -157,11 +157,9 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 
 	// map ensures no duplicate label names.
 	l := make(map[string]string, maxLabelCount)
+	labelNamer := otlptranslator.LabelNamer{UTF8Allowed: settings.AllowUTF8}
 	for _, label := range labels {
-		finalKey := label.Name
-		if !settings.AllowUTF8 {
-			finalKey = otlptranslator.NormalizeLabel(finalKey)
-		}
+		finalKey := labelNamer.Build(label.Name)
 		if existingValue, alreadyExists := l[finalKey]; alreadyExists {
 			l[finalKey] = existingValue + ";" + label.Value
 		} else {
@@ -170,10 +168,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 	}
 
 	for _, lbl := range promotedAttrs {
-		normalized := lbl.Name
-		if !settings.AllowUTF8 {
-			normalized = otlptranslator.NormalizeLabel(normalized)
-		}
+		normalized := labelNamer.Build(lbl.Name)
 		if _, exists := l[normalized]; !exists {
 			l[normalized] = lbl.Value
 		}
@@ -184,9 +179,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 		l["otel_scope_schema_url"] = scope.schemaURL
 		scope.attributes.Range(func(k string, v pcommon.Value) bool {
 			name := "otel_scope_" + k
-			if !settings.AllowUTF8 {
-				name = otlptranslator.NormalizeLabel(name)
-			}
+			name = labelNamer.Build(name)
 			l[name] = v.AsString()
 			return true
 		})
@@ -224,8 +217,8 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 			log.Println("label " + name + " is overwritten. Check if Prometheus reserved labels are used.")
 		}
 		// internal labels should be maintained.
-		if !settings.AllowUTF8 && (len(name) <= 4 || name[:2] != "__" || name[len(name)-2:] != "__") {
-			name = otlptranslator.NormalizeLabel(name)
+		if len(name) <= 4 || name[:2] != "__" || name[len(name)-2:] != "__" {
+			name = labelNamer.Build(name)
 		}
 		l[name] = extras[i+1]
 	}

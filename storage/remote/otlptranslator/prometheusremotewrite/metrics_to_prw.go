@@ -81,7 +81,7 @@ func TranslatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric
 	case pmetric.MetricTypeGauge:
 		m.Type = otlptranslator.MetricTypeGauge
 	case pmetric.MetricTypeSum:
-		if metric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityCumulative {
+		if metric.Sum().IsMonotonic() {
 			m.Type = otlptranslator.MetricTypeMonotonicCounter
 		} else {
 			m.Type = otlptranslator.MetricTypeNonMonotonicCounter

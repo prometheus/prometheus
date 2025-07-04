@@ -181,6 +181,8 @@ This state is periodically ([`max_stale`][d2c]) cleared of inactive series.
 Enabling this _can_ have negative impact on performance, because the in-memory
 state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
+[d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
+
 ## PromQL arithmetic expressions in time durations
 
 `--enable-feature=promql-duration-expr`
@@ -203,6 +205,12 @@ When using offset with duration expressions, you must wrap the expression in
 parentheses. Without parentheses, only the first duration value will be used in
 the offset calculation.
 
+`step()` can be used in duration expressions.
+For a **range query**, it resolves to the step width of the range query.
+For an **instant query**, it resolves to `0s`. 
+
+`min(<duration>, <duration>)` and `max(<duration>, <duration>)` can be used to find the minimum or maximum of two duration expressions.
+
 **Note**: Duration expressions are not supported in the @ timestamp operator.
 
 The following operators are supported:
@@ -216,14 +224,16 @@ The following operators are supported:
 
 Examples of equivalent durations:
 
-* `5m * 2` is the equivalent to `10m` or `600s`
-* `10m - 1m` is the equivalent to `9m` or `540s`
-* `(5+2) * 1m` is the equivalent to `7m` or `420s`
-* `1h / 2` is the equivalent to `30m` or `1800s`
-* `4h % 3h` is the equivalent to `1h` or `3600s`
-* `(2 ^ 3) * 1m` is the equivalent to `8m` or `480s`
+* `5m * 2` is equivalent to `10m` or `600s`
+* `10m - 1m` is equivalent to `9m` or `540s`
+* `(5+2) * 1m` is equivalent to `7m` or `420s`
+* `1h / 2` is equivalent to `30m` or `1800s`
+* `4h % 3h` is equivalent to `1h` or `3600s`
+* `(2 ^ 3) * 1m` is equivalent to `8m` or `480s`
+* `step() + 1` is equivalent to the query step width increased by 1s.
+* `max(step(), 5s)` is equivalent to the larger of the query step width and `5s`.
+* `min(2 * step() + 5s, 5m)` is equivalent to the smaller of twice the query step increased by `5s` and `5m`.
 
-[d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
 
 ## OTLP Native Delta Support
 
