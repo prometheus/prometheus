@@ -55,7 +55,7 @@ type LookupPlan interface {
 	IndexMatchers() []*labels.Matcher
 }
 
-// NewIndexOnlyLookupPlan creates a new LookupPlan which is based on the
+// NewIndexOnlyLookupPlan creates a new LookupPlan which uses the provided matchers for looking up the index only.
 func NewIndexOnlyLookupPlan(matchers []*labels.Matcher) LookupPlan {
 	return &concreteLookupPlan{indexMatchers: matchers}
 }
