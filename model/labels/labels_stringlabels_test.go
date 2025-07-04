@@ -15,6 +15,15 @@
 
 package labels
 
+var expectedSizeOfLabels = []uint64{ // Values must line up with testCaseLabels.
+	12,
+	0,
+	37,
+	266,
+	270,
+	309,
+}
+
 var expectedByteSize = []uint64{ // Values must line up with testCaseLabels.
 	12,
 	0,

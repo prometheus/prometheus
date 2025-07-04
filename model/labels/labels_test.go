@@ -63,11 +63,42 @@ func BenchmarkString(b *testing.B) {
 	}
 }
 
+func TestSizeOfLabels(t *testing.T) {
+	require.Len(t, expectedSizeOfLabels, len(testCaseLabels))
+	for i, c := range expectedSizeOfLabels { // Declared in build-tag-specific files, e.g. labels_slicelabels_test.go.
+		var total uint64
+		testCaseLabels[i].Range(func(l Label) {
+			total += SizeOfLabels(l.Name, l.Value, 1)
+		})
+		require.Equal(t, c, total)
+	}
+}
+
 func TestByteSize(t *testing.T) {
 	require.Len(t, expectedByteSize, len(testCaseLabels))
 	for i, c := range expectedByteSize { // Declared in build-tag-specific files, e.g. labels_slicelabels_test.go.
 		require.Equal(t, c, testCaseLabels[i].ByteSize())
 	}
+}
+
+var GlobalTotal uint64 // Encourage the compiler not to elide the benchmark computation.
+
+func BenchmarkSize(b *testing.B) {
+	lb := New(benchmarkLabels...)
+	b.Run("SizeOfLabels", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			var total uint64
+			lb.Range(func(l Label) {
+				total += SizeOfLabels(l.Name, l.Value, 1)
+			})
+			GlobalTotal = total
+		}
+	})
+	b.Run("ByteSize", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			GlobalTotal = lb.ByteSize()
+		}
+	})
 }
 
 func TestLabels_MatchLabels(t *testing.T) {
