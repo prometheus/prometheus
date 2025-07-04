@@ -766,6 +766,9 @@ type ScrapeConfig struct {
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
 	// List of metric relabel configurations.
 	MetricRelabelConfigs []*relabel.Config `yaml:"metric_relabel_configs,omitempty"`
+
+	// Add namespace enrichment configuration to ScrapeConfig
+	NamespaceEnrichment *NamespaceEnrichmentConfig `yaml:"namespace_enrichment,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -929,6 +932,13 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		c.AlwaysScrapeClassicHistograms = &global
 	}
 
+	// Validate namespace enrichment configuration
+	if c.NamespaceEnrichment != nil {
+		if err := c.validateNamespaceEnrichment(); err != nil {
+			return fmt.Errorf("invalid namespace_enrichment configuration for scrape config with job name %q: %w", c.JobName, err)
+		}
+	}
+
 	return nil
 }
 
@@ -964,6 +974,181 @@ func (c *ScrapeConfig) ConvertClassicHistogramsToNHCBEnabled() bool {
 // AlwaysScrapeClassicHistogramsEnabled returns whether to always scrape classic histograms.
 func (c *ScrapeConfig) AlwaysScrapeClassicHistogramsEnabled() bool {
 	return c.AlwaysScrapeClassicHistograms != nil && *c.AlwaysScrapeClassicHistograms
+}
+
+// validateNamespaceEnrichment validates the namespace enrichment configuration.
+func (c *ScrapeConfig) validateNamespaceEnrichment() error {
+	cfg := c.NamespaceEnrichment
+
+	// Set realistic defaults for resource limits based on production usage
+	if cfg.MaxCacheSize <= 0 {
+		cfg.MaxCacheSize = 1000 // Default: cache up to 1000 namespaces (covers most clusters)
+	}
+	if cfg.CacheTTL == 0 {
+		cfg.CacheTTL = int64(time.Duration(5 * time.Minute).Seconds()) // Default: 5 minute TTL in seconds
+	}
+	if cfg.MaxSelectors <= 0 {
+		cfg.MaxSelectors = 20 // Default: max 20 selectors total (realistic for most use cases)
+	}
+
+	// Enhanced validation for realistic production limits
+	const (
+		maxAllowedCacheSize   = 50000 // Increased for large clusters (50k namespaces)
+		maxAllowedSelectors   = 50    // Increased but still safe limit
+		minCacheTTLSeconds    = 30    // Reduced minimum for faster updates
+		maxCacheTTLSeconds    = 3600  // 1 hour maximum
+		maxSelectorNameLength = 253   // Kubernetes label/annotation key limit
+		maxSelectorsPerType   = 25    // Per type (labels vs annotations)
+	)
+
+	// Validate cache size with progressive warnings
+	if cfg.MaxCacheSize > maxAllowedCacheSize {
+		return fmt.Errorf("max_cache_size %d exceeds maximum allowed %d - this could cause memory exhaustion in large clusters", cfg.MaxCacheSize, maxAllowedCacheSize)
+	}
+	if cfg.MaxCacheSize > 10000 {
+		// Warning for large cache sizes (but still allow)
+		fmt.Printf("WARNING: max_cache_size %d is quite large - monitor memory usage in production\n", cfg.MaxCacheSize)
+	}
+
+	// Enhanced TTL validation with context
+	if cfg.CacheTTL < minCacheTTLSeconds {
+		return fmt.Errorf("cache_ttl %d seconds is below minimum %d seconds - too low TTL increases Kubernetes API load", cfg.CacheTTL, minCacheTTLSeconds)
+	}
+	if cfg.CacheTTL > maxCacheTTLSeconds {
+		return fmt.Errorf("cache_ttl %d seconds exceeds maximum %d seconds - too high TTL may cause stale metadata", cfg.CacheTTL, maxCacheTTLSeconds)
+	}
+
+	// Check total selector count first (before per-type checks)
+	totalSelectors := len(cfg.LabelSelector) + len(cfg.AnnotationSelector)
+	if totalSelectors > maxAllowedSelectors {
+		return fmt.Errorf("too many selectors (%d), maximum allowed: %d", totalSelectors, maxAllowedSelectors)
+	}
+
+	// Enhanced selector validation
+	if len(cfg.LabelSelector) > maxSelectorsPerType {
+		return fmt.Errorf("too many label selectors (%d), maximum per type: %d - consider grouping related metadata", len(cfg.LabelSelector), maxSelectorsPerType)
+	}
+	if len(cfg.AnnotationSelector) > maxSelectorsPerType {
+		return fmt.Errorf("too many annotation selectors (%d), maximum per type: %d - consider grouping related metadata", len(cfg.AnnotationSelector), maxSelectorsPerType)
+	}
+
+	// If label_prefix is empty, use default
+	if cfg.LabelPrefix == "" {
+		cfg.LabelPrefix = "ns_"
+	}
+
+	// Enhanced label_prefix validation with examples
+	if cfg.LabelPrefix != "" {
+		// Check that prefix ends with underscore for proper label naming
+		if !strings.HasSuffix(cfg.LabelPrefix, "_") {
+			return fmt.Errorf("label_prefix must end with underscore for proper Prometheus label naming, got %q - example: \"ns_\"", cfg.LabelPrefix)
+		}
+
+		// Enhanced character validation
+		validPrefixRegex := regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*_$`)
+		if !validPrefixRegex.MatchString(cfg.LabelPrefix) {
+			return fmt.Errorf("label_prefix contains invalid character '-', only alphanumeric and underscore allowed")
+		}
+
+		// Check prefix length
+		if len(cfg.LabelPrefix) > 20 {
+			return fmt.Errorf("label_prefix %q is too long (%d chars), maximum 20 characters - keeps label names readable", cfg.LabelPrefix, len(cfg.LabelPrefix))
+		}
+	}
+
+	// At least one selector required when enabled
+	if cfg.Enabled && len(cfg.LabelSelector) == 0 && len(cfg.AnnotationSelector) == 0 {
+		return errors.New("at least one of label_selector or annotation_selector must be specified when enrichment is enabled - example: label_selector: [\"environment\", \"team\"]")
+	}
+
+	// Enhanced security validation with specific guidance
+	if cfg.Enabled {
+		// Define dangerous patterns
+		dangerousPatterns := []string{"secret", "password", "token", "key", "*", "vault", "aws", "salary"}
+
+		// Security validation for label selectors
+		for i, selector := range cfg.LabelSelector {
+			if err := validateSelector(selector, "label_selector", i); err != nil {
+				return err
+			}
+			if err := validateSelectorSecurity(selector, "label_selector", dangerousPatterns); err != nil {
+				return err
+			}
+		}
+
+		// Security validation for annotation selectors
+		for i, selector := range cfg.AnnotationSelector {
+			if err := validateSelector(selector, "annotation_selector", i); err != nil {
+				return err
+			}
+			if err := validateSelectorSecurity(selector, "annotation_selector", dangerousPatterns); err != nil {
+				return err
+			}
+		}
+
+		// Final selector count validation
+		if totalSelectors > cfg.MaxSelectors {
+			return fmt.Errorf("total selectors (%d) exceeds max_selectors (%d) - this could impact scrape performance and increase cardinality", totalSelectors, cfg.MaxSelectors)
+		}
+
+		if cfg.MaxSelectors > maxAllowedSelectors {
+			return fmt.Errorf("max_selectors %d exceeds maximum allowed %d - too many selectors increase metric cardinality and impact performance", cfg.MaxSelectors, maxAllowedSelectors)
+		}
+	}
+
+	return nil
+}
+
+// validateSelector performs comprehensive validation of individual selectors
+func validateSelector(selector, selectorType string, index int) error {
+	if len(selector) == 0 {
+		return fmt.Errorf("%s[%d] cannot be empty", selectorType, index)
+	}
+
+	// Check for selector length limits (Prometheus has a 253 character limit for label names)
+	if len(selector) > 253 {
+		return fmt.Errorf("%s[%d] '%s' exceeds maximum length of 253 characters", selectorType, index, selector)
+	}
+
+	// Check for invalid characters in selectors (basic validation)
+	// Kubernetes label/annotation names follow DNS-1123 subdomain format with some extensions
+	if strings.Contains(selector, " ") {
+		return fmt.Errorf("%s[%d] '%s' contains invalid character ' ' (space)", selectorType, index, selector)
+	}
+
+	return nil
+}
+
+// validateSelectorSecurity checks if a selector is potentially dangerous for security reasons
+func validateSelectorSecurity(selector, selectorType string, dangerousPatterns []string) error {
+	if len(selector) == 0 {
+		return fmt.Errorf("%s cannot be empty", selectorType)
+	}
+
+	// Check for Kubernetes system metadata prefixes first
+	if strings.HasPrefix(selector, "kubernetes.io/") {
+		return fmt.Errorf("potentially dangerous %s \"%s\" targets Kubernetes system metadata with prefix \"kubernetes.io/\"", selectorType, selector)
+	}
+
+	// Check for regex-like patterns that could be dangerous (check before individual patterns)
+	regexPatterns := []string{".*", ".+", "\\*", "\\?", "\\[", "\\]"}
+	for _, pattern := range regexPatterns {
+		if strings.Contains(selector, pattern) {
+			return fmt.Errorf("potentially dangerous %s \"%s\" contains regex-like pattern \"%s\"", selectorType, selector, pattern)
+		}
+	}
+
+	selectorLower := strings.ToLower(selector)
+
+	// Check for dangerous patterns
+	for _, pattern := range dangerousPatterns {
+		patternLower := strings.ToLower(pattern)
+		if strings.Contains(selectorLower, patternLower) {
+			return fmt.Errorf("potentially dangerous %s \"%s\" contains sensitive pattern \"%s\"", selectorType, selector, pattern)
+		}
+	}
+
+	return nil
 }
 
 // StorageConfig configures runtime reloadable configuration options.
@@ -1617,4 +1802,46 @@ func sanitizeAttributes(attributes []string, adjective string) error {
 		attributes[i] = attr
 	}
 	return err
+}
+
+// NamespaceEnrichmentConfig configures namespace metadata enrichment for scrape jobs.
+type NamespaceEnrichmentConfig struct {
+	Enabled            bool     `yaml:"enabled"`
+	LabelPrefix        string   `yaml:"label_prefix"`
+	LabelSelector      []string `yaml:"label_selector"`
+	AnnotationSelector []string `yaml:"annotation_selector"`
+
+	// Resource limits for experimental feature safety
+	MaxCacheSize int   `yaml:"max_cache_size,omitempty"` // Maximum number of namespaces to cache (default: 1000)
+	CacheTTL     int64 `yaml:"cache_ttl,omitempty"`      // TTL for cache entries in seconds (default: 300)
+	MaxSelectors int   `yaml:"max_selectors,omitempty"`  // Maximum total selectors (default: 20)
+}
+
+// Interface implementation for Kubernetes enricher factory (avoids import cycles)
+func (c *NamespaceEnrichmentConfig) IsEnabled() bool {
+	return c.Enabled
+}
+
+func (c *NamespaceEnrichmentConfig) GetLabelPrefix() string {
+	return c.LabelPrefix
+}
+
+func (c *NamespaceEnrichmentConfig) GetLabelSelector() []string {
+	return c.LabelSelector
+}
+
+func (c *NamespaceEnrichmentConfig) GetAnnotationSelector() []string {
+	return c.AnnotationSelector
+}
+
+func (c *NamespaceEnrichmentConfig) GetMaxCacheSize() int {
+	return c.MaxCacheSize
+}
+
+func (c *NamespaceEnrichmentConfig) GetCacheTTL() int64 {
+	return c.CacheTTL
+}
+
+func (c *NamespaceEnrichmentConfig) GetMaxSelectors() int {
+	return c.MaxSelectors
 }
