@@ -80,10 +80,12 @@ type ProtobufParser struct {
 	// native histogram.
 	parseClassicHistograms  bool
 	enableTypeAndUnitLabels bool
+
+	enableOtelSuffix bool
 }
 
 // NewProtobufParser returns a parser for the payload in the byte slice.
-func NewProtobufParser(b []byte, parseClassicHistograms, enableTypeAndUnitLabels bool, st *labels.SymbolTable) Parser {
+func NewProtobufParser(b []byte, parseClassicHistograms, enableTypeAndUnitLabels bool, enableOtelSuffix bool, st *labels.SymbolTable) Parser {
 	return &ProtobufParser{
 		dec:        dto.NewMetricStreamingDecoder(b),
 		entryBytes: &bytes.Buffer{},
@@ -92,6 +94,7 @@ func NewProtobufParser(b []byte, parseClassicHistograms, enableTypeAndUnitLabels
 		state:                   EntryInvalid,
 		parseClassicHistograms:  parseClassicHistograms,
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
+		enableOtelSuffix:        enableOtelSuffix,
 	}
 }
 
@@ -446,7 +449,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			return EntryInvalid, fmt.Errorf("unknown metric type for metric %q: %s", name, p.dec.GetType())
 		}
 		unit := p.dec.GetUnit()
-		if len(unit) > 0 {
+		if len(unit) > 0 && !p.enableOtelSuffix {
 			if p.dec.GetType() == dto.MetricType_COUNTER && strings.HasSuffix(name, "_total") {
 				if !strings.HasSuffix(name[:len(name)-6], unit) || len(name)-6 < len(unit)+1 || name[len(name)-6-len(unit)-1] != '_' {
 					return EntryInvalid, fmt.Errorf("unit %q not a suffix of counter %q", unit, name)
@@ -609,12 +612,20 @@ func (p *ProtobufParser) getMagicName() string {
 		return p.dec.GetName()
 	}
 	if p.fieldPos == -2 {
-		return p.dec.GetName() + "_count"
+		if p.enableOtelSuffix {
+			return p.dec.GetName() + ".count"
+		} else {
+			return p.dec.GetName() + "_count"
+		}
 	}
 	if p.fieldPos == -1 {
-		return p.dec.GetName() + "_sum"
+		if p.enableOtelSuffix {
+			return p.dec.GetName() + ".sum"
+		} else {
+			return p.dec.GetName() + "_sum"
+		}
 	}
-	if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
+	if !p.enableOtelSuffix && (t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM) {
 		return p.dec.GetName() + "_bucket"
 	}
 	return p.dec.GetName()

@@ -92,6 +92,9 @@ type Options struct {
 	// EnableTypeAndUnitLabels
 	EnableTypeAndUnitLabels bool
 
+	// Allows metric names not to be suffixed with their unit and use dots for magic suffix (e.g. ".sum").
+	EnableOtelSuffix bool
+
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
 

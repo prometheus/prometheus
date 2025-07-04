@@ -983,6 +983,7 @@ func newBasicScrapeLoopWithFallback(t testing.TB, ctx context.Context, scraper s
 		false,
 		false,
 		false,
+		false,
 		true,
 		nil,
 		false,
@@ -1132,6 +1133,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		false,
 		false,
 		false,
+		false,
 		nil,
 		false,
 		scrapeMetrics,
@@ -1274,6 +1276,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 		false,
 		false,
 		false,
@@ -2008,7 +2011,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
 	metric := []byte(`metric{n="1"} 1`)
-	p, warning := textparse.New(metric, "text/plain", "", false, false, false, labels.NewSymbolTable())
+	p, warning := textparse.New(metric, "text/plain", "", false, false, false, false, labels.NewSymbolTable())
 	require.NotNil(t, p)
 	require.NoError(t, warning)
 
