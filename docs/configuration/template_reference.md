@@ -55,8 +55,10 @@ If functions are used in a pipeline, the pipeline value is passed as the last ar
 | humanize1024        | number or string | string  | Like `humanize`, but uses 1024 as the base rather than 1000. |
 | humanizeDuration    | number or string | string  | Converts a duration in seconds to a more readable format. |
 | humanizePercentage  | number or string | string  | Converts a ratio value to a fraction of 100. |
-| humanizeTimestamp   | number or string | string     | Converts a Unix timestamp in seconds to a more readable format. |
-| toTime              | number or string | *time.Time | Converts a Unix timestamp in seconds to a time.Time.            |
+| humanizeTimestamp   | number or string | string         | Converts a Unix timestamp in seconds to a more readable format. |
+| toTime              | number or string | *time.Time     | Converts a Unix timestamp in seconds to a time.Time.            |
+| toDuration          | number or string | *time.Duration | Converts a duration in seconds to a time.Duration. |
+| now                 | none             | float64        | Returns the Unix timestamp in seconds at the time of the template evaluation. |
 
 Humanizing functions are intended to produce reasonable output for consumption
 by humans, and are not guaranteed to return the same results between Prometheus
