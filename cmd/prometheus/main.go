@@ -296,6 +296,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "use-uncached-io":
 				c.tsdb.UseUncachedIO = true
 				logger.Info("Experimental Uncached IO is enabled.")
+			case "otel-suffix":
+				c.scrape.EnableOtelSuffix = true
+				logger.Info("Experimental otel suffix is enabled.")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
