@@ -1355,6 +1355,64 @@ curl http://localhost:9090/api/v1/status/tsdb
 }
 ```
 
+*New in v3.6.0*
+
+### TSDB Blocks
+
+**NOTE**: This endpoint is **experimental** and might change in the future. The endpoint name and the exact format of the returned data may change between Prometheus versions. The **exact metadata returned** by this endpoint is an implementation detail and may change in future Prometheus versions.
+
+The following endpoint returns the list of currently loaded TSDB blocks and their metadata.
+
+```
+GET /api/v1/status/tsdb/blocks
+```
+
+This endpoint returns the following information for each block:
+
+- `ulid`: Unique ID of the block.
+- `minTime`: Minimum timestamp (in milliseconds) of the block.
+- `maxTime`: Maximum timestamp (in milliseconds) of the block.
+- `stats`:
+  - `numSeries`: Number of series in the block.
+  - `numSamples`: Number of samples in the block.
+  - `numChunks`: Number of chunks in the block.
+- `compaction`:
+  - `level`: The compaction level of the block.
+  - `sources`: List of ULIDs of source blocks used to compact this block.
+- `version`: The block version.
+
+
+```bash
+curl http://localhost:9090/api/v1/status/tsdb/blocks
+```
+
+```json
+{
+  "status": "success",
+  "data": {
+    "blocks": [
+      {
+        "ulid": "01JZ8JKZY6XSK3PTDP9ZKRWT60",
+        "minTime": 1750860620060,
+        "maxTime": 1750867200000,
+        "stats": {
+          "numSamples": 13701,
+          "numSeries": 716,
+          "numChunks": 716
+        },
+        "compaction": {
+          "level": 1,
+          "sources": [
+            "01JZ8JKZY6XSK3PTDP9ZKRWT60"
+          ]
+        },
+        "version": 1
+      }
+    ]
+  }
+}
+```
+
 *New in v2.15*
 
 ### WAL Replay Stats
