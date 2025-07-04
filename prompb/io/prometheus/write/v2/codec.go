@@ -29,6 +29,15 @@ func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, symbols []string) labels.
 	return desymbolizeLabels(b, m.GetLabelsRefs(), symbols)
 }
 
+// AddToLabels adds labels to the provided ScratchBuilder. It does not reset
+// the ScratchBuilder or sort labels.
+func (m TimeSeries) AddToLabels(b *labels.ScratchBuilder, symbols []string) {
+	labelRefs := m.GetLabelsRefs()
+	for i := 0; i < len(labelRefs); i += 2 {
+		b.Add(symbols[labelRefs[i]], symbols[labelRefs[i+1]])
+	}
+}
+
 // ToMetadata return model metadata from timeseries' remote metadata.
 func (m TimeSeries) ToMetadata(symbols []string) metadata.Metadata {
 	typ := model.MetricTypeUnknown
