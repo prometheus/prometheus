@@ -24,11 +24,4 @@ var expectedSizeOfLabels = []uint64{ // Values must line up with testCaseLabels.
 	549,
 }
 
-var expectedByteSize = []uint64{ // Values must line up with testCaseLabels.
-	72,
-	0,
-	97,
-	326,
-	327,
-	549,
-}
+var expectedByteSize = expectedSizeOfLabels // They are identical
