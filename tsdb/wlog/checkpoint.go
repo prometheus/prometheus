@@ -51,7 +51,7 @@ type CheckpointStats struct {
 // LastCheckpoint returns the directory name and index of the most recent checkpoint.
 // If dir does not contain any checkpoints, ErrNotFound is returned.
 func LastCheckpoint(dir string) (string, int, error) {
-	checkpoints, err := listCheckpoints(dir)
+	checkpoints, err := listCheckpoints(dir, false)
 	if err != nil {
 		return "", 0, err
 	}
@@ -64,25 +64,43 @@ func LastCheckpoint(dir string) (string, int, error) {
 	return filepath.Join(dir, checkpoint.name), checkpoint.index, nil
 }
 
-// DeleteCheckpoints deletes all checkpoints in a directory below a given index.
+// CheckpointPrefix is the prefix used for checkpoint files.
+const CheckpointPrefix = "checkpoint."
+
+// CheckpointTempFileSuffix is the suffix used when creating temporary checkpoint files.
+const CheckpointTempFileSuffix = ".tmp"
+
+// DeleteCheckpoints deletes all checkpoints in a directory below a given index and any temporary checkpoints that might have
+// failed to be created.
 func DeleteCheckpoints(dir string, maxIndex int) error {
-	checkpoints, err := listCheckpoints(dir)
+	checkpoints, err := listCheckpoints(dir, true)
 	if err != nil {
 		return err
 	}
 
+	if len(checkpoints) == 0 {
+		return nil
+	}
+
+	lastCheckpointIndex := checkpoints[len(checkpoints)-1].index
 	errs := tsdb_errors.NewMulti()
 	for _, checkpoint := range checkpoints {
-		if checkpoint.index >= maxIndex {
-			break
+		if checkpoint.index >= maxIndex && !isTempCheckpoint(checkpoint) {
+			continue
+		}
+		// It's possible the latest checkpoint is a temporary checkpoint currently being created, so ignore the latest
+		// checkpoint when looking for temporary checkpoints to delete.
+		if isTempCheckpoint(checkpoint) && checkpoint.index == lastCheckpointIndex {
+			continue
 		}
 		errs.Add(os.RemoveAll(filepath.Join(dir, checkpoint.name)))
 	}
 	return errs.Err()
 }
 
-// CheckpointPrefix is the prefix used for checkpoint files.
-const CheckpointPrefix = "checkpoint."
+func isTempCheckpoint(checkpoint checkpointRef) bool {
+	return strings.HasSuffix(checkpoint.name, CheckpointTempFileSuffix)
+}
 
 // Checkpoint creates a compacted checkpoint of segments in range [from, to] in the given WAL.
 // It includes the most recent checkpoint if it exists.
@@ -125,7 +143,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 	}
 
 	cpdir := checkpointDir(w.Dir(), to)
-	cpdirtmp := cpdir + ".tmp"
+	cpdirtmp := cpdir + CheckpointTempFileSuffix
 
 	if err := os.RemoveAll(cpdirtmp); err != nil {
 		return nil, fmt.Errorf("remove previous temporary checkpoint dir: %w", err)
@@ -404,7 +422,7 @@ type checkpointRef struct {
 	index int
 }
 
-func listCheckpoints(dir string) (refs []checkpointRef, err error) {
+func listCheckpoints(dir string, includeTemporaryCheckpoints bool) (refs []checkpointRef, err error) {
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -418,7 +436,14 @@ func listCheckpoints(dir string) (refs []checkpointRef, err error) {
 		if !fi.IsDir() {
 			return nil, fmt.Errorf("checkpoint %s is not a directory", fi.Name())
 		}
-		idx, err := strconv.Atoi(fi.Name()[len(CheckpointPrefix):])
+
+		idxString := strings.TrimPrefix(fi.Name(), CheckpointPrefix)
+		if includeTemporaryCheckpoints {
+			// Removing the suffix acts as the temporary checkpoint filter because the temporary checkpoint suffix cannot
+			// be parsed as an integer causing it to be skipped.
+			idxString = strings.TrimSuffix(idxString, CheckpointTempFileSuffix)
+		}
+		idx, err := strconv.Atoi(idxString)
 		if err != nil {
 			continue
 		}
