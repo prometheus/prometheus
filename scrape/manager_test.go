@@ -51,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/runutil"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -614,6 +615,75 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	default:
 		require.Fail(t, "No scrape loops reload was triggered after targets update.")
 	}
+}
+
+func TestManagerDuplicateAfterRelabellingWarning(t *testing.T) {
+	var buf bytes.Buffer
+	writer := &buf
+	logger := promslog.New(&promslog.Config{Writer: writer})
+
+	opts := Options{WarnDuplicateTargets: true}
+	testRegistry := prometheus.NewRegistry()
+	s := teststorage.New(t)
+	defer s.Close()
+	m, err := NewManager(&opts, logger, nil, s, testRegistry)
+	require.NoError(t, err)
+
+	configStr := `
+scrape_configs:
+  - job_name: "jobOne"
+    static_configs:
+      - targets:
+          - localhost:9000
+        labels:
+          foo: bar
+    relabel_configs:
+      - action: labeldrop
+        regex: "job|foo"
+
+  - job_name: "jobTwo"
+    static_configs:
+      - targets:
+          - localhost:9000
+        labels:
+          foo: baz
+    relabel_configs:
+      - action: labeldrop
+        regex: "job|foo"
+`
+	cfg, err := config.Load(configStr, promslog.NewNopLogger())
+	require.NoError(t, err)
+
+	m.ApplyConfig(cfg)
+	require.Len(t, cfg.ScrapeConfigs, 2)
+
+	scrapeCfgOne := cfg.ScrapeConfigs[0]
+	require.Len(t, scrapeCfgOne.ServiceDiscoveryConfigs, 1)
+	staticDiscoveryOne, ok := scrapeCfgOne.ServiceDiscoveryConfigs[0].(discovery.StaticConfig)
+	require.True(t, ok)
+	require.Len(t, staticDiscoveryOne, 1)
+
+	scrapeCfgTwo := cfg.ScrapeConfigs[1]
+	require.Len(t, scrapeCfgTwo.ServiceDiscoveryConfigs, 1)
+	staticDiscoveryTwo, ok := scrapeCfgTwo.ServiceDiscoveryConfigs[0].(discovery.StaticConfig)
+	require.True(t, ok)
+	require.Len(t, staticDiscoveryTwo, 1)
+
+	tsets := make(chan map[string][]*targetgroup.Group)
+	go func() {
+		err = m.Run(tsets)
+		require.NoError(t, err)
+	}()
+	defer m.Stop()
+
+	tsets <- map[string][]*targetgroup.Group{"jobOne": staticDiscoveryOne, "jobTwo": staticDiscoveryTwo}
+
+	m.reload()
+
+	require.Eventually(t, func() bool {
+		require.Contains(t, buf.String(), "Found active targets with same labels after relabelling")
+		return true
+	}, 500*time.Millisecond, 50*time.Millisecond)
 }
 
 func TestSetOffsetSeed(t *testing.T) {
