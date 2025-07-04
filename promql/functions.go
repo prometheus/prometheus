@@ -144,42 +144,93 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	// (which is our guess for where the series actually starts or ends).
 
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
-	extrapolateToInterval := sampledInterval
 
 	if durationToStart >= extrapolationThreshold {
 		durationToStart = averageDurationBetweenSamples / 2
 	}
-	if isCounter && resultFloat > 0 && len(samples.Floats) > 0 && samples.Floats[0].F >= 0 {
+	countReachesZero := false // Wether a float counter or the count of a histogram is extrapolated to zero within the range.
+	if isCounter {
 		// Counters cannot be negative. If we have any slope at all
 		// (i.e. resultFloat went up), we can extrapolate the zero point
 		// of the counter. If the duration to the zero point is shorter
 		// than the durationToStart, we take the zero point as the start
 		// of the series, thereby avoiding extrapolation to negative
 		// counter values.
-		// TODO(beorn7): Do this for histograms, too.
-		durationToZero := sampledInterval * (samples.Floats[0].F / resultFloat)
+		durationToZero := math.NaN() // Will fail all comparisons below if not changed.
+		if resultFloat > 0 &&
+			len(samples.Floats) > 0 &&
+			samples.Floats[0].F >= 0 {
+			durationToZero = sampledInterval * (samples.Floats[0].F / resultFloat)
+		} else if resultHistogram != nil &&
+			resultHistogram.Count > 0 &&
+			len(samples.Histograms) > 0 &&
+			samples.Histograms[0].H.Count >= 0 {
+			durationToZero = sampledInterval * (samples.Histograms[0].H.Count / resultHistogram.Count)
+		}
 		if durationToZero < durationToStart {
 			durationToStart = durationToZero
+			countReachesZero = true
 		}
 	}
-	extrapolateToInterval += durationToStart
 
 	if durationToEnd >= extrapolationThreshold {
 		durationToEnd = averageDurationBetweenSamples / 2
 	}
-	extrapolateToInterval += durationToEnd
 
-	factor := extrapolateToInterval / sampledInterval
+	factor := (sampledInterval + durationToStart + durationToEnd) / sampledInterval
+	// factorRight is only concerned with the extrapolation from the first
+	// sample within the range towards the right end.
+	factorRight := (sampledInterval + durationToEnd) / sampledInterval
 	if isRate {
 		factor /= ms.Range.Seconds()
+		factorRight /= ms.Range.Seconds()
 	}
 	if resultHistogram == nil {
-		resultFloat *= factor
-	} else {
-		resultHistogram.Mul(factor)
+		// Float sample, easy...
+		return append(enh.Out, Sample{F: resultFloat * factor}), annos
+	}
+	if !countReachesZero {
+		// Extrapolation not limited to avoid going below zero, still pretty easy...
+		return append(enh.Out, Sample{H: resultHistogram.Mul(factor)}), annos
 	}
 
-	return append(enh.Out, Sample{F: resultFloat, H: resultHistogram}), annos
+	// This is where the fun begins. We have found a point where we assume
+	// the count of the histogram has been zero. We adjust all other fields
+	// of the histogram so that they also reach zero at that point. Since we
+	// already have the increase from the first to the last sample, we
+	// extrapolate just from the first sample to the end fo the
+	// extrapolation range and then add the value of the first sample as
+	// this is the increase from zero to the value of the first sample. For
+	// the rate, we have to normalize this amount as usual.
+	adjust := func(base, first float64) float64 {
+		if isRate {
+			first /= ms.Range.Seconds()
+		}
+		return base*factorRight + first
+	}
+	resultHistogram.Sum = adjust(resultHistogram.Sum, samples.Histograms[0].H.Sum)
+	resultHistogram.ZeroCount = adjust(resultHistogram.ZeroCount, samples.Histograms[0].H.ZeroCount)
+
+	// TODO(beorn7): These loops will crash if we have ignored an incompatible
+	// 1st sample with a counter reset.
+	for i := range resultHistogram.PositiveBuckets {
+		resultHistogram.PositiveBuckets[i] = adjust(
+			resultHistogram.PositiveBuckets[i],
+			samples.Histograms[0].H.PositiveBuckets[i],
+		)
+	}
+	for i := range resultHistogram.NegativeBuckets {
+		resultHistogram.NegativeBuckets[i] = adjust(
+			resultHistogram.NegativeBuckets[i],
+			samples.Histograms[0].H.NegativeBuckets[i],
+		)
+	}
+
+	// The count could be adjusted in the same way, but the outcome will be
+	// the same as the following (which is simpler):
+	resultHistogram.Count *= factor
+
+	return append(enh.Out, Sample{H: resultHistogram}), annos
 }
 
 // histogramRate is a helper function for extrapolatedRate. It requires
