@@ -66,7 +66,7 @@ func BenchmarkString(b *testing.B) {
 func TestSizeOfLabels(t *testing.T) {
 	require.Len(t, expectedByteSize, len(testCaseLabels))
 	for i, c := range expectedByteSize { // Declared in build-tag-specific files, e.g. labels_slicelabels_test.go.
-		require.Equal(t, c, uint64(testCaseLabels[i].ByteSize()), "%s %d %d", testCaseLabels[i], c, testCaseLabels[i].ByteSize())
+		require.Equal(t, c, uint64(testCaseLabels[i].ByteSize()))
 	}
 }
 
