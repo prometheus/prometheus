@@ -199,6 +199,8 @@ const (
 	podUID                        = metaLabelPrefix + "pod_uid"
 	podControllerKind             = metaLabelPrefix + "pod_controller_kind"
 	podControllerName             = metaLabelPrefix + "pod_controller_name"
+	podIPv4Label                  = metaLabelPrefix + "pod_ipv4"
+	podIPv6Label                  = metaLabelPrefix + "pod_ipv6"
 )
 
 // GetControllerOf returns a pointer to a copy of the controllerRef if controllee has a controller
@@ -220,6 +222,15 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 		podNodeNameLabel: lv(pod.Spec.NodeName),
 		podHostIPLabel:   lv(pod.Status.HostIP),
 		podUID:           lv(string(pod.UID)),
+	}
+
+	for _, podIP := range pod.Status.PodIPs {
+		ip := net.ParseIP(podIP.IP)
+		if ip.To4() != nil {
+			ls[podIPv4Label] = lv(podIP.IP)
+		} else if ip.To16() != nil {
+			ls[podIPv6Label] = lv(podIP.IP)
+		}
 	}
 
 	addObjectMetaLabels(ls, pod.ObjectMeta, RolePod)
@@ -285,8 +296,10 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 		if len(c.Ports) == 0 {
 			// We don't have a port so we just set the address label to the pod IP.
 			// The user has to add a port manually.
+			// If pod.Status.PodIP is a IPv6 address, use JoinHostPort returns "[host]:port"
+			addr := net.JoinHostPort(pod.Status.PodIP, "80")
 			tg.Targets = append(tg.Targets, model.LabelSet{
-				model.AddressLabel:     lv(pod.Status.PodIP),
+				model.AddressLabel:     lv(addr),
 				podContainerNameLabel:  lv(c.Name),
 				podContainerIDLabel:    lv(cID),
 				podContainerImageLabel: lv(c.Image),
