@@ -606,3 +606,16 @@ eval instant at 0 histogram_fraction(-Inf, 1, series)
   expect no_info
   expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series"
   # Should return no results.
+
+# Test fixed monotonicity info annotation for histogram in case of range query.
+load 5m
+    series{le="0.1"}  2x10
+    series{le="1"}    1x10
+    series{le="10"}   5x10
+    series{le="100"}  4x10
+    series{le="1000"} 9x10
+    series{le="+Inf"} 8x10
+
+eval range from 0m to 10m step 5m histogram_quantile(0.5, series)
+    expect info msg: PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series"
+	{} 8.5 8.5 8.5

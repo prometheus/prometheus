@@ -1451,11 +1451,11 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 	}
 
 	// Deal with classic histograms that have already been filtered for conflicting native histograms.
-	for _, mb := range enh.signatureToMetricWithBuckets {
+	for sig, mb := range enh.signatureToMetricWithBuckets {
 		if len(mb.buckets) > 0 {
 			res, forcedMonotonicity, _ := BucketQuantile(q, mb.buckets)
 			if forcedMonotonicity {
-				annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(mb.metric.Get(labels.MetricName), args[1].PositionRange()))
+				annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(labels.FromByteString(sig).Get(model.MetricNameLabel), args[1].PositionRange()))
 			}
 
 			if !enh.enableDelayedNameRemoval {
