@@ -1527,3 +1527,58 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	require.Error(t, p.Err())
 	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
 }
+
+func TestMemPostings_Unordered_Add_Get(t *testing.T) {
+	mp := NewMemPostings()
+	for ref := storage.SeriesRef(1); ref < 8; ref += 2 {
+		// First, add next series.
+		next := ref + 1
+		mp.Add(next, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(next))))
+		p := mp.Postings(context.Background(), labels.MetricName, "test")
+
+		// Now add current ref.
+		mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
+
+		// Next postings should still reference the next series.
+		nextExpanded, err := ExpandPostings(p)
+		require.NoError(t, err)
+		require.Len(t, nextExpanded, int(ref))
+		require.Equal(t, next, nextExpanded[len(nextExpanded)-1])
+	}
+}
+
+func TestMemPostings_Concurrent_Add_Get(t *testing.T) {
+	refs := make(chan storage.SeriesRef)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	t.Cleanup(wg.Wait)
+	t.Cleanup(func() { close(refs) })
+
+	mp := NewMemPostings()
+	go func() {
+		defer wg.Done()
+		for ref := range refs {
+			mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
+			p := mp.Postings(context.Background(), labels.MetricName, "test")
+
+			_, err := ExpandPostings(p)
+			if err != nil {
+				t.Errorf("unexpected error: %s", err)
+			}
+		}
+	}()
+	for ref := storage.SeriesRef(1); ref < 8; ref += 2 {
+		// Add next ref in another goroutine so they would race.
+		refs <- ref + 1
+		// Add current ref here
+		mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
+		// We don't read the value of the postings here,
+		// this is tested in TestMemPostings_Unordered_Add_Get where it's easier to achieve the determinism.
+		// This test just checks that there's no data race.
+		p := mp.Postings(context.Background(), labels.MetricName, "test")
+		// its for single slice only!
+		_, err := ExpandPostings(p)
+		require.NoError(t, err)
+	}
+
+}
