@@ -34,11 +34,6 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 )
 
-func init() {
-	// Register the Kubernetes enricher factory with the scrape package
-	scrape.RegisterEnricherFactory("kubernetes", KubernetesEnricherFactoryFunc)
-}
-
 // NamespaceEnrichmentConfigInterface provides an interface for enrichment configuration
 // This helps avoid import cycles between packages
 type NamespaceEnrichmentConfigInterface interface {
@@ -178,26 +173,33 @@ type MetadataEnricher interface {
 	Stop()
 }
 
-// ScrapeMetadataEnricherAdapter adapts the local MetadataEnricher to work with external packages
-type ScrapeMetadataEnricherAdapter struct {
+// MetadataEnricherWrapper wraps the local MetadataEnricher to implement the external interface
+type MetadataEnricherWrapper struct {
 	enricher MetadataEnricher
 }
 
-func (s *ScrapeMetadataEnricherAdapter) EnrichWithMetadata(lset labels.Labels) labels.Labels {
-	return s.enricher.EnrichWithMetadata(lset)
+func (m *MetadataEnricherWrapper) EnrichWithMetadata(lset labels.Labels) labels.Labels {
+	if m.enricher == nil {
+		return lset
+	}
+	return m.enricher.EnrichWithMetadata(lset)
 }
 
-func (s *ScrapeMetadataEnricherAdapter) Start(ctx context.Context) {
-	s.enricher.Start(ctx)
+func (m *MetadataEnricherWrapper) Start(ctx context.Context) {
+	if m.enricher != nil {
+		m.enricher.Start(ctx)
+	}
 }
 
-func (s *ScrapeMetadataEnricherAdapter) Stop() {
-	s.enricher.Stop()
+func (m *MetadataEnricherWrapper) Stop() {
+	if m.enricher != nil {
+		m.enricher.Stop()
+	}
 }
 
-// NewScrapeMetadataEnricherAdapter creates an adapter for external use
-func NewScrapeMetadataEnricherAdapter(enricher MetadataEnricher) *ScrapeMetadataEnricherAdapter {
-	return &ScrapeMetadataEnricherAdapter{enricher: enricher}
+// NewMetadataEnricherWrapper creates a wrapper for external use
+func NewMetadataEnricherWrapper(enricher MetadataEnricher) *MetadataEnricherWrapper {
+	return &MetadataEnricherWrapper{enricher: enricher}
 }
 
 // NamespaceEnricher implements the MetadataEnricher interface for Kubernetes namespaces.
@@ -695,7 +697,7 @@ func sanitizeLabelName(name string) string {
 // KubernetesEnricherFactory implements enricher factory for registration
 type KubernetesEnricherFactory struct{}
 
-func (f *KubernetesEnricherFactory) CreateEnricher(cfg interface{}, logger *slog.Logger) (interface{}, error) {
+func (f *KubernetesEnricherFactory) CreateEnricher(cfg interface{}, logger *slog.Logger) (scrape.MetadataEnricher, error) {
 	config, ok := cfg.(*NamespaceEnrichmentConfig)
 	if !ok {
 		return nil, fmt.Errorf("invalid config type for Kubernetes enricher")
@@ -722,8 +724,8 @@ func (f *KubernetesEnricherFactory) CreateEnricher(cfg interface{}, logger *slog
 		return nil, fmt.Errorf("failed to create namespace enricher: %w", err)
 	}
 
-	// Return adapter for external use
-	return NewScrapeMetadataEnricherAdapter(enricher), nil
+	// Return wrapper for external use
+	return NewMetadataEnricherWrapper(enricher), nil
 }
 
 func (f *KubernetesEnricherFactory) createKubernetesClient() (kubernetes.Interface, error) {
@@ -779,8 +781,8 @@ func KubernetesEnricherFactoryFunc(cfg interface{}, logger *slog.Logger) (scrape
 		return nil, fmt.Errorf("failed to create namespace enricher: %w", err)
 	}
 
-	// Return adapter for external use
-	return NewScrapeMetadataEnricherAdapter(enricher), nil
+	// Return wrapper for external use
+	return NewMetadataEnricherWrapper(enricher), nil
 }
 
 func createKubernetesClient() (kubernetes.Interface, error) {

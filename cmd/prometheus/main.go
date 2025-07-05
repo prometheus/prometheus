@@ -58,7 +58,8 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
-	_ "github.com/prometheus/prometheus/discovery/install"    // Register service discovery implementations.
+	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
+	"github.com/prometheus/prometheus/discovery/kubernetes"
 	_ "github.com/prometheus/prometheus/discovery/kubernetes" // Register namespace enrichment experimental feature.
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -155,6 +156,8 @@ func init() {
 		panic(err)
 	}
 
+	// Register Kubernetes enricher factory to avoid import cycle
+	scrape.RegisterEnricherFactory("kubernetes", kubernetes.KubernetesEnricherFactoryFunc)
 }
 
 // serverOnlyFlag creates server-only kingpin flag.
