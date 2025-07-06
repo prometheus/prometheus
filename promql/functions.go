@@ -857,12 +857,13 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				}
 				if nhcbBoundsReconciled {
 					nhcbBoundsReconciledSeen = true
-				if comp != nil {
-					mean, _, err = mean.Add(comp) // TODO(crush-on-anechka): Handle nhcbBoundsReconciled after rebase
-					if err != nil {
-						return mean, err
-					}
-				}
+				// TODO(crush-on-anechka): Uncomment once KahanAdd is brought in
+				// if comp != nil {
+				// 	mean, _, err = mean.Add(comp)
+				// 	if err != nil {
+				// 		return mean, err
+				// 	}
+				// }
 			}
 			return mean, nil
 		})
