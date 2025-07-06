@@ -2992,6 +2992,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 
 		case parser.AVG:
 			group.groupCount++
+			fmt.Println("here1")
 			if h != nil {
 				group.hasHistogram = true
 				if group.histogramValue != nil {
@@ -3031,29 +3032,11 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					group.floatMean = group.floatValue / (group.groupCount - 1)
 					group.floatKahanC /= group.groupCount - 1
 				}
-				if math.IsInf(group.floatMean, 0) {
-					if math.IsInf(f, 0) && (group.floatMean > 0) == (f > 0) {
-						// The `floatMean` and `s.F` values are `Inf` of the same sign.  They
-						// can't be subtracted, but the value of `floatMean` is correct
-						// already.
-						break
-					}
-					if !math.IsInf(f, 0) && !math.IsNaN(f) {
-						// At this stage, the mean is an infinite. If the added
-						// value is neither an Inf or a Nan, we can keep that mean
-						// value.
-						// This is required because our calculation below removes
-						// the mean value, which would look like Inf += x - Inf and
-						// end up as a NaN.
-						break
-					}
-				}
-				currentMean := group.floatMean + group.floatKahanC
+				q := (group.groupCount - 1) / group.groupCount
 				group.floatMean, group.floatKahanC = kahansum.Inc(
-					// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
-					f/group.groupCount-currentMean/group.groupCount,
-					group.floatMean,
-					group.floatKahanC,
+					f/group.groupCount,
+					q*group.floatMean,
+					q*group.floatKahanC,
 				)
 			}
 
@@ -3132,7 +3115,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			case aggr.incrementalMean:
 				aggr.floatValue = aggr.floatMean + aggr.floatKahanC
 			default:
-				aggr.floatValue = (aggr.floatValue + aggr.floatKahanC) / aggr.groupCount
+				aggr.floatValue = aggr.floatValue/aggr.groupCount + aggr.floatKahanC/aggr.groupCount
 			}
 
 		case parser.COUNT:
