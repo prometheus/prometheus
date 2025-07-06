@@ -839,12 +839,14 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				}
 				if counterResetCollision {
 					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
-				if comp != nil {
-					mean, _, err = mean.Add(comp) // TODO(crush-on-anechka): Handle counterResetCollision after rebase
-					if err != nil {
-						return mean, err
-					}
 				}
+				// TODO(crush-on-anechka): Uncomment once KahanAdd is brought in
+				// if comp != nil {
+				// 	mean, _, err = mean.Add(comp)
+				// 	if err != nil {
+				// 		return mean, err
+				// 	}
+				// }
 			}
 			return mean, nil
 		})

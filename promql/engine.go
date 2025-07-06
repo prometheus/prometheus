@@ -3296,6 +3296,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			// the order of summation would be hard, given how the
 			// PromQL engine implements aggregations.
 			group.groupCount++
+			fmt.Println("here1")
 			if h != nil {
 				group.hasHistogram = true
 				if group.histogramValue != nil {
