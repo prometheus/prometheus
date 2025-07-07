@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -478,6 +479,16 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "30m0s",
 		},
 		{
+			// now - returns fixed timestamp model.Time as float64.
+			text:   `{{ ( now | toTime).Format "Mon Jan 2 15:04:05 2006" }}`,
+			output: "Sat Nov 24 11:14:12 2012",
+		},
+		{
+			// returns Unix milliseconds timestamp - 30 minutes ago.
+			text:   `{{ ("-30m" | parseDuration | toDuration | ( now | toTime).Add ).UnixMilli }}`,
+			output: "1353753852000",
+		},
+		{
 			// Title.
 			text:   "{{ \"aa bb CC\" | title }}",
 			output: "Aa Bb CC",
@@ -594,7 +605,7 @@ func testTemplateExpansion(t *testing.T, scenarios []scenario) {
 		}
 		var result string
 		var err error
-		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, 0, queryFunc, extURL, s.options)
+		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, model.Time(1353755652000), queryFunc, extURL, s.options)
 		if s.html {
 			result, err = expander.ExpandHTML(nil)
 		} else {
