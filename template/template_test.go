@@ -489,7 +489,7 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "Sat Nov 24 11:14:12 2012",
 		},
 		{
-			// returns Unix milliseconds timestamp for 30 minutes.ago
+			// returns Unix milliseconds timestamp for 30 minutes ago.
 			text:   `{{ ("-30m" | parseDuration | toDuration | ( now | toTime).Add).UnixMilli }}`,
 			output: "1353753852000",
 		},
