@@ -288,7 +288,7 @@ func NewAPI(
 	otlpEnabled, otlpDeltaToCumulative, otlpNativeDeltaIngestion bool,
 	ctZeroIngestionEnabled bool,
 	lookbackDelta time.Duration,
-  overrideErrorCode OverrideErrorCode,
+	overrideErrorCode OverrideErrorCode,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
