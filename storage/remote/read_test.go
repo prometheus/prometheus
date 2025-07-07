@@ -237,8 +237,8 @@ func (c *mockedRemoteClient) ReadMultiple(_ context.Context, queries []*prompb.Q
 	c.gotMultiple = make([]*prompb.Query, len(queries))
 	copy(c.gotMultiple, queries)
 
-	// Process all queries and combine results
-	var allSeries []storage.Series
+	// Simulate the same behavior as the real client
+	var results []*prompb.QueryResult
 	for _, query := range queries {
 		matchers, err := FromLabelMatchers(query.Matchers)
 		if err != nil {
@@ -262,9 +262,32 @@ func (c *mockedRemoteClient) ReadMultiple(_ context.Context, queries []*prompb.Q
 				q.Timeseries = append(q.Timeseries, &prompb.TimeSeries{Labels: s.Labels})
 			}
 		}
+		results = append(results, q)
+	}
 
-		// Add series from this query to the combined result
-		seriesSet := FromQueryResult(sortSeries, q)
+	// Handle both single and multiple queries like the real client
+	if len(results) == 1 {
+		return FromQueryResult(sortSeries, results[0]), nil
+	}
+
+	// Multiple queries case - combine all results
+	if sortSeries {
+		// When sorting is requested, use MergeSeriesSet which can efficiently merge sorted inputs
+		var allSeriesSets []storage.SeriesSet
+		for _, result := range results {
+			seriesSet := FromQueryResult(sortSeries, result)
+			if err := seriesSet.Err(); err != nil {
+				return nil, err
+			}
+			allSeriesSets = append(allSeriesSets, seriesSet)
+		}
+		return storage.NewMergeSeriesSet(allSeriesSets, 0, storage.ChainedSeriesMerge), nil
+	}
+
+	// When sorting is not requested, just concatenate all series without using MergeSeriesSet
+	var allSeries []storage.Series
+	for _, result := range results {
+		seriesSet := FromQueryResult(sortSeries, result)
 		for seriesSet.Next() {
 			allSeries = append(allSeries, seriesSet.At())
 		}
@@ -273,7 +296,7 @@ func (c *mockedRemoteClient) ReadMultiple(_ context.Context, queries []*prompb.Q
 		}
 	}
 
-	return &concreteSeriesSet{series: allSeries}, nil
+	return &concreteSeriesSet{series: allSeries, cur: 0}, nil
 }
 
 func (c *mockedRemoteClient) reset() {
@@ -591,8 +614,8 @@ func TestReadMultiple(t *testing.T) {
 				},
 			},
 			expectedResults: []labels.Labels{
-				labels.FromStrings("job", "prometheus"),
 				labels.FromStrings("job", "node_exporter"),
+				labels.FromStrings("job", "prometheus"),
 			},
 		},
 		{
@@ -614,9 +637,9 @@ func TestReadMultiple(t *testing.T) {
 				},
 			},
 			expectedResults: []labels.Labels{
+				labels.FromStrings("job", "cadvisor", "region", "us"),
 				labels.FromStrings("job", "node_exporter"),
 				labels.FromStrings("job", "prometheus"),
-				labels.FromStrings("job", "cadvisor", "region", "us"),
 			},
 		},
 		{
@@ -663,8 +686,8 @@ func TestReadMultiple(t *testing.T) {
 				},
 			},
 			expectedResults: []labels.Labels{
-				labels.FromStrings("job", "prometheus"),
 				labels.FromStrings("instance", "localhost:9090"),
+				labels.FromStrings("job", "prometheus"),
 			},
 		},
 	}
@@ -712,4 +735,98 @@ func TestReadMultipleErrorHandling(t *testing.T) {
 	result, err := m.ReadMultiple(context.Background(), queries, true)
 	require.Error(t, err)
 	require.Nil(t, result)
+}
+
+func TestReadMultipleSorting(t *testing.T) {
+	// Test data with labels designed to test sorting behavior
+	// When sorted: aaa < bbb < ccc
+	// When unsorted: order depends on processing order
+	m := &mockedRemoteClient{
+		store: []*prompb.TimeSeries{
+			{Labels: []prompb.Label{{Name: "series", Value: "ccc"}}}, // Will be returned by query 1
+			{Labels: []prompb.Label{{Name: "series", Value: "aaa"}}}, // Will be returned by query 2  
+			{Labels: []prompb.Label{{Name: "series", Value: "bbb"}}}, // Will be returned by both queries (overlapping)
+		},
+		b: labels.NewScratchBuilder(0),
+	}
+
+	testCases := []struct {
+		name                string
+		queries             []*prompb.Query
+		sortSeries          bool
+		expectedOrder       []string
+		shouldUseMergeSet   bool // Whether the implementation should use NewMergeSeriesSet
+	}{
+		{
+			name: "multiple queries with sortSeries=true - should be sorted",
+			queries: []*prompb.Query{
+				{
+					StartTimestampMs: 1000,
+					EndTimestampMs:   2000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_RE, Name: "series", Value: "ccc|bbb"}, // Returns: ccc, bbb (unsorted in store)
+					},
+				},
+				{
+					StartTimestampMs: 1500,
+					EndTimestampMs:   2500,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_RE, Name: "series", Value: "aaa|bbb"}, // Returns: aaa, bbb (unsorted in store)
+					},
+				},
+			},
+			sortSeries:        true,
+			expectedOrder:     []string{"aaa", "bbb", "ccc"}, // Should be sorted after merge
+			shouldUseMergeSet: true,
+		},
+		{
+			name: "multiple queries with sortSeries=false - concatenates without deduplication",
+			queries: []*prompb.Query{
+				{
+					StartTimestampMs: 1000,
+					EndTimestampMs:   2000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_RE, Name: "series", Value: "ccc|bbb"}, // Returns: ccc, bbb (unsorted)
+					},
+				},
+				{
+					StartTimestampMs: 1500,
+					EndTimestampMs:   2500,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_RE, Name: "series", Value: "aaa|bbb"}, // Returns: aaa, bbb (unsorted)
+					},
+				},
+			},
+			sortSeries:        false,
+			expectedOrder:     []string{"ccc", "bbb", "aaa", "bbb"}, // Concatenated results - duplicates included
+			shouldUseMergeSet: false, // When sortSeries=false, should not use MergeSeriesSet since inputs aren't sorted
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			m.reset()
+
+			result, err := m.ReadMultiple(context.Background(), tc.queries, tc.sortSeries)
+			require.NoError(t, err)
+
+			// Collect the actual results
+			var actualOrder []string
+			for result.Next() {
+				series := result.At()
+				seriesValue := series.Labels().Get("series")
+				actualOrder = append(actualOrder, seriesValue)
+			}
+			require.NoError(t, result.Err())
+
+			if tc.sortSeries {
+				// When sorting is enabled, results should be in sorted order
+				testutil.RequireEqual(t, tc.expectedOrder, actualOrder)
+			} else {
+				// When sorting is disabled, we still expect a specific order for our test
+				// (concatenated results with duplicates)
+				testutil.RequireEqual(t, tc.expectedOrder, actualOrder)
+			}
+		})
+	}
 }

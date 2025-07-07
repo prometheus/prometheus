@@ -484,16 +484,33 @@ func (c *Client) handleSamplesResponseImpl(req *prompb.ReadRequest, httpResp *ht
 	}
 
 	// Multiple queries case - combine all results
-	var allSeriesSets []storage.SeriesSet
+	if sortSeries {
+		// When sorting is requested, use MergeSeriesSet which can efficiently merge sorted inputs
+		var allSeriesSets []storage.SeriesSet
+		for _, result := range resp.Results {
+			seriesSet := FromQueryResult(sortSeries, result)
+			if err := seriesSet.Err(); err != nil {
+				return nil, fmt.Errorf("error reading series from query result: %w", err)
+			}
+			allSeriesSets = append(allSeriesSets, seriesSet)
+		}
+		return storage.NewMergeSeriesSet(allSeriesSets, 0, storage.ChainedSeriesMerge), nil
+	}
+
+	// When sorting is not requested, just concatenate all series without using MergeSeriesSet
+	// since MergeSeriesSet requires sorted inputs
+	var allSeries []storage.Series
 	for _, result := range resp.Results {
 		seriesSet := FromQueryResult(sortSeries, result)
+		for seriesSet.Next() {
+			allSeries = append(allSeries, seriesSet.At())
+		}
 		if err := seriesSet.Err(); err != nil {
 			return nil, fmt.Errorf("error reading series from query result: %w", err)
 		}
-		allSeriesSets = append(allSeriesSets, seriesSet)
 	}
 
-	return storage.NewMergeSeriesSet(allSeriesSets, 0, storage.ChainedSeriesMerge), nil
+	return &concreteSeriesSet{series: allSeries, cur: 0}, nil
 }
 
 // handleChunkedResponseImpl handles chunked responses for both single and multiple queries.
