@@ -495,7 +495,7 @@ func (c *Client) handleSampledResponseImpl(req *prompb.ReadRequest, httpResp *ht
 		}
 	}
 
-	return &combinedSeriesSet{series: allSeries, index: -1}, nil
+	return &concreteSeriesSet{series: allSeries}, nil
 }
 
 // handleChunkedResponseImpl handles chunked responses for both single and multiple queries.
@@ -514,31 +514,4 @@ func (c *Client) handleChunkedResponseImpl(s *ChunkedReader, httpResp *http.Resp
 	}
 
 	return NewChunkedSeriesSet(s, httpResp.Body, minStartTs, maxEndTs, onClose)
-}
-
-// combinedSeriesSet implements storage.SeriesSet for multiple series from different queries.
-type combinedSeriesSet struct {
-	series []storage.Series
-	index  int
-	err    error
-}
-
-func (c *combinedSeriesSet) Next() bool {
-	c.index++
-	return c.index < len(c.series)
-}
-
-func (c *combinedSeriesSet) At() storage.Series {
-	if c.index < 0 || c.index >= len(c.series) {
-		return nil
-	}
-	return c.series[c.index]
-}
-
-func (c *combinedSeriesSet) Err() error {
-	return c.err
-}
-
-func (c *combinedSeriesSet) Warnings() annotations.Annotations {
-	return nil
 }
