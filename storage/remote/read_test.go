@@ -714,18 +714,18 @@ func TestReadMultipleSorting(t *testing.T) {
 	m := &mockedRemoteClient{
 		store: []*prompb.TimeSeries{
 			{Labels: []prompb.Label{{Name: "series", Value: "ccc"}}}, // Will be returned by query 1
-			{Labels: []prompb.Label{{Name: "series", Value: "aaa"}}}, // Will be returned by query 2  
+			{Labels: []prompb.Label{{Name: "series", Value: "aaa"}}}, // Will be returned by query 2
 			{Labels: []prompb.Label{{Name: "series", Value: "bbb"}}}, // Will be returned by both queries (overlapping)
 		},
 		b: labels.NewScratchBuilder(0),
 	}
 
 	testCases := []struct {
-		name                string
-		queries             []*prompb.Query
-		sortSeries          bool
-		expectedOrder       []string
-		shouldUseMergeSet   bool // Whether the implementation should use NewMergeSeriesSet
+		name              string
+		queries           []*prompb.Query
+		sortSeries        bool
+		expectedOrder     []string
+		shouldUseMergeSet bool // Whether the implementation should use NewMergeSeriesSet
 	}{
 		{
 			name: "multiple queries with sortSeries=true - should be sorted",
@@ -769,7 +769,7 @@ func TestReadMultipleSorting(t *testing.T) {
 			},
 			sortSeries:        false,
 			expectedOrder:     []string{"ccc", "bbb", "aaa", "bbb"}, // Concatenated results - duplicates included
-			shouldUseMergeSet: false, // When sortSeries=false, should not use MergeSeriesSet since inputs aren't sorted
+			shouldUseMergeSet: false,                                // When sortSeries=false, should not use MergeSeriesSet since inputs aren't sorted
 		},
 	}
 
@@ -789,14 +789,10 @@ func TestReadMultipleSorting(t *testing.T) {
 			}
 			require.NoError(t, result.Err())
 
-			if tc.sortSeries {
-				// When sorting is enabled, results should be in sorted order
-				testutil.RequireEqual(t, tc.expectedOrder, actualOrder)
-			} else {
-				// When sorting is disabled, we still expect a specific order for our test
-				// (concatenated results with duplicates)
-				testutil.RequireEqual(t, tc.expectedOrder, actualOrder)
-			}
+			// Verify the expected order matches actual order
+			// For sortSeries=true: results should be in sorted order
+			// For sortSeries=false: results should be in concatenated order (with duplicates)
+			testutil.RequireEqual(t, tc.expectedOrder, actualOrder)
 		})
 	}
 }
