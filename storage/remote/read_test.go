@@ -265,38 +265,8 @@ func (c *mockedRemoteClient) ReadMultiple(_ context.Context, queries []*prompb.Q
 		results = append(results, q)
 	}
 
-	// Handle both single and multiple queries like the real client
-	if len(results) == 1 {
-		return FromQueryResult(sortSeries, results[0]), nil
-	}
-
-	// Multiple queries case - combine all results
-	if sortSeries {
-		// When sorting is requested, use MergeSeriesSet which can efficiently merge sorted inputs
-		var allSeriesSets []storage.SeriesSet
-		for _, result := range results {
-			seriesSet := FromQueryResult(sortSeries, result)
-			if err := seriesSet.Err(); err != nil {
-				return nil, err
-			}
-			allSeriesSets = append(allSeriesSets, seriesSet)
-		}
-		return storage.NewMergeSeriesSet(allSeriesSets, 0, storage.ChainedSeriesMerge), nil
-	}
-
-	// When sorting is not requested, just concatenate all series without using MergeSeriesSet
-	var allSeries []storage.Series
-	for _, result := range results {
-		seriesSet := FromQueryResult(sortSeries, result)
-		for seriesSet.Next() {
-			allSeries = append(allSeries, seriesSet.At())
-		}
-		if err := seriesSet.Err(); err != nil {
-			return nil, err
-		}
-	}
-
-	return &concreteSeriesSet{series: allSeries, cur: 0}, nil
+	// Use the same logic as the real client
+	return combineQueryResults(results, sortSeries)
 }
 
 func (c *mockedRemoteClient) reset() {

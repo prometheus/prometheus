@@ -477,17 +477,25 @@ func (c *Client) handleSamplesResponseImpl(req *prompb.ReadRequest, httpResp *ht
 		return nil, fmt.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
 	}
 
-	// Handle both single and multiple queries
-	if len(resp.Results) == 1 {
-		// Single query case - use existing logic
-		return FromQueryResult(sortSeries, resp.Results[0]), nil
+	return combineQueryResults(resp.Results, sortSeries)
+}
+
+// combineQueryResults combines multiple query results into a single SeriesSet,
+// handling both sorted and unsorted cases appropriately.
+func combineQueryResults(results []*prompb.QueryResult, sortSeries bool) (storage.SeriesSet, error) {
+	if len(results) == 0 {
+		return &concreteSeriesSet{series: nil, cur: 0}, nil
+	}
+
+	if len(results) == 1 {
+		return FromQueryResult(sortSeries, results[0]), nil
 	}
 
 	// Multiple queries case - combine all results
 	if sortSeries {
 		// When sorting is requested, use MergeSeriesSet which can efficiently merge sorted inputs
 		var allSeriesSets []storage.SeriesSet
-		for _, result := range resp.Results {
+		for _, result := range results {
 			seriesSet := FromQueryResult(sortSeries, result)
 			if err := seriesSet.Err(); err != nil {
 				return nil, fmt.Errorf("error reading series from query result: %w", err)
@@ -500,7 +508,7 @@ func (c *Client) handleSamplesResponseImpl(req *prompb.ReadRequest, httpResp *ht
 	// When sorting is not requested, just concatenate all series without using MergeSeriesSet
 	// since MergeSeriesSet requires sorted inputs
 	var allSeries []storage.Series
-	for _, result := range resp.Results {
+	for _, result := range results {
 		seriesSet := FromQueryResult(sortSeries, result)
 		for seriesSet.Next() {
 			allSeries = append(allSeries, seriesSet.At())
