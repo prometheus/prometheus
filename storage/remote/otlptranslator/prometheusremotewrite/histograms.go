@@ -37,7 +37,6 @@ const defaultZeroThreshold = 1e-128
 // as native histogram samples.
 func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Context, dataPoints pmetric.ExponentialHistogramDataPointSlice,
 	resource pcommon.Resource, settings Settings, promName string, temporality pmetric.AggregationTemporality,
-	scope scope,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 	for x := 0; x < dataPoints.Len(); x++ {
@@ -56,7 +55,6 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
-			scope,
 			settings,
 			nil,
 			true,
@@ -254,7 +252,6 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 
 func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
 	resource pcommon.Resource, settings Settings, promName string, temporality pmetric.AggregationTemporality,
-	scope scope,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 
@@ -274,7 +271,6 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
-			scope,
 			settings,
 			nil,
 			true,
