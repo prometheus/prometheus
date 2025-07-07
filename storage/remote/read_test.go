@@ -273,39 +273,12 @@ func (c *mockedRemoteClient) ReadMultiple(_ context.Context, queries []*prompb.Q
 		}
 	}
 
-	return &combinedSeriesSetMock{series: allSeries, index: -1}, nil
+	return &concreteSeriesSet{series: allSeries}, nil
 }
 
 func (c *mockedRemoteClient) reset() {
 	c.got = nil
 	c.gotMultiple = nil
-}
-
-// combinedSeriesSetMock implements storage.SeriesSet for testing multiple series.
-type combinedSeriesSetMock struct {
-	series []storage.Series
-	index  int
-	err    error
-}
-
-func (c *combinedSeriesSetMock) Next() bool {
-	c.index++
-	return c.index < len(c.series)
-}
-
-func (c *combinedSeriesSetMock) At() storage.Series {
-	if c.index < 0 || c.index >= len(c.series) {
-		return nil
-	}
-	return c.series[c.index]
-}
-
-func (c *combinedSeriesSetMock) Err() error {
-	return c.err
-}
-
-func (c *combinedSeriesSetMock) Warnings() annotations.Annotations {
-	return nil
 }
 
 // NOTE: We don't need to test ChunkQuerier as it's uses querier for all operations anyway.
