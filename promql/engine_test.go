@@ -3642,6 +3642,117 @@ func TestRateAnnotations(t *testing.T) {
 	}
 }
 
+func TestTypeUnitMismatchAnnotations(t *testing.T) {
+	testCases := map[string]struct {
+		data                       string
+		expr                       string
+		typeAndUnitLabelsEnabled   bool
+		expectedWarningAnnotations []string
+		expectedInfoAnnotations    []string
+	}{
+		"info annotation when mismatched type": {
+			data: `
+				series{label="a", __type__="counter"} 1 2 3
+				series{label="b", __type__="gauge"} 4 5 6
+			`,
+			expr:                       "sum(series)",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations: []string{
+				`PromQL info: mismatched type or unit metadata "series"`,
+			},
+		},
+		"info annotation when mismatched unit": {
+			data: `
+				series{label="a", __unit__="seconds"} 1 2 3
+				series{label="b", __unit__="minutes"} 4 5 6
+			`,
+			expr:                       "sum(series)",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations: []string{
+				`PromQL info: mismatched type or unit metadata "series"`,
+			},
+		},
+		"info annotation when mismatched type and unit": {
+			data: `
+				series{label="a", __type__="counter", __unit__="seconds"} 1 2 3
+				series{label="b", __type__="gauge", __unit__="minutes"} 4 5 6
+			`,
+			expr:                       "sum(series)",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations: []string{
+				`PromQL info: mismatched type or unit metadata "series"`,
+			},
+		},
+		"no info annotation when type is unknown": {
+			data: `
+				series{label="a", __type__="counter"} 1 2 3
+				series{label="b", __type__="unknown"} 4 5 6
+			`,
+			expr:                       "sum(series)",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when type and unit match": {
+			data: `
+				series{label="a", __type__="counter", __unit__="seconds"} 1 2 3
+				series{label="b", __type__="counter", __unit__="seconds"} 4 5 6
+			`,
+			expr:                       "sum(series)",
+			typeAndUnitLabelsEnabled:   false,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation enableTypeAndUnitLabels is false": {
+			data: `
+				series{label="a", __type__="counter", __unit__="seconds"} 1 2 3
+				series{label="b", __type__="gauge", __unit__="minutes"} 4 5 6
+			`,
+			expr:                       "sum(series)",
+			typeAndUnitLabelsEnabled:   false,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+	}
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
+			var wrappedStorage storage.Storage = store
+			if testCase.typeAndUnitLabelsEnabled {
+				wrappedStorage = storage.AnnotatingStorage(store)
+			}
+			t.Cleanup(func() { _ = store.Close() })
+
+			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				Logger:                   nil,
+				Reg:                      nil,
+				MaxSamples:               promqltest.DefaultMaxSamplesPerQuery,
+				Timeout:                  100 * time.Minute,
+				NoStepSubqueryIntervalFn: func(int64) int64 { return int64((1 * time.Minute / time.Millisecond / time.Nanosecond)) },
+				EnableAtModifier:         true,
+				EnableNegativeOffset:     true,
+				EnablePerStepStats:       false,
+				LookbackDelta:            0,
+				EnableDelayedNameRemoval: true,
+				EnableTypeAndUnitLabels:  testCase.typeAndUnitLabelsEnabled,
+			})
+			query, err := engine.NewInstantQuery(context.Background(), wrappedStorage, nil, testCase.expr, timestamp.Time(0).Add(1*time.Minute))
+			require.NoError(t, err)
+			t.Cleanup(query.Close)
+
+			res := query.Exec(context.Background())
+			require.NoError(t, res.Err)
+
+			warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
+			testutil.RequireEqual(t, testCase.expectedWarningAnnotations, warnings)
+			testutil.RequireEqual(t, testCase.expectedInfoAnnotations, infos)
+		})
+	}
+}
+
 func TestHistogramQuantileAnnotations(t *testing.T) {
 	testCases := map[string]struct {
 		data                       string
