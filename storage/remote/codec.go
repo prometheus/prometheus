@@ -547,8 +547,9 @@ type chunkedSeriesSet struct {
 	mint, maxt    int64
 	cancel        func(error)
 
-	current storage.Series
-	err     error
+	current   storage.Series
+	err       error
+	exhausted bool
 }
 
 func NewChunkedSeriesSet(chunkedReader *ChunkedReader, respBody io.ReadCloser, mint, maxt int64, cancel func(error)) storage.SeriesSet {
@@ -564,6 +565,12 @@ func NewChunkedSeriesSet(chunkedReader *ChunkedReader, respBody io.ReadCloser, m
 // Next return true if there is a next series and false otherwise. It will
 // block until the next series is available.
 func (s *chunkedSeriesSet) Next() bool {
+	if s.exhausted {
+		// Don't try to read the next series again.
+		// This prevents errors like "http: read on closed response body" if Next() is called after it has already returned false.
+		return false
+	}
+
 	res := &prompb.ChunkedReadResponse{}
 
 	err := s.chunkedReader.NextProto(res)
@@ -575,6 +582,7 @@ func (s *chunkedSeriesSet) Next() bool {
 
 		_ = s.respBody.Close()
 		s.cancel(err)
+		s.exhausted = true
 
 		return false
 	}
