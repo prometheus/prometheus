@@ -376,7 +376,7 @@ func (c *Client) ReadMultiple(ctx context.Context, queries []*prompb.Query, sort
 	return c.handleReadResponse(httpResp, req, queries, sortSeries, start, cancel)
 }
 
-// executeReadRequest creates and executes an HTTP request for reading data
+// executeReadRequest creates and executes an HTTP request for reading data.
 func (c *Client) executeReadRequest(ctx context.Context, req *prompb.ReadRequest, spanName string) (*http.Response, context.CancelFunc, time.Time, error) {
 	data, err := proto.Marshal(req)
 	if err != nil {
@@ -410,7 +410,7 @@ func (c *Client) executeReadRequest(ctx context.Context, req *prompb.ReadRequest
 	return httpResp, cancel, start, nil
 }
 
-// handleReadResponse processes the HTTP response and returns a SeriesSet
+// handleReadResponse processes the HTTP response and returns a SeriesSet.
 func (c *Client) handleReadResponse(httpResp *http.Response, req *prompb.ReadRequest, queries []*prompb.Query, sortSeries bool, start time.Time, cancel context.CancelFunc) (storage.SeriesSet, error) {
 	if httpResp.StatusCode/100 != 2 {
 		// Make an attempt at getting an error message.
@@ -452,7 +452,7 @@ func (c *Client) handleReadResponse(httpResp *http.Response, req *prompb.ReadReq
 	}
 }
 
-// handleSampledResponseImpl handles sampled responses for both single and multiple queries
+// handleSampledResponseImpl handles sampled responses for both single and multiple queries.
 func (c *Client) handleSampledResponseImpl(req *prompb.ReadRequest, httpResp *http.Response, sortSeries bool) (storage.SeriesSet, error) {
 	compressed, err := io.ReadAll(httpResp.Body)
 	if err != nil {
@@ -499,7 +499,7 @@ func (c *Client) handleSampledResponseImpl(req *prompb.ReadRequest, httpResp *ht
 	return &combinedSeriesSet{series: allSeries, index: -1}, nil
 }
 
-// handleChunkedResponseImpl handles chunked responses for both single and multiple queries
+// handleChunkedResponseImpl handles chunked responses for both single and multiple queries.
 func (c *Client) handleChunkedResponseImpl(s *ChunkedReader, httpResp *http.Response, queries []*prompb.Query, onClose func(error)) storage.SeriesSet {
 	// For multiple queries in chunked response, we'll still use the existing infrastructure
 	// but we need to provide the timestamp range that covers all queries
@@ -517,7 +517,7 @@ func (c *Client) handleChunkedResponseImpl(s *ChunkedReader, httpResp *http.Resp
 	return NewChunkedSeriesSet(s, httpResp.Body, minStartTs, maxEndTs, onClose)
 }
 
-// combinedSeriesSet implements storage.SeriesSet for multiple series from different queries
+// combinedSeriesSet implements storage.SeriesSet for multiple series from different queries.
 type combinedSeriesSet struct {
 	series []storage.Series
 	index  int

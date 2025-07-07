@@ -248,7 +248,7 @@ func (c *mockedRemoteClient) ReadMultiple(_ context.Context, queries []*prompb.Q
 		q := &prompb.QueryResult{}
 		for _, s := range c.store {
 			l := s.ToLabels(&c.b, nil)
-			var match bool = true
+			match := true
 
 			for _, m := range matchers {
 				v := l.Get(m.Name)
@@ -281,7 +281,7 @@ func (c *mockedRemoteClient) reset() {
 	c.gotMultiple = nil
 }
 
-// combinedSeriesSetMock implements storage.SeriesSet for testing multiple series
+// combinedSeriesSetMock implements storage.SeriesSet for testing multiple series.
 type combinedSeriesSetMock struct {
 	series []storage.Series
 	index  int
