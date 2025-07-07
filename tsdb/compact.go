@@ -895,10 +895,13 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 		meta.Stats.NumChunks += uint64(len(chks))
 		meta.Stats.NumSeries++
 		for _, chk := range chks {
-			meta.Stats.NumSamples += uint64(chk.Chunk.NumSamples())
-			enc := chk.Chunk.Encoding()
-			if enc == chunkenc.EncHistogram || enc == chunkenc.EncFloatHistogram {
-				meta.Stats.NumHistogramSamples += uint64(chk.Chunk.NumSamples())
+			samples := uint64(chk.Chunk.NumSamples())
+			meta.Stats.NumSamples += samples
+			switch chk.Chunk.Encoding() {
+			case chunkenc.EncHistogram, chunkenc.EncFloatHistogram:
+				meta.Stats.NumHistogramSamples += samples
+			case chunkenc.EncXOR:
+				meta.Stats.NumFloatSamples += samples
 			}
 		}
 

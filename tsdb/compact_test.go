@@ -1101,6 +1101,8 @@ func TestCompaction_populateBlock(t *testing.T) {
 					for _, smpl := range chk {
 						if smpl.h != nil || smpl.fh != nil {
 							s.NumHistogramSamples++
+						} else {
+							s.NumFloatSamples++
 						}
 					}
 				}

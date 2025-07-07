@@ -189,6 +189,7 @@ type BlockMeta struct {
 // BlockStats contains stats about contents of a block.
 type BlockStats struct {
 	NumSamples          uint64 `json:"numSamples,omitempty"`
+	NumFloatSamples     uint64 `json:"numFloatSamples,omitempty"`
 	NumHistogramSamples uint64 `json:"numHistogramSamples,omitempty"`
 	NumSeries           uint64 `json:"numSeries,omitempty"`
 	NumChunks           uint64 `json:"numChunks,omitempty"`
