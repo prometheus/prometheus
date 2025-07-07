@@ -479,13 +479,18 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "30m0s",
 		},
 		{
-			// now - returns fixed timestamp model.Time as float64.
-			text:   `{{ ( now | toTime).Format "Mon Jan 2 15:04:05 2006" }}`,
+			// now - returns fixed timestamp as float64 seconds.
+			text:   `{{ now }}`,
+			output: "1.353755652e+09",
+		},
+		{
+			// now - returns fixed timestamp converted to formatted time string.
+			text:   `{{ (now | toTime).Format "Mon Jan 2 15:04:05 2006" }}`,
 			output: "Sat Nov 24 11:14:12 2012",
 		},
 		{
-			// returns Unix milliseconds timestamp - 30 minutes ago.
-			text:   `{{ ("-30m" | parseDuration | toDuration | ( now | toTime).Add ).UnixMilli }}`,
+			// returns Unix milliseconds timestamp for 30 minutes.ago
+			text:   `{{ ("-30m" | parseDuration | toDuration | ( now | toTime).Add).UnixMilli }}`,
 			output: "1353753852000",
 		},
 		{
