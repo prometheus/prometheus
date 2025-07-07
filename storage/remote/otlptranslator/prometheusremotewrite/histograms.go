@@ -64,7 +64,7 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 		)
 
 		if settings.AddTypeAndUnitLabels {
-			lbls = addTypeAndUnitLabels(lbls, metadata)
+			lbls = addTypeAndUnitLabels(lbls, metadata, settings)
 		}
 
 		ts, _ := c.getOrCreateTimeSeries(lbls)
@@ -286,7 +286,7 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 		)
 
 		if settings.AddTypeAndUnitLabels {
-			lbls = addTypeAndUnitLabels(lbls, metadata)
+			lbls = addTypeAndUnitLabels(lbls, metadata, settings)
 		}
 
 		ts, _ := c.getOrCreateTimeSeries(lbls)

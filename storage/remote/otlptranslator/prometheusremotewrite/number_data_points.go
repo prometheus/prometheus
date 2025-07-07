@@ -62,7 +62,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		}
 
 		if settings.AddTypeAndUnitLabels {
-			labels = addTypeAndUnitLabels(labels, metadata)
+			labels = addTypeAndUnitLabels(labels, metadata, settings)
 		}
 
 		c.addSample(sample, labels)
@@ -105,7 +105,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		}
 
 		if settings.AddTypeAndUnitLabels {
-			lbls = addTypeAndUnitLabels(lbls, metadata)
+			lbls = addTypeAndUnitLabels(lbls, metadata, settings)
 		}
 
 		ts := c.addSample(sample, lbls)

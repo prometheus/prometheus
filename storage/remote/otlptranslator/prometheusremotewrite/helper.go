@@ -268,7 +268,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
 		if settings.AddTypeAndUnitLabels {
-			baseLabels = addTypeAndUnitLabels(baseLabels, metadata)
+			baseLabels = addTypeAndUnitLabels(baseLabels, metadata, settings)
 		}
 
 		// If the sum is unset, it indicates the _sum metric point should be
@@ -482,7 +482,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
 		if settings.AddTypeAndUnitLabels {
-			baseLabels = addTypeAndUnitLabels(baseLabels, metadata)
+			baseLabels = addTypeAndUnitLabels(baseLabels, metadata, settings)
 		}
 
 		// treat sum as a sample in an individual TimeSeries
@@ -552,9 +552,11 @@ func createLabels(name string, baseLabels []prompb.Label, extras ...string) []pr
 }
 
 // addTypeAndUnitLabels appends type and unit labels to the given labels slice.
-func addTypeAndUnitLabels(labels []prompb.Label, metadata prompb.MetricMetadata) []prompb.Label {
+func addTypeAndUnitLabels(labels []prompb.Label, metadata prompb.MetricMetadata, settings Settings) []prompb.Label {
+	unitNamer := otlptranslator.UnitNamer{UTF8Allowed: settings.AllowUTF8}
+
 	labels = append(labels, prompb.Label{Name: "__type__", Value: strings.ToLower(metadata.Type.String())})
-	labels = append(labels, prompb.Label{Name: "__unit__", Value: strings.ToLower(metadata.Unit)})
+	labels = append(labels, prompb.Label{Name: "__unit__", Value: unitNamer.Build(metadata.Unit)})
 
 	return labels
 }

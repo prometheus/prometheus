@@ -425,7 +425,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 				{
 					l: labels.New(labels.Label{Name: "__name__", Value: "test.counter"},
 						labels.Label{Name: "__type__", Value: "counter"},
-						labels.Label{Name: "__unit__", Value: "By"},
+						labels.Label{Name: "__unit__", Value: "bytes"},
 						labels.Label{Name: "foo.bar", Value: "baz"},
 						labels.Label{Name: "instance", Value: "test-instance"},
 						labels.Label{Name: "job", Value: "test-service"}),
@@ -506,7 +506,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 				{
 					l: labels.New(labels.Label{Name: "__name__", Value: "test_counter_bytes_total"},
 						labels.Label{Name: "__type__", Value: "counter"},
-						labels.Label{Name: "__unit__", Value: "By"},
+						labels.Label{Name: "__unit__", Value: "bytes"},
 						labels.Label{Name: "foo_bar", Value: "baz"},
 						labels.Label{Name: "instance", Value: "test-instance"},
 						labels.Label{Name: "job", Value: "test-service"}),
@@ -561,7 +561,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 				{
 					l: labels.New(labels.Label{Name: "__name__", Value: "test.counter_bytes_total"},
 						labels.Label{Name: "__type__", Value: "counter"},
-						labels.Label{Name: "__unit__", Value: "By"},
+						labels.Label{Name: "__unit__", Value: "bytes"},
 						labels.Label{Name: "foo.bar", Value: "baz"},
 						labels.Label{Name: "instance", Value: "test-instance"},
 						labels.Label{Name: "job", Value: "test-service"}),
