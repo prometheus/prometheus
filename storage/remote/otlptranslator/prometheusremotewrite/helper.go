@@ -554,7 +554,7 @@ func createLabels(name string, baseLabels []prompb.Label, extras ...string) []pr
 // addTypeAndUnitLabels appends type and unit labels to the given labels slice.
 func addTypeAndUnitLabels(labels []prompb.Label, metadata prompb.MetricMetadata) []prompb.Label {
 	labels = append(labels, prompb.Label{Name: "__type__", Value: strings.ToLower(metadata.Type.String())})
-	labels = append(labels, prompb.Label{Name: "__unit__", Value: metadata.Unit})
+	labels = append(labels, prompb.Label{Name: "__unit__", Value: strings.ToLower(metadata.Unit)})
 
 	return labels
 }
