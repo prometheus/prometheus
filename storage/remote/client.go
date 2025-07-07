@@ -505,12 +505,8 @@ func (c *Client) handleChunkedResponseImpl(s *ChunkedReader, httpResp *http.Resp
 	var minStartTs, maxEndTs int64 = math.MaxInt64, math.MinInt64
 
 	for _, query := range queries {
-		if query.StartTimestampMs < minStartTs {
-			minStartTs = query.StartTimestampMs
-		}
-		if query.EndTimestampMs > maxEndTs {
-			maxEndTs = query.EndTimestampMs
-		}
+		minStartTs = min(minStartTs, query.StartTimestampMs)
+		maxEndTs = max(maxEndTs, query.EndTimestampMs)
 	}
 
 	return NewChunkedSeriesSet(s, httpResp.Body, minStartTs, maxEndTs, onClose)
