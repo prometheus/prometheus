@@ -43,7 +43,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
 	"github.com/prometheus/prometheus/storage/remote/googleiam"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/compression"
 )
 
@@ -349,14 +348,14 @@ func (c *Client) Endpoint() string {
 	return c.urlString
 }
 
-// Read reads from a remote endpoint. The sortSeries parameter is only respected in the case of a sampled response;
+// Read reads from a remote endpoint. The sortSeries parameter is only respected in the case of a samples response;
 // chunked responses arrive already sorted by the server.
 func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
 	return c.ReadMultiple(ctx, []*prompb.Query{query}, sortSeries)
 }
 
 // ReadMultiple reads from a remote endpoint using multiple queries in a single request.
-// The sortSeries parameter is only respected in the case of a sampled response;
+// The sortSeries parameter is only respected in the case of a samples response;
 // chunked responses arrive already sorted by the server.
 // Returns a single SeriesSet with interleaved series from all queries.
 func (c *Client) ReadMultiple(ctx context.Context, queries []*prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
@@ -427,8 +426,8 @@ func (c *Client) handleReadResponse(httpResp *http.Response, req *prompb.ReadReq
 
 	switch {
 	case strings.HasPrefix(contentType, "application/x-protobuf"):
-		c.readQueriesDuration.WithLabelValues("sampled").Observe(time.Since(start).Seconds())
-		c.readQueriesTotal.WithLabelValues("sampled", strconv.Itoa(httpResp.StatusCode)).Inc()
+		c.readQueriesDuration.WithLabelValues("samples").Observe(time.Since(start).Seconds())
+		c.readQueriesTotal.WithLabelValues("samples", strconv.Itoa(httpResp.StatusCode)).Inc()
 		ss, err := c.handleSampledResponseImpl(req, httpResp, sortSeries)
 		cancel()
 		return ss, err
@@ -452,7 +451,7 @@ func (c *Client) handleReadResponse(httpResp *http.Response, req *prompb.ReadReq
 	}
 }
 
-// handleSampledResponseImpl handles sampled responses for both single and multiple queries.
+// handleSampledResponseImpl handles samples responses for both single and multiple queries.
 func (c *Client) handleSampledResponseImpl(req *prompb.ReadRequest, httpResp *http.Response, sortSeries bool) (storage.SeriesSet, error) {
 	compressed, err := io.ReadAll(httpResp.Body)
 	if err != nil {
