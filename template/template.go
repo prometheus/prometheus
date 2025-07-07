@@ -272,8 +272,7 @@ func NewTemplateExpander(
 				return &d, nil
 			},
 			"now": func() float64 {
-				now := time.Now()
-				return float64(now.Unix()) + float64(now.Nanosecond())/float64(time.Second)
+				return float64(timestamp) / 1000.0
 			},
 			"pathPrefix": func() string {
 				return externalURL.Path
