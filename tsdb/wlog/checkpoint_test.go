@@ -417,3 +417,56 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	})
 	require.NoError(t, err)
 }
+
+func TestCheckpointDeletesTemporaryCheckpoints(t *testing.T) {
+	testCases := []struct {
+		name                          string
+		checkpointDirectoriesToCreate []string
+		expectedDirectories           []string
+	}{
+		{
+			name:                          "no tmp checkpoints",
+			checkpointDirectoriesToCreate: nil,
+			expectedDirectories:           []string{"checkpoint.00001000"},
+		},
+		{
+			name:                          "one tmp checkpoint",
+			checkpointDirectoriesToCreate: []string{"checkpoint.00001000.tmp"},
+			expectedDirectories:           []string{"checkpoint.00001000"},
+		},
+		{
+			name:                          "many tmp checkpoints",
+			checkpointDirectoriesToCreate: []string{"checkpoint.00000001.tmp", "checkpoint.00001000.tmp", "checkpoint.00002000.tmp"},
+			expectedDirectories:           []string{"checkpoint.00001000"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, fn := range tc.checkpointDirectoriesToCreate {
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, fn), 0o777))
+			}
+
+			w, err := New(nil, nil, dir, compression.None)
+			require.NoError(t, err)
+			defer w.Close()
+
+			require.NoError(t, err)
+			_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(_ chunks.HeadSeriesRef, _ int) bool { return true }, 1000)
+			require.NoError(t, err)
+
+			files, err := os.ReadDir(dir)
+			require.NoError(t, err)
+
+			var actualDirectories []string
+			for _, f := range files {
+				if !f.IsDir() {
+					continue
+				}
+				actualDirectories = append(actualDirectories, f.Name())
+			}
+			require.Equal(t, tc.expectedDirectories, actualDirectories)
+		})
+	}
+}
