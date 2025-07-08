@@ -3377,11 +3377,8 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		_, err = writeMetaFile(promslog.New(&promslog.Config{}), dir, m)
 		require.NoError(t, err)
 	}
-	tmpCheckpointDir := path.Join(tmpDir, "wal/checkpoint.00000001.tmp")
-	err := os.MkdirAll(tmpCheckpointDir, 0o777)
-	require.NoError(t, err)
 	tmpChunkSnapshotDir := path.Join(tmpDir, chunkSnapshotPrefix+"0000.00000001.tmp")
-	err = os.MkdirAll(tmpChunkSnapshotDir, 0o777)
+	err := os.MkdirAll(tmpChunkSnapshotDir, 0o777)
 	require.NoError(t, err)
 
 	opts := DefaultOptions()
@@ -3412,8 +3409,6 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		}
 	}
 	require.Len(t, expectedIgnoredDirs, ignored)
-	_, err = os.Stat(tmpCheckpointDir)
-	require.True(t, os.IsNotExist(err))
 	_, err = os.Stat(tmpChunkSnapshotDir)
 	require.True(t, os.IsNotExist(err))
 }
