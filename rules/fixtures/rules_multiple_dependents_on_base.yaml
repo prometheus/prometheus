@@ -1,0 +1,21 @@
+groups:
+  - name: concurrent_dependents
+    rules:
+      # 3 dependents on the same base
+      - record: job:http_requests:rate1m
+        expr: sum by (job)(rate(http_requests_total[1m]))
+      - record: job1:http_requests:rate1m
+        expr: job:http_requests:rate1m{job="job1"}
+      - record: job2:http_requests:rate1m
+        expr: job:http_requests:rate1m{job="job2"}
+      - record: job3:http_requests:rate1m
+        expr: job:http_requests:rate1m{job="job3"}
+      # another 3 dependents on the same base
+      - record: job:http_requests:rate5m
+        expr: sum by (job)(rate(http_requests_total[5m]))
+      - record: job1:http_requests:rate5m
+        expr: job:http_requests:rate5m{job="job1"}
+      - record: job2:http_requests:rate5m
+        expr: job:http_requests:rate5m{job="job2"}
+      - record: job3:http_requests:rate5m
+        expr: job:http_requests:rate5m{job="job3"}

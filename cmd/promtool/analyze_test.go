@@ -17,9 +17,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -109,6 +108,7 @@ func init() {
 }
 
 func TestGetBucketCountsAtTime(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		matrix   model.Matrix
 		length   int
@@ -137,6 +137,7 @@ func TestGetBucketCountsAtTime(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(fmt.Sprintf("exampleMatrix@%d", c.timeIdx), func(t *testing.T) {
+			t.Parallel()
 			res, err := getBucketCountsAtTime(c.matrix, c.length, c.timeIdx)
 			require.NoError(t, err)
 			require.Equal(t, c.expected, res)
@@ -145,6 +146,7 @@ func TestGetBucketCountsAtTime(t *testing.T) {
 }
 
 func TestCalcClassicBucketStatistics(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		matrix   model.Matrix
 		expected *statistics
@@ -162,6 +164,7 @@ func TestCalcClassicBucketStatistics(t *testing.T) {
 
 	for i, c := range cases {
 		t.Run(fmt.Sprintf("case %d", i), func(t *testing.T) {
+			t.Parallel()
 			res, err := calcClassicBucketStatistics(c.matrix)
 			require.NoError(t, err)
 			require.Equal(t, c.expected, res)

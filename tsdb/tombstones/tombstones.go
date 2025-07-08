@@ -19,14 +19,12 @@ import (
 	"fmt"
 	"hash"
 	"hash/crc32"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"sync"
-
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -76,7 +74,7 @@ type Reader interface {
 	Close() error
 }
 
-func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
+func WriteFile(logger *slog.Logger, dir string, tr Reader) (int64, error) {
 	path := filepath.Join(dir, TombstonesFilename)
 	tmp := path + ".tmp"
 	hash := newCRC32()
@@ -89,11 +87,11 @@ func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
 	defer func() {
 		if f != nil {
 			if err := f.Close(); err != nil {
-				level.Error(logger).Log("msg", "close tmp file", "err", err.Error())
+				logger.Error("close tmp file", "err", err.Error())
 			}
 		}
 		if err := os.RemoveAll(tmp); err != nil {
-			level.Error(logger).Log("msg", "remove tmp file", "err", err.Error())
+			logger.Error("remove tmp file", "err", err.Error())
 		}
 	}()
 
@@ -379,9 +377,6 @@ func (in Intervals) Add(n Interval) Intervals {
 	if n.Mint < in[mini].Mint {
 		in[mini].Mint = n.Mint
 	}
-	in[mini].Maxt = in[maxi+mini-1].Maxt
-	if n.Maxt > in[mini].Maxt {
-		in[mini].Maxt = n.Maxt
-	}
+	in[mini].Maxt = max(n.Maxt, in[maxi+mini-1].Maxt)
 	return append(in[:mini+1], in[maxi+mini:]...)
 }

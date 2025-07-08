@@ -15,12 +15,12 @@ package hetzner
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -53,14 +53,16 @@ const (
 // the Discoverer interface.
 type hcloudDiscovery struct {
 	*refresh.Discovery
-	client *hcloud.Client
-	port   int
+	client        *hcloud.Client
+	port          int
+	labelSelector string
 }
 
 // newHcloudDiscovery returns a new hcloudDiscovery which periodically refreshes its targets.
-func newHcloudDiscovery(conf *SDConfig, _ log.Logger) (*hcloudDiscovery, error) {
+func newHcloudDiscovery(conf *SDConfig, _ *slog.Logger) (*hcloudDiscovery, error) {
 	d := &hcloudDiscovery{
-		port: conf.Port,
+		port:          conf.Port,
+		labelSelector: conf.LabelSelector,
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "hetzner_sd")
@@ -79,7 +81,10 @@ func newHcloudDiscovery(conf *SDConfig, _ log.Logger) (*hcloudDiscovery, error) 
 }
 
 func (d *hcloudDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	servers, err := d.client.Server.All(ctx)
+	servers, err := d.client.Server.AllWithOpts(ctx, hcloud.ServerListOpts{ListOpts: hcloud.ListOpts{
+		PerPage:       50,
+		LabelSelector: d.labelSelector,
+	}})
 	if err != nil {
 		return nil, err
 	}

@@ -1,0 +1,40 @@
+.control {
+  display: block;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-md);
+  border-radius: var(--mantine-radius-md);
+  font-weight: 500;
+
+  @mixin hover {
+    background-color: var(--mantine-color-gray-8);
+  }
+}
+
+.link {
+  display: block;
+  line-height: 1;
+  padding: rem(8px) rem(12px);
+  border-radius: var(--mantine-radius-sm);
+  text-decoration: none;
+  color: var(--mantine-color-gray-0);
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 500;
+  background-color: transparent;
+
+  @mixin hover {
+    background-color: var(--mantine-color-gray-6);
+    color: var(--mantine-color-gray-0);
+  }
+
+  [data-mantine-color-scheme] &[aria-current="page"] {
+    background-color: var(--mantine-color-blue-filled);
+    color: var(--mantine-color-white);
+  }
+}
+
+/* Font used for autocompletion item icons. */
+@font-face {
+  font-family: "codicon";
+  src:
+    local("codicon"),
+    url(./fonts/codicon.ttf) format("truetype");
+}

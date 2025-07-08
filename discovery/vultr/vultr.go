@@ -15,14 +15,14 @@ package vultr
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -75,7 +75,7 @@ type SDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &vultrMetrics{
 		refreshMetrics: rmi,
 	}
@@ -114,10 +114,10 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*vultrMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	d := &Discovery{
@@ -134,11 +134,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.Discovere
 		Timeout:   time.Duration(conf.RefreshInterval),
 	})
 
-	d.client.SetUserAgent(fmt.Sprintf("Prometheus/%s", version.Version))
-
-	if err != nil {
-		return nil, fmt.Errorf("error setting up vultr agent: %w", err)
-	}
+	d.client.SetUserAgent(version.PrometheusUserAgent())
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{

@@ -68,6 +68,12 @@ func (i ItemType) IsAggregatorWithParam() bool {
 	return i == TOPK || i == BOTTOMK || i == COUNT_VALUES || i == QUANTILE || i == LIMITK || i == LIMIT_RATIO
 }
 
+// IsExperimentalAggregator defines the experimental aggregation functions that are controlled
+// with EnableExperimentalFunctions.
+func (i ItemType) IsExperimentalAggregator() bool {
+	return i == LIMITK || i == LIMIT_RATIO
+}
+
 // IsKeyword returns true if the Item corresponds to a keyword.
 // Returns false otherwise.
 func (i ItemType) IsKeyword() bool { return i > keywordsStart && i < keywordsEnd }
@@ -134,6 +140,7 @@ var key = map[string]ItemType{
 	// Preprocessors.
 	"start": START,
 	"end":   END,
+	"step":  STEP,
 }
 
 var histogramDesc = map[string]ItemType{
@@ -271,6 +278,7 @@ type Lexer struct {
 	braceOpen   bool // Whether a { is opened.
 	bracketOpen bool // Whether a [ is opened.
 	gotColon    bool // Whether we got a ':' after [ was opened.
+	gotDuration bool // Whether we got a duration after [ was opened.
 	stringOpen  rune // Quote rune of the string currently being read.
 
 	// series description variables for internal PromQL testing framework as well as in promtool rules unit tests.
@@ -423,11 +431,10 @@ func lexStatements(l *Lexer) stateFn {
 			l.emit(EQL)
 		}
 	case r == '!':
-		if t := l.next(); t == '=' {
-			l.emit(NEQ)
-		} else {
+		if t := l.next(); t != '=' {
 			return l.errorf("unexpected character after '!': %q", t)
 		}
+		l.emit(NEQ)
 	case r == '<':
 		if t := l.peek(); t == '=' {
 			l.next()
@@ -456,11 +463,20 @@ func lexStatements(l *Lexer) stateFn {
 			l.backup()
 			return lexKeywordOrIdentifier
 		}
-		if l.gotColon {
-			return l.errorf("unexpected colon %q", r)
+		switch r {
+		case ':':
+			if l.gotColon {
+				return l.errorf("unexpected colon %q", r)
+			}
+			l.emit(COLON)
+			l.gotColon = true
+			return lexStatements
+		case 's', 'S', 'm', 'M':
+			if l.scanDurationKeyword() {
+				return lexStatements
+			}
 		}
-		l.emit(COLON)
-		l.gotColon = true
+		return l.errorf("unexpected character: %q, expected %q", r, ':')
 	case r == '(':
 		l.emit(LEFT_PAREN)
 		l.parenDepth++
@@ -486,7 +502,7 @@ func lexStatements(l *Lexer) stateFn {
 			skipSpaces(l)
 		}
 		l.bracketOpen = true
-		return lexNumberOrDuration
+		return lexDurationExpr
 	case r == ']':
 		if !l.bracketOpen {
 			return l.errorf("unexpected right bracket %q", r)
@@ -507,7 +523,7 @@ func lexHistogram(l *Lexer) stateFn {
 		l.histogramState = histogramStateNone
 		l.next()
 		l.emit(TIMES)
-		return lexNumber
+		return lexValueSequence
 	case histogramStateAdd:
 		l.histogramState = histogramStateNone
 		l.next()
@@ -544,6 +560,8 @@ func lexHistogram(l *Lexer) stateFn {
 		return lexNumber
 	case r == '[':
 		l.bracketOpen = true
+		l.gotColon = false
+		l.gotDuration = false
 		l.emit(LEFT_BRACKET)
 		return lexBuckets
 	case r == '}' && l.peek() == '}':
@@ -610,6 +628,9 @@ func lexBuckets(l *Lexer) stateFn {
 	case isSpace(r):
 		l.emit(SPACE)
 		return lexSpace
+	case r == '-':
+		l.emit(SUB)
+		return lexNumber
 	case isDigit(r):
 		l.backup()
 		return lexNumber
@@ -617,6 +638,16 @@ func lexBuckets(l *Lexer) stateFn {
 		l.bracketOpen = false
 		l.emit(RIGHT_BRACKET)
 		return lexHistogram
+	case isAlpha(r):
+		// Current word is Inf or NaN.
+		word := l.input[l.start:l.pos]
+		if desc, ok := key[strings.ToLower(word)]; ok {
+			if desc == NUMBER {
+				l.emit(desc)
+				return lexStatements
+			}
+		}
+		return lexBuckets
 	default:
 		return l.errorf("invalid character in buckets description: %q", r)
 	}
@@ -653,10 +684,10 @@ func lexInsideBraces(l *Lexer) stateFn {
 		l.backup()
 		l.emit(EQL)
 	case r == '!':
-		switch nr := l.next(); {
-		case nr == '~':
+		switch nr := l.next(); nr {
+		case '~':
 			l.emit(NEQ_REGEX)
-		case nr == '=':
+		case '=':
 			l.emit(NEQ)
 		default:
 			return l.errorf("unexpected character after '!' inside braces: %q", nr)
@@ -727,23 +758,23 @@ func lexValueSequence(l *Lexer) stateFn {
 // was only modified to integrate with our lexer.
 func lexEscape(l *Lexer) stateFn {
 	var n int
-	var base, max uint32
+	var base, maxVal uint32
 
 	ch := l.next()
 	switch ch {
 	case 'a', 'b', 'f', 'n', 'r', 't', 'v', '\\', l.stringOpen:
 		return lexString
 	case '0', '1', '2', '3', '4', '5', '6', '7':
-		n, base, max = 3, 8, 255
+		n, base, maxVal = 3, 8, 255
 	case 'x':
 		ch = l.next()
-		n, base, max = 2, 16, 255
+		n, base, maxVal = 2, 16, 255
 	case 'u':
 		ch = l.next()
-		n, base, max = 4, 16, unicode.MaxRune
+		n, base, maxVal = 4, 16, unicode.MaxRune
 	case 'U':
 		ch = l.next()
-		n, base, max = 8, 16, unicode.MaxRune
+		n, base, maxVal = 8, 16, unicode.MaxRune
 	case eof:
 		l.errorf("escape sequence not terminated")
 		return lexString
@@ -772,7 +803,7 @@ func lexEscape(l *Lexer) stateFn {
 		}
 	}
 
-	if x > max || 0xD800 <= x && x < 0xE000 {
+	if x > maxVal || 0xD800 <= x && x < 0xE000 {
 		l.errorf("escape sequence is an invalid Unicode code point")
 	}
 	return lexString
@@ -866,6 +897,32 @@ func lexNumber(l *Lexer) stateFn {
 	}
 	l.emit(NUMBER)
 	return lexStatements
+}
+
+func (l *Lexer) scanDurationKeyword() bool {
+	for {
+		switch r := l.next(); {
+		case isAlpha(r):
+			// absorb.
+		default:
+			l.backup()
+			word := l.input[l.start:l.pos]
+			kw := strings.ToLower(word)
+			switch kw {
+			case "step":
+				l.emit(STEP)
+				return true
+			case "min":
+				l.emit(MIN)
+				return true
+			case "max":
+				l.emit(MAX)
+				return true
+			default:
+				return false
+			}
+		}
+	}
 }
 
 // lexNumberOrDuration scans a number or a duration Item.
@@ -1058,4 +1115,73 @@ func isDigit(r rune) bool {
 // isAlpha reports whether r is an alphabetic or underscore.
 func isAlpha(r rune) bool {
 	return r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z')
+}
+
+// lexDurationExpr scans arithmetic expressions within brackets for duration expressions.
+func lexDurationExpr(l *Lexer) stateFn {
+	switch r := l.next(); {
+	case r == eof:
+		return l.errorf("unexpected end of input in duration expression")
+	case r == ']':
+		l.emit(RIGHT_BRACKET)
+		l.bracketOpen = false
+		l.gotColon = false
+		return lexStatements
+	case r == ':':
+		l.emit(COLON)
+		if !l.gotDuration {
+			return l.errorf("unexpected colon before duration in duration expression")
+		}
+		if l.gotColon {
+			return l.errorf("unexpected repeated colon in duration expression")
+		}
+		l.gotColon = true
+		return lexDurationExpr
+	case r == '(':
+		l.emit(LEFT_PAREN)
+		l.parenDepth++
+		return lexDurationExpr
+	case r == ')':
+		l.emit(RIGHT_PAREN)
+		l.parenDepth--
+		if l.parenDepth < 0 {
+			return l.errorf("unexpected right parenthesis %q", r)
+		}
+		return lexDurationExpr
+	case isSpace(r):
+		skipSpaces(l)
+		return lexDurationExpr
+	case r == '+':
+		l.emit(ADD)
+		return lexDurationExpr
+	case r == '-':
+		l.emit(SUB)
+		return lexDurationExpr
+	case r == '*':
+		l.emit(MUL)
+		return lexDurationExpr
+	case r == '/':
+		l.emit(DIV)
+		return lexDurationExpr
+	case r == '%':
+		l.emit(MOD)
+		return lexDurationExpr
+	case r == '^':
+		l.emit(POW)
+		return lexDurationExpr
+	case r == ',':
+		l.emit(COMMA)
+		return lexDurationExpr
+	case r == 's' || r == 'S' || r == 'm' || r == 'M':
+		if l.scanDurationKeyword() {
+			return lexDurationExpr
+		}
+		return l.errorf("unexpected character in duration expression: %q", r)
+	case isDigit(r) || (r == '.' && isDigit(l.peek())):
+		l.backup()
+		l.gotDuration = true
+		return lexNumberOrDuration
+	default:
+		return l.errorf("unexpected character in duration expression: %q", r)
+	}
 }

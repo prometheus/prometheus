@@ -23,7 +23,7 @@ import (
 
 // syscall.RLIM_INFINITY is a constant.
 // Its type is int on most architectures but there are exceptions such as loong64.
-// Uniform it to uint accorind to the standard.
+// Uniform it to uint according to the standard.
 // https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/sys_resource.h.html
 var unlimited uint64 = syscall.RLIM_INFINITY & math.MaxUint64
 

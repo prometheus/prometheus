@@ -27,3 +27,6 @@ scrape_configs:
 
     static_configs:
       - targets: ["localhost:9090"]
+       # The label name is added as a label `label_name=<label_value>` to any timeseries scraped from this config.
+        labels:
+          app: "prometheus"

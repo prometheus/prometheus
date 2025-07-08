@@ -15,6 +15,7 @@ package chunkenc
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 
@@ -761,9 +762,9 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 		if !okToAppend || counterReset {
 			if appendOnly {
 				if counterReset {
-					return nil, false, a, fmt.Errorf("float histogram counter reset")
+					return nil, false, a, errors.New("float histogram counter reset")
 				}
-				return nil, false, a, fmt.Errorf("float histogram schema change")
+				return nil, false, a, errors.New("float histogram schema change")
 			}
 			newChunk := NewFloatHistogramChunk()
 			app, err := newChunk.Appender()
@@ -812,7 +813,7 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 	pForwardInserts, nForwardInserts, pBackwardInserts, nBackwardInserts, pMergedSpans, nMergedSpans, okToAppend := a.appendableGauge(h)
 	if !okToAppend {
 		if appendOnly {
-			return nil, false, a, fmt.Errorf("float gauge histogram schema change")
+			return nil, false, a, errors.New("float gauge histogram schema change")
 		}
 		newChunk := NewFloatHistogramChunk()
 		app, err := newChunk.Appender()
@@ -945,8 +946,8 @@ func (it *floatHistogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 	fh.NegativeBuckets = resize(fh.NegativeBuckets, len(it.nBuckets))
 	copy(fh.NegativeBuckets, it.nBuckets)
 
-	fh.CustomValues = resize(fh.CustomValues, len(it.customValues))
-	copy(fh.CustomValues, it.customValues)
+	// Custom values are interned. The single copy is in this iterator.
+	fh.CustomValues = it.customValues
 
 	return it.t, fh
 }
@@ -974,6 +975,8 @@ func (it *floatHistogramIterator) Reset(b []byte) {
 	if it.atFloatHistogramCalled {
 		it.atFloatHistogramCalled = false
 		it.pBuckets, it.nBuckets = nil, nil
+		it.pSpans, it.nSpans = nil, nil
+		it.customValues = nil
 	} else {
 		it.pBuckets, it.nBuckets = it.pBuckets[:0], it.nBuckets[:0]
 	}
@@ -1069,7 +1072,7 @@ func (it *floatHistogramIterator) Next() ValueType {
 	// The case for the 2nd sample with single deltas is implicitly handled correctly with the double delta code,
 	// so we don't need a separate single delta logic for the 2nd sample.
 
-	// Recycle bucket slices that have not been returned yet. Otherwise, copy them.
+	// Recycle bucket, span and custom value slices that have not been returned yet. Otherwise, copy them.
 	// We can always recycle the slices for leading and trailing bits as they are
 	// never returned to the caller.
 	if it.atFloatHistogramCalled {
@@ -1087,6 +1090,27 @@ func (it *floatHistogramIterator) Next() ValueType {
 			it.nBuckets = newBuckets
 		} else {
 			it.nBuckets = nil
+		}
+		if len(it.pSpans) > 0 {
+			newSpans := make([]histogram.Span, len(it.pSpans))
+			copy(newSpans, it.pSpans)
+			it.pSpans = newSpans
+		} else {
+			it.pSpans = nil
+		}
+		if len(it.nSpans) > 0 {
+			newSpans := make([]histogram.Span, len(it.nSpans))
+			copy(newSpans, it.nSpans)
+			it.nSpans = newSpans
+		} else {
+			it.nSpans = nil
+		}
+		if len(it.customValues) > 0 {
+			newCustomValues := make([]float64, len(it.customValues))
+			copy(newCustomValues, it.customValues)
+			it.customValues = newCustomValues
+		} else {
+			it.customValues = nil
 		}
 	}
 

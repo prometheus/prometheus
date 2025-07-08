@@ -21,9 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -59,7 +58,7 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 func TestUyuniSDHandleError(t *testing.T) {
 	var (
 		errTesting  = "unable to login to Uyuni API: request error: bad status code - 500"
-		respHandler = func(w http.ResponseWriter, r *http.Request) {
+		respHandler = func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Header().Set("Content-Type", "application/xml")
 			io.WriteString(w, ``)
@@ -75,7 +74,7 @@ func TestUyuniSDLogin(t *testing.T) {
 	var (
 		errTesting  = "unable to get the managed system groups information of monitored clients: request error: bad status code - 500"
 		call        = 0
-		respHandler = func(w http.ResponseWriter, r *http.Request) {
+		respHandler = func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/xml")
 			switch call {
 			case 0:
@@ -106,7 +105,7 @@ func TestUyuniSDLogin(t *testing.T) {
 func TestUyuniSDSkipLogin(t *testing.T) {
 	var (
 		errTesting  = "unable to get the managed system groups information of monitored clients: request error: bad status code - 500"
-		respHandler = func(w http.ResponseWriter, r *http.Request) {
+		respHandler = func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Header().Set("Content-Type", "application/xml")
 			io.WriteString(w, ``)

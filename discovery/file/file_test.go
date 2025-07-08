@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"sync"
 	"testing"
@@ -319,6 +320,9 @@ func valid2Tg(file string) []*targetgroup.Group {
 }
 
 func TestInitialUpdate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
+	}
 	for _, tc := range []string{
 		"fixtures/valid.yml",
 		"fixtures/valid.json",
@@ -363,6 +367,9 @@ func TestInvalidFile(t *testing.T) {
 }
 
 func TestNoopFileUpdate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
+	}
 	t.Parallel()
 
 	runner := newTestRunner(t)
@@ -381,6 +388,9 @@ func TestNoopFileUpdate(t *testing.T) {
 }
 
 func TestFileUpdate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
+	}
 	t.Parallel()
 
 	runner := newTestRunner(t)
@@ -399,6 +409,9 @@ func TestFileUpdate(t *testing.T) {
 }
 
 func TestInvalidFileUpdate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
+	}
 	t.Parallel()
 
 	runner := newTestRunner(t)
@@ -421,6 +434,9 @@ func TestInvalidFileUpdate(t *testing.T) {
 }
 
 func TestUpdateFileWithPartialWrites(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
+	}
 	t.Parallel()
 
 	runner := newTestRunner(t)

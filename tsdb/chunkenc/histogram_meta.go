@@ -558,26 +558,16 @@ func counterResetHint(crh CounterResetHeader, numRead uint16) histogram.CounterR
 		// In a counter histogram chunk, there will not be any counter
 		// resets after the first histogram.
 		return histogram.NotCounterReset
-	case crh == CounterReset:
-		// If the chunk was started because of a counter reset, we can
-		// safely return that hint. This histogram always has to be
-		// treated as a counter reset.
-		return histogram.CounterReset
 	default:
 		// Sadly, we have to return "unknown" as the hint for all other
-		// cases, even if we know that the chunk was started without a
+		// cases, even if we know that the chunk was started with or without a
 		// counter reset. But we cannot be sure that the previous chunk
-		// still exists in the TSDB, so we conservatively return
-		// "unknown". On the bright side, this case should be relatively
-		// rare.
+		// still exists in the TSDB, or if the previous chunk was added later
+		// by out of order or backfill, so we conservatively return "unknown".
 		//
-		// TODO(beorn7): Nevertheless, if the current chunk is in the
-		// middle of a block (not the first chunk in the block for this
-		// series), it's probably safe to assume that the previous chunk
-		// will exist in the TSDB for as long as the current chunk
-		// exist, and we could safely return
-		// "histogram.NotCounterReset". This needs some more work and
-		// might not be worth the effort and/or risk. To be vetted...
+		// TODO: If we can detect whether the previous and current chunk are
+		// actually consecutive then we could trust its hint:
+		// https://github.com/prometheus/prometheus/issues/15346.
 		return histogram.UnknownCounterReset
 	}
 }

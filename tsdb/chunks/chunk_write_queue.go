@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	// Minimum recorded peak since the last shrinking of chunkWriteQueue.chunkrefMap to shrink it again.
+	// Minimum recorded peak since the last shrinking of chunkWriteQueue.chunkRefMap to shrink it again.
 	chunkRefMapShrinkThreshold = 1000
 
 	// Minimum interval between shrinking of chunkWriteQueue.chunkRefMap.
@@ -88,10 +88,7 @@ func newChunkWriteQueue(reg prometheus.Registerer, size int, writeChunk writeChu
 		[]string{"operation"},
 	)
 
-	segmentSize := size
-	if segmentSize > maxChunkQueueSegmentSize {
-		segmentSize = maxChunkQueueSegmentSize
-	}
+	segmentSize := min(size, maxChunkQueueSegmentSize)
 
 	q := &chunkWriteQueue{
 		jobs:                  newWriteJobQueue(size, segmentSize),

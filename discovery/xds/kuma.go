@@ -14,15 +14,16 @@
 package xds
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -99,7 +100,7 @@ func (c *KumaSDConfig) SetDirectory(dir string) {
 func (c *KumaSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	logger := opts.Logger
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 
 	return NewKumaHTTPDiscovery(c, logger, opts.Metrics)
@@ -158,10 +159,10 @@ func kumaMadsV1ResourceParser(resources []*anypb.Any, typeURL string) ([]model.L
 	return targets, nil
 }
 
-func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (discovery.Discoverer, error) {
+func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (discovery.Discoverer, error) {
 	m, ok := metrics.(*xdsMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	// Default to "prometheus" if hostname is unavailable.
@@ -170,7 +171,7 @@ func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger, metrics discove
 		var err error
 		clientID, err = osutil.GetFQDN()
 		if err != nil {
-			level.Debug(logger).Log("msg", "error getting FQDN", "err", err)
+			logger.Debug("error getting FQDN", "err", err)
 			clientID = "prometheus"
 		}
 	}

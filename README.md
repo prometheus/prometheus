@@ -67,9 +67,9 @@ Prometheus will now be reachable at <http://localhost:9090/>.
 
 To build Prometheus from source code, You need:
 
-* Go [version 1.17 or greater](https://golang.org/doc/install).
-* NodeJS [version 16 or greater](https://nodejs.org/).
-* npm [version 7 or greater](https://www.npmjs.com/).
+* Go: Version specified in [go.mod](./go.mod) or greater.
+* NodeJS: Version specified in [.nvmrc](./web/ui/.nvmrc) or greater.
+* npm: Version 8 or greater (check with `npm --version` and [here](https://www.npmjs.com/)).
 
 Start by cloning the repository:
 
@@ -115,7 +115,7 @@ The Makefile provides several targets:
 
 Prometheus is bundled with many service discovery plugins.
 When building Prometheus from source, you can edit the [plugins.yml](./plugins.yml)
-file to disable some service discoveries. The file is a yaml-formated list of go
+file to disable some service discoveries. The file is a yaml-formatted list of go
 import path that will be built into the Prometheus binary.
 
 After you have changed the file, you
@@ -130,7 +130,6 @@ always, be extra careful when loading third party code.
 
 ### Building the Docker image
 
-The `make docker` target is designed for use in our CI system.
 You can build a docker image locally with the following commands:
 
 ```bash
@@ -139,6 +138,9 @@ promu crossbuild -p linux/amd64
 make npm_licenses
 make common-docker-amd64
 ```
+
+The `make docker` target is intended only for use in our CI system and will not
+produce a fully working image when run locally.
 
 ## Using Prometheus as a Go Library
 
@@ -158,8 +160,19 @@ This is experimental.
 ### Prometheus code base
 
 In order to comply with [go mod](https://go.dev/ref/mod#versions) rules,
-Prometheus release number do not exactly match Go module releases. For the
-Prometheus v2.y.z releases, we are publishing equivalent v0.y.z tags.
+Prometheus release number do not exactly match Go module releases.
+
+For the
+Prometheus v3.y.z releases, we are publishing equivalent v0.3y.z tags. The y in v0.3y.z is always padded to two digits, with a leading zero if needed.
+
+Therefore, a user that would want to use Prometheus v3.0.0 as a library could do:
+
+```shell
+go get github.com/prometheus/prometheus@v0.300.0
+```
+
+For the
+Prometheus v2.y.z releases, we published the equivalent v0.y.z tags.
 
 Therefore, a user that would want to use Prometheus v2.35.0 as a library could do:
 
@@ -177,7 +190,7 @@ For more information on building, running, and developing on the React-based UI,
 
 ## More information
 
-* Godoc documentation is available via [pkg.go.dev](https://pkg.go.dev/github.com/prometheus/prometheus). Due to peculiarities of Go Modules, v2.x.y will be displayed as v0.x.y.
+* Godoc documentation is available via [pkg.go.dev](https://pkg.go.dev/github.com/prometheus/prometheus). Due to peculiarities of Go Modules, v3.y.z will be displayed as v0.3y.z (the y in v0.3y.z is always padded to two digits, with a leading zero if needed), while v2.y.z will be displayed as v0.y.z.
 * See the [Community page](https://prometheus.io/community) for how to reach the Prometheus developers and users on various communication channels.
 
 ## Contributing

@@ -20,6 +20,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path"
 	"runtime/pprof"
 	"sort"
 	"strconv"
@@ -28,13 +29,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
-	"github.com/golang/snappy"
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
@@ -48,6 +48,8 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -133,7 +135,7 @@ func TestBasicContentNegotiation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, true)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
 			defer s.Close()
 
 			var (
@@ -241,7 +243,7 @@ func TestSampleDelivery(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("%s-%s", tc.protoMsg, tc.name), func(t *testing.T) {
 			dir := t.TempDir()
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, true)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
 			defer s.Close()
 
 			var (
@@ -340,10 +342,10 @@ func TestMetadataDelivery(t *testing.T) {
 	numMetadata := 1532
 	for i := 0; i < numMetadata; i++ {
 		metadata = append(metadata, scrape.MetricMetadata{
-			Metric: "prometheus_remote_storage_sent_metadata_bytes_total_" + strconv.Itoa(i),
-			Type:   model.MetricTypeCounter,
-			Help:   "a nice help text",
-			Unit:   "",
+			MetricFamily: "prometheus_remote_storage_sent_metadata_bytes_" + strconv.Itoa(i),
+			Type:         model.MetricTypeCounter,
+			Help:         "a nice help text",
+			Unit:         "",
 		})
 	}
 
@@ -351,16 +353,16 @@ func TestMetadataDelivery(t *testing.T) {
 
 	require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedMetadataTotal))
 	require.Len(t, c.receivedMetadata, numMetadata)
-	// One more write than the rounded qoutient should be performed in order to get samples that didn't
+	// One more write than the rounded quotient should be performed in order to get samples that didn't
 	// fit into MaxSamplesPerSend.
 	require.Equal(t, numMetadata/config.DefaultMetadataConfig.MaxSamplesPerSend+1, c.writesReceived)
 	// Make sure the last samples were sent.
-	require.Equal(t, c.receivedMetadata[metadata[len(metadata)-1].Metric][0].MetricFamilyName, metadata[len(metadata)-1].Metric)
+	require.Equal(t, c.receivedMetadata[metadata[len(metadata)-1].MetricFamily][0].MetricFamilyName, metadata[len(metadata)-1].MetricFamily)
 }
 
 func TestWALMetadataDelivery(t *testing.T) {
 	dir := t.TempDir()
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, true)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
 	defer s.Close()
 
 	cfg := config.DefaultQueueConfig
@@ -759,11 +761,11 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		metrics = newQueueManagerMetrics(nil, "", "")
 
 		client = &MockWriteClient{
-			StoreFunc: func(ctx context.Context, b []byte, i int) (WriteResponseStats, error) {
+			StoreFunc: func(_ context.Context, _ []byte, _ int) (WriteResponseStats, error) {
 				onStoreCalled()
 
 				return WriteResponseStats{}, RecoverableError{
-					error:      fmt.Errorf("fake error"),
+					error:      errors.New("fake error"),
 					retryAfter: model.Duration(retryAfter),
 				}
 			},
@@ -837,7 +839,7 @@ func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([
 	return samples, series
 }
 
-func createProtoTimeseriesWithOld(numSamples, baseTs int64, extraLabels ...labels.Label) []prompb.TimeSeries {
+func createProtoTimeseriesWithOld(numSamples, baseTs int64, _ ...labels.Label) []prompb.TimeSeries {
 	samples := make([]prompb.TimeSeries, numSamples)
 	// use a fixed rand source so tests are consistent
 	r := rand.New(rand.NewSource(99))
@@ -930,7 +932,7 @@ func createHistograms(numSamples, numSeries int, floatHistogram bool) ([]record.
 }
 
 func createSeriesMetadata(series []record.RefSeries) []record.RefMetadata {
-	metas := make([]record.RefMetadata, len(series))
+	metas := make([]record.RefMetadata, 0, len(series))
 
 	for _, s := range series {
 		metas = append(metas, record.RefMetadata{
@@ -961,7 +963,6 @@ type TestWriteClient struct {
 	receivedMetadata        map[string][]prompb.MetricMetadata
 	writesReceived          int
 	mtx                     sync.Mutex
-	buf                     []byte
 	protoMsg                config.RemoteWriteProtoMsg
 	injectedErrs            []error
 	currErr                 int
@@ -1117,13 +1118,8 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) (WriteResp
 	if c.returnError != nil {
 		return WriteResponseStats{}, c.returnError
 	}
-	// nil buffers are ok for snappy, ignore cast error.
-	if c.buf != nil {
-		c.buf = c.buf[:cap(c.buf)]
-	}
 
-	reqBuf, err := snappy.Decode(c.buf, req)
-	c.buf = reqBuf
+	reqBuf, err := compression.Decode(compression.Snappy, req, nil)
 	if err != nil {
 		return WriteResponseStats{}, err
 	}
@@ -1326,21 +1322,25 @@ func BenchmarkSampleSend(b *testing.B) {
 	cfg.MaxShards = 20
 
 	// todo: test with new proto type(s)
-	m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, config.RemoteWriteProtoMsgV1)
-	m.StoreSeries(series, 0)
+	for _, format := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		b.Run(string(format), func(b *testing.B) {
+			m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, format)
+			m.StoreSeries(series, 0)
 
-	// These should be received by the client.
-	m.Start()
-	defer m.Stop()
+			// These should be received by the client.
+			m.Start()
+			defer m.Stop()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		m.Append(samples)
-		m.UpdateSeriesSegment(series, i+1) // simulate what wlog.Watcher.garbageCollectSeries does
-		m.SeriesReset(i + 1)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				m.Append(samples)
+				m.UpdateSeriesSegment(series, i+1) // simulate what wlog.Watcher.garbageCollectSeries does
+				m.SeriesReset(i + 1)
+			}
+			// Do not include shutdown
+			b.StopTimer()
+		})
 	}
-	// Do not include shutdown
-	b.StopTimer()
 }
 
 // Check how long it takes to add N series, including external labels processing.
@@ -1403,31 +1403,32 @@ func BenchmarkStartup(b *testing.B) {
 
 	// Find the second largest segment; we will replay up to this.
 	// (Second largest as WALWatcher will start tailing the largest).
-	dirents, err := os.ReadDir(dir)
+	dirents, err := os.ReadDir(path.Join(dir, "wal"))
 	require.NoError(b, err)
 
 	var segments []int
 	for _, dirent := range dirents {
-		if i, err := strconv.Atoi(dirent.Name()); err != nil {
+		if i, err := strconv.Atoi(dirent.Name()); err == nil {
 			segments = append(segments, i)
 		}
 	}
 	sort.Ints(segments)
 
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
-	logger = log.With(logger, "caller", log.DefaultCaller)
+	logger := promslog.New(&promslog.Config{})
 
 	cfg := testDefaultQueueConfig()
 	mcfg := config.DefaultMetadataConfig
 	for n := 0; n < b.N; n++ {
 		metrics := newQueueManagerMetrics(nil, "", "")
+		watcherMetrics := wlog.NewWatcherMetrics(nil)
 		c := NewTestBlockedWriteClient()
 		// todo: test with new proto type(s)
-		m := NewQueueManager(metrics, nil, nil, logger, dir,
+		m := NewQueueManager(metrics, watcherMetrics, nil, logger, dir,
 			newEWMARate(ewmaWeight, shardUpdateDuration),
 			cfg, mcfg, labels.EmptyLabels(), nil, c, 1*time.Minute, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
 		m.watcher.SetStartTime(timestamp.Time(math.MaxInt64))
 		m.watcher.MaxSegment = segments[len(segments)-2]
+		m.watcher.SetMetrics()
 		err := m.watcher.Run()
 		require.NoError(b, err)
 	}
@@ -1849,9 +1850,9 @@ func createDummyTimeSeries(instances int) []timeSeries {
 }
 
 func BenchmarkBuildWriteRequest(b *testing.B) {
-	noopLogger := log.NewNopLogger()
+	noopLogger := promslog.NewNopLogger()
 	bench := func(b *testing.B, batch []timeSeries) {
-		buff := make([]byte, 0)
+		cEnc := compression.NewSyncEncodeBuffer()
 		seriesBuff := make([]prompb.TimeSeries, len(batch))
 		for i := range seriesBuff {
 			seriesBuff[i].Samples = []prompb.Sample{{}}
@@ -1859,17 +1860,10 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 		}
 		pBuf := proto.NewBuffer(nil)
 
-		// Warmup buffers
-		for i := 0; i < 10; i++ {
-			populateTimeSeries(batch, seriesBuff, true, true)
-			buildWriteRequest(noopLogger, seriesBuff, nil, pBuf, &buff, nil, "snappy")
-		}
-
-		b.ResetTimer()
 		totalSize := 0
 		for i := 0; i < b.N; i++ {
 			populateTimeSeries(batch, seriesBuff, true, true)
-			req, _, _, err := buildWriteRequest(noopLogger, seriesBuff, nil, pBuf, &buff, nil, "snappy")
+			req, _, _, err := buildWriteRequest(noopLogger, seriesBuff, nil, pBuf, nil, cEnc, compression.Snappy)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -1896,70 +1890,72 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 }
 
 func BenchmarkBuildV2WriteRequest(b *testing.B) {
-	noopLogger := log.NewNopLogger()
-	type testcase struct {
-		batch []timeSeries
-	}
-	testCases := []testcase{
-		{createDummyTimeSeries(2)},
-		{createDummyTimeSeries(10)},
-		{createDummyTimeSeries(100)},
-	}
-	for _, tc := range testCases {
+	noopLogger := promslog.NewNopLogger()
+	bench := func(b *testing.B, batch []timeSeries) {
 		symbolTable := writev2.NewSymbolTable()
-		buff := make([]byte, 0)
-		seriesBuff := make([]writev2.TimeSeries, len(tc.batch))
+		cEnc := compression.NewSyncEncodeBuffer()
+		seriesBuff := make([]writev2.TimeSeries, len(batch))
 		for i := range seriesBuff {
 			seriesBuff[i].Samples = []writev2.Sample{{}}
 			seriesBuff[i].Exemplars = []writev2.Exemplar{{}}
 		}
 		pBuf := []byte{}
 
-		// Warmup buffers
-		for i := 0; i < 10; i++ {
-			populateV2TimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
-			buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, &buff, nil, "snappy")
-		}
-
-		b.Run(fmt.Sprintf("%d-instances", len(tc.batch)), func(b *testing.B) {
-			totalSize := 0
-			for j := 0; j < b.N; j++ {
-				populateV2TimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
-				b.ResetTimer()
-				req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, &buff, nil, "snappy")
-				if err != nil {
-					b.Fatal(err)
-				}
-				symbolTable.Reset()
-				totalSize += len(req)
-				b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
+		totalSize := 0
+		for i := 0; i < b.N; i++ {
+			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true)
+			req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, nil, cEnc, "snappy")
+			if err != nil {
+				b.Fatal(err)
 			}
-		})
+			totalSize += len(req)
+			b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
+		}
 	}
+
+	twoBatch := createDummyTimeSeries(2)
+	tenBatch := createDummyTimeSeries(10)
+	hundredBatch := createDummyTimeSeries(100)
+
+	b.Run("2 instances", func(b *testing.B) {
+		bench(b, twoBatch)
+	})
+
+	b.Run("10 instances", func(b *testing.B) {
+		bench(b, tenBatch)
+	})
+
+	b.Run("1k instances", func(b *testing.B) {
+		bench(b, hundredBatch)
+	})
 }
 
 func TestDropOldTimeSeries(t *testing.T) {
-	size := 10
-	nSeries := 6
-	nSamples := config.DefaultQueueConfig.Capacity * size
-	samples, newSamples, series := createTimeseriesWithOldSamples(nSamples, nSeries)
+	// Test both v1 and v2 remote write protocols
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			size := 10
+			nSeries := 6
+			nSamples := config.DefaultQueueConfig.Capacity * size
+			samples, newSamples, series := createTimeseriesWithOldSamples(nSamples, nSeries)
 
-	// TODO(alexg): test with new version
-	c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
-	c.expectSamples(newSamples, series)
+			c := NewTestWriteClient(protoMsg)
+			c.expectSamples(newSamples, series)
 
-	cfg := config.DefaultQueueConfig
-	mcfg := config.DefaultMetadataConfig
-	cfg.MaxShards = 1
-	cfg.SampleAgeLimit = model.Duration(60 * time.Second)
-	m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, config.RemoteWriteProtoMsgV1)
-	m.StoreSeries(series, 0)
+			cfg := config.DefaultQueueConfig
+			mcfg := config.DefaultMetadataConfig
+			cfg.MaxShards = 1
+			cfg.SampleAgeLimit = model.Duration(60 * time.Second)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m.StoreSeries(series, 0)
 
-	m.Start()
-	defer m.Stop()
+			m.Start()
+			defer m.Stop()
 
-	m.Append(samples)
-	c.waitForExpectedData(t, 30*time.Second)
+			m.Append(samples)
+			c.waitForExpectedData(t, 30*time.Second)
+		})
+	}
 }
 
 func TestIsSampleOld(t *testing.T) {
@@ -2079,7 +2075,7 @@ func createTimeseriesWithOldSamples(numSamples, numSeries int, extraLabels ...la
 		for j := 0; j < numSamples/2; j++ {
 			sample := record.RefSample{
 				Ref: chunks.HeadSeriesRef(i),
-				T:   int64(int(time.Now().UnixMilli()) + j),
+				T:   time.Now().UnixMilli() + int64(j),
 				V:   float64(i),
 			}
 			samples = append(samples, sample)

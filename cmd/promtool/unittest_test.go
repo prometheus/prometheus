@@ -26,6 +26,7 @@ import (
 )
 
 func TestRulesUnitTest(t *testing.T) {
+	t.Parallel()
 	type args struct {
 		files []string
 	}
@@ -141,14 +142,16 @@ func TestRulesUnitTest(t *testing.T) {
 			reuseCount[tt.want] += len(tt.args.files)
 		}
 		t.Run(tt.name, func(t *testing.T) {
-			if got := RulesUnitTest(tt.queryOpts, nil, false, tt.args.files...); got != tt.want {
+			t.Parallel()
+			if got := RulesUnitTest(tt.queryOpts, nil, false, false, false, tt.args.files...); got != tt.want {
 				t.Errorf("RulesUnitTest() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 	t.Run("Junit xml output ", func(t *testing.T) {
+		t.Parallel()
 		var buf bytes.Buffer
-		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, reuseFiles...); got != 1 {
+		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, reuseFiles...); got != 1 {
 			t.Errorf("RulesUnitTestResults() = %v, want 1", got)
 		}
 		var test junitxml.JUnitXML
@@ -185,15 +188,17 @@ func TestRulesUnitTest(t *testing.T) {
 }
 
 func TestRulesUnitTestRun(t *testing.T) {
+	t.Parallel()
 	type args struct {
 		run   []string
 		files []string
 	}
 	tests := []struct {
-		name      string
-		args      args
-		queryOpts promqltest.LazyLoaderOpts
-		want      int
+		name                string
+		args                args
+		queryOpts           promqltest.LazyLoaderOpts
+		want                int
+		ignoreUnknownFields bool
 	}{
 		{
 			name: "Test all without run arg",
@@ -227,10 +232,42 @@ func TestRulesUnitTestRun(t *testing.T) {
 			},
 			want: 1,
 		},
+		{
+			name: "Test all with extra fields",
+			args: args{
+				files: []string{"./testdata/rules_run_extrafields.yml"},
+			},
+			ignoreUnknownFields: true,
+			want:                0,
+		},
+		{
+			name: "Test precise floating point comparison expected failure",
+			args: args{
+				files: []string{"./testdata/rules_run_no_fuzzy.yml"},
+			},
+			want: 1,
+		},
+		{
+			name: "Test fuzzy floating point comparison correct match",
+			args: args{
+				run:   []string{"correct"},
+				files: []string{"./testdata/rules_run_fuzzy.yml"},
+			},
+			want: 0,
+		},
+		{
+			name: "Test fuzzy floating point comparison wrong match",
+			args: args{
+				run:   []string{"wrong"},
+				files: []string{"./testdata/rules_run_fuzzy.yml"},
+			},
+			want: 1,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := RulesUnitTest(tt.queryOpts, tt.args.run, false, tt.args.files...)
+			t.Parallel()
+			got := RulesUnitTest(tt.queryOpts, tt.args.run, false, false, tt.ignoreUnknownFields, tt.args.files...)
 			require.Equal(t, tt.want, got)
 		})
 	}

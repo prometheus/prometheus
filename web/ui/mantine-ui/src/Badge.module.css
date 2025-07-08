@@ -1,0 +1,76 @@
+.statsBadge {
+  background-color: light-dark(
+    var(--mantine-color-gray-1),
+    var(--mantine-color-gray-8)
+  );
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-5));
+}
+
+.labelBadge {
+  background-color: light-dark(
+    var(--mantine-color-gray-1),
+    var(--mantine-color-gray-8)
+  );
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-5));
+
+  /* We have all these manual styles here because we manually build label badges in the
+     same style as the Mantine ones, but with just one DOM element instead of two. This
+     is important because we have pages with thousands of labels and care about their
+     performance more than other badges. We also don't require icons for label badges,
+     so we can get away with more simplicity and less computation overall. */
+  border-radius: calc(62.5rem * var(--mantine-scale));
+  font-size: calc(0.6875rem * var(--mantine-scale));
+  font-weight: 700;
+  padding: 0 calc(0.625rem * var(--mantine-scale));
+  border: calc(0.0625rem * var(--mantine-scale)) solid transparent;
+  line-height: calc(
+    calc(1.25rem * var(--mantine-scale)) - calc(0.125rem * var(--mantine-scale))
+  );
+  height: calc(1.25rem * var(--mantine-scale));
+  letter-spacing: calc(0.015625rem * var(--mantine-scale));
+  white-space: nowrap;
+  width: fit-content;
+}
+
+.healthOk {
+  background-color: light-dark(
+    var(--mantine-color-green-1),
+    var(--mantine-color-green-9)
+  );
+  color: light-dark(var(--mantine-color-green-9), var(--mantine-color-green-1));
+}
+
+.healthErr {
+  background-color: light-dark(
+    var(--mantine-color-red-1),
+    darken(var(--mantine-color-red-9), 0.25)
+  );
+  color: light-dark(var(--mantine-color-red-9), var(--mantine-color-red-1));
+}
+
+.healthWarn {
+  background-color: light-dark(
+    var(--mantine-color-yellow-1),
+    var(--mantine-color-yellow-9)
+  );
+  color: light-dark(
+    var(--mantine-color-yellow-9),
+    var(--mantine-color-yellow-1)
+  );
+}
+
+.healthInfo {
+  background-color: light-dark(
+    var(--mantine-color-blue-1),
+    var(--mantine-color-blue-9)
+  );
+  color: light-dark(var(--mantine-color-blue-9), var(--mantine-color-blue-1));
+}
+
+.healthUnknown {
+  background-color: light-dark(
+    var(--mantine-color-gray-2),
+    var(--mantine-color-gray-7)
+  );
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-4));
+}

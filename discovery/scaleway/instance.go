@@ -35,28 +35,30 @@ import (
 const (
 	instanceLabelPrefix = metaLabelPrefix + "instance_"
 
-	instanceBootTypeLabel          = instanceLabelPrefix + "boot_type"
-	instanceHostnameLabel          = instanceLabelPrefix + "hostname"
-	instanceIDLabel                = instanceLabelPrefix + "id"
-	instanceImageArchLabel         = instanceLabelPrefix + "image_arch"
-	instanceImageIDLabel           = instanceLabelPrefix + "image_id"
-	instanceImageNameLabel         = instanceLabelPrefix + "image_name"
-	instanceLocationClusterID      = instanceLabelPrefix + "location_cluster_id"
-	instanceLocationHypervisorID   = instanceLabelPrefix + "location_hypervisor_id"
-	instanceLocationNodeID         = instanceLabelPrefix + "location_node_id"
-	instanceNameLabel              = instanceLabelPrefix + "name"
-	instanceOrganizationLabel      = instanceLabelPrefix + "organization_id"
-	instancePrivateIPv4Label       = instanceLabelPrefix + "private_ipv4"
-	instanceProjectLabel           = instanceLabelPrefix + "project_id"
-	instancePublicIPv4Label        = instanceLabelPrefix + "public_ipv4"
-	instancePublicIPv6Label        = instanceLabelPrefix + "public_ipv6"
-	instanceSecurityGroupIDLabel   = instanceLabelPrefix + "security_group_id"
-	instanceSecurityGroupNameLabel = instanceLabelPrefix + "security_group_name"
-	instanceStateLabel             = instanceLabelPrefix + "status"
-	instanceTagsLabel              = instanceLabelPrefix + "tags"
-	instanceTypeLabel              = instanceLabelPrefix + "type"
-	instanceZoneLabel              = instanceLabelPrefix + "zone"
-	instanceRegionLabel            = instanceLabelPrefix + "region"
+	instanceBootTypeLabel            = instanceLabelPrefix + "boot_type"
+	instanceHostnameLabel            = instanceLabelPrefix + "hostname"
+	instanceIDLabel                  = instanceLabelPrefix + "id"
+	instanceImageArchLabel           = instanceLabelPrefix + "image_arch"
+	instanceImageIDLabel             = instanceLabelPrefix + "image_id"
+	instanceImageNameLabel           = instanceLabelPrefix + "image_name"
+	instanceLocationClusterID        = instanceLabelPrefix + "location_cluster_id"
+	instanceLocationHypervisorID     = instanceLabelPrefix + "location_hypervisor_id"
+	instanceLocationNodeID           = instanceLabelPrefix + "location_node_id"
+	instanceNameLabel                = instanceLabelPrefix + "name"
+	instanceOrganizationLabel        = instanceLabelPrefix + "organization_id"
+	instancePrivateIPv4Label         = instanceLabelPrefix + "private_ipv4"
+	instanceProjectLabel             = instanceLabelPrefix + "project_id"
+	instancePublicIPv4Label          = instanceLabelPrefix + "public_ipv4"
+	instancePublicIPv6Label          = instanceLabelPrefix + "public_ipv6"
+	instancePublicIPv4AddressesLabel = instanceLabelPrefix + "public_ipv4_addresses"
+	instancePublicIPv6AddressesLabel = instanceLabelPrefix + "public_ipv6_addresses"
+	instanceSecurityGroupIDLabel     = instanceLabelPrefix + "security_group_id"
+	instanceSecurityGroupNameLabel   = instanceLabelPrefix + "security_group_name"
+	instanceStateLabel               = instanceLabelPrefix + "status"
+	instanceTagsLabel                = instanceLabelPrefix + "tags"
+	instanceTypeLabel                = instanceLabelPrefix + "type"
+	instanceZoneLabel                = instanceLabelPrefix + "zone"
+	instanceRegionLabel              = instanceLabelPrefix + "region"
 )
 
 type instanceDiscovery struct {
@@ -104,7 +106,7 @@ func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 			Transport: rt,
 			Timeout:   time.Duration(conf.RefreshInterval),
 		}),
-		scw.WithUserAgent(fmt.Sprintf("Prometheus/%s", version.Version)),
+		scw.WithUserAgent(version.PrometheusUserAgent()),
 		scw.WithProfile(profile),
 	)
 	if err != nil {
@@ -175,14 +177,43 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 		}
 
 		addr := ""
+		if len(server.PublicIPs) > 0 {
+			var ipv4Addresses []string
+			var ipv6Addresses []string
+
+			for _, ip := range server.PublicIPs {
+				switch ip.Family {
+				case instance.ServerIPIPFamilyInet:
+					ipv4Addresses = append(ipv4Addresses, ip.Address.String())
+				case instance.ServerIPIPFamilyInet6:
+					ipv6Addresses = append(ipv6Addresses, ip.Address.String())
+				}
+			}
+
+			if len(ipv6Addresses) > 0 {
+				labels[instancePublicIPv6AddressesLabel] = model.LabelValue(
+					separator +
+						strings.Join(ipv6Addresses, separator) +
+						separator)
+			}
+			if len(ipv4Addresses) > 0 {
+				labels[instancePublicIPv4AddressesLabel] = model.LabelValue(
+					separator +
+						strings.Join(ipv4Addresses, separator) +
+						separator)
+			}
+		}
+
 		if server.IPv6 != nil { //nolint:staticcheck
 			labels[instancePublicIPv6Label] = model.LabelValue(server.IPv6.Address.String()) //nolint:staticcheck
 			addr = server.IPv6.Address.String()                                              //nolint:staticcheck
 		}
 
 		if server.PublicIP != nil { //nolint:staticcheck
-			labels[instancePublicIPv4Label] = model.LabelValue(server.PublicIP.Address.String()) //nolint:staticcheck
-			addr = server.PublicIP.Address.String()                                              //nolint:staticcheck
+			if server.PublicIP.Family != instance.ServerIPIPFamilyInet6 { //nolint:staticcheck
+				labels[instancePublicIPv4Label] = model.LabelValue(server.PublicIP.Address.String()) //nolint:staticcheck
+			}
+			addr = server.PublicIP.Address.String() //nolint:staticcheck
 		}
 
 		if server.PrivateIP != nil {

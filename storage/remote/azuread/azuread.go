@@ -16,28 +16,28 @@ package azuread
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/grafana/regexp"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/google/uuid"
+	"github.com/grafana/regexp"
 )
 
+// Clouds.
 const (
-	// Clouds.
 	AzureChina      = "AzureChina"
 	AzureGovernment = "AzureGovernment"
 	AzurePublic     = "AzurePublic"
+)
 
-	// Audiences.
+// Audiences.
+const (
 	IngestionChinaAudience      = "https://monitor.azure.cn//.default"
 	IngestionGovernmentAudience = "https://monitor.azure.us//.default"
 	IngestionPublicAudience     = "https://monitor.azure.com//.default"
@@ -108,55 +108,53 @@ func (c *AzureADConfig) Validate() error {
 	}
 
 	if c.Cloud != AzureChina && c.Cloud != AzureGovernment && c.Cloud != AzurePublic {
-		return fmt.Errorf("must provide a cloud in the Azure AD config")
+		return errors.New("must provide a cloud in the Azure AD config")
 	}
 
 	if c.ManagedIdentity == nil && c.OAuth == nil && c.SDK == nil {
-		return fmt.Errorf("must provide an Azure Managed Identity, Azure OAuth or Azure SDK in the Azure AD config")
+		return errors.New("must provide an Azure Managed Identity, Azure OAuth or Azure SDK in the Azure AD config")
 	}
 
 	if c.ManagedIdentity != nil && c.OAuth != nil {
-		return fmt.Errorf("cannot provide both Azure Managed Identity and Azure OAuth in the Azure AD config")
+		return errors.New("cannot provide both Azure Managed Identity and Azure OAuth in the Azure AD config")
 	}
 
 	if c.ManagedIdentity != nil && c.SDK != nil {
-		return fmt.Errorf("cannot provide both Azure Managed Identity and Azure SDK in the Azure AD config")
+		return errors.New("cannot provide both Azure Managed Identity and Azure SDK in the Azure AD config")
 	}
 
 	if c.OAuth != nil && c.SDK != nil {
-		return fmt.Errorf("cannot provide both Azure OAuth and Azure SDK in the Azure AD config")
+		return errors.New("cannot provide both Azure OAuth and Azure SDK in the Azure AD config")
 	}
 
 	if c.ManagedIdentity != nil {
-		if c.ManagedIdentity.ClientID == "" {
-			return fmt.Errorf("must provide an Azure Managed Identity client_id in the Azure AD config")
-		}
-
-		_, err := uuid.Parse(c.ManagedIdentity.ClientID)
-		if err != nil {
-			return fmt.Errorf("the provided Azure Managed Identity client_id is invalid")
+		if c.ManagedIdentity.ClientID != "" {
+			_, err := uuid.Parse(c.ManagedIdentity.ClientID)
+			if err != nil {
+				return errors.New("the provided Azure Managed Identity client_id is invalid")
+			}
 		}
 	}
 
 	if c.OAuth != nil {
 		if c.OAuth.ClientID == "" {
-			return fmt.Errorf("must provide an Azure OAuth client_id in the Azure AD config")
+			return errors.New("must provide an Azure OAuth client_id in the Azure AD config")
 		}
 		if c.OAuth.ClientSecret == "" {
-			return fmt.Errorf("must provide an Azure OAuth client_secret in the Azure AD config")
+			return errors.New("must provide an Azure OAuth client_secret in the Azure AD config")
 		}
 		if c.OAuth.TenantID == "" {
-			return fmt.Errorf("must provide an Azure OAuth tenant_id in the Azure AD config")
+			return errors.New("must provide an Azure OAuth tenant_id in the Azure AD config")
 		}
 
 		var err error
 		_, err = uuid.Parse(c.OAuth.ClientID)
 		if err != nil {
-			return fmt.Errorf("the provided Azure OAuth client_id is invalid")
+			return errors.New("the provided Azure OAuth client_id is invalid")
 		}
 		_, err = regexp.MatchString("^[0-9a-zA-Z-.]+$", c.OAuth.TenantID)
 		if err != nil {
-			return fmt.Errorf("the provided Azure OAuth tenant_id is invalid")
+			return errors.New("the provided Azure OAuth tenant_id is invalid")
 		}
 	}
 
@@ -166,7 +164,7 @@ func (c *AzureADConfig) Validate() error {
 		if c.SDK.TenantID != "" {
 			_, err = regexp.MatchString("^[0-9a-zA-Z-.]+$", c.SDK.TenantID)
 			if err != nil {
-				return fmt.Errorf("the provided Azure OAuth tenant_id is invalid")
+				return errors.New("the provided Azure OAuth tenant_id is invalid")
 			}
 		}
 	}
@@ -268,8 +266,13 @@ func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
 
 // newManagedIdentityTokenCredential returns new Managed Identity token credential.
 func newManagedIdentityTokenCredential(clientOpts *azcore.ClientOptions, managedIdentityConfig *ManagedIdentityConfig) (azcore.TokenCredential, error) {
-	clientID := azidentity.ClientID(managedIdentityConfig.ClientID)
-	opts := &azidentity.ManagedIdentityCredentialOptions{ClientOptions: *clientOpts, ID: clientID}
+	var opts *azidentity.ManagedIdentityCredentialOptions
+	if managedIdentityConfig.ClientID != "" {
+		clientID := azidentity.ClientID(managedIdentityConfig.ClientID)
+		opts = &azidentity.ManagedIdentityCredentialOptions{ClientOptions: *clientOpts, ID: clientID}
+	} else {
+		opts = &azidentity.ManagedIdentityCredentialOptions{ClientOptions: *clientOpts}
+	}
 	return azidentity.NewManagedIdentityCredential(opts)
 }
 
@@ -348,11 +351,10 @@ func (tokenProvider *tokenProvider) getToken(ctx context.Context) error {
 func (tokenProvider *tokenProvider) updateRefreshTime(accessToken azcore.AccessToken) error {
 	tokenExpiryTimestamp := accessToken.ExpiresOn.UTC()
 	deltaExpirytime := time.Now().Add(time.Until(tokenExpiryTimestamp) / 2)
-	if deltaExpirytime.After(time.Now().UTC()) {
-		tokenProvider.refreshTime = deltaExpirytime
-	} else {
+	if !deltaExpirytime.After(time.Now().UTC()) {
 		return errors.New("access token expiry is less than the current time")
 	}
+	tokenProvider.refreshTime = deltaExpirytime
 	return nil
 }
 

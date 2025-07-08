@@ -14,7 +14,7 @@
 package textparse
 
 import (
-	"errors"
+	"fmt"
 	"io"
 	"testing"
 
@@ -69,294 +69,608 @@ testmetric{label="\"bar\""} 1
 # HELP foo Counter with and without labels to certify CT is parsed for both cases
 # TYPE foo counter
 foo_total 17.0 1520879607.789 # {id="counter-test"} 5
-foo_created 1000
+foo_created 1520872607.123
 foo_total{a="b"} 17.0 1520879607.789 # {id="counter-test"} 5
-foo_created{a="b"} 1000
+foo_created{a="b"} 1520872607.123
+foo_total{le="c"} 21.0
+foo_created{le="c"} 1520872621.123
+foo_total{le="1"} 10.0
 # HELP bar Summary with CT at the end, making sure we find CT even if it's multiple lines a far
 # TYPE bar summary
 bar_count 17.0
 bar_sum 324789.3
 bar{quantile="0.95"} 123.7
 bar{quantile="0.99"} 150.0
-bar_created 1520430000
+bar_created 1520872608.124
 # HELP baz Histogram with the same objective as above's summary
 # TYPE baz histogram
 baz_bucket{le="0.0"} 0
 baz_bucket{le="+Inf"} 17
 baz_count 17
 baz_sum 324789.3
-baz_created 1520430000
+baz_created 1520872609.125
 # HELP fizz_created Gauge which shouldn't be parsed as CT
 # TYPE fizz_created gauge
-fizz_created 17.0`
+fizz_created 17.0
+# HELP something Histogram with _created between buckets and summary
+# TYPE something histogram
+something_count 18
+something_sum 324789.4
+something_created 1520430001
+something_bucket{le="0.0"} 1
+something_bucket{le="1"} 2
+something_bucket{le="+Inf"} 18
+# HELP yum Summary with _created between sum and quantiles
+# TYPE yum summary
+yum_count 20
+yum_sum 324789.5
+yum_created 1520430003
+yum{quantile="0.95"} 123.7
+yum{quantile="0.99"} 150.0
+# HELP foobar Summary with _created as the first line
+# TYPE foobar summary
+foobar_count 21
+foobar_created 1520430004
+foobar_sum 324789.6
+foobar{quantile="0.95"} 123.8
+foobar{quantile="0.99"} 150.1`
 
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
 	input += "\n# EOF\n"
 
-	exp := []expectedParse{
-		{
-			m:    "go_gc_duration_seconds",
-			help: "A summary of the GC invocation durations.",
-		}, {
-			m:   "go_gc_duration_seconds",
-			typ: model.MetricTypeSummary,
-		}, {
-			m:    "go_gc_duration_seconds",
-			unit: "seconds",
-		}, {
-			m:    `go_gc_duration_seconds{quantile="0"}`,
-			v:    4.9351e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0"),
-		}, {
-			m:    `go_gc_duration_seconds{quantile="0.25"}`,
-			v:    7.424100000000001e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.25"),
-		}, {
-			m:    `go_gc_duration_seconds{quantile="0.5",a="b"}`,
-			v:    8.3835e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.5", "a", "b"),
-		}, {
-			m:    "nohelp1",
-			help: "",
-		}, {
-			m:    "help2",
-			help: "escape \\ \n \\ \" \\x chars",
-		}, {
-			m:    "nounit",
-			unit: "",
-		}, {
-			m:    `go_gc_duration_seconds{quantile="1.0",a="b"}`,
-			v:    8.3835e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
-		}, {
-			m:    `go_gc_duration_seconds_count`,
-			v:    99,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds_count"),
-		}, {
-			m:    `some:aggregate:rate5m{a_b="c"}`,
-			v:    1,
-			lset: labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"),
-		}, {
-			m:    "go_goroutines",
-			help: "Number of goroutines that currently exist.",
-		}, {
-			m:   "go_goroutines",
-			typ: model.MetricTypeGauge,
-		}, {
-			m:    `go_goroutines`,
-			v:    33,
-			t:    int64p(123123),
-			lset: labels.FromStrings("__name__", "go_goroutines"),
-		}, {
-			m:   "hh",
-			typ: model.MetricTypeHistogram,
-		}, {
-			m:    `hh_bucket{le="+Inf"}`,
-			v:    1,
-			lset: labels.FromStrings("__name__", "hh_bucket", "le", "+Inf"),
-		}, {
-			m:   "gh",
-			typ: model.MetricTypeGaugeHistogram,
-		}, {
-			m:    `gh_bucket{le="+Inf"}`,
-			v:    1,
-			lset: labels.FromStrings("__name__", "gh_bucket", "le", "+Inf"),
-		}, {
-			m:   "hhh",
-			typ: model.MetricTypeHistogram,
-		}, {
-			m:    `hhh_bucket{le="+Inf"}`,
-			v:    1,
-			lset: labels.FromStrings("__name__", "hhh_bucket", "le", "+Inf"),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "histogram-bucket-test"), Value: 4},
-		}, {
-			m:    `hhh_count`,
-			v:    1,
-			lset: labels.FromStrings("__name__", "hhh_count"),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "histogram-count-test"), Value: 4},
-		}, {
-			m:   "ggh",
-			typ: model.MetricTypeGaugeHistogram,
-		}, {
-			m:    `ggh_bucket{le="+Inf"}`,
-			v:    1,
-			lset: labels.FromStrings("__name__", "ggh_bucket", "le", "+Inf"),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "gaugehistogram-bucket-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
-		}, {
-			m:    `ggh_count`,
-			v:    1,
-			lset: labels.FromStrings("__name__", "ggh_count"),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "gaugehistogram-count-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
-		}, {
-			m:   "smr_seconds",
-			typ: model.MetricTypeSummary,
-		}, {
-			m:    `smr_seconds_count`,
-			v:    2,
-			lset: labels.FromStrings("__name__", "smr_seconds_count"),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "summary-count-test"), Value: 1, HasTs: true, Ts: 123321},
-		}, {
-			m:    `smr_seconds_sum`,
-			v:    42,
-			lset: labels.FromStrings("__name__", "smr_seconds_sum"),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "summary-sum-test"), Value: 1, HasTs: true, Ts: 123321},
-		}, {
-			m:   "ii",
-			typ: model.MetricTypeInfo,
-		}, {
-			m:    `ii{foo="bar"}`,
-			v:    1,
-			lset: labels.FromStrings("__name__", "ii", "foo", "bar"),
-		}, {
-			m:   "ss",
-			typ: model.MetricTypeStateset,
-		}, {
-			m:    `ss{ss="foo"}`,
-			v:    1,
-			lset: labels.FromStrings("__name__", "ss", "ss", "foo"),
-		}, {
-			m:    `ss{ss="bar"}`,
-			v:    0,
-			lset: labels.FromStrings("__name__", "ss", "ss", "bar"),
-		}, {
-			m:    `ss{A="a"}`,
-			v:    0,
-			lset: labels.FromStrings("A", "a", "__name__", "ss"),
-		}, {
-			m:   "un",
-			typ: model.MetricTypeUnknown,
-		}, {
-			m:    "_metric_starting_with_underscore",
-			v:    1,
-			lset: labels.FromStrings("__name__", "_metric_starting_with_underscore"),
-		}, {
-			m:    "testmetric{_label_starting_with_underscore=\"foo\"}",
-			v:    1,
-			lset: labels.FromStrings("__name__", "testmetric", "_label_starting_with_underscore", "foo"),
-		}, {
-			m:    "testmetric{label=\"\\\"bar\\\"\"}",
-			v:    1,
-			lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
-		}, {
-			m:    "foo",
-			help: "Counter with and without labels to certify CT is parsed for both cases",
-		}, {
-			m:   "foo",
-			typ: model.MetricTypeCounter,
-		}, {
-			m:    "foo_total",
-			v:    17,
-			lset: labels.FromStrings("__name__", "foo_total"),
-			t:    int64p(1520879607789),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
-			ct:   int64p(1000),
-		}, {
-			m:    `foo_total{a="b"}`,
-			v:    17.0,
-			lset: labels.FromStrings("__name__", "foo_total", "a", "b"),
-			t:    int64p(1520879607789),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
-			ct:   int64p(1000),
-		}, {
-			m:    "bar",
-			help: "Summary with CT at the end, making sure we find CT even if it's multiple lines a far",
-		}, {
-			m:   "bar",
-			typ: model.MetricTypeSummary,
-		}, {
-			m:    "bar_count",
-			v:    17.0,
-			lset: labels.FromStrings("__name__", "bar_count"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    "bar_sum",
-			v:    324789.3,
-			lset: labels.FromStrings("__name__", "bar_sum"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    `bar{quantile="0.95"}`,
-			v:    123.7,
-			lset: labels.FromStrings("__name__", "bar", "quantile", "0.95"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    `bar{quantile="0.99"}`,
-			v:    150.0,
-			lset: labels.FromStrings("__name__", "bar", "quantile", "0.99"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    "baz",
-			help: "Histogram with the same objective as above's summary",
-		}, {
-			m:   "baz",
-			typ: model.MetricTypeHistogram,
-		}, {
-			m:    `baz_bucket{le="0.0"}`,
-			v:    0,
-			lset: labels.FromStrings("__name__", "baz_bucket", "le", "0.0"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    `baz_bucket{le="+Inf"}`,
-			v:    17,
-			lset: labels.FromStrings("__name__", "baz_bucket", "le", "+Inf"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    `baz_count`,
-			v:    17,
-			lset: labels.FromStrings("__name__", "baz_count"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    `baz_sum`,
-			v:    324789.3,
-			lset: labels.FromStrings("__name__", "baz_sum"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    "fizz_created",
-			help: "Gauge which shouldn't be parsed as CT",
-		}, {
-			m:   "fizz_created",
-			typ: model.MetricTypeGauge,
-		}, {
-			m:    `fizz_created`,
-			v:    17,
-			lset: labels.FromStrings("__name__", "fizz_created"),
-		}, {
-			m:    "metric",
-			help: "foo\x00bar",
-		}, {
-			m:    "null_byte_metric{a=\"abc\x00\"}",
-			v:    1,
-			lset: labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"),
-		},
+	for _, typeAndUnitEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("type-and-unit=%v", typeAndUnitEnabled), func(t *testing.T) {
+			exp := []parsedEntry{
+				{
+					m:    "go_gc_duration_seconds",
+					help: "A summary of the GC invocation durations.",
+				}, {
+					m:   "go_gc_duration_seconds",
+					typ: model.MetricTypeSummary,
+				}, {
+					m:    "go_gc_duration_seconds",
+					unit: "seconds",
+				}, {
+					m: `go_gc_duration_seconds{quantile="0"}`,
+					v: 4.9351e-05,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "__type__", string(model.MetricTypeSummary), "__unit__", "seconds", "quantile", "0.0"),
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.0"),
+					),
+				}, {
+					m: `go_gc_duration_seconds{quantile="0.25"}`,
+					v: 7.424100000000001e-05,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "__type__", string(model.MetricTypeSummary), "__unit__", "seconds", "quantile", "0.25"),
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.25"),
+					),
+				}, {
+					m: `go_gc_duration_seconds{quantile="0.5",a="b"}`,
+					v: 8.3835e-05,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "__type__", string(model.MetricTypeSummary), "__unit__", "seconds", "quantile", "0.5", "a", "b"),
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.5", "a", "b"),
+					),
+				}, {
+					m:    "nohelp1",
+					help: "",
+				}, {
+					m:    "help2",
+					help: "escape \\ \n \\ \" \\x chars",
+				}, {
+					m:    "nounit",
+					unit: "",
+				}, {
+					m: `go_gc_duration_seconds{quantile="1.0",a="b"}`,
+					v: 8.3835e-05,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "__type__", string(model.MetricTypeSummary), "quantile", "1.0", "a", "b"),
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
+					),
+				}, {
+					m: `go_gc_duration_seconds_count`,
+					v: 99,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "go_gc_duration_seconds_count", "__type__", string(model.MetricTypeSummary)),
+						labels.FromStrings("__name__", "go_gc_duration_seconds_count"),
+					),
+				}, {
+					m:    `some:aggregate:rate5m{a_b="c"}`,
+					v:    1,
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"), model.MetricTypeSummary),
+				}, {
+					m:    "go_goroutines",
+					help: "Number of goroutines that currently exist.",
+				}, {
+					m:   "go_goroutines",
+					typ: model.MetricTypeGauge,
+				}, {
+					m: `go_goroutines`,
+					v: 33,
+					t: int64p(123123),
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "go_goroutines", "__type__", string(model.MetricTypeGauge)),
+						labels.FromStrings("__name__", "go_goroutines"),
+					),
+				}, {
+					m:   "hh",
+					typ: model.MetricTypeHistogram,
+				}, {
+					m: `hh_bucket{le="+Inf"}`,
+					v: 1,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "hh_bucket", "__type__", string(model.MetricTypeHistogram), "le", "+Inf"),
+						labels.FromStrings("__name__", "hh_bucket", "le", "+Inf"),
+					),
+				}, {
+					m:   "gh",
+					typ: model.MetricTypeGaugeHistogram,
+				}, {
+					m: `gh_bucket{le="+Inf"}`,
+					v: 1,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "gh_bucket", "__type__", string(model.MetricTypeGaugeHistogram), "le", "+Inf"),
+						labels.FromStrings("__name__", "gh_bucket", "le", "+Inf"),
+					),
+				}, {
+					m:   "hhh",
+					typ: model.MetricTypeHistogram,
+				}, {
+					m: `hhh_bucket{le="+Inf"}`,
+					v: 1,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "hhh_bucket", "__type__", string(model.MetricTypeHistogram), "le", "+Inf"),
+						labels.FromStrings("__name__", "hhh_bucket", "le", "+Inf"),
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("id", "histogram-bucket-test"), Value: 4},
+					},
+				}, {
+					m: `hhh_count`,
+					v: 1,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "hhh_count", "__type__", string(model.MetricTypeHistogram)),
+						labels.FromStrings("__name__", "hhh_count"),
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("id", "histogram-count-test"), Value: 4},
+					},
+				}, {
+					m:   "ggh",
+					typ: model.MetricTypeGaugeHistogram,
+				}, {
+					m: `ggh_bucket{le="+Inf"}`,
+					v: 1,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "ggh_bucket", "__type__", string(model.MetricTypeGaugeHistogram), "le", "+Inf"),
+						labels.FromStrings("__name__", "ggh_bucket", "le", "+Inf"),
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("id", "gaugehistogram-bucket-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
+					},
+				}, {
+					m: `ggh_count`,
+					v: 1,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "ggh_count", "__type__", string(model.MetricTypeGaugeHistogram)),
+						labels.FromStrings("__name__", "ggh_count"),
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("id", "gaugehistogram-count-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
+					},
+				}, {
+					m:   "smr_seconds",
+					typ: model.MetricTypeSummary,
+				}, {
+					m: `smr_seconds_count`,
+					v: 2,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "smr_seconds_count", "__type__", string(model.MetricTypeSummary)),
+						labels.FromStrings("__name__", "smr_seconds_count"),
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("id", "summary-count-test"), Value: 1, HasTs: true, Ts: 123321},
+					},
+				}, {
+					m: `smr_seconds_sum`,
+					v: 42,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "smr_seconds_sum", "__type__", string(model.MetricTypeSummary)),
+						labels.FromStrings("__name__", "smr_seconds_sum"),
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("id", "summary-sum-test"), Value: 1, HasTs: true, Ts: 123321},
+					},
+				}, {
+					m:   "ii",
+					typ: model.MetricTypeInfo,
+				}, {
+					m: `ii{foo="bar"}`,
+					v: 1,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "ii", "__type__", string(model.MetricTypeInfo), "foo", "bar"),
+						labels.FromStrings("__name__", "ii", "foo", "bar"),
+					),
+				}, {
+					m:   "ss",
+					typ: model.MetricTypeStateset,
+				}, {
+					m: `ss{ss="foo"}`,
+					v: 1,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "ss", "__type__", string(model.MetricTypeStateset), "ss", "foo"),
+						labels.FromStrings("__name__", "ss", "ss", "foo"),
+					),
+				}, {
+					m: `ss{ss="bar"}`,
+					v: 0,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "ss", "__type__", string(model.MetricTypeStateset), "ss", "bar"),
+						labels.FromStrings("__name__", "ss", "ss", "bar"),
+					),
+				}, {
+					m: `ss{A="a"}`,
+					v: 0,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "ss", "__type__", string(model.MetricTypeStateset), "A", "a"),
+						labels.FromStrings("__name__", "ss", "A", "a"),
+					),
+				}, {
+					m:   "un",
+					typ: model.MetricTypeUnknown,
+				}, {
+					m:    "_metric_starting_with_underscore",
+					v:    1,
+					lset: labels.FromStrings("__name__", "_metric_starting_with_underscore"),
+				}, {
+					m:    "testmetric{_label_starting_with_underscore=\"foo\"}",
+					v:    1,
+					lset: labels.FromStrings("__name__", "testmetric", "_label_starting_with_underscore", "foo"),
+				}, {
+					m:    "testmetric{label=\"\\\"bar\\\"\"}",
+					v:    1,
+					lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
+				}, {
+					m:    "foo",
+					help: "Counter with and without labels to certify CT is parsed for both cases",
+				}, {
+					m:   "foo",
+					typ: model.MetricTypeCounter,
+				}, {
+					m: "foo_total",
+					v: 17,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "foo_total", "__type__", string(model.MetricTypeCounter)),
+						labels.FromStrings("__name__", "foo_total"),
+					),
+					t: int64p(1520879607789),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
+					},
+					ct: 1520872607123,
+				}, {
+					m: `foo_total{a="b"}`,
+					v: 17.0,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "foo_total", "__type__", string(model.MetricTypeCounter), "a", "b"),
+						labels.FromStrings("__name__", "foo_total", "a", "b"),
+					),
+					t: int64p(1520879607789),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
+					},
+					ct: 1520872607123,
+				}, {
+					m: `foo_total{le="c"}`,
+					v: 21.0,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "foo_total", "__type__", string(model.MetricTypeCounter), "le", "c"),
+						labels.FromStrings("__name__", "foo_total", "le", "c"),
+					),
+					ct: 1520872621123,
+				}, {
+					m: `foo_total{le="1"}`,
+					v: 10.0,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "foo_total", "__type__", string(model.MetricTypeCounter), "le", "1"),
+						labels.FromStrings("__name__", "foo_total", "le", "1"),
+					),
+				}, {
+					m:    "bar",
+					help: "Summary with CT at the end, making sure we find CT even if it's multiple lines a far",
+				}, {
+					m:   "bar",
+					typ: model.MetricTypeSummary,
+				}, {
+					m: "bar_count",
+					v: 17.0,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "bar_count", "__type__", string(model.MetricTypeSummary)),
+						labels.FromStrings("__name__", "bar_count"),
+					),
+					ct: 1520872608124,
+				}, {
+					m: "bar_sum",
+					v: 324789.3,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "bar_sum", "__type__", string(model.MetricTypeSummary)),
+						labels.FromStrings("__name__", "bar_sum"),
+					),
+					ct: 1520872608124,
+				}, {
+					m: `bar{quantile="0.95"}`,
+					v: 123.7,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "bar", "__type__", string(model.MetricTypeSummary), "quantile", "0.95"),
+						labels.FromStrings("__name__", "bar", "quantile", "0.95"),
+					),
+					ct: 1520872608124,
+				}, {
+					m: `bar{quantile="0.99"}`,
+					v: 150.0,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "bar", "__type__", string(model.MetricTypeSummary), "quantile", "0.99"),
+						labels.FromStrings("__name__", "bar", "quantile", "0.99"),
+					),
+					ct: 1520872608124,
+				}, {
+					m:    "baz",
+					help: "Histogram with the same objective as above's summary",
+				}, {
+					m:   "baz",
+					typ: model.MetricTypeHistogram,
+				}, {
+					m: `baz_bucket{le="0.0"}`,
+					v: 0,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "baz_bucket", "__type__", string(model.MetricTypeHistogram), "le", "0.0"),
+						labels.FromStrings("__name__", "baz_bucket", "le", "0.0"),
+					),
+					ct: 1520872609125,
+				}, {
+					m: `baz_bucket{le="+Inf"}`,
+					v: 17,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "baz_bucket", "__type__", string(model.MetricTypeHistogram), "le", "+Inf"),
+						labels.FromStrings("__name__", "baz_bucket", "le", "+Inf"),
+					),
+					ct: 1520872609125,
+				}, {
+					m: `baz_count`,
+					v: 17,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "baz_count", "__type__", string(model.MetricTypeHistogram)),
+						labels.FromStrings("__name__", "baz_count"),
+					),
+					ct: 1520872609125,
+				}, {
+					m: `baz_sum`,
+					v: 324789.3,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "baz_sum", "__type__", string(model.MetricTypeHistogram)),
+						labels.FromStrings("__name__", "baz_sum"),
+					),
+					ct: 1520872609125,
+				}, {
+					m:    "fizz_created",
+					help: "Gauge which shouldn't be parsed as CT",
+				}, {
+					m:   "fizz_created",
+					typ: model.MetricTypeGauge,
+				}, {
+					m: `fizz_created`,
+					v: 17,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "fizz_created", "__type__", string(model.MetricTypeGauge)),
+						labels.FromStrings("__name__", "fizz_created"),
+					),
+				}, {
+					m:    "something",
+					help: "Histogram with _created between buckets and summary",
+				}, {
+					m:   "something",
+					typ: model.MetricTypeHistogram,
+				}, {
+					m: `something_count`,
+					v: 18,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "something_count", "__type__", string(model.MetricTypeHistogram)),
+						labels.FromStrings("__name__", "something_count"),
+					),
+					ct: 1520430001000,
+				}, {
+					m: `something_sum`,
+					v: 324789.4,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "something_sum", "__type__", string(model.MetricTypeHistogram)),
+						labels.FromStrings("__name__", "something_sum"),
+					),
+					ct: 1520430001000,
+				}, {
+					m: `something_bucket{le="0.0"}`,
+					v: 1,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "something_bucket", "__type__", string(model.MetricTypeHistogram), "le", "0.0"),
+						labels.FromStrings("__name__", "something_bucket", "le", "0.0"),
+					),
+					ct: 1520430001000,
+				}, {
+					m: `something_bucket{le="1"}`,
+					v: 2,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "something_bucket", "__type__", string(model.MetricTypeHistogram), "le", "1.0"),
+						labels.FromStrings("__name__", "something_bucket", "le", "1.0"),
+					),
+					ct: 1520430001000,
+				}, {
+					m: `something_bucket{le="+Inf"}`,
+					v: 18,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "something_bucket", "__type__", string(model.MetricTypeHistogram), "le", "+Inf"),
+						labels.FromStrings("__name__", "something_bucket", "le", "+Inf"),
+					),
+					ct: 1520430001000,
+				}, {
+					m:    "yum",
+					help: "Summary with _created between sum and quantiles",
+				}, {
+					m:   "yum",
+					typ: model.MetricTypeSummary,
+				}, {
+					m: `yum_count`,
+					v: 20,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "yum_count", "__type__", string(model.MetricTypeSummary)),
+						labels.FromStrings("__name__", "yum_count"),
+					),
+					ct: 1520430003000,
+				}, {
+					m: `yum_sum`,
+					v: 324789.5,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "yum_sum", "__type__", string(model.MetricTypeSummary)),
+						labels.FromStrings("__name__", "yum_sum"),
+					),
+					ct: 1520430003000,
+				}, {
+					m: `yum{quantile="0.95"}`,
+					v: 123.7,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "yum", "__type__", string(model.MetricTypeSummary), "quantile", "0.95"),
+						labels.FromStrings("__name__", "yum", "quantile", "0.95"),
+					),
+					ct: 1520430003000,
+				}, {
+					m: `yum{quantile="0.99"}`,
+					v: 150.0,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "yum", "__type__", string(model.MetricTypeSummary), "quantile", "0.99"),
+						labels.FromStrings("__name__", "yum", "quantile", "0.99"),
+					),
+					ct: 1520430003000,
+				}, {
+					m:    "foobar",
+					help: "Summary with _created as the first line",
+				}, {
+					m:   "foobar",
+					typ: model.MetricTypeSummary,
+				}, {
+					m: `foobar_count`,
+					v: 21,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "foobar_count", "__type__", string(model.MetricTypeSummary)),
+						labels.FromStrings("__name__", "foobar_count"),
+					),
+					ct: 1520430004000,
+				}, {
+					m: `foobar_sum`,
+					v: 324789.6,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "foobar_sum", "__type__", string(model.MetricTypeSummary)),
+						labels.FromStrings("__name__", "foobar_sum"),
+					),
+					ct: 1520430004000,
+				}, {
+					m: `foobar{quantile="0.95"}`,
+					v: 123.8,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "foobar", "__type__", string(model.MetricTypeSummary), "quantile", "0.95"),
+						labels.FromStrings("__name__", "foobar", "quantile", "0.95"),
+					),
+					ct: 1520430004000,
+				}, {
+					m: `foobar{quantile="0.99"}`,
+					v: 150.1,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "foobar", "__type__", string(model.MetricTypeSummary), "quantile", "0.99"),
+						labels.FromStrings("__name__", "foobar", "quantile", "0.99"),
+					),
+					ct: 1520430004000,
+				}, {
+					m:    "metric",
+					help: "foo\x00bar",
+				}, {
+					m:    "null_byte_metric{a=\"abc\x00\"}",
+					v:    1,
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"), model.MetricTypeSummary),
+				},
+			}
+			opts := []OpenMetricsOption{WithOMParserCTSeriesSkipped()}
+			if typeAndUnitEnabled {
+				opts = append(opts, WithOMParserTypeAndUnitLabels())
+			}
+			p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), opts...)
+			got := testParse(t, p)
+			requireEntries(t, exp, got)
+		})
 	}
-
-	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
-	checkParseResultsWithCT(t, p, exp, true)
 }
 
-func TestUTF8OpenMetricsParse(t *testing.T) {
-	oldValidationScheme := model.NameValidationScheme
-	model.NameValidationScheme = model.UTF8Validation
-	defer func() {
-		model.NameValidationScheme = oldValidationScheme
-	}()
-
+func TestOpenMetricsParse_UTF8(t *testing.T) {
 	input := `# HELP "go.gc_duration_seconds" A summary of the GC invocation durations.
 # TYPE "go.gc_duration_seconds" summary
 # UNIT "go.gc_duration_seconds" seconds
 {"go.gc_duration_seconds",quantile="0"} 4.9351e-05
 {"go.gc_duration_seconds",quantile="0.25"} 7.424100000000001e-05
-{"go.gc_duration_seconds_created"} 12313
+{"go.gc_duration_seconds_created"} 1520872607.123
 {"go.gc_duration_seconds",quantile="0.5",a="b"} 8.3835e-05
 {"http.status",q="0.9",a="b"} 8.3835e-05
 {"http.status",q="0.9",a="b"} 8.3835e-05
 {q="0.9","http.status",a="b"} 8.3835e-05
 {"go.gc_duration_seconds_sum"} 0.004304266
-{"Heizölrückstoßabdämpfung 10€ metric with \"interesting\" {character\nchoices}","strange©™\n'quoted' \"name\""="6"} 10.0`
+{"Heizölrückstoßabdämpfung 10€ metric with \"interesting\" {character\nchoices}","strange©™\n'quoted' \"name\""="6"} 10.0
+quotedexemplar_count 1 # {"id.thing"="histogram-count-test"} 4
+quotedexemplar2_count 1 # {"id.thing"="histogram-count-test",other="hello"} 4
+`
 
-	input += "\n# EOF\n"
+	input += "# EOF\n"
 
-	exp := []expectedParse{
+	exp := []parsedEntry{
 		{
 			m:    "go.gc_duration_seconds",
 			help: "A summary of the GC invocation durations.",
@@ -369,13 +683,13 @@ func TestUTF8OpenMetricsParse(t *testing.T) {
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0"}`,
 			v:    4.9351e-05,
-			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0"),
-			ct:   int64p(12313),
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.0"),
+			ct:   1520872607123,
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0.25"}`,
 			v:    7.424100000000001e-05,
 			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.25"),
-			ct:   int64p(12313),
+			ct:   1520872607123,
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0.5",a="b"}`,
 			v:    8.3835e-05,
@@ -401,11 +715,26 @@ func TestUTF8OpenMetricsParse(t *testing.T) {
 			v: 10.0,
 			lset: labels.FromStrings("__name__", `Heizölrückstoßabdämpfung 10€ metric with "interesting" {character
 choices}`, "strange©™\n'quoted' \"name\"", "6"),
+		}, {
+			m:    `quotedexemplar_count`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "quotedexemplar_count"),
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id.thing", "histogram-count-test"), Value: 4},
+			},
+		}, {
+			m:    `quotedexemplar2_count`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "quotedexemplar2_count"),
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id.thing", "histogram-count-test", "other", "hello"), Value: 4},
+			},
 		},
 	}
 
 	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
-	checkParseResultsWithCT(t, p, exp, true)
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
 }
 
 func TestOpenMetricsParseErrors(t *testing.T) {
@@ -699,7 +1028,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable())
+		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
 		var err error
 		for err == nil {
 			_, err = p.Next()
@@ -764,231 +1093,121 @@ func TestOMNullByteHandling(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable())
+		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
 		var err error
 		for err == nil {
 			_, err = p.Next()
 		}
 
 		if c.err == "" {
-			require.Equal(t, io.EOF, err, "test %d", i)
+			require.ErrorIs(t, err, io.EOF, "test %d", i)
 			continue
 		}
 
-		require.Equal(t, c.err, err.Error(), "test %d", i)
+		require.EqualError(t, err, c.err, "test %d", i)
 	}
 }
 
-// While not desirable, there are cases were CT fails to parse and
-// these tests show them.
+// TestCTParseFailures tests known failure edge cases, we know does not work due
+// current OM spec limitations or clients with broken OM format.
 // TODO(maniktherana): Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
 func TestCTParseFailures(t *testing.T) {
-	input := `# HELP something Histogram with _created between buckets and summary
-# TYPE something histogram
-something_count 17
-something_sum 324789.3
-something_created 1520430001
-something_bucket{le="0.0"} 0
-something_bucket{le="+Inf"} 17
-# HELP thing Histogram with _created as first line
+	for _, tcase := range []struct {
+		name     string
+		input    string
+		expected []parsedEntry
+	}{
+		{
+			name: "_created line is a first one",
+			input: `# HELP thing histogram with _created as first line
 # TYPE thing histogram
-thing_created 1520430002
+thing_created 1520872607.123
 thing_count 17
 thing_sum 324789.3
 thing_bucket{le="0.0"} 0
 thing_bucket{le="+Inf"} 17
-# HELP yum Summary with _created between sum and quantiles
-# TYPE yum summary
-yum_count 17.0
-yum_sum 324789.3
-yum_created 1520430003
-yum{quantile="0.95"} 123.7
-yum{quantile="0.99"} 150.0
-# HELP foobar Summary with _created as the first line
-# TYPE foobar summary
-foobar_created 1520430004
-foobar_count 17.0
-foobar_sum 324789.3
-foobar{quantile="0.95"} 123.7
-foobar{quantile="0.99"} 150.0`
-
-	input += "\n# EOF\n"
-
-	int64p := func(x int64) *int64 { return &x }
-
-	type expectCT struct {
-		m     string
-		ct    *int64
-		typ   model.MetricType
-		help  string
-		isErr bool
-	}
-
-	exp := []expectCT{
-		{
-			m:     "something",
-			help:  "Histogram with _created between buckets and summary",
-			isErr: false,
-		}, {
-			m:     "something",
-			typ:   model.MetricTypeHistogram,
-			isErr: false,
-		}, {
-			m:     `something_count`,
-			ct:    int64p(1520430001),
-			isErr: false,
-		}, {
-			m:     `something_sum`,
-			ct:    int64p(1520430001),
-			isErr: false,
-		}, {
-			m:     `something_bucket{le="0.0"}`,
-			ct:    int64p(1520430001),
-			isErr: true,
-		}, {
-			m:     `something_bucket{le="+Inf"}`,
-			ct:    int64p(1520430001),
-			isErr: true,
-		}, {
-			m:     "thing",
-			help:  "Histogram with _created as first line",
-			isErr: false,
-		}, {
-			m:     "thing",
-			typ:   model.MetricTypeHistogram,
-			isErr: false,
-		}, {
-			m:     `thing_count`,
-			ct:    int64p(1520430002),
-			isErr: true,
-		}, {
-			m:     `thing_sum`,
-			ct:    int64p(1520430002),
-			isErr: true,
-		}, {
-			m:     `thing_bucket{le="0.0"}`,
-			ct:    int64p(1520430002),
-			isErr: true,
-		}, {
-			m:     `thing_bucket{le="+Inf"}`,
-			ct:    int64p(1520430002),
-			isErr: true,
-		}, {
-			m:     "yum",
-			help:  "Summary with _created between summary and quantiles",
-			isErr: false,
-		}, {
-			m:     "yum",
-			typ:   model.MetricTypeSummary,
-			isErr: false,
-		}, {
-			m:     "yum_count",
-			ct:    int64p(1520430003),
-			isErr: false,
-		}, {
-			m:     "yum_sum",
-			ct:    int64p(1520430003),
-			isErr: false,
-		}, {
-			m:     `yum{quantile="0.95"}`,
-			ct:    int64p(1520430003),
-			isErr: true,
-		}, {
-			m:     `yum{quantile="0.99"}`,
-			ct:    int64p(1520430003),
-			isErr: true,
-		}, {
-			m:     "foobar",
-			help:  "Summary with _created as the first line",
-			isErr: false,
-		}, {
-			m:     "foobar",
-			typ:   model.MetricTypeSummary,
-			isErr: false,
-		}, {
-			m:     "foobar_count",
-			ct:    int64p(1520430004),
-			isErr: true,
-		}, {
-			m:     "foobar_sum",
-			ct:    int64p(1520430004),
-			isErr: true,
-		}, {
-			m:     `foobar{quantile="0.95"}`,
-			ct:    int64p(1520430004),
-			isErr: true,
-		}, {
-			m:     `foobar{quantile="0.99"}`,
-			ct:    int64p(1520430004),
-			isErr: true,
+# HELP thing_c counter with _created as first line
+# TYPE thing_c counter
+thing_c_created 1520872607.123
+thing_c_total 14123.232
+# EOF
+`,
+			expected: []parsedEntry{
+				{
+					m:    "thing",
+					help: "histogram with _created as first line",
+				},
+				{
+					m:   "thing",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m:  `thing_count`,
+					ct: 0, // Should be int64p(1520872607123).
+				},
+				{
+					m:  `thing_sum`,
+					ct: 0, // Should be int64p(1520872607123).
+				},
+				{
+					m:  `thing_bucket{le="0.0"}`,
+					ct: 0, // Should be int64p(1520872607123).
+				},
+				{
+					m:  `thing_bucket{le="+Inf"}`,
+					ct: 0, // Should be int64p(1520872607123),
+				},
+				{
+					m:    "thing_c",
+					help: "counter with _created as first line",
+				},
+				{
+					m:   "thing_c",
+					typ: model.MetricTypeCounter,
+				},
+				{
+					m:  `thing_c_total`,
+					ct: 0, // Should be int64p(1520872607123).
+				},
+			},
 		},
-	}
-
-	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
-	i := 0
-
-	var res labels.Labels
-	for {
-		et, err := p.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		require.NoError(t, err)
-
-		switch et {
-		case EntrySeries:
-			p.Metric(&res)
-
-			if ct := p.CreatedTimestamp(); exp[i].isErr {
-				require.Nil(t, ct)
-			} else {
-				require.Equal(t, *exp[i].ct, *ct)
-			}
-		default:
-			i++
-			continue
-		}
-		i++
+		{
+			// TODO(bwplotka): Kind of correct bevaviour? If yes, let's move to the OK tests above.
+			name: "maybe counter with no meta",
+			input: `foo_total 17.0
+foo_created 1520872607.123
+foo_total{a="b"} 17.0
+foo_created{a="b"} 1520872608.123
+# EOF
+`,
+			expected: []parsedEntry{
+				{
+					m: `foo_total`,
+				},
+				{
+					m: `foo_created`,
+				},
+				{
+					m: `foo_total{a="b"}`,
+				},
+				{
+					m: `foo_created{a="b"}`,
+				},
+			},
+		},
+	} {
+		t.Run(fmt.Sprintf("case=%v", tcase.name), func(t *testing.T) {
+			p := NewOpenMetricsParser([]byte(tcase.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+			got := testParse(t, p)
+			resetValAndLset(got) // Keep this test focused on metric, basic entries and CT only.
+			requireEntries(t, tcase.expected, got)
+		})
 	}
 }
 
-func TestDeepCopy(t *testing.T) {
-	input := []byte(`# HELP go_goroutines A gauge goroutines.
-# TYPE go_goroutines gauge
-go_goroutines 33 123.123
-# TYPE go_gc_duration_seconds summary
-go_gc_duration_seconds
-go_gc_duration_seconds_created`)
-
-	st := labels.NewSymbolTable()
-	parser := NewOpenMetricsParser(input, st, WithOMParserCTSeriesSkipped()).(*OpenMetricsParser)
-
-	// Modify the original parser state
-	_, err := parser.Next()
-	require.NoError(t, err)
-	require.Equal(t, "go_goroutines", string(parser.l.b[parser.offsets[0]:parser.offsets[1]]))
-	require.True(t, parser.skipCTSeries)
-
-	// Create a deep copy of the parser
-	copyParser := deepCopy(parser)
-	etype, err := copyParser.Next()
-	require.NoError(t, err)
-	require.Equal(t, EntryType, etype)
-	require.True(t, parser.skipCTSeries)
-	require.False(t, copyParser.skipCTSeries)
-
-	// Modify the original parser further
-	parser.Next()
-	parser.Next()
-	parser.Next()
-	require.Equal(t, "go_gc_duration_seconds", string(parser.l.b[parser.offsets[0]:parser.offsets[1]]))
-	require.Equal(t, "summary", string(parser.mtype))
-	require.False(t, copyParser.skipCTSeries)
-	require.True(t, parser.skipCTSeries)
-
-	// Ensure the copy remains unchanged
-	copyParser.Next()
-	copyParser.Next()
-	require.Equal(t, "go_gc_duration_seconds", string(copyParser.l.b[copyParser.offsets[0]:copyParser.offsets[1]]))
-	require.False(t, copyParser.skipCTSeries)
+func resetValAndLset(e []parsedEntry) {
+	for i := range e {
+		e[i].v = 0
+		e[i].lset = labels.EmptyLabels()
+	}
 }
