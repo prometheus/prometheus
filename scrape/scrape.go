@@ -40,7 +40,6 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/prometheus/config"
@@ -152,7 +151,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 
 	client, err := newScrapeClient(cfg.HTTPClientConfig, cfg.JobName, options.HTTPClientOptions...)
 	if err != nil {
-		return nil, fmt.Errorf("error creating HTTP client: %w", err)
+		return nil, err
 	}
 
 	var escapingScheme model.EscapingScheme
@@ -834,7 +833,6 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	defer span.End()
 
 	req := s.req.WithContext(ctx)
-	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	return s.client.Do(req)
 }
