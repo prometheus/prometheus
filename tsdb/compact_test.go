@@ -1098,6 +1098,13 @@ func TestCompaction_populateBlock(t *testing.T) {
 				s.NumChunks += uint64(len(series.chunks))
 				for _, chk := range series.chunks {
 					s.NumSamples += uint64(len(chk))
+					for _, smpl := range chk {
+						if smpl.h != nil || smpl.fh != nil {
+							s.NumHistogramSamples++
+						} else {
+							s.NumFloatSamples++
+						}
+					}
 				}
 			}
 			require.Equal(t, s, meta.Stats)
