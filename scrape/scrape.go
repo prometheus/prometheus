@@ -39,8 +39,6 @@ import (
 	"github.com/prometheus/common/version"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -829,12 +827,8 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 
 		s.req = req
 	}
-	ctx, span := otel.Tracer("").Start(ctx, "Scrape", trace.WithSpanKind(trace.SpanKindClient))
-	defer span.End()
 
-	req := s.req.WithContext(ctx)
-
-	return s.client.Do(req)
+	return s.client.Do(s.req.WithContext(ctx))
 }
 
 func (s *targetScraper) readResponse(_ context.Context, resp *http.Response, w io.Writer) (string, error) {
