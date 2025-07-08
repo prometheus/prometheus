@@ -3722,7 +3722,7 @@ func TestTypeUnitMismatchAnnotations(t *testing.T) {
 			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
 			var wrappedStorage storage.Storage = store
 			if testCase.typeAndUnitLabelsEnabled {
-				wrappedStorage = storage.AnnotatingStorage(store)
+				wrappedStorage = storage.TypeAndUnitMismatchStorage(store)
 			}
 			t.Cleanup(func() { _ = store.Close() })
 

@@ -21,63 +21,61 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// AnnotatingStorage wraps given storage and tracks type and unit
+// TypeAndUnitMismatchStorage wraps given storage and tracks type and unit
 // labels across series. It will produce an info annotation if there
 // is a mismatch between type or unit in series with the same name.
-func AnnotatingStorage(s Storage) Storage {
-	return &annotatingStorage{
+func TypeAndUnitMismatchStorage(s Storage) Storage {
+	return &typeAndUnitMismatchStorage{
 		Storage: s,
 	}
 }
 
-type annotatingStorage struct {
+type typeAndUnitMismatchStorage struct {
 	Storage
 }
 
-type annotatingQuerier struct {
+type typeAndUnitMismatchQuerier struct {
 	Querier
 }
 
-func (s *annotatingStorage) Querier(mint, maxt int64) (Querier, error) {
+func (s *typeAndUnitMismatchStorage) Querier(mint, maxt int64) (Querier, error) {
 	q, err := s.Storage.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
 	}
-	return &annotatingQuerier{
+	return &typeAndUnitMismatchQuerier{
 		Querier: q,
 	}, nil
 }
 
-func (q *annotatingQuerier) Select(ctx context.Context, sort bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
+func (q *typeAndUnitMismatchQuerier) Select(ctx context.Context, sort bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
 	ss := q.Querier.Select(ctx, sort, hints, matchers...)
-	return AnnotatingSeriesSet(ss)
+	return TypeAndUnitMismatchSeriesSet(ss)
 }
 
-type annotatingSeriesSet struct {
+type typeAndUnitInfo struct {
+	typ  string
+	unit string
+}
+
+type typeAndUnitMismatchSeriesSet struct {
 	SeriesSet
 
-	seen map[string]struct {
-		Type string
-		Unit string
-	}
+	prev        *typeAndUnitInfo
 	annotations annotations.Annotations
 }
 
-func AnnotatingSeriesSet(s SeriesSet) SeriesSet {
-	return &annotatingSeriesSet{
+func TypeAndUnitMismatchSeriesSet(s SeriesSet) SeriesSet {
+	return &typeAndUnitMismatchSeriesSet{
 		SeriesSet: s,
-		seen: make(map[string]struct {
-			Type string
-			Unit string
-		}),
 	}
 }
 
-func (s *annotatingSeriesSet) At() Series {
+func (s *typeAndUnitMismatchSeriesSet) At() Series {
 	return s.SeriesSet.At()
 }
 
-func (s *annotatingSeriesSet) Next() bool {
+func (s *typeAndUnitMismatchSeriesSet) Next() bool {
 	if !s.SeriesSet.Next() {
 		return false
 	}
@@ -87,29 +85,29 @@ func (s *annotatingSeriesSet) Next() bool {
 	mType := series.Labels().Get("__type__")
 	mUnit := series.Labels().Get("__unit__")
 
-	if prev, ok := s.seen[metric]; ok {
-		if prev.Type != mType || prev.Unit != mUnit {
-			if prev.Type == "unknown" || mType == "unknown" {
-				if prev.Type == "unknown" && mType != "unknown" {
-					s.seen[metric] = struct {
-						Type string
-						Unit string
-					}{Type: mType, Unit: mUnit}
-				}
-			} else {
-				s.annotations.Add(fmt.Errorf("%w %q", annotations.MismatchedTypeOrUnitInfo, metric))
-			}
+	if s.prev == nil {
+		s.prev = &typeAndUnitInfo{
+			typ:  mType,
+			unit: mUnit,
 		}
 	} else {
-		s.seen[metric] = struct {
-			Type string
-			Unit string
-		}{Type: mType, Unit: mUnit}
+		if s.prev.typ != mType || s.prev.unit != mUnit {
+			// Skip annotation if either type is "unknown" - this allows unknown to coexist with known types
+			if s.prev.typ == "unknown" || mType == "unknown" {
+				// Update to the known type if we have one
+				if s.prev.typ == "unknown" && mType != "unknown" {
+					s.prev.typ = mType
+					s.prev.unit = mUnit
+				}
+			} else {
+				s.annotations.Add(fmt.Errorf("%w for metric %q", annotations.MismatchedTypeOrUnitInfo, metric))
+			}
+		}
 	}
 	return true
 }
 
-func (s *annotatingSeriesSet) Warnings() annotations.Annotations {
+func (s *typeAndUnitMismatchSeriesSet) Warnings() annotations.Annotations {
 	got := s.SeriesSet.Warnings()
 	if got == nil {
 		got = make(annotations.Annotations)

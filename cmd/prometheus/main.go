@@ -785,7 +785,7 @@ func main() {
 
 	var wrappedStorage storage.Storage = localStorage
 	if cfg.scrape.EnableTypeAndUnitLabels {
-		wrappedStorage = storage.AnnotatingStorage(localStorage)
+		wrappedStorage = storage.TypeAndUnitMismatchStorage(localStorage)
 	}
 
 	var (
