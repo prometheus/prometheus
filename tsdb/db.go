@@ -853,7 +853,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 
 	for _, tmpDir := range []string{walDir, dir} {
 		// Remove tmp dirs.
-		if err := removeBestEffortTmpDirs(l, tmpDir); err != nil {
+		if err := tsdbutil.RemoveTmpDirs(l, tmpDir, isTmpDir); err != nil {
 			return nil, fmt.Errorf("remove tmp dirs: %w", err)
 		}
 	}
@@ -1036,26 +1036,6 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	go db.run(ctx)
 
 	return db, nil
-}
-
-func removeBestEffortTmpDirs(l *slog.Logger, dir string) error {
-	files, err := os.ReadDir(dir)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	for _, f := range files {
-		if isTmpDir(f) {
-			if err := os.RemoveAll(filepath.Join(dir, f.Name())); err != nil {
-				l.Error("failed to delete tmp block dir", "dir", filepath.Join(dir, f.Name()), "err", err)
-				continue
-			}
-			l.Info("Found and deleted tmp block dir", "dir", filepath.Join(dir, f.Name()))
-		}
-	}
-	return nil
 }
 
 // StartTime implements the Storage interface.
@@ -2334,8 +2314,7 @@ func isBlockDir(fi fs.DirEntry) bool {
 	return err == nil
 }
 
-// isTmpDir returns true if the given file-info contains a block ULID, a checkpoint prefix,
-// or a chunk snapshot prefix and a tmp extension.
+// isTmpDir returns true if the given file-info contains a block ULID, or a chunk snapshot prefix and a tmp extension.
 func isTmpDir(fi fs.DirEntry) bool {
 	if !fi.IsDir() {
 		return false
@@ -2344,9 +2323,6 @@ func isTmpDir(fi fs.DirEntry) bool {
 	fn := fi.Name()
 	ext := filepath.Ext(fn)
 	if ext == tmpForDeletionBlockDirSuffix || ext == tmpForCreationBlockDirSuffix || ext == tmpLegacy {
-		if strings.HasPrefix(fn, wlog.CheckpointPrefix) {
-			return true
-		}
 		if strings.HasPrefix(fn, chunkSnapshotPrefix) {
 			return true
 		}
