@@ -683,3 +683,33 @@ PromQL(VectorSelector(LabelMatchers(QuotedLabelMatcher(QuotedLabelName(StringLit
 
 ==>
 PromQL(VectorSelector(LabelMatchers(QuotedLabelName(StringLiteral), QuotedLabelMatcher(QuotedLabelName(StringLiteral), MatchOp(EqlSingle), StringLiteral))))
+
+
+# TrimUpper binary operator
+
+metric1 </ metric2
+
+==>
+
+PromQL(
+  BinaryExpr(
+    VectorSelector(Identifier),
+    TrimUpper,
+    VectorSelector(Identifier)
+  )
+)
+
+# TrimLower binary operator
+
+metric1 >/ metric2
+
+==>
+
+PromQL(
+  BinaryExpr(
+    VectorSelector(Identifier),
+    TrimLower,
+    VectorSelector(Identifier)
+  )
+)
+
