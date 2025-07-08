@@ -3659,7 +3659,7 @@ func TestTypeUnitMismatchAnnotations(t *testing.T) {
 			typeAndUnitLabelsEnabled:   true,
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations: []string{
-				`PromQL info: mismatched type or unit metadata "series"`,
+				`PromQL info: mismatched type or unit metadata for metric "series"`,
 			},
 		},
 		"info annotation when mismatched unit": {
@@ -3671,7 +3671,7 @@ func TestTypeUnitMismatchAnnotations(t *testing.T) {
 			typeAndUnitLabelsEnabled:   true,
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations: []string{
-				`PromQL info: mismatched type or unit metadata "series"`,
+				`PromQL info: mismatched type or unit metadata for metric "series"`,
 			},
 		},
 		"info annotation when mismatched type and unit": {
@@ -3683,7 +3683,7 @@ func TestTypeUnitMismatchAnnotations(t *testing.T) {
 			typeAndUnitLabelsEnabled:   true,
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations: []string{
-				`PromQL info: mismatched type or unit metadata "series"`,
+				`PromQL info: mismatched type or unit metadata for metric "series"`,
 			},
 		},
 		"no info annotation when type is unknown": {

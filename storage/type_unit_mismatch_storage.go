@@ -90,18 +90,14 @@ func (s *typeAndUnitMismatchSeriesSet) Next() bool {
 			typ:  mType,
 			unit: mUnit,
 		}
-	} else {
-		if s.prev.typ != mType || s.prev.unit != mUnit {
-			// Skip annotation if either type is "unknown" - this allows unknown to coexist with known types
-			if s.prev.typ == "unknown" || mType == "unknown" {
-				// Update to the known type if we have one
-				if s.prev.typ == "unknown" && mType != "unknown" {
-					s.prev.typ = mType
-					s.prev.unit = mUnit
-				}
-			} else {
-				s.annotations.Add(fmt.Errorf("%w for metric %q", annotations.MismatchedTypeOrUnitInfo, metric))
+	} else if s.prev.typ != mType || s.prev.unit != mUnit {
+		if s.prev.typ == "unknown" || mType == "unknown" {
+			if s.prev.typ == "unknown" && mType != "unknown" {
+				s.prev.typ = mType
+				s.prev.unit = mUnit
 			}
+		} else {
+			s.annotations.Add(fmt.Errorf("%w for metric %q", annotations.MismatchedTypeOrUnitInfo, metric))
 		}
 	}
 	return true
