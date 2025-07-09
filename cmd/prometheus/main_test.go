@@ -417,7 +417,27 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 func TestAgentSuccessfulStartup(t *testing.T) {
 	t.Parallel()
 
-	prom := exec.Command(promPath, "-test.main", "--agent", "--web.listen-address=0.0.0.0:0", "--config.file="+agentConfig)
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "agent.yml")
+
+	configContent := `
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+`
+	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0o644))
+
+	prom := exec.Command(promPath,
+		"-test.main",
+		"--enable-feature=agent",
+		"--web.listen-address=0.0.0.0:0",
+		"--config.file="+configPath,
+		"--storage.tsdb.path="+filepath.Join(tempDir, "data"),
+	)
 	require.NoError(t, prom.Start())
 
 	actualExitStatus := 0
@@ -428,8 +448,8 @@ func TestAgentSuccessfulStartup(t *testing.T) {
 	case err := <-done:
 		t.Logf("prometheus agent should be still running: %v", err)
 		actualExitStatus = prom.ProcessState.ExitCode()
-	case <-time.After(startupTime):
-		prom.Process.Kill()
+	case <-time.After(3 * time.Second):
+		_ = prom.Process.Kill()
 	}
 	require.Equal(t, 0, actualExitStatus)
 }

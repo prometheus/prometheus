@@ -1194,7 +1194,8 @@ func main() {
 		g.Add(
 			func() error {
 				<-reloadReady.C
-
+				ticker := time.NewTicker(time.Duration(cfg.autoReloadInterval))
+				defer ticker.Stop()
 				for {
 					select {
 					case <-hup:
@@ -1219,15 +1220,19 @@ func main() {
 								}
 							}
 						}
-					case <-time.Tick(time.Duration(cfg.autoReloadInterval)):
+
+					case <-ticker.C:
 						if !cfg.enableAutoReload {
 							continue
 						}
 						currentChecksum, err := config.GenerateChecksum(cfg.configFile)
 						if err != nil {
-							checksum = currentChecksum
+
 							logger.Error("Failed to generate checksum during configuration reload", "err", err)
-						} else if currentChecksum == checksum {
+
+							continue
+						}
+						if currentChecksum == checksum {
 							continue
 						}
 						logger.Info("Configuration file change detected, reloading the configuration.")
@@ -1236,6 +1241,8 @@ func main() {
 							logger.Error("Error reloading config", "err", err)
 						} else {
 							checksum = currentChecksum
+							ticker.Stop()
+							ticker = time.NewTicker(time.Duration(cfg.autoReloadInterval))
 						}
 					case <-cancel:
 						return nil
