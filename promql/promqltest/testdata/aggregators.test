@@ -232,6 +232,7 @@ load 5m
   http_requests_histogram{job="api-server", instance="3", group="canary"} {{schema:2 count:4 sum:10 buckets:[1 0 0 0 1 0 0 1 1]}}
 
 eval instant at 0m max(http_requests)
+  expect no_info
   {} 4
 
 # The histogram is ignored here so the result doesn't change but it has an info annotation now.
@@ -244,6 +245,7 @@ eval instant at 0m max(http_requests_histogram)
   expect info
 
 eval instant at 0m min(http_requests)
+  expect no_info
   {} 1
 
 # The histogram is ignored here so the result doesn't change but it has an info annotation now.
@@ -256,10 +258,12 @@ eval instant at 0m min(http_requests_histogram)
   expect info
 
 eval instant at 0m max by (group) (http_requests)
+  expect no_info
   {group="production"} 2
   {group="canary"} 4
 
 eval instant at 0m min by (group) (http_requests)
+  expect no_info
   {group="production"} 1
   {group="canary"} 3
 
@@ -484,6 +488,7 @@ load 10s
 	foo 0 1 0 1 0 1 0.8
 
 eval instant at 1m quantile without(point)(0.8, data)
+	expect no_info
 	{test="two samples"} 0.8
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
