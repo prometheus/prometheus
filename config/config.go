@@ -1570,18 +1570,18 @@ var (
 	NoTranslation translationStrategyOption = "NoTranslation"
 )
 
-func (o translationStrategyOption) AllowsUTF8() bool {
+// ShouldEscape returns true if the translation strategy requires that metric
+// names be escaped.
+func (o translationStrategyOption) ShouldEscape() bool {
 switch o {
-	case NoTranslation, NoUTF8EscapingWithSuffixes:
-		return true
 	case UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes:
+		return true
+	case NoTranslation, NoUTF8EscapingWithSuffixes:
 		return false
 	default:
 	return false
 	}
 }
-
-
 
 // ShouldAddSuffixes returns a bool deciding whether the given translation
 // strategy should have suffixes added.
