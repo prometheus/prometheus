@@ -6718,12 +6718,11 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 }
 
 func TestHeadAppender_AppendHistogramCTZeroSample(t *testing.T) {
-	testHistogram := tsdbutil.GenerateTestHistogram(1)
 	type appendableSamples struct {
 		ts int64
 		h  *histogram.Histogram
 		fh *histogram.FloatHistogram
-		ct int64
+		ct int64 // 0 if no created timestamp.
 	}
 	for _, tc := range []struct {
 		name              string
@@ -6731,11 +6730,34 @@ func TestHeadAppender_AppendHistogramCTZeroSample(t *testing.T) {
 		expectedError     error
 	}{
 		{
-			name: "CT lower than minValidTime initiates ErrOutOfBounds",
+			name: "integer histogram CT lower than minValidTime initiates ErrOutOfBounds",
 			appendableSamples: []appendableSamples{
-				{ts: 100, h: testHistogram, ct: -1},
+				{ts: 100, h: tsdbutil.GenerateTestHistogram(1), ct: -1},
 			},
 			expectedError: storage.ErrOutOfBounds,
+		},
+		{
+			name: "float histograms CT lower than minValidTime initiates ErrOutOfBounds",
+			appendableSamples: []appendableSamples{
+				{ts: 100, fh: tsdbutil.GenerateTestFloatHistogram(1), ct: -1},
+			},
+			expectedError: storage.ErrOutOfBounds,
+		},
+		{
+			name: "integer histogram CT duplicates an existing sample",
+			appendableSamples: []appendableSamples{
+				{ts: 100, h: tsdbutil.GenerateTestHistogram(1)},
+				{ts: 200, h: tsdbutil.GenerateTestHistogram(1), ct: 100},
+			},
+			expectedError: storage.ErrDuplicateSampleForTimestamp,
+		},
+		{
+			name: "float histogram CT duplicates an existing sample",
+			appendableSamples: []appendableSamples{
+				{ts: 100, fh: tsdbutil.GenerateTestFloatHistogram(1)},
+				{ts: 200, fh: tsdbutil.GenerateTestFloatHistogram(1), ct: 100},
+			},
+			expectedError: storage.ErrDuplicateSampleForTimestamp,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -6745,18 +6767,21 @@ func TestHeadAppender_AppendHistogramCTZeroSample(t *testing.T) {
 				require.NoError(t, h.Close())
 			}()
 
-			a := h.Appender(context.Background())
 			lbls := labels.FromStrings("foo", "bar")
 
+			var ref storage.SeriesRef
 			for _, sample := range tc.appendableSamples {
-				ref, err := a.AppendHistogramCTZeroSample(0, lbls, sample.ts, sample.ct, sample.h, sample.fh)
-				require.ErrorIs(t, err, tc.expectedError)
+				a := h.Appender(context.Background())
+				var err error
+				if sample.ct != 0 {
+					ref, err = a.AppendHistogramCTZeroSample(ref, lbls, sample.ts, sample.ct, sample.h, sample.fh)
+					require.ErrorIs(t, err, tc.expectedError)
+				}
 
-				_, err = a.AppendHistogram(ref, lbls, sample.ts, sample.h, sample.fh)
+				ref, err = a.AppendHistogram(ref, lbls, sample.ts, sample.h, sample.fh)
 				require.NoError(t, err)
+				require.NoError(t, a.Commit())
 			}
-
-			require.NoError(t, a.Commit())
 		})
 	}
 }
