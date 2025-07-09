@@ -104,7 +104,7 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	}
 
 	switch cfg.OTLPConfig.TranslationStrategy {
-	case UnderscoreEscapingWithSuffixes:
+	case UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes:
 	case "":
 	case NoTranslation, NoUTF8EscapingWithSuffixes:
 		if cfg.GlobalConfig.MetricNameValidationScheme == model.LegacyValidation {
@@ -1534,30 +1534,67 @@ func getGoGC() int {
 type translationStrategyOption string
 
 var (
-	// NoUTF8EscapingWithSuffixes will accept metric/label names as they are.
-	// Unit and type suffixes may be added to metric names, according to certain rules.
+	// NoUTF8EscapingWithSuffixes will accept metric/label names as they are. Unit
+	// and type suffixes may be added to metric names, according to certain rules.
 	NoUTF8EscapingWithSuffixes translationStrategyOption = "NoUTF8EscapingWithSuffixes"
-	// UnderscoreEscapingWithSuffixes is the default option for translating OTLP to Prometheus.
-	// This option will translate metric name characters that are not alphanumerics/underscores/colons to underscores,
-	// and label name characters that are not alphanumerics/underscores to underscores.
-	// Unit and type suffixes may be appended to metric names, according to certain rules.
+	// UnderscoreEscapingWithSuffixes is the default option for translating OTLP
+	// to Prometheus. This option will translate metric name characters that are
+	// not alphanumerics/underscores/colons to underscores, and label name
+	// characters that are not alphanumerics/underscores to underscores. Unit and
+	// type suffixes may be appended to metric names, according to certain rules.
 	UnderscoreEscapingWithSuffixes translationStrategyOption = "UnderscoreEscapingWithSuffixes"
+	// UnderscoreEscapingWithoutSuffixes translates metric name characters that
+	// are not alphanumerics/underscores/colons to underscores, and label name
+	// characters that are not alphanumerics/underscores to underscores, but
+	// unlike UnderscoreEscapingWithSuffixes it does not append any suffixes to
+	// the names.
+	UnderscoreEscapingWithoutSuffixes translationStrategyOption = "UnderscoreEscapingWithoutSuffixes"
 	// NoTranslation (EXPERIMENTAL): disables all translation of incoming metric
-	// and label names. This offers a way for the OTLP users to use native metric names, reducing confusion.
+	// and label names. This offers a way for the OTLP users to use native metric
+	// names, reducing confusion.
 	//
 	// WARNING: This setting has significant known risks and limitations (see
-	// https://prometheus.io/docs/practices/naming/  for details):
-	// * Impaired UX when using PromQL in plain YAML (e.g. alerts, rules, dashboard, autoscaling configuration).
-	// * Series collisions which in the best case may result in OOO errors, in the worst case a silently malformed
-	// time series. For instance, you may end up in situation of ingesting `foo.bar` series with unit
-	// `seconds` and a separate series `foo.bar` with unit `milliseconds`.
+	// https://prometheus.io/docs/practices/naming/  for details): * Impaired UX
+	// when using PromQL in plain YAML (e.g. alerts, rules, dashboard, autoscaling
+	// configuration). * Series collisions which in the best case may result in
+	// OOO errors, in the worst case a silently malformed time series. For
+	// instance, you may end up in situation of ingesting `foo.bar` series with
+	// unit `seconds` and a separate series `foo.bar` with unit `milliseconds`.
 	//
-	// As a result, this setting is experimental and currently, should not be used in
-	// production systems.
+	// As a result, this setting is experimental and currently, should not be used
+	// in production systems.
 	//
-	// TODO(ArthurSens): Mention `type-and-unit-labels` feature (https://github.com/prometheus/proposals/pull/39) once released, as potential mitigation of the above risks.
+	// TODO(ArthurSens): Mention `type-and-unit-labels` feature
+	// (https://github.com/prometheus/proposals/pull/39) once released, as
+	// potential mitigation of the above risks.
 	NoTranslation translationStrategyOption = "NoTranslation"
 )
+
+func (o translationStrategyOption) AllowsUTF8() bool {
+switch o {
+	case NoTranslation, NoUTF8EscapingWithSuffixes:
+		return true
+	case UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes:
+		return false
+	default:
+	return false
+	}
+}
+
+
+
+// ShouldAddSuffixes returns a bool deciding whether the given translation
+// strategy should have suffixes added.
+func (o translationStrategyOption) ShouldAddSuffixes() bool {
+	switch o {
+	case UnderscoreEscapingWithSuffixes, NoUTF8EscapingWithSuffixes:
+		return true
+	case UnderscoreEscapingWithoutSuffixes, NoTranslation:
+		return false
+	default:
+	return false
+	}
+}
 
 // OTLPConfig is the configuration for writing to the OTLP endpoint.
 type OTLPConfig struct {
