@@ -260,7 +260,7 @@ job_name: <job_name>
 # OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
 [ scrape_protocols: [<string>, ...] | default = <global_config.scrape_protocols> ]
 
-# Fallback protocol to use if a scrape returns blank, unparseable, or otherwise
+# Fallback protocol to use if a scrape returns blank, unparsable, or otherwise
 # invalid Content-Type.
 # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
 # OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.

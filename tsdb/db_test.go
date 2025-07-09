@@ -9066,7 +9066,7 @@ func TestOOONativeHistogramsSettings(t *testing.T) {
 	})
 }
 
-// compareSeries essentially replaces `require.Equal(t, expected, actual) in
+// compareSeries essentially replaces `require.Equal(t, expected, actual)` in
 // situations where the actual series might contain more counter reset hints
 // "unknown" than the expected series. This can easily happen for long series
 // that trigger new chunks. This function therefore tolerates counter reset
