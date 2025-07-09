@@ -129,7 +129,7 @@ type QueryLogger interface {
 	io.Closer
 }
 
-// A Query is derived from an a raw query string and can be run against an engine
+// A Query is derived from a raw query string and can be run against an engine
 // it is associated with.
 type Query interface {
 	// Exec processes the query. Can only be called once.
