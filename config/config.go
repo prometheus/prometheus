@@ -1573,13 +1573,13 @@ var (
 // ShouldEscape returns true if the translation strategy requires that metric
 // names be escaped.
 func (o translationStrategyOption) ShouldEscape() bool {
-switch o {
+	switch o {
 	case UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes:
 		return true
 	case NoTranslation, NoUTF8EscapingWithSuffixes:
 		return false
 	default:
-	return false
+		return false
 	}
 }
 
@@ -1592,7 +1592,7 @@ func (o translationStrategyOption) ShouldAddSuffixes() bool {
 	case UnderscoreEscapingWithoutSuffixes, NoTranslation:
 		return false
 	default:
-	return false
+		return false
 	}
 }
 
