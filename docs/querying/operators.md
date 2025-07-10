@@ -298,7 +298,7 @@ vector of fewer elements with aggregated values:
 
 * `stddev(v)` (calculate population standard deviation over dimensions)
 * `stdvar(v)` (calculate population standard variance over dimensions)
-* `quantile(phi, v)` (calculate φ-quantile (0 ≤ φ ≤ 1) over dimensions)
+* `quantile(φ, v)` (calculate φ-quantile (0 ≤ φ ≤ 1) over dimensions)
 
 These operators can either be used to aggregate over **all** label dimensions
 or preserve distinct dimensions by including a `without` or `by` clause. These
@@ -325,7 +325,7 @@ identical between all elements of the vector.
 `sum(v)` sums up sample values in `v` in the same way as the `+` binary operator does
 between two values. 
 
-All sample values aggregation into a single resulting vector element must either be
+All sample values being aggregated into a single resulting vector element must either be
 float samples or histogram samples. An aggregation of a mix of both is invalid,
 resulting in the removal of the corresponding vector element from the output
 vector, flagged by a warn-level annotation.
@@ -352,7 +352,7 @@ applications, we could simply write:
 `avg(v)` divides the sum of `v` by the number of aggregated samples in the same way
 as the `/` binary operator.
 
-All sample values aggregation into a single resulting vector element must either be
+All sample values being aggregated into a single resulting vector element must either be
 float samples or histogram samples. An aggregation of a mix of both is invalid,
 resulting in the removal of the corresponding vector element from the output
 vector, flagged by a warn-level annotation.
@@ -469,8 +469,13 @@ an info-level annotation.
 
 #### `quantile`
 
-`quantile(phi, v)` calculates the φ-quantile, the value that ranks at number φ*N among
+`quantile(φ, v)` calculates the φ-quantile, the value that ranks at number φ*N among
 the N metric values of the dimensions aggregated over.
+
+`quantile` only works with float samples. Histogram samples in the input vector
+are ignored, flagged by an info-level annotation.
+
+`NaN` is considered the smallest possible value.
 
 For example, `quantile(0.5, ...)` calculates the median, `quantile(0.95, ...)` the 95th percentile. 
 
