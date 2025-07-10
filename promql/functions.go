@@ -580,21 +580,57 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	if len(firstSeries.Floats) == 0 {
 		// The passed values only contain histograms.
 		vec, err := aggrHistOverTime(vals, enh, func(s Series) (*histogram.FloatHistogram, error) {
-			mean := s.Histograms[0].H.Copy()
+			var (
+				sum             = s.Histograms[0].H.Copy()
+				mean, kahanC    *histogram.FloatHistogram
+				count           float64
+				incrementalMean bool
+				err             error
+			)
 			for i, h := range s.Histograms[1:] {
-				count := float64(i + 2)
-				left := h.H.Copy().Div(count)
-				right := mean.Copy().Div(count)
-				toAdd, err := left.Sub(right)
-				if err != nil {
-					return mean, err
+				count = float64(i + 2)
+				if !incrementalMean {
+					sumCopy := sum.Copy()
+					var cCopy *histogram.FloatHistogram
+					if kahanC != nil {
+						cCopy = kahanC.Copy()
+					}
+					cCopy, err = sumCopy.KahanAdd(h.H, cCopy)
+					if err != nil {
+						// TODO(crush-on-anechka): handle error
+						continue
+					}
+					if !sumCopy.HasOverflow() {
+						sum, kahanC = sumCopy, cCopy
+						continue
+					}
+					incrementalMean = true
+					mean = sum.Copy().Div(count - 1)
+					if kahanC != nil {
+						kahanC.Div(count - 1)
+					}
 				}
-				_, err = mean.Add(toAdd)
+				q := (count - 1) / count
+				if kahanC != nil {
+					kahanC.Mul(q)
+				}
+				toAdd := h.H.Copy().Div(count)
+				kahanC, err = mean.Mul(q).KahanAdd(toAdd, kahanC)
 				if err != nil {
-					return mean, err
+					// TODO(crush-on-anechka): handle error
+					continue
 				}
 			}
-			return mean, nil
+			if incrementalMean {
+				if kahanC != nil {
+					return mean.Add(kahanC)
+				}
+				return mean, nil
+			}
+			if kahanC != nil {
+				return sum.Div(count).Add(kahanC.Div(count))
+			}
+			return sum.Div(count), nil
 		})
 		if err != nil {
 			metricName := firstSeries.Metric.Get(labels.MetricName)

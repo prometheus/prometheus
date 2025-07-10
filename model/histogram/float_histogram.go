@@ -1842,3 +1842,27 @@ func (h *FloatHistogram) adjustCounterResetForAddition(other *FloatHistogram) {
 		// TODO(trevorwhitney): Actually issue the warning as soon as the plumbing for it is in place
 	}
 }
+
+// HasOverflow reports whether any of the FloatHistogram's fields contain an infinite value.
+// This can happen when aggregating multiple histograms and exceeding float64 capacity.
+func (h *FloatHistogram) HasOverflow() bool {
+	if math.IsInf(h.ZeroCount, 0) || math.IsInf(h.Count, 0) || math.IsInf(h.Sum, 0) {
+		return true
+	}
+	for _, v := range h.PositiveBuckets {
+		if math.IsInf(v, 0) {
+			return true
+		}
+	}
+	for _, v := range h.NegativeBuckets {
+		if math.IsInf(v, 0) {
+			return true
+		}
+	}
+	for _, v := range h.CustomValues {
+		if math.IsInf(v, 0) {
+			return true
+		}
+	}
+	return false
+}
