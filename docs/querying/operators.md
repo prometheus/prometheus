@@ -332,20 +332,20 @@ vector, flagged by a warn-level annotation.
 
 ##### Examples
 
-If the metric `http_requests_total` had time series that fan out by
+If the metric `memory_consumption_bytes` had time series that fan out by
 `application`, `instance`, and `group` labels, we could calculate the total
-number of seen HTTP requests per application and group over all instances via:
+memory consumption per application and group over all instances via:
 
-    sum without (instance) (http_requests_total)
+    sum without (instance) (memory_consumption_bytes)
 
 Which is equivalent to:
 
-     sum by (application, group) (http_requests_total)
+    sum by (application, group) (memory_consumption_bytes)
 
-If we are just interested in the total of HTTP requests we have seen in **all**
+If we are just interested in the total memory consumption in **all**
 applications, we could simply write:
 
-    sum(http_requests_total)
+    sum(memory_consumption_bytes)
 
 #### `avg`
 
@@ -387,9 +387,9 @@ No sorting applies to range queries.
 
 ##### Example
 
-To get the 5 largest HTTP requests counts across all instances we could write:
+To get the 5 instances with the highest memory consumption across all instances we could write:
 
-    topk(5, http_requests_total)
+    topk(5, memory_consumption_bytes)
 
 #### `limitk` and `limit_ratio`
 
@@ -402,10 +402,9 @@ Therefore, it works for both float samples and histogram samples.
 
 ##### Example
 
-To sample 10 timeseries, for example to inspect labels and their values, we
-could write:
+To sample 10 timeseries we could write:
 
-    limitk(10, http_requests_total)
+    limitk(10, memory_consumption_bytes)
 
 #### `limit_ratio`
 
