@@ -3241,10 +3241,11 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 
 type groupedAggregation struct {
 	floatValue      float64
-	histogramValue  *histogram.FloatHistogram
-	histogramKahanC *histogram.FloatHistogram // Compensation histogram for Kahan summation.
 	floatMean       float64
 	floatKahanC     float64 // "Compensating value" for Kahan summation.
+	histogramValue  *histogram.FloatHistogram
+	histogramMean   *histogram.FloatHistogram
+	histogramKahanC *histogram.FloatHistogram // Compensation histogram for Kahan summation.
 	groupCount      float64
 	heap            vectorByValueHeap
 
@@ -3254,7 +3255,8 @@ type groupedAggregation struct {
 	hasHistogram           bool // Has at least 1 histogram sample aggregated.
 	incompatibleHistograms bool // If true, group has seen mixed exponential and custom buckets.
 	groupAggrComplete      bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group.
-	incrementalMean        bool // True after reverting to incremental calculation of the mean value.
+	floatIncrementalMean   bool // True after reverting to incremental calculation for float-based mean value.
+	histIncrementalMean    bool // True after reverting to incremental calculation for histogram-based mean value.
 	counterResetSeen       bool // Counter reset hint CounterReset seen. Currently only used for histogram samples.
 	notCounterResetSeen    bool // Counter reset hint NotCounterReset seen. Currently only used for histogram samples.
 	dropName               bool // True if any sample in this group has DropName set.
@@ -3420,34 +3422,55 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					case histogram.NotCounterReset:
 						group.notCounterResetSeen = true
 					}
-					left := h.Copy().Div(group.groupCount)
-					right := group.histogramValue.Copy().Div(group.groupCount)
-
-					toAdd, _, nhcbBoundsReconciled, err := left.Sub(right)
+					var err error
+					if !group.histIncrementalMean {
+						v := group.histogramValue.Copy()
+						var c *histogram.FloatHistogram
+						if group.histogramKahanC != nil {
+							c = group.histogramKahanC.Copy()
+						}
+						_, c, err = v.KahanAdd(h, c) // TODO(crush-on-anechka): Handle counterResetCollision after rebase
+						if err != nil {
+							handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+							group.incompatibleHistograms = true
+							continue
+						}
+						// TODO(crush-on-anechka): Uncomment once counterResetCollision is brought in
+						// if counterResetCollision {
+						// 	annos.Add(annotations.NewHistogramCounterResetCollisionWarning(e.Expr.PositionRange(), annotations.HistogramAgg))
+						// }
+						if !v.HasOverflow() {
+							group.histogramValue, group.histogramKahanC = v, c
+							break
+						}
+						group.histIncrementalMean = true
+						group.histogramMean = group.histogramValue.Copy().Div(group.groupCount - 1)
+						if group.histogramKahanC != nil {
+							group.histogramKahanC.Div(group.groupCount - 1)
+						}
+					}
+					q := (group.groupCount - 1) / group.groupCount
+					if group.histogramKahanC != nil {
+						group.histogramKahanC.Mul(q)
+					}
+					toAdd := h.Copy().Div(group.groupCount)
+					_, group.histogramKahanC, err = group.histogramMean.Mul(q).KahanAdd(toAdd, group.histogramKahanC) // TODO(crush-on-anechka): Handle counterResetCollision after rebase
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
 						continue
 					}
-					if nhcbBoundsReconciled {
-						annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(e.Expr.PositionRange(), annotations.HistogramAgg))
-					}
-					_, group.histogramKahanC, err = group.histogramValue.KahanAdd(toAdd, group.histogramKahanC) // TODO(crush-on-anechka): Bring counterResetCollision logic into KahanAdd after rebase
-					if err != nil {
-						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
-						group.incompatibleHistograms = true
-						continue
-					}
-					if nhcbBoundsReconciled {
-						annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(e.Expr.PositionRange(), annotations.HistogramAgg))
-					}
+					// TODO(crush-on-anechka): Uncomment once counterResetCollision is brought in
+					// if nhcbBoundsReconciled {
+					// 	annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(e.Expr.PositionRange(), annotations.HistogramAgg))
+					// }
 				}
 				// Otherwise the aggregation contained floats
 				// previously and will be invalid anyway. No
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
-				if !group.incrementalMean {
+				if !group.floatIncrementalMean {
 					newV, newC := kahansum.Inc(f, group.floatValue, group.floatKahanC)
 					if !math.IsInf(newV, 0) {
 						// The sum doesn't overflow, so we propagate it to the
@@ -3459,7 +3482,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					// If we are here, we know that the sum _would_ overflow. So
 					// instead of continue to sum up, we revert to incremental
 					// calculation of the mean value from here on.
-					group.incrementalMean = true
+					group.floatIncrementalMean = true
 					group.floatMean = group.floatValue / (group.groupCount - 1)
 					group.floatKahanC /= group.groupCount - 1
 				}
@@ -3540,10 +3563,15 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				continue
 			case aggr.hasHistogram:
 				if aggr.histogramKahanC != nil {
-					aggr.histogramValue, _ = aggr.histogramValue.Add(aggr.histogramKahanC)
+					if aggr.histIncrementalMean {
+						aggr.histogramValue, _ = aggr.histogramMean.Add(aggr.histogramKahanC)
+					} else {
+						aggr.histogramValue, _ = aggr.histogramValue.Div(aggr.groupCount).Add(
+							aggr.histogramKahanC.Div(aggr.groupCount))
+					}
 				}
 				aggr.histogramValue = aggr.histogramValue.Compact(0)
-			case aggr.incrementalMean:
+			case aggr.floatIncrementalMean:
 				aggr.floatValue = aggr.floatMean + aggr.floatKahanC
 			default:
 				aggr.floatValue = aggr.floatValue/aggr.groupCount + aggr.floatKahanC/aggr.groupCount
@@ -3573,6 +3601,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			case aggr.hasHistogram:
 				if aggr.histogramKahanC != nil {
 					aggr.histogramValue, _ = aggr.histogramValue.Add(aggr.histogramKahanC)
+					// TODO(crush-on-anechka): handle error
 				}
 				aggr.histogramValue.Compact(0)
 			default:

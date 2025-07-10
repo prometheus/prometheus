@@ -836,36 +836,69 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				}
 			}()
 
-			mean := s.Histograms[0].H.Copy()
-			trackCounterReset(mean)
+			var (
+				sum             = s.Histograms[0].H.Copy()
+				mean, kahanC    *histogram.FloatHistogram
+				count           float64
+				incrementalMean bool
+				err             error
+			)
+			trackCounterReset(sum)
 			for i, h := range s.Histograms[1:] {
 				trackCounterReset(h.H)
-				count := float64(i + 2)
-				left := h.H.Copy().Div(count)
-				right := mean.Copy().Div(count)
-
-				toAdd, _, nhcbBoundsReconciled, err := left.Sub(right)
+				count = float64(i + 2)
+				if !incrementalMean {
+					sumCopy := sum.Copy()
+					var cCopy *histogram.FloatHistogram
+					if kahanC != nil {
+						cCopy = kahanC.Copy()
+					}
+					_, cCopy, err = sumCopy.KahanAdd(h.H, cCopy)
+					if err != nil {
+						// TODO(crush-on-anechka): handle error
+						continue
+					}
+					// TODO(crush-on-anechka): Uncomment once nhcbBoundsReconciled is brought in
+					// if nhcbBoundsReconciled {
+					// 	nhcbBoundsReconciledSeen = true
+					// }
+					if !sumCopy.HasOverflow() {
+						sum, kahanC = sumCopy, cCopy
+						continue
+					}
+					incrementalMean = true
+					mean = sum.Copy().Div(count - 1)
+					if kahanC != nil {
+						kahanC.Div(count - 1)
+					}
+				}
+				q := (count - 1) / count
+				if kahanC != nil {
+					kahanC.Mul(q)
+				}
+				toAdd := h.H.Copy().Div(count)
+				_, kahanC, err = mean.Mul(q).KahanAdd(toAdd, kahanC)
 				if err != nil {
-					return mean, err
+					// TODO(crush-on-anechka): handle error
+					continue
 				}
-				if nhcbBoundsReconciled {
-					nhcbBoundsReconciledSeen = true
-				}
-				_, _, nhcbBoundsReconciled, err = mean.Add(toAdd) // TODO(crush-on-anechka): replace with KahanAdd
-				if err != nil {
-					return mean, err
-				}
-				if nhcbBoundsReconciled {
-					nhcbBoundsReconciledSeen = true
-				// TODO(crush-on-anechka): Uncomment once KahanAdd is brought in
-				// if comp != nil {
-				// 	mean, _, err = mean.Add(comp)
-				// 	if err != nil {
-				// 		return mean, err
-				// 	}
+				// TODO(crush-on-anechka): Uncomment once nhcbBoundsReconciled is brought in
+				// if nhcbBoundsReconciled {
+				// 	nhcbBoundsReconciledSeen = true
 				// }
 			}
-			return mean, nil
+			if incrementalMean {
+				if kahanC != nil {
+					_, _, _, err := mean.Add(kahanC)
+					return mean, err
+				}
+				return mean, nil
+			}
+			if kahanC != nil {
+				_, _, _, err := sum.Div(count).Add(kahanC.Div(count))
+				return sum, err
+			}
+			return sum.Div(count), nil
 		})
 		if err != nil {
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {

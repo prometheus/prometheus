@@ -626,101 +626,6 @@ func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (*FloatHistogram, *F
 	return h, c, nil
 }
 
-// KahanSub works like Sub but using the Kahan summation algorithm to minimize numerical errors.
-// c is a histogram holding the Kahan compensation term. It is modified in-place.
-// If c is nil, a suitable histogram is created. In any case, a pointer to the newly created
-// or updated c is returned as updatedC.
-func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (updatedC *FloatHistogram, err error) {
-	if err := h.checkSchemaAndBounds(other); err != nil {
-		return nil, err
-	}
-
-	h.adjustCounterResetForAddition(other)
-
-	if c == nil {
-		c = h.newCompensationHistogram()
-	}
-
-	if !h.UsesCustomBuckets() {
-		otherZeroCount := h.reconcileZeroBuckets(other, c)
-		h.ZeroCount, c.ZeroCount = kahansum.Dec(otherZeroCount, h.ZeroCount, c.ZeroCount)
-	}
-	h.Count, c.Count = kahansum.Dec(other.Count, h.Count, c.Count)
-	h.Sum, c.Sum = kahansum.Dec(other.Sum, h.Sum, c.Sum)
-	var (
-		hPositiveSpans       = h.PositiveSpans
-		hPositiveBuckets     = h.PositiveBuckets
-		otherPositiveSpans   = other.PositiveSpans
-		otherPositiveBuckets = other.PositiveBuckets
-		cPositiveBuckets     = c.PositiveBuckets
-	)
-
-	if h.UsesCustomBuckets() {
-		h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
-			h.Schema, h.ZeroThreshold, true,
-			hPositiveSpans, hPositiveBuckets,
-			otherPositiveSpans, otherPositiveBuckets,
-			cPositiveBuckets,
-		)
-		return c, nil
-	}
-
-	var (
-		hNegativeSpans       = h.NegativeSpans
-		hNegativeBuckets     = h.NegativeBuckets
-		otherNegativeSpans   = other.NegativeSpans
-		otherNegativeBuckets = other.NegativeBuckets
-		cNegativeBuckets     = c.NegativeBuckets
-	)
-
-	switch {
-	case other.Schema < h.Schema:
-		hPositiveSpans, hPositiveBuckets, cPositiveBuckets = kahanReduceResolution(
-			hPositiveSpans, hPositiveBuckets, cPositiveBuckets,
-			h.Schema, other.Schema,
-			true,
-		)
-		hNegativeSpans, hNegativeBuckets, cNegativeBuckets = kahanReduceResolution(
-			hNegativeSpans, hNegativeBuckets, cNegativeBuckets,
-			h.Schema, other.Schema,
-			true,
-		)
-		h.Schema = other.Schema
-
-	case other.Schema > h.Schema:
-		otherPositiveSpans, otherPositiveBuckets = reduceResolution(
-			otherPositiveSpans, otherPositiveBuckets,
-			other.Schema, h.Schema,
-			false, false,
-		)
-		otherNegativeSpans, otherNegativeBuckets = reduceResolution(
-			otherNegativeSpans, otherNegativeBuckets,
-			other.Schema, h.Schema,
-			false, false,
-		)
-	}
-
-	h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
-		h.Schema, h.ZeroThreshold, true,
-		hPositiveSpans, hPositiveBuckets,
-		otherPositiveSpans, otherPositiveBuckets,
-		cPositiveBuckets,
-	)
-	h.NegativeSpans, h.NegativeBuckets, c.NegativeBuckets = kahanAddBuckets(
-		h.Schema, h.ZeroThreshold, true,
-		hNegativeSpans, hNegativeBuckets,
-		otherNegativeSpans, otherNegativeBuckets,
-		cNegativeBuckets,
-	)
-
-	c.Schema = other.Schema
-	c.ZeroThreshold = h.ZeroThreshold
-	c.PositiveSpans = h.PositiveSpans
-	c.NegativeSpans = h.NegativeSpans
-
-	return c, nil
-}
-
 // Equals returns true if the given float histogram matches exactly.
 // Exact match is when there are no new buckets (even empty) and no missing buckets,
 // and all the bucket values match. Spans can have different empty length spans in between,
@@ -2209,4 +2114,28 @@ func (h *FloatHistogram) NewCompensationHistogram() *FloatHistogram {
 		c.NegativeBuckets = make([]float64, len(h.NegativeBuckets))
 	}
 	return c
+}
+
+// HasOverflow reports whether any of the FloatHistogram's fields contain an infinite value.
+// This can happen when aggregating multiple histograms and exceeding float64 capacity.
+func (h *FloatHistogram) HasOverflow() bool {
+	if math.IsInf(h.ZeroCount, 0) || math.IsInf(h.Count, 0) || math.IsInf(h.Sum, 0) {
+		return true
+	}
+	for _, v := range h.PositiveBuckets {
+		if math.IsInf(v, 0) {
+			return true
+		}
+	}
+	for _, v := range h.NegativeBuckets {
+		if math.IsInf(v, 0) {
+			return true
+		}
+	}
+	for _, v := range h.CustomValues {
+		if math.IsInf(v, 0) {
+			return true
+		}
+	}
+	return false
 }
