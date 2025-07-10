@@ -440,7 +440,32 @@ func TestOTLPWriteHandler(t *testing.T) {
 				},
 			},
 		},
-
+		{
+			name: "UnderscoreEscapingWithoutSuffixes",
+			otlpCfg: config.OTLPConfig{
+				TranslationStrategy: config.UnderscoreEscapingWithoutSuffixes,
+			},
+			expectedSamples: []mockSample{
+				{
+					l: labels.New(labels.Label{Name: "__name__", Value: "test_counter"},
+						labels.Label{Name: "foo_bar", Value: "baz"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"}),
+					t: timestamp.UnixMilli(),
+					v: 10.0,
+				},
+				{
+					l: labels.New(
+						labels.Label{Name: "__name__", Value: "target_info"},
+						labels.Label{Name: "host_name", Value: "test-host"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"},
+					),
+					t: timestamp.UnixMilli(),
+					v: 1,
+				},
+			},
+		},
 		{
 			name: "NoUTF8EscapingWithSuffixes",
 			otlpCfg: config.OTLPConfig{
