@@ -438,7 +438,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				metadata.Metadata{},
 			)
 
-			require.Equal(t, tt.want(), mockAppender.samples)
+			requireEqual(t, tt.want(), mockAppender.samples)
 			require.Empty(t, converter.conflicts)
 		})
 	}
@@ -609,7 +609,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				metadata.Metadata{},
 			)
 
-			require.Equal(t, tt.want(), mockAppender.samples)
+			requireEqual(t, tt.want(), mockAppender.samples)
 			require.Empty(t, converter.conflicts)
 		})
 	}

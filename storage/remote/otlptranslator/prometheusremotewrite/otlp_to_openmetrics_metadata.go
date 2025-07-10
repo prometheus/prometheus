@@ -17,9 +17,8 @@
 package prometheusremotewrite
 
 import (
-	"go.opentelemetry.io/collector/pdata/pmetric"
-
 	"github.com/prometheus/common/model"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
 func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric) model.MetricType {

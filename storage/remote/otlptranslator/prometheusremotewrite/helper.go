@@ -61,18 +61,6 @@ const (
 	defaultLookbackDelta = 5 * time.Minute
 )
 
-type bucketBoundsData struct {
-	labels labels.Labels
-	bound  float64
-}
-
-// byBucketBoundsData enables the usage of sort.Sort() with a slice of bucket bounds.
-type byBucketBoundsData []bucketBoundsData
-
-func (m byBucketBoundsData) Len() int           { return len(m) }
-func (m byBucketBoundsData) Less(i, j int) bool { return m[i].bound < m[j].bound }
-func (m byBucketBoundsData) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
-
 // createAttributes creates a slice of Prometheus Labels with OTLP attributes and pairs of string values.
 // Unpaired string values are ignored. String pairs overwrite OTLP labels if collisions happen and
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
@@ -259,7 +247,6 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 					break
 				}
 				currentBucketExemplars = append(currentBucketExemplars, ex)
-
 			}
 			val := float64(cumulativeCount)
 			if pt.Flags().NoRecordedValue() {
@@ -506,7 +493,7 @@ func (c *PrometheusConverter) timeSeriesIsNew(lbls labels.Labels) bool {
 }
 
 // addResourceTargetInfo converts the resource to the target info metric.
-func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, settings Settings, earliestTimestamp, latestTimestamp time.Time, converter *PrometheusConverter) error {
+func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, settings Settings, earliestTimestamp, latestTimestamp time.Time) error {
 	if settings.DisableTargetInfo {
 		return nil
 	}

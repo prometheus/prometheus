@@ -14,10 +14,15 @@
 package prometheusremotewrite
 
 import (
+	"testing"
+
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type mockCombinedAppender struct {
@@ -65,4 +70,8 @@ func (m *mockCombinedAppender) AppendHistogram(ls labels.Labels, meta metadata.M
 		es:   es,
 	})
 	return nil
+}
+
+func requireEqual(t testing.TB, expected, actual interface{}, msgAndArgs ...interface{}) {
+	testutil.RequireEqualWithOptions(t, expected, actual, []cmp.Option{cmp.AllowUnexported(combinedSample{}, combinedHistogram{})}, msgAndArgs...)
 }

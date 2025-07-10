@@ -382,8 +382,8 @@ func TestConvertBucketsLayout(t *testing.T) {
 		for scaleDown, wantLayout := range tt.wantLayout {
 			t.Run(fmt.Sprintf("%s-scaleby-%d", tt.name, scaleDown), func(t *testing.T) {
 				gotSpans, gotDeltas := convertBucketsLayout(tt.buckets().BucketCounts().AsRaw(), tt.buckets().Offset(), scaleDown, true)
-				require.Equal(t, wantLayout.wantSpans, gotSpans)
-				require.Equal(t, wantLayout.wantDeltas, gotDeltas)
+				requireEqual(t, wantLayout.wantSpans, gotSpans)
+				requireEqual(t, wantLayout.wantDeltas, gotDeltas)
 			})
 		}
 	}
@@ -870,7 +870,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, annots)
 
-			require.Equal(t, tt.wantSeries(), mockAppender.histograms)
+			requireEqual(t, tt.wantSeries(), mockAppender.histograms)
 			require.Empty(t, converter.conflicts)
 		})
 	}
@@ -1337,7 +1337,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, annots)
 
-			require.Equal(t, tt.wantSeries(), mockAppender.histograms)
+			requireEqual(t, tt.wantSeries(), mockAppender.histograms)
 			require.Empty(t, converter.conflicts)
 		})
 	}

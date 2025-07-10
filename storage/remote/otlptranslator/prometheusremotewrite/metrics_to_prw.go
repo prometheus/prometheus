@@ -64,7 +64,6 @@ type PrometheusConverter struct {
 	scratchBuilder labels.ScratchBuilder
 	builder        *labels.Builder
 	appender       CombinedAppender
-	labelNamer     otlptranslator.LabelNamer
 }
 
 func NewPrometheusConverter(appender CombinedAppender) *PrometheusConverter {
@@ -278,7 +277,9 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		if earliestTimestamp < pcommon.Timestamp(math.MaxUint64) {
 			// We have at least one metric sample for this resource.
 			// Generate a corresponding target_info series.
-			c.addResourceTargetInfo(resource, settings, earliestTimestamp.AsTime(), latestTimestamp.AsTime(), c)
+			if err := c.addResourceTargetInfo(resource, settings, earliestTimestamp.AsTime(), latestTimestamp.AsTime()); err != nil {
+				errs = multierr.Append(errs, err)
+			}
 		}
 	}
 

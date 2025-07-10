@@ -19,7 +19,6 @@ package prometheusremotewrite
 import (
 	"context"
 	"fmt"
-	"sort"
 	"testing"
 	"time"
 
@@ -325,7 +324,7 @@ func TestFromMetrics(t *testing.T) {
 			Type: model.MetricTypeGauge,
 			Help: "Target metadata",
 		}
-		require.Equal(t, []combinedSample{
+		requireEqual(t, []combinedSample{
 			{
 				v:    1,
 				t:    ts.AsTime().UnixMilli(),
@@ -572,8 +571,8 @@ func TestTemporality(t *testing.T) {
 			}
 
 			// Sort series to make the test deterministic.
-			require.Equal(t, tc.expectedSamples, mockAppender.samples)
-			require.Equal(t, tc.expectedHistograms, mockAppender.histograms)
+			requireEqual(t, tc.expectedSamples, mockAppender.samples)
+			requireEqual(t, tc.expectedHistograms, mockAppender.histograms)
 		})
 	}
 }
@@ -784,14 +783,6 @@ func createOtelEmptyType(name string) pmetric.Metric {
 	return m
 }
 
-func sortTimeSeries(series []combinedHistogram) []combinedHistogram {
-	sort.Slice(series, func(i, j int) bool {
-		return series[i].ls.String() < series[j].ls.String()
-	})
-
-	return series
-}
-
 func TestTranslatorMetricFromOtelMetric(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -961,9 +952,7 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 												annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
 												require.NoError(b, err)
 												require.Empty(b, annots)
-												if histogramCount+nonHistogramCount > 0 {
-													require.True(b, len(mockAppender.samples)+len(mockAppender.histograms) > 0)
-												}
+												require.Positive(b, len(mockAppender.samples)+len(mockAppender.histograms))
 											}
 										})
 									}

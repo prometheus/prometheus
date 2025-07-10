@@ -321,7 +321,7 @@ func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint, tem
 
 	// TODO(carrieedwards): Add setting to limit maximum bucket count
 	h := &histogram.Histogram{
-		CounterResetHint: histogram.CounterResetHint(resetHint),
+		CounterResetHint: resetHint,
 		Schema:           histogram.CustomBucketsSchema,
 		PositiveSpans:    positiveSpans,
 		PositiveBuckets:  positiveDeltas,
