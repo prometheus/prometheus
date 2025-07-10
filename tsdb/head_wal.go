@@ -76,6 +76,7 @@ func counterAddNonZero(v *prometheus.CounterVec, value float64, lvs ...string) {
 }
 
 func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, lastSegment int) (err error) {
+	fmt.Println("🔁 Starting WAL replay...")
 	// Track number of missing series records that were referenced by other records.
 	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
 	// Track number of different records that referenced a series we don't know about
@@ -102,6 +103,9 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		decodeErr, seriesCreationErr error
 	)
 
+	fmt.Printf("📌 Using %d goroutines for WAL replay\n", concurrency)
+	fmt.Printf("🧵 Processor slots: processors=%d shards=%d\n", len(processors), len(shards))
+
 	defer func() {
 		// For CorruptionErr ensure to terminate all workers before exiting.
 		_, ok := err.(*wlog.CorruptionErr)
@@ -119,6 +123,8 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		processors[i].setup()
 
 		go func(wp *walSubsetProcessor) {
+			fmt.Printf("▶️ WAL processor started: shard=")
+
 			missingSeries, unknownSamples, unknownHistograms, overlapping := wp.processWALSamples(h, mmappedChunks, oooMmappedChunks)
 			unknownSeriesRefs.merge(missingSeries)
 			unknownSampleRefs.Add(unknownSamples)
@@ -271,8 +277,10 @@ Outer:
 
 				idx := uint64(mSeries.ref) % uint64(concurrency)
 				processors[idx].input <- walSubsetProcessorInputItem{walSeriesRef: walSeries.Ref, existingSeries: mSeries}
+
 			}
 			h.wlReplaySeriesPool.Put(v)
+
 		case []record.RefSample:
 			samples := v
 			minValidTime := h.minValidTime.Load()
