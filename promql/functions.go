@@ -821,34 +821,63 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		// The passed values only contain histograms.
 		var annos annotations.Annotations
 		vec, err := aggrHistOverTime(matrixVal, enh, func(s Series) (*histogram.FloatHistogram, error) {
-			mean := s.Histograms[0].H.Copy()
+			var (
+				sum             = s.Histograms[0].H.Copy()
+				mean, kahanC    *histogram.FloatHistogram
+				count           float64
+				incrementalMean bool
+				err             error
+			)
 			for i, h := range s.Histograms[1:] {
-				count := float64(i + 2)
-				left := h.H.Copy().Div(count)
-				right := mean.Copy().Div(count)
-				toAdd, counterResetCollision, err := left.Sub(right)
+				count = float64(i + 2)
+				if !incrementalMean {
+					sumCopy := sum.Copy()
+					var cCopy *histogram.FloatHistogram
+					if kahanC != nil {
+						cCopy = kahanC.Copy()
+					}
+					_, cCopy, err = sumCopy.KahanAdd(h.H, cCopy) // TODO(crush-on-anechka): Handle counterResetCollision after rebase
+					if err != nil {
+						// TODO(crush-on-anechka): handle error
+						continue
+					}
+					// TODO(crush-on-anechka): Uncomment once counterResetCollision is brought in
+					// if counterResetCollision {
+					// 	annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
+					// }
+					if !sumCopy.HasOverflow() {
+						sum, kahanC = sumCopy, cCopy
+						continue
+					}
+					incrementalMean = true
+					mean = sum.Copy().Div(count - 1)
+					if kahanC != nil {
+						kahanC.Div(count - 1)
+					}
+				}
+				q := (count - 1) / count
+				if kahanC != nil {
+					kahanC.Mul(q)
+				}
+				toAdd := h.H.Copy().Div(count)
+				_, kahanC, err = mean.Mul(q).KahanAdd(toAdd, kahanC)
 				if err != nil {
-					return mean, err
+					// TODO(crush-on-anechka): handle error
+					continue
 				}
-				if counterResetCollision {
-					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramSub))
-				}
-				_, counterResetCollision, err = mean.Add(toAdd) // TODO(crush-on-anechka): replace with KahanAdd
-				if err != nil {
-					return mean, err
-				}
-				if counterResetCollision {
-					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
-				}
-				// TODO(crush-on-anechka): Uncomment once KahanAdd is brought in
-				// if comp != nil {
-				// 	mean, _, err = mean.Add(comp)
-				// 	if err != nil {
-				// 		return mean, err
-				// 	}
-				// }
 			}
-			return mean, nil
+			if incrementalMean {
+				if kahanC != nil {
+					_, _, err := mean.Add(kahanC)
+					return mean, err
+				}
+				return mean, nil
+			}
+			if kahanC != nil {
+				_, _, err := sum.Div(count).Add(kahanC.Div(count))
+				return sum, err
+			}
+			return sum.Div(count), nil
 		})
 		if err != nil {
 			metricName := firstSeries.Metric.Get(labels.MetricName)
