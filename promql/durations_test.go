@@ -41,7 +41,7 @@ func TestDurationVisitor(t *testing.T) {
 	expr, err := parser.ParseExpr(complexExpr)
 	require.NoError(t, err)
 
-	err = parser.Walk(&durationVisitor{}, expr, nil)
+	err = parser.Walk(NewDurationVisitor(0), expr, nil)
 	require.NoError(t, err)
 
 	// Verify different parts of the expression have correct durations.
@@ -243,7 +243,7 @@ func TestCalculateDuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := &durationVisitor{step: 1 * time.Second}
+			v := NewDurationVisitor(1 * time.Second)
 			result, err := v.calculateDuration(tt.expr, tt.allowedNegative)
 			if tt.errorMessage != "" {
 				require.Error(t, err)

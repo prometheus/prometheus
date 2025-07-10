@@ -21,12 +21,20 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-// durationVisitor is a visitor that visits a duration expression and calculates the duration.
-type durationVisitor struct {
+// DurationVisitor is a visitor that visits a duration expression and calculates the duration.
+type DurationVisitor struct {
 	step time.Duration
 }
 
-func (v *durationVisitor) Visit(node parser.Node, _ []parser.Node) (parser.Visitor, error) {
+// NewDurationVisitor creates a visitor to Walk and evaluate duration
+// expressions in a parsed query.
+func NewDurationVisitor(step time.Duration) *DurationVisitor {
+	return &DurationVisitor{
+		step: step,
+	}
+}
+
+func (v *DurationVisitor) Visit(node parser.Node, _ []parser.Node) (parser.Visitor, error) {
 	switch n := node.(type) {
 	case *parser.VectorSelector:
 		if n.OriginalOffsetExpr != nil {
@@ -71,7 +79,7 @@ func (v *durationVisitor) Visit(node parser.Node, _ []parser.Node) (parser.Visit
 }
 
 // calculateDuration computes the duration from a duration expression.
-func (v *durationVisitor) calculateDuration(expr parser.Expr, allowedNegative bool) (time.Duration, error) {
+func (v *DurationVisitor) calculateDuration(expr parser.Expr, allowedNegative bool) (time.Duration, error) {
 	duration, err := v.evaluateDurationExpr(expr)
 	if err != nil {
 		return 0, err
@@ -86,7 +94,7 @@ func (v *durationVisitor) calculateDuration(expr parser.Expr, allowedNegative bo
 }
 
 // evaluateDurationExpr recursively evaluates a duration expression to a float64 value.
-func (v *durationVisitor) evaluateDurationExpr(expr parser.Expr) (float64, error) {
+func (v *DurationVisitor) evaluateDurationExpr(expr parser.Expr) (float64, error) {
 	switch n := expr.(type) {
 	case *parser.NumberLiteral:
 		return n.Val, nil
