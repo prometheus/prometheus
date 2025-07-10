@@ -555,8 +555,21 @@ func createLabels(name string, baseLabels []prompb.Label, extras ...string) []pr
 func addTypeAndUnitLabels(labels []prompb.Label, metadata prompb.MetricMetadata, settings Settings) []prompb.Label {
 	unitNamer := otlptranslator.UnitNamer{UTF8Allowed: settings.AllowUTF8}
 
-	labels = append(labels, prompb.Label{Name: "__type__", Value: strings.ToLower(metadata.Type.String())})
-	labels = append(labels, prompb.Label{Name: "__unit__", Value: unitNamer.Build(metadata.Unit)})
+	var hasTypeLabel, hasUnitLabel bool
+	for _, l := range labels {
+		if l.Name == "__type__" {
+			hasTypeLabel = true
+		}
+		if l.Name == "__unit__" {
+			hasUnitLabel = true
+		}
+	}
+	if !hasTypeLabel {
+		labels = append(labels, prompb.Label{Name: "__type__", Value: strings.ToLower(metadata.Type.String())})
+	}
+	if !hasUnitLabel {
+		labels = append(labels, prompb.Label{Name: "__unit__", Value: unitNamer.Build(metadata.Unit)})
+	}
 
 	return labels
 }
