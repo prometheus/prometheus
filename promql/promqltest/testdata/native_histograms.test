@@ -1416,3 +1416,16 @@ eval instant at 55m increase(metric[55m15s])
 eval instant at 54m30s increase(metric[54m45s])
     {type="histogram"} {{count:2509.375 sum:50.69444444444444 counter_reset_hint:gauge buckets:[10.13888888888889 2499.236111111111]}}
     {type="counter"} 2509.375
+
+# Try the same, but now extract just the histogram count via `histogram_count`.
+eval instant at 55m histogram_count(increase(metric[90m]))
+    {type="histogram"} 2490
+
+eval instant at 54m30s histogram_count(increase(metric[90m]))
+    {type="histogram"} 2512.9166666666665
+
+eval instant at 55m histogram_count(increase(metric[55m15s]))
+    {type="histogram"} 2486.25
+
+eval instant at 54m30s histogram_count(increase(metric[54m45s]))
+    {type="histogram"} 2509.375
