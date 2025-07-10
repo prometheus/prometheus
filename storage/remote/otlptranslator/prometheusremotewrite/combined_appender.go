@@ -31,11 +31,12 @@ import (
 // NewCombinedAppender creates a combined appender that sets start times and
 // updates metadata for each series only once, and appends samples and
 // exemplars for each call.
-func NewCombinedAppender(app storage.Appender, logger *slog.Logger, reg prometheus.Registerer) CombinedAppender {
+func NewCombinedAppender(app storage.Appender, logger *slog.Logger, reg prometheus.Registerer, ingestCTZeroSample bool) CombinedAppender {
 	return &combinedAppender{
-		app:    app,
-		logger: logger,
-		refs:   make(map[uint64]storage.SeriesRef),
+		app:                app,
+		logger:             logger,
+		ingestCTZeroSample: ingestCTZeroSample,
+		refs:               make(map[uint64]storage.SeriesRef),
 		samplesAppendedWithoutMetadata: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
 			Subsystem: "api",
@@ -67,6 +68,7 @@ type combinedAppender struct {
 	logger                         *slog.Logger
 	samplesAppendedWithoutMetadata prometheus.Counter
 	outOfOrderExemplars            prometheus.Counter
+	ingestCTZeroSample             bool
 	// Used to ensure we only update metadata and created timestamps once, and to share storage.SeriesRefs.
 	refs map[uint64]storage.SeriesRef
 }
@@ -80,7 +82,7 @@ func (b *combinedAppender) AppendSample(ls labels.Labels, meta metadata.Metadata
 			b.samplesAppendedWithoutMetadata.Add(1)
 			b.logger.Debug("error while updating metadata from OTLP", "err", err)
 		}
-		if ct != 0 {
+		if ct != 0 && b.ingestCTZeroSample {
 			ref, err = b.app.AppendCTZeroSample(ref, ls, t, ct)
 			if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
 				// Even for the first sample OOO is a common scenario because
@@ -114,12 +116,14 @@ func (b *combinedAppender) AppendHistogram(ls labels.Labels, meta metadata.Metad
 			b.samplesAppendedWithoutMetadata.Add(1)
 			b.logger.Debug("error while updating metadata from OTLP", "err", err)
 		}
-		ref, err = b.app.AppendHistogramCTZeroSample(ref, ls, t, ct, h, nil)
-		if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
-			// Even for the first sample OOO is a common scenario because
-			// we can't tell if a CT was already ingested in a previous request.
-			// We ignore the error.
-			b.logger.Debug("Error when appending Histogram CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ct, "timestamp", t)
+		if b.ingestCTZeroSample {
+			ref, err = b.app.AppendHistogramCTZeroSample(ref, ls, t, ct, h, nil)
+			if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
+				// Even for the first sample OOO is a common scenario because
+				// we can't tell if a CT was already ingested in a previous request.
+				// We ignore the error.
+				b.logger.Debug("Error when appending Histogram CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ct, "timestamp", t)
+			}
 		}
 	}
 	ref, err = b.app.AppendHistogram(ref, ls, t, h, nil)
