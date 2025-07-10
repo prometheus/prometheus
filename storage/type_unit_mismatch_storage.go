@@ -16,6 +16,7 @@ package storage
 import (
 	"context"
 	"fmt"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/annotations"
 )

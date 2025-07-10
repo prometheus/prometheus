@@ -20,6 +20,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -3758,6 +3759,8 @@ func TestTypeUnitMismatchAnnotations(t *testing.T) {
 			require.NoError(t, res.Err)
 
 			warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
+			slices.Sort(warnings)
+			slices.Sort(infos)
 			testutil.RequireEqual(t, testCase.expectedWarningAnnotations, warnings)
 			testutil.RequireEqual(t, testCase.expectedInfoAnnotations, infos)
 		})
