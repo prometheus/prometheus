@@ -28,7 +28,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -240,7 +240,7 @@ func TestCreateAttributes(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := NewPrometheusConverter()
+			c := NewPrometheusConverter(&mockCombinedAppender{})
 			settings := Settings{
 				PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
 					PromoteAllResourceAttributes: tc.promoteAllResourceAttributes,
@@ -293,7 +293,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		want         func() map[uint64]*prompb.TimeSeries
+		want         func() []combinedSample
 	}{
 		{
 			name: "summary with start time and without scope promotion",
@@ -310,34 +310,30 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*prompb.TimeSeries {
-				countLabels := labels.FromStrings(
-					model.MetricNameLabel, "test_summary"+countStr,
-				)
-				sumLabels := labels.FromStrings(
-					model.MetricNameLabel, "test_summary"+sumStr,
-				)
-				createdLabels := labels.FromStrings(
-					model.MetricNameLabel, "test_summary"+createdSuffix,
-				)
-				return map[uint64]*prompb.TimeSeries{
-					countLabels.Hash(): {
-						Labels: prompb.FromLabels(countLabels, nil),
-						Samples: []prompb.Sample{
-							{Value: 0, Timestamp: convertTimeStamp(ts)},
-						},
+			want: func() []combinedSample {
+				return []combinedSample{
+					{
+						ls: labels.FromStrings(
+							model.MetricNameLabel, "test_summary"+sumStr,
+						),
+						t:  convertTimeStamp(ts),
+						ct: convertTimeStamp(ts),
+						v:  0,
 					},
-					sumLabels.Hash(): {
-						Labels: prompb.FromLabels(sumLabels, nil),
-						Samples: []prompb.Sample{
-							{Value: 0, Timestamp: convertTimeStamp(ts)},
-						},
+					{
+						ls: labels.FromStrings(
+							model.MetricNameLabel, "test_summary"+countStr,
+						),
+						t:  convertTimeStamp(ts),
+						ct: convertTimeStamp(ts),
+						v:  0,
 					},
-					createdLabels.Hash(): {
-						Labels: prompb.FromLabels(createdLabels, nil),
-						Samples: []prompb.Sample{
-							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
-						},
+					{
+						ls: labels.FromStrings(
+							model.MetricNameLabel, "test_summary"+createdSuffix,
+						),
+						t: convertTimeStamp(ts),
+						v: float64(convertTimeStamp(ts)),
 					},
 				}
 			},
@@ -357,7 +353,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			want: func() map[uint64]*prompb.TimeSeries {
+			want: func() []combinedSample {
 				scopeLabels := []string{
 					"otel_scope_attr1", "value1",
 					"otel_scope_attr2", "value2",
@@ -365,31 +361,27 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 					"otel_scope_schema_url", defaultScope.schemaURL,
 					"otel_scope_version", defaultScope.version,
 				}
-				countLabels := labels.FromStrings(append(scopeLabels,
-					model.MetricNameLabel, "test_summary"+countStr)...)
-				sumLabels := labels.FromStrings(append(scopeLabels,
-					model.MetricNameLabel, "test_summary"+sumStr)...)
-				createdLabels := labels.FromStrings(append(scopeLabels,
-					model.MetricNameLabel, "test_summary"+createdSuffix,
-				)...)
-				return map[uint64]*prompb.TimeSeries{
-					countLabels.Hash(): {
-						Labels: prompb.FromLabels(countLabels, nil),
-						Samples: []prompb.Sample{
-							{Value: 0, Timestamp: convertTimeStamp(ts)},
-						},
+				return []combinedSample{
+					{
+						ls: labels.FromStrings(append(scopeLabels,
+							model.MetricNameLabel, "test_summary"+sumStr)...),
+						t:  convertTimeStamp(ts),
+						ct: convertTimeStamp(ts),
+						v:  0,
 					},
-					sumLabels.Hash(): {
-						Labels: prompb.FromLabels(sumLabels, nil),
-						Samples: []prompb.Sample{
-							{Value: 0, Timestamp: convertTimeStamp(ts)},
-						},
+					{
+						ls: labels.FromStrings(append(scopeLabels,
+							model.MetricNameLabel, "test_summary"+countStr)...),
+						t:  convertTimeStamp(ts),
+						ct: convertTimeStamp(ts),
+						v:  0,
 					},
-					createdLabels.Hash(): {
-						Labels: prompb.FromLabels(createdLabels, nil),
-						Samples: []prompb.Sample{
-							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
-						},
+					{
+						ls: labels.FromStrings(append(scopeLabels,
+							model.MetricNameLabel, "test_summary"+createdSuffix,
+						)...),
+						t: convertTimeStamp(ts),
+						v: float64(convertTimeStamp(ts)),
 					},
 				}
 			},
@@ -407,25 +399,21 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				return metric
 			},
 			promoteScope: false,
-			want: func() map[uint64]*prompb.TimeSeries {
-				countLabels := labels.FromStrings(
-					model.MetricNameLabel, "test_summary"+countStr,
-				)
-				sumLabels := labels.FromStrings(
-					model.MetricNameLabel, "test_summary"+sumStr,
-				)
-				return map[uint64]*prompb.TimeSeries{
-					countLabels.Hash(): {
-						Labels: prompb.FromLabels(countLabels, nil),
-						Samples: []prompb.Sample{
-							{Value: 0, Timestamp: convertTimeStamp(ts)},
-						},
+			want: func() []combinedSample {
+				return []combinedSample{
+					{
+						ls: labels.FromStrings(
+							model.MetricNameLabel, "test_summary"+sumStr,
+						),
+						t: convertTimeStamp(ts),
+						v: 0,
 					},
-					sumLabels.Hash(): {
-						Labels: prompb.FromLabels(sumLabels, nil),
-						Samples: []prompb.Sample{
-							{Value: 0, Timestamp: convertTimeStamp(ts)},
-						},
+					{
+						ls: labels.FromStrings(
+							model.MetricNameLabel, "test_summary"+countStr,
+						),
+						t: convertTimeStamp(ts),
+						v: 0,
 					},
 				}
 			},
@@ -434,7 +422,8 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := tt.metric()
-			converter := NewPrometheusConverter()
+			mockAppender := &mockCombinedAppender{}
+			converter := NewPrometheusConverter(mockAppender)
 
 			converter.addSummaryDataPoints(
 				context.Background(),
@@ -446,9 +435,10 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				},
 				metric.Name(),
 				tt.scope,
+				metadata.Metadata{},
 			)
 
-			testutil.RequireEqual(t, tt.want(), converter.unique)
+			require.Equal(t, tt.want(), mockAppender.samples)
 			require.Empty(t, converter.conflicts)
 		})
 	}
@@ -473,7 +463,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		want         func() map[uint64]*prompb.TimeSeries
+		want         func() []combinedSample
 	}{
 		{
 			name: "histogram with start time and without scope promotion",
@@ -490,35 +480,31 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*prompb.TimeSeries {
-				countLabels := labels.FromStrings(
-					model.MetricNameLabel, "test_hist"+countStr,
-				)
-				createdLabels := labels.FromStrings(
-					model.MetricNameLabel, "test_hist"+createdSuffix,
-				)
-				infLabels := labels.FromStrings(
-					model.MetricNameLabel, "test_hist_bucket",
-					model.BucketLabel, "+Inf",
-				)
-				return map[uint64]*prompb.TimeSeries{
-					countLabels.Hash(): {
-						Labels: prompb.FromLabels(countLabels, nil),
-						Samples: []prompb.Sample{
-							{Value: 0, Timestamp: convertTimeStamp(ts)},
-						},
+			want: func() []combinedSample {
+				return []combinedSample{
+					{
+						ls: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+countStr,
+						),
+						t:  convertTimeStamp(ts),
+						ct: convertTimeStamp(ts),
+						v:  0,
 					},
-					infLabels.Hash(): {
-						Labels: prompb.FromLabels(infLabels, nil),
-						Samples: []prompb.Sample{
-							{Value: 0, Timestamp: convertTimeStamp(ts)},
-						},
+					{
+						ls: labels.FromStrings(
+							model.MetricNameLabel, "test_hist_bucket",
+							model.BucketLabel, "+Inf",
+						),
+						t:  convertTimeStamp(ts),
+						ct: convertTimeStamp(ts),
+						v:  0,
 					},
-					createdLabels.Hash(): {
-						Labels: prompb.FromLabels(createdLabels, nil),
-						Samples: []prompb.Sample{
-							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
-						},
+					{
+						ls: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+createdSuffix,
+						),
+						t: convertTimeStamp(ts),
+						v: float64(convertTimeStamp(ts)),
 					},
 				}
 			},
@@ -538,7 +524,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			want: func() map[uint64]*prompb.TimeSeries {
+			want: func() []combinedSample {
 				scopeLabels := []string{
 					"otel_scope_attr1", "value1",
 					"otel_scope_attr2", "value2",
@@ -546,31 +532,27 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 					"otel_scope_schema_url", defaultScope.schemaURL,
 					"otel_scope_version", defaultScope.version,
 				}
-				countLabels := labels.FromStrings(append(scopeLabels,
-					model.MetricNameLabel, "test_hist"+countStr)...)
-				infLabels := labels.FromStrings(append(scopeLabels,
-					model.MetricNameLabel, "test_hist_bucket",
-					model.BucketLabel, "+Inf")...)
-				createdLabels := labels.FromStrings(append(scopeLabels,
-					model.MetricNameLabel, "test_hist"+createdSuffix)...)
-				return map[uint64]*prompb.TimeSeries{
-					countLabels.Hash(): {
-						Labels: prompb.FromLabels(countLabels, nil),
-						Samples: []prompb.Sample{
-							{Value: 0, Timestamp: convertTimeStamp(ts)},
-						},
+				return []combinedSample{
+					{
+						ls: labels.FromStrings(append(scopeLabels,
+							model.MetricNameLabel, "test_hist"+countStr)...),
+						t:  convertTimeStamp(ts),
+						ct: convertTimeStamp(ts),
+						v:  0,
 					},
-					infLabels.Hash(): {
-						Labels: prompb.FromLabels(infLabels, nil),
-						Samples: []prompb.Sample{
-							{Value: 0, Timestamp: convertTimeStamp(ts)},
-						},
+					{
+						ls: labels.FromStrings(append(scopeLabels,
+							model.MetricNameLabel, "test_hist_bucket",
+							model.BucketLabel, "+Inf")...),
+						t:  convertTimeStamp(ts),
+						ct: convertTimeStamp(ts),
+						v:  0,
 					},
-					createdLabels.Hash(): {
-						Labels: prompb.FromLabels(createdLabels, nil),
-						Samples: []prompb.Sample{
-							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
-						},
+					{
+						ls: labels.FromStrings(append(scopeLabels,
+							model.MetricNameLabel, "test_hist"+createdSuffix)...),
+						t: convertTimeStamp(ts),
+						v: float64(convertTimeStamp(ts)),
 					},
 				}
 			},
@@ -587,26 +569,22 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 
 				return metric
 			},
-			want: func() map[uint64]*prompb.TimeSeries {
-				lbls := labels.FromStrings(
-					model.MetricNameLabel, "test_hist"+countStr,
-				)
-				infLabels := labels.FromStrings(
-					model.MetricNameLabel, "test_hist_bucket",
-					model.BucketLabel, "+Inf",
-				)
-				return map[uint64]*prompb.TimeSeries{
-					infLabels.Hash(): {
-						Labels: prompb.FromLabels(infLabels, nil),
-						Samples: []prompb.Sample{
-							{Value: 0, Timestamp: convertTimeStamp(ts)},
-						},
+			want: func() []combinedSample {
+				return []combinedSample{
+					{
+						ls: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+countStr,
+						),
+						t: convertTimeStamp(ts),
+						v: 0,
 					},
-					lbls.Hash(): {
-						Labels: prompb.FromLabels(lbls, nil),
-						Samples: []prompb.Sample{
-							{Value: 0, Timestamp: convertTimeStamp(ts)},
-						},
+					{
+						ls: labels.FromStrings(
+							model.MetricNameLabel, "test_hist_bucket",
+							model.BucketLabel, "+Inf",
+						),
+						t: convertTimeStamp(ts),
+						v: 0,
 					},
 				}
 			},
@@ -615,7 +593,8 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := tt.metric()
-			converter := NewPrometheusConverter()
+			mockAppender := &mockCombinedAppender{}
+			converter := NewPrometheusConverter(mockAppender)
 
 			converter.addHistogramDataPoints(
 				context.Background(),
@@ -627,9 +606,10 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				},
 				metric.Name(),
 				tt.scope,
+				metadata.Metadata{},
 			)
 
-			require.Equal(t, tt.want(), converter.unique)
+			require.Equal(t, tt.want(), mockAppender.samples)
 			require.Empty(t, converter.conflicts)
 		})
 	}
@@ -637,7 +617,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 
 func TestGetPromExemplars(t *testing.T) {
 	ctx := context.Background()
-	c := NewPrometheusConverter()
+	c := NewPrometheusConverter(&mockCombinedAppender{})
 
 	t.Run("Exemplars with int value", func(t *testing.T) {
 		es := pmetric.NewExemplarSlice()

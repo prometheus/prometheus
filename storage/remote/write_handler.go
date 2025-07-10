@@ -537,7 +537,7 @@ type OTLPOptions struct {
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
 // writes them to the provided appendable.
-func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendable storage.Appendable, configFunc func() config.Config, opts OTLPOptions) http.Handler {
+func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, configFunc func() config.Config, opts OTLPOptions) http.Handler {
 	if opts.NativeDelta && opts.ConvertDelta {
 		// This should be validated when iterating through feature flags, so not expected to fail here.
 		panic("cannot enable native delta ingestion and delta2cumulative conversion at the same time")
@@ -549,6 +549,7 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 		config:                configFunc,
 		allowDeltaTemporality: opts.NativeDelta,
 		lookbackDelta:         opts.LookbackDelta,
+		reg:                   reg,
 	}
 
 	wh := &otlpWriteHandler{logger: logger, defaultConsumer: ex}
@@ -587,6 +588,7 @@ type rwExporter struct {
 	config                func() config.Config
 	allowDeltaTemporality bool
 	lookbackDelta         time.Duration
+	reg                   prometheus.Registerer
 }
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
@@ -595,7 +597,8 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		Appender: rw.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
-	converter := otlptranslator.NewPrometheusConverter(app, rw.logger)
+	combinedAppender := otlptranslator.NewCombinedAppender(app, rw.logger, rw.reg)
+	converter := otlptranslator.NewPrometheusConverter(combinedAppender)
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
 		AddMetricSuffixes:                 otlpCfg.TranslationStrategy.ShouldAddSuffixes(),
 		AllowUTF8:                         !otlpCfg.TranslationStrategy.ShouldEscape(),
@@ -606,6 +609,14 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		PromoteScopeMetadata:              otlpCfg.PromoteScopeMetadata,
 		LookbackDelta:                     rw.lookbackDelta,
 	})
+
+	defer func() {
+		if err != nil {
+			_ = app.Rollback()
+			return
+		}
+		err = app.Commit()
+	}()
 	ws, _ := annots.AsStrings("", 0, 0)
 	if len(ws) > 0 {
 		rw.logger.Warn("Warnings translating OTLP metrics to Prometheus write request", "warnings", ws)

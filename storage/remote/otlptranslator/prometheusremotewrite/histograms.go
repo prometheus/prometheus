@@ -18,7 +18,6 @@ package prometheusremotewrite
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 
@@ -29,7 +28,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -66,37 +64,14 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			promName,
 		)
 		ts := convertTimeStamp(pt.Timestamp())
-		// OTel exponential histograms are always Int Histograms.
-		_, err = c.appender.AppendHistogram(0, lbls, ts, hp, nil)
-		if err != nil {
-			// Although AppendHistogram does not currently return ErrDuplicateSampleForTimestamp there is
-			// a note indicating its inclusion in the future.
-			if errors.Is(err, storage.ErrOutOfOrderSample) ||
-				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-				c.logger.Error("Out of order histogram from OTLP", "err", err.Error(), "series", lbls.String(), "timestamp", ts)
-			}
-			return annots, err
-		}
-		if err = c.updateMetadataIfNeeded(lbls, meta); err != nil {
-			return annots, err
-		}
-
+		ct := convertTimeStamp(pt.StartTimestamp())
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return annots, err
 		}
-		for _, e := range exemplars {
-			if _, err := c.appender.AppendExemplar(0, lbls, e); err != nil {
-				switch {
-				case errors.Is(err, storage.ErrOutOfOrderExemplar):
-					// TODO: metric for counting out of order exemplars
-					c.logger.Debug("Out of order exemplar", "series", lbls.String(), "exemplar", fmt.Sprintf("%+v", e))
-				default:
-					// Since exemplar storage is still experimental, we don't fail the request on ingestion errors
-					c.logger.Debug("Error while adding exemplar in AppendExemplar", "series", lbls.String(), "exemplar", fmt.Sprintf("%+v", e), "err", err)
-				}
-			}
+		// OTel exponential histograms are always Int Histograms.
+		if err = c.appender.AppendHistogram(lbls, meta, ts, ct, hp, exemplars); err != nil {
+			return annots, err
 		}
 	}
 
@@ -304,36 +279,13 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 			promName,
 		)
 		ts := convertTimeStamp(pt.Timestamp())
-		_, err = c.appender.AppendHistogram(0, lbls, ts, hp, nil)
-		if err != nil {
-			// Although AppendHistogram does not currently return ErrDuplicateSampleForTimestamp there is
-			// a note indicating its inclusion in the future.
-			if errors.Is(err, storage.ErrOutOfOrderSample) ||
-				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-				c.logger.Error("Out of order histogram from OTLP", "err", err.Error(), "series", lbls.String(), "timestamp", ts)
-			}
-			return annots, err
-		}
-		if err = c.updateMetadataIfNeeded(lbls, meta); err != nil {
-			return annots, err
-		}
-
+		ct := convertTimeStamp(pt.StartTimestamp())
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return annots, err
 		}
-		for _, e := range exemplars {
-			if _, err := c.appender.AppendExemplar(0, lbls, e); err != nil {
-				switch {
-				case errors.Is(err, storage.ErrOutOfOrderExemplar):
-					// TODO: metric for counting out of order exemplars
-					c.logger.Debug("Out of order exemplar", "series", lbls.String(), "exemplar", fmt.Sprintf("%+v", e))
-				default:
-					// Since exemplar storage is still experimental, we don't fail the request on ingestion errors
-					c.logger.Debug("Error while adding exemplar in AppendExemplar", "series", lbls.String(), "exemplar", fmt.Sprintf("%+v", e), "err", err)
-				}
-			}
+		if err = c.appender.AppendHistogram(lbls, meta, ts, ct, hp, exemplars); err != nil {
+			return annots, err
 		}
 	}
 
@@ -371,12 +323,8 @@ func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint, tem
 	h := &histogram.Histogram{
 		CounterResetHint: histogram.CounterResetHint(resetHint),
 		Schema:           histogram.CustomBucketsSchema,
-		// ZeroThreshold:    h.ZeroThreshold,
-		// ZeroCount:        h.GetZeroCountInt(),
-		PositiveSpans:   positiveSpans,
-		PositiveBuckets: positiveDeltas,
-		// NegativeSpans:    spansProtoToSpans(h.GetNegativeSpans()),
-		// NegativeBuckets:  h.GetNegativeDeltas(),
+		PositiveSpans:    positiveSpans,
+		PositiveBuckets:  positiveDeltas,
 		// Note: OTel explicit histograms have an implicit +Inf bucket, which has a lower bound
 		// of the last element in the explicit_bounds array.
 		// This is similar to the custom_values array in native histograms with custom buckets.

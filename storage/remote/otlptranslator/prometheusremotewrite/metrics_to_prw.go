@@ -20,9 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
-	"sort"
 	"time"
 
 	"github.com/prometheus/otlptranslator"
@@ -33,7 +31,6 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -66,18 +63,17 @@ type PrometheusConverter struct {
 	everyN         everyNTimes
 	scratchBuilder labels.ScratchBuilder
 	builder        *labels.Builder
-	appender       storage.Appender
-	logger         *slog.Logger
+	appender       CombinedAppender
+	labelNamer     otlptranslator.LabelNamer
 }
 
-func NewPrometheusConverter(appender storage.Appender, logger *slog.Logger) *PrometheusConverter {
+func NewPrometheusConverter(appender CombinedAppender) *PrometheusConverter {
 	return &PrometheusConverter{
 		unique:         map[uint64]labels.Labels{},
 		conflicts:      map[uint64][]labels.Labels{},
-		scratchBuilder: labels.NewScratchBuilder(16),
+		scratchBuilder: labels.NewScratchBuilder(0),
 		builder:        labels.NewBuilder(labels.EmptyLabels()),
 		appender:       appender,
-		logger:         logger,
 	}
 }
 
@@ -130,6 +126,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		WithMetricSuffixes: settings.AddMetricSuffixes,
 		UTF8Allowed:        settings.AllowUTF8,
 	}
+	unitNamer := otlptranslator.UnitNamer{}
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
 
@@ -182,8 +179,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				promName := namer.Build(TranslatorMetricFromOtelMetric(metric))
 				meta := metadata.Metadata{
 					Type: otelMetricTypeToPromMetricType(metric),
-					// TODO: use otlptranslator.UnitNamer to convert the unit.
-					Unit: metric.Unit(),
+					Unit: unitNamer.Build(metric.Unit()),
 					Help: metric.Description(),
 				}
 
@@ -286,48 +282,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		}
 	}
 
-	return annots, errs
-}
-
-// addExemplars adds exemplars for the dataPoint. For each exemplar, if it can find a bucket bound corresponding to its value,
-// the exemplar is added to the bucket bound's time series, provided that the time series' has samples.
-func (c *PrometheusConverter) addExemplars(ctx context.Context, dataPoint pmetric.HistogramDataPoint, bucketBounds []bucketBoundsData) error {
-	if len(bucketBounds) == 0 {
-		return nil
-	}
-
-	exemplars, err := c.getPromExemplars(ctx, dataPoint.Exemplars())
-	if err != nil {
-		return err
-	}
-	if len(exemplars) == 0 {
-		return nil
-	}
-
-	sort.Sort(byBucketBoundsData(bucketBounds))
-	for _, exemplar := range exemplars {
-		for _, bound := range bucketBounds {
-			if err := c.everyN.checkContext(ctx); err != nil {
-				return err
-			}
-			if exemplar.Value <= bound.bound {
-				if _, err := c.appender.AppendExemplar(0, bound.labels, exemplar); err != nil {
-
-					switch {
-					case errors.Is(err, storage.ErrOutOfOrderExemplar):
-						// TODO: metric for counting out of order exemplars
-						c.logger.Debug("Out of order exemplar", "series", bound.labels.String(), "exemplar", fmt.Sprintf("%+v", exemplar))
-					default:
-						// Since exemplar storage is still experimental, we don't fail the request on ingestion errors
-						c.logger.Debug("Error while adding exemplar in AppendExemplar", "series", bound.labels.String(), "exemplar", fmt.Sprintf("%+v", exemplar), "err", err)
-					}
-				}
-				break
-			}
-		}
-	}
-
-	return nil
+	return
 }
 
 func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAttributes {
@@ -351,13 +306,11 @@ func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builde
 		return
 	}
 
+	labelNamer := otlptranslator.LabelNamer{UTF8Allowed: allowUTF8}
 	if s.promoteAll {
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 			if _, exists := s.attrs[name]; !exists {
-				normalized := name
-				if !allowUTF8 {
-					normalized = otlptranslator.NormalizeLabel(normalized)
-				}
+				normalized := labelNamer.Build(name)
 				if builder.Get(normalized) == "" {
 					builder.Set(normalized, value.AsString())
 				}
@@ -368,10 +321,7 @@ func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builde
 	}
 	resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 		if _, exists := s.attrs[name]; exists {
-			normalized := name
-			if !allowUTF8 {
-				normalized = otlptranslator.NormalizeLabel(normalized)
-			}
+			normalized := labelNamer.Build(name)
 			if builder.Get(normalized) == "" {
 				builder.Set(normalized, value.AsString())
 			}

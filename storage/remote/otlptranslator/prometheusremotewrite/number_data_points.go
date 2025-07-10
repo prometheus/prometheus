@@ -18,8 +18,6 @@ package prometheusremotewrite
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"math"
 
 	"github.com/prometheus/common/model"
@@ -28,7 +26,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/storage"
 )
 
 func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
@@ -61,15 +58,10 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		ts := convertTimeStamp(pt.Timestamp())
-		if _, err := c.appender.Append(0, labels, ts, val); err != nil {
-			if errors.Is(err, storage.ErrOutOfOrderSample) ||
-				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-				c.logger.Error("Out of order sample from OTLP", "err", err.Error(), "series", labels.String(), "timestamp", ts)
-			}
+		ct := convertTimeStamp(pt.StartTimestamp())
+		if err := c.appender.AppendSample(labels, meta, ts, ct, val, nil); err != nil {
 			return err
 		}
-		return c.updateMetadataIfNeeded(labels, meta)
 	}
 
 	return nil
@@ -105,45 +97,26 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		ts := convertTimeStamp(pt.Timestamp())
-		if _, err := c.appender.Append(0, lbls, ts, val); err != nil {
-			if errors.Is(err, storage.ErrOutOfOrderSample) ||
-				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-				c.logger.Error("Out of order sample from OTLP", "err", err.Error(), "series", lbls.String(), "timestamp", ts)
-			}
-			return err
-		}
-		if err := c.updateMetadataIfNeeded(lbls, meta); err != nil {
-			return err
-		}
+		ct := convertTimeStamp(pt.StartTimestamp())
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return err
 		}
-		for _, ex := range exemplars {
-			if _, err := c.appender.AppendExemplar(0, lbls, ex); err != nil {
-				switch {
-				case errors.Is(err, storage.ErrOutOfOrderExemplar):
-					// TODO: metric for out of order exemplars
-					c.logger.Debug("Out of order exemplar", "series", lbls.String(), "exemplar", fmt.Sprintf("%+v", ex))
-				default:
-					// Since exemplar storage is still experimental, we don't fail the request on ingestion errors
-					c.logger.Debug("Error while adding exemplar in AppendExemplar", "series", lbls.String(), "exemplar", fmt.Sprintf("%+v", ex), "err", err)
-				}
-			}
+		if err := c.appender.AppendSample(lbls, meta, ts, ct, val, exemplars); err != nil {
+			return err
 		}
 
 		// add created time series if needed
-		if settings.ExportCreatedMetric && metric.Sum().IsMonotonic() {
-			startTimestamp := pt.StartTimestamp()
-			if startTimestamp == 0 {
-				return nil
-			}
-
+		if settings.ExportCreatedMetric && metric.Sum().IsMonotonic() && pt.StartTimestamp() != 0 {
 			c.builder.Reset(lbls)
 			// Add created suffix to the metric name for CT series.
 			c.builder.Set(model.MetricNameLabel, c.builder.Get(model.MetricNameLabel)+createdSuffix)
-			c.addTimeSeriesIfNeeded(c.builder.Labels(), meta, startTimestamp, pt.Timestamp())
+			ls := c.builder.Labels()
+			if c.timeSeriesIsNew(ls) {
+				if err := c.appender.AppendSample(ls, meta, ts, 0, float64(ct), nil); err != nil {
+					return err
+				}
+			}
 		}
 	}
 

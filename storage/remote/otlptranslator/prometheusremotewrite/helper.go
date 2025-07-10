@@ -19,7 +19,6 @@ package prometheusremotewrite
 import (
 	"context"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -39,7 +38,6 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/storage"
 )
 
 const (
@@ -205,6 +203,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
+		startTimestamp := convertTimeStamp(pt.StartTimestamp())
 		baseLabels := c.createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
 		// If the sum is unset, it indicates the _sum metric point should be
@@ -217,15 +216,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			}
 
 			sumlabels := c.addLabels(baseName+sumStr, baseLabels)
-			if _, err := c.appender.Append(0, sumlabels, timestamp, val); err != nil {
-				if errors.Is(err, storage.ErrOutOfOrderSample) ||
-					errors.Is(err, storage.ErrOutOfBounds) ||
-					errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-					c.logger.Error("Out of order sample from OTLP", "err", err.Error(), "series", sumlabels.String(), "timestamp", timestamp)
-				}
-				return err
-			}
-			if err := c.updateMetadataIfNeeded(sumlabels, meta); err != nil {
+			if err := c.appender.AppendSample(sumlabels, meta, timestamp, startTimestamp, val, nil); err != nil {
 				return err
 			}
 		}
@@ -237,22 +228,17 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		}
 
 		countlabels := c.addLabels(baseName+countStr, baseLabels)
-		if _, err := c.appender.Append(0, countlabels, timestamp, val); err != nil {
-			if errors.Is(err, storage.ErrOutOfOrderSample) ||
-				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-				c.logger.Error("Out of order sample from OTLP", "err", err.Error(), "series", countlabels.String(), "timestamp", timestamp)
-			}
+		if err := c.appender.AppendSample(countlabels, meta, timestamp, startTimestamp, val, nil); err != nil {
 			return err
 		}
-		if err := c.updateMetadataIfNeeded(countlabels, meta); err != nil {
+		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
+		if err != nil {
 			return err
 		}
+		nextExemplarIdx := 0
 
 		// cumulative count for conversion to cumulative histogram
 		var cumulativeCount uint64
-
-		var bucketBounds []bucketBoundsData
 
 		// process each bound, based on histograms proto definition, # of buckets = # of explicit bounds + 1
 		for i := 0; i < pt.ExplicitBounds().Len() && i < pt.BucketCounts().Len(); i++ {
@@ -262,25 +248,28 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 
 			bound := pt.ExplicitBounds().At(i)
 			cumulativeCount += pt.BucketCounts().At(i)
+
+			// Find exemplars that belong to this bucket. Both exemplars and
+			// buckets are sorted in ascending order.
+			var currentBucketExemplars []exemplar.Exemplar
+			for ; nextExemplarIdx < len(exemplars); nextExemplarIdx++ {
+				ex := exemplars[nextExemplarIdx]
+				if ex.Value > bound {
+					// This exemplar belongs in a higher bucket.
+					break
+				}
+				currentBucketExemplars = append(currentBucketExemplars, ex)
+
+			}
 			val := float64(cumulativeCount)
 			if pt.Flags().NoRecordedValue() {
 				val = math.Float64frombits(value.StaleNaN)
 			}
 			boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
 			labels := c.addLabels(baseName+bucketStr, baseLabels, leStr, boundStr)
-			if _, err := c.appender.Append(0, labels, timestamp, val); err != nil {
-				if errors.Is(err, storage.ErrOutOfOrderSample) ||
-					errors.Is(err, storage.ErrOutOfBounds) ||
-					errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-					c.logger.Error("Out of order sample from OTLP", "err", err.Error(), "series", labels.String(), "timestamp", timestamp)
-				}
+			if err := c.appender.AppendSample(labels, meta, timestamp, startTimestamp, val, currentBucketExemplars); err != nil {
 				return err
 			}
-			if err := c.updateMetadataIfNeeded(labels, meta); err != nil {
-				return err
-			}
-
-			bucketBounds = append(bucketBounds, bucketBoundsData{labels: labels, bound: bound})
 		}
 		// add le=+Inf bucket
 		val = float64(pt.Count())
@@ -288,27 +277,17 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		infLabels := c.addLabels(baseName+bucketStr, baseLabels, leStr, pInfStr)
-		if _, err := c.appender.Append(0, infLabels, timestamp, val); err != nil {
-			if errors.Is(err, storage.ErrOutOfOrderSample) ||
-				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-				c.logger.Error("Out of order sample from OTLP", "err", err.Error(), "series", infLabels.String(), "timestamp", timestamp)
-			}
-			return err
-		}
-		if err := c.updateMetadataIfNeeded(infLabels, meta); err != nil {
+		if err := c.appender.AppendSample(infLabels, meta, timestamp, startTimestamp, val, exemplars[nextExemplarIdx:]); err != nil {
 			return err
 		}
 
-		bucketBounds = append(bucketBounds, bucketBoundsData{bound: math.Inf(1)})
-		if err := c.addExemplars(ctx, pt, bucketBounds); err != nil {
-			return err
-		}
-
-		startTimestamp := pt.StartTimestamp()
-		if settings.ExportCreatedMetric && startTimestamp != 0 {
+		if settings.ExportCreatedMetric && pt.StartTimestamp() != 0 {
 			labels := c.addLabels(baseName+createdSuffix, baseLabels)
-			c.addTimeSeriesIfNeeded(labels, meta, startTimestamp, pt.Timestamp())
+			if c.timeSeriesIsNew(labels) {
+				if err := c.appender.AppendSample(labels, meta, timestamp, 0, float64(startTimestamp), nil); err != nil {
+					return err
+				}
+			}
 		}
 	}
 
@@ -316,6 +295,9 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 }
 
 func (c *PrometheusConverter) getPromExemplars(ctx context.Context, exemplars pmetric.ExemplarSlice) ([]exemplar.Exemplar, error) {
+	if exemplars.Len() == 0 {
+		return nil, nil
+	}
 	outputExemplars := make([]exemplar.Exemplar, 0, exemplars.Len())
 	for i := 0; i < exemplars.Len(); i++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -428,6 +410,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
+		startTimestamp := convertTimeStamp(pt.StartTimestamp())
 		baseLabels := c.createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
 		// treat sum as a sample in an individual TimeSeries
@@ -437,15 +420,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		}
 		// sum and count of the summary should append suffix to baseName
 		sumlabels := c.addLabels(baseName+sumStr, baseLabels)
-		if _, err := c.appender.Append(0, sumlabels, timestamp, val); err != nil {
-			if errors.Is(err, storage.ErrOutOfOrderSample) ||
-				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-				c.logger.Error("Out of order sample from OTLP", "err", err.Error(), "series", sumlabels.String(), "timestamp", timestamp)
-			}
-			return err
-		}
-		if err := c.updateMetadataIfNeeded(sumlabels, meta); err != nil {
+		if err := c.appender.AppendSample(sumlabels, meta, timestamp, startTimestamp, val, nil); err != nil {
 			return err
 		}
 
@@ -455,15 +430,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		countlabels := c.addLabels(baseName+countStr, baseLabels)
-		if _, err := c.appender.Append(0, countlabels, timestamp, val); err != nil {
-			if errors.Is(err, storage.ErrOutOfOrderSample) ||
-				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-				c.logger.Error("Out of order sample from OTLP", "err", err.Error(), "series", countlabels.String(), "timestamp", timestamp)
-			}
-			return err
-		}
-		if err := c.updateMetadataIfNeeded(countlabels, meta); err != nil {
+		if err := c.appender.AppendSample(countlabels, meta, timestamp, startTimestamp, val, nil); err != nil {
 			return err
 		}
 
@@ -476,23 +443,18 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 			}
 			percentileStr := strconv.FormatFloat(qt.Quantile(), 'f', -1, 64)
 			qtlabels := c.addLabels(baseName, baseLabels, quantileStr, percentileStr)
-			if _, err := c.appender.Append(0, qtlabels, timestamp, val); err != nil {
-				if errors.Is(err, storage.ErrOutOfOrderSample) ||
-					errors.Is(err, storage.ErrOutOfBounds) ||
-					errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-					c.logger.Error("Out of order sample from OTLP", "err", err.Error(), "series", qtlabels.String(), "timestamp", timestamp)
-				}
-				return err
-			}
-			if err := c.updateMetadataIfNeeded(qtlabels, meta); err != nil {
+			if err := c.appender.AppendSample(qtlabels, meta, timestamp, startTimestamp, val, nil); err != nil {
 				return err
 			}
 		}
 
-		startTimestamp := pt.StartTimestamp()
-		if settings.ExportCreatedMetric && startTimestamp != 0 {
+		if settings.ExportCreatedMetric && pt.StartTimestamp() != 0 {
 			createdLabels := c.addLabels(baseName+createdSuffix, baseLabels)
-			c.addTimeSeriesIfNeeded(createdLabels, meta, startTimestamp, pt.Timestamp())
+			if c.timeSeriesIsNew(createdLabels) {
+				if err := c.appender.AppendSample(createdLabels, meta, timestamp, 0, float64(startTimestamp), nil); err != nil {
+					return err
+				}
+			}
 		}
 	}
 
@@ -543,45 +505,6 @@ func (c *PrometheusConverter) timeSeriesIsNew(lbls labels.Labels) bool {
 	return true
 }
 
-// addTimeSeriesIfNeeded adds a corresponding time series if it doesn't already exist.
-// If the time series doesn't already exist, it gets added with startTimestamp for its value and timestamp for its timestamp,
-// both converted to milliseconds.
-func (c *PrometheusConverter) addTimeSeriesIfNeeded(lbls labels.Labels, meta metadata.Metadata, startTimestamp, timestamp pcommon.Timestamp) error {
-	if c.timeSeriesIsNew(lbls) {
-		if _, err := c.appender.Append(0, lbls, convertTimeStamp(timestamp), float64(convertTimeStamp(startTimestamp))); err != nil {
-			if errors.Is(err, storage.ErrOutOfOrderSample) ||
-				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-				c.logger.Error("Out of order sample from OTLP", "err", err.Error(), "series", lbls.String(), "timestamp", timestamp)
-			}
-			return err
-		}
-		if _, err := c.appender.UpdateMetadata(0, lbls, meta); err != nil {
-			c.logger.Debug("error while updating metadata from OTLP", "err", err)
-			// Metadata is attached to each series, so since Prometheus does not reject sample without metadata information,
-			// we don't report remote write error either. We increment metric instead.
-			// TODO: add a metric to track failed metadata updates
-			return err
-		}
-	}
-	return nil
-}
-
-// updateMetadataIfNeeded updates metadata if this is the first time we've this
-// set of labels.
-func (c PrometheusConverter) updateMetadataIfNeeded(lbls labels.Labels, meta metadata.Metadata) error {
-	if c.timeSeriesIsNew(lbls) {
-		if _, err := c.appender.UpdateMetadata(0, lbls, meta); err != nil {
-			c.logger.Debug("error while updating metadata from OTLP", "err", err)
-			// Metadata is attached to each series, so since Prometheus does not reject sample without metadata information,
-			// we don't report remote write error either. We increment metric instead.
-			// TODO: add a metric to track failed metadata updates
-			return err
-		}
-	}
-	return nil
-}
-
 // addResourceTargetInfo converts the resource to the target info metric.
 func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, settings Settings, earliestTimestamp, latestTimestamp time.Time, converter *PrometheusConverter) error {
 	if settings.DisableTargetInfo {
@@ -628,6 +551,10 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		// We need at least one identifying label to generate target_info.
 		return nil
 	}
+	meta := metadata.Metadata{
+		Type: model.MetricTypeGauge,
+		Help: "Target metadata",
+	}
 
 	// Generate target_info samples starting at earliestTimestamp and ending at latestTimestamp,
 	// with a sample at every interval between them.
@@ -637,32 +564,13 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		settings.LookbackDelta = defaultLookbackDelta
 	}
 	interval := settings.LookbackDelta / 2
-	for timestamp := earliestTimestamp; timestamp.Before(latestTimestamp); timestamp = timestamp.Add(interval) {
-		ts := timestamp.UnixMilli()
-		if _, err := c.appender.Append(0, lbls, ts, float64(1)); err != nil {
-			if errors.Is(err, storage.ErrOutOfOrderSample) ||
-				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-				c.logger.Error("Out of order sample from OTLP", "err", err.Error(), "series", lbls.String(), "timestamp", ts)
-			}
+	timestamp := earliestTimestamp
+	for ; timestamp.Before(latestTimestamp); timestamp = timestamp.Add(interval) {
+		if err := c.appender.AppendSample(lbls, meta, timestamp.UnixMilli(), 0, float64(1), nil); err != nil {
 			return err
 		}
 	}
-	if len(ts.Samples) == 0 || ts.Samples[len(ts.Samples)-1].Timestamp < latestTimestamp.UnixMilli() {
-		ts := latestTimestamp.UnixMilli()
-		if _, err := c.appender.Append(0, lbls, ts, float64(1)); err != nil {
-			if errors.Is(err, storage.ErrOutOfOrderSample) ||
-				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-				c.logger.Error("Out of order sample from OTLP", "err", err.Error(), "series", lbls.String(), "timestamp", ts)
-			}
-			return err
-		}
-	}
-	return c.updateMetadataIfNeeded(lbls, metadata.Metadata{
-		Type: model.MetricTypeGauge,
-		Help: "Target metadata",
-	})
+	return c.appender.AppendSample(lbls, meta, latestTimestamp.UnixMilli(), 0, float64(1), nil)
 }
 
 // convertTimeStamp converts OTLP timestamp in ns to timestamp in ms.
