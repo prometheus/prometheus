@@ -3659,7 +3659,7 @@ func TestTypeUnitMismatchAnnotations(t *testing.T) {
 			typeAndUnitLabelsEnabled:   true,
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations: []string{
-				`PromQL info: mismatched type or unit metadata for metric "series"`,
+				`PromQL info: mismatched type metadata for metric "series"`,
 			},
 		},
 		"info annotation when mismatched unit": {
@@ -3671,10 +3671,10 @@ func TestTypeUnitMismatchAnnotations(t *testing.T) {
 			typeAndUnitLabelsEnabled:   true,
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations: []string{
-				`PromQL info: mismatched type or unit metadata for metric "series"`,
+				`PromQL info: mismatched unit metadata for metric "series"`,
 			},
 		},
-		"info annotation when mismatched type and unit": {
+		"info annotations when mismatched type and unit": {
 			data: `
 				series{label="a", __type__="counter", __unit__="seconds"} 1 2 3
 				series{label="b", __type__="gauge", __unit__="minutes"} 4 5 6
@@ -3683,13 +3683,24 @@ func TestTypeUnitMismatchAnnotations(t *testing.T) {
 			typeAndUnitLabelsEnabled:   true,
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations: []string{
-				`PromQL info: mismatched type or unit metadata for metric "series"`,
+				`PromQL info: mismatched type metadata for metric "series"`,
+				`PromQL info: mismatched unit metadata for metric "series"`,
 			},
 		},
 		"no info annotation when type is unknown": {
 			data: `
 				series{label="a", __type__="counter"} 1 2 3
 				series{label="b", __type__="unknown"} 4 5 6
+			`,
+			expr:                       "sum(series)",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when initial type is unknown": {
+			data: `
+				series{label="a", __type__="unknown"} 1 2 3
+				series{label="b", __type__="counter"} 4 5 6
 			`,
 			expr:                       "sum(series)",
 			typeAndUnitLabelsEnabled:   true,

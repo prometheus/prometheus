@@ -155,7 +155,8 @@ var (
 	NativeHistogramQuantileNaNResultInfo    = fmt.Errorf("%w: input to histogram_quantile has NaN observations, result is NaN for metric name", PromQLInfo)
 	NativeHistogramQuantileNaNSkewInfo      = fmt.Errorf("%w: input to histogram_quantile has NaN observations, result is skewed higher for metric name", PromQLInfo)
 	NativeHistogramFractionNaNsInfo         = fmt.Errorf("%w: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name", PromQLInfo)
-	MismatchedTypeOrUnitInfo                = fmt.Errorf("%w: mismatched type or unit metadata", PromQLInfo)
+	MismatchedTypeInfo                      = fmt.Errorf("%w: mismatched type metadata", PromQLInfo)
+	MismatchedUnitInfo                      = fmt.Errorf("%w: mismatched unit metadata", PromQLInfo)
 )
 
 type annoErr struct {
@@ -350,11 +351,20 @@ func NewNativeHistogramFractionNaNsInfo(metricName string, pos posrange.Position
 	}
 }
 
-// NewMismatchedTypeOrUnitInfo is used when a query returns multiple metrics with
-// the same name but a different type or unit label.
-func NewMismatchedTypeOrUnitInfo(metricName string, pos posrange.PositionRange) error {
+// NewMismatchedTypeInfo is used when a query returns multiple metrics with
+// the same name but a different type label.
+func NewMismatchedTypeInfo(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w %q", MismatchedTypeOrUnitInfo, metricName),
+		Err:           fmt.Errorf("%w %q", MismatchedTypeInfo, metricName),
+	}
+}
+
+// NewMismatchedUnitInfo is used when a query returns multiple metrics with
+// the same name but a different unit label.
+func NewMismatchedUnitInfo(metricName string, pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %q", MismatchedUnitInfo, metricName),
 	}
 }

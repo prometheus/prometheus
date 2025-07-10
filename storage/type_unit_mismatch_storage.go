@@ -16,7 +16,6 @@ package storage
 import (
 	"context"
 	"fmt"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -58,6 +57,10 @@ type typeAndUnitInfo struct {
 	unit string
 }
 
+func IsTypeEmpty(typ string) bool {
+	return typ == "" || typ == "unknown"
+}
+
 type typeAndUnitMismatchSeriesSet struct {
 	SeriesSet
 
@@ -82,24 +85,27 @@ func (s *typeAndUnitMismatchSeriesSet) Next() bool {
 
 	series := s.SeriesSet.At()
 	metric := series.Labels().Get(labels.MetricName)
-	mType := series.Labels().Get("__type__")
-	mUnit := series.Labels().Get("__unit__")
+	typ := series.Labels().Get("__type__")
+	unit := series.Labels().Get("__unit__")
 
 	if s.prev == nil {
 		s.prev = &typeAndUnitInfo{
-			typ:  mType,
-			unit: mUnit,
+			typ:  typ,
+			unit: unit,
 		}
-	} else if s.prev.typ != mType || s.prev.unit != mUnit {
-		if s.prev.typ == "unknown" || mType == "unknown" {
-			if s.prev.typ == "unknown" && mType != "unknown" {
-				s.prev.typ = mType
-				s.prev.unit = mUnit
+	} else {
+		if s.prev.typ != typ {
+			if IsTypeEmpty(s.prev.typ) && !IsTypeEmpty(typ) {
+				s.prev.typ = typ
+			} else if !IsTypeEmpty(s.prev.typ) && !IsTypeEmpty(typ) {
+				s.annotations.Add(fmt.Errorf("%w for metric %q", annotations.MismatchedTypeInfo, metric))
 			}
-		} else {
-			s.annotations.Add(fmt.Errorf("%w for metric %q", annotations.MismatchedTypeOrUnitInfo, metric))
+		}
+		if s.prev.unit != unit {
+			s.annotations.Add(fmt.Errorf("%w for metric %q", annotations.MismatchedUnitInfo, metric))
 		}
 	}
+
 	return true
 }
 
