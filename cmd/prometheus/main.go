@@ -1901,6 +1901,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
 		UseUncachedIO:                  opts.UseUncachedIO,
+		WALShards:                      10,
 	}
 }
 

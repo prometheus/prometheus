@@ -76,7 +76,76 @@ func counterAddNonZero(v *prometheus.CounterVec, value float64, lvs ...string) {
 	}
 }
 
-func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
+// loadWALSharded replays N independent shard WALs concurrently.
+// It preserves per-shard record order and merges into a single Head.
+// func (h *Head) loadWALSharded(minValidTime int64) error {
+// 	shards := h.shardedWAL.Shards()
+// 	if len(shards) == 0 {
+// 		return nil
+// 	}
+
+// 	// Cap outer parallelism by user setting.
+// 	outer := h.opts.WALReplayConcurrency
+// 	if outer <= 0 || outer > len(shards) {
+// 		outer = len(shards)
+// 	}
+
+// 	// We’ll run at most `outer` shards at a time.
+// 	type shardErr struct {
+// 		shard int
+// 		err   error
+// 	}
+// 	sem := make(chan struct{}, outer)
+// 	errc := make(chan shardErr, len(shards))
+// 	var wg sync.WaitGroup
+
+// 	for i := range shards {
+// 		wg.Add(1)
+// 		sem <- struct{}{}
+// 		go func(shardID int, wl *wlog.WL) {
+// 			defer wg.Done()
+// 			defer func() { <-sem }()
+
+// 			// Replay one shard (checkpoint + segments) using the existing machinery
+// 			// but isolated per shard (own decoder, own processors).
+// 			if err := h.replayOneShard(shardID, wl, minValidTime); err != nil {
+// 				errc <- shardErr{shard: shardID, err: err}
+// 				return
+// 			}
+// 			errc <- shardErr{shard: shardID, err: nil}
+// 		}(i, shards[i])
+// 	}
+
+// 	wg.Wait()
+// 	close(errc)
+
+// 	var first error
+// 	for e := range errc {
+// 		if e.err != nil && first == nil {
+// 			first = fmt.Errorf("replay shard %d: %w", e.shard, e.err)
+// 		}
+// 	}
+// 	if first != nil {
+// 		return first
+// 	}
+
+// 	// If you chose to buffer/merge postings per shard, do the final merge here.
+// 	// (Optional optimization; correctness is fine if you updated postings live.)
+// 	return nil
+// }
+
+// replayShard replays a single shard's WAL stream (checkpoint or a single segment).
+// It mirrors loadWAL's inner loop, but is scoped to one shard's reader and uses
+// per-shard symbol table and multiRef.
+func (h *Head) replayShard(
+	shardID int,
+	r *wlog.Reader,
+	syms *labels.SymbolTable,
+	multiRef *SafeMultiRef,
+	mmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk,
+	oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk,
+	lastSegment int,
+) (err error) {
 	// Track number of missing series records that were referenced by other records.
 	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
 	// Track number of different records that referenced a series we don't know about
@@ -106,6 +175,525 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	defer func() {
 		// For CorruptionErr ensure to terminate all workers before exiting.
 		_, ok := err.(*wlog.CorruptionErr)
+		if ok || seriesCreationErr != nil || decodeErr != nil {
+			for i := 0; i < concurrency; i++ {
+				processors[i].closeAndDrain()
+			}
+			if exemplarsInput != nil {
+				close(exemplarsInput)
+			}
+			wg.Wait()
+		}
+	}()
+
+	wg.Add(concurrency)
+	for i := 0; i < concurrency; i++ {
+		processors[i].setup()
+
+		go func(idx int, wp *walSubsetProcessor) {
+			missingSeries, unknownSamples, unknownHistograms, overlapping :=
+				wp.processWALSamples(h, mmappedChunks, oooMmappedChunks)
+			unknownSeriesRefs.merge(missingSeries)
+			unknownSampleRefs.Add(unknownSamples)
+			mmapOverlappingChunks.Add(overlapping)
+			unknownHistogramRefs.Add(unknownHistograms)
+			wg.Done()
+		}(i, &processors[i])
+	}
+
+	wg.Add(1)
+	exemplarsInput = make(chan record.RefExemplar, 300)
+	go func(input <-chan record.RefExemplar) {
+		missingSeries := make(map[chunks.HeadSeriesRef]struct{})
+		defer wg.Done()
+		for e := range input {
+			ms := h.series.getByID(e.Ref)
+			if ms == nil {
+				unknownExemplarRefs.Inc()
+				missingSeries[e.Ref] = struct{}{}
+				continue
+			}
+			// Only possible error during WAL replay is OOO exemplar, which shouldn’t happen.
+			if err := h.exemplars.AddExemplar(ms.labels(), exemplar.Exemplar{Ts: e.T, Value: e.V, Labels: e.Labels}); err != nil {
+				if !errors.Is(err, storage.ErrOutOfOrderExemplar) {
+					h.logger.Warn("Unexpected error when replaying WAL on exemplar record", "err", err, "shard", shardID)
+				}
+			}
+		}
+		unknownSeriesRefs.merge(missingSeries)
+	}(exemplarsInput)
+
+	go func() {
+		defer close(decoded)
+		dec := record.NewDecoder(syms)
+		for r.Next() {
+			rec := r.Record()
+			switch dec.Type(rec) {
+			case record.Series:
+				series := h.wlReplaySeriesPool.Get()[:0]
+				var err error
+				series, err = dec.Series(rec, series)
+				if err != nil {
+					decodeErr = &wlog.CorruptionErr{
+						Err:     fmt.Errorf("decode series: %w", err),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- series
+
+			case record.Samples:
+				samples := h.wlReplaySamplesPool.Get()[:0]
+				var err error
+				samples, err = dec.Samples(rec, samples)
+				if err != nil {
+					decodeErr = &wlog.CorruptionErr{
+						Err:     fmt.Errorf("decode samples: %w", err),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- samples
+
+			case record.Tombstones:
+				tstones := h.wlReplaytStonesPool.Get()[:0]
+				var err error
+				tstones, err = dec.Tombstones(rec, tstones)
+				if err != nil {
+					decodeErr = &wlog.CorruptionErr{
+						Err:     fmt.Errorf("decode tombstones: %w", err),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- tstones
+
+			case record.Exemplars:
+				exemplars := h.wlReplayExemplarsPool.Get()[:0]
+				var err error
+				exemplars, err = dec.Exemplars(rec, exemplars)
+				if err != nil {
+					decodeErr = &wlog.CorruptionErr{
+						Err:     fmt.Errorf("decode exemplars: %w", err),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- exemplars
+
+			case record.HistogramSamples, record.CustomBucketsHistogramSamples:
+				hists := h.wlReplayHistogramsPool.Get()[:0]
+				var err error
+				hists, err = dec.HistogramSamples(rec, hists)
+				if err != nil {
+					decodeErr = &wlog.CorruptionErr{
+						Err:     fmt.Errorf("decode histograms: %w", err),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- hists
+
+			case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+				hists := h.wlReplayFloatHistogramsPool.Get()[:0]
+				var err error
+				hists, err = dec.FloatHistogramSamples(rec, hists)
+				if err != nil {
+					decodeErr = &wlog.CorruptionErr{
+						Err:     fmt.Errorf("decode float histograms: %w", err),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- hists
+
+			case record.Metadata:
+				meta := h.wlReplayMetadataPool.Get()[:0]
+				var err error
+				meta, err = dec.Metadata(rec, meta)
+				if err != nil {
+					decodeErr = &wlog.CorruptionErr{
+						Err:     fmt.Errorf("decode metadata: %w", err),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- meta
+
+			default:
+				// No-op for unknown record types.
+			}
+		}
+	}()
+
+	// The records are always replayed from the oldest to the newest.
+	missingSeries := make(map[chunks.HeadSeriesRef]struct{})
+Outer:
+	for d := range decoded {
+		switch v := d.(type) {
+		case []record.RefSeries:
+			for _, walSeries := range v {
+				mSeries, created, err := h.getOrCreateWithID(walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels, false)
+				if err != nil {
+					seriesCreationErr = err
+					break Outer
+				}
+
+				// Advance lastSeriesID safely.
+				for {
+					seriesID := uint64(walSeries.Ref)
+					lastSeriesID := h.lastSeriesID.Load()
+					if lastSeriesID >= seriesID || h.lastSeriesID.CompareAndSwap(lastSeriesID, seriesID) {
+						break
+					}
+				}
+
+				if !created {
+					// multiRef[walSeries.Ref] = mSeries.ref
+					multiRef.Set(walSeries.Ref, mSeries.ref)
+					// Keep duplicate series in subsequent checkpoints.
+					// h.setWALExpiry(walSeries.Ref, lastSegment)
+				}
+
+				idx := uint64(mSeries.ref) % uint64(concurrency)
+				processors[idx].input <- walSubsetProcessorInputItem{walSeriesRef: walSeries.Ref, existingSeries: mSeries}
+			}
+			h.wlReplaySeriesPool.Put(v)
+
+		case []record.RefSample:
+			samples := v
+			minValidTime := h.minValidTime.Load()
+			for len(samples) > 0 {
+				m := min(len(samples), 5000)
+				for i := 0; i < concurrency; i++ {
+					if shards[i] == nil {
+						shards[i] = processors[i].reuseBuf()
+					}
+				}
+				for _, sam := range samples[:m] {
+					if sam.T < minValidTime {
+						continue // Before minValidTime: discard.
+					}
+					if r, ok := multiRef.Get(sam.Ref); ok {
+						sam.Ref = r
+					}
+					mod := uint64(sam.Ref) % uint64(concurrency)
+					shards[mod] = append(shards[mod], sam)
+				}
+				for i := 0; i < concurrency; i++ {
+					if len(shards[i]) > 0 {
+						processors[i].input <- walSubsetProcessorInputItem{samples: shards[i]}
+						shards[i] = nil
+					}
+				}
+				samples = samples[m:]
+			}
+			h.wlReplaySamplesPool.Put(v)
+
+		case []tombstones.Stone:
+			for _, s := range v {
+				for _, itv := range s.Intervals {
+					if itv.Maxt < h.minValidTime.Load() {
+						continue
+					}
+					if r, ok := multiRef.Get(chunks.HeadSeriesRef(s.Ref)); ok {
+						s.Ref = storage.SeriesRef(r)
+					}
+					if m := h.series.getByID(chunks.HeadSeriesRef(s.Ref)); m == nil {
+						unknownTombstoneRefs.Inc()
+						missingSeries[chunks.HeadSeriesRef(s.Ref)] = struct{}{}
+						continue
+					}
+					h.tombstones.AddInterval(s.Ref, itv)
+				}
+			}
+			h.wlReplaytStonesPool.Put(v)
+
+		case []record.RefExemplar:
+			for _, e := range v {
+				if e.T < h.minValidTime.Load() {
+					continue
+				}
+				if r, ok := multiRef.Get(e.Ref); ok {
+					e.Ref = r
+				}
+				exemplarsInput <- e
+			}
+			h.wlReplayExemplarsPool.Put(v)
+
+		case []record.RefHistogramSample:
+			samples := v
+			minValidTime := h.minValidTime.Load()
+			for len(samples) > 0 {
+				m := min(len(samples), 5000)
+				for i := 0; i < concurrency; i++ {
+					if histogramShards[i] == nil {
+						histogramShards[i] = processors[i].reuseHistogramBuf()
+					}
+				}
+				for _, sam := range samples[:m] {
+					if sam.T < minValidTime {
+						continue
+					}
+					if r, ok := multiRef.Get(sam.Ref); ok {
+						sam.Ref = r
+					}
+					mod := uint64(sam.Ref) % uint64(concurrency)
+					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, h: sam.H})
+				}
+				for i := 0; i < concurrency; i++ {
+					if len(histogramShards[i]) > 0 {
+						processors[i].input <- walSubsetProcessorInputItem{histogramSamples: histogramShards[i]}
+						histogramShards[i] = nil
+					}
+				}
+				samples = samples[m:]
+			}
+			h.wlReplayHistogramsPool.Put(v)
+
+		case []record.RefFloatHistogramSample:
+			samples := v
+			minValidTime := h.minValidTime.Load()
+			for len(samples) > 0 {
+				m := min(len(samples), 5000)
+				for i := 0; i < concurrency; i++ {
+					if histogramShards[i] == nil {
+						histogramShards[i] = processors[i].reuseHistogramBuf()
+					}
+				}
+				for _, sam := range samples[:m] {
+					if sam.T < minValidTime {
+						continue
+					}
+					if r, ok := multiRef.Get(sam.Ref); ok {
+						sam.Ref = r
+					}
+					mod := uint64(sam.Ref) % uint64(concurrency)
+					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, fh: sam.FH})
+				}
+				for i := 0; i < concurrency; i++ {
+					if len(histogramShards[i]) > 0 {
+						processors[i].input <- walSubsetProcessorInputItem{histogramSamples: histogramShards[i]}
+						histogramShards[i] = nil
+					}
+				}
+				samples = samples[m:]
+			}
+			h.wlReplayFloatHistogramsPool.Put(v)
+
+		case []record.RefMetadata:
+			for _, m := range v {
+				if r, ok := multiRef.Get(m.Ref); ok {
+					m.Ref = r
+				}
+				s := h.series.getByID(m.Ref)
+				if s == nil {
+					unknownMetadataRefs.Inc()
+					missingSeries[m.Ref] = struct{}{}
+					continue
+				}
+				s.meta = &metadata.Metadata{
+					Type: record.ToMetricType(m.Type),
+					Unit: m.Unit,
+					Help: m.Help,
+				}
+			}
+			h.wlReplayMetadataPool.Put(v)
+
+		default:
+			panic(fmt.Errorf("unexpected decoded type: %T", d))
+		}
+	}
+	unknownSeriesRefs.merge(missingSeries)
+
+	if decodeErr != nil {
+		return decodeErr
+	}
+	if seriesCreationErr != nil {
+		// Drain the channel to unblock the goroutine.
+		for range decoded {
+		}
+		return seriesCreationErr
+	}
+
+	// Signal termination to each worker and wait for it to close its output channel.
+	for i := 0; i < concurrency; i++ {
+		processors[i].closeAndDrain()
+	}
+	close(exemplarsInput)
+	wg.Wait()
+
+	if err := r.Err(); err != nil {
+		return fmt.Errorf("read records: %w", err)
+	}
+
+	if unknownSampleRefs.Load()+unknownExemplarRefs.Load()+unknownHistogramRefs.Load()+unknownMetadataRefs.Load()+unknownTombstoneRefs.Load() > 0 {
+		h.logger.Warn(
+			"Unknown series references during sharded WAL replay",
+			"shard", shardID,
+			"series", unknownSeriesRefs.count(),
+			"samples", unknownSampleRefs.Load(),
+			"exemplars", unknownExemplarRefs.Load(),
+			"histograms", unknownHistogramRefs.Load(),
+			"metadata", unknownMetadataRefs.Load(),
+			"tombstones", unknownTombstoneRefs.Load(),
+		)
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownSeriesRefs.count()), "series")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownSampleRefs.Load()), "samples")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownExemplarRefs.Load()), "exemplars")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownHistogramRefs.Load()), "histograms")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownMetadataRefs.Load()), "metadata")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownTombstoneRefs.Load()), "tombstones")
+	}
+	if count := mmapOverlappingChunks.Load(); count > 0 {
+		h.logger.Info("Overlapping m-map chunks on duplicate series records", "count", count, "shard", shardID)
+	}
+	return nil
+}
+
+// loadShardedWAL replays all shards concurrently.
+// Each shard uses its own symbol table and multiRef map.
+// We first backfill from the shard's last checkpoint (if any), then replay
+// segments [startFrom+1..endAt].
+func (h *Head) loadShardedWAL(
+	mmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk,
+	oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk,
+) error {
+	if h.shardedWAL == nil {
+		return nil
+	}
+
+	type shardJob struct {
+		id        int
+		dir       string
+		startFrom int
+		endAt     int
+	}
+	var jobs []shardJob
+	shards := h.shardedWAL.Shards()
+	for shardID, w := range shards {
+		startFrom, endAt, err := wlog.Segments(w.Dir())
+		if err != nil && !errors.Is(err, record.ErrNotFound) {
+			return fmt.Errorf("finding WAL segments for shard %d: %w", shardID, err)
+		}
+		// If no segments, still attempt checkpoint (maybe everything is checkpointed).
+		jobs = append(jobs, shardJob{
+			id:        shardID,
+			dir:       w.Dir(),
+			startFrom: startFrom,
+			endAt:     endAt,
+		})
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(jobs))
+
+	syms := labels.NewSymbolTable()
+	multiRef := NewSafeMultiRef()
+
+	for _, job := range jobs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			// 1) Backfill checkpoint if present.
+			if cpDir, cpIndex, err := wlog.LastCheckpoint(job.dir); err == nil {
+				sr, err := wlog.NewSegmentsReader(cpDir)
+				if err != nil {
+					errCh <- fmt.Errorf("open checkpoint for shard %d: %w", job.id, err)
+					return
+				}
+				if e := h.replayShard(job.id, wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, job.endAt); e != nil {
+					_ = sr.Close()
+					errCh <- fmt.Errorf("backfill checkpoint for shard %d: %w", job.id, e)
+					return
+				}
+				if e := sr.Close(); e != nil {
+					h.logger.Warn("Error closing shard checkpoint reader", "shard", job.id, "err", e)
+				}
+				// Skip the segment already covered by the checkpoint.
+				job.startFrom = cpIndex + 1
+			} else if !errors.Is(err, record.ErrNotFound) {
+				errCh <- fmt.Errorf("find last checkpoint for shard %d: %w", job.id, err)
+				return
+			}
+
+			// 2) Replay segments [startFrom..endAt].
+			for i := job.startFrom; i <= job.endAt; i++ {
+				segName := wlog.SegmentName(job.dir, i)
+				seg, err := wlog.OpenReadSegment(segName)
+				if err != nil {
+					errCh <- fmt.Errorf("open WAL segment for shard %d (%s): %w", job.id, segName, err)
+					return
+				}
+
+				// No snapshot offset in sharded path here; start at 0.
+				sr := wlog.NewSegmentBufReader(seg)
+				err = h.replayShard(job.id, wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, job.endAt)
+				if e := sr.Close(); e != nil {
+					h.logger.Warn("Error closing shard segments reader", "shard", job.id, "segment", i, "err", e)
+				}
+				if err != nil {
+					errCh <- fmt.Errorf("replay WAL segment for shard %d (segment=%d): %w", job.id, i, err)
+					return
+				}
+				h.updateWALReplayStatusRead(i) // safe across shards
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for e := range errCh {
+		if e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
+func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
+	fmt.Println("🔁 Starting WAL replay...")
+	// Track number of missing series records that were referenced by other records.
+	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
+	// Track number of different records that referenced a series we don't know about
+	// for error reporting.
+	var unknownSampleRefs atomic.Uint64
+	var unknownExemplarRefs atomic.Uint64
+	var unknownHistogramRefs atomic.Uint64
+	var unknownMetadataRefs atomic.Uint64
+	var unknownTombstoneRefs atomic.Uint64
+	// Track number of series records that had overlapping m-map chunks.
+	var mmapOverlappingChunks atomic.Uint64
+
+	// Start workers that each process samples for a partition of the series ID space.
+	var (
+		wg             sync.WaitGroup
+		concurrency    = h.opts.WALReplayConcurrency
+		processors     = make([]walSubsetProcessor, concurrency)
+		exemplarsInput chan record.RefExemplar
+
+		shards          = make([][]record.RefSample, concurrency)
+		histogramShards = make([][]histogramRecord, concurrency)
+
+		decoded                      = make(chan interface{}, 10)
+		decodeErr, seriesCreationErr error
+	)
+
+	fmt.Printf("📌 Using %d goroutines for WAL replay\n", concurrency)
+	fmt.Printf("🧵 Processor slots: processors=%d shards=%d\n", len(processors), len(shards))
+
+	defer func() {
+		// For CorruptionErr ensure to terminate all workers before exiting.
+		_, ok := err.(*wlog.CorruptionErr)
 		if ok || seriesCreationErr != nil {
 			for i := range concurrency {
 				processors[i].closeAndDrain()
@@ -120,6 +708,8 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		processors[i].setup()
 
 		go func(wp *walSubsetProcessor) {
+			fmt.Printf("▶️ WAL processor started: shard=")
+
 			missingSeries, unknownSamples, unknownHistograms, overlapping := wp.processWALSamples(h, mmappedChunks, oooMmappedChunks)
 			unknownSeriesRefs.merge(missingSeries)
 			unknownSampleRefs.Add(unknownSamples)
@@ -270,8 +860,10 @@ Outer:
 
 				idx := uint64(mSeries.ref) % uint64(concurrency)
 				processors[idx].input <- walSubsetProcessorInputItem{walSeriesRef: walSeries.Ref, existingSeries: mSeries}
+
 			}
 			h.wlReplaySeriesPool.Put(v)
+
 		case []record.RefSample:
 			samples := v
 			minValidTime := h.minValidTime.Load()
