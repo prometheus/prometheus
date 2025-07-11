@@ -15,6 +15,7 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -31,6 +32,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -3793,10 +3795,15 @@ func assertAPIResponseMetadataLen(t *testing.T, got interface{}, expLen int) {
 }
 
 type fakeDB struct {
-	err error
+	err        error
+	blockMetas []tsdb.BlockMeta
 }
 
-func (f *fakeDB) CleanTombstones() error                                         { return f.err }
+func (f *fakeDB) CleanTombstones() error { return f.err }
+
+func (f *fakeDB) BlockMetas() ([]tsdb.BlockMeta, error) {
+	return f.blockMetas, nil
+}
 func (f *fakeDB) Delete(context.Context, int64, int64, ...*labels.Matcher) error { return f.err }
 func (f *fakeDB) Snapshot(string, bool) error                                    { return f.err }
 func (f *fakeDB) Stats(statsByLabelName string, limit int) (_ *tsdb.Stats, retErr error) {
@@ -4120,6 +4127,45 @@ func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
 	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
 	require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
 	require.JSONEq(t, `{"status":"error","errorType":"not_acceptable","error":"cannot encode response as application/default-format"}`, string(body))
+}
+
+func TestServeTSDBBlocks(t *testing.T) {
+	blockMeta := tsdb.BlockMeta{
+		ULID:    ulid.MustNew(ulid.Now(), nil),
+		MinTime: 0,
+		MaxTime: 1000,
+		Stats: tsdb.BlockStats{
+			NumSeries: 10,
+		},
+	}
+
+	db := &fakeDB{
+		blockMetas: []tsdb.BlockMeta{blockMeta},
+	}
+
+	api := &API{
+		db: db,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status/tsdb/blocks", nil)
+	w := httptest.NewRecorder()
+
+	result := api.serveTSDBBlocks(req)
+
+	json.NewEncoder(w).Encode(result.data)
+
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var resultData struct {
+		Blocks []tsdb.BlockMeta `json:"blocks"`
+	}
+	err := json.NewDecoder(resp.Body).Decode(&resultData)
+	require.NoError(t, err)
+	require.Len(t, resultData.Blocks, 1)
+	require.Equal(t, blockMeta, resultData.Blocks[0])
 }
 
 func TestRespondError(t *testing.T) {
