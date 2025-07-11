@@ -665,7 +665,7 @@ func BenchmarkParser(b *testing.B) {
 			expr, _ := parser.ParseExpr(c)
 			start, end := time.Now().Add(-time.Hour), time.Now()
 			for i := 0; i < b.N; i++ {
-				promql.PreprocessExpr(expr, start, end)
+				promql.PreprocessExpr(expr, start, end, 0)
 			}
 		})
 	}

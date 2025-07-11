@@ -394,13 +394,13 @@ func ChildrenIter(node Node) func(func(Node) bool) {
 				}
 			}
 		case *AggregateExpr:
-			if n.Param != nil {
-				if !yield(n.Param) {
+			if n.Expr != nil {
+				if !yield(n.Expr) {
 					return
 				}
 			}
-			if n.Expr != nil {
-				yield(n.Expr)
+			if n.Param != nil {
+				yield(n.Param)
 			}
 		case *BinaryExpr:
 			if !yield(n.LHS) {
@@ -426,7 +426,7 @@ func ChildrenIter(node Node) func(func(Node) bool) {
 		case *NumberLiteral, *StringLiteral, *VectorSelector:
 			// nothing to do
 		default:
-			panic(fmt.Errorf("promql.Children: unhandled node type %T", node))
+			panic(fmt.Errorf("promql.ChildrenIter: unhandled node type %T", node))
 		}
 	}
 }
