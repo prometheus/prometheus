@@ -444,6 +444,7 @@ func TestEndpoints(t *testing.T) {
 	ng := testEngine(t)
 
 	t.Run("local", func(t *testing.T) {
+		t.Parallel()
 		algr := rulesRetrieverMock{testing: t}
 
 		algr.CreateAlertingRules()
