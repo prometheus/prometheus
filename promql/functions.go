@@ -113,11 +113,18 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		}
 		// Handle counter resets:
 		prevValue := samples.Floats[0].F
+		resetCount := 0
 		for _, currPoint := range samples.Floats[1:] {
 			if currPoint.F < prevValue {
 				resultFloat += prevValue
+				resetCount++
 			}
 			prevValue = currPoint.F
+		}
+
+		resetRatio := float64(resetCount) / float64(numSamplesMinusOne)
+		if resetRatio > 0.6 {
+			annos.Add(annotations.NewTooManyResetsInCounterWarning(metricName, args[0].PositionRange()))
 		}
 	default:
 		// TODO: add RangeTooShortWarning
