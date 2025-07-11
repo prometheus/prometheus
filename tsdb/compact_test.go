@@ -1964,10 +1964,6 @@ func TestDelayedCompaction(t *testing.T) {
 		for db.head.compactable() {
 			time.Sleep(time.Millisecond)
 		}
-		if runtime.GOOS == "windows" {
-			// TODO: enable on windows once ms resolution timers are better supported.
-			return
-		}
 		duration := time.Since(start)
 		require.Less(t, duration, delay)
 	}
@@ -1989,8 +1985,10 @@ func TestDelayedCompaction(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
+			if c.compactionDelay > 0 && runtime.GOOS == "windows" {
+				t.Skip("Time imprecision on windows makes the test flaky, see https://github.com/prometheus/prometheus/issues/16450")
+			}
 			t.Parallel()
 
 			var options *Options
