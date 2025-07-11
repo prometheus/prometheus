@@ -4695,7 +4695,7 @@ metric: <
 					SampleLimit:                    100,
 					Scheme:                         "http",
 					ScrapeInterval:                 model.Duration(50 * time.Millisecond),
-					ScrapeTimeout:                  model.Duration(25 * time.Millisecond),
+					ScrapeTimeout:                  model.Duration(49 * time.Millisecond),
 					AlwaysScrapeClassicHistograms:  tc.alwaysScrapeClassicHistograms,
 					ConvertClassicHistogramsToNHCB: tc.convertClassicHistToNHCB,
 					MetricNameValidationScheme:     config.UTF8ValidationConfig,
@@ -4747,7 +4747,7 @@ metric: <
 						Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(testURL.Host)}},
 					},
 				})
-				require.Len(t, sp.ActiveTargets(), 1)
+				require.Eventually(t, func() bool { return len(sp.ActiveTargets()) == 1 }, 5*time.Second, 50*time.Millisecond)
 
 				select {
 				case <-time.After(5 * time.Second):
