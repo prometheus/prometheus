@@ -926,13 +926,27 @@ func getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path
 		// because wo want to exclude samples that are precisely the
 		// lookback delta before the eval time.
 		start -= durationMilliseconds(s.LookbackDelta) - 1
+		if n.Smoothed {
+			end += durationMilliseconds(s.LookbackDelta)
+		}
 	} else {
-		// For all matrix queries we want to ensure that we have
-		// (end-start) + range selected this way we have `range` data
-		// before the start time. We subtract one from the range to
-		// exclude samples positioned directly at the lower boundary of
-		// the range.
-		start -= durationMilliseconds(evalRange) - 1
+		// For matrix queries, adjust the start and end times to ensure the
+		// correct range of data is selected. For "anchored" selectors, extend
+		// the start time backwards by the lookback delta plus the evaluation
+		// range.  For "smoothed" selectors, extend both the start and end times
+		// by the lookback delta, and also extend the start time by the
+		// evaluation range to cover the smoothing window.  For standard range
+		// queries, extend the start time backwards by the range (minus one
+		// millisecond) to exclude samples exactly at the lower boundary.
+		switch {
+		case n.Anchored:
+			start -= durationMilliseconds(s.LookbackDelta + evalRange)
+		case n.Smoothed:
+			start -= durationMilliseconds(s.LookbackDelta + evalRange)
+			end += durationMilliseconds(s.LookbackDelta)
+		default:
+			start -= durationMilliseconds(evalRange) - 1
+		}
 	}
 
 	offsetMilliseconds := durationMilliseconds(n.OriginalOffset)
@@ -979,7 +993,6 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			evalRange = 0
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
 			n.UnexpandedSeriesSet = querier.Select(ctx, false, hints, n.LabelMatchers...)
-
 		case *parser.MatrixSelector:
 			evalRange = n.Range
 		}
@@ -1518,11 +1531,63 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 	return result, annos
 }
 
+func (ev *evaluator) smoothSeries(ctx context.Context, series []storage.Series, offset time.Duration, recordOrigT bool) Matrix {
+	dur := ev.endTimestamp - ev.startTimestamp
+	it := storage.NewBuffer(dur + 2*durationMilliseconds(ev.lookbackDelta))
+	var chkIter chunkenc.Iterator
+	mat := make(Matrix, 0, len(series))
+	for _, s := range series {
+		ss := Series{
+			Metric: s.Labels(),
+		}
+		chkIter := s.Iterator(chkIter)
+		it.Reset(chkIter)
+
+		var floats []FPoint
+
+		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
+			matrixStart := ts - durationMilliseconds(ev.lookbackDelta)
+			matrixEnd := ts + durationMilliseconds(ev.lookbackDelta)
+			floats, _ = ev.matrixIterSlice(it, matrixStart, matrixEnd, floats, nil)
+
+			step++
+			var havePrev bool
+			var found bool
+			var prevF float64
+			var prevT int64
+			for _, f := range floats {
+				if f.T == ts {
+					ss.Floats = append(ss.Floats, f)
+					found = true
+					break
+				} else if f.T < ts {
+					prevT = f.T
+					prevF = f.F
+					havePrev = true
+					continue
+				}
+				if havePrev {
+					value := linear(prevF, f.F, prevT, f.T, ts)
+					ss.Floats = append(ss.Floats, FPoint{F: value, T: ts})
+					found = true
+					break
+				}
+			}
+			if !found && havePrev {
+				ss.Floats = append(ss.Floats, FPoint{F: prevF, T: ts})
+			}
+		}
+		mat = append(mat, ss)
+	}
+	return mat
+}
+
 // evalSeries generates a Matrix between ev.startTimestamp and ev.endTimestamp (inclusive), each point spaced ev.interval apart, from series given offset.
 // For every storage.Series iterator in series, the method iterates in ev.interval sized steps from ev.startTimestamp until and including ev.endTimestamp,
 // collecting every corresponding sample (obtained via ev.vectorSelectorSingle) into a Series.
 // All of the generated Series are collected into a Matrix, that gets returned.
 func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, offset time.Duration, recordOrigT bool) Matrix {
+
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
 	mat := make(Matrix, 0, len(series))
@@ -1792,6 +1857,15 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		sel := arg.(*parser.MatrixSelector)
 		selVS := sel.VectorSelector.(*parser.VectorSelector)
 
+		// Anchored works with: increase, and delta.
+		if selVS.Anchored && e.Func.Name != "increase" && e.Func.Name != "delta" {
+			warnings.Add(annotations.NewAnchoredWithUnsupportedFunctionWarning(e.Func.Name, e.Args[matrixArgIndex].PositionRange()))
+		}
+		// Smoothed works with: deriv, and rate.
+		if selVS.Smoothed && e.Func.Name != "deriv" && e.Func.Name != "rate" {
+			warnings.Add(annotations.NewSmoothedWithUnsupportedFunctionWarning(e.Func.Name, e.Args[matrixArgIndex].PositionRange()))
+		}
+
 		ws, err := checkAndExpandSeriesSet(ctx, sel)
 		warnings.Merge(ws)
 		if err != nil {
@@ -1801,7 +1875,13 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		offset := durationMilliseconds(selVS.Offset)
 		selRange := durationMilliseconds(sel.Range)
 		stepRange := selRange
-		if stepRange > ev.interval {
+		switch {
+		case selVS.Anchored:
+			stepRange += durationMilliseconds(ev.lookbackDelta)
+		case selVS.Smoothed:
+			stepRange += durationMilliseconds(2 * ev.lookbackDelta)
+		}
+		if stepRange > ev.interval || selVS.Smoothed || selVS.Anchored {
 			stepRange = ev.interval
 		}
 		// Reuse objects across steps to save memory allocations.
@@ -1812,7 +1892,18 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		inArgs[matrixArgIndex] = inMatrix
 		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
 		// Process all the calls for one time series at a time.
-		it := storage.NewBuffer(selRange)
+		// For anchored and smoothed selectors, we need to iterate over a
+		// larger range than the query range to account for the lookback delta.
+		// For standard range queries, we iterate over the query range.
+		bufferRange := selRange
+		switch {
+		case selVS.Anchored:
+			bufferRange += durationMilliseconds(ev.lookbackDelta)
+		case selVS.Smoothed:
+			bufferRange += durationMilliseconds(2 * ev.lookbackDelta)
+		}
+
+		it := storage.NewBuffer(bufferRange)
 		var chkIter chunkenc.Iterator
 
 		// The last_over_time function acts like offset; thus, it
@@ -1843,6 +1934,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				DropName: dropName,
 			}
 			inMatrix[0].Metric = selVS.Series[i].Labels()
+			var mint, maxt int64
 			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 				step++
 				// Set the non-matrix arguments.
@@ -1857,14 +1949,30 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				// for this step, but only if this is the 1st
 				// iteration or no @ modifier has been used.
 				if ts == ev.startTimestamp || selVS.Timestamp == nil {
-					maxt := ts - offset
-					mint := maxt - selRange
-					floats, histograms = ev.matrixIterSlice(it, mint, maxt, floats, histograms)
+					maxt = ts - offset
+					mint = maxt - selRange
+					matrixMaxt := maxt
+					matrixMint := mint
+					if selVS.Anchored || selVS.Smoothed {
+						matrixMint -= durationMilliseconds(ev.lookbackDelta)
+					}
+					if selVS.Smoothed {
+						matrixMaxt += durationMilliseconds(ev.lookbackDelta)
+					}
+					floats, histograms = ev.matrixIterSlice(it, matrixMint, matrixMaxt, floats, histograms)
 				}
 				if len(floats)+len(histograms) == 0 {
 					continue
 				}
-				inMatrix[0].Floats = floats
+				switch {
+				case selVS.Anchored:
+					inMatrix[0].Floats = anchorFloats(floats, mint, maxt)
+				case selVS.Smoothed:
+					counterReset := e.Func.Name == "rate" || e.Func.Name == "increase" || e.Func.Name == "irate"
+					inMatrix[0].Floats = smoothFloats(floats, mint, maxt, counterReset)
+				default:
+					inMatrix[0].Floats = floats
+				}
 				inMatrix[0].Histograms = histograms
 				enh.Ts = ts
 				// Make the function call.
@@ -2060,6 +2168,10 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		ws, err := checkAndExpandSeriesSet(ctx, e)
 		if err != nil {
 			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
+		}
+		if e.Smoothed {
+			mat := ev.smoothSeries(ctx, e.Series, e.Offset, false)
+			return mat, ws
 		}
 		mat := ev.evalSeries(ctx, e.Series, e.Offset, false)
 		return mat, ws
@@ -4013,4 +4125,89 @@ func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelp
 	ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 	return output, bufHelpers
+}
+
+func anchorFloats(floats []FPoint, mint, maxt int64) []FPoint {
+	anchor := make([]FPoint, 0)
+	for i, f := range floats {
+		// <= mint because the interval is left-closed.
+		if f.T <= mint {
+			continue
+		}
+		if i > 0 {
+			anchor = append(anchor, FPoint{T: mint, F: floats[i-1].F})
+		} else {
+			anchor = append(anchor, FPoint{T: mint, F: f.F})
+		}
+		anchor = append(anchor, floats[i:]...)
+		if lastF := anchor[len(anchor)-1]; lastF.T != maxt {
+			anchor = append(anchor, FPoint{T: maxt, F: lastF.F})
+		}
+		break
+	}
+	return anchor
+}
+
+// linear interpolates between two points at a given time.
+func linear(f1, f2 float64, t1, t2, t int64) float64 {
+	if f1 == f2 {
+		return f1
+	}
+	ratio := float64(t-t1) / float64(t2-t1)
+	return (1.0-ratio)*f1 + ratio*f2
+}
+
+func smoothFloats(floats []FPoint, mint, maxt int64, counterReset bool) []FPoint {
+	var out []FPoint
+	n := len(floats)
+	if n == 0 {
+		return out
+	}
+
+	// Find first point after mint.
+	i := 0
+	for i < n && floats[i].T <= mint {
+		i++
+	}
+
+	// If all points are before mint or first after maxt, nothing to do.
+	if i == n {
+		return out
+	}
+
+	// Add interpolated/anchored point at mint.
+	if i == 0 {
+		out = append(out, FPoint{T: mint, F: floats[0].F})
+	} else {
+		prev, next := floats[i-1], floats[i]
+		prevF := prev.F
+		if counterReset && prevF > next.F {
+			prevF = 0
+		}
+		f := linear(prevF, next.F, prev.T, next.T, mint)
+		out = append(out, FPoint{T: mint, F: f})
+	}
+
+	// Add all points strictly between mint and maxt.
+	for ; i < n && floats[i].T < maxt; i++ {
+		out = append(out, floats[i])
+	}
+
+	// Add interpolated/anchored point at maxt.
+	if i == n {
+		// If last point is before maxt, anchor at last value.
+		out = append(out, FPoint{T: maxt, F: floats[n-1].F})
+	} else if floats[i].T == maxt {
+		out = append(out, floats[i])
+	} else if i > 0 {
+		prev, next := floats[i-1], floats[i]
+		prevF := prev.F
+		if counterReset && prevF > next.F {
+			prevF = 0
+		}
+		f := linear(prevF, next.F, prev.T, next.T, maxt)
+		out = append(out, FPoint{T: maxt, F: f})
+	}
+
+	return out
 }

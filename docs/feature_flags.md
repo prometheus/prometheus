@@ -302,3 +302,21 @@ memory in response to misleading cache growth.
 This is currently implemented using direct I/O.
 
 For more details, see the [proposal](https://github.com/prometheus/proposals/pull/45).
+
+## Extended Range Selectors
+
+`--enable-feature=promql-extended-range-selectors`
+
+Enables experimental `anchored` and `smoothed` modifiers for PromQL range and instant selectors. These modifiers provide more control over how range boundaries are handled in functions like `rate` and `increase`, especially with missing or irregular data.
+
+- `anchored`: Treats the range as closed on both ends, using the most recent sample before each boundary or duplicating the first/last sample if needed. Useful for precise counter calculations and improved composability. Use with **increase** and **delta**.
+- `smoothed`: Linearly interpolates values at the range boundaries, using all available data for more accurate results with irregular scrapes or missing samples. Use with **rate** and **deriv**.
+
+Example queries:
+`increase(http_requests_total[5m] anchored)`
+`rate(http_requests_total[5m] smoothed)`
+
+> **Note for alerting and recording rules:**  
+> The `smoothed` modifier requires samples after the evaluation interval, so using it directly in alerting or recording rules will typically *under-estimate* the result, as future samples are not available at evaluation time.  
+> To use `smoothed` safely in rules, you **must** apply a `query_offset` (e.g., `offset 1m`) to ensure the calculation window is fully in the past and all needed samples are available.  
+> For critical alerting, set the offset to at least one scrape interval; for less critical or more resilient use cases, consider a larger offset (multiple scrape intervals) to tolerate missed scrapes.  
