@@ -123,14 +123,14 @@ tls_config:
 # For the following configurations, use either `ca`, `cert` and `key` or `ca_file`, `cert_file` and `key_file` or use `ca_ref`, `cert_ref` or `key_ref`.
 # Text of the CA certificate to use for the server.
 [ ca: <string> ]
-# CA certificate to validate the server certificate witth.
+# CA certificate to validate the server certificate with.
 [ ca_file: <filename> ]
 # `ca_ref` is the name of the secret within the secret manager to use as the CA cert.
 [ ca_ref: <string> ]
 
 # Text of the client cert file for the server.
 [ cert: <string> ]
-# Certficate file for client certificate authentication.
+# Certificate file for client certificate authentication.
 [ cert_file: <filename> ]
 # `cert_ref` is the name of the secret within the secret manager to use as the client certificate.
 [ cert_ref: <string> ]

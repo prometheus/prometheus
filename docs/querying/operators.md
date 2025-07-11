@@ -284,21 +284,21 @@ Prometheus supports the following built-in aggregation operators that can be
 used to aggregate the elements of a single instant vector, resulting in a new
 vector of fewer elements with aggregated values:
 
-* `sum` (calculate sum over dimensions)
-* `avg` (calculate the arithmetic average over dimensions)
-* `min` (select minimum over dimensions)
-* `max` (select maximum over dimensions)
-* `bottomk` (smallest _k_ elements by sample value)
-* `topk` (largest _k_ elements by sample value)
-* `limitk` (sample _k_ elements, **experimental**, must be enabled with `--enable-feature=promql-experimental-functions`)
-* `limit_ratio` (sample a pseudo-random ratio _r_ of elements, **experimental**, must be enabled with `--enable-feature=promql-experimental-functions`)
-* `group` (all values in the resulting vector are 1)
-* `count` (count number of elements in the vector)
-* `count_values` (count number of elements with the same value)
+* `sum(v)` (calculate sum over dimensions)
+* `avg(v)` (calculate the arithmetic average over dimensions)
+* `min(v)` (select minimum over dimensions)
+* `max(v)` (select maximum over dimensions)
+* `bottomk(k, v)` (smallest `k` elements by sample value)
+* `topk(k, v)` (largest `k` elements by sample value)
+* `limitk(k, v)` (sample `k` elements, **experimental**, must be enabled with `--enable-feature=promql-experimental-functions`)
+* `limit_ratio(r, v)` (sample a pseudo-random ratio `r` of elements, **experimental**, must be enabled with `--enable-feature=promql-experimental-functions`)
+* `group(v)` (all values in the resulting vector are 1)
+* `count(v)` (count number of elements in the vector)
+* `count_values(l, v)` (count number of elements with the same value)
 
-* `stddev` (calculate population standard deviation over dimensions)
-* `stdvar` (calculate population standard variance over dimensions)
-* `quantile` (calculate φ-quantile (0 ≤ φ ≤ 1) over dimensions)
+* `stddev(v)` (calculate population standard deviation over dimensions)
+* `stdvar(v)` (calculate population standard variance over dimensions)
+* `quantile(φ, v)` (calculate φ-quantile (0 ≤ φ ≤ 1) over dimensions)
 
 These operators can either be used to aggregate over **all** label dimensions
 or preserve distinct dimensions by including a `without` or `by` clause. These
@@ -318,29 +318,62 @@ all other labels are preserved in the output. `by` does the opposite and drops
 labels that are not listed in the `by` clause, even if their label values are
 identical between all elements of the vector.
 
-`parameter` is only required for `topk`, `bottomk`, `limitk`, `limit_ratio`,
-`quantile`, and `count_values`. It is used as the value for _k_, _r_, φ, or the
-name of the additional label, respectively.
-
 ### Detailed explanations
 
-`sum` sums up sample values in the same way as the `+` binary operator does
-between two values. Similarly, `avg` divides the sum by the number of
-aggregated samples in the same way as the `/` binary operator. Therefore, all
-sample values aggregation into a single resulting vector element must either be
+#### `sum`
+
+`sum(v)` sums up sample values in `v` in the same way as the `+` binary operator does
+between two values. 
+
+All sample values being aggregated into a single resulting vector element must either be
 float samples or histogram samples. An aggregation of a mix of both is invalid,
-resulting in the removeal of the corresponding vector element from the output
+resulting in the removal of the corresponding vector element from the output
 vector, flagged by a warn-level annotation.
 
-`min` and `max` only operate on float samples, following IEEE 754 floating
+##### Examples
+
+If the metric `memory_consumption_bytes` had time series that fan out by
+`application`, `instance`, and `group` labels, we could calculate the total
+memory consumption per application and group over all instances via:
+
+    sum without (instance) (memory_consumption_bytes)
+
+Which is equivalent to:
+
+    sum by (application, group) (memory_consumption_bytes)
+
+If we are just interested in the total memory consumption in **all**
+applications, we could simply write:
+
+    sum(memory_consumption_bytes)
+
+#### `avg`
+
+`avg(v)` divides the sum of `v` by the number of aggregated samples in the same way
+as the `/` binary operator.
+
+All sample values being aggregated into a single resulting vector element must either be
+float samples or histogram samples. An aggregation of a mix of both is invalid,
+resulting in the removal of the corresponding vector element from the output
+vector, flagged by a warn-level annotation.
+
+#### `min` and `max`
+
+`min(v)` and `max(v)` return the minimum or maximum value, respectively, in `v`. 
+
+They only operate on float samples, following IEEE 754 floating
 point arithmetic, which in particular implies that `NaN` is only ever
 considered a minimum or maximum if all aggregated values are `NaN`. Histogram
 samples in the input vector are ignored, flagged by an info-level annotation.
 
-`topk` and `bottomk` are different from other aggregators in that a subset of
-the input samples, including the original labels, are returned in the result
-vector. `by` and `without` are only used to bucket the input vector. Similar to
-`min` and `max`, they only operate on float samples, considering `NaN` values
+#### `topk` and `bottomk`
+
+`topk(k, v)` and `bottomk(k, v)` are different from other aggregators in that a subset of
+`k` values from the input samples, including the original labels, are returned in the result vector. 
+
+`by` and `without` are only used to bucket the input vector. 
+
+Similar to `min` and `max`, they only operate on float samples, considering `NaN` values
 to be farthest from the top or bottom, respectively. Histogram samples in the
 input vector are ignored, flagged by an info-level annotation.
 
@@ -348,72 +381,108 @@ If used in an instant query, `topk` and `bottomk` return series ordered by
 value in descending or ascending order, respectively. If used with `by` or
 `without`, then series within each bucket are sorted by value, and series in
 the same bucket are returned consecutively, but there is no guarantee that
-buckets of series will be returned in any particular order. No sorting applies
-to range queries.
+buckets of series will be returned in any particular order. 
 
-`limitk` and `limit_ratio` also return a subset of the input samples, including
-the original labels in the result vector. The subset is selected in a
-deterministic pseudo-random way. `limitk` picks _k_ samples, while
-`limit_ratio` picks a ratio _r_ of samples (each determined by `parameter`).
-This happens independent of the sample type. Therefore, it works for both float
-samples and histogram samples. _r_ can be between +1 and -1. The absolute value
-of _r_ is used as the selection ratio, but the selection order is inverted for
-a negative _r_, which can be used to select complements. For example,
-`limit_ratio(0.1, ...)` returns a deterministic set of approximatiely 10% of
+No sorting applies to range queries.
+
+##### Example
+
+To get the 5 instances with the highest memory consumption across all instances we could write:
+
+    topk(5, memory_consumption_bytes)
+
+#### `limitk` and `limit_ratio`
+
+`limitk(k, v)` returns a subset of `k` input samples, including
+the original labels in the result vector. 
+
+The subset is selected in a deterministic pseudo-random way.
+This happens independent of the sample type. 
+Therefore, it works for both float samples and histogram samples. 
+
+##### Example
+
+To sample 10 timeseries we could write:
+
+    limitk(10, memory_consumption_bytes)
+
+#### `limit_ratio`
+
+`limit_ratio(r, v)` returns a subset of the input samples, including
+the original labels in the result vector.
+
+The subset is selected in a deterministic pseudo-random way.
+This happens independent of the sample type.
+Therefore, it works for both float samples and histogram samples.
+
+`r` can be between +1 and -1. The absolute value of `r` is used as the selection ratio,
+but the selection order is inverted for a negative `r`, which can be used to select complements.
+For example, `limit_ratio(0.1, ...)` returns a deterministic set of approximatiely 10% of
 the input samples, while `limit_ratio(-0.9, ...)` returns precisely the
-remaining approximately 90% of the input samples not returned by
-`limit_ratio(0.1, ...)`.
+remaining approximately 90% of the input samples not returned by `limit_ratio(0.1, ...)`.
 
-`group` and `count` do not interact with the sample values,
-they work in the same way for float samples and histogram samples.
+#### `group`
 
-`count_values` outputs one time series per unique sample value. Each series has
-an additional label. The name of that label is given by the aggregation
-parameter, and the label value is the unique sample value. The value of each
-time series is the number of times that sample value was present.
+`group(v)` returns 1 for each group that contains any value at that timestamp.
+
+The value may be a float or histogram sample.
+
+#### `count`
+
+`count(v)` returns the number of values at that timestamp, or no value at all
+if no values are present at that timestamp.
+
+The value may be a float or histogram sample.
+
+#### `count_values`
+
+`count_values(l, v)` outputs one time series per unique sample value in `v`. 
+Each series has an additional label, given by `l`, and the label value is the 
+unique sample value. The value of each time series is the number of times that sample value was present.
+
 `count_values` works with both float samples and histogram samples. For the
 latter, a compact string representation of the histogram sample value is used
 as the label value.
 
-`stddev` and `stdvar` only work with float samples, following IEEE 754 floating
-point arithmetic. Histogram samples in the input vector are ignored, flagged by
-an info-level annotation.
-
-`quantile` calculates the φ-quantile, the value that ranks at number φ*N among
-the N metric values of the dimensions aggregated over. φ is provided as the
-aggregation parameter. For example, `quantile(0.5, ...)` calculates the median,
-`quantile(0.95, ...)` the 95th percentile. For φ = `NaN`, `NaN` is returned.
-For φ < 0, `-Inf` is returned. For φ > 1, `+Inf` is returned.
-
-### Examples
-
-If the metric `http_requests_total` had time series that fan out by
-`application`, `instance`, and `group` labels, we could calculate the total
-number of seen HTTP requests per application and group over all instances via:
-
-    sum without (instance) (http_requests_total)
-
-Which is equivalent to:
-
-     sum by (application, group) (http_requests_total)
-
-If we are just interested in the total of HTTP requests we have seen in **all**
-applications, we could simply write:
-
-    sum(http_requests_total)
+##### Example
 
 To count the number of binaries running each build version we could write:
 
     count_values("version", build_version)
 
-To get the 5 largest HTTP requests counts across all instances we could write:
+#### `stddev`
 
-    topk(5, http_requests_total)
+`stddev(v)` returns the standard deviation of `v`. 
 
-To sample 10 timeseries, for example to inspect labels and their values, we
-could write:
+`stddev` only works with float samples, following IEEE 754 floating
+point arithmetic. Histogram samples in the input vector are ignored, flagged by
+an info-level annotation.
 
-    limitk(10, http_requests_total)
+#### `stdvar`
+
+`stdvar(v)` returns the standard deviation of `v`. 
+
+`stdvar` only works with float samples, following IEEE 754 floating
+point arithmetic. Histogram samples in the input vector are ignored, flagged by
+an info-level annotation.
+
+#### `quantile`
+
+`quantile(φ, v)` calculates the φ-quantile, the value that ranks at number φ*N among
+the N metric values of the dimensions aggregated over.
+
+`quantile` only works with float samples. Histogram samples in the input vector
+are ignored, flagged by an info-level annotation.
+
+`NaN` is considered the smallest possible value.
+
+For example, `quantile(0.5, ...)` calculates the median, `quantile(0.95, ...)` the 95th percentile. 
+
+Special cases:
+
+* For φ = `NaN`, `NaN` is returned.
+* For φ < 0, `-Inf` is returned. 
+* For φ > 1, `+Inf` is returned.
 
 ## Binary operator precedence
 
