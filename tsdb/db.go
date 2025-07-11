@@ -817,6 +817,9 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
 	}
+	if opts.IndexLookupPlanner == nil {
+		opts.IndexLookupPlanner = &index.ScanEmptyMatchersLookupPlanner{}
+	}
 
 	if len(rngs) == 0 {
 		// Start with smallest block duration and create exponential buckets until the exceed the
