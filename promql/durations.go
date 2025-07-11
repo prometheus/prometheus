@@ -21,11 +21,20 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-// durationVisitor is a visitor that visits a duration expression and calculates the duration.
+// durationVisitor is a visitor that calculates the actual value of
+// duration expressions in AST nodes. For example the query
+// "http_requests_total offset (1h / 2)" is represented in the AST
+// as a VectorSelector with OriginalOffset 0 and the duration expression
+// in OriginalOffsetExpr representing (1h / 2). This visitor evaluates
+// such duration expression, setting OriginalOffset to 30m.
 type durationVisitor struct {
 	step time.Duration
 }
 
+// Visit finds any duration expressions in AST Nodes and modifies the Node to
+// store the concrete value. Note that parser.Walk does NOT traverse the
+// duration expressions such as OriginalOffsetExpr so we make our own recursive
+// call on those to evaluate the result.
 func (v *durationVisitor) Visit(node parser.Node, _ []parser.Node) (parser.Visitor, error) {
 	switch n := node.(type) {
 	case *parser.VectorSelector:
@@ -70,7 +79,8 @@ func (v *durationVisitor) Visit(node parser.Node, _ []parser.Node) (parser.Visit
 	return v, nil
 }
 
-// calculateDuration computes the duration from a duration expression.
+// calculateDuration returns the float value of a duration expression as
+// time.Duration or an error if the duration is invalid.
 func (v *durationVisitor) calculateDuration(expr parser.Expr, allowedNegative bool) (time.Duration, error) {
 	duration, err := v.evaluateDurationExpr(expr)
 	if err != nil {
