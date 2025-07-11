@@ -35,10 +35,9 @@ Flags:
       --storage.agent.path="data-agent/"
                                  Base path for metrics storage. Use with agent mode only.
       (... other flags)
-      --enable-feature= ...      Comma separated feature names to enable. Valid options: agent, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, remote-write-receiver,
-                                 extra-scrape-metrics, new-service-discovery-manager. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.
+      --[no-]agent               Run Prometheus in 'Agent mode'.
 ```
 
-Since the Agent mode is behind a feature flag, use the --enable-feature=agent flag to run Prometheus in the Agent mode. The rest of the flags are either for both server and Agent or only for a specific mode. You can see which flag is for which mode by checking the last sentence of a flag's help string. "Use with server mode only" means it's only for server mode. If you don't see any mention like this, it means the flag is shared.
+Use the `--agent` flag to run Prometheus in the Agent mode. The rest of the flags are either for both server and Agent or only for a specific mode. You can see which flag is for which mode by checking the last sentence of a flag's help string. "Use with server mode only" means it's only for server mode. If you don't see any mention like this, it means the flag is shared.
 
 The Agent mode accepts the same scrape configuration with the same discovery options and remote write options. It also exposes a web UI  on port 9095 with disabled query capabilities but shows build info, configuration, targets, and service discovery information as in a normal Prometheus server.
