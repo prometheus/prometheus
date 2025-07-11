@@ -973,7 +973,9 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
-	headOpts.IndexLookupPlanner = opts.IndexLookupPlanner
+	if opts.IndexLookupPlanner != nil {
+		headOpts.IndexLookupPlanner = opts.IndexLookupPlanner
+	}
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}
