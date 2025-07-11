@@ -42,6 +42,3 @@ Flags:
 Since the Agent mode is behind a feature flag, use the --enable-feature=agent flag to run Prometheus in the Agent mode. The rest of the flags are either for both server and Agent or only for a specific mode. You can see which flag is for which mode by checking the last sentence of a flag's help string. "Use with server mode only" means it's only for server mode. If you don't see any mention like this, it means the flag is shared.
 
 The Agent mode accepts the same scrape configuration with the same discovery options and remote write options. It also exposes a web UI  on port 9095 with disabled query capabilities but shows build info, configuration, targets, and service discovery information as in a normal Prometheus server.
-
-### Hands-on Prometheus Agent Example: Katacoda Tutorial
-To try the hands-on experience of Prometheus Agent capabilities, we recommend the [Thanos Katacoda tutorial of Prometheus Agent](https://katacoda.com/thanos/courses/thanos/4-receiver-agent), which explains how easy it is to run Prometheus Agent.
