@@ -17,7 +17,7 @@ import {
   BinaryExpr,
   FunctionCall,
   MatrixSelector,
-  NumberLiteral,
+  NumberDurationLiteral,
   OffsetExpr,
   ParenExpr,
   StepInvariantExpr,
@@ -42,7 +42,7 @@ export function getType(node: SyntaxNode | null): ValueType {
       return getType(node.firstChild);
     case StringLiteral:
       return ValueType.string;
-    case NumberLiteral:
+    case NumberDurationLiteral:
       return ValueType.scalar;
     case MatrixSelector:
       return ValueType.matrix;
@@ -52,19 +52,21 @@ export function getType(node: SyntaxNode | null): ValueType {
       return getType(node.getChild('Expr'));
     case UnaryExpr:
       return getType(node.getChild('Expr'));
-    case BinaryExpr:
+    case BinaryExpr: {
       const lt = getType(node.firstChild);
       const rt = getType(node.lastChild);
       if (lt === ValueType.scalar && rt === ValueType.scalar) {
         return ValueType.scalar;
       }
       return ValueType.vector;
-    case FunctionCall:
+    }
+    case FunctionCall: {
       const funcNode = node.firstChild?.firstChild;
       if (!funcNode) {
         return ValueType.none;
       }
       return getFunction(funcNode.type.id).returnType;
+    }
     case StepInvariantExpr:
       return getType(node.getChild('Expr'));
     default:

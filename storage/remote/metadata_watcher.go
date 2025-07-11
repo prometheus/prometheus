@@ -16,11 +16,11 @@ package remote
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/scrape"
 )
@@ -38,13 +38,13 @@ type Watchable interface {
 type noopScrapeManager struct{}
 
 func (noop *noopScrapeManager) Get() (*scrape.Manager, error) {
-	return nil, errors.New("Scrape manager not ready")
+	return nil, errors.New("scrape manager not ready")
 }
 
 // MetadataWatcher watches the Scrape Manager for a given WriteMetadataTo.
 type MetadataWatcher struct {
 	name   string
-	logger log.Logger
+	logger *slog.Logger
 
 	managerGetter ReadyScrapeManager
 	manager       Watchable
@@ -62,9 +62,9 @@ type MetadataWatcher struct {
 }
 
 // NewMetadataWatcher builds a new MetadataWatcher.
-func NewMetadataWatcher(l log.Logger, mg ReadyScrapeManager, name string, w MetadataAppender, interval model.Duration, deadline time.Duration) *MetadataWatcher {
+func NewMetadataWatcher(l *slog.Logger, mg ReadyScrapeManager, name string, w MetadataAppender, interval model.Duration, deadline time.Duration) *MetadataWatcher {
 	if l == nil {
-		l = log.NewNopLogger()
+		l = promslog.NewNopLogger()
 	}
 
 	if mg == nil {
@@ -87,7 +87,7 @@ func NewMetadataWatcher(l log.Logger, mg ReadyScrapeManager, name string, w Meta
 
 // Start the MetadataWatcher.
 func (mw *MetadataWatcher) Start() {
-	level.Info(mw.logger).Log("msg", "Starting scraped metadata watcher")
+	mw.logger.Info("Starting scraped metadata watcher")
 	mw.hardShutdownCtx, mw.hardShutdownCancel = context.WithCancel(context.Background())
 	mw.softShutdownCtx, mw.softShutdownCancel = context.WithCancel(mw.hardShutdownCtx)
 	go mw.loop()
@@ -95,15 +95,15 @@ func (mw *MetadataWatcher) Start() {
 
 // Stop the MetadataWatcher.
 func (mw *MetadataWatcher) Stop() {
-	level.Info(mw.logger).Log("msg", "Stopping metadata watcher...")
-	defer level.Info(mw.logger).Log("msg", "Scraped metadata watcher stopped")
+	mw.logger.Info("Stopping metadata watcher...")
+	defer mw.logger.Info("Scraped metadata watcher stopped")
 
 	mw.softShutdownCancel()
 	select {
 	case <-mw.done:
 		return
 	case <-time.After(mw.deadline):
-		level.Error(mw.logger).Log("msg", "Failed to flush metadata")
+		mw.logger.Error("Failed to flush metadata")
 	}
 
 	mw.hardShutdownCancel()

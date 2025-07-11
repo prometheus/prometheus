@@ -21,27 +21,38 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
 
+var (
+	s254 = strings.Repeat("x", 254) // Edge cases for stringlabels encoding.
+	s255 = strings.Repeat("x", 255)
+)
+
+var testCaseLabels = []Labels{
+	FromStrings("t1", "t1", "t2", "t2"),
+	{},
+	FromStrings("service.name", "t1", "whatever\\whatever", "t2"),
+	FromStrings("aaa", "111", "xx", s254),
+	FromStrings("aaa", "111", "xx", s255),
+	FromStrings("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
+}
+
 func TestLabels_String(t *testing.T) {
-	cases := []struct {
-		labels   Labels
-		expected string
-	}{
-		{
-			labels:   FromStrings("t1", "t1", "t2", "t2"),
-			expected: "{t1=\"t1\", t2=\"t2\"}",
-		},
-		{
-			labels:   Labels{},
-			expected: "{}",
-		},
+	expected := []string{ // Values must line up with testCaseLabels.
+		"{t1=\"t1\", t2=\"t2\"}",
+		"{}",
+		`{"service.name"="t1", "whatever\\whatever"="t2"}`,
+		`{aaa="111", xx="` + s254 + `"}`,
+		`{aaa="111", xx="` + s255 + `"}`,
+		`{" container"="prometheus", " namespace"="observability-prometheus", __name__="kube_pod_container_status_last_terminated_exitcode", cluster="prod-af-north-0", instance="kube-state-metrics-0:kube-state-metrics:ksm", job="kube-state-metrics/kube-state-metrics", pod="observability-prometheus-0", uid="d3ec90b2-4975-4607-b45d-b9ad64bb417e"}`,
 	}
-	for _, c := range cases {
-		str := c.labels.String()
-		require.Equal(t, c.expected, str)
+	require.Len(t, expected, len(testCaseLabels))
+	for i, c := range expected {
+		str := testCaseLabels[i].String()
+		require.Equal(t, c, str)
 	}
 }
 
@@ -49,6 +60,17 @@ func BenchmarkString(b *testing.B) {
 	ls := New(benchmarkLabels...)
 	for i := 0; i < b.N; i++ {
 		_ = ls.String()
+	}
+}
+
+func TestSizeOfLabels(t *testing.T) {
+	require.Len(t, expectedSizeOfLabels, len(testCaseLabels))
+	for i, c := range expectedSizeOfLabels { // Declared in build-tag-specific files, e.g. labels_slicelabels_test.go.
+		var total uint64
+		testCaseLabels[i].Range(func(l Label) {
+			total += SizeOfLabels(l.Name, l.Value, 1)
+		})
+		require.Equal(t, c, total)
 	}
 }
 
@@ -272,8 +294,55 @@ func TestLabels_IsValid(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			require.Equal(t, test.expected, test.input.IsValid())
+			require.Equal(t, test.expected, test.input.IsValid(model.LegacyValidation))
 		})
+	}
+}
+
+func TestLabels_ValidationModes(t *testing.T) {
+	for _, test := range []struct {
+		input    Labels
+		callMode model.ValidationScheme
+		expected bool
+	}{
+		{
+			input: FromStrings(
+				"__name__", "test.metric",
+				"hostname", "localhost",
+				"job", "check",
+			),
+			callMode: model.UTF8Validation,
+			expected: true,
+		},
+		{
+			input: FromStrings(
+				"__name__", "test",
+				"\xc5 bad utf8", "localhost",
+				"job", "check",
+			),
+			callMode: model.UTF8Validation,
+			expected: false,
+		},
+		{
+			input: FromStrings(
+				"__name__", "test.utf8.metric",
+				"hostname", "localhost",
+				"job", "check",
+			),
+			callMode: model.LegacyValidation,
+			expected: false,
+		},
+		{
+			input: FromStrings(
+				"__name__", "test",
+				"host.name", "localhost",
+				"job", "check",
+			),
+			callMode: model.LegacyValidation,
+			expected: false,
+		},
+	} {
+		require.Equal(t, test.expected, test.input.IsValid(test.callMode))
 	}
 }
 
@@ -451,7 +520,7 @@ func TestLabels_Has(t *testing.T) {
 }
 
 func TestLabels_Get(t *testing.T) {
-	require.Equal(t, "", FromStrings("aaa", "111", "bbb", "222").Get("foo"))
+	require.Empty(t, FromStrings("aaa", "111", "bbb", "222").Get("foo"))
 	require.Equal(t, "111", FromStrings("aaaa", "111", "bbb", "222").Get("aaaa"))
 	require.Equal(t, "222", FromStrings("aaaa", "111", "bbb", "222").Get("bbb"))
 }
@@ -461,8 +530,22 @@ func TestLabels_DropMetricName(t *testing.T) {
 	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "aaa", "111").DropMetricName()))
 
 	original := FromStrings("__aaa__", "111", MetricName, "myname", "bbb", "222")
-	check := FromStrings("__aaa__", "111", MetricName, "myname", "bbb", "222")
+	check := original.Copy()
 	require.True(t, Equal(FromStrings("__aaa__", "111", "bbb", "222"), check.DropMetricName()))
+	require.True(t, Equal(original, check))
+}
+
+func TestLabels_DropReserved(t *testing.T) {
+	shouldDropFn := func(n string) bool {
+		return n == MetricName || n == "__something__"
+	}
+	require.True(t, Equal(FromStrings("aaa", "111", "bbb", "222"), FromStrings("aaa", "111", "bbb", "222").DropReserved(shouldDropFn)))
+	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "aaa", "111").DropReserved(shouldDropFn)))
+	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "__something__", string(model.MetricTypeCounter), "aaa", "111").DropReserved(shouldDropFn)))
+
+	original := FromStrings("__aaa__", "111", MetricName, "myname", "bbb", "222")
+	check := original.Copy()
+	require.True(t, Equal(FromStrings("__aaa__", "111", "bbb", "222"), check.DropReserved(shouldDropFn)))
 	require.True(t, Equal(original, check))
 }
 
@@ -878,7 +961,7 @@ func TestMarshaling(t *testing.T) {
 	expectedJSON := "{\"aaa\":\"111\",\"bbb\":\"2222\",\"ccc\":\"33333\"}"
 	b, err := json.Marshal(lbls)
 	require.NoError(t, err)
-	require.Equal(t, expectedJSON, string(b))
+	require.JSONEq(t, expectedJSON, string(b))
 
 	var gotJ Labels
 	err = json.Unmarshal(b, &gotJ)
@@ -888,7 +971,7 @@ func TestMarshaling(t *testing.T) {
 	expectedYAML := "aaa: \"111\"\nbbb: \"2222\"\nccc: \"33333\"\n"
 	b, err = yaml.Marshal(lbls)
 	require.NoError(t, err)
-	require.Equal(t, expectedYAML, string(b))
+	require.YAMLEq(t, expectedYAML, string(b))
 
 	var gotY Labels
 	err = yaml.Unmarshal(b, &gotY)
@@ -904,7 +987,7 @@ func TestMarshaling(t *testing.T) {
 	b, err = json.Marshal(f)
 	require.NoError(t, err)
 	expectedJSONFromStruct := "{\"a_labels\":" + expectedJSON + "}"
-	require.Equal(t, expectedJSONFromStruct, string(b))
+	require.JSONEq(t, expectedJSONFromStruct, string(b))
 
 	var gotFJ foo
 	err = json.Unmarshal(b, &gotFJ)
@@ -914,7 +997,7 @@ func TestMarshaling(t *testing.T) {
 	b, err = yaml.Marshal(f)
 	require.NoError(t, err)
 	expectedYAMLFromStruct := "a_labels:\n  aaa: \"111\"\n  bbb: \"2222\"\n  ccc: \"33333\"\n"
-	require.Equal(t, expectedYAMLFromStruct, string(b))
+	require.YAMLEq(t, expectedYAMLFromStruct, string(b))
 
 	var gotFY foo
 	err = yaml.Unmarshal(b, &gotFY)

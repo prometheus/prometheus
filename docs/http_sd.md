@@ -1,14 +1,13 @@
 ---
-title: HTTP SD
+title: Writing HTTP service discovery
+nav_title: HTTP SD
 sort_rank: 7
 ---
-
-# Writing HTTP Service Discovery
 
 Prometheus provides a generic [HTTP Service Discovery](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config),
 that enables it to discover targets over an HTTP endpoint.
 
-The HTTP Service Discovery is complimentary to the supported service
+The HTTP Service Discovery is complementary to the supported service
 discovery mechanisms, and is an alternative to [File-based Service Discovery](https://prometheus.io/docs/guides/file-sd/#use-file-based-service-discovery-to-discover-scrape-targets).
 
 ## Comparison between File-Based SD and HTTP SD
@@ -40,7 +39,7 @@ an empty list `[]`. Target lists are unordered.
 
 Prometheus caches target lists. If an error occurs while fetching an updated
 targets list, Prometheus keeps using the current targets list. The targets list
-is not saved across restart. The `prometheus_sd_http_failures_total` counter 
+is not saved across restart. The `prometheus_sd_http_failures_total` counter
 metric tracks the number of refresh failures.
 
 The whole list of targets must be returned on every scrape. There is no support

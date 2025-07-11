@@ -14,33 +14,53 @@
 package textparse
 
 import (
-	"bytes"
-	"errors"
+	"fmt"
 	"io"
-	"os"
 	"testing"
 
-	"github.com/klauspost/compress/gzip"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/common/expfmt"
-	"github.com/prometheus/common/model"
-
-	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
-type expectedParse struct {
-	lset    labels.Labels
-	m       string
-	t       *int64
-	v       float64
-	typ     model.MetricType
-	help    string
-	unit    string
-	comment string
-	e       *exemplar.Exemplar
+// lbls is a helper for the readability of the expectations.
+func typeAndUnitLabels(typeAndUnitEnabled bool, enabled, disabled labels.Labels) labels.Labels {
+	if typeAndUnitEnabled {
+		return enabled
+	}
+	return disabled
+}
+
+// todoDetectFamilySwitch exists because there's a known TODO that require dedicated PR and benchmarks for PROM-39.
+// OM and Prom text format do NOT require TYPE, HELP or UNIT lines. This means that metric families can switch without
+// those metadata entries e.g.:
+// ```
+// TYPE go_goroutines gauge
+// go_goroutines 33 # previous metric
+// different_metric_total 12 # <--- different family!
+// ```
+// The expected type for "different_metric_total" is obviously unknown type and unit, but it's surprisingly expensive and complex
+// to reliably write parser for those cases. Two main issues:
+// a. TYPE and UNIT are associated with "metric family" which is different than resulting metric name (e.g. histograms).
+// b. You have to alloc additional entries to pair TYPE and UNIT with metric families they refer to (nit)
+//
+// This problem is elevated for PROM-39 feature.
+//
+// Current metadata handling is semi broken here for this as the (a) is expensive and currently not fully accurate
+// see: https://github.com/prometheus/prometheus/blob/dbf5d01a62249eddcd202303069f6cf7dd3c4a73/scrape/scrape.go#L1916
+//
+// To iterate, we keep it "knowingly" broken behind the feature flag.
+// TODO(bwplotka): Remove this once we fix the problematic case e.g.
+//   - introduce more accurate isSeriesPartOfFamily shared helper or even parser method that tells when new metric family starts
+func todoDetectFamilySwitch(typeAndUnitEnabled bool, expected labels.Labels, brokenTypeInherited model.MetricType) labels.Labels {
+	if typeAndUnitEnabled && brokenTypeInherited != model.MetricTypeUnknown {
+		// Hack for now.
+		b := labels.NewBuilder(expected)
+		b.Set("__type__", string(brokenTypeInherited))
+		return b.Labels()
+	}
+	return expected
 }
 
 func TestPromParse(t *testing.T) {
@@ -51,6 +71,13 @@ go_gc_duration_seconds{quantile="0.25",} 7.424100000000001e-05
 go_gc_duration_seconds{quantile="0.5",a="b"} 8.3835e-05
 go_gc_duration_seconds{quantile="0.8", a="b"} 8.3835e-05
 go_gc_duration_seconds{ quantile="0.9", a="b"} 8.3835e-05
+# HELP prometheus_http_request_duration_seconds Histogram of latencies for HTTP requests.
+# TYPE prometheus_http_request_duration_seconds histogram
+prometheus_http_request_duration_seconds_bucket{handler="/",le="1"} 423
+prometheus_http_request_duration_seconds_bucket{handler="/",le="2"} 1423
+prometheus_http_request_duration_seconds_bucket{handler="/",le="+Inf"} 1423
+prometheus_http_request_duration_seconds_sum{handler="/"} 2000
+prometheus_http_request_duration_seconds_count{handler="/"} 1423
 # Hrandom comment starting with prefix of HELP
 #
 wind_speed{A="2",c="3"} 12345
@@ -68,188 +95,302 @@ some:aggregate:rate5m{a_b="c"}	1
 # HELP go_goroutines Number of goroutines that currently exist.
 # TYPE go_goroutines gauge
 go_goroutines 33  	123123
+# TYPE some_counter_total counter
+# HELP some_counter_total Help after type.
+some_counter_total 12
+# HELP nohelp3
 _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
-testmetric{label="\"bar\""} 1`
+testmetric{label="\"bar\""} 1
+testmetric{le="10"} 1
+# HELP type_and_unit_test1 Type specified in metadata overrides.
+# TYPE type_and_unit_test1 gauge
+type_and_unit_test1{__type__="counter"} 123
+# HELP type_and_unit_test2 Type specified in label.
+type_and_unit_test2{__type__="counter"} 123`
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
 
-	int64p := func(x int64) *int64 { return &x }
-
-	exp := []expectedParse{
-		{
-			m:    "go_gc_duration_seconds",
-			help: "A summary of the GC invocation durations.",
-		}, {
-			m:   "go_gc_duration_seconds",
-			typ: model.MetricTypeSummary,
-		}, {
-			m:    `go_gc_duration_seconds{quantile="0"}`,
-			v:    4.9351e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0"),
-		}, {
-			m:    `go_gc_duration_seconds{quantile="0.25",}`,
-			v:    7.424100000000001e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.25"),
-		}, {
-			m:    `go_gc_duration_seconds{quantile="0.5",a="b"}`,
-			v:    8.3835e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.5", "a", "b"),
-		}, {
-			m:    `go_gc_duration_seconds{quantile="0.8", a="b"}`,
-			v:    8.3835e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.8", "a", "b"),
-		}, {
-			m:    `go_gc_duration_seconds{ quantile="0.9", a="b"}`,
-			v:    8.3835e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.9", "a", "b"),
-		}, {
-			comment: "# Hrandom comment starting with prefix of HELP",
-		}, {
-			comment: "#",
-		}, {
-			m:    `wind_speed{A="2",c="3"}`,
-			v:    12345,
-			lset: labels.FromStrings("A", "2", "__name__", "wind_speed", "c", "3"),
-		}, {
-			comment: "# comment with escaped \\n newline",
-		}, {
-			comment: "# comment with escaped \\ escape character",
-		}, {
-			m:    "nohelp1",
-			help: "",
-		}, {
-			m:    "nohelp2",
-			help: "",
-		}, {
-			m:    `go_gc_duration_seconds{ quantile="1.0", a="b" }`,
-			v:    8.3835e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
-		}, {
-			m:    `go_gc_duration_seconds { quantile="1.0", a="b" }`,
-			v:    8.3835e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
-		}, {
-			m:    `go_gc_duration_seconds { quantile= "1.0", a= "b", }`,
-			v:    8.3835e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
-		}, {
-			m:    `go_gc_duration_seconds { quantile = "1.0", a = "b" }`,
-			v:    8.3835e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
-		}, {
-			// NOTE: Unlike OpenMetrics, Promparse allows spaces between label terms. This appears to be unintended and should probably be fixed.
-			m:    `go_gc_duration_seconds { quantile = "2.0" a = "b" }`,
-			v:    8.3835e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "2.0", "a", "b"),
-		}, {
-			m:    `go_gc_duration_seconds_count`,
-			v:    99,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds_count"),
-		}, {
-			m:    `some:aggregate:rate5m{a_b="c"}`,
-			v:    1,
-			lset: labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"),
-		}, {
-			m:    "go_goroutines",
-			help: "Number of goroutines that currently exist.",
-		}, {
-			m:   "go_goroutines",
-			typ: model.MetricTypeGauge,
-		}, {
-			m:    `go_goroutines`,
-			v:    33,
-			t:    int64p(123123),
-			lset: labels.FromStrings("__name__", "go_goroutines"),
-		}, {
-			m:    "_metric_starting_with_underscore",
-			v:    1,
-			lset: labels.FromStrings("__name__", "_metric_starting_with_underscore"),
-		}, {
-			m:    "testmetric{_label_starting_with_underscore=\"foo\"}",
-			v:    1,
-			lset: labels.FromStrings("__name__", "testmetric", "_label_starting_with_underscore", "foo"),
-		}, {
-			m:    "testmetric{label=\"\\\"bar\\\"\"}",
-			v:    1,
-			lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
-		}, {
-			m:    "metric",
-			help: "foo\x00bar",
-		}, {
-			m:    "null_byte_metric{a=\"abc\x00\"}",
-			v:    1,
-			lset: labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"),
-		},
-	}
-
-	p := NewPromParser([]byte(input), labels.NewSymbolTable())
-	checkParseResults(t, p, exp)
-}
-
-func checkParseResults(t *testing.T, p Parser, exp []expectedParse) {
-	i := 0
-
-	var res labels.Labels
-
-	for {
-		et, err := p.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		require.NoError(t, err)
-
-		switch et {
-		case EntrySeries:
-			m, ts, v := p.Series()
-
-			p.Metric(&res)
-
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].t, ts)
-			require.Equal(t, exp[i].v, v)
-			testutil.RequireEqual(t, exp[i].lset, res)
-
-			var e exemplar.Exemplar
-			found := p.Exemplar(&e)
-			if exp[i].e == nil {
-				require.False(t, found)
-			} else {
-				require.True(t, found)
-				testutil.RequireEqual(t, *exp[i].e, e)
+	for _, typeAndUnitEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("type-and-unit=%v", typeAndUnitEnabled), func(t *testing.T) {
+			exp := []parsedEntry{
+				{
+					m:    "go_gc_duration_seconds",
+					help: "A summary of the GC invocation durations.",
+				},
+				{
+					m:   "go_gc_duration_seconds",
+					typ: model.MetricTypeSummary,
+				},
+				{
+					m: `go_gc_duration_seconds{quantile="0"}`,
+					v: 4.9351e-05,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "__type__", string(model.MetricTypeSummary), "quantile", "0.0"),
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.0"),
+					),
+				},
+				{
+					m: `go_gc_duration_seconds{quantile="0.25",}`,
+					v: 7.424100000000001e-05,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "__type__", string(model.MetricTypeSummary), "quantile", "0.25"),
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.25"),
+					),
+				},
+				{
+					m: `go_gc_duration_seconds{quantile="0.5",a="b"}`,
+					v: 8.3835e-05,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "__type__", string(model.MetricTypeSummary), "quantile", "0.5", "a", "b"),
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.5", "a", "b"),
+					),
+				},
+				{
+					m: `go_gc_duration_seconds{quantile="0.8", a="b"}`,
+					v: 8.3835e-05,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "__type__", string(model.MetricTypeSummary), "quantile", "0.8", "a", "b"),
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.8", "a", "b"),
+					),
+				},
+				{
+					m: `go_gc_duration_seconds{ quantile="0.9", a="b"}`,
+					v: 8.3835e-05,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "__type__", string(model.MetricTypeSummary), "quantile", "0.9", "a", "b"),
+						labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.9", "a", "b"),
+					),
+				},
+				{
+					m:    "prometheus_http_request_duration_seconds",
+					help: "Histogram of latencies for HTTP requests.",
+				},
+				{
+					m:   "prometheus_http_request_duration_seconds",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: `prometheus_http_request_duration_seconds_bucket{handler="/",le="1"}`,
+					v: 423,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "__type__", string(model.MetricTypeHistogram), "handler", "/", "le", "1.0"),
+						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "handler", "/", "le", "1.0"),
+					),
+				},
+				{
+					m: `prometheus_http_request_duration_seconds_bucket{handler="/",le="2"}`,
+					v: 1423,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "__type__", string(model.MetricTypeHistogram), "handler", "/", "le", "2.0"),
+						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "handler", "/", "le", "2.0"),
+					),
+				},
+				{
+					m: `prometheus_http_request_duration_seconds_bucket{handler="/",le="+Inf"}`,
+					v: 1423,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "__type__", string(model.MetricTypeHistogram), "handler", "/", "le", "+Inf"),
+						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "handler", "/", "le", "+Inf"),
+					),
+				},
+				{
+					m: `prometheus_http_request_duration_seconds_sum{handler="/"}`,
+					v: 2000,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_sum", "__type__", string(model.MetricTypeHistogram), "handler", "/"),
+						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_sum", "handler", "/"),
+					),
+				},
+				{
+					m: `prometheus_http_request_duration_seconds_count{handler="/"}`,
+					v: 1423,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_count", "__type__", string(model.MetricTypeHistogram), "handler", "/"),
+						labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_count", "handler", "/"),
+					),
+				},
+				{
+					comment: "# Hrandom comment starting with prefix of HELP",
+				},
+				{
+					comment: "#",
+				},
+				{
+					m: `wind_speed{A="2",c="3"}`,
+					v: 12345,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						// NOTE(bwplotka): This is knowingly broken, inheriting old type when TYPE was not specified on a new metric.
+						// This was broken forever on a case for a broken exposition. Don't fix for now (expensive).
+						labels.FromStrings("A", "2", "__name__", "wind_speed", "__type__", string(model.MetricTypeHistogram), "c", "3"),
+						labels.FromStrings("A", "2", "__name__", "wind_speed", "c", "3"),
+					),
+				},
+				{
+					comment: "# comment with escaped \\n newline",
+				},
+				{
+					comment: "# comment with escaped \\ escape character",
+				},
+				{
+					m:    "nohelp1",
+					help: "",
+				},
+				{
+					m:    "nohelp2",
+					help: "",
+				},
+				{
+					m:    `go_gc_duration_seconds{ quantile="1.0", a="b" }`,
+					v:    8.3835e-05,
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), model.MetricTypeHistogram),
+				},
+				{
+					m:    `go_gc_duration_seconds { quantile="1.0", a="b" }`,
+					v:    8.3835e-05,
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), model.MetricTypeHistogram),
+				},
+				{
+					m:    `go_gc_duration_seconds { quantile= "1.0", a= "b", }`,
+					v:    8.3835e-05,
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), model.MetricTypeHistogram),
+				},
+				{
+					m:    `go_gc_duration_seconds { quantile = "1.0", a = "b" }`,
+					v:    8.3835e-05,
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), model.MetricTypeHistogram),
+				},
+				{
+					// NOTE: Unlike OpenMetrics, PromParser allows spaces between label terms. This appears to be unintended and should probably be fixed.
+					m:    `go_gc_duration_seconds { quantile = "2.0" a = "b" }`,
+					v:    8.3835e-05,
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "2.0", "a", "b"), model.MetricTypeHistogram),
+				},
+				{
+					m:    `go_gc_duration_seconds_count`,
+					v:    99,
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds_count"), model.MetricTypeHistogram),
+				},
+				{
+					m:    `some:aggregate:rate5m{a_b="c"}`,
+					v:    1,
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"), model.MetricTypeHistogram),
+				},
+				{
+					m:    "go_goroutines",
+					help: "Number of goroutines that currently exist.",
+				},
+				{
+					m:   "go_goroutines",
+					typ: model.MetricTypeGauge,
+				},
+				{
+					m: `go_goroutines`,
+					v: 33,
+					t: int64p(123123),
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "go_goroutines", "__type__", string(model.MetricTypeGauge)),
+						labels.FromStrings("__name__", "go_goroutines"),
+					),
+				},
+				{
+					m:   "some_counter_total",
+					typ: model.MetricTypeCounter,
+				},
+				{
+					m:    "some_counter_total",
+					help: "Help after type.",
+				},
+				{
+					m: `some_counter_total`,
+					v: 12,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "some_counter_total", "__type__", string(model.MetricTypeCounter)),
+						labels.FromStrings("__name__", "some_counter_total"),
+					),
+				},
+				{
+					m:    "nohelp3",
+					help: "",
+				},
+				{
+					m:    "_metric_starting_with_underscore",
+					v:    1,
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "_metric_starting_with_underscore"), model.MetricTypeCounter),
+				},
+				{
+					m:    "testmetric{_label_starting_with_underscore=\"foo\"}",
+					v:    1,
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "testmetric", "_label_starting_with_underscore", "foo"), model.MetricTypeCounter),
+				},
+				{
+					m:    "testmetric{label=\"\\\"bar\\\"\"}",
+					v:    1,
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "testmetric", "label", `"bar"`), model.MetricTypeCounter),
+				},
+				{
+					m:    `testmetric{le="10"}`,
+					v:    1,
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "testmetric", "le", "10"), model.MetricTypeCounter),
+				},
+				{
+					m:    "type_and_unit_test1",
+					help: "Type specified in metadata overrides.",
+				},
+				{
+					m:   "type_and_unit_test1",
+					typ: model.MetricTypeGauge,
+				},
+				{
+					m: "type_and_unit_test1{__type__=\"counter\"}",
+					v: 123,
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "type_and_unit_test1", "__type__", string(model.MetricTypeGauge)),
+						labels.FromStrings("__name__", "type_and_unit_test1", "__type__", string(model.MetricTypeCounter)),
+					),
+				},
+				{
+					m:    "type_and_unit_test2",
+					help: "Type specified in label.",
+				},
+				{
+					m:    "type_and_unit_test2{__type__=\"counter\"}",
+					v:    123,
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "type_and_unit_test2", "__type__", string(model.MetricTypeCounter)), model.MetricTypeGauge),
+				},
+				{
+					m:    "metric",
+					help: "foo\x00bar",
+				},
+				{
+					m:    "null_byte_metric{a=\"abc\x00\"}",
+					v:    1,
+					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"), model.MetricTypeGauge),
+				},
 			}
 
-		case EntryType:
-			m, typ := p.Type()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].typ, typ)
-
-		case EntryHelp:
-			m, h := p.Help()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].help, string(h))
-
-		case EntryUnit:
-			m, u := p.Unit()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].unit, string(u))
-
-		case EntryComment:
-			require.Equal(t, exp[i].comment, string(p.Comment()))
-		}
-
-		i++
+			p := NewPromParser([]byte(input), labels.NewSymbolTable(), typeAndUnitEnabled)
+			got := testParse(t, p)
+			requireEntries(t, exp, got)
+		})
 	}
-	require.Len(t, exp, i)
 }
 
 func TestUTF8PromParse(t *testing.T) {
-	oldValidationScheme := model.NameValidationScheme
-	model.NameValidationScheme = model.UTF8Validation
-	defer func() {
-		model.NameValidationScheme = oldValidationScheme
-	}()
-
 	input := `# HELP "go.gc_duration_seconds" A summary of the GC invocation durations.
 # 	TYPE "go.gc_duration_seconds" summary
 {"go.gc_duration_seconds",quantile="0"} 4.9351e-05
@@ -264,7 +405,7 @@ func TestUTF8PromParse(t *testing.T) {
 {"go.gc_duration_seconds_count"} 99
 {"Heizölrückstoßabdämpfung 10€ metric with \"interesting\" {character\nchoices}","strange©™\n'quoted' \"name\""="6"} 10.0`
 
-	exp := []expectedParse{
+	exp := []parsedEntry{
 		{
 			m:    "go.gc_duration_seconds",
 			help: "A summary of the GC invocation durations.",
@@ -274,7 +415,7 @@ func TestUTF8PromParse(t *testing.T) {
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0"}`,
 			v:    4.9351e-05,
-			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0"),
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.0"),
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0.25",}`,
 			v:    7.424100000000001e-05,
@@ -319,8 +460,9 @@ choices}`, "strange©™\n'quoted' \"name\"", "6"),
 		},
 	}
 
-	p := NewPromParser([]byte(input), labels.NewSymbolTable())
-	checkParseResults(t, p, exp)
+	p := NewPromParser([]byte(input), labels.NewSymbolTable(), false)
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
 }
 
 func TestPromParseErrors(t *testing.T) {
@@ -399,13 +541,12 @@ func TestPromParseErrors(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewPromParser([]byte(c.input), labels.NewSymbolTable())
+		p := NewPromParser([]byte(c.input), labels.NewSymbolTable(), false)
 		var err error
 		for err == nil {
 			_, err = p.Next()
 		}
-		require.Error(t, err)
-		require.Equal(t, c.err, err.Error(), "test %d", i)
+		require.EqualError(t, err, c.err, "test %d", i)
 	}
 }
 
@@ -453,7 +594,7 @@ func TestPromNullByteHandling(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewPromParser([]byte(c.input), labels.NewSymbolTable())
+		p := NewPromParser([]byte(c.input), labels.NewSymbolTable(), false)
 		var err error
 		for err == nil {
 			_, err = p.Next()
@@ -464,192 +605,6 @@ func TestPromNullByteHandling(t *testing.T) {
 			continue
 		}
 
-		require.Error(t, err)
-		require.Equal(t, c.err, err.Error(), "test %d", i)
-	}
-}
-
-const (
-	promtestdataSampleCount = 410
-)
-
-func BenchmarkParse(b *testing.B) {
-	for parserName, parser := range map[string]func([]byte, *labels.SymbolTable) Parser{
-		"prometheus":  NewPromParser,
-		"openmetrics": NewOpenMetricsParser,
-	} {
-		for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
-			f, err := os.Open(fn)
-			require.NoError(b, err)
-			defer f.Close()
-
-			buf, err := io.ReadAll(f)
-			require.NoError(b, err)
-
-			b.Run(parserName+"/no-decode-metric/"+fn, func(b *testing.B) {
-				total := 0
-
-				b.SetBytes(int64(len(buf) / promtestdataSampleCount))
-				b.ReportAllocs()
-				b.ResetTimer()
-
-				st := labels.NewSymbolTable()
-				for i := 0; i < b.N; i += promtestdataSampleCount {
-					p := parser(buf, st)
-
-				Outer:
-					for i < b.N {
-						t, err := p.Next()
-						switch t {
-						case EntryInvalid:
-							if errors.Is(err, io.EOF) {
-								break Outer
-							}
-							b.Fatal(err)
-						case EntrySeries:
-							m, _, _ := p.Series()
-							total += len(m)
-							i++
-						}
-					}
-				}
-				_ = total
-			})
-			b.Run(parserName+"/decode-metric/"+fn, func(b *testing.B) {
-				total := 0
-
-				b.SetBytes(int64(len(buf) / promtestdataSampleCount))
-				b.ReportAllocs()
-				b.ResetTimer()
-
-				st := labels.NewSymbolTable()
-				for i := 0; i < b.N; i += promtestdataSampleCount {
-					p := parser(buf, st)
-
-				Outer:
-					for i < b.N {
-						t, err := p.Next()
-						switch t {
-						case EntryInvalid:
-							if errors.Is(err, io.EOF) {
-								break Outer
-							}
-							b.Fatal(err)
-						case EntrySeries:
-							m, _, _ := p.Series()
-
-							var res labels.Labels
-							p.Metric(&res)
-
-							total += len(m)
-							i++
-						}
-					}
-				}
-				_ = total
-			})
-			b.Run(parserName+"/decode-metric-reuse/"+fn, func(b *testing.B) {
-				total := 0
-				var res labels.Labels
-
-				b.SetBytes(int64(len(buf) / promtestdataSampleCount))
-				b.ReportAllocs()
-				b.ResetTimer()
-
-				st := labels.NewSymbolTable()
-				for i := 0; i < b.N; i += promtestdataSampleCount {
-					p := parser(buf, st)
-
-				Outer:
-					for i < b.N {
-						t, err := p.Next()
-						switch t {
-						case EntryInvalid:
-							if errors.Is(err, io.EOF) {
-								break Outer
-							}
-							b.Fatal(err)
-						case EntrySeries:
-							m, _, _ := p.Series()
-
-							p.Metric(&res)
-
-							total += len(m)
-							i++
-						}
-					}
-				}
-				_ = total
-			})
-			b.Run("expfmt-text/"+fn, func(b *testing.B) {
-				if parserName != "prometheus" {
-					b.Skip()
-				}
-				b.SetBytes(int64(len(buf) / promtestdataSampleCount))
-				b.ReportAllocs()
-				b.ResetTimer()
-
-				total := 0
-
-				for i := 0; i < b.N; i += promtestdataSampleCount {
-					decSamples := make(model.Vector, 0, 50)
-					sdec := expfmt.SampleDecoder{
-						Dec: expfmt.NewDecoder(bytes.NewReader(buf), expfmt.NewFormat(expfmt.TypeTextPlain)),
-						Opts: &expfmt.DecodeOptions{
-							Timestamp: model.TimeFromUnixNano(0),
-						},
-					}
-
-					for {
-						if err = sdec.Decode(&decSamples); err != nil {
-							break
-						}
-						total += len(decSamples)
-						decSamples = decSamples[:0]
-					}
-				}
-				_ = total
-			})
-		}
-	}
-}
-
-func BenchmarkGzip(b *testing.B) {
-	for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
-		b.Run(fn, func(b *testing.B) {
-			f, err := os.Open(fn)
-			require.NoError(b, err)
-			defer f.Close()
-
-			var buf bytes.Buffer
-			gw := gzip.NewWriter(&buf)
-
-			n, err := io.Copy(gw, f)
-			require.NoError(b, err)
-			require.NoError(b, gw.Close())
-
-			gbuf, err := io.ReadAll(&buf)
-			require.NoError(b, err)
-
-			k := b.N / promtestdataSampleCount
-
-			b.ReportAllocs()
-			b.SetBytes(n / promtestdataSampleCount)
-			b.ResetTimer()
-
-			total := 0
-
-			for i := 0; i < k; i++ {
-				gr, err := gzip.NewReader(bytes.NewReader(gbuf))
-				require.NoError(b, err)
-
-				d, err := io.ReadAll(gr)
-				require.NoError(b, err)
-				require.NoError(b, gr.Close())
-
-				total += len(d)
-			}
-			_ = total
-		})
+		require.EqualError(t, err, c.err, "test %d", i)
 	}
 }

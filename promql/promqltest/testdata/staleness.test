@@ -14,10 +14,10 @@ eval instant at 40s metric
   {__name__="metric"} 2
 
 # It goes stale 5 minutes after the last sample.
-eval instant at 330s metric
+eval instant at 329s metric
   {__name__="metric"} 2
 
-eval instant at 331s metric
+eval instant at 330s metric
 
 
 # Range vector ignores stale sample.
@@ -30,9 +30,13 @@ eval instant at 10s count_over_time(metric[1s])
 eval instant at 20s count_over_time(metric[1s])
 
 eval instant at 20s count_over_time(metric[10s])
+
+eval instant at 20s count_over_time(metric[20s])
   {} 1
 
 eval instant at 20s count_over_time(metric[10])
+
+eval instant at 20s count_over_time(metric[20])
   {} 1
 
 
@@ -48,7 +52,7 @@ eval instant at 0s metric
 eval instant at 150s metric
   {__name__="metric"} 0
 
-eval instant at 300s metric
+eval instant at 299s metric
   {__name__="metric"} 0
 
-eval instant at 301s metric
+eval instant at 300s metric

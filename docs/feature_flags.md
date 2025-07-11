@@ -3,36 +3,17 @@ title: Feature flags
 sort_rank: 12
 ---
 
-# Feature flags
-
 Here is a list of features that are disabled by default since they are breaking changes or are considered experimental.
 Their behaviour can change in future releases which will be communicated via the [release changelog](https://github.com/prometheus/prometheus/blob/main/CHANGELOG.md).
 
 You can enable them using the `--enable-feature` flag with a comma separated list of features.
 They may be enabled by default in future versions.
 
-## Expand environment variables in external labels
-
-`--enable-feature=expand-external-labels`
-
-Replace `${var}` or `$var` in the [`external_labels`](configuration/configuration.md#configuration-file)
-values according to the values of the current environment variables. References
-to undefined variables are replaced by the empty string.
-The `$` character can be escaped by using `$$`.
-
-## Remote Write Receiver
-
-`--enable-feature=remote-write-receiver`
-
-The remote write receiver allows Prometheus to accept remote write requests from other Prometheus servers. More details can be found [here](storage.md#overview).
-
-Activating the remote write receiver via a feature flag is deprecated. Use `--web.enable-remote-write-receiver` instead. This feature flag will be ignored in future versions of Prometheus.
-
 ## Exemplars storage
 
 `--enable-feature=exemplar-storage`
 
-[OpenMetrics](https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#exemplars) introduces the ability for scrape targets to add exemplars to certain metrics. Exemplars are references to data outside of the MetricSet. A common use case are IDs of program traces.
+[OpenMetrics](https://github.com/prometheus/OpenMetrics/blob/v1.0.0/specification/OpenMetrics.md#exemplars) introduces the ability for scrape targets to add exemplars to certain metrics. Exemplars are references to data outside of the MetricSet. A common use case are IDs of program traces.
 
 Exemplar storage is implemented as a fixed size circular buffer that stores exemplars in memory for all series. Enabling this feature will enable the storage of exemplars scraped by Prometheus. The config file block [storage](configuration/configuration.md#configuration-file)/[exemplars](configuration/configuration.md#exemplars) can be used to control the size of circular buffer by # of exemplars. An exemplar with just a `trace_id=<jaeger-trace-id>` uses roughly 100 bytes of memory via the in-memory exemplar storage. If the exemplar storage is enabled, we will also append the exemplars to WAL for local persistence (for WAL duration).
 
@@ -40,9 +21,8 @@ Exemplar storage is implemented as a fixed size circular buffer that stores exem
 
 `--enable-feature=memory-snapshot-on-shutdown`
 
-This takes the snapshot of the chunks that are in memory along with the series information when shutting down and stores
-it on disk. This will reduce the startup time since the memory state can be restored with this snapshot and m-mapped
-chunks without the need of WAL replay.
+This takes a snapshot of the chunks that are in memory along with the series information when shutting down and stores it on disk. This will reduce the startup time since the memory state can now be restored with this snapshot
+and m-mapped chunks, while a WAL replay from disk is only needed for the parts of the WAL that are not part of the snapshot.
 
 ## Extra scrape metrics
 
@@ -55,30 +35,6 @@ When enabled, for each instance scrape, Prometheus stores a sample in the follow
   to find out how close they are to reaching the limit with `scrape_samples_post_metric_relabeling / scrape_sample_limit`. Note that `scrape_sample_limit` can be zero if there is no limit configured, which means that the query above can return `+Inf` for targets with no limit (as we divide by zero). If you want to query only for targets that do have a sample limit use this query: `scrape_samples_post_metric_relabeling / (scrape_sample_limit > 0)`.
 - `scrape_body_size_bytes`. The uncompressed size of the most recent scrape response, if successful. Scrapes failing because `body_size_limit` is exceeded report `-1`, other scrape failures report `0`.
 
-## New service discovery manager
-
-`--enable-feature=new-service-discovery-manager`
-
-When enabled, Prometheus uses a new service discovery manager that does not
-restart unchanged discoveries upon reloading. This makes reloads faster and reduces
-pressure on service discoveries' sources.
-
-Users are encouraged to test the new service discovery manager and report any
-issues upstream.
-
-In future releases, this new service discovery manager will become the default and
-this feature flag will be ignored.
-
-## Prometheus agent
-
-`--enable-feature=agent`
-
-When enabled, Prometheus runs in agent mode. The agent mode is limited to
-discovery, scrape and remote write.
-
-This is useful when you do not need to query the Prometheus data locally, but
-only from a central [remote endpoint](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage).
-
 ## Per-step stats
 
 `--enable-feature=promql-per-step-stats`
@@ -88,29 +44,6 @@ statistics. Currently this is limited to totalQueryableSamples.
 
 When disabled in either the engine or the query, per-step statistics are not
 computed at all.
-
-## Auto GOMAXPROCS
-
-`--enable-feature=auto-gomaxprocs`
-
-When enabled, GOMAXPROCS variable is automatically set to match Linux container CPU quota.
-
-## Auto GOMEMLIMIT
-
-`--enable-feature=auto-gomemlimit`
-
-When enabled, the GOMEMLIMIT variable is automatically set to match the Linux container memory limit. If there is no container limit, or the process is running outside of containers, the system memory total is used.
-
-There is also an additional tuning flag, `--auto-gomemlimit.ratio`, which allows controlling how much of the memory is used for Prometheus. The remainder is reserved for memory outside the process. For example, kernel page cache. Page cache is important for Prometheus TSDB query performance. The default is `0.9`, which means 90% of the memory limit will be used for Prometheus.
-
-## No default scrape port
-
-`--enable-feature=no-default-scrape-port`
-
-When enabled, the default ports for HTTP (`:80`) or HTTPS (`:443`) will _not_ be added to
-the address used to scrape a target (the value of the `__address_` label), contrary to the default behavior.
-In addition, if a default HTTP or HTTPS port has already been added either in a static configuration or
-by a service discovery mechanism and the respective scheme is specified (`http` or `https`), that port will be removed.
 
 ## Native Histograms
 
@@ -134,74 +67,15 @@ those classic histograms that do not come with a corresponding native
 histogram. However, if a native histogram is present, Prometheus will ignore
 the corresponding classic histogram, with the notable exception of exemplars,
 which are always ingested. To keep the classic histograms as well, enable
-`scrape_classic_histograms` in the scrape job.
-
-_Note about the format of `le` and `quantile` label values:_
-
-In certain situations, the protobuf parsing changes the number formatting of
-the `le` labels of classic histograms and the `quantile` labels of
-summaries. Typically, this happens if the scraped target is instrumented with
-[client_golang](https://github.com/prometheus/client_golang) provided that
-[promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
-is set to `false`. In such a case, integer label values are represented in the
-text format as such, e.g. `quantile="1"` or `le="2"`. However, the protobuf parsing
-changes the representation to float-like (following the OpenMetrics
-specification), so the examples above become `quantile="1.0"` and `le="2.0"` after
-ingestion into Prometheus, which changes the identity of the metric compared to
-what was ingested before via the text format.
-
-The effect of this change is that alerts, recording rules and dashboards that
-directly reference label values as whole numbers such as `le="1"` will stop
-working.
-
-Aggregation by the `le` and `quantile` labels for vectors that contain the old and
-new formatting will lead to unexpected results, and range vectors that span the
-transition between the different formatting will contain additional series.
-The most common use case for both is the quantile calculation via
-`histogram_quantile`, e.g.
-`histogram_quantile(0.95, sum by (le) (rate(histogram_bucket[10m])))`.
-The `histogram_quantile` function already tries to mitigate the effects to some
-extent, but there will be inaccuracies, in particular for shorter ranges that
-cover only a few samples.
-
-Ways to deal with this change either globally or on a per metric basis:
-
-- Fix references to integer `le`, `quantile` label values, but otherwise do
-nothing and accept that some queries that span the transition time will produce
-inaccurate or unexpected results.
-_This is the recommended solution, to get consistently normalized label values._
-Also Prometheus 3.0 is expected to enforce normalization of these label values.
-- Use `metric_relabel_config` to retain the old labels when scraping targets.
-This should **only** be applied to metrics that currently produce such labels.
-
-<!-- The following config snippet is unit tested in scrape/scrape_test.go. -->
-```yaml
-    metric_relabel_configs:
-      - source_labels:
-          - quantile
-        target_label: quantile
-        regex: (\d+)\.0+
-      - source_labels:
-          - le
-          - __name__
-        target_label: le
-        regex: (\d+)\.0+;.*_bucket
-```
-
-## OTLP Receiver
-
-`--enable-feature=otlp-write-receiver`
-
-The OTLP receiver allows Prometheus to accept [OpenTelemetry](https://opentelemetry.io/) metrics writes.
-Prometheus is best used as a Pull based system, and staleness, `up` metric, and other Pull enabled features 
-won't work when you push OTLP metrics.
+`always_scrape_classic_histograms` in the scrape job.
 
 ## Experimental PromQL functions
 
 `--enable-feature=promql-experimental-functions`
 
-Enables PromQL functions that are considered experimental and whose name or
-semantics could change.
+Enables PromQL functions that are considered experimental. These functions
+might change their name, syntax, or semantics. They might also get removed
+entirely.
 
 ## Created Timestamps Zero Injection
 
@@ -225,6 +99,12 @@ This has the potential to improve rule group evaluation latency and resource uti
 
 The number of concurrent rule evaluations can be configured with `--rules.max-concurrent-rule-evals`, which is set to `4` by default.
 
+## Serve old Prometheus UI
+
+Fall back to serving the old (Prometheus 2.x) web UI instead of the new UI. The new UI that was released as part of Prometheus 3.0 is a complete rewrite and aims to be cleaner, less cluttered, and more modern under the hood. However, it is not fully feature complete and battle-tested yet, so some users may still prefer using the old UI.
+
+`--enable-feature=old-ui`
+
 ## Metadata WAL Records
 
 `--enable-feature=metadata-wal-records`
@@ -232,5 +112,193 @@ The number of concurrent rule evaluations can be configured with `--rules.max-co
 When enabled, Prometheus will store metadata in-memory and keep track of
 metadata changes as WAL records on a per-series basis.
 
-This must be used if
-you are also using remote write 2.0 as it will only gather metadata from the WAL.
+This must be used if you would like to send metadata using the new remote write 2.0.
+
+## Delay compaction start time
+
+`--enable-feature=delayed-compaction`
+
+A random offset, up to `10%` of the chunk range, is added to the Head compaction start time. This assists Prometheus instances in avoiding simultaneous compactions and reduces the load on shared resources.
+
+Only auto Head compactions and the operations directly resulting from them are subject to this delay.
+
+In the event of multiple consecutive Head compactions being possible, only the first compaction experiences this delay.
+
+Note that during this delay, the Head continues its usual operations, which include serving and appending series.
+
+Despite the delay in compaction, the blocks produced are time-aligned in the same manner as they would be if the delay was not in place.
+
+## Delay `__name__` label removal for PromQL engine
+
+`--enable-feature=promql-delayed-name-removal`
+
+When enabled, Prometheus will change the way in which the `__name__` label is removed from PromQL query results (for functions and expressions for which this is necessary). Specifically, it will delay the removal to the last step of the query evaluation, instead of every time an expression or function creating derived metrics is evaluated.
+
+This allows optionally preserving the `__name__` label via the `label_replace` and `label_join` functions, and helps prevent the "vector cannot contain metrics with the same labelset" error, which can happen when applying a regex-matcher to the `__name__` label.
+
+Note that evaluating parts of the query separately will still trigger the
+labelset collision. This commonly happens when analyzing intermediate results
+of a query manually or with a tool like PromLens.
+
+If a query refers to the already removed `__name__` label, its behavior may
+change while this feature flag is set. (Example: `sum by (__name__)
+(rate({foo="bar"}[5m]))`, see [details on
+GitHub](https://github.com/prometheus/prometheus/issues/11397#issuecomment-1451998792).)
+These queries are rare to occur and easy to fix. (In the above example,
+removing `by (__name__)` doesn't change anything without the feature flag and
+fixes the possible problem with the feature flag.)
+
+## Auto Reload Config
+
+`--enable-feature=auto-reload-config`
+
+When enabled, Prometheus will automatically reload its configuration file at a
+specified interval. The interval is defined by the
+`--config.auto-reload-interval` flag, which defaults to `30s`.
+
+Configuration reloads are triggered by detecting changes in the checksum of the
+main configuration file or any referenced files, such as rule and scrape
+configurations. To ensure consistency and avoid issues during reloads, it's
+recommended to update these files atomically.
+
+## OTLP Delta Conversion
+
+`--enable-feature=otlp-deltatocumulative`
+
+When enabled, Prometheus will convert OTLP metrics from delta temporality to their
+cumulative equivalent, instead of dropping them. This cannot be enabled in conjunction with `otlp-native-delta-ingestion`.
+
+This uses
+[deltatocumulative][d2c]
+from the OTel collector, using its default settings.
+
+Delta conversion keeps in-memory state to aggregate delta changes per-series over time.
+When Prometheus restarts, this state is lost, starting the aggregation from zero
+again. This results in a counter reset in the cumulative series.
+
+This state is periodically ([`max_stale`][d2c]) cleared of inactive series.
+
+Enabling this _can_ have negative impact on performance, because the in-memory
+state is mutex guarded. Cumulative-only OTLP requests are not affected.
+
+[d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
+
+## PromQL arithmetic expressions in time durations
+
+`--enable-feature=promql-duration-expr`
+
+With this flag, arithmetic expressions can be used in time durations in range queries and offset durations.
+
+In range queries:
+```
+rate(http_requests_total[5m * 2])  # 10 minute range
+rate(http_requests_total[(5+2) * 1m])  # 7 minute range
+```
+
+In offset durations:
+```
+http_requests_total offset (1h / 2)  # 30 minute offset
+http_requests_total offset ((2 ^ 3) * 1m)  # 8 minute offset
+```
+
+When using offset with duration expressions, you must wrap the expression in
+parentheses. Without parentheses, only the first duration value will be used in
+the offset calculation.
+
+`step()` can be used in duration expressions.
+For a **range query**, it resolves to the step width of the range query.
+For an **instant query**, it resolves to `0s`. 
+
+`min(<duration>, <duration>)` and `max(<duration>, <duration>)` can be used to find the minimum or maximum of two duration expressions.
+
+**Note**: Duration expressions are not supported in the @ timestamp operator.
+
+The following operators are supported:
+
+* `+` - addition
+* `-` - subtraction
+* `*` - multiplication
+* `/` - division
+* `%` - modulo
+* `^` - exponentiation
+
+Examples of equivalent durations:
+
+* `5m * 2` is equivalent to `10m` or `600s`
+* `10m - 1m` is equivalent to `9m` or `540s`
+* `(5+2) * 1m` is equivalent to `7m` or `420s`
+* `1h / 2` is equivalent to `30m` or `1800s`
+* `4h % 3h` is equivalent to `1h` or `3600s`
+* `(2 ^ 3) * 1m` is equivalent to `8m` or `480s`
+* `step() + 1` is equivalent to the query step width increased by 1s.
+* `max(step(), 5s)` is equivalent to the larger of the query step width and `5s`.
+* `min(2 * step() + 5s, 5m)` is equivalent to the smaller of twice the query step increased by `5s` and `5m`.
+
+
+## OTLP Native Delta Support
+
+`--enable-feature=otlp-native-delta-ingestion`
+
+When enabled, allows for the native ingestion of delta OTLP metrics, storing the raw sample values without conversion. This cannot be enabled in conjunction with `otlp-deltatocumulative`.
+
+Currently, the StartTimeUnixNano field is ignored, and deltas are given the unknown metric metadata type.
+
+Delta support is in a very early stage of development and the ingestion and querying process my change over time. For the open proposal see [prometheus/proposals#48](https://github.com/prometheus/proposals/pull/48).
+
+### Querying
+
+We encourage users to experiment with deltas and existing PromQL functions; we will collect feedback and likely build features to improve the experience around querying deltas.
+
+Note that standard PromQL counter functions like `rate()` and `increase()` are designed for cumulative metrics and will produce incorrect results when used with delta metrics. This may change in the future, but for now, to get similar results for delta metrics, you need `sum_over_time()`:
+
+* `sum_over_time(delta_metric[<range>])`: Calculates the sum of delta values over the specified time range.
+* `sum_over_time(delta_metric[<range>]) / <range>`: Calculates the per-second rate of the delta metric.
+
+These may not work well if the `<range>` is not a multiple of the collection interval of the metric. For example, if you do `sum_over_time(delta_metric[1m]) / 1m` range query (with a 1m step), but the collection interval of a metric is 10m, the graph will show a single point every 10 minutes with a high rate value, rather than 10 points with a lower, constant value.
+
+### Current gotchas
+
+* If delta metrics are exposed via [federation](https://prometheus.io/docs/prometheus/latest/federation/), data can be incorrectly collected if the ingestion interval is not the same as the scrape interval for the federated endpoint.
+
+* It is difficult to figure out whether a metric has delta or cumulative temporality, since there's no indication of temporality in metric names or labels. For now, if you are ingesting a mix of delta and cumulative metrics we advise you to explicitly add your own labels to distinguish them. In the future, we plan to introduce type labels to consistently distinguish metric types and potentially make PromQL functions type-aware (e.g. providing warnings when cumulative-only functions are used with delta metrics).
+
+* If there are multiple samples being ingested at the same timestamp, only one of the points is kept - the samples are **not** summed together (this is how Prometheus works in general - duplicate timestamp samples are rejected). Any aggregation will have to be done before sending samples to Prometheus.
+
+## Type and Unit Labels
+
+`--enable-feature=type-and-unit-labels`
+
+When enabled, Prometheus will start injecting additional, reserved `__type__`
+and `__unit__` labels as designed in the [PROM-39 proposal](https://github.com/prometheus/proposals/pull/39).
+
+Those labels are sourced from the metadata structured of the existing scrape and ingestion formats
+like OpenMetrics Text, Prometheus Text, Prometheus Proto, Remote Write 2 and OTLP. All the user provided labels with
+`__type__` and `__unit__` will be overridden.
+
+PromQL layer will handle those labels the same way __name__ is handled, e.g. dropped
+on certain operations like `-` or `+` and affected by `promql-delayed-name-removal` feature.
+
+This feature enables important metadata information to be accessible directly with samples and PromQL layer.
+ 
+It's especially useful for users who:
+
+* Want to be able to select metrics based on type or unit.
+* Want to handle cases of series with the same metric name and different type and units.
+  e.g. native histogram migrations or OpenTelemetry metrics from OTLP endpoint, without translation.
+
+In future more [work is planned](https://github.com/prometheus/prometheus/issues/16610) that will depend on this e.g. rich PromQL UX that helps
+when wrong types are used on wrong functions, automatic renames, delta types and more.
+
+## Use Uncached IO
+
+`--enable-feature=use-uncached-io`
+
+Experimental and only available on Linux.
+
+When enabled, it makes chunks writing bypass the page cache. Its primary
+goal is to reduce confusion around page‐cache behavior and to prevent over‑allocation of
+memory in response to misleading cache growth.
+
+This is currently implemented using direct I/O.
+
+For more details, see the [proposal](https://github.com/prometheus/proposals/pull/45).

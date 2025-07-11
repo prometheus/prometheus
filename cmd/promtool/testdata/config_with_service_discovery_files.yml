@@ -6,7 +6,7 @@ scrape_configs:
 alerting:
   alertmanagers:
     - scheme: http
-      api_version: v1
+      api_version: v2
       file_sd_configs:
         - files:
             - nonexistent_file.yml

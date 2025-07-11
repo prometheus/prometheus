@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/schema"
 )
 
 type promlexer struct {
@@ -160,16 +161,19 @@ type PromParser struct {
 	// of the metric name and label names and values for this series.
 	// p.offsets[0] is the start character of the metric name.
 	// p.offsets[1] is the end of the metric name.
-	// Subsequently, p.offsets is a pair of pair of offsets for the positions
+	// Subsequently, p.offsets is a pair of offsets for the positions
 	// of the label name and value start and end characters.
 	offsets []int
+
+	enableTypeAndUnitLabels bool
 }
 
 // NewPromParser returns a new parser of the byte slice.
-func NewPromParser(b []byte, st *labels.SymbolTable) Parser {
+func NewPromParser(b []byte, st *labels.SymbolTable, enableTypeAndUnitLabels bool) Parser {
 	return &PromParser{
-		l:       &promlexer{b: append(b, '\n')},
-		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
+		l:                       &promlexer{b: append(b, '\n')},
+		builder:                 labels.NewScratchBuilderWithSymbolTable(st, 16),
+		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 	}
 }
 
@@ -223,30 +227,43 @@ func (p *PromParser) Comment() []byte {
 	return p.text
 }
 
-// Metric writes the labels of the current sample into the passed labels.
-// It returns the string from which the metric was parsed.
-func (p *PromParser) Metric(l *labels.Labels) string {
-	// Copy the buffer to a string: this is only necessary for the return value.
+// Labels writes the labels of the current sample into the passed labels.
+func (p *PromParser) Labels(l *labels.Labels) {
+	// Defensive copy in case the following keeps a reference.
+	// See https://github.com/prometheus/prometheus/issues/16490
 	s := string(p.series)
-
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
-	p.builder.Add(labels.MetricName, metricName)
 
+	m := schema.Metadata{
+		Name: metricName,
+		// NOTE(bwplotka): There is a known case where the type is wrong on a broken exposition
+		// (see the TestPromParse windspeed metric). Fixing it would require extra
+		// allocs and benchmarks. Since it was always broken, don't fix for now.
+		Type: p.mtype,
+	}
+
+	if p.enableTypeAndUnitLabels {
+		m.AddToLabels(&p.builder)
+	} else {
+		p.builder.Add(labels.MetricName, metricName)
+	}
 	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
 		b := p.offsets[i+1] - p.start
 		label := unreplace(s[a:b])
+		if p.enableTypeAndUnitLabels && !m.IsEmptyFor(label) {
+			// Dropping user provided metadata labels, if found in the OM metadata.
+			continue
+		}
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
-		value := unreplace(s[c:d])
+		value := normalizeFloatsInLabelValues(p.mtype, label, unreplace(s[c:d]))
 		p.builder.Add(label, value)
 	}
 
 	p.builder.Sort()
 	*l = p.builder.Labels()
-
-	return s
 }
 
 // Exemplar implements the Parser interface. However, since the classic
@@ -256,10 +273,10 @@ func (p *PromParser) Exemplar(*exemplar.Exemplar) bool {
 	return false
 }
 
-// CreatedTimestamp returns nil as it's not implemented yet.
+// CreatedTimestamp returns 0 as it's not implemented yet.
 // TODO(bwplotka): https://github.com/prometheus/prometheus/issues/12980
-func (p *PromParser) CreatedTimestamp() *int64 {
-	return nil
+func (p *PromParser) CreatedTimestamp() int64 {
+	return 0
 }
 
 // nextToken returns the next token from the promlexer. It skips over tabs
@@ -502,13 +519,17 @@ func unreplace(s string) string {
 }
 
 func yoloString(b []byte) string {
-	return *((*string)(unsafe.Pointer(&b)))
+	return unsafe.String(unsafe.SliceData(b), len(b))
+}
+
+func yoloBytes(b string) []byte {
+	return unsafe.Slice(unsafe.StringData(b), len(b))
 }
 
 func parseFloat(s string) (float64, error) {
 	// Keep to pre-Go 1.13 float formats.
 	if strings.ContainsAny(s, "pP_") {
-		return 0, fmt.Errorf("unsupported character in float")
+		return 0, errors.New("unsupported character in float")
 	}
 	return strconv.ParseFloat(s, 64)
 }

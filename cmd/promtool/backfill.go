@@ -21,8 +21,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
@@ -48,7 +48,7 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 
 		_, ts, _ := p.Series()
 		if ts == nil {
-			return 0, 0, fmt.Errorf("expected timestamp for series got none")
+			return 0, 0, errors.New("expected timestamp for series got none")
 		}
 
 		if *ts > maxt {
@@ -85,7 +85,7 @@ func getCompatibleBlockDuration(maxBlockDuration int64) int64 {
 	return blockDuration
 }
 
-func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesInAppender int, outputDir string, humanReadable, quiet bool) (returnErr error) {
+func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesInAppender int, outputDir string, humanReadable, quiet bool, customLabels map[string]string) (returnErr error) {
 	blockDuration := getCompatibleBlockDuration(maxBlockDuration)
 	mint = blockDuration * (mint / blockDuration)
 
@@ -101,6 +101,8 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 		wroteHeader  bool
 		nextSampleTs int64 = math.MaxInt64
 	)
+
+	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	for t := mint; t <= maxt; t += blockDuration {
 		tsUpper := t + blockDuration
@@ -118,7 +120,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 			// also need to append samples throughout the whole block range. To allow that, we
 			// pretend that the block is twice as large here, but only really add sample in the
 			// original interval later.
-			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, 2*blockDuration)
+			w, err := tsdb.NewBlockWriter(promslog.NewNopLogger(), outputDir, 2*blockDuration)
 			if err != nil {
 				return fmt.Errorf("block writer: %w", err)
 			}
@@ -146,7 +148,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				_, ts, v := p.Series()
 				if ts == nil {
 					l := labels.Labels{}
-					p.Metric(&l)
+					p.Labels(&l)
 					return fmt.Errorf("expected timestamp for series %v, got none", l)
 				}
 				if *ts < t {
@@ -160,9 +162,15 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				}
 
 				l := labels.Labels{}
-				p.Metric(&l)
+				p.Labels(&l)
 
-				if _, err := app.Append(0, l, *ts, v); err != nil {
+				lb.Reset(l)
+				for name, value := range customLabels {
+					lb.Set(name, value)
+				}
+				lbls := lb.Labels()
+
+				if _, err := app.Append(0, lbls, *ts, v); err != nil {
 					return fmt.Errorf("add sample: %w", err)
 				}
 
@@ -221,13 +229,13 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 	return nil
 }
 
-func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration) (err error) {
+func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration, customLabels map[string]string) (err error) {
 	p := textparse.NewOpenMetricsParser(input, nil) // Don't need a SymbolTable to get max and min timestamps.
 	maxt, mint, err := getMinAndMaxTimestamps(p)
 	if err != nil {
 		return fmt.Errorf("getting min and max timestamp: %w", err)
 	}
-	if err = createBlocks(input, mint, maxt, int64(maxBlockDuration/time.Millisecond), maxSamplesInAppender, outputDir, humanReadable, quiet); err != nil {
+	if err = createBlocks(input, mint, maxt, int64(maxBlockDuration/time.Millisecond), maxSamplesInAppender, outputDir, humanReadable, quiet, customLabels); err != nil {
 		return fmt.Errorf("block creation: %w", err)
 	}
 	return nil

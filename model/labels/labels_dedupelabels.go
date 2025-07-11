@@ -140,19 +140,19 @@ func decodeString(t *nameTable, data string, index int) (string, int) {
 	return t.ToName(num), index
 }
 
-// Bytes returns ls as a byte slice.
-// It uses non-printing characters and so should not be used for printing.
+// Bytes returns an opaque, not-human-readable, encoding of ls, usable as a map key.
+// Encoding may change over time or between runs of Prometheus.
 func (ls Labels) Bytes(buf []byte) []byte {
 	b := bytes.NewBuffer(buf[:0])
 	for i := 0; i < len(ls.data); {
 		if i > 0 {
-			b.WriteByte(seps[0])
+			b.WriteByte(sep)
 		}
 		var name, value string
 		name, i = decodeString(ls.syms, ls.data, i)
 		value, i = decodeString(ls.syms, ls.data, i)
 		b.WriteString(name)
-		b.WriteByte(seps[0])
+		b.WriteByte(sep)
 		b.WriteString(value)
 	}
 	return b.Bytes()
@@ -201,9 +201,9 @@ func (ls Labels) Hash() uint64 {
 		}
 
 		b = append(b, name...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 		b = append(b, value...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 		pos = newPos
 	}
 	return xxhash.Sum64(b)
@@ -226,9 +226,9 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 		}
 		if name == names[j] {
 			b = append(b, name...)
-			b = append(b, seps[0])
+			b = append(b, sep)
 			b = append(b, value...)
-			b = append(b, seps[0])
+			b = append(b, sep)
 		}
 	}
 
@@ -252,9 +252,9 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 			continue
 		}
 		b = append(b, name...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 		b = append(b, value...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 	}
 	return xxhash.Sum64(b), b
 }
@@ -275,10 +275,10 @@ func (ls Labels) BytesWithLabels(buf []byte, names ...string) []byte {
 		}
 		if lName == names[j] {
 			if b.Len() > 1 {
-				b.WriteByte(seps[0])
+				b.WriteByte(sep)
 			}
 			b.WriteString(lName)
-			b.WriteByte(seps[0])
+			b.WriteByte(sep)
 			b.WriteString(lValue)
 		}
 		pos = newPos
@@ -299,10 +299,10 @@ func (ls Labels) BytesWithoutLabels(buf []byte, names ...string) []byte {
 		}
 		if j == len(names) || lName != names[j] {
 			if b.Len() > 1 {
-				b.WriteByte(seps[0])
+				b.WriteByte(sep)
 			}
 			b.WriteString(lName)
-			b.WriteByte(seps[0])
+			b.WriteByte(sep)
 			b.WriteString(lValue)
 		}
 		pos = newPos
@@ -554,20 +554,27 @@ func (ls Labels) ReleaseStrings(release func(string)) {
 	// TODO: remove these calls as there is nothing to do.
 }
 
-// DropMetricName returns Labels with "__name__" removed.
+// DropMetricName returns Labels with the "__name__" removed.
+// Deprecated: Use DropReserved instead.
 func (ls Labels) DropMetricName() Labels {
+	return ls.DropReserved(func(n string) bool { return n == MetricName })
+}
+
+// DropReserved returns Labels without the chosen (via shouldDropFn) reserved (starting with underscore) labels.
+func (ls Labels) DropReserved(shouldDropFn func(name string) bool) Labels {
 	for i := 0; i < len(ls.data); {
 		lName, i2 := decodeString(ls.syms, ls.data, i)
 		_, i2 = decodeVarint(ls.data, i2)
-		if lName == MetricName {
+		if lName[0] > '_' { // Stop looking if we've gone past special labels.
+			break
+		}
+		if shouldDropFn(lName) {
 			if i == 0 { // Make common case fast with no allocations.
 				ls.data = ls.data[i2:]
 			} else {
 				ls.data = ls.data[:i] + ls.data[i2:]
 			}
-			break
-		} else if lName[0] > MetricName[0] { // Stop looking if we've gone past.
-			break
+			continue
 		}
 		i = i2
 	}
@@ -814,4 +821,9 @@ func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	marshalNumbersToSizedBuffer(b.nums, b.overwriteBuffer)
 	ls.syms = b.syms.nameTable
 	ls.data = yoloString(b.overwriteBuffer)
+}
+
+// SizeOfLabels returns the approximate space required for n copies of a label.
+func SizeOfLabels(name, value string, n uint64) uint64 {
+	return uint64(len(name)+len(value)) + n*4 // Assuming most symbol-table entries are 2 bytes long.
 }

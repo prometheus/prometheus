@@ -21,7 +21,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -101,7 +100,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		sets = append(sets, s)
 	}
 
-	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
+	set := storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
 	it := storage.NewBuffer(int64(h.lookbackDelta / 1e6))
 	var chkIter chunkenc.Iterator
 Loop:
@@ -157,7 +156,7 @@ Loop:
 		})
 	}
 	if ws := set.Warnings(); len(ws) > 0 {
-		level.Debug(h.logger).Log("msg", "Federation select returned warnings", "warnings", ws)
+		h.logger.Debug("Federation select returned warnings", "warnings", ws)
 		federationWarnings.Add(float64(len(ws)))
 	}
 	if set.Err() != nil {
@@ -209,7 +208,7 @@ Loop:
 			}
 			if l.Name == labels.MetricName {
 				nameSeen = true
-				if l.Value == lastMetricName && // We already have the name in the current MetricFamily, and we ignore nameless metrics.
+				if l.Value == lastMetricName && // We already have the name in the current MetricDescriptor, and we ignore nameless metrics.
 					lastWasHistogram == isHistogram && // The sample type matches (float vs histogram).
 					// If it was a histogram, the histogram type (counter vs gauge) also matches.
 					(!isHistogram || lastHistogramWasGauge == (s.H.CounterResetHint == histogram.GaugeType)) {
@@ -221,7 +220,7 @@ Loop:
 				// an invalid exposition. But since the consumer of this is Prometheus, and Prometheus can
 				// parse it fine, we allow it and bend the rules to make federation possible in those cases.
 
-				// Need to start a new MetricFamily. Ship off the old one (if any) before
+				// Need to start a new MetricDescriptor. Ship off the old one (if any) before
 				// creating the new one.
 				if protMetricFam != nil {
 					if err := enc.Encode(protMetricFam); err != nil {
@@ -253,11 +252,11 @@ Loop:
 		})
 		if err != nil {
 			federationErrors.Inc()
-			level.Error(h.logger).Log("msg", "federation failed", "err", err)
+			h.logger.Error("federation failed", "err", err)
 			return
 		}
 		if !nameSeen {
-			level.Warn(h.logger).Log("msg", "Ignoring nameless metric during federation", "metric", s.Metric)
+			h.logger.Warn("Ignoring nameless metric during federation", "metric", s.Metric)
 			continue
 		}
 		// Attach global labels if they do not exist yet.
@@ -310,11 +309,11 @@ Loop:
 		lastWasHistogram = isHistogram
 		protMetricFam.Metric = append(protMetricFam.Metric, protMetric)
 	}
-	// Still have to ship off the last MetricFamily, if any.
+	// Still have to ship off the last MetricDescriptor, if any.
 	if protMetricFam != nil {
 		if err := enc.Encode(protMetricFam); err != nil {
 			federationErrors.Inc()
-			level.Error(h.logger).Log("msg", "federation failed", "err", err)
+			h.logger.Error("federation failed", "err", err)
 		}
 	}
 }

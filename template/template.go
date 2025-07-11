@@ -23,16 +23,16 @@ import (
 	"net"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	text_template "text/template"
 	"time"
 
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
-
 	common_templates "github.com/prometheus/common/helpers/templates"
+	"github.com/prometheus/common/model"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -106,25 +106,6 @@ func query(ctx context.Context, q string, ts time.Time, queryFn QueryFunc) (quer
 	return result, nil
 }
 
-func convertToFloat(i interface{}) (float64, error) {
-	switch v := i.(type) {
-	case float64:
-		return v, nil
-	case string:
-		return strconv.ParseFloat(v, 64)
-	case int:
-		return float64(v), nil
-	case uint:
-		return float64(v), nil
-	case int64:
-		return float64(v), nil
-	case uint64:
-		return float64(v), nil
-	default:
-		return 0, fmt.Errorf("can't convert %T to float", v)
-	}
-}
-
 // Expander executes templates in text or HTML mode with a common set of Prometheus template functions.
 type Expander struct {
 	text    string
@@ -186,7 +167,7 @@ func NewTemplateExpander(
 				return html_template.HTML(text)
 			},
 			"match":     regexp.MatchString,
-			"title":     strings.Title, //nolint:staticcheck
+			"title":     cases.Title(language.AmericanEnglish, cases.NoLower).String,
 			"toUpper":   strings.ToUpper,
 			"toLower":   strings.ToLower,
 			"graphLink": strutil.GraphLinkForExpression,
@@ -219,7 +200,7 @@ func NewTemplateExpander(
 				return host
 			},
 			"humanize": func(i interface{}) (string, error) {
-				v, err := convertToFloat(i)
+				v, err := common_templates.ConvertToFloat(i)
 				if err != nil {
 					return "", err
 				}
@@ -248,7 +229,7 @@ func NewTemplateExpander(
 				return fmt.Sprintf("%.4g%s", v, prefix), nil
 			},
 			"humanize1024": func(i interface{}) (string, error) {
-				v, err := convertToFloat(i)
+				v, err := common_templates.ConvertToFloat(i)
 				if err != nil {
 					return "", err
 				}
@@ -267,30 +248,15 @@ func NewTemplateExpander(
 			},
 			"humanizeDuration": common_templates.HumanizeDuration,
 			"humanizePercentage": func(i interface{}) (string, error) {
-				v, err := convertToFloat(i)
+				v, err := common_templates.ConvertToFloat(i)
 				if err != nil {
 					return "", err
 				}
 				return fmt.Sprintf("%.4g%%", v*100), nil
 			},
-			"humanizeTimestamp": func(i interface{}) (string, error) {
-				v, err := convertToFloat(i)
-				if err != nil {
-					return "", err
-				}
-
-				tm, err := floatToTime(v)
-				switch {
-				case errors.Is(err, errNaNOrInf):
-					return fmt.Sprintf("%.4g", v), nil
-				case err != nil:
-					return "", err
-				}
-
-				return fmt.Sprint(tm), nil
-			},
+			"humanizeTimestamp": common_templates.HumanizeTimestamp,
 			"toTime": func(i interface{}) (*time.Time, error) {
-				v, err := convertToFloat(i)
+				v, err := common_templates.ConvertToFloat(i)
 				if err != nil {
 					return nil, err
 				}

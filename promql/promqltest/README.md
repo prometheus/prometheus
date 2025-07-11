@@ -24,6 +24,8 @@ Each test file contains a series of commands. There are three kinds of commands:
 * `clear`
 * `eval`
 
+> **Note:** The `eval` command variants (`eval_fail`, `eval_warn`, `eval_info`, and `eval_ordered`) are deprecated. Use the new `expect` lines instead (explained in the [`eval` command](#eval-command) section). Additionally, `expected_fail_message` and `expected_fail_regexp` are also deprecated.
+
 Each command is executed in the order given in the file.
 
 ## `load` command
@@ -50,12 +52,12 @@ load 1m
     my_metric{env="prod"} 5 2+3x2 _ stale {{schema:1 sum:3 count:22 buckets:[5 10 7]}}
 ```
 
-...will create a single series with labels `my_metric{env="prod"}`, with the following points:
+… will create a single series with labels `my_metric{env="prod"}`, with the following points:
 
 * t=0: value is 5
 * t=1m: value is 2
 * t=2m: value is 5
-* t=3m: value is 7
+* t=3m: value is 8
 * t=4m: no point
 * t=5m: stale marker
 * t=6m: native histogram with schema 1, sum -3, count 22 and bucket counts 5, 10 and 7
@@ -73,7 +75,8 @@ When loading a batch of classic histogram float series, you can optionally appen
 
 ## `eval` command
 
-`eval` runs a query against the test environment and asserts that the result is as expected.
+`eval` runs a query against the test environment and asserts that the result is as expected. 
+It requires the query to succeed without any failures unless an `expect fail` line is provided. Previously `eval` expected no `info` or `warn` annotation, but now `expect no_info` and `expect no_warn` lines must be explicitly provided.
 
 Both instant and range queries are supported.
 
@@ -82,12 +85,18 @@ The syntax is as follows:
 ```
 # Instant query
 eval instant at <time> <query>
+    <expect>
+    ...
+    <expect>
     <series> <points>
     ...
     <series> <points>
     
 # Range query
 eval range from <start> to <end> step <step> <query>
+    <expect>
+    ...
+    <expect>
     <series> <points>
     ...
     <series> <points>
@@ -95,38 +104,90 @@ eval range from <start> to <end> step <step> <query>
 
 * `<time>` is the timestamp to evaluate the instant query at (eg. `1m`)
 * `<start>` and `<end>` specify the time range of the range query, and use the same syntax as `<time>`
-* `<step>` is the step of the range query, and uses the same syntax as `<time>` (eg. `30s`)
+* `<step>` is the step of the range query, and uses the same syntax as `<time>` (eg. `30s`) 
+* `<expect>`(optional) specifies expected annotations, errors, or result ordering.
 * `<series>` and `<points>` specify the expected values, and follow the same syntax as for `load` above
+
+### `expect` Syntax
+
+```
+expect <type> <match_type>: <string>
+```
+
+#### Parameters
+
+* `<type>` is the expectation type:
+    * `fail` expects the query to fail.
+    * `info` expects the query to return at least one info annotation.
+    * `warn` expects the query to return at least one warn annotation.
+    * `no_info` expects the query to return no info annotation.
+    * `no_warn` expects the query to return no warn annotation.
+    * `ordered` expects the query to return the results in the specified order.
+* `<match_type>` (optional) specifies message matching type for annotations:
+    * `msg` for exact string match.
+    * `regex` for regular expression match.
+    * **Not applicable** for `ordered`, `no_info`, and `no_warn`.
+* `<string>` is the expected annotation message.
 
 For example:
 
 ```
 eval instant at 1m sum by (env) (my_metric)
+    expect warn
+    expect no_info
     {env="prod"} 5
     {env="test"} 20
     
 eval range from 0 to 3m step 1m sum by (env) (my_metric)
+    expect warn msg: something went wrong
+    expect info regex: something went (wrong|boom)
     {env="prod"} 2 5 10 20
     {env="test"} 10 20 30 45
+
+eval instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
+expect fail
+
+eval instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
+expect fail msg: "vector cannot contain metrics with the same labelset"
+
+eval instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
+expect fail regex: "vector cannot contain metrics .*|something else went wrong"
+
+eval instant at 1m sum by (env) (my_metric)
+expect ordered
+{env="prod"} 5
+{env="test"} 20
 ```
 
-Instant queries also support asserting that the series are returned in exactly the order specified: use `eval_ordered instant ...` instead of `eval instant ...`.
-This is not supported for range queries.
+There can be multiple `<expect>` lines for a given `<type>`. Each `<type>` validates its corresponding annotation, error, or ordering while ignoring others.
 
-It is also possible to test that queries fail: use `eval_fail instant ...` or `eval_fail range ...`.
-`eval_fail` optionally takes an expected error message string or regexp to assert that the error message is as expected.
+Every `<expect>` line must match at least one corresponding annotation or error.
 
-For example:
+If at least one `<expect>` line of type `warn` or `info` is present, then all corresponding annotations must have a matching `expect` line.
 
+#### Migrating Test Files to the New Syntax
+
+- All `.test` files in the directory specified by the --dir flag will be updated in place.
+- Deprecated syntax will be replaced with the recommended `expect` line statements.
+
+Usage:
+```sh
+go run ./promql/promqltest/cmd/migrate/main.go --mode=strict [--dir=<directory>]
 ```
-# Assert that the query fails for any reason without asserting on the error message.
-eval_fail instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
 
-# Assert that the query fails with exactly the provided error message string.
-eval_fail instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
-    expected_fail_message vector cannot contain metrics with the same labelset
+The `--mode` flag controls how expectations are migrated:
+- `strict`: Strictly migrates all expectations to the new syntax.
+  This is probably more verbose than intended because the old syntax
+  implied many constraints that are often not needed.
+- `basic`: Like `strict` but never creates `no_info` and `no_warn`
+  expectations. This can be a good starting point to manually add 
+  `no_info` and `no_warn` expectations and/or remove `info` and 
+  `warn` expectations as needed.
+- `tolerant`: Only creates `expect fail` and `expect ordered` where
+  appropriate. All desired expectations about presence or absence 
+  of `info` and `warn` have to be added manually.
 
-# Assert that the query fails with an error message matching the regexp provided.
-eval_fail instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
-    expected_fail_regexp (vector cannot contain metrics .*|something else went wrong)
-```
+All three modes create valid passing tests from previously passing tests.
+`basic` and `tolerant` just test fewer expectations than the previous tests.
+
+The --dir flag specifies the directory containing test files to migrate.

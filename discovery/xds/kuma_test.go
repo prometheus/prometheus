@@ -201,9 +201,8 @@ func TestKumaMadsV1ResourceParserInvalidResources(t *testing.T) {
 	}}
 	groups, err := kumaMadsV1ResourceParser(resources, KumaMadsV1ResourceTypeURL)
 	require.Nil(t, groups)
-	require.Error(t, err)
 
-	require.Contains(t, err.Error(), "cannot parse")
+	require.ErrorContains(t, err, "cannot parse")
 }
 
 func TestNewKumaHTTPDiscovery(t *testing.T) {

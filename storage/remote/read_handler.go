@@ -16,13 +16,12 @@ package remote
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
 	"sync"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/config"
@@ -34,7 +33,7 @@ import (
 )
 
 type readHandler struct {
-	logger                    log.Logger
+	logger                    *slog.Logger
 	queryable                 storage.SampleAndChunkQueryable
 	config                    func() config.Config
 	remoteReadSampleLimit     int
@@ -46,7 +45,7 @@ type readHandler struct {
 
 // NewReadHandler creates a http.Handler that accepts remote read requests and
 // writes them to the provided queryable.
-func NewReadHandler(logger log.Logger, r prometheus.Registerer, queryable storage.SampleAndChunkQueryable, config func() config.Config, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame int) http.Handler {
+func NewReadHandler(logger *slog.Logger, r prometheus.Registerer, queryable storage.SampleAndChunkQueryable, config func() config.Config, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame int) http.Handler {
 	h := &readHandler{
 		logger:                    logger,
 		queryable:                 queryable,
@@ -57,10 +56,10 @@ func NewReadHandler(logger log.Logger, r prometheus.Registerer, queryable storag
 		marshalPool:               &sync.Pool{},
 
 		queries: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "prometheus",
-			Subsystem: "api", // TODO: changes to storage in Prometheus 3.0.
-			Name:      "remote_read_queries",
-			Help:      "The current number of remote read queries being executed or waiting.",
+			Namespace: namespace,
+			Subsystem: "remote_read_handler",
+			Name:      "queries",
+			Help:      "The current number of remote read queries that are either in execution or queued on the handler.",
 		}),
 	}
 	if r != nil {
@@ -140,7 +139,7 @@ func (h *readHandler) remoteReadSamples(
 			}
 			defer func() {
 				if err := querier.Close(); err != nil {
-					level.Warn(h.logger).Log("msg", "Error on querier close", "err", err.Error())
+					h.logger.Warn("Error on querier close", "err", err.Error())
 				}
 			}()
 
@@ -163,7 +162,7 @@ func (h *readHandler) remoteReadSamples(
 				return err
 			}
 			for _, w := range ws {
-				level.Warn(h.logger).Log("msg", "Warnings on remote read query", "err", w.Error())
+				h.logger.Warn("Warnings on remote read query", "err", w.Error())
 			}
 			for _, ts := range resp.Results[i].Timeseries {
 				ts.Labels = MergeLabels(ts.Labels, sortedExternalLabels)
@@ -202,16 +201,34 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 				return err
 			}
 
-			chunks := h.getChunkSeriesSet(ctx, query, filteredMatchers)
-			if err := chunks.Err(); err != nil {
+			querier, err := h.queryable.ChunkQuerier(query.StartTimestampMs, query.EndTimestampMs)
+			if err != nil {
 				return err
+			}
+			defer func() {
+				if err := querier.Close(); err != nil {
+					h.logger.Warn("Error on chunk querier close", "err", err.Error())
+				}
+			}()
+
+			var hints *storage.SelectHints
+			if query.Hints != nil {
+				hints = &storage.SelectHints{
+					Start:    query.Hints.StartMs,
+					End:      query.Hints.EndMs,
+					Step:     query.Hints.StepMs,
+					Func:     query.Hints.Func,
+					Grouping: query.Hints.Grouping,
+					Range:    query.Hints.RangeMs,
+					By:       query.Hints.By,
+				}
 			}
 
 			ws, err := StreamChunkedReadResponses(
 				NewChunkedWriter(w, f),
 				int64(i),
 				// The streaming API has to provide the series sorted.
-				chunks,
+				querier.Select(ctx, true, hints, filteredMatchers...),
 				sortedExternalLabels,
 				h.remoteReadMaxBytesInFrame,
 				h.marshalPool,
@@ -221,7 +238,7 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 			}
 
 			for _, w := range ws {
-				level.Warn(h.logger).Log("msg", "Warnings on chunked remote read query", "warnings", w.Error())
+				h.logger.Warn("Warnings on chunked remote read query", "warnings", w.Error())
 			}
 			return nil
 		}(); err != nil {
@@ -234,35 +251,6 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 			return
 		}
 	}
-}
-
-// getChunkSeriesSet executes a query to retrieve a ChunkSeriesSet,
-// encapsulating the operation in its own function to ensure timely release of
-// the querier resources.
-func (h *readHandler) getChunkSeriesSet(ctx context.Context, query *prompb.Query, filteredMatchers []*labels.Matcher) storage.ChunkSeriesSet {
-	querier, err := h.queryable.ChunkQuerier(query.StartTimestampMs, query.EndTimestampMs)
-	if err != nil {
-		return storage.ErrChunkSeriesSet(err)
-	}
-	defer func() {
-		if err := querier.Close(); err != nil {
-			level.Warn(h.logger).Log("msg", "Error on chunk querier close", "err", err.Error())
-		}
-	}()
-
-	var hints *storage.SelectHints
-	if query.Hints != nil {
-		hints = &storage.SelectHints{
-			Start:    query.Hints.StartMs,
-			End:      query.Hints.EndMs,
-			Step:     query.Hints.StepMs,
-			Func:     query.Hints.Func,
-			Grouping: query.Hints.Grouping,
-			Range:    query.Hints.RangeMs,
-			By:       query.Hints.By,
-		}
-	}
-	return querier.Select(ctx, true, hints, filteredMatchers...)
 }
 
 // filterExtLabelsFromMatchers change equality matchers which match external labels

@@ -17,13 +17,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/linode/linodego"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -138,10 +138,10 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*linodeMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	d := &Discovery{
@@ -165,7 +165,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.Discovere
 			Timeout:   time.Duration(conf.RefreshInterval),
 		},
 	)
-	client.SetUserAgent(fmt.Sprintf("Prometheus/%s", version.Version))
+	client.SetUserAgent(version.PrometheusUserAgent())
 	d.client = &client
 
 	d.Discovery = refresh.NewDiscovery(
@@ -194,13 +194,12 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		events, err := d.client.ListEvents(ctx, &eventsOpts)
 		if err != nil {
 			var e *linodego.Error
-			if errors.As(err, &e) && e.Code == http.StatusUnauthorized {
-				// If we get a 401, the token doesn't have `events:read_only` scope.
-				// Disable event polling and fallback to doing a full refresh every interval.
-				d.eventPollingEnabled = false
-			} else {
+			if !errors.As(err, &e) || e.Code != http.StatusUnauthorized {
 				return nil, err
 			}
+			// If we get a 401, the token doesn't have `events:read_only` scope.
+			// Disable event polling and fallback to doing a full refresh every interval.
+			d.eventPollingEnabled = false
 		} else {
 			// Event polling tells us changes the Linode API is aware of. Actions issued outside of the Linode API,
 			// such as issuing a `shutdown` at the VM's console instead of using the API to power off an instance,

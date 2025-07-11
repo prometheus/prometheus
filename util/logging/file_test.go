@@ -14,6 +14,7 @@
 package logging
 
 import (
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -21,6 +22,19 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
 )
+
+func getLogLines(t *testing.T, name string) []string {
+	content, err := os.ReadFile(name)
+	require.NoError(t, err)
+
+	lines := strings.Split(string(content), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if lines[i] == "" {
+			lines = append(lines[:i], lines[i+1:]...)
+		}
+	}
+	return lines
+}
 
 func TestJSONFileLogger_basic(t *testing.T) {
 	f, err := os.CreateTemp("", "logging")
@@ -30,23 +44,23 @@ func TestJSONFileLogger_basic(t *testing.T) {
 		require.NoError(t, os.Remove(f.Name()))
 	}()
 
-	l, err := NewJSONFileLogger(f.Name())
+	logHandler, err := NewJSONFileLogger(f.Name())
 	require.NoError(t, err)
-	require.NotNil(t, l, "logger can't be nil")
+	require.NotNil(t, logHandler, "logger handler can't be nil")
 
-	err = l.Log("test", "yes")
-	require.NoError(t, err)
-	r := make([]byte, 1024)
-	_, err = f.Read(r)
-	require.NoError(t, err)
-	result, err := regexp.Match(`^{"test":"yes","ts":"[^"]+"}\n`, r)
+	logger := slog.New(logHandler)
+	logger.Info("test", "hello", "world")
+
+	r := getLogLines(t, f.Name())
+	require.Len(t, r, 1, "expected 1 log line")
+	result, err := regexp.Match(`^{"time":"[^"]+","level":"INFO","source":"\w+.go:\d+","msg":"test","hello":"world"}`, []byte(r[0]))
 	require.NoError(t, err)
 	require.True(t, result, "unexpected content: %s", r)
 
-	err = l.Close()
+	err = logHandler.Close()
 	require.NoError(t, err)
 
-	err = l.file.Close()
+	err = logHandler.file.Close()
 	require.Error(t, err)
 	require.True(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
 }
@@ -59,31 +73,31 @@ func TestJSONFileLogger_parallel(t *testing.T) {
 		require.NoError(t, os.Remove(f.Name()))
 	}()
 
-	l, err := NewJSONFileLogger(f.Name())
+	logHandler, err := NewJSONFileLogger(f.Name())
 	require.NoError(t, err)
-	require.NotNil(t, l, "logger can't be nil")
+	require.NotNil(t, logHandler, "logger handler can't be nil")
 
-	err = l.Log("test", "yes")
+	logger := slog.New(logHandler)
+	logger.Info("test", "hello", "world")
+
+	logHandler2, err := NewJSONFileLogger(f.Name())
+	require.NoError(t, err)
+	require.NotNil(t, logHandler2, "logger handler can't be nil")
+
+	logger2 := slog.New(logHandler2)
+	logger2.Info("test", "hello", "world")
+
+	err = logHandler.Close()
 	require.NoError(t, err)
 
-	l2, err := NewJSONFileLogger(f.Name())
-	require.NoError(t, err)
-	require.NotNil(t, l, "logger can't be nil")
-
-	err = l2.Log("test", "yes")
-	require.NoError(t, err)
-
-	err = l.Close()
-	require.NoError(t, err)
-
-	err = l.file.Close()
+	err = logHandler.file.Close()
 	require.Error(t, err)
 	require.True(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
 
-	err = l2.Close()
+	err = logHandler2.Close()
 	require.NoError(t, err)
 
-	err = l2.file.Close()
+	err = logHandler2.file.Close()
 	require.Error(t, err)
 	require.True(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
 }

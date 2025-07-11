@@ -10,7 +10,7 @@ git_user="prombot"
 branch="repo_sync"
 commit_msg="Update common Prometheus files"
 pr_title="Synchronize common files from prometheus/prometheus"
-pr_msg="Propagating changes from prometheus/prometheus default branch."
+pr_msg="Propagating changes from prometheus/prometheus default branch.\n\n*Source can be found [here](https://github.com/prometheus/prometheus/blob/main/scripts/sync_repo_files.sh).*"
 orgs="prometheus prometheus-community"
 
 color_red='\e[31m'
@@ -37,7 +37,7 @@ if [ -z "${GITHUB_TOKEN}" ]; then
 fi
 
 # List of files that should be synced.
-SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .yamllint scripts/golangci-lint.yml .github/workflows/scorecards.yml .github/workflows/container_description.yml"
+SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .yamllint scripts/golangci-lint.yml .github/workflows/scorecards.yml .github/workflows/container_description.yml .github/workflows/stale.yml"
 
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)" || exit 1

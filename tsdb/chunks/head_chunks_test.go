@@ -129,7 +129,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 
 	// Checking on-disk bytes for the first file.
 	require.Len(t, hrw.mmappedChunkFiles, 3, "expected 3 mmapped files, got %d", len(hrw.mmappedChunkFiles))
-	require.Equal(t, len(hrw.mmappedChunkFiles), len(hrw.closers))
+	require.Len(t, hrw.closers, len(hrw.mmappedChunkFiles))
 
 	actualBytes, err := os.ReadFile(firstFileName)
 	require.NoError(t, err)
@@ -155,7 +155,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	hrw = createChunkDiskMapper(t, dir)
 
 	idx := 0
-	require.NoError(t, hrw.IterateAllChunks(func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding, isOOO bool) error {
+	require.NoError(t, hrw.IterateAllChunks(func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, _, maxt int64, numSamples uint16, _ chunkenc.Encoding, isOOO bool) error {
 		t.Helper()
 
 		expData := expectedData[idx]
@@ -208,9 +208,9 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 
 		files, err := os.ReadDir(hrw.dir.Name())
 		require.NoError(t, err)
-		require.Equal(t, len(remainingFiles), len(files), "files on disk")
-		require.Equal(t, len(remainingFiles), len(hrw.mmappedChunkFiles), "hrw.mmappedChunkFiles")
-		require.Equal(t, len(remainingFiles), len(hrw.closers), "closers")
+		require.Len(t, files, len(remainingFiles), "files on disk")
+		require.Len(t, hrw.mmappedChunkFiles, len(remainingFiles), "hrw.mmappedChunkFiles")
+		require.Len(t, hrw.closers, len(remainingFiles), "closers")
 
 		for _, i := range remainingFiles {
 			_, ok := hrw.mmappedChunkFiles[i]
@@ -325,9 +325,9 @@ func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
 
 		files, err := os.ReadDir(hrw.dir.Name())
 		require.NoError(t, err)
-		require.Equal(t, len(remainingFiles), len(files), "files on disk")
-		require.Equal(t, len(remainingFiles), len(hrw.mmappedChunkFiles), "hrw.mmappedChunkFiles")
-		require.Equal(t, len(remainingFiles), len(hrw.closers), "closers")
+		require.Len(t, files, len(remainingFiles), "files on disk")
+		require.Len(t, hrw.mmappedChunkFiles, len(remainingFiles), "hrw.mmappedChunkFiles")
+		require.Len(t, hrw.closers, len(remainingFiles), "closers")
 
 		for _, i := range remainingFiles {
 			_, ok := hrw.mmappedChunkFiles[i]
@@ -408,7 +408,7 @@ func TestChunkDiskMapper_Truncate_WriteQueueRaceCondition(t *testing.T) {
 	wg.Wait()
 }
 
-// TestHeadReadWriter_TruncateAfterIterateChunksError tests for
+// TestHeadReadWriter_TruncateAfterFailedIterateChunks tests for
 // https://github.com/prometheus/prometheus/issues/7753
 func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
 	hrw := createChunkDiskMapper(t, "")
@@ -574,7 +574,7 @@ func createChunk(t *testing.T, idx int, hrw *ChunkDiskMapper) (seriesRef HeadSer
 	if rand.Intn(2) == 0 {
 		isOOO = true
 	}
-	chunkRef = hrw.WriteChunk(seriesRef, mint, maxt, chunk, isOOO, func(cbErr error) {
+	chunkRef = hrw.WriteChunk(seriesRef, mint, maxt, chunk, isOOO, func(_ error) {
 		require.NoError(t, err)
 		close(awaitCb)
 	})

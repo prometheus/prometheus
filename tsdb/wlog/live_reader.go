@@ -20,12 +20,11 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"log/slog"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
-	"github.com/golang/snappy"
-	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/prometheus/prometheus/util/compression"
 )
 
 // LiveReaderMetrics holds all metrics exposed by the LiveReader.
@@ -51,15 +50,12 @@ func NewLiveReaderMetrics(reg prometheus.Registerer) *LiveReaderMetrics {
 }
 
 // NewLiveReader returns a new live reader.
-func NewLiveReader(logger log.Logger, metrics *LiveReaderMetrics, r io.Reader) *LiveReader {
-	// Calling zstd.NewReader with a nil io.Reader and no options cannot return an error.
-	zstdReader, _ := zstd.NewReader(nil)
-
+func NewLiveReader(logger *slog.Logger, metrics *LiveReaderMetrics, r io.Reader) *LiveReader {
 	lr := &LiveReader{
-		logger:     logger,
-		rdr:        r,
-		zstdReader: zstdReader,
-		metrics:    metrics,
+		logger:  logger,
+		rdr:     r,
+		decBuf:  compression.NewSyncDecodeBuffer(),
+		metrics: metrics,
 
 		// Until we understand how they come about, make readers permissive
 		// to records spanning pages.
@@ -73,12 +69,13 @@ func NewLiveReader(logger log.Logger, metrics *LiveReaderMetrics, r io.Reader) *
 // that are still in the process of being written, and returns records as soon
 // as they can be read.
 type LiveReader struct {
-	logger      log.Logger
-	rdr         io.Reader
-	err         error
-	rec         []byte
-	compressBuf []byte
-	zstdReader  *zstd.Decoder
+	logger *slog.Logger
+	rdr    io.Reader
+	err    error
+	rec    []byte
+
+	precomprBuf []byte
+	decBuf      compression.DecodeBuffer
 	hdr         [recordHeaderSize]byte
 	buf         [pageSize]byte
 	readIndex   int   // Index in buf to start at for next read.
@@ -196,18 +193,19 @@ func (r *LiveReader) buildRecord() (bool, error) {
 
 		rt := recTypeFromHeader(r.hdr[0])
 		if rt == recFirst || rt == recFull {
-			r.rec = r.rec[:0]
-			r.compressBuf = r.compressBuf[:0]
+			r.precomprBuf = r.precomprBuf[:0]
 		}
 
-		isSnappyCompressed := r.hdr[0]&snappyMask == snappyMask
-		isZstdCompressed := r.hdr[0]&zstdMask == zstdMask
-
-		if isSnappyCompressed || isZstdCompressed {
-			r.compressBuf = append(r.compressBuf, temp...)
-		} else {
-			r.rec = append(r.rec, temp...)
+		// Segment format has only 2 bits, so it's either of those 3 options.
+		// https://github.com/prometheus/prometheus/blob/main/tsdb/docs/format/wal.md#records-encoding
+		compr := compression.None
+		if r.hdr[0]&snappyMask == snappyMask {
+			compr = compression.Snappy
+		} else if r.hdr[0]&zstdMask == zstdMask {
+			compr = compression.Zstd
 		}
+
+		r.precomprBuf = append(r.precomprBuf, temp...)
 
 		if err := validateRecord(rt, r.index); err != nil {
 			r.index = 0
@@ -215,20 +213,9 @@ func (r *LiveReader) buildRecord() (bool, error) {
 		}
 		if rt == recLast || rt == recFull {
 			r.index = 0
-			if isSnappyCompressed && len(r.compressBuf) > 0 {
-				// The snappy library uses `len` to calculate if we need a new buffer.
-				// In order to allocate as few buffers as possible make the length
-				// equal to the capacity.
-				r.rec = r.rec[:cap(r.rec)]
-				r.rec, err = snappy.Decode(r.rec, r.compressBuf)
-				if err != nil {
-					return false, err
-				}
-			} else if isZstdCompressed && len(r.compressBuf) > 0 {
-				r.rec, err = r.zstdReader.DecodeAll(r.compressBuf, r.rec[:0])
-				if err != nil {
-					return false, err
-				}
+			r.rec, err = compression.Decode(compr, r.precomprBuf, r.decBuf)
+			if err != nil {
+				return false, err
 			}
 			return true, nil
 		}
@@ -311,7 +298,7 @@ func (r *LiveReader) readRecord() ([]byte, int, error) {
 			return nil, 0, fmt.Errorf("record would overflow current page: %d > %d", r.readIndex+recordHeaderSize+length, pageSize)
 		}
 		r.metrics.readerCorruptionErrors.WithLabelValues("record_span_page").Inc()
-		level.Warn(r.logger).Log("msg", "Record spans page boundaries", "start", r.readIndex, "end", recordHeaderSize+length, "pageSize", pageSize)
+		r.logger.Warn("Record spans page boundaries", "start", r.readIndex, "end", recordHeaderSize+length, "pageSize", pageSize)
 	}
 	if recordHeaderSize+length > pageSize {
 		return nil, 0, fmt.Errorf("record length greater than a single page: %d > %d", recordHeaderSize+length, pageSize)

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !stringlabels && !dedupelabels
+//go:build slicelabels
 
 package labels
 
@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"slices"
 	"strings"
+	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
 )
@@ -31,17 +32,17 @@ func (ls Labels) Len() int           { return len(ls) }
 func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
 func (ls Labels) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
 
-// Bytes returns ls as a byte slice.
-// It uses an byte invalid character as a separator and so should not be used for printing.
+// Bytes returns an opaque, not-human-readable, encoding of ls, usable as a map key.
+// Encoding may change over time or between runs of Prometheus.
 func (ls Labels) Bytes(buf []byte) []byte {
 	b := bytes.NewBuffer(buf[:0])
 	b.WriteByte(labelSep)
 	for i, l := range ls {
 		if i > 0 {
-			b.WriteByte(seps[0])
+			b.WriteByte(sep)
 		}
 		b.WriteString(l.Name)
-		b.WriteByte(seps[0])
+		b.WriteByte(sep)
 		b.WriteString(l.Value)
 	}
 	return b.Bytes()
@@ -86,9 +87,9 @@ func (ls Labels) Hash() uint64 {
 		}
 
 		b = append(b, v.Name...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 		b = append(b, v.Value...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 	}
 	return xxhash.Sum64(b)
 }
@@ -106,9 +107,9 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 			i++
 		default:
 			b = append(b, ls[i].Name...)
-			b = append(b, seps[0])
+			b = append(b, sep)
 			b = append(b, ls[i].Value...)
-			b = append(b, seps[0])
+			b = append(b, sep)
 			i++
 			j++
 		}
@@ -130,9 +131,9 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 			continue
 		}
 		b = append(b, ls[i].Name...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 		b = append(b, ls[i].Value...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 	}
 	return xxhash.Sum64(b), b
 }
@@ -151,10 +152,10 @@ func (ls Labels) BytesWithLabels(buf []byte, names ...string) []byte {
 			i++
 		default:
 			if b.Len() > 1 {
-				b.WriteByte(seps[0])
+				b.WriteByte(sep)
 			}
 			b.WriteString(ls[i].Name)
-			b.WriteByte(seps[0])
+			b.WriteByte(sep)
 			b.WriteString(ls[i].Value)
 			i++
 			j++
@@ -177,10 +178,10 @@ func (ls Labels) BytesWithoutLabels(buf []byte, names ...string) []byte {
 			continue
 		}
 		if b.Len() > 1 {
-			b.WriteByte(seps[0])
+			b.WriteByte(sep)
 		}
 		b.WriteString(ls[i].Name)
-		b.WriteByte(seps[0])
+		b.WriteByte(sep)
 		b.WriteString(ls[i].Value)
 	}
 	return b.Bytes()
@@ -249,15 +250,7 @@ func (ls Labels) WithoutEmpty() Labels {
 
 // Equal returns whether the two label sets are equal.
 func Equal(ls, o Labels) bool {
-	if len(ls) != len(o) {
-		return false
-	}
-	for i, l := range ls {
-		if l != o[i] {
-			return false
-		}
-	}
-	return true
+	return slices.Equal(ls, o)
 }
 
 // EmptyLabels returns n empty Labels value, for convenience.
@@ -315,7 +308,8 @@ func Compare(a, b Labels) int {
 	return len(a) - len(b)
 }
 
-// Copy labels from b on top of whatever was in ls previously, reusing memory or expanding if needed.
+// CopyFrom copies labels from b on top of whatever was in ls previously,
+// reusing memory or expanding if needed.
 func (ls *Labels) CopyFrom(b Labels) {
 	(*ls) = append((*ls)[:0], b...)
 }
@@ -342,16 +336,29 @@ func (ls Labels) Validate(f func(l Label) error) error {
 	return nil
 }
 
-// DropMetricName returns Labels with "__name__" removed.
+// DropMetricName returns Labels with the "__name__" removed.
+// Deprecated: Use DropReserved instead.
 func (ls Labels) DropMetricName() Labels {
+	return ls.DropReserved(func(n string) bool { return n == MetricName })
+}
+
+// DropReserved returns Labels without the chosen (via shouldDropFn) reserved (starting with underscore) labels.
+func (ls Labels) DropReserved(shouldDropFn func(name string) bool) Labels {
+	rm := 0
 	for i, l := range ls {
-		if l.Name == MetricName {
+		if l.Name[0] > '_' { // Stop looking if we've gone past special labels.
+			break
+		}
+		if shouldDropFn(l.Name) {
+			i := i - rm // Offsetting after removals.
 			if i == 0 { // Make common case fast with no allocations.
-				return ls[1:]
+				ls = ls[1:]
+			} else {
+				// Avoid modifying original Labels - use [:i:i] so that left slice would not
+				// have any spare capacity and append would have to allocate a new slice for the result.
+				ls = append(ls[:i:i], ls[i+1:]...)
 			}
-			// Avoid modifying original Labels - use [:i:i] so that left slice would not
-			// have any spare capacity and append would have to allocate a new slice for the result.
-			return append(ls[:i:i], ls[i+1:]...)
+			rm++
 		}
 	}
 	return ls
@@ -422,7 +429,7 @@ type ScratchBuilder struct {
 	add Labels
 }
 
-// Symbol-table is no-op, just for api parity with dedupelabels.
+// SymbolTable is no-op, just for api parity with dedupelabels.
 type SymbolTable struct{}
 
 func NewSymbolTable() *SymbolTable { return nil }
@@ -458,8 +465,8 @@ func (b *ScratchBuilder) Add(name, value string) {
 	b.add = append(b.add, Label{Name: name, Value: value})
 }
 
-// Add a name/value pair, using []byte instead of string.
-// The '-tags stringlabels' version of this function is unsafe, hence the name.
+// UnsafeAddBytes adds a name/value pair, using []byte instead of string.
+// The default version of this function is unsafe, hence the name.
 // This version is safe - it copies the strings immediately - but we keep the same name so everything compiles.
 func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
 	b.add = append(b.add, Label{Name: string(name), Value: string(value)})
@@ -475,15 +482,20 @@ func (b *ScratchBuilder) Assign(ls Labels) {
 	b.add = append(b.add[:0], ls...) // Copy on top of our slice, so we don't retain the input slice.
 }
 
-// Return the name/value pairs added so far as a Labels object.
+// Labels returns the name/value pairs added so far as a Labels object.
 // Note: if you want them sorted, call Sort() first.
 func (b *ScratchBuilder) Labels() Labels {
 	// Copy the slice, so the next use of ScratchBuilder doesn't overwrite.
 	return append([]Label{}, b.add...)
 }
 
-// Write the newly-built Labels out to ls.
+// Overwrite the newly-built Labels out to ls.
 // Callers must ensure that there are no other references to ls, or any strings fetched from it.
 func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	*ls = append((*ls)[:0], b.add...)
+}
+
+// SizeOfLabels returns the approximate space required for n copies of a label.
+func SizeOfLabels(name, value string, n uint64) uint64 {
+	return (uint64(len(name)) + uint64(unsafe.Sizeof(name)) + uint64(len(value)) + uint64(unsafe.Sizeof(value))) * n
 }

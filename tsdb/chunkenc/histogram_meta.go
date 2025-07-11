@@ -278,8 +278,15 @@ func (b *bucketIterator) Next() (int, bool) {
 type Insert struct {
 	pos int
 	num int
+
+	// Optional: bucketIdx is the index of the bucket that is inserted.
+	// Can be used to adjust spans.
+	bucketIdx int
 }
 
+// Deprecated: expandSpansForward, use expandIntSpansAndBuckets or
+// expandFloatSpansAndBuckets instead.
+// expandSpansForward is left here for reference.
 // expandSpansForward returns the inserts to expand the bucket spans 'a' so that
 // they match the spans in 'b'. 'b' must cover the same or more buckets than
 // 'a', otherwise the function will return false.
@@ -551,38 +558,78 @@ func counterResetHint(crh CounterResetHeader, numRead uint16) histogram.CounterR
 		// In a counter histogram chunk, there will not be any counter
 		// resets after the first histogram.
 		return histogram.NotCounterReset
-	case crh == CounterReset:
-		// If the chunk was started because of a counter reset, we can
-		// safely return that hint. This histogram always has to be
-		// treated as a counter reset.
-		return histogram.CounterReset
 	default:
 		// Sadly, we have to return "unknown" as the hint for all other
-		// cases, even if we know that the chunk was started without a
+		// cases, even if we know that the chunk was started with or without a
 		// counter reset. But we cannot be sure that the previous chunk
-		// still exists in the TSDB, so we conservatively return
-		// "unknown". On the bright side, this case should be relatively
-		// rare.
+		// still exists in the TSDB, or if the previous chunk was added later
+		// by out of order or backfill, so we conservatively return "unknown".
 		//
-		// TODO(beorn7): Nevertheless, if the current chunk is in the
-		// middle of a block (not the first chunk in the block for this
-		// series), it's probably safe to assume that the previous chunk
-		// will exist in the TSDB for as long as the current chunk
-		// exist, and we could safely return
-		// "histogram.NotCounterReset". This needs some more work and
-		// might not be worth the effort and/or risk. To be vetted...
+		// TODO: If we can detect whether the previous and current chunk are
+		// actually consecutive then we could trust its hint:
+		// https://github.com/prometheus/prometheus/issues/15346.
 		return histogram.UnknownCounterReset
 	}
 }
 
-// Handle pathological case of empty span when advancing span idx.
-// Call it with idx==-1 to find the first non empty span.
-func nextNonEmptySpanSliceIdx(idx int, bucketIdx int32, spans []histogram.Span) (newIdx int, newBucketIdx int32) {
-	for idx++; idx < len(spans); idx++ {
-		if spans[idx].Length > 0 {
-			return idx, bucketIdx + spans[idx].Offset + 1
-		}
-		bucketIdx += spans[idx].Offset
+// adjustForInserts adjusts the spans for the given inserts.
+func adjustForInserts(spans []histogram.Span, inserts []Insert) (mergedSpans []histogram.Span) {
+	if len(inserts) == 0 {
+		return spans
 	}
-	return idx, 0
+
+	it := newBucketIterator(spans)
+
+	var (
+		lastBucket int
+		i          int
+		insertIdx  = inserts[i].bucketIdx
+		insertNum  = inserts[i].num
+	)
+
+	addBucket := func(b int) {
+		offset := b - lastBucket - 1
+		if offset == 0 && len(mergedSpans) > 0 {
+			mergedSpans[len(mergedSpans)-1].Length++
+		} else {
+			if len(mergedSpans) == 0 {
+				offset++
+			}
+			mergedSpans = append(mergedSpans, histogram.Span{
+				Offset: int32(offset),
+				Length: 1,
+			})
+		}
+
+		lastBucket = b
+	}
+	consumeInsert := func() {
+		// Consume the insert.
+		insertNum--
+		if insertNum == 0 {
+			i++
+			if i < len(inserts) {
+				insertIdx = inserts[i].bucketIdx
+				insertNum = inserts[i].num
+			}
+		} else {
+			insertIdx++
+		}
+	}
+
+	bucket, ok := it.Next()
+	for ok {
+		if i < len(inserts) && insertIdx < bucket {
+			addBucket(insertIdx)
+			consumeInsert()
+		} else {
+			addBucket(bucket)
+			bucket, ok = it.Next()
+		}
+	}
+	for i < len(inserts) {
+		addBucket(inserts[i].bucketIdx)
+		consumeInsert()
+	}
+	return
 }

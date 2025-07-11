@@ -1,0 +1,228 @@
+# Test for different duration expression formats in range selectors.
+# This tests the parser's ability to handle various duration expression.
+
+# Set up a basic counter that increases steadily.
+load 5m
+	http_requests{path="/foo"}	1 2 3 0 1 0 0 1 2 0
+	http_requests{path="/bar"}	1 2 3 4 5 1 2 3 4 5
+	http_requests{path="/biz"}	0 0 0 0 0 1 1 1 1 1
+
+# Test basic duration with unit: [30m]
+eval instant at 50m changes(http_requests[30m])
+	{path="/foo"} 3
+	{path="/bar"} 4
+	{path="/biz"} 0
+
+# Test addition in duration: [26m+4m]
+eval instant at 50m changes(http_requests[26m+4m])
+	{path="/foo"} 3
+	{path="/bar"} 4
+	{path="/biz"} 0
+
+# Test addition with 0 in duration: [30m+0s]
+eval instant at 50m changes(http_requests[30m+0s])
+	{path="/foo"} 3
+	{path="/bar"} 4
+	{path="/biz"} 0
+
+# Test raw seconds: [1800]
+eval instant at 50m changes(http_requests[1800])
+	{path="/foo"} 3
+	{path="/bar"} 4
+	{path="/biz"} 0
+
+# Test seconds with multiplication: [60*30]
+eval instant at 50m changes(http_requests[60*30])
+	{path="/foo"} 3
+	{path="/bar"} 4
+	{path="/biz"} 0
+
+# Test minutes with multiplication: [2m*15]
+eval instant at 50m changes(http_requests[2m*15])
+	{path="/foo"} 3
+	{path="/bar"} 4
+	{path="/biz"} 0
+
+# Test complex expression with parentheses: [2m*(10+5)]
+eval instant at 50m changes(http_requests[2m*(10+5)])
+	{path="/foo"} 3
+	{path="/bar"} 4
+	{path="/biz"} 0
+
+# Test mixed units: [29m+60s]
+eval instant at 50m changes(http_requests[29m+60s])
+	{path="/foo"} 3
+	{path="/bar"} 4
+	{path="/biz"} 0
+
+# Test nested parentheses: [24m+((1.5*2m)+2m)]
+eval instant at 50m changes(http_requests[24m+((1.5*2m)+2m)])
+	{path="/foo"} 3
+	{path="/bar"} 4
+	{path="/biz"} 0
+
+# Test start with -: [-5m+35m]
+eval instant at 50m changes(http_requests[-5m+35m])
+	{path="/foo"} 3
+	{path="/bar"} 4
+	{path="/biz"} 0
+
+# Test division: [1h/2]
+eval instant at 50m changes(http_requests[1h/2])
+	{path="/foo"} 3
+	{path="/bar"} 4
+	{path="/biz"} 0
+
+# Test modulo: [1h30m % 1h]
+eval instant at 50m changes(http_requests[1h30m % 1h])
+	{path="/foo"} 3
+	{path="/bar"} 4
+	{path="/biz"} 0
+
+# Test modulo and calculation: [30m1s-30m1s % 1m]
+eval instant at 50m changes(http_requests[30m1s-30m1s % 1m])
+	{path="/foo"} 3
+	{path="/bar"} 4
+	{path="/biz"} 0
+
+# Test combination of operations: [(9m30s+30s)*3]
+eval instant at 50m changes(http_requests[(9m30s+30s)*3])
+	{path="/foo"} 3
+	{path="/bar"} 4
+	{path="/biz"} 0
+
+clear
+
+load 10s
+  metric1_total 0+1x1000
+
+# In subquery expression.
+eval instant at 1000s sum_over_time(metric1_total[29s+1s:5s+5s])
+  {} 297
+
+# Test complex expressions in subquery ranges.
+eval instant at 1000s sum_over_time(metric1_total[29s+1s:((((8 - 2) / 3) * 7s) % 4) + 8000ms])
+  {} 297
+
+# Test complex expressions in offset ranges.
+eval instant at 1200s sum_over_time(metric1_total[29s+1s:20*500ms] offset (20*(((((8 - 2) / 3) * 7s) % 4) + 8000ms)))
+  {} 297
+
+# Test complex expressions in offset ranges with negative offset.
+eval instant at 800s sum_over_time(metric1_total[29s+1s:20*500ms] offset -(20*(((((8 - 2) / 3) * 7s) % 4) + 8000ms)))
+  {} 297
+
+# Test offset precedence with parentheses: offset (100 + 2)
+eval instant at 1000s metric1_total offset (100 + 2)
+  {__name__="metric1_total"} 89
+
+# Test offset precedence without parentheses: offset 100 + 2
+eval instant at 1000s metric1_total offset 100 + 2
+  {} 92
+
+eval instant at 1002s (metric1_total offset 2) ^ 2
+  {} 10000
+
+eval instant at 1002s metric1_total offset 2 ^ 2
+  {} 10000
+
+eval instant at 998s metric1_total offset -2 ^ 2
+  {} 10000
+
+eval instant at 1000s metric1_total offset (2 ^ 2)
+  metric1_total{} 99
+
+eval instant at 1000s metric1_total offset (2 * 2)
+  metric1_total{} 99
+
+eval instant at 1000s metric1_total offset -2 * 2
+  {} 200
+
+eval instant at 1000s metric1_total offset (-2 * 2)
+  metric1_total{} 100
+
+eval instant at 1000s metric1_total offset -4
+  metric1_total{} 100
+
+eval instant at 1000s metric1_total offset (-2 ^ 2)
+  metric1_total{} 100
+
+clear
+
+load 1s
+  metric1_total 0+1x100
+
+eval range from 50s to 60s step 10s count_over_time(metric1_total[step()])
+	{} 10 10
+	
+eval range from 50s to 60s step 10s count_over_time(metric1_total[step()+1ms])
+	{} 11 11
+
+eval range from 50s to 60s step 10s count_over_time(metric1_total[(step())+1])
+	{} 11 11
+
+eval range from 50s to 60s step 10s count_over_time(metric1_total[1+(STep()-5)*2])
+	{} 11 11
+
+eval range from 50s to 60s step 5s count_over_time(metric1_total[step()+1])
+	{} 6 6 6
+
+eval range from 50s to 60s step 5s count_over_time(metric1_total[min(step()+1,1h)])
+	{} 6 6 6
+	
+eval range from 50s to 60s step 5s count_over_time(metric1_total[max(min(step()+1,1h),1ms)])
+	{} 6 6 6
+
+eval range from 50s to 60s step 5s count_over_time(metric1_total[((max(min((step()+1),((1h))),1ms)))])
+	{} 6 6 6
+	
+eval range from 50s to 60s step 5s metric1_total offset STEP()
+	metric1_total{} 45 50 55
+
+eval range from 50s to 60s step 5s metric1_total offset step()
+	metric1_total{} 45 50 55
+
+eval range from 50s to 60s step 5s metric1_total offset step()*0
+	{} 0 0 0
+
+eval range from 50s to 60s step 5s metric1_total offset (-step()*2)
+	metric1_total{} 60 65 70
+
+eval range from 50s to 60s step 5s metric1_total offset -step()*2
+	{} 110 120 130
+
+eval range from 50s to 60s step 5s metric1_total offset step()^0
+	{} 1 1 1
+
+eval range from 50s to 60s step 5s metric1_total offset (STEP()/10)
+	metric1_total{} 49 54 59
+
+eval range from 50s to 60s step 5s metric1_total offset (step())
+	metric1_total{} 45 50 55
+
+eval range from 50s to 60s step 5s metric1_total offset min(step(), 1s)
+	metric1_total{} 49 54 59
+
+eval range from 50s to 60s step 5s metric1_total offset min(step(), 1s)+8000
+	{} 8049 8054 8059
+
+eval range from 50s to 60s step 5s metric1_total offset -min(step(), 1s)+8000
+	{} 8051 8056 8061
+
+eval range from 50s to 60s step 5s metric1_total offset -(min(step(), 1s))+8000
+	{} 8051 8056 8061
+
+eval range from 50s to 60s step 5s metric1_total offset -min(step(), 1s)^0
+	{} 1 1 1
+
+eval range from 50s to 60s step 5s metric1_total offset +min(step(), 1s)^0
+	{} 1 1 1
+
+eval range from 50s to 60s step 5s metric1_total offset min(step(), 1s)^0
+	{} 1 1 1
+
+eval range from 50s to 60s step 5s metric1_total offset max(3s,min(step(), 1s))+8000
+	{} 8047 8052 8057
+
+eval range from 50s to 60s step 5s metric1_total offset -(min(step(), 2s)-5)+8000
+	{} 8047 8052 8057

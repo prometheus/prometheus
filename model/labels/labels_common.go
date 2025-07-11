@@ -24,17 +24,20 @@ import (
 )
 
 const (
-	MetricName   = "__name__"
-	AlertName    = "alertname"
-	BucketLabel  = "le"
-	InstanceName = "instance"
+	// MetricName is a special label name that represent a metric name.
+	// Deprecated: Use schema.Metadata structure and its methods.
+	MetricName = "__name__"
 
-	labelSep = '\xfe'
+	AlertName   = "alertname"
+	BucketLabel = "le"
+
+	labelSep = '\xfe' // Used at beginning of `Bytes` return.
+	sep      = '\xff' // Used between labels in `Bytes` and `Hash`.
 )
 
-var seps = []byte{'\xff'}
+var seps = []byte{sep} // Used with Hash, which has no WriteByte method.
 
-// Label is a key/value pair of strings.
+// Label is a key/value a pair of strings.
 type Label struct {
 	Name, Value string
 }
@@ -50,7 +53,11 @@ func (ls Labels) String() string {
 			b.WriteByte(',')
 			b.WriteByte(' ')
 		}
-		b.WriteString(l.Name)
+		if !model.LabelName(l.Name).IsValidLegacy() {
+			b.Write(strconv.AppendQuote(b.AvailableBuffer(), l.Name))
+		} else {
+			b.WriteString(l.Name)
+		}
 		b.WriteByte('=')
 		b.Write(strconv.AppendQuote(b.AvailableBuffer(), l.Value))
 		i++
@@ -94,12 +101,23 @@ func (ls *Labels) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 // IsValid checks if the metric name or label names are valid.
-func (ls Labels) IsValid() bool {
+func (ls Labels) IsValid(validationScheme model.ValidationScheme) bool {
 	err := ls.Validate(func(l Label) error {
-		if l.Name == model.MetricNameLabel && !model.IsValidMetricName(model.LabelValue(l.Value)) {
-			return strconv.ErrSyntax
+		if l.Name == model.MetricNameLabel {
+			// If the default validation scheme has been overridden with legacy mode,
+			// we need to call the special legacy validation checker.
+			if validationScheme == model.LegacyValidation && !model.IsValidLegacyMetricName(string(model.LabelValue(l.Value))) {
+				return strconv.ErrSyntax
+			}
+			if !model.IsValidMetricName(model.LabelValue(l.Value)) {
+				return strconv.ErrSyntax
+			}
 		}
-		if !model.LabelName(l.Name).IsValid() || !model.LabelValue(l.Value).IsValid() {
+		if validationScheme == model.LegacyValidation {
+			if !model.LabelName(l.Name).IsValidLegacy() || !model.LabelValue(l.Value).IsValid() {
+				return strconv.ErrSyntax
+			}
+		} else if !model.LabelName(l.Name).IsValid() || !model.LabelValue(l.Value).IsValid() {
 			return strconv.ErrSyntax
 		}
 		return nil
@@ -151,10 +169,8 @@ func (b *Builder) Del(ns ...string) *Builder {
 // Keep removes all labels from the base except those with the given names.
 func (b *Builder) Keep(ns ...string) *Builder {
 	b.base.Range(func(l Label) {
-		for _, n := range ns {
-			if l.Name == n {
-				return
-			}
+		if slices.Contains(ns, l.Name) {
+			return
 		}
 		b.del = append(b.del, l.Name)
 	})
@@ -218,5 +234,5 @@ func contains(s []Label, n string) bool {
 }
 
 func yoloString(b []byte) string {
-	return *((*string)(unsafe.Pointer(&b)))
+	return unsafe.String(unsafe.SliceData(b), len(b))
 }

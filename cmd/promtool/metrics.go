@@ -23,15 +23,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/golang/snappy"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/fmtutil"
 )
 
-// Push metrics to a prometheus remote write (for testing purpose only).
+// PushMetrics to a prometheus remote write (for testing purpose only).
 func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, timeout time.Duration, labels map[string]string, files ...string) int {
 	addressURL, err := url.Parse(url.String())
 	if err != nil {
@@ -101,6 +101,7 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 	return successExitCode
 }
 
+// TODO(bwplotka): Add PRW 2.0 support.
 func parseAndPushMetrics(client *remote.Client, data []byte, labels map[string]string) bool {
 	metricsData, err := fmtutil.MetricTextToWriteRequest(bytes.NewReader(data), labels)
 	if err != nil {
@@ -115,8 +116,13 @@ func parseAndPushMetrics(client *remote.Client, data []byte, labels map[string]s
 	}
 
 	// Encode the request body into snappy encoding.
-	compressed := snappy.Encode(nil, raw)
-	err = client.Store(context.Background(), compressed, 0)
+	compressed, err := compression.Encode(compression.Snappy, raw, nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "  FAILED:", err)
+		return false
+	}
+
+	_, err = client.Store(context.Background(), compressed, 0)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return false

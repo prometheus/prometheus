@@ -3,8 +3,6 @@ title: Template reference
 sort_rank: 5
 ---
 
-# Template reference
-
 Prometheus supports templating in the annotations and labels of alerts,
 as well as in served console pages. Templates have the ability to run
 queries against the local database, iterate over data, use conditionals,
@@ -17,8 +15,8 @@ The primary data structure for dealing with time series data is the sample, defi
 
 ```go
 type sample struct {
-        Labels map[string]string
-        Value  interface{}
+  Labels map[string]string
+  Value  interface{}
 }
 ```
 
@@ -68,7 +66,7 @@ versions.
 
 | Name          | Arguments     | Returns |    Notes    |
 | ------------- | ------------- | ------- | ----------- |
-| title         | string        | string  | [strings.Title](https://golang.org/pkg/strings/#Title), capitalises first character of each word.|
+| title         | string        | string  | [cases.Title](https://pkg.go.dev/golang.org/x/text/cases#Title), capitalises first character of each word.|
 | toUpper       | string        | string  | [strings.ToUpper](https://golang.org/pkg/strings/#ToUpper), converts all characters to upper case.|
 | toLower       | string        | string  | [strings.ToLower](https://golang.org/pkg/strings/#ToLower), converts all characters to lower case.|
 | stripPort     | string        | string  | [net.SplitHostPort](https://pkg.go.dev/net#SplitHostPort), splits string into host and port, then returns only host.|
