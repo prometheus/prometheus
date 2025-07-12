@@ -26,6 +26,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -619,70 +620,58 @@ func TestManagerTargetsUpdates(t *testing.T) {
 
 func TestManagerDuplicateAfterRelabellingWarning(t *testing.T) {
 	var buf bytes.Buffer
-	writer := &buf
-	logger := promslog.New(&promslog.Config{Writer: writer})
-
+	logger := promslog.New(&promslog.Config{Writer: &buf})
 	opts := Options{WarnDuplicateTargets: true}
-	testRegistry := prometheus.NewRegistry()
 	s := teststorage.New(t)
 	defer s.Close()
-	m, err := NewManager(&opts, logger, nil, s, testRegistry)
+
+	m, err := NewManager(&opts, logger, nil, s, prometheus.NewRegistry())
 	require.NoError(t, err)
 
-	configStr := `
+	const configStr = `
 scrape_configs:
   - job_name: "jobOne"
     static_configs:
-      - targets:
-          - localhost:9000
-        labels:
-          foo: bar
+      - targets: [ "localhost:9000" ]
+        labels: { foo: "bar" }
     relabel_configs:
       - action: labeldrop
         regex: "job|foo"
 
   - job_name: "jobTwo"
     static_configs:
-      - targets:
-          - localhost:9000
-        labels:
-          foo: baz
+      - targets: [ "localhost:9000" ]
+        labels: { foo: "baz" }
     relabel_configs:
       - action: labeldrop
         regex: "job|foo"
 `
 	cfg, err := config.Load(configStr, promslog.NewNopLogger())
 	require.NoError(t, err)
-
-	m.ApplyConfig(cfg)
 	require.Len(t, cfg.ScrapeConfigs, 2)
 
-	scrapeCfgOne := cfg.ScrapeConfigs[0]
-	require.Len(t, scrapeCfgOne.ServiceDiscoveryConfigs, 1)
-	staticDiscoveryOne, ok := scrapeCfgOne.ServiceDiscoveryConfigs[0].(discovery.StaticConfig)
-	require.True(t, ok)
-	require.Len(t, staticDiscoveryOne, 1)
+	m.ApplyConfig(cfg)
 
-	scrapeCfgTwo := cfg.ScrapeConfigs[1]
-	require.Len(t, scrapeCfgTwo.ServiceDiscoveryConfigs, 1)
-	staticDiscoveryTwo, ok := scrapeCfgTwo.ServiceDiscoveryConfigs[0].(discovery.StaticConfig)
-	require.True(t, ok)
-	require.Len(t, staticDiscoveryTwo, 1)
+	getStatic := func(sc *config.ScrapeConfig) []*targetgroup.Group {
+		sd := sc.ServiceDiscoveryConfigs[0].(discovery.StaticConfig)
+		return sd
+	}
 
 	tsets := make(chan map[string][]*targetgroup.Group)
 	go func() {
-		err = m.Run(tsets)
-		require.NoError(t, err)
+		require.NoError(t, m.Run(tsets))
 	}()
 	defer m.Stop()
 
-	tsets <- map[string][]*targetgroup.Group{"jobOne": staticDiscoveryOne, "jobTwo": staticDiscoveryTwo}
+	tsets <- map[string][]*targetgroup.Group{
+		"jobOne": getStatic(cfg.ScrapeConfigs[0]),
+		"jobTwo": getStatic(cfg.ScrapeConfigs[1]),
+	}
 
 	m.reload()
 
 	require.Eventually(t, func() bool {
-		require.Contains(t, buf.String(), "Found active targets with same labels after relabelling")
-		return true
+		return strings.Contains(buf.String(), "Found active targets with same labels after relabelling")
 	}, 500*time.Millisecond, 50*time.Millisecond)
 }
 
