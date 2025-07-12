@@ -1251,7 +1251,6 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 	}
 
 	vectors := make([]Vector, len(exprs)) // Input vectors for the function.
-	args := make([]Vector, len(exprs))    // Argument to function.
 	// Create an output vector that is as big as the input matrix with
 	// the most time series.
 	biggestLen := 1
@@ -1305,7 +1304,6 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 				sh = seriesHelpers[i]
 			}
 			vectors[i], bh = ev.gatherVector(ts, matrixes[i], vectors[i], bh, sh)
-			args[i] = vectors[i]
 			if prepSeries != nil {
 				bufHelpers[i] = bh
 			}
@@ -1313,7 +1311,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 
 		// Make the function call.
 		enh.Ts = ts
-		result, ws := funcCall(args, nil, bufHelpers, enh)
+		result, ws := funcCall(vectors, nil, bufHelpers, enh)
 		enh.Out = result[:0] // Reuse result vector.
 		warnings.Merge(ws)
 
