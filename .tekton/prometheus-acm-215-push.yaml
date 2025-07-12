@@ -370,7 +370,7 @@ spec:
         - name: name
           value: ecosystem-cert-preflight-checks
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-ecosystem-cert-preflight-checks:0.2@sha256:ba7ed837f467904e7b38513174a707a9eec4009d009d6f272ff71d1250bc8854
+          value: quay.io/konflux-ci/tekton-catalog/task-ecosystem-cert-preflight-checks:0.2@sha256:abbe195626eec925288df6425679559025d1be4af5ae70ca6dbbcb49ad3bf08b
         - name: kind
           value: task
         resolver: bundles
@@ -536,7 +536,7 @@ spec:
         - name: name
           value: sast-unicode-check-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-sast-unicode-check-oci-ta:0.2@sha256:3ffa3ac35ad988767ae2202d1f2483ce3e8152b29b89e77620c26f32c1ad2e7e
+          value: quay.io/konflux-ci/tekton-catalog/task-sast-unicode-check-oci-ta:0.3@sha256:a2bde66f6b4164620298c7d709b8f08515409404000fa1dc2260d2508b135651
         - name: kind
           value: task
         resolver: bundles
