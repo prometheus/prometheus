@@ -56,10 +56,10 @@ import (
 // metrics, the timestamp are not needed.
 //
 // Scalar results should be returned as the value of a sample in a Vector.
-type FunctionCall func(vectorVals []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations)
+type FunctionCall func(vectorVals []Vector, matrixVals Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations)
 
 // === time() float64 ===
-func funcTime(_ []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcTime(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return Vector{Sample{
 		F: float64(enh.Ts) / 1000,
 	}}, nil
@@ -69,11 +69,11 @@ func funcTime(_ []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper)
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // extrapolates if the first/last sample is close to the boundary, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extrapolatedRate(vals []Matrix, args parser.Expressions, enh *EvalNodeHelper, isCounter, isRate bool) (Vector, annotations.Annotations) {
+func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isCounter, isRate bool) (Vector, annotations.Annotations) {
 	ms := args[0].(*parser.MatrixSelector)
 	vs := ms.VectorSelector.(*parser.VectorSelector)
 	var (
-		samples            = vals[0][0]
+		samples            = vals[0]
 		rangeStart         = enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
 		rangeEnd           = enh.Ts - durationMilliseconds(vs.Offset)
 		resultFloat        float64
@@ -288,33 +288,33 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 }
 
 // === delta(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcDelta(_ []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcDelta(_ []Vector, matrixVals Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return extrapolatedRate(matrixVals, args, enh, false, false)
 }
 
 // === rate(node parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcRate(_ []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcRate(_ []Vector, matrixVals Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return extrapolatedRate(matrixVals, args, enh, true, true)
 }
 
 // === increase(node parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcIncrease(_ []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcIncrease(_ []Vector, matrixVals Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return extrapolatedRate(matrixVals, args, enh, true, false)
 }
 
 // === irate(node parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcIrate(_ []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcIrate(_ []Vector, matrixVals Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return instantValue(matrixVals, args, enh.Out, true)
 }
 
 // === idelta(node model.ValMatrix) (Vector, Annotations) ===
-func funcIdelta(_ []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcIdelta(_ []Vector, matrixVals Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return instantValue(matrixVals, args, enh.Out, false)
 }
 
-func instantValue(vals []Matrix, args parser.Expressions, out Vector, isRate bool) (Vector, annotations.Annotations) {
+func instantValue(vals Matrix, args parser.Expressions, out Vector, isRate bool) (Vector, annotations.Annotations) {
 	var (
-		samples    = vals[0][0]
+		samples    = vals[0]
 		metricName = samples.Metric.Get(labels.MetricName)
 		ss         = make([]Sample, 0, 2)
 		annos      annotations.Annotations
@@ -441,8 +441,8 @@ func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
 // affects how trends in historical data will affect the current data. A higher
 // trend factor increases the influence. of trends. Algorithm taken from
 // https://en.wikipedia.org/wiki/Exponential_smoothing .
-func funcDoubleExponentialSmoothing(vectorVals []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	samples := matrixVals[0][0]
+func funcDoubleExponentialSmoothing(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	samples := matrixVal[0]
 	metricName := samples.Metric.Get(labels.MetricName)
 	// The smoothing factor argument.
 	sf := vectorVals[0][0].F
@@ -504,7 +504,7 @@ func filterFloats(v Vector) Vector {
 }
 
 // === sort(node parser.ValueTypeVector) (Vector, Annotations) ===
-func funcSort(vectorVals []Vector, _ []Matrix, _ parser.Expressions, _ *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcSort(vectorVals []Vector, _ Matrix, _ parser.Expressions, _ *EvalNodeHelper) (Vector, annotations.Annotations) {
 	// NaN should sort to the bottom, so take descending sort with NaN first and
 	// reverse it.
 	byValueSorter := vectorByReverseValueHeap(filterFloats(vectorVals[0]))
@@ -513,7 +513,7 @@ func funcSort(vectorVals []Vector, _ []Matrix, _ parser.Expressions, _ *EvalNode
 }
 
 // === sortDesc(node parser.ValueTypeVector) (Vector, Annotations) ===
-func funcSortDesc(vectorVals []Vector, _ []Matrix, _ parser.Expressions, _ *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcSortDesc(vectorVals []Vector, _ Matrix, _ parser.Expressions, _ *EvalNodeHelper) (Vector, annotations.Annotations) {
 	// NaN should sort to the bottom, so take ascending sort with NaN first and
 	// reverse it.
 	byValueSorter := vectorByValueHeap(filterFloats(vectorVals[0]))
@@ -522,7 +522,7 @@ func funcSortDesc(vectorVals []Vector, _ []Matrix, _ parser.Expressions, _ *Eval
 }
 
 // === sort_by_label(vector parser.ValueTypeVector, label parser.ValueTypeString...) (Vector, Annotations) ===
-func funcSortByLabel(vectorVals []Vector, _ []Matrix, args parser.Expressions, _ *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcSortByLabel(vectorVals []Vector, _ Matrix, args parser.Expressions, _ *EvalNodeHelper) (Vector, annotations.Annotations) {
 	lbls := stringSliceFromArgs(args[1:])
 	slices.SortFunc(vectorVals[0], func(a, b Sample) int {
 		for _, label := range lbls {
@@ -548,7 +548,7 @@ func funcSortByLabel(vectorVals []Vector, _ []Matrix, args parser.Expressions, _
 }
 
 // === sort_by_label_desc(vector parser.ValueTypeVector, label parser.ValueTypeString...) (Vector, Annotations) ===
-func funcSortByLabelDesc(vectorVals []Vector, _ []Matrix, args parser.Expressions, _ *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcSortByLabelDesc(vectorVals []Vector, _ Matrix, args parser.Expressions, _ *EvalNodeHelper) (Vector, annotations.Annotations) {
 	lbls := stringSliceFromArgs(args[1:])
 	slices.SortFunc(vectorVals[0], func(a, b Sample) int {
 		for _, label := range lbls {
@@ -595,7 +595,7 @@ func clamp(vec Vector, minVal, maxVal float64, enh *EvalNodeHelper) (Vector, ann
 }
 
 // === clamp(Vector parser.ValueTypeVector, min, max Scalar) (Vector, Annotations) ===
-func funcClamp(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcClamp(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vectorVals[0]
 	minVal := vectorVals[1][0].F
 	maxVal := vectorVals[2][0].F
@@ -603,21 +603,21 @@ func funcClamp(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalN
 }
 
 // === clamp_max(Vector parser.ValueTypeVector, max Scalar) (Vector, Annotations) ===
-func funcClampMax(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcClampMax(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vectorVals[0]
 	maxVal := vectorVals[1][0].F
 	return clamp(vec, math.Inf(-1), maxVal, enh)
 }
 
 // === clamp_min(Vector parser.ValueTypeVector, min Scalar) (Vector, Annotations) ===
-func funcClampMin(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcClampMin(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vectorVals[0]
 	minVal := vectorVals[1][0].F
 	return clamp(vec, minVal, math.Inf(+1), enh)
 }
 
 // === round(Vector parser.ValueTypeVector, toNearest=1 Scalar) (Vector, Annotations) ===
-func funcRound(vectorVals []Vector, _ []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcRound(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	// round returns a number rounded to toNearest.
 	// Ties are solved by rounding up.
 	toNearest := float64(1)
@@ -632,7 +632,7 @@ func funcRound(vectorVals []Vector, _ []Matrix, args parser.Expressions, enh *Ev
 }
 
 // === Scalar(node parser.ValueTypeVector) Scalar ===
-func funcScalar(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcScalar(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	var (
 		v     = vectorVals[0]
 		value float64
@@ -656,22 +656,22 @@ func funcScalar(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *Eval
 	return append(enh.Out, Sample{F: value}), nil
 }
 
-func aggrOverTime(matrixVals []Matrix, enh *EvalNodeHelper, aggrFn func(Series) float64) Vector {
-	el := matrixVals[0][0]
+func aggrOverTime(matrixVal Matrix, enh *EvalNodeHelper, aggrFn func(Series) float64) Vector {
+	el := matrixVal[0]
 
 	return append(enh.Out, Sample{F: aggrFn(el)})
 }
 
-func aggrHistOverTime(matrixVals []Matrix, enh *EvalNodeHelper, aggrFn func(Series) (*histogram.FloatHistogram, error)) (Vector, error) {
-	el := matrixVals[0][0]
+func aggrHistOverTime(matrixVal Matrix, enh *EvalNodeHelper, aggrFn func(Series) (*histogram.FloatHistogram, error)) (Vector, error) {
+	el := matrixVal[0]
 	res, err := aggrFn(el)
 
 	return append(enh.Out, Sample{H: res}), err
 }
 
 // === avg_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations)  ===
-func funcAvgOverTime(_ []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	firstSeries := matrixVals[0][0]
+func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	firstSeries := matrixVal[0]
 	if len(firstSeries.Floats) > 0 && len(firstSeries.Histograms) > 0 {
 		metricName := firstSeries.Metric.Get(labels.MetricName)
 		return enh.Out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
@@ -700,7 +700,7 @@ func funcAvgOverTime(_ []Vector, matrixVals []Matrix, args parser.Expressions, e
 	// the current implementation is accurate enough for practical purposes.
 	if len(firstSeries.Floats) == 0 {
 		// The passed values only contain histograms.
-		vec, err := aggrHistOverTime(matrixVals, enh, func(s Series) (*histogram.FloatHistogram, error) {
+		vec, err := aggrHistOverTime(matrixVal, enh, func(s Series) (*histogram.FloatHistogram, error) {
 			mean := s.Histograms[0].H.Copy()
 			for i, h := range s.Histograms[1:] {
 				count := float64(i + 2)
@@ -727,7 +727,7 @@ func funcAvgOverTime(_ []Vector, matrixVals []Matrix, args parser.Expressions, e
 		}
 		return vec, nil
 	}
-	return aggrOverTime(matrixVals, enh, func(s Series) float64 {
+	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
 		var (
 			// Pre-set the 1st sample to start the loop with the 2nd.
 			sum, count      = s.Floats[0].F, 1.
@@ -761,15 +761,15 @@ func funcAvgOverTime(_ []Vector, matrixVals []Matrix, args parser.Expressions, e
 }
 
 // === count_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
-func funcCountOverTime(_ []Vector, matrixVals []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcCountOverTime(_ []Vector, matrixVals Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return aggrOverTime(matrixVals, enh, func(s Series) float64 {
 		return float64(len(s.Floats) + len(s.Histograms))
 	}), nil
 }
 
 // === last_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
-func funcLastOverTime(_ []Vector, matrixVals []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	el := matrixVals[0][0]
+func funcLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	el := matrixVal[0]
 
 	var f FPoint
 	if len(el.Floats) > 0 {
@@ -794,8 +794,8 @@ func funcLastOverTime(_ []Vector, matrixVals []Matrix, _ parser.Expressions, enh
 }
 
 // === mad_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcMadOverTime(_ []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	samples := matrixVals[0][0]
+func funcMadOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	samples := matrixVal[0]
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
 		return enh.Out, nil
@@ -804,7 +804,7 @@ func funcMadOverTime(_ []Vector, matrixVals []Matrix, args parser.Expressions, e
 		metricName := samples.Metric.Get(labels.MetricName)
 		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 	}
-	return aggrOverTime(matrixVals, enh, func(s Series) float64 {
+	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
 		values := make(vectorByValueHeap, 0, len(s.Floats))
 		for _, f := range s.Floats {
 			values = append(values, Sample{F: f.F})
@@ -819,8 +819,8 @@ func funcMadOverTime(_ []Vector, matrixVals []Matrix, args parser.Expressions, e
 }
 
 // === ts_of_last_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
-func funcTsOfLastOverTime(_ []Vector, matrixVals []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	el := matrixVals[0][0]
+func funcTsOfLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	el := matrixVal[0]
 
 	var tf int64
 	if len(el.Floats) > 0 {
@@ -839,22 +839,22 @@ func funcTsOfLastOverTime(_ []Vector, matrixVals []Matrix, _ parser.Expressions,
 }
 
 // === ts_of_max_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcTsOfMaxOverTime(_ []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return compareOverTime(matrixVals, args, enh, func(cur, maxVal float64) bool {
+func funcTsOfMaxOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return compareOverTime(matrixVal, args, enh, func(cur, maxVal float64) bool {
 		return (cur >= maxVal) || math.IsNaN(maxVal)
 	}, true)
 }
 
 // === ts_of_min_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcTsOfMinOverTime(_ []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcTsOfMinOverTime(_ []Vector, matrixVals Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return compareOverTime(matrixVals, args, enh, func(cur, maxVal float64) bool {
 		return (cur <= maxVal) || math.IsNaN(maxVal)
 	}, true)
 }
 
 // compareOverTime is a helper used by funcMaxOverTime and funcMinOverTime.
-func compareOverTime(matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper, compareFn func(float64, float64) bool, returnTimestamp bool) (Vector, annotations.Annotations) {
-	samples := matrixVals[0][0]
+func compareOverTime(matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper, compareFn func(float64, float64) bool, returnTimestamp bool) (Vector, annotations.Annotations) {
+	samples := matrixVal[0]
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
 		return enh.Out, nil
@@ -863,7 +863,7 @@ func compareOverTime(matrixVals []Matrix, args parser.Expressions, enh *EvalNode
 		metricName := samples.Metric.Get(labels.MetricName)
 		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 	}
-	return aggrOverTime(matrixVals, enh, func(s Series) float64 {
+	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
 		maxVal := s.Floats[0].F
 		tsOfMax := s.Floats[0].T
 		for _, f := range s.Floats {
@@ -880,29 +880,29 @@ func compareOverTime(matrixVals []Matrix, args parser.Expressions, enh *EvalNode
 }
 
 // === max_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcMaxOverTime(_ []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcMaxOverTime(_ []Vector, matrixVals Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return compareOverTime(matrixVals, args, enh, func(cur, maxVal float64) bool {
 		return (cur > maxVal) || math.IsNaN(maxVal)
 	}, false)
 }
 
 // === min_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcMinOverTime(_ []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcMinOverTime(_ []Vector, matrixVals Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return compareOverTime(matrixVals, args, enh, func(cur, maxVal float64) bool {
 		return (cur < maxVal) || math.IsNaN(maxVal)
 	}, false)
 }
 
 // === sum_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcSumOverTime(_ []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	firstSeries := matrixVals[0][0]
+func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	firstSeries := matrixVal[0]
 	if len(firstSeries.Floats) > 0 && len(firstSeries.Histograms) > 0 {
 		metricName := firstSeries.Metric.Get(labels.MetricName)
 		return enh.Out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
 	}
 	if len(firstSeries.Floats) == 0 {
 		// The passed values only contain histograms.
-		vec, err := aggrHistOverTime(matrixVals, enh, func(s Series) (*histogram.FloatHistogram, error) {
+		vec, err := aggrHistOverTime(matrixVal, enh, func(s Series) (*histogram.FloatHistogram, error) {
 			sum := s.Histograms[0].H.Copy()
 			for _, h := range s.Histograms[1:] {
 				_, err := sum.Add(h.H)
@@ -922,7 +922,7 @@ func funcSumOverTime(_ []Vector, matrixVals []Matrix, args parser.Expressions, e
 		}
 		return vec, nil
 	}
-	return aggrOverTime(matrixVals, enh, func(s Series) float64 {
+	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
 		var sum, c float64
 		for _, f := range s.Floats {
 			sum, c = kahanSumInc(f.F, sum, c)
@@ -935,9 +935,9 @@ func funcSumOverTime(_ []Vector, matrixVals []Matrix, args parser.Expressions, e
 }
 
 // === quantile_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcQuantileOverTime(vectorVals []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcQuantileOverTime(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	q := vectorVals[0][0].F
-	el := matrixVals[0][0]
+	el := matrixVal[0]
 	if len(el.Floats) == 0 {
 		return enh.Out, nil
 	}
@@ -957,8 +957,8 @@ func funcQuantileOverTime(vectorVals []Vector, matrixVals []Matrix, args parser.
 	return append(enh.Out, Sample{F: quantile(q, values)}), annos
 }
 
-func varianceOverTime(matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper, varianceToResult func(float64) float64) (Vector, annotations.Annotations) {
-	samples := matrixVals[0][0]
+func varianceOverTime(matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper, varianceToResult func(float64) float64) (Vector, annotations.Annotations) {
+	samples := matrixVal[0]
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
 		return enh.Out, nil
@@ -967,7 +967,7 @@ func varianceOverTime(matrixVals []Matrix, args parser.Expressions, enh *EvalNod
 		metricName := samples.Metric.Get(labels.MetricName)
 		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 	}
-	return aggrOverTime(matrixVals, enh, func(s Series) float64 {
+	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
 		var count float64
 		var mean, cMean float64
 		var aux, cAux float64
@@ -986,17 +986,17 @@ func varianceOverTime(matrixVals []Matrix, args parser.Expressions, enh *EvalNod
 }
 
 // === stddev_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcStddevOverTime(_ []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcStddevOverTime(_ []Vector, matrixVals Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return varianceOverTime(matrixVals, args, enh, math.Sqrt)
 }
 
 // === stdvar_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcStdvarOverTime(_ []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcStdvarOverTime(_ []Vector, matrixVals Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return varianceOverTime(matrixVals, args, enh, nil)
 }
 
 // === absent(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcAbsent(vectorVals []Vector, _ []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcAbsent(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	if len(vectorVals[0]) > 0 {
 		return enh.Out, nil
 	}
@@ -1012,12 +1012,12 @@ func funcAbsent(vectorVals []Vector, _ []Matrix, args parser.Expressions, enh *E
 // This function will return 1 if the matrix has at least one element.
 // Due to engine optimization, this function is only called when this condition is true.
 // Then, the engine post-processes the results to get the expected output.
-func funcAbsentOverTime(_ []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcAbsentOverTime(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return append(enh.Out, Sample{F: 1}), nil
 }
 
 // === present_over_time(Vector parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcPresentOverTime(_ []Vector, matrixVals []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcPresentOverTime(_ []Vector, matrixVals Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return aggrOverTime(matrixVals, enh, func(_ Series) float64 {
 		return 1
 	}), nil
@@ -1040,126 +1040,126 @@ func simpleFloatFunc(vectorVals []Vector, enh *EvalNodeHelper, f func(float64) f
 }
 
 // === abs(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcAbs(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcAbs(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Abs), nil
 }
 
 // === ceil(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcCeil(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcCeil(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Ceil), nil
 }
 
 // === floor(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcFloor(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcFloor(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Floor), nil
 }
 
 // === exp(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcExp(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcExp(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Exp), nil
 }
 
 // === sqrt(Vector VectorNode) (Vector, Annotations) ===
-func funcSqrt(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcSqrt(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Sqrt), nil
 }
 
 // === ln(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcLn(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcLn(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Log), nil
 }
 
 // === log2(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcLog2(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcLog2(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Log2), nil
 }
 
 // === log10(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcLog10(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcLog10(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Log10), nil
 }
 
 // === sin(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcSin(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcSin(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Sin), nil
 }
 
 // === cos(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcCos(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcCos(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Cos), nil
 }
 
 // === tan(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcTan(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcTan(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Tan), nil
 }
 
 // === asin(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcAsin(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcAsin(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Asin), nil
 }
 
 // === acos(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcAcos(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcAcos(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Acos), nil
 }
 
 // === atan(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcAtan(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcAtan(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Atan), nil
 }
 
 // === sinh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcSinh(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcSinh(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Sinh), nil
 }
 
 // === cosh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcCosh(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcCosh(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Cosh), nil
 }
 
 // === tanh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcTanh(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcTanh(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Tanh), nil
 }
 
 // === asinh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcAsinh(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcAsinh(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Asinh), nil
 }
 
 // === acosh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcAcosh(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcAcosh(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Acosh), nil
 }
 
 // === atanh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcAtanh(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcAtanh(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Atanh), nil
 }
 
 // === rad(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcRad(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcRad(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, func(v float64) float64 {
 		return v * math.Pi / 180
 	}), nil
 }
 
 // === deg(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcDeg(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcDeg(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, func(v float64) float64 {
 		return v * 180 / math.Pi
 	}), nil
 }
 
 // === pi() Scalar ===
-func funcPi(_ []Vector, _ []Matrix, _ parser.Expressions, _ *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcPi(_ []Vector, _ Matrix, _ parser.Expressions, _ *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return Vector{Sample{F: math.Pi}}, nil
 }
 
 // === sgn(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcSgn(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcSgn(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, func(v float64) float64 {
 		switch {
 		case v < 0:
@@ -1173,7 +1173,7 @@ func funcSgn(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNod
 }
 
 // === timestamp(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcTimestamp(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcTimestamp(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vectorVals[0]
 	for _, el := range vec {
 		if !enh.enableDelayedNameRemoval {
@@ -1250,8 +1250,8 @@ func linearRegression(samples []FPoint, interceptTime int64) (slope, intercept f
 }
 
 // === deriv(node parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcDeriv(_ []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	samples := matrixVals[0][0]
+func funcDeriv(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	samples := matrixVal[0]
 	metricName := samples.Metric.Get(labels.MetricName)
 
 	// No sense in trying to compute a derivative without at least two float points.
@@ -1275,8 +1275,8 @@ func funcDeriv(_ []Vector, matrixVals []Matrix, args parser.Expressions, enh *Ev
 }
 
 // === predict_linear(node parser.ValueTypeMatrix, k parser.ValueTypeScalar) (Vector, Annotations) ===
-func funcPredictLinear(vectorVals []Vector, matrixVals []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	samples := matrixVals[0][0]
+func funcPredictLinear(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	samples := matrixVal[0]
 	duration := vectorVals[0][0].F
 	metricName := samples.Metric.Get(labels.MetricName)
 
@@ -1314,21 +1314,21 @@ func simpleHistogramFunc(vectorVals []Vector, enh *EvalNodeHelper, f func(h *his
 }
 
 // === histogram_count(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcHistogramCount(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcHistogramCount(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleHistogramFunc(vectorVals, enh, func(h *histogram.FloatHistogram) float64 {
 		return h.Count
 	}), nil
 }
 
 // === histogram_sum(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcHistogramSum(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcHistogramSum(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleHistogramFunc(vectorVals, enh, func(h *histogram.FloatHistogram) float64 {
 		return h.Sum
 	}), nil
 }
 
 // === histogram_avg(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcHistogramAvg(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcHistogramAvg(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleHistogramFunc(vectorVals, enh, func(h *histogram.FloatHistogram) float64 {
 		return h.Sum / h.Count
 	}), nil
@@ -1372,17 +1372,17 @@ func histogramVariance(vectorVals []Vector, enh *EvalNodeHelper, varianceToResul
 }
 
 // === histogram_stddev(Vector parser.ValueTypeVector) (Vector, Annotations)  ===
-func funcHistogramStdDev(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcHistogramStdDev(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return histogramVariance(vectorVals, enh, math.Sqrt)
 }
 
 // === histogram_stdvar(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcHistogramStdVar(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcHistogramStdVar(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return histogramVariance(vectorVals, enh, nil)
 }
 
 // === histogram_fraction(lower, upper parser.ValueTypeScalar, Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcHistogramFraction(vectorVals []Vector, _ []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcHistogramFraction(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	lower := vectorVals[0][0].F
 	upper := vectorVals[1][0].F
 	inVec := vectorVals[2]
@@ -1427,7 +1427,7 @@ func funcHistogramFraction(vectorVals []Vector, _ []Matrix, args parser.Expressi
 }
 
 // === histogram_quantile(k parser.ValueTypeScalar, Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcHistogramQuantile(vectorVals []Vector, _ []Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcHistogramQuantile(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	q := vectorVals[0][0].F
 	inVec := vectorVals[1]
 	var annos annotations.Annotations
@@ -1479,9 +1479,9 @@ func funcHistogramQuantile(vectorVals []Vector, _ []Matrix, args parser.Expressi
 }
 
 // === resets(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcResets(_ []Vector, matrixVals []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	floats := matrixVals[0][0].Floats
-	histograms := matrixVals[0][0].Histograms
+func funcResets(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	floats := matrixVal[0].Floats
+	histograms := matrixVal[0].Histograms
 	resets := 0
 	if len(floats) == 0 && len(histograms) == 0 {
 		return enh.Out, nil
@@ -1524,9 +1524,9 @@ func funcResets(_ []Vector, matrixVals []Matrix, _ parser.Expressions, enh *Eval
 }
 
 // === changes(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcChanges(_ []Vector, matrixVals []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	floats := matrixVals[0][0].Floats
-	histograms := matrixVals[0][0].Histograms
+func funcChanges(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	floats := matrixVal[0].Floats
+	histograms := matrixVal[0].Histograms
 	changes := 0
 	if len(floats) == 0 && len(histograms) == 0 {
 		return enh.Out, nil
@@ -1612,7 +1612,7 @@ func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressio
 }
 
 // === Vector(s Scalar) (Vector, Annotations) ===
-func funcVector(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcVector(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return append(enh.Out,
 		Sample{
 			Metric: labels.Labels{},
@@ -1694,56 +1694,56 @@ func dateWrapper(vectorVals []Vector, enh *EvalNodeHelper, f func(time.Time) flo
 }
 
 // === days_in_month(v Vector) Scalar ===
-func funcDaysInMonth(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcDaysInMonth(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return dateWrapper(vectorVals, enh, func(t time.Time) float64 {
 		return float64(32 - time.Date(t.Year(), t.Month(), 32, 0, 0, 0, 0, time.UTC).Day())
 	}), nil
 }
 
 // === day_of_month(v Vector) Scalar ===
-func funcDayOfMonth(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcDayOfMonth(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return dateWrapper(vectorVals, enh, func(t time.Time) float64 {
 		return float64(t.Day())
 	}), nil
 }
 
 // === day_of_week(v Vector) Scalar ===
-func funcDayOfWeek(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcDayOfWeek(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return dateWrapper(vectorVals, enh, func(t time.Time) float64 {
 		return float64(t.Weekday())
 	}), nil
 }
 
 // === day_of_year(v Vector) Scalar ===
-func funcDayOfYear(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcDayOfYear(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return dateWrapper(vectorVals, enh, func(t time.Time) float64 {
 		return float64(t.YearDay())
 	}), nil
 }
 
 // === hour(v Vector) Scalar ===
-func funcHour(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcHour(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return dateWrapper(vectorVals, enh, func(t time.Time) float64 {
 		return float64(t.Hour())
 	}), nil
 }
 
 // === minute(v Vector) Scalar ===
-func funcMinute(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcMinute(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return dateWrapper(vectorVals, enh, func(t time.Time) float64 {
 		return float64(t.Minute())
 	}), nil
 }
 
 // === month(v Vector) Scalar ===
-func funcMonth(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcMonth(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return dateWrapper(vectorVals, enh, func(t time.Time) float64 {
 		return float64(t.Month())
 	}), nil
 }
 
 // === year(v Vector) Scalar ===
-func funcYear(vectorVals []Vector, _ []Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcYear(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return dateWrapper(vectorVals, enh, func(t time.Time) float64 {
 		return float64(t.Year())
 	}), nil
