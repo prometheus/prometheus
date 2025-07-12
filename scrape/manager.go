@@ -92,6 +92,11 @@ type Options struct {
 	// EnableTypeAndUnitLabels
 	EnableTypeAndUnitLabels bool
 
+	// EXPERIMENTAL: Option to enable namespace metadata enrichment.
+	// This feature is in early development and may impact performance and security.
+	// Use with caution in production environments.
+	EnableNamespaceEnrichment bool
+
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
 
@@ -197,6 +202,7 @@ func (m *Manager) reload() {
 				continue
 			}
 			m.scrapePools[setName] = sp
+
 			if l, ok := m.scrapeFailureLoggers[scrapeConfig.ScrapeFailureLogFile]; ok {
 				sp.SetScrapeFailureLogger(l)
 			} else {
