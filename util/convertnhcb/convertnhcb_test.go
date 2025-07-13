@@ -11,27 +11,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package convertnhcb
+package convertnhcb_test
 
 import (
+	"errors"
 	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/util/convertnhcb"
 )
 
 func TestNHCBConvert(t *testing.T) {
 	tests := map[string]struct {
-		setup       func() *TempHistogram
+		setup       func() *convertnhcb.TempHistogram
 		expectedErr error
 		expectedH   *histogram.Histogram
 		expectedFH  *histogram.FloatHistogram
 	}{
 		"empty": {
-			setup: func() *TempHistogram {
-				h := NewTempHistogram()
+			setup: func() *convertnhcb.TempHistogram {
+				h := convertnhcb.NewTempHistogram()
 				return &h
 			},
 			expectedH: &histogram.Histogram{
@@ -41,8 +43,8 @@ func TestNHCBConvert(t *testing.T) {
 			},
 		},
 		"sum only": {
-			setup: func() *TempHistogram {
-				h := NewTempHistogram()
+			setup: func() *convertnhcb.TempHistogram {
+				h := convertnhcb.NewTempHistogram()
 				h.SetSum(1000.25)
 				return &h
 			},
@@ -54,8 +56,8 @@ func TestNHCBConvert(t *testing.T) {
 			},
 		},
 		"single integer bucket": {
-			setup: func() *TempHistogram {
-				h := NewTempHistogram()
+			setup: func() *convertnhcb.TempHistogram {
+				h := convertnhcb.NewTempHistogram()
 				h.SetSum(1000.25)
 				h.SetBucketCount(0.5, 1000)
 				return &h
@@ -70,8 +72,8 @@ func TestNHCBConvert(t *testing.T) {
 			},
 		},
 		"single float bucket": {
-			setup: func() *TempHistogram {
-				h := NewTempHistogram()
+			setup: func() *convertnhcb.TempHistogram {
+				h := convertnhcb.NewTempHistogram()
 				h.SetSum(1000.25)
 				h.SetBucketCount(0.5, 1337.42)
 				return &h
@@ -86,8 +88,8 @@ func TestNHCBConvert(t *testing.T) {
 			},
 		},
 		"happy case integer bucket": {
-			setup: func() *TempHistogram {
-				h := NewTempHistogram()
+			setup: func() *convertnhcb.TempHistogram {
+				h := convertnhcb.NewTempHistogram()
 				h.SetCount(1000)
 				h.SetSum(1000.25)
 				h.SetBucketCount(0.5, 50)
@@ -105,8 +107,8 @@ func TestNHCBConvert(t *testing.T) {
 			},
 		},
 		"happy case float bucket": {
-			setup: func() *TempHistogram {
-				h := NewTempHistogram()
+			setup: func() *convertnhcb.TempHistogram {
+				h := convertnhcb.NewTempHistogram()
 				h.SetCount(1000)
 				h.SetSum(1000.25)
 				h.SetBucketCount(0.5, 50)
@@ -124,8 +126,8 @@ func TestNHCBConvert(t *testing.T) {
 			},
 		},
 		"non cumulative bucket": {
-			setup: func() *TempHistogram {
-				h := NewTempHistogram()
+			setup: func() *convertnhcb.TempHistogram {
+				h := convertnhcb.NewTempHistogram()
 				h.SetCount(1000)
 				h.SetSum(1000.25)
 				h.SetBucketCount(0.5, 50)
@@ -133,11 +135,11 @@ func TestNHCBConvert(t *testing.T) {
 				h.SetBucketCount(math.Inf(1), 900)
 				return &h
 			},
-			expectedErr: errCountNotCumulative,
+			expectedErr: errors.New("count is not cumulative"),
 		},
 		"negative count": {
-			setup: func() *TempHistogram {
-				h := NewTempHistogram()
+			setup: func() *convertnhcb.TempHistogram {
+				h := convertnhcb.NewTempHistogram()
 				h.SetCount(-1000)
 				h.SetSum(1000.25)
 				h.SetBucketCount(0.5, 50)
@@ -145,11 +147,11 @@ func TestNHCBConvert(t *testing.T) {
 				h.SetBucketCount(math.Inf(1), 900)
 				return &h
 			},
-			expectedErr: errNegativeCount,
+			expectedErr: errors.New("count must be non-negative"),
 		},
 		"mixed order": {
-			setup: func() *TempHistogram {
-				h := NewTempHistogram()
+			setup: func() *convertnhcb.TempHistogram {
+				h := convertnhcb.NewTempHistogram()
 				h.SetBucketCount(0.5, 50)
 				h.SetBucketCount(math.Inf(1), 1000)
 				h.SetBucketCount(1.0, 950)
@@ -169,11 +171,13 @@ func TestNHCBConvert(t *testing.T) {
 	}
 
 	for name, test := range tests {
+		test := test
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			th := test.setup()
 			h, fh, err := th.Convert()
 			if test.expectedErr != nil {
-				require.ErrorIs(t, err, test.expectedErr)
+				require.ErrorContains(t, err, test.expectedErr.Error())
 				return
 			}
 			require.Equal(t, test.expectedH, h)
