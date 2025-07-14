@@ -57,22 +57,33 @@ type LookupPlan interface {
 
 // NewIndexOnlyLookupPlan creates a new LookupPlan which uses the provided matchers for looking up the index only.
 func NewIndexOnlyLookupPlan(matchers []*labels.Matcher) LookupPlan {
-	return &concreteLookupPlan{indexMatchers: matchers}
+	return indexOnlyLookupPlan(matchers)
+}
+
+type indexOnlyLookupPlan []*labels.Matcher
+
+func (l indexOnlyLookupPlan) ScanMatchers() []*labels.Matcher {
+	return nil
+}
+
+func (l indexOnlyLookupPlan) IndexMatchers() []*labels.Matcher {
+	return l
 }
 
 // ScanEmptyMatchersLookupPlanner implements LookupPlanner by deferring empty matchers such as l="", l=~".+" to scan matchers.
 type ScanEmptyMatchersLookupPlanner struct{}
 
 func (p *ScanEmptyMatchersLookupPlanner) PlanIndexLookup(_ context.Context, plan LookupPlan, _, _ int64) (LookupPlan, error) {
-	if len(plan.IndexMatchers()) <= 1 {
+	indexMatchers := plan.IndexMatchers()
+	if len(indexMatchers) <= 1 {
 		// If there is only one matcher, then using the index is usually more efficient.
 		// This also covers test cases which use matchers such as {""=""} or {""=~".*"} to mean "match all series"
 		return plan, nil
 	}
-	var indexMatchers []*labels.Matcher
 	scanMatchers := plan.ScanMatchers()
 
-	for _, matcher := range plan.IndexMatchers() {
+	for i := 0; i < len(indexMatchers); i++ {
+		matcher := indexMatchers[i]
 		if matcher.Type == labels.MatchRegexp && matcher.Value == ".*" {
 			// This matches everything (empty and arbitrary values), so it doesn't reduce the selectivity of the whole set of matchers.
 			continue
@@ -81,10 +92,9 @@ func (p *ScanEmptyMatchersLookupPlanner) PlanIndexLookup(_ context.Context, plan
 		// These matchers are unlikely to reduce the selectivity of the matchers, but can still filter out some series, so we can't ignore them.
 		if (matcher.Type == labels.MatchEqual && matcher.Value == "") ||
 			(matcher.Type == labels.MatchRegexp && matcher.Value == ".+") {
+			indexMatchers = append(indexMatchers[:i], indexMatchers[i+1:]...)
+			i--
 			scanMatchers = append(scanMatchers, matcher)
-		} else {
-			// Use selective matchers in index lookup for better performance
-			indexMatchers = append(indexMatchers, matcher)
 		}
 	}
 
@@ -92,6 +102,11 @@ func (p *ScanEmptyMatchersLookupPlanner) PlanIndexLookup(_ context.Context, plan
 		// Zero index matchers match no series. We retain one index matchers so that we have a base set of series which we can scan.
 		indexMatchers = scanMatchers[:1]
 		scanMatchers = scanMatchers[1:]
+	}
+
+	if len(scanMatchers) == 0 {
+		// Avoid an allocation if the sample is simple.
+		return NewIndexOnlyLookupPlan(indexMatchers), nil
 	}
 
 	return &concreteLookupPlan{
