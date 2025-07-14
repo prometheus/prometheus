@@ -511,7 +511,7 @@ func BenchmarkSelect(b *testing.B) {
 	b.Run("Block", func(b *testing.B) {
 		for _, bc := range benchmarkCases {
 			b.Run(bc.name, func(b *testing.B) {
-				benchmarkSelect(b, &queryable, true, 0, 120, bc.matchers...)
+				benchmarkSelect(b, queryable, true, 0, 120, bc.matchers...)
 			})
 		}
 	})
