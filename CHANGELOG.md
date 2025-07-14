@@ -2,17 +2,11 @@
 
 ## main / unreleased
 
-## 3.5.0-rc.1 / 2025-07-08
-
-The following feature was removed (reverted), since problems were discovered:
-* [FEATURE] OTLP: Support promoting OTel scope name/version/schema URL/attributes as metric labels, via `otlp.promote_scope_metadata`. #16730 #16760
-
-## 3.5.0-rc.0 / 2025-06-25
+## 3.5.0 / 2025-07-14
 
 * [FEATURE] PromQL: Add experimental type and unit metadata labels, behind feature flag `type-and-unit-labels`. #16228 #16632 #16718 #16743
 * [FEATURE] PromQL: Add `ts_of_(min|max|last)_over_time`, behind feature flag `experimental-promql-functions`. #16722 #16733
 * [FEATURE] Scraping: Add global option `always_scrape_classic_histograms` to scrape a classic histogram even if it is also exposed as native. #16452
-* [FEATURE] OTLP: Support promoting OTel scope name/version/schema URL/attributes as metric labels, via `otlp.promote_scope_metadata`. #16730 #16760
 * [FEATURE] OTLP: New config options `promote_all_resource_attributes` and `ignore_resource_attributes`. #16426
 * [FEATURE] Discovery: New service discovery for STACKIT Cloud. #16401
 * [ENHANCEMENT] Hetzner SD: Add `label_selector` to filter servers. #16512
