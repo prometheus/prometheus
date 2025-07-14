@@ -15,6 +15,7 @@ package index
 
 import (
 	"context"
+	"slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -75,23 +76,23 @@ type ScanEmptyMatchersLookupPlanner struct{}
 
 func (p *ScanEmptyMatchersLookupPlanner) PlanIndexLookup(_ context.Context, plan LookupPlan, _, _ int64) (LookupPlan, error) {
 	indexMatchers := plan.IndexMatchers()
-	if len(indexMatchers) <= 1 {
+	if len(indexMatchers) <= 1 || !p.canOptimizeIndexMatchers(indexMatchers) {
 		// If there is only one matcher, then using the index is usually more efficient.
 		// This also covers test cases which use matchers such as {""=""} or {""=~".*"} to mean "match all series"
+		// Also avoid allocating a plan if we're not going to change any of the index matchers.
 		return plan, nil
 	}
-	scanMatchers := plan.ScanMatchers()
+
+	// Clone so that we don't overwrite the matchers of clients when we resize the slice
+	indexMatchers = slices.Clone(indexMatchers)
+	scanMatchers := slices.Clone(plan.ScanMatchers())
 
 	for i := 0; i < len(indexMatchers); i++ {
 		matcher := indexMatchers[i]
-		if matcher.Type == labels.MatchRegexp && matcher.Value == ".*" {
-			// This matches everything (empty and arbitrary values), so it doesn't reduce the selectivity of the whole set of matchers.
-			continue
-		}
-		// Put empty string matchers and regex matchers that match everything in scan matchers.
-		// These matchers are unlikely to reduce the selectivity of the matchers, but can still filter out some series, so we can't ignore them.
-		if (matcher.Type == labels.MatchEqual && matcher.Value == "") ||
-			(matcher.Type == labels.MatchRegexp && matcher.Value == ".+") {
+		if p.shouldDropMatcher(matcher) {
+			indexMatchers = append(indexMatchers[:i], indexMatchers[i+1:]...)
+			i--
+		} else if p.shouldScanMatcher(matcher) {
 			indexMatchers = append(indexMatchers[:i], indexMatchers[i+1:]...)
 			i--
 			scanMatchers = append(scanMatchers, matcher)
@@ -113,6 +114,27 @@ func (p *ScanEmptyMatchersLookupPlanner) PlanIndexLookup(_ context.Context, plan
 		indexMatchers: indexMatchers,
 		scanMatchers:  scanMatchers,
 	}, nil
+}
+
+func (p *ScanEmptyMatchersLookupPlanner) shouldDropMatcher(matcher *labels.Matcher) bool {
+	// This matches everything (empty and arbitrary values), so it doesn't reduce the selectivity of the whole set of matchers.
+	return matcher.Type == labels.MatchRegexp && matcher.Value == ".*"
+}
+
+func (p *ScanEmptyMatchersLookupPlanner) shouldScanMatcher(matcher *labels.Matcher) bool {
+	// Put empty string matchers and regex matchers that match everything in scan matchers.
+	// These matchers are unlikely to reduce the selectivity of the matchers, but can still filter out some series, so we can't ignore them.
+	return (matcher.Type == labels.MatchEqual && matcher.Value == "") ||
+		(matcher.Type == labels.MatchRegexp && matcher.Value == ".+")
+}
+
+func (p *ScanEmptyMatchersLookupPlanner) canOptimizeIndexMatchers(matchers []*labels.Matcher) bool {
+	for _, matcher := range matchers {
+		if p.shouldScanMatcher(matcher) || p.shouldDropMatcher(matcher) {
+			return true
+		}
+	}
+	return false
 }
 
 // concreteLookupPlan implements LookupPlan by storing pre-computed index and scan matchers.
