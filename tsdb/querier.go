@@ -1136,12 +1136,13 @@ type genericSeriesSet[S storage.Labels] interface {
 type scanMatcherSeriesSet[S storage.Labels] struct {
 	base         genericSeriesSet[S]
 	scanMatchers []*labels.Matcher
+	allocatedAt  S
 }
 
 func (s *scanMatcherSeriesSet[S]) Next() bool {
 	for s.base.Next() {
-		series := s.base.At()
-		if labelsMatchMatchers(series.Labels(), s.scanMatchers) {
+		s.allocatedAt = s.base.At()
+		if labelsMatchMatchers(s.allocatedAt.Labels(), s.scanMatchers) {
 			return true
 		}
 	}
@@ -1158,7 +1159,7 @@ func labelsMatchMatchers(lbls labels.Labels, matchers []*labels.Matcher) bool {
 }
 
 func (s *scanMatcherSeriesSet[S]) At() S {
-	return s.base.At()
+	return s.allocatedAt
 }
 
 func (s *scanMatcherSeriesSet[S]) Err() error {
