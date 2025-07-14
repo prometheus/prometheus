@@ -283,7 +283,7 @@ func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(ap
 	return h, db
 }
 
-func benchmarkSelect(b *testing.B, queryable storage.Queryable, numSeries int, sorted bool, minT int64, maxT int64, matchers ...*labels.Matcher) {
+func benchmarkSelect(b *testing.B, queryable storage.Queryable, sorted bool, minT int64, maxT int64, matchers ...*labels.Matcher) {
 	q, err := queryable.Querier(minT, maxT)
 	require.NoError(b, err)
 
@@ -303,9 +303,9 @@ func benchmarkSelect(b *testing.B, queryable storage.Queryable, numSeries int, s
 }
 
 // Type wrapper to let a Block be a Queryable in benchmarkSelect().
-type queryableBlock Block
+type queryableBlock = *Block
 
-func (pb *queryableBlock) Querier(mint, maxt int64) (storage.Querier, error) {
+func (pb queryableBlock) Querier(mint, maxt int64) (storage.Querier, error) {
 	return NewBlockQuerier((*Block)(pb), mint, maxt)
 }
 
@@ -322,12 +322,12 @@ func BenchmarkQuerierSelectWithOutOfOrder(b *testing.B) {
 			b.Fatal(err)
 		}
 	})
-
+	matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
 	b.Run("Head", func(b *testing.B) {
 		b.ResetTimer()
 		for s := 1; s <= numSeries; s *= 10 {
 			b.Run(fmt.Sprintf("%dof%d", s, numSeries), func(b *testing.B) {
-				benchmarkSelect(b, db, numSeries, false, 0, int64(s-1))
+				benchmarkSelect(b, db, false, 0, int64(s-1), matcher)
 			})
 		}
 	})
@@ -438,7 +438,7 @@ func BenchmarkSelect(b *testing.B) {
 	})
 	h := db.Head()
 
-	app := h.Appender(b.Context())
+	app := h.Appender(context.Background())
 
 	// 5 metrics × 100 instances × 5 regions × 10 zones × 20 services × 3 environments = 1,500,000 series
 	metrics := 5
@@ -471,7 +471,7 @@ func BenchmarkSelect(b *testing.B) {
 							seriesCount++
 							if seriesCount%1000 == 0 { // Commit every so often, so the appender doesn't get too big.
 								require.NoError(b, app.Commit())
-								app = h.Appender(b.Context())
+								app = h.Appender(context.Background())
 							}
 						}
 					}
@@ -486,7 +486,7 @@ func BenchmarkSelect(b *testing.B) {
 	b.Run("Head", func(b *testing.B) {
 		for _, bc := range benchmarkCases {
 			b.Run(bc.name, func(b *testing.B) {
-				benchmarkSelect(b, db, totalSeries, false, 0, 120, bc.matchers...)
+				benchmarkSelect(b, db, false, 0, 120, bc.matchers...)
 			})
 		}
 	})
@@ -494,7 +494,7 @@ func BenchmarkSelect(b *testing.B) {
 	b.Run("SortedHead", func(b *testing.B) {
 		for _, bc := range benchmarkCases {
 			b.Run(bc.name, func(b *testing.B) {
-				benchmarkSelect(b, db, totalSeries, true, 0, 120, bc.matchers...)
+				benchmarkSelect(b, db, true, 0, 120, bc.matchers...)
 			})
 		}
 	})
@@ -506,12 +506,12 @@ func BenchmarkSelect(b *testing.B) {
 		require.NoError(b, block.Close())
 	}()
 
-	queryable := queryableBlock(*block)
+	queryable := queryableBlock(block)
 
 	b.Run("Block", func(b *testing.B) {
 		for _, bc := range benchmarkCases {
 			b.Run(bc.name, func(b *testing.B) {
-				benchmarkSelect(b, &queryable, totalSeries, true, 0, 120, bc.matchers...)
+				benchmarkSelect(b, &queryable, true, 0, 120, bc.matchers...)
 			})
 		}
 	})
