@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"strconv"
 	"testing"
 
@@ -23,6 +24,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
@@ -281,54 +283,23 @@ func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(ap
 	return h, db
 }
 
-func benchmarkSelect(b *testing.B, queryable storage.Queryable, numSeries int, sorted bool) {
-	matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
+func benchmarkSelect(b *testing.B, queryable storage.Queryable, numSeries int, sorted bool, minT int64, maxT int64, matchers ...*labels.Matcher) {
+	q, err := queryable.Querier(minT, maxT)
+	require.NoError(b, err)
+
 	b.ResetTimer()
-	for s := 1; s <= numSeries; s *= 10 {
-		b.Run(fmt.Sprintf("%dof%d", s, numSeries), func(b *testing.B) {
-			q, err := queryable.Querier(0, int64(s-1))
-			require.NoError(b, err)
-
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				ss := q.Select(context.Background(), sorted, nil, matcher)
-				for ss.Next() {
-				}
-				require.NoError(b, ss.Err())
-			}
-			q.Close()
-		})
-	}
-}
-
-func BenchmarkQuerierSelect(b *testing.B) {
-	numSeries := 1000000
-	h, db := createHeadForBenchmarkSelect(b, numSeries, func(app storage.Appender, i int) {
-		_, err := app.Append(0, labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0)
-		if err != nil {
-			b.Fatal(err)
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		ss := q.Select(context.Background(), sorted, nil, matchers...)
+		var chunkIterator chunkenc.Iterator
+		for ss.Next() {
+			// Access labels and get an iterator to keep the comparison more realistic to a real usage pattern
+			_ = ss.At().Labels()
+			chunkIterator = ss.At().Iterator(chunkIterator)
 		}
-	})
-
-	b.Run("Head", func(b *testing.B) {
-		benchmarkSelect(b, db, numSeries, false)
-	})
-	b.Run("SortedHead", func(b *testing.B) {
-		benchmarkSelect(b, db, numSeries, true)
-	})
-
-	b.Run("Block", func(b *testing.B) {
-		tmpdir := b.TempDir()
-
-		blockdir := createBlockFromHead(b, tmpdir, h)
-		block, err := OpenBlock(nil, blockdir, nil, nil)
-		require.NoError(b, err)
-		defer func() {
-			require.NoError(b, block.Close())
-		}()
-
-		benchmarkSelect(b, (*queryableBlock)(block), numSeries, false)
-	})
+		require.NoError(b, ss.Err())
+	}
+	q.Close()
 }
 
 // Type wrapper to let a Block be a Queryable in benchmarkSelect().
@@ -353,6 +324,195 @@ func BenchmarkQuerierSelectWithOutOfOrder(b *testing.B) {
 	})
 
 	b.Run("Head", func(b *testing.B) {
-		benchmarkSelect(b, db, numSeries, false)
+		b.ResetTimer()
+		for s := 1; s <= numSeries; s *= 10 {
+			b.Run(fmt.Sprintf("%dof%d", s, numSeries), func(b *testing.B) {
+				benchmarkSelect(b, db, numSeries, false, 0, int64(s-1))
+			})
+		}
+	})
+}
+
+var benchmarkCases = []struct {
+	name     string
+	matchers []*labels.Matcher
+}{
+	{
+		name: "SingleMetricAllSeries",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+		},
+	},
+	{
+		name: "SingleMetricReducedSeries",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchEqual, "instance", "instance-1"),
+		},
+	},
+	{
+		name: "SingleMetricOneSeries",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchEqual, "instance", "instance-2"),
+			labels.MustNewMatcher(labels.MatchEqual, "region", "region-1"),
+			labels.MustNewMatcher(labels.MatchEqual, "zone", "zone-3"),
+			labels.MustNewMatcher(labels.MatchEqual, "service", "service-10"),
+			labels.MustNewMatcher(labels.MatchEqual, "environment", "environment-1"),
+		},
+	},
+	{
+		name: "SingleMetricSparseSeries",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchEqual, "service", "service-1"),
+			labels.MustNewMatcher(labels.MatchEqual, "environment", "environment-0"),
+		},
+	},
+	{
+		name: "NonExistentSeries",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchEqual, "environment", "non-existent-environment"),
+		},
+	},
+	{
+		name: "MultipleMetricsRange",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-5]"),
+		},
+	},
+	{
+		name: "MultipleMetricsSparse",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_(1|5|10|15|20)"),
+		},
+	},
+	{
+		name: "NegativeRegexSingleMetric",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchNotRegexp, "instance", "(instance-1.*|instance-2.*)"),
+		},
+	},
+	{
+		name: "NegativeRegexMultipleMetrics",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
+			labels.MustNewMatcher(labels.MatchNotRegexp, "instance", "(instance-1.*|instance-2.*)"),
+		},
+	},
+	{
+		name: "ExpensiveRegexSingleMetric",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchRegexp, "instance", "(container-1|instance-2|container-3|instance-4|container-5)"),
+		},
+	},
+	{
+		name: "ExpensiveRegexMultipleMetrics",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
+			labels.MustNewMatcher(labels.MatchRegexp, "instance", "(container-1|container-2|container-3|container-4|container-5)"),
+		},
+	},
+	{
+		name: "NoopRegexMatcher",
+		matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchRegexp, "environment", ".+"),
+		},
+	},
+}
+
+func BenchmarkSelect(b *testing.B) {
+	// Use the same approach as other benchmarks
+	dir := b.TempDir()
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 255
+	opts.OutOfOrderTimeWindow = 1000
+	db, err := Open(dir, nil, nil, opts, nil)
+	require.NoError(b, err)
+	b.Cleanup(func() {
+		require.NoError(b, db.Close())
+	})
+	h := db.Head()
+
+	app := h.Appender(b.Context())
+
+	// 5 metrics × 100 instances × 5 regions × 10 zones × 20 services × 3 environments = 1,500,000 series
+	metrics := 5
+	instances := 100
+	regions := 5
+	zones := 10
+	services := 20
+	environments := 3
+
+	totalSeries := metrics * instances * regions * zones * services * environments
+	b.Logf("Generating %d series (%d metrics × %d instances × %d regions × %d zones × %d services × %d environments)",
+		totalSeries, metrics, instances, regions, zones, services, environments)
+
+	seriesCount := 0
+	for m := range metrics {
+		for i := range instances {
+			for r := range regions {
+				for z := range zones {
+					for s := range services {
+						for e := range environments {
+							lbls := labels.FromStrings(
+								"__name__", fmt.Sprintf("test_metric_%d", m),
+								"instance", fmt.Sprintf("instance-%d", i),
+								"region", fmt.Sprintf("region-%d", r),
+								"zone", fmt.Sprintf("zone-%d", z),
+								"service", fmt.Sprintf("service-%d", s),
+								"environment", fmt.Sprintf("environment-%d", e),
+							)
+							_, _ = app.Append(0, lbls, 0, rand.Float64())
+							seriesCount++
+							if seriesCount%1000 == 0 { // Commit every so often, so the appender doesn't get too big.
+								require.NoError(b, app.Commit())
+								app = h.Appender(b.Context())
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	require.NoError(b, app.Commit())
+
+	require.Equal(b, totalSeries, int(h.NumSeries()), "Expected number of series does not match")
+
+	b.Run("Head", func(b *testing.B) {
+		for _, bc := range benchmarkCases {
+			b.Run(bc.name, func(b *testing.B) {
+				benchmarkSelect(b, db, totalSeries, false, 0, 120, bc.matchers...)
+			})
+		}
+	})
+
+	b.Run("SortedHead", func(b *testing.B) {
+		for _, bc := range benchmarkCases {
+			b.Run(bc.name, func(b *testing.B) {
+				benchmarkSelect(b, db, totalSeries, true, 0, 120, bc.matchers...)
+			})
+		}
+	})
+
+	blockDir := createBlockFromHead(b, b.TempDir(), h)
+	block, err := OpenBlock(nil, blockDir, nil, nil)
+	require.NoError(b, err)
+	defer func() {
+		require.NoError(b, block.Close())
+	}()
+
+	queryable := queryableBlock(*block)
+
+	b.Run("Block", func(b *testing.B) {
+		for _, bc := range benchmarkCases {
+			b.Run(bc.name, func(b *testing.B) {
+				benchmarkSelect(b, &queryable, totalSeries, true, 0, 120, bc.matchers...)
+			})
+		}
 	})
 }
