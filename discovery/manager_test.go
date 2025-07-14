@@ -1562,3 +1562,53 @@ func TestUnregisterMetrics(t *testing.T) {
 		cancel()
 	}
 }
+
+// Calling ApplyConfig() that removes providers at the same time as shutting down
+// the manager should not hang.
+func TestConfigReloadAndShutdownRace(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	_, sdMetrics := NewTestMetrics(t, reg)
+
+	mgrCtx, mgrCancel := context.WithCancel(context.Background())
+	discoveryManager := NewManager(mgrCtx, promslog.NewNopLogger(), reg, sdMetrics)
+	require.NotNil(t, discoveryManager)
+	discoveryManager.updatert = 100 * time.Millisecond
+
+	var wgDiscovery sync.WaitGroup
+	wgDiscovery.Add(1)
+	go func() {
+		discoveryManager.Run()
+		wgDiscovery.Done()
+	}()
+	time.Sleep(time.Millisecond * 200)
+
+	var wgBg sync.WaitGroup
+	updateChan := discoveryManager.SyncCh()
+	wgBg.Add(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		defer wgBg.Done()
+		select {
+		case <-ctx.Done():
+			return
+		case <-updateChan:
+		}
+	}()
+
+	c := map[string]Configs{
+		"prometheus": {staticConfig("bar:9090")},
+	}
+	discoveryManager.ApplyConfig(c)
+
+	delete(c, "prometheus")
+	wgBg.Add(1)
+	go func() {
+		discoveryManager.ApplyConfig(c)
+		wgBg.Done()
+	}()
+	mgrCancel()
+	wgDiscovery.Wait()
+
+	cancel()
+	wgBg.Wait()
+}

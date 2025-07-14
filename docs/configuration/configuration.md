@@ -197,6 +197,11 @@ otlp:
   # - "NoUTF8EscapingWithSuffixes" is a mode that relies on UTF-8 support in Prometheus.
   #   It preserves all special characters like dots, but still adds required metric name suffixes
   #   for units and _total, as UnderscoreEscapingWithSuffixes does.
+  # - "UnderscoreEscapingWithoutSuffixes" translates metric name characters that
+  #   are not alphanumerics/underscores/colons to underscores, and label name
+  #   characters that are not alphanumerics/underscores to underscores, but
+  #   unlike UnderscoreEscapingWithSuffixes it does not append any suffixes to
+  #   the names.
   # - (EXPERIMENTAL) "NoTranslation" is a mode that relies on UTF-8 support in Prometheus.
   #   It preserves all special character like dots and won't append special suffixes for metric
   #   unit and type.
@@ -257,7 +262,7 @@ job_name: <job_name>
 # OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
 [ scrape_protocols: [<string>, ...] | default = <global_config.scrape_protocols> ]
 
-# Fallback protocol to use if a scrape returns blank, unparseable, or otherwise
+# Fallback protocol to use if a scrape returns blank, unparsable, or otherwise
 # invalid Content-Type.
 # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
 # OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
@@ -2283,7 +2288,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 See below for the configuration options for STACKIT discovery:
 
 ```yaml
-# The STACKIT project 
+# The STACKIT project
 project: <string>
 
 # STACKIT region to use. No automatic discovery of the region is done.
