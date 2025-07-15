@@ -45,6 +45,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -3110,6 +3113,57 @@ func TestAcceptHeader(t *testing.T) {
 			require.Equal(t, tc.expectedHeader, header)
 		})
 	}
+}
+
+// setupTracing temporarily sets the global TracerProvider and Propagator
+// and restores the original state after the test completes.
+func setupTracing(t *testing.T) {
+	t.Helper()
+
+	origTracerProvider := otel.GetTracerProvider()
+	origPropagator := otel.GetTextMapPropagator()
+
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
+	t.Cleanup(func() {
+		otel.SetTracerProvider(origTracerProvider)
+		otel.SetTextMapPropagator(origPropagator)
+	})
+}
+
+// TestRequestTraceparentHeader verifies that the HTTP client used by the target scraper
+// propagates the OpenTelemetry "traceparent" header correctly.
+func TestRequestTraceparentHeader(t *testing.T) {
+	setupTracing(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		// the traceparent header is sent.
+		require.NotEmpty(t, r.Header.Get("traceparent"))
+	}))
+	defer server.Close()
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	client, err := newScrapeClient(config_util.DefaultHTTPClientConfig, "test")
+	require.NoError(t, err)
+
+	ts := &targetScraper{
+		Target: &Target{
+			labels: labels.FromStrings(
+				model.SchemeLabel, serverURL.Scheme,
+				model.AddressLabel, serverURL.Host,
+			),
+			scrapeConfig: &config.ScrapeConfig{},
+		},
+		client: client,
+	}
+
+	resp, err := ts.scrape(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	defer resp.Body.Close()
 }
 
 func TestTargetScraperScrapeOK(t *testing.T) {
