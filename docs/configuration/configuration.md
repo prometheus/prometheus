@@ -219,9 +219,6 @@ otlp:
   [ keep_identifying_resource_attributes: <boolean> | default = false ]
   # Configures optional translation of OTLP explicit bucket histograms into native histograms with custom buckets.
   [ convert_histograms_to_nhcb: <boolean> | default = false ]
-  # Enables promotion of OTel scope metadata (i.e. name, version, schema URL, and attributes) to metric labels.
-  # This is disabled by default for backwards compatibility, but according to OTel spec, scope metadata _should_ be identifying, i.e. translated to metric labels.
-  [ promote_scope_metadata: <boolean> | default = false ]
 
 # Settings related to the remote read feature.
 remote_read:
