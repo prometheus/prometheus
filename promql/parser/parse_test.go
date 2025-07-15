@@ -4838,6 +4838,113 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "unexpected character: 's', expected ':'",
 	},
+	{
+		input: `(foo * on() bar) and on(job) sum(foo) by(abc) > 20`,
+		expected: &BinaryExpr{
+			Op: LAND,
+			LHS: &ParenExpr{
+				Expr: &BinaryExpr{
+					Op: MUL,
+					LHS: &VectorSelector{
+						Name: "foo",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 1,
+							End:   4,
+						},
+					},
+					RHS: &VectorSelector{
+						Name: "bar",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "bar"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 12,
+							End:   15,
+						},
+					},
+					VectorMatching: &VectorMatching{
+						Card:           CardOneToOne,
+						On:             true,
+						MatchingLabels: []string{},
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   16,
+				},
+			},
+			RHS: &BinaryExpr{
+				Op: GTR,
+				LHS: &AggregateExpr{
+					Op: SUM,
+					Expr: &VectorSelector{
+						Name: "foo",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 33,
+							End:   36,
+						},
+					},
+					Grouping: []string{"abc"},
+					PosRange: posrange.PositionRange{
+						Start: 29,
+						End:   45,
+					},
+				},
+				RHS: &NumberLiteral{
+					Val: 20,
+					PosRange: posrange.PositionRange{
+						Start: 48,
+						End:   50,
+					},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToMany,
+				MatchingLabels: []string{"job"},
+				On:             true,
+			},
+		},
+	},
+	{
+		input: `sum by (job)(rate(http_requests_total[30m]))`,
+		expected: &AggregateExpr{
+			Op: SUM,
+			Expr: &Call{
+				Func: MustGetFunction("rate"),
+				Args: Expressions{
+					&MatrixSelector{
+						VectorSelector: &VectorSelector{
+							Name: "http_requests_total",
+							LabelMatchers: []*labels.Matcher{
+								MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_total"),
+							},
+							PosRange: posrange.PositionRange{
+								Start: 18,
+								End:   37,
+							},
+						},
+						Range:  30 * time.Minute,
+						EndPos: 42,
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 13,
+					End:   43,
+				},
+			},
+			Grouping: []string{"job"},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   44,
+			},
+		},
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
