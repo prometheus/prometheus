@@ -388,7 +388,11 @@ func (p *parser) Lex(lval *yySymType) int {
 		lval.item.Typ = EOF
 		p.InjectItem(0)
 	case RIGHT_PAREN:
-		p.closingParens = append(p.closingParens, lval.item.Pos+posrange.Pos(len(lval.item.Val)))
+		if len(p.closingParens) >= 2 {
+			p.closingParens[1] = lval.item.Pos + posrange.Pos(len(lval.item.Val))
+		} else {
+			p.closingParens = append(p.closingParens, lval.item.Pos+posrange.Pos(len(lval.item.Val)))
+		}
 		fallthrough
 	case RIGHT_BRACE, RIGHT_BRACKET, DURATION, NUMBER:
 		p.lastClosing = lval.item.Pos + posrange.Pos(len(lval.item.Val))
