@@ -5119,7 +5119,6 @@ func TestParseExpressions(t *testing.T) {
 					expected = &expectedCopy
 					actualVector.LabelMatchers = nil
 				}
-
 				require.Equal(t, expected, expr, "error on input '%s'", test.input)
 			} else {
 				require.Error(t, err)
@@ -5817,4 +5816,88 @@ func TestParseCustomFunctions(t *testing.T) {
 	call, ok := expr.(*Call)
 	require.True(t, ok)
 	require.Equal(t, "custom_func", call.Func.Name)
+}
+
+func checkPosRange(t *testing.T, node Node) {
+	require.GreaterOrEqual(t, node.PositionRange().End, node.PositionRange().Start,
+		"end position must be >= start position on: '%s' pos=%+v", node, node.PositionRange())
+	for _, child := range Children(node) {
+		checkPosRange(t, child)
+	}
+}
+
+// TestPosRange will ensure that PositionRange on all nodes is valid.
+// Currently it only validates that the end position is greater than or equal to the start position.
+// It uses queries from testExpr list plus some extra queries that are pretty complex and so
+// would require a huge "expected" tree to be manually constructed.
+func TestPosRange(t *testing.T) {
+	// Enable experimental functions testing.
+	EnableExperimentalFunctions = true
+	// Enable experimental duration expression parsing.
+	ExperimentalDurationExpr = true
+	t.Cleanup(func() {
+		EnableExperimentalFunctions = false
+		ExperimentalDurationExpr = false
+	})
+
+	inputs := []string{
+		`
+group by (a) (
+label_replace(
+	label_replace(
+		label_join(
+			label_replace(metric1, "job", "foo", "job", "bar")
+			* on (instance) group_left (enabled, status)
+			(
+				count_values by (instance, status) (
+					"enabled",
+					metric3 * on () group_left () (group(metric4 > 0)
+					or group(metric2{env="1"})
+					or group(metric2{env="2"})
+					or group(metric2{env="3"})
+					or vector(0)
+					)
+				)
+			), "enabled", ",", "status", "enabled"
+		), "enabled", "1", "enabled", "v,[1-9][0-9]*"
+	), "enabled", "0", "enabled", "[^1].*" )
+)
+`,
+		`
+group by (a) (
+label_replace(
+	label_replace(
+		label_join(
+			label_replace(metric1, "job", "foo", "job", "bar")
+			* on (instance) group_left (enabled, status)
+			(
+				count_values by (instance, status) (
+					"enabled",
+					metric3 * on () group_left () (group(metric4 > bool 0)
+					or group(metric2{env="1"})
+					or group(metric2{env="2"})
+					or group(metric2{env="3"})
+					or vector(0)
+					)
+				)
+			), "enabled", ",", "status", "enabled"
+		), "enabled", "1", "enabled", "v,[1-9][0-9]*"
+	), "enabled", "0", "enabled", "[^1].*" )
+)
+`,
+	}
+	for _, test := range testExpr {
+		if test.fail {
+			continue
+		}
+		inputs = append(inputs, test.input)
+	}
+
+	for _, input := range inputs {
+		t.Run(input, func(t *testing.T) {
+			expr, err := ParseExpr(input)
+			require.NoError(t, err)
+			checkPosRange(t, expr)
+		})
+	}
 }

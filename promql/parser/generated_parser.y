@@ -317,11 +317,17 @@ bool_modifier   : /* empty */
                         { $$ = &BinaryExpr{
                         VectorMatching: &VectorMatching{Card: CardOneToOne},
                         }
+                        if len(yylex.(*parser).closingParens) > 0 {
+                                yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
+                        }
                         }
                 | BOOL
                         { $$ = &BinaryExpr{
                         VectorMatching: &VectorMatching{Card: CardOneToOne},
                         ReturnBool:     true,
+                        }
+                        if len(yylex.(*parser).closingParens) > 0 {
+                                yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
                         }
                         }
                 ;
@@ -422,8 +428,8 @@ function_call   : IDENTIFIER function_call_body
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
                         }
                         if len(yylex.(*parser).closingParens) > 1 {
-                	        yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
-                	}
+                                yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
+                        }
                         $$ = &Call{
                                 Func: fn,
                                 Args: $2.(Expressions),

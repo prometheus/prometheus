@@ -1251,6 +1251,9 @@ yydefault:
 			yyVAL.node = &BinaryExpr{
 				VectorMatching: &VectorMatching{Card: CardOneToOne},
 			}
+			if len(yylex.(*parser).closingParens) > 0 {
+				yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
+			}
 		}
 	case 45:
 		yyDollar = yyS[yypt-1 : yypt+1]
@@ -1258,6 +1261,9 @@ yydefault:
 			yyVAL.node = &BinaryExpr{
 				VectorMatching: &VectorMatching{Card: CardOneToOne},
 				ReturnBool:     true,
+			}
+			if len(yylex.(*parser).closingParens) > 0 {
+				yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
 			}
 		}
 	case 46:
