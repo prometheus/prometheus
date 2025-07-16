@@ -3193,7 +3193,7 @@ func TestEngine_Close(t *testing.T) {
 	})
 }
 
-// Without changes to how ParentExpr is handled these test expressions will fail with an "unexpected number of samples" error and "unexpected result in StepInvariantExpr evaluation: *parser.StepInvariantExpr" error
+// Test cases specific to removing redundant ParentExprs.
 func TestRedundantParenExpr(t *testing.T) {
 	engine := newTestEngine(t)
 
@@ -3204,7 +3204,7 @@ func TestRedundantParenExpr(t *testing.T) {
 	`)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
-	for _, expr := range []string{"(metric[2y]@12)", "(((metric[2y]@12)))", `("")`, `((""))`} {
+	for _, expr := range []string{"sum((metric)) / (max((metric)))", "(metric[2y]@12)", "(((metric[2y]@12)))", `("")`, `((""))`, `((("")))`} {
 		q, err := engine.NewInstantQuery(context.Background(), storage, nil, expr, time.Now())
 		require.NoError(t, err)
 
