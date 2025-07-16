@@ -4945,6 +4945,122 @@ var testExpr = []struct {
 			},
 		},
 	},
+	{
+		input: `(sum by (job) (metric1)) < ignoring(cluster) group_left() (count(metric2))`,
+		expected: &BinaryExpr{
+			Op: LSS,
+			LHS: &ParenExpr{
+				Expr: &AggregateExpr{
+					Op: SUM,
+					Expr: &VectorSelector{
+						Name: "metric1",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "metric1"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 15,
+							End:   22,
+						},
+					},
+					Grouping: []string{"job"},
+					PosRange: posrange.PositionRange{
+						Start: 1,
+						End:   23,
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   24,
+				},
+			},
+			RHS: &ParenExpr{
+				Expr: &AggregateExpr{
+					Op: COUNT,
+					Expr: &VectorSelector{
+						Name: "metric2",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "metric2"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 65,
+							End:   72,
+						},
+					},
+					PosRange: posrange.PositionRange{
+						Start: 59,
+						End:   73,
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 58,
+					End:   74,
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToOne,
+				MatchingLabels: []string{"cluster"},
+				Include:        []string{},
+			},
+		},
+	},
+	{
+		input: `(sum by (job) (metric1)) < ignoring(cluster) group_right() (count(metric2))`,
+		expected: &BinaryExpr{
+			Op: LSS,
+			LHS: &ParenExpr{
+				Expr: &AggregateExpr{
+					Op: SUM,
+					Expr: &VectorSelector{
+						Name: "metric1",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "metric1"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 15,
+							End:   22,
+						},
+					},
+					Grouping: []string{"job"},
+					PosRange: posrange.PositionRange{
+						Start: 1,
+						End:   23,
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   24,
+				},
+			},
+			RHS: &ParenExpr{
+				Expr: &AggregateExpr{
+					Op: COUNT,
+					Expr: &VectorSelector{
+						Name: "metric2",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "metric2"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 66,
+							End:   73,
+						},
+					},
+					PosRange: posrange.PositionRange{
+						Start: 60,
+						End:   74,
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 59,
+					End:   75,
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardOneToMany,
+				MatchingLabels: []string{"cluster"},
+				Include:        []string{},
+			},
+		},
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {

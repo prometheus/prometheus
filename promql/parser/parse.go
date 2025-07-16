@@ -451,12 +451,6 @@ func (p *parser) assembleVectorSelector(vs *VectorSelector) {
 	}
 }
 
-func (p *parser) consumeClosingParen() {
-	if len(p.closingParens) > 1 {
-		p.closingParens = p.closingParens[1:]
-	}
-}
-
 func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateExpr) {
 	ret = modifier.(*AggregateExpr)
 	arguments := args.(Expressions)

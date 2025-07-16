@@ -247,14 +247,18 @@ aggregate_expr  : aggregate_op aggregate_modifier function_call_body
                         {
                         // Need to consume the position of the first RIGHT_PAREN. It might not exist on garbage input
                         // like 'sum (some_metric) by test'
-                        yylex.(*parser).consumeClosingParen()
+                        if len(yylex.(*parser).closingParens) > 1 {
+                                yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
+                        }
                         $$ = yylex.(*parser).newAggregateExpr($1, $2, $3)
                         }
                 | aggregate_op function_call_body aggregate_modifier
                         {
                         // Need to consume the position of the first RIGHT_PAREN. It might not exist on garbage input
                         // like 'sum by test (some_metric)'
-                        yylex.(*parser).consumeClosingParen()
+                        if len(yylex.(*parser).closingParens) > 1 {
+                                yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
+                        }
                         $$ = yylex.(*parser).newAggregateExpr($1, $3, $2)
                         }
                 | aggregate_op function_call_body
@@ -326,12 +330,18 @@ on_or_ignoring  : bool_modifier IGNORING grouping_labels
                         {
                         $$ = $1
                         $$.(*BinaryExpr).VectorMatching.MatchingLabels = $3
+                        if len(yylex.(*parser).closingParens) > 0 {
+                                yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
+                        }
                         }
                 | bool_modifier ON grouping_labels
                         {
                         $$ = $1
                         $$.(*BinaryExpr).VectorMatching.MatchingLabels = $3
                         $$.(*BinaryExpr).VectorMatching.On = true
+                        if len(yylex.(*parser).closingParens) > 0 {
+                                yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
+                        }
                         }
                 ;
 
@@ -342,12 +352,18 @@ group_modifiers: bool_modifier /* empty */
                         $$ = $1
                         $$.(*BinaryExpr).VectorMatching.Card = CardManyToOne
                         $$.(*BinaryExpr).VectorMatching.Include = $3
+                        if len(yylex.(*parser).closingParens) > 0 {
+                                yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
+                        }
                         }
                 | on_or_ignoring GROUP_RIGHT maybe_grouping_labels
                         {
                         $$ = $1
                         $$.(*BinaryExpr).VectorMatching.Card = CardOneToMany
                         $$.(*BinaryExpr).VectorMatching.Include = $3
+                        if len(yylex.(*parser).closingParens) > 0 {
+                                yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
+                        }
                         }
                 ;
 
@@ -405,7 +421,9 @@ function_call   : IDENTIFIER function_call_body
                         if fn != nil && fn.Experimental && !EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
                         }
-                        yylex.(*parser).consumeClosingParen()
+                        if len(yylex.(*parser).closingParens) > 1 {
+                	        yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
+                	}
                         $$ = &Call{
                                 Func: fn,
                                 Args: $2.(Expressions),
