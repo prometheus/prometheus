@@ -405,7 +405,6 @@ function_call   : IDENTIFIER function_call_body
                         if fn != nil && fn.Experimental && !EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
                         }
-                        yylex.(*parser).consumeClosingParen()
                         $$ = &Call{
                                 Func: fn,
                                 Args: $2.(Expressions),
@@ -414,6 +413,7 @@ function_call   : IDENTIFIER function_call_body
                                         End:   yylex.(*parser).closingParens[0],
                                 },
                         }
+                        yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
                         }
                 ;
 
@@ -441,7 +441,7 @@ function_call_args: function_call_args COMMA expr
 paren_expr      : LEFT_PAREN expr RIGHT_PAREN
                         {
                         $$ = &ParenExpr{Expr: $2.(Expr), PosRange: mergeRanges(&$1, &$3)}
-                        yylex.(*parser).consumeClosingParen()
+                        yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
                         }
                 ;
 

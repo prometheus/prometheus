@@ -470,7 +470,7 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateE
 		Start: op.Pos,
 		End:   p.closingParens[0],
 	}
-	p.consumeClosingParen()
+	p.closingParens = p.closingParens[1:]
 
 	ret.Op = op.Typ
 
