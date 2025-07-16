@@ -1355,6 +1355,7 @@ yydefault:
 			if fn != nil && fn.Experimental && !EnableExperimentalFunctions {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "function %q is not enabled", yyDollar[1].item.Val)
 			}
+			yylex.(*parser).consumeClosingParen()
 			yyVAL.node = &Call{
 				Func: fn,
 				Args: yyDollar[2].node.(Expressions),
