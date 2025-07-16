@@ -17,6 +17,7 @@ package labels
 
 import (
 	"bytes"
+	"iter"
 	"slices"
 	"strings"
 	"unsafe"
@@ -334,6 +335,17 @@ func (ls Labels) IsEmpty() bool {
 func (ls Labels) Range(f func(l Label)) {
 	for _, l := range ls {
 		f(l)
+	}
+}
+
+// Iter is an iterator over all labels.
+func (ls Labels) Iter() iter.Seq[Label] {
+	return func(yield func(Label) bool) {
+		for _, l := range ls {
+			if !yield(l) {
+				return
+			}
+		}
 	}
 }
 
