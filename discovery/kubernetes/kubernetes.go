@@ -433,8 +433,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			eps := NewEndpointSlice(
 				d.logger.With("role", "endpointslice"),
 				informer,
-				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
-				d.mustNewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
+				d.mustNewSharedInformer(ctx, slw, &apiv1.Service{}, resyncDisabled),
+				d.mustNewSharedInformer(ctx, plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
 				d.metrics.eventCount,
 			)
@@ -493,8 +493,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			eps := NewEndpoints(
 				d.logger.With("role", "endpoint"),
 				d.newEndpointsByNodeInformer(elw),
-				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
-				d.mustNewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
+				d.mustNewSharedInformer(ctx, slw, &apiv1.Service{}, resyncDisabled),
+				d.mustNewSharedInformer(ctx, plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
 				d.metrics.eventCount,
 			)
@@ -550,7 +550,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			svc := NewService(
 				d.logger.With("role", "service"),
-				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
+				d.mustNewSharedInformer(ctx, slw, &apiv1.Service{}, resyncDisabled),
 				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, svc)
@@ -572,7 +572,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 					return i.Watch(ctx, options)
 				},
 			}
-			informer = d.mustNewSharedInformer(ilw, &networkv1.Ingress{}, resyncDisabled)
+			informer = d.mustNewSharedInformer(ctx, ilw, &networkv1.Ingress{}, resyncDisabled)
 			ingress := NewIngress(
 				d.logger.With("role", "ingress"),
 				informer,
@@ -648,7 +648,7 @@ func (d *Discovery) newNodeInformer(ctx context.Context) cache.SharedInformer {
 			return d.client.CoreV1().Nodes().Watch(ctx, options)
 		},
 	}
-	return d.mustNewSharedInformer(nlw, &apiv1.Node{}, resyncDisabled)
+	return d.mustNewSharedInformer(ctx, nlw, &apiv1.Node{}, resyncDisabled)
 }
 
 func (d *Discovery) newPodsByNodeInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
@@ -758,16 +758,16 @@ func (d *Discovery) newEndpointSlicesByNodeInformer(plw *cache.ListWatch, object
 	return d.mustNewSharedIndexInformer(plw, object, resyncDisabled, indexers)
 }
 
-func (d *Discovery) informerWatchErrorHandler(r *cache.Reflector, err error) {
+func (d *Discovery) informerWatchErrorHandler(ctx context.Context, r *cache.Reflector, err error) {
 	d.metrics.failuresCount.Inc()
-	cache.DefaultWatchErrorHandler(r, err)
+	cache.DefaultWatchErrorHandler(ctx, r, err)
 }
 
-func (d *Discovery) mustNewSharedInformer(lw cache.ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration) cache.SharedInformer {
+func (d *Discovery) mustNewSharedInformer(ctx context.Context, lw cache.ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration) cache.SharedInformer {
 	informer := cache.NewSharedInformer(lw, exampleObject, defaultEventHandlerResyncPeriod)
 	// Invoking SetWatchErrorHandler should fail only if the informer has been started beforehand.
 	// Such a scenario would suggest an incorrect use of the API, thus the panic.
-	if err := informer.SetWatchErrorHandler(d.informerWatchErrorHandler); err != nil {
+	if err := informer.SetWatchErrorHandlerWithContext(d.informerWatchErrorHandler); err != nil {
 		panic(err)
 	}
 	return informer
@@ -777,7 +777,7 @@ func (d *Discovery) mustNewSharedIndexInformer(lw cache.ListerWatcher, exampleOb
 	informer := cache.NewSharedIndexInformer(lw, exampleObject, defaultEventHandlerResyncPeriod, indexers)
 	// Invoking SetWatchErrorHandler should fail only if the informer has been started beforehand.
 	// Such a scenario would suggest an incorrect use of the API, thus the panic.
-	if err := informer.SetWatchErrorHandler(d.informerWatchErrorHandler); err != nil {
+	if err := informer.SetWatchErrorHandlerWithContext(d.informerWatchErrorHandler); err != nil {
 		panic(err)
 	}
 	return informer
