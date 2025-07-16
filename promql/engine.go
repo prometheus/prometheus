@@ -3728,6 +3728,19 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 	return e
 }
 
+func unwrapParentExprIfRedundant(e parser.Expr) parser.Expr {
+	switch n := e.(type) {
+	case *parser.ParenExpr:
+		switch n.Expr.(type) {
+		case *parser.MatrixSelector, *parser.StringLiteral, *parser.NumberLiteral, *parser.SubqueryExpr:
+			return n.Expr
+		case *parser.ParenExpr:
+			return unwrapParentExprIfRedundant(n.Expr)
+		}
+	}
+	return e
+}
+
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
 // StepInvariantExpr. It also resolves the preprocessors and evaluates duration expressions
 // into their numeric values.
@@ -3737,13 +3750,7 @@ func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) 
 	// If the expression is a ParenExpr and the child is a MatrixSelector, SubqueryExpr, StringLiteral, or NumberLiteral we remove the ParenExpr from the chain.
 	// This is to avoid issues in the eval() case *parser.StepInvariantExpr handling where there are specific cases for these child expressions.
 	// Without removing the ParentExpr, these specific cases are not handled and errors can occur.
-	switch n := expr.(type) {
-	case *parser.ParenExpr:
-		switch n.Expr.(type) {
-		case *parser.MatrixSelector, *parser.StringLiteral, *parser.NumberLiteral, *parser.SubqueryExpr:
-			expr = n.Expr
-		}
-	}
+	expr = unwrapParentExprIfRedundant(expr)
 
 	if err := parser.Walk(&durationVisitor{step: step}, expr, nil); err != nil {
 		return nil, err

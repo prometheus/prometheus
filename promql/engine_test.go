@@ -3204,7 +3204,7 @@ func TestRedundantParenExpr(t *testing.T) {
 	`)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
-	for _, expr := range []string{"(metric[2y]@12)", `("")`} {
+	for _, expr := range []string{"(metric[2y]@12)", "(((metric[2y]@12)))", `("")`, `((""))`} {
 		q, err := engine.NewInstantQuery(context.Background(), storage, nil, expr, time.Now())
 		require.NoError(t, err)
 
