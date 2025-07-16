@@ -439,8 +439,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			eps := NewEndpointSlice(
 				d.logger.With("role", "endpointslice"),
 				informer,
-				d.mustNewSharedInformer(ctx, slw, &apiv1.Service{}, resyncDisabled),
-				d.mustNewSharedInformer(ctx, plw, &apiv1.Pod{}, resyncDisabled),
+				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
+				d.mustNewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
 				namespaceInf,
 				d.metrics.eventCount,
@@ -505,8 +505,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			eps := NewEndpoints(
 				d.logger.With("role", "endpoint"),
 				d.newIndexedEndpointsInformer(elw),
-				d.mustNewSharedInformer(ctx, slw, &apiv1.Service{}, resyncDisabled),
-				d.mustNewSharedInformer(ctx, plw, &apiv1.Pod{}, resyncDisabled),
+				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
+				d.mustNewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
 				namespaceInf,
 				d.metrics.eventCount,
@@ -679,7 +679,7 @@ func (d *Discovery) newNodeInformer(ctx context.Context) cache.SharedInformer {
 			return d.client.CoreV1().Nodes().Watch(ctx, options)
 		},
 	}
-	return d.mustNewSharedInformer(ctx, nlw, &apiv1.Node{}, resyncDisabled)
+	return d.mustNewSharedInformer(nlw, &apiv1.Node{}, resyncDisabled)
 }
 
 func (d *Discovery) newNamespaceInformer(ctx context.Context) cache.SharedInformer {
@@ -692,7 +692,7 @@ func (d *Discovery) newNamespaceInformer(ctx context.Context) cache.SharedInform
 			return d.client.CoreV1().Namespaces().Watch(ctx, options)
 		},
 	}
-	return d.mustNewSharedInformer(ctx, nlw, &apiv1.Namespace{}, resyncDisabled)
+	return d.mustNewSharedInformer(nlw, &apiv1.Namespace{}, resyncDisabled)
 }
 
 func (d *Discovery) newIndexedPodsInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
@@ -837,7 +837,7 @@ func (d *Discovery) informerWatchErrorHandler(ctx context.Context, r *cache.Refl
 	cache.DefaultWatchErrorHandler(ctx, r, err)
 }
 
-func (d *Discovery) mustNewSharedInformer(ctx context.Context, lw cache.ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration) cache.SharedInformer {
+func (d *Discovery) mustNewSharedInformer(lw cache.ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration) cache.SharedInformer {
 	informer := cache.NewSharedInformer(lw, exampleObject, defaultEventHandlerResyncPeriod)
 	// Invoking SetWatchErrorHandler should fail only if the informer has been started beforehand.
 	// Such a scenario would suggest an incorrect use of the API, thus the panic.
