@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 	apiv1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	disv1 "k8s.io/api/discovery/v1"
 	networkv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -717,51 +718,48 @@ func (d *Discovery) newIndexedPodsInformer(plw *cache.ListWatch) cache.SharedInd
 func (d *Discovery) newIndexedEndpointsInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
 	indexers := make(map[string]cache.IndexFunc)
 	indexers[podIndex] = func(obj interface{}) ([]string, error) {
-		e, ok := obj.(*apiv1.Endpoints)
+		e, ok := obj.(*discoveryv1.EndpointSlice)
 		if !ok {
 			return nil, errors.New("object is not endpoints")
 		}
 		var pods []string
-		for _, target := range e.Subsets {
-			for _, addr := range target.Addresses {
-				if addr.TargetRef != nil && addr.TargetRef.Kind == "Pod" {
-					pods = append(pods, namespacedName(addr.TargetRef.Namespace, addr.TargetRef.Name))
-				}
+		for _, target := range e.Endpoints {
+			if target.TargetRef != nil && target.TargetRef.Kind == "Pod" {
+				pods = append(pods, namespacedName(target.TargetRef.Namespace, target.TargetRef.Name))
 			}
 		}
 		return pods, nil
 	}
+	if !d.attachMetadata.Node {
+		return d.mustNewSharedIndexInformer(plw, &discoveryv1.EndpointSlice{}, resyncDisabled, indexers)
+	}
 
-	if d.attachMetadata.Node {
-		indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
-			e, ok := obj.(*apiv1.Endpoints)
-			if !ok {
-				return nil, errors.New("object is not endpoints")
-			}
-			var nodes []string
-			for _, target := range e.Subsets {
-				for _, addr := range target.Addresses {
-					if addr.TargetRef != nil {
-						switch addr.TargetRef.Kind {
-						case "Pod":
-							if addr.NodeName != nil {
-								nodes = append(nodes, *addr.NodeName)
-							}
-						case "Node":
-							nodes = append(nodes, addr.TargetRef.Name)
-						}
+	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
+		e, ok := obj.(*discoveryv1.EndpointSlice)
+		if !ok {
+			return nil, errors.New("object is not endpoints")
+		}
+		var nodes []string
+		for _, target := range e.Endpoints {
+			if target.TargetRef != nil {
+				switch target.TargetRef.Kind {
+				case "Pod":
+					if target.NodeName != nil {
+						nodes = append(nodes, *target.NodeName)
 					}
+				case "Node":
+					nodes = append(nodes, target.TargetRef.Name)
 				}
 			}
-			return nodes, nil
 		}
+		return nodes, nil
 	}
 
 	if d.attachMetadata.Namespace {
 		indexers[cache.NamespaceIndex] = cache.MetaNamespaceIndexFunc
 	}
 
-	return d.mustNewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncDisabled, indexers)
+	return d.mustNewSharedIndexInformer(plw, &discoveryv1.EndpointSlice{}, resyncDisabled, indexers)
 }
 
 func (d *Discovery) newIndexedEndpointSlicesInformer(plw *cache.ListWatch, object runtime.Object) cache.SharedIndexInformer {
