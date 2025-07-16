@@ -2113,6 +2113,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		return res, ws
 	case *parser.StepInvariantExpr:
 
+		// Unwrap ParenExprs / () that are redundant.
 		unwrapParenExpr(&e.Expr)
 
 		switch ce := e.Expr.(type) {
@@ -3737,7 +3738,7 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) (parser.Expr, error) {
 	detectHistogramStatsDecoding(expr)
 
-	// Unwrap ParenExprs that are redundant.
+	// Unwrap ParenExprs / () that are redundant.
 	unwrapParenExpr(&expr)
 
 	if err := parser.Walk(&durationVisitor{step: step}, expr, nil); err != nil {
