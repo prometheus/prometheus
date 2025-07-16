@@ -3193,6 +3193,27 @@ func TestEngine_Close(t *testing.T) {
 	})
 }
 
+// Without changes to how ParentExpr is handled these test expressions will fail with an "unexpected number of samples" error and "unexpected result in StepInvariantExpr evaluation: *parser.StepInvariantExpr" error
+func TestRedundantParenExpr(t *testing.T) {
+	engine := newTestEngine(t)
+
+	storage := promqltest.LoadedStorage(t, `
+		load 10s
+			metric{type="floats"} 1 2
+			metric{type="histograms"} {{count:1}} {{count:2}}
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	for _, expr := range []string{"(metric[2y]@12)", `("")`} {
+		q, err := engine.NewInstantQuery(context.Background(), storage, nil, expr, time.Now())
+		require.NoError(t, err)
+
+		r := q.Exec(context.Background())
+		require.NoError(t, r.Err)
+		t.Cleanup(q.Close)
+	}
+}
+
 func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 	engine := newTestEngine(t)
 

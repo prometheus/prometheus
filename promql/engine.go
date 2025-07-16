@@ -3734,6 +3734,17 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) (parser.Expr, error) {
 	detectHistogramStatsDecoding(expr)
 
+	// If the expression is a ParenExpr and the child is a MatrixSelector, SubqueryExpr, StringLiteral, or NumberLiteral we remove the ParenExpr from the chain.
+	// This is to avoid issues in the eval() case *parser.StepInvariantExpr handling where there are specific cases for these child expressions.
+	// Without removing the ParentExpr, these specific cases are not handled and errors can occur.
+	switch n := expr.(type) {
+	case *parser.ParenExpr:
+		switch n.Expr.(type) {
+		case *parser.MatrixSelector, *parser.StringLiteral, *parser.NumberLiteral, *parser.SubqueryExpr:
+			expr = n.Expr
+		}
+	}
+
 	if err := parser.Walk(&durationVisitor{step: step}, expr, nil); err != nil {
 		return nil, err
 	}
