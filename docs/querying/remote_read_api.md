@@ -6,7 +6,8 @@ sort_rank: 7
 NOTE: This is not currently considered part of the stable API and is subject to change even between non-major version releases of Prometheus.
 
 This API provides data read functionality from Prometheus. This interface expects [snappy](https://github.com/google/snappy) compression.
-The API definition is located [here](https://github.com/prometheus/prometheus/blob/master/prompb/remote.proto).
+The API definition is located [here](https://github.com/prometheus/prometheus/blob/main/prompb/remote.proto).
+Protobuf definitions are also available on [buf.build](https://buf.build/prometheus/prometheus/docs/main:prometheus#prometheus.ReadRequest).
 
 Request are made to the following endpoint.
 ```
