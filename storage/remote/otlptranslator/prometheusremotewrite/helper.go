@@ -175,14 +175,15 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 		}
 	}
 	if promoteScope {
-		l["otel_scope_name"] = scope.name
-		l["otel_scope_version"] = scope.version
-		l["otel_scope_schema_url"] = scope.schemaURL
 		scope.attributes.Range(func(k string, v pcommon.Value) bool {
 			name := labelNamer.Build("otel_scope_" + k)
 			l[name] = v.AsString()
 			return true
 		})
+		// Scope Name, Version and Schema URL are added after attributes to ensure they are not overwritten by attributes.
+		l["otel_scope_name"] = scope.name
+		l["otel_scope_version"] = scope.version
+		l["otel_scope_schema_url"] = scope.schemaURL
 	}
 
 	// Map service.name + service.namespace to job.
