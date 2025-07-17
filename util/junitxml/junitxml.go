@@ -30,12 +30,20 @@ type TestSuite struct {
 	ErrorCount   int         `xml:"errors,attr"`
 	SkippedCount int         `xml:"skipped,attr"`
 	Timestamp    string      `xml:"timestamp,attr"`
+	Properties   []Property  `xml:"properties>property,omitempty"`
 	Cases        []*TestCase `xml:"testcase"`
 }
+
+type Property struct {
+	Name  string `xml:"name,attr"`
+	Value string `xml:"value,attr"`
+}
+
 type TestCase struct {
 	Name     string   `xml:"name,attr"`
 	Failures []string `xml:"failure,omitempty"`
 	Error    string   `xml:"error,omitempty"`
+	Suite    *TestSuite `xml:"-"`
 }
 
 func (j *JUnitXML) WriteXML(h io.Writer) error {
@@ -54,6 +62,14 @@ func (ts *TestSuite) Fail(f string) {
 	curt.Failures = append(curt.Failures, f)
 }
 
+func (tc *TestCase) Fail(f string) {
+	tc.Suite.Fail(f)
+}
+
+func (tc *TestCase) Abort(e error) {
+	tc.Suite.Abort(e)
+}
+
 func (ts *TestSuite) lastCase() *TestCase {
 	if len(ts.Cases) == 0 {
 		ts.Case("unknown")
@@ -61,13 +77,18 @@ func (ts *TestSuite) lastCase() *TestCase {
 	return ts.Cases[len(ts.Cases)-1]
 }
 
-func (ts *TestSuite) Case(name string) *TestSuite {
+func (ts *TestSuite) Case(name string) *TestCase {
 	j := &TestCase{
-		Name: name,
+		Name:  name,
+		Suite: ts,
 	}
 	ts.Cases = append(ts.Cases, j)
 	ts.TestCount++
-	return ts
+	return j
+}
+
+func (ts *TestSuite) AddProperty(name, value string) {
+	ts.Properties = append(ts.Properties, Property{Name: name, Value: value})
 }
 
 func (ts *TestSuite) Settime(name string) {
