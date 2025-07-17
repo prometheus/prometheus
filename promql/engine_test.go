@@ -696,6 +696,12 @@ load 10s
 			Start:  time.Unix(1, 0),
 		},
 		{
+			Query:       `("")`,
+			Start:       time.Unix(0, 0),
+			Result:      promql.String{T: timestamp.FromTime(time.Unix(0, 0)), V: ""},
+			ShouldError: false,
+		},
+		{
 			Query: "metric",
 			Result: promql.Vector{
 				promql.Sample{
@@ -2312,6 +2318,15 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 			},
 		},
 		{
+			input: `("")`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.StringLiteral{
+					Val:      "",
+					PosRange: posrange.PositionRange{Start: 1, End: 3},
+				},
+			},
+		},
+		{
 			input: `"foo"`,
 			expected: &parser.StepInvariantExpr{
 				Expr: &parser.StringLiteral{
@@ -3208,7 +3223,7 @@ func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 
 	testCases := map[string]struct {
 		expr     string
-		expected parser.Value
+		expected promql.Matrix
 		ts       time.Time
 	}{
 		"matches series with points in range": {
@@ -3247,11 +3262,6 @@ func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 			expr:     "some_metric[1m]",
 			ts:       baseT.Add(20 * time.Minute),
 			expected: promql.Matrix{},
-		},
-		"empty string in parentheus": {
-			expr:     `("")`,
-			ts:       baseT,
-			expected: promql.String{T: timestamp.FromTime(baseT), V: ""},
 		},
 		"metric with stale marker": {
 			expr: "some_metric_with_stale_marker[3m]",
