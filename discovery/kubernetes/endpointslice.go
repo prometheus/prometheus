@@ -492,3 +492,25 @@ func (e *EndpointSlice) addServiceLabels(esa v1.EndpointSlice, tg *targetgroup.G
 
 	tg.Labels = tg.Labels.Merge(serviceLabels(svc))
 }
+
+func addNodeLabels(tg model.LabelSet, nodeInf cache.SharedInformer, logger *slog.Logger, nodeName *string) model.LabelSet {
+	if nodeName == nil {
+		return tg
+	}
+
+	obj, exists, err := nodeInf.GetStore().GetByKey(*nodeName)
+	if err != nil {
+		logger.Error("Error getting node", "node", *nodeName, "err", err)
+		return tg
+	}
+
+	if !exists {
+		return tg
+	}
+
+	node := obj.(*apiv1.Node)
+	// Allocate one target label for the node name,
+	nodeLabelset := make(model.LabelSet)
+	addObjectMetaLabels(nodeLabelset, node.ObjectMeta, RoleNode)
+	return tg.Merge(nodeLabelset)
+}

@@ -491,7 +491,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				go nodeInf.Run(ctx.Done())
 			}
 
-			eps := NewEndpoints(
+			eps := NewEndpointSlice(
 				d.logger.With("role", "endpoint"),
 				d.newEndpointsByNodeInformer(elw),
 				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
@@ -500,7 +500,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, eps)
-			go eps.endpointsInf.Run(ctx.Done())
+			go eps.endpointSliceInf.Run(ctx.Done())
 			go eps.serviceInf.Run(ctx.Done())
 			go eps.podInf.Run(ctx.Done())
 		}
