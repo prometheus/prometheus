@@ -61,6 +61,7 @@ func FakeTestSuites() *JUnitXML {
 	bad.Fail("once")
 	bad.Fail("twice")
 	mixed.Case("ugly").Abort(errors.New("buggy"))
-	ju.Suite("fast").Fail("fail early")
+	case2 := ju.Suite("fast")
+	case2.Fail("fail early")
 	return ju
 }
