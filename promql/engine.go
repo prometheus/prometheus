@@ -2112,10 +2112,6 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, newEv.samplesStats.TotalSamples)
 		return res, ws
 	case *parser.StepInvariantExpr:
-
-		// Unwrap ParenExprs / () that are redundant.
-		unwrapParenExpr(&e.Expr)
-
 		switch ce := e.Expr.(type) {
 		case *parser.StringLiteral, *parser.NumberLiteral:
 			return ev.eval(ctx, ce)

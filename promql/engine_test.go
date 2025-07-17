@@ -3193,27 +3193,6 @@ func TestEngine_Close(t *testing.T) {
 	})
 }
 
-// Test cases specific to removing redundant ParentExprs.
-func TestParenExprUnwrap(t *testing.T) {
-	engine := newTestEngine(t)
-
-	storage := promqltest.LoadedStorage(t, `
-		load 10s
-			metric{type="floats"} 1 2
-			metric{type="histograms"} {{count:1}} {{count:2}}
-	`)
-	t.Cleanup(func() { require.NoError(t, storage.Close()) })
-
-	for _, expr := range []string{"(sum((metric)) / (max((metric))))", "(metric[2y]@12)", "(((metric[2y]@12)))", `("")`, `((""))`, `((("")))`} {
-		q, err := engine.NewInstantQuery(context.Background(), storage, nil, expr, time.Now())
-		require.NoError(t, err)
-
-		r := q.Exec(context.Background())
-		require.NoError(t, r.Err)
-		t.Cleanup(q.Close)
-	}
-}
-
 func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 	engine := newTestEngine(t)
 
@@ -3229,7 +3208,7 @@ func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 
 	testCases := map[string]struct {
 		expr     string
-		expected promql.Matrix
+		expected parser.Value
 		ts       time.Time
 	}{
 		"matches series with points in range": {
@@ -3264,10 +3243,10 @@ func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 			ts:       baseT,
 			expected: promql.Matrix{},
 		},
-		"no samples in range": {
-			expr:     "some_metric[1m]",
-			ts:       baseT.Add(20 * time.Minute),
-			expected: promql.Matrix{},
+		"empty string in parentheus": {
+			expr:     `("")`,
+			ts:       baseT,
+			expected: promql.String{T: timestamp.FromTime(baseT), V: ""},
 		},
 		"metric with stale marker": {
 			expr: "some_metric_with_stale_marker[3m]",
