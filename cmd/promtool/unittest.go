@@ -693,9 +693,9 @@ type alert struct {
 }
 
 type promqlTestCase struct {
-	Expr       string         `yaml:"expr"`
+	Expr       string   `yaml:"expr"`
 	EvalTime   model.Duration `yaml:"eval_time"`
-	ExpSamples []sample       `yaml:"exp_samples"`
+	ExpSamples []sample `yaml:"exp_samples"`
 }
 
 type sample struct {
