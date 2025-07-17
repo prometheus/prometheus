@@ -31,7 +31,6 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 	apiv1 "k8s.io/api/core/v1"
-	discoveryv1 "k8s.io/api/discovery/v1"
 	disv1 "k8s.io/api/discovery/v1"
 	networkv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -718,7 +717,7 @@ func (d *Discovery) newIndexedPodsInformer(plw *cache.ListWatch) cache.SharedInd
 func (d *Discovery) newIndexedEndpointsInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
 	indexers := make(map[string]cache.IndexFunc)
 	indexers[podIndex] = func(obj interface{}) ([]string, error) {
-		e, ok := obj.(*discoveryv1.EndpointSlice)
+		e, ok := obj.(*disv1.EndpointSlice)
 		if !ok {
 			return nil, errors.New("object is not endpoints")
 		}
@@ -731,11 +730,11 @@ func (d *Discovery) newIndexedEndpointsInformer(plw *cache.ListWatch) cache.Shar
 		return pods, nil
 	}
 	if !d.attachMetadata.Node {
-		return d.mustNewSharedIndexInformer(plw, &discoveryv1.EndpointSlice{}, resyncDisabled, indexers)
+		return d.mustNewSharedIndexInformer(plw, &disv1.EndpointSlice{}, resyncDisabled, indexers)
 	}
 
 	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
-		e, ok := obj.(*discoveryv1.EndpointSlice)
+		e, ok := obj.(*disv1.EndpointSlice)
 		if !ok {
 			return nil, errors.New("object is not endpoints")
 		}
@@ -759,7 +758,7 @@ func (d *Discovery) newIndexedEndpointsInformer(plw *cache.ListWatch) cache.Shar
 		indexers[cache.NamespaceIndex] = cache.MetaNamespaceIndexFunc
 	}
 
-	return d.mustNewSharedIndexInformer(plw, &discoveryv1.EndpointSlice{}, resyncDisabled, indexers)
+	return d.mustNewSharedIndexInformer(plw, &disv1.EndpointSlice{}, resyncDisabled, indexers)
 }
 
 func (d *Discovery) newIndexedEndpointSlicesInformer(plw *cache.ListWatch, object runtime.Object) cache.SharedIndexInformer {
