@@ -151,7 +151,7 @@ func TestRulesUnitTest(t *testing.T) {
 	t.Run("Junit xml output ", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
-		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, reuseFiles...); got != 1 {
+		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, false, "junit-xml", "", reuseFiles...); got != 1 {
 			t.Errorf("RulesUnitTestResults() = %v, want 1", got)
 		}
 		var test junitxml.JUnitXML
