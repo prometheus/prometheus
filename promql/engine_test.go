@@ -3243,6 +3243,11 @@ func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 			ts:       baseT,
 			expected: promql.Matrix{},
 		},
+		"no samples in range": {
+			expr:     "some_metric[1m]",
+			ts:       baseT.Add(20 * time.Minute),
+			expected: promql.Matrix{},
+		},
 		"empty string in parentheus": {
 			expr:     `("")`,
 			ts:       baseT,
