@@ -160,11 +160,12 @@ func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, n
 
 	if e.withNamespaceMetadata {
 		_, err = e.namespaceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			// Create and Delete should be covered by the other handlers.
 			UpdateFunc: func(_, o interface{}) {
 				namespace := o.(*apiv1.Namespace)
 				e.enqueueNamespace(namespace.Name)
 			},
+			// Creation and deletion will trigger events for the change handlers of the resources within the namespace.
+			// No need to have additional handlers for them here.
 		})
 		if err != nil {
 			l.Error("Error adding namespaces event handler.", "err", err)

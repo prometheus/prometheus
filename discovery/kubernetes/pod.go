@@ -113,11 +113,12 @@ func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace cac
 
 	if p.withNamespaceMetadata {
 		_, err = p.namespaceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			// Create and Delete should be covered by the other handlers.
 			UpdateFunc: func(_, o interface{}) {
 				namespace := o.(*apiv1.Namespace)
 				p.enqueuePodsForNamespace(namespace.Name)
 			},
+			// Creation and deletion will trigger events for the change handlers of the resources within the namespace.
+			// No need to have additional handlers for them here.
 		})
 		if err != nil {
 			l.Error("Error adding namespaces event handler.", "err", err)

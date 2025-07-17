@@ -553,6 +553,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			go pod.podInf.Run(ctx.Done())
 		}
 	case RoleService:
+		var namespaceInformer cache.SharedInformer
+		if d.attachMetadata.Namespace {
+			namespaceInformer = d.newNamespaceInformer(ctx)
+			go namespaceInformer.Run(ctx.Done())
+		}
+
 		for _, namespace := range namespaces {
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
@@ -569,15 +575,21 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			svc := NewService(
 				d.logger.With("role", "service"),
-				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
+				d.newIndexedServicesInformer(slw),
+				namespaceInformer,
 				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, svc)
 			go svc.informer.Run(ctx.Done())
 		}
 	case RoleIngress:
+		var namespaceInformer cache.SharedInformer
+		if d.attachMetadata.Namespace {
+			namespaceInformer = d.newNamespaceInformer(ctx)
+			go namespaceInformer.Run(ctx.Done())
+		}
+
 		for _, namespace := range namespaces {
-			var informer cache.SharedInformer
 			i := d.client.NetworkingV1().Ingresses(namespace)
 			ilw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
@@ -591,10 +603,10 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 					return i.Watch(ctx, options)
 				},
 			}
-			informer = d.mustNewSharedInformer(ilw, &networkv1.Ingress{}, resyncDisabled)
 			ingress := NewIngress(
 				d.logger.With("role", "ingress"),
-				informer,
+				d.newIndexedIngressesInformer(ilw),
+				namespaceInformer,
 				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, ingress)
@@ -798,6 +810,26 @@ func (d *Discovery) newIndexedEndpointSlicesInformer(plw *cache.ListWatch, objec
 	}
 
 	return d.mustNewSharedIndexInformer(plw, object, resyncDisabled, indexers)
+}
+
+func (d *Discovery) newIndexedServicesInformer(slw *cache.ListWatch) cache.SharedIndexInformer {
+	indexers := make(map[string]cache.IndexFunc)
+
+	if d.attachMetadata.Namespace {
+		indexers[cache.NamespaceIndex] = cache.MetaNamespaceIndexFunc
+	}
+
+	return d.mustNewSharedIndexInformer(slw, &apiv1.Service{}, resyncDisabled, indexers)
+}
+
+func (d *Discovery) newIndexedIngressesInformer(ilw *cache.ListWatch) cache.SharedIndexInformer {
+	indexers := make(map[string]cache.IndexFunc)
+
+	if d.attachMetadata.Namespace {
+		indexers[cache.NamespaceIndex] = cache.MetaNamespaceIndexFunc
+	}
+
+	return d.mustNewSharedIndexInformer(ilw, &networkv1.Ingress{}, resyncDisabled, indexers)
 }
 
 func (d *Discovery) informerWatchErrorHandler(r *cache.Reflector, err error) {

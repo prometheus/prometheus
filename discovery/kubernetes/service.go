@@ -33,14 +33,16 @@ import (
 
 // Service implements discovery of Kubernetes services.
 type Service struct {
-	logger   *slog.Logger
-	informer cache.SharedInformer
-	store    cache.Store
-	queue    *workqueue.Type
+	logger                *slog.Logger
+	informer              cache.SharedIndexInformer
+	store                 cache.Store
+	queue                 *workqueue.Type
+	namespaceInf          cache.SharedInformer
+	withNamespaceMetadata bool
 }
 
 // NewService returns a new service discovery.
-func NewService(l *slog.Logger, inf cache.SharedInformer, eventCount *prometheus.CounterVec) *Service {
+func NewService(l *slog.Logger, inf cache.SharedIndexInformer, namespace cache.SharedInformer, eventCount *prometheus.CounterVec) *Service {
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
@@ -50,10 +52,12 @@ func NewService(l *slog.Logger, inf cache.SharedInformer, eventCount *prometheus
 	svcDeleteCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleDelete)
 
 	s := &Service{
-		logger:   l,
-		informer: inf,
-		store:    inf.GetStore(),
-		queue:    workqueue.NewNamed(RoleService.String()),
+		logger:                l,
+		informer:              inf,
+		store:                 inf.GetStore(),
+		queue:                 workqueue.NewNamed(RoleService.String()),
+		namespaceInf:          namespace,
+		withNamespaceMetadata: namespace != nil,
 	}
 
 	_, err := s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -73,6 +77,21 @@ func NewService(l *slog.Logger, inf cache.SharedInformer, eventCount *prometheus
 	if err != nil {
 		l.Error("Error adding services event handler.", "err", err)
 	}
+
+	if s.withNamespaceMetadata {
+		_, err = s.namespaceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(_, o interface{}) {
+				namespace := o.(*apiv1.Namespace)
+				s.enqueueNamespace(namespace.Name)
+			},
+			// Creation and deletion will trigger events for the change handlers of the resources within the namespace.
+			// No need to have additional handlers for them here.
+		})
+		if err != nil {
+			l.Error("Error adding namespaces event handler.", "err", err)
+		}
+	}
+
 	return s
 }
 
@@ -85,11 +104,28 @@ func (s *Service) enqueue(obj interface{}) {
 	s.queue.Add(key)
 }
 
+func (s *Service) enqueueNamespace(namespace string) {
+	services, err := s.informer.GetIndexer().ByIndex(cache.NamespaceIndex, namespace)
+	if err != nil {
+		s.logger.Error("Error getting services in namespace", "namespace", namespace, "err", err)
+		return
+	}
+
+	for _, service := range services {
+		s.enqueue(service)
+	}
+}
+
 // Run implements the Discoverer interface.
 func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer s.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(ctx.Done(), s.informer.HasSynced) {
+	cacheSyncs := []cache.InformerSynced{s.informer.HasSynced}
+	if s.withNamespaceMetadata {
+		cacheSyncs = append(cacheSyncs, s.namespaceInf.HasSynced)
+	}
+
+	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
 		if !errors.Is(ctx.Err(), context.Canceled) {
 			s.logger.Error("service informer unable to sync cache")
 		}
@@ -174,6 +210,10 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 		Source: serviceSource(svc),
 	}
 	tg.Labels = serviceLabels(svc)
+
+	if s.withNamespaceMetadata {
+		tg.Labels = addNamespaceLabels(tg.Labels, s.namespaceInf, s.logger, svc.Namespace)
+	}
 
 	for _, port := range svc.Spec.Ports {
 		addr := net.JoinHostPort(svc.Name+"."+svc.Namespace+".svc", strconv.FormatInt(int64(port.Port), 10))
