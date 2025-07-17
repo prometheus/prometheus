@@ -980,3 +980,12 @@ func (s syncAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t 
 	defer s.lock.Unlock()
 	return s.Appender.AppendHistogram(ref, l, t, h, f)
 }
+
+func TestWriteStorage_CanRegisterMetricsAfterClosing(t *testing.T) {
+	dir := t.TempDir()
+	reg := prometheus.NewPedanticRegistry()
+
+	s := NewWriteStorage(nil, reg, dir, time.Millisecond, nil)
+	require.NoError(t, s.Close())
+	require.NotPanics(t, func() { NewWriteStorage(nil, reg, dir, time.Millisecond, nil) })
+}
