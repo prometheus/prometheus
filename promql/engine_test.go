@@ -696,6 +696,12 @@ load 10s
 			Start:  time.Unix(1, 0),
 		},
 		{
+			Query:       `("")`,
+			Start:       time.Unix(0, 0),
+			Result:      promql.String{T: timestamp.FromTime(time.Unix(0, 0)), V: ""},
+			ShouldError: false,
+		},
+		{
 			Query: "metric",
 			Result: promql.Vector{
 				promql.Sample{
@@ -2308,6 +2314,15 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 				Expr: &parser.NumberLiteral{
 					Val:      123.4567,
 					PosRange: posrange.PositionRange{Start: 0, End: 8},
+				},
+			},
+		},
+		{
+			input: `("")`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.StringLiteral{
+					Val:      "",
+					PosRange: posrange.PositionRange{Start: 1, End: 3},
 				},
 			},
 		},
