@@ -896,12 +896,6 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 				meta.Stats.NumFloatSamples += samples
 			}
 		}
-
-		for _, chk := range chks {
-			if err := chunkPool.Put(chk.Chunk); err != nil {
-				return fmt.Errorf("put chunk: %w", err)
-			}
-		}
 		ref++
 	}
 	if err := set.Err(); err != nil {
