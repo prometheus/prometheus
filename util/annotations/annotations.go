@@ -155,6 +155,7 @@ var (
 	NativeHistogramQuantileNaNResultInfo    = fmt.Errorf("%w: input to histogram_quantile has NaN observations, result is NaN for metric name", PromQLInfo)
 	NativeHistogramQuantileNaNSkewInfo      = fmt.Errorf("%w: input to histogram_quantile has NaN observations, result is skewed higher for metric name", PromQLInfo)
 	NativeHistogramFractionNaNsInfo         = fmt.Errorf("%w: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name", PromQLInfo)
+	TooManyResetsInCounterWarning           = fmt.Errorf("%w: too many counter resets detected in metric", PromQLInfo)
 )
 
 type annoErr struct {
@@ -346,5 +347,13 @@ func NewNativeHistogramFractionNaNsInfo(metricName string, pos posrange.Position
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", NativeHistogramFractionNaNsInfo, metricName),
+	}
+}
+
+// NewTooManyResetsInCounterWarning is used when a counter is detected to reset too frequently (resets / transitions > 0.6).
+func NewTooManyResetsInCounterWarning(metricName string, pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %q", TooManyResetsInCounterWarning, metricName),
 	}
 }
