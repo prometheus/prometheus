@@ -3731,6 +3731,9 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
 // StepInvariantExpr. It also resolves the preprocessors and evaluates duration expressions
 // into their numeric values.
+// Top level ParenExprs (parentheses) are removed.
+// Note that this only unwraps ParenExprs at the root of this expression.
+// unwrapParenExpr() should still be called within the expression eval() relative to each expression type.
 func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) (parser.Expr, error) {
 	detectHistogramStatsDecoding(expr)
 
