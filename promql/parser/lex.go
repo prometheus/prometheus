@@ -431,7 +431,8 @@ func lexStatements(l *Lexer) stateFn {
 			l.emit(EQL)
 		}
 	case r == '!':
-		if t := l.next(); t != '=' {
+		t := l.next()
+		if t != '=' {
 			return l.errorf("unexpected character after '!': %q", t)
 		}
 		l.emit(NEQ)
