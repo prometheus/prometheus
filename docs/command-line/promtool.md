@@ -465,6 +465,9 @@ Unit tests for rules.
 | <code class="text-nowrap">--debug</code> | Enable unit test debugging. | `false` |
 | <code class="text-nowrap">--diff</code> | [Experimental] Print colored differential output between expected & received output. | `false` |
 | <code class="text-nowrap">--ignore-unknown-fields</code> | Ignore unknown fields in the test files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default. | `false` |
+| <code class="text-nowrap">--coverage</code> | Enable coverage reporting. | `false` |
+| <code class="text-nowrap">--output-format</code> | The output format for the test results (text, json, junit-xml). | `text` |
+| <code class="text-nowrap">--coverage-output</code> | File to write coverage report to. |  |
 
 
 

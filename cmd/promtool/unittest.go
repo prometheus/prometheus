@@ -47,10 +47,10 @@ import (
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
 func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
-	return RulesUnitTestResult(io.Discard, queryOpts, runStrings, diffFlag, debug, ignoreUnknownFields, files...)
+	return RulesUnitTestResult(io.Discard, queryOpts, runStrings, diffFlag, debug, ignoreUnknownFields, false, "text", "", files...)
 }
 
-func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
+func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields, coverage bool, outputFormat, coverageOutput string, files ...string) int {
 	failed := false
 	junit := &junitxml.JUnitXML{}
 
@@ -60,7 +60,7 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	}
 
 	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f)); errs != nil {
+		if errs := ruleUnitTest(f, queryOpts, run, diffFlag, debug, ignoreUnknownFields, coverage, outputFormat, coverageOutput, junit.Suite(f)); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -82,7 +82,7 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite) []error {
+func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields, coverage bool, outputFormat, coverageOutput string, ts *junitxml.TestSuite) []error {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		ts.Abort(err)
@@ -131,12 +131,25 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *reg
 		if t.Interval == 0 {
 			t.Interval = unitTestInp.EvaluationInterval
 		}
-		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, unitTestInp.FuzzyCompare, unitTestInp.RuleFiles...)
+		var coverageTracker *CoverageTracker
+		if coverage {
+			coverageTracker = NewCoverageTracker()
+		}
+
+		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, unitTestInp.FuzzyCompare, coverageTracker, unitTestInp.RuleFiles...)
 		if ers != nil {
 			for _, e := range ers {
-				tc.Fail(e.Error())
+				tc.Suite.Fail(e.Error())
 			}
 			errs = append(errs, ers...)
+		}
+
+		if coverage {
+			if outputFormat == "junit-xml" {
+				coverageTracker.AddCoverageToJUnit(tc.Suite)
+			} else if err := coverageTracker.PrintCoverageReport(coverageOutput, outputFormat); err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
 
@@ -199,7 +212,7 @@ type testGroup struct {
 }
 
 // test performs the unit tests.
-func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug, ignoreUnknownFields, fuzzyCompare bool, ruleFiles ...string) (outErr []error) {
+func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug, ignoreUnknownFields, fuzzyCompare bool, coverageTracker *CoverageTracker, ruleFiles ...string) (outErr []error) {
 	if debug {
 		testStart := time.Now()
 		fmt.Printf("DEBUG: Starting test %s\n", testname)
@@ -234,6 +247,14 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 		return ers
 	}
 	groups := orderedGroups(groupsMap, groupOrderMap)
+
+	if coverageTracker != nil {
+		for _, group := range groups {
+			for _, rule := range group.Rules() {
+				coverageTracker.AddRule(group.Name(), rule.Name())
+			}
+		}
+	}
 
 	// Bounds for evaluating the rules.
 	mint := time.Unix(0, 0).UTC()
@@ -359,6 +380,9 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 			}
 
 			for _, testcase := range alertTests[t] {
+				if coverageTracker != nil {
+					coverageTracker.MarkRuleAsTested(testcase.Alertname)
+				}
 				// Checking alerts.
 				gotAlerts := got[testcase.Alertname]
 
@@ -435,6 +459,9 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 	// Checking promql expressions.
 Outer:
 	for _, testCase := range tg.PromqlExprTests {
+		if coverageTracker != nil {
+			coverageTracker.MarkRuleAsTested(testCase.Expr)
+		}
 		got, err := query(suite.Context(), testCase.Expr, mint.Add(time.Duration(testCase.EvalTime)),
 			suite.QueryEngine(), suite.Queryable())
 		if err != nil {
