@@ -488,7 +488,15 @@ func insert[BV bucketValue](in, out []BV, inserts []Insert, deltas bool) []BV {
 		ii int // The next insert to process.
 	)
 	for i, d := range in {
-		if ii < len(inserts) && i == inserts[ii].pos {
+		if ii >= len(inserts) || i != inserts[ii].pos {
+			// No inserts at this position, the original delta is still valid.
+			out[oi] = d
+			oi++
+			v += d
+			continue
+		}
+		// Process inserts.
+		for ii < len(inserts) && i == inserts[ii].pos {
 			// We have an insert!
 			// Add insert.num new delta values such that their
 			// bucket values equate 0. When deltas==false, it means
@@ -505,32 +513,30 @@ func insert[BV bucketValue](in, out []BV, inserts []Insert, deltas bool) []BV {
 				oi++
 			}
 			ii++
-
-			// Now save the value from the input. The delta value we
-			// should save is the original delta value + the last
-			// value of the point before the insert (to undo the
-			// delta that was introduced by the insert). When
-			// deltas==false, it means that it is an absolute value,
-			// so we set it directly to the value in the 'in' slice.
-			if deltas {
-				out[oi] = d + v
-			} else {
-				out[oi] = d
-			}
-			oi++
-			v = d + v
-			continue
 		}
-		// If there was no insert, the original delta is still valid.
-		out[oi] = d
+		// Now save the value from the input. The delta value we
+		// should save is the original delta value + the last
+		// value of the point before the insert (to undo the
+		// delta that was introduced by the insert). When
+		// deltas==false, it means that it is an absolute value,
+		// so we set it directly to the value in the 'in' slice.
+		if deltas {
+			out[oi] = d + v
+		} else {
+			out[oi] = d
+		}
 		oi++
-		v += d
+		v = d + v
 	}
-	switch ii {
-	case len(inserts):
-		// All inserts processed. Nothing more to do.
-	case len(inserts) - 1:
-		// One more insert to process at the end.
+	// Insert zeros at the end.
+	for ii < len(inserts) {
+		if inserts[ii].pos < len(in) {
+			panic("leftover inserts must be after the current buckets")
+		}
+		// Add insert.num new delta values such that their
+		// bucket values equate 0. When deltas==false, it means
+		// that it is an absolute value. So we set it to 0
+		// directly.
 		if deltas {
 			out[oi] = -v
 		} else {
@@ -541,8 +547,8 @@ func insert[BV bucketValue](in, out []BV, inserts []Insert, deltas bool) []BV {
 			out[oi] = 0
 			oi++
 		}
-	default:
-		panic("unprocessed inserts left")
+		ii++
+		v = 0
 	}
 	return out
 }

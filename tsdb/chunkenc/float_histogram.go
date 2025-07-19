@@ -378,6 +378,51 @@ func expandFloatSpansAndBuckets(a, b []histogram.Span, aBuckets []xorValue, bBuc
 		bCount = bBuckets[bCountIdx]
 	}
 
+	// addInsert updates the current Insert with a new insert at the given
+	// bucket index (otherIdx).
+	addInsert := func(inserts []Insert, insert *Insert, otherIdx int) []Insert {
+		if insert.num == 0 {
+			// First insert.
+			insert.num++
+			insert.bucketIdx = otherIdx
+			return inserts
+		}
+		if insert.bucketIdx+1 != otherIdx {
+			// Insert is not continuous from previous insert.
+			inserts = append(inserts, *insert)
+			insert.num = 0
+			insert.bucketIdx = otherIdx
+		}
+		insert.num++
+		return inserts
+	}
+
+	advanceA := func() {
+		if aInter.num > 0 {
+			aInserts = append(aInserts, aInter)
+			aInter.num = 0
+		}
+		aIdx, aOK = ai.Next()
+		aInter.pos++
+		aCountIdx++
+		if aOK {
+			aCount = aBuckets[aCountIdx].value
+		}
+	}
+
+	advanceB := func() {
+		if bInter.num > 0 {
+			bInserts = append(bInserts, bInter)
+			bInter.num = 0
+		}
+		bIdx, bOK = bi.Next()
+		bInter.pos++
+		bCountIdx++
+		if bOK {
+			bCount = bBuckets[bCountIdx]
+		}
+	}
+
 loop:
 	for {
 		switch {
@@ -389,105 +434,37 @@ loop:
 					return nil, nil, false
 				}
 
-				// Finish WIP insert for a and reset.
-				if aInter.num > 0 {
-					aInserts = append(aInserts, aInter)
-					aInter.num = 0
-				}
-
-				// Finish WIP insert for b and reset.
-				if bInter.num > 0 {
-					bInserts = append(bInserts, bInter)
-					bInter.num = 0
-				}
-
-				aIdx, aOK = ai.Next()
-				bIdx, bOK = bi.Next()
-				aInter.pos++ // Advance potential insert position.
-				aCountIdx++  // Advance absolute bucket count index for a.
-				if aOK {
-					aCount = aBuckets[aCountIdx].value
-				}
-				bInter.pos++ // Advance potential insert position.
-				bCountIdx++  // Advance absolute bucket count index for b.
-				if bOK {
-					bCount = bBuckets[bCountIdx]
-				}
+				advanceA()
+				advanceB()
 
 				continue
 			case aIdx < bIdx: // b misses a bucket index that is in a.
 				// This is ok if the count in a is 0, in which case we make a note to
 				// fill in the bucket in b and advance a.
 				if aCount == 0 {
-					bInter.num++ // Mark that we need to insert a bucket in b.
-					bInter.bucketIdx = aIdx
-					// Advance a
-					if aInter.num > 0 {
-						aInserts = append(aInserts, aInter)
-						aInter.num = 0
-					}
-					aIdx, aOK = ai.Next()
-					aInter.pos++
-					aCountIdx++
-					if aOK {
-						aCount = aBuckets[aCountIdx].value
-					}
+					bInserts = addInsert(bInserts, &bInter, aIdx)
+					advanceA()
 					continue
 				}
 				// Otherwise we are missing a bucket that was in use in a, which is a reset.
 				return nil, nil, false
 			case aIdx > bIdx: // a misses a value that is in b. Forward b and recompare.
-				aInter.num++
-				bInter.bucketIdx = bIdx
-				// Advance b
-				if bInter.num > 0 {
-					bInserts = append(bInserts, bInter)
-					bInter.num = 0
-				}
-				bIdx, bOK = bi.Next()
-				bInter.pos++
-				bCountIdx++
-				if bOK {
-					bCount = bBuckets[bCountIdx]
-				}
+				aInserts = addInsert(aInserts, &aInter, bIdx)
+				advanceB()
 			}
 		case aOK && !bOK: // b misses a value that is in a.
 			// This is ok if the count in a is 0, in which case we make a note to
 			// fill in the bucket in b and advance a.
 			if aCount == 0 {
-				bInter.num++
-				bInter.bucketIdx = aIdx
-				// Advance a
-				if aInter.num > 0 {
-					aInserts = append(aInserts, aInter)
-					aInter.num = 0
-				}
-				aIdx, aOK = ai.Next()
-				aInter.pos++ // Advance potential insert position.
-				// Update absolute bucket counts for a.
-				aCountIdx++
-				if aOK {
-					aCount = aBuckets[aCountIdx].value
-				}
+				bInserts = addInsert(bInserts, &bInter, aIdx)
+				advanceA()
 				continue
 			}
 			// Otherwise we are missing a bucket that was in use in a, which is a reset.
 			return nil, nil, false
 		case !aOK && bOK: // a misses a value that is in b. Forward b and recompare.
-			aInter.num++
-			bInter.bucketIdx = bIdx
-			// Advance b
-			if bInter.num > 0 {
-				bInserts = append(bInserts, bInter)
-				bInter.num = 0
-			}
-			bIdx, bOK = bi.Next()
-			bInter.pos++ // Advance potential insert position.
-			// Update absolute bucket counts for b.
-			bCountIdx++
-			if bOK {
-				bCount = bBuckets[bCountIdx]
-			}
+			aInserts = addInsert(aInserts, &aInter, bIdx)
+			advanceB()
 		default: // Both iterators ran out. We're done.
 			if aInter.num > 0 {
 				aInserts = append(aInserts, aInter)
