@@ -1670,8 +1670,12 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		sortedGrouping := e.Grouping
 		slices.Sort(sortedGrouping)
 
+		unwrapParenExpr(&e.Param)
+		param := unwrapStepInvariantExpr(e.Param)
+		unwrapParenExpr(&param)
+
 		if e.Op == parser.COUNT_VALUES {
-			valueLabel := e.Param.(*parser.StringLiteral)
+			valueLabel := param.(*parser.StringLiteral)
 			if !model.LabelName(valueLabel.Val).IsValid() {
 				ev.errorf("invalid label name %s", valueLabel)
 			}
@@ -1686,8 +1690,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		var warnings annotations.Annotations
 		originalNumSamples := ev.currentSamples
-		// e.Param is the number k for topk/bottomk, or q for quantile.
-		fp, ws := newFParams(ctx, ev, e.Param)
+		// param is the number k for topk/bottomk, or q for quantile.
+		fp, ws := newFParams(ctx, ev, param)
 		warnings.Merge(ws)
 		// Now fetch the data to be aggregated.
 		val, ws := ev.eval(ctx, e.Expr)
@@ -1707,7 +1711,9 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			// Matrix evaluation always returns the evaluation time,
 			// so this function needs special handling when given
 			// a vector selector.
+			unwrapParenExpr(&e.Args[0])
 			arg := unwrapStepInvariantExpr(e.Args[0])
+			unwrapParenExpr(&arg)
 			vs, ok := arg.(*parser.VectorSelector)
 			if ok {
 				return ev.rangeEvalTimestampFunctionOverVectorSelector(ctx, vs, call, e)
@@ -1721,7 +1727,9 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			warnings       annotations.Annotations
 		)
 		for i := range e.Args {
-			a := e.Args[i]
+			unwrapParenExpr(&e.Args[i])
+			a := unwrapStepInvariantExpr(e.Args[i])
+			unwrapParenExpr(&a)
 			if _, ok := a.(*parser.MatrixSelector); ok {
 				matrixArgIndex = i
 				matrixArg = true
@@ -1772,7 +1780,9 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			}
 		}
 
-		arg := e.Args[matrixArgIndex]
+		unwrapParenExpr(&e.Args[matrixArgIndex])
+		arg := unwrapStepInvariantExpr(e.Args[matrixArgIndex])
+		unwrapParenExpr(&arg)
 		sel := arg.(*parser.MatrixSelector)
 		selVS := sel.VectorSelector.(*parser.VectorSelector)
 
@@ -2098,11 +2108,6 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, newEv.samplesStats.TotalSamples)
 		return res, ws
 	case *parser.StepInvariantExpr:
-		switch ce := e.Expr.(type) {
-		case *parser.StringLiteral, *parser.NumberLiteral:
-			return ev.eval(ctx, ce)
-		}
-
 		newEv := &evaluator{
 			startTimestamp:           ev.startTimestamp,
 			endTimestamp:             ev.startTimestamp, // Always a single evaluation.
@@ -3715,8 +3720,8 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 }
 
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
-// StepInvariantExpr. It also resolves the preprocessors, evaluates duration expressions
-// into their numeric values and removes superfluous parenthesis on parameters to functions and aggregations.
+// StepInvariantExpr. It also resolves the preprocessors and evaluates duration expressions
+// into their numeric values.
 func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) (parser.Expr, error) {
 	detectHistogramStatsDecoding(expr)
 
@@ -3731,11 +3736,11 @@ func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) 
 	return expr, nil
 }
 
-// preprocessExprHelper wraps the child nodes of the expression
-// with a StepInvariantExpr wherever it's step invariant. The returned boolean is true if the
-// passed expression qualifies to be wrapped by StepInvariantExpr.
-// Also remove superfluous parenthesis on parameters to functions and aggregations.
-// It also resolves the preprocessors.
+// preprocessExprHelper wraps child nodes of expr with a StepInvariantExpr,
+// at the highest level within the tree that is step-invariant.
+// Also resolves start() and end() on selector and subquery nodes.
+// Return isStepInvariant is true when the whole subexpression is step invariant.
+// Return shoudlWrap is false for cases like MatrixSelector and StringLiteral that never need to be wrapped.
 func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvariant, shouldWrap bool) {
 	switch n := expr.(type) {
 	case *parser.VectorSelector:
@@ -3748,21 +3753,19 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvaria
 		return n.Timestamp != nil, n.Timestamp != nil
 
 	case *parser.AggregateExpr:
-		unwrapParenExpr(&n.Expr)
-		unwrapParenExpr(&n.Param)
 		return preprocessExprHelper(n.Expr, start, end)
 
 	case *parser.BinaryExpr:
-		isInvariant1, shouldWrap1 := preprocessExprHelper(n.LHS, start, end)
-		isInvariant2, shouldWrap2 := preprocessExprHelper(n.RHS, start, end)
-		if isInvariant1 && isInvariant2 {
+		isInvariantLHS, shouldWrapLHS := preprocessExprHelper(n.LHS, start, end)
+		isInvariantRHS, shouldWrapRHS := preprocessExprHelper(n.RHS, start, end)
+		if isInvariantLHS && isInvariantRHS {
 			return true, true
 		}
 
-		if shouldWrap1 {
+		if shouldWrapLHS {
 			n.LHS = newStepInvariantExpr(n.LHS)
 		}
-		if shouldWrap2 {
+		if shouldWrapRHS {
 			n.RHS = newStepInvariantExpr(n.RHS)
 		}
 
@@ -3773,7 +3776,6 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvaria
 		isStepInvariant := !ok
 		shouldWrap := make([]bool, len(n.Args))
 		for i := range n.Args {
-			unwrapParenExpr(&n.Args[i])
 			var argIsStepInvariant bool
 			argIsStepInvariant, shouldWrap[i] = preprocessExprHelper(n.Args[i], start, end)
 			isStepInvariant = isStepInvariant && argIsStepInvariant
@@ -3792,10 +3794,7 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvaria
 		return false, false
 
 	case *parser.MatrixSelector:
-		// We don't need to wrap a MatrixSelector because functions over range vectors evaluate those directly,
-		// and they can't appear at top level in a range query.
-		isStepInvariant, _ := preprocessExprHelper(n.VectorSelector, start, end)
-		return isStepInvariant, false
+		return preprocessExprHelper(n.VectorSelector, start, end)
 
 	case *parser.SubqueryExpr:
 		// Since we adjust offset for the @ modifier evaluation,
