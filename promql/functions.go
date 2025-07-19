@@ -1188,6 +1188,9 @@ func funcTimestamp(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *Eva
 	return enh.Out, nil
 }
 
+// We get incorrect results if this function is inlined; see https://github.com/prometheus/prometheus/issues/16714.
+//
+//go:noinline
 func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
 	t := sum + inc
 	switch {
