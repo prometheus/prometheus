@@ -117,6 +117,7 @@ func TestCompareSpansAndInsert(t *testing.T) {
 		spansA, spansB        []histogram.Span
 		fInserts, bInserts    []Insert
 		bucketsIn, bucketsOut []int64
+		mergedSpans           []histogram.Span
 	}{
 		{
 			description: "single prepend at the beginning",
@@ -218,6 +219,9 @@ func TestCompareSpansAndInsert(t *testing.T) {
 			bInserts: []Insert{
 				{pos: 0, num: 1},
 			},
+			mergedSpans: []histogram.Span{
+				{Offset: -10, Length: 4},
+			},
 		},
 		{
 			description: "single removal of bucket in the middle",
@@ -231,6 +235,9 @@ func TestCompareSpansAndInsert(t *testing.T) {
 			bInserts: []Insert{
 				{pos: 2, num: 1},
 			},
+			mergedSpans: []histogram.Span{
+				{Offset: -10, Length: 4},
+			},
 		},
 		{
 			description: "single removal of bucket at the end",
@@ -242,6 +249,9 @@ func TestCompareSpansAndInsert(t *testing.T) {
 			},
 			bInserts: []Insert{
 				{pos: 3, num: 1},
+			},
+			mergedSpans: []histogram.Span{
+				{Offset: -10, Length: 4},
 			},
 		},
 		{
@@ -324,15 +334,45 @@ func TestCompareSpansAndInsert(t *testing.T) {
 					num: 1,
 				},
 			},
+			mergedSpans: []histogram.Span{
+				{Offset: 0, Length: 3},
+				{Offset: 1, Length: 1},
+				{Offset: 1, Length: 4},
+				{Offset: 3, Length: 3},
+			},
+		},
+		{
+			description: "inserts with gaps",
+			spansA: []histogram.Span{
+				{Offset: -19, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			spansB: []histogram.Span{
+				{Offset: -19, Length: 1},
+				{Offset: 4, Length: 1},
+				{Offset: 3, Length: 1},
+			},
+			fInserts: []Insert{
+				{pos: 4, num: 2},
+			},
+			bInserts: []Insert{
+				{pos: 1, num: 3},
+			},
+			mergedSpans: []histogram.Span{
+				{Offset: -19, Length: 2},
+				{Offset: 1, Length: 3},
+				{Offset: 3, Length: 1},
+			},
 		},
 	}
 
 	for _, s := range scenarios {
 		t.Run(s.description, func(t *testing.T) {
 			if len(s.bInserts) > 0 {
-				fInserts, bInserts, _ := expandSpansBothWays(s.spansA, s.spansB)
+				fInserts, bInserts, m := expandSpansBothWays(s.spansA, s.spansB)
 				require.Equal(t, s.fInserts, fInserts)
 				require.Equal(t, s.bInserts, bInserts)
+				require.Equal(t, s.mergedSpans, m)
 			}
 
 			inserts, valid := expandSpansForward(s.spansA, s.spansB)
