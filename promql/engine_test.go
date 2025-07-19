@@ -2304,20 +2304,16 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 	}{
 		{
 			input: "123.4567",
-			expected: &parser.StepInvariantExpr{
-				Expr: &parser.NumberLiteral{
-					Val:      123.4567,
-					PosRange: posrange.PositionRange{Start: 0, End: 8},
-				},
+			expected: &parser.NumberLiteral{
+				Val:      123.4567,
+				PosRange: posrange.PositionRange{Start: 0, End: 8},
 			},
 		},
 		{
 			input: `"foo"`,
-			expected: &parser.StepInvariantExpr{
-				Expr: &parser.StringLiteral{
-					Val:      "foo",
-					PosRange: posrange.PositionRange{Start: 0, End: 5},
-				},
+			expected: &parser.StringLiteral{
+				Val:      "foo",
+				PosRange: posrange.PositionRange{Start: 0, End: 5},
 			},
 		},
 		{
