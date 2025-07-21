@@ -71,3 +71,15 @@ eval range from 0 to 2m step 1m requests * 2
   {job="1", __address__="bar"} 200 200 200
 
 clear
+
+load 10s
+  some_metric{env="a"} 1+1x5
+  some_metric{env="b"} 2+2x5
+
+# Return a range vector - note that we use the range vector to define our expected timestamps in the result vectors
+eval instant at 1m some_metric[1m]
+  expect range vector from 10s to 1m step 10s
+  some_metric{env="a"} 2 3 4 5 6
+  some_metric{env="b"} 4 6 8 10 12
+
+clear
