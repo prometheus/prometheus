@@ -53,8 +53,8 @@ type Settings struct {
 	// LookbackDelta is the PromQL engine lookback delta.
 	LookbackDelta time.Duration
 	// PromoteScopeMetadata controls whether to promote OTel scope metadata to metric labels.
-	PromoteScopeMetadata bool
-	AddTypeAndUnitLabels bool
+	PromoteScopeMetadata    bool
+	EnableTypeAndUnitLabels bool
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.

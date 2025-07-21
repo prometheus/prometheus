@@ -265,7 +265,7 @@ func NewAPI(
 	otlpEnabled, otlpDeltaToCumulative, otlpNativeDeltaIngestion bool,
 	ctZeroIngestionEnabled bool,
 	lookbackDelta time.Duration,
-	addTypeAndUnitLabels bool,
+	enableTypeAndUnitLabels bool,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -313,10 +313,10 @@ func NewAPI(
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, ap, configFunc, remote.OTLPOptions{
-			ConvertDelta:         otlpDeltaToCumulative,
-			NativeDelta:          otlpNativeDeltaIngestion,
-			LookbackDelta:        lookbackDelta,
-			AddTypeAndUnitLabels: addTypeAndUnitLabels,
+			ConvertDelta:            otlpDeltaToCumulative,
+			NativeDelta:             otlpNativeDeltaIngestion,
+			LookbackDelta:           lookbackDelta,
+			EnableTypeAndUnitLabels: enableTypeAndUnitLabels,
 		})
 	}
 

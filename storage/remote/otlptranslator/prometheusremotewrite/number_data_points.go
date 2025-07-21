@@ -61,7 +61,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 			sample.Value = math.Float64frombits(value.StaleNaN)
 		}
 
-		if settings.AddTypeAndUnitLabels {
+		if settings.EnableTypeAndUnitLabels {
 			labels = addTypeAndUnitLabels(labels, metadata, settings)
 		}
 
@@ -104,7 +104,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			sample.Value = math.Float64frombits(value.StaleNaN)
 		}
 
-		if settings.AddTypeAndUnitLabels {
+		if settings.EnableTypeAndUnitLabels {
 			lbls = addTypeAndUnitLabels(lbls, metadata, settings)
 		}
 

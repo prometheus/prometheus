@@ -267,7 +267,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		timestamp := convertTimeStamp(pt.Timestamp())
 		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
-		if settings.AddTypeAndUnitLabels {
+		if settings.EnableTypeAndUnitLabels {
 			baseLabels = addTypeAndUnitLabels(baseLabels, metadata, settings)
 		}
 
@@ -481,7 +481,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		timestamp := convertTimeStamp(pt.Timestamp())
 		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
-		if settings.AddTypeAndUnitLabels {
+		if settings.EnableTypeAndUnitLabels {
 			baseLabels = addTypeAndUnitLabels(baseLabels, metadata, settings)
 		}
 

@@ -63,7 +63,7 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			metadata.MetricFamilyName,
 		)
 
-		if settings.AddTypeAndUnitLabels {
+		if settings.EnableTypeAndUnitLabels {
 			lbls = addTypeAndUnitLabels(lbls, metadata, settings)
 		}
 
@@ -285,7 +285,7 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 			metadata.MetricFamilyName,
 		)
 
-		if settings.AddTypeAndUnitLabels {
+		if settings.EnableTypeAndUnitLabels {
 			lbls = addTypeAndUnitLabels(lbls, metadata, settings)
 		}
 

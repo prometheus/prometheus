@@ -619,7 +619,7 @@ func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg c
 		return config.Config{
 			OTLPConfig: otlpCfg,
 		}
-	}, OTLPOptions{AddTypeAndUnitLabels: typeAndUnitLabels})
+	}, OTLPOptions{EnableTypeAndUnitLabels: typeAndUnitLabels})
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 
