@@ -111,7 +111,7 @@ func TestBucketIterator(t *testing.T) {
 	}
 }
 
-func TestCompareSpansAndInsert(t *testing.T) {
+func TestExpandSpansBothWaysAndInsert(t *testing.T) {
 	scenarios := []struct {
 		description           string
 		spansA, spansB        []histogram.Span
@@ -135,6 +135,9 @@ func TestCompareSpansAndInsert(t *testing.T) {
 			},
 			bucketsIn:  []int64{6, -3, 0},
 			bucketsOut: []int64{0, 6, -3, 0},
+			mergedSpans: []histogram.Span{
+				{Offset: -11, Length: 4},
+			},
 		},
 		{
 			description: "single append at the end",
@@ -152,6 +155,9 @@ func TestCompareSpansAndInsert(t *testing.T) {
 			},
 			bucketsIn:  []int64{6, -3, 0},
 			bucketsOut: []int64{6, -3, 0, -3},
+			mergedSpans: []histogram.Span{
+				{Offset: -10, Length: 4},
+			},
 		},
 		{
 			description: "double prepend at the beginning",
@@ -169,6 +175,9 @@ func TestCompareSpansAndInsert(t *testing.T) {
 			},
 			bucketsIn:  []int64{6, -3, 0},
 			bucketsOut: []int64{0, 0, 6, -3, 0},
+			mergedSpans: []histogram.Span{
+				{Offset: -12, Length: 5},
+			},
 		},
 		{
 			description: "double append at the end",
@@ -186,6 +195,9 @@ func TestCompareSpansAndInsert(t *testing.T) {
 			},
 			bucketsIn:  []int64{6, -3, 0},
 			bucketsOut: []int64{6, -3, 0, -3, 0},
+			mergedSpans: []histogram.Span{
+				{Offset: -10, Length: 5},
+			},
 		},
 		{
 			description: "double prepond at the beginning and double append at the end",
@@ -207,6 +219,9 @@ func TestCompareSpansAndInsert(t *testing.T) {
 			},
 			bucketsIn:  []int64{6, -3, 0},
 			bucketsOut: []int64{0, 0, 6, -3, 0, -3, 0},
+			mergedSpans: []histogram.Span{
+				{Offset: -12, Length: 7},
+			},
 		},
 		{
 			description: "single removal of bucket at the start",
@@ -219,6 +234,8 @@ func TestCompareSpansAndInsert(t *testing.T) {
 			bInserts: []Insert{
 				{pos: 0, num: 1},
 			},
+			bucketsIn:  []int64{1, 2, -1, 2},
+			bucketsOut: []int64{1, 2, -1, 2},
 			mergedSpans: []histogram.Span{
 				{Offset: -10, Length: 4},
 			},
@@ -235,6 +252,8 @@ func TestCompareSpansAndInsert(t *testing.T) {
 			bInserts: []Insert{
 				{pos: 2, num: 1},
 			},
+			bucketsIn:  []int64{1, 2, -1, 2},
+			bucketsOut: []int64{1, 2, -1, 2},
 			mergedSpans: []histogram.Span{
 				{Offset: -10, Length: 4},
 			},
@@ -253,6 +272,8 @@ func TestCompareSpansAndInsert(t *testing.T) {
 			mergedSpans: []histogram.Span{
 				{Offset: -10, Length: 4},
 			},
+			bucketsIn:  []int64{1, 2, -1, 2},
+			bucketsOut: []int64{1, 2, -1, 2},
 		},
 		{
 			description: "as described in doc comment",
@@ -285,6 +306,12 @@ func TestCompareSpansAndInsert(t *testing.T) {
 			},
 			bucketsIn:  []int64{6, -3, 0, -1, 2, 1, -4},
 			bucketsOut: []int64{6, -3, -3, 3, -3, 0, 2, 2, 1, -5, 1},
+			mergedSpans: []histogram.Span{
+				{Offset: 0, Length: 3},
+				{Offset: 1, Length: 1},
+				{Offset: 1, Length: 4},
+				{Offset: 3, Length: 3},
+			},
 		},
 		{
 			description: "both forward and backward inserts, complex case",
@@ -334,6 +361,8 @@ func TestCompareSpansAndInsert(t *testing.T) {
 					num: 1,
 				},
 			},
+			bucketsIn:  []int64{1, 2, -1, 2, 0, 3, 1},
+			bucketsOut: []int64{1, 2, -3, 2, -2, 0, 4, 0, 3, -7, 8},
 			mergedSpans: []histogram.Span{
 				{Offset: 0, Length: 3},
 				{Offset: 1, Length: 1},
@@ -358,6 +387,8 @@ func TestCompareSpansAndInsert(t *testing.T) {
 			bInserts: []Insert{
 				{pos: 1, num: 3},
 			},
+			bucketsIn:  []int64{1, 2, -1, 1},
+			bucketsOut: []int64{1, 2, -1, 1, -3, 0},
 			mergedSpans: []histogram.Span{
 				{Offset: -19, Length: 2},
 				{Offset: 1, Length: 3},
@@ -368,23 +399,13 @@ func TestCompareSpansAndInsert(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.description, func(t *testing.T) {
-			if len(s.bInserts) > 0 {
-				fInserts, bInserts, m := expandSpansBothWays(s.spansA, s.spansB)
-				require.Equal(t, s.fInserts, fInserts)
-				require.Equal(t, s.bInserts, bInserts)
-				require.Equal(t, s.mergedSpans, m)
-			}
-
-			inserts, valid := expandSpansForward(s.spansA, s.spansB)
-			if len(s.bInserts) > 0 {
-				require.False(t, valid, "compareScan unexpectedly returned true")
-				return
-			}
-			require.True(t, valid, "compareScan unexpectedly returned false")
-			require.Equal(t, s.fInserts, inserts)
+			fInserts, bInserts, m := expandSpansBothWays(s.spansA, s.spansB)
+			require.Equal(t, s.fInserts, fInserts)
+			require.Equal(t, s.bInserts, bInserts)
+			require.Equal(t, s.mergedSpans, m)
 
 			gotBuckets := make([]int64, len(s.bucketsOut))
-			insert(s.bucketsIn, gotBuckets, inserts, true)
+			insert(s.bucketsIn, gotBuckets, fInserts, true)
 			require.Equal(t, s.bucketsOut, gotBuckets)
 
 			floatBucketsIn := make([]float64, len(s.bucketsIn))
@@ -402,7 +423,7 @@ func TestCompareSpansAndInsert(t *testing.T) {
 				floatBucketsOut[i] = float64(last)
 			}
 			gotFloatBuckets := make([]float64, len(floatBucketsOut))
-			insert(floatBucketsIn, gotFloatBuckets, inserts, false)
+			insert(floatBucketsIn, gotFloatBuckets, fInserts, false)
 			require.Equal(t, floatBucketsOut, gotFloatBuckets)
 		})
 	}
