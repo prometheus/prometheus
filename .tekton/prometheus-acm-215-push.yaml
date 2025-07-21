@@ -27,10 +27,19 @@ spec:
   - name: build-platforms
     value:
     - linux/x86_64
+    - linux/ppc64le
+    - linux/s390x
+    - linux/arm64
   - name: dockerfile
     value: Containerfile.operator
   - name: path-context
     value: .
+  - name: hermetic
+    value: true
+  - name: prefetch-input
+    value: '{"type": "gomod", "path": "."}'
+  - name: build-source-image
+    value: "true"
   pipelineSpec:
     description: |
       This pipeline is ideal for building multi-arch container images from a Containerfile while maintaining trust after pipeline customization.
