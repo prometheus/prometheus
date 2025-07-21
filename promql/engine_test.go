@@ -3904,3 +3904,49 @@ func TestInconsistentHistogramCount(t *testing.T) {
 
 	require.Equal(t, countFromHistogram, countFromFunction, "histogram_count function should return the same count as the histogram itself")
 }
+
+// TestSubQueryHistogramsCopy reproduces a bug where native histogram values from subqueries are not copied.
+func TestSubQueryHistogramsCopy(t *testing.T) {
+	start := time.Unix(0, 0)
+	end := time.Unix(144, 0)
+	step := time.Second * 3
+
+	load := `load 2m
+			http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:110 sum:818.00 buckets:[1 14 95]}}+{{schema:0 count:110 buckets:[1 14 95]}}x20
+			http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:210 sum:1598.00 buckets:[1 19 190]}}+{{schema:0 count:210 buckets:[1 19 190]}}x30`
+
+	subQuery := `min_over_time({__name__="http_request_duration_seconds"}[1h:1m])`
+	testQuery := `rate({__name__="http_request_duration_seconds"}[3m])`
+	ctx := context.Background()
+
+	for i := 0; i < 100; i++ {
+		queryable := promqltest.LoadedStorage(t, load)
+		engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+		q, err := engine.NewRangeQuery(ctx, queryable, nil, subQuery, start, end, step)
+		require.NoError(t, err)
+		q.Exec(ctx)
+		q.Close()
+		queryable.Close()
+	}
+
+	for i := 0; i < 100; i++ {
+		queryable := promqltest.LoadedStorage(t, load)
+		engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+		q, err := engine.NewRangeQuery(ctx, queryable, nil, testQuery, start, end, step)
+		require.NoError(t, err)
+		result := q.Exec(ctx)
+
+		mat, err := result.Matrix()
+		require.NoError(t, err)
+
+		for _, s := range mat {
+			for _, h := range s.Histograms {
+				require.NotEmpty(t, h.H.PositiveBuckets)
+			}
+		}
+		q.Close()
+		queryable.Close()
+	}
+}
