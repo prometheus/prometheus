@@ -436,7 +436,7 @@ func insert[BV bucketValue](in, out []BV, inserts []Insert, deltas bool) []BV {
 			out[oi] = d
 		}
 		oi++
-		v = d + v
+		v += d
 	}
 	// Insert zeros at the end.
 	for ii < len(inserts) {
