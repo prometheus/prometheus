@@ -37,7 +37,7 @@ spec:
   - name: hermetic
     value: true
   - name: prefetch-input
-    value: '{"type": "gomod", "path": "."}'
+    value: '[{"path": ".", "type": "gomod"}, {"path": "promu/", "type": "gomod"}]'
   - name: build-source-image
     value: "true"
   pipelineSpec:
