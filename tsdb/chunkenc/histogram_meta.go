@@ -544,7 +544,7 @@ func adjustForInserts(spans []histogram.Span, inserts []Insert) (mergedSpans []h
 		}
 	}
 	for i < len(inserts) {
-		addBucket(inserts[i].bucketIdx)
+		addBucket(insertIdx)
 		consumeInsert()
 	}
 	return

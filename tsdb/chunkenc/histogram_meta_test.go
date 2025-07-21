@@ -660,3 +660,188 @@ func TestSpansFromBidirectionalCompareSpans(t *testing.T) {
 		require.Equal(t, c.exp, act)
 	}
 }
+
+func TestExpandIntOrFloatSpansAndBuckets(t *testing.T) {
+	testCases := map[string]struct {
+		spansA   []histogram.Span
+		bucketsA []int64
+		spansB   []histogram.Span
+		bucketsB []int64
+
+		expectReset           bool
+		expectForwardInserts  []Insert
+		expectBackwardInserts []Insert
+		expectMergedSpans     []histogram.Span
+		expectBucketsA        []int64
+		expectBucketsB        []int64
+	}{
+		"empty": {
+			spansA:                []histogram.Span{},
+			bucketsA:              []int64{},
+			spansB:                []histogram.Span{},
+			bucketsB:              []int64{},
+			expectReset:           false,
+			expectForwardInserts:  nil,
+			expectBackwardInserts: nil,
+			expectMergedSpans:     []histogram.Span{},
+			expectBucketsA:        []int64{},
+			expectBucketsB:        []int64{},
+		},
+		"single bucket reset to none": {
+			spansA:      []histogram.Span{{Offset: 1, Length: 1}},
+			bucketsA:    []int64{1},
+			spansB:      []histogram.Span{},
+			bucketsB:    []int64{},
+			expectReset: true,
+		},
+		"single bucket reset to lower": {
+			spansA:      []histogram.Span{{Offset: 1, Length: 1}},
+			bucketsA:    []int64{2},
+			spansB:      []histogram.Span{{Offset: 1, Length: 1}},
+			bucketsB:    []int64{1},
+			expectReset: true,
+		},
+		"single bucket increase": {
+			spansA:                []histogram.Span{{Offset: 1, Length: 1}},
+			bucketsA:              []int64{1},
+			spansB:                []histogram.Span{{Offset: 1, Length: 1}},
+			bucketsB:              []int64{2},
+			expectReset:           false,
+			expectForwardInserts:  nil,
+			expectBackwardInserts: nil,
+			expectMergedSpans:     []histogram.Span{{Offset: 1, Length: 1}},
+			expectBucketsA:        []int64{1},
+			expectBucketsB:        []int64{2},
+		},
+		"distinct new buckets and increase": {
+			spansA:                []histogram.Span{{Offset: 1, Length: 1}},
+			bucketsA:              []int64{1},
+			spansB:                []histogram.Span{{Offset: -2, Length: 2}, {Offset: 1, Length: 2}, {Offset: 3, Length: 1}},
+			bucketsB:              []int64{2, 0, 0, 0, 0},
+			expectReset:           false,
+			expectForwardInserts:  []Insert{{pos: 0, num: 2, bucketIdx: -2}, {pos: 1, num: 1, bucketIdx: 2}, {pos: 1, num: 1, bucketIdx: 6}},
+			expectBackwardInserts: nil,
+			expectMergedSpans:     []histogram.Span{{Offset: -2, Length: 2}, {Offset: 1, Length: 2}, {Offset: 3, Length: 1}},
+			expectBucketsA:        []int64{0, 0, 1, -1, 0},
+			expectBucketsB:        []int64{2, 0, 0, 0, 0},
+		},
+		"distinct new buckets but reset": {
+			spansA:      []histogram.Span{{Offset: 1, Length: 1}},
+			bucketsA:    []int64{2},
+			spansB:      []histogram.Span{{Offset: -2, Length: 2}, {Offset: 1, Length: 2}, {Offset: 3, Length: 1}},
+			bucketsB:    []int64{1, 0, 0, 0, 0},
+			expectReset: true,
+		},
+		"distinct new buckets but missing": {
+			spansA:      []histogram.Span{{Offset: 1, Length: 1}},
+			bucketsA:    []int64{2},
+			spansB:      []histogram.Span{{Offset: -2, Length: 2}, {Offset: 2, Length: 1}, {Offset: 3, Length: 1}},
+			bucketsB:    []int64{1, 0, 0, 0},
+			expectReset: true,
+		},
+		"distinct new buckets and missing an empty bucket": {
+			spansA:                []histogram.Span{{Offset: 1, Length: 1}},
+			bucketsA:              []int64{0},
+			spansB:                []histogram.Span{{Offset: 3, Length: 1}},
+			bucketsB:              []int64{1},
+			expectReset:           false,
+			expectForwardInserts:  []Insert{{pos: 1, num: 1, bucketIdx: 3}},
+			expectBackwardInserts: []Insert{{pos: 0, num: 1, bucketIdx: 1}},
+			expectMergedSpans:     []histogram.Span{{Offset: 1, Length: 1}, {Offset: 1, Length: 1}},
+			expectBucketsA:        []int64{0, 0},
+			expectBucketsB:        []int64{0, 1},
+		},
+		"distinct new buckets and missing multiple empty buckets": {
+			// Idx: 01234567890123
+			// A    _000_00__0__00
+			// B    ________1_____
+			// M    _000_00_10__00
+			spansA:                []histogram.Span{{Offset: 1, Length: 3}, {Offset: 1, Length: 2}, {Offset: 2, Length: 1}, {Offset: 2, Length: 2}},
+			bucketsA:              []int64{0, 0, 0, 0, 0, 0, 0, 0},
+			spansB:                []histogram.Span{{Offset: 8, Length: 1}},
+			bucketsB:              []int64{1},
+			expectReset:           false,
+			expectForwardInserts:  []Insert{{pos: 5, num: 1, bucketIdx: 8}},
+			expectBackwardInserts: []Insert{{pos: 0, num: 3, bucketIdx: 1}, {pos: 0, num: 2, bucketIdx: 5}, {pos: 1, num: 1, bucketIdx: 9}, {pos: 1, num: 2, bucketIdx: 12}},
+			expectMergedSpans:     []histogram.Span{{Offset: 1, Length: 3}, {Offset: 1, Length: 2}, {Offset: 1, Length: 2}, {Offset: 2, Length: 2}},
+			expectBucketsA:        []int64{0, 0, 0, 0, 0, 0, 0, 0, 0},
+			expectBucketsB:        []int64{0, 0, 0, 0, 0, 1, -1, 0, 0},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			if name != "distinct new buckets and missing multiple empty buckets" {
+				return
+			}
+			t.Run("integers", func(t *testing.T) {
+				// Sanity check.
+				require.Equal(t, len(tc.bucketsA), countSpans(tc.spansA))
+				require.Equal(t, len(tc.bucketsB), countSpans(tc.spansB))
+
+				fInserts, bInserts, ok := expandIntSpansAndBuckets(tc.spansA, tc.spansB, tc.bucketsA, tc.bucketsB)
+				if tc.expectReset {
+					require.False(t, ok)
+					return
+				}
+				require.Equal(t, tc.expectForwardInserts, fInserts, "forward inserts")
+				require.Equal(t, tc.expectBackwardInserts, bInserts, "backward inserts")
+
+				gotBspans := adjustForInserts(tc.spansB, bInserts)
+				require.Equal(t, tc.expectMergedSpans, gotBspans)
+
+				gotAbuckets := make([]int64, len(tc.expectBucketsA))
+				insert(tc.bucketsA, gotAbuckets, fInserts, true)
+				require.Equal(t, tc.expectBucketsA, gotAbuckets)
+
+				gotBbuckets := make([]int64, len(tc.expectBucketsB))
+				insert(tc.bucketsB, gotBbuckets, bInserts, true)
+				require.Equal(t, tc.expectBucketsB, gotBbuckets)
+			})
+
+			t.Run("floats", func(t *testing.T) {
+				// Sanity check.
+				require.Equal(t, len(tc.bucketsA), countSpans(tc.spansA))
+				require.Equal(t, len(tc.bucketsB), countSpans(tc.spansB))
+
+				aXorValues := make([]xorValue, len(tc.bucketsA))
+				absolute := float64(0)
+				for i, v := range tc.bucketsA {
+					absolute += float64(v)
+					aXorValues[i].value = absolute
+				}
+
+				makeFloatBuckets := func(in []int64) []float64 {
+					out := make([]float64, len(in))
+					absolute = float64(0)
+					for i, v := range in {
+						absolute += float64(v)
+						out[i] = absolute
+					}
+					return out
+				}
+
+				bFloatBuckets := makeFloatBuckets(tc.bucketsB)
+
+				fInserts, bInserts, ok := expandFloatSpansAndBuckets(tc.spansA, tc.spansB, aXorValues, bFloatBuckets)
+				if tc.expectReset {
+					require.False(t, ok)
+					return
+				}
+				require.Equal(t, tc.expectForwardInserts, fInserts, "forward inserts")
+				require.Equal(t, tc.expectBackwardInserts, bInserts, "backward inserts")
+
+				gotBspans := adjustForInserts(tc.spansB, bInserts)
+				require.Equal(t, tc.expectMergedSpans, gotBspans)
+
+				gotAbuckets := make([]float64, len(tc.expectBucketsA))
+				insert(makeFloatBuckets(tc.bucketsA), gotAbuckets, fInserts, false)
+				require.Equal(t, makeFloatBuckets(tc.expectBucketsA), gotAbuckets)
+
+				gotBbuckets := make([]float64, len(tc.expectBucketsB))
+				insert(makeFloatBuckets(tc.bucketsB), gotBbuckets, bInserts, false)
+				require.Equal(t, makeFloatBuckets(tc.expectBucketsB), gotBbuckets)
+			})
+		})
+	}
+}

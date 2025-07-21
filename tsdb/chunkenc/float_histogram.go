@@ -387,7 +387,7 @@ func expandFloatSpansAndBuckets(a, b []histogram.Span, aBuckets []xorValue, bBuc
 			insert.bucketIdx = otherIdx
 			return inserts
 		}
-		if insert.bucketIdx+1 != otherIdx {
+		if insert.bucketIdx+insert.num != otherIdx {
 			// Insert is not continuous from previous insert.
 			inserts = append(inserts, *insert)
 			insert.num = 0
@@ -759,7 +759,7 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			// The histogram needs to be expanded to have the extra empty buckets
 			// of the chunk.
 			if len(pForwardInserts) == 0 && len(nForwardInserts) == 0 {
-				// No new chunks from the histogram, so the spans of the appender can accommodate the new buckets.
+				// No new buckets from the histogram, so the spans of the appender can accommodate the new buckets.
 				// However we need to make a copy in case the input is sharing spans from an iterator.
 				h.PositiveSpans = make([]histogram.Span, len(a.pSpans))
 				copy(h.PositiveSpans, a.pSpans)
