@@ -319,11 +319,12 @@ func validateExpectedCmds(cmd *evalCmd) error {
 	return nil
 }
 
-// Given an expected range vector definition, parse the line and return the start & end times and the step duration.
-// ie parse a line such as "expect range vector from 10s to 1m step 10s".
-// The from and to are parsed as durations and their values added to epoch(0) to form a time.Time.
-// The step is parsed as a duration and returned as a time.Duration.
+// Given an expected range vector definition, parse the line and return the start & end times and the step duration
+// ie parse a line such as "expect range vector from 10s to 1m step 10s"
+// the from and to are parsed as durations and their values added to epoch(0) to form a time.Time
+// the step is parsed as a duration and returned as a time.Duration
 func (t *test) parseExpectRangeVector(line string) (*time.Time, *time.Time, *time.Duration, error) {
+
 	parts := patExpectRange.FindStringSubmatch(line)
 	if len(parts) != 4 {
 		return nil, nil, nil, fmt.Errorf("invalid range vector definition %q", line)
@@ -335,12 +336,12 @@ func (t *test) parseExpectRangeVector(line string) (*time.Time, *time.Time, *tim
 
 	parsedFrom, err := model.ParseDuration(from)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("invalid range vector start timestamp offset definition %q: %w", from, err)
+		return nil, nil, nil, fmt.Errorf("invalid range vector start timestamp offset definition %q: %s", from, err)
 	}
 
 	parsedTo, err := model.ParseDuration(to)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("invalid range vector end timestamp offset definition %q: %w", to, err)
+		return nil, nil, nil, fmt.Errorf("invalid range vector end timestamp offset definition %q: %s", to, err)
 	}
 
 	if parsedTo < parsedFrom {
@@ -349,7 +350,7 @@ func (t *test) parseExpectRangeVector(line string) (*time.Time, *time.Time, *tim
 
 	parsedStep, err := model.ParseDuration(step)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("invalid range vector step definition %q: %w", step, err)
+		return nil, nil, nil, fmt.Errorf("invalid range vector step definition %q: %s", step, err)
 	}
 
 	start := time.Unix(0, 0).Add(time.Duration(parsedFrom))
@@ -449,7 +450,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		cmd.info = true
 	}
 
-	var allowExpectedRangeVector bool
+	var allowExpectedRangeVector = false
 
 	for j := 1; i+1 < len(lines); j++ {
 		i++
@@ -508,6 +509,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		}
 		metric, vals, err := parseSeries(defLine, i)
 		if err != nil {
+
 			literal, err1 := parseAsStringLiteral(defLine)
 			if err1 == nil {
 				cmd.expectedString = literal
@@ -529,7 +531,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 
 // Parse a string literal from the given input
 // The literal must be enclosed in double quotes - the returned value is simply the input with the first and last quotes removed
-// No further validation is performed on the literal - ie we don't check for unbalanced quotes, escaped quotes, etc.
+// No further validation is performed on the literal - ie we don't check for unbalanaced quotes, escaped quotes, etc.
 func parseAsStringLiteral(input string) (string, error) {
 	if strings.HasPrefix(input, `"`) && strings.HasSuffix(input, `"`) {
 		return input[1 : len(input)-1], nil
