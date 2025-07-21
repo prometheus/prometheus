@@ -44,6 +44,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 			settings,
 			nil,
 			true,
+			metadata,
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)
@@ -59,10 +60,6 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		}
 		if pt.Flags().NoRecordedValue() {
 			sample.Value = math.Float64frombits(value.StaleNaN)
-		}
-
-		if settings.EnableTypeAndUnitLabels {
-			labels = addTypeAndUnitLabels(labels, metadata, settings)
 		}
 
 		c.addSample(sample, labels)
@@ -87,6 +84,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			settings,
 			nil,
 			true,
+			metadata,
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)
@@ -102,10 +100,6 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		}
 		if pt.Flags().NoRecordedValue() {
 			sample.Value = math.Float64frombits(value.StaleNaN)
-		}
-
-		if settings.EnableTypeAndUnitLabels {
-			lbls = addTypeAndUnitLabels(lbls, metadata, settings)
 		}
 
 		ts := c.addSample(sample, lbls)
