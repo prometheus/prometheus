@@ -283,7 +283,7 @@ func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(ap
 	return h, db
 }
 
-func benchmarkSelect(b *testing.B, queryable storage.Queryable, sorted bool, minT int64, maxT int64, matchers ...*labels.Matcher) {
+func benchmarkSelect(b *testing.B, queryable storage.Queryable, sorted bool, minT, maxT int64, matchers ...*labels.Matcher) {
 	q, err := queryable.Querier(minT, maxT)
 	require.NoError(b, err)
 
