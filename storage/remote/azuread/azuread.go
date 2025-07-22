@@ -190,11 +190,11 @@ func (c *AzureADConfig) Validate() error {
 		}
 
 		// Validate tenant ID format
-		_, err = regexp.MatchString("^[0-9a-zA-Z-.]+$", c.WorkloadIdentity.TenantID)
+		_, err = uuid.Parse(c.WorkloadIdentity.TenantID)
 		if err != nil {
 			return errors.New("the provided Azure Workload Identity tenant_id is invalid")
 		}
-
+		
 		// Set default token file path when not specified - this matches the path used
 		// by the Azure Workload Identity webhook
 		if c.WorkloadIdentity.TokenFilePath == "" {
