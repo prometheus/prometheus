@@ -206,7 +206,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	require.Equal(t, ValNone, it4.Seek(exp[len(exp)-1].t+1))
 }
 
-// Mimics the scenario described for expandSpansForward.
+// Mimics the scenario described for expandIntSpansAndBuckets.
 func TestHistogramChunkBucketChanges(t *testing.T) {
 	c := Chunk(NewHistogramChunk())
 

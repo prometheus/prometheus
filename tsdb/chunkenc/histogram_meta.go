@@ -284,11 +284,12 @@ type Insert struct {
 	bucketIdx int
 }
 
-// expandSpansBothWays is similar to expandSpansForward, but now b may also
-// cover an entirely different set of buckets. The function returns the
-// “forward” inserts to expand 'a' to also cover all the buckets exclusively
-// covered by 'b', and it returns the “backward” inserts to expand 'b' to also
-// cover all the buckets exclusively covered by 'a'.
+// expandSpansBothWays is similar to expandFloatSpansAndBuckets and
+// expandIntSpansAndBuckets, but now b may also cover an entirely different set
+// of buckets and counter resets are ignored. The function returns the “forward”
+// inserts to expand 'a' to also cover all the buckets exclusively covered by
+// 'b', and it returns the “backward” inserts to expand 'b' to also cover all
+// the buckets exclusively covered by 'a'.
 func expandSpansBothWays(a, b []histogram.Span) (forward, backward []Insert, mergedSpans []histogram.Span) {
 	ai := newBucketIterator(a)
 	bi := newBucketIterator(b)

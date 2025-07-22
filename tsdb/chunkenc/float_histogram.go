@@ -343,7 +343,7 @@ func (a *FloatHistogramAppender) appendable(h *histogram.FloatHistogram) (
 // original deltas to a new set of deltas to match a new span layout that adds
 // buckets, we simply need to generate a list of inserts.
 //
-// Note: Within expandSpansForward we don't have to worry about the changes to the
+// Note: Within expandFloatSpansAndBuckets we don't have to worry about the changes to the
 // spans themselves, thanks to the iterators we get to work with the more useful
 // bucket indices (which of course directly correspond to the buckets we have to
 // adjust).

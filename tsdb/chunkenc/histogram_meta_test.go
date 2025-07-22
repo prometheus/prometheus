@@ -78,7 +78,7 @@ func TestBucketIterator(t *testing.T) {
 			},
 			idxs: []int{100, 101, 102, 103, 112, 113, 114, 115, 116, 117, 118, 119},
 		},
-		// The below 2 sets ore the ones described in expandSpansForward's comments.
+		// The below 2 sets ore the ones described in expandFloatSpansAndBuckets's comments.
 		{
 			spans: []histogram.Span{
 				{Offset: 0, Length: 2},
