@@ -27,6 +27,8 @@ More at https://docs.github.com/en/issues/tracking-your-work-with-issues/using-i
 If no, just write "NONE" in the release-notes block below.
 Otherwise, please describe what should be mentioned in the CHANGELOG. Use the following prefixes:
 [FEATURE] [ENHANCEMENT] [PERF] [BUGFIX] [SECURITY] [CHANGE]
+Refer to the existing CHANGELOG for inspiration:  https://github.com/prometheus/prometheus/blob/main/CHANGELOG.md
+If you need help formulating your entries, consult the reviewer(s).
 -->
 ```release-notes
 
