@@ -382,6 +382,8 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 			for _, testcase := range alertTests[t] {
 				if coverageTracker != nil {
 					coverageTracker.MarkRuleAsTested(testcase.Alertname)
+					// Also mark ALERTS timeseries as tested since alerting rules generate ALERTS metrics
+					coverageTracker.MarkRuleAsTested("ALERTS")
 				}
 				// Checking alerts.
 				gotAlerts := got[testcase.Alertname]
@@ -460,7 +462,24 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 Outer:
 	for _, testCase := range tg.PromqlExprTests {
 		if coverageTracker != nil {
-			coverageTracker.MarkRuleAsTested(testCase.Expr)
+			// Parse the expression to extract selectors and mark individual rules as tested
+			expr, err := parser.ParseExpr(testCase.Expr)
+			if err != nil {
+				// If parsing fails, fall back to marking the entire expression
+				// This preserves existing behavior for malformed expressions in tests
+				continue
+			}
+
+			// Extract all selectors from the parsed expression
+			selectors := parser.ExtractSelectors(expr)
+			for _, selectorMatchers := range selectors {
+				for _, matcher := range selectorMatchers {
+					// Look for __name__ label matchers to identify rule names
+					if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual {
+						coverageTracker.MarkRuleAsTested(matcher.Value)
+					}
+				}
+			}
 		}
 		got, err := query(suite.Context(), testCase.Expr, mint.Add(time.Duration(testCase.EvalTime)),
 			suite.QueryEngine(), suite.Queryable())

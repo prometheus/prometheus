@@ -1,0 +1,10 @@
+Coverage: 20.00%
+Total rules: 5
+Untested rules: 4
+Untested rules:
+  alerts:
+    - AlwaysFiring
+    - InstanceDown
+  rules:
+    - fixed_data
+    - suquery_interval_test

@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build:*)",
+      "Bash(go run:*)",
+      "Bash(go fmt:*)",
+      "Bash(find:*)",
+      "Bash(go test:*)",
+      "Bash(rm:*)",
+      "Bash(./promtool:*)"
+    ],
+    "deny": []
+  }
+}
