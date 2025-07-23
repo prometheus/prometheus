@@ -407,14 +407,16 @@ func insert[BV bucketValue](in, out []BV, inserts []Insert, deltas bool) []BV {
 			continue
 		}
 		// Process inserts.
+		firstInsert := true
 		for ii < len(inserts) && i == inserts[ii].pos {
 			// We have an insert!
 			// Add insert.num new delta values such that their
 			// bucket values equate 0. When deltas==false, it means
 			// that it is an absolute value. So we set it to 0
 			// directly.
-			if deltas {
+			if deltas && firstInsert {
 				out[oi] = -v
+				firstInsert = false // No need to go to 0 in further inserts.
 			} else {
 				out[oi] = 0
 			}

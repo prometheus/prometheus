@@ -783,7 +783,7 @@ func TestExpandIntOrFloatSpansAndBuckets(t *testing.T) {
 			// B;   ________2_____
 			// B':  _000_00_20__00
 			spansA:                []histogram.Span{{Offset: 1, Length: 3}, {Offset: 1, Length: 2}, {Offset: 1, Length: 2}, {Offset: 2, Length: 2}},
-			bucketsA:              []int64{0, 0, 0, 0, 1, -1, 0, 0},
+			bucketsA:              []int64{0, 0, 0, 0, 0, 1, -1, 0, 0},
 			spansB:                []histogram.Span{{Offset: 8, Length: 1}},
 			bucketsB:              []int64{2},
 			expectReset:           false,
@@ -798,9 +798,9 @@ func TestExpandIntOrFloatSpansAndBuckets(t *testing.T) {
 			// A:   _000_00_10__00
 			// B;   ________2_____
 			// B':  _000_00_20__00
-			spansA:                []histogram.Span{{Offset: 1, Length: 3}, {Offset: 1, Length: 2}, {Offset: 1, Length: 2}, {Offset: 1, Length: 0}, {Offset: 0, Length: 2}},
-			bucketsA:              []int64{0, 0, 0, 0, 1, -1, 0, 0},
-			spansB:                []histogram.Span{{Offset: 1, Length: 0}, {Offset: 6, Length: 1}},
+			spansA:                []histogram.Span{{Offset: 1, Length: 3}, {Offset: 1, Length: 2}, {Offset: 1, Length: 2}, {Offset: 1, Length: 0}, {Offset: 1, Length: 2}},
+			bucketsA:              []int64{0, 0, 0, 0, 0, 1, -1, 0, 0},
+			spansB:                []histogram.Span{{Offset: 1, Length: 0}, {Offset: 7, Length: 1}},
 			bucketsB:              []int64{2},
 			expectReset:           false,
 			expectForwardInserts:  nil,
@@ -809,18 +809,34 @@ func TestExpandIntOrFloatSpansAndBuckets(t *testing.T) {
 			expectBucketsA:        []int64{0, 0, 0, 0, 0, 1, -1, 0, 0},
 			expectBucketsB:        []int64{0, 0, 0, 0, 0, 2, -2, 0, 0},
 		},
+		"new empty buckets between filled buckets": {
+			// A:  11212332____1__1
+			// B:  122323321__11__1
+			// A': 112123320__01__1
+			// B': 122323321__11__1
+			spansA:               []histogram.Span{{Offset: -51, Length: 8}, {Offset: 11, Length: 1}, {Offset: 14, Length: 1}},
+			bucketsA:             []int64{1, 0, 1, -1, 1, 1, 0, -1, -1, 0},
+			spansB:               []histogram.Span{{Offset: -51, Length: 9}, {Offset: 9, Length: 2}, {Offset: 14, Length: 1}},
+			bucketsB:             []int64{1, 1, 0, 1, -1, 1, 0, -1, -1, 0, 0, 0},
+			expectReset:          false,
+			expectForwardInserts: []Insert{{pos: 8, num: 1, bucketIdx: -43}, {pos: 8, num: 1, bucketIdx: -33}},
+			expectMergedSpans:    []histogram.Span{{Offset: -51, Length: 9}, {Offset: 9, Length: 2}, {Offset: 14, Length: 1}},
+			expectBucketsA:       []int64{1, 0, 1, -1, 1, 1, 0, -1, -2, 0, 1, 0},
+			// 1 0 1 -1 1 1 0 -1 -2 -2 1 0
+
+			expectBucketsB: []int64{1, 1, 0, 1, -1, 1, 0, -1, -1, 0, 0, 0},
+		},
 	}
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			if name != "distinct new buckets and missing multiple empty buckets" {
-				return
-			}
-			t.Run("integers", func(t *testing.T) {
-				// Sanity check.
-				require.Equal(t, len(tc.bucketsA), countSpans(tc.spansA))
-				require.Equal(t, len(tc.bucketsB), countSpans(tc.spansB))
+			// Sanity check.
+			require.Equal(t, countSpans(tc.spansA), len(tc.bucketsA))
+			require.Equal(t, countSpans(tc.spansB), len(tc.bucketsB))
+			require.Equal(t, countSpans(tc.expectMergedSpans), len(tc.expectBucketsA))
+			require.Equal(t, countSpans(tc.expectMergedSpans), len(tc.expectBucketsB))
 
+			t.Run("integers", func(t *testing.T) {
 				fInserts, bInserts, ok := expandIntSpansAndBuckets(tc.spansA, tc.spansB, tc.bucketsA, tc.bucketsB)
 				if tc.expectReset {
 					require.False(t, ok)
@@ -842,10 +858,6 @@ func TestExpandIntOrFloatSpansAndBuckets(t *testing.T) {
 			})
 
 			t.Run("floats", func(t *testing.T) {
-				// Sanity check.
-				require.Equal(t, len(tc.bucketsA), countSpans(tc.spansA))
-				require.Equal(t, len(tc.bucketsB), countSpans(tc.spansB))
-
 				aXorValues := make([]xorValue, len(tc.bucketsA))
 				absolute := float64(0)
 				for i, v := range tc.bucketsA {
