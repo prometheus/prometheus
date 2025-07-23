@@ -86,11 +86,6 @@ type engineMetrics struct {
 	querySamples         prometheus.Counter
 }
 
-// convertibleToInt64 returns true if v does not over-/underflow an int64.
-func convertibleToInt64(v float64) bool {
-	return v <= maxInt64 && v >= minInt64
-}
-
 type (
 	// ErrQueryTimeout is returned if a query timed out during processing.
 	ErrQueryTimeout string
@@ -134,7 +129,7 @@ type QueryLogger interface {
 	io.Closer
 }
 
-// A Query is derived from an a raw query string and can be run against an engine
+// A Query is derived from a raw query string and can be run against an engine
 // it is associated with.
 type Query interface {
 	// Exec processes the query. Can only be called once.
@@ -481,7 +476,7 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
 func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, ts time.Time) (Query, error) {
-	pExpr, qry := ng.newQuery(q, qs, opts, ts, ts, 0)
+	pExpr, qry := ng.newQuery(q, qs, opts, ts, ts, 0*time.Second)
 	finishQueue, err := ng.queueActive(ctx, qry)
 	if err != nil {
 		return nil, err
@@ -494,7 +489,7 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
-	*pExpr, err = PreprocessExpr(expr, ts, ts)
+	*pExpr, err = PreprocessExpr(expr, ts, ts, 0)
 
 	return qry, err
 }
@@ -518,7 +513,7 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
-	*pExpr, err = PreprocessExpr(expr, start, end)
+	*pExpr, err = PreprocessExpr(expr, start, end, interval)
 
 	return qry, err
 }
@@ -1433,12 +1428,24 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 		if params.Max() < 1 {
 			return nil, annos
 		}
+		if params.HasAnyNaN() {
+			ev.errorf("Parameter value is NaN")
+		}
+		if fParam := params.Min(); fParam <= minInt64 {
+			ev.errorf("Scalar value %v underflows int64", fParam)
+		}
+		if fParam := params.Max(); fParam >= maxInt64 {
+			ev.errorf("Scalar value %v overflows int64", fParam)
+		}
 		seriess = make(map[uint64]Series, len(inputMatrix))
 
 	case parser.LIMIT_RATIO:
 		// Return early if all r values are zero.
 		if params.Max() == 0 && params.Min() == 0 {
 			return nil, annos
+		}
+		if params.HasAnyNaN() {
+			ev.errorf("Ratio value is NaN")
 		}
 		if params.Max() > 1.0 {
 			annos.Add(annotations.NewInvalidRatioWarning(params.Max(), 1.0, aggExpr.Param.PositionRange()))
@@ -2998,6 +3005,7 @@ type groupedAggregation struct {
 	hasHistogram           bool // Has at least 1 histogram sample aggregated.
 	incompatibleHistograms bool // If true, group has seen mixed exponential and custom buckets, or incompatible custom buckets.
 	groupAggrComplete      bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group.
+	incrementalMean        bool // True after reverting to incremental calculation of the mean value.
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.
@@ -3096,21 +3104,38 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			}
 
 		case parser.AVG:
-			// For the average calculation, we use incremental mean
-			// calculation. In particular in combination with Kahan
-			// summation (which we do for floats, but not yet for
-			// histograms, see issue #14105), this is quite accurate
-			// and only breaks in extreme cases (see testdata for
-			// avg_over_time). One might assume that simple direct
-			// mean calculation works better in some cases, but so
-			// far, our conclusion is that we fare best with the
-			// incremental approach plus Kahan summation (for
-			// floats). For a relevant discussion, see
+			// For the average calculation of histograms, we use
+			// incremental mean calculation without the help of
+			// Kahan summation (but this should change, see
+			// https://github.com/prometheus/prometheus/issues/14105
+			// ). For floats, we improve the accuracy with the help
+			// of Kahan summation. For a while, we assumed that
+			// incremental mean calculation combined with Kahan
+			// summation (see
 			// https://stackoverflow.com/questions/61665473/is-it-beneficial-for-precision-to-calculate-the-incremental-mean-average
-			// Additional note: For even better numerical accuracy,
-			// we would need to process the values in a particular
-			// order, but that would be very hard to implement given
-			// how the PromQL engine works.
+			// for inspiration) is generally the preferred solution.
+			// However, it then turned out that direct mean
+			// calculation (still in combination with Kahan
+			// summation) is often more accurate. See discussion in
+			// https://github.com/prometheus/prometheus/issues/16714
+			// . The problem with the direct mean calculation is
+			// that it can overflow float64 for inputs on which the
+			// incremental mean calculation works just fine. Our
+			// current approach is therefore to use direct mean
+			// calculation as long as we do not overflow (or
+			// underflow) the running sum. Once the latter would
+			// happen, we switch to incremental mean calculation.
+			// This seems to work reasonably well, but note that a
+			// deeper understanding would be needed to find out if
+			// maybe an earlier switch to incremental mean
+			// calculation would be better in terms of accuracy.
+			// Also, we could apply a number of additional means to
+			// improve the accuracy, like processing the values in a
+			// particular order. For now, we decided that the
+			// current implementation is accurate enough for
+			// practical purposes, in particular given that changing
+			// the order of summation would be hard, given how the
+			// PromQL engine implements aggregations.
 			group.groupCount++
 			if h != nil {
 				group.hasHistogram = true
@@ -3135,6 +3160,22 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
+				if !group.incrementalMean {
+					newV, newC := kahanSumInc(f, group.floatValue, group.floatKahanC)
+					if !math.IsInf(newV, 0) {
+						// The sum doesn't overflow, so we propagate it to the
+						// group struct and continue with the regular
+						// calculation of the mean value.
+						group.floatValue, group.floatKahanC = newV, newC
+						break
+					}
+					// If we are here, we know that the sum _would_ overflow. So
+					// instead of continue to sum up, we revert to incremental
+					// calculation of the mean value from here on.
+					group.incrementalMean = true
+					group.floatMean = group.floatValue / (group.groupCount - 1)
+					group.floatKahanC /= group.groupCount - 1
+				}
 				q := (group.groupCount - 1) / group.groupCount
 				group.floatMean, group.floatKahanC = kahanSumInc(
 					f/group.groupCount,
@@ -3212,8 +3253,10 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				continue
 			case aggr.hasHistogram:
 				aggr.histogramValue = aggr.histogramValue.Compact(0)
-			default:
+			case aggr.incrementalMean:
 				aggr.floatValue = aggr.floatMean + aggr.floatKahanC
+			default:
+				aggr.floatValue = aggr.floatValue/aggr.groupCount + aggr.floatKahanC/aggr.groupCount
 			}
 
 		case parser.COUNT:
@@ -3289,9 +3332,6 @@ seriesLoop:
 		var r float64
 		switch op {
 		case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
-			if !convertibleToInt64(fParam) {
-				ev.errorf("Scalar value %v overflows int64", fParam)
-			}
 			k = int64(fParam)
 			if k > int64(len(inputMatrix)) {
 				k = int64(len(inputMatrix))
@@ -3303,9 +3343,6 @@ seriesLoop:
 				return nil, annos
 			}
 		case parser.LIMIT_RATIO:
-			if math.IsNaN(fParam) {
-				ev.errorf("Ratio value %v is NaN", fParam)
-			}
 			switch {
 			case fParam == 0:
 				if enh.Ts != ev.endTimestamp {
@@ -3694,10 +3731,10 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
 // StepInvariantExpr. It also resolves the preprocessors and evaluates duration expressions
 // into their numeric values.
-func PreprocessExpr(expr parser.Expr, start, end time.Time) (parser.Expr, error) {
+func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) (parser.Expr, error) {
 	detectHistogramStatsDecoding(expr)
 
-	if err := parser.Walk(&durationVisitor{}, expr, nil); err != nil {
+	if err := parser.Walk(&durationVisitor{step: step}, expr, nil); err != nil {
 		return nil, err
 	}
 

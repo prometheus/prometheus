@@ -2148,7 +2148,7 @@ func TestDB_LabelNames(t *testing.T) {
 		sampleLabels1 [][2]string // For checking head and disk separately.
 		// To test Head+Disk, sampleLabels2 should have
 		// at least 1 unique label name which is not in sampleLabels1.
-		sampleLabels2 [][2]string // // For checking head and disk together.
+		sampleLabels2 [][2]string // For checking head and disk together.
 		exp1          []string    // after adding sampleLabels1.
 		exp2          []string    // after adding sampleLabels1 and sampleLabels2.
 	}{
@@ -9066,7 +9066,7 @@ func TestOOONativeHistogramsSettings(t *testing.T) {
 	})
 }
 
-// compareSeries essentially replaces `require.Equal(t, expected, actual) in
+// compareSeries essentially replaces `require.Equal(t, expected, actual)` in
 // situations where the actual series might contain more counter reset hints
 // "unknown" than the expected series. This can easily happen for long series
 // that trigger new chunks. This function therefore tolerates counter reset
@@ -9414,7 +9414,7 @@ func TestGenerateCompactionDelay(t *testing.T) {
 type blockedResponseRecorder struct {
 	r *httptest.ResponseRecorder
 
-	// writeblocked is used to block writing until the test wants it to resume.
+	// writeBlocked is used to block writing until the test wants it to resume.
 	writeBlocked chan struct{}
 	// writeStarted is closed by blockedResponseRecorder to signal that writing has started.
 	writeStarted chan struct{}

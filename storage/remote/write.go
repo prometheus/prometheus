@@ -268,6 +268,14 @@ func (rws *WriteStorage) Close() error {
 		q.Stop()
 	}
 	close(rws.quit)
+
+	rws.watcherMetrics.Unregister()
+	rws.liveReaderMetrics.Unregister()
+
+	if rws.reg != nil {
+		rws.reg.Unregister(rws.highestTimestamp.Gauge)
+	}
+
 	return nil
 }
 

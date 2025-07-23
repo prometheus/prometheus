@@ -76,8 +76,8 @@ func TestCreateAttributes(t *testing.T) {
 		{
 			name:                      "Successful conversion without resource attribute promotion and without scope promotion",
 			scope:                     defaultScope,
-			promoteResourceAttributes: nil,
 			promoteScope:              false,
+			promoteResourceAttributes: nil,
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -104,8 +104,8 @@ func TestCreateAttributes(t *testing.T) {
 		{
 			name:                      "Successful conversion without resource attribute promotion and with scope promotion",
 			scope:                     defaultScope,
-			promoteResourceAttributes: nil,
 			promoteScope:              true,
+			promoteResourceAttributes: nil,
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -178,10 +178,33 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
+			name:                      "Successful conversion with some attributes ignored",
+			promoteResourceAttributes: nil,
+			ignoreAttrs:               []string{"metric-attr-other"},
+			expectedLabels: []prompb.Label{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service name",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "metric value",
+				},
+			},
+		},
+		{
 			name:                      "Successful conversion with some attributes ignored and with scope promotion",
 			scope:                     defaultScope,
-			promoteResourceAttributes: nil,
 			promoteScope:              true,
+			promoteResourceAttributes: nil,
 			ignoreAttrs:               []string{"metric-attr-other"},
 			expectedLabels: []prompb.Label{
 				{
@@ -205,12 +228,12 @@ func TestCreateAttributes(t *testing.T) {
 					Value: defaultScope.name,
 				},
 				{
-					Name:  "otel_scope_schema_url",
-					Value: defaultScope.schemaURL,
-				},
-				{
 					Name:  "otel_scope_version",
 					Value: defaultScope.version,
+				},
+				{
+					Name:  "otel_scope_schema_url",
+					Value: defaultScope.schemaURL,
 				},
 				{
 					Name:  "otel_scope_attr1",
@@ -257,12 +280,12 @@ func TestCreateAttributes(t *testing.T) {
 					Value: defaultScope.name,
 				},
 				{
-					Name:  "otel_scope_schema_url",
-					Value: defaultScope.schemaURL,
-				},
-				{
 					Name:  "otel_scope_version",
 					Value: defaultScope.version,
+				},
+				{
+					Name:  "otel_scope_schema_url",
+					Value: defaultScope.schemaURL,
 				},
 				{
 					Name:  "otel_scope_attr1",
@@ -277,8 +300,8 @@ func TestCreateAttributes(t *testing.T) {
 		{
 			name:                      "Successful conversion with resource attribute promotion and with scope promotion, conflicting resource attributes are ignored",
 			scope:                     defaultScope,
-			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr", "metric-attr", "job", "instance"},
 			promoteScope:              true,
+			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr", "metric-attr", "job", "instance"},
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -309,12 +332,12 @@ func TestCreateAttributes(t *testing.T) {
 					Value: defaultScope.name,
 				},
 				{
-					Name:  "otel_scope_schema_url",
-					Value: defaultScope.schemaURL,
-				},
-				{
 					Name:  "otel_scope_version",
 					Value: defaultScope.version,
+				},
+				{
+					Name:  "otel_scope_schema_url",
+					Value: defaultScope.schemaURL,
 				},
 				{
 					Name:  "otel_scope_attr1",
@@ -329,8 +352,8 @@ func TestCreateAttributes(t *testing.T) {
 		{
 			name:                      "Successful conversion with resource attribute promotion and with scope promotion, attributes are only promoted once",
 			scope:                     defaultScope,
-			promoteResourceAttributes: []string{"existent-attr", "existent-attr"},
 			promoteScope:              true,
+			promoteResourceAttributes: []string{"existent-attr", "existent-attr"},
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -361,12 +384,12 @@ func TestCreateAttributes(t *testing.T) {
 					Value: defaultScope.name,
 				},
 				{
-					Name:  "otel_scope_schema_url",
-					Value: defaultScope.schemaURL,
-				},
-				{
 					Name:  "otel_scope_version",
 					Value: defaultScope.version,
+				},
+				{
+					Name:  "otel_scope_schema_url",
+					Value: defaultScope.schemaURL,
 				},
 				{
 					Name:  "otel_scope_attr1",
@@ -421,12 +444,12 @@ func TestCreateAttributes(t *testing.T) {
 					Value: defaultScope.name,
 				},
 				{
-					Name:  "otel_scope_schema_url",
-					Value: defaultScope.schemaURL,
-				},
-				{
 					Name:  "otel_scope_version",
 					Value: defaultScope.version,
+				},
+				{
+					Name:  "otel_scope_schema_url",
+					Value: defaultScope.schemaURL,
 				},
 				{
 					Name:  "otel_scope_attr1",
@@ -441,8 +464,8 @@ func TestCreateAttributes(t *testing.T) {
 		{
 			name:                         "Successful conversion promoting all resource attributes and with scope promotion, ignoring 'service.instance.id'",
 			scope:                        defaultScope,
-			promoteAllResourceAttributes: true,
 			promoteScope:                 true,
+			promoteAllResourceAttributes: true,
 			ignoreResourceAttributes: []string{
 				"service.instance.id",
 			},
@@ -480,12 +503,12 @@ func TestCreateAttributes(t *testing.T) {
 					Value: defaultScope.name,
 				},
 				{
-					Name:  "otel_scope_schema_url",
-					Value: defaultScope.schemaURL,
-				},
-				{
 					Name:  "otel_scope_version",
 					Value: defaultScope.version,
+				},
+				{
+					Name:  "otel_scope_schema_url",
+					Value: defaultScope.schemaURL,
 				},
 				{
 					Name:  "otel_scope_attr1",
@@ -545,7 +568,6 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 		schemaURL:  "https://schema.com",
 		attributes: scopeAttrs,
 	}
-
 	ts := pcommon.Timestamp(time.Now().UnixNano())
 	tests := []struct {
 		name         string
@@ -685,6 +707,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 
 				return metric
 			},
+			scope:        defaultScope,
 			promoteScope: false,
 			want: func() map[uint64]*prompb.TimeSeries {
 				countLabels := []prompb.Label{
@@ -720,8 +743,8 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				metric.Summary().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					PromoteScopeMetadata: tt.promoteScope,
 					ExportCreatedMetric:  true,
+					PromoteScopeMetadata: tt.promoteScope,
 				},
 				metric.Name(),
 				tt.scope,
@@ -745,7 +768,6 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 		schemaURL:  "https://schema.com",
 		attributes: scopeAttrs,
 	}
-
 	ts := pcommon.Timestamp(time.Now().UnixNano())
 	tests := []struct {
 		name         string

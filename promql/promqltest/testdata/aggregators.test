@@ -232,30 +232,38 @@ load 5m
   http_requests_histogram{job="api-server", instance="3", group="canary"} {{schema:2 count:4 sum:10 buckets:[1 0 0 0 1 0 0 1 1]}}
 
 eval instant at 0m max(http_requests)
+  expect no_info
   {} 4
 
 # The histogram is ignored here so the result doesn't change but it has an info annotation now.
-eval_info instant at 0m max({job="api-server"})
+eval instant at 0m max({job="api-server"})
+  expect info
   {} 4
 
 # The histogram is ignored here so there is no result but it has an info annotation now.
-eval_info instant at 0m max(http_requests_histogram)
+eval instant at 0m max(http_requests_histogram)
+  expect info
 
 eval instant at 0m min(http_requests)
+  expect no_info
   {} 1
 
 # The histogram is ignored here so the result doesn't change but it has an info annotation now.
-eval_info instant at 0m min({job="api-server"})
+eval instant at 0m min({job="api-server"})
+  expect info
   {} 1
 
 # The histogram is ignored here so there is no result but it has an info annotation now.
-eval_info instant at 0m min(http_requests_histogram)
+eval instant at 0m min(http_requests_histogram)
+  expect info
 
 eval instant at 0m max by (group) (http_requests)
+  expect no_info
   {group="production"} 2
   {group="canary"} 4
 
 eval instant at 0m min by (group) (http_requests)
+  expect no_info
   {group="production"} 1
   {group="canary"} 3
 
@@ -276,26 +284,31 @@ load 5m
 	http_requests_histogram{job="api-server", instance="3", group="production"}	{{schema:0 sum:20 count:20}}x11
 	foo 1+1x9 3
 
-eval_ordered instant at 50m topk(3, http_requests)
+eval instant at 50m topk(3, http_requests)
+	expect ordered
 	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="production", instance="1", job="app-server"} 600
 
-eval_ordered instant at 50m topk((3), (http_requests))
+eval instant at 50m topk((3), (http_requests))
+	expect ordered
 	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="production", instance="1", job="app-server"} 600
 
-eval_ordered instant at 50m topk(5, http_requests{group="canary",job="app-server"})
+eval instant at 50m topk(5, http_requests{group="canary",job="app-server"})
+	expect ordered
 	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="canary", instance="0", job="app-server"} 700
 
-eval_ordered instant at 50m bottomk(3, http_requests)
+eval instant at 50m bottomk(3, http_requests)
+	expect ordered
 	http_requests{group="production", instance="0", job="api-server"} 100
 	http_requests{group="production", instance="1", job="api-server"} 200
 	http_requests{group="canary", instance="0", job="api-server"} 300
 
-eval_ordered instant at 50m bottomk(5, http_requests{group="canary",job="app-server"})
+eval instant at 50m bottomk(5, http_requests{group="canary",job="app-server"})
+	expect ordered
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="canary", instance="1", job="app-server"} 800
 
@@ -309,33 +322,39 @@ eval instant at 50m bottomk by (group) (2, http_requests)
   http_requests{group="production", instance="0", job="api-server"} 100
   http_requests{group="production", instance="1", job="api-server"} 200
 
-eval_ordered instant at 50m bottomk by (group) (2, http_requests{group="production"})
+eval instant at 50m bottomk by (group) (2, http_requests{group="production"})
+  expect ordered
   http_requests{group="production", instance="0", job="api-server"} 100
   http_requests{group="production", instance="1", job="api-server"} 200
 
 # Test NaN is sorted away from the top/bottom.
-eval_ordered instant at 50m topk(3, http_requests{job="api-server",group="production"})
+eval instant at 50m topk(3, http_requests{job="api-server",group="production"})
+	expect ordered
 	http_requests{job="api-server", instance="1", group="production"}	200
 	http_requests{job="api-server", instance="0", group="production"}	100
 	http_requests{job="api-server", instance="2", group="production"}	NaN
 
-eval_ordered instant at 50m bottomk(3, http_requests{job="api-server",group="production"})
+eval instant at 50m bottomk(3, http_requests{job="api-server",group="production"})
+	expect ordered
 	http_requests{job="api-server", instance="0", group="production"}	100
 	http_requests{job="api-server", instance="1", group="production"}	200
 	http_requests{job="api-server", instance="2", group="production"}	NaN
 
 # Test topk and bottomk allocate min(k, input_vector) for results vector
-eval_ordered instant at 50m bottomk(9999999999, http_requests{job="app-server",group="canary"})
+eval instant at 50m bottomk(9999999999, http_requests{job="app-server",group="canary"})
+	expect ordered
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="canary", instance="1", job="app-server"} 800
 
-eval_ordered instant at 50m topk(9999999999, http_requests{job="api-server",group="production"})
+eval instant at 50m topk(9999999999, http_requests{job="api-server",group="production"})
+	expect ordered
 	http_requests{job="api-server", instance="1", group="production"}	200
 	http_requests{job="api-server", instance="0", group="production"}	100
 	http_requests{job="api-server", instance="2", group="production"}	NaN
 
 # Bug #5276.
-eval_ordered instant at 50m topk(scalar(foo), http_requests)
+eval instant at 50m topk(scalar(foo), http_requests)
+	expect ordered
 	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="production", instance="1", job="app-server"} 600
@@ -348,45 +367,66 @@ eval range from 0m to 50m step 5m count(bottomk(scalar(foo), http_requests))
 	{} 1 2 3 4 5 6 7 8 9 9 3
 
 # Tests for histogram: should ignore histograms.
-eval_info instant at 50m topk(100, http_requests_histogram)
+eval instant at 50m topk(100, http_requests_histogram)
+    expect info
     #empty
 
-eval_info range from 0 to 50m step 5m topk(100, http_requests_histogram)
+eval range from 0 to 50m step 5m topk(100, http_requests_histogram)
+    expect info
     #empty
 
-eval_info instant at 50m topk(1, {__name__=~"http_requests(_histogram)?"})
+eval instant at 50m topk(1, {__name__=~"http_requests(_histogram)?"})
+    expect info
     {__name__="http_requests", group="canary", instance="1", job="app-server"} 800
 
-eval_info instant at 50m count(topk(1000, {__name__=~"http_requests(_histogram)?"}))
+eval instant at 50m count(topk(1000, {__name__=~"http_requests(_histogram)?"}))
+    expect info
     {} 9
 
-eval_info range from 0 to 50m step 5m count(topk(1000, {__name__=~"http_requests(_histogram)?"}))
+eval range from 0 to 50m step 5m count(topk(1000, {__name__=~"http_requests(_histogram)?"}))
+    expect info
     {} 9x10
 
-eval_info instant at 50m topk by (instance) (1, {__name__=~"http_requests(_histogram)?"})
+eval instant at 50m topk by (instance) (1, {__name__=~"http_requests(_histogram)?"})
+    expect info
     {__name__="http_requests", group="canary", instance="0", job="app-server"} 700
     {__name__="http_requests", group="canary", instance="1", job="app-server"} 800
     {__name__="http_requests", group="production", instance="2", job="api-server"} NaN
 
-eval_info instant at 50m bottomk(100, http_requests_histogram)
+eval instant at 50m bottomk(100, http_requests_histogram)
+    expect info
     #empty
 
-eval_info range from 0 to 50m step 5m bottomk(100, http_requests_histogram)
+eval range from 0 to 50m step 5m bottomk(100, http_requests_histogram)
+    expect info
     #empty
 
-eval_info instant at 50m bottomk(1, {__name__=~"http_requests(_histogram)?"})
+eval instant at 50m bottomk(1, {__name__=~"http_requests(_histogram)?"})
+    expect info
     {__name__="http_requests", group="production", instance="0", job="api-server"} 100
 
-eval_info instant at 50m count(bottomk(1000, {__name__=~"http_requests(_histogram)?"}))
+eval instant at 50m count(bottomk(1000, {__name__=~"http_requests(_histogram)?"}))
+    expect info
     {} 9
 
-eval_info range from 0 to 50m step 5m count(bottomk(1000, {__name__=~"http_requests(_histogram)?"}))
+eval range from 0 to 50m step 5m count(bottomk(1000, {__name__=~"http_requests(_histogram)?"}))
+    expect info
     {} 9x10
 
-eval_info instant at 50m bottomk by (instance) (1, {__name__=~"http_requests(_histogram)?"})
+eval instant at 50m bottomk by (instance) (1, {__name__=~"http_requests(_histogram)?"})
+    expect info
     {__name__="http_requests", group="production", instance="0", job="api-server"} 100
     {__name__="http_requests", group="production", instance="1", job="api-server"} 200
     {__name__="http_requests", group="production", instance="2", job="api-server"} NaN
+
+eval instant at 50m topk(NaN, non_existent)
+    expect fail msg: Parameter value is NaN
+
+eval instant at 50m limitk(NaN, non_existent)
+    expect fail msg: Parameter value is NaN
+
+eval instant at 50m limit_ratio(NaN, non_existent)
+    expect fail msg: Ratio value is NaN
 
 clear
 
@@ -438,8 +478,8 @@ eval instant at 1m count_values by (job, group)("job", version)
     {job="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}", group="canary"} 2
 
 # Test an invalid label value.
-eval_fail instant at 0 count_values("a\xc5z", version)
-  expected_fail_message invalid label name "a\xc5z"
+eval instant at 0 count_values("a\xc5z", version)
+  expect fail msg:invalid label name "a\xc5z"
 
 # Tests for quantile.
 clear
@@ -453,46 +493,67 @@ load 10s
 	data{test="uneven samples",point="a"} 0
 	data{test="uneven samples",point="b"} 1
 	data{test="uneven samples",point="c"} 4
+	data{test="NaN sample",point="a"} 0
+	data{test="NaN sample",point="b"} 1
+	data{test="NaN sample",point="c"} NaN
 	data_histogram{test="histogram sample", point="c"} {{schema:2 count:4 sum:10 buckets:[1 0 0 0 1 0 0 1 1]}}
 	foo 0 1 0 1 0 1 0.8
 
+# 80th percentile.
+# The NaN sample is treated as the smallest possible value.
 eval instant at 1m quantile without(point)(0.8, data)
+	expect no_info
 	{test="two samples"} 0.8
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
+	{test="NaN sample"} 0.6
+
+# 20th percentile.
+# A quantile between NaN and 0 is interpolated as NaN.
+eval instant at 1m quantile without(point)(0.2, data)
+	{test="two samples"} 0.2
+	{test="three samples"} 0.4
+	{test="uneven samples"} 0.4
+	{test="NaN sample"} NaN
 
 # The histogram is ignored here so the result doesn't change but it has an info annotation now.
-eval_info instant at 1m quantile without(point)(0.8, {__name__=~"data(_histogram)?"})
+eval instant at 1m quantile without(point)(0.8, {__name__=~"data(_histogram)?"})
+	expect info
 	{test="two samples"} 0.8
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
+	{test="NaN sample"} 0.6
 
 # The histogram is ignored here so there is no result but it has an info annotation now.
-eval_info instant at 1m quantile(0.8, data_histogram)
+eval instant at 1m quantile(0.8, data_histogram)
+  expect info
 
 # Bug #5276.
 eval instant at 1m quantile without(point)(scalar(foo), data)
 	{test="two samples"} 0.8
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
-
+	{test="NaN sample"} 0.6
 
 eval instant at 1m quantile without(point)((scalar(foo)), data)
 	{test="two samples"} 0.8
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
+	{test="NaN sample"} 0.6
 
 eval instant at 1m quantile without(point)(NaN, data)
 	expect warn msg: PromQL warning: quantile value should be between 0 and 1, got NaN
-    {test="two samples"} NaN
-    {test="three samples"} NaN
-    {test="uneven samples"} NaN
+	{test="two samples"} NaN
+	{test="three samples"} NaN
+	{test="uneven samples"} NaN
+	{test="NaN sample"} NaN
 
 # Bug #15971.
 eval range from 0m to 1m step 10s quantile without(point) (scalar(foo), data)
 	{test="two samples"} 0 1 0 1 0 1 0.8
 	{test="three samples"} 0 2 0 2 0 2 1.6
 	{test="uneven samples"} 0 4 0 4 0 4 2.8
+	{test="NaN sample"} NaN 1 NaN 1 NaN 1 0.6
 
 # Tests for group.
 clear
@@ -593,10 +654,8 @@ eval instant at 1m avg(data{test="big"})
 eval instant at 1m avg(data{test="-big"})
 	{} -9.988465674311579e+307
 
-# This test fails on darwin/arm64.
-# Deactivated until issue #16714 is fixed.
-# eval instant at 1m avg(data{test="bigzero"})
-#	{} 0
+eval instant at 1m avg(data{test="bigzero"})
+	{} 0
 
 # If NaN is in the mix, the result is NaN.
 eval instant at 1m avg(data)
@@ -663,6 +722,63 @@ eval instant at 1m avg by (group) (data{test="nan"})
 
 clear
 
+# Demonstrate robustness of direct mean calculation vs. incremental mean calculation.
+# The tests below are prone to small inaccuracies with incremental mean calculation.
+# The exact number of aggregated values that trigger an inaccuracy depends on the
+# hardware.
+# See also discussion in https://github.com/prometheus/prometheus/issues/16714
+load 5m
+  foo{idx="0"} 52
+  foo{idx="1"} 52
+  foo{idx="2"} 52
+  foo{idx="3"} 52
+  foo{idx="4"} 52
+  foo{idx="5"} 52
+  foo{idx="6"} 52
+  foo{idx="7"} 52
+  foo{idx="8"} 52
+  foo{idx="9"} 52
+  foo{idx="10"} 52
+  foo{idx="11"} 52
+
+eval instant at 0 avg(foo) - 52
+  {} 0
+
+eval instant at 0 avg(topk(11, foo)) - 52
+  {} 0
+
+eval instant at 0 avg(topk(10, foo)) - 52
+  {} 0
+
+eval instant at 0 avg(topk(9, foo)) - 52
+  {} 0
+
+eval instant at 0 avg(topk(8, foo)) - 52
+  {} 0
+
+# The following tests do not utilize the tolerance built into the
+# testing framework but rely on the exact equality implemented in
+# PromQL. They currently pass, but we should keep in mind that this is
+# not a hard requirement, and generally it is a bad idea in practice
+# to rely on exact equality like this in alerting rules etc.
+
+eval instant at 0 avg(foo) == 52
+  {} 52
+
+eval instant at 0 avg(topk(11, foo)) == 52
+  {} 52
+
+eval instant at 0 avg(topk(10, foo)) == 52
+  {} 52
+
+eval instant at 0 avg(topk(9, foo)) == 52
+  {} 52
+
+eval instant at 0 avg(topk(8, foo)) == 52
+  {} 52
+
+clear
+
 # Test that aggregations are deterministic.
 # Commented because it is flaky in range mode.
 #load 10s
@@ -681,22 +797,28 @@ load 5m
 	series{label="c"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}}
 
 # The histogram is ignored here so the result doesn't change but it has an info annotation now.
-eval_info instant at 0m stddev(series)
+eval instant at 0m stddev(series)
+	expect info
 	{} 0.5
 
-eval_info instant at 0m stdvar(series)
+eval instant at 0m stdvar(series)
+	expect info
 	{} 0.25
 
 # The histogram is ignored here so there is no result but it has an info annotation now.
-eval_info instant at 0m stddev({label="c"})
+eval instant at 0m stddev({label="c"})
+  expect info
 
-eval_info instant at 0m stdvar({label="c"})
+eval instant at 0m stdvar({label="c"})
+  expect info
 
-eval_info instant at 0m stddev by (label) (series)
+eval instant at 0m stddev by (label) (series)
+	expect info
 	{label="a"} 0
 	{label="b"} 0
 
-eval_info instant at 0m stdvar by (label) (series)
+eval instant at 0m stdvar by (label) (series)
+	expect info
 	{label="a"} 0
 	{label="b"} 0
 
@@ -707,17 +829,21 @@ load 5m
 	series{label="b"} 1
 	series{label="c"} 2
 
-eval_info instant at 0m stddev(series)
+eval instant at 0m stddev(series)
+	expect info
 	{} 0.5
 
-eval_info instant at 0m stdvar(series)
+eval instant at 0m stdvar(series)
+	expect info
 	{} 0.25
 
-eval_info instant at 0m stddev by (label) (series)
+eval instant at 0m stddev by (label) (series)
+	expect info
 	{label="b"} 0
 	{label="c"} 0
 
-eval_info instant at 0m stdvar by (label) (series)
+eval instant at 0m stdvar by (label) (series)
+	expect info
 	{label="b"} 0
 	{label="c"} 0
 
