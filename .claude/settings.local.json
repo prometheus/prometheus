@@ -7,7 +7,11 @@
       "Bash(find:*)",
       "Bash(go test:*)",
       "Bash(rm:*)",
-      "Bash(./promtool:*)"
+      "Bash(./promtool:*)",
+      "Bash(gci write:*)",
+      "Bash(gofmt:*)",
+      "Bash(goimports:*)",
+      "Bash(golangci-lint run:*)"
     ],
     "deny": []
   }

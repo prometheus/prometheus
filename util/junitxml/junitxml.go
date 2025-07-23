@@ -40,9 +40,9 @@ type Property struct {
 }
 
 type TestCase struct {
-	Name     string   `xml:"name,attr"`
-	Failures []string `xml:"failure,omitempty"`
-	Error    string   `xml:"error,omitempty"`
+	Name     string     `xml:"name,attr"`
+	Failures []string   `xml:"failure,omitempty"`
+	Error    string     `xml:"error,omitempty"`
 	Suite    *TestSuite `xml:"-"`
 }
 
