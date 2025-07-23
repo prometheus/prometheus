@@ -1098,6 +1098,13 @@ func TestCompaction_populateBlock(t *testing.T) {
 				s.NumChunks += uint64(len(series.chunks))
 				for _, chk := range series.chunks {
 					s.NumSamples += uint64(len(chk))
+					for _, smpl := range chk {
+						if smpl.h != nil || smpl.fh != nil {
+							s.NumHistogramSamples++
+						} else {
+							s.NumFloatSamples++
+						}
+					}
 				}
 			}
 			require.Equal(t, s, meta.Stats)
@@ -1957,10 +1964,6 @@ func TestDelayedCompaction(t *testing.T) {
 		for db.head.compactable() {
 			time.Sleep(time.Millisecond)
 		}
-		if runtime.GOOS == "windows" {
-			// TODO: enable on windows once ms resolution timers are better supported.
-			return
-		}
 		duration := time.Since(start)
 		require.Less(t, duration, delay)
 	}
@@ -1982,8 +1985,10 @@ func TestDelayedCompaction(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
+			if c.compactionDelay > 0 && runtime.GOOS == "windows" {
+				t.Skip("Time imprecision on windows makes the test flaky, see https://github.com/prometheus/prometheus/issues/16450")
+			}
 			t.Parallel()
 
 			var options *Options

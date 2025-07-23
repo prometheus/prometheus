@@ -144,32 +144,37 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	// (which is our guess for where the series actually starts or ends).
 
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
-	extrapolateToInterval := sampledInterval
-
 	if durationToStart >= extrapolationThreshold {
 		durationToStart = averageDurationBetweenSamples / 2
 	}
-	if isCounter && resultFloat > 0 && len(samples.Floats) > 0 && samples.Floats[0].F >= 0 {
+	if isCounter {
 		// Counters cannot be negative. If we have any slope at all
 		// (i.e. resultFloat went up), we can extrapolate the zero point
 		// of the counter. If the duration to the zero point is shorter
 		// than the durationToStart, we take the zero point as the start
 		// of the series, thereby avoiding extrapolation to negative
 		// counter values.
-		// TODO(beorn7): Do this for histograms, too.
-		durationToZero := sampledInterval * (samples.Floats[0].F / resultFloat)
+		durationToZero := durationToStart
+		if resultFloat > 0 &&
+			len(samples.Floats) > 0 &&
+			samples.Floats[0].F >= 0 {
+			durationToZero = sampledInterval * (samples.Floats[0].F / resultFloat)
+		} else if resultHistogram != nil &&
+			resultHistogram.Count > 0 &&
+			len(samples.Histograms) > 0 &&
+			samples.Histograms[0].H.Count >= 0 {
+			durationToZero = sampledInterval * (samples.Histograms[0].H.Count / resultHistogram.Count)
+		}
 		if durationToZero < durationToStart {
 			durationToStart = durationToZero
 		}
 	}
-	extrapolateToInterval += durationToStart
 
 	if durationToEnd >= extrapolationThreshold {
 		durationToEnd = averageDurationBetweenSamples / 2
 	}
-	extrapolateToInterval += durationToEnd
 
-	factor := extrapolateToInterval / sampledInterval
+	factor := (sampledInterval + durationToStart + durationToEnd) / sampledInterval
 	if isRate {
 		factor /= ms.Range.Seconds()
 	}
@@ -671,29 +676,36 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		metricName := firstSeries.Metric.Get(labels.MetricName)
 		return enh.Out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
 	}
-	// For the average calculation, we use incremental mean calculation. In
-	// particular in combination with Kahan summation (which we do for
-	// floats, but not yet for histograms, see issue #14105), this is quite
-	// accurate and only breaks in extreme cases (see testdata). One might
-	// assume that simple direct mean calculation works better in some
-	// cases, but so far, our conclusion is that we fare best with the
-	// incremental approach plus Kahan summation (for floats). For a
-	// relevant discussion, see
+	// For the average calculation of histograms, we use incremental mean
+	// calculation without the help of Kahan summation (but this should
+	// change, see https://github.com/prometheus/prometheus/issues/14105 ).
+	// For floats, we improve the accuracy with the help of Kahan summation.
+	// For a while, we assumed that incremental mean calculation combined
+	// with Kahan summation (see
 	// https://stackoverflow.com/questions/61665473/is-it-beneficial-for-precision-to-calculate-the-incremental-mean-average
-	// Additional note: For even better numerical accuracy, we would need to
-	// process the values in a particular order. For avg_over_time, that
-	// would be more or less feasible, but it would be more expensive, and
-	// it would also be much harder for the avg aggregator, given how the
-	// PromQL engine works.
+	// for inspiration) is generally the preferred solution. However, it
+	// then turned out that direct mean calculation (still in combination
+	// with Kahan summation) is often more accurate. See discussion in
+	// https://github.com/prometheus/prometheus/issues/16714 . The problem
+	// with the direct mean calculation is that it can overflow float64 for
+	// inputs on which the incremental mean calculation works just fine. Our
+	// current approach is therefore to use direct mean calculation as long
+	// as we do not overflow (or underflow) the running sum. Once the latter
+	// would happen, we switch to incremental mean calculation. This seems
+	// to work reasonably well, but note that a deeper understanding would
+	// be needed to find out if maybe an earlier switch to incremental mean
+	// calculation would be better in terms of accuracy. Also, we could
+	// apply a number of additional means to improve the accuracy, like
+	// processing the values in a particular order. For now, we decided that
+	// the current implementation is accurate enough for practical purposes.
 	if len(firstSeries.Floats) == 0 {
 		// The passed values only contain histograms.
 		vec, err := aggrHistOverTime(vals, enh, func(s Series) (*histogram.FloatHistogram, error) {
-			count := 1
 			mean := s.Histograms[0].H.Copy()
-			for _, h := range s.Histograms[1:] {
-				count++
-				left := h.H.Copy().Div(float64(count))
-				right := mean.Copy().Div(float64(count))
+			for i, h := range s.Histograms[1:] {
+				count := float64(i + 2)
+				left := h.H.Copy().Div(count)
+				right := mean.Copy().Div(count)
 				toAdd, err := left.Sub(right)
 				if err != nil {
 					return mean, err
@@ -716,13 +728,35 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		return vec, nil
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
-		var mean, kahanC float64
-		for i, f := range s.Floats {
-			count := float64(i + 1)
-			q := float64(i) / count
+		var (
+			// Pre-set the 1st sample to start the loop with the 2nd.
+			sum, count      = s.Floats[0].F, 1.
+			mean, kahanC    float64
+			incrementalMean bool
+		)
+		for i, f := range s.Floats[1:] {
+			count = float64(i + 2)
+			if !incrementalMean {
+				newSum, newC := kahanSumInc(f.F, sum, kahanC)
+				// Perform regular mean calculation as long as
+				// the sum doesn't overflow.
+				if !math.IsInf(newSum, 0) {
+					sum, kahanC = newSum, newC
+					continue
+				}
+				// Handle overflow by reverting to incremental
+				// calculation of the mean value.
+				incrementalMean = true
+				mean = sum / (count - 1)
+				kahanC /= (count - 1)
+			}
+			q := (count - 1) / count
 			mean, kahanC = kahanSumInc(f.F/count, q*mean, q*kahanC)
 		}
-		return mean + kahanC
+		if incrementalMean {
+			return mean + kahanC
+		}
+		return sum/count + kahanC/count
 	}), nil
 }
 
@@ -747,7 +781,7 @@ func funcLastOverTime(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHe
 		h = el.Histograms[len(el.Histograms)-1]
 	}
 
-	if h.H == nil || h.T < f.T {
+	if h.H == nil || (len(el.Floats) > 0 && h.T < f.T) {
 		return append(enh.Out, Sample{
 			Metric: el.Metric,
 			F:      f.F,
@@ -795,7 +829,7 @@ func funcTsOfLastOverTime(vals []parser.Value, _ parser.Expressions, enh *EvalNo
 
 	var th int64
 	if len(el.Histograms) > 0 {
-		th = el.Floats[len(el.Floats)-1].T
+		th = el.Histograms[len(el.Histograms)-1].T
 	}
 
 	return append(enh.Out, Sample{
@@ -1364,9 +1398,11 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 		if !enh.enableDelayedNameRemoval {
 			sample.Metric = sample.Metric.DropReserved(schema.IsMetadataLabel)
 		}
+		hf, hfAnnos := HistogramFraction(lower, upper, sample.H, sample.Metric.Get(model.MetricNameLabel), args[0].PositionRange())
+		annos.Merge(hfAnnos)
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
-			F:        HistogramFraction(lower, upper, sample.H),
+			F:        hf,
 			DropName: true,
 		})
 	}
@@ -1410,9 +1446,11 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		if !enh.enableDelayedNameRemoval {
 			sample.Metric = sample.Metric.DropReserved(schema.IsMetadataLabel)
 		}
+		hq, hqAnnos := HistogramQuantile(q, sample.H, sample.Metric.Get(model.MetricNameLabel), args[0].PositionRange())
+		annos.Merge(hqAnnos)
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
-			F:        HistogramQuantile(q, sample.H),
+			F:        hq,
 			DropName: true,
 		})
 	}

@@ -26,37 +26,33 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+var (
+	s254 = strings.Repeat("x", 254) // Edge cases for stringlabels encoding.
+	s255 = strings.Repeat("x", 255)
+)
+
+var testCaseLabels = []Labels{
+	FromStrings("t1", "t1", "t2", "t2"),
+	{},
+	FromStrings("service.name", "t1", "whatever\\whatever", "t2"),
+	FromStrings("aaa", "111", "xx", s254),
+	FromStrings("aaa", "111", "xx", s255),
+	FromStrings("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
+}
+
 func TestLabels_String(t *testing.T) {
-	s254 := strings.Repeat("x", 254) // Edge cases for stringlabels encoding.
-	s255 := strings.Repeat("x", 255)
-	cases := []struct {
-		labels   Labels
-		expected string
-	}{
-		{
-			labels:   FromStrings("t1", "t1", "t2", "t2"),
-			expected: "{t1=\"t1\", t2=\"t2\"}",
-		},
-		{
-			labels:   Labels{},
-			expected: "{}",
-		},
-		{
-			labels:   FromStrings("service.name", "t1", "whatever\\whatever", "t2"),
-			expected: `{"service.name"="t1", "whatever\\whatever"="t2"}`,
-		},
-		{
-			labels:   FromStrings("aaa", "111", "xx", s254),
-			expected: `{aaa="111", xx="` + s254 + `"}`,
-		},
-		{
-			labels:   FromStrings("aaa", "111", "xx", s255),
-			expected: `{aaa="111", xx="` + s255 + `"}`,
-		},
+	expected := []string{ // Values must line up with testCaseLabels.
+		"{t1=\"t1\", t2=\"t2\"}",
+		"{}",
+		`{"service.name"="t1", "whatever\\whatever"="t2"}`,
+		`{aaa="111", xx="` + s254 + `"}`,
+		`{aaa="111", xx="` + s255 + `"}`,
+		`{" container"="prometheus", " namespace"="observability-prometheus", __name__="kube_pod_container_status_last_terminated_exitcode", cluster="prod-af-north-0", instance="kube-state-metrics-0:kube-state-metrics:ksm", job="kube-state-metrics/kube-state-metrics", pod="observability-prometheus-0", uid="d3ec90b2-4975-4607-b45d-b9ad64bb417e"}`,
 	}
-	for _, c := range cases {
-		str := c.labels.String()
-		require.Equal(t, c.expected, str)
+	require.Len(t, expected, len(testCaseLabels))
+	for i, c := range expected {
+		str := testCaseLabels[i].String()
+		require.Equal(t, c, str)
 	}
 }
 
@@ -65,6 +61,44 @@ func BenchmarkString(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = ls.String()
 	}
+}
+
+func TestSizeOfLabels(t *testing.T) {
+	require.Len(t, expectedSizeOfLabels, len(testCaseLabels))
+	for i, c := range expectedSizeOfLabels { // Declared in build-tag-specific files, e.g. labels_slicelabels_test.go.
+		var total uint64
+		testCaseLabels[i].Range(func(l Label) {
+			total += SizeOfLabels(l.Name, l.Value, 1)
+		})
+		require.Equal(t, c, total)
+	}
+}
+
+func TestByteSize(t *testing.T) {
+	require.Len(t, expectedByteSize, len(testCaseLabels))
+	for i, c := range expectedByteSize { // Declared in build-tag-specific files, e.g. labels_slicelabels_test.go.
+		require.Equal(t, c, testCaseLabels[i].ByteSize())
+	}
+}
+
+var GlobalTotal uint64 // Encourage the compiler not to elide the benchmark computation.
+
+func BenchmarkSize(b *testing.B) {
+	lb := New(benchmarkLabels...)
+	b.Run("SizeOfLabels", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			var total uint64
+			lb.Range(func(l Label) {
+				total += SizeOfLabels(l.Name, l.Value, 1)
+			})
+			GlobalTotal = total
+		}
+	})
+	b.Run("ByteSize", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			GlobalTotal = lb.ByteSize()
+		}
+	})
 }
 
 func TestLabels_MatchLabels(t *testing.T) {

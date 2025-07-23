@@ -223,6 +223,19 @@ type SelectHints struct {
 	// When disabled, the result may contain samples outside the queried time range but Select() performances
 	// may be improved.
 	DisableTrimming bool
+
+	// Projection hints. They are currently unused in the Prometheus promql engine but can be used by different
+	// implementations of the Queryable interface and engines.
+	// These hints are useful for queries like `sum by (label) (rate(metric[5m]))` - we can safely evaluate it
+	// even if we only fetch the `label` label. For some storage implementations this is beneficial.
+
+	// ProjectionLabels are the minimum amount of labels required to be fetched for this Select call
+	// When honored it is required to add an __series_hash__ label containing the hash of all labels
+	// of a particular series so that the engine can still perform horizontal joins.
+	ProjectionLabels []string
+
+	// ProjectionInclude defines if we have to include or exclude the labels from the ProjectLabels field.
+	ProjectionInclude bool
 }
 
 // LabelHints specifies hints passed for label reads.

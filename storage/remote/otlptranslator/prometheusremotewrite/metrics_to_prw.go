@@ -20,7 +20,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
+	"time"
 
 	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -48,6 +50,10 @@ type Settings struct {
 	KeepIdentifyingResourceAttributes bool
 	ConvertHistogramsToNHCB           bool
 	AllowDeltaTemporality             bool
+	// LookbackDelta is the PromQL engine lookback delta.
+	LookbackDelta time.Duration
+	// PromoteScopeMetadata controls whether to promote OTel scope metadata to metric labels.
+	PromoteScopeMetadata bool
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
@@ -75,7 +81,7 @@ func TranslatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric
 	case pmetric.MetricTypeGauge:
 		m.Type = otlptranslator.MetricTypeGauge
 	case pmetric.MetricTypeSum:
-		if metric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityCumulative {
+		if metric.Sum().IsMonotonic() {
 			m.Type = otlptranslator.MetricTypeMonotonicCounter
 		} else {
 			m.Type = otlptranslator.MetricTypeNonMonotonicCounter
@@ -88,6 +94,23 @@ func TranslatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric
 		m.Type = otlptranslator.MetricTypeExponentialHistogram
 	}
 	return m
+}
+
+type scope struct {
+	name       string
+	version    string
+	schemaURL  string
+	attributes pcommon.Map
+}
+
+func newScopeFromScopeMetrics(scopeMetrics pmetric.ScopeMetrics) scope {
+	s := scopeMetrics.Scope()
+	return scope{
+		name:       s.Name(),
+		version:    s.Version(),
+		schemaURL:  scopeMetrics.SchemaUrl(),
+		attributes: s.Attributes(),
+	}
 }
 
 // FromMetrics converts pmetric.Metrics to Prometheus remote write format.
@@ -113,11 +136,14 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		resourceMetrics := resourceMetricsSlice.At(i)
 		resource := resourceMetrics.Resource()
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
-		// keep track of the most recent timestamp in the ResourceMetrics for
+		// keep track of the earliest and latest timestamp in the ResourceMetrics for
 		// use with the "target" info metric
-		var mostRecentTimestamp pcommon.Timestamp
+		earliestTimestamp := pcommon.Timestamp(math.MaxUint64)
+		latestTimestamp := pcommon.Timestamp(0)
 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
-			metricSlice := scopeMetricsSlice.At(j).Metrics()
+			scopeMetrics := scopeMetricsSlice.At(j)
+			scope := newScopeFromScopeMetrics(scopeMetrics)
+			metricSlice := scopeMetrics.Metrics()
 
 			// TODO: decide if instrumentation library information should be exported as labels
 			for k := 0; k < metricSlice.Len(); k++ {
@@ -127,7 +153,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				}
 
 				metric := metricSlice.At(k)
-				mostRecentTimestamp = max(mostRecentTimestamp, mostRecentTimestampInMetric(metric))
+				earliestTimestamp, latestTimestamp = findMinAndMaxTimestamps(metric, earliestTimestamp, latestTimestamp)
 				temporality, hasTemporality, err := aggregationTemporality(metric)
 				if err != nil {
 					errs = multierr.Append(errs, err)
@@ -161,7 +187,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, promName); err != nil {
+					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, promName, scope); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -173,7 +199,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, promName); err != nil {
+					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, promName, scope); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -186,7 +212,9 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						break
 					}
 					if settings.ConvertHistogramsToNHCB {
-						ws, err := c.addCustomBucketsHistogramDataPoints(ctx, dataPoints, resource, settings, promName, temporality)
+						ws, err := c.addCustomBucketsHistogramDataPoints(
+							ctx, dataPoints, resource, settings, promName, temporality, scope,
+						)
 						annots.Merge(ws)
 						if err != nil {
 							errs = multierr.Append(errs, err)
@@ -195,7 +223,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 							}
 						}
 					} else {
-						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName); err != nil {
+						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName, scope); err != nil {
 							errs = multierr.Append(errs, err)
 							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 								return
@@ -215,6 +243,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						settings,
 						promName,
 						temporality,
+						scope,
 					)
 					annots.Merge(ws)
 					if err != nil {
@@ -229,7 +258,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, promName); err != nil {
+					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, promName, scope); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -240,7 +269,11 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				}
 			}
 		}
-		addResourceTargetInfo(resource, settings, mostRecentTimestamp, c)
+		if earliestTimestamp < pcommon.Timestamp(math.MaxUint64) {
+			// We have at least one metric sample for this resource.
+			// Generate a corresponding target_info series.
+			addResourceTargetInfo(resource, settings, earliestTimestamp.AsTime(), latestTimestamp.AsTime(), c)
+		}
 	}
 
 	return annots, errs

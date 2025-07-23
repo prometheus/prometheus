@@ -440,7 +440,32 @@ func TestOTLPWriteHandler(t *testing.T) {
 				},
 			},
 		},
-
+		{
+			name: "UnderscoreEscapingWithoutSuffixes",
+			otlpCfg: config.OTLPConfig{
+				TranslationStrategy: config.UnderscoreEscapingWithoutSuffixes,
+			},
+			expectedSamples: []mockSample{
+				{
+					l: labels.New(labels.Label{Name: "__name__", Value: "test_counter"},
+						labels.Label{Name: "foo_bar", Value: "baz"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"}),
+					t: timestamp.UnixMilli(),
+					v: 10.0,
+				},
+				{
+					l: labels.New(
+						labels.Label{Name: "__name__", Value: "target_info"},
+						labels.Label{Name: "host_name", Value: "test-host"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"},
+					),
+					t: timestamp.UnixMilli(),
+					v: 1,
+				},
+			},
+		},
 		{
 			name: "NoUTF8EscapingWithSuffixes",
 			otlpCfg: config.OTLPConfig{
@@ -954,4 +979,13 @@ func (s syncAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t 
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	return s.Appender.AppendHistogram(ref, l, t, h, f)
+}
+
+func TestWriteStorage_CanRegisterMetricsAfterClosing(t *testing.T) {
+	dir := t.TempDir()
+	reg := prometheus.NewPedanticRegistry()
+
+	s := NewWriteStorage(nil, reg, dir, time.Millisecond, nil)
+	require.NoError(t, s.Close())
+	require.NotPanics(t, func() { NewWriteStorage(nil, reg, dir, time.Millisecond, nil) })
 }

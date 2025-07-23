@@ -6717,6 +6717,75 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 	}
 }
 
+func TestHeadAppender_AppendHistogramCTZeroSample(t *testing.T) {
+	type appendableSamples struct {
+		ts int64
+		h  *histogram.Histogram
+		fh *histogram.FloatHistogram
+		ct int64 // 0 if no created timestamp.
+	}
+	for _, tc := range []struct {
+		name              string
+		appendableSamples []appendableSamples
+		expectedError     error
+	}{
+		{
+			name: "integer histogram CT lower than minValidTime initiates ErrOutOfBounds",
+			appendableSamples: []appendableSamples{
+				{ts: 100, h: tsdbutil.GenerateTestHistogram(1), ct: -1},
+			},
+			expectedError: storage.ErrOutOfBounds,
+		},
+		{
+			name: "float histograms CT lower than minValidTime initiates ErrOutOfBounds",
+			appendableSamples: []appendableSamples{
+				{ts: 100, fh: tsdbutil.GenerateTestFloatHistogram(1), ct: -1},
+			},
+			expectedError: storage.ErrOutOfBounds,
+		},
+		{
+			name: "integer histogram CT duplicates an existing sample",
+			appendableSamples: []appendableSamples{
+				{ts: 100, h: tsdbutil.GenerateTestHistogram(1)},
+				{ts: 200, h: tsdbutil.GenerateTestHistogram(1), ct: 100},
+			},
+			expectedError: storage.ErrDuplicateSampleForTimestamp,
+		},
+		{
+			name: "float histogram CT duplicates an existing sample",
+			appendableSamples: []appendableSamples{
+				{ts: 100, fh: tsdbutil.GenerateTestFloatHistogram(1)},
+				{ts: 200, fh: tsdbutil.GenerateTestFloatHistogram(1), ct: 100},
+			},
+			expectedError: storage.ErrDuplicateSampleForTimestamp,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+
+			defer func() {
+				require.NoError(t, h.Close())
+			}()
+
+			lbls := labels.FromStrings("foo", "bar")
+
+			var ref storage.SeriesRef
+			for _, sample := range tc.appendableSamples {
+				a := h.Appender(context.Background())
+				var err error
+				if sample.ct != 0 {
+					ref, err = a.AppendHistogramCTZeroSample(ref, lbls, sample.ts, sample.ct, sample.h, sample.fh)
+					require.ErrorIs(t, err, tc.expectedError)
+				}
+
+				ref, err = a.AppendHistogram(ref, lbls, sample.ts, sample.h, sample.fh)
+				require.NoError(t, err)
+				require.NoError(t, a.Commit())
+			}
+		})
+	}
+}
+
 func TestHeadCompactableDoesNotCompactEmptyHead(t *testing.T) {
 	// Use a chunk range of 1 here so that if we attempted to determine if the head
 	// was compactable using default values for min and max times, `Head.compactable()`
