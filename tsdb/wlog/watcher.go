@@ -73,6 +73,7 @@ type WriteNotified interface {
 }
 
 type WatcherMetrics struct {
+	reg                   prometheus.Registerer
 	recordsRead           *prometheus.CounterVec
 	recordDecodeFails     *prometheus.CounterVec
 	samplesSentPreTailing *prometheus.CounterVec
@@ -113,6 +114,7 @@ type Watcher struct {
 
 func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 	m := &WatcherMetrics{
+		reg: reg,
 		recordsRead: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: "prometheus",
@@ -169,6 +171,19 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 	}
 
 	return m
+}
+
+// Unregister unregisters metrics emitted by this instance.
+func (m *WatcherMetrics) Unregister() {
+	if m.reg == nil {
+		return
+	}
+
+	m.reg.Unregister(m.recordsRead)
+	m.reg.Unregister(m.recordDecodeFails)
+	m.reg.Unregister(m.samplesSentPreTailing)
+	m.reg.Unregister(m.currentSegment)
+	m.reg.Unregister(m.notificationsSkipped)
 }
 
 // NewWatcher creates a new WAL watcher for a given WriteTo.
