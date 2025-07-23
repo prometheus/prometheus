@@ -656,12 +656,10 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, earlies
 			Timestamp: timestamp.UnixMilli(),
 		})
 	}
-	if len(ts.Samples) == 0 || ts.Samples[len(ts.Samples)-1].Timestamp < latestTimestamp.UnixMilli() {
-		ts.Samples = append(ts.Samples, prompb.Sample{
-			Value:     float64(1),
-			Timestamp: latestTimestamp.UnixMilli(),
-		})
-	}
+	ts.Samples = append(ts.Samples, prompb.Sample{
+		Value:     float64(1),
+		Timestamp: latestTimestamp.UnixMilli(),
+	})
 }
 
 // convertTimeStamp converts OTLP timestamp in ns to timestamp in ms.
