@@ -832,26 +832,26 @@ func TestExpandIntOrFloatSpansAndBuckets(t *testing.T) {
 			// B:  _0130_____00_0
 			// A': 00020_____00_0
 			// B': 00130_____00_0
-			spansA: []histogram.Span{{Offset: -16, Length: 1}, {Offset: 2, Length: 1}, {Offset: 7, Length: 1}},
-			bucketsA: []int64{0,2,-2},
-			spansB: []histogram.Span{{Offset: -15, Length: 4}, {Offset: 5, Length: 2}, {Offset: 1, Length: 1}},
-			bucketsB: []int64{0, 1, 2, -3, 0, 0, 0},
-			expectReset: false,
-			expectForwardInserts: []Insert{{pos:1, num: 2, bucketIdx: -15}, {pos:2,num:1,bucketIdx: -12},{pos:2,num:1,bucketIdx: -6}, {pos:3,num:1,bucketIdx: -3}},
-			expectBackwardInserts: []Insert{{pos:0, num:1, bucketIdx: -16}},
-			expectMergedSpans: []histogram.Span{{Offset:-16,Length: 5}, {Offset: 5, Length: 2}, {Offset: 1, Length: 1}},
-			expectBucketsA: []int64{0, 0, 0, 2, -2, 0, 0, 0},
-			expectBucketsB: []int64{0, 0, 1, 2, -3, 0, 0, 0},
+			spansA:                []histogram.Span{{Offset: -16, Length: 1}, {Offset: 2, Length: 1}, {Offset: 7, Length: 1}},
+			bucketsA:              []int64{0, 2, -2},
+			spansB:                []histogram.Span{{Offset: -15, Length: 4}, {Offset: 5, Length: 2}, {Offset: 1, Length: 1}},
+			bucketsB:              []int64{0, 1, 2, -3, 0, 0, 0},
+			expectReset:           false,
+			expectForwardInserts:  []Insert{{pos: 1, num: 2, bucketIdx: -15}, {pos: 2, num: 1, bucketIdx: -12}, {pos: 2, num: 1, bucketIdx: -6}, {pos: 3, num: 1, bucketIdx: -3}},
+			expectBackwardInserts: []Insert{{pos: 0, num: 1, bucketIdx: -16}},
+			expectMergedSpans:     []histogram.Span{{Offset: -16, Length: 5}, {Offset: 5, Length: 2}, {Offset: 1, Length: 1}},
+			expectBucketsA:        []int64{0, 0, 0, 2, -2, 0, 0, 0},
+			expectBucketsB:        []int64{0, 0, 1, 2, -3, 0, 0, 0},
 		},
 	}
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			// Sanity check.
-			require.Equal(t, countSpans(tc.spansA), len(tc.bucketsA))
-			require.Equal(t, countSpans(tc.spansB), len(tc.bucketsB))
-			require.Equal(t, countSpans(tc.expectMergedSpans), len(tc.expectBucketsA))
-			require.Equal(t, countSpans(tc.expectMergedSpans), len(tc.expectBucketsB))
+			require.Len(t, tc.bucketsA, countSpans(tc.spansA))
+			require.Len(t, tc.bucketsB, countSpans(tc.spansB))
+			require.Len(t, tc.expectBucketsA, countSpans(tc.expectMergedSpans))
+			require.Len(t, tc.expectBucketsB, countSpans(tc.expectMergedSpans))
 
 			t.Run("integers", func(t *testing.T) {
 				fInserts, bInserts, ok := expandIntSpansAndBuckets(tc.spansA, tc.spansB, tc.bucketsA, tc.bucketsB)
