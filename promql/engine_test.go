@@ -3423,7 +3423,7 @@ func TestRateAnnotations(t *testing.T) {
 			expr:                     "rate(series[1m1s])",
 			typeAndUnitLabelsEnabled: true,
 			expectedInfoAnnotations: []string{
-				`PromQL info: metric might not be a counter, __type__ label is not set to "counter", got "": "series" (1:6)`,
+				`PromQL info: metric might not be a counter, __type__ label is not set to "counter" or "histogram", got "": "series" (1:6)`,
 			},
 			expectedWarningAnnotations: []string{},
 		},
@@ -3434,7 +3434,7 @@ func TestRateAnnotations(t *testing.T) {
 			expr:                     "increase(series[1m1s])",
 			typeAndUnitLabelsEnabled: true,
 			expectedInfoAnnotations: []string{
-				`PromQL info: metric might not be a counter, __type__ label is not set to "counter", got "": "series" (1:10)`,
+				`PromQL info: metric might not be a counter, __type__ label is not set to "counter" or "histogram", got "": "series" (1:10)`,
 			},
 			expectedWarningAnnotations: []string{},
 		},
@@ -3447,9 +3447,27 @@ func TestRateAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		},
+		"no info annotation when rate() over series with __type__=histogram label": {
+			data: `
+				series{label="a", __type__="histogram"} 1 2 3
+			`,
+			expr:                       "rate(series[1m1s])",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
 		"no info annotation when increase() over series with __type__=counter label": {
 			data: `
 				series{label="a", __type__="counter"} 1 2 3
+			`,
+			expr:                       "increase(series[1m1s])",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when increase() over series with __type__=histogram label": {
+			data: `
+				series{label="a", __type__="histogram"} 1 2 3
 			`,
 			expr:                       "increase(series[1m1s])",
 			typeAndUnitLabelsEnabled:   true,
