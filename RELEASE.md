@@ -127,6 +127,9 @@ Then bump the UI module version:
 make ui-bump-version
 ```
 
+All of the above goes to make a PR, which you should create targeting the `release-x.y` branch, then wait for CI to complete and get an approval.
+Once the PR is ready, merge it into the release branch and pull it down to your work area. Then you are ready for the next step:
+
 ### 2. Draft the new release
 
 Tag the new release via the following commands:
