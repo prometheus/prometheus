@@ -115,6 +115,9 @@ func (c *HistogramChunk) Compact() {
 
 // Appender implements the Chunk interface.
 func (c *HistogramChunk) Appender() (Appender, error) {
+	if len(c.b.stream) == 3 { // Avoid allocating an Iterator when chunk is empty.
+		return &HistogramAppender{b: &c.b, t: math.MinInt64, leading: 0xff}, nil
+	}
 	it := c.iterator(nil)
 
 	// To get an appender, we must know the state it would have if we had
