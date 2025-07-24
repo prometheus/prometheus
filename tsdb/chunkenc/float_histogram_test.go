@@ -195,7 +195,7 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	require.Equal(t, ValNone, it4.Seek(exp[len(exp)-1].t+1))
 }
 
-// Mimics the scenario described for expandSpansForward.
+// Mimics the scenario described for expandFloatSpansAndBuckets.
 func TestFloatHistogramChunkBucketChanges(t *testing.T) {
 	c := Chunk(NewFloatHistogramChunk())
 
@@ -1419,4 +1419,46 @@ func assertFirstFloatHistogramSampleHint(t *testing.T, chunk Chunk, expected his
 	require.Equal(t, ValFloatHistogram, it.Next())
 	_, v := it.AtFloatHistogram(nil)
 	require.Equal(t, expected, v.CounterResetHint)
+}
+
+func TestFloatHistogramEmptyBucketsWithGaps(t *testing.T) {
+	h1 := &histogram.FloatHistogram{
+		PositiveSpans: []histogram.Span{
+			{Offset: -19, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []float64{0, 0, 0, 0},
+	}
+	require.NoError(t, h1.Validate())
+
+	c := NewFloatHistogramChunk()
+	app, err := c.Appender()
+	require.NoError(t, err)
+	_, _, _, err = app.AppendFloatHistogram(nil, 1, h1, false)
+	require.NoError(t, err)
+
+	h2 := &histogram.FloatHistogram{
+		PositiveSpans: []histogram.Span{
+			{Offset: -19, Length: 1},
+			{Offset: 4, Length: 1},
+			{Offset: 3, Length: 1},
+		},
+		PositiveBuckets: []float64{0, 0, 0},
+	}
+	require.NoError(t, h2.Validate())
+
+	newC, recoded, _, err := app.AppendFloatHistogram(nil, 2, h2, false)
+	require.NoError(t, err)
+	require.True(t, recoded)
+	require.NotNil(t, newC)
+
+	it := newC.Iterator(nil)
+	require.Equal(t, ValFloatHistogram, it.Next())
+	_, h := it.AtFloatHistogram(nil)
+	require.NoError(t, h.Validate())
+	require.Equal(t, ValFloatHistogram, it.Next())
+	_, h = it.AtFloatHistogram(nil)
+	require.NoError(t, h.Validate())
+	require.Equal(t, ValNone, it.Next())
+	require.NoError(t, it.Err())
 }
