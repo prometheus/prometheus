@@ -826,6 +826,23 @@ func TestExpandIntOrFloatSpansAndBuckets(t *testing.T) {
 
 			expectBucketsB: []int64{1, 1, 0, 1, -1, 1, 0, -1, -1, 0, 0, 0},
 		},
+		"real example 1": {
+			// I-  6543210987654321
+			// A:  0__2_______0__
+			// B:  _0130_____00_0
+			// A': 00020_____00_0
+			// B': 00130_____00_0
+			spansA: []histogram.Span{{Offset: -16, Length: 1}, {Offset: 2, Length: 1}, {Offset: 7, Length: 1}},
+			bucketsA: []int64{0,2,-2},
+			spansB: []histogram.Span{{Offset: -15, Length: 4}, {Offset: 5, Length: 2}, {Offset: 1, Length: 1}},
+			bucketsB: []int64{0, 1, 2, -3, 0, 0, 0},
+			expectReset: false,
+			expectForwardInserts: []Insert{{pos:1, num: 2, bucketIdx: -15}, {pos:2,num:1,bucketIdx: -12},{pos:2,num:1,bucketIdx: -6}, {pos:3,num:1,bucketIdx: -3}},
+			expectBackwardInserts: []Insert{{pos:0, num:1, bucketIdx: -16}},
+			expectMergedSpans: []histogram.Span{{Offset:-16,Length: 5}, {Offset: 5, Length: 2}, {Offset: 1, Length: 1}},
+			expectBucketsA: []int64{0, 0, 0, 2, -2, 0, 0, 0},
+			expectBucketsB: []int64{0, 0, 1, 2, -3, 0, 0, 0},
+		},
 	}
 
 	for name, tc := range testCases {
