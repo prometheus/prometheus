@@ -100,13 +100,13 @@ func (p *ScanEmptyMatchersLookupPlanner) PlanIndexLookup(_ context.Context, plan
 	}
 
 	if len(indexMatchers) == 0 && len(scanMatchers) > 0 {
-		// Zero index matchers match no series. We retain one index matchers so that we have a base set of series which we can scan.
+		// Zero index matchers match no series. We retain one index matcher so that we have a base set of series which we can scan.
 		indexMatchers = scanMatchers[:1]
 		scanMatchers = scanMatchers[1:]
 	}
 
 	if len(scanMatchers) == 0 {
-		// Avoid an allocation if the sample is simple.
+		// Avoid an allocation if the plan is simple.
 		return NewIndexOnlyLookupPlan(indexMatchers), nil
 	}
 
