@@ -219,6 +219,9 @@ otlp:
   [ keep_identifying_resource_attributes: <boolean> | default = false ]
   # Configures optional translation of OTLP explicit bucket histograms into native histograms with custom buckets.
   [ convert_histograms_to_nhcb: <boolean> | default = false ]
+  # Enables promotion of OTel scope metadata (i.e. name, version, schema URL, and attributes) to metric labels.
+  # This is disabled by default for backwards compatibility, but according to OTel spec, scope metadata _should_ be identifying, i.e. translated to metric labels.
+  [ promote_scope_metadata: <boolean> | default = false ]
 
 # Settings related to the remote read feature.
 remote_read:
@@ -271,7 +274,7 @@ job_name: <job_name>
 # Whether to scrape a classic histogram, even if it is also exposed as a native
 # histogram (has no effect without --enable-feature=native-histograms).
 [ always_scrape_classic_histograms: <boolean> |
-default = <global.always_scrape_classic_hisotgrams> ]
+default = <global.always_scrape_classic_histograms> ]
 
 # The HTTP resource path on which to fetch metrics from targets.
 [ metrics_path: <path> | default = /metrics ]

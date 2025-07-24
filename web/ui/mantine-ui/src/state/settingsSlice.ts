@@ -14,6 +14,8 @@ interface Settings {
   enableSyntaxHighlighting: boolean;
   enableLinter: boolean;
   showAnnotations: boolean;
+  showQueryWarnings: boolean;
+  showQueryInfoNotices: boolean;
   ruleGroupsPerPage: number;
   alertGroupsPerPage: number;
 }
@@ -31,6 +33,9 @@ export const localStorageKeyEnableSyntaxHighlighting =
   "settings.enableSyntaxHighlighting";
 export const localStorageKeyEnableLinter = "settings.enableLinter";
 export const localStorageKeyShowAnnotations = "settings.showAnnotations";
+export const localStorageKeyShowQueryWarnings = "settings.showQueryWarnings";
+export const localStorageKeyShowQueryInfoNotices =
+  "settings.showQueryInfoNotices";
 export const localStorageKeyRuleGroupsPerPage = "settings.ruleGroupsPerPage";
 export const localStorageKeyAlertGroupsPerPage = "settings.alertGroupsPerPage";
 
@@ -97,6 +102,14 @@ export const initialState: Settings = {
   ),
   showAnnotations: initializeFromLocalStorage<boolean>(
     localStorageKeyShowAnnotations,
+    true
+  ),
+  showQueryWarnings: initializeFromLocalStorage<boolean>(
+    localStorageKeyShowQueryWarnings,
+    true
+  ),
+  showQueryInfoNotices: initializeFromLocalStorage<boolean>(
+    localStorageKeyShowQueryInfoNotices,
     true
   ),
   ruleGroupsPerPage: initializeFromLocalStorage<number>(

@@ -117,7 +117,7 @@ var seps = []byte{'\xff'}
 // Unpaired string values are ignored. String pairs overwrite OTLP labels if collisions happen and
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
-func createAttributes(resource pcommon.Resource, attributes pcommon.Map, settings Settings,
+func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope scope, settings Settings,
 	ignoreAttrs []string, logOnOverwrite bool, extras ...string,
 ) []prompb.Label {
 	resourceAttrs := resource.Attributes()
@@ -126,8 +126,15 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 
 	promotedAttrs := settings.PromoteResourceAttributes.promotedAttributes(resourceAttrs)
 
+	promoteScope := settings.PromoteScopeMetadata && scope.name != ""
+	scopeLabelCount := 0
+	if promoteScope {
+		// Include name, version and schema URL.
+		scopeLabelCount = scope.attributes.Len() + 3
+	}
+
 	// Calculate the maximum possible number of labels we could return so we can preallocate l.
-	maxLabelCount := attributes.Len() + len(settings.ExternalLabels) + len(promotedAttrs) + len(extras)/2
+	maxLabelCount := attributes.Len() + len(settings.ExternalLabels) + len(promotedAttrs) + scopeLabelCount + len(extras)/2
 
 	if haveServiceName {
 		maxLabelCount++
@@ -166,6 +173,17 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 		if _, exists := l[normalized]; !exists {
 			l[normalized] = lbl.Value
 		}
+	}
+	if promoteScope {
+		scope.attributes.Range(func(k string, v pcommon.Value) bool {
+			name := labelNamer.Build("otel_scope_" + k)
+			l[name] = v.AsString()
+			return true
+		})
+		// Scope Name, Version and Schema URL are added after attributes to ensure they are not overwritten by attributes.
+		l["otel_scope_name"] = scope.name
+		l["otel_scope_version"] = scope.version
+		l["otel_scope_schema_url"] = scope.schemaURL
 	}
 
 	// Map service.name + service.namespace to job.
@@ -237,7 +255,7 @@ func aggregationTemporality(metric pmetric.Metric) (pmetric.AggregationTemporali
 // However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
 // https://github.com/prometheus/prometheus/issues/13485.
 func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, baseName string,
+	resource pcommon.Resource, settings Settings, baseName string, scope scope,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -246,7 +264,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
-		baseLabels := createAttributes(resource, pt.Attributes(), settings, nil, false)
+		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
 		// If the sum is unset, it indicates the _sum metric point should be
 		// omitted
@@ -447,7 +465,7 @@ func findMinAndMaxTimestamps(metric pmetric.Metric, minTimestamp, maxTimestamp p
 }
 
 func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
-	settings Settings, baseName string,
+	settings Settings, baseName string, scope scope,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -456,7 +474,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
-		baseLabels := createAttributes(resource, pt.Attributes(), settings, nil, false)
+		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
 		// treat sum as a sample in an individual TimeSeries
 		sum := &prompb.Sample{
@@ -609,7 +627,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, earlies
 		// Do not pass identifying attributes as ignoreAttrs below.
 		identifyingAttrs = nil
 	}
-	labels := createAttributes(resource, attributes, settings, identifyingAttrs, false, model.MetricNameLabel, name)
+	labels := createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, model.MetricNameLabel, name)
 	haveIdentifier := false
 	for _, l := range labels {
 		if l.Name == model.JobLabel || l.Name == model.InstanceLabel {
