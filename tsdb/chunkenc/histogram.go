@@ -414,11 +414,8 @@ func expandIntSpansAndBuckets(a, b []histogram.Span, aBuckets, bBuckets []int64)
 	addInsert := func(inserts []Insert, insert *Insert, otherIdx int) []Insert {
 		if insert.num == 0 {
 			// First insert.
-			insert.num++
 			insert.bucketIdx = otherIdx
-			return inserts
-		}
-		if insert.bucketIdx+insert.num != otherIdx {
+		} else if insert.bucketIdx+insert.num != otherIdx {
 			// Insert is not continuous from previous insert.
 			inserts = append(inserts, *insert)
 			insert.num = 0
