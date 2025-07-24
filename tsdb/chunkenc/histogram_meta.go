@@ -441,7 +441,7 @@ func insert[BV bucketValue](in, out []BV, inserts []Insert, deltas bool) []BV {
 		oi++
 		v += d
 	}
-	// Insert zeros at the end.
+	// Insert empty buckets at the end.
 	for ii < len(inserts) {
 		if inserts[ii].pos < len(in) {
 			panic("leftover inserts must be after the current buckets")
