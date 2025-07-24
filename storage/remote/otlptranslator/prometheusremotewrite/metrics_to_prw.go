@@ -171,9 +171,14 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					continue
 				}
 
+				promName, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
+				if err != nil {
+					errs = multierr.Append(errs, err)
+					continue
+				}
 				metadata := prompb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
-					MetricFamilyName: namer.Build(TranslatorMetricFromOtelMetric(metric)),
+					MetricFamilyName: promName,
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
 				}
