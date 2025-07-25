@@ -6435,7 +6435,7 @@ func TestStripeSeries_gc(t *testing.T) {
 	s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
 	hash := ms1.lset.Hash()
 
-	s.gc(0, 0)
+	s.gc(0, 0, nil)
 
 	// Verify that we can get neither ms1 nor ms2 after gc-ing corresponding series
 	got := s.getByHash(hash, ms1.lset)
@@ -6865,4 +6865,131 @@ func testHeadAppendHistogramAndCommitConcurrency(t *testing.T, appendFn func(sto
 	}()
 
 	wg.Wait()
+}
+
+func TestHead_NumStaleSeries(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	t.Cleanup(func() {
+		require.NoError(t, head.Close())
+	})
+	require.NoError(t, head.Init(0))
+
+	// Initially, no series should be stale.
+	require.Equal(t, uint64(0), head.NumStaleSeries())
+
+	appendSample := func(lbls labels.Labels, ts int64, val float64) {
+		app := head.Appender(context.Background())
+		_, err := app.Append(0, lbls, ts, val)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+	appendHistogram := func(lbls labels.Labels, ts int64, val *histogram.Histogram) {
+		app := head.Appender(context.Background())
+		_, err := app.AppendHistogram(0, lbls, ts, val, nil)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+	appendFloatHistogram := func(lbls labels.Labels, ts int64, val *histogram.FloatHistogram) {
+		app := head.Appender(context.Background())
+		_, err := app.AppendHistogram(0, lbls, ts, nil, val)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	verifySeriesCounts := func(numStaleSeries, numSeries int) {
+		require.Equal(t, uint64(numStaleSeries), head.NumStaleSeries())
+		require.Equal(t, uint64(numSeries), head.NumSeries())
+	}
+
+	// Create some series with normal samples.
+	series1 := labels.FromStrings("name", "series1", "label", "value1")
+	series2 := labels.FromStrings("name", "series2", "label", "value2")
+	series3 := labels.FromStrings("name", "series3", "label", "value3")
+
+	// Add normal samples to all series.
+	appendSample(series1, 100, 1)
+	appendSample(series2, 100, 2)
+	appendSample(series3, 100, 3)
+	// Still no stale series.
+	verifySeriesCounts(0, 3)
+
+	// Make series1 stale by appending a stale sample. Now we should have 1 stale series.
+	appendSample(series1, 200, math.Float64frombits(value.StaleNaN))
+	verifySeriesCounts(1, 3)
+
+	// Make series2 stale as well.
+	appendSample(series2, 200, math.Float64frombits(value.StaleNaN))
+	verifySeriesCounts(2, 3)
+
+	// Add a non-stale sample to series1. It should not be counted as stale now.
+	appendSample(series1, 300, 10)
+	verifySeriesCounts(1, 3)
+
+	// Test that series3 doesn't become stale when we add another normal sample.
+	appendSample(series3, 200, 10)
+	verifySeriesCounts(1, 3)
+
+	// Test histogram stale samples as well.
+	series4 := labels.FromStrings("name", "series4", "type", "histogram")
+	h := tsdbutil.GenerateTestHistograms(1)[0]
+	appendHistogram(series4, 100, h)
+	verifySeriesCounts(1, 4)
+
+	// Make histogram series stale.
+	staleHist := h.Copy()
+	staleHist.Sum = math.Float64frombits(value.StaleNaN)
+	appendHistogram(series4, 200, staleHist)
+	verifySeriesCounts(2, 4)
+
+	// Test float histogram stale samples.
+	series5 := labels.FromStrings("name", "series5", "type", "float_histogram")
+	fh := tsdbutil.GenerateTestFloatHistograms(1)[0]
+	appendFloatHistogram(series5, 100, fh)
+	verifySeriesCounts(2, 5)
+
+	// Make float histogram series stale.
+	staleFH := fh.Copy()
+	staleFH.Sum = math.Float64frombits(value.StaleNaN)
+	appendFloatHistogram(series5, 200, staleFH)
+	verifySeriesCounts(3, 5)
+
+	// Make histogram sample non-stale and stale back again.
+	appendHistogram(series4, 210, h)
+	verifySeriesCounts(2, 5)
+	appendHistogram(series4, 220, staleHist)
+	verifySeriesCounts(3, 5)
+
+	// Make float histogram sample non-stale and stale back again.
+	appendFloatHistogram(series5, 210, fh)
+	verifySeriesCounts(2, 5)
+	appendFloatHistogram(series5, 220, staleFH)
+	verifySeriesCounts(3, 5)
+
+	// Series 1 and 3 are not stale at this point. Add a new sample to series 1 and series 5,
+	// so after the GC and removing series 2, 3, 4, we should be left with 1 stale and 1 non-stale series.
+	appendSample(series1, 400, 10)
+	appendFloatHistogram(series5, 400, staleFH)
+	verifySeriesCounts(3, 5)
+
+	// Test garbage collection behavior - stale series should be decremented when GC'd.
+	// Force a garbage collection by truncating old data.
+	require.NoError(t, head.Truncate(300))
+
+	// After truncation, run GC to collect old chunks/series.
+	head.gc()
+
+	// series 1 and series 5 are left.
+	verifySeriesCounts(1, 2)
+
+	// Test creating a new series for each of float, histogram, float histogram that starts as stale.
+	// This should be counted as stale.
+	series6 := labels.FromStrings("name", "series6", "direct", "stale")
+	series7 := labels.FromStrings("name", "series7", "direct", "stale")
+	series8 := labels.FromStrings("name", "series8", "direct", "stale")
+	appendSample(series6, 400, math.Float64frombits(value.StaleNaN))
+	verifySeriesCounts(2, 3)
+	appendHistogram(series7, 400, staleHist)
+	verifySeriesCounts(3, 4)
+	appendFloatHistogram(series8, 400, staleFH)
+	verifySeriesCounts(4, 5)
 }
