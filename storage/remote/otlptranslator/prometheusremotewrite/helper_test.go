@@ -531,7 +531,7 @@ func TestCreateAttributes(t *testing.T) {
 				}),
 				PromoteScopeMetadata: tc.promoteScope,
 			}
-			lbls := createAttributes(resource, attrs, tc.scope, settings, tc.ignoreAttrs, false, model.MetricNameLabel, "test_metric")
+			lbls := createAttributes(resource, attrs, tc.scope, settings, tc.ignoreAttrs, false, prompb.MetricMetadata{}, model.MetricNameLabel, "test_metric")
 
 			require.ElementsMatch(t, lbls, tc.expectedLabels)
 		})
@@ -746,7 +746,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 					ExportCreatedMetric:  true,
 					PromoteScopeMetadata: tt.promoteScope,
 				},
-				metric.Name(),
+				prompb.MetricMetadata{MetricFamilyName: metric.Name()},
 				tt.scope,
 			)
 
@@ -944,7 +944,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 					ExportCreatedMetric:  true,
 					PromoteScopeMetadata: tt.promoteScope,
 				},
-				metric.Name(),
+				prompb.MetricMetadata{MetricFamilyName: metric.Name()},
 				tt.scope,
 			)
 
@@ -987,4 +987,59 @@ func TestGetPromExemplars(t *testing.T) {
 		_, err := getPromExemplars(ctx, everyN, pt)
 		require.Error(t, err)
 	})
+}
+
+func TestAddTypeAndUnitLabels(t *testing.T) {
+	testCases := []struct {
+		name           string
+		inputLabels    []prompb.Label
+		metadata       prompb.MetricMetadata
+		expectedLabels []prompb.Label
+	}{
+		{
+			name: "overwrites existing type and unit labels and preserves other labels",
+			inputLabels: []prompb.Label{
+				{Name: "job", Value: "test-job"},
+				{Name: "__type__", Value: "old_type"},
+				{Name: "instance", Value: "test-instance"},
+				{Name: "__unit__", Value: "old_unit"},
+				{Name: "custom_label", Value: "custom_value"},
+			},
+			metadata: prompb.MetricMetadata{
+				Type: prompb.MetricMetadata_COUNTER,
+				Unit: "seconds",
+			},
+			expectedLabels: []prompb.Label{
+				{Name: "job", Value: "test-job"},
+				{Name: "instance", Value: "test-instance"},
+				{Name: "custom_label", Value: "custom_value"},
+				{Name: "__type__", Value: "counter"},
+				{Name: "__unit__", Value: "seconds"},
+			},
+		},
+		{
+			name: "adds type and unit labels when missing",
+			inputLabels: []prompb.Label{
+				{Name: "job", Value: "test-job"},
+				{Name: "instance", Value: "test-instance"},
+			},
+			metadata: prompb.MetricMetadata{
+				Type: prompb.MetricMetadata_GAUGE,
+				Unit: "bytes",
+			},
+			expectedLabels: []prompb.Label{
+				{Name: "job", Value: "test-job"},
+				{Name: "instance", Value: "test-instance"},
+				{Name: "__type__", Value: "gauge"},
+				{Name: "__unit__", Value: "bytes"},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := addTypeAndUnitLabels(tc.inputLabels, tc.metadata, Settings{AllowUTF8: false})
+			require.ElementsMatch(t, tc.expectedLabels, result)
+		})
+	}
 }
