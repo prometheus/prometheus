@@ -183,13 +183,9 @@ func (n *Manager) nextBatch() []*Alert {
 
 	var alerts []*Alert
 
-	if maxBatchSize := n.opts.MaxBatchSize; len(n.queue) > maxBatchSize {
-		alerts = append(make([]*Alert, 0, maxBatchSize), n.queue[:maxBatchSize]...)
-		n.queue = n.queue[maxBatchSize:]
-	} else {
-		alerts = append(make([]*Alert, 0, len(n.queue)), n.queue...)
-		n.queue = n.queue[:0]
-	}
+	batchSize := min(len(n.queue), n.opts.MaxBatchSize)
+	alerts = append(make([]*Alert, 0, batchSize), n.queue[:batchSize]...)
+	n.queue = n.queue[batchSize:]
 
 	return alerts
 }
