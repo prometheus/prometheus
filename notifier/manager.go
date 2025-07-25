@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 
@@ -92,7 +93,7 @@ func do(ctx context.Context, client *http.Client, req *http.Request) (*http.Resp
 }
 
 // NewManager is the manager constructor.
-func NewManager(o *Options, logger *slog.Logger) *Manager {
+func NewManager(o *Options, logger *slog.Logger) (*Manager, error) {
 	if o.Do == nil {
 		o.Do = do
 	}
@@ -102,6 +103,14 @@ func NewManager(o *Options, logger *slog.Logger) *Manager {
 	}
 	if logger == nil {
 		logger = promslog.NewNopLogger()
+	}
+
+	for i, rc := range o.RelabelConfigs {
+		switch rc.MetricNameValidationScheme {
+		case model.LegacyValidation, model.UTF8Validation:
+		default:
+			return nil, fmt.Errorf("NewManager: o.RelabelConfigs[%d].MetricNameValidationScheme cannot be unset", i)
+		}
 	}
 
 	n := &Manager{
@@ -123,7 +132,7 @@ func NewManager(o *Options, logger *slog.Logger) *Manager {
 		alertmanagersDiscoveredFunc,
 	)
 
-	return n
+	return n, nil
 }
 
 // ApplyConfig updates the status state as the new config requires.
@@ -133,6 +142,15 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 
 	n.opts.ExternalLabels = conf.GlobalConfig.ExternalLabels
 	n.opts.RelabelConfigs = conf.AlertingConfig.AlertRelabelConfigs
+	for i, rc := range n.opts.RelabelConfigs {
+		switch rc.MetricNameValidationScheme {
+		case model.LegacyValidation, model.UTF8Validation:
+		default:
+			// TODO: Take MetricNameValidationScheme from globalConfig.
+			//nolint:staticcheck // model.NameValidationScheme is deprecated.
+			n.opts.RelabelConfigs[i].MetricNameValidationScheme = model.NameValidationScheme
+		}
+	}
 
 	amSets := make(map[string]*alertmanagerSet)
 	// configToAlertmanagers maps alertmanager sets for each unique AlertmanagerConfig,

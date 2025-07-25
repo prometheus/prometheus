@@ -790,13 +790,17 @@ func main() {
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
 
-		notifierManager = notifier.NewManager(&cfg.notifier, logger.With("component", "notifier"))
-
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
 		ctxNotify, cancelNotify = context.WithCancel(context.Background())
 		discoveryManagerScrape  *discovery.Manager
 		discoveryManagerNotify  *discovery.Manager
 	)
+
+	notifierManager, err := notifier.NewManager(&cfg.notifier, logger.With("component", "notifier"))
+	if err != nil {
+		logger.Error("failed to create notifier manager", "err", err)
+		os.Exit(1)
+	}
 
 	// Kubernetes client metrics are used by Kubernetes SD.
 	// They are registered here in the main function, because SD mechanisms

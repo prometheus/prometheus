@@ -456,6 +456,8 @@ github.com/prometheus/common v0.4.1/go.mod h1:TNfzLD0ON7rHzMJeJkieUDPYmFC7Snx/y8
 github.com/prometheus/common v0.9.1/go.mod h1:yhUN8i9wzaXS3w1O07YhxHEBxD+W35wd8bs7vj7HSQ4=
 github.com/prometheus/common v0.65.1-0.20250703115700-7f8b2a0d32d3 h1:R/zO7ombSHCI8bjQusgCMSL+cE669w5/R2upq5WlPD0=
 github.com/prometheus/common v0.65.1-0.20250703115700-7f8b2a0d32d3/go.mod h1:0gZns+BLRQ3V6NdaerOhMbwwRbNh9hkGINtQAsP5GS8=
+github.com/prometheus/common v0.65.1-0.20250725155108-cc9661f1a5e6 h1:+m3zLkfCDzAmwl+24RQQU1HmwGvCgtzrH7hm8CYFcRU=
+github.com/prometheus/common v0.65.1-0.20250725155108-cc9661f1a5e6/go.mod h1:LL3lcZII3UXGO4InbF+BTSsiAAPUBnwFVbp4gBWIMqw=
 github.com/prometheus/common/assets v0.2.0 h1:0P5OrzoHrYBOSM1OigWL3mY8ZvV2N4zIE/5AahrSrfM=
 github.com/prometheus/common/assets v0.2.0/go.mod h1:D17UVUE12bHbim7HzwUvtqm6gwBEaDQ0F+hIGbFbccI=
 github.com/prometheus/exporter-toolkit v0.14.0 h1:NMlswfibpcZZ+H0sZBiTjrA3/aBFHkNZqE+iCj5EmRg=

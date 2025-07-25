@@ -854,7 +854,7 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return true, true
 	}
-	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields)
+	rgs, errs := rulefmt.Parse(data, rulefmt.WithIgnoreUnknownFields(ls.ignoreUnknownFields))
 	if errs != nil {
 		failed = true
 		fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -888,7 +888,7 @@ func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 	hasErrors := false
 	for _, f := range files {
 		fmt.Println("Checking", f)
-		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields)
+		rgs, errs := rulefmt.ParseFile(f, rulefmt.WithIgnoreUnknownFields(ls.ignoreUnknownFields))
 		if errs != nil {
 			failed = true
 			fmt.Fprintln(os.Stderr, "  FAILED:")

@@ -45,7 +45,8 @@ import (
 const maxBatchSize = 256
 
 func TestHandlerNextBatch(t *testing.T) {
-	h := NewManager(&Options{}, nil)
+	h, err := NewManager(&Options{}, nil)
+	require.NoError(t, err)
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
 		h.queue = append(h.queue, &Alert{
@@ -125,7 +126,8 @@ func TestHandlerSendAll(t *testing.T) {
 	defer server2.Close()
 	defer server3.Close()
 
-	h := NewManager(&Options{}, nil)
+	h, err := NewManager(&Options{}, nil)
+	require.NoError(t, err)
 
 	authClient, _ := config_util.NewClientFromConfig(
 		config_util.HTTPClientConfig{
@@ -235,7 +237,8 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 	defer server2.Close()
 	defer server3.Close()
 
-	h := NewManager(&Options{}, nil)
+	h, err := NewManager(&Options{}, nil)
+	require.NoError(t, err)
 	h.alertmanagers = make(map[string]*alertmanagerSet)
 
 	am1Cfg := config.DefaultAlertmanagerConfig
@@ -245,9 +248,10 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 	am2Cfg.Timeout = model.Duration(time.Second)
 	am2Cfg.AlertRelabelConfigs = []*relabel.Config{
 		{
-			SourceLabels: model.LabelNames{"alertnamedrop"},
-			Action:       "drop",
-			Regex:        relabel.MustNewRegexp(".+"),
+			SourceLabels:               model.LabelNames{"alertnamedrop"},
+			Action:                     "drop",
+			Regex:                      relabel.MustNewRegexp(".+"),
+			MetricNameValidationScheme: model.UTF8Validation,
 		},
 	}
 
@@ -255,9 +259,10 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 	am3Cfg.Timeout = model.Duration(time.Second)
 	am3Cfg.AlertRelabelConfigs = []*relabel.Config{
 		{
-			SourceLabels: model.LabelNames{"alertname"},
-			Action:       "drop",
-			Regex:        relabel.MustNewRegexp(".+"),
+			SourceLabels:               model.LabelNames{"alertname"},
+			Action:                     "drop",
+			Regex:                      relabel.MustNewRegexp(".+"),
+			MetricNameValidationScheme: model.UTF8Validation,
 		},
 	}
 
@@ -359,7 +364,7 @@ func TestCustomDo(t *testing.T) {
 	const testBody = "testbody"
 
 	var received bool
-	h := NewManager(&Options{
+	h, err := NewManager(&Options{
 		Do: func(_ context.Context, _ *http.Client, req *http.Request) (*http.Response, error) {
 			received = true
 			body, err := io.ReadAll(req.Body)
@@ -375,6 +380,7 @@ func TestCustomDo(t *testing.T) {
 			}, nil
 		},
 	}, nil)
+	require.NoError(t, err)
 
 	h.sendOne(context.Background(), nil, testURL, []byte(testBody))
 
@@ -382,20 +388,22 @@ func TestCustomDo(t *testing.T) {
 }
 
 func TestExternalLabels(t *testing.T) {
-	h := NewManager(&Options{
+	h, err := NewManager(&Options{
 		QueueCapacity:  3 * maxBatchSize,
 		MaxBatchSize:   maxBatchSize,
 		ExternalLabels: labels.FromStrings("a", "b"),
 		RelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{"alertname"},
-				TargetLabel:  "a",
-				Action:       "replace",
-				Regex:        relabel.MustNewRegexp("externalrelabelthis"),
-				Replacement:  "c",
+				SourceLabels:               model.LabelNames{"alertname"},
+				TargetLabel:                "a",
+				Action:                     "replace",
+				Regex:                      relabel.MustNewRegexp("externalrelabelthis"),
+				Replacement:                "c",
+				MetricNameValidationScheme: model.UTF8Validation,
 			},
 		},
 	}, nil)
+	require.NoError(t, err)
 
 	// This alert should get the external label attached.
 	h.Send(&Alert{
@@ -417,24 +425,27 @@ func TestExternalLabels(t *testing.T) {
 }
 
 func TestHandlerRelabel(t *testing.T) {
-	h := NewManager(&Options{
+	h, err := NewManager(&Options{
 		QueueCapacity: 3 * maxBatchSize,
 		MaxBatchSize:  maxBatchSize,
 		RelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{"alertname"},
-				Action:       "drop",
-				Regex:        relabel.MustNewRegexp("drop"),
+				SourceLabels:               model.LabelNames{"alertname"},
+				Action:                     "drop",
+				Regex:                      relabel.MustNewRegexp("drop"),
+				MetricNameValidationScheme: model.UTF8Validation,
 			},
 			{
-				SourceLabels: model.LabelNames{"alertname"},
-				TargetLabel:  "alertname",
-				Action:       "replace",
-				Regex:        relabel.MustNewRegexp("rename"),
-				Replacement:  "renamed",
+				SourceLabels:               model.LabelNames{"alertname"},
+				TargetLabel:                "alertname",
+				Action:                     "replace",
+				Regex:                      relabel.MustNewRegexp("rename"),
+				Replacement:                "renamed",
+				MetricNameValidationScheme: model.UTF8Validation,
 			},
 		},
 	}, nil)
+	require.NoError(t, err)
 
 	// This alert should be dropped due to the configuration
 	h.Send(&Alert{
@@ -495,13 +506,14 @@ func TestHandlerQueuing(t *testing.T) {
 		server.Close()
 	}()
 
-	h := NewManager(
+	h, err := NewManager(
 		&Options{
 			QueueCapacity: 3 * maxBatchSize,
 			MaxBatchSize:  maxBatchSize,
 		},
 		nil,
 	)
+	require.NoError(t, err)
 
 	h.alertmanagers = make(map[string]*alertmanagerSet)
 
@@ -606,7 +618,8 @@ func TestReload(t *testing.T) {
 		},
 	}
 
-	n := NewManager(&Options{}, nil)
+	n, err := NewManager(&Options{}, nil)
+	require.NoError(t, err)
 
 	cfg := &config.Config{}
 	s := `
@@ -614,7 +627,7 @@ alerting:
   alertmanagers:
   - static_configs:
 `
-	err := yaml.UnmarshalStrict([]byte(s), cfg)
+	err = yaml.UnmarshalStrict([]byte(s), cfg)
 	require.NoError(t, err, "Unable to load YAML config.")
 	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 1)
 
@@ -653,7 +666,8 @@ func TestDroppedAlertmanagers(t *testing.T) {
 		},
 	}
 
-	n := NewManager(&Options{}, nil)
+	n, err := NewManager(&Options{}, nil)
+	require.NoError(t, err)
 
 	cfg := &config.Config{}
 	s := `
@@ -665,7 +679,7 @@ alerting:
         regex: 'alertmanager:9093'
         action: drop
 `
-	err := yaml.UnmarshalStrict([]byte(s), cfg)
+	err = yaml.UnmarshalStrict([]byte(s), cfg)
 	require.NoError(t, err, "Unable to load YAML config.")
 	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 1)
 
@@ -762,12 +776,13 @@ func TestHangingNotifier(t *testing.T) {
 	go sdManager.Run()
 
 	// Set up the notifier with both faulty and functional Alertmanagers.
-	notifier := NewManager(
+	notifier, err := NewManager(
 		&Options{
 			QueueCapacity: alertsCount,
 		},
 		nil,
 	)
+	require.NoError(t, err)
 	notifier.alertmanagers = make(map[string]*alertmanagerSet)
 	amCfg := config.DefaultAlertmanagerConfig
 	amCfg.Timeout = model.Duration(sendTimeout)
@@ -878,13 +893,14 @@ func TestStop_DrainingDisabled(t *testing.T) {
 		server.Close()
 	}()
 
-	m := NewManager(
+	m, err := NewManager(
 		&Options{
 			QueueCapacity:   10,
 			DrainOnShutdown: false,
 		},
 		nil,
 	)
+	require.NoError(t, err)
 
 	m.alertmanagers = make(map[string]*alertmanagerSet)
 
@@ -964,13 +980,14 @@ func TestStop_DrainingEnabled(t *testing.T) {
 		server.Close()
 	}()
 
-	m := NewManager(
+	m, err := NewManager(
 		&Options{
 			QueueCapacity:   10,
 			DrainOnShutdown: true,
 		},
 		nil,
 	)
+	require.NoError(t, err)
 
 	m.alertmanagers = make(map[string]*alertmanagerSet)
 
@@ -1031,7 +1048,8 @@ func TestApplyConfig(t *testing.T) {
 	}
 	alertmanagerURL := fmt.Sprintf("http://%s/api/v2/alerts", targetURL)
 
-	n := NewManager(&Options{}, nil)
+	n, err := NewManager(&Options{}, nil)
+	require.NoError(t, err)
 	cfg := &config.Config{}
 	s := `
 alerting:

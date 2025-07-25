@@ -103,6 +103,16 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 		cfg.GlobalConfig.ExternalLabels = b.Labels()
 	}
 
+	if err := cfg.AlertingConfig.Validate(cfg.GlobalConfig.MetricNameValidationScheme); err != nil {
+		return nil, err
+	}
+
+	for _, rwc := range cfg.RemoteWriteConfigs {
+		if err := rwc.Validate(cfg.GlobalConfig.MetricNameValidationScheme); err != nil {
+			return nil, err
+		}
+	}
+
 	switch cfg.OTLPConfig.TranslationStrategy {
 	case UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes:
 	case "":
@@ -400,6 +410,16 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 	}
 
+	if err := c.AlertingConfig.Validate(c.GlobalConfig.MetricNameValidationScheme); err != nil {
+		return err
+	}
+
+	for _, rwc := range c.RemoteWriteConfigs {
+		if err := rwc.Validate(c.GlobalConfig.MetricNameValidationScheme); err != nil {
+			return err
+		}
+	}
+
 	// Do global overrides and validation.
 	jobNames := map[string]struct{}{}
 	for _, scfg := range c.ScrapeConfigs {
@@ -596,7 +616,7 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	if err := gc.ExternalLabels.Validate(func(l labels.Label) error {
-		if !model.LabelName(l.Name).IsValid() {
+		if !gc.MetricNameValidationScheme.IsValidLabelName(l.Name) {
 			return fmt.Errorf("%q is not a valid label name", l.Name)
 		}
 		if !model.LabelValue(l.Value).IsValid() {
@@ -929,6 +949,17 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		c.AlwaysScrapeClassicHistograms = &global
 	}
 
+	for _, rc := range c.RelabelConfigs {
+		if err := rc.Validate(c.MetricNameValidationScheme); err != nil {
+			return err
+		}
+	}
+	for _, rc := range c.MetricRelabelConfigs {
+		if err := rc.Validate(c.MetricNameValidationScheme); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -1081,6 +1112,20 @@ type AlertingConfig struct {
 	AlertmanagerConfigs AlertmanagerConfigs `yaml:"alertmanagers,omitempty"`
 }
 
+func (c *AlertingConfig) Validate(nameValidationScheme model.ValidationScheme) error {
+	for i := range c.AlertRelabelConfigs {
+		if err := c.AlertRelabelConfigs[i].Validate(nameValidationScheme); err != nil {
+			return err
+		}
+	}
+	for i := range c.AlertmanagerConfigs {
+		if err := c.AlertmanagerConfigs[i].Validate(nameValidationScheme); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SetDirectory joins any relative file paths with dir.
 func (c *AlertingConfig) SetDirectory(dir string) {
 	for _, c := range c.AlertmanagerConfigs {
@@ -1225,6 +1270,20 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	return nil
 }
 
+func (c *AlertmanagerConfig) Validate(nameValidationScheme model.ValidationScheme) error {
+	for i := range c.AlertRelabelConfigs {
+		if err := c.AlertRelabelConfigs[i].Validate(nameValidationScheme); err != nil {
+			return err
+		}
+	}
+	for i := range c.RelabelConfigs {
+		if err := c.RelabelConfigs[i].Validate(nameValidationScheme); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // MarshalYAML implements the yaml.Marshaler interface.
 func (c *AlertmanagerConfig) MarshalYAML() (interface{}, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
@@ -1360,6 +1419,16 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	}
 
 	return validateAuthConfigs(c)
+}
+
+func (c *RemoteWriteConfig) Validate(nameValidationScheme model.ValidationScheme) error {
+	for _, rc := range c.WriteRelabelConfigs {
+		if err := rc.Validate(nameValidationScheme); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // validateAuthConfigs validates that at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured.

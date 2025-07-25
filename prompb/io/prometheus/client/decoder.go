@@ -232,7 +232,7 @@ func parseLabel(dAtA []byte, b scratchBuilder) error {
 				return io.ErrUnexpectedEOF
 			}
 			name = yoloString(dAtA[iNdEx:postIndex])
-			if !model.LabelName(name).IsValid() {
+			if !model.UTF8Validation.IsValidLabelName(name) {
 				return fmt.Errorf("invalid label name: %s", name)
 			}
 			iNdEx = postIndex

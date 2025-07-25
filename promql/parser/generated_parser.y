@@ -378,14 +378,14 @@ grouping_label_list:
 
 grouping_label  : maybe_label
                         {
-                        if !model.LabelName($1.Val).IsValid() {
+                        if !model.UTF8Validation.IsValidLabelName($1.Val) {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"invalid label name for grouping: %q", $1.Val)
                         }
                         $$ = $1
                         }
                 | STRING {
                         unquoted := yylex.(*parser).unquoteString($1.Val)
-                        if !model.LabelName(unquoted).IsValid() {
+                        if !model.UTF8Validation.IsValidLabelName(unquoted) {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"invalid label name for grouping: %q", unquoted)
                         }
                         $$ = $1
