@@ -4838,6 +4838,229 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "unexpected character: 's', expected ':'",
 	},
+	{
+		input: `(foo * on() bar) and on(job) sum(foo) by(abc) > 20`,
+		expected: &BinaryExpr{
+			Op: LAND,
+			LHS: &ParenExpr{
+				Expr: &BinaryExpr{
+					Op: MUL,
+					LHS: &VectorSelector{
+						Name: "foo",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 1,
+							End:   4,
+						},
+					},
+					RHS: &VectorSelector{
+						Name: "bar",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "bar"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 12,
+							End:   15,
+						},
+					},
+					VectorMatching: &VectorMatching{
+						Card:           CardOneToOne,
+						On:             true,
+						MatchingLabels: []string{},
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   16,
+				},
+			},
+			RHS: &BinaryExpr{
+				Op: GTR,
+				LHS: &AggregateExpr{
+					Op: SUM,
+					Expr: &VectorSelector{
+						Name: "foo",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 33,
+							End:   36,
+						},
+					},
+					Grouping: []string{"abc"},
+					PosRange: posrange.PositionRange{
+						Start: 29,
+						End:   45,
+					},
+				},
+				RHS: &NumberLiteral{
+					Val: 20,
+					PosRange: posrange.PositionRange{
+						Start: 48,
+						End:   50,
+					},
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToMany,
+				MatchingLabels: []string{"job"},
+				On:             true,
+			},
+		},
+	},
+	{
+		input: `sum by (job)(rate(http_requests_total[30m]))`,
+		expected: &AggregateExpr{
+			Op: SUM,
+			Expr: &Call{
+				Func: MustGetFunction("rate"),
+				Args: Expressions{
+					&MatrixSelector{
+						VectorSelector: &VectorSelector{
+							Name: "http_requests_total",
+							LabelMatchers: []*labels.Matcher{
+								MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_total"),
+							},
+							PosRange: posrange.PositionRange{
+								Start: 18,
+								End:   37,
+							},
+						},
+						Range:  30 * time.Minute,
+						EndPos: 42,
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 13,
+					End:   43,
+				},
+			},
+			Grouping: []string{"job"},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   44,
+			},
+		},
+	},
+	{
+		input: `(sum by (job) (metric1)) < ignoring(cluster) group_left() (count(metric2))`,
+		expected: &BinaryExpr{
+			Op: LSS,
+			LHS: &ParenExpr{
+				Expr: &AggregateExpr{
+					Op: SUM,
+					Expr: &VectorSelector{
+						Name: "metric1",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "metric1"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 15,
+							End:   22,
+						},
+					},
+					Grouping: []string{"job"},
+					PosRange: posrange.PositionRange{
+						Start: 1,
+						End:   23,
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   24,
+				},
+			},
+			RHS: &ParenExpr{
+				Expr: &AggregateExpr{
+					Op: COUNT,
+					Expr: &VectorSelector{
+						Name: "metric2",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "metric2"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 65,
+							End:   72,
+						},
+					},
+					PosRange: posrange.PositionRange{
+						Start: 59,
+						End:   73,
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 58,
+					End:   74,
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToOne,
+				MatchingLabels: []string{"cluster"},
+				Include:        []string{},
+			},
+		},
+	},
+	{
+		input: `(sum by (job) (metric1)) < ignoring(cluster) group_right() (count(metric2))`,
+		expected: &BinaryExpr{
+			Op: LSS,
+			LHS: &ParenExpr{
+				Expr: &AggregateExpr{
+					Op: SUM,
+					Expr: &VectorSelector{
+						Name: "metric1",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "metric1"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 15,
+							End:   22,
+						},
+					},
+					Grouping: []string{"job"},
+					PosRange: posrange.PositionRange{
+						Start: 1,
+						End:   23,
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   24,
+				},
+			},
+			RHS: &ParenExpr{
+				Expr: &AggregateExpr{
+					Op: COUNT,
+					Expr: &VectorSelector{
+						Name: "metric2",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "metric2"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 66,
+							End:   73,
+						},
+					},
+					PosRange: posrange.PositionRange{
+						Start: 60,
+						End:   74,
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 59,
+					End:   75,
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardOneToMany,
+				MatchingLabels: []string{"cluster"},
+				Include:        []string{},
+			},
+		},
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
@@ -4896,7 +5119,6 @@ func TestParseExpressions(t *testing.T) {
 					expected = &expectedCopy
 					actualVector.LabelMatchers = nil
 				}
-
 				require.Equal(t, expected, expr, "error on input '%s'", test.input)
 			} else {
 				require.Error(t, err)
@@ -5594,4 +5816,88 @@ func TestParseCustomFunctions(t *testing.T) {
 	call, ok := expr.(*Call)
 	require.True(t, ok)
 	require.Equal(t, "custom_func", call.Func.Name)
+}
+
+func checkPosRange(t *testing.T, node Node) {
+	require.GreaterOrEqual(t, node.PositionRange().End, node.PositionRange().Start,
+		"end position must be >= start position on: '%s' pos=%+v", node, node.PositionRange())
+	for _, child := range Children(node) {
+		checkPosRange(t, child)
+	}
+}
+
+// TestPosRange will ensure that PositionRange on all nodes is valid.
+// Currently it only validates that the end position is greater than or equal to the start position.
+// It uses queries from testExpr list plus some extra queries that are pretty complex and so
+// would require a huge "expected" tree to be manually constructed.
+func TestPosRange(t *testing.T) {
+	// Enable experimental functions testing.
+	EnableExperimentalFunctions = true
+	// Enable experimental duration expression parsing.
+	ExperimentalDurationExpr = true
+	t.Cleanup(func() {
+		EnableExperimentalFunctions = false
+		ExperimentalDurationExpr = false
+	})
+
+	inputs := []string{
+		`
+group by (a) (
+label_replace(
+	label_replace(
+		label_join(
+			label_replace(metric1, "job", "foo", "job", "bar")
+			* on (instance) group_left (enabled, status)
+			(
+				count_values by (instance, status) (
+					"enabled",
+					metric3 * on () group_left () (group(metric4 > 0)
+					or group(metric2{env="1"})
+					or group(metric2{env="2"})
+					or group(metric2{env="3"})
+					or vector(0)
+					)
+				)
+			), "enabled", ",", "status", "enabled"
+		), "enabled", "1", "enabled", "v,[1-9][0-9]*"
+	), "enabled", "0", "enabled", "[^1].*" )
+)
+`,
+		`
+group by (a) (
+label_replace(
+	label_replace(
+		label_join(
+			label_replace(metric1, "job", "foo", "job", "bar")
+			* on (instance) group_left (enabled, status)
+			(
+				count_values by (instance, status) (
+					"enabled",
+					metric3 * on () group_left () (group(metric4 > bool 0)
+					or group(metric2{env="1"})
+					or group(metric2{env="2"})
+					or group(metric2{env="3"})
+					or vector(0)
+					)
+				)
+			), "enabled", ",", "status", "enabled"
+		), "enabled", "1", "enabled", "v,[1-9][0-9]*"
+	), "enabled", "0", "enabled", "[^1].*" )
+)
+`,
+	}
+	for _, test := range testExpr {
+		if test.fail {
+			continue
+		}
+		inputs = append(inputs, test.input)
+	}
+
+	for _, input := range inputs {
+		t.Run(input, func(t *testing.T) {
+			expr, err := ParseExpr(input)
+			require.NoError(t, err)
+			checkPosRange(t, expr)
+		})
+	}
 }
