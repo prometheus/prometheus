@@ -1418,12 +1418,13 @@ func BenchmarkStoreSeries(b *testing.B) {
 		{Name: "replica", Value: "1"},
 	}
 	relabelConfigs := []*relabel.Config{{
-		SourceLabels: model.LabelNames{"namespace"},
-		Separator:    ";",
-		Regex:        relabel.MustNewRegexp("kube.*"),
-		TargetLabel:  "job",
-		Replacement:  "$1",
-		Action:       relabel.Replace,
+		SourceLabels:         model.LabelNames{"namespace"},
+		Separator:            ";",
+		Regex:                relabel.MustNewRegexp("kube.*"),
+		TargetLabel:          "job",
+		Replacement:          "$1",
+		Action:               relabel.Replace,
+		NameValidationScheme: model.UTF8Validation,
 	}}
 	testCases := []struct {
 		name           string
