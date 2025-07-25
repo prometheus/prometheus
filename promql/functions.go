@@ -35,6 +35,8 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
+const defaultResetRatioThreshold = 0.4
+
 // FunctionCall is the type of a PromQL function implementation
 //
 // vals is a list of the evaluated arguments for the function call.
@@ -113,11 +115,18 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 		}
 		// Handle counter resets:
 		prevValue := samples.Floats[0].F
+		resetCount := 0
 		for _, currPoint := range samples.Floats[1:] {
 			if currPoint.F < prevValue {
 				resultFloat += prevValue
+				resetCount++
 			}
 			prevValue = currPoint.F
+		}
+
+		resetRatio := float64(resetCount) / float64(numSamplesMinusOne)
+		if resetRatio > defaultResetRatioThreshold {
+			annos = annos.Add(annotations.NewTooManyResetsInCounterWarning(metricName, args[0].PositionRange()))
 		}
 	default:
 		// TODO: add RangeTooShortWarning
