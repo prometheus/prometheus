@@ -568,7 +568,6 @@ func (r blockIndexReader) LabelNamesFor(ctx context.Context, postings index.Post
 }
 
 // IndexLookupPlanner returns the index lookup planner for this reader.
-// Block readers use the default index-only planner.
 func (r blockIndexReader) IndexLookupPlanner() index.LookupPlanner {
 	return r.ir.IndexLookupPlanner()
 }

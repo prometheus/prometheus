@@ -124,7 +124,17 @@ func TestScanEmptyMatchersLookupPlanner(t *testing.T) {
 			expectedScan: []*labels.Matcher{},
 		},
 		{
-			name: "single empty matcher goes to index",
+			name: "single match-non-empty regex goes to index",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "job", ".+"),
+			},
+			expectedIndex: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "job", ".+"),
+			},
+			expectedScan: []*labels.Matcher{},
+		},
+		{
+			name: "single empty matcher goes to index; this is an invalid matcher on the API, but some internal code uses it",
 			matchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, "", ""),
 			},

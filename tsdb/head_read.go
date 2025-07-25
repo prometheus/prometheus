@@ -308,7 +308,6 @@ func (h *headIndexReader) LabelNamesFor(ctx context.Context, series index.Postin
 }
 
 // IndexLookupPlanner returns the index lookup planner for this reader.
-// Head readers use the default index-only planner.
 func (h *headIndexReader) IndexLookupPlanner() index.LookupPlanner {
 	return h.head.opts.IndexLookupPlanner
 }

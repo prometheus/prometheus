@@ -189,7 +189,6 @@ func (oh *HeadAndOOOIndexReader) LabelValues(ctx context.Context, name string, h
 }
 
 // IndexLookupPlanner returns the index lookup planner for this reader.
-// HeadAndOOO readers use the default index-only planner.
 func (oh *HeadAndOOOIndexReader) IndexLookupPlanner() index.LookupPlanner {
 	return oh.head.opts.IndexLookupPlanner
 }
@@ -519,7 +518,6 @@ func (ir *OOOCompactionHeadIndexReader) Close() error {
 }
 
 // IndexLookupPlanner returns the index lookup planner for this reader.
-// OOO compaction head readers use the default index-only planner.
 func (ir *OOOCompactionHeadIndexReader) IndexLookupPlanner() index.LookupPlanner {
 	return ir.ch.head.opts.IndexLookupPlanner
 }
