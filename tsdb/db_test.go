@@ -83,7 +83,7 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
 	tmpdir := t.TempDir()
 	var err error
 
-	if opts == nil {
+	if opts = nil {
 		opts = DefaultOptions()
 	}
 	opts.EnableNativeHistograms = true
