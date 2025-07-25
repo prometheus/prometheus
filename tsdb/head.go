@@ -1198,6 +1198,20 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	return h.truncateSeriesAndChunkDiskMapper("truncateMemory")
 }
 
+func (h *Head) truncateStaleSeries(p index.Postings, maxt int64) {
+	h.chunkSnapshotMtx.Lock()
+	defer h.chunkSnapshotMtx.Unlock()
+
+	if h.MinTime() >= maxt {
+		return
+	}
+
+	// TODO: this will block all queries. See if we can do better.
+	h.WaitForPendingReadersInTimeRange(h.MinTime(), maxt)
+
+	h.gcStaleSeries(p, maxt)
+}
+
 // WaitForPendingReadersInTimeRange waits for queries overlapping with given range to finish querying.
 // The query timeout limits the max wait time of this function implicitly.
 // The mint is inclusive and maxt is the truncation time hence exclusive.
@@ -1550,6 +1564,53 @@ func (h *RangeHead) String() string {
 	return fmt.Sprintf("range head (mint: %d, maxt: %d)", h.MinTime(), h.MaxTime())
 }
 
+// StaleHead allows querying the stale series in the Head via an IndexReader, ChunkReader and tombstones.Reader.
+// Used only for compactions.
+type StaleHead struct {
+	RangeHead
+	staleSeriesRefs []storage.SeriesRef
+}
+
+// NewStaleHead returns a *StaleHead.
+func NewStaleHead(head *Head, mint, maxt int64, staleSeriesRefs []storage.SeriesRef) *StaleHead {
+	return &StaleHead{
+		RangeHead: RangeHead{
+			head: head,
+			mint: mint,
+			maxt: maxt,
+		},
+		staleSeriesRefs: staleSeriesRefs,
+	}
+}
+
+func (h *StaleHead) Index() (_ IndexReader, err error) {
+	return h.head.staleIndex(h.RangeHead.mint, h.RangeHead.maxt, h.staleSeriesRefs)
+}
+
+func (h *StaleHead) NumSeries() uint64 {
+	return h.head.NumStaleSeries()
+}
+
+var staleHeadULID = ulid.MustParse("0000000000XXXXXXXSTALEHEAD")
+
+func (h *StaleHead) Meta() BlockMeta {
+	return BlockMeta{
+		MinTime: h.MinTime(),
+		MaxTime: h.MaxTime(),
+		ULID:    staleHeadULID,
+		Stats: BlockStats{
+			NumSeries: h.NumSeries(),
+		},
+	}
+}
+
+// String returns an human readable representation of the stake head. It's important to
+// keep this function in order to avoid the struct dump when the head is stringified in
+// errors or logs.
+func (h *StaleHead) String() string {
+	return fmt.Sprintf("stale head (mint: %d, maxt: %d)", h.MinTime(), h.MaxTime())
+}
+
 // Delete all samples in the range of [mint, maxt] for series that satisfy the given
 // label matchers.
 func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
@@ -1647,6 +1708,43 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	}
 
 	return actualInOrderMint, minOOOTime, minMmapFile
+}
+
+// gcStaleSeries removes all the stale series provided given that they are still stale
+// and the series maxt is <= the given max.
+func (h *Head) gcStaleSeries(p index.Postings, maxt int64) {
+
+	// Drop old chunks and remember series IDs and hashes if they can be
+	// deleted entirely.
+	deleted, affected, chunksRemoved := h.series.gcStaleSeries(p, maxt)
+	seriesRemoved := len(deleted)
+
+	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
+	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
+	h.metrics.chunks.Sub(float64(chunksRemoved))
+	h.numSeries.Sub(uint64(seriesRemoved))
+	h.numStaleSeries.Sub(uint64(seriesRemoved))
+
+	// Remove deleted series IDs from the postings lists.
+	h.postings.Delete(deleted, affected)
+
+	// Remove tombstones referring to the deleted series.
+	h.tombstones.DeleteTombstones(deleted)
+
+	if h.wal != nil {
+		_, last, _ := wlog.Segments(h.wal.Dir())
+		h.walExpiriesMtx.Lock()
+		// Keep series records until we're past segment 'last'
+		// because the WAL will still have samples records with
+		// this ref ID. If we didn't keep these series records then
+		// on start up when we replay the WAL, or any other code
+		// that reads the WAL, wouldn't be able to use those
+		// samples since we would have no labels for that ref ID.
+		for ref := range deleted {
+			h.walExpiries[chunks.HeadSeriesRef(ref)] = last
+		}
+		h.walExpiriesMtx.Unlock()
+	}
 }
 
 // Tombstones returns a new reader over the head's tombstones.
@@ -2021,6 +2119,70 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef, n
 	}
 
 	return deleted, affected, rmChunks, actualMint, minOOOTime, minMmapFile
+}
+
+// TODO: add comments
+func (s *stripeSeries) gcStaleSeries(p index.Postings, maxt int64) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ int) {
+	var (
+		deleted  = map[storage.SeriesRef]struct{}{}
+		affected = map[labels.Label]struct{}{}
+		rmChunks = 0
+	)
+
+	staleSeriesMap := map[storage.SeriesRef]struct{}{}
+	for p.Next() {
+		ref := p.At()
+		staleSeriesMap[ref] = struct{}{}
+	}
+
+	check := func(hashShard int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+		if _, exists := staleSeriesMap[storage.SeriesRef(series.ref)]; !exists {
+			// This series was not compacted. Skip it.
+			return
+		}
+
+		series.Lock()
+		defer series.Unlock()
+
+		if series.maxTime() > maxt {
+			return
+		}
+
+		// Check if the series is still stale.
+		isStale := value.IsStaleNaN(series.lastValue) ||
+			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
+			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum))
+
+		if !isStale {
+			return
+		}
+
+		if series.headChunks != nil {
+			rmChunks += series.headChunks.len()
+		}
+		rmChunks += len(series.mmappedChunks)
+
+		// The series is gone entirely. We need to keep the series lock
+		// and make sure we have acquired the stripe locks for hash and ID of the
+		// series alike.
+		// If we don't hold them all, there's a very small chance that a series receives
+		// samples again while we are half-way into deleting it.
+		refShard := int(series.ref) & (s.size - 1)
+		if hashShard != refShard {
+			s.locks[refShard].Lock()
+			defer s.locks[refShard].Unlock()
+		}
+
+		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
+		s.hashes[hashShard].del(hash, series.ref)
+		delete(s.series[refShard], series.ref)
+		deletedForCallback[series.ref] = series.lset // OK to access lset; series is locked at the top of this function.
+	}
+
+	s.iterForDeletion(check)
+
+	return deleted, affected, rmChunks
 }
 
 // The iterForDeletion function iterates through all series, invoking the checkDeletedFunc for each.

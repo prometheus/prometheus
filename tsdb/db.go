@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -1482,6 +1483,47 @@ func (db *DB) compactHead(head *RangeHead) error {
 	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
 		return fmt.Errorf("head memory truncate: %w", err)
 	}
+
+	db.head.RebuildSymbolTable(db.logger)
+
+	return nil
+}
+
+// CompactStaleHead compacts all the stale series that do no have out-of-order data into persistent blocks.
+// If a stale series has out-of-order data, it is not possible to tell if the series stopped getting any data completely.
+func (db *DB) CompactStaleHead() error {
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+
+	db.logger.Info("Starting stale series compaction")
+
+	staleSeriesRefs, err := db.head.SortedStaleSeriesRefsNoOOOData(context.Background())
+	if err != nil {
+		return err
+	}
+	meta := &BlockMeta{}
+	meta.Compaction.SetStaleSeries()
+	mint, maxt := db.head.opts.ChunkRange*(db.head.MinTime()/db.head.opts.ChunkRange), db.head.MaxTime()
+	for ; mint < maxt; mint += db.head.chunkRange.Load() {
+		staleHead := NewStaleHead(db.Head(), mint, mint+db.head.chunkRange.Load()-1, staleSeriesRefs)
+
+		uids, err := db.compactor.Write(db.dir, staleHead, staleHead.MinTime(), staleHead.BlockMaxTime(), nil)
+		if err != nil {
+			return fmt.Errorf("persist stale head: %w", err)
+		}
+
+		if err := db.reloadBlocks(); err != nil {
+			multiErr := tsdb_errors.NewMulti(fmt.Errorf("reloadBlocks blocks: %w", err))
+			for _, uid := range uids {
+				if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
+					multiErr.Add(fmt.Errorf("delete persisted stale head block after failed db reloadBlocks:%s: %w", uid, errRemoveAll))
+				}
+			}
+			return multiErr.Err()
+		}
+	}
+
+	db.head.truncateStaleSeries(index.NewListPostings(staleSeriesRefs), maxt)
 
 	db.head.RebuildSymbolTable(db.logger)
 

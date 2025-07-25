@@ -439,7 +439,17 @@ func (e errChunksIterator) Err() error    { return e.err }
 // ExpandSamples iterates over all samples in the iterator, buffering all in slice.
 // Optionally it takes samples constructor, useful when you want to compare sample slices with different
 // sample implementations. if nil, sample type from this package will be used.
+// For float sample, NaN values are replaced with -42.
 func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample) ([]chunks.Sample, error) {
+	return expandSamples(iter, true, newSampleFn)
+}
+
+// ExpandSamplesWithoutReplacingNaNs is same as ExpandSamples but it does not replace float sample NaN values with anything.
+func ExpandSamplesWithoutReplacingNaNs(iter chunkenc.Iterator, newSampleFn func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample) ([]chunks.Sample, error) {
+	return expandSamples(iter, false, newSampleFn)
+}
+
+func expandSamples(iter chunkenc.Iterator, replaceNaN bool, newSampleFn func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample) ([]chunks.Sample, error) {
 	if newSampleFn == nil {
 		newSampleFn = func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
 			switch {
@@ -461,7 +471,7 @@ func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, f float64, 
 		case chunkenc.ValFloat:
 			t, f := iter.At()
 			// NaNs can't be compared normally, so substitute for another value.
-			if math.IsNaN(f) {
+			if replaceNaN && math.IsNaN(f) {
 				f = -42
 			}
 			result = append(result, newSampleFn(t, f, nil, nil))
