@@ -1222,6 +1222,8 @@ func (a *headAppender) commitSamples(acc *appenderCommitContext) {
 				acc.floatsAppended--
 			}
 		default:
+			newlyStale := !value.IsStaleNaN(series.lastValue) && value.IsStaleNaN(s.V)
+			staleToNonStale := value.IsStaleNaN(series.lastValue) && !value.IsStaleNaN(s.V)
 			ok, chunkCreated = series.append(s.T, s.V, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
@@ -1229,6 +1231,12 @@ func (a *headAppender) commitSamples(acc *appenderCommitContext) {
 				}
 				if s.T > acc.inOrderMaxt {
 					acc.inOrderMaxt = s.T
+				}
+				if newlyStale {
+					a.head.numStaleSeries.Inc()
+				}
+				if staleToNonStale {
+					a.head.numStaleSeries.Dec()
 				}
 			} else {
 				// The sample is an exact duplicate, and should be silently dropped.
@@ -1310,6 +1318,12 @@ func (a *headAppender) commitHistograms(acc *appenderCommitContext) {
 				acc.histogramsAppended--
 			}
 		default:
+			newlyStale := value.IsStaleNaN(s.H.Sum)
+			staleToNonStale := false
+			if series.lastHistogramValue != nil {
+				newlyStale = newlyStale && !value.IsStaleNaN(series.lastHistogramValue.Sum)
+				staleToNonStale = value.IsStaleNaN(series.lastHistogramValue.Sum) && !value.IsStaleNaN(s.H.Sum)
+			}
 			ok, chunkCreated = series.appendHistogram(s.T, s.H, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
@@ -1317,6 +1331,12 @@ func (a *headAppender) commitHistograms(acc *appenderCommitContext) {
 				}
 				if s.T > acc.inOrderMaxt {
 					acc.inOrderMaxt = s.T
+				}
+				if newlyStale {
+					a.head.numStaleSeries.Inc()
+				}
+				if staleToNonStale {
+					a.head.numStaleSeries.Dec()
 				}
 			} else {
 				acc.histogramsAppended--
@@ -1398,6 +1418,12 @@ func (a *headAppender) commitFloatHistograms(acc *appenderCommitContext) {
 				acc.histogramsAppended--
 			}
 		default:
+			newlyStale := value.IsStaleNaN(s.FH.Sum)
+			staleToNonStale := false
+			if series.lastFloatHistogramValue != nil {
+				newlyStale = newlyStale && !value.IsStaleNaN(series.lastFloatHistogramValue.Sum)
+				staleToNonStale = value.IsStaleNaN(series.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.FH.Sum)
+			}
 			ok, chunkCreated = series.appendFloatHistogram(s.T, s.FH, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
@@ -1405,6 +1431,12 @@ func (a *headAppender) commitFloatHistograms(acc *appenderCommitContext) {
 				}
 				if s.T > acc.inOrderMaxt {
 					acc.inOrderMaxt = s.T
+				}
+				if newlyStale {
+					a.head.numStaleSeries.Inc()
+				}
+				if staleToNonStale {
+					a.head.numStaleSeries.Dec()
 				}
 			} else {
 				acc.histogramsAppended--
