@@ -130,7 +130,7 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 // An error may also be returned if fallbackType had to be used or there was some
 // other error parsing the supplied Content-Type.
 // If the returned parser is nil then the scrape must fail.
-func New(b []byte, contentType, fallbackType string, parseClassicHistograms, skipOMCTSeries, enableTypeAndUnitLabels bool, st *labels.SymbolTable) (Parser, error) {
+func New(b []byte, contentType, fallbackType string, parseClassicHistograms, skipOMCTSeries, enableTypeAndUnitLabels bool, enableOtelSuffix bool, st *labels.SymbolTable) (Parser, error) {
 	mediaType, err := extractMediaType(contentType, fallbackType)
 	// err may be nil or something we want to warn about.
 
@@ -139,9 +139,10 @@ func New(b []byte, contentType, fallbackType string, parseClassicHistograms, ski
 		return NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
 			o.skipCTSeries = skipOMCTSeries
 			o.enableTypeAndUnitLabels = enableTypeAndUnitLabels
+			o.enableOtelSuffix = enableOtelSuffix
 		}), err
 	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b, parseClassicHistograms, enableTypeAndUnitLabels, st), err
+		return NewProtobufParser(b, parseClassicHistograms, enableTypeAndUnitLabels, enableOtelSuffix, st), err
 	case "text/plain":
 		return NewPromParser(b, st, enableTypeAndUnitLabels), err
 	default:

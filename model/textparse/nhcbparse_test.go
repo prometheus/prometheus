@@ -598,7 +598,7 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 		func() (string, parserFactory, []int, parserOptions) {
 			factory := func(keepClassic bool) Parser {
 				inputBuf := createTestProtoBufHistogram(t)
-				return NewProtobufParser(inputBuf.Bytes(), keepClassic, false, labels.NewSymbolTable())
+				return NewProtobufParser(inputBuf.Bytes(), keepClassic, false, false, labels.NewSymbolTable())
 			}
 			return "ProtoBuf", factory, []int{1, 2, 3}, parserOptions{useUTF8sep: true, hasCreatedTimeStamp: true}
 		},
@@ -1121,7 +1121,7 @@ metric: <
 		},
 	}
 
-	p := NewProtobufParser(buf.Bytes(), false, false, labels.NewSymbolTable())
+	p := NewProtobufParser(buf.Bytes(), false, false, false, labels.NewSymbolTable())
 	p = NewNHCBParser(p, labels.NewSymbolTable(), false)
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
