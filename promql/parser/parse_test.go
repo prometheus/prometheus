@@ -560,6 +560,21 @@ var testExpr = []struct {
 		errMsg: "set operator \"and\" not allowed in binary scalar expression",
 	},
 	{
+		input:  `test[5m] + test[5m]`,
+		fail:   true,
+		errMsg: `binary expression involving a range vector requires a scalar type as the other operand`,
+	},
+	{
+		input:  `test[5m] + test`,
+		fail:   true,
+		errMsg: `binary expression involving a range vector requires a scalar type as the other operand`,
+	},
+	{
+		input:  `test + test[5m]`,
+		fail:   true,
+		errMsg: `binary expression involving a range vector requires a scalar type as the other operand`,
+	},
+	{
 		input:  "1 == 1",
 		fail:   true,
 		errMsg: "1:3: parse error: comparisons between scalars must use BOOL modifier",
@@ -2258,6 +2273,32 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `foo[3ms] @ 2.345 + 1`,
+		expected: &BinaryExpr{
+			Op: ADD,
+			LHS: &MatrixSelector{
+				VectorSelector: &VectorSelector{
+					Name:      "foo",
+					Timestamp: makeInt64Pointer(2345),
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 0,
+						End:   3,
+					},
+				},
+				Range:  3 * time.Millisecond,
+				EndPos: 16,
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: posrange.PositionRange{Start: 19, End: 20},
+			},
+			VectorMatching: nil,
+		},
+	},
+	{
 		input: `foo[4s180ms] @ 2.345`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
@@ -3110,6 +3151,64 @@ var testExpr = []struct {
 				},
 			},
 			VectorMatching: &VectorMatching{},
+		},
+	},
+	{
+		input: "a[5m] + 1",
+		expected: &BinaryExpr{
+			Op: ADD,
+			LHS: &MatrixSelector{
+				VectorSelector: &VectorSelector{
+					Name: "a",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "a"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 0,
+						End:   1,
+					},
+				},
+				Range:  5 * time.Minute,
+				EndPos: 5,
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: posrange.PositionRange{Start: 8, End: 9},
+			},
+			VectorMatching: nil,
+		},
+	},
+	{
+		input: "a[5m] > 0 > 1",
+		expected: &BinaryExpr{
+			Op: GTR,
+			LHS: &BinaryExpr{
+				Op: GTR,
+				LHS: &MatrixSelector{
+					VectorSelector: &VectorSelector{
+						Name: "a",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "a"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 0,
+							End:   1,
+						},
+					},
+					Range:  5 * time.Minute,
+					EndPos: 5,
+				},
+				RHS: &NumberLiteral{
+					Val:      0,
+					PosRange: posrange.PositionRange{Start: 8, End: 9},
+				},
+				VectorMatching: nil,
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: posrange.PositionRange{Start: 12, End: 13},
+			},
+			VectorMatching: nil,
 		},
 	},
 	// String quoting and escape sequence interpretation tests.
