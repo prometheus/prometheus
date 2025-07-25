@@ -1238,7 +1238,6 @@ func (a *headAppender) commitSamples(acc *appenderCommitContext) {
 				if staleToNonStale {
 					a.head.numStaleSeries.Dec()
 				}
-
 			} else {
 				// The sample is an exact duplicate, and should be silently dropped.
 				acc.floatsAppended--
