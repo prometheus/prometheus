@@ -1584,7 +1584,7 @@ func NewStaleHead(head *Head, mint, maxt int64, staleSeriesRefs []storage.Series
 }
 
 func (h *StaleHead) Index() (_ IndexReader, err error) {
-	return h.head.staleIndex(h.RangeHead.mint, h.RangeHead.maxt, h.staleSeriesRefs)
+	return h.head.staleIndex(h.mint, h.maxt, h.staleSeriesRefs)
 }
 
 func (h *StaleHead) NumSeries() uint64 {
@@ -1680,13 +1680,14 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, affected, chunksRemoved, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef, &h.numStaleSeries)
+	deleted, affected, chunksRemoved, staleSeriesDeleted, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
 	h.numSeries.Sub(uint64(seriesRemoved))
+	h.numStaleSeries.Sub(uint64(staleSeriesDeleted))
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
@@ -1713,7 +1714,6 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 // gcStaleSeries removes all the stale series provided given that they are still stale
 // and the series maxt is <= the given max.
 func (h *Head) gcStaleSeries(p index.Postings, maxt int64) {
-
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
 	deleted, affected, chunksRemoved := h.series.gcStaleSeries(p, maxt)
@@ -2041,13 +2041,14 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 // but the returned map goes into postings.Delete() which expects a map[storage.SeriesRef]struct
 // and there's no easy way to cast maps.
 // minMmapFile is the min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
-func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef, numStaleSeries *atomic.Uint64) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ int, _, _ int64, minMmapFile int) {
+func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _ int, _, _ int64, minMmapFile int) {
 	var (
-		deleted          = map[storage.SeriesRef]struct{}{}
-		affected         = map[labels.Label]struct{}{}
-		rmChunks         = 0
-		actualMint int64 = math.MaxInt64
-		minOOOTime int64 = math.MaxInt64
+		deleted                  = map[storage.SeriesRef]struct{}{}
+		affected                 = map[labels.Label]struct{}{}
+		rmChunks                 = 0
+		staleSeriesDeleted       = 0
+		actualMint         int64 = math.MaxInt64
+		minOOOTime         int64 = math.MaxInt64
 	)
 	minMmapFile = math.MaxInt32
 
@@ -2102,7 +2103,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef, n
 		if value.IsStaleNaN(series.lastValue) ||
 			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
 			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
-			numStaleSeries.Dec()
+			staleSeriesDeleted++
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
@@ -2118,10 +2119,10 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef, n
 		actualMint = mint
 	}
 
-	return deleted, affected, rmChunks, actualMint, minOOOTime, minMmapFile
+	return deleted, affected, rmChunks, staleSeriesDeleted, actualMint, minOOOTime, minMmapFile
 }
 
-// TODO: add comments
+// TODO: add comments.
 func (s *stripeSeries) gcStaleSeries(p index.Postings, maxt int64) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ int) {
 	var (
 		deleted  = map[storage.SeriesRef]struct{}{}
