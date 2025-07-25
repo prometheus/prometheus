@@ -533,6 +533,8 @@ type OTLPOptions struct {
 	// LookbackDelta is the query lookback delta.
 	// Used to calculate the target_info sample timestamp interval.
 	LookbackDelta time.Duration
+	// Add type and unit labels to the metrics.
+	EnableTypeAndUnitLabels bool
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
@@ -548,9 +550,10 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 			logger:     logger,
 			appendable: appendable,
 		},
-		config:                configFunc,
-		allowDeltaTemporality: opts.NativeDelta,
-		lookbackDelta:         opts.LookbackDelta,
+		config:                  configFunc,
+		allowDeltaTemporality:   opts.NativeDelta,
+		lookbackDelta:           opts.LookbackDelta,
+		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
 	}
 
 	wh := &otlpWriteHandler{logger: logger, defaultConsumer: ex}
@@ -585,9 +588,10 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 
 type rwExporter struct {
 	*writeHandler
-	config                func() config.Config
-	allowDeltaTemporality bool
-	lookbackDelta         time.Duration
+	config                  func() config.Config
+	allowDeltaTemporality   bool
+	lookbackDelta           time.Duration
+	enableTypeAndUnitLabels bool
 }
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
@@ -601,9 +605,10 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		PromoteResourceAttributes:         otlptranslator.NewPromoteResourceAttributes(otlpCfg),
 		KeepIdentifyingResourceAttributes: otlpCfg.KeepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:           otlpCfg.ConvertHistogramsToNHCB,
+		PromoteScopeMetadata:              otlpCfg.PromoteScopeMetadata,
 		AllowDeltaTemporality:             rw.allowDeltaTemporality,
 		LookbackDelta:                     rw.lookbackDelta,
-		PromoteScopeMetadata:              otlpCfg.PromoteScopeMetadata,
+		EnableTypeAndUnitLabels:           rw.enableTypeAndUnitLabels,
 	})
 	if err != nil {
 		rw.logger.Warn("Error translating OTLP metrics to Prometheus write request", "err", err)
