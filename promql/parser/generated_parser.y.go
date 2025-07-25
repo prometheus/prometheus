@@ -1327,7 +1327,7 @@ yydefault:
 	case 59:
 		yyDollar = yyS[yypt-1 : yypt+1]
 		{
-			if !model.LabelName(yyDollar[1].item.Val).IsValid() {
+			if !model.UTF8Validation.IsValidLabelName(yyDollar[1].item.Val) {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "invalid label name for grouping: %q", yyDollar[1].item.Val)
 			}
 			yyVAL.item = yyDollar[1].item
@@ -1336,7 +1336,7 @@ yydefault:
 		yyDollar = yyS[yypt-1 : yypt+1]
 		{
 			unquoted := yylex.(*parser).unquoteString(yyDollar[1].item.Val)
-			if !model.LabelName(unquoted).IsValid() {
+			if !model.UTF8Validation.IsValidLabelName(unquoted) {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "invalid label name for grouping: %q", unquoted)
 			}
 			yyVAL.item = yyDollar[1].item
