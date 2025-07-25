@@ -413,6 +413,10 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		jobNames[scfg.JobName] = struct{}{}
 	}
 
+	if err := c.AlertingConfig.Validate(c.GlobalConfig.MetricNameValidationScheme); err != nil {
+		return err
+	}
+
 	rwNames := map[string]struct{}{}
 	for _, rwcfg := range c.RemoteWriteConfigs {
 		if rwcfg == nil {
@@ -421,6 +425,9 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		// Skip empty names, we fill their name with their config hash in remote write code.
 		if _, ok := rwNames[rwcfg.Name]; ok && rwcfg.Name != "" {
 			return fmt.Errorf("found multiple remote write configs with job name %q", rwcfg.Name)
+		}
+		if err := rwcfg.Validate(c.GlobalConfig.MetricNameValidationScheme); err != nil {
+			return err
 		}
 		rwNames[rwcfg.Name] = struct{}{}
 	}
@@ -596,8 +603,14 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
+	switch gc.MetricNameValidationScheme {
+	case model.UTF8Validation, model.LegacyValidation:
+	default:
+		gc.MetricNameValidationScheme = DefaultGlobalConfig.MetricNameValidationScheme
+	}
+
 	if err := gc.ExternalLabels.Validate(func(l labels.Label) error {
-		if !model.LabelName(l.Name).IsValid() {
+		if !gc.MetricNameValidationScheme.IsValidLabelName(l.Name) {
 			return fmt.Errorf("%q is not a valid label name", l.Name)
 		}
 		if !model.LabelValue(l.Value).IsValid() {
@@ -878,11 +891,9 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 
 	switch globalConfig.MetricNameValidationScheme {
-	case model.UnsetValidation:
-		globalConfig.MetricNameValidationScheme = model.UTF8Validation
 	case model.LegacyValidation, model.UTF8Validation:
 	default:
-		return fmt.Errorf("unknown global name validation method specified, must be either '', 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
+		return errors.New("global name validation method must be set")
 	}
 	// Scrapeconfig validation scheme matches global if left blank.
 	localValidationUnset := false
@@ -942,6 +953,17 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	if c.AlwaysScrapeClassicHistograms == nil {
 		global := globalConfig.AlwaysScrapeClassicHistograms
 		c.AlwaysScrapeClassicHistograms = &global
+	}
+
+	for _, rc := range c.RelabelConfigs {
+		if err := rc.Validate(c.MetricNameValidationScheme); err != nil {
+			return err
+		}
+	}
+	for _, rc := range c.MetricRelabelConfigs {
+		if err := rc.Validate(c.MetricNameValidationScheme); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -1096,6 +1118,20 @@ type AlertingConfig struct {
 	AlertmanagerConfigs AlertmanagerConfigs `yaml:"alertmanagers,omitempty"`
 }
 
+func (c *AlertingConfig) Validate(nameValidationScheme model.ValidationScheme) error {
+	for _, rc := range c.AlertRelabelConfigs {
+		if err := rc.Validate(nameValidationScheme); err != nil {
+			return err
+		}
+	}
+	for _, rc := range c.AlertmanagerConfigs {
+		if err := rc.Validate(nameValidationScheme); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SetDirectory joins any relative file paths with dir.
 func (c *AlertingConfig) SetDirectory(dir string) {
 	for _, c := range c.AlertmanagerConfigs {
@@ -1240,6 +1276,20 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	return nil
 }
 
+func (c *AlertmanagerConfig) Validate(nameValidationScheme model.ValidationScheme) error {
+	for _, rc := range c.AlertRelabelConfigs {
+		if err := rc.Validate(nameValidationScheme); err != nil {
+			return err
+		}
+	}
+	for _, rc := range c.RelabelConfigs {
+		if err := rc.Validate(nameValidationScheme); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // MarshalYAML implements the yaml.Marshaler interface.
 func (c *AlertmanagerConfig) MarshalYAML() (interface{}, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
@@ -1375,6 +1425,16 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	}
 
 	return validateAuthConfigs(c)
+}
+
+func (c *RemoteWriteConfig) Validate(nameValidationScheme model.ValidationScheme) error {
+	for _, rc := range c.WriteRelabelConfigs {
+		if err := rc.Validate(nameValidationScheme); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // validateAuthConfigs validates that at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured.

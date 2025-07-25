@@ -165,11 +165,12 @@ func TestBackfillRuleIntegration(t *testing.T) {
 func newTestRuleImporter(_ context.Context, start time.Time, tmpDir string, testSamples model.Matrix, maxBlockDuration time.Duration) (*ruleImporter, error) {
 	logger := promslog.NewNopLogger()
 	cfg := ruleImporterConfig{
-		outputDir:        tmpDir,
-		start:            start.Add(-10 * time.Hour),
-		end:              start.Add(-7 * time.Hour),
-		evalInterval:     60 * time.Second,
-		maxBlockDuration: maxBlockDuration,
+		outputDir:            tmpDir,
+		start:                start.Add(-10 * time.Hour),
+		end:                  start.Add(-7 * time.Hour),
+		evalInterval:         60 * time.Second,
+		maxBlockDuration:     maxBlockDuration,
+		nameValidationScheme: model.UTF8Validation,
 	}
 
 	return newRuleImporter(logger, cfg, mockQueryRangeAPI{
