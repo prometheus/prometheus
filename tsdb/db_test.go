@@ -37,8 +37,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/model/value"
-
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/oklog/ulid/v2"
@@ -53,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -9659,7 +9658,7 @@ func TestStaleSeriesCompaction(t *testing.T) {
 		querier.Close()
 	})
 	seriesSet = queryWithoutReplacingNaNs(t, querier, labels.MustNewMatcher(labels.MatchRegexp, "name", "series.*"))
-	require.Equal(t, len(expBlockQuery), len(seriesSet))
+	require.Len(t, seriesSet, len(expBlockQuery))
 
 	// Compare all the samples except the stale value that needs special handling.
 	for _, category := range [][]labels.Labels{staleSeries, staleHist, staleFHist} {
@@ -9668,7 +9667,7 @@ func TestStaleSeriesCompaction(t *testing.T) {
 			samples := expBlockQuery[seriesKey]
 			actSamples, exists := seriesSet[seriesKey]
 			require.Truef(t, exists, "series not found in result %s", seriesKey)
-			require.Equal(t, len(samples), len(actSamples))
+			require.Len(t, actSamples, len(samples))
 			require.Equal(t, samples[0], actSamples[0])
 			require.Equal(t, samples[1].T(), actSamples[1].T())
 		}

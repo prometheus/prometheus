@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/tsdb/index"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -45,6 +44,7 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minimum Go version is met.
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
@@ -94,6 +94,10 @@ func DefaultOptions() *Options {
 		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
 		CompactionDelay:             time.Duration(0),
 		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
+		// For testing purposes. TODO: remove before merging the PR.
+		StaleSeriesCompactionInterval:           15 * time.Minute,
+		StaleSeriesCompactionThreshold:          0.2,
+		StaleSeriesImmediateCompactionThreshold: 0.35,
 	}
 }
 
@@ -223,6 +227,19 @@ type Options struct {
 
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
+
+	// StaleSeriesCompactionInterval tells at what interval to attempt stale series compaction
+	// if the number of stale series crosses the given threshold.
+	StaleSeriesCompactionInterval time.Duration
+
+	// StaleSeriesCompactionThreshold is a number between 0.0-1.0 indicating the % of stale series in
+	// the in-memory Head block. If the % of stale series crosses this threshold, stale series
+	// compaction will be run in the next stale series compaction interval.
+	StaleSeriesCompactionThreshold float64
+
+	// StaleSeriesImmediateCompactionThreshold is a number between 0.0-1.0 indicating the % of stale series in
+	// the in-memory Head block. If the % of stale series crosses this threshold, stale series is run immediately.
+	StaleSeriesImmediateCompactionThreshold float64
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -1080,6 +1097,17 @@ func (db *DB) run(ctx context.Context) {
 
 	backoff := time.Duration(0)
 
+	nextStaleSeriesCompactionTime := time.Now().Round(db.opts.StaleSeriesCompactionInterval)
+	if nextStaleSeriesCompactionTime.Before(time.Now()) {
+		nextStaleSeriesCompactionTime = nextStaleSeriesCompactionTime.Add(db.opts.StaleSeriesCompactionInterval)
+	}
+
+	staleSeriesWaitDur := time.Until(nextStaleSeriesCompactionTime)
+	if db.opts.StaleSeriesCompactionInterval <= 0 {
+		// Long enough interval so that we don't schedule a stale series compaction.
+		staleSeriesWaitDur = 365 * 24 * time.Hour
+	}
+
 	for {
 		select {
 		case <-db.stopc:
@@ -1094,6 +1122,15 @@ func (db *DB) run(ctx context.Context) {
 				db.logger.Error("reloadBlocks", "err", err)
 			}
 			db.cmtx.Unlock()
+
+			// TODO: check if normal compaction is soon, and don't run stale series compaction if it is soon.
+			staleSeriesRatio := float64(db.Head().NumStaleSeries()) / float64(db.Head().NumSeries())
+			if db.autoCompact && db.opts.StaleSeriesImmediateCompactionThreshold > 0 &&
+				staleSeriesRatio >= db.opts.StaleSeriesImmediateCompactionThreshold {
+				if err := db.CompactStaleHead(); err != nil {
+					db.logger.Error("immediate stale series compaction failed", "err", err)
+				}
+			}
 
 			select {
 			case db.compactc <- struct{}{}:
@@ -1116,6 +1153,19 @@ func (db *DB) run(ctx context.Context) {
 				db.metrics.compactionsSkipped.Inc()
 			}
 			db.autoCompactMtx.Unlock()
+		case <-time.After(staleSeriesWaitDur):
+			// TODO: check if normal compaction is soon, and don't run stale series compaction if it is soon.
+			staleSeriesRatio := float64(db.Head().NumStaleSeries()) / float64(db.Head().NumSeries())
+			if db.autoCompact && db.opts.StaleSeriesCompactionThreshold > 0 &&
+				staleSeriesRatio >= db.opts.StaleSeriesCompactionThreshold {
+				if err := db.CompactStaleHead(); err != nil {
+					db.logger.Error("scheduled stale series compaction failed", "err", err)
+				}
+			}
+
+			nextStaleSeriesCompactionTime = nextStaleSeriesCompactionTime.Add(db.opts.StaleSeriesCompactionInterval)
+			staleSeriesWaitDur = time.Until(nextStaleSeriesCompactionTime)
+
 		case <-db.stopc:
 			return
 		}
@@ -1480,7 +1530,8 @@ func (db *DB) compactHead(head *RangeHead) error {
 }
 
 func (db *DB) CompactStaleHead() error {
-	// TODO: compact the OOO data as well!!
+	// TODO: compact the OOO data as well.
+	// TODO: test splitting of data in multiple blocks if stale series crosses block boundary.
 
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
@@ -1488,7 +1539,7 @@ func (db *DB) CompactStaleHead() error {
 	staleSeriesRefs := db.head.SortedStaleSeriesRefs(context.Background())
 
 	mint, maxt := db.head.MinTime(), db.head.MaxTime()
-	for ; mint < maxt; mint = mint + db.head.chunkRange.Load() {
+	for ; mint < maxt; mint += db.head.chunkRange.Load() {
 		staleHead := NewStaleHead(db.Head(), mint, mint+db.head.chunkRange.Load(), staleSeriesRefs)
 
 		uids, err := db.compactor.Write(db.dir, staleHead, staleHead.MinTime(), staleHead.BlockMaxTime(), nil)
