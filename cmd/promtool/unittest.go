@@ -112,8 +112,7 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields, coverage bool, outputFormat, coverageOutput string, ts *junitxml.TestSuite, results io.Writer, globalCoverageTracker *CoverageTracker) []error {
-
+func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields, _ bool, outputFormat, coverageOutput string, ts *junitxml.TestSuite, results io.Writer, globalCoverageTracker *CoverageTracker) []error {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		ts.Abort(err)
@@ -512,19 +511,19 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 Outer:
 	for _, testCase := range tg.PromqlExprTests {
 		if coverageTracker != nil {
-            expr, err := parser.ParseExpr(testCase.Expr)
-            if err != nil {
-                // Log error and continue - don't fail test execution.
-                fmt.Fprintf(os.Stderr, "  WARNING: could not parse expression %q for coverage tracking: %s\n", testCase.Expr, err)
-                continue
-            }
+			expr, err := parser.ParseExpr(testCase.Expr)
+			if err != nil {
+				// Log error and continue - don't fail test execution.
+				fmt.Fprintf(os.Stderr, "  WARNING: could not parse expression %q for coverage tracking: %s\n", testCase.Expr, err)
+				continue
+			}
 
-            // Mark rules as tested based on extracted selectors.
-            selectors := parser.ExtractSelectors(expr)
-            for _, selectorGroup := range selectors {
-                coverageTracker.MarkRuleAsTestedBySelector(groups, selectorGroup)
-            }
-        }
+			// Mark rules as tested based on extracted selectors.
+			selectors := parser.ExtractSelectors(expr)
+			for _, selectorGroup := range selectors {
+				coverageTracker.MarkRuleAsTestedBySelector(groups, selectorGroup)
+			}
+		}
 		got, err := query(suite.Context(), testCase.Expr, mint.Add(time.Duration(testCase.EvalTime)),
 			suite.QueryEngine(), suite.Queryable())
 		if err != nil {

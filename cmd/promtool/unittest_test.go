@@ -303,15 +303,16 @@ func TestCoverageReporting(t *testing.T) {
 		var coverageJSON []string
 		jsonStarted := false
 		for _, line := range lines {
-			if strings.HasPrefix(line, "{") {
+			switch {
+			case strings.HasPrefix(line, "{"):
 				jsonStarted = true
 				coverageJSON = []string{line}
-			} else if jsonStarted && (strings.HasPrefix(line, "}") || strings.Contains(line, "]")) {
+			case jsonStarted && (strings.HasPrefix(line, "}") || strings.Contains(line, "]")):
 				coverageJSON = append(coverageJSON, line)
 				if strings.HasPrefix(line, "}") {
 					break
 				}
-			} else if jsonStarted {
+			case jsonStarted:
 				coverageJSON = append(coverageJSON, line)
 			}
 		}
@@ -320,10 +321,10 @@ func TestCoverageReporting(t *testing.T) {
 
 		var report struct {
 			OverallCoverage float64                    `json:"overall_coverage"`
-			TotalRules      int                        `json:"total_rules"`
-			TestedRules     int                        `json:"tested_rules"`
-			Files           map[string]interface{}     `json:"files"`
-			TestResults     []TestResult               `json:"test_results"`
+			TotalRules      int                    `json:"total_rules"`
+			TestedRules     int                    `json:"tested_rules"`
+			Files           map[string]interface{} `json:"files"`
+			TestResults     []TestResult           `json:"test_results"`
 		}
 		err := json.Unmarshal([]byte(jsonStr), &report)
 		require.NoError(t, err)
@@ -332,14 +333,14 @@ func TestCoverageReporting(t *testing.T) {
 		require.Equal(t, 5, report.TotalRules)
 		require.Equal(t, 1, report.TestedRules)
 		require.Equal(t, float64(20), report.OverallCoverage)
-		require.Len(t, report.Files, 1) // Should have one rule file
+		require.Len(t, report.Files, 1)       // Should have one rule file
 		require.Len(t, report.TestResults, 5) // 5 test groups in unittest.yml
 
 		// Verify test results structure
 		for _, testResult := range report.TestResults {
 			require.NotEmpty(t, testResult.Name)
 			require.True(t, testResult.Passed) // All tests should pass
-			require.Greater(t, testResult.Duration, int64(0))
+			require.Positive(t, testResult.Duration)
 			require.Empty(t, testResult.Error) // No errors expected
 		}
 	})
@@ -393,15 +394,16 @@ func TestCoverageReporting(t *testing.T) {
 		var coverageJSON []string
 		jsonStarted := false
 		for _, line := range lines {
-			if strings.HasPrefix(line, "{") {
+			switch {
+			case strings.HasPrefix(line, "{"):
 				jsonStarted = true
 				coverageJSON = []string{line}
-			} else if jsonStarted && (strings.HasPrefix(line, "}") || strings.Contains(line, "]")) {
+			case jsonStarted && (strings.HasPrefix(line, "}") || strings.Contains(line, "]")):
 				coverageJSON = append(coverageJSON, line)
 				if strings.HasPrefix(line, "}") {
 					break
 				}
-			} else if jsonStarted {
+			case jsonStarted:
 				coverageJSON = append(coverageJSON, line)
 			}
 		}
@@ -422,7 +424,6 @@ func TestCoverageReporting(t *testing.T) {
 				require.NotEmpty(t, testResult.Error)
 			}
 		}
-		require.Greater(t, failingTests, 0, "Expected at least one failing test")
+		require.Positive(t, failingTests, "Expected at least one failing test")
 	})
 }
-

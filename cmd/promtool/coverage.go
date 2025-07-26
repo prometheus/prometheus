@@ -27,7 +27,7 @@ import (
 	"github.com/prometheus/prometheus/util/junitxml"
 )
 
-// TestResult represents the result of an individual test
+// TestResult represents the result of an individual test.
 type TestResult struct {
 	Name     string        `json:"name"`
 	Passed   bool          `json:"passed"`
@@ -109,7 +109,7 @@ func (t *CoverageTracker) ruleMatchesSelector(rule rules.Rule, matchers []*label
 	return false
 }
 
-// AddTestResult adds a test result to the tracker
+// AddTestResult adds a test result to the tracker.
 func (t *CoverageTracker) AddTestResult(result TestResult) {
 	t.testResults = append(t.testResults, result)
 }
@@ -197,14 +197,14 @@ func (t *CoverageTracker) generateTextReport(coveragePercent float64, totalRules
 			if fileRules > 0 {
 				fileCoverage = float64(fileRules-fileUntested) / float64(fileRules) * 100
 			}
-			b.WriteString(fmt.Sprintf("  %s: %.0f%% rule coverage (%d/%d rules tested)\n", 
+			b.WriteString(fmt.Sprintf("  %s: %.0f%% rule coverage (%d/%d rules tested)\n",
 				fileName, fileCoverage, fileRules-fileUntested, fileRules))
 		}
 	}
-	
-	b.WriteString(fmt.Sprintf("Overall coverage: %.0f%% (%d/%d rules tested)\n", 
+
+	b.WriteString(fmt.Sprintf("Overall coverage: %.0f%% (%d/%d rules tested)\n",
 		coveragePercent, totalRules-totalUntested, totalRules))
-		
+
 	if totalUntested > 0 {
 		b.WriteString("\nUntested rules:\n")
 		for groupName, rules := range untestedRules {
@@ -219,7 +219,7 @@ func (t *CoverageTracker) generateTextReport(coveragePercent float64, totalRules
 	return []byte(b.String())
 }
 
-func (t *CoverageTracker) generateJSONReportWithTestResults(coveragePercent float64, totalRules, totalUntested int, untestedRules map[string][]string, testResults []TestResult) ([]byte, error) {
+func (t *CoverageTracker) generateJSONReportWithTestResults(coveragePercent float64, totalRules, totalUntested int, _ map[string][]string, testResults []TestResult) ([]byte, error) {
 	// Calculate file-level coverage
 	fileCoverage := make(map[string]interface{})
 	for fileName, groupNames := range t.ruleFiles {
@@ -227,7 +227,7 @@ func (t *CoverageTracker) generateJSONReportWithTestResults(coveragePercent floa
 		fileUntested := 0
 		testedRules := []string{}
 		untestedRulesList := []string{}
-		
+
 		for _, groupName := range groupNames {
 			if rules, ok := t.rules[groupName]; ok {
 				for ruleName := range rules {
@@ -241,15 +241,15 @@ func (t *CoverageTracker) generateJSONReportWithTestResults(coveragePercent floa
 				}
 			}
 		}
-		
+
 		fileCoveragePercent := float64(0)
 		if fileRules > 0 {
 			fileCoveragePercent = float64(fileRules-fileUntested) / float64(fileRules) * 100
 		}
-		
+
 		sort.Strings(testedRules)
 		sort.Strings(untestedRulesList)
-		
+
 		fileCoverage[fileName] = map[string]interface{}{
 			"coverage":       fileCoveragePercent,
 			"tested_rules":   testedRules,
@@ -258,11 +258,11 @@ func (t *CoverageTracker) generateJSONReportWithTestResults(coveragePercent floa
 	}
 
 	report := struct {
-		OverallCoverage float64                    `json:"overall_coverage"`
-		TotalRules      int                        `json:"total_rules"`
-		TestedRules     int                        `json:"tested_rules"`
-		Files           map[string]interface{}     `json:"files"`
-		TestResults     []TestResult               `json:"test_results"`
+		OverallCoverage float64                `json:"overall_coverage"`
+		TotalRules      int                    `json:"total_rules"`
+		TestedRules     int                    `json:"tested_rules"`
+		Files           map[string]interface{} `json:"files"`
+		TestResults     []TestResult           `json:"test_results"`
 	}{
 		OverallCoverage: coveragePercent,
 		TotalRules:      totalRules,
@@ -273,7 +273,7 @@ func (t *CoverageTracker) generateJSONReportWithTestResults(coveragePercent floa
 	return json.MarshalIndent(report, "", "  ")
 }
 
-func (t *CoverageTracker) generateJSONReport(coveragePercent float64, totalRules, totalUntested int, untestedRules map[string][]string) ([]byte, error) {
+func (t *CoverageTracker) generateJSONReport(coveragePercent float64, totalRules, totalUntested int, _ map[string][]string) ([]byte, error) {
 	// Calculate file-level coverage
 	fileCoverage := make(map[string]interface{})
 	for fileName, groupNames := range t.ruleFiles {
@@ -281,7 +281,7 @@ func (t *CoverageTracker) generateJSONReport(coveragePercent float64, totalRules
 		fileUntested := 0
 		testedRules := []string{}
 		untestedRulesList := []string{}
-		
+
 		for _, groupName := range groupNames {
 			if rules, ok := t.rules[groupName]; ok {
 				for ruleName := range rules {
@@ -295,15 +295,15 @@ func (t *CoverageTracker) generateJSONReport(coveragePercent float64, totalRules
 				}
 			}
 		}
-		
+
 		fileCoveragePercent := float64(0)
 		if fileRules > 0 {
 			fileCoveragePercent = float64(fileRules-fileUntested) / float64(fileRules) * 100
 		}
-		
+
 		sort.Strings(testedRules)
 		sort.Strings(untestedRulesList)
-		
+
 		fileCoverage[fileName] = map[string]interface{}{
 			"coverage":       fileCoveragePercent,
 			"tested_rules":   testedRules,
@@ -312,10 +312,10 @@ func (t *CoverageTracker) generateJSONReport(coveragePercent float64, totalRules
 	}
 
 	report := struct {
-		OverallCoverage float64                    `json:"overall_coverage"`
-		TotalRules      int                        `json:"total_rules"`
-		TestedRules     int                        `json:"tested_rules"`
-		Files           map[string]interface{}     `json:"files"`
+		OverallCoverage float64                `json:"overall_coverage"`
+		TotalRules      int                    `json:"total_rules"`
+		TestedRules     int                    `json:"tested_rules"`
+		Files           map[string]interface{} `json:"files"`
 	}{
 		OverallCoverage: coveragePercent,
 		TotalRules:      totalRules,
@@ -323,16 +323,6 @@ func (t *CoverageTracker) generateJSONReport(coveragePercent float64, totalRules
 		Files:           fileCoverage,
 	}
 	return json.MarshalIndent(report, "", "  ")
-}
-
-// flattenUntestedRules converts the map[string][]string to a flat []string
-func flattenUntestedRules(untestedRules map[string][]string) []string {
-	var result []string
-	for _, rules := range untestedRules {
-		result = append(result, rules...)
-	}
-	sort.Strings(result)
-	return result
 }
 
 func (t *CoverageTracker) AddCoverageToJUnit(ts *junitxml.TestSuite) {
