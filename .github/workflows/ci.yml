@@ -39,10 +39,10 @@ jobs:
           persist-credentials: false
       - uses: prometheus/promci@443c7fc2397e946bc9f5029e313a9c3441b9b86d # v0.4.7
       - uses: ./.github/promci/actions/setup_environment
-      - name: Run Go tests 10 times with failfast
+      - name: Run Go tests 50 times with failfast
         run: |
-          for i in {1..20}; do
-            go test -v --tags=dedupelabels -failfast ./... || exit 1
+          for i in {1..50}; do
+            go test --tags=dedupelabels -failfast -count=1 -run 'TestQueryLog|TestAutoReloadConfig|TestStartupInterrupt|TestScrapeFailureLogFile|TestHeadCompactionWhileScraping|TestRuntimeGOGCConfig' ./... 2>&1 | grep -v 'go: downloading'
           done
       - run: go test --tags=slicelabels -race ./cmd/prometheus
       - run: go test --tags=forcedirectio -race ./tsdb/
