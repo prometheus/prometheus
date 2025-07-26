@@ -47,10 +47,10 @@ import (
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
 func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
-	return RulesUnitTestResult(io.Discard, queryOpts, runStrings, diffFlag, debug, ignoreUnknownFields, false, "text", "", files...)
+	return RulesUnitTestResult(io.Discard, queryOpts, runStrings, diffFlag, debug, ignoreUnknownFields, false, "text", "", 0, files...)
 }
 
-func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields, coverage bool, outputFormat, coverageOutput string, files ...string) int {
+func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields, coverage bool, outputFormat, coverageOutput string, coverageThreshold float64, files ...string) int {
 	failed := false
 	junit := &junitxml.JUnitXML{}
 
@@ -88,6 +88,15 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 		} else {
 			if err := globalCoverageTracker.PrintCoverageReport(results, coverageOutput, outputFormat); err != nil {
 				fmt.Fprintf(os.Stderr, "failed to write coverage report: %s\n", err)
+			}
+		}
+		
+		// Check coverage threshold
+		if coverageThreshold > 0 {
+			if !globalCoverageTracker.CheckCoverageThreshold(coverageThreshold) {
+				currentCoverage := globalCoverageTracker.GetCoveragePercent()
+				fmt.Fprintf(os.Stderr, "Coverage %.2f%% is below required threshold %.2f%%\n", currentCoverage, coverageThreshold)
+				failed = true
 			}
 		}
 	}
@@ -280,10 +289,20 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 	groups := orderedGroups(groupsMap, groupOrderMap)
 
 	if coverageTracker != nil {
+		// Track rule files and their groups
+		fileGroups := make(map[string][]string)
 		for _, group := range groups {
+			fileName := group.File()
+			if fileName != "" {
+				fileGroups[fileName] = append(fileGroups[fileName], group.Name())
+			}
 			for _, rule := range group.Rules() {
 				coverageTracker.AddRule(group.Name(), rule.Name())
 			}
+		}
+		// Add file mappings to coverage tracker
+		for fileName, groupNames := range fileGroups {
+			coverageTracker.AddRuleFile(fileName, groupNames)
 		}
 	}
 

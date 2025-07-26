@@ -237,6 +237,7 @@ func main() {
 	testRulesCoverage := testRulesCmd.Flag("coverage", "Enable coverage reporting.").Default("false").Bool()
 	testRulesOutputFormat := testRulesCmd.Flag("output-format", "The output format for the test results (text, json, junit-xml).").Default("text").Enum("text", "json", "junit-xml")
 	testRulesCoverageOutput := testRulesCmd.Flag("coverage-output", "File to write coverage report to.").String()
+	testRulesCoverageThreshold := testRulesCmd.Flag("coverage-threshold", "Minimum coverage percentage required (0-100). Test fails if coverage is below this threshold.").Default("0").Float64()
 
 	defaultDBPath := "data/"
 	tsdbCmd := app.Command("tsdb", "Run tsdb commands.")
@@ -424,6 +425,7 @@ func main() {
 			*testRulesCoverage,
 			*testRulesOutputFormat,
 			*testRulesCoverageOutput,
+			*testRulesCoverageThreshold,
 			*testRulesFiles...,
 		))
 

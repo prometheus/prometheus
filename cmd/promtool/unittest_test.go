@@ -153,7 +153,7 @@ func TestRulesUnitTest(t *testing.T) {
 	t.Run("Junit xml output ", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
-		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, false, "junit-xml", "", reuseFiles...); got != 1 {
+		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, false, "junit-xml", "", 0, reuseFiles...); got != 1 {
 			t.Errorf("RulesUnitTestResults() = %v, want 1", got)
 		}
 		var test junitxml.JUnitXML
@@ -281,12 +281,12 @@ func TestCoverageReporting(t *testing.T) {
 	t.Run("Coverage Text Output", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
-		got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, true, "text", "", "./testdata/unittest.yml")
+		got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, true, "text", "", 0, "./testdata/unittest.yml")
 		require.Equal(t, 0, got)
 
 		output := buf.String()
-		require.Contains(t, output, "Coverage:")
-		require.Contains(t, output, "Total rules:")
+		require.Contains(t, output, "Overall coverage:")
+		require.Contains(t, output, "Rule file coverage:")
 		require.Contains(t, output, "Untested rules:")
 		// Note: SUCCESS is printed to stderr, not captured in our buffer
 	})
@@ -294,7 +294,7 @@ func TestCoverageReporting(t *testing.T) {
 	t.Run("Coverage JSON Output", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
-		got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, true, "json", "", "./testdata/unittest.yml")
+		got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, true, "json", "", 0, "./testdata/unittest.yml")
 		require.Equal(t, 0, got)
 
 		output := buf.String()
@@ -319,11 +319,11 @@ func TestCoverageReporting(t *testing.T) {
 		require.NotEmpty(t, coverageJSON, "Coverage JSON report not found")
 
 		var report struct {
-			CoveragePercent float64      `json:"coverage_percentage"`
-			TotalRules      int          `json:"total_rules"`
-			TestedRules     int          `json:"tested_rules"`
-			UntestedRules   []string     `json:"untested_rules"`
-			TestResults     []TestResult `json:"test_results"`
+			OverallCoverage float64                    `json:"overall_coverage"`
+			TotalRules      int                        `json:"total_rules"`
+			TestedRules     int                        `json:"tested_rules"`
+			Files           map[string]interface{}     `json:"files"`
+			TestResults     []TestResult               `json:"test_results"`
 		}
 		err := json.Unmarshal([]byte(jsonStr), &report)
 		require.NoError(t, err)
@@ -331,8 +331,8 @@ func TestCoverageReporting(t *testing.T) {
 		// Verify coverage report structure
 		require.Equal(t, 5, report.TotalRules)
 		require.Equal(t, 1, report.TestedRules)
-		require.Equal(t, float64(20), report.CoveragePercent)
-		require.Len(t, report.UntestedRules, 4)
+		require.Equal(t, float64(20), report.OverallCoverage)
+		require.Len(t, report.Files, 1) // Should have one rule file
 		require.Len(t, report.TestResults, 5) // 5 test groups in unittest.yml
 
 		// Verify test results structure
@@ -347,7 +347,7 @@ func TestCoverageReporting(t *testing.T) {
 	t.Run("Coverage JUnit XML Output", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
-		got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, true, "junit-xml", "", "./testdata/unittest.yml")
+		got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, true, "junit-xml", "", 0, "./testdata/unittest.yml")
 		require.Equal(t, 0, got)
 
 		output := buf.Bytes()
@@ -384,7 +384,7 @@ func TestCoverageReporting(t *testing.T) {
 	t.Run("Coverage With Failing Tests", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
-		got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, true, "json", "", "./testdata/failing.yml")
+		got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, true, "json", "", 0, "./testdata/failing.yml")
 		require.Equal(t, 1, got) // Should fail
 
 		output := buf.String()
