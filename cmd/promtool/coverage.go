@@ -178,7 +178,7 @@ func (t *CoverageTracker) PrintCoverageReport(w io.Writer, outputFile, outputFor
 
 func (t *CoverageTracker) generateTextReport(coveragePercent float64, totalRules, totalUntested int, untestedRules map[string][]string) []byte {
 	var b strings.Builder
-	
+
 	// Print file-level coverage
 	if len(t.ruleFiles) > 0 {
 		b.WriteString("Rule file coverage:\n")

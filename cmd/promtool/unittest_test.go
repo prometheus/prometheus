@@ -320,7 +320,7 @@ func TestCoverageReporting(t *testing.T) {
 		require.NotEmpty(t, coverageJSON, "Coverage JSON report not found")
 
 		var report struct {
-			OverallCoverage float64                    `json:"overall_coverage"`
+			OverallCoverage float64                `json:"overall_coverage"`
 			TotalRules      int                    `json:"total_rules"`
 			TestedRules     int                    `json:"tested_rules"`
 			Files           map[string]interface{} `json:"files"`

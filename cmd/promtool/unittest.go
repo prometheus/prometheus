@@ -90,7 +90,7 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 				fmt.Fprintf(os.Stderr, "failed to write coverage report: %s\n", err)
 			}
 		}
-		
+
 		// Check coverage threshold
 		if coverageThreshold > 0 {
 			if !globalCoverageTracker.CheckCoverageThreshold(coverageThreshold) {

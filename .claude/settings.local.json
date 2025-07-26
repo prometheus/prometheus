@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make:*)",
+      "Bash(git checkout:*)"
+    ],
+    "deny": []
+  }
+}
