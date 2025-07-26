@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go generate:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": []
+  }
+}

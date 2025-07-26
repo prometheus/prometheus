@@ -1,5 +1,5 @@
 ---
-title: prometheus
+title: prometheus.exe
 ---
 
 The Prometheus monitoring server

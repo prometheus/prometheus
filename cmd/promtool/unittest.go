@@ -90,7 +90,6 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 				fmt.Fprintf(os.Stderr, "failed to write coverage report: %s\n", err)
 			}
 		}
-
 		// Check coverage threshold
 		if coverageThreshold > 0 {
 			if !globalCoverageTracker.CheckCoverageThreshold(coverageThreshold) {
@@ -112,7 +111,7 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields, _ bool, outputFormat, coverageOutput string, ts *junitxml.TestSuite, results io.Writer, globalCoverageTracker *CoverageTracker) []error {
+func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields, _ bool, _, coverageOutput string, ts *junitxml.TestSuite, results io.Writer, globalCoverageTracker *CoverageTracker) []error {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		ts.Abort(err)

@@ -21,10 +21,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/util/junitxml"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRulesUnitTest(t *testing.T) {
@@ -302,6 +301,7 @@ func TestCoverageReporting(t *testing.T) {
 		// Find the JSON coverage report (look for the opening brace)
 		var coverageJSON []string
 		jsonStarted := false
+	findJSON:
 		for _, line := range lines {
 			switch {
 			case strings.HasPrefix(line, "{"):
@@ -310,7 +310,7 @@ func TestCoverageReporting(t *testing.T) {
 			case jsonStarted && (strings.HasPrefix(line, "}") || strings.Contains(line, "]")):
 				coverageJSON = append(coverageJSON, line)
 				if strings.HasPrefix(line, "}") {
-					break
+					break findJSON
 				}
 			case jsonStarted:
 				coverageJSON = append(coverageJSON, line)
@@ -393,6 +393,7 @@ func TestCoverageReporting(t *testing.T) {
 		// Find the JSON coverage report
 		var coverageJSON []string
 		jsonStarted := false
+	findJSON2:
 		for _, line := range lines {
 			switch {
 			case strings.HasPrefix(line, "{"):
@@ -401,7 +402,7 @@ func TestCoverageReporting(t *testing.T) {
 			case jsonStarted && (strings.HasPrefix(line, "}") || strings.Contains(line, "]")):
 				coverageJSON = append(coverageJSON, line)
 				if strings.HasPrefix(line, "}") {
-					break
+					break findJSON2
 				}
 			case jsonStarted:
 				coverageJSON = append(coverageJSON, line)
