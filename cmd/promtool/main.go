@@ -407,6 +407,9 @@ func main() {
 		results := io.Discard
 		if *junitOutFile != nil {
 			results = *junitOutFile
+		} else if *testRulesCoverage {
+			// When coverage is enabled but no junit file is specified, output to stdout
+			results = os.Stdout
 		}
 		os.Exit(RulesUnitTestResult(results,
 			promqltest.LazyLoaderOpts{

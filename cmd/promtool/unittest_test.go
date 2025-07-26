@@ -15,8 +15,10 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -272,3 +274,155 @@ func TestRulesUnitTestRun(t *testing.T) {
 		})
 	}
 }
+
+func TestCoverageReporting(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Coverage Text Output", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, true, "text", "", "./testdata/unittest.yml")
+		require.Equal(t, 0, got)
+
+		output := buf.String()
+		require.Contains(t, output, "Coverage:")
+		require.Contains(t, output, "Total rules:")
+		require.Contains(t, output, "Untested rules:")
+		// Note: SUCCESS is printed to stderr, not captured in our buffer
+	})
+
+	t.Run("Coverage JSON Output", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, true, "json", "", "./testdata/unittest.yml")
+		require.Equal(t, 0, got)
+
+		output := buf.String()
+		lines := strings.Split(strings.TrimSpace(output), "\n")
+		// Find the JSON coverage report (look for the opening brace)
+		var coverageJSON []string
+		jsonStarted := false
+		for _, line := range lines {
+			if strings.HasPrefix(line, "{") {
+				jsonStarted = true
+				coverageJSON = []string{line}
+			} else if jsonStarted && (strings.HasPrefix(line, "}") || strings.Contains(line, "]")) {
+				coverageJSON = append(coverageJSON, line)
+				if strings.HasPrefix(line, "}") {
+					break
+				}
+			} else if jsonStarted {
+				coverageJSON = append(coverageJSON, line)
+			}
+		}
+		jsonStr := strings.Join(coverageJSON, "\n")
+		require.NotEmpty(t, coverageJSON, "Coverage JSON report not found")
+
+		var report struct {
+			CoveragePercent float64      `json:"coverage_percentage"`
+			TotalRules      int          `json:"total_rules"`
+			TestedRules     int          `json:"tested_rules"`
+			UntestedRules   []string     `json:"untested_rules"`
+			TestResults     []TestResult `json:"test_results"`
+		}
+		err := json.Unmarshal([]byte(jsonStr), &report)
+		require.NoError(t, err)
+
+		// Verify coverage report structure
+		require.Equal(t, 5, report.TotalRules)
+		require.Equal(t, 1, report.TestedRules)
+		require.Equal(t, float64(20), report.CoveragePercent)
+		require.Len(t, report.UntestedRules, 4)
+		require.Len(t, report.TestResults, 5) // 5 test groups in unittest.yml
+
+		// Verify test results structure
+		for _, testResult := range report.TestResults {
+			require.NotEmpty(t, testResult.Name)
+			require.True(t, testResult.Passed) // All tests should pass
+			require.Greater(t, testResult.Duration, int64(0))
+			require.Empty(t, testResult.Error) // No errors expected
+		}
+	})
+
+	t.Run("Coverage JUnit XML Output", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, true, "junit-xml", "", "./testdata/unittest.yml")
+		require.Equal(t, 0, got)
+
+		output := buf.Bytes()
+		var test junitxml.JUnitXML
+		err := xml.Unmarshal(output, &test)
+		require.NoError(t, err)
+
+		// Should have 2 test suites: one for the test file and one for coverage
+		require.Len(t, test.Suites, 2)
+
+		// Find coverage suite
+		var coverageSuite *junitxml.TestSuite
+		for _, suite := range test.Suites {
+			if suite.Name == "coverage" {
+				coverageSuite = suite
+				break
+			}
+		}
+		require.NotNil(t, coverageSuite, "Coverage test suite not found")
+
+		// Verify coverage property exists
+		require.NotEmpty(t, coverageSuite.Properties)
+		found := false
+		for _, prop := range coverageSuite.Properties {
+			if prop.Name == "coverage" {
+				found = true
+				require.Contains(t, prop.Value, "%")
+				break
+			}
+		}
+		require.True(t, found, "Coverage property not found in JUnit XML")
+	})
+
+	t.Run("Coverage With Failing Tests", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, true, "json", "", "./testdata/failing.yml")
+		require.Equal(t, 1, got) // Should fail
+
+		output := buf.String()
+		lines := strings.Split(strings.TrimSpace(output), "\n")
+		// Find the JSON coverage report
+		var coverageJSON []string
+		jsonStarted := false
+		for _, line := range lines {
+			if strings.HasPrefix(line, "{") {
+				jsonStarted = true
+				coverageJSON = []string{line}
+			} else if jsonStarted && (strings.HasPrefix(line, "}") || strings.Contains(line, "]")) {
+				coverageJSON = append(coverageJSON, line)
+				if strings.HasPrefix(line, "}") {
+					break
+				}
+			} else if jsonStarted {
+				coverageJSON = append(coverageJSON, line)
+			}
+		}
+		jsonStr := strings.Join(coverageJSON, "\n")
+		require.NotEmpty(t, coverageJSON, "Coverage JSON report not found")
+
+		var report struct {
+			TestResults []TestResult `json:"test_results"`
+		}
+		err := json.Unmarshal([]byte(jsonStr), &report)
+		require.NoError(t, err)
+
+		// Verify that failing tests are recorded correctly
+		failingTests := 0
+		for _, testResult := range report.TestResults {
+			if !testResult.Passed {
+				failingTests++
+				require.NotEmpty(t, testResult.Error)
+			}
+		}
+		require.Greater(t, failingTests, 0, "Expected at least one failing test")
+	})
+}
+

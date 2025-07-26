@@ -1,0 +1,38 @@
+{
+  "coverage_percentage": 20,
+  "total_rules": 5,
+  "tested_rules": 1,
+  "untested_rules": [
+    "AlwaysFiring",
+    "InstanceDown",
+    "fixed_data",
+    "suquery_interval_test"
+  ],
+  "test_results": [
+    {
+      "name": "unnamed#0",
+      "passed": true,
+      "duration_ms": 13974200
+    },
+    {
+      "name": "unnamed#1",
+      "passed": true,
+      "duration_ms": 10564900
+    },
+    {
+      "name": "unnamed#2",
+      "passed": true,
+      "duration_ms": 16366900
+    },
+    {
+      "name": "unnamed#3",
+      "passed": true,
+      "duration_ms": 322071400
+    },
+    {
+      "name": "unnamed#4",
+      "passed": true,
+      "duration_ms": 23322300
+    }
+  ]
+}

@@ -16,17 +16,30 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/util/junitxml"
 )
 
+// TestResult represents the result of an individual test
+type TestResult struct {
+	Name     string        `json:"name"`
+	Passed   bool          `json:"passed"`
+	Duration time.Duration `json:"duration_ms"`
+	Error    string        `json:"error,omitempty"`
+}
+
 // CoverageTracker tracks the coverage of rules.
 type CoverageTracker struct {
-	rules    map[string]map[string]struct{}
-	untested map[string]map[string]struct{}
+	rules       map[string]map[string]struct{}
+	untested    map[string]map[string]struct{}
+	testResults []TestResult
 }
 
 // NewCoverageTracker creates a new CoverageTracker.
@@ -56,8 +69,45 @@ func (t *CoverageTracker) MarkRuleAsTested(ruleName string) {
 	}
 }
 
+// MarkRuleAsTestedBySelector marks rules as tested based on a set of label matchers.
+func (t *CoverageTracker) MarkRuleAsTestedBySelector(groups []*rules.Group, matchers []*labels.Matcher) {
+	for _, group := range groups {
+		for _, rule := range group.Rules() {
+			if t.ruleMatchesSelector(rule, matchers) {
+				t.MarkRuleAsTested(rule.Name())
+			}
+		}
+	}
+}
+
+// ruleMatchesSelector checks if a rule matches a set of label matchers.
+func (t *CoverageTracker) ruleMatchesSelector(rule rules.Rule, matchers []*labels.Matcher) bool {
+	// Check __name__ label first.
+	for _, matcher := range matchers {
+		if matcher.Name == labels.MetricName {
+			if matcher.Value == rule.Name() {
+				return true
+			}
+		}
+		// Also check other labels associated with the rule.
+		if ruleLabels := rule.Labels(); ruleLabels.Len() > 0 {
+			if labelValue := ruleLabels.Get(matcher.Name); labelValue != "" {
+				if matcher.Matches(labelValue) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// AddTestResult adds a test result to the tracker
+func (t *CoverageTracker) AddTestResult(result TestResult) {
+	t.testResults = append(t.testResults, result)
+}
+
 // PrintCoverageReport prints the coverage report to the specified output file.
-func (t *CoverageTracker) PrintCoverageReport(outputFile, outputFormat string) error {
+func (t *CoverageTracker) PrintCoverageReport(w io.Writer, outputFile, outputFormat string) error {
 	var (
 		totalRules      int
 		totalUntested   int
@@ -89,7 +139,11 @@ func (t *CoverageTracker) PrintCoverageReport(outputFile, outputFormat string) e
 
 	switch outputFormat {
 	case "json":
-		report, err = t.generateJSONReport(coveragePercent, totalRules, totalUntested, untestedRules)
+		if len(t.testResults) > 0 {
+			report, err = t.generateJSONReportWithTestResults(coveragePercent, totalRules, totalUntested, untestedRules, t.testResults)
+		} else {
+			report, err = t.generateJSONReport(coveragePercent, totalRules, totalUntested, untestedRules)
+		}
 	case "junit-xml":
 		// JUnit XML is handled by the junitxml package. We just add the coverage
 		// as a property to the test suite.
@@ -106,8 +160,12 @@ func (t *CoverageTracker) PrintCoverageReport(outputFile, outputFormat string) e
 		return os.WriteFile(outputFile, report, 0o644)
 	}
 
-	fmt.Println(string(report))
-	return nil
+	_, err = w.Write(report)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte("\n"))
+	return err
 }
 
 func (t *CoverageTracker) generateTextReport(coveragePercent float64, totalRules, totalUntested int, untestedRules map[string][]string) []byte {
@@ -127,19 +185,46 @@ func (t *CoverageTracker) generateTextReport(coveragePercent float64, totalRules
 	return []byte(b.String())
 }
 
-func (t *CoverageTracker) generateJSONReport(coveragePercent float64, totalRules, totalUntested int, untestedRules map[string][]string) ([]byte, error) {
+func (t *CoverageTracker) generateJSONReportWithTestResults(coveragePercent float64, totalRules, totalUntested int, untestedRules map[string][]string, testResults []TestResult) ([]byte, error) {
 	report := struct {
-		CoveragePercent float64             `json:"coveragePercent"`
-		TotalRules      int                 `json:"totalRules"`
-		UntestedRules   int                 `json:"untestedRules"`
-		Untested        map[string][]string `json:"untested,omitempty"`
+		CoveragePercent float64      `json:"coverage_percentage"`
+		TotalRules      int          `json:"total_rules"`
+		TestedRules     int          `json:"tested_rules"`
+		UntestedRules   []string     `json:"untested_rules"`
+		TestResults     []TestResult `json:"test_results"`
 	}{
 		CoveragePercent: coveragePercent,
 		TotalRules:      totalRules,
-		UntestedRules:   totalUntested,
-		Untested:        untestedRules,
+		TestedRules:     totalRules - totalUntested,
+		UntestedRules:   flattenUntestedRules(untestedRules),
+		TestResults:     testResults,
 	}
 	return json.MarshalIndent(report, "", "  ")
+}
+
+func (t *CoverageTracker) generateJSONReport(coveragePercent float64, totalRules, totalUntested int, untestedRules map[string][]string) ([]byte, error) {
+	report := struct {
+		CoveragePercent float64             `json:"coverage_percentage"`
+		TotalRules      int                 `json:"total_rules"`
+		TestedRules     int                 `json:"tested_rules"`
+		UntestedRules   []string            `json:"untested_rules"`
+	}{
+		CoveragePercent: coveragePercent,
+		TotalRules:      totalRules,
+		TestedRules:     totalRules - totalUntested,
+		UntestedRules:   flattenUntestedRules(untestedRules),
+	}
+	return json.MarshalIndent(report, "", "  ")
+}
+
+// flattenUntestedRules converts the map[string][]string to a flat []string
+func flattenUntestedRules(untestedRules map[string][]string) []string {
+	var result []string
+	for _, rules := range untestedRules {
+		result = append(result, rules...)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func (t *CoverageTracker) AddCoverageToJUnit(ts *junitxml.TestSuite) {

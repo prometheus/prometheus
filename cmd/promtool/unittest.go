@@ -59,8 +59,14 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 		run = regexp.MustCompile(strings.Join(runStrings, "|"))
 	}
 
+	// Global coverage tracker for aggregating across all files and test groups
+	var globalCoverageTracker *CoverageTracker
+	if coverage {
+		globalCoverageTracker = NewCoverageTracker()
+	}
+
 	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts, run, diffFlag, debug, ignoreUnknownFields, coverage, outputFormat, coverageOutput, junit.Suite(f)); errs != nil {
+		if errs := ruleUnitTest(f, queryOpts, run, diffFlag, debug, ignoreUnknownFields, coverage, outputFormat, coverageOutput, junit.Suite(f), results, globalCoverageTracker); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -72,9 +78,24 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 		}
 		fmt.Println()
 	}
-	err := junit.WriteXML(results)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to write JUnit XML: %s\n", err)
+
+	// Print global coverage report once at the end
+	if coverage && globalCoverageTracker != nil {
+		if outputFormat == "junit-xml" {
+			// For JUnit XML, add coverage to a dedicated suite
+			coverageSuite := junit.Suite("coverage")
+			globalCoverageTracker.AddCoverageToJUnit(coverageSuite)
+		} else {
+			if err := globalCoverageTracker.PrintCoverageReport(results, coverageOutput, outputFormat); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to write coverage report: %s\n", err)
+			}
+		}
+	}
+	if outputFormat == "junit-xml" {
+		err := junit.WriteXML(results)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to write JUnit XML: %s\n", err)
+		}
 	}
 	if failed {
 		return failureExitCode
@@ -82,7 +103,8 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields, coverage bool, outputFormat, coverageOutput string, ts *junitxml.TestSuite) []error {
+func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields, coverage bool, outputFormat, coverageOutput string, ts *junitxml.TestSuite, results io.Writer, globalCoverageTracker *CoverageTracker) []error {
+
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		ts.Abort(err)
@@ -131,25 +153,34 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *reg
 		if t.Interval == 0 {
 			t.Interval = unitTestInp.EvaluationInterval
 		}
-		var coverageTracker *CoverageTracker
-		if coverage {
-			coverageTracker = NewCoverageTracker()
+		// Track test start time for duration calculation
+		testStart := time.Now()
+		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, unitTestInp.FuzzyCompare, globalCoverageTracker, unitTestInp.RuleFiles...)
+		testDuration := time.Since(testStart)
+
+		// Record test result for coverage tracking
+		if globalCoverageTracker != nil {
+			testResult := TestResult{
+				Name:     testname,
+				Passed:   ers == nil,
+				Duration: testDuration,
+			}
+			if ers != nil {
+				// Combine all error messages
+				var errorMsgs []string
+				for _, e := range ers {
+					errorMsgs = append(errorMsgs, e.Error())
+				}
+				testResult.Error = strings.Join(errorMsgs, "; ")
+			}
+			globalCoverageTracker.AddTestResult(testResult)
 		}
 
-		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, unitTestInp.FuzzyCompare, coverageTracker, unitTestInp.RuleFiles...)
 		if ers != nil {
 			for _, e := range ers {
 				tc.Suite.Fail(e.Error())
 			}
 			errs = append(errs, ers...)
-		}
-
-		if coverage {
-			if outputFormat == "junit-xml" {
-				coverageTracker.AddCoverageToJUnit(tc.Suite)
-			} else if err := coverageTracker.PrintCoverageReport(coverageOutput, outputFormat); err != nil {
-				errs = append(errs, err)
-			}
 		}
 	}
 
@@ -462,25 +493,19 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 Outer:
 	for _, testCase := range tg.PromqlExprTests {
 		if coverageTracker != nil {
-			// Parse the expression to extract selectors and mark individual rules as tested
-			expr, err := parser.ParseExpr(testCase.Expr)
-			if err != nil {
-				// If parsing fails, fall back to marking the entire expression
-				// This preserves existing behavior for malformed expressions in tests
-				continue
-			}
+            expr, err := parser.ParseExpr(testCase.Expr)
+            if err != nil {
+                // Log error and continue - don't fail test execution.
+                fmt.Fprintf(os.Stderr, "  WARNING: could not parse expression %q for coverage tracking: %s\n", testCase.Expr, err)
+                continue
+            }
 
-			// Extract all selectors from the parsed expression
-			selectors := parser.ExtractSelectors(expr)
-			for _, selectorMatchers := range selectors {
-				for _, matcher := range selectorMatchers {
-					// Look for __name__ label matchers to identify rule names
-					if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual {
-						coverageTracker.MarkRuleAsTested(matcher.Value)
-					}
-				}
-			}
-		}
+            // Mark rules as tested based on extracted selectors.
+            selectors := parser.ExtractSelectors(expr)
+            for _, selectorGroup := range selectors {
+                coverageTracker.MarkRuleAsTestedBySelector(groups, selectorGroup)
+            }
+        }
 		got, err := query(suite.Context(), testCase.Expr, mint.Add(time.Duration(testCase.EvalTime)),
 			suite.QueryEngine(), suite.Queryable())
 		if err != nil {
