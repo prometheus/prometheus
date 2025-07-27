@@ -8,10 +8,10 @@ groups:
       severity: page
     annotations:
       summary: High request latency
-  - alert: HighRequestLatency
+  - alert: HighRequestLatencyDuplicate
     expr: job:request_latency_seconds:mean5m{job="myjob"} > 0.5
     for: 10m
     labels:
       severity: page
     annotations:
-      summary: High request latency
+      summary: High request latency duplicate

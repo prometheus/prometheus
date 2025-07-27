@@ -4,4 +4,4 @@ groups:
   - name: at-modifier
     rules:
       - record: x
-        expr: "requests @ 1000"
+        expr: "requests"

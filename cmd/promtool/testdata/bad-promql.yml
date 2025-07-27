@@ -9,4 +9,4 @@ tests:
 
     promql_expr_test:
       # This PromQL generates an error.
-      - expr: "join_1 + on(a) join_2"
+      - expr: "join_1 + on(a) group_left() join_2"

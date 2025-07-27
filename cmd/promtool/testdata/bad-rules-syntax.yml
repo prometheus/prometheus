@@ -4,4 +4,4 @@ groups:
   - name: bad-syntax
     rules:
       - record: x
-        expr: 'test +'
+        expr: 'test + 1'

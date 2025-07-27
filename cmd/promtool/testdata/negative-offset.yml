@@ -4,4 +4,4 @@ groups:
   - name: negative-offset
     rules:
       - record: x
-        expr: "requests offset -5m"
+        expr: "requests offset 5m"
