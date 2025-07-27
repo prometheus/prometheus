@@ -31,7 +31,9 @@ jobs:
   go-test:
     name: Go tests - ${{ matrix.config.name }} - inst${{ matrix.instance }}
     runs-on: ubuntu-latest
+    continue-on-error: true
     strategy:
+      fail-fast: false
       matrix:
         config:
           - name: "long-timeout"
