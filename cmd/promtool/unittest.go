@@ -46,11 +46,11 @@ import (
 
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
-func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
-	return RulesUnitTestResult(io.Discard, queryOpts, runStrings, diffFlag, debug, ignoreUnknownFields, files...)
+func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, warnAsError, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
+	return RulesUnitTestResult(io.Discard, queryOpts, runStrings, warnAsError, diffFlag, debug, ignoreUnknownFields, files...)
 }
 
-func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
+func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, warnAsError, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
 	failed := false
 	junit := &junitxml.JUnitXML{}
 
@@ -58,9 +58,8 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	if runStrings != nil {
 		run = regexp.MustCompile(strings.Join(runStrings, "|"))
 	}
-
 	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f)); errs != nil {
+		if errs := ruleUnitTest(f, queryOpts, run, diffFlag, debug, ignoreUnknownFields, warnAsError, junit.Suite(f)); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -82,7 +81,7 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite) []error {
+func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields, warnAsError bool, ts *junitxml.TestSuite) []error {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		ts.Abort(err)
@@ -94,7 +93,7 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *reg
 		ts.Abort(err)
 		return []error{err}
 	}
-	if err := resolveAndGlobFilepaths(filepath.Dir(filename), &unitTestInp); err != nil {
+	if err := resolveAndGlobFilepaths(filepath.Dir(filename), &unitTestInp, warnAsError); err != nil {
 		ts.Abort(err)
 		return []error{err}
 	}
@@ -165,7 +164,8 @@ type unitTestFile struct {
 
 // resolveAndGlobFilepaths joins all relative paths in a configuration
 // with a given base directory and replaces all globs with matching files.
-func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
+func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile, warnAsError bool) error {
+	var missingPatterns []string
 	for i, rf := range utf.RuleFiles {
 		if rf != "" && !filepath.IsAbs(rf) {
 			utf.RuleFiles[i] = filepath.Join(baseDir, rf)
@@ -179,10 +179,19 @@ func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
 			return err
 		}
 		if len(m) == 0 {
-			fmt.Fprintln(os.Stderr, "  WARNING: no file match pattern", rf)
+			if warnAsError {
+				missingPatterns = append(missingPatterns, rf)
+			} else {
+				fmt.Fprintln(os.Stderr, "  WARNING: no file match pattern", rf)
+			}
 		}
 		globbedFiles = append(globbedFiles, m...)
 	}
+
+	if warnAsError && len(missingPatterns) > 0 {
+		return fmt.Errorf("  no file match patterns %q", missingPatterns)
+	}
+
 	utf.RuleFiles = globbedFiles
 	return nil
 }
