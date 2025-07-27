@@ -41,7 +41,7 @@ jobs:
             tcp_tw_reuse: 0
             port_range: "60000 60999"
           - name: "short-timeout"
-            tcp_fin_timeout: 1
+            tcp_fin_timeout: 0
             tcp_tw_reuse: 0
             port_range: "40000 60999"
         instance: [1, 2, 3]
