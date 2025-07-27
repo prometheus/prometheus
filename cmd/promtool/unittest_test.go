@@ -37,7 +37,6 @@ import (
 )
 
 func TestRulesUnitTest(t *testing.T) {
-
 	t.Parallel()
 
 	type args struct {
@@ -53,13 +52,10 @@ func TestRulesUnitTest(t *testing.T) {
 
 		want int
 	}{
-
 		{
-
 			name: "Passing Unit Tests",
 
 			args: args{
-
 				files: []string{"./testdata/unittest.yml"},
 			},
 
@@ -67,11 +63,9 @@ func TestRulesUnitTest(t *testing.T) {
 		},
 
 		{
-
 			name: "Long evaluation interval",
 
 			args: args{
-
 				files: []string{"./testdata/long-period.yml"},
 			},
 
@@ -79,11 +73,9 @@ func TestRulesUnitTest(t *testing.T) {
 		},
 
 		{
-
 			name: "Bad input series",
 
 			args: args{
-
 				files: []string{"./testdata/bad-input-series.yml"},
 			},
 
@@ -91,11 +83,9 @@ func TestRulesUnitTest(t *testing.T) {
 		},
 
 		{
-
 			name: "Bad PromQL",
 
 			args: args{
-
 				files: []string{"./testdata/bad-promql.yml"},
 			},
 
@@ -103,11 +93,9 @@ func TestRulesUnitTest(t *testing.T) {
 		},
 
 		{
-
 			name: "Bad rules (syntax error)",
 
 			args: args{
-
 				files: []string{"./testdata/bad-rules-syntax-test.yml"},
 			},
 
@@ -115,11 +103,9 @@ func TestRulesUnitTest(t *testing.T) {
 		},
 
 		{
-
 			name: "Bad rules (error evaluating)",
 
 			args: args{
-
 				files: []string{"./testdata/bad-rules-error-test.yml"},
 			},
 
@@ -127,11 +113,9 @@ func TestRulesUnitTest(t *testing.T) {
 		},
 
 		{
-
 			name: "Simple failing test",
 
 			args: args{
-
 				files: []string{"./testdata/failing.yml"},
 			},
 
@@ -139,11 +123,9 @@ func TestRulesUnitTest(t *testing.T) {
 		},
 
 		{
-
 			name: "Disabled feature (@ modifier)",
 
 			args: args{
-
 				files: []string{"./testdata/at-modifier-test.yml"},
 			},
 
@@ -151,16 +133,13 @@ func TestRulesUnitTest(t *testing.T) {
 		},
 
 		{
-
 			name: "Enabled feature (@ modifier)",
 
 			args: args{
-
 				files: []string{"./testdata/at-modifier-test.yml"},
 			},
 
 			queryOpts: promqltest.LazyLoaderOpts{
-
 				EnableAtModifier: true,
 			},
 
@@ -168,11 +147,9 @@ func TestRulesUnitTest(t *testing.T) {
 		},
 
 		{
-
 			name: "Disabled feature (negative offset)",
 
 			args: args{
-
 				files: []string{"./testdata/negative-offset-test.yml"},
 			},
 
@@ -180,16 +157,13 @@ func TestRulesUnitTest(t *testing.T) {
 		},
 
 		{
-
 			name: "Enabled feature (negative offset)",
 
 			args: args{
-
 				files: []string{"./testdata/negative-offset-test.yml"},
 			},
 
 			queryOpts: promqltest.LazyLoaderOpts{
-
 				EnableNegativeOffset: true,
 			},
 
@@ -197,16 +171,13 @@ func TestRulesUnitTest(t *testing.T) {
 		},
 
 		{
-
 			name: "No test group interval",
 
 			args: args{
-
 				files: []string{"./testdata/no-test-group-interval.yml"},
 			},
 
 			queryOpts: promqltest.LazyLoaderOpts{
-
 				EnableNegativeOffset: true,
 			},
 
@@ -221,10 +192,8 @@ func TestRulesUnitTest(t *testing.T) {
 	for _, tt := range tests {
 
 		if (tt.queryOpts == promqltest.LazyLoaderOpts{
-
 			EnableNegativeOffset: true,
 		} || tt.queryOpts == promqltest.LazyLoaderOpts{
-
 			EnableAtModifier: true,
 		}) {
 
@@ -235,29 +204,22 @@ func TestRulesUnitTest(t *testing.T) {
 		}
 
 		t.Run(tt.name, func(t *testing.T) {
-
 			t.Parallel()
 
 			if got := RulesUnitTest(tt.queryOpts, nil, false, false, false, tt.args.files...); got != tt.want {
-
 				t.Errorf("RulesUnitTest() = %v, want %v", got, tt.want)
-
 			}
-
 		})
 
 	}
 
 	t.Run("Junit xml output ", func(t *testing.T) {
-
 		t.Parallel()
 
 		var buf bytes.Buffer
 
 		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, false, "text", "", 0.0, reuseFiles...); got != 1 {
-
 			t.Errorf("RulesUnitTestResults() = %v, want 1", got)
-
 		}
 
 		var test junitxml.JUnitXML
@@ -265,7 +227,6 @@ func TestRulesUnitTest(t *testing.T) {
 		output := buf.Bytes()
 
 		err := xml.Unmarshal(output, &test)
-
 		if err != nil {
 
 			fmt.Println("error in decoding XML:", err)
@@ -285,21 +246,15 @@ func TestRulesUnitTest(t *testing.T) {
 		total = len(test.Suites)
 
 		if total != len(reuseFiles) {
-
 			t.Errorf("JUnit output had %d testsuite elements; expected %d\n", total, len(reuseFiles))
-
 		}
 
 		for _, i := range test.Suites {
 
 			if i.FailureCount == 0 {
-
 				passes++
-
 			} else {
-
 				failures++
-
 			}
 
 			cases += len(i.Cases)
@@ -307,23 +262,16 @@ func TestRulesUnitTest(t *testing.T) {
 		}
 
 		if total != passes+failures {
-
 			t.Errorf("JUnit output mismatch: Total testsuites (%d) does not equal the sum of passes (%d) and failures (%d).", total, passes, failures)
-
 		}
 
 		if cases < total {
-
 			t.Errorf("JUnit output had %d suites without test cases\n", total-cases)
-
 		}
-
 	})
-
 }
 
 func TestRulesUnitTestRun(t *testing.T) {
-
 	t.Parallel()
 
 	type args struct {
@@ -343,13 +291,10 @@ func TestRulesUnitTestRun(t *testing.T) {
 
 		ignoreUnknownFields bool
 	}{
-
 		{
-
 			name: "Test all without run arg",
 
 			args: args{
-
 				run: nil,
 
 				files: []string{"./testdata/rules_run.yml"},
@@ -359,11 +304,9 @@ func TestRulesUnitTestRun(t *testing.T) {
 		},
 
 		{
-
 			name: "Test all with run arg",
 
 			args: args{
-
 				run: []string{"correct", "wrong"},
 
 				files: []string{"./testdata/rules_run.yml"},
@@ -373,11 +316,9 @@ func TestRulesUnitTestRun(t *testing.T) {
 		},
 
 		{
-
 			name: "Test correct",
 
 			args: args{
-
 				run: []string{"correct"},
 
 				files: []string{"./testdata/rules_run.yml"},
@@ -387,11 +328,9 @@ func TestRulesUnitTestRun(t *testing.T) {
 		},
 
 		{
-
 			name: "Test wrong",
 
 			args: args{
-
 				run: []string{"wrong"},
 
 				files: []string{"./testdata/rules_run.yml"},
@@ -401,11 +340,9 @@ func TestRulesUnitTestRun(t *testing.T) {
 		},
 
 		{
-
 			name: "Test all with extra fields",
 
 			args: args{
-
 				files: []string{"./testdata/rules_run_extrafields.yml"},
 			},
 
@@ -415,11 +352,9 @@ func TestRulesUnitTestRun(t *testing.T) {
 		},
 
 		{
-
 			name: "Test precise floating point comparison expected failure",
 
 			args: args{
-
 				files: []string{"./testdata/rules_run_no_fuzzy.yml"},
 			},
 
@@ -427,11 +362,9 @@ func TestRulesUnitTestRun(t *testing.T) {
 		},
 
 		{
-
 			name: "Test fuzzy floating point comparison correct match",
 
 			args: args{
-
 				run: []string{"correct"},
 
 				files: []string{"./testdata/rules_run_fuzzy.yml"},
@@ -441,11 +374,9 @@ func TestRulesUnitTestRun(t *testing.T) {
 		},
 
 		{
-
 			name: "Test fuzzy floating point comparison wrong match",
 
 			args: args{
-
 				run: []string{"wrong"},
 
 				files: []string{"./testdata/rules_run_fuzzy.yml"},
@@ -456,23 +387,17 @@ func TestRulesUnitTestRun(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-
 		t.Run(tt.name, func(t *testing.T) {
-
 			t.Parallel()
 
 			got := RulesUnitTest(tt.queryOpts, tt.args.run, false, false, tt.ignoreUnknownFields, tt.args.files...)
 
 			require.Equal(t, tt.want, got)
-
 		})
-
 	}
-
 }
 
 func TestRulesUnitTestCoverage(t *testing.T) {
-
 	t.Parallel()
 
 	tests := []struct {
@@ -484,9 +409,7 @@ func TestRulesUnitTestCoverage(t *testing.T) {
 
 		want int
 	}{
-
 		{
-
 			name: "Coverage enabled",
 
 			files: []string{"./testdata/unittest.yml"},
@@ -497,7 +420,6 @@ func TestRulesUnitTestCoverage(t *testing.T) {
 		},
 
 		{
-
 			name: "Coverage disabled",
 
 			files: []string{"./testdata/unittest.yml"},
@@ -509,9 +431,7 @@ func TestRulesUnitTestCoverage(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-
 		t.Run(tt.name, func(t *testing.T) {
-
 			t.Parallel()
 
 			var buf bytes.Buffer
@@ -523,15 +443,11 @@ func TestRulesUnitTestCoverage(t *testing.T) {
 			// The coverage output goes to stdout/stderr in the current implementation
 
 			// We just verify that the function runs without error when coverage is enabled
-
 		})
-
 	}
-
 }
 
 func TestCoverageTracker(t *testing.T) {
-
 	t.Parallel()
 
 	tracker := newCoverageTracker()
@@ -553,7 +469,6 @@ func TestCoverageTracker(t *testing.T) {
 	tracker.testedRules["test.yml"] = make(map[string]bool)
 
 	tracker.allRules["test.yml"]["test_rule"] = &ruleInfo{
-
 		Name: "test_rule",
 
 		Type: "recording",
@@ -566,15 +481,12 @@ func TestCoverageTracker(t *testing.T) {
 	require.Equal(t, []string{"test_case"}, tracker.testCaseMapping["test_rule"])
 
 	require.True(t, tracker.testedRules["test.yml"]["test_rule"])
-
 }
 
 func TestCoverageOutputFormats(t *testing.T) {
-
 	t.Parallel()
 
 	report := &coverageReport{
-
 		TotalRules: 5,
 
 		TestedRules: 4,
@@ -582,9 +494,7 @@ func TestCoverageOutputFormats(t *testing.T) {
 		Coverage: 80.0,
 
 		Files: map[string]*fileCoverageInfo{
-
 			"test.yml": {
-
 				File: "test.yml",
 
 				TotalRules: 5,
@@ -594,9 +504,7 @@ func TestCoverageOutputFormats(t *testing.T) {
 				Coverage: 80.0,
 
 				Rules: map[string]*ruleCoverageInfo{
-
 					"rule1": {
-
 						Name: "rule1",
 
 						Type: "recording",
@@ -615,7 +523,6 @@ func TestCoverageOutputFormats(t *testing.T) {
 
 		format string
 	}{
-
 		{"Text format", "text"},
 
 		{"JSON format", "json"},
@@ -624,17 +531,12 @@ func TestCoverageOutputFormats(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-
 		t.Run(tt.name, func(t *testing.T) {
-
 			t.Parallel()
 
 			err := outputCoverageReport(report, tt.format, "")
 
 			require.NoError(t, err)
-
 		})
-
 	}
-
 }

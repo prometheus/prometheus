@@ -75,13 +75,11 @@ import (
 var promqlEnableDelayedNameRemoval = false
 
 func init() {
-
 	// This can be removed when the legacy global mode is fully deprecated.
 
 	//nolint:staticcheck
 
 	model.NameValidationScheme = model.UTF8Validation
-
 }
 
 const (
@@ -119,7 +117,6 @@ var (
 const httpConfigFileDescription = "HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool"
 
 func main() {
-
 	var (
 		httpRoundTripper = api.DefaultRoundTripper
 
@@ -506,27 +503,19 @@ func main() {
 	if httpConfigFilePath != "" {
 
 		if serverURL != nil && serverURL.User.Username() != "" {
-
 			kingpin.Fatalf("Cannot set base auth in the server URL and use a http.config.file at the same time")
-
 		}
 
 		var err error
 
 		httpConfig, _, err := promconfig.LoadHTTPConfigFile(httpConfigFilePath)
-
 		if err != nil {
-
 			kingpin.Fatalf("Failed to load HTTP config file: %v", err)
-
 		}
 
 		httpRoundTripper, err = promconfig.NewRoundTripperFromConfig(*httpConfig, "promtool", promconfig.WithUserAgent(version.ComponentUserAgent("promtool")))
-
 		if err != nil {
-
 			kingpin.Fatalf("Failed to create a new HTTP round tripper: %v", err)
-
 		}
 
 	}
@@ -536,7 +525,6 @@ func main() {
 		opts := strings.Split(f, ",")
 
 		for _, o := range opts {
-
 			switch o {
 
 			case "promql-experimental-functions":
@@ -556,7 +544,6 @@ func main() {
 				fmt.Printf("  WARNING: Unknown feature passed to --enable-feature: %s", o)
 
 			}
-
 		}
 
 	}
@@ -628,15 +615,12 @@ func main() {
 		results := io.Discard
 
 		if *junitOutFile != nil {
-
 			results = *junitOutFile
-
 		}
 
 		os.Exit(RulesUnitTestResult(results,
 
 			promqltest.LazyLoaderOpts{
-
 				EnableAtModifier: true,
 
 				EnableNegativeOffset: true,
@@ -720,11 +704,9 @@ func main() {
 		os.Exit(checkErr(labelsDeletePromQL(*promQLLabelsDeleteQuery, *promQLLabelsDeleteName)))
 
 	}
-
 }
 
 func checkExperimental(f bool) {
-
 	if !f {
 
 		fmt.Fprintln(os.Stderr, "This command is experimental and requires the --experimental flag to be set.")
@@ -732,7 +714,6 @@ func checkExperimental(f bool) {
 		os.Exit(1)
 
 	}
-
 }
 
 var errLint = errors.New("lint error")
@@ -748,18 +729,15 @@ type rulesLintConfig struct {
 }
 
 func newRulesLintConfig(stringVal string, fatal, ignoreUnknownFields bool) rulesLintConfig {
-
 	items := strings.Split(stringVal, ",")
 
 	ls := rulesLintConfig{
-
 		fatal: fatal,
 
 		ignoreUnknownFields: ignoreUnknownFields,
 	}
 
 	for _, setting := range items {
-
 		switch setting {
 
 		case lintOptionAll:
@@ -777,17 +755,13 @@ func newRulesLintConfig(stringVal string, fatal, ignoreUnknownFields bool) rules
 			fmt.Printf("WARNING: unknown lint option: %q\n", setting)
 
 		}
-
 	}
 
 	return ls
-
 }
 
 func (ls rulesLintConfig) lintDuplicateRules() bool {
-
 	return ls.all || ls.duplicateRules
-
 }
 
 type configLintConfig struct {
@@ -797,11 +771,8 @@ type configLintConfig struct {
 }
 
 func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, lookbackDelta model.Duration) configLintConfig {
-
 	c := configLintConfig{
-
 		rulesLintConfig: rulesLintConfig{
-
 			fatal: fatal,
 		},
 	}
@@ -811,7 +782,6 @@ func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, loo
 	var rulesOptions []string
 
 	for _, option := range strings.Split(optionsStr, ",") {
-
 		switch option {
 
 		case lintOptionAll, lintOptionTooLongScrapeInterval:
@@ -819,9 +789,7 @@ func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, loo
 			c.lookbackDelta = lookbackDelta
 
 			if option == lintOptionAll {
-
 				rulesOptions = append(rulesOptions, lintOptionAll)
-
 			}
 
 		case lintOptionNone:
@@ -833,7 +801,6 @@ func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, loo
 			rulesOptions = append(rulesOptions, option)
 
 		}
-
 	}
 
 	if lintNone {
@@ -845,27 +812,20 @@ func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, loo
 	}
 
 	if len(rulesOptions) > 0 {
-
 		c.rulesLintConfig = newRulesLintConfig(strings.Join(rulesOptions, ","), fatal, ignoreUnknownFields)
-
 	}
 
 	return c
-
 }
 
 // CheckServerStatus - healthy & ready.
 
 func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper http.RoundTripper) error {
-
 	if serverURL.Scheme == "" {
-
 		serverURL.Scheme = "http"
-
 	}
 
 	config := api.Config{
-
 		Address: serverURL.String() + checkEndpoint,
 
 		RoundTripper: roundTripper,
@@ -874,7 +834,6 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 	// Create new client.
 
 	c, err := api.NewClient(config)
-
 	if err != nil {
 
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
@@ -884,11 +843,8 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 	}
 
 	request, err := http.NewRequest(http.MethodGet, config.Address, nil)
-
 	if err != nil {
-
 		return err
-
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -896,29 +852,22 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 	defer cancel()
 
 	response, dataBytes, err := c.Do(ctx, request)
-
 	if err != nil {
-
 		return err
-
 	}
 
 	if response.StatusCode != http.StatusOK {
-
 		return fmt.Errorf("check failed: URL=%s, status=%d", serverURL, response.StatusCode)
-
 	}
 
 	fmt.Fprintln(os.Stderr, "  SUCCESS: ", string(dataBytes))
 
 	return nil
-
 }
 
 // CheckConfig validates configuration files.
 
 func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig, files ...string) int {
-
 	failed := false
 
 	hasErrors := false
@@ -938,9 +887,7 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig,
 		} else {
 
 			if len(ruleFiles) > 0 {
-
 				fmt.Printf("  SUCCESS: %d rule files found\n", len(ruleFiles))
-
 			}
 
 			fmt.Printf(" SUCCESS: %s is valid prometheus config file syntax\n", f)
@@ -966,25 +913,19 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig,
 	}
 
 	if failed && hasErrors {
-
 		return failureExitCode
-
 	}
 
 	if failed && lintSettings.fatal {
-
 		return lintErrExitCode
-
 	}
 
 	return successExitCode
-
 }
 
 // CheckWebConfig validates web configuration files.
 
 func CheckWebConfig(files ...string) int {
-
 	failed := false
 
 	for _, f := range files {
@@ -1004,55 +945,40 @@ func CheckWebConfig(files ...string) int {
 	}
 
 	if failed {
-
 		return failureExitCode
-
 	}
 
 	return successExitCode
-
 }
 
 func checkFileExists(fn string) error {
-
 	// Nothing set, nothing to error on.
 
 	if fn == "" {
-
 		return nil
-
 	}
 
 	_, err := os.Stat(fn)
 
 	return err
-
 }
 
 func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]string, []*config.ScrapeConfig, error) {
-
 	fmt.Println("Checking", filename)
 
 	cfg, err := config.LoadFile(filename, agentMode, promslog.NewNopLogger())
-
 	if err != nil {
-
 		return nil, nil, err
-
 	}
 
 	var ruleFiles []string
 
 	if !checkSyntaxOnly {
-
 		for _, rf := range cfg.RuleFiles {
 
 			rfs, err := filepath.Glob(rf)
-
 			if err != nil {
-
 				return nil, nil, err
-
 			}
 
 			// If an explicit file was given, error if it is not accessible.
@@ -1060,15 +986,11 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 			if !strings.Contains(rf, "*") {
 
 				if len(rfs) == 0 {
-
 					return nil, nil, fmt.Errorf("%q does not point to an existing file", rf)
-
 				}
 
 				if err := checkFileExists(rfs[0]); err != nil {
-
 					return nil, nil, fmt.Errorf("error checking rule file %q: %w", rfs[0], err)
-
 				}
 
 			}
@@ -1076,25 +998,19 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 			ruleFiles = append(ruleFiles, rfs...)
 
 		}
-
 	}
 
 	var scfgs []*config.ScrapeConfig
 
 	if checkSyntaxOnly {
-
 		scfgs = cfg.ScrapeConfigs
-
 	} else {
 
 		var err error
 
 		scfgs, err = cfg.GetScrapeConfigs()
-
 		if err != nil {
-
 			return nil, nil, fmt.Errorf("error loading scrape configs: %w", err)
-
 		}
 
 	}
@@ -1102,49 +1018,35 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 	for _, scfg := range scfgs {
 
 		if !checkSyntaxOnly && scfg.HTTPClientConfig.Authorization != nil {
-
 			if err := checkFileExists(scfg.HTTPClientConfig.Authorization.CredentialsFile); err != nil {
-
 				return nil, nil, fmt.Errorf("error checking authorization credentials or bearer token file %q: %w", scfg.HTTPClientConfig.Authorization.CredentialsFile, err)
-
 			}
-
 		}
 
 		if err := checkTLSConfig(scfg.HTTPClientConfig.TLSConfig, checkSyntaxOnly); err != nil {
-
 			return nil, nil, err
-
 		}
 
 		for _, c := range scfg.ServiceDiscoveryConfigs {
-
 			switch c := c.(type) {
 
 			case *kubernetes.SDConfig:
 
 				if err := checkTLSConfig(c.HTTPClientConfig.TLSConfig, checkSyntaxOnly); err != nil {
-
 					return nil, nil, err
-
 				}
 
 			case *file.SDConfig:
 
 				if checkSyntaxOnly {
-
 					break
-
 				}
 
 				for _, file := range c.Files {
 
 					files, err := filepath.Glob(file)
-
 					if err != nil {
-
 						return nil, nil, err
-
 					}
 
 					if len(files) != 0 {
@@ -1154,17 +1056,12 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 							var targetGroups []*targetgroup.Group
 
 							targetGroups, err = checkSDFile(f)
-
 							if err != nil {
-
 								return nil, nil, fmt.Errorf("checking SD file %q: %w", file, err)
-
 							}
 
 							if err := checkTargetGroupsForScrapeConfig(targetGroups, scfg); err != nil {
-
 								return nil, nil, err
-
 							}
 
 						}
@@ -1180,13 +1077,10 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 			case discovery.StaticConfig:
 
 				if err := checkTargetGroupsForScrapeConfig(c, scfg); err != nil {
-
 					return nil, nil, err
-
 				}
 
 			}
-
 		}
 
 	}
@@ -1194,27 +1088,20 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 	alertConfig := cfg.AlertingConfig
 
 	for _, amcfg := range alertConfig.AlertmanagerConfigs {
-
 		for _, c := range amcfg.ServiceDiscoveryConfigs {
-
 			switch c := c.(type) {
 
 			case *file.SDConfig:
 
 				if checkSyntaxOnly {
-
 					break
-
 				}
 
 				for _, file := range c.Files {
 
 					files, err := filepath.Glob(file)
-
 					if err != nil {
-
 						return nil, nil, err
-
 					}
 
 					if len(files) != 0 {
@@ -1224,17 +1111,12 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 							var targetGroups []*targetgroup.Group
 
 							targetGroups, err = checkSDFile(f)
-
 							if err != nil {
-
 								return nil, nil, fmt.Errorf("checking SD file %q: %w", file, err)
-
 							}
 
 							if err := checkTargetGroupsForAlertmanager(targetGroups, amcfg); err != nil {
-
 								return nil, nil, err
-
 							}
 
 						}
@@ -1250,75 +1132,51 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 			case discovery.StaticConfig:
 
 				if err := checkTargetGroupsForAlertmanager(c, amcfg); err != nil {
-
 					return nil, nil, err
-
 				}
 
 			}
-
 		}
-
 	}
 
 	return ruleFiles, scfgs, nil
-
 }
 
 func checkTLSConfig(tlsConfig promconfig.TLSConfig, checkSyntaxOnly bool) error {
-
 	if len(tlsConfig.CertFile) > 0 && len(tlsConfig.KeyFile) == 0 {
-
 		return fmt.Errorf("client cert file %q specified without client key file", tlsConfig.CertFile)
-
 	}
 
 	if len(tlsConfig.KeyFile) > 0 && len(tlsConfig.CertFile) == 0 {
-
 		return fmt.Errorf("client key file %q specified without client cert file", tlsConfig.KeyFile)
-
 	}
 
 	if checkSyntaxOnly {
-
 		return nil
-
 	}
 
 	if err := checkFileExists(tlsConfig.CertFile); err != nil {
-
 		return fmt.Errorf("error checking client cert file %q: %w", tlsConfig.CertFile, err)
-
 	}
 
 	if err := checkFileExists(tlsConfig.KeyFile); err != nil {
-
 		return fmt.Errorf("error checking client key file %q: %w", tlsConfig.KeyFile, err)
-
 	}
 
 	return nil
-
 }
 
 func checkSDFile(filename string) ([]*targetgroup.Group, error) {
-
 	fd, err := os.Open(filename)
-
 	if err != nil {
-
 		return nil, err
-
 	}
 
 	defer fd.Close()
 
 	content, err := io.ReadAll(fd)
-
 	if err != nil {
-
 		return nil, err
-
 	}
 
 	var targetGroups []*targetgroup.Group
@@ -1328,17 +1186,13 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 	case ".json":
 
 		if err := json.Unmarshal(content, &targetGroups); err != nil {
-
 			return nil, err
-
 		}
 
 	case ".yml", ".yaml":
 
 		if err := yaml.UnmarshalStrict(content, &targetGroups); err != nil {
-
 			return nil, err
-
 		}
 
 	default:
@@ -1348,57 +1202,41 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 	}
 
 	for i, tg := range targetGroups {
-
 		if tg == nil {
-
 			return nil, fmt.Errorf("nil target group item found (index %d)", i)
-
 		}
-
 	}
 
 	return targetGroups, nil
-
 }
 
 // CheckRules validates rule files.
 
 func CheckRules(ls rulesLintConfig, files ...string) int {
-
 	failed := false
 
 	hasErrors := false
 
 	if len(files) == 0 {
-
 		failed, hasErrors = checkRulesFromStdin(ls)
-
 	} else {
-
 		failed, hasErrors = checkRules(files, ls)
-
 	}
 
 	if failed && hasErrors {
-
 		return failureExitCode
-
 	}
 
 	if failed && ls.fatal {
-
 		return lintErrExitCode
-
 	}
 
 	return successExitCode
-
 }
 
 // checkRulesFromStdin validates rule from stdin.
 
 func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
-
 	failed := false
 
 	hasErrors := false
@@ -1406,7 +1244,6 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 	fmt.Println("Checking standard input")
 
 	data, err := io.ReadAll(os.Stdin)
-
 	if err != nil {
 
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
@@ -1432,9 +1269,7 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 		}
 
 		if hasErrors {
-
 			return failed, hasErrors
-
 		}
 
 	}
@@ -1444,35 +1279,27 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 		fmt.Fprintln(os.Stderr, "  FAILED:")
 
 		for _, e := range errs {
-
 			fmt.Fprintln(os.Stderr, e.Error())
-
 		}
 
 		failed = true
 
 		for _, err := range errs {
-
 			hasErrors = hasErrors || !errors.Is(err, errLint)
-
 		}
 
 	} else {
-
 		fmt.Printf("  SUCCESS: %d rules found\n", n)
-
 	}
 
 	fmt.Println()
 
 	return failed, hasErrors
-
 }
 
 // checkRules validates rule files.
 
 func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
-
 	failed := false
 
 	hasErrors := false
@@ -1498,9 +1325,7 @@ func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 			}
 
 			if hasErrors {
-
 				continue
-
 			}
 
 		}
@@ -1510,23 +1335,17 @@ func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 
 			for _, e := range errs {
-
 				fmt.Fprintln(os.Stderr, e.Error())
-
 			}
 
 			failed = true
 
 			for _, err := range errs {
-
 				hasErrors = hasErrors || !errors.Is(err, errLint)
-
 			}
 
 		} else {
-
 			fmt.Printf("  SUCCESS: %d rules found\n", n)
-
 		}
 
 		fmt.Println()
@@ -1534,17 +1353,13 @@ func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 	}
 
 	return failed, hasErrors
-
 }
 
 func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings rulesLintConfig) (int, []error) {
-
 	numRules := 0
 
 	for _, rg := range rgs.Groups {
-
 		numRules += len(rg.Rules)
-
 	}
 
 	if lintSettings.lintDuplicateRules() {
@@ -1560,9 +1375,7 @@ func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings rulesLintConfig) (int
 				errMessage += fmt.Sprintf("Metric: %s\nLabel(s):\n", n.metric)
 
 				n.label.Range(func(l labels.Label) {
-
 					errMessage += fmt.Sprintf("\t%s: %s\n", l.Name, l.Value)
-
 				})
 
 			}
@@ -1576,13 +1389,10 @@ func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings rulesLintConfig) (int
 	}
 
 	return numRules, nil
-
 }
 
 func lintScrapeConfigs(scrapeConfigs []*config.ScrapeConfig, lintSettings configLintConfig) bool {
-
 	for _, scfg := range scrapeConfigs {
-
 		if lintSettings.lookbackDelta > 0 && scfg.ScrapeInterval >= lintSettings.lookbackDelta {
 
 			fmt.Fprintf(os.Stderr, "  FAILED: too long scrape interval found, data point will be marked as stale - job: %s, interval: %s\n", scfg.JobName, scfg.ScrapeInterval)
@@ -1590,11 +1400,9 @@ func lintScrapeConfigs(scrapeConfigs []*config.ScrapeConfig, lintSettings config
 			return true
 
 		}
-
 	}
 
 	return false
-
 }
 
 type compareRuleType struct {
@@ -1612,42 +1420,30 @@ func (c compareRuleTypes) Swap(i, j int) { c[i], c[j] = c[j], c[i] }
 func (c compareRuleTypes) Less(i, j int) bool { return compare(c[i], c[j]) < 0 }
 
 func compare(a, b compareRuleType) int {
-
 	if res := strings.Compare(a.metric, b.metric); res != 0 {
-
 		return res
-
 	}
 
 	return labels.Compare(a.label, b.label)
-
 }
 
 func checkDuplicates(groups []rulefmt.RuleGroup) []compareRuleType {
-
 	var duplicates []compareRuleType
 
 	var cRules compareRuleTypes
 
 	for _, group := range groups {
-
 		for _, rule := range group.Rules {
-
 			cRules = append(cRules, compareRuleType{
-
 				metric: ruleMetric(rule),
 
 				label: rules.FromMaps(group.Labels, rule.Labels),
 			})
-
 		}
-
 	}
 
 	if len(cRules) < 2 {
-
 		return duplicates
-
 	}
 
 	sort.Sort(cRules)
@@ -1657,15 +1453,11 @@ func checkDuplicates(groups []rulefmt.RuleGroup) []compareRuleType {
 	for i := 1; i < len(cRules); i++ {
 
 		if compare(last, cRules[i]) == 0 {
-
 			// Don't add a duplicated rule multiple times.
 
 			if len(duplicates) == 0 || compare(last, duplicates[len(duplicates)-1]) != 0 {
-
 				duplicates = append(duplicates, cRules[i])
-
 			}
-
 		}
 
 		last = cRules[i]
@@ -1673,19 +1465,14 @@ func checkDuplicates(groups []rulefmt.RuleGroup) []compareRuleType {
 	}
 
 	return duplicates
-
 }
 
 func ruleMetric(rule rulefmt.Rule) string {
-
 	if rule.Alert != "" {
-
 		return rule.Alert
-
 	}
 
 	return rule.Record
-
 }
 
 var checkMetricsUsage = strings.TrimSpace(`
@@ -1709,7 +1496,6 @@ $ curl -s http://localhost:9090/metrics | promtool check metrics
 // CheckMetrics performs a linting pass on input metrics.
 
 func CheckMetrics(extended bool) int {
-
 	var buf bytes.Buffer
 
 	tee := io.TeeReader(os.Stdin, &buf)
@@ -1717,7 +1503,6 @@ func CheckMetrics(extended bool) int {
 	l := promlint.New(tee)
 
 	problems, err := l.Lint()
-
 	if err != nil {
 
 		fmt.Fprintln(os.Stderr, "error while linting:", err)
@@ -1727,21 +1512,16 @@ func CheckMetrics(extended bool) int {
 	}
 
 	for _, p := range problems {
-
 		fmt.Fprintln(os.Stderr, p.Metric, p.Text)
-
 	}
 
 	if len(problems) > 0 {
-
 		return lintErrExitCode
-
 	}
 
 	if extended {
 
 		stats, total, err := checkMetricsExtended(&buf)
-
 		if err != nil {
 
 			fmt.Fprintln(os.Stderr, err)
@@ -1755,9 +1535,7 @@ func CheckMetrics(extended bool) int {
 		fmt.Fprintf(w, "Metric\tCardinality\tPercentage\t\n")
 
 		for _, stat := range stats {
-
 			fmt.Fprintf(w, "%s\t%d\t%.2f%%\t\n", stat.name, stat.cardinality, stat.percentage*100)
-
 		}
 
 		fmt.Fprintf(w, "Total\t%d\t%.f%%\t\n", total, 100.)
@@ -1767,7 +1545,6 @@ func CheckMetrics(extended bool) int {
 	}
 
 	return successExitCode
-
 }
 
 type metricStat struct {
@@ -1779,15 +1556,11 @@ type metricStat struct {
 }
 
 func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
-
 	p := expfmt.TextParser{}
 
 	metricFamilies, err := p.TextToMetricFamilies(r)
-
 	if err != nil {
-
 		return nil, 0, fmt.Errorf("error while parsing text to metric families: %w", err)
-
 	}
 
 	var total int
@@ -1833,19 +1606,14 @@ func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
 	}
 
 	for i := range stats {
-
 		stats[i].percentage = float64(stats[i].cardinality) / float64(total)
-
 	}
 
 	sort.SliceStable(stats, func(i, j int) bool {
-
 		return stats[i].cardinality > stats[j].cardinality
-
 	})
 
 	return stats, total, nil
-
 }
 
 type endpointsGroup struct {
@@ -1856,11 +1624,8 @@ type endpointsGroup struct {
 
 var (
 	pprofEndpoints = []endpointsGroup{
-
 		{
-
 			urlToFilename: map[string]string{
-
 				"/debug/pprof/profile?seconds=30": "cpu.pb",
 
 				"/debug/pprof/block": "block.pb",
@@ -1875,43 +1640,31 @@ var (
 			},
 
 			postProcess: func(b []byte) ([]byte, error) {
-
 				p, err := profile.Parse(bytes.NewReader(b))
-
 				if err != nil {
-
 					return nil, err
-
 				}
 
 				var buf bytes.Buffer
 
 				if err := p.WriteUncompressed(&buf); err != nil {
-
 					return nil, fmt.Errorf("writing the profile to the buffer: %w", err)
-
 				}
 
 				return buf.Bytes(), nil
-
 			},
 		},
 
 		{
-
 			urlToFilename: map[string]string{
-
 				"/debug/pprof/trace?seconds=30": "trace.pb",
 			},
 		},
 	}
 
 	metricsEndpoints = []endpointsGroup{
-
 		{
-
 			urlToFilename: map[string]string{
-
 				"/metrics": "metrics.txt",
 			},
 		},
@@ -1921,9 +1674,7 @@ var (
 )
 
 func debugPprof(url string) int {
-
 	if err := debugWrite(debugWriterConfig{
-
 		serverURL: url,
 
 		tarballName: "debug.tar.gz",
@@ -1938,13 +1689,10 @@ func debugPprof(url string) int {
 	}
 
 	return successExitCode
-
 }
 
 func debugMetrics(url string) int {
-
 	if err := debugWrite(debugWriterConfig{
-
 		serverURL: url,
 
 		tarballName: "debug.tar.gz",
@@ -1959,13 +1707,10 @@ func debugMetrics(url string) int {
 	}
 
 	return successExitCode
-
 }
 
 func debugAll(url string) int {
-
 	if err := debugWrite(debugWriterConfig{
-
 		serverURL: url,
 
 		tarballName: "debug.tar.gz",
@@ -1980,7 +1725,6 @@ func debugAll(url string) int {
 	}
 
 	return successExitCode
-
 }
 
 type printer interface {
@@ -1994,55 +1738,39 @@ type printer interface {
 type promqlPrinter struct{}
 
 func (p *promqlPrinter) printValue(v model.Value) {
-
 	fmt.Println(v)
-
 }
 
 func (p *promqlPrinter) printSeries(val []model.LabelSet) {
-
 	for _, v := range val {
-
 		fmt.Println(v)
-
 	}
-
 }
 
 func (p *promqlPrinter) printLabelValues(val model.LabelValues) {
-
 	for _, v := range val {
-
 		fmt.Println(v)
-
 	}
-
 }
 
 type jsonPrinter struct{}
 
 func (j *jsonPrinter) printValue(v model.Value) {
-
 	//nolint:errcheck
 
 	json.NewEncoder(os.Stdout).Encode(v)
-
 }
 
 func (j *jsonPrinter) printSeries(v []model.LabelSet) {
-
 	//nolint:errcheck
 
 	json.NewEncoder(os.Stdout).Encode(v)
-
 }
 
 func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
-
 	//nolint:errcheck
 
 	json.NewEncoder(os.Stdout).Encode(v)
-
 }
 
 // importRules backfills recording rules from the files provided. The output are blocks of data
@@ -2050,7 +1778,6 @@ func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 // at the outputDir location.
 
 func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outputDir string, evalInterval, maxBlockDuration time.Duration, files ...string) error {
-
 	ctx := context.Background()
 
 	var stime, etime time.Time
@@ -2058,37 +1785,26 @@ func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outpu
 	var err error
 
 	if end == "" {
-
 		etime = time.Now().UTC().Add(-3 * time.Hour)
-
 	} else {
 
 		etime, err = parseTime(end)
-
 		if err != nil {
-
 			return fmt.Errorf("error parsing end time: %w", err)
-
 		}
 
 	}
 
 	stime, err = parseTime(start)
-
 	if err != nil {
-
 		return fmt.Errorf("error parsing start time: %w", err)
-
 	}
 
 	if !stime.Before(etime) {
-
 		return errors.New("start time is not before end time")
-
 	}
 
 	cfg := ruleImporterConfig{
-
 		outputDir: outputDir,
 
 		start: stime,
@@ -2101,11 +1817,8 @@ func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outpu
 	}
 
 	api, err := newAPI(url, roundTripper, nil)
-
 	if err != nil {
-
 		return fmt.Errorf("new api client error: %w", err)
-
 	}
 
 	ruleImporter := newRuleImporter(promslog.New(&promslog.Config{}), cfg, api)
@@ -2113,51 +1826,35 @@ func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outpu
 	errs := ruleImporter.loadGroups(ctx, files)
 
 	for _, err := range errs {
-
 		if err != nil {
-
 			return fmt.Errorf("rule importer parse error: %w", err)
-
 		}
-
 	}
 
 	errs = ruleImporter.importAll(ctx)
 
 	for _, err := range errs {
-
 		fmt.Fprintln(os.Stderr, "rule importer error:", err)
-
 	}
 
 	if len(errs) > 0 {
-
 		return errors.New("error importing rules")
-
 	}
 
 	return nil
-
 }
 
 func checkTargetGroupsForAlertmanager(targetGroups []*targetgroup.Group, amcfg *config.AlertmanagerConfig) error {
-
 	for _, tg := range targetGroups {
-
 		if _, _, err := notifier.AlertmanagerFromGroup(tg, amcfg); err != nil {
-
 			return err
-
 		}
-
 	}
 
 	return nil
-
 }
 
 func checkTargetGroupsForScrapeConfig(targetGroups []*targetgroup.Group, scfg *config.ScrapeConfig) error {
-
 	var targets []*scrape.Target
 
 	lb := labels.NewBuilder(labels.EmptyLabels())
@@ -2179,33 +1876,23 @@ func checkTargetGroupsForScrapeConfig(targetGroups []*targetgroup.Group, scfg *c
 	}
 
 	return nil
-
 }
 
 func formatPromQL(query string) error {
-
 	expr, err := parser.ParseExpr(query)
-
 	if err != nil {
-
 		return err
-
 	}
 
 	fmt.Println(expr.Pretty(0))
 
 	return nil
-
 }
 
 func labelsSetPromQL(query, labelMatchType, name, value string) error {
-
 	expr, err := parser.ParseExpr(query)
-
 	if err != nil {
-
 		return err
-
 	}
 
 	var matchType labels.MatchType
@@ -2235,13 +1922,11 @@ func labelsSetPromQL(query, labelMatchType, name, value string) error {
 	}
 
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
-
 		if n, ok := node.(*parser.VectorSelector); ok {
 
 			var found bool
 
 			for i, l := range n.LabelMatchers {
-
 				if l.Name == name {
 
 					n.LabelMatchers[i].Type = matchType
@@ -2251,66 +1936,47 @@ func labelsSetPromQL(query, labelMatchType, name, value string) error {
 					found = true
 
 				}
-
 			}
 
 			if !found {
-
 				n.LabelMatchers = append(n.LabelMatchers, &labels.Matcher{
-
 					Type: matchType,
 
 					Name: name,
 
 					Value: value,
 				})
-
 			}
 
 		}
 
 		return nil
-
 	})
 
 	fmt.Println(expr.Pretty(0))
 
 	return nil
-
 }
 
 func labelsDeletePromQL(query, name string) error {
-
 	expr, err := parser.ParseExpr(query)
-
 	if err != nil {
-
 		return err
-
 	}
 
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
-
 		if n, ok := node.(*parser.VectorSelector); ok {
-
 			for i, l := range n.LabelMatchers {
-
 				if l.Name == name {
-
 					n.LabelMatchers = append(n.LabelMatchers[:i], n.LabelMatchers[i+1:]...)
-
 				}
-
 			}
-
 		}
 
 		return nil
-
 	})
 
 	fmt.Println(expr.Pretty(0))
 
 	return nil
-
 }
