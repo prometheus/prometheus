@@ -45,6 +45,11 @@ jobs:
         instance: [1, 2, 3]
     container:
       image: quay.io/prometheus/golang-builder:1.24-base
+      options: >-
+        --sysctl net.ipv4.tcp_fin_timeout=${{ matrix.config.tcp_fin_timeout }}
+        --sysctl net.ipv4.tcp_tw_reuse=${{ matrix.config.tcp_tw_reuse }}
+        --sysctl net.ipv4.ip_local_port_range="${{ matrix.config.port_range }}"
+        --privileged
     steps:
       - uses: actions/checkout@v4
 
@@ -61,15 +66,6 @@ jobs:
       - name: Download Go modules
         run: go mod download
 
-      - name: Apply TCP settings - ${{ matrix.config.name }}
-        run: |
-          echo "  FIN timeout: ${{ matrix.config.tcp_fin_timeout }}"
-          echo "  TW reuse: ${{ matrix.config.tcp_tw_reuse }}"
-          echo "  Port range: ${{ matrix.config.port_range }}"
-          sysctl -w net.ipv4.tcp_fin_timeout=${{ matrix.config.tcp_fin_timeout }}
-          sysctl -w net.ipv4.tcp_tw_reuse=${{ matrix.config.tcp_tw_reuse }}
-          sysctl -w net.ipv4.ip_local_port_range="${{ matrix.config.port_range }}"
-
       - name: Run Go tests - ${{ matrix.config.name }} - inst${{ matrix.instance }}
         shell: bash
         run: |
@@ -77,6 +73,10 @@ jobs:
           log_file="/tmp/test_output_${{ matrix.config.name }}_inst${{ matrix.instance }}.log"
           touch "$log_file"
           echo "Writing test logs to $log_file"
+          echo "TCP settings applied via Docker options:"
+          echo "  FIN timeout: ${{ matrix.config.tcp_fin_timeout }}"
+          echo "  TW reuse: ${{ matrix.config.tcp_tw_reuse }}"
+          echo "  Port range: ${{ matrix.config.port_range }}"
 
           for i in {1..10}; do
             echo "Run #$i with ${{ matrix.config.name }}" | tee -a "$log_file"
