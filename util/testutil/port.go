@@ -31,20 +31,13 @@ func RandomUnprivilegedPort(t *testing.T) int {
 	mu.Lock()
 	defer mu.Unlock()
 
-	port, listener, err := getPort()
-	if listener != nil {
-		defer listener.Close()
-	}
-
+	port, err := getPort()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for portWasUsed(port) {
-		port, listener, err = getPort()
-		if listener != nil {
-			defer listener.Close()
-		}
+		port, err = getPort()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -59,11 +52,15 @@ func portWasUsed(port int) bool {
 	return slices.Contains(usedPorts, port)
 }
 
-func getPort() (int, net.Listener, error) {
+func getPort() (int, error) {
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 
-	return listener.Addr().(*net.TCPAddr).Port, listener, nil
+	if err := listener.Close(); err != nil {
+		return 0, err
+	}
+
+	return listener.Addr().(*net.TCPAddr).Port, nil
 }
