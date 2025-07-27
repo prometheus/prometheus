@@ -70,10 +70,11 @@ func init() {
 }
 
 const (
-	successExitCode = 0
-	failureExitCode = 1
+	successExitCode     = 0
+	failureExitCode     = 1
+	coverageExitCode    = 2
 	// Exit code 3 is used for "one or more lint issues detected".
-	lintErrExitCode = 3
+	lintErrExitCode     = 3
 
 	lintOptionAll                   = "all"
 	lintOptionDuplicateRules        = "duplicate-rules"
@@ -234,6 +235,10 @@ func main() {
 	testRulesDebug := testRulesCmd.Flag("debug", "Enable unit test debugging.").Default("false").Bool()
 	testRulesDiff := testRulesCmd.Flag("diff", "[Experimental] Print colored differential output between expected & received output.").Default("false").Bool()
 	testRulesIgnoreUnknownFields := testRulesCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the test files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
+	testRulesCoverage := testRulesCmd.Flag("coverage", "Enable test coverage tracking for rules.").Default("false").Bool()
+	testRulesOutputFormat := testRulesCmd.Flag("output-format", "Output format for test results and coverage.").Default("text").Enum("text", "json", "junit-xml")
+	testRulesCoverageOutput := testRulesCmd.Flag("coverage-output", "File path to store coverage report.").String()
+	testRulesCoverageThreshold := testRulesCmd.Flag("coverage-threshold", "Minimum coverage percentage required (0-100). Exit with code 2 if coverage is below threshold.").Default("0").Float()
 
 	defaultDBPath := "data/"
 	tsdbCmd := app.Command("tsdb", "Run tsdb commands.")
@@ -415,6 +420,10 @@ func main() {
 			*testRulesDiff,
 			*testRulesDebug,
 			*testRulesIgnoreUnknownFields,
+			*testRulesCoverage,
+			*testRulesOutputFormat,
+			*testRulesCoverageOutput,
+			*testRulesCoverageThreshold,
 			*testRulesFiles...),
 		)
 

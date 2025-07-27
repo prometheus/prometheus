@@ -151,7 +151,7 @@ func TestRulesUnitTest(t *testing.T) {
 	t.Run("Junit xml output ", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
-		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, reuseFiles...); got != 1 {
+		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, false, "text", "", 0.0, reuseFiles...); got != 1 {
 			t.Errorf("RulesUnitTestResults() = %v, want 1", got)
 		}
 		var test junitxml.JUnitXML
@@ -269,6 +269,110 @@ func TestRulesUnitTestRun(t *testing.T) {
 			t.Parallel()
 			got := RulesUnitTest(tt.queryOpts, tt.args.run, false, false, tt.ignoreUnknownFields, tt.args.files...)
 			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestRulesUnitTestCoverage(t *testing.T) {
+	t.Parallel()
+	
+	tests := []struct {
+		name     string
+		files    []string
+		coverage bool
+		want     int
+	}{
+		{
+			name:     "Coverage enabled",
+			files:    []string{"./testdata/unittest.yml"},
+			coverage: true,
+			want:     0,
+		},
+		{
+			name:     "Coverage disabled",
+			files:    []string{"./testdata/unittest.yml"},
+			coverage: false,
+			want:     0,
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, tt.coverage, "text", "", 0.0, tt.files...)
+			require.Equal(t, tt.want, got)
+			
+			// The coverage output goes to stdout/stderr in the current implementation
+			// We just verify that the function runs without error when coverage is enabled
+		})
+	}
+}
+
+func TestCoverageTracker(t *testing.T) {
+	t.Parallel()
+	
+	tracker := newCoverageTracker()
+	require.NotNil(t, tracker)
+	require.Empty(t, tracker.ruleFiles)
+	require.Empty(t, tracker.allRules)
+	require.Empty(t, tracker.testedRules)
+	require.Empty(t, tracker.warnings)
+	
+	// Add a rule manually to test markRuleTested
+	tracker.allRules["test.yml"] = make(map[string]*ruleInfo)
+	tracker.testedRules["test.yml"] = make(map[string]bool)
+	tracker.allRules["test.yml"]["test_rule"] = &ruleInfo{
+		Name: "test_rule",
+		Type: "recording",
+	}
+	
+	tracker.markRuleTested("test_rule", "test_case")
+	require.Contains(t, tracker.testCaseMapping, "test_rule")
+	require.Equal(t, []string{"test_case"}, tracker.testCaseMapping["test_rule"])
+	require.True(t, tracker.testedRules["test.yml"]["test_rule"])
+}
+
+func TestCoverageOutputFormats(t *testing.T) {
+	t.Parallel()
+	
+	report := &coverageReport{
+		TotalRules:  5,
+		TestedRules: 4,
+		Coverage:    80.0,
+		Files: map[string]*fileCoverageInfo{
+			"test.yml": {
+				File:        "test.yml",
+				TotalRules:  5,
+				TestedRules: 4,
+				Coverage:    80.0,
+				Rules: map[string]*ruleCoverageInfo{
+					"rule1": {
+						Name:      "rule1",
+						Type:      "recording",
+						Tested:    true,
+						TestCases: []string{"test1"},
+					},
+				},
+			},
+		},
+	}
+	
+	tests := []struct {
+		name   string
+		format string
+	}{
+		{"Text format", "text"},
+		{"JSON format", "json"},
+		{"JUnit XML format", "junit-xml"},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			
+			err := outputCoverageReport(report, tt.format, "")
+			require.NoError(t, err)
 		})
 	}
 }

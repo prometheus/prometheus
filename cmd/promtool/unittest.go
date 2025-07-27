@@ -44,13 +44,72 @@ import (
 	"github.com/prometheus/prometheus/util/junitxml"
 )
 
+type coverageTracker struct {
+	ruleFiles       []string
+	testedRules     map[string]map[string]bool
+	allRules        map[string]map[string]*ruleInfo
+	dependencies    map[string][]string
+	warnings        []string
+	testCaseMapping map[string][]string
+	complexity      *complexityMetrics
+	testCases       map[string]bool
+}
+
+type ruleInfo struct {
+	Name       string
+	Type       string
+	Expression string
+	File       string
+	Group      string
+}
+
+type coverageReport struct {
+	TotalRules        int                          `json:"total_rules"`
+	TestedRules       int                          `json:"tested_rules"`
+	Coverage          float64                      `json:"coverage_percentage"`
+	RecordingRules    *ruleCoverageSummary         `json:"recording_rules"`
+	AlertingRules     *ruleCoverageSummary         `json:"alerting_rules"`
+	Files             map[string]*fileCoverageInfo `json:"files"`
+	Warnings          []string                     `json:"warnings,omitempty"`
+	TestCaseCount     int                          `json:"test_case_count"`
+	ComplexityMetrics *complexityMetrics           `json:"complexity_metrics,omitempty"`
+}
+
+type ruleCoverageSummary struct {
+	Total    int     `json:"total"`
+	Tested   int     `json:"tested"`
+	Coverage float64 `json:"coverage_percentage"`
+}
+
+type complexityMetrics struct {
+	FunctionsUsed       []string `json:"functions_used,omitempty"`
+	ComplexExpressions  int      `json:"complex_expressions"`
+	SubqueriesUsed      int      `json:"subqueries_used"`
+	RegexMatchers       int      `json:"regex_matchers"`
+}
+
+type fileCoverageInfo struct {
+	File        string                     `json:"file"`
+	TotalRules  int                        `json:"total_rules"`
+	TestedRules int                        `json:"tested_rules"`
+	Coverage    float64                    `json:"coverage_percentage"`
+	Rules       map[string]*ruleCoverageInfo `json:"rules"`
+}
+
+type ruleCoverageInfo struct {
+	Name      string   `json:"name"`
+	Type      string   `json:"type"`
+	Tested    bool     `json:"tested"`
+	TestCases []string `json:"test_cases,omitempty"`
+}
+
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
 func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
-	return RulesUnitTestResult(io.Discard, queryOpts, runStrings, diffFlag, debug, ignoreUnknownFields, files...)
+	return RulesUnitTestResult(io.Discard, queryOpts, runStrings, diffFlag, debug, ignoreUnknownFields, false, "text", "", 0.0, files...)
 }
 
-func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
+func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields, coverage bool, outputFormat, coverageOutput string, coverageThreshold float64, files ...string) int {
 	failed := false
 	junit := &junitxml.JUnitXML{}
 
@@ -59,8 +118,13 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 		run = regexp.MustCompile(strings.Join(runStrings, "|"))
 	}
 
+	var tracker *coverageTracker
+	if coverage {
+		tracker = newCoverageTracker()
+	}
+
 	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f)); errs != nil {
+		if errs := ruleUnitTest(f, queryOpts, run, diffFlag, debug, ignoreUnknownFields, tracker, junit.Suite(f)); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -76,13 +140,27 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to write JUnit XML: %s\n", err)
 	}
-	if failed {
-		return failureExitCode
+
+	if coverage && tracker != nil {
+		report := tracker.generateReport()
+		if err := outputCoverageReport(report, outputFormat, coverageOutput); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to output coverage report: %s\n", err)
+		}
+		
+		// Check coverage threshold
+		if coverageThreshold > 0 && report.Coverage < coverageThreshold {
+			fmt.Fprintf(os.Stderr, "Coverage %.2f%% is below threshold %.2f%%\n", report.Coverage, coverageThreshold)
+			return 2 // coverageExitCode
+		}
 	}
-	return successExitCode
+
+	if failed {
+		return 1 // failureExitCode
+	}
+	return 0 // successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite) []error {
+func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, tracker *coverageTracker, ts *junitxml.TestSuite) []error {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		ts.Abort(err)
@@ -131,7 +209,7 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *reg
 		if t.Interval == 0 {
 			t.Interval = unitTestInp.EvaluationInterval
 		}
-		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, unitTestInp.FuzzyCompare, unitTestInp.RuleFiles...)
+		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, tracker, unitTestInp.FuzzyCompare, unitTestInp.RuleFiles...)
 		if ers != nil {
 			for _, e := range ers {
 				tc.Fail(e.Error())
@@ -199,7 +277,7 @@ type testGroup struct {
 }
 
 // test performs the unit tests.
-func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug, ignoreUnknownFields, fuzzyCompare bool, ruleFiles ...string) (outErr []error) {
+func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug, ignoreUnknownFields bool, tracker *coverageTracker, fuzzyCompare bool, ruleFiles ...string) (outErr []error) {
 	if debug {
 		testStart := time.Now()
 		fmt.Printf("DEBUG: Starting test %s\n", testname)
@@ -234,6 +312,14 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 		return ers
 	}
 	groups := orderedGroups(groupsMap, groupOrderMap)
+
+	if tracker != nil {
+		for _, ruleFile := range ruleFiles {
+			if err := tracker.addRuleFile(ruleFile, groupsMap); err != nil {
+				return []error{err}
+			}
+		}
+	}
 
 	// Bounds for evaluating the rules.
 	mint := time.Unix(0, 0).UTC()
@@ -362,6 +448,10 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 				// Checking alerts.
 				gotAlerts := got[testcase.Alertname]
 
+				if tracker != nil {
+					tracker.markRuleTested(testcase.Alertname, testname)
+				}
+
 				var expAlerts labelsAndAnnotations
 				for _, a := range testcase.ExpAlerts {
 					// User gives only the labels from alerting rule, which doesn't
@@ -441,6 +531,15 @@ Outer:
 			errs = append(errs, fmt.Errorf("    expr: %q, time: %s, err: %s", testCase.Expr,
 				testCase.EvalTime.String(), err.Error()))
 			continue
+		}
+
+		if tracker != nil {
+			expr, parseErr := parser.ParseExpr(testCase.Expr)
+			if parseErr == nil {
+				tracker.markExpressionTested(expr, testname)
+			} else {
+				tracker.warnings = append(tracker.warnings, fmt.Sprintf("Failed to parse expression in test %s: %s", testname, parseErr.Error()))
+			}
 		}
 
 		var gotSamples []parsedSample
@@ -700,4 +799,379 @@ func (ps *parsedSample) String() string {
 		return ps.Labels.String() + " " + ps.Histogram
 	}
 	return ps.Labels.String() + " " + strconv.FormatFloat(ps.Value, 'E', -1, 64)
+}
+
+func newCoverageTracker() *coverageTracker {
+	return &coverageTracker{
+		testedRules:     make(map[string]map[string]bool),
+		allRules:        make(map[string]map[string]*ruleInfo),
+		dependencies:    make(map[string][]string),
+		testCaseMapping: make(map[string][]string),
+		testCases:       make(map[string]bool),
+		complexity: &complexityMetrics{
+			FunctionsUsed: make([]string, 0),
+		},
+	}
+}
+
+func (ct *coverageTracker) addRuleFile(filename string, groups map[string]*rules.Group) error {
+	ct.ruleFiles = append(ct.ruleFiles, filename)
+	ct.allRules[filename] = make(map[string]*ruleInfo)
+	ct.testedRules[filename] = make(map[string]bool)
+
+	for _, group := range groups {
+		for _, rule := range group.Rules() {
+			ruleName := rule.Name()
+			ruleType := "recording"
+			if _, ok := rule.(*rules.AlertingRule); ok {
+				ruleType = "alerting"
+			}
+
+			ct.allRules[filename][ruleName] = &ruleInfo{
+				Name:       ruleName,
+				Type:       ruleType,
+				Expression: rule.Query().String(),
+				File:       filename,
+				Group:      group.Name(),
+			}
+
+			ct.extractDependencies(ruleName, rule.Query())
+		}
+	}
+
+	return nil
+}
+
+func (ct *coverageTracker) extractDependencies(ruleName string, expr parser.Expr) {
+	var dependencies []string
+	seenMetrics := make(map[string]bool)
+
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
+		switch n := node.(type) {
+		case *parser.VectorSelector:
+			metricName := n.Name
+			if metricName != "" && metricName != ruleName && !seenMetrics[metricName] {
+				dependencies = append(dependencies, metricName)
+				seenMetrics[metricName] = true
+			}
+		case *parser.MatrixSelector:
+			if vs, ok := n.VectorSelector.(*parser.VectorSelector); ok && vs.Name != "" && vs.Name != ruleName && !seenMetrics[vs.Name] {
+				dependencies = append(dependencies, vs.Name)
+				seenMetrics[vs.Name] = true
+			}
+		case *parser.Call:
+			if n.Func != nil {
+				// Track function usage
+				funcName := n.Func.Name
+				found := false
+				for _, f := range ct.complexity.FunctionsUsed {
+					if f == funcName {
+						found = true
+						break
+					}
+				}
+				if !found {
+					ct.complexity.FunctionsUsed = append(ct.complexity.FunctionsUsed, funcName)
+				}
+
+				switch funcName {
+				case "label_replace", "label_join":
+					ct.warnings = append(ct.warnings, fmt.Sprintf("Complex function %s in rule %s may affect coverage calculation", funcName, ruleName))
+					ct.complexity.ComplexExpressions++
+				case "absent", "absent_over_time":
+					ct.warnings = append(ct.warnings, fmt.Sprintf("Function %s in rule %s may reference metrics that don't exist in test data", funcName, ruleName))
+				case "group_left", "group_right":
+					ct.warnings = append(ct.warnings, fmt.Sprintf("Complex aggregation %s in rule %s may affect dependency tracking", funcName, ruleName))
+					ct.complexity.ComplexExpressions++
+				}
+			}
+		case *parser.BinaryExpr:
+			if n.VectorMatching != nil && (n.VectorMatching.On || len(n.VectorMatching.MatchingLabels) > 0) {
+				ct.warnings = append(ct.warnings, fmt.Sprintf("Complex vector matching in rule %s may affect coverage calculation", ruleName))
+				ct.complexity.ComplexExpressions++
+			}
+		case *parser.SubqueryExpr:
+			ct.warnings = append(ct.warnings, fmt.Sprintf("Subquery in rule %s may reference additional time ranges", ruleName))
+			ct.complexity.SubqueriesUsed++
+		}
+		return nil
+	})
+
+	if len(dependencies) > 0 {
+		ct.dependencies[ruleName] = dependencies
+	}
+}
+
+func (ct *coverageTracker) markRuleTested(ruleName, testCase string) {
+	ct.testCases[testCase] = true
+	
+	for filename := range ct.allRules {
+		if _, exists := ct.allRules[filename][ruleName]; exists {
+			ct.testedRules[filename][ruleName] = true
+			ct.testCaseMapping[ruleName] = append(ct.testCaseMapping[ruleName], testCase)
+			
+			if deps, hasDeps := ct.dependencies[ruleName]; hasDeps {
+				for _, dep := range deps {
+					ct.markRuleTested(dep, testCase)
+				}
+			}
+			break
+		}
+	}
+}
+
+func (ct *coverageTracker) markExpressionTested(expr parser.Expr, testCase string) {
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
+		switch n := node.(type) {
+		case *parser.VectorSelector:
+			if n.Name != "" {
+				ct.markRuleTested(n.Name, testCase)
+			}
+			// Also check for dynamic metric name references in label matchers
+			ct.checkLabelMatchers(n.LabelMatchers, testCase)
+		case *parser.MatrixSelector:
+			if vs, ok := n.VectorSelector.(*parser.VectorSelector); ok && vs.Name != "" {
+				ct.markRuleTested(vs.Name, testCase)
+				ct.checkLabelMatchers(vs.LabelMatchers, testCase)
+			}
+		case *parser.Call:
+			// Handle functions that might reference other metrics indirectly
+			if n.Func != nil {
+				switch n.Func.Name {
+				case "label_replace", "label_join":
+					// These functions might create references to other rules
+					ct.extractFunctionDependencies(n, testCase)
+				}
+			}
+		}
+		return nil
+	})
+}
+
+func (ct *coverageTracker) checkLabelMatchers(matchers []*labels.Matcher, testCase string) {
+	for _, matcher := range matchers {
+		if matcher.Type == labels.MatchRegexp || matcher.Type == labels.MatchNotRegexp {
+			ct.complexity.RegexMatchers++
+			if matcher.Name == "__name__" {
+				// Handle regex patterns on __name__ that might match multiple metrics
+				ct.warnings = append(ct.warnings, fmt.Sprintf("Regex pattern on __name__ in test %s may match multiple metrics, coverage tracking may be incomplete", testCase))
+			}
+		}
+	}
+}
+
+func (ct *coverageTracker) extractFunctionDependencies(call *parser.Call, testCase string) {
+	// For complex functions, we can try to extract metric references from arguments
+	for _, arg := range call.Args {
+		if vs, ok := arg.(*parser.VectorSelector); ok && vs.Name != "" {
+			ct.markRuleTested(vs.Name, testCase)
+		}
+	}
+}
+
+func (ct *coverageTracker) generateReport() *coverageReport {
+	totalRules := 0
+	testedRules := 0
+	recordingTotal := 0
+	recordingTested := 0
+	alertingTotal := 0
+	alertingTested := 0
+	
+	files := make(map[string]*fileCoverageInfo)
+	
+	for filename, rules := range ct.allRules {
+		fileInfo := &fileCoverageInfo{
+			File:  filename,
+			Rules: make(map[string]*ruleCoverageInfo),
+		}
+		
+		fileTotalRules := 0
+		fileTestedRules := 0
+		
+		for ruleName, ruleInfo := range rules {
+			tested := ct.testedRules[filename][ruleName]
+			testCases := ct.testCaseMapping[ruleName]
+			
+			if len(testCases) > 0 && !tested {
+				tested = true
+				ct.testedRules[filename][ruleName] = true
+			}
+			
+			fileInfo.Rules[ruleName] = &ruleCoverageInfo{
+				Name:      ruleName,
+				Type:      ruleInfo.Type,
+				Tested:    tested,
+				TestCases: testCases,
+			}
+			
+			fileTotalRules++
+			if tested {
+				fileTestedRules++
+			}
+
+			// Track rule type metrics
+			if ruleInfo.Type == "recording" {
+				recordingTotal++
+				if tested {
+					recordingTested++
+				}
+			} else if ruleInfo.Type == "alerting" {
+				alertingTotal++
+				if tested {
+					alertingTested++
+				}
+			}
+		}
+		
+		fileInfo.TotalRules = fileTotalRules
+		fileInfo.TestedRules = fileTestedRules
+		if fileTotalRules > 0 {
+			fileInfo.Coverage = float64(fileTestedRules) / float64(fileTotalRules) * 100
+		}
+		
+		files[filename] = fileInfo
+		totalRules += fileTotalRules
+		testedRules += fileTestedRules
+	}
+	
+	coverage := 0.0
+	if totalRules > 0 {
+		coverage = float64(testedRules) / float64(totalRules) * 100
+	}
+
+	recordingCoverage := 0.0
+	if recordingTotal > 0 {
+		recordingCoverage = float64(recordingTested) / float64(recordingTotal) * 100
+	}
+
+	alertingCoverage := 0.0
+	if alertingTotal > 0 {
+		alertingCoverage = float64(alertingTested) / float64(alertingTotal) * 100
+	}
+	
+	return &coverageReport{
+		TotalRules:    totalRules,
+		TestedRules:   testedRules,
+		Coverage:      coverage,
+		RecordingRules: &ruleCoverageSummary{
+			Total:    recordingTotal,
+			Tested:   recordingTested,
+			Coverage: recordingCoverage,
+		},
+		AlertingRules: &ruleCoverageSummary{
+			Total:    alertingTotal,
+			Tested:   alertingTested,
+			Coverage: alertingCoverage,
+		},
+		Files:             files,
+		Warnings:          ct.warnings,
+		TestCaseCount:     len(ct.testCases),
+		ComplexityMetrics: ct.complexity,
+	}
+}
+
+func outputCoverageReport(report *coverageReport, format, outputFile string) error {
+	var output io.Writer
+	
+	if outputFile != "" {
+		file, err := os.Create(outputFile)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		output = file
+	} else {
+		output = os.Stdout
+	}
+	
+	switch format {
+	case "json":
+		encoder := json.NewEncoder(output)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(report)
+		
+	case "junit-xml":
+		return outputCoverageJUnit(report, output)
+		
+	default: // text
+		return outputCoverageText(report, output)
+	}
+}
+
+func outputCoverageText(report *coverageReport, output io.Writer) error {
+	fmt.Fprintf(output, "\nCoverage Report:\n")
+	fmt.Fprintf(output, "================\n")
+	fmt.Fprintf(output, "Total Rules: %d\n", report.TotalRules)
+	fmt.Fprintf(output, "Tested Rules: %d\n", report.TestedRules)
+	fmt.Fprintf(output, "Overall Coverage: %.2f%%\n", report.Coverage)
+	
+	if report.RecordingRules != nil {
+		fmt.Fprintf(output, "Recording Rules: %.2f%% (%d/%d)\n", report.RecordingRules.Coverage, report.RecordingRules.Tested, report.RecordingRules.Total)
+	}
+	if report.AlertingRules != nil {
+		fmt.Fprintf(output, "Alerting Rules: %.2f%% (%d/%d)\n", report.AlertingRules.Coverage, report.AlertingRules.Tested, report.AlertingRules.Total)
+	}
+	
+	fmt.Fprintf(output, "Test Cases: %d\n", report.TestCaseCount)
+	
+	if report.ComplexityMetrics != nil {
+		fmt.Fprintf(output, "\nComplexity Metrics:\n")
+		if len(report.ComplexityMetrics.FunctionsUsed) > 0 {
+			fmt.Fprintf(output, "  Functions Used: %s\n", strings.Join(report.ComplexityMetrics.FunctionsUsed, ", "))
+		}
+		if report.ComplexityMetrics.ComplexExpressions > 0 {
+			fmt.Fprintf(output, "  Complex Expressions: %d\n", report.ComplexityMetrics.ComplexExpressions)
+		}
+		if report.ComplexityMetrics.SubqueriesUsed > 0 {
+			fmt.Fprintf(output, "  Subqueries Used: %d\n", report.ComplexityMetrics.SubqueriesUsed)
+		}
+		if report.ComplexityMetrics.RegexMatchers > 0 {
+			fmt.Fprintf(output, "  Regex Matchers: %d\n", report.ComplexityMetrics.RegexMatchers)
+		}
+	}
+	
+	if len(report.Warnings) > 0 {
+		fmt.Fprintf(output, "\nWarnings:\n")
+		for _, warning := range report.Warnings {
+			fmt.Fprintf(output, "  - %s\n", warning)
+		}
+	}
+	
+	fmt.Fprintf(output, "\nFile Coverage:\n")
+	for filename, fileInfo := range report.Files {
+		fmt.Fprintf(output, "  %s: %.2f%% (%d/%d)\n", filename, fileInfo.Coverage, fileInfo.TestedRules, fileInfo.TotalRules)
+		
+		for ruleName, ruleInfo := range fileInfo.Rules {
+			status := "✗"
+			if ruleInfo.Tested {
+				status = "✓"
+			}
+			fmt.Fprintf(output, "    %s %s (%s)\n", status, ruleName, ruleInfo.Type)
+			if len(ruleInfo.TestCases) > 0 {
+				fmt.Fprintf(output, "      Tested by: %s\n", strings.Join(ruleInfo.TestCases, ", "))
+			}
+		}
+		fmt.Fprintf(output, "\n")
+	}
+	
+	return nil
+}
+
+func outputCoverageJUnit(report *coverageReport, output io.Writer) error {
+	junit := &junitxml.JUnitXML{}
+	suite := junit.Suite("coverage")
+	
+	suite.Case(fmt.Sprintf("Coverage: %.2f%% (%d/%d rules tested)", 
+		report.Coverage, report.TestedRules, report.TotalRules))
+	
+	for filename, fileInfo := range report.Files {
+		for ruleName, ruleInfo := range fileInfo.Rules {
+			suite.Case(fmt.Sprintf("%s:%s", filename, ruleName))
+			if !ruleInfo.Tested {
+				suite.Fail("Rule not covered by any test")
+			}
+		}
+	}
+	
+	return junit.WriteXML(output)
 }
