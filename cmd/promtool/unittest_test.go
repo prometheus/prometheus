@@ -188,9 +188,7 @@ func TestRulesUnitTest(t *testing.T) {
 	reuseFiles := []string{}
 
 	reuseCount := [2]int{}
-
 	for _, tt := range tests {
-
 		if (tt.queryOpts == promqltest.LazyLoaderOpts{
 			EnableNegativeOffset: true,
 		} || tt.queryOpts == promqltest.LazyLoaderOpts{
@@ -200,24 +198,20 @@ func TestRulesUnitTest(t *testing.T) {
 			reuseFiles = append(reuseFiles, tt.args.files...)
 
 			reuseCount[tt.want] += len(tt.args.files)
-
 		}
 
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-
 			if got := RulesUnitTest(tt.queryOpts, nil, false, false, false, tt.args.files...); got != tt.want {
 				t.Errorf("RulesUnitTest() = %v, want %v", got, tt.want)
 			}
 		})
-
 	}
 
 	t.Run("Junit xml output ", func(t *testing.T) {
 		t.Parallel()
 
 		var buf bytes.Buffer
-
 		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, false, "text", "", 0.0, reuseFiles...); got != 1 {
 			t.Errorf("RulesUnitTestResults() = %v, want 1", got)
 		}
@@ -232,7 +226,6 @@ func TestRulesUnitTest(t *testing.T) {
 			fmt.Println("error in decoding XML:", err)
 
 			return
-
 		}
 
 		var total int
@@ -244,13 +237,10 @@ func TestRulesUnitTest(t *testing.T) {
 		var cases int
 
 		total = len(test.Suites)
-
 		if total != len(reuseFiles) {
 			t.Errorf("JUnit output had %d testsuite elements; expected %d\n", total, len(reuseFiles))
 		}
-
 		for _, i := range test.Suites {
-
 			if i.FailureCount == 0 {
 				passes++
 			} else {
@@ -258,13 +248,10 @@ func TestRulesUnitTest(t *testing.T) {
 			}
 
 			cases += len(i.Cases)
-
 		}
-
 		if total != passes+failures {
 			t.Errorf("JUnit output mismatch: Total testsuites (%d) does not equal the sum of passes (%d) and failures (%d).", total, passes, failures)
 		}
-
 		if cases < total {
 			t.Errorf("JUnit output had %d suites without test cases\n", total-cases)
 		}
@@ -385,7 +372,6 @@ func TestRulesUnitTestRun(t *testing.T) {
 			want: 1,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -429,7 +415,6 @@ func TestRulesUnitTestCoverage(t *testing.T) {
 			want: 0,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -529,7 +514,6 @@ func TestCoverageOutputFormats(t *testing.T) {
 
 		{"JUnit XML format", "junit-xml"},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
