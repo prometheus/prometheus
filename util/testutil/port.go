@@ -53,6 +53,15 @@ func portWasUsed(port int) bool {
 }
 
 func getPort() (int, error) {
+	// lc := net.ListenConfig{
+	// 	Control: func(network, address string, c syscall.RawConn) error {
+	// 		return c.Control(func(fd uintptr) {
+	// 			syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+	// 		})
+	// 	},
+	// }
+
+	// listener, err := lc.Listen(context.Background(), "tcp", ":0")
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
 		return 0, err
