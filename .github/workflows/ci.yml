@@ -43,7 +43,7 @@ jobs:
           - name: "short-timeout"
             tcp_fin_timeout: 0
             tcp_tw_reuse: 0
-            port_range: "40000 60999"
+            port_range: "32768 60999"
         instance: [1, 2, 3]
     container:
       image: quay.io/prometheus/golang-builder:1.24-base
