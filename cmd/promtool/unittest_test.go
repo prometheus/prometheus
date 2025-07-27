@@ -42,7 +42,6 @@ func TestRulesUnitTest(t *testing.T) {
 	type args struct {
 		files []string
 	}
-
 	tests := []struct {
 		name string
 
@@ -184,9 +183,7 @@ func TestRulesUnitTest(t *testing.T) {
 			want: 0,
 		},
 	}
-
 	reuseFiles := []string{}
-
 	reuseCount := [2]int{}
 	for _, tt := range tests {
 		if (tt.queryOpts == promqltest.LazyLoaderOpts{
@@ -194,12 +191,9 @@ func TestRulesUnitTest(t *testing.T) {
 		} || tt.queryOpts == promqltest.LazyLoaderOpts{
 			EnableAtModifier: true,
 		}) {
-
 			reuseFiles = append(reuseFiles, tt.args.files...)
-
 			reuseCount[tt.want] += len(tt.args.files)
 		}
-
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := RulesUnitTest(tt.queryOpts, nil, false, false, false, tt.args.files...); got != tt.want {
@@ -207,35 +201,23 @@ func TestRulesUnitTest(t *testing.T) {
 			}
 		})
 	}
-
 	t.Run("Junit xml output ", func(t *testing.T) {
 		t.Parallel()
-
 		var buf bytes.Buffer
 		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, false, "text", "", 0.0, reuseFiles...); got != 1 {
 			t.Errorf("RulesUnitTestResults() = %v, want 1", got)
 		}
-
 		var test junitxml.JUnitXML
-
 		output := buf.Bytes()
-
 		err := xml.Unmarshal(output, &test)
 		if err != nil {
-
 			fmt.Println("error in decoding XML:", err)
-
 			return
 		}
-
 		var total int
-
 		var passes int
-
 		var failures int
-
 		var cases int
-
 		total = len(test.Suites)
 		if total != len(reuseFiles) {
 			t.Errorf("JUnit output had %d testsuite elements; expected %d\n", total, len(reuseFiles))
@@ -246,7 +228,6 @@ func TestRulesUnitTest(t *testing.T) {
 			} else {
 				failures++
 			}
-
 			cases += len(i.Cases)
 		}
 		if total != passes+failures {
@@ -266,7 +247,6 @@ func TestRulesUnitTestRun(t *testing.T) {
 
 		files []string
 	}
-
 	tests := []struct {
 		name string
 
@@ -375,9 +355,7 @@ func TestRulesUnitTestRun(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-
 			got := RulesUnitTest(tt.queryOpts, tt.args.run, false, false, tt.ignoreUnknownFields, tt.args.files...)
-
 			require.Equal(t, tt.want, got)
 		})
 	}
@@ -385,7 +363,6 @@ func TestRulesUnitTestRun(t *testing.T) {
 
 func TestRulesUnitTestCoverage(t *testing.T) {
 	t.Parallel()
-
 	tests := []struct {
 		name string
 
@@ -418,11 +395,8 @@ func TestRulesUnitTestCoverage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-
 			var buf bytes.Buffer
-
 			got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, tt.coverage, "text", "", 0.0, tt.files...)
-
 			require.Equal(t, tt.want, got)
 
 			// The coverage output goes to stdout/stderr in the current implementation
@@ -434,43 +408,30 @@ func TestRulesUnitTestCoverage(t *testing.T) {
 
 func TestCoverageTracker(t *testing.T) {
 	t.Parallel()
-
 	tracker := newCoverageTracker()
-
 	require.NotNil(t, tracker)
-
 	require.Empty(t, tracker.ruleFiles)
-
 	require.Empty(t, tracker.allRules)
-
 	require.Empty(t, tracker.testedRules)
-
 	require.Empty(t, tracker.warnings)
 
 	// Add a rule manually to test markRuleTested
 
 	tracker.allRules["test.yml"] = make(map[string]*ruleInfo)
-
 	tracker.testedRules["test.yml"] = make(map[string]bool)
-
 	tracker.allRules["test.yml"]["test_rule"] = &ruleInfo{
 		Name: "test_rule",
 
 		Type: "recording",
 	}
-
 	tracker.markRuleTested("test_rule", "test_case")
-
 	require.Contains(t, tracker.testCaseMapping, "test_rule")
-
 	require.Equal(t, []string{"test_case"}, tracker.testCaseMapping["test_rule"])
-
 	require.True(t, tracker.testedRules["test.yml"]["test_rule"])
 }
 
 func TestCoverageOutputFormats(t *testing.T) {
 	t.Parallel()
-
 	report := &coverageReport{
 		TotalRules: 5,
 
@@ -502,7 +463,6 @@ func TestCoverageOutputFormats(t *testing.T) {
 			},
 		},
 	}
-
 	tests := []struct {
 		name string
 
@@ -517,9 +477,7 @@ func TestCoverageOutputFormats(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-
 			err := outputCoverageReport(report, tt.format, "")
-
 			require.NoError(t, err)
 		})
 	}
