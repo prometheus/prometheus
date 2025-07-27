@@ -3735,11 +3735,12 @@ func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) 
 	return expr, nil
 }
 
-// preprocessExprHelper wraps the child nodes of the expression
-// with a StepInvariantExpr wherever it's step invariant. The returned boolean is true if the
-// passed expression qualifies to be wrapped by StepInvariantExpr.
-// Also remove superfluous parenthesis on parameters to functions and aggregations.
-// It also resolves the preprocessors.
+// preprocessExprHelper wraps child nodes of expr with a StepInvariantExpr,
+// at the highest level within the tree that is step-invariant.
+// Also removes superfluous parenthesis on parameters to functions and aggregations.
+// Also resolves start() and end() on selector and subquery nodes.
+// Return isStepInvariant is true when the whole subexpression is step invariant.
+// Return shoudlWrap is false for cases like MatrixSelector and StringLiteral that never need to be wrapped.
 func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvariant, shouldWrap bool) {
 	switch n := expr.(type) {
 	case *parser.VectorSelector:
@@ -3757,16 +3758,16 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvaria
 		return preprocessExprHelper(n.Expr, start, end)
 
 	case *parser.BinaryExpr:
-		isInvariant1, shouldWrap1 := preprocessExprHelper(n.LHS, start, end)
-		isInvariant2, shouldWrap2 := preprocessExprHelper(n.RHS, start, end)
-		if isInvariant1 && isInvariant2 {
+		isInvariantLHS, shouldWrapLHS := preprocessExprHelper(n.LHS, start, end)
+		isInvariantRHS, shouldWrapRHS := preprocessExprHelper(n.RHS, start, end)
+		if isInvariantLHS && isInvariantRHS {
 			return true, true
 		}
 
-		if shouldWrap1 {
+		if shouldWrapLHS {
 			n.LHS = newStepInvariantExpr(n.LHS)
 		}
-		if shouldWrap2 {
+		if shouldWrapRHS {
 			n.RHS = newStepInvariantExpr(n.RHS)
 		}
 
