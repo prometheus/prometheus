@@ -183,7 +183,7 @@ func (p *OpenMetricsParser) Help() ([]byte, []byte) {
 	m := p.l.b[p.offsets[0]:p.offsets[1]]
 
 	// Replacer causes allocations. Replace only when necessary.
-	if strings.IndexByte(yoloString(p.text), byte('\\')) >= 0 {
+	if bytes.IndexByte(p.text, byte('\\')) >= 0 {
 		// OpenMetrics always uses the Prometheus format label value escaping.
 		return m, []byte(lvalReplacer.Replace(string(p.text)))
 	}
