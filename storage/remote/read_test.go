@@ -660,6 +660,28 @@ func TestReadMultiple(t *testing.T) {
 				labels.FromStrings("job", "prometheus"),
 			},
 		},
+		{
+			name: "same matchers with overlapping time ranges",
+			queries: []*prompb.Query{
+				{
+					StartTimestampMs: 1000,
+					EndTimestampMs:   5000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "region", Value: "us"},
+					},
+				},
+				{
+					StartTimestampMs: 3000,
+					EndTimestampMs:   8000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "region", Value: "us"},
+					},
+				},
+			},
+			expectedResults: []labels.Labels{
+				labels.FromStrings("job", "cadvisor", "region", "us"),
+			},
+		},
 	}
 
 	for _, tc := range testCases {
