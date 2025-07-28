@@ -830,11 +830,10 @@ func TestReadMultipleSorting(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name              string
-		queries           []*prompb.Query
-		sortSeries        bool
-		expectedOrder     []string
-		shouldUseMergeSet bool // Whether the implementation should use NewMergeSeriesSet
+		name          string
+		queries       []*prompb.Query
+		sortSeries    bool
+		expectedOrder []string
 	}{
 		{
 			name: "multiple queries with sortSeries=true - should be sorted",
@@ -854,9 +853,8 @@ func TestReadMultipleSorting(t *testing.T) {
 					},
 				},
 			},
-			sortSeries:        true,
-			expectedOrder:     []string{"aaa", "bbb", "ccc"}, // Should be sorted after merge
-			shouldUseMergeSet: true,
+			sortSeries:    true,
+			expectedOrder: []string{"aaa", "bbb", "ccc"}, // Should be sorted after merge
 		},
 		{
 			name: "multiple queries with sortSeries=false - concatenates without deduplication",
@@ -876,9 +874,8 @@ func TestReadMultipleSorting(t *testing.T) {
 					},
 				},
 			},
-			sortSeries:        false,
-			expectedOrder:     []string{"ccc", "bbb", "aaa", "bbb"}, // Concatenated results - duplicates included
-			shouldUseMergeSet: false,                                // When sortSeries=false, should not use MergeSeriesSet since inputs aren't sorted
+			sortSeries:    false,
+			expectedOrder: []string{"ccc", "bbb", "aaa", "bbb"}, // Concatenated results - duplicates included
 		},
 	}
 
