@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"go.yaml.in/yaml/v2"
 
+	"github.com/prometheus/prometheus/cmd/promtool/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -78,9 +79,9 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 		fmt.Fprintf(os.Stderr, "failed to write JUnit XML: %s\n", err)
 	}
 	if failed {
-		return failureExitCode
+		return config.FailureExitCode
 	}
-	return successExitCode
+	return config.SuccessExitCode
 }
 
 func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite) []error {

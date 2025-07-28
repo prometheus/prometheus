@@ -11,13 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package config
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -37,21 +37,34 @@ type sdCheckResult struct {
 	Error            error         `json:"error,omitempty"`
 }
 
-// CheckSD performs service discovery for the given job name and reports the results.
+func CheckSDWithOutput(sdConfigFiles, sdJobName string, sdTimeout time.Duration, _ prometheus.Registerer) (int, string) {
+	writer := &ByteBufferWriter{
+		outBuffer: bytes.NewBuffer(nil),
+	}
+	exitCode := doCheckSD(writer, sdConfigFiles, sdJobName, sdTimeout)
+	output := writer.String()
+	return exitCode, output
+}
+
 func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration, _ prometheus.Registerer) int {
+	return doCheckSD(&StdWriter{}, sdConfigFiles, sdJobName, sdTimeout)
+}
+
+// CheckSD performs service discovery for the given job name and reports the results.
+func doCheckSD(writer OutputWriter, sdConfigFiles, sdJobName string, sdTimeout time.Duration) int {
 	logger := promslog.New(&promslog.Config{})
 
 	cfg, err := config.LoadFile(sdConfigFiles, false, logger)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Cannot load config", err)
-		return failureExitCode
+		fmt.Fprintln(writer.ErrWriter(), "Cannot load config", err)
+		return FailureExitCode
 	}
 
 	var scrapeConfig *config.ScrapeConfig
 	scfgs, err := cfg.GetScrapeConfigs()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Cannot load scrape configs", err)
-		return failureExitCode
+		fmt.Fprintln(writer.ErrWriter(), "Cannot load scrape configs", err)
+		return FailureExitCode
 	}
 
 	jobs := []string{}
@@ -66,11 +79,11 @@ func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration, _ prometh
 	}
 
 	if !jobMatched {
-		fmt.Fprintf(os.Stderr, "Job %s not found. Select one of:\n", sdJobName)
+		fmt.Fprintf(writer.ErrWriter(), "Job %s not found. Select one of:\n", sdJobName)
 		for _, job := range jobs {
-			fmt.Fprintf(os.Stderr, "\t%s\n", job)
+			fmt.Fprintf(writer.ErrWriter(), "\t%s\n", job)
 		}
-		return failureExitCode
+		return FailureExitCode
 	}
 
 	targetGroupChan := make(chan []*targetgroup.Group)
@@ -83,14 +96,14 @@ func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration, _ prometh
 		metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 		err := metrics.Register()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Could not register service discovery metrics", err)
-			return failureExitCode
+			fmt.Fprintln(writer.ErrWriter(), "Could not register service discovery metrics", err)
+			return FailureExitCode
 		}
 
 		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{Logger: logger, Metrics: metrics})
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Could not create new discoverer", err)
-			return failureExitCode
+			fmt.Fprintln(writer.ErrWriter(), "Could not create new discoverer", err)
+			return FailureExitCode
 		}
 		go func() {
 			d.Run(ctx, targetGroupChan)
@@ -119,12 +132,12 @@ outerLoop:
 
 	res, err := json.MarshalIndent(results, "", "  ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Could not marshal result json: %s", err)
-		return failureExitCode
+		fmt.Fprintf(writer.ErrWriter(), "Could not marshal result json: %s", err)
+		return FailureExitCode
 	}
 
 	fmt.Printf("%s", res)
-	return successExitCode
+	return SuccessExitCode
 }
 
 func getSDCheckResult(targetGroups []*targetgroup.Group, scrapeConfig *config.ScrapeConfig) []sdCheckResult {
