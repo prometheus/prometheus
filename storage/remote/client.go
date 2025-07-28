@@ -521,8 +521,6 @@ func combineQueryResults(results []*prompb.QueryResult, sortSeries bool) (storag
 	return &concreteSeriesSet{series: allSeries, cur: 0}, nil
 }
 
-// Trigger CI refresh.
-
 // handleChunkedResponseImpl handles chunked responses for both single and multiple queries.
 func (c *Client) handleChunkedResponseImpl(s *ChunkedReader, httpResp *http.Response, queries []*prompb.Query, onClose func(error)) storage.SeriesSet {
 	// For multiple queries in chunked response, we'll still use the existing infrastructure
