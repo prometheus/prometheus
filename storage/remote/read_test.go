@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -225,9 +226,17 @@ func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query, sortSe
 			}
 		}
 
-		if !notMatch {
-			q.Timeseries = append(q.Timeseries, &prompb.TimeSeries{Labels: s.Labels})
+		if notMatch {
+			continue
 		}
+		// Filter samples by query time range
+		var filteredSamples []prompb.Sample
+		for _, sample := range s.Samples {
+			if sample.Timestamp >= query.StartTimestampMs && sample.Timestamp <= query.EndTimestampMs {
+				filteredSamples = append(filteredSamples, sample)
+			}
+		}
+		q.Timeseries = append(q.Timeseries, &prompb.TimeSeries{Labels: s.Labels, Samples: filteredSamples})
 	}
 	return FromQueryResult(sortSeries, q), nil
 }
@@ -248,19 +257,27 @@ func (c *mockedRemoteClient) ReadMultiple(_ context.Context, queries []*prompb.Q
 		q := &prompb.QueryResult{}
 		for _, s := range c.store {
 			l := s.ToLabels(&c.b, nil)
-			match := true
+			var notMatch bool
 
 			for _, m := range matchers {
 				v := l.Get(m.Name)
 				if !m.Matches(v) {
-					match = false
+					notMatch = true
 					break
 				}
 			}
 
-			if match {
-				q.Timeseries = append(q.Timeseries, &prompb.TimeSeries{Labels: s.Labels})
+			if notMatch {
+				continue
 			}
+			// Filter samples by query time range
+			var filteredSamples []prompb.Sample
+			for _, sample := range s.Samples {
+				if sample.Timestamp >= query.StartTimestampMs && sample.Timestamp <= query.EndTimestampMs {
+					filteredSamples = append(filteredSamples, sample)
+				}
+			}
+			q.Timeseries = append(q.Timeseries, &prompb.TimeSeries{Labels: s.Labels, Samples: filteredSamples})
 		}
 		results = append(results, q)
 	}
@@ -535,20 +552,52 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 }
 
 func TestReadMultiple(t *testing.T) {
+	const sampleIntervalMs = 250
+
+	// Helper function to generate samples at 250ms intervals for a time range
+	generateSamples := func(startMs, endMs int64) []prompb.Sample {
+		var samples []prompb.Sample
+		for ts := startMs; ts <= endMs; ts += sampleIntervalMs {
+			samples = append(samples, prompb.Sample{
+				Timestamp: ts,
+				Value:     float64(ts), // Use timestamp as value for simplicity
+			})
+		}
+		return samples
+	}
+
 	m := &mockedRemoteClient{
 		store: []*prompb.TimeSeries{
-			{Labels: []prompb.Label{{Name: "job", Value: "prometheus"}}},
-			{Labels: []prompb.Label{{Name: "job", Value: "node_exporter"}}},
-			{Labels: []prompb.Label{{Name: "job", Value: "cadvisor"}, {Name: "region", Value: "us"}}},
-			{Labels: []prompb.Label{{Name: "instance", Value: "localhost:9090"}}},
+			{
+				Labels:  []prompb.Label{{Name: "job", Value: "prometheus"}},
+				Samples: generateSamples(0, 10000),
+			},
+			{
+				Labels:  []prompb.Label{{Name: "job", Value: "node_exporter"}},
+				Samples: generateSamples(0, 10000),
+			},
+			{
+				Labels:  []prompb.Label{{Name: "job", Value: "cadvisor"}, {Name: "region", Value: "us"}},
+				Samples: generateSamples(0, 10000),
+			},
+			{
+				Labels:  []prompb.Label{{Name: "instance", Value: "localhost:9090"}},
+				Samples: generateSamples(0, 10000),
+			},
 		},
 		b: labels.NewScratchBuilder(0),
+	}
+
+	// Expected result structure
+	type expectedSeries struct {
+		labels      labels.Labels
+		sampleCount int
 	}
 
 	testCases := []struct {
 		name            string
 		queries         []*prompb.Query
-		expectedResults []labels.Labels
+		expectedResults []expectedSeries
 	}{
 		{
 			name: "single query",
@@ -561,8 +610,11 @@ func TestReadMultiple(t *testing.T) {
 					},
 				},
 			},
-			expectedResults: []labels.Labels{
-				labels.FromStrings("job", "prometheus"),
+			expectedResults: []expectedSeries{
+				{
+					labels:      labels.FromStrings("job", "prometheus"),
+					sampleCount: 5,
+				},
 			},
 		},
 		{
@@ -583,9 +635,15 @@ func TestReadMultiple(t *testing.T) {
 					},
 				},
 			},
-			expectedResults: []labels.Labels{
-				labels.FromStrings("job", "node_exporter"),
-				labels.FromStrings("job", "prometheus"),
+			expectedResults: []expectedSeries{
+				{
+					labels:      labels.FromStrings("job", "node_exporter"),
+					sampleCount: 5,
+				},
+				{
+					labels:      labels.FromStrings("job", "prometheus"),
+					sampleCount: 5,
+				},
 			},
 		},
 		{
@@ -606,10 +664,19 @@ func TestReadMultiple(t *testing.T) {
 					},
 				},
 			},
-			expectedResults: []labels.Labels{
-				labels.FromStrings("job", "cadvisor", "region", "us"),
-				labels.FromStrings("job", "node_exporter"),
-				labels.FromStrings("job", "prometheus"),
+			expectedResults: []expectedSeries{
+				{
+					labels:      labels.FromStrings("job", "cadvisor", "region", "us"),
+					sampleCount: 5,
+				},
+				{
+					labels:      labels.FromStrings("job", "node_exporter"),
+					sampleCount: 5,
+				},
+				{
+					labels:      labels.FromStrings("job", "prometheus"),
+					sampleCount: 5,
+				},
 			},
 		},
 		{
@@ -655,9 +722,15 @@ func TestReadMultiple(t *testing.T) {
 					},
 				},
 			},
-			expectedResults: []labels.Labels{
-				labels.FromStrings("instance", "localhost:9090"),
-				labels.FromStrings("job", "prometheus"),
+			expectedResults: []expectedSeries{
+				{
+					labels:      labels.FromStrings("instance", "localhost:9090"),
+					sampleCount: 5,
+				},
+				{
+					labels:      labels.FromStrings("job", "prometheus"),
+					sampleCount: 5,
+				},
 			},
 		},
 		{
@@ -678,8 +751,11 @@ func TestReadMultiple(t *testing.T) {
 					},
 				},
 			},
-			expectedResults: []labels.Labels{
-				labels.FromStrings("job", "cadvisor", "region", "us"),
+			expectedResults: []expectedSeries{
+				{
+					labels:      labels.FromStrings("job", "cadvisor", "region", "us"),
+					sampleCount: 29, // Union of [1000,5000] and [3000,8000] = [1000,8000] = (8000-1000)/250 + 1 (on the edge) = 29 unique samples
+				},
 			},
 		},
 	}
@@ -695,12 +771,23 @@ func TestReadMultiple(t *testing.T) {
 			require.Equal(t, tc.queries, m.gotMultiple)
 
 			// Verify the combined result matches expected
-			var got []labels.Labels
+			var got []expectedSeries
 			for result.Next() {
-				got = append(got, result.At().Labels())
+				series := result.At()
+				sampleCount := 0
+				iterator := series.Iterator(nil)
+				for iterator.Next() != chunkenc.ValNone {
+					sampleCount++
+				}
+				require.NoError(t, iterator.Err())
+
+				got = append(got, expectedSeries{
+					labels:      series.Labels(),
+					sampleCount: sampleCount,
+				})
 			}
 			require.NoError(t, result.Err())
-			testutil.RequireEqual(t, tc.expectedResults, got)
+			require.Equal(t, tc.expectedResults, got)
 		})
 	}
 }
