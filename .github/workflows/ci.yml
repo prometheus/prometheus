@@ -41,6 +41,7 @@ jobs:
       - uses: ./.github/promci/actions/setup_environment
       - run: go test --tags=dedupelabels ./...
       - run: go test --tags=slicelabels -race ./cmd/prometheus
+      - run: go test --tags=slicelabels -race ./prompb/io/prometheus/client
       - run: go test --tags=forcedirectio -race ./tsdb/
       - run: GOARCH=386 go test ./...
       - uses: ./.github/promci/actions/check_proto
