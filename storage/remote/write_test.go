@@ -614,8 +614,9 @@ func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg c
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/x-protobuf")
 
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	appendable := &mockAppendable{}
-	handler := NewOTLPWriteHandler(nil, nil, appendable, func() config.Config {
+	handler := NewOTLPWriteHandler(log, nil, appendable, func() config.Config {
 		return config.Config{
 			OTLPConfig: otlpCfg,
 		}
