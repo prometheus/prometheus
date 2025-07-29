@@ -1115,7 +1115,7 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB, timeout time.Durati
 			if len(c.receivedMetadata) == 0 {
 				return 0
 			}
-			return len(c.expectedMetadata) // Count unique series that have metadata
+			return len(c.expectedMetadata) // Count unique series that have metadata.
 		}()
 		c.mtx.Unlock()
 
