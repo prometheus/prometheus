@@ -31,43 +31,47 @@ type mockCombinedAppender struct {
 }
 
 type combinedSample struct {
-	ls   labels.Labels
-	meta metadata.Metadata
-	t    int64
-	ct   int64
-	v    float64
-	es   []exemplar.Exemplar
+	metricFamilyName string
+	ls               labels.Labels
+	meta             metadata.Metadata
+	t                int64
+	ct               int64
+	v                float64
+	es               []exemplar.Exemplar
 }
 
 type combinedHistogram struct {
-	ls   labels.Labels
-	meta metadata.Metadata
-	t    int64
-	ct   int64
-	h    *histogram.Histogram
-	es   []exemplar.Exemplar
+	metricFamilyName string
+	ls               labels.Labels
+	meta             metadata.Metadata
+	t                int64
+	ct               int64
+	h                *histogram.Histogram
+	es               []exemplar.Exemplar
 }
 
-func (m *mockCombinedAppender) AppendSample(ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) error {
+func (m *mockCombinedAppender) AppendSample(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) error {
 	m.samples = append(m.samples, combinedSample{
-		ls:   ls,
-		meta: meta,
-		t:    t,
-		ct:   ct,
-		v:    v,
-		es:   es,
+		metricFamilyName: metricFamilyName,
+		ls:               ls,
+		meta:             meta,
+		t:                t,
+		ct:               ct,
+		v:                v,
+		es:               es,
 	})
 	return nil
 }
 
-func (m *mockCombinedAppender) AppendHistogram(ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) error {
+func (m *mockCombinedAppender) AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) error {
 	m.histograms = append(m.histograms, combinedHistogram{
-		ls:   ls,
-		meta: meta,
-		t:    t,
-		ct:   ct,
-		h:    h,
-		es:   es,
+		metricFamilyName: metricFamilyName,
+		ls:               ls,
+		meta:             meta,
+		t:                t,
+		ct:               ct,
+		h:                h,
+		es:               es,
 	})
 	return nil
 }

@@ -326,28 +326,32 @@ func TestFromMetrics(t *testing.T) {
 		}
 		requireEqual(t, []combinedSample{
 			{
-				v:    1,
-				t:    ts.AsTime().UnixMilli(),
-				ls:   targetInfoLabels,
-				meta: targetInfoMeta,
+				metricFamilyName: "target_info",
+				v:                1,
+				t:                ts.AsTime().UnixMilli(),
+				ls:               targetInfoLabels,
+				meta:             targetInfoMeta,
 			},
 			{
-				v:    1,
-				t:    ts.AsTime().Add(defaultLookbackDelta / 2).UnixMilli(),
-				ls:   targetInfoLabels,
-				meta: targetInfoMeta,
+				metricFamilyName: "target_info",
+				v:                1,
+				t:                ts.AsTime().Add(defaultLookbackDelta / 2).UnixMilli(),
+				ls:               targetInfoLabels,
+				meta:             targetInfoMeta,
 			},
 			{
-				v:    1,
-				t:    ts.AsTime().Add(defaultLookbackDelta).UnixMilli(),
-				ls:   targetInfoLabels,
-				meta: targetInfoMeta,
+				metricFamilyName: "target_info",
+				v:                1,
+				t:                ts.AsTime().Add(defaultLookbackDelta).UnixMilli(),
+				ls:               targetInfoLabels,
+				meta:             targetInfoMeta,
 			},
 			{
-				v:    1,
-				t:    ts.AsTime().Add(defaultLookbackDelta + defaultLookbackDelta/4).UnixMilli(),
-				ls:   targetInfoLabels,
-				meta: targetInfoMeta,
+				metricFamilyName: "target_info",
+				v:                1,
+				t:                ts.AsTime().Add(defaultLookbackDelta + defaultLookbackDelta/4).UnixMilli(),
+				ls:               targetInfoLabels,
+				meta:             targetInfoMeta,
 			},
 		}, mockAppender.samples[len(mockAppender.samples)-4:])
 	})
@@ -593,9 +597,10 @@ func createOtelSum(name string, temporality pmetric.AggregationTemporality, ts t
 
 func createPromFloatSeries(name string, ts time.Time, typ model.MetricType) combinedSample {
 	return combinedSample{
-		ls: labels.FromStrings("__name__", name, "test_label", "test_value"),
-		t:  ts.UnixMilli(),
-		v:  5,
+		metricFamilyName: name,
+		ls:               labels.FromStrings("__name__", name, "test_label", "test_value"),
+		t:                ts.UnixMilli(),
+		v:                5,
 		meta: metadata.Metadata{
 			Type: typ,
 		},
@@ -630,8 +635,9 @@ func createOtelExponentialHistogram(name string, temporality pmetric.Aggregation
 
 func createPromNativeHistogramSeries(name string, hint histogram.CounterResetHint, ts time.Time, typ model.MetricType) combinedHistogram {
 	return combinedHistogram{
-		ls: labels.FromStrings("__name__", name, "test_label", "test_value"),
-		t:  ts.UnixMilli(),
+		metricFamilyName: name,
+		ls:               labels.FromStrings("__name__", name, "test_label", "test_value"),
+		t:                ts.UnixMilli(),
 		meta: metadata.Metadata{
 			Type: typ,
 		},
@@ -664,7 +670,8 @@ func createOtelExplicitHistogram(name string, temporality pmetric.AggregationTem
 
 func createPromNHCBSeries(name string, hint histogram.CounterResetHint, ts time.Time, typ model.MetricType) combinedHistogram {
 	return combinedHistogram{
-		ls: labels.FromStrings("__name__", name, "test_label", "test_value"),
+		metricFamilyName: name,
+		ls:               labels.FromStrings("__name__", name, "test_label", "test_value"),
 		meta: metadata.Metadata{
 			Type: typ,
 		},
@@ -689,41 +696,46 @@ func createPromNHCBSeries(name string, hint histogram.CounterResetHint, ts time.
 func createPromClassicHistogramSeries(name string, ts time.Time, typ model.MetricType) []combinedSample {
 	return []combinedSample{
 		{
-			ls: labels.FromStrings("__name__", name+"_sum", "test_label", "test_value"),
-			t:  ts.UnixMilli(),
-			v:  30,
+			metricFamilyName: name,
+			ls:               labels.FromStrings("__name__", name+"_sum", "test_label", "test_value"),
+			t:                ts.UnixMilli(),
+			v:                30,
 			meta: metadata.Metadata{
 				Type: typ,
 			},
 		},
 		{
-			ls: labels.FromStrings("__name__", name+"_count", "test_label", "test_value"),
-			t:  ts.UnixMilli(),
-			v:  20,
+			metricFamilyName: name,
+			ls:               labels.FromStrings("__name__", name+"_count", "test_label", "test_value"),
+			t:                ts.UnixMilli(),
+			v:                20,
 			meta: metadata.Metadata{
 				Type: typ,
 			},
 		},
 		{
-			ls: labels.FromStrings("__name__", name+"_bucket", "le", "1", "test_label", "test_value"),
-			t:  ts.UnixMilli(),
-			v:  10,
+			metricFamilyName: name,
+			ls:               labels.FromStrings("__name__", name+"_bucket", "le", "1", "test_label", "test_value"),
+			t:                ts.UnixMilli(),
+			v:                10,
 			meta: metadata.Metadata{
 				Type: typ,
 			},
 		},
 		{
-			ls: labels.FromStrings("__name__", name+"_bucket", "le", "2", "test_label", "test_value"),
-			t:  ts.UnixMilli(),
-			v:  20,
+			metricFamilyName: name,
+			ls:               labels.FromStrings("__name__", name+"_bucket", "le", "2", "test_label", "test_value"),
+			t:                ts.UnixMilli(),
+			v:                20,
 			meta: metadata.Metadata{
 				Type: typ,
 			},
 		},
 		{
-			ls: labels.FromStrings("__name__", name+"_bucket", "le", "+Inf", "test_label", "test_value"),
-			t:  ts.UnixMilli(),
-			v:  20,
+			metricFamilyName: name,
+			ls:               labels.FromStrings("__name__", name+"_bucket", "le", "+Inf", "test_label", "test_value"),
+			t:                ts.UnixMilli(),
+			v:                20,
 			meta: metadata.Metadata{
 				Type: typ,
 			},
@@ -750,25 +762,28 @@ func createOtelSummary(name string, ts time.Time) pmetric.Metric {
 func createPromSummarySeries(name string, ts time.Time) []combinedSample {
 	return []combinedSample{
 		{
-			ls: labels.FromStrings("__name__", name+"_sum", "test_label", "test_value"),
-			t:  ts.UnixMilli(),
-			v:  18,
+			metricFamilyName: name,
+			ls:               labels.FromStrings("__name__", name+"_sum", "test_label", "test_value"),
+			t:                ts.UnixMilli(),
+			v:                18,
 			meta: metadata.Metadata{
 				Type: model.MetricTypeSummary,
 			},
 		},
 		{
-			ls: labels.FromStrings("__name__", name+"_count", "test_label", "test_value"),
-			t:  ts.UnixMilli(),
-			v:  9,
+			metricFamilyName: name,
+			ls:               labels.FromStrings("__name__", name+"_count", "test_label", "test_value"),
+			t:                ts.UnixMilli(),
+			v:                9,
 			meta: metadata.Metadata{
 				Type: model.MetricTypeSummary,
 			},
 		},
 		{
-			ls: labels.FromStrings("__name__", name, "quantile", "0.5", "test_label", "test_value"),
-			t:  ts.UnixMilli(),
-			v:  2,
+			metricFamilyName: name,
+			ls:               labels.FromStrings("__name__", name, "quantile", "0.5", "test_label", "test_value"),
+			t:                ts.UnixMilli(),
+			v:                2,
 			meta: metadata.Metadata{
 				Type: model.MetricTypeSummary,
 			},

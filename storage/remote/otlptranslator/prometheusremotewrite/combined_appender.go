@@ -57,10 +57,10 @@ func NewCombinedAppender(app storage.Appender, logger *slog.Logger, reg promethe
 type CombinedAppender interface {
 	// AppendSample appends a sample and related exemplars, metadata, and
 	// created timestamp to the storage.
-	AppendSample(ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) error
+	AppendSample(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) error
 	// AppendSample appends a histogram and related exemplars, metadata, and
 	// created timestamp to the storage.
-	AppendHistogram(ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) error
+	AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) error
 }
 
 type combinedAppender struct {
@@ -73,7 +73,7 @@ type combinedAppender struct {
 	refs map[uint64]storage.SeriesRef
 }
 
-func (b *combinedAppender) AppendSample(ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) (err error) {
+func (b *combinedAppender) AppendSample(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) (err error) {
 	hash := ls.Hash()
 	ref, exists := b.refs[hash]
 	if !exists {
@@ -107,7 +107,7 @@ func (b *combinedAppender) AppendSample(ls labels.Labels, meta metadata.Metadata
 	return
 }
 
-func (b *combinedAppender) AppendHistogram(ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
+func (b *combinedAppender) AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
 	hash := ls.Hash()
 	ref, exists := b.refs[hash]
 	if !exists {
