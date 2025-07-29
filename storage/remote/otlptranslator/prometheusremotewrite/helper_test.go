@@ -324,6 +324,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			want: func() []combinedSample {
 				return []combinedSample{
 					{
+						metricFamilyName: "test_summary",
 						ls: labels.FromStrings(
 							model.MetricNameLabel, "test_summary"+sumStr,
 						),
@@ -332,6 +333,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 						v:  0,
 					},
 					{
+						metricFamilyName: "test_summary",
 						ls: labels.FromStrings(
 							model.MetricNameLabel, "test_summary"+countStr,
 						),
@@ -340,6 +342,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 						v:  0,
 					},
 					{
+						metricFamilyName: "test_summary",
 						ls: labels.FromStrings(
 							model.MetricNameLabel, "test_summary"+createdSuffix,
 						),
@@ -374,6 +377,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				}
 				return []combinedSample{
 					{
+						metricFamilyName: "test_summary",
 						ls: labels.FromStrings(append(scopeLabels,
 							model.MetricNameLabel, "test_summary"+sumStr)...),
 						t:  convertTimeStamp(ts),
@@ -381,6 +385,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 						v:  0,
 					},
 					{
+						metricFamilyName: "test_summary",
 						ls: labels.FromStrings(append(scopeLabels,
 							model.MetricNameLabel, "test_summary"+countStr)...),
 						t:  convertTimeStamp(ts),
@@ -388,6 +393,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 						v:  0,
 					},
 					{
+						metricFamilyName: "test_summary",
 						ls: labels.FromStrings(append(scopeLabels,
 							model.MetricNameLabel, "test_summary"+createdSuffix,
 						)...),
@@ -414,6 +420,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			want: func() []combinedSample {
 				return []combinedSample{
 					{
+						metricFamilyName: "test_summary",
 						ls: labels.FromStrings(
 							model.MetricNameLabel, "test_summary"+sumStr,
 						),
@@ -421,6 +428,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 						v: 0,
 					},
 					{
+						metricFamilyName: "test_summary",
 						ls: labels.FromStrings(
 							model.MetricNameLabel, "test_summary"+countStr,
 						),
@@ -494,6 +502,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			want: func() []combinedSample {
 				return []combinedSample{
 					{
+						metricFamilyName: "test_hist",
 						ls: labels.FromStrings(
 							model.MetricNameLabel, "test_hist"+countStr,
 						),
@@ -502,6 +511,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 						v:  0,
 					},
 					{
+						metricFamilyName: "test_hist",
 						ls: labels.FromStrings(
 							model.MetricNameLabel, "test_hist_bucket",
 							model.BucketLabel, "+Inf",
@@ -511,6 +521,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 						v:  0,
 					},
 					{
+						metricFamilyName: "test_hist",
 						ls: labels.FromStrings(
 							model.MetricNameLabel, "test_hist"+createdSuffix,
 						),
@@ -545,6 +556,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				}
 				return []combinedSample{
 					{
+						metricFamilyName: "test_hist",
 						ls: labels.FromStrings(append(scopeLabels,
 							model.MetricNameLabel, "test_hist"+countStr)...),
 						t:  convertTimeStamp(ts),
@@ -552,6 +564,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 						v:  0,
 					},
 					{
+						metricFamilyName: "test_hist",
 						ls: labels.FromStrings(append(scopeLabels,
 							model.MetricNameLabel, "test_hist_bucket",
 							model.BucketLabel, "+Inf")...),
@@ -560,6 +573,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 						v:  0,
 					},
 					{
+						metricFamilyName: "test_hist",
 						ls: labels.FromStrings(append(scopeLabels,
 							model.MetricNameLabel, "test_hist"+createdSuffix)...),
 						t: convertTimeStamp(ts),
@@ -583,6 +597,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			want: func() []combinedSample {
 				return []combinedSample{
 					{
+						metricFamilyName: "test_hist",
 						ls: labels.FromStrings(
 							model.MetricNameLabel, "test_hist"+countStr,
 						),
@@ -590,6 +605,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 						v: 0,
 					},
 					{
+						metricFamilyName: "test_hist",
 						ls: labels.FromStrings(
 							model.MetricNameLabel, "test_hist_bucket",
 							model.BucketLabel, "+Inf",

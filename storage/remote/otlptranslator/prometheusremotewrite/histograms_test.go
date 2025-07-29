@@ -669,10 +669,11 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				)
 				return []combinedHistogram{
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    0,
-						ct:   0,
+						metricFamilyName: "test_hist",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                0,
+						ct:               0,
 						h: &histogram.Histogram{
 							Count:           7,
 							Schema:          1,
@@ -684,10 +685,11 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						es: []exemplar.Exemplar{{Value: 1}},
 					},
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    0,
-						ct:   0,
+						metricFamilyName: "test_hist",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                0,
+						ct:               0,
 						h: &histogram.Histogram{
 							Count:           4,
 							Schema:          1,
@@ -740,10 +742,11 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				)
 				return []combinedHistogram{
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    0,
-						ct:   0,
+						metricFamilyName: "test_hist",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                0,
+						ct:               0,
 						h: &histogram.Histogram{
 							Count:           7,
 							Schema:          1,
@@ -755,10 +758,11 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						es: []exemplar.Exemplar{{Value: 1}},
 					},
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    0,
-						ct:   0,
+						metricFamilyName: "test_hist",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                0,
+						ct:               0,
 						h: &histogram.Histogram{
 							Count:           4,
 							Schema:          1,
@@ -811,10 +815,11 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 
 				return []combinedHistogram{
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    0,
-						ct:   0,
+						metricFamilyName: "test_hist",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                0,
+						ct:               0,
 						h: &histogram.Histogram{
 							Count:           7,
 							Schema:          1,
@@ -826,10 +831,11 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						es: []exemplar.Exemplar{{Value: 1}},
 					},
 					{
-						ls:   labelsAnother,
-						meta: metadata.Metadata{},
-						t:    0,
-						ct:   0,
+						metricFamilyName: "test_hist",
+						ls:               labelsAnother,
+						meta:             metadata.Metadata{},
+						t:                0,
+						ct:               0,
 						h: &histogram.Histogram{
 							Count:           4,
 							Schema:          1,
@@ -1133,10 +1139,11 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 				)
 				return []combinedHistogram{
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    0,
-						ct:   0,
+						metricFamilyName: "test_hist_to_nhcb",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                0,
+						ct:               0,
 						h: &histogram.Histogram{
 							Count:           3,
 							Sum:             3,
@@ -1148,10 +1155,11 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 						es: []exemplar.Exemplar{{Value: 1}},
 					},
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    0,
-						ct:   0,
+						metricFamilyName: "test_hist_to_nhcb",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                0,
+						ct:               0,
 						h: &histogram.Histogram{
 							Count:           11,
 							Sum:             5,
@@ -1204,10 +1212,11 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 				)
 				return []combinedHistogram{
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    0,
-						ct:   0,
+						metricFamilyName: "test_hist_to_nhcb",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                0,
+						ct:               0,
 						h: &histogram.Histogram{
 							Count:           3,
 							Sum:             3,
@@ -1219,10 +1228,11 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 						es: []exemplar.Exemplar{{Value: 1}},
 					},
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    0,
-						ct:   0,
+						metricFamilyName: "test_hist_to_nhcb",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                0,
+						ct:               0,
 						h: &histogram.Histogram{
 							Count:           11,
 							Sum:             5,
@@ -1275,10 +1285,11 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 
 				return []combinedHistogram{
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    0,
-						ct:   0,
+						metricFamilyName: "test_hist_to_nhcb",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                0,
+						ct:               0,
 						h: &histogram.Histogram{
 							Count:           6,
 							Sum:             3,
@@ -1290,10 +1301,11 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 						es: []exemplar.Exemplar{{Value: 1}},
 					},
 					{
-						ls:   labelsAnother,
-						meta: metadata.Metadata{},
-						t:    0,
-						ct:   0,
+						metricFamilyName: "test_hist_to_nhcb",
+						ls:               labelsAnother,
+						meta:             metadata.Metadata{},
+						t:                0,
+						ct:               0,
 						h: &histogram.Histogram{
 							Count:           11,
 							Sum:             5,

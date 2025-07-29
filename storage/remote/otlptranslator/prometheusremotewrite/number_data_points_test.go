@@ -68,10 +68,11 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				)
 				return []combinedSample{
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    convertTimeStamp(pcommon.Timestamp(ts)),
-						v:    1,
+						metricFamilyName: "test",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(pcommon.Timestamp(ts)),
+						v:                1,
 					},
 				}
 			},
@@ -98,10 +99,11 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				)
 				return []combinedSample{
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    convertTimeStamp(pcommon.Timestamp(ts)),
-						v:    1,
+						metricFamilyName: "test",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(pcommon.Timestamp(ts)),
+						v:                1,
 					},
 				}
 			},
@@ -170,10 +172,11 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				)
 				return []combinedSample{
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    convertTimeStamp(ts),
-						v:    1,
+						metricFamilyName: "test",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(ts),
+						v:                1,
 					},
 				}
 			},
@@ -201,10 +204,11 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				)
 				return []combinedSample{
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    convertTimeStamp(ts),
-						v:    1,
+						metricFamilyName: "test",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(ts),
+						v:                1,
 					},
 				}
 			},
@@ -229,10 +233,11 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				)
 				return []combinedSample{
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    convertTimeStamp(ts),
-						v:    1,
+						metricFamilyName: "test",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(ts),
+						v:                1,
 						es: []exemplar.Exemplar{
 							{Value: 2},
 						},
@@ -266,17 +271,19 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				)
 				return []combinedSample{
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    convertTimeStamp(ts),
-						ct:   convertTimeStamp(ts),
-						v:    1,
+						metricFamilyName: "test_sum",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(ts),
+						ct:               convertTimeStamp(ts),
+						v:                1,
 					},
 					{
-						ls:   createdLabels,
-						meta: metadata.Metadata{},
-						t:    convertTimeStamp(ts),
-						v:    float64(convertTimeStamp(ts)),
+						metricFamilyName: "test_sum",
+						ls:               createdLabels,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(ts),
+						v:                float64(convertTimeStamp(ts)),
 					},
 				}
 			},
@@ -302,10 +309,11 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				)
 				return []combinedSample{
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    convertTimeStamp(ts),
-						v:    0,
+						metricFamilyName: "test_sum",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(ts),
+						v:                0,
 					},
 				}
 			},
@@ -331,10 +339,11 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				)
 				return []combinedSample{
 					{
-						ls:   lbls,
-						meta: metadata.Metadata{},
-						t:    convertTimeStamp(ts),
-						v:    0,
+						metricFamilyName: "test_sum",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(ts),
+						v:                0,
 					},
 				}
 			},
