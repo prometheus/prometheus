@@ -554,50 +554,51 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 func TestReadMultiple(t *testing.T) {
 	const sampleIntervalMs = 250
 
-	// Helper function to generate samples at 250ms intervals for a time range
-	generateSamples := func(startMs, endMs int64) []prompb.Sample {
+	// Helper function to calculate series multiplier based on labels
+	getSeriesMultiplier := func(labels []prompb.Label) uint64 {
+		// Create a simple hash from labels to generate unique values per series
+		labelHash := uint64(0)
+		for _, label := range labels {
+			for _, b := range label.Name + label.Value {
+				labelHash = labelHash*31 + uint64(b)
+			}
+		}
+		return labelHash % sampleIntervalMs
+	}
+
+	// Helper function to generate a complete time series with samples at 250ms intervals
+	// Each series gets different sample values based on a hash of their labels
+	generateSeries := func(labels []prompb.Label, startMs, endMs int64) *prompb.TimeSeries {
+		seriesMultiplier := getSeriesMultiplier(labels)
+
 		var samples []prompb.Sample
 		for ts := startMs; ts <= endMs; ts += sampleIntervalMs {
 			samples = append(samples, prompb.Sample{
 				Timestamp: ts,
-				Value:     float64(ts), // Use timestamp as value for simplicity
+				Value:     float64(ts + int64(seriesMultiplier)), // Unique value per series
 			})
 		}
-		return samples
+
+		return &prompb.TimeSeries{
+			Labels:  labels,
+			Samples: samples,
+		}
 	}
 
 	m := &mockedRemoteClient{
 		store: []*prompb.TimeSeries{
-			{
-				Labels:  []prompb.Label{{Name: "job", Value: "prometheus"}},
-				Samples: generateSamples(0, 10000),
-			},
-			{
-				Labels:  []prompb.Label{{Name: "job", Value: "node_exporter"}},
-				Samples: generateSamples(0, 10000),
-			},
-			{
-				Labels:  []prompb.Label{{Name: "job", Value: "cadvisor"}, {Name: "region", Value: "us"}},
-				Samples: generateSamples(0, 10000),
-			},
-			{
-				Labels:  []prompb.Label{{Name: "instance", Value: "localhost:9090"}},
-				Samples: generateSamples(0, 10000),
-			},
+			generateSeries([]prompb.Label{{Name: "job", Value: "prometheus"}}, 0, 10000),
+			generateSeries([]prompb.Label{{Name: "job", Value: "node_exporter"}}, 0, 10000),
+			generateSeries([]prompb.Label{{Name: "job", Value: "cadvisor"}, {Name: "region", Value: "us"}}, 0, 10000),
+			generateSeries([]prompb.Label{{Name: "instance", Value: "localhost:9090"}}, 0, 10000),
 		},
 		b: labels.NewScratchBuilder(0),
-	}
-
-	// Expected result structure
-	type expectedSeries struct {
-		labels      labels.Labels
-		sampleCount int
 	}
 
 	testCases := []struct {
 		name            string
 		queries         []*prompb.Query
-		expectedResults []expectedSeries
+		expectedResults []*prompb.TimeSeries
 	}{
 		{
 			name: "single query",
@@ -610,11 +611,8 @@ func TestReadMultiple(t *testing.T) {
 					},
 				},
 			},
-			expectedResults: []expectedSeries{
-				{
-					labels:      labels.FromStrings("job", "prometheus"),
-					sampleCount: 5,
-				},
+			expectedResults: []*prompb.TimeSeries{
+				generateSeries([]prompb.Label{{Name: "job", Value: "prometheus"}}, 1000, 2000),
 			},
 		},
 		{
@@ -635,15 +633,9 @@ func TestReadMultiple(t *testing.T) {
 					},
 				},
 			},
-			expectedResults: []expectedSeries{
-				{
-					labels:      labels.FromStrings("job", "node_exporter"),
-					sampleCount: 5,
-				},
-				{
-					labels:      labels.FromStrings("job", "prometheus"),
-					sampleCount: 5,
-				},
+			expectedResults: []*prompb.TimeSeries{
+				generateSeries([]prompb.Label{{Name: "job", Value: "node_exporter"}}, 1500, 2500),
+				generateSeries([]prompb.Label{{Name: "job", Value: "prometheus"}}, 1000, 2000),
 			},
 		},
 		{
@@ -664,19 +656,10 @@ func TestReadMultiple(t *testing.T) {
 					},
 				},
 			},
-			expectedResults: []expectedSeries{
-				{
-					labels:      labels.FromStrings("job", "cadvisor", "region", "us"),
-					sampleCount: 5,
-				},
-				{
-					labels:      labels.FromStrings("job", "node_exporter"),
-					sampleCount: 5,
-				},
-				{
-					labels:      labels.FromStrings("job", "prometheus"),
-					sampleCount: 5,
-				},
+			expectedResults: []*prompb.TimeSeries{
+				generateSeries([]prompb.Label{{Name: "job", Value: "cadvisor"}, {Name: "region", Value: "us"}}, 1500, 2500),
+				generateSeries([]prompb.Label{{Name: "job", Value: "node_exporter"}}, 1000, 2000),
+				generateSeries([]prompb.Label{{Name: "job", Value: "prometheus"}}, 1000, 2000),
 			},
 		},
 		{
@@ -722,15 +705,9 @@ func TestReadMultiple(t *testing.T) {
 					},
 				},
 			},
-			expectedResults: []expectedSeries{
-				{
-					labels:      labels.FromStrings("instance", "localhost:9090"),
-					sampleCount: 5,
-				},
-				{
-					labels:      labels.FromStrings("job", "prometheus"),
-					sampleCount: 5,
-				},
+			expectedResults: []*prompb.TimeSeries{
+				generateSeries([]prompb.Label{{Name: "instance", Value: "localhost:9090"}}, 2000, 3000),
+				generateSeries([]prompb.Label{{Name: "job", Value: "prometheus"}}, 1000, 2000),
 			},
 		},
 		{
@@ -751,11 +728,8 @@ func TestReadMultiple(t *testing.T) {
 					},
 				},
 			},
-			expectedResults: []expectedSeries{
-				{
-					labels:      labels.FromStrings("job", "cadvisor", "region", "us"),
-					sampleCount: 29, // Union of [1000,5000] and [3000,8000] = [1000,8000] = (8000-1000)/250 + 1 (on the edge) = 29 unique samples
-				},
+			expectedResults: []*prompb.TimeSeries{
+				generateSeries([]prompb.Label{{Name: "job", Value: "cadvisor"}, {Name: "region", Value: "us"}}, 1000, 8000),
 			},
 		},
 	}
@@ -771,37 +745,30 @@ func TestReadMultiple(t *testing.T) {
 			require.Equal(t, tc.queries, m.gotMultiple)
 
 			// Verify the combined result matches expected
-			var got []expectedSeries
+			var got []*prompb.TimeSeries
 			for result.Next() {
 				series := result.At()
-				sampleCount := 0
+				var samples []prompb.Sample
 				iterator := series.Iterator(nil)
+
+				// Collect actual samples
 				for iterator.Next() != chunkenc.ValNone {
-					sampleCount++
+					ts, value := iterator.At()
+					samples = append(samples, prompb.Sample{
+						Timestamp: ts,
+						Value:     value,
+					})
 				}
 				require.NoError(t, iterator.Err())
 
-				got = append(got, expectedSeries{
-					labels:      series.Labels(),
-					sampleCount: sampleCount,
+				got = append(got, &prompb.TimeSeries{
+					Labels:  prompb.FromLabels(series.Labels(), nil),
+					Samples: samples,
 				})
 			}
 			require.NoError(t, result.Err())
 
-			// Sort both expected and got to ensure deterministic comparison
-			sort.Slice(tc.expectedResults, func(i, j int) bool {
-				return tc.expectedResults[i].labels.String() < tc.expectedResults[j].labels.String()
-			})
-			sort.Slice(got, func(i, j int) bool {
-				return got[i].labels.String() < got[j].labels.String()
-			})
-
-			// Compare by label string representation and sample count to handle dedupelabels build tag
-			require.Equal(t, len(tc.expectedResults), len(got), "number of series should match")
-			for i := range tc.expectedResults {
-				require.Equal(t, tc.expectedResults[i].labels.String(), got[i].labels.String(), "labels should match")
-				require.Equal(t, tc.expectedResults[i].sampleCount, got[i].sampleCount, "sample count should match")
-			}
+			require.ElementsMatch(t, tc.expectedResults, got)
 		})
 	}
 }
