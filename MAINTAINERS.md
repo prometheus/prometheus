@@ -17,7 +17,7 @@ Maintainers for specific parts of the codebase:
 * `model/histogram` and other code related to native histograms: Björn Rabenstein (<beorn@grafana.com> / @beorn7),
 George Krajcsovits (<gyorgy.krajcsovits@grafana.com> / @krajorama)
 * `storage`
-  * `remote`: Callum Styan (<callumstyan@gmail.com> / @cstyan), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Tom Wilkie (tom.wilkie@gmail.com / @tomwilkie), Nicolás Pazos ( <npazosmendez@gmail.com> / @npazosmendez), Alex Greenbank ( <alex.greenbank@grafana.com> / @alexgreenbank)
+  * `remote`: Callum Styan (<callumstyan@gmail.com> / @cstyan), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Tom Wilkie (tom.wilkie@gmail.com / @tomwilkie), Nicolás Pazos ( <npazosmendez@gmail.com> / @npazosmendez), Alex Greenbank ( <alexgreenbank@yahoo.com> / @alexgreenbank)
     * `otlptranslator`: Arthur Silva Sens (<arthursens2005@gmail.com> / @ArthurSens), Arve Knudsen (<arve.knudsen@gmail.com> / @aknuds1), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
 * `tsdb`: Ganesh Vernekar (<ganesh@grafana.com> / @codesome), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
 * `web`
@@ -32,7 +32,7 @@ incomplete and out of date. However the listed maintainer(s) should be able to
 direct a PR/question to the right person.
 
 v3 release coordinators:
-* Alex Greenbank (<alex.greenbank@grafana.com> / @alexgreenbank)
+* Alex Greenbank (<alexgreenbank@yahoo.com> / @alexgreenbank)
 * Carrie Edwards (<carrie.edwards@grafana.com> / @carrieedwards)
 * Fiona Liao (<fiona.liao@grafana.com> / @fionaliao)
 * Jan Fajerski (<github@fajerski.name> / @jan--f)
