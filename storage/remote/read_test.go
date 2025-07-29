@@ -787,7 +787,21 @@ func TestReadMultiple(t *testing.T) {
 				})
 			}
 			require.NoError(t, result.Err())
-			require.Equal(t, tc.expectedResults, got)
+
+			// Sort both expected and got to ensure deterministic comparison
+			sort.Slice(tc.expectedResults, func(i, j int) bool {
+				return tc.expectedResults[i].labels.String() < tc.expectedResults[j].labels.String()
+			})
+			sort.Slice(got, func(i, j int) bool {
+				return got[i].labels.String() < got[j].labels.String()
+			})
+
+			// Compare by label string representation and sample count to handle dedupelabels build tag
+			require.Equal(t, len(tc.expectedResults), len(got), "number of series should match")
+			for i := range tc.expectedResults {
+				require.Equal(t, tc.expectedResults[i].labels.String(), got[i].labels.String(), "labels should match")
+				require.Equal(t, tc.expectedResults[i].sampleCount, got[i].sampleCount, "sample count should match")
+			}
 		})
 	}
 }
