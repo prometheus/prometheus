@@ -29,6 +29,17 @@ import (
 	"github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite/labels"
 )
 
+// CombinedAppender is similar to storage.Appender, but combines updates to
+// metadata, created timestamps, exemplars and samples into a single call.
+type CombinedAppender interface {
+	// AppendSample appends a sample and related exemplars, metadata, and
+	// created timestamp to the storage.
+	AppendSample(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) error
+	// AppendSample appends a histogram and related exemplars, metadata, and
+	// created timestamp to the storage.
+	AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) error
+}
+
 // NewCombinedAppender creates a combined appender that sets start times and
 // updates metadata for each series only once, and appends samples and
 // exemplars for each call.
@@ -51,17 +62,6 @@ func NewCombinedAppender(app storage.Appender, logger *slog.Logger, reg promethe
 			Help:      "The total number of received OTLP exemplars which were rejected because they were out of order.",
 		}),
 	}
-}
-
-// CombinedAppender is similar to storage.Appender, but combines updates to
-// metadata, created timestamps, exemplars and samples into a single call.
-type CombinedAppender interface {
-	// AppendSample appends a sample and related exemplars, metadata, and
-	// created timestamp to the storage.
-	AppendSample(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) error
-	// AppendSample appends a histogram and related exemplars, metadata, and
-	// created timestamp to the storage.
-	AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) error
 }
 
 type combinedAppender struct {
