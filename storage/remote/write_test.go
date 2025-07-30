@@ -383,7 +383,8 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 
 func TestOTLPWriteHandlerNaming(t *testing.T) {
 	timestamp := time.Now()
-	exportRequest := generateOTLPWriteRequest(timestamp)
+	var zeroTime time.Time
+	exportRequest := generateOTLPWriteRequest(timestamp, zeroTime)
 	for _, testCase := range []struct {
 		name              string
 		otlpCfg           config.OTLPConfig
@@ -914,7 +915,10 @@ func TestOTLPWriteHandlerNaming(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			appendable := handleOTLP(t, exportRequest, testCase.otlpCfg, testCase.typeAndUnitLabels)
+			otlpOpts := OTLPOptions{
+				EnableTypeAndUnitLabels: testCase.typeAndUnitLabels,
+			}
+			appendable := handleOTLP(t, exportRequest, testCase.otlpCfg, otlpOpts)
 			for _, sample := range testCase.expectedSamples {
 				requireContainsSample(t, appendable.samples, sample)
 			}
@@ -925,6 +929,182 @@ func TestOTLPWriteHandlerNaming(t *testing.T) {
 			require.Len(t, appendable.histograms, 1) // 1 (exponential histogram)
 			require.Len(t, appendable.metadata, 13)  // for each float and histogram sample
 			require.Len(t, appendable.exemplars, 1)  // 1 (exemplar)
+		})
+	}
+}
+
+// Check that start time is ingested if ingestCTZeroSample is enabled
+// and the start time is actually set (non-zero).
+func TestOTLPWRiteHandlerStartTime(t *testing.T) {
+	timestamp := time.Now()
+	startTime := timestamp.Add(-1 * time.Millisecond)
+	var zeroTime time.Time
+
+	expectedSamples := []mockSample{
+		{
+			l: labels.FromStrings(model.MetricNameLabel, "test.counter", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+			t: timestamp.UnixMilli(),
+			v: 10.0,
+		},
+		{
+			l: labels.FromStrings(model.MetricNameLabel, "test.gauge", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+			t: timestamp.UnixMilli(),
+			v: 10.0,
+		},
+		{
+			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_sum", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+			t: timestamp.UnixMilli(),
+			v: 30.0,
+		},
+		{
+			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_count", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+			t: timestamp.UnixMilli(),
+			v: 12.0,
+		},
+		{
+			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "0"),
+			t: timestamp.UnixMilli(),
+			v: 2.0,
+		},
+		{
+			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "1"),
+			t: timestamp.UnixMilli(),
+			v: 4.0,
+		},
+		{
+			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "2"),
+			t: timestamp.UnixMilli(),
+			v: 6.0,
+		},
+		{
+			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "3"),
+			t: timestamp.UnixMilli(),
+			v: 8.0,
+		},
+		{
+			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "4"),
+			t: timestamp.UnixMilli(),
+			v: 10.0,
+		},
+		{
+			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "5"),
+			t: timestamp.UnixMilli(),
+			v: 12.0,
+		},
+		{
+			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "+Inf"),
+			t: timestamp.UnixMilli(),
+			v: 12.0,
+		},
+		{
+			l: labels.FromStrings(model.MetricNameLabel, "target_info", "host.name", "test-host", "instance", "test-instance", "job", "test-service"),
+			t: timestamp.UnixMilli(),
+			v: 1.0,
+		},
+	}
+	expectedHistograms := []mockHistogram{
+		{
+			l: labels.FromStrings(model.MetricNameLabel, "test.exponential.histogram", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+			t: timestamp.UnixMilli(),
+			h: &histogram.Histogram{
+				Schema:          2,
+				ZeroThreshold:   1e-128,
+				ZeroCount:       2,
+				Count:           10,
+				Sum:             30,
+				PositiveSpans:   []histogram.Span{{Offset: 1, Length: 5}},
+				PositiveBuckets: []int64{2, 0, 0, 0, 0},
+			},
+		},
+	}
+
+	expectedSamplesWithCTZero := make([]mockSample, 0, len(expectedSamples)*2-1) // All samples will get CT zero, except target_info.
+	for _, s := range expectedSamples {
+		if s.l.Get(model.MetricNameLabel) != "target_info" {
+			expectedSamplesWithCTZero = append(expectedSamplesWithCTZero, mockSample{
+				l: s.l.Copy(),
+				t: startTime.UnixMilli(),
+				v: 0,
+			})
+		}
+		expectedSamplesWithCTZero = append(expectedSamplesWithCTZero, s)
+	}
+	expectedHistogramsWithCTZero := make([]mockHistogram, 0, len(expectedHistograms)*2)
+	for _, s := range expectedHistograms {
+		if s.l.Get(model.MetricNameLabel) != "target_info" {
+			expectedHistogramsWithCTZero = append(expectedHistogramsWithCTZero, mockHistogram{
+				l: s.l.Copy(),
+				t: startTime.UnixMilli(),
+				h: &histogram.Histogram{},
+			})
+		}
+		expectedHistogramsWithCTZero = append(expectedHistogramsWithCTZero, s)
+	}
+
+	for _, testCase := range []struct {
+		name               string
+		otlpOpts           OTLPOptions
+		startTime          time.Time
+		expectCTZero       bool
+		expectedSamples    []mockSample
+		expectedHistograms []mockHistogram
+	}{
+		{
+			name: "IngestCTZero=false/startTime=0",
+			otlpOpts: OTLPOptions{
+				IngestCTZeroSample: false,
+			},
+			startTime:          zeroTime,
+			expectedSamples:    expectedSamples,
+			expectedHistograms: expectedHistograms,
+		},
+		{
+			name: "IngestCTZero=true/startTime=0",
+			otlpOpts: OTLPOptions{
+				IngestCTZeroSample: true,
+			},
+			startTime:          zeroTime,
+			expectedSamples:    expectedSamples,
+			expectedHistograms: expectedHistograms,
+		},
+		{
+			name: "IngestCTZero=false/startTime=ts-1ms",
+			otlpOpts: OTLPOptions{
+				IngestCTZeroSample: false,
+			},
+			startTime:          startTime,
+			expectedSamples:    expectedSamples,
+			expectedHistograms: expectedHistograms,
+		},
+		{
+			name: "IngestCTZero=true/startTime=ts-1ms",
+			otlpOpts: OTLPOptions{
+				IngestCTZeroSample: true,
+			},
+			startTime:          startTime,
+			expectedSamples:    expectedSamplesWithCTZero,
+			expectedHistograms: expectedHistogramsWithCTZero,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			exportRequest := generateOTLPWriteRequest(timestamp, testCase.startTime)
+			appendable := handleOTLP(t, exportRequest, config.OTLPConfig{
+				TranslationStrategy: config.NoTranslation,
+			}, testCase.otlpOpts)
+			for i, expect := range testCase.expectedSamples {
+				actual := appendable.samples[i]
+				require.True(t, labels.Equal(expect.l, actual.l), "sample labels,pos=%v", i)
+				require.Equal(t, expect.t, actual.t, "sample timestamp,pos=%v", i)
+				require.Equal(t, expect.v, actual.v, "sample value,pos=%v", i)
+			}
+			for i, expect := range testCase.expectedHistograms {
+				actual := appendable.histograms[i]
+				require.True(t, labels.Equal(expect.l, actual.l), "histogram labels,pos=%v", i)
+				require.Equal(t, expect.t, actual.t, "histogram timestamp,pos=%v", i)
+				require.True(t, expect.h.Equals(actual.h), "histogram value,pos=%v", i)
+			}
+			require.Len(t, appendable.samples, len(testCase.expectedSamples))
+			require.Len(t, appendable.histograms, len(testCase.expectedHistograms))
 		})
 	}
 }
@@ -955,7 +1135,7 @@ func requireContainsMetadata(t *testing.T, actual []mockMetadata, expected mockM
 		"actual  : %v", expected, actual))
 }
 
-func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg config.OTLPConfig, typeAndUnitLabels bool) *mockAppendable {
+func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg config.OTLPConfig, otlpOpts OTLPOptions) *mockAppendable {
 	buf, err := exportRequest.MarshalProto()
 	require.NoError(t, err)
 
@@ -969,7 +1149,7 @@ func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg c
 		return config.Config{
 			OTLPConfig: otlpCfg,
 		}
-	}, OTLPOptions{EnableTypeAndUnitLabels: typeAndUnitLabels})
+	}, otlpOpts)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 
@@ -979,7 +1159,7 @@ func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg c
 	return appendable
 }
 
-func generateOTLPWriteRequest(timestamp time.Time) pmetricotlp.ExportRequest {
+func generateOTLPWriteRequest(timestamp, startTime time.Time) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
 	// Generate One Counter, One Gauge, One Histogram, One Exponential-Histogram
@@ -1004,6 +1184,7 @@ func generateOTLPWriteRequest(timestamp time.Time) pmetricotlp.ExportRequest {
 
 	counterDataPoint := counterMetric.Sum().DataPoints().AppendEmpty()
 	counterDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
+	counterDataPoint.SetStartTimestamp(pcommon.NewTimestampFromTime(startTime))
 	counterDataPoint.SetDoubleValue(10.0)
 	counterDataPoint.Attributes().PutStr("foo.bar", "baz")
 
@@ -1023,6 +1204,7 @@ func generateOTLPWriteRequest(timestamp time.Time) pmetricotlp.ExportRequest {
 
 	gaugeDataPoint := gaugeMetric.Gauge().DataPoints().AppendEmpty()
 	gaugeDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
+	gaugeDataPoint.SetStartTimestamp(pcommon.NewTimestampFromTime(startTime))
 	gaugeDataPoint.SetDoubleValue(10.0)
 	gaugeDataPoint.Attributes().PutStr("foo.bar", "baz")
 
@@ -1036,9 +1218,10 @@ func generateOTLPWriteRequest(timestamp time.Time) pmetricotlp.ExportRequest {
 
 	histogramDataPoint := histogramMetric.Histogram().DataPoints().AppendEmpty()
 	histogramDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
+	histogramDataPoint.SetStartTimestamp(pcommon.NewTimestampFromTime(startTime))
 	histogramDataPoint.ExplicitBounds().FromRaw([]float64{0.0, 1.0, 2.0, 3.0, 4.0, 5.0})
 	histogramDataPoint.BucketCounts().FromRaw([]uint64{2, 2, 2, 2, 2, 2})
-	histogramDataPoint.SetCount(10)
+	histogramDataPoint.SetCount(12)
 	histogramDataPoint.SetSum(30.0)
 	histogramDataPoint.Attributes().PutStr("foo.bar", "baz")
 
@@ -1052,6 +1235,7 @@ func generateOTLPWriteRequest(timestamp time.Time) pmetricotlp.ExportRequest {
 
 	exponentialHistogramDataPoint := exponentialHistogramMetric.ExponentialHistogram().DataPoints().AppendEmpty()
 	exponentialHistogramDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
+	exponentialHistogramDataPoint.SetStartTimestamp(pcommon.NewTimestampFromTime(startTime))
 	exponentialHistogramDataPoint.SetScale(2.0)
 	exponentialHistogramDataPoint.Positive().BucketCounts().FromRaw([]uint64{2, 2, 2, 2, 2})
 	exponentialHistogramDataPoint.SetZeroCount(2)
