@@ -112,11 +112,13 @@ type OpenMetricsParser struct {
 	visitedMFName           []byte
 	skipCTSeries            bool
 	enableTypeAndUnitLabels bool
+	enableOtelSuffix        bool
 }
 
 type openMetricsParserOptions struct {
 	skipCTSeries            bool
 	enableTypeAndUnitLabels bool
+	enableOtelSuffix        bool
 }
 
 type OpenMetricsOption func(*openMetricsParserOptions)
@@ -155,6 +157,7 @@ func NewOpenMetricsParser(b []byte, st *labels.SymbolTable, opts ...OpenMetricsO
 		builder:                 labels.NewScratchBuilderWithSymbolTable(st, 16),
 		skipCTSeries:            options.skipCTSeries,
 		enableTypeAndUnitLabels: options.enableTypeAndUnitLabels,
+		enableOtelSuffix:        options.enableOtelSuffix,
 	}
 
 	return parser
@@ -524,7 +527,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		case tUnit:
 			p.unit = string(p.text)
 			m := yoloString(p.l.b[p.offsets[0]:p.offsets[1]])
-			if len(p.unit) > 0 {
+			if len(p.unit) > 0 && !p.enableOtelSuffix {
 				if !strings.HasSuffix(m, p.unit) || len(m) < len(p.unit)+1 || p.l.b[p.offsets[1]-len(p.unit)-1] != '_' {
 					return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", p.unit, m)
 				}
