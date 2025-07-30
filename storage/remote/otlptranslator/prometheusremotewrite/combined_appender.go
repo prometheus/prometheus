@@ -73,7 +73,7 @@ type combinedAppender struct {
 	refs map[uint64]storage.SeriesRef
 }
 
-func (b *combinedAppender) AppendSample(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) (err error) {
+func (b *combinedAppender) AppendSample(_ string, ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) (err error) {
 	hash := ls.Hash()
 	ref, exists := b.refs[hash]
 	if !exists {
@@ -107,7 +107,7 @@ func (b *combinedAppender) AppendSample(metricFamilyName string, ls labels.Label
 	return
 }
 
-func (b *combinedAppender) AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
+func (b *combinedAppender) AppendHistogram(_ string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
 	hash := ls.Hash()
 	ref, exists := b.refs[hash]
 	if !exists {
