@@ -29,8 +29,8 @@ import (
 	"go.uber.org/multierr"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite/labels"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 

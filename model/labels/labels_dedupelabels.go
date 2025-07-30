@@ -464,6 +464,18 @@ func New(ls ...Label) Labels {
 	return Labels{syms: syms.nameTable, data: yoloString(buf)}
 }
 
+// NewFromSorted returns sorted Labels from the given
+// sorted labels. In case of slices it returns the
+// input.
+func NewFromSorted(ls []Label) Labels {
+	syms := NewSymbolTable()
+	var stackSpace [16]int
+	size, nums := mapLabelsToNumbers(syms, ls, stackSpace[:])
+	buf := make([]byte, size)
+	marshalNumbersToSizedBuffer(nums, buf)
+	return Labels{syms: syms.nameTable, data: yoloString(buf)}
+}
+
 // FromStrings creates new labels from pairs of strings.
 func FromStrings(ss ...string) Labels {
 	if len(ss)%2 != 0 {

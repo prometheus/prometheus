@@ -27,8 +27,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite/labels"
 )
 
 func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {

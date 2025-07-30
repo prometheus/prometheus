@@ -23,9 +23,10 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
+	modelLabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite/labels"
 )
 
 // NewCombinedAppender creates a combined appender that sets start times and
@@ -73,7 +74,8 @@ type combinedAppender struct {
 	refs map[uint64]storage.SeriesRef
 }
 
-func (b *combinedAppender) AppendSample(_ string, ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) (err error) {
+func (b *combinedAppender) AppendSample(_ string, rawls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) (err error) {
+	ls := modelLabels.NewFromSorted(rawls)
 	hash := ls.Hash()
 	ref, exists := b.refs[hash]
 	if !exists {
@@ -107,7 +109,8 @@ func (b *combinedAppender) AppendSample(_ string, ls labels.Labels, meta metadat
 	return
 }
 
-func (b *combinedAppender) AppendHistogram(_ string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
+func (b *combinedAppender) AppendHistogram(_ string, rawls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
+	ls := modelLabels.NewFromSorted(rawls)
 	hash := ls.Hash()
 	ref, exists := b.refs[hash]
 	if !exists {
@@ -141,7 +144,7 @@ func (b *combinedAppender) AppendHistogram(_ string, ls labels.Labels, meta meta
 	return
 }
 
-func (b *combinedAppender) appendExemplars(ref storage.SeriesRef, ls labels.Labels, es []exemplar.Exemplar) storage.SeriesRef {
+func (b *combinedAppender) appendExemplars(ref storage.SeriesRef, ls modelLabels.Labels, es []exemplar.Exemplar) storage.SeriesRef {
 	var err error
 	for _, e := range es {
 		if ref, err = b.app.AppendExemplar(ref, ls, e); err != nil {

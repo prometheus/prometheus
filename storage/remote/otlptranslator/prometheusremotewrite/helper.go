@@ -35,11 +35,12 @@ import (
 	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
 
 	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/labels"
+	modelLabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite/labels"
 )
 
 const (
@@ -100,7 +101,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		// Now that we have sorted and filtered the labels, build the actual list
 		// of labels, and handle conflicts by appending values.
 		c.builder.Reset(labels.EmptyLabels())
-		sortedLabels.Range(func(l labels.Label) {
+		sortedLabels.Range(func(l modelLabels.Label) {
 			finalKey := labelNamer.Build(l.Name)
 			if existingValue := c.builder.Get(finalKey); existingValue != "" {
 				c.builder.Set(finalKey, existingValue+";"+l.Value)
@@ -349,7 +350,7 @@ func (c *PrometheusConverter) getPromExemplars(ctx context.Context, exemplars pm
 			})
 		}
 		c.scratchBuilder.Sort()
-		newExemplar.Labels = c.scratchBuilder.Labels()
+		newExemplar.Labels = modelLabels.NewFromSorted(c.scratchBuilder.Labels())
 		outputExemplars = append(outputExemplars, newExemplar)
 	}
 
@@ -561,7 +562,7 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 	// TODO: should target info have the __type__ metadata label?
 	lbls := c.createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, metadata.Metadata{}, model.MetricNameLabel, name)
 	haveIdentifier := false
-	lbls.Range(func(l labels.Label) {
+	lbls.Range(func(l modelLabels.Label) {
 		if l.Name == model.JobLabel || l.Name == model.InstanceLabel {
 			haveIdentifier = true
 		}

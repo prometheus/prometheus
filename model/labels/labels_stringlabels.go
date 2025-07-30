@@ -314,6 +314,16 @@ func New(ls ...Label) Labels {
 	return Labels{data: yoloString(buf)}
 }
 
+// NewFromSorted returns sorted Labels from the given
+// sorted labels. In case of slices it returns the
+// input.
+func NewFromSorted(ls []Label) Labels {
+	size := labelsSize(ls)
+	buf := make([]byte, size)
+	marshalLabelsToSizedBuffer(ls, buf)
+	return Labels{data: yoloString(buf)}
+}
+
 // FromStrings creates new labels from pairs of strings.
 func FromStrings(ss ...string) Labels {
 	if len(ss)%2 != 0 {

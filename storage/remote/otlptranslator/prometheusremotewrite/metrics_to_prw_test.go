@@ -30,8 +30,9 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
+	modelLabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite/labels"
 )
 
 func TestFromMetrics(t *testing.T) {
@@ -107,7 +108,7 @@ func TestFromMetrics(t *testing.T) {
 				tgtInfoCount := 0
 				for _, s := range ts {
 					lbls := s.ls
-					if lbls.Get(labels.MetricName) == "target_info" {
+					if lbls.Get(modelLabels.MetricName) == "target_info" {
 						tgtInfoCount++
 						require.Equal(t, "test-namespace/test-service", lbls.Get("job"))
 						require.Equal(t, "id1234", lbls.Get("instance"))
