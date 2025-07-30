@@ -190,6 +190,27 @@ Check if the rule files are valid or not.
 
 
 
+##### `promtool check query`
+
+Check if the PromQL query is valid.
+
+examples:
+
+$ promtool check query 'up'
+
+$ promtool check query 'rate(http_requests_total[5m])'
+
+
+
+###### Arguments
+
+| Argument | Description | Required |
+| --- | --- | --- |
+| query | The PromQL query expression to validate. | Yes |
+
+
+
+
 ##### `promtool check metrics`
 
 Pass Prometheus metrics over stdin to lint them for consistency and correctness.

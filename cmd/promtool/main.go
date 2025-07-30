@@ -161,6 +161,9 @@ func main() {
 		"Make lint errors exit with exit code 3.").Default("false").Bool()
 	checkRulesIgnoreUnknownFields := checkRulesCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the rule files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
+	checkQueryCmd := checkCmd.Command("query", "Check if the PromQL query is valid.\n\nexamples:\n\n$ promtool check query 'up'\n\n$ promtool check query 'rate(http_requests_total[5m])'")
+	checkQueryExpr := checkQueryCmd.Arg("query", "The PromQL query expression to validate.").Required().String()
+
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 	checkMetricsExtended := checkCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
 	agentMode := checkConfigCmd.Flag("agent", "Check config file for Prometheus in Agent mode.").Bool()
@@ -372,6 +375,9 @@ func main() {
 
 	case checkRulesCmd.FullCommand():
 		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesIgnoreUnknownFields), *ruleFiles...))
+
+	case checkQueryCmd.FullCommand():
+		os.Exit(CheckQuery(*checkQueryExpr))
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
@@ -822,6 +828,26 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 	}
 
 	return targetGroups, nil
+}
+
+// CheckQuery validates a PromQL query expression.
+func CheckQuery(query string) int {
+	fmt.Printf("Checking PromQL query: %q\n", query)
+
+	if query == "" {
+		fmt.Fprintln(os.Stderr, "  FAILED: query expression cannot be empty")
+		return failureExitCode
+	}
+
+	_, err := parser.ParseExpr(query)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "  FAILED:")
+		fmt.Fprintf(os.Stderr, "    %s\n", err.Error())
+		return failureExitCode
+	}
+
+	fmt.Println("  SUCCESS: query is valid")
+	return successExitCode
 }
 
 // CheckRules validates rule files.

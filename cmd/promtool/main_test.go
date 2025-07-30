@@ -558,6 +558,62 @@ func TestCheckRules(t *testing.T) {
 	})
 }
 
+func TestCheckQuery(t *testing.T) {
+	tests := []struct {
+		name     string
+		query    string
+		expected int
+	}{
+		{
+			name:     "valid-simple-query",
+			query:    "up",
+			expected: successExitCode,
+		},
+		{
+			name:     "valid-function-query",
+			query:    "rate(http_requests_total[5m])",
+			expected: successExitCode,
+		},
+		{
+			name:     "valid-aggregation-query",
+			query:    "sum by (job) (up)",
+			expected: successExitCode,
+		},
+		{
+			name:     "valid-complex-query",
+			query:    "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
+			expected: successExitCode,
+		},
+		{
+			name:     "invalid-syntax-unclosed-paren",
+			query:    "rate(http_requests_total[5m",
+			expected: failureExitCode,
+		},
+		{
+			name:     "invalid-syntax-unclosed-bracket",
+			query:    "http_requests_total[5m",
+			expected: failureExitCode,
+		},
+		{
+			name:     "invalid-syntax-bad-function",
+			query:    "invalid_function(up)",
+			expected: failureExitCode,
+		},
+		{
+			name:     "empty-query",
+			query:    "",
+			expected: failureExitCode,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exitCode := CheckQuery(tt.query)
+			require.Equal(t, tt.expected, exitCode, "Expected exit code %d for query %q, got %d", tt.expected, tt.query, exitCode)
+		})
+	}
+}
+
 func TestCheckRulesWithFeatureFlag(t *testing.T) {
 	// As opposed to TestCheckRules calling CheckRules directly we run promtool
 	// so the feature flag parsing can be tested.
