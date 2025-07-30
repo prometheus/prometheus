@@ -82,7 +82,7 @@ func (b *combinedAppender) AppendSample(_ string, rawls labels.Labels, meta meta
 		ref, err = b.app.UpdateMetadata(0, ls, meta)
 		if err != nil {
 			b.samplesAppendedWithoutMetadata.Add(1)
-			b.logger.Debug("error while updating metadata from OTLP", "err", err)
+			b.logger.Debug("Error while updating metadata from OTLP", "err", err)
 		}
 		if ct != 0 && b.ingestCTZeroSample {
 			ref, err = b.app.AppendCTZeroSample(ref, ls, t, ct)
@@ -90,7 +90,7 @@ func (b *combinedAppender) AppendSample(_ string, rawls labels.Labels, meta meta
 				// Even for the first sample OOO is a common scenario because
 				// we can't tell if a CT was already ingested in a previous request.
 				// We ignore the error.
-				b.logger.Debug("Error when appending CT in OTLP request", "err", err, "series", ls.String(), "created_timestamp", ct, "timestamp", t)
+				b.logger.Debug("Error when appending float CT from OTLP", "err", err, "series", ls.String(), "created_timestamp", ct, "timestamp", t)
 			}
 		}
 	}
@@ -101,7 +101,7 @@ func (b *combinedAppender) AppendSample(_ string, rawls labels.Labels, meta meta
 		if errors.Is(err, storage.ErrOutOfOrderSample) ||
 			errors.Is(err, storage.ErrOutOfBounds) ||
 			errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-			b.logger.Error("Out of order sample from OTLP", "err", err.Error(), "series", ls.String(), "timestamp", t)
+			b.logger.Error("Error when appending float sample from OTLP", "err", err.Error(), "series", ls.String(), "timestamp", t)
 		}
 	}
 	ref = b.appendExemplars(ref, ls, es)
@@ -117,7 +117,7 @@ func (b *combinedAppender) AppendHistogram(_ string, rawls labels.Labels, meta m
 		ref, err = b.app.UpdateMetadata(0, ls, meta)
 		if err != nil {
 			b.samplesAppendedWithoutMetadata.Add(1)
-			b.logger.Debug("error while updating metadata from OTLP", "err", err)
+			b.logger.Debug("Error while updating metadata from OTLP", "err", err)
 		}
 		if b.ingestCTZeroSample {
 			ref, err = b.app.AppendHistogramCTZeroSample(ref, ls, t, ct, h, nil)
@@ -125,7 +125,7 @@ func (b *combinedAppender) AppendHistogram(_ string, rawls labels.Labels, meta m
 				// Even for the first sample OOO is a common scenario because
 				// we can't tell if a CT was already ingested in a previous request.
 				// We ignore the error.
-				b.logger.Debug("Error when appending Histogram CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ct, "timestamp", t)
+				b.logger.Debug("Error when appending Histogram CT from OTLP", "err", err, "series", ls.String(), "created_timestamp", ct, "timestamp", t)
 			}
 		}
 	}
@@ -136,7 +136,7 @@ func (b *combinedAppender) AppendHistogram(_ string, rawls labels.Labels, meta m
 		if errors.Is(err, storage.ErrOutOfOrderSample) ||
 			errors.Is(err, storage.ErrOutOfBounds) ||
 			errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-			b.logger.Error("Out of order histogram from OTLP", "err", err.Error(), "series", ls.String(), "timestamp", t)
+			b.logger.Error("Error when appending histogram sample from OTLP", "err", err.Error(), "series", ls.String(), "timestamp", t)
 		}
 	}
 	ref = b.appendExemplars(ref, ls, es)
@@ -151,10 +151,10 @@ func (b *combinedAppender) appendExemplars(ref storage.SeriesRef, ls modelLabels
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderExemplar):
 				b.outOfOrderExemplars.Add(1)
-				b.logger.Debug("Out of order exemplar", "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e))
+				b.logger.Debug("Out of order exemplar from OTLP", "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e))
 			default:
 				// Since exemplar storage is still experimental, we don't fail the request on ingestion errors
-				b.logger.Debug("Error while adding exemplar in AppendExemplar", "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e), "err", err)
+				b.logger.Debug("Error while adding exemplar from OTLP", "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e), "err", err)
 			}
 		}
 	}
