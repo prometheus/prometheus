@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wlog"
@@ -75,7 +76,77 @@ func counterAddNonZero(v *prometheus.CounterVec, value float64, lvs ...string) {
 	}
 }
 
+type seriesShard struct {
+	series   []record.RefSeries
+	postings *index.MemPostings
+	errs     chan error
+}
+
+func distributeSeriesToShards(series []record.RefSeries, numShards int) []*seriesShard {
+	shards := make([]*seriesShard, numShards)
+	for i := range shards {
+		shards[i] = &seriesShard{
+			postings: index.NewUnorderedMemPostings(),
+			errs:     make(chan error, 1),
+		}
+	}
+	for _, s := range series {
+		shardID := s.Labels.Hash() % uint64(numShards)
+		shards[shardID].series = append(shards[shardID].series, s)
+	}
+	return shards
+}
+
+func replaySeriesShards(shards []*seriesShard, h *Head) error {
+	var wg sync.WaitGroup
+	for _, shard := range shards {
+		wg.Add(1)
+		go func(s *seriesShard) {
+			defer wg.Done()
+			for _, ser := range s.series {
+				mSeries, created, err := h.getOrCreateWithID(ser.Ref, ser.Labels.Hash(), ser.Labels, false)
+				if err != nil {
+					s.errs <- fmt.Errorf("getOrCreateWithID failed: %w", err)
+					return
+				}
+				if created {
+					s.postings.Add(storage.SeriesRef(mSeries.ref), ser.Labels)
+				}
+			}
+			s.postings.EnsureOrder(1)
+		}(shard)
+	}
+
+	wg.Wait()
+	for _, s := range shards {
+		select {
+		case err := <-s.errs:
+			if err != nil {
+				return err
+			}
+		default:
+		}
+	}
+	// Merge postings into global head.
+	for _, s := range shards {
+		s.postings.Iter(func(lbl labels.Label, p index.Postings) error {
+			for p.Next() {
+				h.postings.Add(p.At(), labels.FromMap(map[string]string{lbl.Name: lbl.Value}))
+			}
+			return p.Err()
+		})
+	}
+	return nil
+}
+
+// Entry point for sharded series replay. Call this from loadWAL instead of serial loop.
+func processSeriesSharded(series []record.RefSeries, h *Head, concurrency int) error {
+	shards := distributeSeriesToShards(series, concurrency)
+	return replaySeriesShards(shards, h)
+}
+
 func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, lastSegment int) (err error) {
+	fmt.Println("🔁 Starting WAL replay...")
 	// Track number of missing series records that were referenced by other records.
 	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
 	// Track number of different records that referenced a series we don't know about
@@ -102,6 +173,9 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		decodeErr, seriesCreationErr error
 	)
 
+	fmt.Printf("📌 Using %d goroutines for WAL replay\n", concurrency)
+	fmt.Printf("🧵 Processor slots: processors=%d shards=%d\n", len(processors), len(shards))
+
 	defer func() {
 		// For CorruptionErr ensure to terminate all workers before exiting.
 		_, ok := err.(*wlog.CorruptionErr)
@@ -119,6 +193,8 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		processors[i].setup()
 
 		go func(wp *walSubsetProcessor) {
+			fmt.Printf("▶️ WAL processor started: shard=")
+
 			missingSeries, unknownSamples, unknownHistograms, overlapping := wp.processWALSamples(h, mmappedChunks, oooMmappedChunks)
 			unknownSeriesRefs.merge(missingSeries)
 			unknownSampleRefs.Add(unknownSamples)
@@ -253,26 +329,35 @@ Outer:
 	for d := range decoded {
 		switch v := d.(type) {
 		case []record.RefSeries:
-			for _, walSeries := range v {
-				mSeries, created, err := h.getOrCreateWithID(walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels, false)
+			if h.opts.EnableSharding {
+				err := processSeriesSharded(v, h, concurrency)
 				if err != nil {
 					seriesCreationErr = err
 					break Outer
 				}
+			} else {
+				for _, walSeries := range v {
+					mSeries, created, err := h.getOrCreateWithID(walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels, false)
+					if err != nil {
+						seriesCreationErr = err
+						break Outer
+					}
 
-				if chunks.HeadSeriesRef(h.lastSeriesID.Load()) < walSeries.Ref {
-					h.lastSeriesID.Store(uint64(walSeries.Ref))
-				}
-				if !created {
-					multiRef[walSeries.Ref] = mSeries.ref
-					// Set the WAL expiry for the duplicate series, so it is kept in subsequent WAL checkpoints.
-					h.setWALExpiry(walSeries.Ref, lastSegment)
-				}
+					if chunks.HeadSeriesRef(h.lastSeriesID.Load()) < walSeries.Ref {
+						h.lastSeriesID.Store(uint64(walSeries.Ref))
+					}
+					if !created {
+						multiRef[walSeries.Ref] = mSeries.ref
+						// Set the WAL expiry for the duplicate series, so it is kept in subsequent WAL checkpoints.
+						h.setWALExpiry(walSeries.Ref, lastSegment)
+					}
 
-				idx := uint64(mSeries.ref) % uint64(concurrency)
-				processors[idx].input <- walSubsetProcessorInputItem{walSeriesRef: walSeries.Ref, existingSeries: mSeries}
+					idx := uint64(mSeries.ref) % uint64(concurrency)
+					processors[idx].input <- walSubsetProcessorInputItem{walSeriesRef: walSeries.Ref, existingSeries: mSeries}
+				}
 			}
 			h.wlReplaySeriesPool.Put(v)
+
 		case []record.RefSample:
 			samples := v
 			minValidTime := h.minValidTime.Load()
