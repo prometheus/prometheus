@@ -43,7 +43,6 @@ const (
 	IngestionPublicAudience     = "https://monitor.azure.com//.default"
 )
 
-// Default paths.
 const (
 	// DefaultWorkloadIdentityTokenPath is the default path where the Azure Workload Identity.
 	// webhook projects the service account token. This path is automatically configured.
