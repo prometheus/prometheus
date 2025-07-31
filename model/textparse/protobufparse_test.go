@@ -16,6 +16,8 @@ package textparse
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
+	"math/rand"
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
@@ -26,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
+	"github.com/prometheus/prometheus/util/pool"
 )
 
 func createTestProtoBuf(t testing.TB) *bytes.Buffer {
@@ -3213,4 +3216,122 @@ func TestProtobufParse(t *testing.T) {
 			requireEntries(t, exp, got)
 		})
 	}
+}
+
+func TestProtobufParser_LabelsCorruption(t *testing.T) {
+	testCases := []struct {
+		name                    string
+		parseClassicHistogram   bool
+		enableTypeAndUnitLabels bool
+	}{
+		{
+			name:                    "parseClassicHistogram=true, enableTypeAndUnitLabels=true",
+			parseClassicHistogram:   true,
+			enableTypeAndUnitLabels: true,
+		},
+		{
+			name:                    "parseClassicHistogram=true, enableTypeAndUnitLabels=false",
+			parseClassicHistogram:   true,
+			enableTypeAndUnitLabels: false,
+		},
+		{
+			name:                    "parseClassicHistogram=false, enableTypeAndUnitLabels=true",
+			parseClassicHistogram:   false,
+			enableTypeAndUnitLabels: true,
+		},
+		{
+			name:                    "parseClassicHistogram=false, enableTypeAndUnitLabels=false",
+			parseClassicHistogram:   false,
+			enableTypeAndUnitLabels: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Use buffer pool like in scrape.go
+			r := rand.New(rand.NewSource(0))
+			buffers := pool.New(128, 1024, 2, func(sz int) interface{} { return make([]byte, 0, sz) })
+			lastScrapeSize := 0
+			var allPreviousLabels []labels.Labels
+			st := labels.NewSymbolTable()
+			for i := 0; i < 100; i++ { // run multiple iterations to encounter memory corruptions
+				labelsCount := r.Intn(40)
+				// Get buffer from pool like in scrape.go
+				b := buffers.Get(lastScrapeSize).([]byte)
+				buf := bytes.NewBuffer(b)
+
+				// Generate some scraped data to parse
+				mf := &dto.MetricFamily{}
+				data := generateMetricFamilyText(labelsCount)
+				require.NoError(t, proto.UnmarshalText(data, mf))
+				protoBuf, err := proto.Marshal(mf)
+				require.NoError(t, err)
+				sizeBuf := make([]byte, binary.MaxVarintLen32)
+				sizeBufSize := binary.PutUvarint(sizeBuf, uint64(len(protoBuf)))
+				buf.Write(sizeBuf[:sizeBufSize])
+				buf.Write(protoBuf)
+
+				// Use protobuf parser to parse like in real usage
+				b = buf.Bytes()
+				p := NewProtobufParser(b, tc.parseClassicHistogram, tc.enableTypeAndUnitLabels, st)
+				entry, err := p.Next()
+				require.NoError(t, err)
+				require.Equal(t, EntryHelp, entry)
+
+				entry, err = p.Next()
+				require.NoError(t, err)
+				require.Equal(t, EntryUnit, entry)
+
+				entry, err = p.Next()
+				require.NoError(t, err)
+				require.Equal(t, EntryType, entry)
+
+				entry, err = p.Next()
+				require.NoError(t, err)
+				require.Equal(t, EntrySeries, entry)
+
+				// Get the labels
+				var lbs labels.Labels
+				p.Labels(&lbs) // this might use unsafe strings to create labels - we verify no corruption occurs
+				allPreviousLabels = append(allPreviousLabels, lbs)
+
+				// Validate all labels seen so far remain valid
+				for _, l := range allPreviousLabels {
+					require.True(t, l.IsValid(model.LegacyValidation), "encountered corrupted labels: %v", l)
+				}
+
+				lastScrapeSize = len(b)
+				buffers.Put(b)
+			}
+		})
+	}
+}
+
+func generateLabels() string {
+	randomName := fmt.Sprintf("instance_%d", rand.Intn(1000))
+	randomValue := fmt.Sprintf("value_%d", rand.Intn(1000))
+	return fmt.Sprintf(`label: <
+    name: "%s"
+    value: "%s"
+  >`, randomName, randomValue)
+}
+
+func generateMetricFamilyText(labelsCount int) string {
+	randomName := fmt.Sprintf("metric_%d_bytes", rand.Intn(1000))
+	randomHelp := fmt.Sprintf("Test metric to demonstrate forced corruption %d.", rand.Intn(1000))
+	labels10 := ""
+	for i := 0; i < labelsCount; i++ {
+		labels10 += generateLabels()
+	}
+	return fmt.Sprintf(`name: "%s"
+help: "%s"
+type: GAUGE
+unit: "bytes"
+metric: <
+  %s
+  gauge: <
+    value: 1.0
+  >
+>
+`, randomName, randomHelp, labels10)
 }
