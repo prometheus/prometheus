@@ -119,7 +119,7 @@ var seps = []byte{'\xff'}
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
 func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope scope, settings Settings,
-	ignoreAttrs []string, logOnOverwrite bool, metadata prompb.MetricMetadata, extras ...string,
+	ignoreAttrs []string, logOnOverwrite bool, metadata prompb.MetricMetadata, temporality pmetric.AggregationTemporality, hasTemporality bool, isMonotonic bool, hasMonotonicity bool, extras ...string,
 ) []prompb.Label {
 	resourceAttrs := resource.Attributes()
 	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
@@ -145,6 +145,10 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 	}
 	if settings.EnableTypeAndUnitLabels {
 		maxLabelCount += 2
+		// Add one more for temporality label if needed
+		if settings.AllowDeltaTemporality && hasTemporality {
+			maxLabelCount++
+		}
 	}
 
 	// Ensure attributes are sorted by key for consistent merging of keys which
@@ -192,11 +196,45 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 
 	if settings.EnableTypeAndUnitLabels {
 		unitNamer := otlptranslator.UnitNamer{UTF8Allowed: settings.AllowUTF8}
+		
+		// Handle type label with delta temporality special case
 		if metadata.Type != prompb.MetricMetadata_UNKNOWN {
-			l["__type__"] = strings.ToLower(metadata.Type.String())
+			typeValue := strings.ToLower(metadata.Type.String())
+			
+			// If delta temporality and NativeDelta is enabled, set type to gauge/gaugehistogram
+			if settings.AllowDeltaTemporality && hasTemporality && temporality == pmetric.AggregationTemporalityDelta {
+				switch metadata.Type {
+				case prompb.MetricMetadata_COUNTER:
+					typeValue = "gauge"
+				case prompb.MetricMetadata_HISTOGRAM:
+					typeValue = "gaugehistogram"
+				}
+			}
+			
+			l["__type__"] = typeValue
 		}
+		
 		if metadata.Unit != "" {
 			l["__unit__"] = unitNamer.Build(metadata.Unit)
+		}
+		
+		// Add temporality label if conditions are met
+		if settings.AllowDeltaTemporality && hasTemporality {
+			switch temporality {
+			case pmetric.AggregationTemporalityCumulative:
+				l["__temporality__"] = "cumulative"
+			case pmetric.AggregationTemporalityDelta:
+				l["__temporality__"] = "delta"
+			}
+		}
+		
+		// Add monotonicity label if conditions are met
+		if hasMonotonicity {
+			if isMonotonic {
+				l["__monotonicity__"] = "true"
+			} else {
+				l["__monotonicity__"] = "false"
+			}
 		}
 	}
 
@@ -269,7 +307,7 @@ func aggregationTemporality(metric pmetric.Metric) (pmetric.AggregationTemporali
 // However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
 // https://github.com/prometheus/prometheus/issues/13485.
 func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, metadata prompb.MetricMetadata, scope scope,
+	resource pcommon.Resource, settings Settings, metadata prompb.MetricMetadata, scope scope, temporality pmetric.AggregationTemporality, hasTemporality bool,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -278,7 +316,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
-		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false, metadata)
+		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false, metadata, temporality, hasTemporality, false, false)
 
 		// If the sum is unset, it indicates the _sum metric point should be
 		// omitted
@@ -488,7 +526,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
-		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false, metadata)
+		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false, metadata, 0, false, false, false)
 
 		// treat sum as a sample in an individual TimeSeries
 		sum := &prompb.Sample{
@@ -655,7 +693,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, earlies
 		// Do not pass identifying attributes as ignoreAttrs below.
 		identifyingAttrs = nil
 	}
-	labels := createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, prompb.MetricMetadata{}, model.MetricNameLabel, name)
+	labels := createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, prompb.MetricMetadata{}, 0, false, false, false, model.MetricNameLabel, name)
 	haveIdentifier := false
 	for _, l := range labels {
 		if l.Name == model.JobLabel || l.Name == model.InstanceLabel {

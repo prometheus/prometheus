@@ -1037,7 +1037,12 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 
 	var suffix string
 	if settings.AddMetricSuffixes {
-		suffix = "_unit"
+		// For delta temporality, don't add unit suffixes
+		if temporality == pmetric.AggregationTemporalityDelta && settings.AllowDeltaTemporality {
+			suffix = "" // No unit suffix for delta metrics
+		} else {
+			suffix = "_unit"
+		}
 	}
 	var wantPromMetrics []wantPrometheusMetric
 	for i := 1; i <= histogramCount; i++ {
@@ -1132,7 +1137,12 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 
 		var counterSuffix string
 		if settings.AddMetricSuffixes {
-			counterSuffix = suffix + "_total"
+			// For delta temporality, don't add any suffixes
+			if temporality == pmetric.AggregationTemporalityDelta && settings.AllowDeltaTemporality {
+				counterSuffix = "" // No suffixes at all for delta metrics
+			} else {
+				counterSuffix = suffix + "_total"
+			}
 		}
 
 		metricType := prompb.MetricMetadata_COUNTER

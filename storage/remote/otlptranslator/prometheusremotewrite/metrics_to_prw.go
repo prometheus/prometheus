@@ -171,9 +171,23 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					continue
 				}
 
+				// For delta temporality, don't add any suffixes (unit or type)
+				var metricFamilyName string
+				if hasTemporality && temporality == pmetric.AggregationTemporalityDelta && settings.AllowDeltaTemporality {
+					// Create a namer without suffixes for delta temporality
+					deltaNamer := otlptranslator.MetricNamer{
+						Namespace:          settings.Namespace,
+						WithMetricSuffixes: false, // Disable all suffixes for delta metrics
+						UTF8Allowed:        settings.AllowUTF8,
+					}
+					metricFamilyName = deltaNamer.Build(TranslatorMetricFromOtelMetric(metric))
+				} else {
+					metricFamilyName = namer.Build(TranslatorMetricFromOtelMetric(metric))
+				}
+
 				metadata := prompb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
-					MetricFamilyName: namer.Build(TranslatorMetricFromOtelMetric(metric)),
+					MetricFamilyName: metricFamilyName,
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
 				}
@@ -200,7 +214,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, metadata, scope); err != nil {
+					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, metadata, scope, temporality, hasTemporality); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -224,7 +238,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 							}
 						}
 					} else {
-						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, metadata, scope); err != nil {
+						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, metadata, scope, temporality, hasTemporality); err != nil {
 							errs = multierr.Append(errs, err)
 							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 								return

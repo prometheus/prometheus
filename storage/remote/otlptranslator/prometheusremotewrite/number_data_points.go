@@ -45,6 +45,10 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 			nil,
 			true,
 			metadata,
+			0, // gauge has no temporality
+			false, // gauge has no temporality
+			false, // gauge has no monotonicity
+			false, // gauge has no monotonicity
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)
@@ -69,7 +73,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 }
 
 func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, metric pmetric.Metric, settings Settings, metadata prompb.MetricMetadata, scope scope,
+	resource pcommon.Resource, metric pmetric.Metric, settings Settings, metadata prompb.MetricMetadata, scope scope, temporality pmetric.AggregationTemporality, hasTemporality bool,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -85,6 +89,10 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			nil,
 			true,
 			metadata,
+			temporality,
+			hasTemporality,
+			metric.Sum().IsMonotonic(),
+			true, // Sum metrics always have monotonicity info
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)

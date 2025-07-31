@@ -60,6 +60,10 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			nil,
 			true,
 			metadata,
+			temporality,
+			true, // exponential histograms always have temporality
+			false, // exponential histograms don't have monotonicity
+			false, // exponential histograms don't have monotonicity
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)
@@ -279,6 +283,10 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 			nil,
 			true,
 			metadata,
+			temporality,
+			true, // histograms always have temporality
+			false, // histograms don't have monotonicity
+			false, // histograms don't have monotonicity
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)
