@@ -44,9 +44,8 @@ const (
 )
 
 const (
-	// DefaultWorkloadIdentityTokenPath is the default path where the Azure Workload Identity.
-	// webhook projects the service account token. This path is automatically configured.
-	// by the webhook when a pod has the label azure.workload.identity/use: "true".
+	// DefaultWorkloadIdentityTokenPath is the default path where the Azure Workload Identity
+	// webhook puts the service account token on Azure environments. See <azure docs link>.
 	DefaultWorkloadIdentityTokenPath = "/var/run/secrets/azure/tokens/azure-identity-token"
 )
 
