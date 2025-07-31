@@ -787,7 +787,7 @@ func (b *ScratchBuilder) Add(name, value string) {
 }
 
 // Add a name/value pair, using []byte instead of string to reduce memory allocations.
-// The values must remain live until Labels() is called.
+// The values must remain live until Labels() or Overwrite() is called.
 func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
 	b.add = append(b.add, Label{Name: yoloString(name), Value: yoloString(value)})
 }
@@ -828,6 +828,12 @@ func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	marshalNumbersToSizedBuffer(b.nums, b.overwriteBuffer)
 	ls.syms = b.syms.nameTable
 	ls.data = yoloString(b.overwriteBuffer)
+}
+
+// UnsafeString must be used when passing to Add strings that are reusing buffers via the unsafe package.
+// For example, b.Add("__name__", labels.UnsafeString(yoloString(buf))).
+func UnsafeString(s string) string {
+	return s // No-op - the call to Labels() or Overwrite() will create a copy
 }
 
 // SizeOfLabels returns the approximate space required for n copies of a label.

@@ -506,6 +506,12 @@ func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	*ls = append((*ls)[:0], b.add...)
 }
 
+// UnsafeString must be used when passing to Add strings that are reusing buffers via the unsafe package.
+// For example, b.Add("__name__", labels.UnsafeString(yoloString(buf))).
+func UnsafeString(s string) string {
+	return strings.Clone(s) // We need to clone such strings for slicelabels implementation.
+}
+
 // SizeOfLabels returns the approximate space required for n copies of a label.
 func SizeOfLabels(name, value string, n uint64) uint64 {
 	return (uint64(len(name)) + uint64(unsafe.Sizeof(name)) + uint64(len(value)) + uint64(unsafe.Sizeof(value))) * n

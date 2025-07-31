@@ -555,13 +555,19 @@ func (p *ProtobufParser) Next() (Entry, error) {
 func (p *ProtobufParser) onSeriesOrHistogramUpdate() error {
 	p.builder.Reset()
 
+	name, safe := p.getMagicName()
+	if !safe {
+		name = labels.UnsafeString(name) // Make sure the name is safe to use in labels.
+	}
+
 	if p.enableTypeAndUnitLabels {
 		_, typ := p.Type()
 
 		m := schema.Metadata{
-			Name: p.getMagicName(),
+			Name: name,
 			Type: typ,
-			Unit: p.dec.GetUnit(),
+			// After the next call to dec.NextMetricFamily, the unit value becomes invalid, use labels.UnsafeString.
+			Unit: labels.UnsafeString(p.dec.GetUnit()),
 		}
 		m.AddToLabels(&p.builder)
 		if err := p.dec.Label(schema.IgnoreOverriddenMetadataLabelsScratchBuilder{
@@ -571,7 +577,7 @@ func (p *ProtobufParser) onSeriesOrHistogramUpdate() error {
 			return err
 		}
 	} else {
-		p.builder.Add(labels.MetricName, p.getMagicName())
+		p.builder.Add(labels.MetricName, name)
 		if err := p.dec.Label(&p.builder); err != nil {
 			return err
 		}
@@ -600,24 +606,28 @@ func (p *ProtobufParser) onSeriesOrHistogramUpdate() error {
 	return nil
 }
 
-// getMagicName usually just returns p.mf.GetType() but adds a magic suffix
-// ("_count", "_sum", "_bucket") if needed according to the current parser
-// state.
-func (p *ProtobufParser) getMagicName() string {
+// getMagicName returns the name of the metric. It usually just returns
+// p.mf.GetName() but adds a magic suffix ("_count", "_sum", "_bucket") if
+// needed according to the current parser state.
+// The second return value is set to true if the metric name is safe to use
+// in labels without wrapping with labels.UnsafeString. When it is false, the
+// returned name will become invalid with the next call to dec.NextMetricFamily
+// and must be wrapped with labels.UnsafeString when used in labels.
+func (p *ProtobufParser) getMagicName() (string, bool) {
 	t := p.dec.GetType()
 	if p.state == EntryHistogram || (t != dto.MetricType_HISTOGRAM && t != dto.MetricType_GAUGE_HISTOGRAM && t != dto.MetricType_SUMMARY) {
-		return p.dec.GetName()
+		return p.dec.GetName(), false
 	}
 	if p.fieldPos == -2 {
-		return p.dec.GetName() + "_count"
+		return p.dec.GetName() + "_count", true
 	}
 	if p.fieldPos == -1 {
-		return p.dec.GetName() + "_sum"
+		return p.dec.GetName() + "_sum", true
 	}
 	if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
-		return p.dec.GetName() + "_bucket"
+		return p.dec.GetName() + "_bucket", true
 	}
-	return p.dec.GetName()
+	return p.dec.GetName(), false
 }
 
 // getMagicLabel returns if a magic label ("quantile" or "le") is needed and, if
