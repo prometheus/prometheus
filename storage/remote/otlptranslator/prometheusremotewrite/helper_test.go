@@ -438,6 +438,68 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "summary without start time and without scope promotion and some quantiles",
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_summary")
+				metric.SetEmptySummary()
+
+				dp := metric.Summary().DataPoints().AppendEmpty()
+				dp.SetTimestamp(ts)
+				dp.SetCount(50)
+				dp.SetSum(100)
+				dp.QuantileValues().EnsureCapacity(2)
+				h := dp.QuantileValues().AppendEmpty()
+				h.SetQuantile(0.5)
+				h.SetValue(30)
+				n := dp.QuantileValues().AppendEmpty()
+				n.SetQuantile(0.9)
+				n.SetValue(40)
+
+				return metric
+			},
+			scope:        defaultScope,
+			promoteScope: false,
+			want: func() []combinedSample {
+				return []combinedSample{
+					{
+						metricFamilyName: "test_summary",
+						ls: labels.FromStrings(
+							model.MetricNameLabel, "test_summary"+sumStr,
+						),
+						t: convertTimeStamp(ts),
+						v: 100,
+					},
+					{
+						metricFamilyName: "test_summary",
+						ls: labels.FromStrings(
+							model.MetricNameLabel, "test_summary"+countStr,
+						),
+						t: convertTimeStamp(ts),
+						v: 50,
+					},
+					{
+						metricFamilyName: "test_summary",
+						ls: labels.FromStrings(
+							model.MetricNameLabel, "test_summary",
+							quantileStr, "0.5",
+						),
+						t: convertTimeStamp(ts),
+						v: 30,
+					},
+					{
+						metricFamilyName: "test_summary",
+						ls: labels.FromStrings(
+							model.MetricNameLabel, "test_summary",
+							quantileStr, "0.9",
+						),
+						t: convertTimeStamp(ts),
+						v: 40,
+					},
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
