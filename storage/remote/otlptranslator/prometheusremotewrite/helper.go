@@ -118,7 +118,7 @@ var seps = []byte{'\xff'}
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
 func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope scope, settings Settings,
-	ignoreAttrs []string, logOnOverwrite bool, metadata prompb.MetricMetadata, extras ...string,
+	ignoreAttrs []string, logOnOverwrite bool, metadata prompb.MetricMetadata, temporality pmetric.AggregationTemporality, hasTemporality bool, extras ...string,
 ) ([]prompb.Label, error) {
 	resourceAttrs := resource.Attributes()
 	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
@@ -144,6 +144,9 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 	}
 	if settings.EnableTypeAndUnitLabels {
 		maxLabelCount += 2
+		if settings.AllowDeltaTemporality && hasTemporality {
+			maxLabelCount++
+		}
 	}
 
 	// Ensure attributes are sorted by key for consistent merging of keys which
@@ -205,11 +208,33 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 
 	if settings.EnableTypeAndUnitLabels {
 		unitNamer := otlptranslator.UnitNamer{UTF8Allowed: settings.AllowUTF8}
+
 		if metadata.Type != prompb.MetricMetadata_UNKNOWN {
-			l["__type__"] = strings.ToLower(metadata.Type.String())
+			typeValue := strings.ToLower(metadata.Type.String())
+
+			if settings.AllowDeltaTemporality && hasTemporality && temporality == pmetric.AggregationTemporalityDelta {
+				switch metadata.Type {
+				case prompb.MetricMetadata_COUNTER:
+					typeValue = "gauge"
+				case prompb.MetricMetadata_HISTOGRAM:
+					typeValue = "gaugehistogram"
+				}
+			}
+
+			l["__type__"] = typeValue
 		}
+
 		if metadata.Unit != "" {
 			l["__unit__"] = unitNamer.Build(metadata.Unit)
+		}
+
+		if settings.AllowDeltaTemporality && hasTemporality {
+			switch temporality {
+			case pmetric.AggregationTemporalityCumulative:
+				l["__temporality__"] = "cumulative"
+			case pmetric.AggregationTemporalityDelta:
+				l["__temporality__"] = "delta"
+			}
 		}
 	}
 
@@ -286,7 +311,7 @@ func aggregationTemporality(metric pmetric.Metric) (pmetric.AggregationTemporali
 // However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
 // https://github.com/prometheus/prometheus/issues/13485.
 func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, metadata prompb.MetricMetadata, scope scope,
+	resource pcommon.Resource, settings Settings, metadata prompb.MetricMetadata, scope scope, temporality pmetric.AggregationTemporality, hasTemporality bool,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -295,7 +320,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
-		baseLabels, err := createAttributes(resource, pt.Attributes(), scope, settings, nil, false, metadata)
+		baseLabels, err := createAttributes(resource, pt.Attributes(), scope, settings, nil, false, metadata, temporality, hasTemporality)
 		if err != nil {
 			return err
 		}
@@ -502,7 +527,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
-		baseLabels, err := createAttributes(resource, pt.Attributes(), scope, settings, nil, false, metadata)
+		baseLabels, err := createAttributes(resource, pt.Attributes(), scope, settings, nil, false, metadata, 0, false)
 		if err != nil {
 			return err
 		}
@@ -650,7 +675,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, earlies
 		// Do not pass identifying attributes as ignoreAttrs below.
 		identifyingAttrs = nil
 	}
-	labels, err := createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, prompb.MetricMetadata{}, model.MetricNameLabel, name)
+	labels, err := createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, prompb.MetricMetadata{}, 0, false, model.MetricNameLabel, name)
 	if err != nil {
 		return err
 	}
