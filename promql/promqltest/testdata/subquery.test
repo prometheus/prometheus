@@ -156,4 +156,6 @@ load 5m
 	foo 3+0x10
 
 eval instant at 12m min_over_time((topk(1, foo))[1m:5m])
+	expect no_info
+	expect no_warn
 	#empty

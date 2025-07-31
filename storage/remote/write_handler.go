@@ -530,6 +530,11 @@ type OTLPOptions struct {
 	// marking the metric type as unknown for now).
 	// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
 	NativeDelta bool
+	// LookbackDelta is the query lookback delta.
+	// Used to calculate the target_info sample timestamp interval.
+	LookbackDelta time.Duration
+	// Add type and unit labels to the metrics.
+	EnableTypeAndUnitLabels bool
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
@@ -545,8 +550,10 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 			logger:     logger,
 			appendable: appendable,
 		},
-		config:                configFunc,
-		allowDeltaTemporality: opts.NativeDelta,
+		config:                  configFunc,
+		allowDeltaTemporality:   opts.NativeDelta,
+		lookbackDelta:           opts.LookbackDelta,
+		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
 	}
 
 	wh := &otlpWriteHandler{logger: logger, defaultConsumer: ex}
@@ -581,22 +588,27 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 
 type rwExporter struct {
 	*writeHandler
-	config                func() config.Config
-	allowDeltaTemporality bool
+	config                  func() config.Config
+	allowDeltaTemporality   bool
+	lookbackDelta           time.Duration
+	enableTypeAndUnitLabels bool
 }
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
 	otlpCfg := rw.config().OTLPConfig
 
 	converter := otlptranslator.NewPrometheusConverter()
+
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
-		AddMetricSuffixes:                 otlpCfg.TranslationStrategy != config.NoTranslation,
-		AllowUTF8:                         otlpCfg.TranslationStrategy != config.UnderscoreEscapingWithSuffixes,
+		AddMetricSuffixes:                 otlpCfg.TranslationStrategy.ShouldAddSuffixes(),
+		AllowUTF8:                         !otlpCfg.TranslationStrategy.ShouldEscape(),
 		PromoteResourceAttributes:         otlptranslator.NewPromoteResourceAttributes(otlpCfg),
 		KeepIdentifyingResourceAttributes: otlpCfg.KeepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:           otlpCfg.ConvertHistogramsToNHCB,
-		AllowDeltaTemporality:             rw.allowDeltaTemporality,
 		PromoteScopeMetadata:              otlpCfg.PromoteScopeMetadata,
+		AllowDeltaTemporality:             rw.allowDeltaTemporality,
+		LookbackDelta:                     rw.lookbackDelta,
+		EnableTypeAndUnitLabels:           rw.enableTypeAndUnitLabels,
 	})
 	if err != nil {
 		rw.logger.Warn("Error translating OTLP metrics to Prometheus write request", "err", err)

@@ -275,6 +275,100 @@ func TestFromMetrics(t *testing.T) {
 			"histogram data point has zero count, but non-zero sum: 155.000000",
 		}, ws)
 	})
+
+	t.Run("target_info's samples starts at the earliest metric sample timestamp and ends at the latest sample timestamp of the corresponding resource, with one sample every lookback delta/2 timestamps between", func(t *testing.T) {
+		request := pmetricotlp.NewExportRequest()
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+		generateAttributes(rm.Resource().Attributes(), "resource", 5)
+
+		// Fake some resource attributes.
+		for k, v := range map[string]string{
+			"service.name":        "test-service",
+			"service.namespace":   "test-namespace",
+			"service.instance.id": "id1234",
+		} {
+			rm.Resource().Attributes().PutStr(k, v)
+		}
+		metrics := rm.ScopeMetrics().AppendEmpty().Metrics()
+		ts := pcommon.NewTimestampFromTime(time.Now())
+
+		var expMetadata []prompb.MetricMetadata
+		for i := range 3 {
+			m := metrics.AppendEmpty()
+			m.SetEmptyGauge()
+			m.SetName(fmt.Sprintf("gauge-%v", i+1))
+			m.SetDescription("gauge")
+			m.SetUnit("unit")
+			// Add samples every lookback delta / 4 timestamps.
+			curTs := ts.AsTime()
+			for range 6 {
+				point := m.Gauge().DataPoints().AppendEmpty()
+				point.SetTimestamp(pcommon.NewTimestampFromTime(curTs))
+				point.SetDoubleValue(1.23)
+				generateAttributes(point.Attributes(), "series", 2)
+				curTs = curTs.Add(defaultLookbackDelta / 4)
+			}
+
+			namer := otlptranslator.MetricNamer{}
+			expMetadata = append(expMetadata, prompb.MetricMetadata{
+				Type:             otelMetricTypeToPromMetricType(m),
+				MetricFamilyName: namer.Build(TranslatorMetricFromOtelMetric(m)),
+				Help:             m.Description(),
+				Unit:             m.Unit(),
+			})
+		}
+
+		converter := NewPrometheusConverter()
+		annots, err := converter.FromMetrics(
+			context.Background(),
+			request.Metrics(),
+			Settings{
+				LookbackDelta: defaultLookbackDelta,
+			},
+		)
+		require.NoError(t, err)
+		require.Empty(t, annots)
+
+		testutil.RequireEqual(t, expMetadata, converter.Metadata())
+
+		timeSeries := converter.TimeSeries()
+		tgtInfoCount := 0
+		for _, s := range timeSeries {
+			b := labels.NewScratchBuilder(2)
+			lbls := s.ToLabels(&b, nil)
+			if lbls.Get(labels.MetricName) != "target_info" {
+				continue
+			}
+
+			tgtInfoCount++
+			require.Equal(t, "test-namespace/test-service", lbls.Get("job"))
+			require.Equal(t, "id1234", lbls.Get("instance"))
+			require.False(t, lbls.Has("service_name"))
+			require.False(t, lbls.Has("service_namespace"))
+			require.False(t, lbls.Has("service_instance_id"))
+			// There should be a target_info sample at the earliest metric timestamp, then two spaced lookback delta/2 apart,
+			// then one at the latest metric timestamp.
+			testutil.RequireEqual(t, []prompb.Sample{
+				{
+					Value:     1,
+					Timestamp: ts.AsTime().UnixMilli(),
+				},
+				{
+					Value:     1,
+					Timestamp: ts.AsTime().Add(defaultLookbackDelta / 2).UnixMilli(),
+				},
+				{
+					Value:     1,
+					Timestamp: ts.AsTime().Add(defaultLookbackDelta).UnixMilli(),
+				},
+				{
+					Value:     1,
+					Timestamp: ts.AsTime().Add(defaultLookbackDelta + defaultLookbackDelta/4).UnixMilli(),
+				},
+			}, s.Samples)
+		}
+		require.Equal(t, 1, tgtInfoCount)
+	})
 }
 
 func TestTemporality(t *testing.T) {

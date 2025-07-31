@@ -49,7 +49,7 @@ sum without(instance) (rate(requests_total[5m]))
 
 		require.Equal(t, "HighAlert", rg.Rules[2].Alert)
 		require.Equal(t, "critical", rg.Rules[2].Labels["severity"])
-		require.Equal(t, "stuff's happening with {{ $.labels.service }}", rg.Rules[0].Annotations["description"])
+		require.Equal(t, "stuff's happening with {{ $.labels.service }}", rg.Rules[2].Annotations["description"])
 
 		require.Equal(t, "HighAlert2", rg.Rules[3].Alert)
 		require.Equal(t, "critical", rg.Rules[3].Labels["severity"])

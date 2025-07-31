@@ -185,16 +185,6 @@ func DefaultPostingsDecoderFactory(_ *BlockMeta) index.PostingsDecoder {
 	return index.DecodePostingsRaw
 }
 
-// NewLeveledCompactorWithChunkSize returns a new LeveledCompactor with a certain max block segment chunk size.
-// It's the same as calling NewLeveledCompactorWithOptions with maxBlockChunkSegmentSize, mergeFunc, and enabled overlapping compaction.
-func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
-	return NewLeveledCompactorWithOptions(ctx, r, l, ranges, pool, LeveledCompactorOptions{
-		MaxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
-		MergeFunc:                   mergeFunc,
-		EnableOverlappingCompaction: true,
-	})
-}
-
 // NewLeveledCompactor returns a new LeveledCompactor.
 // It's the same as calling NewLeveledCompactorWithOptions with mergeFunc, and enabled overlapping compaction.
 func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
@@ -903,7 +893,14 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 		meta.Stats.NumChunks += uint64(len(chks))
 		meta.Stats.NumSeries++
 		for _, chk := range chks {
-			meta.Stats.NumSamples += uint64(chk.Chunk.NumSamples())
+			samples := uint64(chk.Chunk.NumSamples())
+			meta.Stats.NumSamples += samples
+			switch chk.Chunk.Encoding() {
+			case chunkenc.EncHistogram, chunkenc.EncFloatHistogram:
+				meta.Stats.NumHistogramSamples += samples
+			case chunkenc.EncXOR:
+				meta.Stats.NumFloatSamples += samples
+			}
 		}
 
 		for _, chk := range chks {
