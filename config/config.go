@@ -913,6 +913,7 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	// that local ScrapeConfigs that only specify Legacy validation do not inherit
 	// the global AllowUTF8 escaping setting, which is an error.
 	if c.MetricNameEscapingScheme == "" {
+		//nolint:gocritic
 		if localValidationUnset {
 			c.MetricNameEscapingScheme = globalConfig.MetricNameEscapingScheme
 		} else if c.MetricNameValidationScheme == model.LegacyValidation {
