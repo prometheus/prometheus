@@ -52,6 +52,10 @@ type dbAdapter struct {
 	*tsdb.DB
 }
 
+func (a *dbAdapter) BlockMetas() ([]tsdb.BlockMeta, error) {
+	return a.DB.BlockMetas(), nil
+}
+
 func (a *dbAdapter) Stats(statsByLabelName string, limit int) (*tsdb.Stats, error) {
 	return a.Head().Stats(statsByLabelName, limit), nil
 }
@@ -569,6 +573,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		"/query_range":                 {http.MethodGet, http.MethodPost},
 		"/query_exemplars":             {http.MethodGet, http.MethodPost},
 		"/status/tsdb":                 {http.MethodGet},
+		"/status/tsdb/blocks":          {http.MethodGet},
 		"/alerts":                      {http.MethodGet},
 		"/rules":                       {http.MethodGet},
 		"/admin/tsdb/delete_series":    {http.MethodPost, http.MethodPut},
