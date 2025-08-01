@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -2061,9 +2062,8 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 	var lowest int64
 	var droppedSamples, droppedExemplars, droppedHistograms int
 
-	keepIdx := 0
 	lowest = math.MaxInt64
-	for i, ts := range timeSeries {
+	timeSeries = slices.DeleteFunc(timeSeries, func(ts prompb.TimeSeries) bool {
 		if filter != nil && filter(ts) {
 			if len(ts.Samples) > 0 {
 				droppedSamples++
@@ -2074,7 +2074,7 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 			if len(ts.Histograms) > 0 {
 				droppedHistograms++
 			}
-			continue
+			return true
 		}
 
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
@@ -2098,15 +2098,9 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 		if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp < lowest {
 			lowest = ts.Histograms[0].Timestamp
 		}
-		if i != keepIdx {
-			// We have to swap the kept timeseries with the one which should be dropped.
-			// Copying any elements within timeSeries could cause data corruptions when reusing the slice in a next batch (shards.populateTimeSeries).
-			timeSeries[keepIdx], timeSeries[i] = timeSeries[i], timeSeries[keepIdx]
-		}
-		keepIdx++
-	}
+		return false
+	})
 
-	timeSeries = timeSeries[:keepIdx]
 	return highest, lowest, timeSeries, droppedSamples, droppedExemplars, droppedHistograms
 }
 
