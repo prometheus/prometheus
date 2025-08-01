@@ -51,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -100,8 +101,8 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
 	return db
 }
 
-// query runs a matcher query against the querier and fully expands its data.
-func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]chunks.Sample {
+// queryHelper runs a matcher query against the querier and fully expands its data.
+func queryHelper(t testing.TB, q storage.Querier, withNaNReplacement bool, matchers ...*labels.Matcher) map[string][]chunks.Sample {
 	ss := q.Select(context.Background(), false, nil, matchers...)
 	defer func() {
 		require.NoError(t, q.Close())
@@ -113,7 +114,13 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 		series := ss.At()
 
 		it = series.Iterator(it)
-		samples, err := storage.ExpandSamples(it, newSample)
+		var samples []chunks.Sample
+		var err error
+		if withNaNReplacement {
+			samples, err = storage.ExpandSamples(it, newSample)
+		} else {
+			samples, err = storage.ExpandSamplesWithoutReplacingNaNs(it, newSample)
+		}
 		require.NoError(t, err)
 		require.NoError(t, it.Err())
 
@@ -128,6 +135,16 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 	require.Empty(t, ss.Warnings())
 
 	return result
+}
+
+// query runs a matcher query against the querier and fully expands its data.
+func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]chunks.Sample {
+	return queryHelper(t, q, true, matchers...)
+}
+
+// queryWithoutReplacingNaNs runs a matcher query against the querier and fully expands its data.
+func queryWithoutReplacingNaNs(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]chunks.Sample {
+	return queryHelper(t, q, false, matchers...)
 }
 
 // queryAndExpandChunks runs a matcher query against the querier and fully expands its data into samples.
@@ -9515,5 +9532,160 @@ func TestBlockClosingBlockedDuringRemoteRead(t *testing.T) {
 	case <-time.After(10 * time.Millisecond):
 		require.Fail(t, "Closing the block timed out.")
 	case <-blockClosed:
+	}
+}
+
+func TestStaleSeriesCompaction(t *testing.T) {
+	opts := DefaultOptions()
+	db := openTestDB(t, opts, nil)
+	db.DisableCompactions()
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	var (
+		nonStaleSeries, staleSeries,
+		nonStaleHist, staleHist,
+		nonStaleFHist, staleFHist []labels.Labels
+		numSeriesPerCategory = 1
+	)
+	for i := 0; i < numSeriesPerCategory; i++ {
+		nonStaleSeries = append(nonStaleSeries, labels.FromStrings("name", fmt.Sprintf("series%d", 1000+i)))
+		nonStaleHist = append(nonStaleHist, labels.FromStrings("name", fmt.Sprintf("series%d", 2000+i)))
+		nonStaleFHist = append(nonStaleFHist, labels.FromStrings("name", fmt.Sprintf("series%d", 3000+i)))
+
+		staleSeries = append(staleSeries, labels.FromStrings("name", fmt.Sprintf("series%d", 4000+i)))
+		staleHist = append(staleHist, labels.FromStrings("name", fmt.Sprintf("series%d", 5000+i)))
+		staleFHist = append(staleFHist, labels.FromStrings("name", fmt.Sprintf("series%d", 6000+i)))
+	}
+
+	var (
+		v       = 10.0
+		staleV  = math.Float64frombits(value.StaleNaN)
+		h       = tsdbutil.GenerateTestHistograms(1)[0]
+		fh      = tsdbutil.GenerateTestFloatHistograms(1)[0]
+		staleH  = &histogram.Histogram{Sum: staleV}
+		staleFH = &histogram.FloatHistogram{Sum: staleV}
+	)
+
+	addNormalSamples := func(ts int64, floatSeries, histSeries, floatHistSeries []labels.Labels) {
+		app := db.Appender(context.Background())
+		for i := 0; i < len(floatSeries); i++ {
+			_, err := app.Append(0, floatSeries[i], ts, v)
+			require.NoError(t, err)
+			_, err = app.AppendHistogram(0, histSeries[i], ts, h, nil)
+			require.NoError(t, err)
+			_, err = app.AppendHistogram(0, floatHistSeries[i], ts, nil, fh)
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+	addStaleSamples := func(ts int64, floatSeries, histSeries, floatHistSeries []labels.Labels) {
+		app := db.Appender(context.Background())
+		for i := 0; i < len(floatSeries); i++ {
+			_, err := app.Append(0, floatSeries[i], ts, staleV)
+			require.NoError(t, err)
+			_, err = app.AppendHistogram(0, histSeries[i], ts, staleH, nil)
+			require.NoError(t, err)
+			_, err = app.AppendHistogram(0, floatHistSeries[i], ts, nil, staleFH)
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	// Normal sample for all.
+	addNormalSamples(100, nonStaleSeries, nonStaleHist, nonStaleFHist)
+	addNormalSamples(100, staleSeries, staleHist, staleFHist)
+
+	// Stale sample for the stale series. Normal sample for the non-stale series.
+	addNormalSamples(200, nonStaleSeries, nonStaleHist, nonStaleFHist)
+	addStaleSamples(200, staleSeries, staleHist, staleFHist)
+
+	// Normal samples for the non-stale series later
+	addNormalSamples(300, nonStaleSeries, nonStaleHist, nonStaleFHist)
+
+	require.Equal(t, uint64(6*numSeriesPerCategory), db.Head().NumSeries())
+	require.Equal(t, uint64(3*numSeriesPerCategory), db.Head().NumStaleSeries())
+
+	require.NoError(t, db.CompactStaleHead())
+
+	require.Equal(t, uint64(3*numSeriesPerCategory), db.Head().NumSeries())
+	require.Equal(t, uint64(0), db.Head().NumStaleSeries())
+	require.Len(t, db.Blocks(), 1)
+
+	nonFirstH := h.Copy()
+	nonFirstH.CounterResetHint = histogram.NotCounterReset
+	nonFirstFH := fh.Copy()
+	nonFirstFH.CounterResetHint = histogram.NotCounterReset
+
+	expHeadQuery := make(map[string][]chunks.Sample)
+	for i := 0; i < numSeriesPerCategory; i++ {
+		expHeadQuery[fmt.Sprintf(`{name="%s"}`, nonStaleSeries[i].Get("name"))] = []chunks.Sample{
+			sample{t: 100, f: v}, sample{t: 200, f: v}, sample{t: 300, f: v},
+		}
+		expHeadQuery[fmt.Sprintf(`{name="%s"}`, nonStaleHist[i].Get("name"))] = []chunks.Sample{
+			sample{t: 100, h: h}, sample{t: 200, h: nonFirstH}, sample{t: 300, h: nonFirstH},
+		}
+		expHeadQuery[fmt.Sprintf(`{name="%s"}`, nonStaleFHist[i].Get("name"))] = []chunks.Sample{
+			sample{t: 100, fh: fh}, sample{t: 200, fh: nonFirstFH}, sample{t: 300, fh: nonFirstFH},
+		}
+	}
+
+	querier, err := NewBlockQuerier(NewRangeHead(db.head, 0, 300), 0, 300)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		querier.Close()
+	})
+	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchRegexp, "name", "series.*"))
+	require.Equal(t, expHeadQuery, seriesSet)
+
+	expBlockQuery := make(map[string][]chunks.Sample)
+	for i := 0; i < numSeriesPerCategory; i++ {
+		expBlockQuery[fmt.Sprintf(`{name="%s"}`, staleSeries[i].Get("name"))] = []chunks.Sample{
+			sample{t: 100, f: v}, sample{t: 200, f: staleV},
+		}
+		expBlockQuery[fmt.Sprintf(`{name="%s"}`, staleHist[i].Get("name"))] = []chunks.Sample{
+			sample{t: 100, h: h}, sample{t: 200, h: staleH},
+		}
+		expBlockQuery[fmt.Sprintf(`{name="%s"}`, staleFHist[i].Get("name"))] = []chunks.Sample{
+			sample{t: 100, fh: fh}, sample{t: 200, fh: staleFH},
+		}
+	}
+
+	querier, err = NewBlockQuerier(db.Blocks()[0], 0, 300)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		querier.Close()
+	})
+	seriesSet = queryWithoutReplacingNaNs(t, querier, labels.MustNewMatcher(labels.MatchRegexp, "name", "series.*"))
+	require.Len(t, seriesSet, len(expBlockQuery))
+
+	// Compare all the samples except the stale value that needs special handling.
+	for _, category := range [][]labels.Labels{staleSeries, staleHist, staleFHist} {
+		for i := 0; i < numSeriesPerCategory; i++ {
+			seriesKey := fmt.Sprintf(`{name="%s"}`, category[i].Get("name"))
+			samples := expBlockQuery[seriesKey]
+			actSamples, exists := seriesSet[seriesKey]
+			require.Truef(t, exists, "series not found in result %s", seriesKey)
+			require.Len(t, actSamples, len(samples))
+			require.Equal(t, samples[0], actSamples[0])
+			require.Equal(t, samples[1].T(), actSamples[1].T())
+		}
+	}
+
+	// Check the NaN values.
+	for i := 0; i < numSeriesPerCategory; i++ {
+		seriesKey := fmt.Sprintf(`{name="%s"}`, staleSeries[i].Get("name"))
+		require.True(t, value.IsStaleNaN(seriesSet[seriesKey][1].F()))
+	}
+
+	for i := 0; i < numSeriesPerCategory; i++ {
+		seriesKey := fmt.Sprintf(`{name="%s"}`, staleHist[i].Get("name"))
+		require.True(t, seriesSet[seriesKey][1].H().Equals(staleH))
+	}
+
+	for i := 0; i < numSeriesPerCategory; i++ {
+		seriesKey := fmt.Sprintf(`{name="%s"}`, staleFHist[i].Get("name"))
+		require.True(t, seriesSet[seriesKey][1].FH().Equals(staleFH))
 	}
 }
