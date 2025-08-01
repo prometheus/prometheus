@@ -67,11 +67,6 @@ type WorkloadIdentityConfig struct {
 
 	// TokenFilePath is the path to the token file provided by the Kubernetes service account projected volume.
 	// If not specified, it defaults to DefaultWorkloadIdentityTokenPath.
-	//
-	// Note: The token file is automatically mounted by the Azure Workload Identity webhook.
-	// when the pod has the label azure.workload.identity/use: "true". This field only needs.
-	// to be specified if you have a non-standard setup or the webhook is mounting the token.
-	// in a custom location.
 	TokenFilePath string `yaml:"token_file_path,omitempty"`
 }
 
