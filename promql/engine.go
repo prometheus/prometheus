@@ -1190,7 +1190,11 @@ func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annota
 			sample.Metric.Get(model.BucketLabel), 64,
 		)
 		if err != nil {
-			annos.Add(annotations.NewBadBucketLabelWarning(sample.Metric.Get(labels.MetricName), sample.Metric.Get(model.BucketLabel), arg.PositionRange()))
+			if enh.enableDelayedNameRemoval {
+				annos.Add(annotations.NewBadBucketLabelWarning(sample.Metric.Get(labels.MetricName), sample.Metric.Get(model.BucketLabel), arg.PositionRange()))
+			} else {
+				annos.Add(annotations.NewBadBucketLabelWarning("", sample.Metric.Get(model.BucketLabel), arg.PositionRange()))
+			}
 			continue
 		}
 		enh.lblBuf = sample.Metric.BytesWithoutLabels(enh.lblBuf, labels.BucketLabel)
@@ -1213,7 +1217,11 @@ func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annota
 			// At this data point, we have classic histogram
 			// buckets and a native histogram with the same name and
 			// labels. Do not evaluate anything.
-			annos.Add(annotations.NewMixedClassicNativeHistogramsWarning(sample.Metric.Get(labels.MetricName), arg.PositionRange()))
+			if enh.enableDelayedNameRemoval {
+				annos.Add(annotations.NewMixedClassicNativeHistogramsWarning(sample.Metric.Get(labels.MetricName), arg.PositionRange()))
+			} else {
+				annos.Add(annotations.NewMixedClassicNativeHistogramsWarning("", arg.PositionRange()))
+			}
 			delete(enh.signatureToMetricWithBuckets, string(enh.lblBuf))
 			enh.nativeHistogramSamples[idx].H = nil
 			continue
