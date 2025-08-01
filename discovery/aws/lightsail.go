@@ -27,7 +27,6 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/lightsail"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go"
@@ -107,27 +106,19 @@ func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return err
 	}
 	if c.Region == "" {
-		// TODO(@sysadmind): Should we get a context from somewhere?
-		ctx := context.TODO()
-		cfg, err := awsConfig.LoadDefaultConfig(ctx)
+		cfg, err := awsConfig.LoadDefaultConfig(context.Background())
 		if err != nil {
 			return err
 		}
 
-		if cfg.Region != "" {
-			// If the region is already set in the config, use it.
-			// This can happen if the user has set the region in the AWS config file or environment variables.
-			c.Region = cfg.Region
-		} else {
-			// Attempt to get the region from the instance metadata service.
-			metaClient := imds.NewFromConfig(cfg)
-			result, err := metaClient.GetRegion(ctx, &imds.GetRegionInput{})
-			if err != nil {
-				return errors.New("EC2 SD configuration requires a region")
-			}
-			c.Region = result.Region
-		}
+		// Use the region from the AWS config. It will load environment variables and shared config files.
+		c.Region = cfg.Region
 	}
+
+	if c.Region == "" {
+		return errors.New("lightsail SD configuration requires a region")
+	}
+
 	return c.HTTPClientConfig.Validate()
 }
 
