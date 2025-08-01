@@ -1,0 +1,6 @@
+groups:
+  - name: features
+    rules:
+      - record: x
+        # We don't expect anything from this, just want to check the function parses.
+        expr: sort_by_label(up, "instance")
