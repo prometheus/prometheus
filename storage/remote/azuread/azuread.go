@@ -182,7 +182,7 @@ func (c *AzureADConfig) Validate() error {
 			return errors.New("the provided Azure Workload Identity client_id is invalid")
 		}
 
-		// Validate tenant ID format
+		// Validate tenant ID format.
 		_, err = uuid.Parse(c.WorkloadIdentity.TenantID)
 		if err != nil {
 			return errors.New("the provided Azure Workload Identity tenant_id is invalid")
