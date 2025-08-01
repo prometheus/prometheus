@@ -58,7 +58,6 @@ type ManagedIdentityConfig struct {
 // WorkloadIdentityConfig is used to store workload identity config values.
 type WorkloadIdentityConfig struct {
 	// ClientID is the clientId of the Microsoft Entra application or user-assigned managed identity.
-	// This should match the azure.workload.identity/client-id annotation on the Kubernetes service account.
 	ClientID string `yaml:"client_id,omitempty"`
 
 	// TenantID is the tenantId of the Microsoft Entra application or user-assigned managed identity.
@@ -135,11 +134,6 @@ func (c *AzureADConfig) Validate() error {
 		return errors.New("must provide a cloud in the Azure AD config")
 	}
 
-	if c.ManagedIdentity == nil && c.WorkloadIdentity == nil && c.OAuth == nil && c.SDK == nil {
-		return errors.New("must provide an Azure Managed Identity, Azure Workload Identity, Azure OAuth or Azure SDK in the Azure AD config")
-	}
-
-	// Check for mutually exclusive configurations
 	authenticators := 0
 	if c.ManagedIdentity != nil {
 		authenticators++
@@ -154,6 +148,9 @@ func (c *AzureADConfig) Validate() error {
 		authenticators++
 	}
 
+	if authenticators == 0 {
+		return errors.New("must provide an Azure Managed Identity, Azure Workload Identity, Azure OAuth or Azure SDK in the Azure AD config")
+	}
 	if authenticators > 1 {
 		return errors.New("cannot provide multiple authentication methods in the Azure AD config")
 	}
@@ -171,25 +168,17 @@ func (c *AzureADConfig) Validate() error {
 		if c.WorkloadIdentity.ClientID == "" {
 			return errors.New("must provide an Azure Workload Identity client_id in the Azure AD config")
 		}
-
 		if c.WorkloadIdentity.TenantID == "" {
 			return errors.New("must provide an Azure Workload Identity tenant_id in the Azure AD config")
 		}
 
-		// Validate client ID format.
-		_, err := uuid.Parse(c.WorkloadIdentity.ClientID)
-		if err != nil {
+		if _, err := uuid.Parse(c.WorkloadIdentity.ClientID); err != nil {
 			return errors.New("the provided Azure Workload Identity client_id is invalid")
 		}
-
-		// Validate tenant ID format.
-		_, err = uuid.Parse(c.WorkloadIdentity.TenantID)
-		if err != nil {
+		if _, err := uuid.Parse(c.WorkloadIdentity.TenantID); err != nil {
 			return errors.New("the provided Azure Workload Identity tenant_id is invalid")
 		}
 
-		// Set default token file path when not specified - this matches the path used
-		// by the Azure Workload Identity webhook.
 		if c.WorkloadIdentity.TokenFilePath == "" {
 			c.WorkloadIdentity.TokenFilePath = DefaultWorkloadIdentityTokenPath
 		}
@@ -206,24 +195,18 @@ func (c *AzureADConfig) Validate() error {
 			return errors.New("must provide an Azure OAuth tenant_id in the Azure AD config")
 		}
 
-		var err error
-		_, err = uuid.Parse(c.OAuth.ClientID)
-		if err != nil {
+		if _, err := uuid.Parse(c.OAuth.ClientID); err != nil {
 			return errors.New("the provided Azure OAuth client_id is invalid")
 		}
-		_, err = regexp.MatchString("^[0-9a-zA-Z-.]+$", c.OAuth.TenantID)
-		if err != nil {
+		if _, err := regexp.MatchString("^[0-9a-zA-Z-.]+$", c.OAuth.TenantID); err != nil {
 			return errors.New("the provided Azure OAuth tenant_id is invalid")
 		}
 	}
 
 	if c.SDK != nil {
-		var err error
-
 		if c.SDK.TenantID != "" {
-			_, err = regexp.MatchString("^[0-9a-zA-Z-.]+$", c.SDK.TenantID)
-			if err != nil {
-				return errors.New("the provided Azure OAuth tenant_id is invalid")
+			if _, err := regexp.MatchString("^[0-9a-zA-Z-.]+$", c.SDK.TenantID); err != nil {
+				return errors.New("the provided Azure SDK tenant_id is invalid")
 			}
 		}
 	}
