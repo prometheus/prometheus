@@ -172,7 +172,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				}
 
 				metadata := prompb.MetricMetadata{
-					Type:             otelMetricTypeToPromMetricType(metric),
+					Type:             otelMetricTypeToPromMetricType(metric, settings.AllowDeltaTemporality),
 					MetricFamilyName: namer.Build(TranslatorMetricFromOtelMetric(metric)),
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
