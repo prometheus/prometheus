@@ -3,6 +3,7 @@
 ## main / unreleased
 
 * [BUGFIX] OTLP receiver: Generate `target_info` samples between the earliest and latest samples per resource. #16737
+* [BUGFIX] Config: Infer escaping scheme when scrape config validation scheme is set.
 
 ## 3.5.0 / 2025-07-14
 

@@ -2800,29 +2800,40 @@ func TestScrapeConfigDisableCompression(t *testing.T) {
 
 func TestScrapeConfigNameValidationSettings(t *testing.T) {
 	tests := []struct {
-		name         string
-		inputFile    string
-		expectScheme model.ValidationScheme
+		name           string
+		inputFile      string
+		expectScheme   model.ValidationScheme
+		expectEscaping model.EscapingScheme
 	}{
 		{
-			name:         "blank config implies default",
-			inputFile:    "scrape_config_default_validation_mode",
-			expectScheme: model.UTF8Validation,
+			name:           "blank config implies default",
+			inputFile:      "scrape_config_default_validation_mode",
+			expectScheme:   model.UTF8Validation,
+			expectEscaping: model.NoEscaping,
 		},
 		{
-			name:         "global setting implies local settings",
-			inputFile:    "scrape_config_global_validation_mode",
-			expectScheme: model.LegacyValidation,
+			name:           "global setting implies local settings",
+			inputFile:      "scrape_config_global_validation_mode",
+			expectScheme:   model.LegacyValidation,
+			expectEscaping: model.DotsEscaping,
 		},
 		{
-			name:         "local setting",
-			inputFile:    "scrape_config_local_validation_mode",
-			expectScheme: model.LegacyValidation,
+			name:           "local setting",
+			inputFile:      "scrape_config_local_validation_mode",
+			expectScheme:   model.LegacyValidation,
+			expectEscaping: model.ValueEncodingEscaping,
 		},
 		{
-			name:         "local setting overrides global setting",
-			inputFile:    "scrape_config_local_global_validation_mode",
-			expectScheme: model.UTF8Validation,
+			name:           "local setting overrides global setting",
+			inputFile:      "scrape_config_local_global_validation_mode",
+			expectScheme:   model.UTF8Validation,
+			expectEscaping: model.DotsEscaping,
+		},
+		{
+			name:           "local validation implies underscores escaping",
+			inputFile:      "scrape_config_local_infer_escaping",
+			expectScheme:   model.LegacyValidation,
+			expectEscaping: model.UnderscoreEscaping,
 		},
 	}
 
@@ -2838,6 +2849,10 @@ func TestScrapeConfigNameValidationSettings(t *testing.T) {
 			require.NoError(t, yaml.UnmarshalStrict(out, got))
 
 			require.Equal(t, tc.expectScheme, got.ScrapeConfigs[0].MetricNameValidationScheme)
+
+			escaping, err := model.ToEscapingScheme(got.ScrapeConfigs[0].MetricNameEscapingScheme)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectEscaping, escaping)
 		})
 	}
 }
