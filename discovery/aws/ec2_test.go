@@ -38,10 +38,6 @@ func boolptr(b bool) *bool {
 	return &b
 }
 
-func int32ptr(i int32) *int32 {
-	return &i
-}
-
 // Struct for test data.
 type ec2DataStore struct {
 	region string
@@ -289,7 +285,7 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 							// interface without primary IPv6, index 2
 							{
 								Attachment: &ec2Types.InstanceNetworkInterfaceAttachment{
-									DeviceIndex: int32ptr(3),
+									DeviceIndex: aws.Int32(3),
 								},
 								Ipv6Addresses: []ec2Types.InstanceIpv6Address{
 									{
@@ -302,7 +298,7 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 							// interface with primary IPv6, index 1
 							{
 								Attachment: &ec2Types.InstanceNetworkInterfaceAttachment{
-									DeviceIndex: int32ptr(1),
+									DeviceIndex: aws.Int32(1),
 								},
 								Ipv6Addresses: []ec2Types.InstanceIpv6Address{
 									{
@@ -319,7 +315,7 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 							// interface with primary IPv6, index 3
 							{
 								Attachment: &ec2Types.InstanceNetworkInterfaceAttachment{
-									DeviceIndex: int32ptr(3),
+									DeviceIndex: aws.Int32(3),
 								},
 								Ipv6Addresses: []ec2Types.InstanceIpv6Address{
 									{
@@ -332,7 +328,7 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 							// interface without primary IPv6, index 0
 							{
 								Attachment: &ec2Types.InstanceNetworkInterfaceAttachment{
-									DeviceIndex: int32ptr(0),
+									DeviceIndex: aws.Int32(0),
 								},
 								Ipv6Addresses: []ec2Types.InstanceIpv6Address{},
 								SubnetId:      strptr("azid-3"),
