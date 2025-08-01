@@ -22,7 +22,10 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 )
 
-func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric) prompb.MetricMetadata_MetricType {
+// As part of implementing support for delta temporality, the metric type metadata for delta metrics
+// will be "gauge"/"gaugehistogram". 
+// See proposal: https://github.com/prometheus/proposals/pull/48/
+func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric, allowDeltaTemporality bool) prompb.MetricMetadata_MetricType {
 	switch otelMetric.Type() {
 	case pmetric.MetricTypeGauge:
 		return prompb.MetricMetadata_GAUGE
@@ -31,26 +34,20 @@ func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric) prompb.MetricMeta
 		if otelMetric.Sum().IsMonotonic() {
 			metricType = prompb.MetricMetadata_COUNTER
 		}
-		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
-		// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
-		if otelMetric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
-			metricType = prompb.MetricMetadata_UNKNOWN
+		if otelMetric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityDelta && allowDeltaTemporality {
+			metricType = prompb.MetricMetadata_GAUGE
 		}
 		return metricType
 	case pmetric.MetricTypeHistogram:
-		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
-		// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
-		if otelMetric.Histogram().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
-			return prompb.MetricMetadata_UNKNOWN
+		if otelMetric.Histogram().AggregationTemporality() == pmetric.AggregationTemporalityDelta && allowDeltaTemporality {
+			return prompb.MetricMetadata_GAUGEHISTOGRAM
 		}
 		return prompb.MetricMetadata_HISTOGRAM
 	case pmetric.MetricTypeSummary:
 		return prompb.MetricMetadata_SUMMARY
 	case pmetric.MetricTypeExponentialHistogram:
-		if otelMetric.ExponentialHistogram().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
-			// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
-			// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
-			return prompb.MetricMetadata_UNKNOWN
+		if otelMetric.ExponentialHistogram().AggregationTemporality() == pmetric.AggregationTemporalityDelta && allowDeltaTemporality {
+			return prompb.MetricMetadata_GAUGEHISTOGRAM
 		}
 		return prompb.MetricMetadata_HISTOGRAM
 	}

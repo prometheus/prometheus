@@ -211,19 +211,8 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 
 		if metadata.Type != prompb.MetricMetadata_UNKNOWN {
 			typeValue := strings.ToLower(metadata.Type.String())
-
-			if settings.AllowDeltaTemporality && hasTemporality && temporality == pmetric.AggregationTemporalityDelta {
-				switch metadata.Type {
-				case prompb.MetricMetadata_COUNTER:
-					typeValue = "gauge"
-				case prompb.MetricMetadata_HISTOGRAM:
-					typeValue = "gaugehistogram"
-				}
-			}
-
 			l["__type__"] = typeValue
 		}
-
 		if metadata.Unit != "" {
 			l["__unit__"] = unitNamer.Build(metadata.Unit)
 		}
