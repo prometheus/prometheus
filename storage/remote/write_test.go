@@ -382,11 +382,12 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 
 func TestOTLPWriteHandler(t *testing.T) {
 	timestamp := time.Now()
-	exportRequest := generateOTLPWriteRequest(timestamp)
 	for _, testCase := range []struct {
 		name              string
 		otlpCfg           config.OTLPConfig
+		exportRequest     pmetricotlp.ExportRequest
 		typeAndUnitLabels bool
+		nativeDelta       bool
 		expectedSamples   []mockSample
 	}{
 		{
@@ -394,6 +395,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 			otlpCfg: config.OTLPConfig{
 				TranslationStrategy: config.NoTranslation,
 			},
+			exportRequest: generateOTLPWriteRequest(timestamp),
 			expectedSamples: []mockSample{
 				{
 					l: labels.New(labels.Label{Name: "__name__", Value: "test.counter"},
@@ -420,6 +422,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 			otlpCfg: config.OTLPConfig{
 				TranslationStrategy: config.NoTranslation,
 			},
+			exportRequest:     generateOTLPWriteRequest(timestamp),
 			typeAndUnitLabels: true,
 			expectedSamples: []mockSample{
 				{
@@ -445,10 +448,43 @@ func TestOTLPWriteHandler(t *testing.T) {
 			},
 		},
 		{
+			name: "NoTranslation/NativeDelta",
+			otlpCfg: config.OTLPConfig{
+				TranslationStrategy: config.NoTranslation,
+			},
+			exportRequest:     generateOTLPWriteRequestWithTemporality(timestamp, pmetric.AggregationTemporalityDelta),
+			typeAndUnitLabels: true,
+			nativeDelta:       true,
+			expectedSamples: []mockSample{
+				{
+					l: labels.New(labels.Label{Name: "__name__", Value: "test.counter"},
+						labels.Label{Name: "__type__", Value: "gauge"},
+						labels.Label{Name: "__unit__", Value: "bytes"},
+						labels.Label{Name: "__temporality__", Value: "delta"},
+						labels.Label{Name: "foo.bar", Value: "baz"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"}),
+					t: timestamp.UnixMilli(),
+					v: 10.0,
+				},
+				{
+					l: labels.New(
+						labels.Label{Name: "__name__", Value: "target_info"},
+						labels.Label{Name: "host.name", Value: "test-host"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"},
+					),
+					t: timestamp.UnixMilli(),
+					v: 1,
+				},
+			},
+		},
+		{
 			name: "UnderscoreEscapingWithSuffixes/NoTypeAndUnitLabels",
 			otlpCfg: config.OTLPConfig{
 				TranslationStrategy: config.UnderscoreEscapingWithSuffixes,
 			},
+			exportRequest: generateOTLPWriteRequest(timestamp),
 			expectedSamples: []mockSample{
 				{
 					l: labels.New(labels.Label{Name: "__name__", Value: "test_counter_bytes_total"},
@@ -475,6 +511,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 			otlpCfg: config.OTLPConfig{
 				TranslationStrategy: config.UnderscoreEscapingWithoutSuffixes,
 			},
+			exportRequest: generateOTLPWriteRequest(timestamp),
 			expectedSamples: []mockSample{
 				{
 					l: labels.New(labels.Label{Name: "__name__", Value: "test_counter"},
@@ -501,6 +538,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 			otlpCfg: config.OTLPConfig{
 				TranslationStrategy: config.UnderscoreEscapingWithSuffixes,
 			},
+			exportRequest:     generateOTLPWriteRequest(timestamp),
 			typeAndUnitLabels: true,
 			expectedSamples: []mockSample{
 				{
@@ -526,10 +564,43 @@ func TestOTLPWriteHandler(t *testing.T) {
 			},
 		},
 		{
+			name: "UnderscoreEscapingWithSuffixes/WithNativeDelta",
+			otlpCfg: config.OTLPConfig{
+				TranslationStrategy: config.UnderscoreEscapingWithSuffixes,
+			},
+			exportRequest:     generateOTLPWriteRequestWithTemporality(timestamp, pmetric.AggregationTemporalityDelta),
+			typeAndUnitLabels: true,
+			nativeDelta:       true,
+			expectedSamples: []mockSample{
+				{
+					l: labels.New(labels.Label{Name: "__name__", Value: "test_counter_bytes_total"},
+						labels.Label{Name: "__type__", Value: "gauge"},
+						labels.Label{Name: "__unit__", Value: "bytes"},
+						labels.Label{Name: "__temporality__", Value: "delta"},
+						labels.Label{Name: "foo_bar", Value: "baz"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"}),
+					t: timestamp.UnixMilli(),
+					v: 10.0,
+				},
+				{
+					l: labels.New(
+						labels.Label{Name: "__name__", Value: "target_info"},
+						labels.Label{Name: "host_name", Value: "test-host"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"},
+					),
+					t: timestamp.UnixMilli(),
+					v: 1,
+				},
+			},
+		},
+		{
 			name: "NoUTF8EscapingWithSuffixes/NoTypeAndUnitLabels",
 			otlpCfg: config.OTLPConfig{
 				TranslationStrategy: config.NoUTF8EscapingWithSuffixes,
 			},
+			exportRequest: generateOTLPWriteRequest(timestamp),
 			expectedSamples: []mockSample{
 				{
 					l: labels.New(labels.Label{Name: "__name__", Value: "test.counter_bytes_total"},
@@ -556,6 +627,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 			otlpCfg: config.OTLPConfig{
 				TranslationStrategy: config.NoUTF8EscapingWithSuffixes,
 			},
+			exportRequest:     generateOTLPWriteRequest(timestamp),
 			typeAndUnitLabels: true,
 			expectedSamples: []mockSample{
 				{
@@ -580,9 +652,41 @@ func TestOTLPWriteHandler(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "NoUTF8EscapingWithSuffixes/WithNativeDelta",
+			otlpCfg: config.OTLPConfig{
+				TranslationStrategy: config.NoUTF8EscapingWithSuffixes,
+			},
+			exportRequest:     generateOTLPWriteRequestWithTemporality(timestamp, pmetric.AggregationTemporalityDelta),
+			typeAndUnitLabels: true,
+			nativeDelta:       true,
+			expectedSamples: []mockSample{
+				{
+					l: labels.New(labels.Label{Name: "__name__", Value: "test.counter_bytes_total"},
+						labels.Label{Name: "__type__", Value: "gauge"},
+						labels.Label{Name: "__unit__", Value: "bytes"},
+						labels.Label{Name: "__temporality__", Value: "delta"},
+						labels.Label{Name: "foo.bar", Value: "baz"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"}),
+					t: timestamp.UnixMilli(),
+					v: 10.0,
+				},
+				{
+					l: labels.New(
+						labels.Label{Name: "__name__", Value: "target_info"},
+						labels.Label{Name: "host.name", Value: "test-host"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"},
+					),
+					t: timestamp.UnixMilli(),
+					v: 1,
+				},
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			appendable := handleOTLP(t, exportRequest, testCase.otlpCfg, testCase.typeAndUnitLabels)
+			appendable := handleOTLP(t, testCase.exportRequest, testCase.otlpCfg, testCase.typeAndUnitLabels, testCase.nativeDelta)
 			for _, sample := range testCase.expectedSamples {
 				requireContainsSample(t, appendable.samples, sample)
 			}
@@ -606,7 +710,7 @@ func requireContainsSample(t *testing.T, actual []mockSample, expected mockSampl
 		"actual  : %v", expected, actual))
 }
 
-func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg config.OTLPConfig, typeAndUnitLabels bool) *mockAppendable {
+func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg config.OTLPConfig, typeAndUnitLabels bool, nativeDelta bool) *mockAppendable {
 	buf, err := exportRequest.MarshalProto()
 	require.NoError(t, err)
 
@@ -619,7 +723,7 @@ func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg c
 		return config.Config{
 			OTLPConfig: otlpCfg,
 		}
-	}, OTLPOptions{EnableTypeAndUnitLabels: typeAndUnitLabels})
+	}, OTLPOptions{EnableTypeAndUnitLabels: typeAndUnitLabels, NativeDelta: nativeDelta})
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 
@@ -630,6 +734,10 @@ func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg c
 }
 
 func generateOTLPWriteRequest(timestamp time.Time) pmetricotlp.ExportRequest {
+	return generateOTLPWriteRequestWithTemporality(timestamp, pmetric.AggregationTemporalityCumulative)
+}
+
+func generateOTLPWriteRequestWithTemporality(timestamp time.Time, temporality pmetric.AggregationTemporality) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
 	// Generate One Counter, One Gauge, One Histogram, One Exponential-Histogram
@@ -649,7 +757,7 @@ func generateOTLPWriteRequest(timestamp time.Time) pmetricotlp.ExportRequest {
 	counterMetric.SetDescription("test-counter-description")
 	counterMetric.SetUnit("By")
 	counterMetric.SetEmptySum()
-	counterMetric.Sum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+	counterMetric.Sum().SetAggregationTemporality(temporality)
 	counterMetric.Sum().SetIsMonotonic(true)
 
 	counterDataPoint := counterMetric.Sum().DataPoints().AppendEmpty()
@@ -682,7 +790,7 @@ func generateOTLPWriteRequest(timestamp time.Time) pmetricotlp.ExportRequest {
 	histogramMetric.SetDescription("test-histogram-description")
 	histogramMetric.SetUnit("By")
 	histogramMetric.SetEmptyHistogram()
-	histogramMetric.Histogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+	histogramMetric.Histogram().SetAggregationTemporality(temporality)
 
 	histogramDataPoint := histogramMetric.Histogram().DataPoints().AppendEmpty()
 	histogramDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
@@ -698,7 +806,7 @@ func generateOTLPWriteRequest(timestamp time.Time) pmetricotlp.ExportRequest {
 	exponentialHistogramMetric.SetDescription("test-exponential-histogram-description")
 	exponentialHistogramMetric.SetUnit("By")
 	exponentialHistogramMetric.SetEmptyExponentialHistogram()
-	exponentialHistogramMetric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+	exponentialHistogramMetric.ExponentialHistogram().SetAggregationTemporality(temporality)
 
 	exponentialHistogramDataPoint := exponentialHistogramMetric.ExponentialHistogram().DataPoints().AppendEmpty()
 	exponentialHistogramDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
