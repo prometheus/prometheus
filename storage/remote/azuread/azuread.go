@@ -348,20 +348,6 @@ func newManagedIdentityTokenCredential(clientOpts *azcore.ClientOptions, managed
 }
 
 // newWorkloadIdentityTokenCredential returns new Microsoft Entra Workload Identity token credential.
-// This is used for Kubernetes Pods that have been configured with the azure.workload.identity/use: "true" label
-// and a service account annotated with azure.workload.identity/client-id annotation.
-//
-// For this to work properly, the Kubernetes pod must:
-// 1. Have the label azure.workload.identity/use: "true"
-// 2. Use a service account with annotation azure.workload.identity/client-id matching the ClientID
-// 3. Have the Azure Workload Identity webhook installed in the cluster
-// 4. Have federated identity credentials established between the identity and service account
-//
-// The token file path (typically DefaultWorkloadIdentityTokenPath) is mounted automatically
-// by the Azure Workload Identity webhook when it mutates the pod. The webhook:
-// - Projects the service account token to this path
-// - Sets environment variables like AZURE_AUTHORITY_HOST and AZURE_FEDERATED_TOKEN_FILE
-// - Adds the necessary volume mounts to the pod
 //
 // For detailed setup instructions, see:
 // https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/prometheus-metrics-enable-workload-identity
