@@ -317,6 +317,7 @@ func NewAPI(
 			ConvertDelta:            otlpDeltaToCumulative,
 			NativeDelta:             otlpNativeDeltaIngestion,
 			LookbackDelta:           lookbackDelta,
+			IngestCTZeroSample:      ctZeroIngestionEnabled,
 			EnableTypeAndUnitLabels: enableTypeAndUnitLabels,
 		})
 	}
