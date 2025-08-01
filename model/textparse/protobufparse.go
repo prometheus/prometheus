@@ -561,7 +561,8 @@ func (p *ProtobufParser) onSeriesOrHistogramUpdate() error {
 		m := schema.Metadata{
 			Name: p.getMagicName(),
 			Type: typ,
-			Unit: p.dec.GetUnit(),
+			// After the next call to dec.NextMetricFamily, the unit value becomes invalid, use labels.UnsafeString.
+			Unit: labels.UnsafeString(p.dec.GetUnit()),
 		}
 		m.AddToLabels(&p.builder)
 		if err := p.dec.Label(schema.IgnoreOverriddenMetadataLabelsScratchBuilder{
@@ -603,10 +604,14 @@ func (p *ProtobufParser) onSeriesOrHistogramUpdate() error {
 // getMagicName usually just returns p.mf.GetType() but adds a magic suffix
 // ("_count", "_sum", "_bucket") if needed according to the current parser
 // state.
+// After the next call to dec.NextMetricFamily, the returned value might
+// become invalid. When necessary, the returned value is wrapped with a call
+// to labels.UnsafeString so it is safe to use in labels.
 func (p *ProtobufParser) getMagicName() string {
 	t := p.dec.GetType()
 	if p.state == EntryHistogram || (t != dto.MetricType_HISTOGRAM && t != dto.MetricType_GAUGE_HISTOGRAM && t != dto.MetricType_SUMMARY) {
-		return p.dec.GetName()
+		// Use labels.UnsafeString since we will use this value in labels.
+		return labels.UnsafeString(p.dec.GetName())
 	}
 	if p.fieldPos == -2 {
 		return p.dec.GetName() + "_count"
@@ -617,7 +622,8 @@ func (p *ProtobufParser) getMagicName() string {
 	if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
 		return p.dec.GetName() + "_bucket"
 	}
-	return p.dec.GetName()
+	// Use labels.UnsafeString since we will use this value in labels.
+	return labels.UnsafeString(p.dec.GetName())
 }
 
 // getMagicLabel returns if a magic label ("quantile" or "le") is needed and, if
