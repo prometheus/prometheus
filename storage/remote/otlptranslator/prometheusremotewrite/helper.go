@@ -670,7 +670,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, earlies
 	}
 
 	name := targetMetricName
-	if len(settings.Namespace) > 0 {
+	if settings.Namespace != "" {
 		name = settings.Namespace + "_" + name
 	}
 
