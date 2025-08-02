@@ -507,7 +507,8 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 	chks := []chunks.Meta{}
 	builder := labels.ScratchBuilder{}
 	for p.Next() {
-		if err = ir.Series(p.At(), &builder, &chks); err != nil {
+		err = ir.Series(p.At(), &builder, &chks)
+		if err != nil {
 			return err
 		}
 		// Amount of the block time range not covered by this series.

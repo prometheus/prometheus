@@ -131,7 +131,8 @@ func loadAzureAdConfig(filename string) (*AzureADConfig, error) {
 		return nil, err
 	}
 	cfg := AzureADConfig{}
-	if err = yaml.UnmarshalStrict(content, &cfg); err != nil {
+	err = yaml.UnmarshalStrict(content, &cfg)
+	if err != nil {
 		return nil, err
 	}
 	return &cfg, nil
