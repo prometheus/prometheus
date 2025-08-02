@@ -124,7 +124,6 @@ linters:
         - httpNoBody
         - importShadow
         - nestingReduce
-        - preferStringWriter
         - ptrToRefParam
         - rangeValCopy
         - redundantSprint
