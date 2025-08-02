@@ -186,6 +186,10 @@ type HeadOptions struct {
 
 	// EnableSharding enables ShardedPostings() support in the Head.
 	EnableSharding bool
+
+	// StartupMinRetentionTime is the used to delete blocks and ignore samples from the WAL
+	// during the startup of the TSDB.
+	StartupMinRetentionTime int64
 }
 
 const (
