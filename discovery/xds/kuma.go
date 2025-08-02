@@ -73,7 +73,7 @@ func (c *KumaSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
-	if len(c.Server) == 0 {
+	if c.Server == "" {
 		return fmt.Errorf("kuma SD server must not be empty: %s", c.Server)
 	}
 	parsedURL, err := url.Parse(c.Server)
@@ -81,7 +81,7 @@ func (c *KumaSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
-	if len(parsedURL.Scheme) == 0 || len(parsedURL.Host) == 0 {
+	if parsedURL.Scheme == "" || parsedURL.Host == "" {
 		return fmt.Errorf("kuma SD server must not be empty and have a scheme: %s", c.Server)
 	}
 

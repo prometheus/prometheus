@@ -769,10 +769,10 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 }
 
 func checkTLSConfig(tlsConfig promconfig.TLSConfig, checkSyntaxOnly bool) error {
-	if len(tlsConfig.CertFile) > 0 && len(tlsConfig.KeyFile) == 0 {
+	if tlsConfig.CertFile != "" && tlsConfig.KeyFile == "" {
 		return fmt.Errorf("client cert file %q specified without client key file", tlsConfig.CertFile)
 	}
-	if len(tlsConfig.KeyFile) > 0 && len(tlsConfig.CertFile) == 0 {
+	if tlsConfig.KeyFile != "" && tlsConfig.CertFile == "" {
 		return fmt.Errorf("client key file %q specified without client cert file", tlsConfig.KeyFile)
 	}
 

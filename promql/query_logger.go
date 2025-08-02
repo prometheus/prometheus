@@ -50,7 +50,7 @@ const (
 
 func parseBrokenJSON(brokenJSON []byte) (string, bool) {
 	queries := strings.ReplaceAll(string(brokenJSON), "\x00", "")
-	if len(queries) > 0 {
+	if queries != "" {
 		queries = queries[:len(queries)-1] + "]"
 	}
 

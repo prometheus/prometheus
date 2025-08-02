@@ -64,7 +64,7 @@ title: %s
 
 func createFlagRow(flag *kingpin.FlagModel) []string {
 	defaultVal := ""
-	if len(flag.Default) > 0 && len(flag.Default[0]) > 0 {
+	if len(flag.Default) > 0 && flag.Default[0] != "" {
 		defaultVal = fmt.Sprintf("`%s`", flag.Default[0])
 	}
 

@@ -791,7 +791,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if err := discovery.UnmarshalYAMLWithInlineConfigs(c, unmarshal); err != nil {
 		return err
 	}
-	if len(c.JobName) == 0 {
+	if c.JobName == "" {
 		return errors.New("job_name is empty")
 	}
 
