@@ -119,7 +119,6 @@ linters:
         - exposedSyncMutex
         - hexLiteral
         - hugeParam
-        - httpNoBody
         - importShadow
         - nestingReduce
         - ptrToRefParam
