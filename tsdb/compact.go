@@ -640,12 +640,12 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 		c.metrics.Ran.Inc()
 		c.metrics.Duration.Observe(time.Since(t).Seconds())
 	}(time.Now())
-
-	if err = os.RemoveAll(tmp); err != nil {
+	err = os.RemoveAll(tmp)
+	if err != nil {
 		return err
 	}
-
-	if err = os.MkdirAll(tmp, 0o777); err != nil {
+	err = os.MkdirAll(tmp, 0o777)
+	if err != nil {
 		return err
 	}
 
