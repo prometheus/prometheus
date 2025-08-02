@@ -130,8 +130,8 @@ func WriteFile(logger *slog.Logger, dir string, tr Reader) (int64, error) {
 	if err := f.Sync(); err != nil {
 		return 0, tsdb_errors.NewMulti(err, f.Close()).Err()
 	}
-
-	if err = f.Close(); err != nil {
+	err = f.Close()
+	if err != nil {
 		return 0, err
 	}
 	f = nil

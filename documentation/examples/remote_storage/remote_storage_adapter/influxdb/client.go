@@ -106,11 +106,13 @@ func (c *Client) Write(samples model.Samples) error {
 	writeAPI.EnableBatching() // default 5_000
 	var err error
 	for _, p := range points {
-		if err = writeAPI.WritePoint(c.context, p); err != nil {
+		err = writeAPI.WritePoint(c.context, p)
+		if err != nil {
 			return err
 		}
 	}
-	if err = writeAPI.Flush(c.context); err != nil {
+	err = writeAPI.Flush(c.context)
+	if err != nil {
 		return err
 	}
 
@@ -136,7 +138,8 @@ func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 		}
 
 		for resp.Next() {
-			if err = mergeResult(labelsToSeries, resp.Record()); err != nil {
+			err = mergeResult(labelsToSeries, resp.Record())
+			if err != nil {
 				return nil, err
 			}
 		}

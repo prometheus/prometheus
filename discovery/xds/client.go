@@ -213,7 +213,8 @@ func (rc *HTTPResourceClient) Fetch(ctx context.Context) (*v3.DiscoveryResponse,
 	}
 
 	discoveryRes := &v3.DiscoveryResponse{}
-	if err = protoJSONUnmarshalOptions.Unmarshal(respBody, discoveryRes); err != nil {
+	err = protoJSONUnmarshalOptions.Unmarshal(respBody, discoveryRes)
+	if err != nil {
 		return nil, err
 	}
 

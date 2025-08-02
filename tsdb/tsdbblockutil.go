@@ -61,7 +61,8 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger *
 			if lastTyp != typ {
 				// The behaviour of appender is undefined if samples of different types
 				// are appended to the same series in a single Commit().
-				if err = app.Commit(); err != nil {
+				err = app.Commit()
+				if err != nil {
 					return "", err
 				}
 				app = w.Appender(ctx)
@@ -92,15 +93,16 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger *
 		}
 		// Commit and make a new appender periodically, to avoid building up data in memory.
 		if sampleCount > commitAfter {
-			if err = app.Commit(); err != nil {
+			err = app.Commit()
+			if err != nil {
 				return "", err
 			}
 			app = w.Appender(ctx)
 			sampleCount = 0
 		}
 	}
-
-	if err = app.Commit(); err != nil {
+	err = app.Commit()
+	if err != nil {
 		return "", err
 	}
 

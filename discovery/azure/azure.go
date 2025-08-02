@@ -145,18 +145,22 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err = validateAuthParam(c.SubscriptionID, "subscription_id"); err != nil {
+	err = validateAuthParam(c.SubscriptionID, "subscription_id")
+	if err != nil {
 		return err
 	}
 
 	if c.AuthenticationMethod == authMethodOAuth {
-		if err = validateAuthParam(c.TenantID, "tenant_id"); err != nil {
+		err = validateAuthParam(c.TenantID, "tenant_id")
+		if err != nil {
 			return err
 		}
-		if err = validateAuthParam(c.ClientID, "client_id"); err != nil {
+		err = validateAuthParam(c.ClientID, "client_id")
+		if err != nil {
 			return err
 		}
-		if err = validateAuthParam(string(c.ClientSecret), "client_secret"); err != nil {
+		err = validateAuthParam(string(c.ClientSecret), "client_secret")
+		if err != nil {
 			return err
 		}
 	}

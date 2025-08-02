@@ -277,8 +277,8 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 				}
 			}
 		}
-
-		if err = h.appendV1Histograms(app, ts.Histograms, ls); err != nil {
+		err = h.appendV1Histograms(app, ts.Histograms, ls)
+		if err != nil {
 			return err
 		}
 		samplesAppended += len(ts.Histograms)

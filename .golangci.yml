@@ -125,7 +125,6 @@ linters:
         - redundantSprint
         - regexpSimplify
         - returnAfterHttpError
-        - sloppyReassign
         - sprintfQuotedString
         - todoCommentWithoutDetail
         - tooManyResultsChecker
