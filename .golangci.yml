@@ -115,7 +115,6 @@ linters:
         - boolExprSimplify
         - commentedOutCode
         - deferInLoop
-        - equalFold
         - evalOrder
         - exposedSyncMutex
         - hexLiteral
