@@ -790,42 +790,13 @@ func main() {
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
 
-		notifierManager = notifier.NewManager(&cfg.notifier, logger.With("component", "notifier"))
+		notifierManager *notifier.Manager
 
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
 		ctxNotify, cancelNotify = context.WithCancel(context.Background())
 		discoveryManagerScrape  *discovery.Manager
 		discoveryManagerNotify  *discovery.Manager
 	)
-
-	// Kubernetes client metrics are used by Kubernetes SD.
-	// They are registered here in the main function, because SD mechanisms
-	// can only register metrics specific to a SD instance.
-	// Kubernetes client metrics are the same for the whole process -
-	// they are not specific to an SD instance.
-	err = discovery.RegisterK8sClientMetricsWithPrometheus(prometheus.DefaultRegisterer)
-	if err != nil {
-		logger.Error("failed to register Kubernetes client metrics", "err", err)
-		os.Exit(1)
-	}
-
-	sdMetrics, err := discovery.CreateAndRegisterSDMetrics(prometheus.DefaultRegisterer)
-	if err != nil {
-		logger.Error("failed to register service discovery metrics", "err", err)
-		os.Exit(1)
-	}
-
-	discoveryManagerScrape = discovery.NewManager(ctxScrape, logger.With("component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("scrape"))
-	if discoveryManagerScrape == nil {
-		logger.Error("failed to create a discovery manager scrape")
-		os.Exit(1)
-	}
-
-	discoveryManagerNotify = discovery.NewManager(ctxNotify, logger.With("component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"))
-	if discoveryManagerNotify == nil {
-		logger.Error("failed to create a discovery manager notify")
-		os.Exit(1)
-	}
 
 	scrapeManager, err := scrape.NewManager(
 		&cfg.scrape,
@@ -847,6 +818,37 @@ func main() {
 	)
 
 	if !agentMode {
+		notifierManager = notifier.NewManager(&cfg.notifier, logger.With("component", "notifier"))
+
+		// Kubernetes client metrics are used by Kubernetes SD.
+		// They are registered here in the main function, because SD mechanisms
+		// can only register metrics specific to a SD instance.
+		// Kubernetes client metrics are the same for the whole process -
+		// they are not specific to an SD instance.
+		err = discovery.RegisterK8sClientMetricsWithPrometheus(prometheus.DefaultRegisterer)
+		if err != nil {
+			logger.Error("failed to register Kubernetes client metrics", "err", err)
+			os.Exit(1)
+		}
+
+		sdMetrics, err := discovery.CreateAndRegisterSDMetrics(prometheus.DefaultRegisterer)
+		if err != nil {
+			logger.Error("failed to register service discovery metrics", "err", err)
+			os.Exit(1)
+		}
+
+		discoveryManagerScrape = discovery.NewManager(ctxScrape, logger.With("component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("scrape"))
+		if discoveryManagerScrape == nil {
+			logger.Error("failed to create a discovery manager scrape")
+			os.Exit(1)
+		}
+
+		discoveryManagerNotify = discovery.NewManager(ctxNotify, logger.With("component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"))
+		if discoveryManagerNotify == nil {
+			logger.Error("failed to create a discovery manager notify")
+			os.Exit(1)
+		}
+
 		opts := promql.EngineOpts{
 			Logger:                   logger.With("component", "query engine"),
 			Reg:                      prometheus.DefaultRegisterer,
@@ -973,6 +975,11 @@ func main() {
 		}, {
 			name: "scrape_sd",
 			reloader: func(cfg *config.Config) error {
+				if agentMode {
+					// No-op in Agent mode.
+					return nil
+				}
+
 				c := make(map[string]discovery.Configs)
 				scfgs, err := cfg.GetScrapeConfigs()
 				if err != nil {
@@ -984,11 +991,23 @@ func main() {
 				return discoveryManagerScrape.ApplyConfig(c)
 			},
 		}, {
-			name:     "notify",
-			reloader: notifierManager.ApplyConfig,
+			name: "notify",
+			reloader: func(cfg *config.Config) error {
+				if agentMode {
+					// No-op in Agent mode.
+					return nil
+				}
+
+				return notifierManager.ApplyConfig(cfg)
+			},
 		}, {
 			name: "notify_sd",
 			reloader: func(cfg *config.Config) error {
+				if agentMode {
+					// No-op in Agent mode.
+					return nil
+				}
+
 				c := make(map[string]discovery.Configs)
 				for k, v := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
 					c[k] = v.ServiceDiscoveryConfigs
@@ -1090,32 +1109,36 @@ func main() {
 		)
 	}
 	{
-		// Scrape discovery manager.
-		g.Add(
-			func() error {
-				err := discoveryManagerScrape.Run()
-				logger.Info("Scrape discovery manager stopped")
-				return err
-			},
-			func(_ error) {
-				logger.Info("Stopping scrape discovery manager...")
-				cancelScrape()
-			},
-		)
+		if !agentMode {
+			// Scrape discovery manager.
+			g.Add(
+				func() error {
+					err := discoveryManagerScrape.Run()
+					logger.Info("Scrape discovery manager stopped")
+					return err
+				},
+				func(_ error) {
+					logger.Info("Stopping scrape discovery manager...")
+					cancelScrape()
+				},
+			)
+		}
 	}
 	{
-		// Notify discovery manager.
-		g.Add(
-			func() error {
-				err := discoveryManagerNotify.Run()
-				logger.Info("Notify discovery manager stopped")
-				return err
-			},
-			func(_ error) {
-				logger.Info("Stopping notify discovery manager...")
-				cancelNotify()
-			},
-		)
+		if !agentMode {
+			// Notify discovery manager.
+			g.Add(
+				func() error {
+					err := discoveryManagerNotify.Run()
+					logger.Info("Notify discovery manager stopped")
+					return err
+				},
+				func(_ error) {
+					logger.Info("Stopping notify discovery manager...")
+					cancelNotify()
+				},
+			)
+		}
 	}
 	if !agentMode {
 		// Rule manager.
@@ -1131,28 +1154,30 @@ func main() {
 		)
 	}
 	{
-		// Scrape manager.
-		g.Add(
-			func() error {
-				// When the scrape manager receives a new targets list
-				// it needs to read a valid config for each job.
-				// It depends on the config being in sync with the discovery manager so
-				// we wait until the config is fully loaded.
-				<-reloadReady.C
+		if !agentMode {
+			// Scrape manager.
+			g.Add(
+				func() error {
+					// When the scrape manager receives a new targets list
+					// it needs to read a valid config for each job.
+					// It depends on the config being in sync with the discovery manager so
+					// we wait until the config is fully loaded.
+					<-reloadReady.C
 
-				err := scrapeManager.Run(discoveryManagerScrape.SyncCh())
-				logger.Info("Scrape manager stopped")
-				return err
-			},
-			func(_ error) {
-				// Scrape manager needs to be stopped before closing the local TSDB
-				// so that it doesn't try to write samples to a closed storage.
-				// We should also wait for rule manager to be fully stopped to ensure
-				// we don't trigger any false positive alerts for rules using absent().
-				logger.Info("Stopping scrape manager...")
-				scrapeManager.Stop()
-			},
-		)
+					err := scrapeManager.Run(discoveryManagerScrape.SyncCh())
+					logger.Info("Scrape manager stopped")
+					return err
+				},
+				func(_ error) {
+					// Scrape manager needs to be stopped before closing the local TSDB
+					// so that it doesn't try to write samples to a closed storage.
+					// We should also wait for rule manager to be fully stopped to ensure
+					// we don't trigger any false positive alerts for rules using absent().
+					logger.Info("Stopping scrape manager...")
+					scrapeManager.Stop()
+				},
+			)
+		}
 	}
 	{
 		// Tracing manager.
@@ -1406,26 +1431,28 @@ func main() {
 		)
 	}
 	{
-		// Notifier.
+		if !agentMode {
+			// Notifier.
 
-		// Calling notifier.Stop() before ruleManager.Stop() will cause a panic if the ruleManager isn't running,
-		// so keep this interrupt after the ruleManager.Stop().
-		g.Add(
-			func() error {
-				// When the notifier manager receives a new targets list
-				// it needs to read a valid config for each job.
-				// It depends on the config being in sync with the discovery manager
-				// so we wait until the config is fully loaded.
-				<-reloadReady.C
+			// Calling notifier.Stop() before ruleManager.Stop() will cause a panic if the ruleManager isn't running,
+			// so keep this interrupt after the ruleManager.Stop().
+			g.Add(
+				func() error {
+					// When the notifier manager receives a new targets list
+					// it needs to read a valid config for each job.
+					// It depends on the config being in sync with the discovery manager
+					// so we wait until the config is fully loaded.
+					<-reloadReady.C
 
-				notifierManager.Run(discoveryManagerNotify.SyncCh())
-				logger.Info("Notifier manager stopped")
-				return nil
-			},
-			func(_ error) {
-				notifierManager.Stop()
-			},
-		)
+					notifierManager.Run(discoveryManagerNotify.SyncCh())
+					logger.Info("Notifier manager stopped")
+					return nil
+				},
+				func(_ error) {
+					notifierManager.Stop()
+				},
+			)
+		}
 	}
 	func() { // This function exists so the top of the stack is named 'main.main.funcxxx' and not 'oklog'.
 		if err := g.Run(); err != nil {
