@@ -3700,7 +3700,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					// Build a context with the correct request params.
 					ctx := context.Background()
 					for p, v := range test.params {
-						ctx = route.WithParam(ctx, p, v)
+						ctx = route.WithParam(ctx, p, v) //nolint:fatcontext // This is intentional to provide the route params.
 					}
 
 					req, err := request(method, test.query)
