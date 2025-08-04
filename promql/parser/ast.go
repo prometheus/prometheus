@@ -243,15 +243,15 @@ func (TestStmt) PositionRange() posrange.PositionRange {
 		End:   -1,
 	}
 }
-func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }
-func (e *Call) Type() ValueType           { return e.Func.ReturnType }
-func (e *MatrixSelector) Type() ValueType { return ValueTypeMatrix }
-func (e *SubqueryExpr) Type() ValueType   { return ValueTypeMatrix }
-func (e *NumberLiteral) Type() ValueType  { return ValueTypeScalar }
-func (e *ParenExpr) Type() ValueType      { return e.Expr.Type() }
-func (e *StringLiteral) Type() ValueType  { return ValueTypeString }
-func (e *UnaryExpr) Type() ValueType      { return e.Expr.Type() }
-func (e *VectorSelector) Type() ValueType { return ValueTypeVector }
+func (*AggregateExpr) Type() ValueType  { return ValueTypeVector }
+func (e *Call) Type() ValueType         { return e.Func.ReturnType }
+func (*MatrixSelector) Type() ValueType { return ValueTypeMatrix }
+func (*SubqueryExpr) Type() ValueType   { return ValueTypeMatrix }
+func (*NumberLiteral) Type() ValueType  { return ValueTypeScalar }
+func (e *ParenExpr) Type() ValueType    { return e.Expr.Type() }
+func (*StringLiteral) Type() ValueType  { return ValueTypeString }
+func (e *UnaryExpr) Type() ValueType    { return e.Expr.Type() }
+func (*VectorSelector) Type() ValueType { return ValueTypeVector }
 func (e *BinaryExpr) Type() ValueType {
 	if e.LHS.Type() == ValueTypeScalar && e.RHS.Type() == ValueTypeScalar {
 		return ValueTypeScalar
@@ -259,7 +259,7 @@ func (e *BinaryExpr) Type() ValueType {
 	return ValueTypeVector
 }
 func (e *StepInvariantExpr) Type() ValueType { return e.Expr.Type() }
-func (e *DurationExpr) Type() ValueType      { return ValueTypeScalar }
+func (*DurationExpr) Type() ValueType        { return ValueTypeScalar }
 
 func (*AggregateExpr) PromQLExpr()     {}
 func (*BinaryExpr) PromQLExpr()        {}

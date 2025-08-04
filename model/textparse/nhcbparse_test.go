@@ -603,14 +603,14 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 			return "ProtoBuf", factory, []int{1, 2, 3}, parserOptions{useUTF8sep: true, hasCreatedTimeStamp: true}
 		},
 		func() (string, parserFactory, []int, parserOptions) {
-			factory := func(_ bool) Parser {
+			factory := func(bool) Parser {
 				input := createTestOpenMetricsHistogram()
 				return NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
 			}
 			return "OpenMetrics", factory, []int{1}, parserOptions{hasCreatedTimeStamp: true}
 		},
 		func() (string, parserFactory, []int, parserOptions) {
-			factory := func(_ bool) Parser {
+			factory := func(bool) Parser {
 				input := createTestPromHistogram()
 				return NewPromParser([]byte(input), labels.NewSymbolTable(), false)
 			}

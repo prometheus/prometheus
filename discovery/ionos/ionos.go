@@ -96,7 +96,7 @@ func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.Ref
 }
 
 // Name returns the name of the IONOS Cloud service discovery.
-func (c SDConfig) Name() string {
+func (SDConfig) Name() string {
 	return "ionos"
 }
 

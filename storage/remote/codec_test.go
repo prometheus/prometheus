@@ -719,9 +719,9 @@ func (c *mockChunkSeriesSet) At() storage.ChunkSeries {
 	}
 }
 
-func (c *mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
+func (*mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
-func (c *mockChunkSeriesSet) Err() error {
+func (*mockChunkSeriesSet) Err() error {
 	return nil
 }
 
@@ -748,7 +748,7 @@ func (c *mockChunkIterator) Next() bool {
 	return c.index < len(c.chunks)
 }
 
-func (c *mockChunkIterator) Err() error {
+func (*mockChunkIterator) Err() error {
 	return nil
 }
 
@@ -986,7 +986,7 @@ func TestChunkedSeriesSet(t *testing.T) {
 // mockFlusher implements http.Flusher.
 type mockFlusher struct{}
 
-func (f *mockFlusher) Flush() {}
+func (*mockFlusher) Flush() {}
 
 type oneShotCloser struct {
 	r      io.Reader

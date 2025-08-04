@@ -60,7 +60,7 @@ func (a *dbAdapter) Stats(statsByLabelName string, limit int) (*tsdb.Stats, erro
 	return a.Head().Stats(statsByLabelName, limit), nil
 }
 
-func (a *dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
+func (*dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
 }
 
