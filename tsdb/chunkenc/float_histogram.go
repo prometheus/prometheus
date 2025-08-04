@@ -58,7 +58,7 @@ type xorValue struct {
 }
 
 // Encoding returns the encoding type.
-func (c *FloatHistogramChunk) Encoding() Encoding {
+func (*FloatHistogramChunk) Encoding() Encoding {
 	return EncFloatHistogram
 }
 
@@ -215,7 +215,7 @@ func (a *FloatHistogramAppender) NumSamples() int {
 
 // Append implements Appender. This implementation panics because normal float
 // samples must never be appended to a histogram chunk.
-func (a *FloatHistogramAppender) Append(int64, float64) {
+func (*FloatHistogramAppender) Append(int64, float64) {
 	panic("appended a float sample to a histogram chunk")
 }
 
@@ -688,7 +688,7 @@ func (a *FloatHistogramAppender) recode(
 
 // recodeHistogram converts the current histogram (in-place) to accommodate an expansion of the set of
 // (positive and/or negative) buckets used.
-func (a *FloatHistogramAppender) recodeHistogram(
+func (*FloatHistogramAppender) recodeHistogram(
 	fh *histogram.FloatHistogram,
 	pBackwardInter, nBackwardInter []Insert,
 ) {
@@ -702,7 +702,7 @@ func (a *FloatHistogramAppender) recodeHistogram(
 	}
 }
 
-func (a *FloatHistogramAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
+func (*FloatHistogramAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float histogram chunk")
 }
 
@@ -872,11 +872,11 @@ func (it *floatHistogramIterator) Seek(t int64) ValueType {
 	return ValFloatHistogram
 }
 
-func (it *floatHistogramIterator) At() (int64, float64) {
+func (*floatHistogramIterator) At() (int64, float64) {
 	panic("cannot call floatHistogramIterator.At")
 }
 
-func (it *floatHistogramIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+func (*floatHistogramIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	panic("cannot call floatHistogramIterator.AtHistogram")
 }
 

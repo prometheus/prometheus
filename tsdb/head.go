@@ -1730,7 +1730,7 @@ func (h *Head) Close() error {
 // String returns an human readable representation of the TSDB head. It's important to
 // keep this function in order to avoid the struct dump when the head is stringified in
 // errors or logs.
-func (h *Head) String() string {
+func (*Head) String() string {
 	return "head"
 }
 

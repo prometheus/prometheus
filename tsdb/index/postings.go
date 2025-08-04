@@ -564,10 +564,10 @@ type errPostings struct {
 	err error
 }
 
-func (e errPostings) Next() bool                  { return false }
-func (e errPostings) Seek(storage.SeriesRef) bool { return false }
-func (e errPostings) At() storage.SeriesRef       { return 0 }
-func (e errPostings) Err() error                  { return e.err }
+func (errPostings) Next() bool                  { return false }
+func (errPostings) Seek(storage.SeriesRef) bool { return false }
+func (errPostings) At() storage.SeriesRef       { return 0 }
+func (e errPostings) Err() error                { return e.err }
 
 var emptyPostings = errPostings{}
 
@@ -861,7 +861,7 @@ func (it *ListPostings) Seek(x storage.SeriesRef) bool {
 	return false
 }
 
-func (it *ListPostings) Err() error {
+func (*ListPostings) Err() error {
 	return nil
 }
 
@@ -914,7 +914,7 @@ func (it *bigEndianPostings) Seek(x storage.SeriesRef) bool {
 	return false
 }
 
-func (it *bigEndianPostings) Err() error {
+func (*bigEndianPostings) Err() error {
 	return nil
 }
 

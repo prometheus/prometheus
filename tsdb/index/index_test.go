@@ -90,7 +90,7 @@ func (m mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...c
 	return nil
 }
 
-func (m mockIndex) Close() error {
+func (mockIndex) Close() error {
 	return nil
 }
 

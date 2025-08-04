@@ -93,8 +93,8 @@ func (s *testMetaStore) GetMetadata(metric string) (scrape.MetricMetadata, bool)
 	return scrape.MetricMetadata{}, false
 }
 
-func (s *testMetaStore) SizeMetadata() int   { return 0 }
-func (s *testMetaStore) LengthMetadata() int { return 0 }
+func (*testMetaStore) SizeMetadata() int   { return 0 }
+func (*testMetaStore) LengthMetadata() int { return 0 }
 
 // testTargetRetriever represents a list of targets to scrape.
 // It is used to represent targets as part of test cases.
@@ -190,7 +190,7 @@ func (t *testTargetRetriever) toFactory() func(context.Context) TargetRetriever 
 
 type testAlertmanagerRetriever struct{}
 
-func (t testAlertmanagerRetriever) Alertmanagers() []*url.URL {
+func (testAlertmanagerRetriever) Alertmanagers() []*url.URL {
 	return []*url.URL{
 		{
 			Scheme: "http",
@@ -200,7 +200,7 @@ func (t testAlertmanagerRetriever) Alertmanagers() []*url.URL {
 	}
 }
 
-func (t testAlertmanagerRetriever) DroppedAlertmanagers() []*url.URL {
+func (testAlertmanagerRetriever) DroppedAlertmanagers() []*url.URL {
 	return []*url.URL{
 		{
 			Scheme: "http",
@@ -315,7 +315,7 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 		Appendable: storage,
 		Context:    context.Background(),
 		Logger:     promslog.NewNopLogger(),
-		NotifyFunc: func(_ context.Context, _ string, _ ...*rules.Alert) {},
+		NotifyFunc: func(context.Context, string, ...*rules.Alert) {},
 	}
 
 	var r []rules.Rule
@@ -3806,7 +3806,7 @@ func (f *fakeDB) BlockMetas() ([]tsdb.BlockMeta, error) {
 }
 func (f *fakeDB) Delete(context.Context, int64, int64, ...*labels.Matcher) error { return f.err }
 func (f *fakeDB) Snapshot(string, bool) error                                    { return f.err }
-func (f *fakeDB) Stats(statsByLabelName string, limit int) (_ *tsdb.Stats, retErr error) {
+func (*fakeDB) Stats(statsByLabelName string, limit int) (_ *tsdb.Stats, retErr error) {
 	dbDir, err := os.MkdirTemp("", "tsdb-api-ready")
 	if err != nil {
 		return nil, err
@@ -3823,7 +3823,7 @@ func (f *fakeDB) Stats(statsByLabelName string, limit int) (_ *tsdb.Stats, retEr
 	return h.Stats(statsByLabelName, limit), nil
 }
 
-func (f *fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
+func (*fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
 }
 
@@ -4637,11 +4637,11 @@ func (t *testCodec) ContentType() MIMEType {
 	return t.contentType
 }
 
-func (t *testCodec) CanEncode(_ *Response) bool {
+func (t *testCodec) CanEncode(*Response) bool {
 	return t.canEncode
 }
 
-func (t *testCodec) Encode(_ *Response) ([]byte, error) {
+func (t *testCodec) Encode(*Response) ([]byte, error) {
 	return []byte(fmt.Sprintf("response from %v codec", t.contentType)), nil
 }
 
@@ -4765,11 +4765,11 @@ type fakeEngine struct {
 	query fakeQuery
 }
 
-func (e *fakeEngine) NewInstantQuery(_ context.Context, _ storage.Queryable, _ promql.QueryOpts, _ string, _ time.Time) (promql.Query, error) {
+func (e *fakeEngine) NewInstantQuery(context.Context, storage.Queryable, promql.QueryOpts, string, time.Time) (promql.Query, error) {
 	return &e.query, nil
 }
 
-func (e *fakeEngine) NewRangeQuery(_ context.Context, _ storage.Queryable, _ promql.QueryOpts, _ string, _, _ time.Time, _ time.Duration) (promql.Query, error) {
+func (e *fakeEngine) NewRangeQuery(context.Context, storage.Queryable, promql.QueryOpts, string, time.Time, time.Time, time.Duration) (promql.Query, error) {
 	return &e.query, nil
 }
 
@@ -4788,17 +4788,17 @@ func (q *fakeQuery) Exec(ctx context.Context) *promql.Result {
 	}
 }
 
-func (q *fakeQuery) Close() {}
+func (*fakeQuery) Close() {}
 
-func (q *fakeQuery) Statement() parser.Statement {
+func (*fakeQuery) Statement() parser.Statement {
 	return nil
 }
 
-func (q *fakeQuery) Stats() *stats.Statistics {
+func (*fakeQuery) Stats() *stats.Statistics {
 	return nil
 }
 
-func (q *fakeQuery) Cancel() {}
+func (*fakeQuery) Cancel() {}
 
 func (q *fakeQuery) String() string {
 	return q.query

@@ -160,6 +160,7 @@ linters:
         - name: unexported-return
         - name: unreachable-code
         - name: unused-parameter
+        - name: unused-receiver
         - name: var-declaration
         - name: var-naming
     testifylint:

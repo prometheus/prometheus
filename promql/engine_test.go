@@ -250,10 +250,10 @@ type errSeriesSet struct {
 	err error
 }
 
-func (errSeriesSet) Next() bool                          { return false }
-func (errSeriesSet) At() storage.Series                  { return nil }
-func (e errSeriesSet) Err() error                        { return e.err }
-func (e errSeriesSet) Warnings() annotations.Annotations { return nil }
+func (errSeriesSet) Next() bool                        { return false }
+func (errSeriesSet) At() storage.Series                { return nil }
+func (e errSeriesSet) Err() error                      { return e.err }
+func (errSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func TestQueryError(t *testing.T) {
 	opts := promql.EngineOpts{
@@ -2282,7 +2282,7 @@ func TestQueryLogger_error(t *testing.T) {
 	ctx = promql.NewOriginContext(ctx, map[string]interface{}{"foo": "bar"})
 	defer cancelCtx()
 	testErr := errors.New("failure")
-	query := engine.NewTestQuery(func(_ context.Context) error {
+	query := engine.NewTestQuery(func(context.Context) error {
 		return testErr
 	})
 
@@ -3790,7 +3790,7 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	require.Nil(t, newc)
 
 	querier := storage.MockQuerier{
-		SelectMockFunction: func(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+		SelectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 			return &singleSeriesSet{
 				series: mockSeries{chunks: []chunkenc.Chunk{c1, c2, c3}, labelSet: []string{"__name__", "foo"}},
 			}
@@ -3825,10 +3825,10 @@ type singleSeriesSet struct {
 	consumed bool
 }
 
-func (s *singleSeriesSet) Next() bool                       { c := s.consumed; s.consumed = true; return !c }
-func (s singleSeriesSet) At() storage.Series                { return s.series }
-func (s singleSeriesSet) Err() error                        { return nil }
-func (s singleSeriesSet) Warnings() annotations.Annotations { return nil }
+func (s *singleSeriesSet) Next() bool                     { c := s.consumed; s.consumed = true; return !c }
+func (s singleSeriesSet) At() storage.Series              { return s.series }
+func (singleSeriesSet) Err() error                        { return nil }
+func (singleSeriesSet) Warnings() annotations.Annotations { return nil }
 
 type mockSeries struct {
 	chunks   []chunkenc.Chunk

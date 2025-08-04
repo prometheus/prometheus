@@ -24,9 +24,9 @@ type openstackMetrics struct {
 var _ discovery.DiscovererMetrics = (*openstackMetrics)(nil)
 
 // Register implements discovery.DiscovererMetrics.
-func (m *openstackMetrics) Register() error {
+func (*openstackMetrics) Register() error {
 	return nil
 }
 
 // Unregister implements discovery.DiscovererMetrics.
-func (m *openstackMetrics) Unregister() {}
+func (*openstackMetrics) Unregister() {}

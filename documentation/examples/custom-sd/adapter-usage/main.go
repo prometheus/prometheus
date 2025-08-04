@@ -94,7 +94,7 @@ type discovery struct {
 	oldSourceList   map[string]bool
 }
 
-func (d *discovery) parseServiceNodes(resp *http.Response, name string) (*targetgroup.Group, error) {
+func (*discovery) parseServiceNodes(resp *http.Response, name string) (*targetgroup.Group, error) {
 	var nodes []*CatalogService
 	tgroup := targetgroup.Group{
 		Source: name,

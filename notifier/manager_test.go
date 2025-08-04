@@ -725,7 +725,7 @@ func TestHangingNotifier(t *testing.T) {
 
 	// Set up a faulty Alertmanager.
 	var faultyCalled atomic.Bool
-	faultyServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+	faultyServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		faultyCalled.Store(true)
 		select {
 		case <-done:
@@ -737,7 +737,7 @@ func TestHangingNotifier(t *testing.T) {
 
 	// Set up a functional Alertmanager.
 	var functionalCalled atomic.Bool
-	functionalServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+	functionalServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		functionalCalled.Store(true)
 	}))
 	functionalURL, err := url.Parse(functionalServer.URL)

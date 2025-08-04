@@ -148,7 +148,7 @@ func (c StaticConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) {
 
 // NewDiscovererMetrics returns NoopDiscovererMetrics because no metrics are
 // needed for this service discovery mechanism.
-func (c StaticConfig) NewDiscovererMetrics(prometheus.Registerer, RefreshMetricsInstantiator) DiscovererMetrics {
+func (StaticConfig) NewDiscovererMetrics(prometheus.Registerer, RefreshMetricsInstantiator) DiscovererMetrics {
 	return &NoopDiscovererMetrics{}
 }
 

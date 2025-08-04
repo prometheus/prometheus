@@ -1845,7 +1845,7 @@ func (r *Reader) postingsForLabelMatchingV1(ctx context.Context, name string, ma
 
 // SortedPostings returns the given postings list reordered so that the backing series
 // are sorted.
-func (r *Reader) SortedPostings(p Postings) Postings {
+func (*Reader) SortedPostings(p Postings) Postings {
 	return p
 }
 
@@ -1920,7 +1920,7 @@ func (s *stringListIter) Next() bool {
 	return true
 }
 func (s stringListIter) At() string { return s.cur }
-func (s stringListIter) Err() error { return nil }
+func (stringListIter) Err() error   { return nil }
 
 // Decoder provides decoding methods for the v1 and v2 index file format.
 //
@@ -1946,7 +1946,7 @@ func DecodePostingsRaw(d encoding.Decbuf) (int, Postings, error) {
 
 // LabelNamesOffsetsFor decodes the offsets of the name symbols for a given series.
 // They are returned in the same order they're stored, which should be sorted lexicographically.
-func (dec *Decoder) LabelNamesOffsetsFor(b []byte) ([]uint32, error) {
+func (*Decoder) LabelNamesOffsetsFor(b []byte) ([]uint32, error) {
 	d := encoding.Decbuf{B: b}
 	k := d.Uvarint()
 
