@@ -310,9 +310,11 @@ func TestFromMetrics(t *testing.T) {
 			}
 
 			namer := otlptranslator.MetricNamer{}
+			name, err := namer.Build(TranslatorMetricFromOtelMetric(m))
+			require.NoError(t, err)
 			expMetadata = append(expMetadata, prompb.MetricMetadata{
 				Type:             otelMetricTypeToPromMetricType(m),
-				MetricFamilyName: namer.Build(TranslatorMetricFromOtelMetric(m)),
+				MetricFamilyName: name,
 				Help:             m.Description(),
 				Unit:             m.Unit(),
 			})

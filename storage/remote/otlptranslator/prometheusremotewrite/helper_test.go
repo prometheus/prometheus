@@ -531,7 +531,8 @@ func TestCreateAttributes(t *testing.T) {
 				}),
 				PromoteScopeMetadata: tc.promoteScope,
 			}
-			lbls := createAttributes(resource, attrs, tc.scope, settings, tc.ignoreAttrs, false, prompb.MetricMetadata{}, model.MetricNameLabel, "test_metric")
+			lbls, err := createAttributes(resource, attrs, tc.scope, settings, tc.ignoreAttrs, false, prompb.MetricMetadata{}, model.MetricNameLabel, "test_metric")
+			require.NoError(t, err)
 
 			require.ElementsMatch(t, lbls, tc.expectedLabels)
 		})
