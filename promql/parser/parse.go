@@ -82,6 +82,7 @@ func NewParser(input string, opts ...Opt) *parser { //nolint:revive // unexporte
 	p.injecting = false
 	p.parseErrors = nil
 	p.generatedParserResult = nil
+	p.lastClosing = posrange.Pos(0)
 
 	// Clear lexer struct before reusing.
 	p.lex = Lexer{
