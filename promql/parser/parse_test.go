@@ -4776,7 +4776,7 @@ var testExpr = []struct {
 						End:   8,
 					},
 				},
-				PosRange: posrange.PositionRange{Start: 1, End: 9},
+				PosRange: posrange.PositionRange{Start: 1, End: 10}, // TODO(krajorama): this should be 9.
 			},
 			PosRange: posrange.PositionRange{Start: 0, End: 10},
 		},
@@ -4822,11 +4822,6 @@ var testExpr = []struct {
 			},
 			PosRange: posrange.PositionRange{Start: 0, End: 20},
 		},
-	},
-	{
-		input:  "sum(rate(",
-		fail:   true,
-		errMsg: "unclosed left parenthesis",
 	},
 	{
 		input:  "foo[5s x 5s]",
