@@ -25,6 +25,7 @@ linters:
     - depguard
     - errorlint
     - exptostd
+    - fatcontext
     - gocritic
     - godot
     - loggercheck
