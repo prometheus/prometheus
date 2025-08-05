@@ -23,7 +23,7 @@ import (
 )
 
 // As part of implementing support for delta temporality, the metric type metadata for delta metrics
-// will be "gauge"/"gaugehistogram". 
+// will be "gauge"/"gaugehistogram".
 // See proposal: https://github.com/prometheus/proposals/pull/48/
 func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric, allowDeltaTemporality bool) prompb.MetricMetadata_MetricType {
 	switch otelMetric.Type() {

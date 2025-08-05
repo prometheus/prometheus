@@ -313,7 +313,7 @@ func TestFromMetrics(t *testing.T) {
 			name, err := namer.Build(TranslatorMetricFromOtelMetric(m))
 			require.NoError(t, err)
 			expMetadata = append(expMetadata, prompb.MetricMetadata{
-				Type:             otelMetricTypeToPromMetricType(m),
+				Type:             otelMetricTypeToPromMetricType(m, true),
 				MetricFamilyName: name,
 				Help:             m.Description(),
 				Unit:             m.Unit(),
@@ -404,8 +404,8 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityDelta, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromFloatSeries("test_metric_1", ts),
-				createPromFloatSeries("test_metric_2", ts),
+				createPromFloatSeriesWithTemporality("test_metric_1", "delta", ts),
+				createPromFloatSeriesWithTemporality("test_metric_2", "delta", ts),
 			},
 		},
 		{
@@ -416,8 +416,8 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromFloatSeries("test_metric_1", ts),
-				createPromFloatSeries("test_metric_2", ts),
+				createPromFloatSeriesWithTemporality("test_metric_1", "delta", ts),
+				createPromFloatSeriesWithTemporality("test_metric_2", "cumulative", ts),
 			},
 		},
 		{
@@ -440,7 +440,7 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityUnspecified, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromFloatSeries("test_metric_1", ts),
+				createPromFloatSeriesWithTemporality("test_metric_1", "cumulative", ts),
 			},
 			expectedError: `invalid temporality and type combination for metric "test_metric_2"`,
 		},
@@ -462,8 +462,8 @@ func TestTemporality(t *testing.T) {
 				createOtelExponentialHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromNativeHistogramSeries("test_histogram_1", prompb.Histogram_GAUGE, ts),
-				createPromNativeHistogramSeries("test_histogram_2", prompb.Histogram_UNKNOWN, ts),
+				createPromNativeHistogramSeriesWithTemporality("test_histogram_1", "delta", prompb.Histogram_GAUGE, ts),
+				createPromNativeHistogramSeriesWithTemporality("test_histogram_2", "cumulative", prompb.Histogram_UNKNOWN, ts),
 			},
 		},
 		{
@@ -498,8 +498,8 @@ func TestTemporality(t *testing.T) {
 				createOtelExplicitHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromNHCBSeries("test_histogram_1", prompb.Histogram_GAUGE, ts),
-				createPromNHCBSeries("test_histogram_2", prompb.Histogram_UNKNOWN, ts),
+				createPromNHCBSeriesWithTemporality("test_histogram_1", "delta", prompb.Histogram_GAUGE, ts),
+				createPromNHCBSeriesWithTemporality("test_histogram_2", "cumulative", prompb.Histogram_UNKNOWN, ts),
 			},
 		},
 		{
@@ -535,8 +535,8 @@ func TestTemporality(t *testing.T) {
 				createOtelExplicitHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: append(
-				createPromClassicHistogramSeries("test_histogram_1", ts),
-				createPromClassicHistogramSeries("test_histogram_2", ts)...,
+				createPromClassicHistogramSeriesWithTemporality("test_histogram_1", "delta", ts),
+				createPromClassicHistogramSeriesWithTemporality("test_histogram_2", "cumulative", ts)...,
 			),
 		},
 		{
@@ -577,7 +577,8 @@ func TestTemporality(t *testing.T) {
 
 			c := NewPrometheusConverter()
 			settings := Settings{
-				AllowDeltaTemporality:   tc.allowDelta,
+				AllowDeltaTemporality: tc.allowDelta,
+				//EnableTypeAndUnitLabels: tc.typeAndUnitLabels,
 				ConvertHistogramsToNHCB: tc.convertToNHCB,
 			}
 
@@ -623,6 +624,20 @@ func createPromFloatSeries(name string, ts time.Time) prompb.TimeSeries {
 	}
 }
 
+func createPromFloatSeriesWithTemporality(name string, temporality string, ts time.Time) prompb.TimeSeries {
+	return prompb.TimeSeries{
+		Labels: []prompb.Label{
+			{Name: "__name__", Value: name},
+			{Name: "__temporality__", Value: temporality},
+			{Name: "test_label", Value: "test_value"},
+		},
+		Samples: []prompb.Sample{{
+			Value:     5,
+			Timestamp: ts.UnixMilli(),
+		}},
+	}
+}
+
 func createOtelGauge(name string, ts time.Time) pmetric.Metric {
 	metrics := pmetric.NewMetricSlice()
 	m := metrics.AppendEmpty()
@@ -653,6 +668,27 @@ func createPromNativeHistogramSeries(name string, hint prompb.Histogram_ResetHin
 	return prompb.TimeSeries{
 		Labels: []prompb.Label{
 			{Name: "__name__", Value: name},
+			{Name: "test_label", Value: "test_value"},
+		},
+		Histograms: []prompb.Histogram{
+			{
+				Count:         &prompb.Histogram_CountInt{CountInt: 1},
+				Sum:           5,
+				Schema:        0,
+				ZeroThreshold: 1e-128,
+				ZeroCount:     &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+				Timestamp:     ts.UnixMilli(),
+				ResetHint:     hint,
+			},
+		},
+	}
+}
+
+func createPromNativeHistogramSeriesWithTemporality(name string, temporality string, hint prompb.Histogram_ResetHint, ts time.Time) prompb.TimeSeries {
+	return prompb.TimeSeries{
+		Labels: []prompb.Label{
+			{Name: "__name__", Value: name},
+			{Name: "__temporality__", Value: temporality},
 			{Name: "test_label", Value: "test_value"},
 		},
 		Histograms: []prompb.Histogram{
@@ -712,6 +748,34 @@ func createPromNHCBSeries(name string, hint prompb.Histogram_ResetHint, ts time.
 	}
 }
 
+func createPromNHCBSeriesWithTemporality(name string, temporality string, hint prompb.Histogram_ResetHint, ts time.Time) prompb.TimeSeries {
+	return prompb.TimeSeries{
+		Labels: []prompb.Label{
+			{Name: "__name__", Value: name},
+			{Name: "__temporality__", Value: temporality},
+			{Name: "test_label", Value: "test_value"},
+		},
+		Histograms: []prompb.Histogram{
+			{
+				Count:         &prompb.Histogram_CountInt{CountInt: 20},
+				Sum:           30,
+				Schema:        -53,
+				ZeroThreshold: 0,
+				ZeroCount:     nil,
+				PositiveSpans: []prompb.BucketSpan{
+					{
+						Length: 3,
+					},
+				},
+				PositiveDeltas: []int64{10, 0, -10},
+				CustomValues:   []float64{1, 2},
+				Timestamp:      ts.UnixMilli(),
+				ResetHint:      hint,
+			},
+		},
+	}
+}
+
 func createPromClassicHistogramSeries(name string, ts time.Time) []prompb.TimeSeries {
 	return []prompb.TimeSeries{
 		{
@@ -748,6 +812,54 @@ func createPromClassicHistogramSeries(name string, ts time.Time) []prompb.TimeSe
 		{
 			Labels: []prompb.Label{
 				{Name: "__name__", Value: name + "_sum"},
+				{Name: "test_label", Value: "test_value"},
+			},
+			Samples: []prompb.Sample{{Value: 30, Timestamp: ts.UnixMilli()}},
+		},
+	}
+}
+
+func createPromClassicHistogramSeriesWithTemporality(name string, temporality string, ts time.Time) []prompb.TimeSeries {
+	return []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: name + "_bucket"},
+				{Name: "__temporality__", Value: temporality},
+				{Name: "le", Value: "1"},
+				{Name: "test_label", Value: "test_value"},
+			},
+			Samples: []prompb.Sample{{Value: 10, Timestamp: ts.UnixMilli()}},
+		},
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: name + "_bucket"},
+				{Name: "__temporality__", Value: temporality},
+				{Name: "le", Value: "2"},
+				{Name: "test_label", Value: "test_value"},
+			},
+			Samples: []prompb.Sample{{Value: 20, Timestamp: ts.UnixMilli()}},
+		},
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: name + "_bucket"},
+				{Name: "__temporality__", Value: temporality},
+				{Name: "le", Value: "+Inf"},
+				{Name: "test_label", Value: "test_value"},
+			},
+			Samples: []prompb.Sample{{Value: 20, Timestamp: ts.UnixMilli()}},
+		},
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: name + "_count"},
+				{Name: "__temporality__", Value: temporality},
+				{Name: "test_label", Value: "test_value"},
+			},
+			Samples: []prompb.Sample{{Value: 20, Timestamp: ts.UnixMilli()}},
+		},
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: name + "_sum"},
+				{Name: "__temporality__", Value: temporality},
 				{Name: "test_label", Value: "test_value"},
 			},
 			Samples: []prompb.Sample{{Value: 30, Timestamp: ts.UnixMilli()}},
