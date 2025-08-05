@@ -176,7 +176,11 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					continue
 				}
 
-				promName := namer.Build(TranslatorMetricFromOtelMetric(metric))
+				promName, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
+				if err != nil {
+					errs = multierr.Append(errs, err)
+					continue
+				}
 				meta := metadata.Metadata{
 					Type: otelMetricTypeToPromMetricType(metric),
 					Unit: unitNamer.Build(metric.Unit()),
@@ -303,31 +307,42 @@ func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAtt
 }
 
 // addPromotedAttributes adds labels for promoted resourceAttributes to the builder.
-func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builder, resourceAttributes pcommon.Map, allowUTF8 bool) {
+func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builder, resourceAttributes pcommon.Map, allowUTF8 bool) error {
 	if s == nil {
-		return
+		return nil
 	}
 
 	labelNamer := otlptranslator.LabelNamer{UTF8Allowed: allowUTF8}
 	if s.promoteAll {
+		var err error
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 			if _, exists := s.attrs[name]; !exists {
-				normalized := labelNamer.Build(name)
+				var normalized string
+				normalized, err = labelNamer.Build(name)
+				if err != nil {
+					return false
+				}
 				if builder.Get(normalized) == "" {
 					builder.Set(normalized, value.AsString())
 				}
 			}
 			return true
 		})
-		return
+		return err
 	}
+	var err error
 	resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 		if _, exists := s.attrs[name]; exists {
-			normalized := labelNamer.Build(name)
+			var normalized string
+			normalized, err = labelNamer.Build(name)
+			if err != nil {
+				return false
+			}
 			if builder.Get(normalized) == "" {
 				builder.Set(normalized, value.AsString())
 			}
 		}
 		return true
 	})
+	return err
 }

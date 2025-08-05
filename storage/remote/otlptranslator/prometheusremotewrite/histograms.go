@@ -53,7 +53,7 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			return annots, err
 		}
 
-		lbls := c.createAttributes(
+		lbls, err := c.createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
@@ -64,6 +64,9 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			model.MetricNameLabel,
 			promName,
 		)
+		if err != nil {
+			return annots, err
+		}
 		ts := convertTimeStamp(pt.Timestamp())
 		ct := convertTimeStamp(pt.StartTimestamp())
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
@@ -269,7 +272,7 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 			return annots, err
 		}
 
-		lbls := c.createAttributes(
+		lbls, err := c.createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
@@ -280,6 +283,9 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 			model.MetricNameLabel,
 			promName,
 		)
+		if err != nil {
+			return annots, err
+		}
 		ts := convertTimeStamp(pt.Timestamp())
 		ct := convertTimeStamp(pt.StartTimestamp())
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())

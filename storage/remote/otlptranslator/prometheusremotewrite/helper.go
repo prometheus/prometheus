@@ -70,7 +70,7 @@ const (
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
 func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope scope, settings Settings,
 	ignoreAttrs []string, logOnOverwrite bool, meta metadata.Metadata, extras ...string,
-) labels.Labels {
+) (labels.Labels, error) {
 	resourceAttrs := resource.Attributes()
 	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
 	instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
@@ -101,14 +101,22 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		// Now that we have sorted and filtered the labels, build the actual list
 		// of labels, and handle conflicts by appending values.
 		c.builder.Reset(labels.EmptyLabels())
+		var sortErr error
 		sortedLabels.Range(func(l modelLabels.Label) {
-			finalKey := labelNamer.Build(l.Name)
+			finalKey, err := labelNamer.Build(l.Name)
+			if err != nil && sortErr == nil {
+				sortErr = err
+				return
+			}
 			if existingValue := c.builder.Get(finalKey); existingValue != "" {
 				c.builder.Set(finalKey, existingValue+";"+l.Value)
 			} else {
 				c.builder.Set(finalKey, l.Value)
 			}
 		})
+		if sortErr != nil {
+			return nil, sortErr
+		}
 	}
 
 	if settings.EnableTypeAndUnitLabels {
@@ -127,12 +135,21 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		c.builder.Set("otel_scope_name", scope.name)
 		c.builder.Set("otel_scope_version", scope.version)
 		c.builder.Set("otel_scope_schema_url", scope.schemaURL)
+		var scopeErr error
 		scope.attributes.Range(func(k string, v pcommon.Value) bool {
 			name := "otel_scope_" + k
-			name = labelNamer.Build(name)
+			var err error
+			name, err = labelNamer.Build(name)
+			if err != nil && scopeErr == nil {
+				scopeErr = err
+				return false
+			}
 			c.builder.Set(name, v.AsString())
 			return true
 		})
+		if scopeErr != nil {
+			return nil, scopeErr
+		}
 	}
 	// Map service.name + service.namespace to job.
 	if haveServiceName {
@@ -166,12 +183,16 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		}
 		// internal labels should be maintained.
 		if len(name) <= 4 || name[:2] != "__" || name[len(name)-2:] != "__" {
-			name = labelNamer.Build(name)
+			var err error
+			name, err = labelNamer.Build(name)
+			if err != nil {
+				return nil, err
+			}
 		}
 		c.builder.Set(name, extras[i+1])
 	}
 
-	return c.builder.Labels()
+	return c.builder.Labels(), nil
 }
 
 func aggregationTemporality(metric pmetric.Metric) (pmetric.AggregationTemporality, bool, error) {
@@ -207,7 +228,10 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestamp := convertTimeStamp(pt.StartTimestamp())
-		baseLabels := c.createAttributes(resource, pt.Attributes(), scope, settings, nil, false, meta)
+		baseLabels, err := c.createAttributes(resource, pt.Attributes(), scope, settings, nil, false, meta)
+		if err != nil {
+			return err
+		}
 
 		// If the sum is unset, it indicates the _sum metric point should be
 		// omitted
@@ -413,7 +437,10 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestamp := convertTimeStamp(pt.StartTimestamp())
-		baseLabels := c.createAttributes(resource, pt.Attributes(), scope, settings, nil, false, meta)
+		baseLabels, err := c.createAttributes(resource, pt.Attributes(), scope, settings, nil, false, meta)
+		if err != nil {
+			return err
+		}
 
 		// treat sum as a sample in an individual TimeSeries
 		val := pt.Sum()
@@ -560,7 +587,10 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		Help: "Target metadata",
 	}
 	// TODO: should target info have the __type__ metadata label?
-	lbls := c.createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, metadata.Metadata{}, model.MetricNameLabel, name)
+	lbls, err := c.createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, metadata.Metadata{}, model.MetricNameLabel, name)
+	if err != nil {
+		return err
+	}
 	haveIdentifier := false
 	lbls.Range(func(l modelLabels.Label) {
 		if l.Name == model.JobLabel || l.Name == model.InstanceLabel {

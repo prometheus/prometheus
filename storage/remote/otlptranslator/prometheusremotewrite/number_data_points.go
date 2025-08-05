@@ -37,7 +37,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		}
 
 		pt := dataPoints.At(x)
-		labels := c.createAttributes(
+		labels, err := c.createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
@@ -48,6 +48,9 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 			model.MetricNameLabel,
 			name,
 		)
+		if err != nil {
+			return err
+		}
 		var val float64
 		switch pt.ValueType() {
 		case pmetric.NumberDataPointValueTypeInt:
@@ -77,7 +80,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		}
 
 		pt := dataPoints.At(x)
-		lbls := c.createAttributes(
+		lbls, err := c.createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
@@ -88,6 +91,9 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			model.MetricNameLabel,
 			name,
 		)
+		if err != nil {
+			return nil
+		}
 		var val float64
 		switch pt.ValueType() {
 		case pmetric.NumberDataPointValueTypeInt:
