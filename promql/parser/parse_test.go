@@ -5310,6 +5310,7 @@ func TestParseHistogramSeries(t *testing.T) {
 						Offset: 0,
 						Length: 3,
 					}},
+					CounterResetHint: histogram.GaugeType,
 				},
 				{
 					Schema:          1,
@@ -5318,6 +5319,7 @@ func TestParseHistogramSeries(t *testing.T) {
 						Offset: 0,
 						Length: 3,
 					}},
+					CounterResetHint: histogram.GaugeType,
 				},
 			},
 		},
