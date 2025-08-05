@@ -210,20 +210,18 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 		unitNamer := otlptranslator.UnitNamer{UTF8Allowed: settings.AllowUTF8}
 
 		if metadata.Type != prompb.MetricMetadata_UNKNOWN {
-			typeValue := strings.ToLower(metadata.Type.String())
-			l["__type__"] = typeValue
+			l["__type__"] = strings.ToLower(metadata.Type.String())
 		}
 		if metadata.Unit != "" {
 			l["__unit__"] = unitNamer.Build(metadata.Unit)
 		}
-
-		if settings.AllowDeltaTemporality && hasTemporality {
-			switch temporality {
-			case pmetric.AggregationTemporalityCumulative:
-				l["__temporality__"] = "cumulative"
-			case pmetric.AggregationTemporalityDelta:
-				l["__temporality__"] = "delta"
-			}
+	}
+	if settings.AllowDeltaTemporality && hasTemporality {
+		switch temporality {
+		case pmetric.AggregationTemporalityCumulative:
+			l["__temporality__"] = "cumulative"
+		case pmetric.AggregationTemporalityDelta:
+			l["__temporality__"] = "delta"
 		}
 	}
 

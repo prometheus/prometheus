@@ -546,11 +546,6 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 		panic("cannot enable native delta ingestion and delta2cumulative conversion at the same time")
 	}
 
-	if opts.NativeDelta && !opts.EnableTypeAndUnitLabels {
-		// This should be validated when iterating through feature flags, so not expected to fail here.
-		panic("cannot enable native delta ingestion without enabling type and unit labels")
-	}
-
 	ex := &rwExporter{
 		writeHandler: &writeHandler{
 			logger:     logger,

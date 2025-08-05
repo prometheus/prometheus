@@ -308,10 +308,6 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 		return errors.New("cannot enable otlp-deltatocumulative and otlp-native-delta-ingestion features at the same time")
 	}
 
-	if c.web.NativeOTLPDeltaIngestion && !c.web.EnableTypeAndUnitLabels {
-		return errors.New("cannot enable otlp-native-delta-ingestion feature without enabling type and unit labels feature")
-	}
-
 	return nil
 }
 
