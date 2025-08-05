@@ -451,7 +451,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 		{
 			name: "NoTranslation/NativeDelta",
 			otlpCfg: config.OTLPConfig{
-				TranslationStrategy: config.NoTranslation,
+				TranslationStrategy: otlptranslator.NoTranslation,
 			},
 			exportRequest:     generateOTLPWriteRequestWithTemporality(timestamp, pmetric.AggregationTemporalityDelta),
 			typeAndUnitLabels: true,
@@ -567,7 +567,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 		{
 			name: "UnderscoreEscapingWithSuffixes/WithNativeDelta",
 			otlpCfg: config.OTLPConfig{
-				TranslationStrategy: config.UnderscoreEscapingWithSuffixes,
+				TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
 			},
 			exportRequest:     generateOTLPWriteRequestWithTemporality(timestamp, pmetric.AggregationTemporalityDelta),
 			typeAndUnitLabels: true,
@@ -656,7 +656,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 		{
 			name: "NoUTF8EscapingWithSuffixes/WithNativeDelta",
 			otlpCfg: config.OTLPConfig{
-				TranslationStrategy: config.NoUTF8EscapingWithSuffixes,
+				TranslationStrategy: otlptranslator.NoUTF8EscapingWithSuffixes,
 			},
 			exportRequest:     generateOTLPWriteRequestWithTemporality(timestamp, pmetric.AggregationTemporalityDelta),
 			typeAndUnitLabels: true,
