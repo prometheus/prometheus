@@ -577,8 +577,7 @@ func TestTemporality(t *testing.T) {
 
 			c := NewPrometheusConverter()
 			settings := Settings{
-				AllowDeltaTemporality: tc.allowDelta,
-				//EnableTypeAndUnitLabels: tc.typeAndUnitLabels,
+				AllowDeltaTemporality:   tc.allowDelta,
 				ConvertHistogramsToNHCB: tc.convertToNHCB,
 			}
 
