@@ -129,7 +129,10 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		}
 	}
 
-	settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, settings.AllowUTF8)
+	err := settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, settings.AllowUTF8)
+	if err != nil {
+		return nil, err
+	}
 	if promoteScope {
 		// Scope Name, Version and Schema URL are added after attributes to ensure they are not overwritten by attributes.
 		c.builder.Set("otel_scope_name", scope.name)
