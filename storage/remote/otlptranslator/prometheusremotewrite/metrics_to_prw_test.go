@@ -1179,10 +1179,8 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 		generateExemplars(h.Exemplars(), exemplarsPerSeries, ts)
 
 		metricType := prompb.MetricMetadata_HISTOGRAM
-		if temporality != pmetric.AggregationTemporalityCumulative {
-			// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
-			// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
-			metricType = prompb.MetricMetadata_UNKNOWN
+		if temporality == pmetric.AggregationTemporalityDelta && settings.AllowDeltaTemporality {
+			metricType = prompb.MetricMetadata_GAUGEHISTOGRAM
 		}
 		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
 			name:        fmt.Sprintf("histogram_%d%s_bucket", i, suffix),
@@ -1221,11 +1219,6 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 		generateExemplars(point.Exemplars(), exemplarsPerSeries, ts)
 
 		metricType := prompb.MetricMetadata_GAUGE
-		if temporality != pmetric.AggregationTemporalityCumulative {
-			// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
-			// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
-			metricType = prompb.MetricMetadata_UNKNOWN
-		}
 		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
 			name:        fmt.Sprintf("non_monotonic_sum_%d%s", i, suffix),
 			familyName:  fmt.Sprintf("non_monotonic_sum_%d%s", i, suffix),
@@ -1255,10 +1248,8 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 		}
 
 		metricType := prompb.MetricMetadata_COUNTER
-		if temporality != pmetric.AggregationTemporalityCumulative {
-			// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
-			// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
-			metricType = prompb.MetricMetadata_UNKNOWN
+		if temporality == pmetric.AggregationTemporalityDelta && settings.AllowDeltaTemporality {
+			metricType = prompb.MetricMetadata_GAUGE
 		}
 		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
 			name:        fmt.Sprintf("monotonic_sum_%d%s", i, counterSuffix),
