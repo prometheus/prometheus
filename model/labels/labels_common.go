@@ -224,6 +224,7 @@ func (b *Builder) Range(f func(l Label)) {
 	}
 }
 
+// Contains returns true if the label name n is present in s, otherwise false.
 func Contains(s []Label, n string) bool {
 	for _, a := range s {
 		if a.Name == n {
