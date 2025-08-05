@@ -711,7 +711,7 @@ func requireContainsSample(t *testing.T, actual []mockSample, expected mockSampl
 		"actual  : %v", expected, actual))
 }
 
-func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg config.OTLPConfig, typeAndUnitLabels bool, nativeDelta bool) *mockAppendable {
+func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg config.OTLPConfig, typeAndUnitLabels, nativeDelta bool) *mockAppendable {
 	buf, err := exportRequest.MarshalProto()
 	require.NoError(t, err)
 

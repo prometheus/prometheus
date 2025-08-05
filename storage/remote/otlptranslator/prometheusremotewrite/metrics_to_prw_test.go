@@ -623,7 +623,7 @@ func createPromFloatSeries(name string, ts time.Time) prompb.TimeSeries {
 	}
 }
 
-func createPromFloatSeriesWithTemporality(name string, temporality string, ts time.Time) prompb.TimeSeries {
+func createPromFloatSeriesWithTemporality(name, temporality string, ts time.Time) prompb.TimeSeries {
 	return prompb.TimeSeries{
 		Labels: []prompb.Label{
 			{Name: "__name__", Value: name},
@@ -683,7 +683,7 @@ func createPromNativeHistogramSeries(name string, hint prompb.Histogram_ResetHin
 	}
 }
 
-func createPromNativeHistogramSeriesWithTemporality(name string, temporality string, hint prompb.Histogram_ResetHint, ts time.Time) prompb.TimeSeries {
+func createPromNativeHistogramSeriesWithTemporality(name, temporality string, hint prompb.Histogram_ResetHint, ts time.Time) prompb.TimeSeries {
 	return prompb.TimeSeries{
 		Labels: []prompb.Label{
 			{Name: "__name__", Value: name},
@@ -747,7 +747,7 @@ func createPromNHCBSeries(name string, hint prompb.Histogram_ResetHint, ts time.
 	}
 }
 
-func createPromNHCBSeriesWithTemporality(name string, temporality string, hint prompb.Histogram_ResetHint, ts time.Time) prompb.TimeSeries {
+func createPromNHCBSeriesWithTemporality(name, temporality string, hint prompb.Histogram_ResetHint, ts time.Time) prompb.TimeSeries {
 	return prompb.TimeSeries{
 		Labels: []prompb.Label{
 			{Name: "__name__", Value: name},
@@ -818,7 +818,7 @@ func createPromClassicHistogramSeries(name string, ts time.Time) []prompb.TimeSe
 	}
 }
 
-func createPromClassicHistogramSeriesWithTemporality(name string, temporality string, ts time.Time) []prompb.TimeSeries {
+func createPromClassicHistogramSeriesWithTemporality(name, temporality string, ts time.Time) []prompb.TimeSeries {
 	return []prompb.TimeSeries{
 		{
 			Labels: []prompb.Label{
