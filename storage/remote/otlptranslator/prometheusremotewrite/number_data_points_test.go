@@ -127,6 +127,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				tt.scope,
 				metadata.Metadata{},
 			)
+			require.NoError(t, mockAppender.Commit())
 
 			requireEqual(t, tt.want(), mockAppender.samples)
 			require.Empty(t, converter.conflicts)
@@ -368,6 +369,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				tt.scope,
 				metadata.Metadata{},
 			)
+			require.NoError(t, mockAppender.Commit())
 
 			requireEqual(t, tt.want(), mockAppender.samples)
 			require.Empty(t, converter.conflicts)

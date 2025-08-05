@@ -38,6 +38,8 @@ type CombinedAppender interface {
 	// AppendSample appends a histogram and related exemplars, metadata, and
 	// created timestamp to the storage.
 	AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) error
+	// Commit finalizes the ongoing transaction in storage.
+	Commit() error
 }
 
 // NewCombinedAppender creates a combined appender that sets start times and
@@ -91,11 +93,6 @@ func (b *combinedAppender) AppendSample(_ string, rawls labels.Labels, meta meta
 		exists = false
 	}
 	if !exists {
-		ref, err = b.app.UpdateMetadata(0, ls, meta)
-		if err != nil {
-			b.samplesAppendedWithoutMetadata.Add(1)
-			b.logger.Debug("Error while updating metadata from OTLP", "err", err)
-		}
 		if ct != 0 && b.ingestCTZeroSample {
 			ref, err = b.app.AppendCTZeroSample(ref, ls, t, ct)
 			if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
@@ -116,13 +113,27 @@ func (b *combinedAppender) AppendSample(_ string, rawls labels.Labels, meta meta
 			b.logger.Error("Error when appending float sample from OTLP", "err", err.Error(), "series", ls.String(), "timestamp", t)
 		}
 	}
-	ref = b.appendExemplars(ref, ls, es)
+
+	if ref == 0 {
+		// We cannot update metadata or add exemplars on non existent series.
+		return
+	}
+
 	if !exists {
 		b.refs[hash] = labelsRef{
 			ref: ref,
 			ls:  ls,
 		}
+		// If this is the first time we see this series, set the metadata.
+		ref, err = b.app.UpdateMetadata(0, ls, meta)
+		if err != nil {
+			b.samplesAppendedWithoutMetadata.Add(1)
+			b.logger.Debug("Error while updating metadata from OTLP", "err", err)
+		}
 	}
+
+	b.appendExemplars(ref, ls, es)
+
 	return
 }
 
@@ -136,12 +147,7 @@ func (b *combinedAppender) AppendHistogram(_ string, rawls labels.Labels, meta m
 		exists = false
 	}
 	if !exists {
-		ref, err = b.app.UpdateMetadata(0, ls, meta)
-		if err != nil {
-			b.samplesAppendedWithoutMetadata.Add(1)
-			b.logger.Debug("Error while updating metadata from OTLP", "err", err)
-		}
-		if b.ingestCTZeroSample {
+		if ct != 0 && b.ingestCTZeroSample {
 			ref, err = b.app.AppendHistogramCTZeroSample(ref, ls, t, ct, h, nil)
 			if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
 				// Even for the first sample OOO is a common scenario because
@@ -151,6 +157,7 @@ func (b *combinedAppender) AppendHistogram(_ string, rawls labels.Labels, meta m
 			}
 		}
 	}
+
 	ref, err = b.app.AppendHistogram(ref, ls, t, h, nil)
 	if err != nil {
 		// Although AppendHistogram does not currently return ErrDuplicateSampleForTimestamp there is
@@ -161,14 +168,32 @@ func (b *combinedAppender) AppendHistogram(_ string, rawls labels.Labels, meta m
 			b.logger.Error("Error when appending histogram sample from OTLP", "err", err.Error(), "series", ls.String(), "timestamp", t)
 		}
 	}
-	ref = b.appendExemplars(ref, ls, es)
+
+	if ref == 0 {
+		// We cannot update metadata or add exemplars on non existent series.
+		return
+	}
+
 	if !exists {
 		b.refs[hash] = labelsRef{
 			ref: ref,
 			ls:  ls,
 		}
+		// If this is the first time we see this series, set the metadata.
+		ref, err = b.app.UpdateMetadata(0, ls, meta)
+		if err != nil {
+			b.samplesAppendedWithoutMetadata.Add(1)
+			b.logger.Debug("Error while updating metadata from OTLP", "err", err)
+		}
 	}
+
+	b.appendExemplars(ref, ls, es)
+
 	return
+}
+
+func (b *combinedAppender) Commit() error {
+	return b.app.Commit()
 }
 
 func (b *combinedAppender) appendExemplars(ref storage.SeriesRef, ls modelLabels.Labels, es []exemplar.Exemplar) storage.SeriesRef {
