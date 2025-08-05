@@ -1523,3 +1523,26 @@ eval instant at 55m histogram_count(increase(metric[55m15s]))
 
 eval instant at 54m30s histogram_count(increase(metric[54m45s]))
     {type="histogram"} 2509.375
+
+clear
+
+# Test that `rate` adds warning when applied to an average of native histograms.
+load 5m
+  metric{id="1"} {{schema:0 sum:4 count:4 buckets:[1 2 1]}}x10
+  metric{id="2"} {{schema:0 sum:4 count:4 buckets:[1 2 1]}}x10
+
+# Don't warn if there is only a single histogram.
+eval instant at 5m rate(avg(metric{id="1"})[10m:])
+  expect no_warn
+  {} {{counter_reset_hint:gauge}}
+
+# Rate warns if histogram is not a counter and avg sets gauge hint.
+eval instant at 5m rate(avg(metric)[10m:])
+  expect warn regex: this native histogram metric is not a counter: ""
+  {} {{counter_reset_hint:gauge}}
+
+# Rate warns if histogram is not a counter and avg_over_time sets gauge hint.
+eval instant at 5m rate(avg_over_time(metric{id="1"}[10m])[5m:])
+  expect warn regex: this native histogram metric is not a counter: "metric"
+  {id="1"} {{counter_reset_hint:gauge}}
+
