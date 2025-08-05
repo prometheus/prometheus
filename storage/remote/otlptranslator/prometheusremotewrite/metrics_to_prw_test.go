@@ -93,7 +93,6 @@ func TestFromMetrics(t *testing.T) {
 					seenFamilyNames[wantMetric.familyName] = struct{}{}
 				}
 
-				// TODO check returned counters
 				annots, err := converter.FromMetrics(
 					context.Background(),
 					payload.Metrics(),
