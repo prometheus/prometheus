@@ -1528,3 +1528,40 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	require.Error(t, p.Err())
 	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
 }
+
+// expandPostingsOriginal is the original implementation of ExpandPostings for benchmarking.
+func expandPostingsOriginal(p Postings) (res []storage.SeriesRef, err error) {
+	for p.Next() {
+		res = append(res, p.At())
+	}
+	return res, p.Err()
+}
+
+func BenchmarkExpandPostings(b *testing.B) {
+	for _, size := range []int{0, 1, 10, 100, 1000, 10000, 100000} {
+		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+			postings := make([]storage.SeriesRef, size)
+			for i := 0; i < size; i++ {
+				postings[i] = storage.SeriesRef(i)
+			}
+
+			b.Run("original", func(b *testing.B) {
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					p := newListPostings(postings...)
+					_, err := expandPostingsOriginal(p)
+					require.NoError(b, err)
+				}
+			})
+
+			b.Run("optimized", func(b *testing.B) {
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					p := newListPostings(postings...)
+					_, err := ExpandPostings(p)
+					require.NoError(b, err)
+				}
+			})
+		})
+	}
+}

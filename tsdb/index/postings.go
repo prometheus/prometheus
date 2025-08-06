@@ -536,6 +536,23 @@ func (p *MemPostings) PostingsForAllLabelValues(ctx context.Context, name string
 
 // ExpandPostings returns the postings expanded as a slice.
 func ExpandPostings(p Postings) (res []storage.SeriesRef, err error) {
+	if !p.Next() {
+		return nil, p.Err()
+	}
+
+	// Pre-allocate slice capacity to avoid frequent reallocations during append operations.
+	// For ListPostings, we can determine the exact size needed. For other implementations,
+	// we use a reasonable default to reduce initial allocations.
+	var initialCapacity int
+	if lp, ok := p.(*ListPostings); ok {
+		initialCapacity = lp.Len() + 1
+	} else {
+		initialCapacity = 64
+	}
+
+	res = make([]storage.SeriesRef, 0, initialCapacity)
+	res = append(res, p.At())
+
 	for p.Next() {
 		res = append(res, p.At())
 	}
