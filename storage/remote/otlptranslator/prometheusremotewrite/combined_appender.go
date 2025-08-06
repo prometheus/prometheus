@@ -84,6 +84,20 @@ type combinedAppender struct {
 }
 
 func (b *combinedAppender) AppendSample(_ string, rawls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) (err error) {
+	return b.appendFloatOrHistogram(rawls, meta, t, ct, v, nil, es)
+}
+
+func (b *combinedAppender) AppendHistogram(_ string, rawls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
+	if h == nil {
+		// Sanity check, we should never get here with a nil histogram.
+		ls := modelLabels.NewFromSorted(rawls)
+		b.logger.Error("Received nil histogram in CombinedAppender.AppendHistogram", "series", ls.String())
+		return nil
+	}
+	return b.appendFloatOrHistogram(rawls, meta, t, ct, 0, h, es)
+}
+
+func (b *combinedAppender) appendFloatOrHistogram(rawls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
 	ls := modelLabels.NewFromSorted(rawls)
 	hash := ls.Hash()
 	lref, exists := b.refs[hash]
@@ -94,7 +108,11 @@ func (b *combinedAppender) AppendSample(_ string, rawls labels.Labels, meta meta
 	}
 	if !exists {
 		if ct != 0 && b.ingestCTZeroSample {
-			ref, err = b.app.AppendCTZeroSample(ref, ls, t, ct)
+			if h != nil {
+				ref, err = b.app.AppendHistogramCTZeroSample(ref, ls, t, ct, h, nil)
+			} else {
+				ref, err = b.app.AppendCTZeroSample(ref, ls, t, ct)
+			}
 			if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
 				// Even for the first sample OOO is a common scenario because
 				// we can't tell if a CT was already ingested in a previous request.
@@ -103,7 +121,11 @@ func (b *combinedAppender) AppendSample(_ string, rawls labels.Labels, meta meta
 			}
 		}
 	}
-	ref, err = b.app.Append(ref, ls, t, v)
+	if h != nil {
+		ref, err = b.app.AppendHistogram(ref, ls, t, h, nil)
+	} else {
+		ref, err = b.app.Append(ref, ls, t, v)
+	}
 	if err != nil {
 		// Although Append does not currently return ErrDuplicateSampleForTimestamp there is
 		// a note indicating its inclusion in the future.
@@ -111,61 +133,6 @@ func (b *combinedAppender) AppendSample(_ string, rawls labels.Labels, meta meta
 			errors.Is(err, storage.ErrOutOfBounds) ||
 			errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
 			b.logger.Error("Error when appending float sample from OTLP", "err", err.Error(), "series", ls.String(), "timestamp", t)
-		}
-	}
-
-	if ref == 0 {
-		// We cannot update metadata or add exemplars on non existent series.
-		return
-	}
-
-	if !exists {
-		b.refs[hash] = labelsRef{
-			ref: ref,
-			ls:  ls,
-		}
-		// If this is the first time we see this series, set the metadata.
-		ref, err = b.app.UpdateMetadata(0, ls, meta)
-		if err != nil {
-			b.samplesAppendedWithoutMetadata.Add(1)
-			b.logger.Debug("Error while updating metadata from OTLP", "err", err)
-		}
-	}
-
-	b.appendExemplars(ref, ls, es)
-
-	return
-}
-
-func (b *combinedAppender) AppendHistogram(_ string, rawls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
-	ls := modelLabels.NewFromSorted(rawls)
-	hash := ls.Hash()
-	lref, exists := b.refs[hash]
-	ref := lref.ref
-	if exists && !modelLabels.Equal(lref.ls, ls) {
-		// Hash collision, this is a new series.
-		exists = false
-	}
-	if !exists {
-		if ct != 0 && b.ingestCTZeroSample {
-			ref, err = b.app.AppendHistogramCTZeroSample(ref, ls, t, ct, h, nil)
-			if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
-				// Even for the first sample OOO is a common scenario because
-				// we can't tell if a CT was already ingested in a previous request.
-				// We ignore the error.
-				b.logger.Debug("Error when appending Histogram CT from OTLP", "err", err, "series", ls.String(), "created_timestamp", ct, "timestamp", t)
-			}
-		}
-	}
-
-	ref, err = b.app.AppendHistogram(ref, ls, t, h, nil)
-	if err != nil {
-		// Although AppendHistogram does not currently return ErrDuplicateSampleForTimestamp there is
-		// a note indicating its inclusion in the future.
-		if errors.Is(err, storage.ErrOutOfOrderSample) ||
-			errors.Is(err, storage.ErrOutOfBounds) ||
-			errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-			b.logger.Error("Error when appending histogram sample from OTLP", "err", err.Error(), "series", ls.String(), "timestamp", t)
 		}
 	}
 
