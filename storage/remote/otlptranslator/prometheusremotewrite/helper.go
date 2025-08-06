@@ -140,10 +140,8 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		c.builder.Set("otel_scope_schema_url", scope.schemaURL)
 		var scopeErr error
 		scope.attributes.Range(func(k string, v pcommon.Value) bool {
-			name := "otel_scope_" + k
-			var err error
-			name, err = labelNamer.Build(name)
-			if err != nil && scopeErr == nil {
+			name, err := labelNamer.Build("otel_scope_" + k)
+			if err != nil {
 				scopeErr = err
 				return false
 			}
