@@ -414,7 +414,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 
 			ctx := context.Background()
 			reg := prometheus.NewRegistry()
-			capp := NewCombinedAppender(db.Appender(ctx), promslog.NewNopLogger(), reg, ingestCTZeroSample, NewCombinedAppenderMetrics(reg))
+			capp := NewCombinedAppender(db.Appender(ctx), promslog.NewNopLogger(), ingestCTZeroSample, NewCombinedAppenderMetrics(reg))
 
 			require.NoError(t, tc.appendFunc(capp))
 
