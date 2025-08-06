@@ -520,13 +520,13 @@ func addTypeAndUnitLabels(labels []prompb.Label, metadata prompb.MetricMetadata,
 	return labels
 }
 
-// getOrCreateTimeSeries returns the time series corresponding to the label set if existent, and false.
-// Otherwise it creates a new one and returns that, and true.
+// timeSeriesIsNew returns true if the given labels are new, or false if they
+// already exist and stores the labels for future conflict checks.
 func (c *PrometheusConverter) timeSeriesIsNew(lbls labels.Labels) bool {
 	h := lbls.Hash()
-	uLabels, ok := c.unique[h]
-	if ok {
-		if labels.Equal(uLabels, lbls) {
+	ts := c.unique[h]
+	if ts != nil {
+		if labels.Equal(ts, lbls) {
 			// We already have this metric
 			return false
 		}
@@ -540,12 +540,12 @@ func (c *PrometheusConverter) timeSeriesIsNew(lbls labels.Labels) bool {
 		}
 
 		// New conflict
-		c.conflicts[h] = append(c.conflicts[h], uLabels)
+		c.conflicts[h] = append(c.conflicts[h], lbls)
 		return true
 	}
 
 	// This metric is new
-	c.unique[h] = uLabels
+	c.unique[h] = lbls
 	return true
 }
 
