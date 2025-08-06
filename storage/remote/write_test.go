@@ -936,7 +936,7 @@ func TestOTLPWriteHandlerNaming(t *testing.T) {
 
 // Check that start time is ingested if ingestCTZeroSample is enabled
 // and the start time is actually set (non-zero).
-func TestOTLPWRiteHandlerStartTime(t *testing.T) {
+func TestOTLPWriteHandlerStartTime(t *testing.T) {
 	timestamp := time.Now()
 	startTime := timestamp.Add(-1 * time.Millisecond)
 	var zeroTime time.Time
