@@ -558,18 +558,7 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
 		reg:                     reg,
 		// Register metrics.
-		samplesAppendedWithoutMetadata: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Namespace: "prometheus",
-			Subsystem: "api",
-			Name:      "otlp_without_metadata_appended_samples_total",
-			Help:      "The total number of received OTLP data points which were ingested without corresponding metadata.",
-		}),
-		outOfOrderExemplars: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Namespace: "prometheus",
-			Subsystem: "api",
-			Name:      "otlp_out_of_order_exemplars_total",
-			Help:      "The total number of received OTLP exemplars which were rejected because they were out of order.",
-		}),
+		metrics: otlptranslator.NewCombinedAppenderMetrics(reg),
 	}
 
 	wh := &otlpWriteHandler{logger: logger, defaultConsumer: ex}
@@ -613,8 +602,7 @@ type rwExporter struct {
 	reg                     prometheus.Registerer
 
 	// Metrics.
-	samplesAppendedWithoutMetadata prometheus.Counter
-	outOfOrderExemplars            prometheus.Counter
+	metrics otlptranslator.CombinedAppenderMetrics
 }
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
@@ -623,7 +611,7 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		Appender: rw.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
-	combinedAppender := otlptranslator.NewCombinedAppender(app, rw.logger, rw.reg, rw.ingestCTZeroSample, rw.samplesAppendedWithoutMetadata, rw.outOfOrderExemplars)
+	combinedAppender := otlptranslator.NewCombinedAppender(app, rw.logger, rw.reg, rw.ingestCTZeroSample, rw.metrics)
 	converter := otlptranslator.NewPrometheusConverter(combinedAppender)
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
 		AddMetricSuffixes:                 otlpCfg.TranslationStrategy.ShouldAddSuffixes(),
