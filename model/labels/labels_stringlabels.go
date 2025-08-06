@@ -308,15 +308,11 @@ func yoloBytes(s string) []byte {
 // The caller has to guarantee that all label names are unique.
 func New(ls ...Label) Labels {
 	slices.SortFunc(ls, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
-	size := labelsSize(ls)
-	buf := make([]byte, size)
-	marshalLabelsToSizedBuffer(ls, buf)
-	return Labels{data: yoloString(buf)}
+	return NewFromSorted(ls)
 }
 
 // NewFromSorted returns sorted Labels from the given
-// sorted labels. In case of slices it returns the
-// input.
+// sorted labels.
 func NewFromSorted(ls []Label) Labels {
 	size := labelsSize(ls)
 	buf := make([]byte, size)

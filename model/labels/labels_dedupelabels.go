@@ -456,17 +456,11 @@ func EmptyLabels() Labels {
 // Note this function is not efficient; should not be used in performance-critical places.
 func New(ls ...Label) Labels {
 	slices.SortFunc(ls, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
-	syms := NewSymbolTable()
-	var stackSpace [16]int
-	size, nums := mapLabelsToNumbers(syms, ls, stackSpace[:])
-	buf := make([]byte, size)
-	marshalNumbersToSizedBuffer(nums, buf)
-	return Labels{syms: syms.nameTable, data: yoloString(buf)}
+	return NewFromSorted(ls)
 }
 
 // NewFromSorted returns sorted Labels from the given
-// sorted labels. In case of slices it returns the
-// input.
+// sorted labels.
 func NewFromSorted(ls []Label) Labels {
 	syms := NewSymbolTable()
 	var stackSpace [16]int
