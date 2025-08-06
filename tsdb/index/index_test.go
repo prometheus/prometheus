@@ -186,37 +186,6 @@ func TestIndexRW_Postings(t *testing.T) {
 	}
 	require.NoError(t, p.Err())
 
-	// The label indices are no longer used, so test them by hand here.
-	labelValuesOffsets := map[string]uint64{}
-	d := encoding.NewDecbufAt(ir.b, int(ir.toc.LabelIndicesTable), castagnoliTable)
-	cnt := d.Be32()
-
-	for d.Err() == nil && d.Len() > 0 && cnt > 0 {
-		require.Equal(t, 1, d.Uvarint(), "Unexpected number of keys for label indices table")
-		lbl := d.UvarintStr()
-		off := d.Uvarint64()
-		labelValuesOffsets[lbl] = off
-		cnt--
-	}
-	require.NoError(t, d.Err())
-
-	labelIndices := map[string][]string{}
-	for lbl, off := range labelValuesOffsets {
-		d := encoding.NewDecbufAt(ir.b, int(off), castagnoliTable)
-		require.Equal(t, 1, d.Be32int(), "Unexpected number of label indices table names")
-		for i := d.Be32(); i > 0 && d.Err() == nil; i-- {
-			v, err := ir.lookupSymbol(ctx, d.Be32())
-			require.NoError(t, err)
-			labelIndices[lbl] = append(labelIndices[lbl], v)
-		}
-		require.NoError(t, d.Err())
-	}
-
-	require.Equal(t, map[string][]string{
-		"a": {"1"},
-		"b": {"1", "2", "3", "4"},
-	}, labelIndices)
-
 	t.Run("ShardedPostings()", func(t *testing.T) {
 		ir, err := NewFileReader(fn, DecodePostingsRaw)
 		require.NoError(t, err)
