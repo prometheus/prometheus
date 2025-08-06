@@ -161,7 +161,7 @@ func (b *combinedAppender) appendFloatOrHistogram(rawls labels.Labels, meta meta
 			ls:  ls,
 		}
 		// If this is the first time we see this series, set the metadata.
-		ref, err = b.app.UpdateMetadata(0, ls, meta)
+		_, err = b.app.UpdateMetadata(ref, ls, meta)
 		if err != nil {
 			b.samplesAppendedWithoutMetadata.Add(1)
 			b.logger.Warn("Error while updating metadata from OTLP", "err", err)
