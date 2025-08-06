@@ -6901,6 +6901,20 @@ func TestHead_NumStaleSeries(t *testing.T) {
 		require.Equal(t, uint64(numSeries), head.NumSeries())
 	}
 
+	restartHeadAndVerifySeriesCounts := func(numStaleSeries, numSeries int) {
+		verifySeriesCounts(numStaleSeries, numSeries)
+
+		require.NoError(t, head.Close())
+
+		wal, err := wlog.NewSize(nil, nil, filepath.Join(head.opts.ChunkDirRoot, "wal"), 32768, compression.None)
+		require.NoError(t, err)
+		head, err = NewHead(nil, nil, wal, nil, head.opts, nil)
+		require.NoError(t, err)
+		require.NoError(t, head.Init(0))
+
+		verifySeriesCounts(numStaleSeries, numSeries)
+	}
+
 	// Create some series with normal samples.
 	series1 := labels.FromStrings("name", "series1", "label", "value1")
 	series2 := labels.FromStrings("name", "series2", "label", "value2")
@@ -6920,10 +6934,12 @@ func TestHead_NumStaleSeries(t *testing.T) {
 	// Make series2 stale as well.
 	appendSample(series2, 200, math.Float64frombits(value.StaleNaN))
 	verifySeriesCounts(2, 3)
+	restartHeadAndVerifySeriesCounts(2, 3)
 
 	// Add a non-stale sample to series1. It should not be counted as stale now.
 	appendSample(series1, 300, 10)
 	verifySeriesCounts(1, 3)
+	restartHeadAndVerifySeriesCounts(1, 3)
 
 	// Test that series3 doesn't become stale when we add another normal sample.
 	appendSample(series3, 200, 10)
@@ -6946,6 +6962,7 @@ func TestHead_NumStaleSeries(t *testing.T) {
 	fh := tsdbutil.GenerateTestFloatHistograms(1)[0]
 	appendFloatHistogram(series5, 100, fh)
 	verifySeriesCounts(2, 5)
+	restartHeadAndVerifySeriesCounts(2, 5)
 
 	// Make float histogram series stale.
 	staleFH := fh.Copy()
@@ -6969,7 +6986,7 @@ func TestHead_NumStaleSeries(t *testing.T) {
 	// so after the GC and removing series 2, 3, 4, we should be left with 1 stale and 1 non-stale series.
 	appendSample(series1, 400, 10)
 	appendFloatHistogram(series5, 400, staleFH)
-	verifySeriesCounts(3, 5)
+	restartHeadAndVerifySeriesCounts(3, 5)
 
 	// Test garbage collection behavior - stale series should be decremented when GC'd.
 	// Force a garbage collection by truncating old data.
