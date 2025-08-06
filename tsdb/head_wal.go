@@ -16,6 +16,7 @@ package tsdb
 import (
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/model/value"
 	"maps"
 	"math"
 	"os"
@@ -627,6 +628,14 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if s.T <= ms.mmMaxTime {
 				continue
 			}
+
+			if !value.IsStaleNaN(ms.lastValue) && value.IsStaleNaN(s.V) {
+				h.numStaleSeries.Inc()
+			}
+			if value.IsStaleNaN(ms.lastValue) && !value.IsStaleNaN(s.V) {
+				h.numStaleSeries.Dec()
+			}
+
 			if _, chunkCreated := ms.append(s.T, s.V, 0, appendChunkOpts); chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
@@ -657,11 +666,27 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if s.t <= ms.mmMaxTime {
 				continue
 			}
-			var chunkCreated bool
+			var chunkCreated, newlyStale, staleToNonStale bool
 			if s.h != nil {
+				newlyStale = value.IsStaleNaN(s.h.Sum)
+				if ms.lastHistogramValue != nil {
+					newlyStale = newlyStale && !value.IsStaleNaN(ms.lastHistogramValue.Sum)
+					staleToNonStale = value.IsStaleNaN(ms.lastHistogramValue.Sum) && !value.IsStaleNaN(s.h.Sum)
+				}
 				_, chunkCreated = ms.appendHistogram(s.t, s.h, 0, appendChunkOpts)
 			} else {
+				newlyStale = value.IsStaleNaN(s.fh.Sum)
+				if ms.lastFloatHistogramValue != nil {
+					newlyStale = newlyStale && !value.IsStaleNaN(ms.lastFloatHistogramValue.Sum)
+					staleToNonStale = value.IsStaleNaN(ms.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.fh.Sum)
+				}
 				_, chunkCreated = ms.appendFloatHistogram(s.t, s.fh, 0, appendChunkOpts)
+			}
+			if newlyStale {
+				h.numStaleSeries.Inc()
+			}
+			if staleToNonStale {
+				h.numStaleSeries.Dec()
 			}
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
