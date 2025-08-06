@@ -43,7 +43,6 @@ type Settings struct {
 	Namespace                         string
 	ExternalLabels                    map[string]string
 	DisableTargetInfo                 bool
-	ExportCreatedMetric               bool
 	AddMetricSuffixes                 bool
 	AllowUTF8                         bool
 	PromoteResourceAttributes         *PromoteResourceAttributes
