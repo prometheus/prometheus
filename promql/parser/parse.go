@@ -322,7 +322,7 @@ func (p *parser) unexpected(context, expected string) {
 var errUnexpected = errors.New("unexpected error")
 
 // recover is the handler that turns panics into returns from the top level of Parse.
-func (p *parser) recover(errp *error) {
+func (*parser) recover(errp *error) {
 	e := recover()
 	switch _, ok := e.(runtime.Error); {
 	case ok:
@@ -387,7 +387,7 @@ func (p *parser) Lex(lval *yySymType) int {
 // It is a no-op since the parsers error routines are triggered
 // by mechanisms that allow more fine-grained control
 // For more information, see https://pkg.go.dev/golang.org/x/tools/cmd/goyacc.
-func (p *parser) Error(string) {
+func (*parser) Error(string) {
 }
 
 // InjectItem allows injecting a single Item at the beginning of the token stream
@@ -410,7 +410,7 @@ func (p *parser) InjectItem(typ ItemType) {
 	p.injecting = true
 }
 
-func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *BinaryExpr {
+func (*parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *BinaryExpr {
 	ret := modifiers.(*BinaryExpr)
 
 	ret.LHS = lhs.(Expr)
@@ -420,7 +420,7 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *Bi
 	return ret
 }
 
-func (p *parser) assembleVectorSelector(vs *VectorSelector) {
+func (*parser) assembleVectorSelector(vs *VectorSelector) {
 	// If the metric name was set outside the braces, add a matcher for it.
 	// If the metric name was inside the braces we don't need to do anything.
 	if vs.Name != "" {
@@ -472,7 +472,7 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateE
 }
 
 // newMap is used when building the FloatHistogram from a map.
-func (p *parser) newMap() (ret map[string]interface{}) {
+func (*parser) newMap() (ret map[string]interface{}) {
 	return map[string]interface{}{}
 }
 
@@ -501,7 +501,7 @@ func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, t
 	})
 }
 
-func (p *parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64,
+func (*parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64,
 	combine func(*histogram.FloatHistogram, *histogram.FloatHistogram) (*histogram.FloatHistogram, error),
 ) ([]SequenceValue, error) {
 	ret := make([]SequenceValue, times+1)

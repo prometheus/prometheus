@@ -221,9 +221,9 @@ func newHistogramSeries(histograms []*histogram.Histogram) *histogramSeries {
 	}
 }
 
-func (m histogramSeries) Labels() labels.Labels { return labels.EmptyLabels() }
+func (histogramSeries) Labels() labels.Labels { return labels.EmptyLabels() }
 
-func (m histogramSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
+func (m histogramSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator {
 	return &histogramIterator{
 		i:          -1,
 		histograms: m.histograms,
@@ -243,18 +243,18 @@ func (h *histogramIterator) Next() chunkenc.ValueType {
 	return chunkenc.ValNone
 }
 
-func (h *histogramIterator) Seek(_ int64) chunkenc.ValueType { panic("not implemented") }
+func (*histogramIterator) Seek(int64) chunkenc.ValueType { panic("not implemented") }
 
-func (h *histogramIterator) At() (int64, float64) { panic("not implemented") }
+func (*histogramIterator) At() (int64, float64) { panic("not implemented") }
 
-func (h *histogramIterator) AtHistogram(_ *histogram.Histogram) (int64, *histogram.Histogram) {
+func (h *histogramIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	return 0, h.histograms[h.i]
 }
 
-func (h *histogramIterator) AtFloatHistogram(_ *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+func (h *histogramIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return 0, h.histograms[h.i].ToFloat(nil)
 }
 
-func (h *histogramIterator) AtT() int64 { return 0 }
+func (*histogramIterator) AtT() int64 { return 0 }
 
-func (h *histogramIterator) Err() error { return nil }
+func (*histogramIterator) Err() error { return nil }

@@ -37,7 +37,7 @@ type Watchable interface {
 
 type noopScrapeManager struct{}
 
-func (noop *noopScrapeManager) Get() (*scrape.Manager, error) {
+func (*noopScrapeManager) Get() (*scrape.Manager, error) {
 	return nil, errors.New("scrape manager not ready")
 }
 

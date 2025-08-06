@@ -330,7 +330,7 @@ func (d *Discovery) getTargetsForSystems(
 	return result, nil
 }
 
-func (d *Discovery) refresh(_ context.Context) ([]*targetgroup.Group, error) {
+func (d *Discovery) refresh(context.Context) ([]*targetgroup.Group, error) {
 	rpcClient, err := xmlrpc.NewClient(d.apiURL.String(), d.roundTripper)
 	if err != nil {
 		return nil, err

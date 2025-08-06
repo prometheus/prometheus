@@ -92,7 +92,7 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable 
 	return h
 }
 
-func (h *writeHandler) parseProtoMsg(contentType string) (config.RemoteWriteProtoMsg, error) {
+func (*writeHandler) parseProtoMsg(contentType string) (config.RemoteWriteProtoMsg, error) {
 	contentType = strings.TrimSpace(contentType)
 
 	parts := strings.Split(contentType, ";")
@@ -513,7 +513,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 // handleHistogramZeroSample appends CT as a zero-value sample with CT value as the sample timestamp.
 // It doesn't return errors in case of out of order CT.
-func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist writev2.Histogram, ct int64) (storage.SeriesRef, error) {
+func (*writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist writev2.Histogram, ct int64) (storage.SeriesRef, error) {
 	var err error
 	if hist.IsFloatHistogram() {
 		ref, err = app.AppendHistogramCTZeroSample(ref, l, hist.Timestamp, ct, nil, hist.ToFloatHistogram())
@@ -625,7 +625,7 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 	return err
 }
 
-func (rw *rwExporter) Capabilities() consumer.Capabilities {
+func (*rwExporter) Capabilities() consumer.Capabilities {
 	return consumer.Capabilities{MutatesData: false}
 }
 

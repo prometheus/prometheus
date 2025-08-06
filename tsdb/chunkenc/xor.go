@@ -71,7 +71,7 @@ func (c *XORChunk) Reset(stream []byte) {
 }
 
 // Encoding returns the encoding type.
-func (c *XORChunk) Encoding() Encoding {
+func (*XORChunk) Encoding() Encoding {
 	return EncXOR
 }
 
@@ -223,11 +223,11 @@ func (a *xorAppender) writeVDelta(v float64) {
 	xorWrite(a.b, v, a.v, &a.leading, &a.trailing)
 }
 
-func (a *xorAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
+func (*xorAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float chunk")
 }
 
-func (a *xorAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
+func (*xorAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a float histogram sample to a float chunk")
 }
 
@@ -263,11 +263,11 @@ func (it *xorIterator) At() (int64, float64) {
 	return it.t, it.val
 }
 
-func (it *xorIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+func (*xorIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	panic("cannot call xorIterator.AtHistogram")
 }
 
-func (it *xorIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+func (*xorIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	panic("cannot call xorIterator.AtFloatHistogram")
 }
 

@@ -758,7 +758,7 @@ func TestOTLPDelta(t *testing.T) {
 		{t: milli(1), l: ls, v: 1}, // +1
 		{t: milli(2), l: ls, v: 3}, // +2
 	}
-	if diff := cmp.Diff(want, appendable.samples, cmp.Exporter(func(_ reflect.Type) bool { return true })); diff != "" {
+	if diff := cmp.Diff(want, appendable.samples, cmp.Exporter(func(reflect.Type) bool { return true })); diff != "" {
 		t.Fatal(diff)
 	}
 }
