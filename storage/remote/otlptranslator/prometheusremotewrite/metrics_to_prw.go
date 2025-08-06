@@ -288,9 +288,6 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		}
 	}
 
-	err := c.appender.Commit()
-	errs = multierr.Append(errs, err)
-
 	return
 }
 

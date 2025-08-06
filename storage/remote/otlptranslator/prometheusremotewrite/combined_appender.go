@@ -38,8 +38,6 @@ type CombinedAppender interface {
 	// AppendHistogram appends a histogram and related exemplars, metadata, and
 	// created timestamp to the storage.
 	AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) error
-	// Commit finalizes the ongoing transaction in storage.
-	Commit() error
 }
 
 // CombinedAppenderMetrics is for the metrics observed by the
@@ -178,10 +176,6 @@ func sampleType(h *histogram.Histogram) string {
 		return "float"
 	}
 	return "histogram"
-}
-
-func (b *combinedAppender) Commit() error {
-	return b.app.Commit()
 }
 
 func (b *combinedAppender) appendExemplars(ref storage.SeriesRef, ls modelLabels.Labels, es []exemplar.Exemplar) storage.SeriesRef {

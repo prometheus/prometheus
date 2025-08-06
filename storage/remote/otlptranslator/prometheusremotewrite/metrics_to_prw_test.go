@@ -101,6 +101,8 @@ func TestFromMetrics(t *testing.T) {
 				require.NoError(t, err)
 				require.Empty(t, annots)
 
+				require.NoError(t, mockAppender.Commit())
+
 				ts := mockAppender.samples
 				require.Len(t, ts, 1536+1) // +1 for the target_info.
 
@@ -157,6 +159,7 @@ func TestFromMetrics(t *testing.T) {
 			)
 			require.NoError(t, err)
 			require.Empty(t, annots)
+			require.NoError(t, mockAppender.Commit())
 
 			if convertHistogramsToNHCB {
 				require.Len(t, mockAppender.histograms, 1)
@@ -306,7 +309,7 @@ func TestFromMetrics(t *testing.T) {
 		annots, err := converter.FromMetrics(context.Background(), request.Metrics(), settings)
 		require.NoError(t, err)
 		require.Empty(t, annots)
-
+		require.NoError(t, mockAppender.Commit())
 		require.Len(t, mockAppender.samples, 22)
 		// There should be a target_info sample at the earliest metric timestamp, then two spaced lookback delta/2 apart,
 		// then one at the latest metric timestamp.
@@ -573,6 +576,7 @@ func TestTemporality(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+			require.NoError(t, mockAppender.Commit())
 
 			// Sort series to make the test deterministic.
 			requireEqual(t, tc.expectedSamples, mockAppender.samples)
