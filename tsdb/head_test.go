@@ -6988,6 +6988,10 @@ func TestHead_NumStaleSeries(t *testing.T) {
 	appendFloatHistogram(series5, 400, staleFH)
 	restartHeadAndVerifySeriesCounts(3, 5)
 
+	// This will test restarting with snapshot.
+	head.opts.EnableMemorySnapshotOnShutdown = true
+	restartHeadAndVerifySeriesCounts(3, 5)
+
 	// Test garbage collection behavior - stale series should be decremented when GC'd.
 	// Force a garbage collection by truncating old data.
 	require.NoError(t, head.Truncate(300))
