@@ -119,33 +119,42 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 }
 
 func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms []*labels.Matcher,
-	index IndexReader, chunks ChunkReader, tombstones tombstones.Reader, mint, maxt int64,
+	ix IndexReader, chunks ChunkReader, tombstones tombstones.Reader, mint, maxt int64,
 ) storage.SeriesSet {
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
-
-	p, err := PostingsForMatchers(ctx, index, ms...)
-	if err != nil {
-		return storage.ErrSeriesSet(err)
-	}
-	if sharded {
-		p = index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
-	}
-	if sortSeries {
-		p = index.SortedPostings(p)
-	}
 
 	if hints != nil {
 		mint = hints.Start
 		maxt = hints.End
 		disableTrimming = hints.DisableTrimming
-		if hints.Func == "series" {
-			// When you're only looking up metadata (for example series API), you don't need to load any chunks.
-			return newBlockSeriesSet(index, newNopChunkReader(), tombstones, p, mint, maxt, disableTrimming)
-		}
 	}
 
-	return newBlockSeriesSet(index, chunks, tombstones, p, mint, maxt, disableTrimming)
+	// Use the planner to decide which matchers to apply during index lookup vs scanning
+	plan, err := ix.IndexLookupPlanner().PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), mint, maxt)
+	if err != nil {
+		return storage.ErrSeriesSet(fmt.Errorf("creating index lookup plan: %w", err))
+	}
+	indexMatchers := plan.IndexMatchers()
+	scanMatchers := plan.ScanMatchers()
+
+	p, err := PostingsForMatchers(ctx, ix, indexMatchers...)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+	if sharded {
+		p = ix.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
+	}
+	if sortSeries {
+		p = ix.SortedPostings(p)
+	}
+
+	if hints != nil && hints.Func == "series" {
+		// When you're only looking up metadata (for example series API), you don't need to load any chunks.
+		return newBlockSeriesSetWithScanMatchers(ix, newNopChunkReader(), tombstones, p, mint, maxt, disableTrimming, scanMatchers)
+	}
+
+	return newBlockSeriesSetWithScanMatchers(ix, chunks, tombstones, p, mint, maxt, disableTrimming, scanMatchers)
 }
 
 // blockChunkQuerier provides chunk querying access to a single block database.
@@ -167,7 +176,7 @@ func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *
 }
 
 func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms []*labels.Matcher,
-	blockID ulid.ULID, index IndexReader, chunks ChunkReader, tombstones tombstones.Reader, mint, maxt int64,
+	blockID ulid.ULID, ix IndexReader, chunks ChunkReader, tombstones tombstones.Reader, mint, maxt int64,
 ) storage.ChunkSeriesSet {
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
@@ -177,17 +186,26 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 		maxt = hints.End
 		disableTrimming = hints.DisableTrimming
 	}
-	p, err := PostingsForMatchers(ctx, index, ms...)
+
+	// Use the planner to decide which matchers to apply during index lookup vs scanning
+	plan, err := ix.IndexLookupPlanner().PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), mint, maxt)
+	if err != nil {
+		return storage.ErrChunkSeriesSet(fmt.Errorf("creating index lookup plan: %w", err))
+	}
+	indexMatchers := plan.IndexMatchers()
+	scanMatchers := plan.ScanMatchers()
+
+	p, err := PostingsForMatchers(ctx, ix, indexMatchers...)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
 	if sharded {
-		p = index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
+		p = ix.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
 	}
 	if sortSeries {
-		p = index.SortedPostings(p)
+		p = ix.SortedPostings(p)
 	}
-	return NewBlockChunkSeriesSet(blockID, index, chunks, tombstones, p, mint, maxt, disableTrimming)
+	return NewBlockChunkSeriesSetWithScanMatchers(blockID, ix, chunks, tombstones, p, mint, maxt, disableTrimming, scanMatchers)
 }
 
 // PostingsForMatchers assembles a single postings iterator against the index reader
@@ -453,6 +471,7 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hi
 	}
 
 	values := make([]string, 0, len(indexes))
+
 	for _, idx := range indexes {
 		values = append(values, allValues[idx])
 		if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
@@ -1094,6 +1113,63 @@ func (b *blockSeriesSet) At() storage.Series {
 	}
 }
 
+// newBlockSeriesSetWithScanMatchers creates a blockSeriesSet that applies scan matchers during series scanning.
+func newBlockSeriesSetWithScanMatchers(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool, scanMatchers []*labels.Matcher) storage.SeriesSet {
+	base := newBlockSeriesSet(i, c, t, p, mint, maxt, disableTrimming)
+	if len(scanMatchers) == 0 {
+		return base
+	}
+	return &scanMatcherSeriesSet[storage.Series]{
+		base:         base,
+		scanMatchers: scanMatchers,
+	}
+}
+
+type genericSeriesSet[S storage.Labels] interface {
+	Next() bool
+	At() S
+	Err() error
+	Warnings() annotations.Annotations
+}
+
+// scanMatcherSeriesSet wraps a SeriesSet and applies additional matchers during series scanning.
+type scanMatcherSeriesSet[S storage.Labels] struct {
+	base         genericSeriesSet[S]
+	scanMatchers []*labels.Matcher
+	allocatedAt  S
+}
+
+func (s *scanMatcherSeriesSet[S]) Next() bool {
+	for s.base.Next() {
+		s.allocatedAt = s.base.At()
+		if labelsMatchMatchers(s.allocatedAt.Labels(), s.scanMatchers) {
+			return true
+		}
+	}
+	return false
+}
+
+func labelsMatchMatchers(lbls labels.Labels, matchers []*labels.Matcher) bool {
+	for _, matcher := range matchers {
+		if !matcher.Matches(lbls.Get(matcher.Name)) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *scanMatcherSeriesSet[S]) At() S {
+	return s.allocatedAt
+}
+
+func (s *scanMatcherSeriesSet[S]) Err() error {
+	return s.base.Err()
+}
+
+func (s *scanMatcherSeriesSet[S]) Warnings() annotations.Annotations {
+	return s.base.Warnings()
+}
+
 // blockChunkSeriesSet allows to iterate over sorted, populated series with applied tombstones.
 // Series with all deleted chunks are still present as Labelled iterator with no chunks.
 // Chunks are also trimmed to requested [min and max] (keeping samples with min and max timestamps).
@@ -1122,6 +1198,18 @@ func (b *blockChunkSeriesSet) At() storage.ChunkSeries {
 		chunks:     b.chunks,
 		blockID:    b.blockID,
 		seriesData: b.curr,
+	}
+}
+
+// NewBlockChunkSeriesSetWithScanMatchers creates a blockChunkSeriesSet that applies scan matchers during series scanning.
+func NewBlockChunkSeriesSetWithScanMatchers(id ulid.ULID, i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool, scanMatchers []*labels.Matcher) storage.ChunkSeriesSet {
+	base := NewBlockChunkSeriesSet(id, i, c, t, p, mint, maxt, disableTrimming)
+	if len(scanMatchers) == 0 {
+		return base
+	}
+	return &scanMatcherSeriesSet[storage.ChunkSeries]{
+		base:         base,
+		scanMatchers: scanMatchers,
 	}
 }
 
