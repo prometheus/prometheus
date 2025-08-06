@@ -588,7 +588,7 @@ func (b *blockBaseSeriesSet) Err() error {
 	return b.p.Err()
 }
 
-func (b *blockBaseSeriesSet) Warnings() annotations.Annotations { return nil }
+func (*blockBaseSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // populateWithDelGenericSeriesIterator allows to iterate over given chunk
 // metas. In each iteration it ensures that chunks are trimmed based on given
@@ -1266,4 +1266,4 @@ func (cr nopChunkReader) ChunkOrIterable(chunks.Meta) (chunkenc.Chunk, chunkenc.
 	return cr.emptyChunk, nil, nil
 }
 
-func (cr nopChunkReader) Close() error { return nil }
+func (nopChunkReader) Close() error { return nil }

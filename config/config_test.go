@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 
@@ -170,7 +171,7 @@ var expectedConf = &Config{
 		PromoteResourceAttributes: []string{
 			"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name",
 		},
-		TranslationStrategy: UnderscoreEscapingWithSuffixes,
+		TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
 	},
 
 	RemoteReadConfigs: []*RemoteReadConfig{
@@ -1828,7 +1829,7 @@ func TestOTLPAllowUTF8(t *testing.T) {
 		verify := func(t *testing.T, conf *Config, err error) {
 			t.Helper()
 			require.NoError(t, err)
-			require.Equal(t, NoUTF8EscapingWithSuffixes, conf.OTLPConfig.TranslationStrategy)
+			require.Equal(t, otlptranslator.NoUTF8EscapingWithSuffixes, conf.OTLPConfig.TranslationStrategy)
 		}
 
 		t.Run("LoadFile", func(t *testing.T) {
@@ -1868,7 +1869,7 @@ func TestOTLPAllowUTF8(t *testing.T) {
 		verify := func(t *testing.T, conf *Config, err error) {
 			t.Helper()
 			require.NoError(t, err)
-			require.Equal(t, NoTranslation, conf.OTLPConfig.TranslationStrategy)
+			require.Equal(t, otlptranslator.NoTranslation, conf.OTLPConfig.TranslationStrategy)
 		}
 
 		t.Run("LoadFile", func(t *testing.T) {
@@ -1927,7 +1928,7 @@ func TestOTLPAllowUTF8(t *testing.T) {
 		verify := func(t *testing.T, conf *Config, err error) {
 			t.Helper()
 			require.NoError(t, err)
-			require.Equal(t, UnderscoreEscapingWithSuffixes, conf.OTLPConfig.TranslationStrategy)
+			require.Equal(t, otlptranslator.UnderscoreEscapingWithSuffixes, conf.OTLPConfig.TranslationStrategy)
 		}
 
 		t.Run("LoadFile", func(t *testing.T) {
@@ -2800,29 +2801,40 @@ func TestScrapeConfigDisableCompression(t *testing.T) {
 
 func TestScrapeConfigNameValidationSettings(t *testing.T) {
 	tests := []struct {
-		name         string
-		inputFile    string
-		expectScheme model.ValidationScheme
+		name           string
+		inputFile      string
+		expectScheme   model.ValidationScheme
+		expectEscaping model.EscapingScheme
 	}{
 		{
-			name:         "blank config implies default",
-			inputFile:    "scrape_config_default_validation_mode",
-			expectScheme: model.UTF8Validation,
+			name:           "blank config implies default",
+			inputFile:      "scrape_config_default_validation_mode",
+			expectScheme:   model.UTF8Validation,
+			expectEscaping: model.NoEscaping,
 		},
 		{
-			name:         "global setting implies local settings",
-			inputFile:    "scrape_config_global_validation_mode",
-			expectScheme: model.LegacyValidation,
+			name:           "global setting implies local settings",
+			inputFile:      "scrape_config_global_validation_mode",
+			expectScheme:   model.LegacyValidation,
+			expectEscaping: model.DotsEscaping,
 		},
 		{
-			name:         "local setting",
-			inputFile:    "scrape_config_local_validation_mode",
-			expectScheme: model.LegacyValidation,
+			name:           "local setting",
+			inputFile:      "scrape_config_local_validation_mode",
+			expectScheme:   model.LegacyValidation,
+			expectEscaping: model.ValueEncodingEscaping,
 		},
 		{
-			name:         "local setting overrides global setting",
-			inputFile:    "scrape_config_local_global_validation_mode",
-			expectScheme: model.UTF8Validation,
+			name:           "local setting overrides global setting",
+			inputFile:      "scrape_config_local_global_validation_mode",
+			expectScheme:   model.UTF8Validation,
+			expectEscaping: model.DotsEscaping,
+		},
+		{
+			name:           "local validation implies underscores escaping",
+			inputFile:      "scrape_config_local_infer_escaping",
+			expectScheme:   model.LegacyValidation,
+			expectEscaping: model.UnderscoreEscaping,
 		},
 	}
 
@@ -2838,6 +2850,10 @@ func TestScrapeConfigNameValidationSettings(t *testing.T) {
 			require.NoError(t, yaml.UnmarshalStrict(out, got))
 
 			require.Equal(t, tc.expectScheme, got.ScrapeConfigs[0].MetricNameValidationScheme)
+
+			escaping, err := model.ToEscapingScheme(got.ScrapeConfigs[0].MetricNameEscapingScheme)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectEscaping, escaping)
 		})
 	}
 }

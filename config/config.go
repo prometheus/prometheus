@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/sigv4"
 	"gopkg.in/yaml.v2"
 
@@ -104,9 +105,9 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	}
 
 	switch cfg.OTLPConfig.TranslationStrategy {
-	case UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes:
+	case otlptranslator.UnderscoreEscapingWithSuffixes, otlptranslator.UnderscoreEscapingWithoutSuffixes:
 	case "":
-	case NoTranslation, NoUTF8EscapingWithSuffixes:
+	case otlptranslator.NoTranslation, otlptranslator.NoUTF8EscapingWithSuffixes:
 		if cfg.GlobalConfig.MetricNameValidationScheme == model.LegacyValidation {
 			return nil, fmt.Errorf("OTLP translation strategy %q is not allowed when UTF8 is disabled", cfg.OTLPConfig.TranslationStrategy)
 		}
@@ -257,7 +258,7 @@ var (
 
 	// DefaultOTLPConfig is the default OTLP configuration.
 	DefaultOTLPConfig = OTLPConfig{
-		TranslationStrategy: UnderscoreEscapingWithSuffixes,
+		TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
 	}
 )
 
@@ -884,8 +885,10 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		return fmt.Errorf("unknown global name validation method specified, must be either '', 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
 	}
 	// Scrapeconfig validation scheme matches global if left blank.
+	localValidationUnset := false
 	switch c.MetricNameValidationScheme {
 	case model.UnsetValidation:
+		localValidationUnset = true
 		c.MetricNameValidationScheme = globalConfig.MetricNameValidationScheme
 	case model.LegacyValidation, model.UTF8Validation:
 	default:
@@ -905,8 +908,20 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		return fmt.Errorf("unknown global name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got %q", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, globalConfig.MetricNameEscapingScheme)
 	}
 
+	// Similarly, if ScrapeConfig escaping scheme is blank, infer it from the
+	// ScrapeConfig validation scheme if that was set, or the Global validation
+	// scheme if the ScrapeConfig validation scheme was also not set. This ensures
+	// that local ScrapeConfigs that only specify Legacy validation do not inherit
+	// the global AllowUTF8 escaping setting, which is an error.
 	if c.MetricNameEscapingScheme == "" {
-		c.MetricNameEscapingScheme = globalConfig.MetricNameEscapingScheme
+		//nolint:gocritic
+		if localValidationUnset {
+			c.MetricNameEscapingScheme = globalConfig.MetricNameEscapingScheme
+		} else if c.MetricNameValidationScheme == model.LegacyValidation {
+			c.MetricNameEscapingScheme = model.EscapeUnderscores
+		} else {
+			c.MetricNameEscapingScheme = model.AllowUTF8
+		}
 	}
 
 	switch c.MetricNameEscapingScheme {
@@ -1531,79 +1546,14 @@ func getGoGC() int {
 	return DefaultGoGCPercentage
 }
 
-type translationStrategyOption string
-
-var (
-	// NoUTF8EscapingWithSuffixes will accept metric/label names as they are. Unit
-	// and type suffixes may be added to metric names, according to certain rules.
-	NoUTF8EscapingWithSuffixes translationStrategyOption = "NoUTF8EscapingWithSuffixes"
-	// UnderscoreEscapingWithSuffixes is the default option for translating OTLP
-	// to Prometheus. This option will translate metric name characters that are
-	// not alphanumerics/underscores/colons to underscores, and label name
-	// characters that are not alphanumerics/underscores to underscores. Unit and
-	// type suffixes may be appended to metric names, according to certain rules.
-	UnderscoreEscapingWithSuffixes translationStrategyOption = "UnderscoreEscapingWithSuffixes"
-	// UnderscoreEscapingWithoutSuffixes translates metric name characters that
-	// are not alphanumerics/underscores/colons to underscores, and label name
-	// characters that are not alphanumerics/underscores to underscores, but
-	// unlike UnderscoreEscapingWithSuffixes it does not append any suffixes to
-	// the names.
-	UnderscoreEscapingWithoutSuffixes translationStrategyOption = "UnderscoreEscapingWithoutSuffixes"
-	// NoTranslation (EXPERIMENTAL): disables all translation of incoming metric
-	// and label names. This offers a way for the OTLP users to use native metric
-	// names, reducing confusion.
-	//
-	// WARNING: This setting has significant known risks and limitations (see
-	// https://prometheus.io/docs/practices/naming/  for details): * Impaired UX
-	// when using PromQL in plain YAML (e.g. alerts, rules, dashboard, autoscaling
-	// configuration). * Series collisions which in the best case may result in
-	// OOO errors, in the worst case a silently malformed time series. For
-	// instance, you may end up in situation of ingesting `foo.bar` series with
-	// unit `seconds` and a separate series `foo.bar` with unit `milliseconds`.
-	//
-	// As a result, this setting is experimental and currently, should not be used
-	// in production systems.
-	//
-	// TODO(ArthurSens): Mention `type-and-unit-labels` feature
-	// (https://github.com/prometheus/proposals/pull/39) once released, as
-	// potential mitigation of the above risks.
-	NoTranslation translationStrategyOption = "NoTranslation"
-)
-
-// ShouldEscape returns true if the translation strategy requires that metric
-// names be escaped.
-func (o translationStrategyOption) ShouldEscape() bool {
-	switch o {
-	case UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes:
-		return true
-	case NoTranslation, NoUTF8EscapingWithSuffixes:
-		return false
-	default:
-		return false
-	}
-}
-
-// ShouldAddSuffixes returns a bool deciding whether the given translation
-// strategy should have suffixes added.
-func (o translationStrategyOption) ShouldAddSuffixes() bool {
-	switch o {
-	case UnderscoreEscapingWithSuffixes, NoUTF8EscapingWithSuffixes:
-		return true
-	case UnderscoreEscapingWithoutSuffixes, NoTranslation:
-		return false
-	default:
-		return false
-	}
-}
-
 // OTLPConfig is the configuration for writing to the OTLP endpoint.
 type OTLPConfig struct {
-	PromoteAllResourceAttributes      bool                      `yaml:"promote_all_resource_attributes,omitempty"`
-	PromoteResourceAttributes         []string                  `yaml:"promote_resource_attributes,omitempty"`
-	IgnoreResourceAttributes          []string                  `yaml:"ignore_resource_attributes,omitempty"`
-	TranslationStrategy               translationStrategyOption `yaml:"translation_strategy,omitempty"`
-	KeepIdentifyingResourceAttributes bool                      `yaml:"keep_identifying_resource_attributes,omitempty"`
-	ConvertHistogramsToNHCB           bool                      `yaml:"convert_histograms_to_nhcb,omitempty"`
+	PromoteAllResourceAttributes      bool                                     `yaml:"promote_all_resource_attributes,omitempty"`
+	PromoteResourceAttributes         []string                                 `yaml:"promote_resource_attributes,omitempty"`
+	IgnoreResourceAttributes          []string                                 `yaml:"ignore_resource_attributes,omitempty"`
+	TranslationStrategy               otlptranslator.TranslationStrategyOption `yaml:"translation_strategy,omitempty"`
+	KeepIdentifyingResourceAttributes bool                                     `yaml:"keep_identifying_resource_attributes,omitempty"`
+	ConvertHistogramsToNHCB           bool                                     `yaml:"convert_histograms_to_nhcb,omitempty"`
 	// PromoteScopeMetadata controls whether to promote OTel scope metadata (i.e. name, version, schema URL, and attributes) to metric labels.
 	// As per OTel spec, the aforementioned scope metadata should be identifying, i.e. made into metric labels.
 	PromoteScopeMetadata bool `yaml:"promote_scope_metadata,omitempty"`

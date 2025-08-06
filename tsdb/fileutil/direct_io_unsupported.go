@@ -24,6 +24,6 @@ func NewBufioWriterWithSeek(f *os.File, size int) (BufWriter, error) {
 	return &writer{bufio.NewWriterSize(f, size)}, nil
 }
 
-func NewDirectIOWriter(_ *os.File, _ int) (BufWriter, error) {
+func NewDirectIOWriter(*os.File, int) (BufWriter, error) {
 	return nil, errDirectIOUnsupported
 }
