@@ -612,8 +612,7 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		settings.LookbackDelta = defaultLookbackDelta
 	}
 	interval := settings.LookbackDelta / 2
-	timestamp := earliestTimestamp
-	for ; timestamp.Before(latestTimestamp); timestamp = timestamp.Add(interval) {
+	for timestamp := earliestTimestamp; timestamp.Before(latestTimestamp); timestamp = timestamp.Add(interval) {
 		if err := c.appender.AppendSample(name, lbls, meta, timestamp.UnixMilli(), 0, float64(1), nil); err != nil {
 			return err
 		}
