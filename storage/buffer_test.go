@@ -390,15 +390,15 @@ func (m *mockSeriesIterator) At() (int64, float64)            { return m.at() }
 func (m *mockSeriesIterator) Next() chunkenc.ValueType        { return m.next() }
 func (m *mockSeriesIterator) Err() error                      { return m.err() }
 
-func (m *mockSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+func (*mockSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	return 0, nil // Not really mocked.
 }
 
-func (m *mockSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+func (*mockSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return 0, nil // Not really mocked.
 }
 
-func (m *mockSeriesIterator) AtT() int64 {
+func (*mockSeriesIterator) AtT() int64 {
 	return 0 // Not really mocked.
 }
 
@@ -444,4 +444,4 @@ func (it *fakeSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	return chunkenc.ValFloat
 }
 
-func (it *fakeSeriesIterator) Err() error { return nil }
+func (*fakeSeriesIterator) Err() error { return nil }

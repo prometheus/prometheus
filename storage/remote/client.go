@@ -418,7 +418,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 	}
 }
 
-func (c *Client) handleSampledResponse(req *prompb.ReadRequest, httpResp *http.Response, sortSeries bool) (storage.SeriesSet, error) {
+func (*Client) handleSampledResponse(req *prompb.ReadRequest, httpResp *http.Response, sortSeries bool) (storage.SeriesSet, error) {
 	compressed, err := io.ReadAll(httpResp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error reading response. HTTP status code: %s: %w", httpResp.Status, err)

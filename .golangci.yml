@@ -25,8 +25,10 @@ linters:
     - depguard
     - errorlint
     - exptostd
+    - fatcontext
     - gocritic
     - godot
+    - govet
     - loggercheck
     - misspell
     - nilnesserr
@@ -107,6 +109,11 @@ linters:
         - (*net/http.Server).Shutdown
         # Never check for rollback errors as Rollback() is called when a previous error was detected.
         - (github.com/prometheus/prometheus/storage.Appender).Rollback
+    govet:
+      disable:
+        - shadow
+        - fieldalignment
+      enable-all: true
     perfsprint:
       # Optimizes even if it requires an int or uint type cast.
       int-conversion: true
@@ -160,6 +167,7 @@ linters:
         - name: unexported-return
         - name: unreachable-code
         - name: unused-parameter
+        - name: unused-receiver
         - name: var-declaration
         - name: var-naming
     testifylint:

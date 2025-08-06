@@ -460,7 +460,7 @@ func NewScratchBuilder(n int) ScratchBuilder {
 }
 
 // NewBuilderWithSymbolTable creates a Builder, for api parity with dedupelabels.
-func NewBuilderWithSymbolTable(_ *SymbolTable) *Builder {
+func NewBuilderWithSymbolTable(*SymbolTable) *Builder {
 	return NewBuilder(EmptyLabels())
 }
 
@@ -469,7 +469,7 @@ func NewScratchBuilderWithSymbolTable(_ *SymbolTable, n int) ScratchBuilder {
 	return NewScratchBuilder(n)
 }
 
-func (b *ScratchBuilder) SetSymbolTable(_ *SymbolTable) {
+func (b *ScratchBuilder) SetSymbolTable(*SymbolTable) {
 	// no-op
 }
 

@@ -61,7 +61,7 @@ func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.Ref
 }
 
 // Name implements the Discoverer interface.
-func (c SDConfig) Name() string {
+func (SDConfig) Name() string {
 	return "ovhcloud"
 }
 

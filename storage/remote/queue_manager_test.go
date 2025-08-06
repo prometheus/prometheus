@@ -764,7 +764,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		metrics = newQueueManagerMetrics(nil, "", "")
 
 		client = &MockWriteClient{
-			StoreFunc: func(_ context.Context, _ []byte, _ int) (WriteResponseStats, error) {
+			StoreFunc: func(context.Context, []byte, int) (WriteResponseStats, error) {
 				onStoreCalled()
 
 				return WriteResponseStats{}, RecoverableError{
@@ -1235,11 +1235,11 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) (WriteResp
 	return rs, nil
 }
 
-func (c *TestWriteClient) Name() string {
+func (*TestWriteClient) Name() string {
 	return "testwriteclient"
 }
 
-func (c *TestWriteClient) Endpoint() string {
+func (*TestWriteClient) Endpoint() string {
 	return "http://test-remote.com/1234"
 }
 
@@ -1325,11 +1325,11 @@ func (c *TestBlockingWriteClient) NumCalls() uint64 {
 	return c.numCalls.Load()
 }
 
-func (c *TestBlockingWriteClient) Name() string {
+func (*TestBlockingWriteClient) Name() string {
 	return "testblockingwriteclient"
 }
 
-func (c *TestBlockingWriteClient) Endpoint() string {
+func (*TestBlockingWriteClient) Endpoint() string {
 	return "http://test-remote-blocking.com/1234"
 }
 
@@ -1337,11 +1337,11 @@ func (c *TestBlockingWriteClient) Endpoint() string {
 type NopWriteClient struct{}
 
 func NewNopWriteClient() *NopWriteClient { return &NopWriteClient{} }
-func (c *NopWriteClient) Store(context.Context, []byte, int) (WriteResponseStats, error) {
+func (*NopWriteClient) Store(context.Context, []byte, int) (WriteResponseStats, error) {
 	return WriteResponseStats{}, nil
 }
-func (c *NopWriteClient) Name() string     { return "nopwriteclient" }
-func (c *NopWriteClient) Endpoint() string { return "http://test-remote.com/1234" }
+func (*NopWriteClient) Name() string     { return "nopwriteclient" }
+func (*NopWriteClient) Endpoint() string { return "http://test-remote.com/1234" }
 
 type MockWriteClient struct {
 	StoreFunc    func(context.Context, []byte, int) (WriteResponseStats, error)

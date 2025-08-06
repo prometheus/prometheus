@@ -878,7 +878,7 @@ func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...inte
 		msgAndArgs...)
 }
 
-func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
+func (m *mockAppendable) Appender(context.Context) storage.Appender {
 	if m.latestSample == nil {
 		m.latestSample = map[uint64]int64{}
 	}
@@ -894,7 +894,7 @@ func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	return m
 }
 
-func (m *mockAppendable) SetOptions(_ *storage.AppendOptions) {
+func (*mockAppendable) SetOptions(*storage.AppendOptions) {
 	panic("unimplemented")
 }
 

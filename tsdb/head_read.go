@@ -49,7 +49,7 @@ type headIndexReader struct {
 	mint, maxt int64
 }
 
-func (h *headIndexReader) Close() error {
+func (*headIndexReader) Close() error {
 	return nil
 }
 

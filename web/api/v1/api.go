@@ -446,7 +446,7 @@ func invalidParamError(err error, parameter string) apiFuncResult {
 	}, nil, nil}
 }
 
-func (api *API) options(*http.Request) apiFuncResult {
+func (*API) options(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
@@ -519,7 +519,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}, nil, warnings, qry.Close}
 }
 
-func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
+func (*API) formatQuery(r *http.Request) (result apiFuncResult) {
 	expr, err := parser.ParseExpr(r.FormValue("query"))
 	if err != nil {
 		return invalidParamError(err, "query")
@@ -528,7 +528,7 @@ func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
 	return apiFuncResult{expr.Pretty(0), nil, nil, nil}
 }
 
-func (api *API) parseQuery(r *http.Request) apiFuncResult {
+func (*API) parseQuery(r *http.Request) apiFuncResult {
 	expr, err := parser.ParseExpr(r.FormValue("query"))
 	if err != nil {
 		return invalidParamError(err, "query")
@@ -999,7 +999,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	return apiFuncResult{metrics, nil, warnings, closer}
 }
 
-func (api *API) dropSeries(_ *http.Request) apiFuncResult {
+func (*API) dropSeries(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, &apiError{errorInternal, errors.New("not implemented")}, nil, nil}
 }
 
@@ -1693,7 +1693,7 @@ type prometheusConfig struct {
 	YAML string `json:"yaml"`
 }
 
-func (api *API) serveRuntimeInfo(_ *http.Request) apiFuncResult {
+func (api *API) serveRuntimeInfo(*http.Request) apiFuncResult {
 	status, err := api.runtimeInfo()
 	if err != nil {
 		return apiFuncResult{status, &apiError{errorInternal, err}, nil, nil}
@@ -1701,18 +1701,18 @@ func (api *API) serveRuntimeInfo(_ *http.Request) apiFuncResult {
 	return apiFuncResult{status, nil, nil, nil}
 }
 
-func (api *API) serveBuildInfo(_ *http.Request) apiFuncResult {
+func (api *API) serveBuildInfo(*http.Request) apiFuncResult {
 	return apiFuncResult{api.buildInfo, nil, nil, nil}
 }
 
-func (api *API) serveConfig(_ *http.Request) apiFuncResult {
+func (api *API) serveConfig(*http.Request) apiFuncResult {
 	cfg := &prometheusConfig{
 		YAML: api.config().String(),
 	}
 	return apiFuncResult{cfg, nil, nil, nil}
 }
 
-func (api *API) serveFlags(_ *http.Request) apiFuncResult {
+func (api *API) serveFlags(*http.Request) apiFuncResult {
 	return apiFuncResult{api.flagsMap, nil, nil, nil}
 }
 
@@ -1750,7 +1750,7 @@ func TSDBStatsFromIndexStats(stats []index.Stat) []TSDBStat {
 	return result
 }
 
-func (api *API) serveTSDBBlocks(_ *http.Request) apiFuncResult {
+func (api *API) serveTSDBBlocks(*http.Request) apiFuncResult {
 	blockMetas, err := api.db.BlockMetas()
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error getting block metadata: %w", err)}, nil, nil}

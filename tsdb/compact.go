@@ -178,7 +178,7 @@ type LeveledCompactorOptions struct {
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
 
-func DefaultPostingsDecoderFactory(_ *BlockMeta) index.PostingsDecoder {
+func DefaultPostingsDecoderFactory(*BlockMeta) index.PostingsDecoder {
 	return index.DecodePostingsRaw
 }
 
@@ -761,7 +761,7 @@ type DefaultBlockPopulator struct{}
 // PopulateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
 // It expects sorted blocks input by mint.
-func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger *slog.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter, postingsFunc IndexReaderPostingsFunc) (err error) {
+func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger *slog.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter, postingsFunc IndexReaderPostingsFunc) (err error) {
 	if len(blocks) == 0 {
 		return errors.New("cannot populate block from no readers")
 	}

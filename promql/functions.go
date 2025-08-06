@@ -1018,7 +1018,7 @@ func funcAbsentOverTime(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNod
 
 // === present_over_time(Vector parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcPresentOverTime(_ []Vector, matrixVals Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return aggrOverTime(matrixVals, enh, func(_ Series) float64 {
+	return aggrOverTime(matrixVals, enh, func(Series) float64 {
 		return 1
 	}), nil
 }
@@ -1154,7 +1154,7 @@ func funcDeg(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeH
 }
 
 // === pi() Scalar ===
-func funcPi(_ []Vector, _ Matrix, _ parser.Expressions, _ *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcPi([]Vector, Matrix, parser.Expressions, *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return Vector{Sample{F: math.Pi}}, nil
 }
 

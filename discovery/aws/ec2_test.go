@@ -399,7 +399,7 @@ func newMockEC2Client(ec2Data *ec2DataStore) *mockEC2Client {
 	return &client
 }
 
-func (m *mockEC2Client) DescribeAvailabilityZonesWithContext(_ aws.Context, _ *ec2.DescribeAvailabilityZonesInput, _ ...request.Option) (*ec2.DescribeAvailabilityZonesOutput, error) {
+func (m *mockEC2Client) DescribeAvailabilityZonesWithContext(aws.Context, *ec2.DescribeAvailabilityZonesInput, ...request.Option) (*ec2.DescribeAvailabilityZonesOutput, error) {
 	if len(m.ec2Data.azToAZID) == 0 {
 		return nil, errors.New("No AZs found")
 	}

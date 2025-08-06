@@ -225,7 +225,7 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 		QueryFunc:  rules.EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
 		Appendable: suite.Storage(),
 		Context:    context.Background(),
-		NotifyFunc: func(_ context.Context, _ string, _ ...*rules.Alert) {},
+		NotifyFunc: func(context.Context, string, ...*rules.Alert) {},
 		Logger:     promslog.NewNopLogger(),
 	}
 	m := rules.NewManager(opts)
