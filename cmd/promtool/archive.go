@@ -21,13 +21,13 @@ import (
 	"github.com/klauspost/compress/gzip"
 )
 
-const filePerm = 0o666
-
 type tarGzFileWriter struct {
 	tarWriter *tar.Writer
 	gzWriter  *gzip.Writer
 	file      *os.File
 }
+
+const filePerm = 0o666
 
 func newTarGzFileWriter(archiveName string) (*tarGzFileWriter, error) {
 	file, err := os.Create(archiveName)
