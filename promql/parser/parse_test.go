@@ -5526,7 +5526,7 @@ func TestRecoverParserRuntime(t *testing.T) {
 	defer p.recover(&err)
 	// Cause a runtime panic.
 	var a []int
-	a[123] = 1
+	a[123] = 1 //nolint:govet // This is intended to cause a runtime panic.
 }
 
 func TestRecoverParserError(t *testing.T) {

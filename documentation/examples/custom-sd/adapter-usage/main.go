@@ -221,10 +221,8 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 		}
 		d.oldSourceList = newSourceList
-		if err == nil {
-			// We're returning all Consul services as a single targetgroup.
-			ch <- tgs
-		}
+		// We're returning all Consul services as a single targetgroup.
+		ch <- tgs
 		// Wait for ticker or exit when ctx is closed.
 		select {
 		case <-c:
