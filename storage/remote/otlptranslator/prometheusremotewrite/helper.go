@@ -42,13 +42,12 @@ import (
 )
 
 const (
-	sumStr        = "_sum"
-	countStr      = "_count"
-	bucketStr     = "_bucket"
-	leStr         = "le"
-	quantileStr   = "quantile"
-	pInfStr       = "+Inf"
-	createdSuffix = "_created"
+	sumStr      = "_sum"
+	countStr    = "_count"
+	bucketStr   = "_bucket"
+	leStr       = "le"
+	quantileStr = "quantile"
+	pInfStr     = "+Inf"
 	// maxExemplarRunes is the maximum number of UTF-8 exemplar characters
 	// according to the prometheus specification
 	// https://github.com/prometheus/OpenMetrics/blob/v1.0.0/specification/OpenMetrics.md#exemplars
@@ -371,12 +370,6 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		if err := c.addExemplars(ctx, pt, bucketBounds); err != nil {
 			return err
 		}
-
-		startTimestamp := pt.StartTimestamp()
-		if settings.ExportCreatedMetric && startTimestamp != 0 {
-			labels := createLabels(metadata.MetricFamilyName+createdSuffix, baseLabels)
-			c.addTimeSeriesIfNeeded(labels, startTimestamp, pt.Timestamp())
-		}
 	}
 
 	return nil
@@ -551,12 +544,6 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 			qtlabels := createLabels(metadata.MetricFamilyName, baseLabels, quantileStr, percentileStr)
 			c.addSample(quantile, qtlabels)
 		}
-
-		startTimestamp := pt.StartTimestamp()
-		if settings.ExportCreatedMetric && startTimestamp != 0 {
-			createdLabels := createLabels(metadata.MetricFamilyName+createdSuffix, baseLabels)
-			c.addTimeSeriesIfNeeded(createdLabels, startTimestamp, pt.Timestamp())
-		}
 	}
 
 	return nil
@@ -627,22 +614,6 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls []prompb.Label) (*promp
 	}
 	c.unique[h] = ts
 	return ts, true
-}
-
-// addTimeSeriesIfNeeded adds a corresponding time series if it doesn't already exist.
-// If the time series doesn't already exist, it gets added with startTimestamp for its value and timestamp for its timestamp,
-// both converted to milliseconds.
-func (c *PrometheusConverter) addTimeSeriesIfNeeded(lbls []prompb.Label, startTimestamp, timestamp pcommon.Timestamp) {
-	ts, created := c.getOrCreateTimeSeries(lbls)
-	if created {
-		ts.Samples = []prompb.Sample{
-			{
-				// convert ns to ms
-				Value:     float64(convertTimeStamp(startTimestamp)),
-				Timestamp: convertTimeStamp(timestamp),
-			},
-		}
-	}
 }
 
 // addResourceTargetInfo converts the resource to the target info metric.
