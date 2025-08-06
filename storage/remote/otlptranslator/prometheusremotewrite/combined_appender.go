@@ -131,7 +131,7 @@ func (b *combinedAppender) appendFloatOrHistogram(rawls labels.Labels, meta meta
 				// Even for the first sample OOO is a common scenario because
 				// we can't tell if a CT was already ingested in a previous request.
 				// We ignore the error.
-				b.logger.Debug("Error when appending float CT from OTLP", "err", err, "series", ls.String(), "created_timestamp", ct, "timestamp", t)
+				b.logger.Warn("Error when appending CT from OTLP", "err", err, "series", ls.String(), "created_timestamp", ct, "timestamp", t, "sample_type", sampleType(h))
 			}
 		}
 	}
@@ -146,7 +146,7 @@ func (b *combinedAppender) appendFloatOrHistogram(rawls labels.Labels, meta meta
 		if errors.Is(err, storage.ErrOutOfOrderSample) ||
 			errors.Is(err, storage.ErrOutOfBounds) ||
 			errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-			b.logger.Error("Error when appending float sample from OTLP", "err", err.Error(), "series", ls.String(), "timestamp", t)
+			b.logger.Error("Error when appending sample from OTLP", "err", err.Error(), "series", ls.String(), "timestamp", t, "sample_type", sampleType(h))
 		}
 	}
 
@@ -164,13 +164,20 @@ func (b *combinedAppender) appendFloatOrHistogram(rawls labels.Labels, meta meta
 		ref, err = b.app.UpdateMetadata(0, ls, meta)
 		if err != nil {
 			b.samplesAppendedWithoutMetadata.Add(1)
-			b.logger.Debug("Error while updating metadata from OTLP", "err", err)
+			b.logger.Warn("Error while updating metadata from OTLP", "err", err)
 		}
 	}
 
 	b.appendExemplars(ref, ls, es)
 
 	return
+}
+
+func sampleType(h *histogram.Histogram) string {
+	if h == nil {
+		return "float"
+	}
+	return "histogram"
 }
 
 func (b *combinedAppender) Commit() error {
