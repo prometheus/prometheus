@@ -37,12 +37,6 @@ import (
 
 type origin int
 
-const (
-	apiOrigin origin = iota
-	consoleOrigin
-	ruleOrigin
-)
-
 // queryLogTest defines a query log test.
 type queryLogTest struct {
 	origin         origin   // Kind of queries tested: api, console, rules.
@@ -53,6 +47,29 @@ type queryLogTest struct {
 	configFile     *os.File // The configuration file.
 	enabledAtStart bool     // Whether query log is enabled at startup.
 }
+
+type queryLogLine struct {
+	Params struct {
+		Query string `json:"query"`
+		Step  int    `json:"step"`
+		Start string `json:"start"`
+		End   string `json:"end"`
+	} `json:"params"`
+	Request struct {
+		Path     string `json:"path"`
+		ClientIP string `json:"clientIP"`
+	} `json:"httpRequest"`
+	RuleGroup struct {
+		File string `json:"file"`
+		Name string `json:"name"`
+	} `json:"ruleGroup"`
+}
+
+const (
+	apiOrigin origin = iota
+	consoleOrigin
+	ruleOrigin
+)
 
 // skip checks if the test is needed and the prerequisites are met.
 func (p *queryLogTest) skip(t *testing.T) {
@@ -411,23 +428,6 @@ func (p *queryLogTest) run(t *testing.T) {
 	} else {
 		require.Positive(t, qc, "no queries logged")
 	}
-}
-
-type queryLogLine struct {
-	Params struct {
-		Query string `json:"query"`
-		Step  int    `json:"step"`
-		Start string `json:"start"`
-		End   string `json:"end"`
-	} `json:"params"`
-	Request struct {
-		Path     string `json:"path"`
-		ClientIP string `json:"clientIP"`
-	} `json:"httpRequest"`
-	RuleGroup struct {
-		File string `json:"file"`
-		Name string `json:"name"`
-	} `json:"ruleGroup"`
 }
 
 // readQueryLog unmarshal a json-formatted query log into query log lines.

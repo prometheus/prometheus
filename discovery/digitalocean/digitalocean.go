@@ -53,6 +53,14 @@ const (
 	separator          = ","
 )
 
+// SDConfig is the configuration for DigitalOcean based service discovery.
+type SDConfig struct {
+	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
+
+	RefreshInterval model.Duration `yaml:"refresh_interval"`
+	Port            int            `yaml:"port"`
+}
+
 // DefaultSDConfig is the default DigitalOcean SD configuration.
 var DefaultSDConfig = SDConfig{
 	Port:             80,
@@ -69,14 +77,6 @@ func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.Ref
 	return &digitaloceanMetrics{
 		refreshMetrics: rmi,
 	}
-}
-
-// SDConfig is the configuration for DigitalOcean based service discovery.
-type SDConfig struct {
-	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
-
-	RefreshInterval model.Duration `yaml:"refresh_interval"`
-	Port            int            `yaml:"port"`
 }
 
 // Name returns the name of the Config.
