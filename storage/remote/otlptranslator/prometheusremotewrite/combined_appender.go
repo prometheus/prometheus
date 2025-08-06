@@ -35,7 +35,7 @@ type CombinedAppender interface {
 	// AppendSample appends a sample and related exemplars, metadata, and
 	// created timestamp to the storage.
 	AppendSample(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) error
-	// AppendSample appends a histogram and related exemplars, metadata, and
+	// AppendHistogram appends a histogram and related exemplars, metadata, and
 	// created timestamp to the storage.
 	AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) error
 	// Commit finalizes the ongoing transaction in storage.
@@ -105,7 +105,7 @@ func (b *combinedAppender) AppendSample(_ string, rawls labels.Labels, meta meta
 	}
 	ref, err = b.app.Append(ref, ls, t, v)
 	if err != nil {
-		// Although AppendHistogram does not currently return ErrDuplicateSampleForTimestamp there is
+		// Although Append does not currently return ErrDuplicateSampleForTimestamp there is
 		// a note indicating its inclusion in the future.
 		if errors.Is(err, storage.ErrOutOfOrderSample) ||
 			errors.Is(err, storage.ErrOutOfBounds) ||
