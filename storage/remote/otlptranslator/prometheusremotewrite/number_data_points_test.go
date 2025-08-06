@@ -347,7 +347,6 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				context.Background(),
 				metric.Sum().DataPoints(),
 				pcommon.NewResource(),
-				metric,
 				Settings{
 					PromoteScopeMetadata: tt.promoteScope,
 				},
