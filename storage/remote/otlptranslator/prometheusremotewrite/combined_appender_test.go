@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -413,7 +414,20 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 			t.Cleanup(func() { db.Close() })
 
 			ctx := context.Background()
-			capp := NewCombinedAppender(db.Appender(ctx), promslog.NewNopLogger(), prometheus.NewRegistry(), ingestCTZeroSample)
+			reg := prometheus.NewRegistry()
+			samplesAppendedWithoutMetadata := promauto.With(reg).NewCounter(prometheus.CounterOpts{
+				Namespace: "prometheus",
+				Subsystem: "api",
+				Name:      "otlp_without_metadata_appended_samples_total",
+				Help:      "The total number of received OTLP data points which were ingested without corresponding metadata.",
+			})
+			outOfOrderExemplars := promauto.With(reg).NewCounter(prometheus.CounterOpts{
+				Namespace: "prometheus",
+				Subsystem: "api",
+				Name:      "otlp_out_of_order_exemplars_total",
+				Help:      "The total number of received OTLP exemplars which were rejected because they were out of order.",
+			})
+			capp := NewCombinedAppender(db.Appender(ctx), promslog.NewNopLogger(), reg, ingestCTZeroSample, samplesAppendedWithoutMetadata, outOfOrderExemplars)
 
 			require.NoError(t, tc.appendFunc(capp))
 

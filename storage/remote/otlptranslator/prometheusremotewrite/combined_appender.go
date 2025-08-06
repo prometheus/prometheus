@@ -19,7 +19,6 @@ import (
 	"log/slog"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -45,24 +44,14 @@ type CombinedAppender interface {
 // NewCombinedAppender creates a combined appender that sets start times and
 // updates metadata for each series only once, and appends samples and
 // exemplars for each call.
-func NewCombinedAppender(app storage.Appender, logger *slog.Logger, reg prometheus.Registerer, ingestCTZeroSample bool) CombinedAppender {
+func NewCombinedAppender(app storage.Appender, logger *slog.Logger, reg prometheus.Registerer, ingestCTZeroSample bool, samplesAppendedWithoutMetadata, outOfOrderExemplars prometheus.Counter) CombinedAppender {
 	return &combinedAppender{
-		app:                app,
-		logger:             logger,
-		ingestCTZeroSample: ingestCTZeroSample,
-		refs:               make(map[uint64]labelsRef),
-		samplesAppendedWithoutMetadata: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Namespace: "prometheus",
-			Subsystem: "api",
-			Name:      "otlp_without_metadata_appended_samples_total",
-			Help:      "The total number of received OTLP data points which were ingested without corresponding metadata.",
-		}),
-		outOfOrderExemplars: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Namespace: "prometheus",
-			Subsystem: "api",
-			Name:      "otlp_out_of_order_exemplars_total",
-			Help:      "The total number of received OTLP exemplars which were rejected because they were out of order.",
-		}),
+		app:                            app,
+		logger:                         logger,
+		ingestCTZeroSample:             ingestCTZeroSample,
+		refs:                           make(map[uint64]labelsRef),
+		samplesAppendedWithoutMetadata: samplesAppendedWithoutMetadata,
+		outOfOrderExemplars:            outOfOrderExemplars,
 	}
 }
 
