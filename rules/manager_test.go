@@ -1048,6 +1048,7 @@ func TestMetricsUpdate(t *testing.T) {
 }
 
 func TestGroupStalenessOnRemoval(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
@@ -1126,6 +1127,7 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 }
 
 func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
@@ -1195,6 +1197,7 @@ func countStaleNaN(t *testing.T, st storage.Storage) int {
 }
 
 func TestRuleMovedBetweenGroups(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
@@ -1338,6 +1341,7 @@ func TestRuleHealthUpdates(t *testing.T) {
 }
 
 func TestRuleGroupEvalIterationFunc(t *testing.T) {
+	t.Parallel()
 	storage := promqltest.LoadedStorage(t, `
 		load 5m
 		http_requests{instance="0"}	75  85 50 0 0 25 0 0 40 0 120
@@ -2317,6 +2321,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 }
 
 func TestNewRuleGroupRestoration(t *testing.T) {
+	t.Parallel()
 	store := teststorage.New(t)
 	t.Cleanup(func() { store.Close() })
 	var (
@@ -2380,6 +2385,7 @@ func TestNewRuleGroupRestoration(t *testing.T) {
 }
 
 func TestNewRuleGroupRestorationWithRestoreNewGroupOption(t *testing.T) {
+	t.Parallel()
 	store := teststorage.New(t)
 	t.Cleanup(func() { store.Close() })
 	var (
