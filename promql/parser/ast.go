@@ -253,9 +253,17 @@ func (*StringLiteral) Type() ValueType  { return ValueTypeString }
 func (e *UnaryExpr) Type() ValueType    { return e.Expr.Type() }
 func (*VectorSelector) Type() ValueType { return ValueTypeVector }
 func (e *BinaryExpr) Type() ValueType {
-	if e.LHS.Type() == ValueTypeScalar && e.RHS.Type() == ValueTypeScalar {
+	lt, rt := e.LHS.Type(), e.RHS.Type()
+	if lt == ValueTypeScalar && rt == ValueTypeScalar {
 		return ValueTypeScalar
 	}
+
+	// Operator between range vector selector and scalar.
+	if lt == ValueTypeMatrix || rt == ValueTypeMatrix {
+		return ValueTypeMatrix
+	}
+
+	// Operator between instant vector selector and scalar.
 	return ValueTypeVector
 }
 func (e *StepInvariantExpr) Type() ValueType { return e.Expr.Type() }
