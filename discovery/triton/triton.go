@@ -211,7 +211,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		endpoint = fmt.Sprintf("%s?groups=%s", endpoint, groups)
 	}
 
-	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	req, err := http.NewRequest(http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

@@ -75,7 +75,7 @@ func TestCompressionHandler_PlainText(t *testing.T) {
 
 func BenchmarkNewCompressionHandler_MaliciousAcceptEncoding(b *testing.B) {
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/whatever", nil)
+	req := httptest.NewRequest(http.MethodGet, "/whatever", http.NoBody)
 	req.Header.Set("Accept-Encoding", strings.Repeat(",", http.DefaultMaxHeaderBytes))
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -97,7 +97,7 @@ func TestCompressionHandler_Gzip(t *testing.T) {
 		},
 	}
 
-	req, _ := http.NewRequest(http.MethodGet, server.URL+"/foo_endpoint", nil)
+	req, _ := http.NewRequest(http.MethodGet, server.URL+"/foo_endpoint", http.NoBody)
 	req.Header.Set(acceptEncodingHeader, gzipEncoding)
 
 	resp, err := client.Do(req)
@@ -132,7 +132,7 @@ func TestCompressionHandler_Deflate(t *testing.T) {
 		},
 	}
 
-	req, _ := http.NewRequest(http.MethodGet, server.URL+"/foo_endpoint", nil)
+	req, _ := http.NewRequest(http.MethodGet, server.URL+"/foo_endpoint", http.NoBody)
 	req.Header.Set(acceptEncodingHeader, deflateEncoding)
 
 	resp, err := client.Do(req)

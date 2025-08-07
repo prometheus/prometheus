@@ -41,7 +41,7 @@ func TestCORSHandler(t *testing.T) {
 	dummyOrigin := "https://foo.com"
 
 	// OPTIONS with legit origin
-	req, err := http.NewRequest(http.MethodOptions, server.URL+"/any_path", nil)
+	req, err := http.NewRequest(http.MethodOptions, server.URL+"/any_path", http.NoBody)
 	require.NoError(t, err, "could not create request")
 
 	req.Header.Set("Origin", dummyOrigin)
@@ -55,7 +55,7 @@ func TestCORSHandler(t *testing.T) {
 	require.Equal(t, dummyOrigin, AccessControlAllowOrigin, "expected Access-Control-Allow-Origin header")
 
 	// OPTIONS with bad origin
-	req, err = http.NewRequest(http.MethodOptions, server.URL+"/any_path", nil)
+	req, err = http.NewRequest(http.MethodOptions, server.URL+"/any_path", http.NoBody)
 	require.NoError(t, err, "could not create request")
 
 	req.Header.Set("Origin", "https://not-foo.com")
@@ -69,7 +69,7 @@ func TestCORSHandler(t *testing.T) {
 	require.Equal(t, "Origin", Vary)
 
 	// OPTIONS with no origin
-	req, err = http.NewRequest(http.MethodOptions, server.URL+"/any_path", nil)
+	req, err = http.NewRequest(http.MethodOptions, server.URL+"/any_path", http.NoBody)
 	require.NoError(t, err)
 
 	resp, err = client.Do(req)

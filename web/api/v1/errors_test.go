@@ -108,7 +108,7 @@ func TestApiStatusCodes(t *testing.T) {
 				r := createPrometheusAPI(t, q, tc.overrideErrorCode)
 				rec := httptest.NewRecorder()
 
-				req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
+				req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", http.NoBody)
 
 				r.ServeHTTP(rec, req)
 
