@@ -72,15 +72,17 @@ func NewCombinedAppender(app storage.Appender, logger *slog.Logger, ingestCTZero
 		app:                            app,
 		logger:                         logger,
 		ingestCTZeroSample:             ingestCTZeroSample,
-		refs:                           make(map[uint64]labelsRef),
+		refs:                           make(map[uint64]seriesRef),
 		samplesAppendedWithoutMetadata: metrics.samplesAppendedWithoutMetadata,
 		outOfOrderExemplars:            metrics.outOfOrderExemplars,
 	}
 }
 
-type labelsRef struct {
-	ref storage.SeriesRef
-	ls  modelLabels.Labels
+type seriesRef struct {
+	ref  storage.SeriesRef
+	ct   int64
+	ls   modelLabels.Labels
+	meta metadata.Metadata
 }
 
 type combinedAppender struct {
@@ -92,7 +94,7 @@ type combinedAppender struct {
 	// Used to ensure we only update metadata and created timestamps once, and to share storage.SeriesRefs.
 	// To detect hash collision it also stores the labels.
 	// There is no overflow/conflict list, the TSDB will handle that part.
-	refs map[uint64]labelsRef
+	refs map[uint64]seriesRef
 }
 
 func (b *combinedAppender) AppendSample(_ string, rawls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) (err error) {
@@ -112,18 +114,26 @@ func (b *combinedAppender) AppendHistogram(_ string, rawls labels.Labels, meta m
 func (b *combinedAppender) appendFloatOrHistogram(rawls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
 	ls := modelLabels.NewFromSorted(rawls)
 	hash := ls.Hash()
-	lref, exists := b.refs[hash]
-	ref := lref.ref
-	if exists && !modelLabels.Equal(lref.ls, ls) {
+	series, exists := b.refs[hash]
+	ref := series.ref
+	if exists && !modelLabels.Equal(series.ls, ls) {
 		// Hash collision, this is a new series.
 		exists = false
+		ref = 0
 	}
-	if !exists {
+	updateSeries := false
+	if !exists || series.ct != ct {
+		updateSeries = true
 		if ct != 0 && b.ingestCTZeroSample {
+			var newRef storage.SeriesRef
 			if h != nil {
-				ref, err = b.app.AppendHistogramCTZeroSample(ref, ls, t, ct, h, nil)
+				newRef, err = b.app.AppendHistogramCTZeroSample(ref, ls, t, ct, h, nil)
 			} else {
-				ref, err = b.app.AppendCTZeroSample(ref, ls, t, ct)
+				newRef, err = b.app.AppendCTZeroSample(ref, ls, t, ct)
+			}
+			if newRef != 0 {
+				// Do not lose the reference to the series if CT failed.
+				ref = newRef
 			}
 			if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
 				// Even for the first sample OOO is a common scenario because
@@ -133,18 +143,24 @@ func (b *combinedAppender) appendFloatOrHistogram(rawls labels.Labels, meta meta
 			}
 		}
 	}
-	if h != nil {
-		ref, err = b.app.AppendHistogram(ref, ls, t, h, nil)
-	} else {
-		ref, err = b.app.Append(ref, ls, t, v)
-	}
-	if err != nil {
-		// Although Append does not currently return ErrDuplicateSampleForTimestamp there is
-		// a note indicating its inclusion in the future.
-		if errors.Is(err, storage.ErrOutOfOrderSample) ||
-			errors.Is(err, storage.ErrOutOfBounds) ||
-			errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-			b.logger.Error("Error when appending sample from OTLP", "err", err.Error(), "series", ls.String(), "timestamp", t, "sample_type", sampleType(h))
+	{
+		var newRef storage.SeriesRef
+		if h != nil {
+			newRef, err = b.app.AppendHistogram(ref, ls, t, h, nil)
+		} else {
+			newRef, err = b.app.Append(ref, ls, t, v)
+		}
+		if err != nil {
+			// Although Append does not currently return ErrDuplicateSampleForTimestamp there is
+			// a note indicating its inclusion in the future.
+			if errors.Is(err, storage.ErrOutOfOrderSample) ||
+				errors.Is(err, storage.ErrOutOfBounds) ||
+				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
+				b.logger.Error("Error when appending sample from OTLP", "err", err.Error(), "series", ls.String(), "timestamp", t, "sample_type", sampleType(h))
+			}
+		} else {
+			// If the append was successful, we can use the returned reference.
+			ref = newRef
 		}
 	}
 
@@ -153,16 +169,22 @@ func (b *combinedAppender) appendFloatOrHistogram(rawls labels.Labels, meta meta
 		return
 	}
 
-	if !exists {
-		b.refs[hash] = labelsRef{
-			ref: ref,
-			ls:  ls,
-		}
+	if !exists || series.meta.Help != meta.Help || series.meta.Type != meta.Type || series.meta.Unit != meta.Unit {
+		updateSeries = true
 		// If this is the first time we see this series, set the metadata.
-		_, err = b.app.UpdateMetadata(ref, ls, meta)
+		_, err := b.app.UpdateMetadata(ref, ls, meta)
 		if err != nil {
 			b.samplesAppendedWithoutMetadata.Add(1)
 			b.logger.Warn("Error while updating metadata from OTLP", "err", err)
+		}
+	}
+
+	if updateSeries {
+		b.refs[hash] = seriesRef{
+			ref:  ref,
+			ct:   ct,
+			ls:   ls,
+			meta: meta,
 		}
 	}
 

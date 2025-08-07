@@ -85,6 +85,24 @@ func (ls Labels) Has(name string) bool {
 	return false
 }
 
+func (ls Labels) IsEmpty() bool {
+	return len(ls) == 0
+}
+
+// HasDuplicateLabelNames returns whether ls has duplicate label names.
+// It assumes that the labelset is sorted.
+func (ls Labels) HasDuplicateLabelNames() (string, bool) {
+	for i, l := range ls {
+		if i == 0 {
+			continue
+		}
+		if l.Name == ls[i-1].Name {
+			return l.Name, true
+		}
+	}
+	return "", false
+}
+
 // Equal returns whether the two label sets are equal.
 func Equal(ls, o Labels) bool {
 	return slices.Equal(ls, o)
