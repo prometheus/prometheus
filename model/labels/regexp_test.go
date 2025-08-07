@@ -1325,8 +1325,10 @@ func generateRandomValues() []string {
 	texts := append([]string{}, randStrings(randGenerator, 10, 10)...)
 	texts = append(texts, randStrings(randGenerator, 5, 30)...)
 	texts = append(texts, randStrings(randGenerator, 1, 100)...)
-	texts = append(texts, "foo"+randString(randGenerator, 50))
-	texts = append(texts, randString(randGenerator, 50)+"foo")
+	texts = append(texts,
+		"foo"+randString(randGenerator, 50),
+		randString(randGenerator, 50)+"foo",
+	)
 
 	return texts
 }

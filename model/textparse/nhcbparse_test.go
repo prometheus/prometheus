@@ -634,14 +634,16 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 					req, ok := caseI[requirementName]
 					require.True(t, ok, "Case %d does not have requirement %s", caseNumber, requirementName)
 					metric := "test_histogram" + strconv.Itoa(caseNumber)
-					tc.exp = append(tc.exp, parsedEntry{
-						m:    metric,
-						help: "Test histogram " + strconv.Itoa(caseNumber),
-					})
-					tc.exp = append(tc.exp, parsedEntry{
-						m:   metric,
-						typ: model.MetricTypeHistogram,
-					})
+					tc.exp = append(tc.exp,
+						parsedEntry{
+							m:    metric,
+							help: "Test histogram " + strconv.Itoa(caseNumber),
+						},
+						parsedEntry{
+							m:   metric,
+							typ: model.MetricTypeHistogram,
+						},
+					)
 
 					var ct int64
 					if options.hasCreatedTimeStamp {

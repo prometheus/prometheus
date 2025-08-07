@@ -289,11 +289,13 @@ func (m *rulesRetrieverMock) CreateAlertingRules() {
 		promslog.NewNopLogger(),
 	)
 	var r []*rules.AlertingRule
-	r = append(r, rule1)
-	r = append(r, rule2)
-	r = append(r, rule3)
-	r = append(r, rule4)
-	r = append(r, rule5)
+	r = append(r,
+		rule1,
+		rule2,
+		rule3,
+		rule4,
+		rule5,
+	)
 	m.alertingRules = r
 }
 
@@ -328,8 +330,10 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 	require.NoError(m.testing, err, "unable to parse alert expression")
 	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
 	recordingRule2 := rules.NewRecordingRule("recording-rule-2", recordingExpr, labels.FromStrings("testlabel", "rule"))
-	r = append(r, recordingRule)
-	r = append(r, recordingRule2)
+	r = append(r,
+		recordingRule,
+		recordingRule2,
+	)
 
 	group := rules.NewGroup(rules.GroupOptions{
 		Name:          "grp",
