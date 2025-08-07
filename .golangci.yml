@@ -122,7 +122,6 @@ linters:
         - rangeValCopy
         - regexpSimplify
         - returnAfterHttpError
-        - sprintfQuotedString
         - todoCommentWithoutDetail
         - tooManyResultsChecker
         - truncateCmp

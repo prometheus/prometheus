@@ -2638,7 +2638,7 @@ func BenchmarkSetMatcher(b *testing.B) {
 	}
 
 	for _, c := range cases {
-		benchMsg := fmt.Sprintf("nSeries=%d,nBlocks=%d,cardinality=%d,pattern=\"%s\"", c.numSeries, c.numBlocks, c.cardinality, c.pattern)
+		benchMsg := fmt.Sprintf("nSeries=%d,nBlocks=%d,cardinality=%d,pattern=%q", c.numSeries, c.numBlocks, c.cardinality, c.pattern)
 		b.Run(benchMsg, func(b *testing.B) {
 			dir := b.TempDir()
 
