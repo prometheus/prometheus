@@ -879,7 +879,6 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			require.NoError(t, mockAppender.Commit())
 
 			requireEqual(t, tt.wantSeries(), mockAppender.histograms)
-			require.Empty(t, converter.conflicts)
 		})
 	}
 }
@@ -1354,7 +1353,6 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			require.NoError(t, mockAppender.Commit())
 
 			requireEqual(t, tt.wantSeries(), mockAppender.histograms)
-			require.Empty(t, converter.conflicts)
 		})
 	}
 }

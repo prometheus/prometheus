@@ -506,7 +506,6 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			require.NoError(t, mockAppender.Commit())
 
 			requireEqual(t, tt.want(), mockAppender.samples)
-			require.Empty(t, converter.conflicts)
 		})
 	}
 }
@@ -669,7 +668,6 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			require.NoError(t, mockAppender.Commit())
 
 			requireEqual(t, tt.want(), mockAppender.samples)
-			require.Empty(t, converter.conflicts)
 		})
 	}
 }

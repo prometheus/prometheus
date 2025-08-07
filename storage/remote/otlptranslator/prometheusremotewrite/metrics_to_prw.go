@@ -58,8 +58,6 @@ type Settings struct {
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
 type PrometheusConverter struct {
-	unique         map[uint64]labels.Labels
-	conflicts      map[uint64][]labels.Labels
 	everyN         everyNTimes
 	scratchBuilder labels.ScratchBuilder
 	builder        *labels.Builder
@@ -68,8 +66,6 @@ type PrometheusConverter struct {
 
 func NewPrometheusConverter(appender CombinedAppender) *PrometheusConverter {
 	return &PrometheusConverter{
-		unique:         map[uint64]labels.Labels{},
-		conflicts:      map[uint64][]labels.Labels{},
 		scratchBuilder: labels.NewScratchBuilder(0),
 		builder:        labels.NewBuilder(labels.EmptyLabels()),
 		appender:       appender,
