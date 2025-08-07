@@ -946,7 +946,7 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 				b.Run(fmt.Sprintf("histogram count: %v", histogramCount), func(b *testing.B) {
 					nonHistogramCounts := []int{0, 1000}
 
-					if histogramCount == 0 {
+					if resourceAttributeCount == 0 && histogramCount == 0 {
 						// Don't bother running a scenario where we'll generate no series.
 						nonHistogramCounts = []int{1000}
 					}
