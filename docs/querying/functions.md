@@ -849,7 +849,7 @@ over time and return an instant vector with per-series aggregation results:
 * `quantile_over_time(scalar, range-vector)`: the φ-quantile (0 ≤ φ ≤ 1) of all float samples in the specified interval.
 * `stddev_over_time(range-vector)`: the population standard deviation of all float samples in the specified interval.
 * `stdvar_over_time(range-vector)`: the population standard variance of all float samples in the specified interval.
-* `last_over_time(range-vector)`: the most recent sample in the specified interval.
+* `last_over_time(range-vector)`: the most recent sample in the specified interval, including NaN samples.
 * `present_over_time(range-vector)`: the value 1 for any series in the specified interval.
 
 If the [feature flag](../feature_flags.md#experimental-promql-functions)
@@ -863,15 +863,19 @@ additional functions are available:
 * `ts_of_max_over_time(range-vector)`: the timestamp of the last float sample
   that has the maximum value of all float samples in the specified interval.
 * `ts_of_last_over_time(range-vector)`: the timestamp of last sample in the
-  specified interval.
+  specified interval, including NaN samples
+* `first_over_time(range-vector)`: the oldest sample in the specified interval,
+   including NaN samples.
+* `ts_of_first_over_time(range-vector)`: the timestamp of earliest sample in the
+  specified interval, including NaN samples.
 
 Note that all values in the specified interval have the same weight in the
 aggregation even if the values are not equally spaced throughout the interval.
 
 These functions act on histograms in the following way:
 
-- `count_over_time`, `last_over_time`, and `present_over_time()` act on float
-  and histogram samples in the same way.
+- `count_over_time`, `first_over_time`, `last_over_time`, and
+  `present_over_time()` act on float and histogram samples in the same way.
 - `avg_over_time()` and `sum_over_time()` act on histogram samples in a way
   that corresponds to the respective aggregation operators. If a series
   contains a mix of float samples and histogram samples within the range, the
@@ -882,6 +886,13 @@ These functions act on histograms in the following way:
   output. For ranges with a mix of histogram and float samples, only the float
   samples are processed and the omission of the histogram samples is flagged by
   an info-level annotation.
+
+`first_over_time(m[1m])` differs from `m offset 1m` in that the former will
+select the first sample of `m` _within_ the 1m range, where `m offset 1m` will
+select the most recent sample within the lookback interval _outside and prior
+to_ the 1m offset. This is particularly useful with `first_over_time(m[step()])`
+in range queries (available when `--enable-feature=promql-duration-expr` is set)
+to ensure that the sample selected is within the range step.
 
 ## Trigonometric Functions
 
