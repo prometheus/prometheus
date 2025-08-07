@@ -1542,9 +1542,19 @@ load 10s
 	data{type="some_nan3"} NaN 0 1
 	data{type="only_nan"} NaN NaN NaN
 	data_histogram{type="only_histogram"} {{schema:0 sum:1 count:2}} {{schema:0 sum:2 count:3}} {{schema:0 sum:3 count:4}}
-	data_histogram{type="mix_samples"} 0 1 {{schema:0 sum:1 count:2}} {{schema:0 sum:2 count:3}}
+	data_histogram{type="mix_samples_hlast"} 0 1 {{schema:0 sum:1 count:2}} {{schema:0 sum:2 count:3}}
 	data_sparse{type="sparse_numbers"} _ 5 2 _ 4 _
 	data_empty{type="empty_series"} _ _ _ _ _ _ _ _ _ _ _ _ _
+
+# workaround for https://github.com/prometheus/prometheus/issues/17025 causing histogram samples
+# before float samples in a load directive to be silently dropped as (incorrectly) out-of-order.
+# By splitting the vector across two loads, a commit is forced inbetween so the
+# ordering will be handled correctly.
+load 10s
+	data_histogram{type="mix_samples_hfirst"} {{schema:0 sum:1 count:2}} {{schema:0 sum:9 count:3}}
+
+load 10s
+	data_histogram{type="mix_samples_hfirst"} _ _ 4 1
 
 eval instant at 1m min_over_time(data[2m])
 	expect no_info
@@ -1558,9 +1568,10 @@ eval instant at 1m min_over_time(data_histogram{type="only_histogram"}[2m])
 	expect no_info
 	#empty
 
-eval instant at 1m min_over_time(data_histogram{type=~"mix_samples"}[2m])
+eval instant at 1m min_over_time(data_histogram{type=~"mix_samples.*"}[2m])
 	expect info
-	{type="mix_samples"} 0
+	{type="mix_samples_hlast"} 0
+	{type="mix_samples_hfirst"} 1
 
 eval instant at 1m min_over_time(data_sparse[2m])
 	{type="sparse_numbers"} 2
@@ -1577,9 +1588,10 @@ eval instant at 1m max_over_time(data_histogram{type="only_histogram"}[2m])
 	expect no_info
 	#empty
 
-eval instant at 1m max_over_time(data_histogram{type=~"mix_samples"}[2m])
+eval instant at 1m max_over_time(data_histogram{type=~"mix_samples.*"}[2m])
 	expect info
-	{type="mix_samples"} 1
+	{type="mix_samples_hlast"} 1
+	{type="mix_samples_hfirst"} 4
 
 eval instant at 1m max_over_time(data_sparse[2m])
 	{type="sparse_numbers"} 5
@@ -1592,7 +1604,8 @@ eval instant at 1m last_over_time({__name__=~"data(_histogram|_sparse|_empty)?"}
 	data{type="some_nan3"} 1
 	data{type="only_nan"} NaN
 	data_histogram{type="only_histogram"} {{schema:0 sum:3 count:4}}
-	data_histogram{type="mix_samples"} {{schema:0 sum:2 count:3}}
+	data_histogram{type="mix_samples_hlast"} {{schema:0 sum:2 count:3}}
+	data_histogram{type="mix_samples_hfirst"} 1
 	data_sparse{type="sparse_numbers"} 4
 
 eval instant at 1m first_over_time({__name__=~"data(_histogram|_sparse|_empty)?"}[2m])
@@ -1603,7 +1616,8 @@ eval instant at 1m first_over_time({__name__=~"data(_histogram|_sparse|_empty)?"
 	data{type="some_nan3"} NaN
 	data{type="only_nan"} NaN
 	data_histogram{type="only_histogram"} {{schema:0 sum:1 count:2}}
-	data_histogram{type="mix_samples"} 0
+	data_histogram{type="mix_samples_hlast"} 0
+	data_histogram{type="mix_samples_hfirst"} {{schema:0 sum:1 count:2}}
 	data_sparse{type="sparse_numbers"} 5
 
 eval instant at 1m count_over_time({__name__=~"data(_histogram|_sparse|_empty)?"}[2m])
@@ -1614,7 +1628,8 @@ eval instant at 1m count_over_time({__name__=~"data(_histogram|_sparse|_empty)?"
 	{type="some_nan3"} 3
 	{type="only_nan"} 3
 	{type="only_histogram"} 3
-	{type="mix_samples"} 4
+	{type="mix_samples_hlast"} 4
+	{type="mix_samples_hfirst"} 4
 	{type="sparse_numbers"} 3
 
 clear
