@@ -967,11 +967,13 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 												settings,
 												pmetric.AggregationTemporalityCumulative,
 											)
+											appMetrics := NewCombinedAppenderMetrics(prometheus.NewRegistry())
+											noOpLogger := promslog.NewNopLogger()
 											b.ResetTimer()
 
 											for range b.N {
 												app := &noOpAppender{}
-												mockAppender := NewCombinedAppender(app, promslog.NewNopLogger(), false, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
+												mockAppender := NewCombinedAppender(app, noOpLogger, false, appMetrics)
 												converter := NewPrometheusConverter(mockAppender)
 												annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
 												require.NoError(b, err)
