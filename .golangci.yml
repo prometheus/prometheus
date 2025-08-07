@@ -110,7 +110,6 @@ linters:
       enable-all: true
       disabled-checks:
         - appendAssign
-        - appendCombine
         - badLock
         - boolExprSimplify
         - commentedOutCode
