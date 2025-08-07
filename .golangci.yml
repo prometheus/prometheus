@@ -111,7 +111,6 @@ linters:
       disabled-checks:
         - appendAssign
         - badLock
-        - boolExprSimplify
         - commentedOutCode
         - deferInLoop
         - evalOrder
