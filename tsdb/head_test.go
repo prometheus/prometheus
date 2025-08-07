@@ -889,14 +889,13 @@ func TestHead_WALMultiRef(t *testing.T) {
 func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 	existingRef := 1
 	existingLbls := labels.FromStrings("foo", "bar")
-	deletedKeepUntil := 10
+	keepUntil := int64(10)
 
 	cases := []struct {
-		name      string
-		prepare   func(t *testing.T, h *Head)
-		seriesRef chunks.HeadSeriesRef
-		last      int
-		expected  bool
+		name     string
+		prepare  func(t *testing.T, h *Head)
+		mint     int64
+		expected bool
 	}{
 		{
 			name: "keep series still in the head",
@@ -904,26 +903,22 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 				_, _, err := h.getOrCreateWithID(chunks.HeadSeriesRef(existingRef), existingLbls.Hash(), existingLbls, false)
 				require.NoError(t, err)
 			},
-			seriesRef: chunks.HeadSeriesRef(existingRef),
-			expected:  true,
+			expected: true,
 		},
 		{
-			name: "keep deleted series with keepUntil > last",
-			prepare: func(_ *testing.T, h *Head) {
-				h.setWALExpiry(chunks.HeadSeriesRef(existingRef), deletedKeepUntil)
-			},
-			seriesRef: chunks.HeadSeriesRef(existingRef),
-			last:      deletedKeepUntil - 1,
-			expected:  true,
+			name:     "keep series with keepUntil > mint",
+			mint:     keepUntil - 1,
+			expected: true,
 		},
 		{
-			name: "drop deleted series with keepUntil <= last",
-			prepare: func(_ *testing.T, h *Head) {
-				h.setWALExpiry(chunks.HeadSeriesRef(existingRef), deletedKeepUntil)
-			},
-			seriesRef: chunks.HeadSeriesRef(existingRef),
-			last:      deletedKeepUntil,
-			expected:  false,
+			name:     "keep series with keepUntil = mint",
+			mint:     keepUntil,
+			expected: true,
+		},
+		{
+			name:     "drop series with keepUntil < mint",
+			mint:     keepUntil + 1,
+			expected: false,
 		},
 	}
 
@@ -936,9 +931,11 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 
 			if tc.prepare != nil {
 				tc.prepare(t, h)
+			} else {
+				h.setWALExpiry(chunks.HeadSeriesRef(existingRef), keepUntil)
 			}
 
-			kept := h.keepSeriesInWALCheckpoint(tc.seriesRef, tc.last)
+			kept := h.keepSeriesInWALCheckpoint(chunks.HeadSeriesRef(existingRef), tc.mint)
 			require.Equal(t, tc.expected, kept)
 		})
 	}

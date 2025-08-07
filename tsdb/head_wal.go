@@ -266,7 +266,7 @@ Outer:
 				if !created {
 					multiRef[walSeries.Ref] = mSeries.ref
 					// Set the WAL expiry for the duplicate series, so it is kept in subsequent WAL checkpoints.
-					h.setWALExpiry(walSeries.Ref, lastSegment)
+					h.setWALExpiry(walSeries.Ref, int64(lastSegment))
 				}
 
 				idx := uint64(mSeries.ref) % uint64(concurrency)

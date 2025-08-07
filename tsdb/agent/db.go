@@ -633,7 +633,7 @@ Loop:
 
 // keepSeriesInWALCheckpoint is used to determine whether a series record should be kept in the checkpoint
 // last is the last WAL segment that was considered for checkpointing.
-func (db *DB) keepSeriesInWALCheckpoint(id chunks.HeadSeriesRef, last int) bool {
+func (db *DB) keepSeriesInWALCheckpoint(id chunks.HeadSeriesRef, last int64) bool {
 	// Keep the record if the series exists in the db.
 	if db.series.GetByID(id) != nil {
 		return true
@@ -641,8 +641,10 @@ func (db *DB) keepSeriesInWALCheckpoint(id chunks.HeadSeriesRef, last int) bool 
 
 	// Keep the record if the series was recently deleted.
 	seg, ok := db.deleted[id]
-	return ok && seg > last
+	return ok && int(seg) > int(last)
 }
+
+// !!!! TODO -- this likely breaks??
 
 func (db *DB) truncate(mint int64) error {
 	db.mtx.RLock()
