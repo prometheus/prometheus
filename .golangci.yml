@@ -115,7 +115,6 @@ linters:
         - deferInLoop
         - evalOrder
         - exposedSyncMutex
-        - hexLiteral
         - hugeParam
         - httpNoBody
         - importShadow
