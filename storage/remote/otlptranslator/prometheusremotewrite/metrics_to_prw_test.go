@@ -33,10 +33,9 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
-	modelLabels "github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite/labels"
 )
 
 func TestFromMetrics(t *testing.T) {
@@ -113,7 +112,7 @@ func TestFromMetrics(t *testing.T) {
 				tgtInfoCount := 0
 				for _, s := range ts {
 					lbls := s.ls
-					if lbls.Get(modelLabels.MetricName) == "target_info" {
+					if lbls.Get(labels.MetricName) == "target_info" {
 						tgtInfoCount++
 						require.Equal(t, "test-namespace/test-service", lbls.Get("job"))
 						require.Equal(t, "id1234", lbls.Get("instance"))
@@ -1006,30 +1005,30 @@ type noOpAppender struct {
 
 var _ storage.Appender = &noOpAppender{}
 
-func (a *noOpAppender) Append(_ storage.SeriesRef, _ modelLabels.Labels, _ int64, _ float64) (storage.SeriesRef, error) {
+func (a *noOpAppender) Append(_ storage.SeriesRef, _ labels.Labels, _ int64, _ float64) (storage.SeriesRef, error) {
 	a.samples++
 	return 1, nil
 }
 
-func (*noOpAppender) AppendCTZeroSample(_ storage.SeriesRef, _ modelLabels.Labels, _, _ int64) (storage.SeriesRef, error) {
+func (*noOpAppender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
 	return 1, nil
 }
 
-func (a *noOpAppender) AppendHistogram(_ storage.SeriesRef, _ modelLabels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *noOpAppender) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	a.histograms++
 	return 1, nil
 }
 
-func (*noOpAppender) AppendHistogramCTZeroSample(_ storage.SeriesRef, _ modelLabels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (*noOpAppender) AppendHistogramCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	return 1, nil
 }
 
-func (a *noOpAppender) UpdateMetadata(_ storage.SeriesRef, _ modelLabels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+func (a *noOpAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
 	a.metadata++
 	return 1, nil
 }
 
-func (*noOpAppender) AppendExemplar(_ storage.SeriesRef, _ modelLabels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
+func (*noOpAppender) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
 	return 1, nil
 }
 

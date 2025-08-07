@@ -35,12 +35,11 @@ import (
 	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
 
 	"github.com/prometheus/prometheus/model/exemplar"
-	modelLabels "github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite/labels"
 )
 
 const (
@@ -58,7 +57,6 @@ const (
 	// https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification%2Fmetrics%2Fdatamodel.md#exemplars-2
 	traceIDKey           = "trace_id"
 	spanIDKey            = "span_id"
-	infoType             = "info"
 	targetMetricName     = "target_info"
 	defaultLookbackDelta = 5 * time.Minute
 )
@@ -101,7 +99,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		// of labels, and handle conflicts by appending values.
 		c.builder.Reset(labels.EmptyLabels())
 		var sortErr error
-		sortedLabels.Range(func(l modelLabels.Label) {
+		sortedLabels.Range(func(l labels.Label) {
 			finalKey, err := labelNamer.Build(l.Name)
 			if err != nil && sortErr == nil {
 				sortErr = err
@@ -114,7 +112,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 			}
 		})
 		if sortErr != nil {
-			return nil, sortErr
+			return labels.EmptyLabels(), sortErr
 		}
 	}
 
@@ -130,7 +128,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 
 	err := settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, settings.AllowUTF8)
 	if err != nil {
-		return nil, err
+		return labels.EmptyLabels(), err
 	}
 	if promoteScope {
 		// Scope Name, Version and Schema URL are added after attributes to ensure they are not overwritten by attributes.
@@ -148,7 +146,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 			return true
 		})
 		if scopeErr != nil {
-			return nil, scopeErr
+			return labels.EmptyLabels(), scopeErr
 		}
 	}
 	// Map service.name + service.namespace to job.
@@ -186,7 +184,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 			var err error
 			name, err = labelNamer.Build(name)
 			if err != nil {
-				return nil, err
+				return labels.EmptyLabels(), err
 			}
 		}
 		c.builder.Set(name, extras[i+1])
@@ -365,7 +363,7 @@ func (c *PrometheusConverter) getPromExemplars(ctx context.Context, exemplars pm
 			})
 		}
 		c.scratchBuilder.Sort()
-		newExemplar.Labels = modelLabels.NewFromSorted(c.scratchBuilder.Labels())
+		newExemplar.Labels = c.scratchBuilder.Labels()
 		outputExemplars = append(outputExemplars, newExemplar)
 	}
 
@@ -545,7 +543,7 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		return err
 	}
 	haveIdentifier := false
-	lbls.Range(func(l modelLabels.Label) {
+	lbls.Range(func(l labels.Label) {
 		if l.Name == model.JobLabel || l.Name == model.InstanceLabel {
 			haveIdentifier = true
 		}
