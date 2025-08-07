@@ -976,7 +976,13 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 												annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
 												require.NoError(b, err)
 												require.Empty(b, annots)
-												require.Positive(b, app.samples+app.histograms)
+												if histogramCount+nonHistogramCount > 0 {
+													require.Positive(b, app.samples+app.histograms)
+													require.Positive(b, app.metadata)
+												} else {
+													require.Zero(b, app.samples+app.histograms)
+													require.Zero(b, app.metadata)
+												}
 											}
 										})
 									}
@@ -993,6 +999,7 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 type noOpAppender struct {
 	samples    int
 	histograms int
+	metadata   int
 }
 
 var _ storage.Appender = &noOpAppender{}
@@ -1015,7 +1022,8 @@ func (*noOpAppender) AppendHistogramCTZeroSample(_ storage.SeriesRef, _ modelLab
 	return 1, nil
 }
 
-func (*noOpAppender) UpdateMetadata(_ storage.SeriesRef, _ modelLabels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+func (a *noOpAppender) UpdateMetadata(_ storage.SeriesRef, _ modelLabels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+	a.metadata++
 	return 1, nil
 }
 
