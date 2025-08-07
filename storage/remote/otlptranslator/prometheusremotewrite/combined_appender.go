@@ -23,10 +23,9 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
-	modelLabels "github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite/labels"
 )
 
 // CombinedAppender is similar to storage.Appender, but combines updates to
@@ -81,7 +80,7 @@ func NewCombinedAppender(app storage.Appender, logger *slog.Logger, ingestCTZero
 type seriesRef struct {
 	ref  storage.SeriesRef
 	ct   int64
-	ls   modelLabels.Labels
+	ls   labels.Labels
 	meta metadata.Metadata
 }
 
@@ -97,26 +96,24 @@ type combinedAppender struct {
 	refs map[uint64]seriesRef
 }
 
-func (b *combinedAppender) AppendSample(_ string, rawls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) (err error) {
-	return b.appendFloatOrHistogram(rawls, meta, t, ct, v, nil, es)
+func (b *combinedAppender) AppendSample(_ string, ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) (err error) {
+	return b.appendFloatOrHistogram(ls, meta, t, ct, v, nil, es)
 }
 
-func (b *combinedAppender) AppendHistogram(_ string, rawls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
+func (b *combinedAppender) AppendHistogram(_ string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
 	if h == nil {
 		// Sanity check, we should never get here with a nil histogram.
-		ls := modelLabels.NewFromSorted(rawls)
 		b.logger.Error("Received nil histogram in CombinedAppender.AppendHistogram", "series", ls.String())
 		return nil
 	}
-	return b.appendFloatOrHistogram(rawls, meta, t, ct, 0, h, es)
+	return b.appendFloatOrHistogram(ls, meta, t, ct, 0, h, es)
 }
 
-func (b *combinedAppender) appendFloatOrHistogram(rawls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
-	ls := modelLabels.NewFromSorted(rawls)
+func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
 	hash := ls.Hash()
 	series, exists := b.refs[hash]
 	ref := series.ref
-	if exists && !modelLabels.Equal(series.ls, ls) {
+	if exists && !labels.Equal(series.ls, ls) {
 		// Hash collision, this is a new series.
 		exists = false
 		ref = 0
@@ -200,7 +197,7 @@ func sampleType(h *histogram.Histogram) string {
 	return "histogram"
 }
 
-func (b *combinedAppender) appendExemplars(ref storage.SeriesRef, ls modelLabels.Labels, es []exemplar.Exemplar) storage.SeriesRef {
+func (b *combinedAppender) appendExemplars(ref storage.SeriesRef, ls labels.Labels, es []exemplar.Exemplar) storage.SeriesRef {
 	var err error
 	for _, e := range es {
 		if ref, err = b.app.AppendExemplar(ref, ls, e); err != nil {

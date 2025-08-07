@@ -28,10 +28,9 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
-	modelLabels "github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -119,17 +118,17 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 
 	testExemplars := []exemplar.Exemplar{
 		{
-			Labels: modelLabels.FromStrings("tracid", "122"),
+			Labels: labels.FromStrings("tracid", "122"),
 			Value:  1337,
 		},
 		{
-			Labels: modelLabels.FromStrings("tracid", "132"),
+			Labels: labels.FromStrings("tracid", "132"),
 			Value:  7777,
 		},
 	}
 	expectedExemplars := []exemplar.QueryResult{
 		{
-			SeriesLabels: modelLabels.FromStrings(
+			SeriesLabels: labels.FromStrings(
 				model.MetricNameLabel, "test_bytes_total",
 				"foo", "bar",
 			),
@@ -460,7 +459,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 			ss := q.Select(ctx, false, &storage.SelectHints{
 				Start: int64(math.MinInt64),
 				End:   int64(math.MaxInt64),
-			}, modelLabels.MustNewMatcher(modelLabels.MatchEqual, model.MetricNameLabel, "test_bytes_total"))
+			}, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_bytes_total"))
 
 			require.NoError(t, ss.Err())
 
@@ -487,7 +486,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 
 			eq, err := db.ExemplarQuerier(ctx)
 			require.NoError(t, err)
-			exResult, err := eq.Select(int64(math.MinInt64), int64(math.MaxInt64), []*modelLabels.Matcher{modelLabels.MustNewMatcher(modelLabels.MatchEqual, model.MetricNameLabel, "test_bytes_total")})
+			exResult, err := eq.Select(int64(math.MinInt64), int64(math.MaxInt64), []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_bytes_total")})
 			require.NoError(t, err)
 			if tc.expectedExemplars == nil {
 				tc.expectedExemplars = []exemplar.QueryResult{}
@@ -530,7 +529,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Help: "some help",
 		}, 4, 3, 62.0, []exemplar.Exemplar{
 			{
-				Labels: modelLabels.FromStrings("tracid", "122"),
+				Labels: labels.FromStrings("tracid", "122"),
 				Value:  1337,
 			},
 		}))
@@ -715,7 +714,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Help: "some help",
 		}, 2, 0, 42.0, []exemplar.Exemplar{
 			{
-				Labels: modelLabels.FromStrings("tracid", "122"),
+				Labels: labels.FromStrings("tracid", "122"),
 				Value:  1337,
 			},
 		}))
@@ -723,7 +722,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 		require.Len(t, app.records, 1)
 		require.Equal(t, appenderRecord{
 			op: "Append",
-			ls: modelLabels.FromStrings(model.MetricNameLabel, "test_bytes_total", "foo", "bar"),
+			ls: labels.FromStrings(model.MetricNameLabel, "test_bytes_total", "foo", "bar"),
 		}, app.records[0])
 	})
 
@@ -748,7 +747,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Help: "some other help",
 		}, 4, 3, 62.0, []exemplar.Exemplar{
 			{
-				Labels: modelLabels.FromStrings("tracid", "122"),
+				Labels: labels.FromStrings("tracid", "122"),
 				Value:  1337,
 			},
 		}))
@@ -781,10 +780,10 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Help: "some help",
 		}, 2, 1, 42.0, nil))
 
-		hash := modelLabels.NewFromSorted(ls).Hash()
+		hash := ls.Hash()
 		cappImpl := capp.(*combinedAppender)
 		series := cappImpl.refs[hash]
-		series.ls = modelLabels.FromStrings(
+		series.ls = labels.FromStrings(
 			model.MetricNameLabel, "test_bytes_total",
 			"foo", "club",
 		)
@@ -798,7 +797,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Help: "some help",
 		}, 4, 3, 62.0, []exemplar.Exemplar{
 			{
-				Labels: modelLabels.FromStrings("tracid", "122"),
+				Labels: labels.FromStrings("tracid", "122"),
 				Value:  1337,
 			},
 		}))
@@ -828,7 +827,7 @@ type appenderRecord struct {
 	op     string
 	ref    storage.SeriesRef
 	outRef storage.SeriesRef
-	ls     modelLabels.Labels
+	ls     labels.Labels
 }
 
 type appenderRecorder struct {
@@ -857,7 +856,7 @@ func (a *appenderRecorder) newRef() storage.SeriesRef {
 	return storage.SeriesRef(a.refcount)
 }
 
-func (a *appenderRecorder) Append(ref storage.SeriesRef, ls modelLabels.Labels, _ int64, _ float64) (storage.SeriesRef, error) {
+func (a *appenderRecorder) Append(ref storage.SeriesRef, ls labels.Labels, _ int64, _ float64) (storage.SeriesRef, error) {
 	a.records = append(a.records, appenderRecord{op: "Append", ref: ref, ls: ls})
 	if a.appendError != nil {
 		return 0, a.appendError
@@ -869,7 +868,7 @@ func (a *appenderRecorder) Append(ref storage.SeriesRef, ls modelLabels.Labels, 
 	return ref, nil
 }
 
-func (a *appenderRecorder) AppendCTZeroSample(ref storage.SeriesRef, ls modelLabels.Labels, _, _ int64) (storage.SeriesRef, error) {
+func (a *appenderRecorder) AppendCTZeroSample(ref storage.SeriesRef, ls labels.Labels, _, _ int64) (storage.SeriesRef, error) {
 	a.records = append(a.records, appenderRecord{op: "AppendCTZeroSample", ref: ref, ls: ls})
 	if a.appendCTZeroSampleError != nil {
 		return 0, a.appendCTZeroSampleError
@@ -881,7 +880,7 @@ func (a *appenderRecorder) AppendCTZeroSample(ref storage.SeriesRef, ls modelLab
 	return ref, nil
 }
 
-func (a *appenderRecorder) AppendHistogram(ref storage.SeriesRef, ls modelLabels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *appenderRecorder) AppendHistogram(ref storage.SeriesRef, ls labels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	a.records = append(a.records, appenderRecord{op: "AppendHistogram", ref: ref, ls: ls})
 	if a.appendHistogramError != nil {
 		return 0, a.appendHistogramError
@@ -893,7 +892,7 @@ func (a *appenderRecorder) AppendHistogram(ref storage.SeriesRef, ls modelLabels
 	return ref, nil
 }
 
-func (a *appenderRecorder) AppendHistogramCTZeroSample(ref storage.SeriesRef, ls modelLabels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *appenderRecorder) AppendHistogramCTZeroSample(ref storage.SeriesRef, ls labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	a.records = append(a.records, appenderRecord{op: "AppendHistogramCTZeroSample", ref: ref, ls: ls})
 	if a.appendHistogramCTZeroSampleError != nil {
 		return 0, a.appendHistogramCTZeroSampleError
@@ -905,7 +904,7 @@ func (a *appenderRecorder) AppendHistogramCTZeroSample(ref storage.SeriesRef, ls
 	return ref, nil
 }
 
-func (a *appenderRecorder) UpdateMetadata(ref storage.SeriesRef, ls modelLabels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+func (a *appenderRecorder) UpdateMetadata(ref storage.SeriesRef, ls labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
 	a.records = append(a.records, appenderRecord{op: "UpdateMetadata", ref: ref, ls: ls})
 	if a.updateMetadataError != nil {
 		return 0, a.updateMetadataError
@@ -914,7 +913,7 @@ func (a *appenderRecorder) UpdateMetadata(ref storage.SeriesRef, ls modelLabels.
 	return ref, nil
 }
 
-func (a *appenderRecorder) AppendExemplar(ref storage.SeriesRef, ls modelLabels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
+func (a *appenderRecorder) AppendExemplar(ref storage.SeriesRef, ls labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
 	a.records = append(a.records, appenderRecord{op: "AppendExemplar", ref: ref, ls: ls})
 	if a.appendExemplarError != nil {
 		return 0, a.appendExemplarError
