@@ -120,7 +120,6 @@ linters:
         - nestingReduce
         - ptrToRefParam
         - rangeValCopy
-        - redundantSprint
         - regexpSimplify
         - returnAfterHttpError
         - sloppyReassign
