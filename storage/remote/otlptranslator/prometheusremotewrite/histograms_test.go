@@ -866,7 +866,6 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				metric.ExponentialHistogram().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					ExportCreatedMetric:  true,
 					PromoteScopeMetadata: tt.promoteScope,
 				},
 				name,
@@ -1340,7 +1339,6 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 				metric.Histogram().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					ExportCreatedMetric:     true,
 					ConvertHistogramsToNHCB: true,
 					PromoteScopeMetadata:    tt.promoteScope,
 				},

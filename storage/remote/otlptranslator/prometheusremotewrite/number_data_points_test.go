@@ -120,7 +120,6 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				metric.Gauge().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					ExportCreatedMetric:  true,
 					PromoteScopeMetadata: tt.promoteScope,
 				},
 				metric.Name(),
@@ -267,9 +266,6 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				lbls := labels.FromStrings(
 					model.MetricNameLabel, "test_sum",
 				)
-				createdLabels := labels.FromStrings(
-					model.MetricNameLabel, "test_sum"+createdSuffix,
-				)
 				return []combinedSample{
 					{
 						metricFamilyName: "test_sum",
@@ -278,13 +274,6 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 						t:                convertTimeStamp(ts),
 						ct:               convertTimeStamp(ts),
 						v:                1,
-					},
-					{
-						metricFamilyName: "test_sum",
-						ls:               createdLabels,
-						meta:             metadata.Metadata{},
-						t:                convertTimeStamp(ts),
-						v:                float64(convertTimeStamp(ts)),
 					},
 				}
 			},
@@ -360,9 +349,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				context.Background(),
 				metric.Sum().DataPoints(),
 				pcommon.NewResource(),
-				metric,
 				Settings{
-					ExportCreatedMetric:  true,
 					PromoteScopeMetadata: tt.promoteScope,
 				},
 				metric.Name(),

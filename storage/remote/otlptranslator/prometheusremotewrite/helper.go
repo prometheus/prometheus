@@ -44,13 +44,12 @@ import (
 )
 
 const (
-	sumStr        = "_sum"
-	countStr      = "_count"
-	bucketStr     = "_bucket"
-	leStr         = "le"
-	quantileStr   = "quantile"
-	pInfStr       = "+Inf"
-	createdSuffix = "_created"
+	sumStr      = "_sum"
+	countStr    = "_count"
+	bucketStr   = "_bucket"
+	leStr       = "le"
+	quantileStr = "quantile"
+	pInfStr     = "+Inf"
 	// maxExemplarRunes is the maximum number of UTF-8 exemplar characters
 	// according to the prometheus specification
 	// https://github.com/prometheus/OpenMetrics/blob/v1.0.0/specification/OpenMetrics.md#exemplars
@@ -307,15 +306,6 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		if err := c.appender.AppendSample(baseName, infLabels, meta, timestamp, startTimestamp, val, exemplars[nextExemplarIdx:]); err != nil {
 			return err
 		}
-
-		if settings.ExportCreatedMetric && pt.StartTimestamp() != 0 {
-			labels := c.addLabels(baseName+createdSuffix, baseLabels)
-			if c.timeSeriesIsNew(labels) {
-				if err := c.appender.AppendSample(baseName, labels, meta, timestamp, 0, float64(startTimestamp), nil); err != nil {
-					return err
-				}
-			}
-		}
 	}
 
 	return nil
@@ -477,15 +467,6 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 				return err
 			}
 		}
-
-		if settings.ExportCreatedMetric && pt.StartTimestamp() != 0 {
-			createdLabels := c.addLabels(baseName+createdSuffix, baseLabels)
-			if c.timeSeriesIsNew(createdLabels) {
-				if err := c.appender.AppendSample(baseName, createdLabels, meta, timestamp, 0, float64(startTimestamp), nil); err != nil {
-					return err
-				}
-			}
-		}
 	}
 
 	return nil
@@ -518,35 +499,6 @@ func addTypeAndUnitLabels(labels []prompb.Label, metadata prompb.MetricMetadata,
 	labels = append(labels, prompb.Label{Name: "__unit__", Value: unitNamer.Build(metadata.Unit)})
 
 	return labels
-}
-
-// timeSeriesIsNew returns true if the given labels are new, or false if they
-// already exist and stores the labels for future conflict checks.
-func (c *PrometheusConverter) timeSeriesIsNew(lbls labels.Labels) bool {
-	h := lbls.Hash()
-	ts := c.unique[h]
-	if ts != nil {
-		if labels.Equal(ts, lbls) {
-			// We already have this metric
-			return false
-		}
-
-		// Look for a matching conflict
-		for _, cLabels := range c.conflicts[h] {
-			if labels.Equal(cLabels, lbls) {
-				// We already have this metric
-				return false
-			}
-		}
-
-		// New conflict
-		c.conflicts[h] = append(c.conflicts[h], lbls)
-		return true
-	}
-
-	// This metric is new
-	c.unique[h] = lbls
-	return true
 }
 
 // addResourceTargetInfo converts the resource to the target info metric.

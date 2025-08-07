@@ -342,14 +342,6 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 						ct: convertTimeStamp(ts),
 						v:  0,
 					},
-					{
-						metricFamilyName: "test_summary",
-						ls: labels.FromStrings(
-							model.MetricNameLabel, "test_summary"+createdSuffix,
-						),
-						t: convertTimeStamp(ts),
-						v: float64(convertTimeStamp(ts)),
-					},
 				}
 			},
 		},
@@ -392,14 +384,6 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 						t:  convertTimeStamp(ts),
 						ct: convertTimeStamp(ts),
 						v:  0,
-					},
-					{
-						metricFamilyName: "test_summary",
-						ls: labels.FromStrings(append(scopeLabels,
-							model.MetricNameLabel, "test_summary"+createdSuffix,
-						)...),
-						t: convertTimeStamp(ts),
-						v: float64(convertTimeStamp(ts)),
 					},
 				}
 			},
@@ -513,7 +497,6 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				metric.Summary().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					ExportCreatedMetric:  true,
 					PromoteScopeMetadata: tt.promoteScope,
 				},
 				metric.Name(),
@@ -584,14 +567,6 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 						ct: convertTimeStamp(ts),
 						v:  0,
 					},
-					{
-						metricFamilyName: "test_hist",
-						ls: labels.FromStrings(
-							model.MetricNameLabel, "test_hist"+createdSuffix,
-						),
-						t: convertTimeStamp(ts),
-						v: float64(convertTimeStamp(ts)),
-					},
 				}
 			},
 		},
@@ -635,13 +610,6 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 						t:  convertTimeStamp(ts),
 						ct: convertTimeStamp(ts),
 						v:  0,
-					},
-					{
-						metricFamilyName: "test_hist",
-						ls: labels.FromStrings(append(scopeLabels,
-							model.MetricNameLabel, "test_hist"+createdSuffix)...),
-						t: convertTimeStamp(ts),
-						v: float64(convertTimeStamp(ts)),
 					},
 				}
 			},
@@ -692,7 +660,6 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				metric.Histogram().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					ExportCreatedMetric:  true,
 					PromoteScopeMetadata: tt.promoteScope,
 				},
 				metric.Name(),

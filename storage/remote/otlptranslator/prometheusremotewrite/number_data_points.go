@@ -72,7 +72,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 }
 
 func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string, scope scope, meta metadata.Metadata,
+	resource pcommon.Resource, settings Settings, name string, scope scope, meta metadata.Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -112,19 +112,6 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		}
 		if err := c.appender.AppendSample(name, lbls, meta, ts, ct, val, exemplars); err != nil {
 			return err
-		}
-
-		// add created time series if needed
-		if settings.ExportCreatedMetric && metric.Sum().IsMonotonic() && pt.StartTimestamp() != 0 {
-			c.builder.Reset(lbls)
-			// Add created suffix to the metric name for CT series.
-			c.builder.Set(model.MetricNameLabel, name+createdSuffix)
-			ls := c.builder.Labels()
-			if c.timeSeriesIsNew(ls) {
-				if err := c.appender.AppendSample(name, ls, meta, ts, 0, float64(ct), nil); err != nil {
-					return err
-				}
-			}
 		}
 	}
 
