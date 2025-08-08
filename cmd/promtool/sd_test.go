@@ -42,11 +42,12 @@ func TestSDCheckResult(t *testing.T) {
 		ScrapeInterval: model.Duration(1 * time.Minute),
 		ScrapeTimeout:  model.Duration(10 * time.Second),
 		RelabelConfigs: []*relabel.Config{{
-			SourceLabels: model.LabelNames{"foo"},
-			Action:       relabel.Replace,
-			TargetLabel:  "newfoo",
-			Regex:        reg,
-			Replacement:  "$1",
+			SourceLabels:         model.LabelNames{"foo"},
+			Action:               relabel.Replace,
+			TargetLabel:          "newfoo",
+			Regex:                reg,
+			Replacement:          "$1",
+			NameValidationScheme: model.UTF8Validation,
 		}},
 	}
 
