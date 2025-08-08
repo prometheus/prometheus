@@ -61,13 +61,46 @@ import (
 	"github.com/prometheus/prometheus/util/documentcli"
 )
 
-var promqlEnableDelayedNameRemoval = false
-
-func init() {
-	// This can be removed when the legacy global mode is fully deprecated.
-	//nolint:staticcheck
-	model.NameValidationScheme = model.UTF8Validation
+type rulesLintConfig struct {
+	all                 bool
+	duplicateRules      bool
+	fatal               bool
+	ignoreUnknownFields bool
 }
+
+type configLintConfig struct {
+	rulesLintConfig
+
+	lookbackDelta model.Duration
+}
+
+type compareRuleType struct {
+	metric string
+	label  labels.Labels
+}
+
+type compareRuleTypes []compareRuleType
+
+type metricStat struct {
+	name        string
+	cardinality int
+	percentage  float64
+}
+
+type endpointsGroup struct {
+	urlToFilename map[string]string
+	postProcess   func(b []byte) ([]byte, error)
+}
+
+type printer interface {
+	printValue(v model.Value)
+	printSeries(v []model.LabelSet)
+	printLabelValues(v model.LabelValues)
+}
+
+type promqlPrinter struct{}
+
+type jsonPrinter struct{}
 
 const (
 	successExitCode = 0
@@ -83,13 +116,73 @@ const (
 	checkReadiness                  = "/-/ready"
 )
 
+const httpConfigFileDescription = "HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool"
+
 var (
 	lintRulesOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
 	// Same as lintRulesOptions, but including scrape config linting options as well.
 	lintConfigOptions = append(append([]string{}, lintRulesOptions...), lintOptionTooLongScrapeInterval)
 )
 
-const httpConfigFileDescription = "HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool"
+var promqlEnableDelayedNameRemoval = false
+
+var errLint = errors.New("lint error")
+
+var checkMetricsUsage = strings.TrimSpace(`
+Pass Prometheus metrics over stdin to lint them for consistency and correctness.
+
+examples:
+
+$ cat metrics.prom | promtool check metrics
+
+$ curl -s http://localhost:9090/metrics | promtool check metrics
+`)
+
+var (
+	pprofEndpoints = []endpointsGroup{
+		{
+			urlToFilename: map[string]string{
+				"/debug/pprof/profile?seconds=30": "cpu.pb",
+				"/debug/pprof/block":              "block.pb",
+				"/debug/pprof/goroutine":          "goroutine.pb",
+				"/debug/pprof/heap":               "heap.pb",
+				"/debug/pprof/mutex":              "mutex.pb",
+				"/debug/pprof/threadcreate":       "threadcreate.pb",
+			},
+			postProcess: func(b []byte) ([]byte, error) {
+				p, err := profile.Parse(bytes.NewReader(b))
+				if err != nil {
+					return nil, err
+				}
+				var buf bytes.Buffer
+				if err := p.WriteUncompressed(&buf); err != nil {
+					return nil, fmt.Errorf("writing the profile to the buffer: %w", err)
+				}
+
+				return buf.Bytes(), nil
+			},
+		},
+		{
+			urlToFilename: map[string]string{
+				"/debug/pprof/trace?seconds=30": "trace.pb",
+			},
+		},
+	}
+	metricsEndpoints = []endpointsGroup{
+		{
+			urlToFilename: map[string]string{
+				"/metrics": "metrics.txt",
+			},
+		},
+	}
+	allEndpoints = append(pprofEndpoints, metricsEndpoints...)
+)
+
+func init() {
+	// This can be removed when the legacy global mode is fully deprecated.
+	//nolint:staticcheck
+	model.NameValidationScheme = model.UTF8Validation
+}
 
 func main() {
 	var (
@@ -465,15 +558,6 @@ func checkExperimental(f bool) {
 	}
 }
 
-var errLint = errors.New("lint error")
-
-type rulesLintConfig struct {
-	all                 bool
-	duplicateRules      bool
-	fatal               bool
-	ignoreUnknownFields bool
-}
-
 func newRulesLintConfig(stringVal string, fatal, ignoreUnknownFields bool) rulesLintConfig {
 	items := strings.Split(stringVal, ",")
 	ls := rulesLintConfig{
@@ -496,12 +580,6 @@ func newRulesLintConfig(stringVal string, fatal, ignoreUnknownFields bool) rules
 
 func (ls rulesLintConfig) lintDuplicateRules() bool {
 	return ls.all || ls.duplicateRules
-}
-
-type configLintConfig struct {
-	rulesLintConfig
-
-	lookbackDelta model.Duration
 }
 
 func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, lookbackDelta model.Duration) configLintConfig {
@@ -951,13 +1029,6 @@ func lintScrapeConfigs(scrapeConfigs []*config.ScrapeConfig, lintSettings config
 	return false
 }
 
-type compareRuleType struct {
-	metric string
-	label  labels.Labels
-}
-
-type compareRuleTypes []compareRuleType
-
 func (c compareRuleTypes) Len() int           { return len(c) }
 func (c compareRuleTypes) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
 func (c compareRuleTypes) Less(i, j int) bool { return compare(c[i], c[j]) < 0 }
@@ -1008,16 +1079,6 @@ func ruleMetric(rule rulefmt.Rule) string {
 	return rule.Record
 }
 
-var checkMetricsUsage = strings.TrimSpace(`
-Pass Prometheus metrics over stdin to lint them for consistency and correctness.
-
-examples:
-
-$ cat metrics.prom | promtool check metrics
-
-$ curl -s http://localhost:9090/metrics | promtool check metrics
-`)
-
 // CheckMetrics performs a linting pass on input metrics.
 func CheckMetrics(extended bool) int {
 	var buf bytes.Buffer
@@ -1053,12 +1114,6 @@ func CheckMetrics(extended bool) int {
 	}
 
 	return successExitCode
-}
-
-type metricStat struct {
-	name        string
-	cardinality int
-	percentage  float64
 }
 
 func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
@@ -1101,51 +1156,6 @@ func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
 	return stats, total, nil
 }
 
-type endpointsGroup struct {
-	urlToFilename map[string]string
-	postProcess   func(b []byte) ([]byte, error)
-}
-
-var (
-	pprofEndpoints = []endpointsGroup{
-		{
-			urlToFilename: map[string]string{
-				"/debug/pprof/profile?seconds=30": "cpu.pb",
-				"/debug/pprof/block":              "block.pb",
-				"/debug/pprof/goroutine":          "goroutine.pb",
-				"/debug/pprof/heap":               "heap.pb",
-				"/debug/pprof/mutex":              "mutex.pb",
-				"/debug/pprof/threadcreate":       "threadcreate.pb",
-			},
-			postProcess: func(b []byte) ([]byte, error) {
-				p, err := profile.Parse(bytes.NewReader(b))
-				if err != nil {
-					return nil, err
-				}
-				var buf bytes.Buffer
-				if err := p.WriteUncompressed(&buf); err != nil {
-					return nil, fmt.Errorf("writing the profile to the buffer: %w", err)
-				}
-
-				return buf.Bytes(), nil
-			},
-		},
-		{
-			urlToFilename: map[string]string{
-				"/debug/pprof/trace?seconds=30": "trace.pb",
-			},
-		},
-	}
-	metricsEndpoints = []endpointsGroup{
-		{
-			urlToFilename: map[string]string{
-				"/metrics": "metrics.txt",
-			},
-		},
-	}
-	allEndpoints = append(pprofEndpoints, metricsEndpoints...)
-)
-
 func debugPprof(url string) int {
 	if err := debugWrite(debugWriterConfig{
 		serverURL:      url,
@@ -1182,14 +1192,6 @@ func debugAll(url string) int {
 	return successExitCode
 }
 
-type printer interface {
-	printValue(v model.Value)
-	printSeries(v []model.LabelSet)
-	printLabelValues(v model.LabelValues)
-}
-
-type promqlPrinter struct{}
-
 func (*promqlPrinter) printValue(v model.Value) {
 	fmt.Println(v)
 }
@@ -1205,8 +1207,6 @@ func (*promqlPrinter) printLabelValues(val model.LabelValues) {
 		fmt.Println(v)
 	}
 }
-
-type jsonPrinter struct{}
 
 func (*jsonPrinter) printValue(v model.Value) {
 	//nolint:errcheck

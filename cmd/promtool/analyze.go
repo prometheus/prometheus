@@ -33,6 +33,35 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+type QueryAnalyzeConfig struct {
+	metricType string
+	duration   time.Duration
+	time       string
+	matchers   []string
+}
+
+// minPop/avgPop/maxPop is for the number of populated (non-zero) buckets.
+// total is the total number of buckets across all samples in the series,
+// populated or not.
+type statistics struct {
+	minPop, maxPop, total int
+	avgPop                float64
+}
+
+type bucketBounds struct {
+	boundaries   int32
+	upper, lower float64
+}
+
+type distribution struct {
+	min, max, count int
+	avg             float64
+}
+
+type metaStatistics struct {
+	minPop, avgPop, maxPop, total distribution
+}
+
 var (
 	errNotNativeHistogram = errors.New("not a native histogram")
 	errNotEnoughData      = errors.New("not enough data")
@@ -46,13 +75,6 @@ which is typical for classic but not native histograms).`
 -----------------------
 Each line shows min/avg/max over the series above.`
 )
-
-type QueryAnalyzeConfig struct {
-	metricType string
-	duration   time.Duration
-	time       string
-	matchers   []string
-}
 
 // run retrieves metrics that look like conventional histograms (i.e. have _bucket
 // suffixes) or native histograms, depending on metricType flag.
@@ -175,14 +197,6 @@ func querySamples(ctx context.Context, api v1.API, query string, end time.Time) 
 	return matrix, nil
 }
 
-// minPop/avgPop/maxPop is for the number of populated (non-zero) buckets.
-// total is the total number of buckets across all samples in the series,
-// populated or not.
-type statistics struct {
-	minPop, maxPop, total int
-	avgPop                float64
-}
-
 func (s statistics) String() string {
 	if s.maxPop == s.total {
 		return fmt.Sprintf("%d/%.3f/%d", s.minPop, s.avgPop, s.maxPop)
@@ -266,11 +280,6 @@ func getBucketCountsAtTime(matrix model.Matrix, numBuckets, timeIdx int) ([]int,
 	return counts, nil
 }
 
-type bucketBounds struct {
-	boundaries   int32
-	upper, lower float64
-}
-
 func makeBucketBounds(b *model.HistogramBucket) bucketBounds {
 	return bucketBounds{
 		boundaries: b.Boundaries,
@@ -312,11 +321,6 @@ func calcNativeBucketStatistics(series *model.SampleStream) (*statistics, error)
 	return stats, nil
 }
 
-type distribution struct {
-	min, max, count int
-	avg             float64
-}
-
 func newDistribution() distribution {
 	return distribution{
 		min: math.MaxInt,
@@ -336,10 +340,6 @@ func (d *distribution) update(num int) {
 
 func (d distribution) String() string {
 	return fmt.Sprintf("%d/%.3f/%d", d.min, d.avg, d.max)
-}
-
-type metaStatistics struct {
-	minPop, avgPop, maxPop, total distribution
 }
 
 func newMetaStatistics() *metaStatistics {
