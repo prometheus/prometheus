@@ -891,7 +891,6 @@ func TestHead_WALMultiRef(t *testing.T) {
 }
 
 func TestHead_WALCheckpointMultiRef(t *testing.T) {
-
 	cases := []struct {
 		name               string
 		walEntries         []interface{}
