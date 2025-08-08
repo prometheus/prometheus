@@ -18,10 +18,19 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sync"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/value"
 )
+
+// histogramChunkAppenderIterPool is exclusively used in Appender() to help reduce
+// allocations under heavy usage.
+var histogramChunkAppenderIterPool = sync.Pool{
+	New: func() interface{} {
+		return &histogramIterator{}
+	},
+}
 
 // HistogramChunk holds encoded sample data for a sparse, high-resolution
 // histogram.
@@ -115,7 +124,8 @@ func (c *HistogramChunk) Compact() {
 
 // Appender implements the Chunk interface.
 func (c *HistogramChunk) Appender() (Appender, error) {
-	it := c.iterator(nil)
+	it := c.iterator(histogramChunkAppenderIterPool.Get().(*histogramIterator))
+	defer histogramChunkAppenderIterPool.Put(it)
 
 	// To get an appender, we must know the state it would have if we had
 	// appended all existing data from scratch. We iterate through the end
