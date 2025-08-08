@@ -1130,7 +1130,9 @@ func TestHead_WALCheckpointMultiRef(t *testing.T) {
 			cprecs := readTestWAL(t, checkpointDir)
 			recs := readTestWAL(t, w.Dir())
 			recs = append(cprecs, recs...)
-			require.Equal(t, tc.expectedWalEntries, recs)
+
+			// Use testutil.RequireEqual which handles labels properly with dedupelabels
+			testutil.RequireEqual(t, tc.expectedWalEntries, recs)
 		})
 	}
 }
