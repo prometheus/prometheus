@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -68,6 +69,7 @@ var (
 type Head struct {
 	chunkRange               atomic.Int64
 	numSeries                atomic.Uint64
+	numStaleSeries           atomic.Uint64
 	minOOOTime, maxOOOTime   atomic.Int64 // TODO(jesusvazquez) These should be updated after garbage collection.
 	minTime, maxTime         atomic.Int64 // Current min and max of the samples included in the head. TODO(jesusvazquez) Ensure these are properly tracked.
 	minValidTime             atomic.Int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
@@ -360,6 +362,7 @@ func (h *Head) resetWLReplayResources() {
 type headMetrics struct {
 	activeAppenders           prometheus.Gauge
 	series                    prometheus.GaugeFunc
+	staleSeries               prometheus.GaugeFunc
 	seriesCreated             prometheus.Counter
 	seriesRemoved             prometheus.Counter
 	seriesNotFound            prometheus.Counter
@@ -405,6 +408,12 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Help: "Total number of series in the head block.",
 		}, func() float64 {
 			return float64(h.NumSeries())
+		}),
+		staleSeries: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_stale_series",
+			Help: "Total number of stale series in the head block.",
+		}, func() float64 {
+			return float64(h.NumStaleSeries())
 		}),
 		seriesCreated: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_series_created_total",
@@ -532,6 +541,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		r.MustRegister(
 			m.activeAppenders,
 			m.series,
+			m.staleSeries,
 			m.chunks,
 			m.chunksCreated,
 			m.chunksRemoved,
@@ -1188,6 +1198,20 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	return h.truncateSeriesAndChunkDiskMapper("truncateMemory")
 }
 
+func (h *Head) truncateStaleSeries(p index.Postings, maxt int64) {
+	h.chunkSnapshotMtx.Lock()
+	defer h.chunkSnapshotMtx.Unlock()
+
+	if h.MinTime() >= maxt {
+		return
+	}
+
+	// TODO: this will block all queries. See if we can do better.
+	h.WaitForPendingReadersInTimeRange(h.MinTime(), maxt)
+
+	h.gcStaleSeries(p, maxt)
+}
+
 // WaitForPendingReadersInTimeRange waits for queries overlapping with given range to finish querying.
 // The query timeout limits the max wait time of this function implicitly.
 // The mint is inclusive and maxt is the truncation time hence exclusive.
@@ -1538,6 +1562,53 @@ func (h *RangeHead) String() string {
 	return fmt.Sprintf("range head (mint: %d, maxt: %d)", h.MinTime(), h.MaxTime())
 }
 
+// StaleHead allows querying the stale series in the Head via an IndexReader, ChunkReader and tombstones.Reader.
+// Used only for compactions.
+type StaleHead struct {
+	RangeHead
+	staleSeriesRefs []storage.SeriesRef
+}
+
+// NewStaleHead returns a *StaleHead.
+func NewStaleHead(head *Head, mint, maxt int64, staleSeriesRefs []storage.SeriesRef) *StaleHead {
+	return &StaleHead{
+		RangeHead: RangeHead{
+			head: head,
+			mint: mint,
+			maxt: maxt,
+		},
+		staleSeriesRefs: staleSeriesRefs,
+	}
+}
+
+func (h *StaleHead) Index() (_ IndexReader, err error) {
+	return h.head.staleIndex(h.mint, h.maxt, h.staleSeriesRefs)
+}
+
+func (h *StaleHead) NumSeries() uint64 {
+	return h.head.NumStaleSeries()
+}
+
+var staleHeadULID = ulid.MustParse("0000000000XXXXXXXSTALEHEAD")
+
+func (h *StaleHead) Meta() BlockMeta {
+	return BlockMeta{
+		MinTime: h.MinTime(),
+		MaxTime: h.MaxTime(),
+		ULID:    staleHeadULID,
+		Stats: BlockStats{
+			NumSeries: h.NumSeries(),
+		},
+	}
+}
+
+// String returns an human readable representation of the stake head. It's important to
+// keep this function in order to avoid the struct dump when the head is stringified in
+// errors or logs.
+func (h *StaleHead) String() string {
+	return fmt.Sprintf("stale head (mint: %d, maxt: %d)", h.MinTime(), h.MaxTime())
+}
+
 // Delete all samples in the range of [mint, maxt] for series that satisfy the given
 // label matchers.
 func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
@@ -1607,13 +1678,14 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, affected, chunksRemoved, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
+	deleted, affected, chunksRemoved, staleSeriesDeleted, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
 	h.numSeries.Sub(uint64(seriesRemoved))
+	h.numStaleSeries.Sub(uint64(staleSeriesDeleted))
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
@@ -1640,14 +1712,55 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	return actualInOrderMint, minOOOTime, minMmapFile
 }
 
+// gcStaleSeries removes all the stale series provided given that they are still stale
+// and the series maxt is <= the given max.
+func (h *Head) gcStaleSeries(p index.Postings, maxt int64) {
+	// Drop old chunks and remember series IDs and hashes if they can be
+	// deleted entirely.
+	deleted, affected, chunksRemoved := h.series.gcStaleSeries(p, maxt)
+	seriesRemoved := len(deleted)
+
+	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
+	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
+	h.metrics.chunks.Sub(float64(chunksRemoved))
+	h.numSeries.Sub(uint64(seriesRemoved))
+	h.numStaleSeries.Sub(uint64(seriesRemoved))
+
+	// Remove deleted series IDs from the postings lists.
+	h.postings.Delete(deleted, affected)
+
+	// Remove tombstones referring to the deleted series.
+	h.tombstones.DeleteTombstones(deleted)
+
+	if h.wal != nil {
+		_, last, _ := wlog.Segments(h.wal.Dir())
+		h.walExpiriesMtx.Lock()
+		// Keep series records until we're past segment 'last'
+		// because the WAL will still have samples records with
+		// this ref ID. If we didn't keep these series records then
+		// on start up when we replay the WAL, or any other code
+		// that reads the WAL, wouldn't be able to use those
+		// samples since we would have no labels for that ref ID.
+		for ref := range deleted {
+			h.walExpiries[chunks.HeadSeriesRef(ref)] = last
+		}
+		h.walExpiriesMtx.Unlock()
+	}
+}
+
 // Tombstones returns a new reader over the head's tombstones.
 func (h *Head) Tombstones() (tombstones.Reader, error) {
 	return h.tombstones, nil
 }
 
-// NumSeries returns the number of active series in the head.
+// NumSeries returns the number of series tracked in the head.
 func (h *Head) NumSeries() uint64 {
 	return h.numSeries.Load()
+}
+
+// NumStaleSeries returns the number of stale series in the head.
+func (h *Head) NumStaleSeries() uint64 {
+	return h.numStaleSeries.Load()
 }
 
 var headULID = ulid.MustParse("0000000000XXXXXXXXXXXXHEAD")
@@ -1929,13 +2042,14 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 // but the returned map goes into postings.Delete() which expects a map[storage.SeriesRef]struct
 // and there's no easy way to cast maps.
 // minMmapFile is the min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
-func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ int, _, _ int64, minMmapFile int) {
+func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _ int, _, _ int64, minMmapFile int) {
 	var (
-		deleted          = map[storage.SeriesRef]struct{}{}
-		affected         = map[labels.Label]struct{}{}
-		rmChunks         = 0
-		actualMint int64 = math.MaxInt64
-		minOOOTime int64 = math.MaxInt64
+		deleted                  = map[storage.SeriesRef]struct{}{}
+		affected                 = map[labels.Label]struct{}{}
+		rmChunks                 = 0
+		staleSeriesDeleted       = 0
+		actualMint         int64 = math.MaxInt64
+		minOOOTime         int64 = math.MaxInt64
 	)
 	minMmapFile = math.MaxInt32
 
@@ -1987,6 +2101,12 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			defer s.locks[refShard].Unlock()
 		}
 
+		if value.IsStaleNaN(series.lastValue) ||
+			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
+			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
+			staleSeriesDeleted++
+		}
+
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
@@ -2000,7 +2120,71 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		actualMint = mint
 	}
 
-	return deleted, affected, rmChunks, actualMint, minOOOTime, minMmapFile
+	return deleted, affected, rmChunks, staleSeriesDeleted, actualMint, minOOOTime, minMmapFile
+}
+
+// TODO: add comments.
+func (s *stripeSeries) gcStaleSeries(p index.Postings, maxt int64) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ int) {
+	var (
+		deleted  = map[storage.SeriesRef]struct{}{}
+		affected = map[labels.Label]struct{}{}
+		rmChunks = 0
+	)
+
+	staleSeriesMap := map[storage.SeriesRef]struct{}{}
+	for p.Next() {
+		ref := p.At()
+		staleSeriesMap[ref] = struct{}{}
+	}
+
+	check := func(hashShard int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+		if _, exists := staleSeriesMap[storage.SeriesRef(series.ref)]; !exists {
+			// This series was not compacted. Skip it.
+			return
+		}
+
+		series.Lock()
+		defer series.Unlock()
+
+		if series.maxTime() > maxt {
+			return
+		}
+
+		// Check if the series is still stale.
+		isStale := value.IsStaleNaN(series.lastValue) ||
+			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
+			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum))
+
+		if !isStale {
+			return
+		}
+
+		if series.headChunks != nil {
+			rmChunks += series.headChunks.len()
+		}
+		rmChunks += len(series.mmappedChunks)
+
+		// The series is gone entirely. We need to keep the series lock
+		// and make sure we have acquired the stripe locks for hash and ID of the
+		// series alike.
+		// If we don't hold them all, there's a very small chance that a series receives
+		// samples again while we are half-way into deleting it.
+		refShard := int(series.ref) & (s.size - 1)
+		if hashShard != refShard {
+			s.locks[refShard].Lock()
+			defer s.locks[refShard].Unlock()
+		}
+
+		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
+		s.hashes[hashShard].del(hash, series.ref)
+		delete(s.series[refShard], series.ref)
+		deletedForCallback[series.ref] = series.lset // OK to access lset; series is locked at the top of this function.
+	}
+
+	s.iterForDeletion(check)
+
+	return deleted, affected, rmChunks
 }
 
 // The iterForDeletion function iterates through all series, invoking the checkDeletedFunc for each.
