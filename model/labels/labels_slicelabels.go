@@ -252,7 +252,7 @@ func (ls Labels) WithoutEmpty() Labels {
 // the two string headers size for name and value.
 // Slice header size is ignored because it should be amortized to zero.
 func (ls Labels) ByteSize() uint64 {
-	var size uint64 = 0
+	var size uint64
 	for _, l := range ls {
 		size += uint64(len(l.Name)+len(l.Value)) + 2*uint64(unsafe.Sizeof(""))
 	}
@@ -445,7 +445,7 @@ type SymbolTable struct{}
 
 func NewSymbolTable() *SymbolTable { return nil }
 
-func (t *SymbolTable) Len() int { return 0 }
+func (*SymbolTable) Len() int { return 0 }
 
 // NewScratchBuilder creates a ScratchBuilder initialized for Labels with n entries.
 func NewScratchBuilder(n int) ScratchBuilder {
@@ -462,7 +462,7 @@ func NewScratchBuilderWithSymbolTable(_ *SymbolTable, n int) ScratchBuilder {
 	return NewScratchBuilder(n)
 }
 
-func (b *ScratchBuilder) SetSymbolTable(*SymbolTable) {
+func (*ScratchBuilder) SetSymbolTable(*SymbolTable) {
 	// no-op
 }
 
