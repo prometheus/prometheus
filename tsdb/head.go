@@ -1280,11 +1280,12 @@ func (h *Head) getWALExpiry(id chunks.HeadSeriesRef) (int64, bool) {
 	return keepUntil, ok
 }
 
-func (h *Head) setWALExpiry(id chunks.HeadSeriesRef, keepUntil int64) {
+// updateWALExpiry updates the WAL expiry for a series, keeping the higher of the current value and keepUntil.
+func (h *Head) updateWALExpiry(id chunks.HeadSeriesRef, keepUntil int64) {
 	h.walExpiriesMtx.Lock()
 	defer h.walExpiriesMtx.Unlock()
 
-	h.walExpiries[id] = keepUntil
+	h.walExpiries[id] = max(keepUntil, h.walExpiries[id])
 }
 
 // keepSeriesInWALCheckpoint is used to determine whether a series record should be kept in the checkpoint

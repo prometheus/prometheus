@@ -265,8 +265,6 @@ Outer:
 				}
 				if !created {
 					multiRef[walSeries.Ref] = mSeries.ref
-					// Set the WAL expiry for the duplicate series, so it is kept in subsequent WAL checkpoints.
-					h.setWALExpiry(walSeries.Ref, int64(lastSegment))
 				}
 
 				idx := uint64(mSeries.ref) % uint64(concurrency)
@@ -292,6 +290,8 @@ Outer:
 						continue // Before minValidTime: discard.
 					}
 					if r, ok := multiRef[sam.Ref]; ok {
+						// This is a sample for a duplicate series, so we need to keep the series record at least until this record's timestamp.
+						h.updateWALExpiry(sam.Ref, sam.T)
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
@@ -313,6 +313,8 @@ Outer:
 						continue
 					}
 					if r, ok := multiRef[chunks.HeadSeriesRef(s.Ref)]; ok {
+						// This is a tombstone for a duplicate series, so we need to keep the series record at least until this record's timestamp.
+						h.updateWALExpiry(chunks.HeadSeriesRef(s.Ref), itv.Maxt)
 						s.Ref = storage.SeriesRef(r)
 					}
 					if m := h.series.getByID(chunks.HeadSeriesRef(s.Ref)); m == nil {
@@ -330,6 +332,8 @@ Outer:
 					continue
 				}
 				if r, ok := multiRef[e.Ref]; ok {
+					// This is an exemplar for a duplicate series, so we need to keep the series record at least until this record's timestamp.
+					h.updateWALExpiry(e.Ref, e.T)
 					e.Ref = r
 				}
 				exemplarsInput <- e
@@ -354,6 +358,8 @@ Outer:
 						continue // Before minValidTime: discard.
 					}
 					if r, ok := multiRef[sam.Ref]; ok {
+						// This is a histogram sample for a duplicate series, so we need to keep the series record at least until this record's timestamp.
+						h.updateWALExpiry(sam.Ref, sam.T)
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
@@ -387,6 +393,8 @@ Outer:
 						continue // Before minValidTime: discard.
 					}
 					if r, ok := multiRef[sam.Ref]; ok {
+						// This is a float histogram sample for a duplicate series, so we need to keep the series record at least until this record's timestamp.
+						h.updateWALExpiry(sam.Ref, sam.T)
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
