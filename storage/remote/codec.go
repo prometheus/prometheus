@@ -350,7 +350,7 @@ type concreteSeriesSet struct {
 
 func (c *concreteSeriesSet) Next() bool {
 	c.cur++
-	return c.cur-1 < len(c.series)
+	return c.cur <= len(c.series)
 }
 
 func (c *concreteSeriesSet) At() storage.Series {
@@ -920,7 +920,8 @@ func DecodeOTLPWriteRequest(r *http.Request) (pmetricotlp.ExportRequest, error) 
 		r.Body.Close()
 		return pmetricotlp.NewExportRequest(), err
 	}
-	if err = r.Body.Close(); err != nil {
+	err = r.Body.Close()
+	if err != nil {
 		return pmetricotlp.NewExportRequest(), err
 	}
 	otlpReq, err := decoderFunc(body)

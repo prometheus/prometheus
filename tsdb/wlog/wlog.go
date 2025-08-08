@@ -812,7 +812,8 @@ func (w *WL) Truncate(i int) (err error) {
 		if r.index >= i {
 			break
 		}
-		if err = os.Remove(filepath.Join(w.Dir(), r.name)); err != nil {
+		err = os.Remove(filepath.Join(w.Dir(), r.name))
+		if err != nil {
 			return err
 		}
 	}
