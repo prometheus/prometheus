@@ -294,6 +294,9 @@ func (h *FloatHistogram) Mul(factor float64) *FloatHistogram {
 	for i := range h.NegativeBuckets {
 		h.NegativeBuckets[i] *= factor
 	}
+	if factor < 0 {
+		h.CounterResetHint = GaugeType
+	}
 	return h
 }
 
@@ -316,6 +319,9 @@ func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
 	}
 	for i := range h.NegativeBuckets {
 		h.NegativeBuckets[i] /= scalar
+	}
+	if scalar < 0 {
+		h.CounterResetHint = GaugeType
 	}
 	return h
 }
@@ -416,6 +422,9 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (*FloatHistogram, error) {
 	if h.UsesCustomBuckets() && !FloatBucketsMatch(h.CustomValues, other.CustomValues) {
 		return nil, ErrHistogramsIncompatibleBounds
 	}
+
+	// Prevent counter resets when subtracting as this might decrease counters.
+	h.CounterResetHint = GaugeType
 
 	if !h.UsesCustomBuckets() {
 		otherZeroCount := h.reconcileZeroBuckets(other)
