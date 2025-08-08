@@ -26,19 +26,21 @@ import (
 
 func TestMetadata(t *testing.T) {
 	testMeta := Metadata{
-		Name: "metric_total",
-		Type: model.MetricTypeCounter,
-		Unit: "seconds",
+		Name:        "metric_total",
+		Type:        model.MetricTypeCounter,
+		Unit:        "seconds",
+		Temporality: "delta",
 	}
 
 	for _, tcase := range []struct {
-		emptyName, emptyType, emptyUnit bool
+		emptyName, emptyType, emptyUnit, emptyTemporality bool
 	}{
 		{},
 		{emptyName: true},
 		{emptyType: true},
 		{emptyUnit: true},
-		{emptyName: true, emptyType: true, emptyUnit: true},
+		{emptyTemporality: true},
+		{emptyName: true, emptyType: true, emptyUnit: true, emptyTemporality: true},
 	} {
 		var (
 			expectedMeta   Metadata
@@ -63,6 +65,10 @@ func TestMetadata(t *testing.T) {
 				lb.Add(metricUnit, testMeta.Unit)
 				expectedMeta.Unit = testMeta.Unit
 			}
+			if !tcase.emptyTemporality {
+				lb.Add(metricTemporality, testMeta.Temporality)
+				expectedMeta.Temporality = testMeta.Temporality
+			}
 			lb.Sort()
 			expectedLabels = lb.Labels()
 		}
@@ -79,6 +85,7 @@ func TestMetadata(t *testing.T) {
 				require.Equal(t, tcase.emptyType, expectedMeta.IsEmptyFor(metricType))
 				require.Equal(t, tcase.emptyType, expectedMeta.IsTypeEmpty())
 				require.Equal(t, tcase.emptyUnit, expectedMeta.IsEmptyFor(metricUnit))
+				require.Equal(t, tcase.emptyTemporality, expectedMeta.IsEmptyFor(metricTemporality))
 			}
 			{
 				// From Metadata to labels for various builders.
@@ -100,7 +107,7 @@ func TestIgnoreOverriddenMetadataLabelsScratchBuilder(t *testing.T) {
 	// PROM-39 specifies that metadata labels should be sourced primarily from the metadata structures.
 	// However, the original labels should be preserved IF the metadata structure does not set or support certain information.
 	// Test those cases with common label interactions.
-	incomingLabels := labels.FromStrings(metricName, "different_name", metricType, string(model.MetricTypeSummary), metricUnit, "MB", "foo", "bar")
+	incomingLabels := labels.FromStrings(metricName, "different_name", metricType, string(model.MetricTypeSummary), metricUnit, "MB", metricTemporality, "cumulative", "foo", "bar")
 	for _, tcase := range []struct {
 		highPrioMeta   Metadata
 		expectedLabels labels.Labels
@@ -110,25 +117,26 @@ func TestIgnoreOverriddenMetadataLabelsScratchBuilder(t *testing.T) {
 		},
 		{
 			highPrioMeta: Metadata{
-				Name: "metric_total",
-				Type: model.MetricTypeCounter,
-				Unit: "seconds",
+				Name:        "metric_total",
+				Type:        model.MetricTypeCounter,
+				Unit:        "seconds",
+				Temporality: "delta",
 			},
-			expectedLabels: labels.FromStrings(metricName, "metric_total", metricType, string(model.MetricTypeCounter), metricUnit, "seconds", "foo", "bar"),
+			expectedLabels: labels.FromStrings(metricName, "metric_total", metricType, string(model.MetricTypeCounter), metricUnit, "seconds", metricTemporality, "delta", "foo", "bar"),
 		},
 		{
 			highPrioMeta: Metadata{
 				Name: "metric_total",
 				Type: model.MetricTypeCounter,
 			},
-			expectedLabels: labels.FromStrings(metricName, "metric_total", metricType, string(model.MetricTypeCounter), metricUnit, "MB", "foo", "bar"),
+			expectedLabels: labels.FromStrings(metricName, "metric_total", metricType, string(model.MetricTypeCounter), metricUnit, "MB", metricTemporality, "cumulative", "foo", "bar"),
 		},
 		{
 			highPrioMeta: Metadata{
 				Type: model.MetricTypeCounter,
 				Unit: "seconds",
 			},
-			expectedLabels: labels.FromStrings(metricName, "different_name", metricType, string(model.MetricTypeCounter), metricUnit, "seconds", "foo", "bar"),
+			expectedLabels: labels.FromStrings(metricName, "different_name", metricType, string(model.MetricTypeCounter), metricUnit, "seconds", metricTemporality, "cumulative", "foo", "bar"),
 		},
 		{
 			highPrioMeta: Metadata{
@@ -136,7 +144,7 @@ func TestIgnoreOverriddenMetadataLabelsScratchBuilder(t *testing.T) {
 				Type: model.MetricTypeUnknown,
 				Unit: "seconds",
 			},
-			expectedLabels: labels.FromStrings(metricName, "metric_total", metricType, string(model.MetricTypeSummary), metricUnit, "seconds", "foo", "bar"),
+			expectedLabels: labels.FromStrings(metricName, "metric_total", metricType, string(model.MetricTypeSummary), metricUnit, "seconds", metricTemporality, "cumulative", "foo", "bar"),
 		},
 	} {
 		t.Run(fmt.Sprintf("meta=%#v", tcase.highPrioMeta), func(t *testing.T) {
@@ -148,6 +156,28 @@ func TestIgnoreOverriddenMetadataLabelsScratchBuilder(t *testing.T) {
 			})
 			lb.Sort()
 			require.Equal(t, tcase.expectedLabels, lb.Labels())
+		})
+	}
+}
+
+func TestIsMetadataLabel(t *testing.T) {
+	testCases := []struct {
+		label    string
+		expected bool
+	}{
+		{"__name__", true},
+		{"__type__", true},
+		{"__unit__", true},
+		{"__temporality__", true},
+		{"foo", false},
+		{"bar", false},
+		{"__other__", false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.label, func(t *testing.T) {
+			result := IsMetadataLabel(tc.label)
+			require.Equal(t, tc.expected, result)
 		})
 	}
 }
