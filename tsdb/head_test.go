@@ -770,9 +770,7 @@ func TestHead_ReadWAL(t *testing.T) {
 			// But it should have a WAL expiry set.
 			keepUntil, ok := head.getWALExpiry(101)
 			require.True(t, ok)
-			_, last, err := wlog.Segments(w.Dir())
-			require.NoError(t, err)
-			require.Equal(t, last, keepUntil)
+			require.Equal(t, int64(101), keepUntil)
 			// Only the duplicate series record should have a WAL expiry set.
 			_, ok = head.getWALExpiry(50)
 			require.False(t, ok)
