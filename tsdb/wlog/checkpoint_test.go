@@ -291,7 +291,7 @@ func TestCheckpoint(t *testing.T) {
 			}
 			require.NoError(t, w.Close())
 
-			stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef, _ int64) bool {
+			stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
 				return x%2 == 0
 			}, last/2)
 			require.NoError(t, err)

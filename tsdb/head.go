@@ -1288,17 +1288,19 @@ func (h *Head) updateWALExpiry(id chunks.HeadSeriesRef, keepUntil int64) {
 	h.walExpiries[id] = max(keepUntil, h.walExpiries[id])
 }
 
-// keepSeriesInWALCheckpoint is used to determine whether a series record should be kept in the checkpoint
+// keepSeriesInWALCheckpointFn returns a function that is used to determine whether a series record should be kept in the checkpoint.
 // mint is the time before which data in the WAL is being truncated.
-func (h *Head) keepSeriesInWALCheckpoint(id chunks.HeadSeriesRef, mint int64) bool {
-	// Keep the record if the series exists in the head.
-	if h.series.getByID(id) != nil {
-		return true
-	}
+func (h *Head) keepSeriesInWALCheckpointFn(mint int64) func(id chunks.HeadSeriesRef) bool {
+	return func(id chunks.HeadSeriesRef) bool {
+		// Keep the record if the series exists in the head.
+		if h.series.getByID(id) != nil {
+			return true
+		}
 
-	// Keep the record if the series has an expiry set.
-	keepUntil, ok := h.getWALExpiry(id)
-	return ok && keepUntil >= mint
+		// Keep the record if the series has an expiry set.
+		keepUntil, ok := h.getWALExpiry(id)
+		return ok && keepUntil >= mint
+	}
 }
 
 // truncateWAL removes old data before mint from the WAL.
@@ -1335,7 +1337,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	}
 
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpoint, mint); err != nil {
+	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		var cerr *chunks.CorruptionErr
 		if errors.As(err, &cerr) {

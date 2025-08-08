@@ -1187,8 +1187,8 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 				h.updateWALExpiry(chunks.HeadSeriesRef(existingRef), keepUntil)
 			}
 
-			kept := h.keepSeriesInWALCheckpoint(chunks.HeadSeriesRef(existingRef), tc.mint)
-			require.Equal(t, tc.expected, kept)
+			keep := h.keepSeriesInWALCheckpointFn(tc.mint)
+			require.Equal(t, tc.expected, keep(chunks.HeadSeriesRef(existingRef)))
 		})
 	}
 }
