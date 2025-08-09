@@ -167,6 +167,8 @@ type PromParser struct {
 	offsets []int
 
 	enableTypeAndUnitLabels bool
+	lastBaseMetricName      string
+	typeSetThisLine         bool
 }
 
 // NewPromParser returns a new parser of the byte slice.
@@ -303,6 +305,7 @@ func (p *PromParser) parseError(exp string, got token) error {
 func (p *PromParser) Next() (Entry, error) {
 	var err error
 
+	p.typeSetThisLine = false
 	p.start = p.l.i
 	p.offsets = p.offsets[:0]
 
@@ -338,6 +341,7 @@ func (p *PromParser) Next() (Entry, error) {
 		}
 		switch t {
 		case tType:
+			p.typeSetThisLine = true
 			switch s := yoloString(p.text); s {
 			case "counter":
 				p.mtype = model.MetricTypeCounter
@@ -384,7 +388,17 @@ func (p *PromParser) Next() (Entry, error) {
 		}
 
 		p.series = p.l.b[p.start:p.l.i]
-		return p.parseMetricSuffix(p.nextToken())
+		entry, err := p.parseMetricSuffix(p.nextToken())
+		if entry == EntrySeries {
+			metricNameBytes := p.series[p.offsets[0]-p.start : p.offsets[1]-p.start]
+			base := baseName(metricNameBytes)
+
+			if base != p.lastBaseMetricName && !p.typeSetThisLine {
+				p.mtype = inferMetricTypeFromName(metricNameBytes)
+			}
+			p.lastBaseMetricName = base
+		}
+		return entry, err
 	case tMName:
 		p.offsets = append(p.offsets, p.start, p.l.i)
 		p.series = p.l.b[p.start:p.l.i]
@@ -397,7 +411,17 @@ func (p *PromParser) Next() (Entry, error) {
 			p.series = p.l.b[p.start:p.l.i]
 			t2 = p.nextToken()
 		}
-		return p.parseMetricSuffix(t2)
+		entry, err := p.parseMetricSuffix(t2)
+		if entry == EntrySeries {
+			metricNameBytes := p.series[p.offsets[0]-p.start : p.offsets[1]-p.start]
+			base := baseName(metricNameBytes)
+
+			if base != p.lastBaseMetricName && !p.typeSetThisLine {
+				p.mtype = inferMetricTypeFromName(metricNameBytes)
+			}
+			p.lastBaseMetricName = base
+		}
+		return entry, err
 
 	default:
 		err = p.parseError("expected a valid start token", t)
@@ -533,4 +557,50 @@ func parseFloat(s string) (float64, error) {
 		return 0, errors.New("unsupported character in float")
 	}
 	return strconv.ParseFloat(s, 64)
+}
+
+// func baseName(name string) string {
+// 	suffixes := []string{"_total", "_count", "_sum", "_bucket"}
+// 	for _, suf := range suffixes {
+// 		if strings.HasSuffix(name, suf) {
+// 			return name[:len(name)-len(suf)]
+// 		}
+// 	}
+// 	return name
+// }
+
+// baseName returns the metric family name without the _suffix.
+// It uses yoloString for efficiency and avoids unnecessary allocations.
+// This is safe because the returned string is only used during the current parse step
+// and not stored for later use.
+func baseName(b []byte) string {
+	idx := bytes.LastIndexByte(b, '_')
+	if idx > 0 {
+		return yoloString(b[:idx])
+	}
+	return yoloString(b)
+}
+
+// inferMetricTypeFromName tries to guess the metric type from its name.
+// It is zero-allocation: works directly on the metricNameBytes slice.
+// If it can't guess, it returns MetricTypeUnknown.
+func inferMetricTypeFromName(name []byte) model.MetricType {
+	// Common Prometheus naming conventions:
+	// *_total     → counter
+	// *_count     → histogram or summary count (histogram is more common)
+	// *_sum       → histogram or summary sum
+	// *_bucket    → histogram
+	// These guesses are heuristic and may be wrong in some cases.
+	switch {
+	case len(name) > 6 && bytes.HasSuffix(name, []byte("_total")):
+		return model.MetricTypeCounter
+	case len(name) > 6 && bytes.HasSuffix(name, []byte("_count")):
+		return model.MetricTypeHistogram
+	case len(name) > 4 && bytes.HasSuffix(name, []byte("_sum")):
+		return model.MetricTypeHistogram
+	case len(name) > 7 && bytes.HasSuffix(name, []byte("_bucket")):
+		return model.MetricTypeHistogram
+	default:
+		return model.MetricTypeUnknown
+	}
 }
