@@ -2896,7 +2896,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							},
 							PosRange: posrange.PositionRange{
 								Start: 29,
-								End:   52, // TODO(krajorama): this should be 51. https://github.com/prometheus/prometheus/issues/16053
+								End:   51,
 							},
 						},
 					},
