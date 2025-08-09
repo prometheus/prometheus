@@ -113,6 +113,7 @@ func TestDeleteCheckpoints(t *testing.T) {
 }
 
 func TestCheckpoint(t *testing.T) {
+	t.Parallel()
 	makeHistogram := func(i int) *histogram.Histogram {
 		return &histogram.Histogram{
 			Count:         5 + uint64(i*4),

@@ -369,6 +369,7 @@ func TestSegmentMetric(t *testing.T) {
 }
 
 func TestCompression(t *testing.T) {
+	t.Parallel()
 	bootstrap := func(compressed compression.Type) string {
 		const (
 			segmentSize = pageSize
