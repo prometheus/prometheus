@@ -215,6 +215,8 @@ type flagConfig struct {
 	promqlEnableDelayedNameRemoval bool
 
 	promslogConfig promslog.Config
+
+	maxResetRatio float64
 }
 
 // setFeatureListOptions sets the corresponding options from the featureList.
@@ -425,6 +427,10 @@ func main() {
 
 	a.Flag("web.cors.origin", `Regex for CORS origin. It is fully anchored. Example: 'https?://(domain1|domain2)\.com'`).
 		Default(".*").StringVar(&cfg.corsRegexString)
+
+	a.Flag("query.max-reset-ratio",
+		"Maximum allowed ratio of counter resets (resets/samples) before issuing a warning in PromQL rate-like functions.").
+		Default("0.2").FloatVar(&cfg.maxResetRatio)
 
 	serverOnlyFlag(a, "storage.tsdb.path", "Base path for metrics storage.").
 		Default("data/").StringVar(&cfg.serverStoragePath)
@@ -862,6 +868,7 @@ func main() {
 			EnablePerStepStats:       cfg.enablePerStepStats,
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
+			MaxResetRatio:            cfg.maxResetRatio,
 		}
 
 		queryEngine = promql.NewEngine(opts)

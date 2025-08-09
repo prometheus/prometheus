@@ -1954,3 +1954,20 @@ eval instant at 0m scalar({type="histogram"})
 # One float in the vector.
 eval instant at 0m scalar({l="x"})
 	1
+
+clear
+
+# Test rate() with too many resets warning.
+load 1m
+    http_requests_total{job="api"} 100 5 6 3 2 1
+    http_requests_total{job="api2"} 10 20 5 6 25
+
+eval instant at 5m rate(http_requests_total{job="api"}[5m])
+	expect info msg: PromQL info: too many counter resets detected in metric "http_requests_total"
+	{job="api"} 0.029166666666666667
+
+eval instant at 5m rate(http_requests_total{job="api2"}[5m])
+	expect no_info
+    {job="api2"} 0.1388888888888889
+
+clear

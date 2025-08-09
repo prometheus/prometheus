@@ -323,6 +323,8 @@ type EngineOpts struct {
 	EnableDelayedNameRemoval bool
 	// EnableTypeAndUnitLabels will allow PromQL Engine to make decisions based on the type and unit labels.
 	EnableTypeAndUnitLabels bool
+	// MaxResetRatio is the maximum allowed ratio of counter resets to samples in rate/increase functions.
+	MaxResetRatio float64
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -342,6 +344,7 @@ type Engine struct {
 	enablePerStepStats       bool
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
+	maxResetRatio            float64
 }
 
 // NewEngine returns a new engine.
@@ -434,6 +437,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		enablePerStepStats:       opts.EnablePerStepStats,
 		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
 		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
+		maxResetRatio:            opts.MaxResetRatio,
 	}
 }
 
@@ -745,6 +749,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 			querier:                  querier,
+			maxResetRatio:            ng.maxResetRatio,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
 
@@ -805,6 +810,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 		enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 		querier:                  querier,
+		maxResetRatio:            ng.maxResetRatio,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
 	val, warnings, err := evaluator.Eval(ctxInnerEval, s.Expr)
@@ -1079,6 +1085,7 @@ type evaluator struct {
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
 	querier                  storage.Querier
+	maxResetRatio            float64
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1155,6 +1162,8 @@ type EvalNodeHelper struct {
 
 	// Additional options for the evaluation.
 	enableDelayedNameRemoval bool
+
+	maxResetRatio float64
 }
 
 func (enh *EvalNodeHelper) resetBuilder(lbls labels.Labels) {
@@ -1260,7 +1269,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 			biggestLen = len(matrixes[i])
 		}
 	}
-	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
+	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen), enableDelayedNameRemoval: ev.enableDelayedNameRemoval, maxResetRatio: ev.maxResetRatio}
 	type seriesAndTimestamp struct {
 		Series
 		ts int64
@@ -1390,7 +1399,7 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 
 	var annos annotations.Annotations
 
-	enh := &EvalNodeHelper{enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
+	enh := &EvalNodeHelper{enableDelayedNameRemoval: ev.enableDelayedNameRemoval, maxResetRatio: ev.maxResetRatio}
 	tempNumSamples := ev.currentSamples
 
 	// Create a mapping from input series to output groups.
@@ -1803,7 +1812,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		var histograms []HPoint
 		var prevSS *Series
 		inMatrix := make(Matrix, 1)
-		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
+		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), enableDelayedNameRemoval: ev.enableDelayedNameRemoval, maxResetRatio: ev.maxResetRatio}
 		// Process all the calls for one time series at a time.
 		it := storage.NewBuffer(selRange)
 		var chkIter chunkenc.Iterator
@@ -2080,6 +2089,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			querier:                  ev.querier,
+			maxResetRatio:            ev.maxResetRatio,
 		}
 
 		if e.Step != 0 {
@@ -2126,6 +2136,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			querier:                  ev.querier,
+			maxResetRatio:            ev.maxResetRatio,
 		}
 		res, ws := newEv.eval(ctx, e.Expr)
 		ev.currentSamples = newEv.currentSamples
