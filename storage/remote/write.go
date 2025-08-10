@@ -73,7 +73,8 @@ type WriteStorage struct {
 	quit              chan struct{}
 
 	// For timestampTracker.
-	highestTimestamp *maxTimestamp
+	highestTimestamp        *maxTimestamp
+	enableTypeAndUnitLabels bool
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
@@ -209,6 +210,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.interner,
 			rws.highestTimestamp,
 			rws.scraper,
+			rws.enableTypeAndUnitLabels,
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
 			rwConf.ProtobufMessage,
