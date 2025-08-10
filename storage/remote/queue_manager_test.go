@@ -2429,7 +2429,7 @@ func TestPopulateV2TimeSeries_typeAndUnitLabels(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			batch := make([]timeSeries, 1)
-			builder := labels.NewScratchBuilder(4)
+			builder := labels.NewScratchBuilder(2)
 			builder.Add("__name__", "test_metric_"+tc.name)
 
 			if tc.typeLabel != "" {
@@ -2438,9 +2438,6 @@ func TestPopulateV2TimeSeries_typeAndUnitLabels(t *testing.T) {
 			if tc.unitLabel != "" {
 				builder.Add("__unit__", tc.unitLabel)
 			}
-
-			builder.Add("job", "test_job")
-			builder.Add("instance", "localhost:9090")
 
 			batch[0] = timeSeries{
 				seriesLabels: builder.Labels(),
