@@ -322,7 +322,7 @@ func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, pro
 func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg config.RemoteWriteProtoMsg) *QueueManager {
 	dir := t.TempDir()
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, protoMsg)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg)
 
 	return m
 }
@@ -782,7 +782,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		}
 	)
 
-	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, config.RemoteWriteProtoMsgV1)
 	m.StoreSeries(fakeSeries, 0)
 
 	// Attempt to samples while the manager is running. We immediately stop the
@@ -1459,7 +1459,7 @@ func BenchmarkStoreSeries(b *testing.B) {
 				cfg := config.DefaultQueueConfig
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
-				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
+				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, config.RemoteWriteProtoMsgV1)
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -1938,7 +1938,7 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 
 		totalSize := 0
 		for i := 0; i < b.N; i++ {
-			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true)
+			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false)
 			req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, nil, cEnc, "snappy")
 			if err != nil {
 				b.Fatal(err)
@@ -2329,5 +2329,168 @@ func BenchmarkBuildTimeSeries(b *testing.B) {
 		samples := createProtoTimeseriesWithOld(numSamples, 100, extraLabels...)
 		_, _, result, _, _, _ := buildTimeSeries(samples, filter)
 		require.NotNil(b, result)
+	}
+}
+
+// TestPopulateV2TimeSeries_enableTypeAndUnitLabels tests that the populateV2TimeSeries function correctly populates the type and unit labels when the feature flag is enabled.
+// func TestPopulateV2TimeSeries_enableTypeAndUnitLabels(t *testing.T) {
+// 	noopLogger := promslog.NewNopLogger()
+// 	symbolTable := writev2.NewSymbolTable()
+// 	pendingData := make([]writev2.TimeSeries, 100)
+// 	batch := make([]timeSeries, 100)
+// 	for i := 0; i < 100; i++ {
+// 		batch[i] = timeSeries{
+// 			seriesLabels: labels.NewScratchBuilder(1).Add("__name__", "test_metric").Add("__type__", "counter").Add("__unit__", "1").Labels(),
+// 		}
+// 	}
+// }
+
+// TestPopulateV2TimeSeries_typeAndUnitLabels tests that the populateV2TimeSeries function correctly populates the type and unit labels.
+func TestPopulateV2TimeSeries_typeAndUnitLabels(t *testing.T) {
+	symbolTable := writev2.NewSymbolTable()
+
+	testCases := []struct {
+		name                    string
+		typeLabel               string
+		unitLabel               string
+		expectedType            writev2.Metadata_MetricType
+		description             string
+		enableTypeAndUnitLabels bool
+	}{
+		{
+			name:                    "counter_with_unit",
+			typeLabel:               "counter",
+			unitLabel:               "operations",
+			expectedType:            writev2.Metadata_METRIC_TYPE_COUNTER,
+			description:             "Counter metric with operations unit",
+			enableTypeAndUnitLabels: true,
+		},
+		{
+			name:                    "gauge_with_bytes",
+			typeLabel:               "gauge",
+			unitLabel:               "bytes",
+			expectedType:            writev2.Metadata_METRIC_TYPE_GAUGE,
+			description:             "Gauge metric with bytes unit",
+			enableTypeAndUnitLabels: true,
+		},
+		{
+			name:                    "histogram_with_seconds",
+			typeLabel:               "histogram",
+			unitLabel:               "seconds",
+			expectedType:            writev2.Metadata_METRIC_TYPE_HISTOGRAM,
+			description:             "Histogram metric with seconds unit",
+			enableTypeAndUnitLabels: true,
+		},
+		{
+			name:                    "summary_with_ratio",
+			typeLabel:               "summary",
+			unitLabel:               "ratio",
+			expectedType:            writev2.Metadata_METRIC_TYPE_SUMMARY,
+			description:             "Summary metric with ratio unit",
+			enableTypeAndUnitLabels: true,
+		},
+		{
+			name:                    "info_no_unit",
+			typeLabel:               "info",
+			unitLabel:               "",
+			expectedType:            writev2.Metadata_METRIC_TYPE_INFO,
+			description:             "Info metric without unit",
+			enableTypeAndUnitLabels: true,
+		},
+		{
+			name:                    "stateset_no_unit",
+			typeLabel:               "stateset",
+			unitLabel:               "",
+			expectedType:            writev2.Metadata_METRIC_TYPE_STATESET,
+			description:             "Stateset metric without unit",
+			enableTypeAndUnitLabels: true,
+		},
+		{
+			name:                    "unknown_type",
+			typeLabel:               "unknown_type",
+			unitLabel:               "meters",
+			expectedType:            writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			description:             "Unknown type defaults to unspecified",
+			enableTypeAndUnitLabels: true,
+		},
+		{
+			name:                    "empty_type_with_unit",
+			typeLabel:               "",
+			unitLabel:               "watts",
+			expectedType:            writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			description:             "Empty type with unit",
+			enableTypeAndUnitLabels: true,
+		},
+		{
+			name:                    "type_no_unit",
+			typeLabel:               "gauge",
+			unitLabel:               "",
+			expectedType:            writev2.Metadata_METRIC_TYPE_GAUGE,
+			description:             "Type without unit",
+			enableTypeAndUnitLabels: true,
+		},
+		{
+			name:                    "no_type_no_unit",
+			typeLabel:               "",
+			unitLabel:               "",
+			expectedType:            writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			description:             "No type and no unit",
+			enableTypeAndUnitLabels: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			batch := make([]timeSeries, 1)
+			builder := labels.NewScratchBuilder(4)
+			builder.Add("__name__", "test_metric_"+tc.name)
+
+			if tc.typeLabel != "" {
+				builder.Add("__type__", tc.typeLabel)
+			}
+			if tc.unitLabel != "" {
+				builder.Add("__unit__", tc.unitLabel)
+			}
+
+			builder.Add("job", "test_job")
+			builder.Add("instance", "localhost:9090")
+
+			batch[0] = timeSeries{
+				seriesLabels: builder.Labels(),
+				value:        123.45,
+				timestamp:    time.Now().UnixMilli(),
+				sType:        tSample,
+				metadata:     nil, // Setting metadata to nil to force use of labels
+			}
+
+			pendingData := make([]writev2.TimeSeries, 1)
+
+			// Test with feature flag enabled.
+			// TODO(@perebaj): Remove this once the feature flag is removed.
+			if tc.enableTypeAndUnitLabels {
+				symbolTable.Reset()
+				nSamples, nExemplars, nHistograms, _ := populateV2TimeSeries(
+					&symbolTable,
+					batch,
+					pendingData,
+					false, // sendExemplars
+					false, // sendNativeHistograms
+					true,  // enableTypeAndUnitLabels
+				)
+
+				require.Equal(t, 1, nSamples, "Should have 1 sample")
+				require.Equal(t, 0, nExemplars, "Should have 0 exemplars")
+				require.Equal(t, 0, nHistograms, "Should have 0 histograms")
+
+				require.Equal(t, tc.expectedType, pendingData[0].Metadata.Type,
+					"Type should match expected for %s", tc.description)
+
+				unitRef := pendingData[0].Metadata.UnitRef
+
+				symbols := symbolTable.Symbols()
+				require.True(t, unitRef < uint32(len(symbols)), "Unit ref should be valid")
+				require.Equal(t, tc.unitLabel, symbols[unitRef], "Unit should match")
+			}
+		})
 	}
 }
