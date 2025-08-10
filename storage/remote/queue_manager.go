@@ -1946,7 +1946,6 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 				default:
 					metricType = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
 				}
-
 			}
 			// Safeguard against sending garbage in case of not having metadata
 			// for whatever reason.
