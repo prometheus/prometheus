@@ -2475,7 +2475,6 @@ func TestPopulateV2TimeSeries_typeAndUnitLabels(t *testing.T) {
 				unitRef := pendingData[0].Metadata.UnitRef
 
 				symbols := symbolTable.Symbols()
-				require.True(t, unitRef < uint32(len(symbols)), "Unit ref should be valid")
 				require.Equal(t, tc.unitLabel, symbols[unitRef], "Unit should match")
 			}
 		})
