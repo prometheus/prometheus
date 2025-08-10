@@ -1929,25 +1929,22 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			if enableTypeAndUnitLabels {
 				typeValue := d.seriesLabels.Get("__type__")
 				unit = d.seriesLabels.Get("__unit__")
-
-				if typeValue != "" || unit != "" {
-					// convert string type to MetricMetadata_MetricType
-					switch typeValue {
-					case "counter":
-						metricType = writev2.Metadata_METRIC_TYPE_COUNTER
-					case "gauge":
-						metricType = writev2.Metadata_METRIC_TYPE_GAUGE
-					case "histogram":
-						metricType = writev2.Metadata_METRIC_TYPE_HISTOGRAM
-					case "summary":
-						metricType = writev2.Metadata_METRIC_TYPE_SUMMARY
-					case "info":
-						metricType = writev2.Metadata_METRIC_TYPE_INFO
-					case "stateset":
-						metricType = writev2.Metadata_METRIC_TYPE_STATESET
-					default:
-						metricType = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
-					}
+				// convert string type to MetricMetadata_MetricType
+				switch typeValue {
+				case "counter":
+					metricType = writev2.Metadata_METRIC_TYPE_COUNTER
+				case "gauge":
+					metricType = writev2.Metadata_METRIC_TYPE_GAUGE
+				case "histogram":
+					metricType = writev2.Metadata_METRIC_TYPE_HISTOGRAM
+				case "summary":
+					metricType = writev2.Metadata_METRIC_TYPE_SUMMARY
+				case "info":
+					metricType = writev2.Metadata_METRIC_TYPE_INFO
+				case "stateset":
+					metricType = writev2.Metadata_METRIC_TYPE_STATESET
+				default:
+					metricType = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
 				}
 
 			}
