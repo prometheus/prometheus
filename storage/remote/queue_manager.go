@@ -1924,11 +1924,9 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(d.metadata.Unit)
 			nPendingMetadata++
 		} else {
-			fmt.Println("enableTypeAndUnitLabels", enableTypeAndUnitLabels)
 			metricType := writev2.Metadata_METRIC_TYPE_UNSPECIFIED
 			var unit string
 			if enableTypeAndUnitLabels {
-				fmt.Println("DEBUG enableTypeAndUnitLabels")
 				typeValue := d.seriesLabels.Get("__type__")
 				unit = d.seriesLabels.Get("__unit__")
 

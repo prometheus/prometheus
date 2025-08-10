@@ -2332,19 +2332,6 @@ func BenchmarkBuildTimeSeries(b *testing.B) {
 	}
 }
 
-// TestPopulateV2TimeSeries_enableTypeAndUnitLabels tests that the populateV2TimeSeries function correctly populates the type and unit labels when the feature flag is enabled.
-// func TestPopulateV2TimeSeries_enableTypeAndUnitLabels(t *testing.T) {
-// 	noopLogger := promslog.NewNopLogger()
-// 	symbolTable := writev2.NewSymbolTable()
-// 	pendingData := make([]writev2.TimeSeries, 100)
-// 	batch := make([]timeSeries, 100)
-// 	for i := 0; i < 100; i++ {
-// 		batch[i] = timeSeries{
-// 			seriesLabels: labels.NewScratchBuilder(1).Add("__name__", "test_metric").Add("__type__", "counter").Add("__unit__", "1").Labels(),
-// 		}
-// 	}
-// }
-
 // TestPopulateV2TimeSeries_typeAndUnitLabels tests that the populateV2TimeSeries function correctly populates the type and unit labels.
 func TestPopulateV2TimeSeries_typeAndUnitLabels(t *testing.T) {
 	symbolTable := writev2.NewSymbolTable()
