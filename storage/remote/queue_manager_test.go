@@ -2437,7 +2437,7 @@ func TestQueueAppend(t *testing.T) {
 				{sType: tSample},
 			},
 			expectedResult: []bool{true, true, true, true, true},
-			expectedBatch:  0, 
+			expectedBatch:  0,
 			expectedSent:   1,
 		},
 	}
@@ -2456,14 +2456,14 @@ func TestQueueAppend(t *testing.T) {
 			}
 
 			require.Equal(t, tt.expectedResult, results)
-			require.Len(t, q.batch,tt.expectedBatch)
+			require.Len(t, q.batch, tt.expectedBatch)
 
 			// Check number of batches sent.
 			sentCount := 0
 			for len(q.batchQueue) > 0 {
 				batch := <-q.batchQueue
 				sentCount++
-				
+
 				// Verify sent batch has correct sample count if this was triggered by capacity.
 				if tt.expectedSent > 0 {
 					sampleCount := 0
