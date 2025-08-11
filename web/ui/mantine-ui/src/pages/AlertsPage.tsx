@@ -20,7 +20,15 @@ import badgeClasses from "../Badge.module.css";
 import panelClasses from "../Panel.module.css";
 import RuleDefinition from "../components/RuleDefinition";
 import { humanizeDurationRelative, now } from "../lib/formatTime";
-import { Fragment, useEffect, useMemo, useRef } from "react";
+import {
+  Profiler,
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+} from "react";
+import type { ProfilerOnRenderCallback } from "react";
 import { StateMultiSelect } from "../components/StateMultiSelect";
 import { IconInfoCircle, IconSearch } from "@tabler/icons-react";
 import { LabelBadges } from "../components/LabelBadges";
@@ -65,6 +73,16 @@ type AlertsPageData = {
       };
     }[];
   }[];
+};
+
+// Track timing for a search render cycle
+type SearchMeasure = {
+  id: number;
+  search: string;
+  startedAt: number;
+  computeEnd?: number;
+  elementsEnd?: number; // fallback if Profiler isn't available
+  elementsDuration?: number; // actual render time from React Profiler
 };
 
 const kvSearch = new KVSearch<AlertingRule>({
@@ -168,9 +186,18 @@ export default function AlertsPage() {
   // Measure how long it takes to render the filtered list after debouncedSearch changes.
   const searchRenderStartRef = useRef<number | null>(null);
   const prevDebouncedSearchRef = useRef<string>(debouncedSearch);
+  const measureIdRef = useRef(0);
+  const measureRef = useRef<SearchMeasure | null>(null);
   if (prevDebouncedSearchRef.current !== debouncedSearch) {
-    searchRenderStartRef.current = performance.now();
     prevDebouncedSearchRef.current = debouncedSearch;
+    measureIdRef.current += 1;
+    const startedAt = performance.now();
+    measureRef.current = {
+      id: measureIdRef.current,
+      search: debouncedSearch,
+      startedAt,
+    };
+    searchRenderStartRef.current = startedAt;
   }
 
   // After commit, wait for paint to complete, then log duration.
@@ -181,11 +208,23 @@ export default function AlertsPage() {
       let raf2 = 0;
       raf1 = requestAnimationFrame(() => {
         raf2 = requestAnimationFrame(() => {
-          const duration = performance.now() - start;
+          const paintEnd = performance.now();
+          const m = measureRef.current;
+          const computeMs = m?.computeEnd != null ? m.computeEnd - start : NaN;
+          const elementsMs =
+            m?.elementsDuration != null
+              ? m.elementsDuration
+              : m?.elementsEnd != null && m?.computeEnd != null
+                ? m.elementsEnd - m.computeEnd
+                : NaN;
+          const paintMs =
+            m?.elementsEnd != null ? paintEnd - m.elementsEnd : NaN;
+          const totalMs = paintEnd - start;
           console.log(
-            `AlertsPage: filtered list render time ${duration.toFixed(2)} ms (search="${debouncedSearch}")`
+            `AlertsPage timings (search="${m?.search ?? ""}"): compute=${isNaN(computeMs) ? "-" : computeMs.toFixed(2)}ms, elements=${isNaN(elementsMs as number) ? "-" : (elementsMs as number).toFixed(2)}ms, paint=${isNaN(paintMs) ? "-" : paintMs.toFixed(2)}ms, total=${totalMs.toFixed(2)}ms`
           );
           searchRenderStartRef.current = null;
+          measureRef.current = null;
         });
       });
       return () => {
@@ -212,6 +251,12 @@ export default function AlertsPage() {
     () => buildAlertsPageData(data.data, debouncedSearch, stateFilter),
     [data, stateFilter, debouncedSearch]
   );
+
+  // Mark compute end when the filtered data is ready for rendering
+  if (measureRef.current && searchRenderStartRef.current != null) {
+    // We consider compute finished after alertsPageData has been recomputed
+    measureRef.current.computeEnd = performance.now();
+  }
 
   const shownGroups = useMemo(
     () =>
@@ -429,6 +474,25 @@ export default function AlertsPage() {
     [currentPageGroups, showAnnotations, setShowEmptyGroups]
   );
 
+  // Capture actual render time for the list subtree using React Profiler
+  const onListRender = useCallback<ProfilerOnRenderCallback>(
+    (_, __, actualDuration) => {
+      if (measureRef.current && searchRenderStartRef.current != null) {
+        measureRef.current.elementsDuration = actualDuration;
+      }
+    },
+    []
+  );
+
+  // Mark elements end after creating React elements for the current view (fallback when Profiler duration is unavailable)
+  if (
+    measureRef.current &&
+    measureRef.current.computeEnd &&
+    searchRenderStartRef.current != null
+  ) {
+    measureRef.current.elementsEnd = performance.now();
+  }
+
   return (
     <Stack mt="xs">
       <Group>
@@ -485,7 +549,9 @@ export default function AlertsPage() {
         onChange={setActivePage}
         hideWithOnePage
       />
-      {renderedPageItems}
+      <Profiler id="alerts-list" onRender={onListRender}>
+        {renderedPageItems}
+      </Profiler>
     </Stack>
   );
 }
