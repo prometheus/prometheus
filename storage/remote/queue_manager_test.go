@@ -2563,7 +2563,7 @@ func TestQueueAppend_NewBatchAfterSend(t *testing.T) {
 
 	// Verify new batch has correct capacity
 	require.Equal(t, originalCapacity, cap(q.batch))
-	require.Empty(t, len(q.batch))
+	require.Empty(t, q.batch)
 
 	// Should be able to append to new batch
 	require.True(t, q.Append(timeSeries{sType: tSample}))
@@ -2598,7 +2598,7 @@ func TestQueueAppend_EdgeCases(t *testing.T) {
 		}
 
 		// Should not have sent any batches.
-		require.Equal(t, 0, len(q.batchQueue))
-		require.Equal(t, 10, len(q.batch))
+		require.Empty(t, q.batchQueue)
+		require.Len(t, q.batch, 10)
 	})
 }
