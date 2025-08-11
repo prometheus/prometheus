@@ -780,10 +780,18 @@ func main() {
 	)
 
 	var (
-		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
-		scraper       = &readyScrapeManager{}
+		localStorage = &readyStorage{stats: tsdb.NewDBStats()}
+		scraper      = &readyScrapeManager{}
+	)
+
+	var wrappedStorage storage.Storage = localStorage
+	if cfg.scrape.EnableTypeAndUnitLabels {
+		wrappedStorage = storage.TypeAndUnitMismatchStorage(localStorage)
+	}
+
+	var (
 		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
-		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
+		fanoutStorage = storage.NewFanout(logger, wrappedStorage, remoteStorage)
 	)
 
 	var (
