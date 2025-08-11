@@ -539,18 +539,10 @@ func TestReshard(t *testing.T) {
 			m.Start()
 			defer m.Stop()
 
-			var wg sync.WaitGroup
-			errCh := make(chan error, 1)
-
-			wg.Add(1)
 			go func() {
-				defer wg.Done()
 				for i := 0; i < len(samples); i += config.DefaultQueueConfig.Capacity {
 					sent := m.Append(samples[i : i+config.DefaultQueueConfig.Capacity])
-					if !sent {
-						errCh <- fmt.Errorf("samples not sent at batch starting index %d", i)
-						return
-					}
+					require.True(t, sent, "samples not sent")
 					time.Sleep(100 * time.Millisecond)
 				}
 			}()
@@ -561,20 +553,10 @@ func TestReshard(t *testing.T) {
 				time.Sleep(100 * time.Millisecond)
 			}
 
-			wg.Wait() // wait for append goroutine to finish
-
-			select {
-			case err := <-errCh:
-				require.NoError(t, err)
-			default:
-				// no error
-			}
-
 			c.waitForExpectedData(t, 30*time.Second)
 		})
 	}
 }
-
 
 func TestReshardRaceWithStop(t *testing.T) {
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
@@ -2438,11 +2420,11 @@ func TestQueueAppend(t *testing.T) {
 			samples: []timeSeries{
 				{sType: tSample},
 				{sType: tSample},
-				{sType: tSample}, // This should trigger batch send with fixed code
+				{sType: tSample},
 			},
 			expectedResult: []bool{true, true, true},
-			expectedBatch:  0, // New batch should be empty after send
-			expectedSent:   1, // One batch should be sent
+			expectedBatch:  0,
+			expectedSent:   1,
 		},
 		{
 			name:          "mixed samples and metadata reaching capacity",
@@ -2453,11 +2435,11 @@ func TestQueueAppend(t *testing.T) {
 				{sType: tMetadata},
 				{sType: tSample},
 				{sType: tMetadata},
-				{sType: tSample}, // This should trigger batch send (3 samples total)
+				{sType: tSample},
 			},
 			expectedResult: []bool{true, true, true, true, true},
-			expectedBatch:  0, // New batch should be empty after send
-			expectedSent:   1, // One batch should be sent
+			expectedBatch:  0, 
+			expectedSent:   1,
 		},
 	}
 
@@ -2477,13 +2459,13 @@ func TestQueueAppend(t *testing.T) {
 			require.Equal(t, tt.expectedResult, results)
 			require.Equal(t, tt.expectedBatch, len(q.batch))
 
-			// Check number of batches sent
+			// Check number of batches sent.
 			sentCount := 0
 			for len(q.batchQueue) > 0 {
 				batch := <-q.batchQueue
 				sentCount++
 				
-				// Verify sent batch has correct sample count if this was triggered by capacity
+				// Verify sent batch has correct sample count if this was triggered by capacity.
 				if tt.expectedSent > 0 {
 					sampleCount := 0
 					for _, ts := range batch {
@@ -2506,18 +2488,18 @@ func TestQueueAppend_BlockedQueue(t *testing.T) {
 		maxSamples: 2, // capacity 1
 	}
 
-	// Fill the channel first
+	// Fill the channel first.
 	q.batchQueue <- make([]timeSeries, 1)
 
-	// Add samples to reach batch capacity
+	// Add samples to reach batch capacity.
 	result1 := q.Append(timeSeries{sType: tSample})
 	require.True(t, result1)
 
-	// Second append should fail because channel is full
+	// Second append should fail because channel is full.
 	result2 := q.Append(timeSeries{sType: tSample})
 	require.False(t, result2, "expected Append to return false when batch queue is full")
 
-	// Batch should only contain first sample (second was removed)
+	// Batch should only contain first sample (second was removed).
 	require.Equal(t, 1, len(q.batch), "expected batch to contain only first sample after blocked send")
 }
 
@@ -2532,7 +2514,7 @@ func TestQueueAppend_ConcurrentAccess(t *testing.T) {
 	results := make([]bool, numGoroutines)
 	var wg sync.WaitGroup
 
-	// Launch multiple goroutines appending concurrently
+	// Launch multiple goroutines appending concurrently.
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
 		go func(idx int) {
@@ -2544,7 +2526,7 @@ func TestQueueAppend_ConcurrentAccess(t *testing.T) {
 
 	wg.Wait()
 
-	// Count successful appends
+	// Count successful appends.
 	successCount := 0
 	for _, result := range results {
 		if result {
@@ -2552,10 +2534,10 @@ func TestQueueAppend_ConcurrentAccess(t *testing.T) {
 		}
 	}
 
-	// Should have some successes
+	// Should have some successes.
 	require.Greater(t, successCount, 0, "expected at least some successful appends")
 
-	// Total items (in batch + sent) should equal successful appends
+	// Total items (in batch + sent) should equal successful appends.
 	totalItems := len(q.batch)
 	for len(q.batchQueue) > 0 {
 		batch := <-q.batchQueue
@@ -2573,9 +2555,9 @@ func TestQueueAppend_NewBatchAfterSend(t *testing.T) {
 		maxSamples: originalCapacity,
 	}
 
-	// Fill first batch to capacity
+	// Fill first batch to capacity.
 	require.True(t, q.Append(timeSeries{sType: tSample}))
-	require.True(t, q.Append(timeSeries{sType: tSample})) // Should send batch
+	require.True(t, q.Append(timeSeries{sType: tSample})) // Should send batch.
 
 	// Verify batch was sent
 	require.Equal(t, 1, len(q.batchQueue))
@@ -2597,7 +2579,7 @@ func TestQueueAppend_EdgeCases(t *testing.T) {
 			maxSamples: 0,
 		}
 
-		// Should immediately send since any non-metadata exceeds capacity
+		// Should immediately send since any non-metadata exceeds capacity.
 		result := q.Append(timeSeries{sType: tSample})
 		require.True(t, result)
 		require.Equal(t, 1, len(q.batchQueue))
@@ -2610,13 +2592,13 @@ func TestQueueAppend_EdgeCases(t *testing.T) {
 			maxSamples: 2,
 		}
 
-		// Add many metadata entries
+		// Add many metadata entries.
 		for i := 0; i < 10; i++ {
 			result := q.Append(timeSeries{sType: tMetadata})
 			require.True(t, result)
 		}
 
-		// Should not have sent any batches
+		// Should not have sent any batches.
 		require.Equal(t, 0, len(q.batchQueue))
 		require.Equal(t, 10, len(q.batch))
 	})

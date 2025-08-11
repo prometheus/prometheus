@@ -1,0 +1,19 @@
+Fix(queue): exclude metadata from sample count in batch send logic
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# Date:      Mon Aug 11 08:28:22 2025 +0530
+#
+# interactive rebase in progress; onto 294f36e80
+# Last command done (1 command done):
+#    edit 75a416ea5 Fix(queue): exclude metadata from sample count in batch send logic
+# Next commands to do (2 remaining commands):
+#    pick 44b9009a6 Fixed the lint issue
+#    pick 209935ece Fixed lint issue in test file
+# You are currently editing a commit while rebasing branch 'queue-exclude-metadata-from-batch' on '294f36e80'.
+#
+# Changes to be committed:
+#	modified:   storage/remote/queue_manager.go
+#	modified:   storage/remote/queue_manager_test.go
+#
