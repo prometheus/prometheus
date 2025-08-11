@@ -619,6 +619,7 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 	return nil
 }
 
+
 func isSampleOld(baseTime time.Time, sampleAgeLimit time.Duration, ts int64) bool {
 	if sampleAgeLimit == 0 {
 		// If sampleAgeLimit is unset, then we never skip samples due to their age.
@@ -1340,6 +1341,7 @@ type queue struct {
 	batchMtx   sync.Mutex
 	batch      []timeSeries
 	batchQueue chan []timeSeries
+	maxSamples int
 
 	// Since we know there are a limited number of batches out, using a stack
 	// is easy and safe so a sync.Pool is not necessary.
@@ -1386,6 +1388,7 @@ func newQueue(batchSize, capacity int) *queue {
 	}
 }
 
+
 // Append the timeSeries to the buffered batch. Returns false if it
 // cannot be added and must be retried.
 func (q *queue) Append(datum timeSeries) bool {
@@ -1396,7 +1399,15 @@ func (q *queue) Append(datum timeSeries) bool {
 	// in the batch size calculation.
 	// See https://github.com/prometheus/prometheus/issues/14405
 	q.batch = append(q.batch, datum)
-	if len(q.batch) == cap(q.batch) {
+
+	// Count non-metadata samples
+	totalSamples := 0
+	for _, ts := range q.batch {
+		if ts.sType != tMetadata {
+			totalSamples++
+		}
+	}
+	if totalSamples >= q.maxSamples{
 		select {
 		case q.batchQueue <- q.batch:
 			q.batch = q.newBatch(cap(q.batch))

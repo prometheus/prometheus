@@ -52,6 +52,7 @@ import (
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
+//	metadataModel "github.com/prometheus/prometheus/model/metadata"
 )
 
 const defaultFlushDeadline = 1 * time.Minute
@@ -539,10 +540,18 @@ func TestReshard(t *testing.T) {
 			m.Start()
 			defer m.Stop()
 
+			var wg sync.WaitGroup
+			errCh := make(chan error, 1)
+
+			wg.Add(1)
 			go func() {
+				defer wg.Done()
 				for i := 0; i < len(samples); i += config.DefaultQueueConfig.Capacity {
 					sent := m.Append(samples[i : i+config.DefaultQueueConfig.Capacity])
-					require.True(t, sent, "samples not sent")
+					if !sent {
+						errCh <- fmt.Errorf("samples not sent at batch starting index %d", i)
+						return
+					}
 					time.Sleep(100 * time.Millisecond)
 				}
 			}()
@@ -553,10 +562,20 @@ func TestReshard(t *testing.T) {
 				time.Sleep(100 * time.Millisecond)
 			}
 
+			wg.Wait() // wait for append goroutine to finish
+
+			select {
+			case err := <-errCh:
+				require.NoError(t, err)
+			default:
+				// no error
+			}
+
 			c.waitForExpectedData(t, 30*time.Second)
 		})
 	}
 }
+
 
 func TestReshardRaceWithStop(t *testing.T) {
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
@@ -2361,4 +2380,245 @@ func BenchmarkBuildTimeSeries(b *testing.B) {
 		_, _, result, _, _, _ := buildTimeSeries(samples, filter)
 		require.NotNil(b, result)
 	}
+}
+
+
+func TestQueueAppend(t *testing.T) {
+	tests := []struct {
+		name           string
+		batchCapacity  int
+		queueCapacity  int
+		samples        []timeSeries
+		expectedResult []bool
+		expectedBatch  int
+		expectedSent   int
+	}{
+		{
+			name:          "append to empty queue",
+			batchCapacity: 5,
+			queueCapacity: 1,
+			samples: []timeSeries{
+				{sType: tSample},
+			},
+			expectedResult: []bool{true},
+			expectedBatch:  1,
+			expectedSent:   0,
+		},
+		{
+			name:          "append multiple samples below capacity",
+			batchCapacity: 5,
+			queueCapacity: 1,
+			samples: []timeSeries{
+				{sType: tSample},
+				{sType: tSample},
+				{sType: tSample},
+			},
+			expectedResult: []bool{true, true, true},
+			expectedBatch:  3,
+			expectedSent:   0,
+		},
+		{
+			name:          "metadata does not count towards sample limit",
+			batchCapacity: 3,
+			queueCapacity: 1,
+			samples: []timeSeries{
+				{sType: tSample},
+				{sType: tMetadata},
+				{sType: tSample},
+				{sType: tMetadata},
+				{sType: tMetadata},
+			},
+			expectedResult: []bool{true, true, true, true, true},
+			expectedBatch:  5,
+			expectedSent:   0,
+		},
+		{
+			name:          "batch sent when sample capacity reached",
+			batchCapacity: 3,
+			queueCapacity: 1,
+			samples: []timeSeries{
+				{sType: tSample},
+				{sType: tSample},
+				{sType: tSample}, // This should trigger batch send with fixed code
+			},
+			expectedResult: []bool{true, true, true},
+			expectedBatch:  0, // New batch should be empty after send
+			expectedSent:   1, // One batch should be sent
+		},
+		{
+			name:          "mixed samples and metadata reaching capacity",
+			batchCapacity: 3,
+			queueCapacity: 1,
+			samples: []timeSeries{
+				{sType: tSample},
+				{sType: tMetadata},
+				{sType: tSample},
+				{sType: tMetadata},
+				{sType: tSample}, // This should trigger batch send (3 samples total)
+			},
+			expectedResult: []bool{true, true, true, true, true},
+			expectedBatch:  0, // New batch should be empty after send
+			expectedSent:   1, // One batch should be sent
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := &queue{
+				batch:      make([]timeSeries, 0, tt.batchCapacity),
+				batchQueue: make(chan []timeSeries, tt.queueCapacity),
+				maxSamples: tt.batchCapacity,
+			}
+
+			results := make([]bool, len(tt.samples))
+			for i, sample := range tt.samples {
+				results[i] = q.Append(sample)
+			}
+
+			require.Equal(t, tt.expectedResult, results)
+			require.Equal(t, tt.expectedBatch, len(q.batch))
+
+			// Check number of batches sent
+			sentCount := 0
+			for len(q.batchQueue) > 0 {
+				batch := <-q.batchQueue
+				sentCount++
+				
+				// Verify sent batch has correct sample count if this was triggered by capacity
+				if tt.expectedSent > 0 {
+					sampleCount := 0
+					for _, ts := range batch {
+						if ts.sType != tMetadata {
+							sampleCount++
+						}
+					}
+					require.GreaterOrEqual(t, sampleCount, tt.batchCapacity)
+				}
+			}
+			require.Equal(t, tt.expectedSent, sentCount)
+		})
+	}
+}
+
+func TestQueueAppend_BlockedQueue(t *testing.T) {
+	q := &queue{
+		batch:      make([]timeSeries, 0, 2),
+		batchQueue: make(chan []timeSeries, 1),
+		maxSamples: 2, // capacity 1
+	}
+
+	// Fill the channel first
+	q.batchQueue <- make([]timeSeries, 1)
+
+	// Add samples to reach batch capacity
+	result1 := q.Append(timeSeries{sType: tSample})
+	require.True(t, result1)
+
+	// Second append should fail because channel is full
+	result2 := q.Append(timeSeries{sType: tSample})
+	require.False(t, result2, "expected Append to return false when batch queue is full")
+
+	// Batch should only contain first sample (second was removed)
+	require.Equal(t, 1, len(q.batch), "expected batch to contain only first sample after blocked send")
+}
+
+func TestQueueAppend_ConcurrentAccess(t *testing.T) {
+	q := &queue{
+		batch:      make([]timeSeries, 0, 10),
+		batchQueue: make(chan []timeSeries, 5),
+		maxSamples: 10,
+	}
+
+	const numGoroutines = 100
+	results := make([]bool, numGoroutines)
+	var wg sync.WaitGroup
+
+	// Launch multiple goroutines appending concurrently
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			datum := timeSeries{sType: tSample}
+			results[idx] = q.Append(datum)
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Count successful appends
+	successCount := 0
+	for _, result := range results {
+		if result {
+			successCount++
+		}
+	}
+
+	// Should have some successes
+	require.Greater(t, successCount, 0, "expected at least some successful appends")
+
+	// Total items (in batch + sent) should equal successful appends
+	totalItems := len(q.batch)
+	for len(q.batchQueue) > 0 {
+		batch := <-q.batchQueue
+		totalItems += len(batch)
+	}
+
+	require.Equal(t, successCount, totalItems, "total items should match successful appends")
+}
+
+func TestQueueAppend_NewBatchAfterSend(t *testing.T) {
+	originalCapacity := 2
+	q := &queue{
+		batch:      make([]timeSeries, 0, originalCapacity),
+		batchQueue: make(chan []timeSeries, 2),
+		maxSamples: originalCapacity,
+	}
+
+	// Fill first batch to capacity
+	require.True(t, q.Append(timeSeries{sType: tSample}))
+	require.True(t, q.Append(timeSeries{sType: tSample})) // Should send batch
+
+	// Verify batch was sent
+	require.Equal(t, 1, len(q.batchQueue))
+
+	// Verify new batch has correct capacity
+	require.Equal(t, originalCapacity, cap(q.batch))
+	require.Equal(t, 0, len(q.batch))
+
+	// Should be able to append to new batch
+	require.True(t, q.Append(timeSeries{sType: tSample}))
+	require.Equal(t, 1, len(q.batch))
+}
+
+func TestQueueAppend_EdgeCases(t *testing.T) {
+	t.Run("zero capacity batch", func(t *testing.T) {
+		q := &queue{
+			batch:      make([]timeSeries, 0, 0),
+			batchQueue: make(chan []timeSeries, 1),
+			maxSamples: 0,
+		}
+
+		// Should immediately send since any non-metadata exceeds capacity
+		result := q.Append(timeSeries{sType: tSample})
+		require.True(t, result)
+		require.Equal(t, 1, len(q.batchQueue))
+	})
+
+	t.Run("only metadata never triggers send", func(t *testing.T) {
+		q := &queue{
+			batch:      make([]timeSeries, 0, 2),
+			batchQueue: make(chan []timeSeries, 1),
+			maxSamples: 2,
+		}
+
+		// Add many metadata entries
+		for i := 0; i < 10; i++ {
+			result := q.Append(timeSeries{sType: tMetadata})
+			require.True(t, result)
+		}
+
+		// Should not have sent any batches
+		require.Equal(t, 0, len(q.batchQueue))
+		require.Equal(t, 10, len(q.batch))
+	})
 }
