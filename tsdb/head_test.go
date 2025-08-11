@@ -84,7 +84,7 @@ func newTestHeadWithOptions(t testing.TB, compressWAL compression.Type, opts *He
 	h, err := NewHead(nil, nil, wal, nil, opts, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_ chunks.HeadSeriesRef, _ chunks.ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding, _ bool) error {
+	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(chunks.HeadSeriesRef, chunks.ChunkDiskMapperRef, int64, int64, uint16, chunkenc.Encoding, bool) error {
 		return nil
 	}))
 
@@ -2709,7 +2709,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 		return i
 	}
 
-	testIsolation := func(_ *Head, _ int) {
+	testIsolation := func(*Head, int) {
 	}
 
 	// Test isolation without restart of Head.
@@ -5567,7 +5567,7 @@ func newUnsupportedChunk() *unsupportedChunk {
 	return &unsupportedChunk{chunkenc.NewXORChunk()}
 }
 
-func (c *unsupportedChunk) Encoding() chunkenc.Encoding {
+func (*unsupportedChunk) Encoding() chunkenc.Encoding {
 	return EncUnsupportedXOR
 }
 
@@ -6097,7 +6097,7 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 	}{
 		"float samples": {
 			numTotalSamples: 180,
-			floatValFunc: func(_ int) float64 {
+			floatValFunc: func(int) float64 {
 				return 1.
 			},
 			expectedChks: []struct {
@@ -6804,8 +6804,8 @@ type countSeriesLifecycleCallback struct {
 	deleted atomic.Int64
 }
 
-func (c *countSeriesLifecycleCallback) PreCreation(labels.Labels) error { return nil }
-func (c *countSeriesLifecycleCallback) PostCreation(labels.Labels)      { c.created.Inc() }
+func (*countSeriesLifecycleCallback) PreCreation(labels.Labels) error { return nil }
+func (c *countSeriesLifecycleCallback) PostCreation(labels.Labels)    { c.created.Inc() }
 func (c *countSeriesLifecycleCallback) PostDeletion(s map[chunks.HeadSeriesRef]labels.Labels) {
 	c.deleted.Add(int64(len(s)))
 }

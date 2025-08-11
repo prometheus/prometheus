@@ -471,7 +471,7 @@ func (ssi *storageSeriesIterator) At() (t int64, v float64) {
 	return ssi.currT, ssi.currF
 }
 
-func (ssi *storageSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+func (*storageSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	panic(errors.New("storageSeriesIterator: AtHistogram not supported"))
 }
 
@@ -535,7 +535,7 @@ func (ssi *storageSeriesIterator) Next() chunkenc.ValueType {
 	}
 }
 
-func (ssi *storageSeriesIterator) Err() error {
+func (*storageSeriesIterator) Err() error {
 	return nil
 }
 

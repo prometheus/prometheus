@@ -847,15 +847,16 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			namer := otlptranslator.MetricNamer{
 				WithMetricSuffixes: true,
 			}
+			name, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
+			require.NoError(t, err)
 			annots, err := converter.addExponentialHistogramDataPoints(
 				context.Background(),
 				metric.ExponentialHistogram().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					ExportCreatedMetric:  true,
 					PromoteScopeMetadata: tt.promoteScope,
 				},
-				prompb.MetricMetadata{MetricFamilyName: namer.Build(TranslatorMetricFromOtelMetric(metric))},
+				prompb.MetricMetadata{MetricFamilyName: name},
 				pmetric.AggregationTemporalityCumulative,
 				tt.scope,
 			)
@@ -1303,16 +1304,17 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			namer := otlptranslator.MetricNamer{
 				WithMetricSuffixes: true,
 			}
+			name, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
+			require.NoError(t, err)
 			annots, err := converter.addCustomBucketsHistogramDataPoints(
 				context.Background(),
 				metric.Histogram().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					ExportCreatedMetric:     true,
 					ConvertHistogramsToNHCB: true,
 					PromoteScopeMetadata:    tt.promoteScope,
 				},
-				prompb.MetricMetadata{MetricFamilyName: namer.Build(TranslatorMetricFromOtelMetric(metric))},
+				prompb.MetricMetadata{MetricFamilyName: name},
 				pmetric.AggregationTemporalityCumulative,
 				tt.scope,
 			)

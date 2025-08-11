@@ -59,13 +59,6 @@ type parser struct {
 	// Everytime an Item is lexed that could be the end
 	// of certain expressions its end position is stored here.
 	lastClosing posrange.Pos
-	// Keep track of closing parentheses in addition, because sometimes the
-	// parser needs to read past a closing parenthesis to find the end of an
-	// expression, e.g. reading ony '(sum(foo)' cannot tell the end of the
-	// aggregation expression, since it could continue with either
-	// '(sum(foo))' or '(sum(foo) by (bar))' by which time we set lastClosing
-	// to the last paren.
-	closingParens []posrange.Pos
 
 	yyParser yyParserImpl
 
@@ -89,7 +82,7 @@ func NewParser(input string, opts ...Opt) *parser { //nolint:revive // unexporte
 	p.injecting = false
 	p.parseErrors = nil
 	p.generatedParserResult = nil
-	p.closingParens = make([]posrange.Pos, 0)
+	p.lastClosing = posrange.Pos(0)
 
 	// Clear lexer struct before reusing.
 	p.lex = Lexer{
@@ -179,11 +172,6 @@ func EnrichParseError(err error, enrich func(parseErr *ParseErr)) {
 func ParseExpr(input string) (expr Expr, err error) {
 	p := NewParser(input)
 	defer p.Close()
-
-	if len(p.closingParens) > 0 {
-		return nil, fmt.Errorf("internal parser error, not all closing parens consumed: %v", p.closingParens)
-	}
-
 	return p.ParseExpr()
 }
 
@@ -334,7 +322,7 @@ func (p *parser) unexpected(context, expected string) {
 var errUnexpected = errors.New("unexpected error")
 
 // recover is the handler that turns panics into returns from the top level of Parse.
-func (p *parser) recover(errp *error) {
+func (*parser) recover(errp *error) {
 	e := recover()
 	switch _, ok := e.(runtime.Error); {
 	case ok:
@@ -387,10 +375,7 @@ func (p *parser) Lex(lval *yySymType) int {
 	case EOF:
 		lval.item.Typ = EOF
 		p.InjectItem(0)
-	case RIGHT_PAREN:
-		p.closingParens = append(p.closingParens, lval.item.Pos+posrange.Pos(len(lval.item.Val)))
-		fallthrough
-	case RIGHT_BRACE, RIGHT_BRACKET, DURATION, NUMBER:
+	case RIGHT_BRACE, RIGHT_PAREN, RIGHT_BRACKET, DURATION, NUMBER:
 		p.lastClosing = lval.item.Pos + posrange.Pos(len(lval.item.Val))
 	}
 
@@ -402,7 +387,7 @@ func (p *parser) Lex(lval *yySymType) int {
 // It is a no-op since the parsers error routines are triggered
 // by mechanisms that allow more fine-grained control
 // For more information, see https://pkg.go.dev/golang.org/x/tools/cmd/goyacc.
-func (p *parser) Error(string) {
+func (*parser) Error(string) {
 }
 
 // InjectItem allows injecting a single Item at the beginning of the token stream
@@ -425,7 +410,7 @@ func (p *parser) InjectItem(typ ItemType) {
 	p.injecting = true
 }
 
-func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *BinaryExpr {
+func (*parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *BinaryExpr {
 	ret := modifiers.(*BinaryExpr)
 
 	ret.LHS = lhs.(Expr)
@@ -435,7 +420,7 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *Bi
 	return ret
 }
 
-func (p *parser) assembleVectorSelector(vs *VectorSelector) {
+func (*parser) assembleVectorSelector(vs *VectorSelector) {
 	// If the metric name was set outside the braces, add a matcher for it.
 	// If the metric name was inside the braces we don't need to do anything.
 	if vs.Name != "" {
@@ -451,16 +436,10 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateE
 	ret = modifier.(*AggregateExpr)
 	arguments := args.(Expressions)
 
-	if len(p.closingParens) == 0 {
-		// Prevents invalid array accesses.
-		// The error is already captured by the parser.
-		return
-	}
 	ret.PosRange = posrange.PositionRange{
 		Start: op.Pos,
-		End:   p.closingParens[0],
+		End:   p.lastClosing,
 	}
-	p.closingParens = p.closingParens[1:]
 
 	ret.Op = op.Typ
 
@@ -493,7 +472,7 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateE
 }
 
 // newMap is used when building the FloatHistogram from a map.
-func (p *parser) newMap() (ret map[string]interface{}) {
+func (*parser) newMap() (ret map[string]interface{}) {
 	return map[string]interface{}{}
 }
 
@@ -522,7 +501,7 @@ func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, t
 	})
 }
 
-func (p *parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64,
+func (*parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64,
 	combine func(*histogram.FloatHistogram, *histogram.FloatHistogram) (*histogram.FloatHistogram, error),
 ) ([]SequenceValue, error) {
 	ret := make([]SequenceValue, times+1)

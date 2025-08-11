@@ -50,8 +50,8 @@ func (s *TestMetaStore) GetMetadata(mfName string) (scrape.MetricMetadata, bool)
 	return scrape.MetricMetadata{}, false
 }
 
-func (s *TestMetaStore) SizeMetadata() int   { return 0 }
-func (s *TestMetaStore) LengthMetadata() int { return 0 }
+func (*TestMetaStore) SizeMetadata() int   { return 0 }
+func (*TestMetaStore) LengthMetadata() int { return 0 }
 
 type writeMetadataToMock struct {
 	metadataAppended int

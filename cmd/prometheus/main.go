@@ -99,7 +99,7 @@ type klogv1Writer struct{}
 // This is a hack to support klogv1 without use of go-kit/log. It is inspired
 // by klog's upstream klogv1/v2 coexistence example:
 // https://github.com/kubernetes/klog/blob/main/examples/coexist_klog_v1_and_v2/coexist_klog_v1_and_v2.go
-func (kw klogv1Writer) Write(p []byte) (n int, err error) {
+func (klogv1Writer) Write(p []byte) (n int, err error) {
 	if len(p) < klogv1DefaultPrefixLength {
 		klogv2.InfoDepth(klogv1OutputCallDepth, string(p))
 		return len(p), nil
@@ -157,7 +157,7 @@ func init() {
 // serverOnlyFlag creates server-only kingpin flag.
 func serverOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagClause {
 	return app.Flag(name, fmt.Sprintf("%s Use with server mode only.", help)).
-		PreAction(func(_ *kingpin.ParseContext) error {
+		PreAction(func(*kingpin.ParseContext) error {
 			// This will be invoked only if flag is actually provided by user.
 			serverOnlyFlags = append(serverOnlyFlags, "--"+name)
 			return nil
@@ -167,7 +167,7 @@ func serverOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagCl
 // agentOnlyFlag creates agent-only kingpin flag.
 func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagClause {
 	return app.Flag(name, fmt.Sprintf("%s Use with agent mode only.", help)).
-		PreAction(func(_ *kingpin.ParseContext) error {
+		PreAction(func(*kingpin.ParseContext) error {
 			// This will be invoked only if flag is actually provided by user.
 			agentOnlyFlags = append(agentOnlyFlags, "--"+name)
 			return nil
@@ -568,7 +568,7 @@ func main() {
 
 	promslogflag.AddFlags(a, &cfg.promslogConfig)
 
-	a.Flag("write-documentation", "Generate command line documentation. Internal use.").Hidden().Action(func(_ *kingpin.ParseContext) error {
+	a.Flag("write-documentation", "Generate command line documentation. Internal use.").Hidden().Action(func(*kingpin.ParseContext) error {
 		if err := documentcli.GenerateMarkdown(a.Model(), os.Stdout); err != nil {
 			os.Exit(1)
 			return err
@@ -1082,7 +1082,7 @@ func main() {
 				}
 				return nil
 			},
-			func(_ error) {
+			func(error) {
 				close(cancel)
 				webHandler.SetReady(web.Stopping)
 				notifs.AddNotification(notifications.ShuttingDown)
@@ -1097,7 +1097,7 @@ func main() {
 				logger.Info("Scrape discovery manager stopped")
 				return err
 			},
-			func(_ error) {
+			func(error) {
 				logger.Info("Stopping scrape discovery manager...")
 				cancelScrape()
 			},
@@ -1111,7 +1111,7 @@ func main() {
 				logger.Info("Notify discovery manager stopped")
 				return err
 			},
-			func(_ error) {
+			func(error) {
 				logger.Info("Stopping notify discovery manager...")
 				cancelNotify()
 			},
@@ -1125,7 +1125,7 @@ func main() {
 				ruleManager.Run()
 				return nil
 			},
-			func(_ error) {
+			func(error) {
 				ruleManager.Stop()
 			},
 		)
@@ -1144,7 +1144,7 @@ func main() {
 				logger.Info("Scrape manager stopped")
 				return err
 			},
-			func(_ error) {
+			func(error) {
 				// Scrape manager needs to be stopped before closing the local TSDB
 				// so that it doesn't try to write samples to a closed storage.
 				// We should also wait for rule manager to be fully stopped to ensure
@@ -1162,7 +1162,7 @@ func main() {
 				tracingManager.Run()
 				return nil
 			},
-			func(_ error) {
+			func(error) {
 				tracingManager.Stop()
 			},
 		)
@@ -1243,7 +1243,7 @@ func main() {
 					}
 				}
 			},
-			func(_ error) {
+			func(error) {
 				// Wait for any in-progress reloads to complete to avoid
 				// reloading things after they have been shutdown.
 				cancel <- struct{}{}
@@ -1275,7 +1275,7 @@ func main() {
 				<-cancel
 				return nil
 			},
-			func(_ error) {
+			func(error) {
 				close(cancel)
 			},
 		)
@@ -1328,7 +1328,7 @@ func main() {
 				<-cancel
 				return nil
 			},
-			func(_ error) {
+			func(error) {
 				if err := fanoutStorage.Close(); err != nil {
 					logger.Error("Error stopping storage", "err", err)
 				}
@@ -1383,7 +1383,7 @@ func main() {
 				<-cancel
 				return nil
 			},
-			func(_ error) {
+			func(error) {
 				if err := fanoutStorage.Close(); err != nil {
 					logger.Error("Error stopping storage", "err", err)
 				}
@@ -1400,7 +1400,7 @@ func main() {
 				}
 				return nil
 			},
-			func(_ error) {
+			func(error) {
 				cancelWeb()
 			},
 		)
@@ -1422,7 +1422,7 @@ func main() {
 				logger.Info("Notifier manager stopped")
 				return nil
 			},
-			func(_ error) {
+			func(error) {
 				notifierManager.Stop()
 			},
 		)
@@ -1703,35 +1703,35 @@ func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 type notReadyAppender struct{}
 
 // SetOptions does nothing in this appender implementation.
-func (n notReadyAppender) SetOptions(_ *storage.AppendOptions) {}
+func (notReadyAppender) SetOptions(*storage.AppendOptions) {}
 
-func (n notReadyAppender) Append(_ storage.SeriesRef, _ labels.Labels, _ int64, _ float64) (storage.SeriesRef, error) {
+func (notReadyAppender) Append(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 
-func (n notReadyAppender) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
+func (notReadyAppender) AppendExemplar(storage.SeriesRef, labels.Labels, exemplar.Exemplar) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 
-func (n notReadyAppender) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (notReadyAppender) AppendHistogram(storage.SeriesRef, labels.Labels, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 
-func (n notReadyAppender) AppendHistogramCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (notReadyAppender) AppendHistogramCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 
-func (n notReadyAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+func (notReadyAppender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 
-func (n notReadyAppender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+func (notReadyAppender) AppendCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 
-func (n notReadyAppender) Commit() error { return tsdb.ErrNotReady }
+func (notReadyAppender) Commit() error { return tsdb.ErrNotReady }
 
-func (n notReadyAppender) Rollback() error { return tsdb.ErrNotReady }
+func (notReadyAppender) Rollback() error { return tsdb.ErrNotReady }
 
 // Close implements the Storage interface.
 func (s *readyStorage) Close() error {
@@ -1754,6 +1754,21 @@ func (s *readyStorage) CleanTombstones() error {
 		}
 	}
 	return tsdb.ErrNotReady
+}
+
+// BlockMetas implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
+func (s *readyStorage) BlockMetas() ([]tsdb.BlockMeta, error) {
+	if x := s.get(); x != nil {
+		switch db := x.(type) {
+		case *tsdb.DB:
+			return db.BlockMetas(), nil
+		case *agent.DB:
+			return nil, agent.ErrUnsupported
+		default:
+			panic(fmt.Sprintf("unknown storage type %T", db))
+		}
+	}
+	return nil, tsdb.ErrNotReady
 }
 
 // Delete implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
@@ -1928,7 +1943,7 @@ func rwProtoMsgFlagValue(msgs *[]config.RemoteWriteProtoMsg) kingpin.Value {
 }
 
 // IsCumulative is used by kingpin to tell if it's an array or not.
-func (p *rwProtoMsgFlagParser) IsCumulative() bool {
+func (*rwProtoMsgFlagParser) IsCumulative() bool {
 	return true
 }
 

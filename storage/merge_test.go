@@ -1053,9 +1053,9 @@ func (m *mockChunkSeriesSet) Next() bool {
 
 func (m *mockChunkSeriesSet) At() ChunkSeries { return m.series[m.idx] }
 
-func (m *mockChunkSeriesSet) Err() error { return nil }
+func (*mockChunkSeriesSet) Err() error { return nil }
 
-func (m *mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
+func (*mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func TestChainSampleIterator(t *testing.T) {
 	for sampleType, sampleFunc := range map[string]func(int64) chunks.Sample{
@@ -1409,7 +1409,7 @@ func BenchmarkMergeLabelValuesWithLimit(b *testing.B) {
 		},
 	}
 
-	b.Run("benchmark", func(_ *testing.B) {
+	b.Run("benchmark", func(*testing.B) {
 		ctx := context.Background()
 		hints := &LabelHints{
 			Limit: 1000,
@@ -1692,27 +1692,27 @@ type errIterator struct {
 	err error
 }
 
-func (e errIterator) Next() chunkenc.ValueType {
+func (errIterator) Next() chunkenc.ValueType {
 	return chunkenc.ValNone
 }
 
-func (e errIterator) Seek(_ int64) chunkenc.ValueType {
+func (errIterator) Seek(int64) chunkenc.ValueType {
 	return chunkenc.ValNone
 }
 
-func (e errIterator) At() (int64, float64) {
+func (errIterator) At() (int64, float64) {
 	return 0, 0
 }
 
-func (e errIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+func (errIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	return 0, nil
 }
 
-func (e errIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+func (errIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return 0, nil
 }
 
-func (e errIterator) AtT() int64 {
+func (errIterator) AtT() int64 {
 	return 0
 }
 

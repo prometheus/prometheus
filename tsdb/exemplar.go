@@ -140,11 +140,11 @@ func (ce *CircularExemplarStorage) Appender() *CircularExemplarStorage {
 	return ce
 }
 
-func (ce *CircularExemplarStorage) ExemplarQuerier(_ context.Context) (storage.ExemplarQuerier, error) {
+func (ce *CircularExemplarStorage) ExemplarQuerier(context.Context) (storage.ExemplarQuerier, error) {
 	return ce, nil
 }
 
-func (ce *CircularExemplarStorage) Querier(_ context.Context) (storage.ExemplarQuerier, error) {
+func (ce *CircularExemplarStorage) Querier(context.Context) (storage.ExemplarQuerier, error) {
 	return ce, nil
 }
 
