@@ -131,10 +131,6 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		return labels.EmptyLabels(), err
 	}
 	if promoteScope {
-		// Scope Name, Version and Schema URL are added after attributes to ensure they are not overwritten by attributes.
-		c.builder.Set("otel_scope_name", scope.name)
-		c.builder.Set("otel_scope_version", scope.version)
-		c.builder.Set("otel_scope_schema_url", scope.schemaURL)
 		var scopeErr error
 		scope.attributes.Range(func(k string, v pcommon.Value) bool {
 			name, err := labelNamer.Build("otel_scope_" + k)
@@ -148,6 +144,10 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		if scopeErr != nil {
 			return labels.EmptyLabels(), scopeErr
 		}
+		// Scope Name, Version and Schema URL are added after attributes to ensure they are not overwritten by attributes.
+		c.builder.Set("otel_scope_name", scope.name)
+		c.builder.Set("otel_scope_version", scope.version)
+		c.builder.Set("otel_scope_schema_url", scope.schemaURL)
 	}
 	// Map service.name + service.namespace to job.
 	if haveServiceName {
