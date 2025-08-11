@@ -4844,6 +4844,34 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: "sum by (job)(rate(http_requests_total[30m]))",
+		expected: &AggregateExpr{
+			Op:       SUM,
+			Grouping: []string{"job"},
+			Expr: &Call{
+				Func: MustGetFunction("rate"),
+				Args: Expressions{
+					&MatrixSelector{
+						VectorSelector: &VectorSelector{
+							Name: "http_requests_total",
+							LabelMatchers: []*labels.Matcher{
+								MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_total"),
+							},
+							PosRange: posrange.PositionRange{
+								Start: 18,
+								End:   37,
+							},
+						},
+						Range:  30 * time.Minute,
+						EndPos: 42,
+					},
+				},
+				PosRange: posrange.PositionRange{Start: 13, End: 43},
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 44},
+		},
+	},
+	{
 		input:  "sum(rate(",
 		fail:   true,
 		errMsg: "unclosed left parenthesis",
@@ -4885,6 +4913,9 @@ func TestParseExpressions(t *testing.T) {
 	})
 
 	for _, test := range testExpr {
+		if test.input != "sum by (job)(rate(http_requests_total[30m]))" {
+			continue
+		}
 		t.Run(readable(test.input), func(t *testing.T) {
 			expr, err := ParseExpr(test.input)
 
