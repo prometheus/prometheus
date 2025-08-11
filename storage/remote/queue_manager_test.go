@@ -2574,7 +2574,7 @@ func TestQueueAppend_EdgeCases(t *testing.T) {
 		q := &queue{
 			batch:      make([]timeSeries, 0),
 			batchQueue: make(chan []timeSeries, 1),
-			maxSamples: 0,
+			maxSamplesPerSend: 0,
 		}
 
 		// Should immediately send since any non-metadata exceeds capacity.

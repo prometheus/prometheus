@@ -22,7 +22,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	"log"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
@@ -1408,19 +1407,14 @@ func (q *queue) Append(datum timeSeries) bool {
 		}
 	}
 
-    // Instrumentation: log batch size and sample count on every append
-    log.Printf("Append called: batch size=%d, non-metadata samples=%d, maxSamples=%d", len(q.batch), totalSamples, q.maxSamplesPerSend)
 	if totalSamples >= q.maxSamplesPerSend {
 		select {
 		case q.batchQueue <- q.batch:
-			log.Printf("Batch sent: batch size=%d, non-metadata samples=%d", len(q.batch), totalSamples)
 			q.batch = q.newBatch(q.maxSamplesPerSend)
 			return true
 		default:
 			// Remove the sample we just appended. It will get retried.
-			dropped := q.batch[len(q.batch)-1]
 			q.batch = q.batch[:len(q.batch)-1]
-			log.Printf("Batch queue full, dropping sample with type=%v for retry, batch size now=%d", dropped.sType, q.maxSamplesPerSend)
 			return false
 		}
 	}
