@@ -354,6 +354,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				tt.scope,
 				pmetric.AggregationTemporalityCumulative,
 				true,
+				metric.Sum().IsMonotonic(),
 			)
 
 			require.Equal(t, tt.want(), converter.unique)
