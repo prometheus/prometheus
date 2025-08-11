@@ -20,7 +20,7 @@ import badgeClasses from "../Badge.module.css";
 import panelClasses from "../Panel.module.css";
 import RuleDefinition from "../components/RuleDefinition";
 import { humanizeDurationRelative, now } from "../lib/formatTime";
-import { Fragment, useEffect, useMemo } from "react";
+import { Fragment, useEffect, useMemo, useRef } from "react";
 import { StateMultiSelect } from "../components/StateMultiSelect";
 import { IconInfoCircle, IconSearch } from "@tabler/icons-react";
 import { LabelBadges } from "../components/LabelBadges";
@@ -164,6 +164,38 @@ export default function AlertsPage() {
     withDefault(StringParam, "")
   );
   const [debouncedSearch] = useDebouncedValue<string>(searchFilter.trim(), 250);
+
+  // Measure how long it takes to render the filtered list after debouncedSearch changes.
+  const searchRenderStartRef = useRef<number | null>(null);
+  const prevDebouncedSearchRef = useRef<string>(debouncedSearch);
+  if (prevDebouncedSearchRef.current !== debouncedSearch) {
+    searchRenderStartRef.current = performance.now();
+    prevDebouncedSearchRef.current = debouncedSearch;
+  }
+
+  // After commit, wait for paint to complete, then log duration.
+  useEffect(() => {
+    if (searchRenderStartRef.current != null) {
+      const start = searchRenderStartRef.current;
+      let raf1 = 0;
+      let raf2 = 0;
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => {
+          const duration = performance.now() - start;
+          console.log(
+            `AlertsPage: filtered list render time ${duration.toFixed(2)} ms (search="${debouncedSearch}")`
+          );
+          searchRenderStartRef.current = null;
+        });
+      });
+      return () => {
+        cancelAnimationFrame(raf1);
+        cancelAnimationFrame(raf2);
+      };
+    }
+    return;
+  });
+
   const [showEmptyGroups, setShowEmptyGroups] = useLocalStorage<boolean>({
     key: "alertsPage.showEmptyGroups",
     defaultValue: false,
