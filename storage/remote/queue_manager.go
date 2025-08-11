@@ -1346,6 +1346,7 @@ type queue struct {
 	// poolMtx covers adding and removing batches from the batchPool.
 	poolMtx   sync.Mutex
 	batchPool [][]timeSeries
+	nonMetadataCount int
 }
 
 type timeSeries struct {
@@ -1399,21 +1400,22 @@ func (q *queue) Append(datum timeSeries) bool {
 	q.batch = append(q.batch, datum)
 
 	// Count non-metadata samples.
-	totalSamples := 0
-	for _, ts := range q.batch {
-		if ts.sType != tMetadata {
-			totalSamples++
-		}
+	if datum.sType != tMetadata {
+		q.nonMetadataCount++
 	}
 
-	if totalSamples >= q.maxSamplesPerSend {
+	if q.nonMetadataCount >= q.maxSamplesPerSend {
 		select {
 		case q.batchQueue <- q.batch:
 			q.batch = q.newBatch(q.maxSamplesPerSend)
+			q.nonMetadataCount = 0
 			return true
 		default:
 			// Remove the sample we just appended. It will get retried.
 			q.batch = q.batch[:len(q.batch)-1]
+			if datum.sType != tMetadata {
+				q.nonMetadataCount--
+			}
 			return false
 		}
 	}
