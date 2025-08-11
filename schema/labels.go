@@ -21,19 +21,20 @@ import (
 
 const (
 	// Special label names and selectors for schema.Metadata fields.
-	// They are currently private to ensure __name__, __type__, __unit__ and __temporality__ are used
+	// They are currently private to ensure __name__, __type__, __unit__, __temporality__ and __monotonicity__ are used
 	// together and remain extensible in Prometheus. See NewMetadataFromLabels and Metadata
 	// methods for the interactions with the labels package structs.
-	metricName        = "__name__"
-	metricType        = "__type__"
-	metricUnit        = "__unit__"
-	metricTemporality = "__temporality__"
+	metricName         = "__name__"
+	metricType         = "__type__"
+	metricUnit         = "__unit__"
+	metricTemporality  = "__temporality__"
+	metricMonotonicity = "__monotonicity__"
 )
 
 // IsMetadataLabel returns true if the given label name is a special
 // schema Metadata label.
 func IsMetadataLabel(name string) bool {
-	return name == metricName || name == metricType || name == metricUnit || name == metricTemporality
+	return name == metricName || name == metricType || name == metricUnit || name == metricTemporality || name == metricMonotonicity
 }
 
 // Metadata represents the core metric schema/metadata elements that:
@@ -78,6 +79,9 @@ type Metadata struct {
 	// Temporality represents the metric temporality. Empty string means temporality is not set.
 	// Valid values are "cumulative" and "delta".
 	Temporality string
+	// Monotonicity represents whether the metric is monotonic. Empty string means monotonicity is not set.
+	// Valid values are "true" and "false".
+	Monotonicity string
 }
 
 // NewMetadataFromLabels returns the schema metadata from the labels.
@@ -87,10 +91,11 @@ func NewMetadataFromLabels(ls labels.Labels) Metadata {
 		typ = model.MetricType(got)
 	}
 	return Metadata{
-		Name:        ls.Get(metricName),
-		Type:        typ,
-		Unit:        ls.Get(metricUnit),
-		Temporality: ls.Get(metricTemporality),
+		Name:         ls.Get(metricName),
+		Type:         typ,
+		Unit:         ls.Get(metricUnit),
+		Temporality:  ls.Get(metricTemporality),
+		Monotonicity: ls.Get(metricMonotonicity),
 	}
 }
 
@@ -112,6 +117,8 @@ func (m Metadata) IsEmptyFor(labelName string) bool {
 		return m.Unit == ""
 	case metricTemporality:
 		return m.Temporality == ""
+	case metricMonotonicity:
+		return m.Monotonicity == ""
 	default:
 		return true
 	}
@@ -132,6 +139,9 @@ func (m Metadata) AddToLabels(b *labels.ScratchBuilder) {
 	if m.Temporality != "" {
 		b.Add(metricTemporality, m.Temporality)
 	}
+	if m.Monotonicity != "" {
+		b.Add(metricMonotonicity, m.Monotonicity)
+	}
 }
 
 // SetToLabels injects metric schema metadata as labels into the labels.Builder.
@@ -148,6 +158,7 @@ func (m Metadata) SetToLabels(b *labels.Builder) {
 	}
 	b.Set(metricUnit, m.Unit)
 	b.Set(metricTemporality, m.Temporality)
+	b.Set(metricMonotonicity, m.Monotonicity)
 }
 
 // IgnoreOverriddenMetadataLabelsScratchBuilder is a wrapper over labels scratch builder
