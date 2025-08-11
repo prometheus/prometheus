@@ -2444,8 +2444,8 @@ func TestQueueAppend(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			q := &queue{
-				batch:      make([]timeSeries, 0, tt.batchCapacity),
-				batchQueue: make(chan []timeSeries, tt.queueCapacity),
+				batch:             make([]timeSeries, 0, tt.batchCapacity),
+				batchQueue:        make(chan []timeSeries, tt.queueCapacity),
 				maxSamplesPerSend: tt.batchCapacity,
 			}
 
@@ -2481,8 +2481,8 @@ func TestQueueAppend(t *testing.T) {
 
 func TestQueueAppend_BlockedQueue(t *testing.T) {
 	q := &queue{
-		batch:      make([]timeSeries, 0, 2),
-		batchQueue: make(chan []timeSeries, 1),
+		batch:             make([]timeSeries, 0, 2),
+		batchQueue:        make(chan []timeSeries, 1),
 		maxSamplesPerSend: 2, // capacity 1
 	}
 
@@ -2503,8 +2503,8 @@ func TestQueueAppend_BlockedQueue(t *testing.T) {
 
 func TestQueueAppend_ConcurrentAccess(t *testing.T) {
 	q := &queue{
-		batch:      make([]timeSeries, 0, 10),
-		batchQueue: make(chan []timeSeries, 5),
+		batch:             make([]timeSeries, 0, 10),
+		batchQueue:        make(chan []timeSeries, 5),
 		maxSamplesPerSend: 10,
 	}
 
@@ -2548,8 +2548,8 @@ func TestQueueAppend_ConcurrentAccess(t *testing.T) {
 func TestQueueAppend_NewBatchAfterSend(t *testing.T) {
 	originalCapacity := 2
 	q := &queue{
-		batch:      make([]timeSeries, 0, originalCapacity),
-		batchQueue: make(chan []timeSeries, 2),
+		batch:             make([]timeSeries, 0, originalCapacity),
+		batchQueue:        make(chan []timeSeries, 2),
 		maxSamplesPerSend: originalCapacity,
 	}
 
@@ -2572,8 +2572,8 @@ func TestQueueAppend_NewBatchAfterSend(t *testing.T) {
 func TestQueueAppend_EdgeCases(t *testing.T) {
 	t.Run("zero capacity batch", func(t *testing.T) {
 		q := &queue{
-			batch:      make([]timeSeries, 0),
-			batchQueue: make(chan []timeSeries, 1),
+			batch:             make([]timeSeries, 0),
+			batchQueue:        make(chan []timeSeries, 1),
 			maxSamplesPerSend: 0,
 		}
 
@@ -2585,8 +2585,8 @@ func TestQueueAppend_EdgeCases(t *testing.T) {
 
 	t.Run("only metadata never triggers send", func(t *testing.T) {
 		q := &queue{
-			batch:      make([]timeSeries, 0, 2),
-			batchQueue: make(chan []timeSeries, 1),
+			batch:             make([]timeSeries, 0, 2),
+			batchQueue:        make(chan []timeSeries, 1),
 			maxSamplesPerSend: 2,
 		}
 
@@ -2602,32 +2602,31 @@ func TestQueueAppend_EdgeCases(t *testing.T) {
 	})
 }
 
-
 func TestSimpleAppend(t *testing.T) {
 	// Create a simple queue for testing
 	q := &queue{
 		maxSamplesPerSend: 3,
-		batchQueue: make(chan []timeSeries, 10), // Buffered channel
-		batch:      make([]timeSeries, 0, 3),
-		batchPool:  [][]timeSeries{},
+		batchQueue:        make(chan []timeSeries, 10), // Buffered channel
+		batch:             make([]timeSeries, 0, 3),
+		batchPool:         [][]timeSeries{},
 	}
-	
+
 	// Test basic append
 	sample := timeSeries{sType: tSample} // Not metadata
-	
+
 	result1 := q.Append(sample)
 	fmt.Printf("First append result: %v, batch len: %d\n", result1, len(q.batch))
-	
+
 	result2 := q.Append(sample)
 	fmt.Printf("Second append result: %v, batch len: %d\n", result2, len(q.batch))
-	
+
 	result3 := q.Append(sample)
 	fmt.Printf("Third append result: %v, batch len: %d\n", result3, len(q.batch))
-	
+
 	// This should trigger a batch send
 	result4 := q.Append(sample)
 	fmt.Printf("Fourth append result: %v, batch len: %d\n", result4, len(q.batch))
-	
+
 	// Check if batch was sent
 	select {
 	case batch := <-q.batchQueue:

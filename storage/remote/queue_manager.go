@@ -1242,7 +1242,7 @@ func (s *shards) start(n int) {
 
 	newQueues := make([]*queue, n)
 	for i := 0; i < n; i++ {
-		newQueues[i] = newQueue(s.qm.cfg.MaxSamplesPerSend, s.qm.cfg.Capacity, s.qm.cfg.MaxSamplesPerSend,)
+		newQueues[i] = newQueue(s.qm.cfg.MaxSamplesPerSend, s.qm.cfg.Capacity, s.qm.cfg.MaxSamplesPerSend)
 	}
 
 	s.queues = newQueues
@@ -1337,9 +1337,9 @@ func (s *shards) enqueue(ref chunks.HeadSeriesRef, data timeSeries) bool {
 
 type queue struct {
 	// batchMtx covers operations appending to or publishing the partial batch.
-	batchMtx   sync.Mutex
-	batch      []timeSeries
-	batchQueue chan []timeSeries
+	batchMtx          sync.Mutex
+	batch             []timeSeries
+	batchQueue        chan []timeSeries
 	maxSamplesPerSend int
 
 	// Since we know there are a limited number of batches out, using a stack
@@ -1383,7 +1383,7 @@ func newQueue(batchSize, capacity int, maxSamplesPerSend int) *queue {
 		batchQueue: make(chan []timeSeries, batches),
 		// batchPool should have capacity for everything in the channel + 1 for
 		// the batch being processed.
-		batchPool: make([][]timeSeries, 0, batches+1),
+		batchPool:         make([][]timeSeries, 0, batches+1),
 		maxSamplesPerSend: maxSamplesPerSend,
 	}
 }
