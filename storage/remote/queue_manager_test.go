@@ -52,7 +52,6 @@ import (
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
-//	metadataModel "github.com/prometheus/prometheus/model/metadata"
 )
 
 const defaultFlushDeadline = 1 * time.Minute
