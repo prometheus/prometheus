@@ -619,7 +619,6 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 	return nil
 }
 
-
 func isSampleOld(baseTime time.Time, sampleAgeLimit time.Duration, ts int64) bool {
 	if sampleAgeLimit == 0 {
 		// If sampleAgeLimit is unset, then we never skip samples due to their age.
