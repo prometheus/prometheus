@@ -1387,7 +1387,6 @@ func newQueue(batchSize, capacity int) *queue {
 	}
 }
 
-
 // Append the timeSeries to the buffered batch. Returns false if it
 // cannot be added and must be retried.
 func (q *queue) Append(datum timeSeries) bool {
@@ -1399,7 +1398,7 @@ func (q *queue) Append(datum timeSeries) bool {
 	// See https://github.com/prometheus/prometheus/issues/14405
 	q.batch = append(q.batch, datum)
 
-	// Count non-metadata samples
+	// Count non-metadata samples.
 	totalSamples := 0
 	for _, ts := range q.batch {
 		if ts.sType != tMetadata {
