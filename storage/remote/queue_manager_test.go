@@ -2363,7 +2363,6 @@ func BenchmarkBuildTimeSeries(b *testing.B) {
 	}
 }
 
-
 func TestQueueAppend(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -2457,7 +2456,7 @@ func TestQueueAppend(t *testing.T) {
 			}
 
 			require.Equal(t, tt.expectedResult, results)
-			require.Equal(t, tt.expectedBatch, len(q.batch))
+			require.Len(t, q.batch,tt.expectedBatch)
 
 			// Check number of batches sent.
 			sentCount := 0
@@ -2500,7 +2499,7 @@ func TestQueueAppend_BlockedQueue(t *testing.T) {
 	require.False(t, result2, "expected Append to return false when batch queue is full")
 
 	// Batch should only contain first sample (second was removed).
-	require.Equal(t, 1, len(q.batch), "expected batch to contain only first sample after blocked send")
+	require.Len(t, q.batch, 1, "expected batch to contain only first sample after blocked send")
 }
 
 func TestQueueAppend_ConcurrentAccess(t *testing.T) {
@@ -2535,7 +2534,7 @@ func TestQueueAppend_ConcurrentAccess(t *testing.T) {
 	}
 
 	// Should have some successes.
-	require.Greater(t, successCount, 0, "expected at least some successful appends")
+	require.Positive(t, successCount, "expected at least some successful appends")
 
 	// Total items (in batch + sent) should equal successful appends.
 	totalItems := len(q.batch)
@@ -2560,21 +2559,21 @@ func TestQueueAppend_NewBatchAfterSend(t *testing.T) {
 	require.True(t, q.Append(timeSeries{sType: tSample})) // Should send batch.
 
 	// Verify batch was sent
-	require.Equal(t, 1, len(q.batchQueue))
+	require.Len(t, q.batchQueue, 1)
 
 	// Verify new batch has correct capacity
 	require.Equal(t, originalCapacity, cap(q.batch))
-	require.Equal(t, 0, len(q.batch))
+	require.Empty(t, len(q.batch))
 
 	// Should be able to append to new batch
 	require.True(t, q.Append(timeSeries{sType: tSample}))
-	require.Equal(t, 1, len(q.batch))
+	require.Len(t, q.batch, 1)
 }
 
 func TestQueueAppend_EdgeCases(t *testing.T) {
 	t.Run("zero capacity batch", func(t *testing.T) {
 		q := &queue{
-			batch:      make([]timeSeries, 0, 0),
+			batch:      make([]timeSeries, 0),
 			batchQueue: make(chan []timeSeries, 1),
 			maxSamples: 0,
 		}
@@ -2582,7 +2581,7 @@ func TestQueueAppend_EdgeCases(t *testing.T) {
 		// Should immediately send since any non-metadata exceeds capacity.
 		result := q.Append(timeSeries{sType: tSample})
 		require.True(t, result)
-		require.Equal(t, 1, len(q.batchQueue))
+		require.Len(t, q.batchQueue, 1)
 	})
 
 	t.Run("only metadata never triggers send", func(t *testing.T) {

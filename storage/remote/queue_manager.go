@@ -1405,7 +1405,7 @@ func (q *queue) Append(datum timeSeries) bool {
 			totalSamples++
 		}
 	}
-	if totalSamples >= q.maxSamples{
+	if totalSamples >= q.maxSamples {
 		select {
 		case q.batchQueue <- q.batch:
 			q.batch = q.newBatch(cap(q.batch))
