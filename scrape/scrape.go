@@ -54,6 +54,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/logging"
+	"github.com/prometheus/prometheus/util/namevalidationutil"
 	"github.com/prometheus/prometheus/util/pool"
 )
 
@@ -154,9 +155,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 		return nil, err
 	}
 
-	switch cfg.MetricNameValidationScheme {
-	case model.LegacyValidation, model.UTF8Validation:
-	default:
+	if err := namevalidationutil.CheckNameValidationScheme(cfg.MetricNameValidationScheme); err != nil {
 		return nil, errors.New("newScrapePool: MetricNameValidationScheme must be set in scrape configuration")
 	}
 	var escapingScheme model.EscapingScheme
@@ -331,9 +330,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.config = cfg
 	oldClient := sp.client
 	sp.client = client
-	switch cfg.MetricNameValidationScheme {
-	case model.LegacyValidation, model.UTF8Validation:
-	default:
+	if err := namevalidationutil.CheckNameValidationScheme(cfg.MetricNameValidationScheme); err != nil {
 		return errors.New("scrapePool.reload: MetricNameValidationScheme must be set in scrape configuration")
 	}
 	sp.validationScheme = cfg.MetricNameValidationScheme

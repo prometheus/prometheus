@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/template"
+	"github.com/prometheus/prometheus/util/namevalidationutil"
 )
 
 // Error represents semantic errors on parsing rule groups.
@@ -97,10 +98,8 @@ type ruleGroups struct {
 
 // Validate validates all rules in the rule groups.
 func (g *RuleGroups) Validate(node ruleGroups, nameValidationScheme model.ValidationScheme) (errs []error) {
-	switch nameValidationScheme {
-	case model.UTF8Validation, model.LegacyValidation:
-	default:
-		errs = append(errs, fmt.Errorf("unhandled nameValidationScheme: %s", nameValidationScheme))
+	if err := namevalidationutil.CheckNameValidationScheme(nameValidationScheme); err != nil {
+		errs = append(errs, err)
 		return
 	}
 
