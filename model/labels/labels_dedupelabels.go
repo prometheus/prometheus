@@ -456,12 +456,6 @@ func EmptyLabels() Labels {
 // Note this function is not efficient; should not be used in performance-critical places.
 func New(ls ...Label) Labels {
 	slices.SortFunc(ls, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
-	return NewFromSorted(ls)
-}
-
-// NewFromSorted returns sorted Labels from the given
-// sorted labels.
-func NewFromSorted(ls []Label) Labels {
 	syms := NewSymbolTable()
 	var stackSpace [16]int
 	size, nums := mapLabelsToNumbers(syms, ls, stackSpace[:])

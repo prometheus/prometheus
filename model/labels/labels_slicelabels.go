@@ -279,13 +279,6 @@ func New(ls ...Label) Labels {
 	return set
 }
 
-// NewFromSorted returns sorted Labels from the given
-// sorted labels. In case of slices it returns the
-// input. This function does NOT copy!
-func NewFromSorted(ls []Label) Labels {
-	return ls
-}
-
 // FromStrings creates new labels from pairs of strings.
 func FromStrings(ss ...string) Labels {
 	if len(ss)%2 != 0 {
@@ -430,7 +423,7 @@ func (b *Builder) Labels() Labels {
 	}
 	res := make(Labels, 0, expectedSize)
 	for _, l := range b.base {
-		if slices.Contains(b.del, l.Name) || Contains(b.add, l.Name) {
+		if slices.Contains(b.del, l.Name) || contains(b.add, l.Name) {
 			continue
 		}
 		res = append(res, l)

@@ -215,7 +215,7 @@ func (b *Builder) Range(f func(l Label)) {
 	// Take a copy of add and del, so they are unaffected by calls to Set() or Del().
 	origAdd, origDel := append(addStack[:0], b.add...), append(delStack[:0], b.del...)
 	b.base.Range(func(l Label) {
-		if !slices.Contains(origDel, l.Name) && !Contains(origAdd, l.Name) {
+		if !slices.Contains(origDel, l.Name) && !contains(origAdd, l.Name) {
 			f(l)
 		}
 	})
@@ -224,8 +224,7 @@ func (b *Builder) Range(f func(l Label)) {
 	}
 }
 
-// Contains returns true if the label name n is present in s, otherwise false.
-func Contains(s []Label, n string) bool {
+func contains(s []Label, n string) bool {
 	for _, a := range s {
 		if a.Name == n {
 			return true
