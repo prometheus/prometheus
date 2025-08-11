@@ -353,20 +353,18 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 		allSamplesSoFar := rs.AllSamples()
 		var ref storage.SeriesRef
-
-		// Samples.
-		if h.ingestSTZeroSample && len(ts.Samples) > 0 && ts.Samples[0].Timestamp != 0 && ts.CreatedTimestamp != 0 {
-			// ST only needs to be ingested for the first sample, it will be considered
-			// out of order for the rest.
-			ref, err = app.AppendSTZeroSample(ref, ls, ts.Samples[0].Timestamp, ts.CreatedTimestamp)
-			if err != nil && !errors.Is(err, storage.ErrOutOfOrderST) {
-				// Even for the first sample OOO is a common scenario because
-				// we can't tell if a ST was already ingested in a previous request.
-				// We ignore the error.
-				h.logger.Debug("Error when appending ST in remote write request", "err", err, "series", ls.String(), "start_timestamp", ts.CreatedTimestamp, "timestamp", ts.Samples[0].Timestamp)
-			}
-		}
 		for _, s := range ts.Samples {
+			if h.ingestSTZeroSample && s.StartTimestamp != 0 && s.Timestamp != 0 {
+				ref, err = app.AppendSTZeroSample(ref, ls, s.Timestamp, s.StartTimestamp)
+				// We treat OOO errors specially as it's a common scenario given:
+				// * We can't tell if ST was already ingested in a previous request.
+				// * We don't check if ST changed for stream of samples (we typically have one though),
+				// as it's checked in the AppendSTZeroSample reliably.
+				if err != nil && !errors.Is(err, storage.ErrOutOfOrderST) {
+					h.logger.Debug("Error when appending ST from remote write request", "err", err, "series", ls.String(), "start_timestamp", s.StartTimestamp, "timestamp", s.Timestamp)
+				}
+			}
+
 			ref, err = app.Append(ref, ls, s.GetTimestamp(), s.GetValue())
 			if err == nil {
 				rs.Samples++
@@ -387,15 +385,14 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 		// Native Histograms.
 		for _, hp := range ts.Histograms {
-			if h.ingestSTZeroSample && hp.Timestamp != 0 && ts.CreatedTimestamp != 0 {
-				// Differently from samples, we need to handle ST for each histogram instead of just the first one.
-				// This is because histograms and float histograms are stored separately, even if they have the same labels.
-				ref, err = h.handleHistogramZeroSample(app, ref, ls, hp, ts.CreatedTimestamp)
+			if h.ingestSTZeroSample && hp.StartTimestamp != 0 && hp.Timestamp != 0 {
+				ref, err = h.handleHistogramZeroSample(app, ref, ls, hp, hp.StartTimestamp)
+				// We treat OOO errors specially as it's a common scenario given:
+				// * We can't tell if ST was already ingested in a previous request.
+				// * We don't check if ST changed for stream of samples (we typically have one though),
+				// as it's checked in the ingestSTZeroSample reliably.
 				if err != nil && !errors.Is(err, storage.ErrOutOfOrderST) {
-					// Even for the first sample OOO is a common scenario because
-					// we can't tell if a ST was already ingested in a previous request.
-					// We ignore the error.
-					h.logger.Debug("Error when appending ST in remote write request", "err", err, "series", ls.String(), "start_timestamp", ts.CreatedTimestamp, "timestamp", hp.Timestamp)
+					h.logger.Debug("Error when appending ST from remote write request", "err", err, "series", ls.String(), "start_timestamp", hp.StartTimestamp, "timestamp", hp.Timestamp)
 				}
 			}
 			if hp.IsFloatHistogram() {
@@ -474,7 +471,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 	return samplesWithoutMetadata, http.StatusBadRequest, errors.Join(badRequestErrs...)
 }
 
-// handleHistogramZeroSample appends ST as a zero-value sample with ST value as the sample timestamp.
+// handleHistogramZeroSample appends ST as a zero-value sample with st value as the sample timestamp.
 // It doesn't return errors in case of out of order ST.
 func (*writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist writev2.Histogram, st int64) (storage.SeriesRef, error) {
 	var err error
