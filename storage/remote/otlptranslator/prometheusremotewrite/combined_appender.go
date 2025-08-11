@@ -11,6 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// TODO(krajorama): rename this package to otlpappender or similar, as it is
+// not specific to Prometheus remote write anymore.
+// Note otlptranslator is already used by prometheus/otlptranslator repo.
 package prometheusremotewrite
 
 import (
