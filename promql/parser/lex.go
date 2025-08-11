@@ -1186,7 +1186,7 @@ func lexDurationExpr(l *Lexer) stateFn {
 	}
 }
 
-// findPrevRightParen finds the previous right parenthesis for a given start position.
+// findPrevRightParen finds the previous right parenthesis.
 // Use in case when the parser had to read ahead to the find the next right
 // parenthesis to decide whether to continue and lost track of the previous right
 // parenthesis position.
@@ -1194,16 +1194,16 @@ func lexDurationExpr(l *Lexer) stateFn {
 // multiple bytes, which would break the position calculation.
 // Falls back to the input start position on any problem.
 // https://github.com/prometheus/prometheus/issues/16053
-func (l *Lexer) findPrevRightParen(startPos posrange.Pos) posrange.Pos {
+func (l *Lexer) findPrevRightParen(fallbackPos posrange.Pos) posrange.Pos {
 	// Early return on:
-	// - invalid start position,
+	// - invalid fallback position,
 	// - not enough space for second right parenthesis,
 	// - last read position is after the end, since then we stopped due to the
 	//   end of the input, not a parenthesis, or if last position doesn't hold
 	//   right parenthesis,
 	// - last position doesn't hold right parenthesis.
-	if startPos <= 0 || startPos > posrange.Pos(len(l.input)) || l.lastPos <= 0 || l.lastPos >= posrange.Pos(len(l.input)) || l.input[l.lastPos] != ')' {
-		return startPos
+	if fallbackPos <= 0 || fallbackPos > posrange.Pos(len(l.input)) || l.lastPos <= 0 || l.lastPos >= posrange.Pos(len(l.input)) || l.input[l.lastPos] != ')' {
+		return fallbackPos
 	}
 	for i := l.lastPos - 1; i > 0; i-- {
 		switch {
@@ -1211,8 +1211,8 @@ func (l *Lexer) findPrevRightParen(startPos posrange.Pos) posrange.Pos {
 			return i + 1
 		case isSpace(rune(l.input[i])):
 		default:
-			return startPos
+			return fallbackPos
 		}
 	}
-	return startPos
+	return fallbackPos
 }
