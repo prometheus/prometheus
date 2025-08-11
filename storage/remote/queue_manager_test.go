@@ -519,7 +519,6 @@ func TestSeriesReset(t *testing.T) {
 	m.SeriesReset(2)
 	require.Len(t, m.seriesLabels, numSegments*numSeries/2)
 }
-
 func TestReshard(t *testing.T) {
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
@@ -1833,7 +1832,7 @@ func TestQueueManagerMetrics(t *testing.T) {
 func TestQueue_FlushAndShutdownDoesNotDeadlock(t *testing.T) {
 	capacity := 100
 	batchSize := 10
-	queue := newQueue(batchSize, capacity)
+	queue := newQueue(batchSize, capacity, batchSize)
 	for i := 0; i < capacity+batchSize; i++ {
 		queue.Append(timeSeries{})
 	}
@@ -2447,7 +2446,7 @@ func TestQueueAppend(t *testing.T) {
 			q := &queue{
 				batch:      make([]timeSeries, 0, tt.batchCapacity),
 				batchQueue: make(chan []timeSeries, tt.queueCapacity),
-				maxSamples: tt.batchCapacity,
+				maxSamplesPerSend: tt.batchCapacity,
 			}
 
 			results := make([]bool, len(tt.samples))
@@ -2484,7 +2483,7 @@ func TestQueueAppend_BlockedQueue(t *testing.T) {
 	q := &queue{
 		batch:      make([]timeSeries, 0, 2),
 		batchQueue: make(chan []timeSeries, 1),
-		maxSamples: 2, // capacity 1
+		maxSamplesPerSend: 2, // capacity 1
 	}
 
 	// Fill the channel first.
@@ -2506,7 +2505,7 @@ func TestQueueAppend_ConcurrentAccess(t *testing.T) {
 	q := &queue{
 		batch:      make([]timeSeries, 0, 10),
 		batchQueue: make(chan []timeSeries, 5),
-		maxSamples: 10,
+		maxSamplesPerSend: 10,
 	}
 
 	const numGoroutines = 100
@@ -2551,7 +2550,7 @@ func TestQueueAppend_NewBatchAfterSend(t *testing.T) {
 	q := &queue{
 		batch:      make([]timeSeries, 0, originalCapacity),
 		batchQueue: make(chan []timeSeries, 2),
-		maxSamples: originalCapacity,
+		maxSamplesPerSend: originalCapacity,
 	}
 
 	// Fill first batch to capacity.
@@ -2588,7 +2587,7 @@ func TestQueueAppend_EdgeCases(t *testing.T) {
 		q := &queue{
 			batch:      make([]timeSeries, 0, 2),
 			batchQueue: make(chan []timeSeries, 1),
-			maxSamples: 2,
+			maxSamplesPerSend: 2,
 		}
 
 		// Add many metadata entries.
@@ -2601,4 +2600,39 @@ func TestQueueAppend_EdgeCases(t *testing.T) {
 		require.Empty(t, q.batchQueue)
 		require.Len(t, q.batch, 10)
 	})
+}
+
+
+func TestSimpleAppend(t *testing.T) {
+	// Create a simple queue for testing
+	q := &queue{
+		maxSamplesPerSend: 3,
+		batchQueue: make(chan []timeSeries, 10), // Buffered channel
+		batch:      make([]timeSeries, 0, 3),
+		batchPool:  [][]timeSeries{},
+	}
+	
+	// Test basic append
+	sample := timeSeries{sType: tSample} // Not metadata
+	
+	result1 := q.Append(sample)
+	fmt.Printf("First append result: %v, batch len: %d\n", result1, len(q.batch))
+	
+	result2 := q.Append(sample)
+	fmt.Printf("Second append result: %v, batch len: %d\n", result2, len(q.batch))
+	
+	result3 := q.Append(sample)
+	fmt.Printf("Third append result: %v, batch len: %d\n", result3, len(q.batch))
+	
+	// This should trigger a batch send
+	result4 := q.Append(sample)
+	fmt.Printf("Fourth append result: %v, batch len: %d\n", result4, len(q.batch))
+	
+	// Check if batch was sent
+	select {
+	case batch := <-q.batchQueue:
+		fmt.Printf("Received batch with %d samples\n", len(batch))
+	default:
+		fmt.Printf("No batch in queue\n")
+	}
 }
