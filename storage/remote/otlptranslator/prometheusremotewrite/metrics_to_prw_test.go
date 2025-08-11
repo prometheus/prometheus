@@ -404,8 +404,8 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityDelta, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromFloatSeriesWithTemporality("test_metric_1", "delta", ts),
-				createPromFloatSeriesWithTemporality("test_metric_2", "delta", ts),
+				createPromFloatSeriesWithTemporalityAndMonotonicity("test_metric_1", "delta", "false", ts),
+				createPromFloatSeriesWithTemporalityAndMonotonicity("test_metric_2", "delta", "false", ts),
 			},
 		},
 		{
@@ -416,7 +416,7 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
 			expectedSeries: []prompb.TimeSeries{
-				createPromFloatSeriesWithTemporality("test_metric_1", "delta", ts),
+				createPromFloatSeriesWithTemporalityAndMonotonicity("test_metric_1", "delta", "false", ts),
 				createPromFloatSeriesWithTemporality("test_metric_2", "cumulative", ts),
 			},
 		},
@@ -563,6 +563,37 @@ func TestTemporality(t *testing.T) {
 			expectedSeries: []prompb.TimeSeries{},
 			expectedError:  `could not get aggregation temporality for test_empty as it has unsupported metric type Empty`,
 		},
+		{
+			name:       "delta sum with monotonic and non-monotonic metrics when allowed",
+			allowDelta: true,
+			inputSeries: []pmetric.Metric{
+				createOtelSumWithMonotonicity("test_monotonic_sum", pmetric.AggregationTemporalityDelta, true, ts),
+				createOtelSumWithMonotonicity("test_non_monotonic_sum", pmetric.AggregationTemporalityDelta, false, ts),
+			},
+			expectedSeries: []prompb.TimeSeries{
+				createPromFloatSeriesWithTemporalityAndMonotonicity("test_monotonic_sum", "delta", "true", ts),
+				createPromFloatSeriesWithTemporalityAndMonotonicity("test_non_monotonic_sum", "delta", "false", ts),
+			},
+		},
+		{
+			name:       "cumulative sum does not have monotonicity label",
+			allowDelta: true,
+			inputSeries: []pmetric.Metric{
+				createOtelSumWithMonotonicity("test_cumulative_sum", pmetric.AggregationTemporalityCumulative, true, ts),
+			},
+			expectedSeries: []prompb.TimeSeries{
+				createPromFloatSeriesWithTemporality("test_cumulative_sum", "cumulative", ts),
+			},
+		},
+		{
+			name:       "delta sum does not have monotonicity label when AllowDeltaTemporality disabled",
+			allowDelta: false,
+			inputSeries: []pmetric.Metric{
+				createOtelSumWithMonotonicity("test_delta_sum", pmetric.AggregationTemporalityDelta, true, ts),
+			},
+			expectedSeries: []prompb.TimeSeries{},
+			expectedError:  `invalid temporality and type combination for metric "test_delta_sum"`,
+		},
 	}
 
 	for _, tc := range tests {
@@ -610,6 +641,20 @@ func createOtelSum(name string, temporality pmetric.AggregationTemporality, ts t
 	return m
 }
 
+func createOtelSumWithMonotonicity(name string, temporality pmetric.AggregationTemporality, isMonotonic bool, ts time.Time) pmetric.Metric {
+	metrics := pmetric.NewMetricSlice()
+	m := metrics.AppendEmpty()
+	m.SetName(name)
+	sum := m.SetEmptySum()
+	sum.SetAggregationTemporality(temporality)
+	sum.SetIsMonotonic(isMonotonic)
+	dp := sum.DataPoints().AppendEmpty()
+	dp.SetDoubleValue(5)
+	dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+	dp.Attributes().PutStr("test_label", "test_value")
+	return m
+}
+
 func createPromFloatSeries(name string, ts time.Time) prompb.TimeSeries {
 	return prompb.TimeSeries{
 		Labels: []prompb.Label{
@@ -626,6 +671,21 @@ func createPromFloatSeries(name string, ts time.Time) prompb.TimeSeries {
 func createPromFloatSeriesWithTemporality(name, temporality string, ts time.Time) prompb.TimeSeries {
 	return prompb.TimeSeries{
 		Labels: []prompb.Label{
+			{Name: "__name__", Value: name},
+			{Name: "__temporality__", Value: temporality},
+			{Name: "test_label", Value: "test_value"},
+		},
+		Samples: []prompb.Sample{{
+			Value:     5,
+			Timestamp: ts.UnixMilli(),
+		}},
+	}
+}
+
+func createPromFloatSeriesWithTemporalityAndMonotonicity(name, temporality, monotonicity string, ts time.Time) prompb.TimeSeries {
+	return prompb.TimeSeries{
+		Labels: []prompb.Label{
+			{Name: "__monotonicity__", Value: monotonicity},
 			{Name: "__name__", Value: name},
 			{Name: "__temporality__", Value: temporality},
 			{Name: "test_label", Value: "test_value"},

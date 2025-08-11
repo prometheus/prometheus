@@ -26,20 +26,22 @@ import (
 
 func TestMetadata(t *testing.T) {
 	testMeta := Metadata{
-		Name:        "metric_total",
-		Type:        model.MetricTypeCounter,
-		Unit:        "seconds",
-		Temporality: "delta",
+		Name:         "metric_total",
+		Type:         model.MetricTypeCounter,
+		Unit:         "seconds",
+		Temporality:  "delta",
+		Monotonicity: "true",
 	}
 
 	for _, tcase := range []struct {
-		emptyName, emptyType, emptyUnit, emptyTemporality bool
+		emptyName, emptyType, emptyUnit, emptyTemporality, emptyMonotonicity bool
 	}{
 		{},
 		{emptyName: true},
 		{emptyType: true},
 		{emptyUnit: true},
 		{emptyTemporality: true},
+		{emptyMonotonicity: true},
 		{emptyName: true, emptyType: true, emptyUnit: true, emptyTemporality: true},
 	} {
 		var (
@@ -69,6 +71,10 @@ func TestMetadata(t *testing.T) {
 				lb.Add(metricTemporality, testMeta.Temporality)
 				expectedMeta.Temporality = testMeta.Temporality
 			}
+			if !tcase.emptyMonotonicity {
+				lb.Add(metricMonotonicity, testMeta.Monotonicity)
+				expectedMeta.Monotonicity = testMeta.Monotonicity
+			}
 			lb.Sort()
 			expectedLabels = lb.Labels()
 		}
@@ -86,6 +92,7 @@ func TestMetadata(t *testing.T) {
 				require.Equal(t, tcase.emptyType, expectedMeta.IsTypeEmpty())
 				require.Equal(t, tcase.emptyUnit, expectedMeta.IsEmptyFor(metricUnit))
 				require.Equal(t, tcase.emptyTemporality, expectedMeta.IsEmptyFor(metricTemporality))
+				require.Equal(t, tcase.emptyMonotonicity, expectedMeta.IsEmptyFor(metricMonotonicity))
 			}
 			{
 				// From Metadata to labels for various builders.
@@ -117,12 +124,13 @@ func TestIgnoreOverriddenMetadataLabelsScratchBuilder(t *testing.T) {
 		},
 		{
 			highPrioMeta: Metadata{
-				Name:        "metric_total",
-				Type:        model.MetricTypeCounter,
-				Unit:        "seconds",
-				Temporality: "delta",
+				Name:         "metric_total",
+				Type:         model.MetricTypeCounter,
+				Unit:         "seconds",
+				Temporality:  "delta",
+				Monotonicity: "true",
 			},
-			expectedLabels: labels.FromStrings(metricName, "metric_total", metricType, string(model.MetricTypeCounter), metricUnit, "seconds", metricTemporality, "delta", "foo", "bar"),
+			expectedLabels: labels.FromStrings(metricName, "metric_total", metricType, string(model.MetricTypeCounter), metricUnit, "seconds", metricTemporality, "delta", metricMonotonicity, "true", "foo", "bar"),
 		},
 		{
 			highPrioMeta: Metadata{
@@ -169,6 +177,7 @@ func TestIsMetadataLabel(t *testing.T) {
 		{"__type__", true},
 		{"__unit__", true},
 		{"__temporality__", true},
+		{"__monotonicity__", true},
 		{"foo", false},
 		{"bar", false},
 		{"__other__", false},
