@@ -367,7 +367,7 @@ func (c *Client) ReadMultiple(ctx context.Context, queries []*prompb.Query, sort
 		AcceptedResponseTypes: c.acceptedResponseTypes,
 	}
 
-	httpResp, cancel, start, err := c.executeReadRequest(ctx, req, "Remote Read Multiple")
+	httpResp, cancel, start, err := c.executeReadRequest(ctx, req, "Remote Read")
 	if err != nil {
 		return nil, err
 	}
@@ -426,9 +426,9 @@ func (c *Client) handleReadResponse(httpResp *http.Response, req *prompb.ReadReq
 
 	switch {
 	case strings.HasPrefix(contentType, "application/x-protobuf"):
-		c.readQueriesDuration.WithLabelValues("samples").Observe(time.Since(start).Seconds())
-		c.readQueriesTotal.WithLabelValues("samples", strconv.Itoa(httpResp.StatusCode)).Inc()
-		ss, err := c.handleSamplesResponseImpl(req, httpResp, sortSeries)
+		c.readQueriesDuration.WithLabelValues("sampled").Observe(time.Since(start).Seconds())
+		c.readQueriesTotal.WithLabelValues("sampled", strconv.Itoa(httpResp.StatusCode)).Inc()
+		ss, err := c.handleSampledResponseImpl(req, httpResp, sortSeries)
 		cancel()
 		return ss, err
 	case strings.HasPrefix(contentType, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"):
@@ -451,8 +451,8 @@ func (c *Client) handleReadResponse(httpResp *http.Response, req *prompb.ReadReq
 	}
 }
 
-// handleSamplesResponseImpl handles samples responses for both single and multiple queries.
-func (c *Client) handleSamplesResponseImpl(req *prompb.ReadRequest, httpResp *http.Response, sortSeries bool) (storage.SeriesSet, error) {
+// handleSampledResponseImpl handles samples responses for both single and multiple queries.
+func (c *Client) handleSampledResponseImpl(req *prompb.ReadRequest, httpResp *http.Response, sortSeries bool) (storage.SeriesSet, error) {
 	compressed, err := io.ReadAll(httpResp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error reading response. HTTP status code: %s: %w", httpResp.Status, err)
