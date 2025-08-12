@@ -24,9 +24,9 @@ type dockerMetrics struct {
 }
 
 // Register implements discovery.DiscovererMetrics.
-func (m *dockerMetrics) Register() error {
+func (*dockerMetrics) Register() error {
 	return nil
 }
 
 // Unregister implements discovery.DiscovererMetrics.
-func (m *dockerMetrics) Unregister() {}
+func (*dockerMetrics) Unregister() {}

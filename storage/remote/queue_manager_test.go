@@ -68,6 +68,7 @@ func newHighestTimestampMetric() *maxTimestamp {
 }
 
 func TestBasicContentNegotiation(t *testing.T) {
+	t.Parallel()
 	queueConfig := config.DefaultQueueConfig
 	queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
 	queueConfig.MaxShards = 1
@@ -199,6 +200,7 @@ func TestBasicContentNegotiation(t *testing.T) {
 }
 
 func TestSampleDelivery(t *testing.T) {
+	t.Parallel()
 	// Let's create an even number of send batches, so we don't run into the
 	// batch timeout case.
 	n := 3
@@ -291,6 +293,9 @@ func TestSampleDelivery(t *testing.T) {
 			c.expectExemplars(exemplars[:len(exemplars)/2], series)
 			c.expectHistograms(histograms[:len(histograms)/2], series)
 			c.expectFloatHistograms(floatHistograms[:len(floatHistograms)/2], series)
+			if tc.protoMsg == config.RemoteWriteProtoMsgV2 && len(metadata) > 0 {
+				c.expectMetadataForBatch(metadata, series, samples[:len(samples)/2], exemplars[:len(exemplars)/2], histograms[:len(histograms)/2], floatHistograms[:len(floatHistograms)/2])
+			}
 			qm.Append(samples[:len(samples)/2])
 			qm.AppendExemplars(exemplars[:len(exemplars)/2])
 			qm.AppendHistograms(histograms[:len(histograms)/2])
@@ -402,6 +407,7 @@ func TestWALMetadataDelivery(t *testing.T) {
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
+	t.Parallel()
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			// Let's send one less sample than batch size, and wait the timeout duration
@@ -430,6 +436,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 }
 
 func TestSampleDeliveryOrder(t *testing.T) {
+	t.Parallel()
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			ts := 10
@@ -463,6 +470,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 }
 
 func TestShutdown(t *testing.T) {
+	t.Parallel()
 	deadline := 1 * time.Second
 	c := NewTestBlockedWriteClient()
 
@@ -518,6 +526,7 @@ func TestSeriesReset(t *testing.T) {
 }
 
 func TestReshard(t *testing.T) {
+	t.Parallel()
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			size := 10 // Make bigger to find more races.
@@ -556,6 +565,7 @@ func TestReshard(t *testing.T) {
 }
 
 func TestReshardRaceWithStop(t *testing.T) {
+	t.Parallel()
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			c := NewTestWriteClient(protoMsg)
@@ -594,6 +604,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 }
 
 func TestReshardPartialBatch(t *testing.T) {
+	t.Parallel()
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			samples, series := createTimeseries(1, 10)
@@ -748,6 +759,7 @@ func TestShouldReshard(t *testing.T) {
 // TestDisableReshardOnRetry asserts that resharding should be disabled when a
 // recoverable error is returned from remote_write.
 func TestDisableReshardOnRetry(t *testing.T) {
+	t.Parallel()
 	onStoredContext, onStoreCalled := context.WithCancel(context.Background())
 	defer onStoreCalled()
 
@@ -761,7 +773,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		metrics = newQueueManagerMetrics(nil, "", "")
 
 		client = &MockWriteClient{
-			StoreFunc: func(_ context.Context, _ []byte, _ int) (WriteResponseStats, error) {
+			StoreFunc: func(context.Context, []byte, int) (WriteResponseStats, error) {
 				onStoreCalled()
 
 				return WriteResponseStats{}, RecoverableError{
@@ -961,6 +973,7 @@ type TestWriteClient struct {
 	expectedHistograms      map[string][]prompb.Histogram
 	expectedFloatHistograms map[string][]prompb.Histogram
 	receivedMetadata        map[string][]prompb.MetricMetadata
+	expectedMetadata        map[string][]prompb.MetricMetadata
 	writesReceived          int
 	mtx                     sync.Mutex
 	protoMsg                config.RemoteWriteProtoMsg
@@ -979,6 +992,7 @@ func NewTestWriteClient(protoMsg config.RemoteWriteProtoMsg) *TestWriteClient {
 		receivedSamples:  map[string][]prompb.Sample{},
 		expectedSamples:  map[string][]prompb.Sample{},
 		receivedMetadata: map[string][]prompb.MetricMetadata{},
+		expectedMetadata: map[string][]prompb.MetricMetadata{},
 		protoMsg:         protoMsg,
 		storeWait:        0,
 		returnError:      nil,
@@ -1051,6 +1065,43 @@ func (c *TestWriteClient) expectFloatHistograms(fhs []record.RefFloatHistogramSa
 	}
 }
 
+func (c *TestWriteClient) expectMetadataForBatch(metadata []record.RefMetadata, series []record.RefSeries, samples []record.RefSample, exemplars []record.RefExemplar, histograms []record.RefHistogramSample, floatHistograms []record.RefFloatHistogramSample) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	c.expectedMetadata = map[string][]prompb.MetricMetadata{}
+	c.receivedMetadata = map[string][]prompb.MetricMetadata{}
+
+	// Collect refs that have data in this batch.
+	refsWithData := make(map[chunks.HeadSeriesRef]struct{})
+	for _, s := range samples {
+		refsWithData[s.Ref] = struct{}{}
+	}
+	for _, e := range exemplars {
+		refsWithData[e.Ref] = struct{}{}
+	}
+	for _, h := range histograms {
+		refsWithData[h.Ref] = struct{}{}
+	}
+	for _, fh := range floatHistograms {
+		refsWithData[fh.Ref] = struct{}{}
+	}
+
+	// Only expect metadata for series that have data in this batch.
+	for _, m := range metadata {
+		if _, ok := refsWithData[m.Ref]; !ok {
+			continue
+		}
+		tsID := getSeriesIDFromRef(series[m.Ref])
+		c.expectedMetadata[tsID] = append(c.expectedMetadata[tsID], prompb.MetricMetadata{
+			MetricFamilyName: tsID,
+			Type:             prompb.FromMetadataType(record.ToMetricType(m.Type)),
+			Help:             m.Help,
+			Unit:             m.Unit,
+		})
+	}
+}
+
 func deepLen[M any](ms ...map[string][]M) int {
 	l := 0
 	for _, m := range ms {
@@ -1068,12 +1119,17 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB, timeout time.Durati
 	defer cancel()
 	if err := runutil.Retry(500*time.Millisecond, ctx.Done(), func() error {
 		c.mtx.Lock()
-		exp := deepLen(c.expectedSamples) + deepLen(c.expectedExemplars) + deepLen(c.expectedHistograms, c.expectedFloatHistograms)
-		got := deepLen(c.receivedSamples) + deepLen(c.receivedExemplars) + deepLen(c.receivedHistograms, c.receivedFloatHistograms)
+		exp := deepLen(c.expectedSamples) + deepLen(c.expectedExemplars) + deepLen(c.expectedHistograms, c.expectedFloatHistograms) + len(c.expectedMetadata)
+		got := deepLen(c.receivedSamples) + deepLen(c.receivedExemplars) + deepLen(c.receivedHistograms, c.receivedFloatHistograms) + func() int {
+			if len(c.receivedMetadata) == 0 {
+				return 0
+			}
+			return len(c.expectedMetadata) // Count unique series that have metadata.
+		}()
 		c.mtx.Unlock()
 
 		if got < exp {
-			return fmt.Errorf("expected %v samples/exemplars/histograms/floathistograms, got %v", exp, got)
+			return fmt.Errorf("expected %v samples/exemplars/histograms/floathistograms/metadata, got %v", exp, got)
 		}
 		return nil
 	}); err != nil {
@@ -1094,6 +1150,12 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB, timeout time.Durati
 	}
 	for ts, expectedFloatHistogram := range c.expectedFloatHistograms {
 		require.Equal(tb, expectedFloatHistogram, c.receivedFloatHistograms[ts], ts)
+	}
+	for ts, expectedMetadata := range c.expectedMetadata {
+		require.NotEmpty(tb, c.receivedMetadata[ts], "No metadata received for series %s", ts)
+		// For metadata, we only check that we got at least one entry with the right content
+		// since v2 protocol sends metadata with each data point
+		require.Equal(tb, expectedMetadata[0], c.receivedMetadata[ts][0], ts)
 	}
 }
 
@@ -1182,18 +1244,18 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) (WriteResp
 	return rs, nil
 }
 
-func (c *TestWriteClient) Name() string {
+func (*TestWriteClient) Name() string {
 	return "testwriteclient"
 }
 
-func (c *TestWriteClient) Endpoint() string {
+func (*TestWriteClient) Endpoint() string {
 	return "http://test-remote.com/1234"
 }
 
 func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, error) {
 	req := &prompb.WriteRequest{
 		Timeseries: make([]prompb.TimeSeries, len(v2Req.Timeseries)),
-		// TODO handle metadata?
+		Metadata:   []prompb.MetricMetadata{},
 	}
 	b := labels.NewScratchBuilder(0)
 	for i, rts := range v2Req.Timeseries {
@@ -1231,6 +1293,21 @@ func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, erro
 			}
 			req.Timeseries[i].Histograms[j] = prompb.FromIntHistogram(h.Timestamp, h.ToIntHistogram())
 		}
+
+		// Convert v2 metadata to v1 format.
+		if rts.Metadata.Type != writev2.Metadata_METRIC_TYPE_UNSPECIFIED {
+			labels := rts.ToLabels(&b, v2Req.Symbols)
+			metadata := rts.ToMetadata(v2Req.Symbols)
+
+			metricFamilyName := labels.String()
+
+			req.Metadata = append(req.Metadata, prompb.MetricMetadata{
+				MetricFamilyName: metricFamilyName,
+				Type:             prompb.FromMetadataType(metadata.Type),
+				Help:             metadata.Help,
+				Unit:             metadata.Unit,
+			})
+		}
 	}
 	return req, nil
 }
@@ -1257,11 +1334,11 @@ func (c *TestBlockingWriteClient) NumCalls() uint64 {
 	return c.numCalls.Load()
 }
 
-func (c *TestBlockingWriteClient) Name() string {
+func (*TestBlockingWriteClient) Name() string {
 	return "testblockingwriteclient"
 }
 
-func (c *TestBlockingWriteClient) Endpoint() string {
+func (*TestBlockingWriteClient) Endpoint() string {
 	return "http://test-remote-blocking.com/1234"
 }
 
@@ -1269,11 +1346,11 @@ func (c *TestBlockingWriteClient) Endpoint() string {
 type NopWriteClient struct{}
 
 func NewNopWriteClient() *NopWriteClient { return &NopWriteClient{} }
-func (c *NopWriteClient) Store(context.Context, []byte, int) (WriteResponseStats, error) {
+func (*NopWriteClient) Store(context.Context, []byte, int) (WriteResponseStats, error) {
 	return WriteResponseStats{}, nil
 }
-func (c *NopWriteClient) Name() string     { return "nopwriteclient" }
-func (c *NopWriteClient) Endpoint() string { return "http://test-remote.com/1234" }
+func (*NopWriteClient) Name() string     { return "nopwriteclient" }
+func (*NopWriteClient) Endpoint() string { return "http://test-remote.com/1234" }
 
 type MockWriteClient struct {
 	StoreFunc    func(context.Context, []byte, int) (WriteResponseStats, error)
@@ -1931,27 +2008,32 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 }
 
 func TestDropOldTimeSeries(t *testing.T) {
-	size := 10
-	nSeries := 6
-	nSamples := config.DefaultQueueConfig.Capacity * size
-	samples, newSamples, series := createTimeseriesWithOldSamples(nSamples, nSeries)
+	t.Parallel()
+	// Test both v1 and v2 remote write protocols
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			size := 10
+			nSeries := 6
+			nSamples := config.DefaultQueueConfig.Capacity * size
+			samples, newSamples, series := createTimeseriesWithOldSamples(nSamples, nSeries)
 
-	// TODO(alexg): test with new version
-	c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
-	c.expectSamples(newSamples, series)
+			c := NewTestWriteClient(protoMsg)
+			c.expectSamples(newSamples, series)
 
-	cfg := config.DefaultQueueConfig
-	mcfg := config.DefaultMetadataConfig
-	cfg.MaxShards = 1
-	cfg.SampleAgeLimit = model.Duration(60 * time.Second)
-	m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, config.RemoteWriteProtoMsgV1)
-	m.StoreSeries(series, 0)
+			cfg := config.DefaultQueueConfig
+			mcfg := config.DefaultMetadataConfig
+			cfg.MaxShards = 1
+			cfg.SampleAgeLimit = model.Duration(60 * time.Second)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m.StoreSeries(series, 0)
 
-	m.Start()
-	defer m.Stop()
+			m.Start()
+			defer m.Stop()
 
-	m.Append(samples)
-	c.waitForExpectedData(t, 30*time.Second)
+			m.Append(samples)
+			c.waitForExpectedData(t, 30*time.Second)
+		})
+	}
 }
 
 func TestIsSampleOld(t *testing.T) {
@@ -1962,6 +2044,7 @@ func TestIsSampleOld(t *testing.T) {
 
 // Simulates scenario in which remote write endpoint is down and a subset of samples is dropped due to age limit while backoffing.
 func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
+	t.Parallel()
 	maxSamplesPerSend := 10
 	sampleAgeLimit := time.Second
 

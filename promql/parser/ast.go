@@ -116,7 +116,8 @@ type DurationExpr struct {
 	LHS, RHS Expr     // The operands on the respective sides of the operator.
 	Wrapped  bool     // Set when the duration is wrapped in parentheses.
 
-	StartPos posrange.Pos // For unary operations, the position of the operator.
+	StartPos posrange.Pos // For unary operations and step(), the start position of the operator.
+	EndPos   posrange.Pos // For step(), the end position of the operator.
 }
 
 // Call represents a function call.
@@ -242,15 +243,15 @@ func (TestStmt) PositionRange() posrange.PositionRange {
 		End:   -1,
 	}
 }
-func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }
-func (e *Call) Type() ValueType           { return e.Func.ReturnType }
-func (e *MatrixSelector) Type() ValueType { return ValueTypeMatrix }
-func (e *SubqueryExpr) Type() ValueType   { return ValueTypeMatrix }
-func (e *NumberLiteral) Type() ValueType  { return ValueTypeScalar }
-func (e *ParenExpr) Type() ValueType      { return e.Expr.Type() }
-func (e *StringLiteral) Type() ValueType  { return ValueTypeString }
-func (e *UnaryExpr) Type() ValueType      { return e.Expr.Type() }
-func (e *VectorSelector) Type() ValueType { return ValueTypeVector }
+func (*AggregateExpr) Type() ValueType  { return ValueTypeVector }
+func (e *Call) Type() ValueType         { return e.Func.ReturnType }
+func (*MatrixSelector) Type() ValueType { return ValueTypeMatrix }
+func (*SubqueryExpr) Type() ValueType   { return ValueTypeMatrix }
+func (*NumberLiteral) Type() ValueType  { return ValueTypeScalar }
+func (e *ParenExpr) Type() ValueType    { return e.Expr.Type() }
+func (*StringLiteral) Type() ValueType  { return ValueTypeString }
+func (e *UnaryExpr) Type() ValueType    { return e.Expr.Type() }
+func (*VectorSelector) Type() ValueType { return ValueTypeVector }
 func (e *BinaryExpr) Type() ValueType {
 	if e.LHS.Type() == ValueTypeScalar && e.RHS.Type() == ValueTypeScalar {
 		return ValueTypeScalar
@@ -258,7 +259,7 @@ func (e *BinaryExpr) Type() ValueType {
 	return ValueTypeVector
 }
 func (e *StepInvariantExpr) Type() ValueType { return e.Expr.Type() }
-func (e *DurationExpr) Type() ValueType      { return ValueTypeScalar }
+func (*DurationExpr) Type() ValueType        { return ValueTypeScalar }
 
 func (*AggregateExpr) PromQLExpr()     {}
 func (*BinaryExpr) PromQLExpr()        {}
@@ -455,6 +456,18 @@ func (e *BinaryExpr) PositionRange() posrange.PositionRange {
 }
 
 func (e *DurationExpr) PositionRange() posrange.PositionRange {
+	if e.Op == STEP {
+		return posrange.PositionRange{
+			Start: e.StartPos,
+			End:   e.EndPos,
+		}
+	}
+	if e.RHS == nil {
+		return posrange.PositionRange{
+			Start: e.StartPos,
+			End:   e.RHS.PositionRange().End,
+		}
+	}
 	if e.LHS == nil {
 		return posrange.PositionRange{
 			Start: e.StartPos,

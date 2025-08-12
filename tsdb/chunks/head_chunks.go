@@ -172,7 +172,7 @@ func (f *chunkPos) shouldCutNewFile(bytesToWrite uint64) bool {
 // bytesToWriteForChunk returns the number of bytes that will need to be written for the given chunk size,
 // including all meta data before and after the chunk data.
 // Head chunk format: https://github.com/prometheus/prometheus/blob/main/tsdb/docs/format/head_chunks.md#chunk
-func (f *chunkPos) bytesToWriteForChunk(chkLen uint64) uint64 {
+func (*chunkPos) bytesToWriteForChunk(chkLen uint64) uint64 {
 	// Headers.
 	bytes := uint64(SeriesRefSize) + 2*MintMaxtSize + ChunkEncodingSize
 
@@ -283,16 +283,16 @@ const (
 	OutOfOrderMask = uint8(0b10000000)
 )
 
-func (cdm *ChunkDiskMapper) ApplyOutOfOrderMask(sourceEncoding chunkenc.Encoding) chunkenc.Encoding {
+func (*ChunkDiskMapper) ApplyOutOfOrderMask(sourceEncoding chunkenc.Encoding) chunkenc.Encoding {
 	enc := uint8(sourceEncoding) | OutOfOrderMask
 	return chunkenc.Encoding(enc)
 }
 
-func (cdm *ChunkDiskMapper) IsOutOfOrderChunk(e chunkenc.Encoding) bool {
+func (*ChunkDiskMapper) IsOutOfOrderChunk(e chunkenc.Encoding) bool {
 	return (uint8(e) & OutOfOrderMask) != 0
 }
 
-func (cdm *ChunkDiskMapper) RemoveMasks(sourceEncoding chunkenc.Encoding) chunkenc.Encoding {
+func (*ChunkDiskMapper) RemoveMasks(sourceEncoding chunkenc.Encoding) chunkenc.Encoding {
 	restored := uint8(sourceEncoding) & (^OutOfOrderMask)
 	return chunkenc.Encoding(restored)
 }

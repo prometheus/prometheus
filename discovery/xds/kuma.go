@@ -88,7 +88,7 @@ func (c *KumaSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return c.HTTPClientConfig.Validate()
 }
 
-func (c *KumaSDConfig) Name() string {
+func (*KumaSDConfig) Name() string {
 	return "kuma"
 }
 

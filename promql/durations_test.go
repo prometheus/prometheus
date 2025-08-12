@@ -196,6 +196,24 @@ func TestCalculateDuration(t *testing.T) {
 			allowedNegative: true,
 		},
 		{
+			name: "step",
+			expr: &parser.DurationExpr{
+				Op: parser.STEP,
+			},
+			expected: 1 * time.Second,
+		},
+		{
+			name: "step multiplication",
+			expr: &parser.DurationExpr{
+				LHS: &parser.DurationExpr{
+					Op: parser.STEP,
+				},
+				RHS: &parser.NumberLiteral{Val: 3},
+				Op:  parser.MUL,
+			},
+			expected: 3 * time.Second,
+		},
+		{
 			name: "division by zero",
 			expr: &parser.DurationExpr{
 				LHS: &parser.NumberLiteral{Val: 5},
@@ -225,7 +243,8 @@ func TestCalculateDuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := calculateDuration(tt.expr, tt.allowedNegative)
+			v := &durationVisitor{step: 1 * time.Second}
+			result, err := v.calculateDuration(tt.expr, tt.allowedNegative)
 			if tt.errorMessage != "" {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tt.errorMessage)

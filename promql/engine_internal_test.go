@@ -39,10 +39,9 @@ func TestRecoverEvaluatorRuntime(t *testing.T) {
 		require.Contains(t, output.String(), "sum(up)")
 	}()
 	defer ev.recover(expr, nil, &err)
-
 	// Cause a runtime panic.
 	var a []int
-	a[123] = 1
+	a[123] = 1 //nolint:govet // This is intended to cause a runtime panic.
 }
 
 func TestRecoverEvaluatorError(t *testing.T) {

@@ -1098,6 +1098,13 @@ func TestCompaction_populateBlock(t *testing.T) {
 				s.NumChunks += uint64(len(series.chunks))
 				for _, chk := range series.chunks {
 					s.NumSamples += uint64(len(chk))
+					for _, smpl := range chk {
+						if smpl.h != nil || smpl.fh != nil {
+							s.NumHistogramSamples++
+						} else {
+							s.NumFloatSamples++
+						}
+					}
 				}
 			}
 			require.Equal(t, s, meta.Stats)
@@ -1303,6 +1310,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 // TestCancelCompactions ensures that when the db is closed
 // any running compaction is cancelled to unblock closing the db.
 func TestCancelCompactions(t *testing.T) {
+	t.Parallel()
 	tmpdir := t.TempDir()
 
 	// Create some blocks to fall within the compaction range.
@@ -1372,6 +1380,7 @@ func TestCancelCompactions(t *testing.T) {
 // TestDeleteCompactionBlockAfterFailedReload ensures that a failed reloadBlocks immediately after a compaction
 // deletes the resulting block to avoid creating blocks with the same time range.
 func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
+	t.Parallel()
 	tests := map[string]func(*DB) int{
 		"Test Head Compaction": func(db *DB) int {
 			rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 - 1
@@ -1957,10 +1966,6 @@ func TestDelayedCompaction(t *testing.T) {
 		for db.head.compactable() {
 			time.Sleep(time.Millisecond)
 		}
-		if runtime.GOOS == "windows" {
-			// TODO: enable on windows once ms resolution timers are better supported.
-			return
-		}
 		duration := time.Since(start)
 		require.Less(t, duration, delay)
 	}
@@ -1982,8 +1987,10 @@ func TestDelayedCompaction(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
+			if c.compactionDelay > 0 && runtime.GOOS == "windows" {
+				t.Skip("Time imprecision on windows makes the test flaky, see https://github.com/prometheus/prometheus/issues/16450")
+			}
 			t.Parallel()
 
 			var options *Options
@@ -2094,6 +2101,7 @@ func TestDelayedCompaction(t *testing.T) {
 // TestDelayedCompactionDoesNotBlockUnrelatedOps makes sure that when delayed compaction is enabled,
 // operations that don't directly derive from the Head compaction are not delayed, here we consider disk blocks compaction.
 func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name            string
 		whenCompactable bool

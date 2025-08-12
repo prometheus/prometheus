@@ -250,10 +250,10 @@ type errSeriesSet struct {
 	err error
 }
 
-func (errSeriesSet) Next() bool                          { return false }
-func (errSeriesSet) At() storage.Series                  { return nil }
-func (e errSeriesSet) Err() error                        { return e.err }
-func (e errSeriesSet) Warnings() annotations.Annotations { return nil }
+func (errSeriesSet) Next() bool                        { return false }
+func (errSeriesSet) At() storage.Series                { return nil }
+func (e errSeriesSet) Err() error                      { return e.err }
+func (errSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func TestQueryError(t *testing.T) {
 	opts := promql.EngineOpts{
@@ -2282,7 +2282,7 @@ func TestQueryLogger_error(t *testing.T) {
 	ctx = promql.NewOriginContext(ctx, map[string]interface{}{"foo": "bar"})
 	defer cancelCtx()
 	testErr := errors.New("failure")
-	query := engine.NewTestQuery(func(_ context.Context) error {
+	query := engine.NewTestQuery(func(context.Context) error {
 		return testErr
 	})
 
@@ -2896,7 +2896,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							},
 							PosRange: posrange.PositionRange{
 								Start: 29,
-								End:   51,
+								End:   52, // TODO(krajorama): this should be 51. https://github.com/prometheus/prometheus/issues/16053
 							},
 						},
 					},
@@ -3088,7 +3088,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 		t.Run(test.input, func(t *testing.T) {
 			expr, err := parser.ParseExpr(test.input)
 			require.NoError(t, err)
-			expr, err = promql.PreprocessExpr(expr, startTime, endTime)
+			expr, err = promql.PreprocessExpr(expr, startTime, endTime, 0)
 			require.NoError(t, err)
 			if test.outputTest {
 				require.Equal(t, test.input, expr.String(), "error on input '%s'", test.input)
@@ -3504,7 +3504,7 @@ func TestRateAnnotations(t *testing.T) {
 			expr:                     "rate(series[1m1s])",
 			typeAndUnitLabelsEnabled: true,
 			expectedInfoAnnotations: []string{
-				`PromQL info: metric might not be a counter, __type__ label is not set to "counter", got "": "series" (1:6)`,
+				`PromQL info: metric might not be a counter, __type__ label is not set to "counter" or "histogram", got "": "series" (1:6)`,
 			},
 			expectedWarningAnnotations: []string{},
 		},
@@ -3515,7 +3515,7 @@ func TestRateAnnotations(t *testing.T) {
 			expr:                     "increase(series[1m1s])",
 			typeAndUnitLabelsEnabled: true,
 			expectedInfoAnnotations: []string{
-				`PromQL info: metric might not be a counter, __type__ label is not set to "counter", got "": "series" (1:10)`,
+				`PromQL info: metric might not be a counter, __type__ label is not set to "counter" or "histogram", got "": "series" (1:10)`,
 			},
 			expectedWarningAnnotations: []string{},
 		},
@@ -3528,9 +3528,27 @@ func TestRateAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		},
+		"no info annotation when rate() over series with __type__=histogram label": {
+			data: `
+				series{label="a", __type__="histogram"} 1 2 3
+			`,
+			expr:                       "rate(series[1m1s])",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
 		"no info annotation when increase() over series with __type__=counter label": {
 			data: `
 				series{label="a", __type__="counter"} 1 2 3
+			`,
+			expr:                       "increase(series[1m1s])",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when increase() over series with __type__=histogram label": {
+			data: `
+				series{label="a", __type__="histogram"} 1 2 3
 			`,
 			expr:                       "increase(series[1m1s])",
 			typeAndUnitLabelsEnabled:   true,
@@ -3772,7 +3790,7 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	require.Nil(t, newc)
 
 	querier := storage.MockQuerier{
-		SelectMockFunction: func(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+		SelectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 			return &singleSeriesSet{
 				series: mockSeries{chunks: []chunkenc.Chunk{c1, c2, c3}, labelSet: []string{"__name__", "foo"}},
 			}
@@ -3807,10 +3825,10 @@ type singleSeriesSet struct {
 	consumed bool
 }
 
-func (s *singleSeriesSet) Next() bool                       { c := s.consumed; s.consumed = true; return !c }
-func (s singleSeriesSet) At() storage.Series                { return s.series }
-func (s singleSeriesSet) Err() error                        { return nil }
-func (s singleSeriesSet) Warnings() annotations.Annotations { return nil }
+func (s *singleSeriesSet) Next() bool                     { c := s.consumed; s.consumed = true; return !c }
+func (s singleSeriesSet) At() storage.Series              { return s.series }
+func (singleSeriesSet) Err() error                        { return nil }
+func (singleSeriesSet) Warnings() annotations.Annotations { return nil }
 
 type mockSeries struct {
 	chunks   []chunkenc.Chunk
@@ -3984,4 +4002,50 @@ func TestInconsistentHistogramCount(t *testing.T) {
 	countFromFunction := float64(v[0].F)
 
 	require.Equal(t, countFromHistogram, countFromFunction, "histogram_count function should return the same count as the histogram itself")
+}
+
+// TestSubQueryHistogramsCopy reproduces a bug where native histogram values from subqueries are not copied.
+func TestSubQueryHistogramsCopy(t *testing.T) {
+	start := time.Unix(0, 0)
+	end := time.Unix(144, 0)
+	step := time.Second * 3
+
+	load := `load 2m
+			http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:110 sum:818.00 buckets:[1 14 95]}}+{{schema:0 count:110 buckets:[1 14 95]}}x20
+			http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:210 sum:1598.00 buckets:[1 19 190]}}+{{schema:0 count:210 buckets:[1 19 190]}}x30`
+
+	subQuery := `min_over_time({__name__="http_request_duration_seconds"}[1h:1m])`
+	testQuery := `rate({__name__="http_request_duration_seconds"}[3m])`
+	ctx := context.Background()
+
+	for i := 0; i < 100; i++ {
+		queryable := promqltest.LoadedStorage(t, load)
+		engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+		q, err := engine.NewRangeQuery(ctx, queryable, nil, subQuery, start, end, step)
+		require.NoError(t, err)
+		q.Exec(ctx)
+		q.Close()
+		queryable.Close()
+	}
+
+	for i := 0; i < 100; i++ {
+		queryable := promqltest.LoadedStorage(t, load)
+		engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+		q, err := engine.NewRangeQuery(ctx, queryable, nil, testQuery, start, end, step)
+		require.NoError(t, err)
+		result := q.Exec(ctx)
+
+		mat, err := result.Matrix()
+		require.NoError(t, err)
+
+		for _, s := range mat {
+			for _, h := range s.Histograms {
+				require.NotEmpty(t, h.H.PositiveBuckets)
+			}
+		}
+		q.Close()
+		queryable.Close()
+	}
 }

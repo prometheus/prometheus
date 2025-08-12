@@ -428,7 +428,7 @@ func (c *Client) handleReadResponse(httpResp *http.Response, req *prompb.ReadReq
 	case strings.HasPrefix(contentType, "application/x-protobuf"):
 		c.readQueriesDuration.WithLabelValues("sampled").Observe(time.Since(start).Seconds())
 		c.readQueriesTotal.WithLabelValues("sampled", strconv.Itoa(httpResp.StatusCode)).Inc()
-		ss, err := c.handleSampledResponseImpl(req, httpResp, sortSeries)
+		ss, err := c.handleSampledResponse(req, httpResp, sortSeries)
 		cancel()
 		return ss, err
 	case strings.HasPrefix(contentType, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"):
@@ -451,8 +451,7 @@ func (c *Client) handleReadResponse(httpResp *http.Response, req *prompb.ReadReq
 	}
 }
 
-// handleSampledResponseImpl handles samples responses for both single and multiple queries.
-func (c *Client) handleSampledResponseImpl(req *prompb.ReadRequest, httpResp *http.Response, sortSeries bool) (storage.SeriesSet, error) {
+func (c *Client) handleSampledResponse(req *prompb.ReadRequest, httpResp *http.Response, sortSeries bool) (storage.SeriesSet, error) {
 	compressed, err := io.ReadAll(httpResp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error reading response. HTTP status code: %s: %w", httpResp.Status, err)

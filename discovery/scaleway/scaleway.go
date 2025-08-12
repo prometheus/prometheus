@@ -111,7 +111,7 @@ func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.Ref
 	}
 }
 
-func (c SDConfig) Name() string {
+func (SDConfig) Name() string {
 	return "scaleway"
 }
 
