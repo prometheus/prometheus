@@ -30,8 +30,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var longErrMessage = strings.Repeat("error message", maxErrMsgLen)
@@ -472,5 +474,235 @@ func delayedResponseHTTPHandler(t *testing.T, delay time.Duration) http.HandlerF
 
 		_, err = w.Write(snappy.Encode(nil, b))
 		require.NoError(t, err)
+	}
+}
+
+func TestReadMultipleErrorHandling(t *testing.T) {
+	m := &mockedRemoteClient{
+		store: []*prompb.TimeSeries{
+			{Labels: []prompb.Label{{Name: "job", Value: "prometheus"}}},
+		},
+		b: labels.NewScratchBuilder(0),
+	}
+
+	// Test with invalid matcher - should return error
+	queries := []*prompb.Query{
+		{
+			StartTimestampMs: 1000,
+			EndTimestampMs:   2000,
+			Matchers: []*prompb.LabelMatcher{
+				{Type: prompb.LabelMatcher_Type(999), Name: "job", Value: "prometheus"}, // invalid matcher type
+			},
+		},
+	}
+
+	result, err := m.ReadMultiple(context.Background(), queries, true)
+	require.Error(t, err)
+	require.Nil(t, result)
+}
+
+func TestReadMultipleSorting(t *testing.T) {
+	// Test data with labels designed to test sorting behavior
+	// When sorted: aaa < bbb < ccc
+	// When unsorted: order depends on processing order
+	m := &mockedRemoteClient{
+		store: []*prompb.TimeSeries{
+			{Labels: []prompb.Label{{Name: "series", Value: "ccc"}}}, // Will be returned by query 1
+			{Labels: []prompb.Label{{Name: "series", Value: "aaa"}}}, // Will be returned by query 2
+			{Labels: []prompb.Label{{Name: "series", Value: "bbb"}}}, // Will be returned by both queries (overlapping)
+		},
+		b: labels.NewScratchBuilder(0),
+	}
+
+	testCases := []struct {
+		name          string
+		queries       []*prompb.Query
+		sortSeries    bool
+		expectedOrder []string
+	}{
+		{
+			name: "multiple queries with sortSeries=true - should be sorted",
+			queries: []*prompb.Query{
+				{
+					StartTimestampMs: 1000,
+					EndTimestampMs:   2000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_RE, Name: "series", Value: "ccc|bbb"}, // Returns: ccc, bbb (unsorted in store)
+					},
+				},
+				{
+					StartTimestampMs: 1500,
+					EndTimestampMs:   2500,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_RE, Name: "series", Value: "aaa|bbb"}, // Returns: aaa, bbb (unsorted in store)
+					},
+				},
+			},
+			sortSeries:    true,
+			expectedOrder: []string{"aaa", "bbb", "ccc"}, // Should be sorted after merge
+		},
+		{
+			name: "multiple queries with sortSeries=false - concatenates without deduplication",
+			queries: []*prompb.Query{
+				{
+					StartTimestampMs: 1000,
+					EndTimestampMs:   2000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_RE, Name: "series", Value: "ccc|bbb"}, // Returns: ccc, bbb (unsorted)
+					},
+				},
+				{
+					StartTimestampMs: 1500,
+					EndTimestampMs:   2500,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_RE, Name: "series", Value: "aaa|bbb"}, // Returns: aaa, bbb (unsorted in store)
+					},
+				},
+			},
+			sortSeries:    false,
+			expectedOrder: []string{"ccc", "bbb", "aaa", "bbb"}, // Concatenated results - duplicates included
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			m.reset()
+
+			result, err := m.ReadMultiple(context.Background(), tc.queries, tc.sortSeries)
+			require.NoError(t, err)
+
+			// Collect the actual results
+			var actualOrder []string
+			for result.Next() {
+				series := result.At()
+				seriesValue := series.Labels().Get("series")
+				actualOrder = append(actualOrder, seriesValue)
+			}
+			require.NoError(t, result.Err())
+
+			// Verify the expected order matches actual order
+			// For sortSeries=true: results should be in sorted order
+			// For sortSeries=false: results should be in concatenated order (with duplicates)
+			testutil.RequireEqual(t, tc.expectedOrder, actualOrder)
+		})
+	}
+}
+
+func TestReadMultipleWithChunks(t *testing.T) {
+	// Test multiple queries with chunked responses
+	// This simulates a scenario where each query returns multiple chunks per series
+	tests := []struct {
+		name                string
+		queries             []*prompb.Query
+		expectedChunkCount  int
+		expectedSeriesCount int
+	}{
+		{
+			name: "multiple queries with chunked responses",
+			queries: []*prompb.Query{
+				{
+					StartTimestampMs: 1000,
+					EndTimestampMs:   5000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "job", Value: "prometheus"},
+					},
+				},
+				{
+					StartTimestampMs: 6000,
+					EndTimestampMs:   10000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "job", Value: "node_exporter"},
+					},
+				},
+			},
+			expectedChunkCount:  6, // 3 chunks per query (2 queries * 3 chunks)
+			expectedSeriesCount: 6, // Each chunk represents a series response
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
+
+				flusher, ok := w.(http.Flusher)
+				require.True(t, ok)
+
+				cw := NewChunkedWriter(w, flusher)
+
+				// For each query, simulate multiple chunks
+				for queryIndex, query := range tc.queries {
+					chunks := buildTestChunks(t)
+					for _, chunk := range chunks {
+						// Create unique labels for each query
+						var labels []prompb.Label
+						if queryIndex == 0 {
+							labels = []prompb.Label{{Name: "job", Value: "prometheus"}}
+						} else {
+							labels = []prompb.Label{{Name: "job", Value: "node_exporter"}}
+						}
+
+						cSeries := prompb.ChunkedSeries{
+							Labels: labels,
+							Chunks: []prompb.Chunk{chunk},
+						}
+
+						readResp := prompb.ChunkedReadResponse{
+							ChunkedSeries: []*prompb.ChunkedSeries{&cSeries},
+							QueryIndex:    int64(queryIndex),
+						}
+
+						b, err := proto.Marshal(&readResp)
+						require.NoError(t, err)
+
+						_, err = cw.Write(b)
+						require.NoError(t, err)
+
+						// Adjust chunk timestamps to be within query range
+						_ = query.StartTimestampMs // Use query for validation if needed
+					}
+				}
+			}))
+			defer server.Close()
+
+			u, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			cfg := &ClientConfig{
+				URL:              &config_util.URL{URL: u},
+				Timeout:          model.Duration(5 * time.Second),
+				ChunkedReadLimit: config.DefaultChunkedReadLimit,
+			}
+
+			client, err := NewReadClient("test", cfg)
+			require.NoError(t, err)
+
+			// Test ReadMultiple with chunked responses
+			result, err := client.ReadMultiple(context.Background(), tc.queries, false)
+			require.NoError(t, err)
+
+			// Count the series returned
+			var seriesCount int
+			for result.Next() {
+				seriesCount++
+				series := result.At()
+
+				// Verify we have some labels
+				require.True(t, series.Labels().Len() > 0)
+
+				// Verify we can iterate through samples
+				it := series.Iterator(nil)
+				var sampleCount int
+				for it.Next() != chunkenc.ValNone {
+					sampleCount++
+				}
+				require.NoError(t, it.Err())
+				require.True(t, sampleCount > 0, "Each series should have samples")
+			}
+			require.NoError(t, result.Err())
+
+			// Verify we got the expected number of series (one per chunk)
+			require.Equal(t, tc.expectedSeriesCount, seriesCount)
+		})
 	}
 }
