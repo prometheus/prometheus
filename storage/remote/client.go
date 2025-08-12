@@ -367,7 +367,7 @@ func (c *Client) ReadMultiple(ctx context.Context, queries []*prompb.Query, sort
 		AcceptedResponseTypes: c.acceptedResponseTypes,
 	}
 
-	httpResp, cancel, start, err := c.executeReadRequest(ctx, req, "Remote Read")
+	httpResp, cancel, start, err := c.executeReadRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +376,7 @@ func (c *Client) ReadMultiple(ctx context.Context, queries []*prompb.Query, sort
 }
 
 // executeReadRequest creates and executes an HTTP request for reading data.
-func (c *Client) executeReadRequest(ctx context.Context, req *prompb.ReadRequest, spanName string) (*http.Response, context.CancelFunc, time.Time, error) {
+func (c *Client) executeReadRequest(ctx context.Context, req *prompb.ReadRequest) (*http.Response, context.CancelFunc, time.Time, error) {
 	data, err := proto.Marshal(req)
 	if err != nil {
 		return nil, nil, time.Time{}, fmt.Errorf("unable to marshal read request: %w", err)
@@ -396,7 +396,7 @@ func (c *Client) executeReadRequest(ctx context.Context, req *prompb.ReadRequest
 	errTimeout := fmt.Errorf("%w: request timed out after %s", context.DeadlineExceeded, c.timeout)
 	ctx, cancel := context.WithTimeoutCause(ctx, c.timeout, errTimeout)
 
-	ctx, span := otel.Tracer("").Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindClient))
+	ctx, span := otel.Tracer("").Start(ctx, "Remote Read", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
 	start := time.Now()
