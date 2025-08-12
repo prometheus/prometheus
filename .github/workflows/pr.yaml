@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: mheap/github-action-required-labels@v5
         with:
-          token: "${{ secrets.GITHUB_TOKEN }}"s
+          token: "${{ secrets.GITHUB_TOKEN }}"
           mode: exactly
           count: 1
           labels: |
