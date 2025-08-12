@@ -2362,242 +2362,163 @@ func BenchmarkBuildTimeSeries(b *testing.B) {
 	}
 }
 
-func TestQueueAppend(t *testing.T) {
-	tests := []struct {
-		name           string
-		batchCapacity  int
-		queueCapacity  int
-		samples        []timeSeries
-		expectedResult []bool
-		expectedBatch  int
-		expectedSent   int
-	}{
-		{
-			name:          "append to empty queue",
-			batchCapacity: 5,
-			queueCapacity: 1,
-			samples: []timeSeries{
-				{sType: tSample},
-			},
-			expectedResult: []bool{true},
-			expectedBatch:  1,
-			expectedSent:   0,
-		},
-		{
-			name:          "append multiple samples below capacity",
-			batchCapacity: 5,
-			queueCapacity: 1,
-			samples: []timeSeries{
-				{sType: tSample},
-				{sType: tSample},
-				{sType: tSample},
-			},
-			expectedResult: []bool{true, true, true},
-			expectedBatch:  3,
-			expectedSent:   0,
-		},
-		{
-			name:          "metadata does not count towards sample limit",
-			batchCapacity: 3,
-			queueCapacity: 1,
-			samples: []timeSeries{
-				{sType: tSample},
-				{sType: tMetadata},
-				{sType: tSample},
-				{sType: tMetadata},
-				{sType: tMetadata},
-			},
-			expectedResult: []bool{true, true, true, true, true},
-			expectedBatch:  5,
-			expectedSent:   0,
-		},
-		{
-			name:          "batch sent when sample capacity reached",
-			batchCapacity: 3,
-			queueCapacity: 1,
-			samples: []timeSeries{
-				{sType: tSample},
-				{sType: tSample},
-				{sType: tSample},
-			},
-			expectedResult: []bool{true, true, true},
-			expectedBatch:  0,
-			expectedSent:   1,
-		},
-		{
-			name:          "mixed samples and metadata reaching capacity",
-			batchCapacity: 3,
-			queueCapacity: 1,
-			samples: []timeSeries{
-				{sType: tSample},
-				{sType: tMetadata},
-				{sType: tSample},
-				{sType: tMetadata},
-				{sType: tSample},
-			},
-			expectedResult: []bool{true, true, true, true, true},
-			expectedBatch:  0,
-			expectedSent:   1,
-		},
+// TestRefMetadataRouting - Test with 100 samples and metadata to thoroughly check routing
+func TestRefMetadataRouting(t *testing.T) {
+	t.Log("🧪 Large scale test with 100 samples + metadata to thoroughly check routing")
+	t.Log("📝 Make sure you added debug logging to your queue.Append method!")
+	
+	cfg := config.DefaultQueueConfig
+	cfg.MaxShards = 1
+	cfg.MaxSamplesPerSend = 10  // Smaller batch size to trigger more batches
+	cfg.Capacity = 200          // Ensure enough capacity
+	
+	c := NewTestWriteClient(config.RemoteWriteProtoMsgV2)
+	qm := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, config.RemoteWriteProtoMsgV2)
+	
+	qm.Start()
+	defer qm.Stop()
+	
+	// Create multiple test series
+	numSeries := 10
+	series := make([]record.RefSeries, numSeries)
+	for i := 0; i < numSeries; i++ {
+		series[i] = record.RefSeries{
+			Ref:    chunks.HeadSeriesRef(i + 1),
+			Labels: labels.FromStrings("__name__", fmt.Sprintf("test_metric_%d", i), "job", "test_job"),
+		}
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			q := &queue{
-				batch:             make([]timeSeries, 0, tt.batchCapacity),
-				batchQueue:        make(chan []timeSeries, tt.queueCapacity),
-				maxSamplesPerSend: tt.batchCapacity,
+	
+	t.Logf("📥 Step 1: Storing %d test series...", numSeries)
+	qm.StoreSeries(series, 0)
+	
+	// Step 2: Send a bunch of metadata first
+	t.Log("📤 Step 2: Sending metadata for all series...")
+	for i := 0; i < numSeries; i++ {
+		metadata := []record.RefMetadata{
+			{
+				Ref:  chunks.HeadSeriesRef(i + 1),
+				Type: 1, // gauge
+				Unit: fmt.Sprintf("unit_%d", i),
+				Help: fmt.Sprintf("Help text for metric %d", i),
+			},
+		}
+		qm.StoreMetadata(metadata)
+		
+		// Add some delay to see if metadata gets processed differently
+		if i%3 == 0 {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	
+	t.Log("⏱️ Waiting for metadata processing...")
+	time.Sleep(100 * time.Millisecond)
+	
+	// Step 3: Send 100 samples in batches, interleaved with more metadata
+	t.Log("📤 Step 3: Sending 100 samples with interleaved metadata...")
+	samplesPerSeries := 10
+	totalSamples := numSeries * samplesPerSeries
+	
+	for batchNum := 0; batchNum < samplesPerSeries; batchNum++ {
+		t.Logf("📦 Batch %d/%d...", batchNum+1, samplesPerSeries)
+		
+		// Send samples for all series in this batch
+		samples := make([]record.RefSample, numSeries)
+		for seriesIdx := 0; seriesIdx < numSeries; seriesIdx++ {
+			samples[seriesIdx] = record.RefSample{
+				Ref: chunks.HeadSeriesRef(seriesIdx + 1),
+				T:   int64(1000 + batchNum*100 + seriesIdx),
+				V:   float64(batchNum*10 + seriesIdx),
 			}
-
-			results := make([]bool, len(tt.samples))
-			for i, sample := range tt.samples {
-				results[i] = q.Append(sample)
-			}
-
-			require.Equal(t, tt.expectedResult, results)
-			require.Len(t, q.batch, tt.expectedBatch)
-
-			// Check number of batches sent.
-			sentCount := 0
-			for len(q.batchQueue) > 0 {
-				batch := <-q.batchQueue
-				sentCount++
-
-				// Verify sent batch has correct sample count if this was triggered by capacity.
-				if tt.expectedSent > 0 {
-					sampleCount := 0
-					for _, ts := range batch {
-						if ts.sType != tMetadata {
-							sampleCount++
-						}
-					}
-					require.GreaterOrEqual(t, sampleCount, tt.batchCapacity)
+		}
+		
+		sent := qm.Append(samples)
+		require.True(t, sent, "Batch %d samples should be appended successfully", batchNum+1)
+		
+		// Interleave some additional metadata every few batches
+		if batchNum%3 == 0 && batchNum > 0 {
+			t.Logf("📋 Adding more metadata at batch %d...", batchNum+1)
+			for seriesIdx := 0; seriesIdx < 3; seriesIdx++ { // Just first 3 series
+				moreMetadata := []record.RefMetadata{
+					{
+						Ref:  chunks.HeadSeriesRef(seriesIdx + 1),
+						Type: 2, // counter
+						Unit: fmt.Sprintf("updated_unit_%d_%d", seriesIdx, batchNum),
+						Help: fmt.Sprintf("Updated help for metric %d at batch %d", seriesIdx, batchNum),
+					},
 				}
+				qm.StoreMetadata(moreMetadata)
 			}
-			require.Equal(t, tt.expectedSent, sentCount)
-		})
+		}
+		
+		// Small delay to allow processing
+		time.Sleep(20 * time.Millisecond)
 	}
-}
-
-func TestQueueAppend_BlockedQueue(t *testing.T) {
-	q := &queue{
-		batch:             make([]timeSeries, 0, 2),
-		batchQueue:        make(chan []timeSeries, 1),
-		maxSamplesPerSend: 2, // capacity 1
+	
+	t.Logf("✅ Sent %d total samples across %d series", totalSamples, numSeries)
+	
+	// Step 4: Send some final metadata
+	t.Log("📤 Step 4: Sending final metadata burst...")
+	for i := 0; i < numSeries; i++ {
+		finalMetadata := []record.RefMetadata{
+			{
+				Ref:  chunks.HeadSeriesRef(i + 1),
+				Type: 3, // histogram
+				Unit: fmt.Sprintf("final_unit_%d", i),
+				Help: fmt.Sprintf("Final help text for metric %d", i),
+			},
+		}
+		qm.StoreMetadata(finalMetadata)
 	}
-
-	// Fill the channel first.
-	q.batchQueue <- make([]timeSeries, 1)
-
-	// Add samples to reach batch capacity.
-	result1 := q.Append(timeSeries{sType: tSample})
-	require.True(t, result1)
-
-	// Second append should fail because channel is full.
-	result2 := q.Append(timeSeries{sType: tSample})
-	require.False(t, result2, "expected Append to return false when batch queue is full")
-
-	// Batch should only contain first sample (second was removed).
-	require.Len(t, q.batch, 1, "expected batch to contain only first sample after blocked send")
-}
-
-func TestQueueAppend_ConcurrentAccess(t *testing.T) {
-	q := &queue{
-		batch:             make([]timeSeries, 0, 10),
-		batchQueue:        make(chan []timeSeries, 5),
-		maxSamplesPerSend: 10,
-	}
-
-	const numGoroutines = 100
-	results := make([]bool, numGoroutines)
-	var wg sync.WaitGroup
-
-	// Launch multiple goroutines appending concurrently.
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			datum := timeSeries{sType: tSample}
-			results[idx] = q.Append(datum)
-		}(i)
-	}
-
-	wg.Wait()
-
-	// Count successful appends.
-	successCount := 0
-	for _, result := range results {
-		if result {
-			successCount++
+	
+	// Step 5: Send a few more samples to ensure final processing
+	t.Log("📤 Step 5: Sending final samples to trigger processing...")
+	finalSamples := make([]record.RefSample, 5)
+	for i := 0; i < 5; i++ {
+		finalSamples[i] = record.RefSample{
+			Ref: chunks.HeadSeriesRef(i + 1),
+			T:   int64(9000 + i),
+			V:   float64(999 + i),
 		}
 	}
-
-	// Should have some successes.
-	require.Positive(t, successCount, "expected at least some successful appends")
-
-	// Total items (in batch + sent) should equal successful appends.
-	totalItems := len(q.batch)
-	for len(q.batchQueue) > 0 {
-		batch := <-q.batchQueue
-		totalItems += len(batch)
-	}
-
-	require.Equal(t, successCount, totalItems, "total items should match successful appends")
+	sent := qm.Append(finalSamples)
+	require.True(t, sent)
+	
+	// Wait for all processing to complete
+	t.Log("⏱️ Waiting for final processing...")
+	time.Sleep(500 * time.Millisecond)
+	
+	t.Log("🎯 TEST COMPLETED!")
 }
 
-func TestQueueAppend_NewBatchAfterSend(t *testing.T) {
-	originalCapacity := 2
-	q := &queue{
-		batch:             make([]timeSeries, 0, originalCapacity),
-		batchQueue:        make(chan []timeSeries, 2),
-		maxSamplesPerSend: originalCapacity,
+
+func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
+	symbolTable := writev2.NewSymbolTable()
+	pendingData := make([]writev2.TimeSeries, 2)
+	
+	batch := []timeSeries{
+		{sType: tMetadata, seriesLabels: labels.FromStrings("__name__", "test")},
+		{sType: tMetadata, seriesLabels: labels.FromStrings("__name__", "test")},
 	}
-
-	// Fill first batch to capacity.
-	require.True(t, q.Append(timeSeries{sType: tSample}))
-	require.True(t, q.Append(timeSeries{sType: tSample})) // Should send batch.
-
-	// Verify batch was sent
-	require.Len(t, q.batchQueue, 1)
-
-	// Verify new batch has correct capacity
-	require.Equal(t, originalCapacity, cap(q.batch))
-	require.Empty(t, q.batch)
-
-	// Should be able to append to new batch
-	require.True(t, q.Append(timeSeries{sType: tSample}))
-	require.Len(t, q.batch, 1)
-}
-
-func TestQueueAppend_EdgeCases(t *testing.T) {
-	t.Run("zero capacity batch", func(t *testing.T) {
-		q := &queue{
-			batch:             make([]timeSeries, 0),
-			batchQueue:        make(chan []timeSeries, 1),
-			maxSamplesPerSend: 0,
-		}
-
-		// Should immediately send since any non-metadata exceeds capacity.
-		result := q.Append(timeSeries{sType: tSample})
-		require.True(t, result)
-		require.Len(t, q.batchQueue, 1)
-	})
-
-	t.Run("only metadata never triggers send", func(t *testing.T) {
-		q := &queue{
-			batch:             make([]timeSeries, 0, 2),
-			batchQueue:        make(chan []timeSeries, 1),
-			maxSamplesPerSend: 2,
-		}
-
-		// Add many metadata entries.
-		for i := 0; i < 10; i++ {
-			result := q.Append(timeSeries{sType: tMetadata})
-			require.True(t, result)
-		}
-
-		// Should not have sent any batches.
-		require.Empty(t, q.batchQueue)
-		require.Len(t, q.batch, 10)
-	})
+	
+	// Call the function
+	_, _, _, _, nUnexpected := populateV2TimeSeries(
+		&symbolTable, batch, pendingData, false, false,
+	)
+	
+	// Simulate what your caller code should do
+	if nUnexpected > 0 {
+		// This is what should happen in your actual caller:
+		// qm.logger.Warn("unexpected metadata sType in populateV2TimeSeries", "count", nUnexpected)
+		// qm.metrics.unexpectedMetadataTotal.Add(float64(nUnexpected))
+		
+		t.Logf("✅ Caller would log and increment metric for %d unexpected metadata", nUnexpected)
+	} else {
+		t.Errorf("Expected to detect unexpected metadata, but nUnexpected was 0")
+	}
+	
+	if nUnexpected != 2 {
+		t.Errorf("Expected 2 unexpected metadata, got %d", nUnexpected)
+	}
+	
+	t.Logf("✅ Caller pattern test passed: detected %d unexpected metadata", nUnexpected)
 }

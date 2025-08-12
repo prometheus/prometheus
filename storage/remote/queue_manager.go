@@ -92,6 +92,7 @@ type queueManagerMetrics struct {
 	sentBytesTotal         prometheus.Counter
 	metadataBytesTotal     prometheus.Counter
 	maxSamplesPerSend      prometheus.Gauge
+	unexpectedMetadataTotal prometheus.Counter
 }
 
 func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManagerMetrics {
@@ -312,6 +313,13 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "The maximum number of samples to be sent, in a single request, to the remote storage. Note that, when sending of exemplars over remote write is enabled, exemplars count towards this limt.",
 		ConstLabels: constLabels,
 	})
+	m.unexpectedMetadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "unexpected_metadata_total",
+		Help:        "Total number of unexpected metadata entries in populateV2TimeSeries indicating routing bugs.",
+		ConstLabels: constLabels,
+	})
 
 	return m
 }
@@ -348,6 +356,7 @@ func (m *queueManagerMetrics) register() {
 			m.sentBytesTotal,
 			m.metadataBytesTotal,
 			m.maxSamplesPerSend,
+			m.unexpectedMetadataTotal,
 		)
 	}
 }
@@ -383,6 +392,7 @@ func (m *queueManagerMetrics) unregister() {
 		m.reg.Unregister(m.sentBytesTotal)
 		m.reg.Unregister(m.metadataBytesTotal)
 		m.reg.Unregister(m.maxSamplesPerSend)
+		m.reg.Unregister(m.unexpectedMetadataTotal)
 	}
 }
 
@@ -1339,14 +1349,13 @@ type queue struct {
 	batchMtx          sync.Mutex
 	batch             []timeSeries
 	batchQueue        chan []timeSeries
-	maxSamplesPerSend int
+	maxSamples 	      int
 
 	// Since we know there are a limited number of batches out, using a stack
 	// is easy and safe so a sync.Pool is not necessary.
 	// poolMtx covers adding and removing batches from the batchPool.
-	poolMtx   sync.Mutex
-	batchPool [][]timeSeries
-	nonMetadataCount int
+	poolMtx          sync.Mutex
+	batchPool        [][]timeSeries
 }
 
 type timeSeries struct {
@@ -1371,7 +1380,7 @@ const (
 	tMetadata
 )
 
-func newQueue(batchSize, capacity int, maxSamplesPerSend int) *queue {
+func newQueue(batchSize, capacity int, maxSamples int) *queue {
 	batches := capacity / batchSize
 	// Always create an unbuffered channel even if capacity is configured to be
 	// less than max_samples_per_send.
@@ -1384,12 +1393,12 @@ func newQueue(batchSize, capacity int, maxSamplesPerSend int) *queue {
 		// batchPool should have capacity for everything in the channel + 1 for
 		// the batch being processed.
 		batchPool:         make([][]timeSeries, 0, batches+1),
-		maxSamplesPerSend: maxSamplesPerSend,
+		maxSamples: maxSamples,
 	}
 }
 
-// Append the timeSeries to the buffered batch. Returns false if it
-// cannot be added and must be retried.
+// // Append the timeSeries to the buffered batch. Returns false if it
+// // cannot be added and must be retried.
 func (q *queue) Append(datum timeSeries) bool {
 	q.batchMtx.Lock()
 	defer q.batchMtx.Unlock()
@@ -1398,24 +1407,14 @@ func (q *queue) Append(datum timeSeries) bool {
 	// in the batch size calculation.
 	// See https://github.com/prometheus/prometheus/issues/14405
 	q.batch = append(q.batch, datum)
-
-	// Count non-metadata samples.
-	if datum.sType != tMetadata {
-		q.nonMetadataCount++
-	}
-
-	if q.nonMetadataCount >= q.maxSamplesPerSend {
+	if len(q.batch) >= q.maxSamples {
 		select {
 		case q.batchQueue <- q.batch:
-			q.batch = q.newBatch(q.maxSamplesPerSend)
-			q.nonMetadataCount = 0
+			q.batch = q.newBatch(q.maxSamples)
 			return true
 		default:
 			// Remove the sample we just appended. It will get retried.
 			q.batch = q.batch[:len(q.batch)-1]
-			if datum.sType != tMetadata {
-				q.nonMetadataCount--
-			}
 			return false
 		}
 	}
@@ -1555,8 +1554,12 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			}
 			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, encBuf, compr)
 		case config.RemoteWriteProtoMsgV2:
-			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms)
+			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
+			if nUnexpectedMetadata > 0 {
+				s.qm.logger.Warn("unexpected metadata sType in populateV2TimeSeries", "count", nUnexpectedMetadata)
+				s.qm.metrics.unexpectedMetadataTotal.Add(float64(nUnexpectedMetadata))
+			}
 			_ = s.sendV2Samples(ctx, pendingDataV2[:n], symbolTable.Symbols(), nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, &pBufRaw, encBuf, compr)
 			symbolTable.Reset()
 		}
@@ -1923,8 +1926,8 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	return accumulatedStats, err
 }
 
-func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms bool) (int, int, int, int) {
-	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata int
+func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms bool) (int, int, int, int, int) {
+	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
 		if d.metadata != nil {
@@ -1972,11 +1975,12 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromFloatHistogram(d.timestamp, d.floatHistogram))
 			nPendingHistograms++
 		case tMetadata:
+			nUnexpectedMetadata++
 			// TODO: log or return an error?
 			// we shouldn't receive metadata type data here, it should already be inserted into the timeSeries
 		}
 	}
-	return nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata
+	return nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata
 }
 
 func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt func(int) error, onRetry func()) error {
