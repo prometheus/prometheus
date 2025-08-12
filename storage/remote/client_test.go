@@ -16,6 +16,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -32,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -589,13 +591,14 @@ func TestReadMultipleSorting(t *testing.T) {
 }
 
 func TestReadMultipleWithChunks(t *testing.T) {
-	// Test multiple queries with chunked responses
-	// This simulates a scenario where each query returns multiple chunks per series
 	tests := []struct {
-		name                string
-		queries             []*prompb.Query
-		expectedChunkCount  int
-		expectedSeriesCount int
+		name                  string
+		queries               []*prompb.Query
+		responseType          string
+		mockHandler           func(*testing.T, []*prompb.Query) http.HandlerFunc
+		expectedSeriesCount   int
+		expectedErrorContains string
+		validateSampleCounts  []int // expected samples per series
 	}{
 		{
 			name: "multiple queries with chunked responses",
@@ -615,54 +618,55 @@ func TestReadMultipleWithChunks(t *testing.T) {
 					},
 				},
 			},
-			expectedChunkCount:  6, // 3 chunks per query (2 queries * 3 chunks)
-			expectedSeriesCount: 6, // Each chunk represents a series response
+			responseType:         "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse",
+			mockHandler:          createChunkedResponseHandler,
+			expectedSeriesCount:  6, // 3 chunks per query (2 queries * 3 series per query)
+			validateSampleCounts: []int{4, 5, 1, 4, 5, 1},
+		},
+		{
+			name: "sampled response multiple queries",
+			queries: []*prompb.Query{
+				{
+					StartTimestampMs: 1000,
+					EndTimestampMs:   3000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "job", Value: "prometheus"},
+					},
+				},
+				{
+					StartTimestampMs: 4000,
+					EndTimestampMs:   6000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "job", Value: "node_exporter"},
+					},
+				},
+			},
+			responseType:         "application/x-protobuf",
+			mockHandler:          createSampledResponseHandler,
+			expectedSeriesCount:  4, // 2 series per query * 2 queries
+			validateSampleCounts: []int{2, 2, 2, 2},
+		},
+		{
+			name: "single query with multiple chunks",
+			queries: []*prompb.Query{
+				{
+					StartTimestampMs: 0,
+					EndTimestampMs:   15000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "__name__", Value: "cpu_usage"},
+					},
+				},
+			},
+			responseType:         "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse",
+			mockHandler:          createChunkedResponseHandler,
+			expectedSeriesCount:  3,
+			validateSampleCounts: []int{5, 5, 5},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
-
-				flusher, ok := w.(http.Flusher)
-				require.True(t, ok)
-
-				cw := NewChunkedWriter(w, flusher)
-
-				// For each query, simulate multiple chunks
-				for queryIndex, query := range tc.queries {
-					chunks := buildTestChunks(t)
-					for _, chunk := range chunks {
-						// Create unique labels for each query
-						var labels []prompb.Label
-						if queryIndex == 0 {
-							labels = []prompb.Label{{Name: "job", Value: "prometheus"}}
-						} else {
-							labels = []prompb.Label{{Name: "job", Value: "node_exporter"}}
-						}
-
-						cSeries := prompb.ChunkedSeries{
-							Labels: labels,
-							Chunks: []prompb.Chunk{chunk},
-						}
-
-						readResp := prompb.ChunkedReadResponse{
-							ChunkedSeries: []*prompb.ChunkedSeries{&cSeries},
-							QueryIndex:    int64(queryIndex),
-						}
-
-						b, err := proto.Marshal(&readResp)
-						require.NoError(t, err)
-
-						_, err = cw.Write(b)
-						require.NoError(t, err)
-
-						// Adjust chunk timestamps to be within query range
-						_ = query.StartTimestampMs // Use query for validation if needed
-					}
-				}
-			}))
+			server := httptest.NewServer(tc.mockHandler(t, tc.queries))
 			defer server.Close()
 
 			u, err := url.Parse(server.URL)
@@ -677,32 +681,203 @@ func TestReadMultipleWithChunks(t *testing.T) {
 			client, err := NewReadClient("test", cfg)
 			require.NoError(t, err)
 
-			// Test ReadMultiple with chunked responses
+			// Test ReadMultiple
 			result, err := client.ReadMultiple(context.Background(), tc.queries, false)
 			require.NoError(t, err)
 
-			// Count the series returned
-			var seriesCount int
+			// Collect all series and validate
+			var allSeries []storage.Series
+			var totalSamples int
 			for result.Next() {
-				seriesCount++
 				series := result.At()
+				allSeries = append(allSeries, series)
 
 				// Verify we have some labels
 				require.True(t, series.Labels().Len() > 0)
 
-				// Verify we can iterate through samples
+				// Count samples in this series
 				it := series.Iterator(nil)
 				var sampleCount int
 				for it.Next() != chunkenc.ValNone {
 					sampleCount++
 				}
 				require.NoError(t, it.Err())
-				require.True(t, sampleCount > 0, "Each series should have samples")
+				totalSamples += sampleCount
+
+				require.Equalf(t, tc.validateSampleCounts[len(allSeries)-1], sampleCount, "Series %d sample count mismatch", len(allSeries))
 			}
 			require.NoError(t, result.Err())
 
-			// Verify we got the expected number of series (one per chunk)
-			require.Equal(t, tc.expectedSeriesCount, seriesCount)
+			// Validate total counts
+			require.Equal(t, tc.expectedSeriesCount, len(allSeries), "Series count mismatch")
 		})
 	}
+}
+
+// createChunkedResponseHandler creates a mock handler for chunked responses
+func createChunkedResponseHandler(t *testing.T, queries []*prompb.Query) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
+
+		flusher, ok := w.(http.Flusher)
+		require.True(t, ok)
+
+		cw := NewChunkedWriter(w, flusher)
+
+		// For each query, simulate multiple chunks
+		for queryIndex, _ := range queries {
+			chunks := buildTestChunks(t) // Creates 3 chunks with 5 samples each
+			for chunkIndex, chunk := range chunks {
+				// Create unique labels for each series in each query
+				var labels []prompb.Label
+				if queryIndex == 0 {
+					labels = []prompb.Label{
+						{Name: "job", Value: "prometheus"},
+						{Name: "instance", Value: fmt.Sprintf("localhost:%d", 9090+chunkIndex)},
+					}
+				} else {
+					labels = []prompb.Label{
+						{Name: "job", Value: "node_exporter"},
+						{Name: "instance", Value: fmt.Sprintf("localhost:%d", 9100+chunkIndex)},
+					}
+				}
+
+				cSeries := prompb.ChunkedSeries{
+					Labels: labels,
+					Chunks: []prompb.Chunk{chunk},
+				}
+
+				readResp := prompb.ChunkedReadResponse{
+					ChunkedSeries: []*prompb.ChunkedSeries{&cSeries},
+					QueryIndex:    int64(queryIndex),
+				}
+
+				b, err := proto.Marshal(&readResp)
+				require.NoError(t, err)
+
+				_, err = cw.Write(b)
+				require.NoError(t, err)
+			}
+		}
+	})
+}
+
+// createSampledResponseHandler creates a mock handler for sampled responses
+func createSampledResponseHandler(t *testing.T, queries []*prompb.Query) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-protobuf")
+
+		var results []*prompb.QueryResult
+		for queryIndex, query := range queries {
+			var timeseries []*prompb.TimeSeries
+
+			// Create 2 series per query
+			for seriesIndex := 0; seriesIndex < 2; seriesIndex++ {
+				var labels []prompb.Label
+				if queryIndex == 0 {
+					labels = []prompb.Label{
+						{Name: "job", Value: "prometheus"},
+						{Name: "instance", Value: fmt.Sprintf("localhost:%d", 9090+seriesIndex)},
+					}
+				} else {
+					labels = []prompb.Label{
+						{Name: "job", Value: "node_exporter"},
+						{Name: "instance", Value: fmt.Sprintf("localhost:%d", 9100+seriesIndex)},
+					}
+				}
+
+				// Create 2 samples per series within query time range
+				samples := []prompb.Sample{
+					{Timestamp: query.StartTimestampMs, Value: float64(queryIndex*10 + seriesIndex)},
+					{Timestamp: query.EndTimestampMs, Value: float64(queryIndex*10 + seriesIndex + 1)},
+				}
+
+				timeseries = append(timeseries, &prompb.TimeSeries{
+					Labels:  labels,
+					Samples: samples,
+				})
+			}
+
+			results = append(results, &prompb.QueryResult{Timeseries: timeseries})
+		}
+
+		resp := &prompb.ReadResponse{Results: results}
+		data, err := proto.Marshal(resp)
+		require.NoError(t, err)
+
+		compressed := snappy.Encode(nil, data)
+		_, err = w.Write(compressed)
+		require.NoError(t, err)
+	})
+}
+
+// createOverlappingSeriesHandler creates responses with same series from multiple queries
+func createOverlappingSeriesHandler(t *testing.T, queries []*prompb.Query) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
+
+		flusher, ok := w.(http.Flusher)
+		require.True(t, ok)
+
+		cw := NewChunkedWriter(w, flusher)
+
+		// Same series labels for both queries (will be merged)
+		commonLabels := []prompb.Label{
+			{Name: "__name__", Value: "up"},
+			{Name: "job", Value: "prometheus"},
+		}
+
+		// Send response for each query with the same series
+		for queryIndex, _ := range queries {
+			chunk := buildTestChunks(t)[0] // Use first chunk with 5 samples
+
+			cSeries := prompb.ChunkedSeries{
+				Labels: commonLabels,
+				Chunks: []prompb.Chunk{chunk},
+			}
+
+			readResp := prompb.ChunkedReadResponse{
+				ChunkedSeries: []*prompb.ChunkedSeries{&cSeries},
+				QueryIndex:    int64(queryIndex),
+			}
+
+			b, err := proto.Marshal(&readResp)
+			require.NoError(t, err)
+
+			_, err = cw.Write(b)
+			require.NoError(t, err)
+		}
+	})
+}
+
+// createInvalidQueryIndexHandler creates responses with invalid query indices
+func createInvalidQueryIndexHandler(t *testing.T, queries []*prompb.Query) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
+
+		flusher, ok := w.(http.Flusher)
+		require.True(t, ok)
+
+		cw := NewChunkedWriter(w, flusher)
+
+		chunk := buildTestChunks(t)[0]
+		labels := []prompb.Label{{Name: "job", Value: "test"}}
+
+		cSeries := prompb.ChunkedSeries{
+			Labels: labels,
+			Chunks: []prompb.Chunk{chunk},
+		}
+
+		// Send invalid query index (should be 0 for single query, but we send 99)
+		readResp := prompb.ChunkedReadResponse{
+			ChunkedSeries: []*prompb.ChunkedSeries{&cSeries},
+			QueryIndex:    99, // Invalid index
+		}
+
+		b, err := proto.Marshal(&readResp)
+		require.NoError(t, err)
+
+		_, err = cw.Write(b)
+		require.NoError(t, err)
+	})
 }
