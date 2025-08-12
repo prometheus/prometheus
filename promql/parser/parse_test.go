@@ -4913,9 +4913,6 @@ func TestParseExpressions(t *testing.T) {
 	})
 
 	for _, test := range testExpr {
-		if test.input != "sum by (job)(rate(http_requests_total[30m]))" {
-			continue
-		}
 		t.Run(readable(test.input), func(t *testing.T) {
 			expr, err := ParseExpr(test.input)
 
