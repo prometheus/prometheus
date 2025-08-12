@@ -282,7 +282,8 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 		QueueConfig:   config.DefaultQueueConfig,
 		WriteRelabelConfigs: []*relabel.Config{
 			{
-				Regex: relabel.MustNewRegexp(".+"),
+				Regex:                relabel.MustNewRegexp(".+"),
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 		ProtobufMessage: config.RemoteWriteProtoMsgV1,
@@ -329,7 +330,10 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 
 	storeHashes()
 	// Update c0 and c2.
-	c0.WriteRelabelConfigs[0] = &relabel.Config{Regex: relabel.MustNewRegexp("foo")}
+	c0.WriteRelabelConfigs[0] = &relabel.Config{
+		Regex:                relabel.MustNewRegexp("foo"),
+		NameValidationScheme: model.UTF8Validation,
+	}
 	c2.RemoteTimeout = model.Duration(50 * time.Second)
 	conf = &config.Config{
 		GlobalConfig:       config.GlobalConfig{},

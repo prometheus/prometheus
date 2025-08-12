@@ -766,10 +766,10 @@ func (it *chunkedSeriesIterator) Err() error {
 // also making sure that there are no labels with duplicate names.
 func validateLabelsAndMetricName(ls []prompb.Label) error {
 	for i, l := range ls {
-		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
+		if l.Name == labels.MetricName && !model.UTF8Validation.IsValidMetricName(l.Value) {
 			return fmt.Errorf("invalid metric name: %v", l.Value)
 		}
-		if !model.LabelName(l.Name).IsValid() {
+		if !model.UTF8Validation.IsValidLabelName(l.Name) {
 			return fmt.Errorf("invalid label name: %v", l.Name)
 		}
 		if !model.LabelValue(l.Value).IsValid() {
