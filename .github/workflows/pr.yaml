@@ -8,8 +8,8 @@ on:
       - unlabeled
       - synchronize
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+  pull-requests: read
 
 jobs:
   check_release_notes:
@@ -25,5 +25,5 @@ jobs:
           labels: |
             backport-to-lts
             no-lts-backport
-          add_comment: true
+          add_comment: false
           message: "With the help of the reviewer(s), please decide whether the changes in this PR should be marked for backporting to the LTS version(s), by setting one of the following labels: {{ provided }}."
