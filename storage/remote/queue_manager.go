@@ -63,35 +63,35 @@ const (
 type queueManagerMetrics struct {
 	reg prometheus.Registerer
 
-	samplesTotal           prometheus.Counter
-	exemplarsTotal         prometheus.Counter
-	histogramsTotal        prometheus.Counter
-	metadataTotal          prometheus.Counter
-	failedSamplesTotal     prometheus.Counter
-	failedExemplarsTotal   prometheus.Counter
-	failedHistogramsTotal  prometheus.Counter
-	failedMetadataTotal    prometheus.Counter
-	retriedSamplesTotal    prometheus.Counter
-	retriedExemplarsTotal  prometheus.Counter
-	retriedHistogramsTotal prometheus.Counter
-	retriedMetadataTotal   prometheus.Counter
-	droppedSamplesTotal    *prometheus.CounterVec
-	droppedExemplarsTotal  *prometheus.CounterVec
-	droppedHistogramsTotal *prometheus.CounterVec
-	enqueueRetriesTotal    prometheus.Counter
-	sentBatchDuration      prometheus.Histogram
-	highestSentTimestamp   *maxTimestamp
-	pendingSamples         prometheus.Gauge
-	pendingExemplars       prometheus.Gauge
-	pendingHistograms      prometheus.Gauge
-	shardCapacity          prometheus.Gauge
-	numShards              prometheus.Gauge
-	maxNumShards           prometheus.Gauge
-	minNumShards           prometheus.Gauge
-	desiredNumShards       prometheus.Gauge
-	sentBytesTotal         prometheus.Counter
-	metadataBytesTotal     prometheus.Counter
-	maxSamplesPerSend      prometheus.Gauge
+	samplesTotal            prometheus.Counter
+	exemplarsTotal          prometheus.Counter
+	histogramsTotal         prometheus.Counter
+	metadataTotal           prometheus.Counter
+	failedSamplesTotal      prometheus.Counter
+	failedExemplarsTotal    prometheus.Counter
+	failedHistogramsTotal   prometheus.Counter
+	failedMetadataTotal     prometheus.Counter
+	retriedSamplesTotal     prometheus.Counter
+	retriedExemplarsTotal   prometheus.Counter
+	retriedHistogramsTotal  prometheus.Counter
+	retriedMetadataTotal    prometheus.Counter
+	droppedSamplesTotal     *prometheus.CounterVec
+	droppedExemplarsTotal   *prometheus.CounterVec
+	droppedHistogramsTotal  *prometheus.CounterVec
+	enqueueRetriesTotal     prometheus.Counter
+	sentBatchDuration       prometheus.Histogram
+	highestSentTimestamp    *maxTimestamp
+	pendingSamples          prometheus.Gauge
+	pendingExemplars        prometheus.Gauge
+	pendingHistograms       prometheus.Gauge
+	shardCapacity           prometheus.Gauge
+	numShards               prometheus.Gauge
+	maxNumShards            prometheus.Gauge
+	minNumShards            prometheus.Gauge
+	desiredNumShards        prometheus.Gauge
+	sentBytesTotal          prometheus.Counter
+	metadataBytesTotal      prometheus.Counter
+	maxSamplesPerSend       prometheus.Gauge
 	unexpectedMetadataTotal prometheus.Counter
 }
 
@@ -1346,16 +1346,16 @@ func (s *shards) enqueue(ref chunks.HeadSeriesRef, data timeSeries) bool {
 
 type queue struct {
 	// batchMtx covers operations appending to or publishing the partial batch.
-	batchMtx          sync.Mutex
-	batch             []timeSeries
-	batchQueue        chan []timeSeries
-	maxSamples 	      int
+	batchMtx   sync.Mutex
+	batch      []timeSeries
+	batchQueue chan []timeSeries
+	maxSamples int
 
 	// Since we know there are a limited number of batches out, using a stack
 	// is easy and safe so a sync.Pool is not necessary.
 	// poolMtx covers adding and removing batches from the batchPool.
-	poolMtx          sync.Mutex
-	batchPool        [][]timeSeries
+	poolMtx   sync.Mutex
+	batchPool [][]timeSeries
 }
 
 type timeSeries struct {
@@ -1392,7 +1392,7 @@ func newQueue(batchSize, capacity int, maxSamples int) *queue {
 		batchQueue: make(chan []timeSeries, batches),
 		// batchPool should have capacity for everything in the channel + 1 for
 		// the batch being processed.
-		batchPool:         make([][]timeSeries, 0, batches+1),
+		batchPool:  make([][]timeSeries, 0, batches+1),
 		maxSamples: maxSamples,
 	}
 }
