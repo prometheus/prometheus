@@ -174,7 +174,7 @@ func (e annoErr) Unwrap() error {
 	return e.Err
 }
 
-func annotationWithMetricName(anno error, metricName string) error {
+func maybeAddMetricName(anno error, metricName string) error {
 	if metricName == "" {
 		return anno
 	}
@@ -202,7 +202,7 @@ func NewInvalidRatioWarning(q, to float64, pos posrange.PositionRange) error {
 // NewBadBucketLabelWarning is used when there is an error parsing the bucket label
 // of a classic histogram.
 func NewBadBucketLabelWarning(metricName, label string, pos posrange.PositionRange) error {
-	anno := annotationWithMetricName(fmt.Errorf("%w of %q", BadBucketLabelWarning, label), metricName)
+	anno := maybeAddMetricName(fmt.Errorf("%w of %q", BadBucketLabelWarning, label), metricName)
 	return annoErr{
 		PositionRange: pos,
 		Err:           anno,
@@ -233,7 +233,7 @@ func NewMixedFloatsHistogramsAggWarning(pos posrange.PositionRange) error {
 func NewMixedClassicNativeHistogramsWarning(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           annotationWithMetricName(MixedClassicNativeHistogramsWarning, metricName),
+		Err:           maybeAddMetricName(MixedClassicNativeHistogramsWarning, metricName),
 	}
 }
 
@@ -296,7 +296,7 @@ func NewPossibleNonCounterLabelInfo(metricName, typeLabel string, pos posrange.P
 func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           annotationWithMetricName(HistogramQuantileForcedMonotonicityInfo, metricName),
+		Err:           maybeAddMetricName(HistogramQuantileForcedMonotonicityInfo, metricName),
 	}
 }
 
@@ -339,20 +339,20 @@ func NewIncompatibleBucketLayoutInBinOpWarning(operator string, pos posrange.Pos
 func NewNativeHistogramQuantileNaNResultInfo(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           annotationWithMetricName(NativeHistogramQuantileNaNResultInfo, metricName),
+		Err:           maybeAddMetricName(NativeHistogramQuantileNaNResultInfo, metricName),
 	}
 }
 
 func NewNativeHistogramQuantileNaNSkewInfo(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           annotationWithMetricName(NativeHistogramQuantileNaNSkewInfo, metricName),
+		Err:           maybeAddMetricName(NativeHistogramQuantileNaNSkewInfo, metricName),
 	}
 }
 
 func NewNativeHistogramFractionNaNsInfo(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           annotationWithMetricName(NativeHistogramFractionNaNsInfo, metricName),
+		Err:           maybeAddMetricName(NativeHistogramFractionNaNsInfo, metricName),
 	}
 }
