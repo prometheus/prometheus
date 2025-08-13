@@ -161,7 +161,7 @@ func NewReadClient(name string, conf *ClientConfig, optFuncs ...config_util.HTTP
 	}
 	httpClient.Transport = otelhttp.NewTransport(t)
 
-	// Set accepted response types, default to existing behavior if not specified
+	// Set accepted response types, default to existing behavior if not specified.
 	acceptedResponseTypes := conf.AcceptedResponseTypes
 	if len(acceptedResponseTypes) == 0 {
 		acceptedResponseTypes = AcceptedResponseTypes
