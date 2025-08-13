@@ -1546,3 +1546,9 @@ eval instant at 5m rate(avg_over_time(metric{id="1"}[10m])[5m:])
   expect warn regex: this native histogram metric is not a counter: "metric"
   {id="1"} {{counter_reset_hint:gauge}}
 
+# Unary minus turns counters into gauges.
+eval instant at 5m -metric
+  expect no_warn
+  expect no_info
+  {id="1"} {{count:-4 sum:-4 counter_reset_hint:gauge buckets:[-1 -2 -1]}}
+  {id="2"} {{count:-4 sum:-4 counter_reset_hint:gauge buckets:[-1 -2 -1]}}
