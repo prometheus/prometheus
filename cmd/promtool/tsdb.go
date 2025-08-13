@@ -909,22 +909,22 @@ func generateBucket(minVal, maxVal int) (start, end, step int) {
 }
 
 func displayDiskUsage(data map[string]uint64, total uint64) {
-	type kv struct {
-		k string
-		v uint64
+	type metricDiskUsage struct {
+		metricName string
+		diskUsage  uint64
 	}
 
-	sorted := make([]kv, 0, len(data))
+	sorted := make([]metricDiskUsage, 0, len(data))
 	for k, v := range data {
-		sorted = append(sorted, kv{k, v})
+		sorted = append(sorted, metricDiskUsage{k, v})
 	}
 
 	// sort descending by value
-	slices.SortFunc(sorted, func(a, b kv) int {
+	slices.SortFunc(sorted, func(a, b metricDiskUsage) int {
 		switch {
-		case a.v < b.v:
+		case a.diskUsage < b.diskUsage:
 			return 1
-		case a.v > b.v:
+		case a.diskUsage > b.diskUsage:
 			return -1
 		default:
 			return 0
@@ -940,12 +940,12 @@ func displayDiskUsage(data map[string]uint64, total uint64) {
 
 	var sum uint64
 	for i := range sorted[:topMetricsToShow] {
-		sum += sorted[i].v
+		sum += sorted[i].diskUsage
 		var percent float64
 		if total > 0 {
-			percent = float64(sorted[i].v) / float64(total) * 100
+			percent = float64(sorted[i].diskUsage) / float64(total) * 100
 		}
-		fmt.Printf("%12d bytes (%6.2f%%) %s\n", sorted[i].v, percent, sorted[i].k)
+		fmt.Printf("%12d bytes (%6.2f%%) %s\n", sorted[i].diskUsage, percent, sorted[i].metricName)
 	}
 
 	var topPercent float64
