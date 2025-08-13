@@ -3579,81 +3579,6 @@ func TestRateAnnotations(t *testing.T) {
 	}
 }
 
-func TestHistogramQuantileAnnotations(t *testing.T) {
-	testCases := map[string]struct {
-		data                       string
-		expr                       string
-		expectedWarningAnnotations []string
-		expectedInfoAnnotations    []string
-	}{
-		"info annotation for nonmonotonic buckets": {
-			data: `
-				nonmonotonic_bucket{le="0.1"}   0+2x10
-				nonmonotonic_bucket{le="1"}     0+1x10
-				nonmonotonic_bucket{le="10"}    0+5x10
-				nonmonotonic_bucket{le="100"}   0+4x10
-				nonmonotonic_bucket{le="1000"}  0+9x10
-				nonmonotonic_bucket{le="+Inf"}  0+8x10
-			`,
-			expr:                       "histogram_quantile(0.5, nonmonotonic_bucket)",
-			expectedWarningAnnotations: []string{},
-			expectedInfoAnnotations: []string{
-				`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "nonmonotonic_bucket" (1:25)`,
-			},
-		},
-		"warning annotation for missing le label": {
-			data: `
-				myHistogram{abe="0.1"}   0+2x10
-			`,
-			expr: "histogram_quantile(0.5, myHistogram)",
-			expectedWarningAnnotations: []string{
-				`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "myHistogram" (1:25)`,
-			},
-			expectedInfoAnnotations: []string{},
-		},
-		"warning annotation for malformed le label": {
-			data: `
-				myHistogram{le="Hello World"}   0+2x10
-			`,
-			expr: "histogram_quantile(0.5, myHistogram)",
-			expectedWarningAnnotations: []string{
-				`PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World" for metric name "myHistogram" (1:25)`,
-			},
-			expectedInfoAnnotations: []string{},
-		},
-		"warning annotation for mixed histograms": {
-			data: `
-				mixedHistogram{le="0.1"}   0+2x10
-				mixedHistogram{le="1"}     0+3x10
-				mixedHistogram{}           {{schema:0 count:10 sum:50 buckets:[1 2 3]}}
-			`,
-			expr: "histogram_quantile(0.5, mixedHistogram)",
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains a mix of classic and native histograms for metric name "mixedHistogram" (1:25)`,
-			},
-			expectedInfoAnnotations: []string{},
-		},
-	}
-	for name, testCase := range testCases {
-		t.Run(name, func(t *testing.T) {
-			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
-			t.Cleanup(func() { _ = store.Close() })
-
-			engine := newTestEngine(t)
-			query, err := engine.NewInstantQuery(context.Background(), store, nil, testCase.expr, timestamp.Time(0).Add(1*time.Minute))
-			require.NoError(t, err)
-			t.Cleanup(query.Close)
-
-			res := query.Exec(context.Background())
-			require.NoError(t, res.Err)
-
-			warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
-			testutil.RequireEqual(t, testCase.expectedWarningAnnotations, warnings)
-			testutil.RequireEqual(t, testCase.expectedInfoAnnotations, infos)
-		})
-	}
-}
-
 func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	// Make a chunk with two normal histograms of the same value.
 	h1 := histogram.Histogram{
@@ -3825,6 +3750,48 @@ eval instant at 10m last_over_time(metric_total{env="1"}[10m])
 # Drops name for other _over_time functions
 eval instant at 10m max_over_time(metric_total{env="1"}[10m])
 	{env="1"} 120
+
+clear
+
+load 1m
+	float{a="b"}									2x10
+	classic_histogram_invalid{abe="0.1"}			2x10
+	native_histogram{a="b", c="d"}					{{sum:0 count:0}}x10
+    histogram_nan{case="100% NaNs"} 				{{schema:0 count:0 sum:0}} {{schema:0 count:3 sum:NaN}}
+    histogram_nan{case="20% NaNs"} 					{{schema:0 count:0 sum:0}} {{schema:0 count:15 sum:NaN buckets:[12]}}
+	conflicting_histogram{le="0.1"}					2x10
+	conflicting_histogram							{{sum:0}}x10
+	nonmonotonic_bucket{le="0.1"}   				0+2x10
+	nonmonotonic_bucket{le="1"}     				0+1x10
+	nonmonotonic_bucket{le="10"}    				0+5x10
+	nonmonotonic_bucket{le="100"}   				0+4x10
+	nonmonotonic_bucket{le="1000"}  				0+9x10
+	nonmonotonic_bucket{le="+Inf"}  				0+8x10
+
+eval instant at 1m histogram_quantile(0.5, classic_histogram_invalid)
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of ""
+
+eval instant at 1m histogram_fraction(0.5, 1, conflicting_histogram)
+	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms
+
+eval instant at 1m histogram_quantile(0.5, nonmonotonic_bucket)
+	expect info msg: PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile)
+	{} 8.5
+
+eval instant at 1m histogram_quantile(1, histogram_nan)
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN
+    {case="100% NaNs"} NaN
+    {case="20% NaNs"} NaN
+
+eval instant at 1m histogram_quantile(0.8, histogram_nan{case="20% NaNs"})
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher
+    {case="20% NaNs"} 1
+
+eval instant at 1m histogram_fraction(-Inf, 0.7071067811865475, histogram_nan)
+    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions
+    {case="100% NaNs"} 0.0
+    {case="20% NaNs"} 0.4
+
 `, engine)
 }
 
