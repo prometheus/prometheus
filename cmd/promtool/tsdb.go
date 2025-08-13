@@ -647,6 +647,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 		if err := indexr.Series(postingsr.At(), &builder, &chks); err != nil {
 			return err
 		}
+		metricName := builder.Labels().Get(labels.MetricName)
 
 		for _, chk := range chks {
 			// Load the actual data of the chunk.
@@ -698,7 +699,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 			chunkDataLength := len(chk.Bytes())
 			chunkDataLengthUvarintLength := binary.PutUvarint(buf, uint64(chunkDataLength))
 			chunkSize := uint64(chunkDataLengthUvarintLength) + chunks.ChunkEncodingSize + uint64(chunkDataLength) + crc32.Size
-			diskUsageInBytesPerMetric[builder.Labels().Get(labels.MetricName)] += chunkSize
+			diskUsageInBytesPerMetric[metricName] += chunkSize
 			diskUsageInBytesTotal += chunkSize
 		}
 	}
