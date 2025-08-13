@@ -4,7 +4,7 @@
 
 ## 3.6.0-rc.0 / 2025-08-12
 
-* [FEATURE] PromQL: Add `step()`, `min()` and `max()` behind feature flag `promql-duration-expr`. #16777
+* [FEATURE] PromQL: Add `step()`, and `min()` and `max()` on durations, behind feature flag `promql-duration-expr`. #16777
 * [FEATURE] API: Add a `/v1/status/tsdb/blocks` endpoint exposing metadata about loaded blocks. #16695
 * [FEATURE] Templates: Add `toDuration()` and `now()` functions. #16619
 * [ENHANCEMENT] Discovery: Add support for attaching namespace metadata to targets. #16831
@@ -15,7 +15,7 @@
 * [ENHANCEMENT] UI: Add option to disable info and warning query messages under `Query page settings`. #16901
 * [ENHANCEMENT] UI: Improve metadata handling for `_count/_sum/_bucket` suffixes. #16910
 * [PERF] PromQL: Improve performance due to internal optimizations. #16797
-* [BUGFIX] Config: Fix `metric_name_escaping_scheme` related error messages produced during validation. #16801
+* [BUGFIX] Config: Fix "unknown global name escaping method" error messages produced during config validation. #16801
 * [BUGFIX] Discovery: Fix race condition during shutdown. #16820
 * [BUGFIX] OTLP: Generate `target_info` samples between the earliest and latest samples per resource. #16737
 * [BUGFIX] PromQL: Fail when `NaN` is passed as parameter to `topk()`, `bottomk()`, `limitk()` and `limit_ratio()`. #16725
