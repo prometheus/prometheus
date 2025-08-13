@@ -639,8 +639,8 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 	histogramChunkSize := make([]int, 0)
 	histogramChunkBucketsCount := make([]int, 0)
 	buf := make([]byte, chunks.MaxChunkLengthFieldSize)
-	diskUsage := map[string]uint64{}
-	diskUsageTotal := uint64(0)
+	diskUsageInBytesPerMetric := map[string]uint64{}
+	diskUsageInBytesTotal := uint64(0)
 	var builder labels.ScratchBuilder
 	for postingsr.Next() {
 		var chks []chunks.Meta
@@ -698,8 +698,8 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 			chunkDataLength := len(chk.Bytes())
 			chunkDataLengthUvarintLength := binary.PutUvarint(buf, uint64(chunkDataLength))
 			chunkSize := uint64(chunkDataLengthUvarintLength) + chunks.ChunkEncodingSize + uint64(chunkDataLength) + crc32.Size
-			diskUsage[builder.Labels().Get("__name__")] += chunkSize
-			diskUsageTotal += chunkSize
+			diskUsageInBytesPerMetric[builder.Labels().Get("__name__")] += chunkSize
+			diskUsageInBytesTotal += chunkSize
 		}
 	}
 
@@ -715,7 +715,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 
 	displayHistogram("buckets per histogram chunk", histogramChunkBucketsCount, totalChunks)
 
-	displayDiskUsage(diskUsage, diskUsageTotal)
+	displayDiskUsage(diskUsageInBytesPerMetric, diskUsageInBytesTotal)
 
 	return nil
 }
