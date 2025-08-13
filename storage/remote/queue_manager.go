@@ -27,6 +27,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
+	"go.uber.org/atomic"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -40,10 +45,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
-	"go.uber.org/atomic"
 )
 
 const (
@@ -1380,7 +1381,7 @@ const (
 	tMetadata
 )
 
-func newQueue(batchSize, capacity int, maxSamples int) *queue {
+func newQueue(batchSize, capacity, maxSamples int) *queue {
 	batches := capacity / batchSize
 	// Always create an unbuffered channel even if capacity is configured to be
 	// less than max_samples_per_send.
