@@ -914,11 +914,6 @@ func displayDiskUsage(data map[string]uint64, total uint64) {
 		v uint64
 	}
 
-	topMetricsToShow := 20
-	if len(data) < topMetricsToShow {
-		topMetricsToShow = len(data)
-	}
-
 	sorted := make([]kv, 0, len(data))
 	for k, v := range data {
 		sorted = append(sorted, kv{k, v})
@@ -935,6 +930,11 @@ func displayDiskUsage(data map[string]uint64, total uint64) {
 			return 0
 		}
 	})
+
+	topMetricsToShow := 20
+	if len(data) < topMetricsToShow {
+		topMetricsToShow = len(data)
+	}
 
 	fmt.Printf("Top %d metric names by disk usage:\n", topMetricsToShow)
 
