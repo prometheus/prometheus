@@ -883,6 +883,29 @@ func TestReadMultipleWithChunks(t *testing.T) {
 			expectedSeriesCount:  3,
 			validateSampleCounts: []int{5, 5, 5},
 		},
+		{
+			name: "overlapping series from multiple queries",
+			queries: []*prompb.Query{
+				{
+					StartTimestampMs: 1000,
+					EndTimestampMs:   5000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "__name__", Value: "up"},
+					},
+				},
+				{
+					StartTimestampMs: 3000,
+					EndTimestampMs:   7000,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "__name__", Value: "up"},
+					},
+				},
+			},
+			responseType:         "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse",
+			mockHandler:          createOverlappingSeriesHandler,
+			expectedSeriesCount:  2,           // Each query creates a separate series entry
+			validateSampleCounts: []int{4, 4}, // Actual samples returned by handler
+		},
 	}
 
 	for _, tc := range tests {
