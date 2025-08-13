@@ -451,7 +451,7 @@ func (c *Client) handleReadResponse(httpResp *http.Response, req *prompb.ReadReq
 	}
 }
 
-func (c *Client) handleSampledResponse(req *prompb.ReadRequest, httpResp *http.Response, sortSeries bool) (storage.SeriesSet, error) {
+func (*Client) handleSampledResponse(req *prompb.ReadRequest, httpResp *http.Response, sortSeries bool) (storage.SeriesSet, error) {
 	compressed, err := io.ReadAll(httpResp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error reading response. HTTP status code: %s: %w", httpResp.Status, err)
@@ -521,7 +521,7 @@ func combineQueryResults(results []*prompb.QueryResult, sortSeries bool) (storag
 }
 
 // handleChunkedResponseImpl handles chunked responses for both single and multiple queries.
-func (c *Client) handleChunkedResponseImpl(s *ChunkedReader, httpResp *http.Response, queries []*prompb.Query, onClose func(error)) storage.SeriesSet {
+func (*Client) handleChunkedResponseImpl(s *ChunkedReader, httpResp *http.Response, queries []*prompb.Query, onClose func(error)) storage.SeriesSet {
 	// For multiple queries in chunked response, we'll still use the existing infrastructure
 	// but we need to provide the timestamp range that covers all queries
 	var minStartTs, maxEndTs int64 = math.MaxInt64, math.MinInt64

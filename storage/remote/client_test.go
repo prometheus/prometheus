@@ -502,6 +502,7 @@ func TestReadMultipleErrorHandling(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, result)
 }
+
 func TestReadMultiple(t *testing.T) {
 	const sampleIntervalMs = 250
 
@@ -813,13 +814,12 @@ func TestReadMultipleSorting(t *testing.T) {
 
 func TestReadMultipleWithChunks(t *testing.T) {
 	tests := []struct {
-		name                  string
-		queries               []*prompb.Query
-		responseType          string
-		mockHandler           func(*testing.T, []*prompb.Query) http.HandlerFunc
-		expectedSeriesCount   int
-		expectedErrorContains string
-		validateSampleCounts  []int // expected samples per series
+		name                 string
+		queries              []*prompb.Query
+		responseType         string
+		mockHandler          func(*testing.T, []*prompb.Query) http.HandlerFunc
+		expectedSeriesCount  int
+		validateSampleCounts []int // expected samples per series
 	}{
 		{
 			name: "multiple queries with chunked responses",
@@ -927,6 +927,7 @@ func TestReadMultipleWithChunks(t *testing.T) {
 
 			// Test ReadMultiple
 			result, err := client.ReadMultiple(context.Background(), tc.queries, false)
+
 			require.NoError(t, err)
 
 			// Collect all series and validate
@@ -937,7 +938,7 @@ func TestReadMultipleWithChunks(t *testing.T) {
 				allSeries = append(allSeries, series)
 
 				// Verify we have some labels
-				require.True(t, series.Labels().Len() > 0)
+				require.Positive(t, series.Labels().Len())
 
 				// Count samples in this series
 				it := series.Iterator(nil)
@@ -953,14 +954,14 @@ func TestReadMultipleWithChunks(t *testing.T) {
 			require.NoError(t, result.Err())
 
 			// Validate total counts
-			require.Equal(t, tc.expectedSeriesCount, len(allSeries), "Series count mismatch")
+			require.Len(t, allSeries, tc.expectedSeriesCount, "Series count mismatch")
 		})
 	}
 }
 
-// createChunkedResponseHandler creates a mock handler for chunked responses
+// createChunkedResponseHandler creates a mock handler for chunked responses.
 func createChunkedResponseHandler(t *testing.T, queries []*prompb.Query) http.HandlerFunc {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
 
 		flusher, ok := w.(http.Flusher)
@@ -969,7 +970,7 @@ func createChunkedResponseHandler(t *testing.T, queries []*prompb.Query) http.Ha
 		cw := NewChunkedWriter(w, flusher)
 
 		// For each query, simulate multiple chunks
-		for queryIndex, _ := range queries {
+		for queryIndex := range queries {
 			chunks := buildTestChunks(t) // Creates 3 chunks with 5 samples each
 			for chunkIndex, chunk := range chunks {
 				// Create unique labels for each series in each query
@@ -1006,9 +1007,9 @@ func createChunkedResponseHandler(t *testing.T, queries []*prompb.Query) http.Ha
 	})
 }
 
-// createSampledResponseHandler creates a mock handler for sampled responses
+// createSampledResponseHandler creates a mock handler for sampled responses.
 func createSampledResponseHandler(t *testing.T, queries []*prompb.Query) http.HandlerFunc {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/x-protobuf")
 
 		var results []*prompb.QueryResult
@@ -1055,9 +1056,9 @@ func createSampledResponseHandler(t *testing.T, queries []*prompb.Query) http.Ha
 	})
 }
 
-// createOverlappingSeriesHandler creates responses with same series from multiple queries
+// createOverlappingSeriesHandler creates responses with same series from multiple queries.
 func createOverlappingSeriesHandler(t *testing.T, queries []*prompb.Query) http.HandlerFunc {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
 
 		flusher, ok := w.(http.Flusher)
@@ -1072,7 +1073,7 @@ func createOverlappingSeriesHandler(t *testing.T, queries []*prompb.Query) http.
 		}
 
 		// Send response for each query with the same series
-		for queryIndex, _ := range queries {
+		for queryIndex := range queries {
 			chunk := buildTestChunks(t)[0] // Use first chunk with 5 samples
 
 			cSeries := prompb.ChunkedSeries{
@@ -1091,37 +1092,5 @@ func createOverlappingSeriesHandler(t *testing.T, queries []*prompb.Query) http.
 			_, err = cw.Write(b)
 			require.NoError(t, err)
 		}
-	})
-}
-
-// createInvalidQueryIndexHandler creates responses with invalid query indices
-func createInvalidQueryIndexHandler(t *testing.T, queries []*prompb.Query) http.HandlerFunc {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
-
-		flusher, ok := w.(http.Flusher)
-		require.True(t, ok)
-
-		cw := NewChunkedWriter(w, flusher)
-
-		chunk := buildTestChunks(t)[0]
-		labels := []prompb.Label{{Name: "job", Value: "test"}}
-
-		cSeries := prompb.ChunkedSeries{
-			Labels: labels,
-			Chunks: []prompb.Chunk{chunk},
-		}
-
-		// Send invalid query index (should be 0 for single query, but we send 99)
-		readResp := prompb.ChunkedReadResponse{
-			ChunkedSeries: []*prompb.ChunkedSeries{&cSeries},
-			QueryIndex:    99, // Invalid index
-		}
-
-		b, err := proto.Marshal(&readResp)
-		require.NoError(t, err)
-
-		_, err = cw.Write(b)
-		require.NoError(t, err)
 	})
 }
