@@ -698,7 +698,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 			chunkDataLength := len(chk.Bytes())
 			chunkDataLengthUvarintLength := binary.PutUvarint(buf, uint64(chunkDataLength))
 			chunkSize := uint64(chunkDataLengthUvarintLength) + chunks.ChunkEncodingSize + uint64(chunkDataLength) + crc32.Size
-			diskUsageInBytesPerMetric[builder.Labels().Get("__name__")] += chunkSize
+			diskUsageInBytesPerMetric[builder.Labels().Get(labels.MetricName)] += chunkSize
 			diskUsageInBytesTotal += chunkSize
 		}
 	}
