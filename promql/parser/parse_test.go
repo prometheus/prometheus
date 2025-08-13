@@ -4776,9 +4776,29 @@ var testExpr = []struct {
 						End:   8,
 					},
 				},
-				PosRange: posrange.PositionRange{Start: 1, End: 10}, // TODO(krajorama): this should be 9. https://github.com/prometheus/prometheus/issues/16053
+				PosRange: posrange.PositionRange{Start: 1, End: 9},
 			},
 			PosRange: posrange.PositionRange{Start: 0, End: 10},
+		},
+	},
+	{
+		input: "(sum(foo) )",
+		expected: &ParenExpr{
+			Expr: &AggregateExpr{
+				Op: SUM,
+				Expr: &VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 5,
+						End:   8,
+					},
+				},
+				PosRange: posrange.PositionRange{Start: 1, End: 9},
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 11},
 		},
 	},
 	{
@@ -4821,6 +4841,34 @@ var testExpr = []struct {
 				PosRange: posrange.PositionRange{Start: 1, End: 19},
 			},
 			PosRange: posrange.PositionRange{Start: 0, End: 20},
+		},
+	},
+	{
+		input: "sum by (job)(rate(http_requests_total[30m]))",
+		expected: &AggregateExpr{
+			Op:       SUM,
+			Grouping: []string{"job"},
+			Expr: &Call{
+				Func: MustGetFunction("rate"),
+				Args: Expressions{
+					&MatrixSelector{
+						VectorSelector: &VectorSelector{
+							Name: "http_requests_total",
+							LabelMatchers: []*labels.Matcher{
+								MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_total"),
+							},
+							PosRange: posrange.PositionRange{
+								Start: 18,
+								End:   37,
+							},
+						},
+						Range:  30 * time.Minute,
+						EndPos: 42,
+					},
+				},
+				PosRange: posrange.PositionRange{Start: 13, End: 43},
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 44},
 		},
 	},
 	{
