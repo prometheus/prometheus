@@ -24,7 +24,7 @@
 * [BUGFIX] PromQL: Fix inconsistencies when using native histograms in subqueries. #16879
 * [BUGFIX] PromQL: Fix inconsistent annotations for `rate()` and `increase()` on histograms when feature flag `type-and-unit-labels` is enabled. #16915
 * [BUGFIX] Scraping: Fix memory corruption in `slicelabels` builds. #16946
-* [BUGFIX] TSDB: Fix panic on append when feature flag `created-timestamp-zero-ingestion` is enabled. #16318
+* [BUGFIX] TSDB: Fix panic on append when feature flag `created-timestamp-zero-ingestion` is enabled. #16332
 * [BUGFIX] TSDB: Fix panic on append for native histograms with empty buckets. #16893
 
 ## 3.5.0 / 2025-07-14
