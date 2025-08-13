@@ -4051,3 +4051,106 @@ func TestSubQueryHistogramsCopy(t *testing.T) {
 		queryable.Close()
 	}
 }
+
+func TestHistogram_CounterResetHint(t *testing.T) {
+	baseT := timestamp.Time(0)
+	load := `
+		load 2m
+		test_histogram {{count:0}}+{{count:1}}x4
+	`
+	testCases := []struct {
+		name  string
+		query string
+		want  histogram.CounterResetHint
+	}{
+		{
+			name:  "adding histograms",
+			query: `test_histogram + test_histogram`,
+			want:  histogram.NotCounterReset,
+		},
+		{
+			name:  "subtraction",
+			query: `test_histogram - test_histogram`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "negated addition",
+			query: `test_histogram + (-test_histogram)`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "negated subtraction",
+			query: `test_histogram - (-test_histogram)`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "unary negation",
+			query: `-test_histogram`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "repeated unary negation",
+			query: `-(-test_histogram)`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "multiplication",
+			query: `2 * test_histogram`,
+			want:  histogram.NotCounterReset,
+		},
+		{
+			name:  "negative multiplication",
+			query: `-1 * test_histogram`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "division",
+			query: `test_histogram / 2`,
+			want:  histogram.NotCounterReset,
+		},
+		{
+			name:  "negative division",
+			query: `test_histogram / -1`,
+			want:  histogram.GaugeType,
+		},
+		// Equality and unequality should always return the LHS:
+		{
+			name:  "equality (not counter reset)",
+			query: `test_histogram == test_histogram`,
+			want:  histogram.NotCounterReset,
+		},
+		{
+			name:  "equality (gauge)",
+			query: `-test_histogram == -test_histogram`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "unequality (not counter reset)",
+			query: `test_histogram != -test_histogram`,
+			want:  histogram.NotCounterReset,
+		},
+		{
+			name:  "unequality (gauge)",
+			query: `-test_histogram != test_histogram`,
+			want:  histogram.GaugeType,
+		},
+	}
+	ctx := context.Background()
+	queryable := promqltest.LoadedStorage(t, load)
+	defer queryable.Close()
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			q, err := engine.NewInstantQuery(ctx, queryable, nil, tc.query, baseT.Add(2*time.Minute))
+			require.NoError(t, err)
+			defer q.Close()
+			res := q.Exec(ctx)
+			require.NoError(t, res.Err)
+			v, err := res.Vector()
+			require.NoError(t, err)
+			require.Len(t, v, 1)
+			require.NotNil(t, v[0].H)
+			require.Equal(t, tc.want, v[0].H.CounterResetHint)
+		})
+	}
+}
