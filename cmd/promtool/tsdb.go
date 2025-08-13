@@ -915,7 +915,8 @@ func displayDiskUsage(data map[string]uint64, total uint64) {
 		diskUsage  uint64
 	}
 
-	sorted := make([]metricDiskUsage, 0, len(data))
+	numberOfMetrics := len(data)
+	sorted := make([]metricDiskUsage, 0, numberOfMetrics)
 	for k, v := range data {
 		sorted = append(sorted, metricDiskUsage{k, v})
 	}
@@ -932,12 +933,14 @@ func displayDiskUsage(data map[string]uint64, total uint64) {
 		}
 	})
 
-	topMetricsToShow := 20
-	if len(data) < topMetricsToShow {
-		topMetricsToShow = len(data)
-	}
+	shouldDisplayTopMetrics := numberOfMetrics > 20
+	topMetricsToShow := min(20, numberOfMetrics)
 
-	fmt.Printf("Top %d metric names by disk usage:\n", topMetricsToShow)
+	if shouldDisplayTopMetrics {
+		fmt.Printf("Top %d metric names by disk usage:\n", topMetricsToShow)
+	} else {
+		fmt.Printf("All %d metric names by disk usage:\n", numberOfMetrics)
+	}
 
 	var sum uint64
 	for i := range sorted[:topMetricsToShow] {
@@ -953,6 +956,9 @@ func displayDiskUsage(data map[string]uint64, total uint64) {
 	if total > 0 {
 		topPercent = float64(sum) / float64(total) * 100
 	}
-	fmt.Printf("  total (top %8d): %12d bytes (%.2f%%)\n", topMetricsToShow, sum, topPercent)
-	fmt.Printf("  total (all %8d): %12d bytes\n", len(data), total)
+
+	if shouldDisplayTopMetrics {
+		fmt.Printf("  total (top %8d): %12d bytes (%.2f%%)\n", topMetricsToShow, sum, topPercent)
+	}
+	fmt.Printf("  total (all %8d): %12d bytes\n", numberOfMetrics, total)
 }
