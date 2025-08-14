@@ -17,7 +17,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"flag"
 	"fmt"
@@ -2953,13 +2952,10 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 			sizeExp := 0
 			sizeAct := 0
 
+			varintBuffer := make([]byte, chunks.MaxChunkLengthFieldSize)
 			for _, chks := range test.chks {
 				for _, chk := range chks {
-					l := make([]byte, binary.MaxVarintLen32)
-					sizeExp += binary.PutUvarint(l, uint64(len(chk.Chunk.Bytes()))) // The length field.
-					sizeExp += chunks.ChunkEncodingSize
-					sizeExp += len(chk.Chunk.Bytes()) // The data itself.
-					sizeExp += crc32.Size             // The 4 bytes of crc32
+					sizeExp += chunks.ChunkSizeInBytes(chk.Chunk, varintBuffer)
 				}
 			}
 			sizeExp += test.expSegmentsCount * chunks.SegmentHeaderSize // The segment header bytes.
