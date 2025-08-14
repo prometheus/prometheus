@@ -239,9 +239,9 @@ Examples of equivalent durations:
 
 `--enable-feature=otlp-native-delta-ingestion`
 
-When enabled, allows for the native ingestion of delta OTLP metrics, storing the raw sample values without conversion. This cannot be enabled in conjunction with `otlp-deltatocumulative`.  It is recommended to enable `type-and-unit-labels`.
+When enabled, allows for the native ingestion of delta OTLP metrics, storing the raw sample values without conversion. This cannot be enabled in conjunction with `otlp-deltatocumulative`. It is recommended to enable `type-and-unit-labels`.
 
-Currently, the StartTimeUnixNano field is ignored. Delta metrics are given a `__temporality__` label with a value of "delta" and a `__type__` label with a value of "gauge"/"gaugehistogram". 
+Currently, the StartTimeUnixNano field is ignored. Delta metrics are given a `__temporality__` label with a value of "delta", and a `__type__` label with a value of "gauge"/"gaugehistogram" if `type-and-unit-labels` is enabled.
 
 Delta support is in a very early stage of development and the ingestion and querying process my change over time. For the open proposal see [prometheus/proposals#48](https://github.com/prometheus/proposals/pull/48).
 

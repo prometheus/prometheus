@@ -61,7 +61,6 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			true,
 			metadata,
 			temporality,
-			true,
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)
@@ -284,7 +283,6 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 			true,
 			metadata,
 			temporality,
-			true,
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)
