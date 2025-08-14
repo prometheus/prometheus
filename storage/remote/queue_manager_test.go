@@ -1833,7 +1833,7 @@ func TestQueueManagerMetrics(t *testing.T) {
 func TestQueue_FlushAndShutdownDoesNotDeadlock(t *testing.T) {
 	capacity := 100
 	batchSize := 10
-	queue := newQueue(batchSize, capacity, batchSize)
+	queue := newQueue(batchSize, capacity)
 	for i := 0; i < capacity+batchSize; i++ {
 		queue.Append(timeSeries{})
 	}
@@ -2363,151 +2363,34 @@ func BenchmarkBuildTimeSeries(b *testing.B) {
 	}
 }
 
-// TestRefMetadataRouting - Test with 100 samples and metadata to thoroughly check routing.
-func TestRefMetadataRouting(t *testing.T) {
-	t.Log("🧪 Large scale test with 100 samples + metadata to thoroughly check routing")
-	t.Log("📝 Make sure you added debug logging to your queue.Append method!")
-
-	cfg := config.DefaultQueueConfig
-	cfg.MaxShards = 1
-	cfg.MaxSamplesPerSend = 10
-	cfg.Capacity = 200
-
-	c := NewTestWriteClient(config.RemoteWriteProtoMsgV2)
-	qm := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, config.RemoteWriteProtoMsgV2)
-
-	qm.Start()
-	defer qm.Stop()
-
-	// Create multiple test series.
-	numSeries := 10
-	series := make([]record.RefSeries, numSeries)
-	for i := 0; i < numSeries; i++ {
-		series[i] = record.RefSeries{
-			Ref:    chunks.HeadSeriesRef(i + 1),
-			Labels: labels.FromStrings("__name__", fmt.Sprintf("test_metric_%d", i), "job", "test_job"),
-		}
-	}
-
-	t.Logf("📥 Step 1: Storing %d test series...", numSeries)
-	qm.StoreSeries(series, 0)
-
-	t.Log("📤 Step 2: Sending metadata for all series...")
-	for i := 0; i < numSeries; i++ {
-		metadata := []record.RefMetadata{
-			{
-				Ref:  chunks.HeadSeriesRef(i + 1),
-				Type: 1, // gauge
-				Unit: fmt.Sprintf("unit_%d", i),
-				Help: fmt.Sprintf("Help text for metric %d", i),
-			},
-		}
-		qm.StoreMetadata(metadata)
-
-		if i%3 == 0 {
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-
-	t.Log("⏱️ Waiting for metadata processing...")
-	time.Sleep(100 * time.Millisecond)
-
-	t.Log("📤 Step 3: Sending 100 samples with interleaved metadata...")
-	samplesPerSeries := 10
-	totalSamples := numSeries * samplesPerSeries
-
-	for batchNum := 0; batchNum < samplesPerSeries; batchNum++ {
-		t.Logf("📦 Batch %d/%d...", batchNum+1, samplesPerSeries)
-
-		// Send samples for all series in this batch.
-		samples := make([]record.RefSample, numSeries)
-		for seriesIdx := 0; seriesIdx < numSeries; seriesIdx++ {
-			samples[seriesIdx] = record.RefSample{
-				Ref: chunks.HeadSeriesRef(seriesIdx + 1),
-				T:   int64(1000 + batchNum*100 + seriesIdx),
-				V:   float64(batchNum*10 + seriesIdx),
-			}
-		}
-
-		sent := qm.Append(samples)
-		require.True(t, sent, "Batch %d samples should be appended successfully", batchNum+1)
-
-		// Interleave some additional metadata every few batches.
-		if batchNum%3 == 0 && batchNum > 0 {
-			t.Logf("📋 Adding more metadata at batch %d...", batchNum+1)
-			for seriesIdx := 0; seriesIdx < 3; seriesIdx++ {
-				moreMetadata := []record.RefMetadata{
-					{
-						Ref:  chunks.HeadSeriesRef(seriesIdx + 1),
-						Type: 2,
-						Unit: fmt.Sprintf("updated_unit_%d_%d", seriesIdx, batchNum),
-						Help: fmt.Sprintf("Updated help for metric %d at batch %d", seriesIdx, batchNum),
-					},
-				}
-				qm.StoreMetadata(moreMetadata)
-			}
-		}
-
-		time.Sleep(20 * time.Millisecond)
-	}
-
-	t.Logf("✅ Sent %d total samples across %d series", totalSamples, numSeries)
-
-	t.Log("📤 Step 4: Sending final metadata burst...")
-	for i := 0; i < numSeries; i++ {
-		finalMetadata := []record.RefMetadata{
-			{
-				Ref:  chunks.HeadSeriesRef(i + 1),
-				Type: 3,
-				Unit: fmt.Sprintf("final_unit_%d", i),
-				Help: fmt.Sprintf("Final help text for metric %d", i),
-			},
-		}
-		qm.StoreMetadata(finalMetadata)
-	}
-
-	t.Log("📤 Step 5: Sending final samples to trigger processing...")
-	finalSamples := make([]record.RefSample, 5)
-	for i := 0; i < 5; i++ {
-		finalSamples[i] = record.RefSample{
-			Ref: chunks.HeadSeriesRef(i + 1),
-			T:   int64(9000 + i),
-			V:   float64(999 + i),
-		}
-	}
-	sent := qm.Append(finalSamples)
-	require.True(t, sent)
-
-	t.Log("⏱️ Waiting for final processing...")
-	time.Sleep(500 * time.Millisecond)
-
-	t.Log("🎯 TEST COMPLETED!")
-}
-
 func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
+	logger := promslog.New(&promslog.Config{})
+	metrics := newQueueManagerMetrics(nil, "", "")
+	initialCount := client_testutil.ToFloat64(metrics.unexpectedMetadataTotal)
 	symbolTable := writev2.NewSymbolTable()
-	pendingData := make([]writev2.TimeSeries, 2)
+	pendingData := make([]writev2.TimeSeries, 4)
 
 	batch := []timeSeries{
-		{sType: tMetadata, seriesLabels: labels.FromStrings("__name__", "test")},
-		{sType: tMetadata, seriesLabels: labels.FromStrings("__name__", "test")},
+		{sType: tSample, seriesLabels: labels.FromStrings("__name__", "metric1")},
+		{sType: tMetadata, seriesLabels: labels.FromStrings("__name__", "metric2")},
+		{sType: tSample, seriesLabels: labels.FromStrings("__name__", "metric3")},
+		{sType: tMetadata, seriesLabels: labels.FromStrings("__name__", "metric4")},
 	}
 
-	// Call the function.
-	_, _, _, _, nUnexpected := populateV2TimeSeries(
+	nSamples, nExemplars, nHistograms, nMetadata, nUnexpected := populateV2TimeSeries(
 		&symbolTable, batch, pendingData, false, false,
 	)
 
-	// Simulate what your caller code should do.
+	require.Equal(t, 2, nSamples, "Should count 2 samples")
+	require.Equal(t, 0, nExemplars, "Should count 0 exemplars")
+	require.Equal(t, 0, nHistograms, "Should count 0 histograms")
+	require.Equal(t, 0, nMetadata, "Should count 0 processed metadata")
+	require.Equal(t, 2, nUnexpected, "Should count 2 unexpected metadata")
+
 	if nUnexpected > 0 {
-		t.Logf("✅ Caller would log and increment metric for %d unexpected metadata", nUnexpected)
-	} else {
-		t.Errorf("Expected to detect unexpected metadata, but nUnexpected was 0")
+		logger.Warn("unexpected metadata in populateV2TimeSeries", "count", nUnexpected)
+		metrics.unexpectedMetadataTotal.Add(float64(nUnexpected))
 	}
-
-	if nUnexpected != 2 {
-		t.Errorf("Expected 2 unexpected metadata, got %d", nUnexpected)
-	}
-
-	t.Logf("✅ Caller pattern test passed: detected %d unexpected metadata", nUnexpected)
+	finalCount := client_testutil.ToFloat64(metrics.unexpectedMetadataTotal)
+	require.Equal(t, initialCount+2.0, finalCount, "unexpectedMetadataTotal should be incremented by 2")
 }

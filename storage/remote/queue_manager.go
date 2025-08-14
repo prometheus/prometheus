@@ -1252,7 +1252,7 @@ func (s *shards) start(n int) {
 
 	newQueues := make([]*queue, n)
 	for i := 0; i < n; i++ {
-		newQueues[i] = newQueue(s.qm.cfg.MaxSamplesPerSend, s.qm.cfg.Capacity, s.qm.cfg.MaxSamplesPerSend)
+		newQueues[i] = newQueue(s.qm.cfg.MaxSamplesPerSend, s.qm.cfg.Capacity)
 	}
 
 	s.queues = newQueues
@@ -1350,7 +1350,6 @@ type queue struct {
 	batchMtx   sync.Mutex
 	batch      []timeSeries
 	batchQueue chan []timeSeries
-	maxSamples int
 
 	// Since we know there are a limited number of batches out, using a stack
 	// is easy and safe so a sync.Pool is not necessary.
@@ -1381,7 +1380,7 @@ const (
 	tMetadata
 )
 
-func newQueue(batchSize, capacity, maxSamples int) *queue {
+func newQueue(batchSize, capacity int) *queue {
 	batches := capacity / batchSize
 	// Always create an unbuffered channel even if capacity is configured to be
 	// less than max_samples_per_send.
@@ -1393,13 +1392,12 @@ func newQueue(batchSize, capacity, maxSamples int) *queue {
 		batchQueue: make(chan []timeSeries, batches),
 		// batchPool should have capacity for everything in the channel + 1 for
 		// the batch being processed.
-		batchPool:  make([][]timeSeries, 0, batches+1),
-		maxSamples: maxSamples,
+		batchPool: make([][]timeSeries, 0, batches+1),
 	}
 }
 
-// // Append the timeSeries to the buffered batch. Returns false if it
-// // cannot be added and must be retried.
+// Append the timeSeries to the buffered batch. Returns false if it
+// cannot be added and must be retried.
 func (q *queue) Append(datum timeSeries) bool {
 	q.batchMtx.Lock()
 	defer q.batchMtx.Unlock()
@@ -1408,10 +1406,10 @@ func (q *queue) Append(datum timeSeries) bool {
 	// in the batch size calculation.
 	// See https://github.com/prometheus/prometheus/issues/14405
 	q.batch = append(q.batch, datum)
-	if len(q.batch) >= q.maxSamples {
+	if len(q.batch) == cap(q.batch) {
 		select {
 		case q.batchQueue <- q.batch:
-			q.batch = q.newBatch(q.maxSamples)
+			q.batch = q.newBatch(cap(q.batch))
 			return true
 		default:
 			// Remove the sample we just appended. It will get retried.
@@ -1977,8 +1975,6 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			nPendingHistograms++
 		case tMetadata:
 			nUnexpectedMetadata++
-			// TODO: log or return an error?
-			// we shouldn't receive metadata type data here, it should already be inserted into the timeSeries
 		}
 	}
 	return nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata
