@@ -17,10 +17,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"hash/crc32"
 	"io"
 	"log/slog"
 	"os"
@@ -638,7 +636,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 	histogramChunkSamplesCount := make([]int, 0)
 	histogramChunkSize := make([]int, 0)
 	histogramChunkBucketsCount := make([]int, 0)
-	buf := make([]byte, chunks.MaxChunkLengthFieldSize)
+	varintBuffer := make([]byte, chunks.MaxChunkLengthFieldSize)
 	diskUsageInBytesPerMetric := map[string]uint64{}
 	diskUsageInBytesTotal := uint64(0)
 	var builder labels.ScratchBuilder
@@ -696,9 +694,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 				histogramChunkBucketsCount = append(histogramChunkBucketsCount, bucketCount)
 			}
 			totalChunks++
-			chunkDataLength := len(chk.Bytes())
-			chunkDataLengthUvarintLength := binary.PutUvarint(buf, uint64(chunkDataLength))
-			chunkSize := uint64(chunkDataLengthUvarintLength) + chunks.ChunkEncodingSize + uint64(chunkDataLength) + crc32.Size
+			chunkSize := uint64(chunks.ChunkSizeInBytes(chk, varintBuffer))
 			diskUsageInBytesPerMetric[metricName] += chunkSize
 			diskUsageInBytesTotal += chunkSize
 		}

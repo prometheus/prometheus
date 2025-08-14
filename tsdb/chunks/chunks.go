@@ -774,3 +774,18 @@ func sequenceFiles(dir string) ([]string, error) {
 	}
 	return res, nil
 }
+
+// ChunkSizeInBytes calculates the total size in bytes of a given chunk.
+// It includes the length of the chunk's data, the length of the variable-length
+// integer representation of this data length, the chunk encoding size, and the
+// CRC32 checksum size.
+// The varintBuffer parameter is used to avoid allocating a new buffer on every
+// call, optimizing performance by reusing the provided buffer for encoding the
+// variable-length integer. The function returns the total size as an integer.
+// A new buffer of MaxChunkLengthFieldSize can be created with: make([]byte, MaxChunkLengthFieldSize)
+func ChunkSizeInBytes(chunk chunkenc.Chunk, varintBuffer []byte) int {
+	chunkDataLength := len(chunk.Bytes())
+	chunkDataLengthUvarintLength := binary.PutUvarint(varintBuffer, uint64(chunkDataLength))
+	chunkSize := chunkDataLengthUvarintLength + ChunkEncodingSize + chunkDataLength + crc32.Size
+	return chunkSize
+}
