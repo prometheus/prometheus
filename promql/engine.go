@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"math"
 	"reflect"
 	"runtime"
@@ -926,13 +927,27 @@ func getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path
 		// because wo want to exclude samples that are precisely the
 		// lookback delta before the eval time.
 		start -= durationMilliseconds(s.LookbackDelta) - 1
+		if n.Smoothed {
+			end += durationMilliseconds(s.LookbackDelta)
+		}
 	} else {
-		// For all matrix queries we want to ensure that we have
-		// (end-start) + range selected this way we have `range` data
-		// before the start time. We subtract one from the range to
-		// exclude samples positioned directly at the lower boundary of
-		// the range.
-		start -= durationMilliseconds(evalRange) - 1
+		// For matrix queries, adjust the start and end times to ensure the
+		// correct range of data is selected. For "anchored" selectors, extend
+		// the start time backwards by the lookback delta plus the evaluation
+		// range.  For "smoothed" selectors, extend both the start and end times
+		// by the lookback delta, and also extend the start time by the
+		// evaluation range to cover the smoothing window. For standard range
+		// queries, extend the start time backwards by the range (minus one
+		// millisecond) to exclude samples exactly at the lower boundary.
+		switch {
+		case n.Anchored:
+			start -= durationMilliseconds(s.LookbackDelta + evalRange)
+		case n.Smoothed:
+			start -= durationMilliseconds(s.LookbackDelta + evalRange)
+			end += durationMilliseconds(s.LookbackDelta)
+		default:
+			start -= durationMilliseconds(evalRange) - 1
+		}
 	}
 
 	offsetMilliseconds := durationMilliseconds(n.OriginalOffset)
@@ -979,7 +994,6 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			evalRange = 0
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
 			n.UnexpandedSeriesSet = querier.Select(ctx, false, hints, n.LabelMatchers...)
-
 		case *parser.MatrixSelector:
 			evalRange = n.Range
 		}
@@ -1524,6 +1538,67 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 	return result, annos
 }
 
+func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration) Matrix {
+	dur := ev.endTimestamp - ev.startTimestamp
+
+	it := storage.NewBuffer(dur + 2*durationMilliseconds(ev.lookbackDelta))
+
+	offMS := offset.Milliseconds()
+	start := ev.startTimestamp - offMS
+	end := ev.endTimestamp - offMS
+	step := ev.interval
+	lb := durationMilliseconds(ev.lookbackDelta)
+
+	var chkIter chunkenc.Iterator
+	mat := make(Matrix, 0, len(series))
+
+	for _, s := range series {
+		ss := Series{Metric: s.Labels()}
+
+		chkIter = s.Iterator(chkIter)
+		it.Reset(chkIter)
+
+		var floats []FPoint
+
+		for ts := start; ts <= end; ts += step {
+			matrixStart := ts - lb
+			matrixEnd := ts + lb
+
+			floats, _ = ev.matrixIterSlice(it, matrixStart, matrixEnd, floats, nil)
+			if len(floats) == 0 {
+				continue
+			}
+
+			// Binary search for the first index with T >= ts.
+			i := sort.Search(len(floats), func(i int) bool { return floats[i].T >= ts })
+
+			switch {
+			case i < len(floats) && floats[i].T == ts:
+				// Exact match.
+				ss.Floats = append(ss.Floats, floats[i])
+
+			case i > 0 && i < len(floats):
+				// Interpolate between prev and next.
+				prev, next := floats[i-1], floats[i]
+				val := interpolate(prev, next, ts, false)
+				ss.Floats = append(ss.Floats, FPoint{F: val, T: ts})
+
+			case i > 0:
+				// No next point yet; carry forward previous value.
+				prev := floats[i-1]
+				ss.Floats = append(ss.Floats, FPoint{F: prev.F, T: ts})
+
+			default:
+				// i == 0 and floats[0].T > ts: there is no previous data yet; skip.
+			}
+		}
+
+		mat = append(mat, ss)
+	}
+
+	return mat
+}
+
 // evalSeries generates a Matrix between ev.startTimestamp and ev.endTimestamp (inclusive), each point spaced ev.interval apart, from series given offset.
 // For every storage.Series iterator in series, the method iterates in ev.interval sized steps from ev.startTimestamp until and including ev.endTimestamp,
 // collecting every corresponding sample (obtained via ev.vectorSelectorSingle) into a Series.
@@ -1784,6 +1859,17 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		sel := arg.(*parser.MatrixSelector)
 		selVS := sel.VectorSelector.(*parser.VectorSelector)
 
+		switch {
+		case selVS.Anchored:
+			if _, ok := AnchoredSafeFunctions[e.Func.Name]; !ok {
+				ev.errorf("anchored modifier can only be used with: %s - not with %s", strings.Join(slices.Sorted(maps.Keys(AnchoredSafeFunctions)), ", "), e.Func.Name)
+			}
+		case selVS.Smoothed:
+			if _, ok := SmoothedSafeFunctions[e.Func.Name]; !ok {
+				ev.errorf("smoothed modifier can only be used with: %s - not with %s", strings.Join(slices.Sorted(maps.Keys(SmoothedSafeFunctions)), ", "), e.Func.Name)
+			}
+		}
+
 		ws, err := checkAndExpandSeriesSet(ctx, sel)
 		warnings.Merge(ws)
 		if err != nil {
@@ -1793,7 +1879,13 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		offset := durationMilliseconds(selVS.Offset)
 		selRange := durationMilliseconds(sel.Range)
 		stepRange := selRange
-		if stepRange > ev.interval {
+		switch {
+		case selVS.Anchored:
+			stepRange += durationMilliseconds(ev.lookbackDelta)
+		case selVS.Smoothed:
+			stepRange += durationMilliseconds(2 * ev.lookbackDelta)
+		}
+		if stepRange > ev.interval || selVS.Smoothed || selVS.Anchored {
 			stepRange = ev.interval
 		}
 		// Reuse objects across steps to save memory allocations.
@@ -1803,7 +1895,18 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		inMatrix := make(Matrix, 1)
 		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
 		// Process all the calls for one time series at a time.
-		it := storage.NewBuffer(selRange)
+		// For anchored and smoothed selectors, we need to iterate over a
+		// larger range than the query range to account for the lookback delta.
+		// For standard range queries, we iterate over the query range.
+		bufferRange := selRange
+		switch {
+		case selVS.Anchored:
+			bufferRange += durationMilliseconds(ev.lookbackDelta)
+		case selVS.Smoothed:
+			bufferRange += durationMilliseconds(2 * ev.lookbackDelta)
+		}
+
+		it := storage.NewBuffer(bufferRange)
 		var chkIter chunkenc.Iterator
 
 		// The last_over_time function acts like offset; thus, it
@@ -1852,10 +1955,24 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				if ts == ev.startTimestamp || selVS.Timestamp == nil {
 					maxt := ts - offset
 					mint := maxt - selRange
-					floats, histograms = ev.matrixIterSlice(it, mint, maxt, floats, histograms)
+					matrixMaxt := maxt
+					matrixMint := mint
+					switch {
+					case selVS.Anchored:
+						matrixMint -= durationMilliseconds(ev.lookbackDelta)
+					case selVS.Smoothed:
+						matrixMint -= durationMilliseconds(ev.lookbackDelta)
+						matrixMaxt += durationMilliseconds(ev.lookbackDelta)
+					}
+					floats, histograms = ev.matrixIterSlice(it, matrixMint, matrixMaxt, floats, histograms)
 				}
 				if len(floats)+len(histograms) == 0 {
 					continue
+				}
+				if selVS.Anchored || selVS.Smoothed {
+					if len(histograms) > 0 {
+						ev.errorf("smoothed and anchored modifiers do not work with native histograms")
+					}
 				}
 				inMatrix[0].Floats = floats
 				inMatrix[0].Histograms = histograms
@@ -2054,6 +2171,10 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		ws, err := checkAndExpandSeriesSet(ctx, e)
 		if err != nil {
 			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
+		}
+		if e.Smoothed {
+			mat := ev.smoothSeries(e.Series, e.Offset)
+			return mat, ws
 		}
 		mat := ev.evalSeries(ctx, e.Series, e.Offset, false)
 		return mat, ws
@@ -2348,13 +2469,24 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 	var (
 		vs = node.VectorSelector.(*parser.VectorSelector)
 
-		offset = durationMilliseconds(vs.Offset)
-		maxt   = ev.startTimestamp - offset
-		mint   = maxt - durationMilliseconds(node.Range)
-		matrix = make(Matrix, 0, len(vs.Series))
-
-		it = storage.NewBuffer(durationMilliseconds(node.Range))
+		offset      = durationMilliseconds(vs.Offset)
+		maxt        = ev.startTimestamp - offset
+		mint        = maxt - durationMilliseconds(node.Range)
+		matrixMint  = mint
+		matrixMaxt  = maxt
+		matrix      = make(Matrix, 0, len(vs.Series))
+		bufferRange = durationMilliseconds(node.Range)
 	)
+	switch {
+	case vs.Anchored:
+		bufferRange += durationMilliseconds(ev.lookbackDelta)
+		mint -= durationMilliseconds(ev.lookbackDelta)
+	case vs.Smoothed:
+		bufferRange += 2 * durationMilliseconds(ev.lookbackDelta)
+		mint -= durationMilliseconds(ev.lookbackDelta)
+		maxt += durationMilliseconds(ev.lookbackDelta)
+	}
+	it := storage.NewBuffer(bufferRange)
 	ws, err := checkAndExpandSeriesSet(ctx, node)
 	if err != nil {
 		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
@@ -2373,6 +2505,12 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 		}
 
 		ss.Floats, ss.Histograms = ev.matrixIterSlice(it, mint, maxt, nil, nil)
+		switch {
+		case vs.Anchored:
+			ss.Floats = extendFloats(ss.Floats, matrixMint, matrixMaxt, false)
+		case vs.Smoothed:
+			ss.Floats = extendFloats(ss.Floats, matrixMint, matrixMaxt, true)
+		}
 		totalSize := int64(len(ss.Floats)) + int64(totalHPointSize(ss.Histograms))
 		ev.samplesStats.IncrementSamplesAtTimestamp(ev.startTimestamp, totalSize)
 
@@ -4011,4 +4149,36 @@ func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelp
 	ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 	return output, bufHelpers
+}
+
+func extendFloats(floats []FPoint, mint, maxt int64, smoothed bool) []FPoint {
+	numSamplesMinusOne := len(floats) - 1
+
+	firstSampleIndex := max(0, sort.Search(numSamplesMinusOne, func(i int) bool { return floats[i].T > mint })-1)
+	lastSampleIndex := numSamplesMinusOne
+	if smoothed {
+		lastSampleIndex = sort.Search(numSamplesMinusOne, func(i int) bool { return floats[i].T >= maxt })
+	}
+
+	if floats[lastSampleIndex].T <= mint {
+		return []FPoint{}
+	}
+
+	left := pickOrInterpolateLeft(floats, firstSampleIndex, mint, smoothed, false)
+	right := pickOrInterpolateRight(floats, lastSampleIndex, maxt, smoothed, false)
+	if floats[firstSampleIndex].T <= mint {
+		firstSampleIndex++
+	}
+	if floats[lastSampleIndex].T >= maxt {
+		lastSampleIndex--
+	}
+	fmt.Println(firstSampleIndex, lastSampleIndex)
+
+	out := []FPoint{
+		{T: mint, F: left},
+	}
+	out = append(out, floats[firstSampleIndex:lastSampleIndex+1]...)
+	out = append(out, FPoint{T: maxt, F: right})
+
+	return out
 }
