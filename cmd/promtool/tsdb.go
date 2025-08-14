@@ -917,7 +917,7 @@ func displayDiskUsage(data map[string]uint64, total uint64) {
 		sorted = append(sorted, metricDiskUsage{k, v})
 	}
 
-	// sort descending by value
+	// sort descending by value, then by metric name ascending
 	slices.SortFunc(sorted, func(a, b metricDiskUsage) int {
 		switch {
 		case a.diskUsage < b.diskUsage:
@@ -925,7 +925,7 @@ func displayDiskUsage(data map[string]uint64, total uint64) {
 		case a.diskUsage > b.diskUsage:
 			return -1
 		default:
-			return 0
+			return strings.Compare(a.metricName, b.metricName)
 		}
 	})
 
