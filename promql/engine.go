@@ -2830,7 +2830,7 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 			lh, rh = rh, lh
 		}
 		float, histogram, keep, err := vectorElemBinop(op, lf, rf, lh, rh, pos)
-		if err != nil {
+		if err != nil && !errors.Is(err, annotations.PromQLWarning) {
 			lastErr = err
 			continue
 		}
@@ -2955,17 +2955,23 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 		{
 			switch op {
 			case parser.ADD:
-				res, err := hlhs.Copy().Add(hrhs)
+				res, counterResetCollision, err := hlhs.Copy().Add(hrhs)
 				if err != nil {
 					return 0, nil, false, err
 				}
-				return 0, res.Compact(0), true, nil
+				if counterResetCollision {
+					err = annotations.NewHistogramCounterResetCollisionWarning(pos)
+				}
+				return 0, res.Compact(0), true, err
 			case parser.SUB:
-				res, err := hlhs.Copy().Sub(hrhs)
+				res, counterResetCollision, err := hlhs.Copy().Sub(hrhs)
 				if err != nil {
 					return 0, nil, false, err
 				}
-				return 0, res.Compact(0), true, nil
+				if counterResetCollision {
+					err = annotations.NewHistogramCounterResetCollisionWarning(pos)
+				}
+				return 0, res.Compact(0), true, err
 			case parser.EQLC:
 				// This operation expects that both histograms are compacted.
 				return 0, hlhs, hlhs.Equals(hrhs), nil
@@ -3078,7 +3084,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if h != nil {
 				group.hasHistogram = true
 				if group.histogramValue != nil {
-					_, err := group.histogramValue.Add(h)
+					_, _, err := group.histogramValue.Add(h)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
@@ -3131,13 +3137,13 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				if group.histogramValue != nil {
 					left := h.Copy().Div(group.groupCount)
 					right := group.histogramValue.Copy().Div(group.groupCount)
-					toAdd, err := left.Sub(right)
+					toAdd, _, err := left.Sub(right)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
 						continue
 					}
-					_, err = group.histogramValue.Add(toAdd)
+					_, _, err = group.histogramValue.Add(toAdd)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true

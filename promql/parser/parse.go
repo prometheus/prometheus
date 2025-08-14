@@ -494,13 +494,15 @@ func (p *parser) mergeMaps(left, right *map[string]interface{}) (ret *map[string
 
 func (p *parser) histogramsIncreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
 	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
-		return a.Add(b)
+		res, _, err := a.Add(b)
+		return res, err
 	})
 }
 
 func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
 	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
-		return a.Sub(b)
+		res, _, err := a.Sub(b)
+		return res, err
 	})
 }
 
