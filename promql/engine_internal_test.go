@@ -21,7 +21,9 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -76,4 +78,66 @@ func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
 	defer ev.recover(nil, &ws, &err)
 
 	panic(e)
+}
+
+func TestVectorElemBinop_Histograms(t *testing.T) {
+	testCases := []struct {
+		name       string
+		op         parser.ItemType
+		hlhs, hrhs *histogram.FloatHistogram
+		want       *histogram.FloatHistogram
+		wantErr    error
+	}{
+		{
+			name: "ADD with unknown counter reset hints",
+			op:   parser.ADD,
+			hlhs: &histogram.FloatHistogram{},
+			hrhs: &histogram.FloatHistogram{},
+			want: &histogram.FloatHistogram{},
+		},
+		{
+			name: "ADD with mixed counter reset hints",
+			op:   parser.ADD,
+			hlhs: &histogram.FloatHistogram{
+				CounterResetHint: histogram.CounterReset,
+			},
+			hrhs: &histogram.FloatHistogram{
+				CounterResetHint: histogram.NotCounterReset,
+			},
+			want:    &histogram.FloatHistogram{},
+			wantErr: annotations.HistogramCounterResetCollisionWarning,
+		},
+		{
+			name: "SUB with unknown counter reset hints",
+			op:   parser.SUB,
+			hlhs: &histogram.FloatHistogram{},
+			hrhs: &histogram.FloatHistogram{},
+			want: &histogram.FloatHistogram{
+				CounterResetHint: histogram.GaugeType,
+			},
+		},
+		{
+			name: "SUB with mixed counter reset hints",
+			op:   parser.SUB,
+			hlhs: &histogram.FloatHistogram{
+				CounterResetHint: histogram.CounterReset,
+			},
+			hrhs: &histogram.FloatHistogram{
+				CounterResetHint: histogram.NotCounterReset,
+			},
+			want:    &histogram.FloatHistogram{},
+			wantErr: annotations.HistogramCounterResetCollisionWarning,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, got, _, err := vectorElemBinop(tc.op, 0, 0, tc.hlhs, tc.hrhs, posrange.PositionRange{})
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
 }
