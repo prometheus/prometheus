@@ -382,7 +382,7 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 	require.NoError(t, s.Close())
 }
 
-func TestOTLPWriteHandlerNaming(t *testing.T) {
+func TestOTLPWriteHandler(t *testing.T) {
 	timestamp := time.Now()
 	var zeroTime time.Time
 	exportRequest := generateOTLPWriteRequest(timestamp, zeroTime)
@@ -936,7 +936,7 @@ func TestOTLPWriteHandlerNaming(t *testing.T) {
 
 // Check that start time is ingested if ingestCTZeroSample is enabled
 // and the start time is actually set (non-zero).
-func TestOTLPWriteHandlerStartTime(t *testing.T) {
+func TestOTLPWriteHandler_StartTime(t *testing.T) {
 	timestamp := time.Now()
 	startTime := timestamp.Add(-1 * time.Millisecond)
 	var zeroTime time.Time
