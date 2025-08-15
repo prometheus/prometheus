@@ -200,7 +200,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 				},
 			},
 		},
-		"single float sample, CT name time as sample": {
+		"single float sample, CT same time as sample": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
 				require.NoError(t, app.AppendSample("test_bytes_total", labels.FromStrings(
 					model.MetricNameLabel, "test_bytes_total",
@@ -296,7 +296,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 				},
 			},
 		},
-		"single histogram sample, CT name time as sample": {
+		"single histogram sample, CT same time as sample": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
 				require.NoError(t, app.AppendHistogram("test_bytes_total", labels.FromStrings(
 					model.MetricNameLabel, "test_bytes_total",
@@ -787,7 +787,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			model.MetricNameLabel, "test_bytes_total",
 			"foo", "club",
 		)
-		// The hash and ref remains the same, but we altered the labels.
+		// The hash and ref remain the same, but we altered the labels.
 		// This simulates a conflict with an existing series.
 		cappImpl.refs[hash] = series
 
