@@ -442,6 +442,7 @@ func (*testLoop) getCache() *scrapeCache {
 }
 
 func TestScrapePoolStop(t *testing.T) {
+	t.Parallel()
 	sp := &scrapePool{
 		activeTargets: map[uint64]*Target{},
 		loops:         map[uint64]loop{},
@@ -501,6 +502,7 @@ func TestScrapePoolStop(t *testing.T) {
 }
 
 func TestScrapePoolReload(t *testing.T) {
+	t.Parallel()
 	var mtx sync.Mutex
 	numTargets := 20
 
@@ -866,6 +868,7 @@ func TestScrapePoolAppender(t *testing.T) {
 }
 
 func TestScrapePoolRaces(t *testing.T) {
+	t.Parallel()
 	interval, _ := model.ParseDuration("1s")
 	timeout, _ := model.ParseDuration("500ms")
 	newConfig := func() *config.ScrapeConfig {
@@ -998,6 +1001,7 @@ func newBasicScrapeLoopWithFallback(t testing.TB, ctx context.Context, scraper s
 }
 
 func TestScrapeLoopStopBeforeRun(t *testing.T) {
+	t.Parallel()
 	scraper := &testScraper{}
 	sl := newBasicScrapeLoop(t, context.Background(), scraper, nil, 1)
 
@@ -1102,6 +1106,7 @@ func TestScrapeLoopStop(t *testing.T) {
 }
 
 func TestScrapeLoopRun(t *testing.T) {
+	t.Parallel()
 	var (
 		signal = make(chan struct{}, 1)
 		errc   = make(chan error)
@@ -3922,6 +3927,7 @@ func TestCheckAddError(t *testing.T) {
 }
 
 func TestScrapeReportSingleAppender(t *testing.T) {
+	t.Parallel()
 	s := teststorage.New(t)
 	defer s.Close()
 
@@ -4331,6 +4337,7 @@ test_summary_count 199
 
 // Testing whether we can automatically convert scraped classic histograms into native histograms with custom buckets.
 func TestConvertClassicHistogramsToNHCB(t *testing.T) {
+	t.Parallel()
 	genTestCounterText := func(name string, value int, withMetadata bool) string {
 		if withMetadata {
 			return fmt.Sprintf(`
@@ -4741,6 +4748,7 @@ metric: <
 			}
 
 			t.Run(fmt.Sprintf("%s with %s", name, metricsTextName), func(t *testing.T) {
+				t.Parallel()
 				simpleStorage := teststorage.New(t)
 				defer simpleStorage.Close()
 
@@ -5367,6 +5375,7 @@ scrape_configs:
 }
 
 func TestTargetScrapeConfigWithLabels(t *testing.T) {
+	t.Parallel()
 	const (
 		configTimeout        = 1500 * time.Millisecond
 		expectedTimeout      = "1.5"
@@ -5521,6 +5530,7 @@ func TestTargetScrapeConfigWithLabels(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			select {
 			case <-run(t, c.cfg, c.targets):
 			case <-time.After(10 * time.Second):

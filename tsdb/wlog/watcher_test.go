@@ -443,6 +443,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 }
 
 func TestReadCheckpoint(t *testing.T) {
+	t.Parallel()
 	pageSize := 32 * 1024
 	const seriesCount = 10
 	const samplesCount = 250
@@ -677,6 +678,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 }
 
 func TestRun_StartupTime(t *testing.T) {
+	t.Parallel()
 	const pageSize = 32 * 1024
 	const segments = 10
 	const seriesCount = 20

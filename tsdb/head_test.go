@@ -2917,6 +2917,7 @@ func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
 }
 
 func TestHeadSeriesChunkRace(t *testing.T) {
+	t.Parallel()
 	for i := 0; i < 1000; i++ {
 		testHeadSeriesChunkRace(t)
 	}
@@ -2944,6 +2945,7 @@ func TestIsolationWithoutAdd(t *testing.T) {
 }
 
 func TestOutOfOrderSamplesMetric(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
 			options := DefaultOptions()
@@ -3546,6 +3548,7 @@ func TestIteratorSeekIntoBuffer(t *testing.T) {
 
 // Tests https://github.com/prometheus/prometheus/issues/8221.
 func TestChunkNotFoundHeadGCRace(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	db.DisableCompactions()
 	ctx := context.Background()
@@ -3612,6 +3615,7 @@ func TestChunkNotFoundHeadGCRace(t *testing.T) {
 
 // Tests https://github.com/prometheus/prometheus/issues/9079.
 func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	db.DisableCompactions()
 	ctx := context.Background()
@@ -3705,6 +3709,7 @@ func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 }
 
 func TestWaitForPendingReadersInTimeRange(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	db.DisableCompactions()
 

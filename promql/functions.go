@@ -283,7 +283,6 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 		annos.Add(annotations.NewNativeHistogramNotGaugeWarning(metricName, pos))
 	}
 
-	h.CounterResetHint = histogram.GaugeType
 	return h.Compact(0), annos
 }
 
@@ -1463,7 +1462,11 @@ func funcHistogramQuantile(vectorVals []Vector, _ Matrix, args parser.Expression
 		if len(mb.buckets) > 0 {
 			res, forcedMonotonicity, _ := BucketQuantile(q, mb.buckets)
 			if forcedMonotonicity {
-				annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(mb.metric.Get(labels.MetricName), args[1].PositionRange()))
+				if enh.enableDelayedNameRemoval {
+					annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(mb.metric.Get(labels.MetricName), args[1].PositionRange()))
+				} else {
+					annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo("", args[1].PositionRange()))
+				}
 			}
 
 			if !enh.enableDelayedNameRemoval {
@@ -1946,9 +1949,7 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 }
 
 func stringFromArg(e parser.Expr) string {
-	tmp := unwrapStepInvariantExpr(e) // Unwrap StepInvariant
-	unwrapParenExpr(&tmp)             // Optionally unwrap ParenExpr
-	return tmp.(*parser.StringLiteral).Val
+	return e.(*parser.StringLiteral).Val
 }
 
 func stringSliceFromArgs(args parser.Expressions) []string {
