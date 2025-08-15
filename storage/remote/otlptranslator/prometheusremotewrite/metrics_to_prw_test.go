@@ -305,11 +305,13 @@ func TestFromMetrics(t *testing.T) {
 
 		mockAppender := &mockCombinedAppender{}
 		converter := NewPrometheusConverter(mockAppender)
-		settings := Settings{
-			LookbackDelta: defaultLookbackDelta,
-		}
-
-		annots, err := converter.FromMetrics(context.Background(), request.Metrics(), settings)
+		annots, err := converter.FromMetrics(
+			context.Background(),
+			request.Metrics(),
+			Settings{
+				LookbackDelta: defaultLookbackDelta,
+			},
+		)
 		require.NoError(t, err)
 		require.Empty(t, annots)
 		require.NoError(t, mockAppender.Commit())
