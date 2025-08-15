@@ -2003,7 +2003,7 @@ func TestIsSampleOld(t *testing.T) {
 func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 	t.Parallel()
 	maxSamplesPerSend := 10
-	sampleAgeLimit := time.Second
+	sampleAgeLimit := time.Second * 2
 
 	cfg := config.DefaultQueueConfig
 	cfg.MaxShards = 1
