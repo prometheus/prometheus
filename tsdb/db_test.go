@@ -17,7 +17,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"flag"
 	"fmt"
@@ -2818,7 +2817,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 	chk3 := assureChunkFromSamples(t, []chunks.Sample{sample{1, 3, nil, nil}})
 	chk4 := assureChunkFromSamples(t, []chunks.Sample{sample{1, 4, nil, nil}})
 	chk5 := assureChunkFromSamples(t, []chunks.Sample{sample{1, 5, nil, nil}})
-	chunkSize := len(chk1.Chunk.Bytes()) + binary.PutUvarint(make([]byte, chunks.MaxChunkLengthFieldSize), uint64(len(chk1.Chunk.Bytes()))) + chunks.ChunkEncodingSize + crc32.Size
+	chunkSize := chunks.ChunkSizeInBytes(chk1.Chunk, make([]byte, chunks.MaxChunkLengthFieldSize))
 
 	tests := []struct {
 		chks [][]chunks.Meta
