@@ -482,7 +482,8 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					amSetCovered.CompareAndSwap(k, false, true)
 				}
 
-				n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
+				n.metrics.latencySum.WithLabelValues(url).Observe(time.Since(begin).Seconds())
+				n.metrics.latencyHist.WithLabelValues(url).Observe(time.Since(begin).Seconds())
 				n.metrics.sent.WithLabelValues(url).Add(float64(count))
 
 				wg.Done()

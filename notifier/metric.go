@@ -16,7 +16,8 @@ package notifier
 import "github.com/prometheus/client_golang/prometheus"
 
 type alertMetrics struct {
-	latency                 *prometheus.SummaryVec
+	latencySum              *prometheus.SummaryVec
+	latencyHist             *prometheus.HistogramVec
 	errors                  *prometheus.CounterVec
 	sent                    *prometheus.CounterVec
 	dropped                 prometheus.Counter
@@ -25,14 +26,27 @@ type alertMetrics struct {
 	alertmanagersDiscovered prometheus.GaugeFunc
 }
 
-func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanagersDiscovered func() float64) *alertMetrics {
+func newAlertMetrics(
+	r prometheus.Registerer,
+	queueCap int,
+	queueLen, alertmanagersDiscovered func() float64,
+) *alertMetrics {
 	m := &alertMetrics{
-		latency: prometheus.NewSummaryVec(prometheus.SummaryOpts{
+		latencySum: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Namespace:  namespace,
 			Subsystem:  subsystem,
 			Name:       "latency_seconds",
 			Help:       "Latency quantiles for sending alert notifications.",
 			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+		},
+			[]string{alertmanagerLabel},
+		),
+		latencyHist: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "duration_seconds",
+			Help:      "Latency histogram for sending alert notifications.",
+			Buckets:   append(prometheus.DefBuckets, 20, 30),
 		},
 			[]string{alertmanagerLabel},
 		),
@@ -80,7 +94,8 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanag
 
 	if r != nil {
 		r.MustRegister(
-			m.latency,
+			m.latencySum,
+			m.latencyHist,
 			m.errors,
 			m.sent,
 			m.dropped,
