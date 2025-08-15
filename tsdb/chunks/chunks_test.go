@@ -122,11 +122,7 @@ func TestWriterSegmentFileSize(t *testing.T) {
 
 	dir := t.TempDir()
 
-	// There is an estimation error in WriteChunks when the chunk size is calculated. The actual chunk length field
-	// size is not considered but always assumed to be MaxChunkLengthFieldSize (5 bytes). In this test, chunkMeta1
-	// and chunkMeta2 take 1 byte each for the chunk length field, so the estimation error is 8 bytes.
-	estimationError := (MaxChunkLengthFieldSize - 1) + (MaxChunkLengthFieldSize - 1)
-	w, err := NewWriter(dir, WithSegmentSize(int64(SegmentHeaderSize+chunkFloatSize1+chunkFloatSize2+estimationError)))
+	w, err := NewWriter(dir, WithSegmentSize(int64(SegmentHeaderSize+chunkFloatSize1+chunkFloatSize2)))
 	require.NoError(t, err)
 
 	err = w.WriteChunks(chunkMeta1, chunkMeta2)
