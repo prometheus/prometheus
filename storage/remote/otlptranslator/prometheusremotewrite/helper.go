@@ -101,7 +101,12 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		var sortErr error
 		sortedLabels.Range(func(l labels.Label) {
 			finalKey, err := labelNamer.Build(l.Name)
-			if err != nil && sortErr == nil {
+			if sortErr != nil {
+				return
+			}
+
+			finalKey, err := labelNamer.Build(l.Name)
+			if err != nil {
 				sortErr = err
 				return
 			}
