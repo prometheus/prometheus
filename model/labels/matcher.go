@@ -101,7 +101,7 @@ func (m *Matcher) shouldQuoteName() bool {
 		}
 		return true
 	}
-	return len(m.Name) == 0
+	return m.Name == ""
 }
 
 // Matches returns whether the matcher matches the given string value.

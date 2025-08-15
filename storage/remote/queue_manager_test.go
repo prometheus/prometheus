@@ -1189,7 +1189,8 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) (WriteResp
 	// Check if we've been told to inject err for this call.
 	if len(c.injectedErrs) > 0 {
 		c.currErr++
-		if err = c.injectedErrs[c.currErr]; err != nil {
+		err = c.injectedErrs[c.currErr]
+		if err != nil {
 			return WriteResponseStats{}, err
 		}
 	}

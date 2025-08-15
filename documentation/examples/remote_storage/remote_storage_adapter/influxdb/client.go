@@ -106,11 +106,13 @@ func (c *Client) Write(samples model.Samples) error {
 	writeAPI.EnableBatching() // default 5_000
 	var err error
 	for _, p := range points {
-		if err = writeAPI.WritePoint(c.context, p); err != nil {
+		err = writeAPI.WritePoint(c.context, p)
+		if err != nil {
 			return err
 		}
 	}
-	if err = writeAPI.Flush(c.context); err != nil {
+	err = writeAPI.Flush(c.context)
+	if err != nil {
 		return err
 	}
 
@@ -136,7 +138,8 @@ func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 		}
 
 		for resp.Next() {
-			if err = mergeResult(labelsToSeries, resp.Record()); err != nil {
+			err = mergeResult(labelsToSeries, resp.Record())
+			if err != nil {
 				return nil, err
 			}
 		}
@@ -165,7 +168,7 @@ func (c *Client) buildCommand(q *prompb.Query) (string, error) {
 		if m.Name == model.MetricNameLabel {
 			switch m.Type {
 			case prompb.LabelMatcher_EQ:
-				measurement += fmt.Sprintf(" == \"%s\"", m.Value)
+				measurement += fmt.Sprintf(" == %q", m.Value)
 			case prompb.LabelMatcher_RE:
 				measurement += fmt.Sprintf(" =~ /%s/", escapeSlashes(m.Value))
 			default:
@@ -177,9 +180,9 @@ func (c *Client) buildCommand(q *prompb.Query) (string, error) {
 
 		switch m.Type {
 		case prompb.LabelMatcher_EQ:
-			matchers = append(matchers, fmt.Sprintf("r.%s == \"%s\"", m.Name, escapeSingleQuotes(m.Value)))
+			matchers = append(matchers, fmt.Sprintf("r.%s == %q", m.Name, escapeSingleQuotes(m.Value)))
 		case prompb.LabelMatcher_NEQ:
-			matchers = append(matchers, fmt.Sprintf("r.%s != \"%s\"", m.Name, escapeSingleQuotes(m.Value)))
+			matchers = append(matchers, fmt.Sprintf("r.%s != %q", m.Name, escapeSingleQuotes(m.Value)))
 		case prompb.LabelMatcher_RE:
 			matchers = append(matchers, fmt.Sprintf("r.%s =~ /%s/", m.Name, escapeSingleQuotes(m.Value)))
 		case prompb.LabelMatcher_NRE:
@@ -194,7 +197,7 @@ func (c *Client) buildCommand(q *prompb.Query) (string, error) {
 
 	// _measurement must be retained, otherwise "invalid metric name" shall be thrown
 	command := fmt.Sprintf(
-		"from(bucket: \"%s\") |> range(%s) |> filter(fn: (r) => %s%s)",
+		"from(bucket: %q) |> range(%s) |> filter(fn: (r) => %s%s)",
 		c.bucket, rangeInNs, measurement, joinedMatchers,
 	)
 
