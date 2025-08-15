@@ -121,26 +121,23 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 		exists = false
 		ref = 0
 	}
-	updateSeries := false
-	if !exists || series.ct != ct {
-		updateSeries = true
-		if ct != 0 && b.ingestCTZeroSample {
-			var newRef storage.SeriesRef
-			if h != nil {
-				newRef, err = b.app.AppendHistogramCTZeroSample(ref, ls, t, ct, h, nil)
-			} else {
-				newRef, err = b.app.AppendCTZeroSample(ref, ls, t, ct)
-			}
-			if newRef != 0 {
-				// Do not lose the reference to the series if CT failed.
-				ref = newRef
-			}
-			if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
-				// Even for the first sample OOO is a common scenario because
-				// we can't tell if a CT was already ingested in a previous request.
-				// We ignore the error.
-				b.logger.Warn("Error when appending CT from OTLP", "err", err, "series", ls.String(), "created_timestamp", ct, "timestamp", t, "sample_type", sampleType(h))
-			}
+	updateSeries := !exists || series.ct != ct
+	if updateSeries && ct != 0 && b.ingestCTZeroSample {
+		var newRef storage.SeriesRef
+		if h != nil {
+			newRef, err = b.app.AppendHistogramCTZeroSample(ref, ls, t, ct, h, nil)
+		} else {
+			newRef, err = b.app.AppendCTZeroSample(ref, ls, t, ct)
+		}
+		if newRef != 0 {
+			// Do not lose the reference to the series if CT failed.
+			ref = newRef
+		}
+		if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
+			// Even for the first sample OOO is a common scenario because
+			// we can't tell if a CT was already ingested in a previous request.
+			// We ignore the error.
+			b.logger.Warn("Error when appending CT from OTLP", "err", err, "series", ls.String(), "created_timestamp", ct, "timestamp", t, "sample_type", sampleType(h))
 		}
 	}
 	{
