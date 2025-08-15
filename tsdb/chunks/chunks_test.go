@@ -104,3 +104,45 @@ func TestChunkSizeInBytes(t *testing.T) {
 	expectedSegmentFileSize := SegmentHeaderSize + chunkFloatSize + chunkHistogramSize + chunkFloatHistogramSize
 	require.Equal(t, int64(expectedSegmentFileSize), actualSegmentFileSize, "segment file size in bytes does not add up based on the chunk sizes")
 }
+
+func TestWriterSegmentFileSize(t *testing.T) {
+	chunkMeta1, err := ChunkFromSamples([]Sample{
+		sample{t: 10, f: 11},
+	})
+	require.NoError(t, err)
+
+	chunkMeta2, err := ChunkFromSamples([]Sample{
+		sample{t: 20, f: 11},
+	})
+	require.NoError(t, err)
+
+	varintBuffer := make([]byte, MaxChunkLengthFieldSize)
+	chunkFloatSize1 := ChunkSizeInBytes(chunkMeta1.Chunk, varintBuffer)
+	chunkFloatSize2 := ChunkSizeInBytes(chunkMeta2.Chunk, varintBuffer)
+
+	dir := t.TempDir()
+
+	// There is an estimation error in WriteChunks when the chunk size is calculated. The actual chunk length field
+	// size is not considered but always assumed to be MaxChunkLengthFieldSize (5 bytes). In this test, chunkMeta1
+	// and chunkMeta2 take 1 byte each for the chunk length field, so the estimation error is 8 bytes.
+	estimationError := (MaxChunkLengthFieldSize - 1) + (MaxChunkLengthFieldSize - 1)
+	w, err := NewWriter(dir, WithSegmentSize(int64(SegmentHeaderSize+chunkFloatSize1+chunkFloatSize2+estimationError)))
+	require.NoError(t, err)
+
+	err = w.WriteChunks(chunkMeta1, chunkMeta2)
+	require.NoError(t, err)
+
+	err = w.Close()
+	require.NoError(t, err)
+
+	files, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, files, 1, "expected only one segment to be created to store both chunks")
+
+	segmentInfo, err := os.Stat(dir + "/000001")
+	require.NoError(t, err)
+
+	actualSegmentFileSize := segmentInfo.Size()
+	expectedSegmentFileSize := SegmentHeaderSize + chunkFloatSize1 + chunkFloatSize2
+	require.Equal(t, int64(expectedSegmentFileSize), actualSegmentFileSize, "segment file size in bytes does not add up based on the chunk sizes")
+}
