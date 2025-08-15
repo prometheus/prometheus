@@ -636,12 +636,16 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 	histogramChunkSamplesCount := make([]int, 0)
 	histogramChunkSize := make([]int, 0)
 	histogramChunkBucketsCount := make([]int, 0)
+	varintBuffer := make([]byte, chunks.MaxChunkLengthFieldSize)
+	diskUsageInBytesPerMetric := map[string]uint64{}
+	diskUsageInBytesTotal := uint64(0)
 	var builder labels.ScratchBuilder
 	for postingsr.Next() {
 		var chks []chunks.Meta
 		if err := indexr.Series(postingsr.At(), &builder, &chks); err != nil {
 			return err
 		}
+		metricName := builder.Labels().Get(labels.MetricName)
 
 		for _, chk := range chks {
 			// Load the actual data of the chunk.
@@ -690,6 +694,9 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 				histogramChunkBucketsCount = append(histogramChunkBucketsCount, bucketCount)
 			}
 			totalChunks++
+			chunkSize := uint64(chunks.ChunkSizeInBytes(chk, varintBuffer))
+			diskUsageInBytesPerMetric[metricName] += chunkSize
+			diskUsageInBytesTotal += chunkSize
 		}
 	}
 
@@ -704,6 +711,9 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 	displayHistogram("bytes per histogram chunk", histogramChunkSize, totalChunks)
 
 	displayHistogram("buckets per histogram chunk", histogramChunkBucketsCount, totalChunks)
+
+	displayDiskUsage(diskUsageInBytesPerMetric, diskUsageInBytesTotal)
+
 	return nil
 }
 
@@ -893,4 +903,58 @@ func generateBucket(minVal, maxVal int) (start, end, step int) {
 	end = maxVal - maxVal%step + step
 
 	return
+}
+
+func displayDiskUsage(data map[string]uint64, total uint64) {
+	type metricDiskUsage struct {
+		metricName string
+		diskUsage  uint64
+	}
+
+	numberOfMetrics := len(data)
+	sorted := make([]metricDiskUsage, 0, numberOfMetrics)
+	for k, v := range data {
+		sorted = append(sorted, metricDiskUsage{k, v})
+	}
+
+	// sort descending by value, then by metric name ascending
+	slices.SortFunc(sorted, func(a, b metricDiskUsage) int {
+		switch {
+		case a.diskUsage < b.diskUsage:
+			return 1
+		case a.diskUsage > b.diskUsage:
+			return -1
+		default:
+			return strings.Compare(a.metricName, b.metricName)
+		}
+	})
+
+	shouldDisplayTopMetrics := numberOfMetrics > 20
+	topMetricsToShow := min(20, numberOfMetrics)
+
+	if shouldDisplayTopMetrics {
+		fmt.Printf("Top %d metric names by disk usage:\n", topMetricsToShow)
+	} else {
+		fmt.Printf("All %d metric names by disk usage:\n", numberOfMetrics)
+	}
+
+	var sum uint64
+	for i := range sorted[:topMetricsToShow] {
+		sum += sorted[i].diskUsage
+		var percent float64
+		if total > 0 {
+			percent = float64(sorted[i].diskUsage) / float64(total) * 100
+		}
+		fmt.Printf("%12d bytes (%6.2f%%) %s\n", sorted[i].diskUsage, percent, sorted[i].metricName)
+	}
+
+	var topPercent float64
+	if total > 0 {
+		topPercent = float64(sum) / float64(total) * 100
+	}
+
+	if shouldDisplayTopMetrics {
+		fmt.Printf("  total (top %8d): %12d bytes (%.2f%%)\n", topMetricsToShow, sum, topPercent)
+	}
+	fmt.Printf("  total (all %8d): %12d bytes\n", numberOfMetrics, total)
 }

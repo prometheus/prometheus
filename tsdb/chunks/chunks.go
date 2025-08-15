@@ -498,11 +498,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 	)
 
 	for i, chk := range chks {
-		// Each chunk contains: data length + encoding + the data itself + crc32
-		chkSize := int64(MaxChunkLengthFieldSize) // The data length is a variable length field so use the maximum possible value.
-		chkSize += ChunkEncodingSize              // The chunk encoding.
-		chkSize += int64(len(chk.Chunk.Bytes()))  // The data itself.
-		chkSize += crc32.Size                     // The 4 bytes of crc32.
+		chkSize := int64(ChunkSizeInBytes(chk.Chunk, w.buf[:]))
 		batchSize += chkSize
 
 		// Cut a new batch when it is not the first chunk(to avoid empty segments) and
@@ -773,4 +769,23 @@ func sequenceFiles(dir string) ([]string, error) {
 		res = append(res, filepath.Join(dir, fi.Name()))
 	}
 	return res, nil
+}
+
+// ChunkSizeInBytes calculates the total size in bytes of a given chunk.
+// It includes the length of the chunk's data, the length of the variable-length
+// integer representation of this data length, the chunk encoding size, and the
+// CRC32 checksum size.
+// The varintBuffer parameter is used to avoid allocating a new buffer on every
+// call, optimizing performance by reusing the provided buffer for encoding the
+// variable-length integer. The function returns the total size as an integer.
+// A new buffer of MaxChunkLengthFieldSize can be created with: make([]byte, MaxChunkLengthFieldSize).
+func ChunkSizeInBytes(chunk chunkenc.Chunk, varintBuffer []byte) int {
+	chunkDataLength := len(chunk.Bytes())
+	chunkDataLengthUvarintLength := binary.PutUvarint(varintBuffer, uint64(chunkDataLength))
+	chunkSize := 0
+	chunkSize += chunkDataLengthUvarintLength // The data length is a variable length field.
+	chunkSize += ChunkEncodingSize            // The chunk encoding.
+	chunkSize += chunkDataLength              // The data itself.
+	chunkSize += crc32.Size                   // The 4 bytes of crc32.
+	return chunkSize
 }
