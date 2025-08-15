@@ -231,6 +231,10 @@ func TestTSDBDumpOpenMetricsRoundTrip(t *testing.T) {
 }
 
 func TestPromtoolAnalyze(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on windows")
+	}
+
 	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			metric{foo="bar", baz="abc"} 1 2 3 4 5
@@ -268,6 +272,10 @@ All 2 metric names by disk usage:
 }
 
 func TestPromtoolAnalyzeMoreThan20Metrics(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on windows")
+	}
+
 	metrics := "test_1{} 1 2 3 4 5\n"
 	for i := 1; i < 30; i++ {
 		metrics += fmt.Sprintf("test_%d{index=\"0\"} 1 2 3 4 5\n", i)
