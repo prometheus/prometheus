@@ -65,6 +65,46 @@ type TBRun interface {
 	Run(string, func(*testing.T)) bool
 }
 
+// clearCmd is a command that wipes the test's storage state.
+type clearCmd struct{}
+
+// evalCmd is a command that evaluates an expression for the given time (range)
+// and expects a specific result.
+type evalCmd struct {
+	expr  string
+	start time.Time
+	end   time.Time
+	step  time.Duration
+	line  int
+
+	isRange                   bool // if false, instant query
+	fail, warn, ordered, info bool
+	expectedFailMessage       string
+	expectedFailRegexp        *regexp.Regexp
+
+	expectedCmds map[expectCmdType][]expectCmd
+
+	metrics      map[uint64]labels.Labels
+	expectScalar bool
+	expected     map[uint64]entry
+}
+
+// loadCmd is a command that loads sequences of sample values for specific
+// metrics into the storage.
+type loadCmd struct {
+	gap       time.Duration
+	metrics   map[uint64]labels.Labels
+	defs      map[uint64][]promql.Sample
+	exemplars map[uint64][]exemplar.Exemplar
+	withNHCB  bool
+}
+
+// testCommand is an interface that ensures that only the package internal
+// types can be a valid command for a test.
+type testCommand interface {
+	testCmd()
+}
+
 var testStartTime = time.Unix(0, 0).UTC()
 
 // LoadedStorage returns storage with generated data using the provided load statements.
@@ -502,25 +542,9 @@ func (t *test) parse(input string) error {
 	return nil
 }
 
-// testCommand is an interface that ensures that only the package internal
-// types can be a valid command for a test.
-type testCommand interface {
-	testCmd()
-}
-
 func (*clearCmd) testCmd() {}
 func (*loadCmd) testCmd()  {}
 func (*evalCmd) testCmd()  {}
-
-// loadCmd is a command that loads sequences of sample values for specific
-// metrics into the storage.
-type loadCmd struct {
-	gap       time.Duration
-	metrics   map[uint64]labels.Labels
-	defs      map[uint64][]promql.Sample
-	exemplars map[uint64][]exemplar.Exemplar
-	withNHCB  bool
-}
 
 func newLoadCmd(gap time.Duration, withNHCB bool) *loadCmd {
 	return &loadCmd{
@@ -682,27 +706,6 @@ func appendSample(a storage.Appender, s promql.Sample, m labels.Labels) error {
 		}
 	}
 	return nil
-}
-
-// evalCmd is a command that evaluates an expression for the given time (range)
-// and expects a specific result.
-type evalCmd struct {
-	expr  string
-	start time.Time
-	end   time.Time
-	step  time.Duration
-	line  int
-
-	isRange                   bool // if false, instant query
-	fail, warn, ordered, info bool
-	expectedFailMessage       string
-	expectedFailRegexp        *regexp.Regexp
-
-	expectedCmds map[expectCmdType][]expectCmd
-
-	metrics      map[uint64]labels.Labels
-	expectScalar bool
-	expected     map[uint64]entry
 }
 
 func (ev *evalCmd) isOrdered() bool {
@@ -1191,9 +1194,6 @@ func HistogramTestExpression(h *histogram.FloatHistogram) string {
 	}
 	return ""
 }
-
-// clearCmd is a command that wipes the test's storage state.
-type clearCmd struct{}
 
 func (clearCmd) String() string {
 	return "clear"

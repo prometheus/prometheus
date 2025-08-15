@@ -31,6 +31,11 @@ import (
 	"github.com/prometheus/prometheus/util/fmtutil"
 )
 
+type setHeadersTransport struct {
+	http.RoundTripper
+	headers map[string]string
+}
+
 // PushMetrics to a prometheus remote write (for testing purpose only).
 func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, timeout time.Duration, labels map[string]string, files ...string) int {
 	addressURL, err := url.Parse(url.String())
@@ -129,11 +134,6 @@ func parseAndPushMetrics(client *remote.Client, data []byte, labels map[string]s
 	}
 
 	return true
-}
-
-type setHeadersTransport struct {
-	http.RoundTripper
-	headers map[string]string
 }
 
 func (s *setHeadersTransport) RoundTrip(req *http.Request) (*http.Response, error) {

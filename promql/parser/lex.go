@@ -22,6 +22,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
+type ItemType int
+
 // Item represents a token or text string returned from the scanner.
 type Item struct {
 	Typ ItemType     // The type of this Item.
@@ -97,8 +99,6 @@ func (i ItemType) IsSetOperator() bool {
 	}
 	return false
 }
-
-type ItemType int
 
 // This is a list of all keywords in PromQL.
 // When changing this list, make sure to also change
