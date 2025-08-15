@@ -999,6 +999,13 @@ type TSDBConfig struct {
 	// During unmarshall, this is converted into milliseconds and stored in OutOfOrderTimeWindow.
 	// This should not be used directly and must be converted into OutOfOrderTimeWindow.
 	OutOfOrderTimeWindowFlag model.Duration `yaml:"out_of_order_time_window,omitempty"`
+
+	// BlockReloadInterval sets how often the TSDB scans for new blocks in its storage directory.
+	// By default, Prometheus detects new blocks on a fixed one minute loop. Users who backfill
+	// or drop blocks manually must wait up to this interval before data becomes available for queries.
+	// This setting allows customizing the reload frequency to balance between timely block discovery
+	// and system resource usage.
+	BlockReloadInterval model.Duration `yaml:"block_reload_interval,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
