@@ -778,7 +778,7 @@ func sequenceFiles(dir string) ([]string, error) {
 // The varintBuffer parameter is used to avoid allocating a new buffer on every
 // call, optimizing performance by reusing the provided buffer for encoding the
 // variable-length integer. The function returns the total size as an integer.
-// A new buffer of MaxChunkLengthFieldSize can be created with: make([]byte, MaxChunkLengthFieldSize)
+// A new buffer of MaxChunkLengthFieldSize can be created with: make([]byte, MaxChunkLengthFieldSize).
 func ChunkSizeInBytes(chunk chunkenc.Chunk, varintBuffer []byte) int {
 	chunkDataLength := len(chunk.Bytes())
 	chunkDataLengthUvarintLength := binary.PutUvarint(varintBuffer, uint64(chunkDataLength))
