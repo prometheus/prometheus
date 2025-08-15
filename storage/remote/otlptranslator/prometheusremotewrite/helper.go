@@ -39,7 +39,6 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/prompb"
 )
 
 const (
@@ -119,39 +118,40 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		}
 	}
 
-	if settings.EnableTypeAndUnitLabels {
-		unitNamer := otlptranslator.UnitNamer{UTF8Allowed: settings.AllowUTF8}
-		if meta.Type != model.MetricTypeUnknown {
-			c.builder.Set("__type__", strings.ToLower(string(meta.Type)))
-		}
-		if meta.Unit != "" {
-			c.builder.Set("__unit__", unitNamer.Build(meta.Unit))
-		}
-	}
-
 	err := settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, settings.AllowUTF8)
 	if err != nil {
 		return labels.EmptyLabels(), err
 	}
 	if promoteScope {
-		var scopeErr error
+		var rangeErr error
 		scope.attributes.Range(func(k string, v pcommon.Value) bool {
 			name, err := labelNamer.Build("otel_scope_" + k)
 			if err != nil {
-				scopeErr = err
+				rangeErr = err
 				return false
 			}
 			c.builder.Set(name, v.AsString())
 			return true
 		})
-		if scopeErr != nil {
-			return labels.EmptyLabels(), scopeErr
+		if rangeErr != nil {
+			return labels.EmptyLabels(), rangeErr
 		}
 		// Scope Name, Version and Schema URL are added after attributes to ensure they are not overwritten by attributes.
 		c.builder.Set("otel_scope_name", scope.name)
 		c.builder.Set("otel_scope_version", scope.version)
 		c.builder.Set("otel_scope_schema_url", scope.schemaURL)
 	}
+
+	if settings.EnableTypeAndUnitLabels {
+		unitNamer := otlptranslator.UnitNamer{UTF8Allowed: settings.AllowUTF8}
+		if meta.Type != model.MetricTypeUnknown {
+			c.builder.Set(model.MetricTypeLabel, strings.ToLower(string(meta.Type)))
+		}
+		if meta.Unit != "" {
+			c.builder.Set(model.MetricUnitLabel, unitNamer.Build(meta.Unit))
+		}
+	}
+
 	// Map service.name + service.namespace to job.
 	if haveServiceName {
 		val := serviceName.AsString()
@@ -486,20 +486,6 @@ func (c *PrometheusConverter) addLabels(name string, baseLabels labels.Labels, e
 	}
 	c.builder.Set(model.MetricNameLabel, name)
 	return c.builder.Labels()
-}
-
-// addTypeAndUnitLabels appends type and unit labels to the given labels slice.
-func addTypeAndUnitLabels(labels []prompb.Label, metadata prompb.MetricMetadata, settings Settings) []prompb.Label {
-	unitNamer := otlptranslator.UnitNamer{UTF8Allowed: settings.AllowUTF8}
-
-	labels = slices.DeleteFunc(labels, func(l prompb.Label) bool {
-		return l.Name == "__type__" || l.Name == "__unit__"
-	})
-
-	labels = append(labels, prompb.Label{Name: "__type__", Value: strings.ToLower(metadata.Type.String())})
-	labels = append(labels, prompb.Label{Name: "__unit__", Value: unitNamer.Build(metadata.Unit)})
-
-	return labels
 }
 
 // addResourceTargetInfo converts the resource to the target info metric.
