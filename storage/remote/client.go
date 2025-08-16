@@ -125,7 +125,7 @@ type readClientMetrics struct {
 func newRemoteReadMetrics(
 	name string,
 	url string,
-	reg prometheus.Registerer,
+	_ prometheus.Registerer, // ignored: remote-read carve-out uses the global registry
 ) (
 	prometheus.Gauge,
 	*prometheus.CounterVec,
@@ -133,19 +133,18 @@ func newRemoteReadMetrics(
 ) {
 	key := name + "|" + url
 
+	// Reuse existing collectors (no unregister, no reset) if we've already created them.
+	if oldVal, ok := remoteReadMetricCache.Load(key); ok {
+		if old, ok := oldVal.(*readClientMetrics); ok {
+			return old.readQueries, old.readQueriesTotalVec, old.readQueryDurationVec
+		}
+	}
+
+	// Carve-out: keep using the global registerer for remote-read.
 	wrappedReg := prometheus.WrapRegistererWith(prometheus.Labels{
 		"remote_name": name,
 		"endpoint":    url,
-	}, reg)
-
-	// If already registered, unregister from the wrapped registry
-	if oldVal, ok := remoteReadMetricCache.Load(key); ok {
-		if old, ok := oldVal.(*readClientMetrics); ok && old.reg != nil {
-			old.reg.Unregister(old.readQueries)
-			old.reg.Unregister(old.readQueriesTotalVec)
-			old.reg.Unregister(old.readQueryDurationVec)
-		}
-	}
+	}, prometheus.DefaultRegisterer)
 
 	readQueries := prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: namespace,
@@ -172,13 +171,34 @@ func newRemoteReadMetrics(
 		NativeHistogramMinResetDuration: time.Hour,
 	}, []string{"response_type"})
 
-	wrappedReg.MustRegister(readQueries, readQueriesTotalVec, readQueryDurationVec)
+	// Register OR reuse if already present (avoid panics and counter resets).
+	if err := wrappedReg.Register(readQueries); err != nil {
+		if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
+			readQueries = are.ExistingCollector.(prometheus.Gauge)
+		} else {
+			panic(err)
+		}
+	}
+	if err := wrappedReg.Register(readQueriesTotalVec); err != nil {
+		if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
+			readQueriesTotalVec = are.ExistingCollector.(*prometheus.CounterVec)
+		} else {
+			panic(err)
+		}
+	}
+	if err := wrappedReg.Register(readQueryDurationVec); err != nil {
+		if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
+			readQueryDurationVec = are.ExistingCollector.(*prometheus.HistogramVec)
+		} else {
+			panic(err)
+		}
+	}
 
 	remoteReadMetricCache.Store(key, &readClientMetrics{
 		readQueries:          readQueries,
 		readQueriesTotalVec:  readQueriesTotalVec,
 		readQueryDurationVec: readQueryDurationVec,
-		reg:                  wrappedReg, // ✅ Store wrapped, not base
+		reg:                  wrappedReg, // keep for explicit cleanup when a remote is removed
 	})
 
 	return readQueries, readQueriesTotalVec, readQueryDurationVec
@@ -212,8 +232,10 @@ func NewReadClient(name string, conf *ClientConfig, reg prometheus.Registerer, o
 	acceptedResponseTypes := conf.AcceptedResponseTypes
 	if len(acceptedResponseTypes) == 0 {
 		acceptedResponseTypes = AcceptedResponseTypes
-
 	}
+
+	// Always create metrics; newRemoteReadMetrics uses the global registry for the carve-out.
+	readQueries, readQueriesTotal, readQueriesDuration = newRemoteReadMetrics(name, conf.URL.String(), reg)
 
 	return &Client{
 		remoteName:            name,

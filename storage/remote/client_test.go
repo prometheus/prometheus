@@ -370,6 +370,10 @@ func TestReadClient(t *testing.T) {
 				ChunkedReadLimit: config.DefaultChunkedReadLimit,
 			}
 			reg := prometheus.NewRegistry()
+			old := prometheus.DefaultRegisterer
+			prometheus.DefaultRegisterer = reg
+			t.Cleanup(func() { prometheus.DefaultRegisterer = old })
+			t.Cleanup(func() { unregisterRemoteReadMetrics("test|" + conf.URL.String()) })
 			c, err := NewReadClient("test", conf, reg)
 			require.NoError(t, err)
 
