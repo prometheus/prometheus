@@ -9673,7 +9673,9 @@ func TestStaleSeriesCompaction(t *testing.T) {
 	nonFirstFH.CounterResetHint = histogram.NotCounterReset
 
 	// Verify head block.
-	{
+	verifyHeadBlock := func() {
+		require.Equal(t, uint64(3), db.head.NumSeries())
+		require.Equal(t, uint64(0), db.head.NumStaleSeries())
 
 		expHeadQuery := make(map[string][]chunks.Sample)
 		for i := 0; i < numSeriesPerCategory; i++ {
@@ -9696,6 +9698,8 @@ func TestStaleSeriesCompaction(t *testing.T) {
 		seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchRegexp, "name", "series.*"))
 		require.Equal(t, expHeadQuery, seriesSet)
 	}
+
+	verifyHeadBlock()
 
 	// Verify blocks from stale series.
 	{
@@ -9768,5 +9772,15 @@ func TestStaleSeriesCompaction(t *testing.T) {
 				}
 			}
 		}
+	}
+
+	{
+		// Restart DB and verify that stale series were discarded from WAL replay.
+		require.NoError(t, db.Close())
+		var err error
+		db, err = Open(db.Dir(), db.logger, db.registerer, db.opts, nil)
+		require.NoError(t, err)
+
+		verifyHeadBlock()
 	}
 }

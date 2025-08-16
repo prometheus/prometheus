@@ -1198,18 +1198,33 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	return h.truncateSeriesAndChunkDiskMapper("truncateMemory")
 }
 
-func (h *Head) truncateStaleSeries(p index.Postings, maxt int64) {
+func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) error {
 	h.chunkSnapshotMtx.Lock()
 	defer h.chunkSnapshotMtx.Unlock()
 
-	if h.MinTime() >= maxt {
-		return
+	// Record these stale series refs in the WAL so that we can ignore them during replay.
+	if h.wal != nil {
+		stones := make([]tombstones.Stone, 0, len(seriesRefs))
+		for _, ref := range seriesRefs {
+			stones = append(stones, tombstones.Stone{
+				Ref:       ref,
+				Intervals: tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}},
+			})
+		}
+		var enc record.Encoder
+		if err := h.wal.Log(enc.Tombstones(stones, nil)); err != nil {
+			return err
+		}
 	}
 
-	// TODO: this will block all queries. See if we can do better.
+	if h.MinTime() >= maxt {
+		return nil
+	}
+
 	h.WaitForPendingReadersInTimeRange(h.MinTime(), maxt)
 
-	h.gcStaleSeries(p, maxt)
+	h.gcStaleSeries(seriesRefs, maxt)
+	return nil
 }
 
 // WaitForPendingReadersInTimeRange waits for queries overlapping with given range to finish querying.
@@ -1713,10 +1728,10 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 
 // gcStaleSeries removes all the stale series provided given that they are still stale
 // and the series maxt is <= the given max.
-func (h *Head) gcStaleSeries(p index.Postings, maxt int64) {
+func (h *Head) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) {
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, affected, chunksRemoved := h.series.gcStaleSeries(p, maxt)
+	deleted, affected, chunksRemoved := h.series.gcStaleSeries(seriesRefs, maxt)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -2122,8 +2137,64 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 	return deleted, affected, rmChunks, staleSeriesDeleted, actualMint, minOOOTime, minMmapFile
 }
 
+// deleteSeriesByID deletes the series with the given reference.
+// Only used for WAL replay.
+func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
+	var (
+		deleted            = map[storage.SeriesRef]struct{}{}
+		affected           = map[labels.Label]struct{}{}
+		staleSeriesDeleted = 0
+		chunksRemoved      = 0
+	)
+
+	for _, ref := range refs {
+		refShard := int(ref) & (h.series.size - 1)
+		h.series.locks[refShard].Lock()
+
+		// Copying getByID here to avoid locking and unlocking twice.
+		series := h.series.series[refShard][ref]
+		if series == nil {
+			h.series.locks[refShard].Unlock()
+			continue
+		}
+
+		if value.IsStaleNaN(series.lastValue) ||
+			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
+			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
+			staleSeriesDeleted++
+		}
+
+		hash := series.lset.Hash()
+		hashShard := int(hash) & (h.series.size - 1)
+
+		chunksRemoved += len(series.mmappedChunks)
+		if series.headChunks != nil {
+			chunksRemoved += series.headChunks.len()
+		}
+
+		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
+		h.series.hashes[hashShard].del(hash, series.ref)
+		delete(h.series.series[refShard], series.ref)
+
+		h.series.locks[refShard].Unlock()
+	}
+
+	h.metrics.seriesRemoved.Add(float64(len(deleted)))
+	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
+	h.metrics.chunks.Sub(float64(chunksRemoved))
+	h.numSeries.Sub(uint64(len(deleted)))
+	h.numStaleSeries.Sub(uint64(staleSeriesDeleted))
+
+	// Remove deleted series IDs from the postings lists.
+	h.postings.Delete(deleted, affected)
+
+	// Remove tombstones referring to the deleted series.
+	h.tombstones.DeleteTombstones(deleted)
+}
+
 // TODO: add comments.
-func (s *stripeSeries) gcStaleSeries(p index.Postings, maxt int64) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ int) {
+func (s *stripeSeries) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ int) {
 	var (
 		deleted  = map[storage.SeriesRef]struct{}{}
 		affected = map[labels.Label]struct{}{}
@@ -2131,8 +2202,7 @@ func (s *stripeSeries) gcStaleSeries(p index.Postings, maxt int64) (_ map[storag
 	)
 
 	staleSeriesMap := map[storage.SeriesRef]struct{}{}
-	for p.Next() {
-		ref := p.At()
+	for _, ref := range seriesRefs {
 		staleSeriesMap[ref] = struct{}{}
 	}
 

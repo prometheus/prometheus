@@ -44,7 +44,6 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minimum Go version is met.
-	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
@@ -1574,7 +1573,9 @@ func (db *DB) CompactStaleHead() error {
 		}
 	}
 
-	db.head.truncateStaleSeries(index.NewListPostings(staleSeriesRefs), maxt)
+	if err := db.head.truncateStaleSeries(staleSeriesRefs, maxt); err != nil {
+		return fmt.Errorf("head truncate: %w", err)
+	}
 	db.head.RebuildSymbolTable(db.logger)
 
 	db.logger.Info("Ending stale series compaction")
