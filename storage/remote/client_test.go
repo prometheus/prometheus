@@ -928,7 +928,7 @@ func TestReadMultipleWithChunks(t *testing.T) {
 				ChunkedReadLimit: config.DefaultChunkedReadLimit,
 			}
 
-			client, err := NewReadClient("test", cfg)
+			client, err := NewReadClient("test", cfg, prometheus.NewRegistry())
 			require.NoError(t, err)
 
 			// Test ReadMultiple

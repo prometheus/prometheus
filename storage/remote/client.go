@@ -234,7 +234,12 @@ func NewReadClient(name string, conf *ClientConfig, reg prometheus.Registerer, o
 		acceptedResponseTypes = AcceptedResponseTypes
 	}
 
-	// Always create metrics; newRemoteReadMetrics uses the global registry for the carve-out.
+	// Always create metrics; helper uses the default registry for the carve-out.
+	var (
+		readQueries         prometheus.Gauge
+		readQueriesTotal    *prometheus.CounterVec
+		readQueriesDuration prometheus.ObserverVec
+	)
 	readQueries, readQueriesTotal, readQueriesDuration = newRemoteReadMetrics(name, conf.URL.String(), reg)
 
 	return &Client{
@@ -244,9 +249,9 @@ func NewReadClient(name string, conf *ClientConfig, reg prometheus.Registerer, o
 		timeout:               time.Duration(conf.Timeout),
 		chunkedReadLimit:      conf.ChunkedReadLimit,
 		acceptedResponseTypes: acceptedResponseTypes,
-		readQueries:           remoteReadQueries.WithLabelValues(name, conf.URL.String()),
-		readQueriesTotal:      remoteReadQueriesTotal.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: conf.URL.String()}),
-		readQueriesDuration:   remoteReadQueryDuration.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: conf.URL.String()}),
+		readQueries:           readQueries,
+		readQueriesTotal:      readQueriesTotal,
+		readQueriesDuration:   readQueriesDuration,
 	}, nil
 }
 

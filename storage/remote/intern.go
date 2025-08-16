@@ -49,7 +49,15 @@ func newEntry(s string) *entry {
 
 func newPool(reg prometheus.Registerer) *pool {
 	if reg != nil {
-		reg.MustRegister(noReferenceReleases)
+		if err := reg.Register(noReferenceReleases); err != nil {
+			if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
+				// Reuse the existing collector so increments go to the same series.
+				noReferenceReleases = are.ExistingCollector.(prometheus.Counter)
+			} else {
+				// Preserve current behavior for unexpected errors.
+				panic(err)
+			}
+		}
 	}
 
 	return &pool{
