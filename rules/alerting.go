@@ -58,6 +58,8 @@ const (
 	// StateFiring is the state of an alert that has been active for longer than
 	// the configured threshold duration.
 	StateFiring
+	// StateUnknown is the state of an alert that has not yet been evaluated.
+	StateUnknown
 )
 
 func (s AlertState) String() string {
@@ -68,6 +70,8 @@ func (s AlertState) String() string {
 		return "pending"
 	case StateFiring:
 		return "firing"
+	case StateUnknown:
+		return "unknown"
 	}
 	panic(fmt.Errorf("unknown alert state: %d", s))
 }
@@ -530,8 +534,13 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 }
 
 // State returns the maximum state of alert instances for this rule.
-// StateFiring > StatePending > StateInactive.
+// StateFiring > StatePending > StateInactive > StateUnknown.
 func (r *AlertingRule) State() AlertState {
+	// If the rule has never been evaluated, return StateUnknown
+	if r.GetEvaluationTimestamp().IsZero() {
+		return StateUnknown
+	}
+
 	r.activeMtx.Lock()
 	defer r.activeMtx.Unlock()
 
