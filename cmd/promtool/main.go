@@ -846,7 +846,7 @@ func CheckQuery(query string) int {
 		return failureExitCode
 	}
 
-	fmt.Println("  SUCCESS: query is valid")
+	fmt.Println("  SUCCESS: query is syntactically valid")
 	return successExitCode
 }
 
