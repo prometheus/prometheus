@@ -161,7 +161,7 @@ func main() {
 		"Make lint errors exit with exit code 3.").Default("false").Bool()
 	checkRulesIgnoreUnknownFields := checkRulesCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the rule files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
-	checkQueryCmd := checkCmd.Command("query", "Check if the PromQL query is valid.\n\nexamples:\n\n$ promtool check query 'up'\n\n$ promtool check query 'rate(http_requests_total[5m])'")
+	checkQueryCmd := checkCmd.Command("query", "Check if the PromQL query is syntactically valid.\n\nExamples:\n\n    $ promtool check query 'up'\n\n    $ promtool check query 'rate(http_requests_total[5m])'")
 	checkQueryExpr := checkQueryCmd.Arg("query", "The PromQL query expression to validate.").Required().String()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
