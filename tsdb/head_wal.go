@@ -599,6 +599,8 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 	missingSeries := make(map[chunks.HeadSeriesRef]struct{})
 	var unknownSampleRefs, unknownHistogramRefs, mmapOverlappingChunks uint64
 
+	headChunksMap := map[chunks.HeadSeriesRef]*memChunk{}
+
 	minValidTime := h.minValidTime.Load()
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 	appendChunkOpts := chunkOpts{
@@ -627,6 +629,9 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if s.T <= ms.mmMaxTime {
 				continue
 			}
+
+			// TODO: change this to append to a temporary set of chunks and not clash with the head chunks.
+			// TODO: Even if you pass a temporary chunk, we need the temporary appender. Fix that.
 			if _, chunkCreated := ms.append(s.T, s.V, 0, appendChunkOpts); chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
@@ -659,8 +664,10 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			}
 			var chunkCreated bool
 			if s.h != nil {
+				// TODO: change this to append to a temporary set of chunks and not clash with the head chunks.
 				_, chunkCreated = ms.appendHistogram(s.t, s.h, 0, appendChunkOpts)
 			} else {
+				// TODO: change this to append to a temporary set of chunks and not clash with the head chunks.
 				_, chunkCreated = ms.appendFloatHistogram(s.t, s.fh, 0, appendChunkOpts)
 			}
 			if chunkCreated {

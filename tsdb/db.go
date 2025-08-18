@@ -285,6 +285,9 @@ type DB struct {
 	blockQuerierFunc BlockQuerierFunc
 
 	blockChunkQuerierFunc BlockChunkQuerierFunc
+
+	isReady    atomic.Bool
+	readyError atomic.Error
 }
 
 type dbMetrics struct {
@@ -1006,34 +1009,40 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		minValidTime = inOrderMaxTime
 	}
 
-	if initErr := db.head.Init(minValidTime); initErr != nil {
-		db.head.metrics.walCorruptionsTotal.Inc()
-		var e *errLoadWbl
-		if errors.As(initErr, &e) {
-			db.logger.Warn("Encountered WBL read error, attempting repair", "err", initErr)
-			if err := wbl.Repair(e.err); err != nil {
-				return nil, fmt.Errorf("repair corrupted WBL: %w", err)
+	go func() {
+		if initErr := db.head.Init(minValidTime); initErr != nil {
+			db.head.metrics.walCorruptionsTotal.Inc()
+			var e *errLoadWbl
+			if errors.As(initErr, &e) {
+				db.logger.Warn("Encountered WBL read error, attempting repair", "err", initErr)
+				if err := wbl.Repair(e.err); err != nil {
+					db.readyError.Store(fmt.Errorf("repair corrupted WBL: %w", err))
+					return
+				}
+				db.logger.Info("Successfully repaired WBL")
+			} else {
+				db.logger.Warn("Encountered WAL read error, attempting repair", "err", initErr)
+				if err := wal.Repair(initErr); err != nil {
+					db.readyError.Store(fmt.Errorf("repair corrupted WAL: %w", err))
+					return
+				}
+				db.logger.Info("Successfully repaired WAL")
 			}
-			db.logger.Info("Successfully repaired WBL")
-		} else {
-			db.logger.Warn("Encountered WAL read error, attempting repair", "err", initErr)
-			if err := wal.Repair(initErr); err != nil {
-				return nil, fmt.Errorf("repair corrupted WAL: %w", err)
-			}
-			db.logger.Info("Successfully repaired WAL")
 		}
-	}
 
-	if db.head.MinOOOTime() != int64(math.MaxInt64) {
-		// Some OOO data was replayed from the disk that needs compaction and cleanup.
-		db.oooWasEnabled.Store(true)
-	}
+		if db.head.MinOOOTime() != int64(math.MaxInt64) {
+			// Some OOO data was replayed from the disk that needs compaction and cleanup.
+			db.oooWasEnabled.Store(true)
+		}
 
-	if opts.EnableDelayedCompaction {
-		opts.CompactionDelay = db.generateCompactionDelay()
-	}
+		if opts.EnableDelayedCompaction {
+			opts.CompactionDelay = db.generateCompactionDelay()
+		}
 
-	go db.run(ctx)
+		db.run(ctx)
+
+		db.isReady.Store(true)
+	}()
 
 	return db, nil
 }
@@ -1056,6 +1065,10 @@ func removeBestEffortTmpDirs(l *slog.Logger, dir string) error {
 		}
 	}
 	return nil
+}
+
+func (db *DB) Ready() (bool, error) {
+	return db.isReady.Load(), db.readyError.Load()
 }
 
 // StartTime implements the Storage interface.
@@ -2050,6 +2063,10 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 
 // Querier returns a new querier over the data partition for the given time range.
 func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
+	if !db.isReady.Load() {
+		return nil, errors.New("db is not ready")
+	}
+
 	var blocks []BlockReader
 
 	db.mtx.RLock()

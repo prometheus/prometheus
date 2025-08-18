@@ -1222,7 +1222,7 @@ func (a *headAppender) commitSamples(acc *appenderCommitContext) {
 				acc.floatsAppended--
 			}
 		default:
-			ok, chunkCreated = series.append(s.T, s.V, a.appendID, acc.appendChunkOpts)
+			ok, chunkCreated = series.append(s.T, s.V, a.appendID, acc.appendChunkOpts, nil)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1560,8 +1560,8 @@ type chunkOpts struct {
 // the appendID for isolation. (The appendID can be zero, which results in no
 // isolation for this append.)
 // Series lock must be held when calling.
-func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncXOR, o)
+func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts, headChunks *memChunk) (sampleInOrder, chunkCreated bool) {
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncXOR, o, headChunks)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1578,6 +1578,14 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sa
 	}
 
 	return true, chunkCreated
+}
+
+func (s *memSeries) prependHeadChunks(headChunks *memChunk) {
+	if s.headChunks == nil {
+		s.headChunks = headChunks
+	} else {
+		s.headChunks.oldest().prev = headChunks
+	}
 }
 
 // appendHistogram adds the histogram.
@@ -1698,13 +1706,16 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 // number of samples they contain with a soft cap in bytes.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 // This should be called only when appending data.
-func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts) (c *memChunk, sampleInOrder, chunkCreated bool) {
+func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts, headChunks *memChunk) (c *memChunk, sampleInOrder, chunkCreated bool) {
 	// We target chunkenc.MaxBytesPerXORChunk as a hard for the size of an XOR chunk. We must determine whether to cut
 	// a new head chunk without knowing the size of the next sample, however, so we assume the next sample will be a
 	// maximally-sized sample (19 bytes).
 	const maxBytesPerXORChunk = chunkenc.MaxBytesPerXORChunk - 19
 
-	c = s.headChunks
+	c = headChunks
+	if c == nil {
+		c = s.headChunks
+	}
 
 	if c == nil {
 		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
