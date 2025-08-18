@@ -164,7 +164,8 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overri
 		false,
 		false,
 		5*time.Minute,
-		overrideErrorCode,
+		false,
+    overrideErrorCode,
 	)
 
 	promRouter := route.New().WithPrefix("/api/v1")
@@ -179,7 +180,7 @@ type errorTestQueryable struct {
 	err error
 }
 
-func (t errorTestQueryable) ExemplarQuerier(_ context.Context) (storage.ExemplarQuerier, error) {
+func (t errorTestQueryable) ExemplarQuerier(context.Context) (storage.ExemplarQuerier, error) {
 	return nil, t.err
 }
 
@@ -207,11 +208,11 @@ func (t errorTestQuerier) LabelNames(context.Context, *storage.LabelHints, ...*l
 	return nil, nil, t.err
 }
 
-func (t errorTestQuerier) Close() error {
+func (errorTestQuerier) Close() error {
 	return nil
 }
 
-func (t errorTestQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+func (t errorTestQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 	if t.s != nil {
 		return t.s
 	}
@@ -222,11 +223,11 @@ type errorTestSeriesSet struct {
 	err error
 }
 
-func (t errorTestSeriesSet) Next() bool {
+func (errorTestSeriesSet) Next() bool {
 	return false
 }
 
-func (t errorTestSeriesSet) At() storage.Series {
+func (errorTestSeriesSet) At() storage.Series {
 	return nil
 }
 
@@ -234,7 +235,7 @@ func (t errorTestSeriesSet) Err() error {
 	return t.err
 }
 
-func (t errorTestSeriesSet) Warnings() annotations.Annotations {
+func (errorTestSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 

@@ -62,6 +62,9 @@ func NewMetricStreamingDecoder(data []byte) *MetricStreamingDecoder {
 
 var errInvalidVarint = errors.New("clientpb: invalid varint encountered")
 
+// NextMetricFamily decodes the next metric family from the input without metrics.
+// Use NextMetric() to decode metrics. The MetricFamily fields Name, Help and Unit
+// are only valid until NextMetricFamily is called again.
 func (m *MetricStreamingDecoder) NextMetricFamily() error {
 	b := m.in[m.inPos:]
 	if len(b) == 0 {
@@ -143,16 +146,17 @@ func (m *MetricStreamingDecoder) resetMetric() {
 	}
 }
 
-func (m *MetricStreamingDecoder) GetMetric() {
+func (*MetricStreamingDecoder) GetMetric() {
 	panic("don't use GetMetric, use Metric directly")
 }
 
-func (m *MetricStreamingDecoder) GetLabel() {
+func (*MetricStreamingDecoder) GetLabel() {
 	panic("don't use GetLabel, use Label instead")
 }
 
 type scratchBuilder interface {
 	Add(name, value string)
+	UnsafeAddBytes(name, value []byte)
 }
 
 // Label parses labels into labels scratch builder. Metric name is missing
@@ -170,9 +174,10 @@ func (m *MetricStreamingDecoder) Label(b scratchBuilder) error {
 }
 
 // parseLabel is essentially LabelPair.Unmarshal but directly adding into scratch builder
-// and reusing strings.
+// via UnsafeAddBytes method to reuse strings.
 func parseLabel(dAtA []byte, b scratchBuilder) error {
-	var name, value string
+	var name, value []byte
+	var unsafeName string
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -231,9 +236,10 @@ func parseLabel(dAtA []byte, b scratchBuilder) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			name = yoloString(dAtA[iNdEx:postIndex])
-			if !model.LabelName(name).IsValid() {
-				return fmt.Errorf("invalid label name: %s", name)
+			name = dAtA[iNdEx:postIndex]
+			unsafeName = yoloString(name)
+			if !model.UTF8Validation.IsValidLabelName(unsafeName) {
+				return fmt.Errorf("invalid label name: %s", unsafeName)
 			}
 			iNdEx = postIndex
 		case 2:
@@ -266,8 +272,8 @@ func parseLabel(dAtA []byte, b scratchBuilder) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			value = yoloString(dAtA[iNdEx:postIndex])
-			if !utf8.ValidString(value) {
+			value = dAtA[iNdEx:postIndex]
+			if !utf8.ValidString(yoloString(value)) {
 				return fmt.Errorf("invalid label value: %s", value)
 			}
 			iNdEx = postIndex
@@ -289,7 +295,7 @@ func parseLabel(dAtA []byte, b scratchBuilder) error {
 	if iNdEx > l {
 		return io.ErrUnexpectedEOF
 	}
-	b.Add(name, value)
+	b.UnsafeAddBytes(name, value)
 	return nil
 }
 

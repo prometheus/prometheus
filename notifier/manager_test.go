@@ -45,7 +45,7 @@ import (
 const maxBatchSize = 256
 
 func TestHandlerNextBatch(t *testing.T) {
-	h := NewManager(&Options{}, nil)
+	h := NewManager(&Options{}, model.UTF8Validation, nil)
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
 		h.queue = append(h.queue, &Alert{
@@ -125,7 +125,7 @@ func TestHandlerSendAll(t *testing.T) {
 	defer server2.Close()
 	defer server3.Close()
 
-	h := NewManager(&Options{}, nil)
+	h := NewManager(&Options{}, model.UTF8Validation, nil)
 
 	authClient, _ := config_util.NewClientFromConfig(
 		config_util.HTTPClientConfig{
@@ -235,7 +235,7 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 	defer server2.Close()
 	defer server3.Close()
 
-	h := NewManager(&Options{}, nil)
+	h := NewManager(&Options{}, model.UTF8Validation, nil)
 	h.alertmanagers = make(map[string]*alertmanagerSet)
 
 	am1Cfg := config.DefaultAlertmanagerConfig
@@ -245,9 +245,10 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 	am2Cfg.Timeout = model.Duration(time.Second)
 	am2Cfg.AlertRelabelConfigs = []*relabel.Config{
 		{
-			SourceLabels: model.LabelNames{"alertnamedrop"},
-			Action:       "drop",
-			Regex:        relabel.MustNewRegexp(".+"),
+			SourceLabels:         model.LabelNames{"alertnamedrop"},
+			Action:               "drop",
+			Regex:                relabel.MustNewRegexp(".+"),
+			NameValidationScheme: model.UTF8Validation,
 		},
 	}
 
@@ -255,9 +256,10 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 	am3Cfg.Timeout = model.Duration(time.Second)
 	am3Cfg.AlertRelabelConfigs = []*relabel.Config{
 		{
-			SourceLabels: model.LabelNames{"alertname"},
-			Action:       "drop",
-			Regex:        relabel.MustNewRegexp(".+"),
+			SourceLabels:         model.LabelNames{"alertname"},
+			Action:               "drop",
+			Regex:                relabel.MustNewRegexp(".+"),
+			NameValidationScheme: model.UTF8Validation,
 		},
 	}
 
@@ -374,7 +376,7 @@ func TestCustomDo(t *testing.T) {
 				Body: io.NopCloser(bytes.NewBuffer(nil)),
 			}, nil
 		},
-	}, nil)
+	}, model.UTF8Validation, nil)
 
 	h.sendOne(context.Background(), nil, testURL, []byte(testBody))
 
@@ -388,14 +390,15 @@ func TestExternalLabels(t *testing.T) {
 		ExternalLabels: labels.FromStrings("a", "b"),
 		RelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{"alertname"},
-				TargetLabel:  "a",
-				Action:       "replace",
-				Regex:        relabel.MustNewRegexp("externalrelabelthis"),
-				Replacement:  "c",
+				SourceLabels:         model.LabelNames{"alertname"},
+				TargetLabel:          "a",
+				Action:               "replace",
+				Regex:                relabel.MustNewRegexp("externalrelabelthis"),
+				Replacement:          "c",
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
-	}, nil)
+	}, model.UTF8Validation, nil)
 
 	// This alert should get the external label attached.
 	h.Send(&Alert{
@@ -422,19 +425,21 @@ func TestHandlerRelabel(t *testing.T) {
 		MaxBatchSize:  maxBatchSize,
 		RelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{"alertname"},
-				Action:       "drop",
-				Regex:        relabel.MustNewRegexp("drop"),
+				SourceLabels:         model.LabelNames{"alertname"},
+				Action:               "drop",
+				Regex:                relabel.MustNewRegexp("drop"),
+				NameValidationScheme: model.UTF8Validation,
 			},
 			{
-				SourceLabels: model.LabelNames{"alertname"},
-				TargetLabel:  "alertname",
-				Action:       "replace",
-				Regex:        relabel.MustNewRegexp("rename"),
-				Replacement:  "renamed",
+				SourceLabels:         model.LabelNames{"alertname"},
+				TargetLabel:          "alertname",
+				Action:               "replace",
+				Regex:                relabel.MustNewRegexp("rename"),
+				Replacement:          "renamed",
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
-	}, nil)
+	}, model.UTF8Validation, nil)
 
 	// This alert should be dropped due to the configuration
 	h.Send(&Alert{
@@ -500,6 +505,7 @@ func TestHandlerQueuing(t *testing.T) {
 			QueueCapacity: 3 * maxBatchSize,
 			MaxBatchSize:  maxBatchSize,
 		},
+		model.UTF8Validation,
 		nil,
 	)
 
@@ -606,7 +612,7 @@ func TestReload(t *testing.T) {
 		},
 	}
 
-	n := NewManager(&Options{}, nil)
+	n := NewManager(&Options{}, model.UTF8Validation, nil)
 
 	cfg := &config.Config{}
 	s := `
@@ -653,7 +659,7 @@ func TestDroppedAlertmanagers(t *testing.T) {
 		},
 	}
 
-	n := NewManager(&Options{}, nil)
+	n := NewManager(&Options{}, model.UTF8Validation, nil)
 
 	cfg := &config.Config{}
 	s := `
@@ -725,7 +731,7 @@ func TestHangingNotifier(t *testing.T) {
 
 	// Set up a faulty Alertmanager.
 	var faultyCalled atomic.Bool
-	faultyServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+	faultyServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		faultyCalled.Store(true)
 		select {
 		case <-done:
@@ -737,7 +743,7 @@ func TestHangingNotifier(t *testing.T) {
 
 	// Set up a functional Alertmanager.
 	var functionalCalled atomic.Bool
-	functionalServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+	functionalServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		functionalCalled.Store(true)
 	}))
 	functionalURL, err := url.Parse(functionalServer.URL)
@@ -766,6 +772,7 @@ func TestHangingNotifier(t *testing.T) {
 		&Options{
 			QueueCapacity: alertsCount,
 		},
+		model.UTF8Validation,
 		nil,
 	)
 	notifier.alertmanagers = make(map[string]*alertmanagerSet)
@@ -883,6 +890,7 @@ func TestStop_DrainingDisabled(t *testing.T) {
 			QueueCapacity:   10,
 			DrainOnShutdown: false,
 		},
+		model.UTF8Validation,
 		nil,
 	)
 
@@ -969,6 +977,7 @@ func TestStop_DrainingEnabled(t *testing.T) {
 			QueueCapacity:   10,
 			DrainOnShutdown: true,
 		},
+		model.UTF8Validation,
 		nil,
 	)
 
@@ -1031,7 +1040,7 @@ func TestApplyConfig(t *testing.T) {
 	}
 	alertmanagerURL := fmt.Sprintf("http://%s/api/v2/alerts", targetURL)
 
-	n := NewManager(&Options{}, nil)
+	n := NewManager(&Options{}, model.UTF8Validation, nil)
 	cfg := &config.Config{}
 	s := `
 alerting:

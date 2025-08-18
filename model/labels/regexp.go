@@ -695,7 +695,7 @@ func (m *literalSuffixStringMatcher) Matches(s string) bool {
 // emptyStringMatcher matches an empty string.
 type emptyStringMatcher struct{}
 
-func (m emptyStringMatcher) Matches(s string) bool {
+func (emptyStringMatcher) Matches(s string) bool {
 	return len(s) == 0
 }
 
@@ -756,7 +756,7 @@ func (m *equalMultiStringSliceMatcher) add(s string) {
 	m.values = append(m.values, s)
 }
 
-func (m *equalMultiStringSliceMatcher) addPrefix(_ string, _ bool, _ StringMatcher) {
+func (*equalMultiStringSliceMatcher) addPrefix(string, bool, StringMatcher) {
 	panic("not implemented")
 }
 
@@ -897,7 +897,7 @@ func toNormalisedLowerSlow(s string, i int, a []byte) string {
 // (including an empty one) as far as it doesn't contain any newline character.
 type anyStringWithoutNewlineMatcher struct{}
 
-func (m anyStringWithoutNewlineMatcher) Matches(s string) bool {
+func (anyStringWithoutNewlineMatcher) Matches(s string) bool {
 	// We need to make sure it doesn't contain a newline. Since the newline is
 	// an ASCII character, we can use strings.IndexByte().
 	return strings.IndexByte(s, '\n') == -1
@@ -947,7 +947,7 @@ func (m *zeroOrOneCharacterStringMatcher) Matches(s string) bool {
 // trueMatcher is a stringMatcher which matches any string (always returns true).
 type trueMatcher struct{}
 
-func (m trueMatcher) Matches(_ string) bool {
+func (trueMatcher) Matches(string) bool {
 	return true
 }
 

@@ -145,7 +145,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 }
 
 // StartTime implements the Storage interface.
-func (s *Storage) StartTime() (int64, error) {
+func (*Storage) StartTime() (int64, error) {
 	return int64(model.Latest), nil
 }
 

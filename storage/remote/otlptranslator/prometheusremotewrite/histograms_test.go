@@ -631,7 +631,6 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 		schemaURL:  "https://schema.com",
 		attributes: scopeAttrs,
 	}
-
 	tests := []struct {
 		name         string
 		metric       func() pmetric.Metric
@@ -701,7 +700,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "histogram data points with same labels and with scope promotion",
+			name: "histogram data points with same labels",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_hist")
@@ -848,15 +847,16 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			namer := otlptranslator.MetricNamer{
 				WithMetricSuffixes: true,
 			}
+			name, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
+			require.NoError(t, err)
 			annots, err := converter.addExponentialHistogramDataPoints(
 				context.Background(),
 				metric.ExponentialHistogram().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					ExportCreatedMetric:  true,
 					PromoteScopeMetadata: tt.promoteScope,
 				},
-				namer.Build(TranslatorMetricFromOtelMetric(metric)),
+				prompb.MetricMetadata{MetricFamilyName: name},
 				pmetric.AggregationTemporalityCumulative,
 				tt.scope,
 			)
@@ -1088,7 +1088,6 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 		schemaURL:  "https://schema.com",
 		attributes: scopeAttrs,
 	}
-
 	tests := []struct {
 		name         string
 		metric       func() pmetric.Metric
@@ -1158,7 +1157,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "histogram data points with same labels and with scope promotion",
+			name: "histogram data points with same labels",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_hist_to_nhcb")
@@ -1305,16 +1304,17 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			namer := otlptranslator.MetricNamer{
 				WithMetricSuffixes: true,
 			}
+			name, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
+			require.NoError(t, err)
 			annots, err := converter.addCustomBucketsHistogramDataPoints(
 				context.Background(),
 				metric.Histogram().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					ExportCreatedMetric:     true,
 					ConvertHistogramsToNHCB: true,
 					PromoteScopeMetadata:    tt.promoteScope,
 				},
-				namer.Build(TranslatorMetricFromOtelMetric(metric)),
+				prompb.MetricMetadata{MetricFamilyName: name},
 				pmetric.AggregationTemporalityCumulative,
 				tt.scope,
 			)

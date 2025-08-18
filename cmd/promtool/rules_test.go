@@ -35,7 +35,7 @@ type mockQueryRangeAPI struct {
 	samples model.Matrix
 }
 
-func (mockAPI mockQueryRangeAPI) QueryRange(_ context.Context, _ string, _ v1.Range, _ ...v1.Option) (model.Value, v1.Warnings, error) {
+func (mockAPI mockQueryRangeAPI) QueryRange(context.Context, string, v1.Range, ...v1.Option) (model.Value, v1.Warnings, error) {
 	return mockAPI.samples, v1.Warnings{}, nil
 }
 
@@ -165,11 +165,12 @@ func TestBackfillRuleIntegration(t *testing.T) {
 func newTestRuleImporter(_ context.Context, start time.Time, tmpDir string, testSamples model.Matrix, maxBlockDuration time.Duration) (*ruleImporter, error) {
 	logger := promslog.NewNopLogger()
 	cfg := ruleImporterConfig{
-		outputDir:        tmpDir,
-		start:            start.Add(-10 * time.Hour),
-		end:              start.Add(-7 * time.Hour),
-		evalInterval:     60 * time.Second,
-		maxBlockDuration: maxBlockDuration,
+		outputDir:            tmpDir,
+		start:                start.Add(-10 * time.Hour),
+		end:                  start.Add(-7 * time.Hour),
+		evalInterval:         60 * time.Second,
+		maxBlockDuration:     maxBlockDuration,
+		nameValidationScheme: model.UTF8Validation,
 	}
 
 	return newRuleImporter(logger, cfg, mockQueryRangeAPI{

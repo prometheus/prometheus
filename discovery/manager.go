@@ -365,8 +365,10 @@ func (m *Manager) updater(ctx context.Context, p *Provider, updates chan []*targ
 
 func (m *Manager) sender() {
 	ticker := time.NewTicker(m.updatert)
-	defer ticker.Stop()
-
+	defer func() {
+		ticker.Stop()
+		close(m.syncCh)
+	}()
 	for {
 		select {
 		case <-m.ctx.Done():
@@ -507,20 +509,4 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 		add(StaticConfig{{}})
 	}
 	return failed
-}
-
-// StaticProvider holds a list of target groups that never change.
-type StaticProvider struct {
-	TargetGroups []*targetgroup.Group
-}
-
-// Run implements the Worker interface.
-func (sd *StaticProvider) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	// We still have to consider that the consumer exits right away in which case
-	// the context will be canceled.
-	select {
-	case ch <- sd.TargetGroups:
-	case <-ctx.Done():
-	}
-	close(ch)
 }

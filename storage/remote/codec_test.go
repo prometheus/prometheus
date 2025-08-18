@@ -15,6 +15,7 @@ package remote
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -718,9 +719,9 @@ func (c *mockChunkSeriesSet) At() storage.ChunkSeries {
 	}
 }
 
-func (c *mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
+func (*mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
-func (c *mockChunkSeriesSet) Err() error {
+func (*mockChunkSeriesSet) Err() error {
 	return nil
 }
 
@@ -747,7 +748,7 @@ func (c *mockChunkIterator) Next() bool {
 	return c.index < len(c.chunks)
 }
 
-func (c *mockChunkIterator) Err() error {
+func (*mockChunkIterator) Err() error {
 	return nil
 }
 
@@ -892,7 +893,8 @@ func TestChunkedSeriesSet(t *testing.T) {
 		flusher := &mockFlusher{}
 
 		w := NewChunkedWriter(buf, flusher)
-		r := NewChunkedReader(buf, config.DefaultChunkedReadLimit, nil)
+		wrappedReader := newOneShotCloser(buf)
+		r := NewChunkedReader(wrappedReader, config.DefaultChunkedReadLimit, nil)
 
 		chks := buildTestChunks(t)
 		l := []prompb.Label{
@@ -913,7 +915,7 @@ func TestChunkedSeriesSet(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		ss := NewChunkedSeriesSet(r, io.NopCloser(buf), 0, 14000, func(error) {})
+		ss := NewChunkedSeriesSet(r, wrappedReader, 0, 14000, func(error) {})
 		require.NoError(t, ss.Err())
 		require.Nil(t, ss.Warnings())
 
@@ -938,6 +940,9 @@ func TestChunkedSeriesSet(t *testing.T) {
 		}
 		require.Equal(t, numTestChunks, numResponses)
 		require.NoError(t, ss.Err())
+
+		require.False(t, ss.Next(), "Next() should still return false after it previously returned false")
+		require.NoError(t, ss.Err(), "Err() should not return an error if Next() is called again after it previously returned false")
 	})
 
 	t.Run("chunked reader error", func(t *testing.T) {
@@ -981,7 +986,33 @@ func TestChunkedSeriesSet(t *testing.T) {
 // mockFlusher implements http.Flusher.
 type mockFlusher struct{}
 
-func (f *mockFlusher) Flush() {}
+func (*mockFlusher) Flush() {}
+
+type oneShotCloser struct {
+	r      io.Reader
+	closed bool
+}
+
+func newOneShotCloser(r io.Reader) io.ReadCloser {
+	return &oneShotCloser{r, false}
+}
+
+func (c *oneShotCloser) Read(p []byte) (n int, err error) {
+	if c.closed {
+		return 0, errors.New("already closed")
+	}
+
+	return c.r.Read(p)
+}
+
+func (c *oneShotCloser) Close() error {
+	if c.closed {
+		return errors.New("already closed")
+	}
+
+	c.closed = true
+	return nil
+}
 
 const (
 	numTestChunks          = 3

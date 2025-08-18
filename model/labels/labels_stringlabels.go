@@ -449,11 +449,11 @@ func (ls Labels) DropReserved(shouldDropFn func(name string) bool) Labels {
 }
 
 // InternStrings is a no-op because it would only save when the whole set of labels is identical.
-func (ls *Labels) InternStrings(_ func(string) string) {
+func (*Labels) InternStrings(func(string) string) {
 }
 
 // ReleaseStrings is a no-op for the same reason as InternStrings.
-func (ls Labels) ReleaseStrings(_ func(string)) {
+func (Labels) ReleaseStrings(func(string)) {
 }
 
 // Builder allows modifying Labels.
@@ -664,10 +664,10 @@ type SymbolTable struct{}
 
 func NewSymbolTable() *SymbolTable { return nil }
 
-func (t *SymbolTable) Len() int { return 0 }
+func (*SymbolTable) Len() int { return 0 }
 
 // NewBuilderWithSymbolTable creates a Builder, for api parity with dedupelabels.
-func NewBuilderWithSymbolTable(_ *SymbolTable) *Builder {
+func NewBuilderWithSymbolTable(*SymbolTable) *Builder {
 	return NewBuilder(EmptyLabels())
 }
 
@@ -676,7 +676,7 @@ func NewScratchBuilderWithSymbolTable(_ *SymbolTable, n int) ScratchBuilder {
 	return NewScratchBuilder(n)
 }
 
-func (b *ScratchBuilder) SetSymbolTable(_ *SymbolTable) {
+func (*ScratchBuilder) SetSymbolTable(*SymbolTable) {
 	// no-op
 }
 

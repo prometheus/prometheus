@@ -148,7 +148,7 @@ func (a *initAppender) Rollback() error {
 }
 
 // Appender returns a new Appender on the database.
-func (h *Head) Appender(_ context.Context) storage.Appender {
+func (h *Head) Appender(context.Context) storage.Appender {
 	h.metrics.activeAppenders.Inc()
 
 	// The head cache might not have a starting point yet. The init appender
@@ -799,13 +799,17 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 			if errors.Is(err, storage.ErrOutOfOrderSample) {
 				return 0, storage.ErrOutOfOrderCT
 			}
+
+			return 0, err
 		}
+
 		// OOO is not allowed because after the first scrape, CT will be the same for most (if not all) future samples.
 		// This is to prevent the injected zero from being marked as OOO forever.
 		if isOOO {
 			s.Unlock()
 			return 0, storage.ErrOutOfOrderCT
 		}
+
 		s.pendingCommit = true
 		s.Unlock()
 		a.histograms = append(a.histograms, record.RefHistogramSample{
@@ -832,13 +836,17 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 			if errors.Is(err, storage.ErrOutOfOrderSample) {
 				return 0, storage.ErrOutOfOrderCT
 			}
+
+			return 0, err
 		}
+
 		// OOO is not allowed because after the first scrape, CT will be the same for most (if not all) future samples.
 		// This is to prevent the injected zero from being marked as OOO forever.
 		if isOOO {
 			s.Unlock()
 			return 0, storage.ErrOutOfOrderCT
 		}
+
 		s.pendingCommit = true
 		s.Unlock()
 		a.floatHistograms = append(a.floatHistograms, record.RefFloatHistogramSample{
@@ -852,6 +860,7 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 	if ct > a.maxt {
 		a.maxt = ct
 	}
+
 	return storage.SeriesRef(s.ref), nil
 }
 

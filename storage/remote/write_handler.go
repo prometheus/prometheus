@@ -92,7 +92,7 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable 
 	return h
 }
 
-func (h *writeHandler) parseProtoMsg(contentType string) (config.RemoteWriteProtoMsg, error) {
+func (*writeHandler) parseProtoMsg(contentType string) (config.RemoteWriteProtoMsg, error) {
 	contentType = strings.TrimSpace(contentType)
 
 	parts := strings.Split(contentType, ";")
@@ -142,6 +142,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}())
 		h.logger.Error("Error decoding remote write request", "err", err)
 		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
+		return
 	}
 
 	enc := r.Header.Get("Content-Encoding")
@@ -153,6 +154,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		err := fmt.Errorf("%v encoding (compression) is not accepted by this server; only %v is acceptable", enc, compression.Snappy)
 		h.logger.Error("Error decoding remote write request", "err", err)
 		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
+		return
 	}
 
 	// Read the request body.
@@ -513,7 +515,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 // handleHistogramZeroSample appends CT as a zero-value sample with CT value as the sample timestamp.
 // It doesn't return errors in case of out of order CT.
-func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist writev2.Histogram, ct int64) (storage.SeriesRef, error) {
+func (*writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist writev2.Histogram, ct int64) (storage.SeriesRef, error) {
 	var err error
 	if hist.IsFloatHistogram() {
 		ref, err = app.AppendHistogramCTZeroSample(ref, l, hist.Timestamp, ct, nil, hist.ToFloatHistogram())
@@ -533,6 +535,8 @@ type OTLPOptions struct {
 	// LookbackDelta is the query lookback delta.
 	// Used to calculate the target_info sample timestamp interval.
 	LookbackDelta time.Duration
+	// Add type and unit labels to the metrics.
+	EnableTypeAndUnitLabels bool
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
@@ -548,9 +552,10 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 			logger:     logger,
 			appendable: appendable,
 		},
-		config:                configFunc,
-		allowDeltaTemporality: opts.NativeDelta,
-		lookbackDelta:         opts.LookbackDelta,
+		config:                  configFunc,
+		allowDeltaTemporality:   opts.NativeDelta,
+		lookbackDelta:           opts.LookbackDelta,
+		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
 	}
 
 	wh := &otlpWriteHandler{logger: logger, defaultConsumer: ex}
@@ -585,24 +590,27 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 
 type rwExporter struct {
 	*writeHandler
-	config                func() config.Config
-	allowDeltaTemporality bool
-	lookbackDelta         time.Duration
+	config                  func() config.Config
+	allowDeltaTemporality   bool
+	lookbackDelta           time.Duration
+	enableTypeAndUnitLabels bool
 }
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
 	otlpCfg := rw.config().OTLPConfig
 
 	converter := otlptranslator.NewPrometheusConverter()
+
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
-		AddMetricSuffixes:                 otlpCfg.TranslationStrategy != config.NoTranslation,
-		AllowUTF8:                         otlpCfg.TranslationStrategy != config.UnderscoreEscapingWithSuffixes,
+		AddMetricSuffixes:                 otlpCfg.TranslationStrategy.ShouldAddSuffixes(),
+		AllowUTF8:                         !otlpCfg.TranslationStrategy.ShouldEscape(),
 		PromoteResourceAttributes:         otlptranslator.NewPromoteResourceAttributes(otlpCfg),
 		KeepIdentifyingResourceAttributes: otlpCfg.KeepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:           otlpCfg.ConvertHistogramsToNHCB,
-		AllowDeltaTemporality:             rw.allowDeltaTemporality,
 		PromoteScopeMetadata:              otlpCfg.PromoteScopeMetadata,
+		AllowDeltaTemporality:             rw.allowDeltaTemporality,
 		LookbackDelta:                     rw.lookbackDelta,
+		EnableTypeAndUnitLabels:           rw.enableTypeAndUnitLabels,
 	})
 	if err != nil {
 		rw.logger.Warn("Error translating OTLP metrics to Prometheus write request", "err", err)
@@ -619,7 +627,7 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 	return err
 }
 
-func (rw *rwExporter) Capabilities() consumer.Capabilities {
+func (*rwExporter) Capabilities() consumer.Capabilities {
 	return consumer.Capabilities{MutatesData: false}
 }
 
