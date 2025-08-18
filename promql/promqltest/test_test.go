@@ -948,6 +948,61 @@ eval instant at 0m http_requests
 `,
 			expectedError: `error in eval http_requests (line 12): invalid expect lines, multiple expect fail lines are not allowed`,
 		},
+		"instant query with string literal": {
+			input: `
+				eval instant at 50m ("Foo")
+					expect string Foo
+			`,
+		},
+		"instant query with string literal with leading space": {
+			input: `
+				eval instant at 50m (" Foo")
+					expect string  Foo
+			`,
+		},
+		"instant query with string literal with empty string": {
+			input: `
+				eval instant at 50m ("")
+					expect string
+			`,
+		},
+		"instant query with empty string literal": {
+			input: `
+				eval instant at 50m ("Foo")
+					expect string
+			`,
+			expectedError: `error in eval ("Foo") (line 2): expected empty string but got Foo`,
+		},
+		"instant query with error string literal": {
+			input: `
+				eval instant at 50m ("Foo")
+					expect string Bar
+			`,
+			expectedError: `error in eval ("Foo") (line 2): expected string Bar but got Foo`,
+		},
+		"instant query with range result": {
+			input: `
+				load 10s
+  					some_metric{env="a"} 1+1x5
+
+				eval instant at 1m some_metric[1m]
+					expect range vector from 10s to 1m step 10s
+  					some_metric{env="a"} 2 3 4 5 6
+  					some_metric{env="b"} 4 6 8 10 12
+			`,
+			expectedError: `error in eval some_metric[1m] (line 5): expected metric {__name__="some_metric", env="b"} not found`,
+		},
+		"instant query with invalid range result": {
+			input: `
+				load 10s
+  					some_metric{env="a"} 1+1x5
+
+				eval instant at 1m some_metric[1m]
+					expect range vector from 10s
+  					some_metric{env="a"} 2 3 4 5 6
+			`,
+			expectedError: `error in eval some_metric[1m] (line 6): invalid range vector definition "expect range vector from 10s"`,
+		},
 	}
 
 	for name, testCase := range testCases {

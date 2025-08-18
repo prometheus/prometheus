@@ -47,17 +47,21 @@ import (
 )
 
 var (
-	patSpace       = regexp.MustCompile("[\t ]+")
-	patLoad        = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)$`)
-	patEvalInstant = regexp.MustCompile(`^eval(?:_(fail|warn|ordered|info))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
-	patEvalRange   = regexp.MustCompile(`^eval(?:_(fail|warn|info))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
-	patExpect      = regexp.MustCompile(`^expect\s+(ordered|fail|warn|no_warn|info|no_info)(?:\s+(regex|msg):(.+))?$`)
-	patMatchAny    = regexp.MustCompile(`^.*$`)
+	patSpace        = regexp.MustCompile("[\t ]+")
+	patLoad         = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)$`)
+	patEvalInstant  = regexp.MustCompile(`^eval(?:_(fail|warn|ordered|info))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
+	patEvalRange    = regexp.MustCompile(`^eval(?:_(fail|warn|info))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
+	patExpect       = regexp.MustCompile(`^expect\s+(ordered|fail|warn|no_warn|info|no_info)(?:\s+(regex|msg):(.+))?$`)
+	patMatchAny     = regexp.MustCompile(`^.*$`)
+	patExpectRange  = regexp.MustCompile(`^` + rangeVectorPrefix + `\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+)$`)
+	patExpectString = regexp.MustCompile(`^` + expectStringPrefix + `\s(.+)$`)
 )
 
 const (
 	defaultEpsilon            = 0.000001 // Relative error allowed for sample values.
 	DefaultMaxSamplesPerQuery = 10000
+	rangeVectorPrefix         = "expect range vector"
+	expectStringPrefix        = "expect string"
 )
 
 type TBRun interface {
@@ -314,7 +318,58 @@ func validateExpectedCmds(cmd *evalCmd) error {
 	return nil
 }
 
-func (*test) parseEval(lines []string, i int) (int, *evalCmd, error) {
+// Given an expected range vector definition, parse the line and return the start & end times and the step duration.
+// ie parse a line such as "expect range vector from 10s to 1m step 10s".
+// The from and to are parsed as durations and their values added to epoch(0) to form a time.Time.
+// The step is parsed as a duration and returned as a time.Duration.
+func (t *test) parseExpectRangeVector(line string) (*time.Time, *time.Time, *time.Duration, error) {
+	parts := patExpectRange.FindStringSubmatch(line)
+	if len(parts) != 4 {
+		return nil, nil, nil, fmt.Errorf("invalid range vector definition %q", line)
+	}
+
+	from := parts[1]
+	to := parts[2]
+	step := parts[3]
+
+	parsedFrom, parsedTo, parsedStep, err := t.parseDurations(from, to, step)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	start := testStartTime.Add(time.Duration(*parsedFrom))
+	end := testStartTime.Add(time.Duration(*parsedTo))
+	stepDuration := time.Duration(*parsedStep)
+
+	return &start, &end, &stepDuration, nil
+}
+
+// parseDurations parses the given from, to and step strings to Durations.
+// Additionally, a check is performed to ensure to is before from.
+func (*test) parseDurations(from, to, step string) (*model.Duration, *model.Duration, *model.Duration, error) {
+	parsedFrom, err := model.ParseDuration(from)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid start timestamp definition %q: %w", from, err)
+	}
+
+	parsedTo, err := model.ParseDuration(to)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid end timestamp definition %q: %w", to, err)
+	}
+
+	if parsedTo < parsedFrom {
+		return nil, nil, nil, fmt.Errorf("invalid test definition, end timestamp (%s) is before start timestamp (%s)", to, from)
+	}
+
+	parsedStep, err := model.ParseDuration(step)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid step definition %q: %w", step, err)
+	}
+
+	return &parsedFrom, &parsedTo, &parsedStep, nil
+}
+
+func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	instantParts := patEvalInstant.FindStringSubmatch(lines[i])
 	rangeParts := patEvalRange.FindStringSubmatch(lines[i])
 
@@ -355,10 +410,11 @@ func (*test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	}
 
 	var cmd *evalCmd
+	var offset model.Duration
 
 	if isInstant {
 		at := instantParts[2]
-		offset, err := model.ParseDuration(at)
+		offset, err = model.ParseDuration(at)
 		if err != nil {
 			return i, nil, formatErr("invalid timestamp definition %q: %s", at, err)
 		}
@@ -369,26 +425,12 @@ func (*test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		to := rangeParts[3]
 		step := rangeParts[4]
 
-		parsedFrom, err := model.ParseDuration(from)
+		parsedFrom, parsedTo, parsedStep, err := t.parseDurations(from, to, step)
 		if err != nil {
-			return i, nil, formatErr("invalid start timestamp definition %q: %s", from, err)
+			return i, nil, formatErr(err.Error())
 		}
 
-		parsedTo, err := model.ParseDuration(to)
-		if err != nil {
-			return i, nil, formatErr("invalid end timestamp definition %q: %s", to, err)
-		}
-
-		if parsedTo < parsedFrom {
-			return i, nil, formatErr("invalid test definition, end timestamp (%s) is before start timestamp (%s)", to, from)
-		}
-
-		parsedStep, err := model.ParseDuration(step)
-		if err != nil {
-			return i, nil, formatErr("invalid step definition %q: %s", step, err)
-		}
-
-		cmd = newRangeEvalCmd(expr, testStartTime.Add(time.Duration(parsedFrom)), testStartTime.Add(time.Duration(parsedTo)), time.Duration(parsedStep), i+1)
+		cmd = newRangeEvalCmd(expr, testStartTime.Add(time.Duration(*parsedFrom)), testStartTime.Add(time.Duration(*parsedTo)), time.Duration(*parsedStep), i+1)
 	}
 
 	switch mod {
@@ -403,6 +445,8 @@ func (*test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	case "info":
 		cmd.info = true
 	}
+
+	var expectRangeVector bool
 
 	for j := 1; i+1 < len(lines); j++ {
 		i++
@@ -424,6 +468,32 @@ func (*test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 				return i, nil, formatErr("invalid regexp '%s' for expected_fail_regexp: %w", pattern, err)
 			}
 			break
+		}
+
+		if strings.HasPrefix(defLine, rangeVectorPrefix) {
+			start, end, step, err := t.parseExpectRangeVector(defLine)
+			if err != nil {
+				return i, nil, formatErr("%w", err)
+			}
+
+			expectRangeVector = true
+			cmd.start = *start
+			cmd.end = *end
+			cmd.step = *step
+			cmd.isInstantRangeQuery = true
+			cmd.excludeFromRangeQuery = true
+
+			continue
+		}
+
+		if strings.HasPrefix(defLine, expectStringPrefix) {
+			expectString, err := parseAsStringLiteral(defLine)
+			if err != nil {
+				return i, nil, formatErr("%w", err)
+			}
+			cmd.expectedString = expectString
+			cmd.excludeFromRangeQuery = true
+			continue
 		}
 
 		// This would still allow a metric named 'expect' if it is written as 'expect{}'.
@@ -450,13 +520,29 @@ func (*test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			return i, nil, err
 		}
 
-		// Currently, we are not expecting any matrices.
-		if len(vals) > 1 && isInstant {
-			return i, nil, formatErr("expecting multiple values in instant evaluation not allowed")
+		// Only allow a range vector for an instant query where we have defined the expected range vector timestamps.
+		if len(vals) > 1 && isInstant && !expectRangeVector {
+			return i, nil, formatErr("expecting multiple values in instant evaluation not allowed. consider using 'expect range vector' directive to enable a range vector result for an instant query")
 		}
 		cmd.expectMetric(j, metric, vals...)
 	}
 	return i, cmd, nil
+}
+
+// parseAsStringLiteral returns the expected string from an expect string expression.
+// It is valid for the line top match the expect string prefix exactly, and an empty string is returned.
+// For other string we expect there to be a single space between the prefix and the literal value.
+func parseAsStringLiteral(line string) (string, error) {
+	if line == expectStringPrefix {
+		return "", nil
+	}
+
+	parts := patExpectString.FindStringSubmatch(line)
+	if len(parts) != 2 {
+		return "", errors.New("expected string literal not valid")
+	}
+
+	return parts[1], nil
 }
 
 // getLines returns trimmed lines after removing the comments.
@@ -703,6 +789,17 @@ type evalCmd struct {
 	metrics      map[uint64]labels.Labels
 	expectScalar bool
 	expected     map[uint64]entry
+
+	// we expect a string literal - is set instead of expected
+	expectedString string
+
+	// if true and this is an instant query then we will not test this in a range query scenario
+	excludeFromRangeQuery bool
+
+	// if true and this is an instant query then we will exclude it from adding additional at modifier test cases
+	excludeFromAtModifier bool
+
+	isInstantRangeQuery bool
 }
 
 func (ev *evalCmd) isOrdered() bool {
@@ -777,6 +874,9 @@ func newInstantEvalCmd(expr string, start time.Time, line int) *evalCmd {
 		metrics:      map[uint64]labels.Labels{},
 		expected:     map[uint64]entry{},
 		expectedCmds: map[expectCmdType][]expectCmd{},
+
+		excludeFromRangeQuery: false,
+		excludeFromAtModifier: false,
 	}
 }
 
@@ -1016,7 +1116,13 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		if !almost.Equal(exp0.Value, val.V, defaultEpsilon) {
 			return fmt.Errorf("expected scalar %v but got %v", exp0.Value, val.V)
 		}
-
+	case promql.String:
+		if ev.expectedString != val.V {
+			if len(ev.expectedString) == 0 {
+				return fmt.Errorf("expected empty string but got %v", val.V)
+			}
+			return fmt.Errorf("expected string %v but got %v", ev.expectedString, val.V)
+		}
 	default:
 		panic(fmt.Errorf("promql.Test.compareResult: unexpected result type %T", result))
 	}
@@ -1354,11 +1460,23 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 }
 
 func (t *test) execInstantEval(cmd *evalCmd, engine promql.QueryEngine) error {
-	queries, err := atModifierTestCases(cmd.expr, cmd.start)
-	if err != nil {
-		return err
+	var queries []atModifierTestCase
+	var err error
+
+	// if we are expecting a range vector result (ie metric[5m]) then the eval time is set to the end
+	evalTime := cmd.start
+	if cmd.isInstantRangeQuery {
+		evalTime = cmd.end
 	}
-	queries = append([]atModifierTestCase{{expr: cmd.expr, evalTime: cmd.start}}, queries...)
+
+	if !cmd.excludeFromAtModifier {
+		queries, err = atModifierTestCases(cmd.expr, evalTime)
+		if err != nil {
+			return err
+		}
+	}
+
+	queries = append([]atModifierTestCase{{expr: cmd.expr, evalTime: evalTime}}, queries...)
 	for _, iq := range queries {
 		if err := t.runInstantQuery(iq, cmd, engine); err != nil {
 			return err
@@ -1393,6 +1511,12 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 	err = cmd.compareResult(res.Value)
 	if err != nil {
 		return fmt.Errorf("error in %s %s (line %d): %w", cmd, iq.expr, cmd.line, err)
+	}
+
+	// this query has have been explicitly excluded from range query testing
+	// ie it could be that the query result is not an instant vector or scalar
+	if cmd.excludeFromRangeQuery {
+		return nil
 	}
 
 	// Check query returns same result in range mode,
