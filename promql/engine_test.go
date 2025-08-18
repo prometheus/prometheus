@@ -2962,7 +2962,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							EndPos: 32,
 						},
 					},
-					PosRange: posrange.PositionRange{Start: 0, End: 32},
+					PosRange: posrange.PositionRange{Start: 0, End: 33},
 				},
 			},
 		},
