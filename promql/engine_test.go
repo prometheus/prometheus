@@ -2304,20 +2304,16 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 	}{
 		{
 			input: "123.4567",
-			expected: &parser.StepInvariantExpr{
-				Expr: &parser.NumberLiteral{
-					Val:      123.4567,
-					PosRange: posrange.PositionRange{Start: 0, End: 8},
-				},
+			expected: &parser.NumberLiteral{
+				Val:      123.4567,
+				PosRange: posrange.PositionRange{Start: 0, End: 8},
 			},
 		},
 		{
 			input: `"foo"`,
-			expected: &parser.StepInvariantExpr{
-				Expr: &parser.StringLiteral{
-					Val:      "foo",
-					PosRange: posrange.PositionRange{Start: 0, End: 5},
-				},
+			expected: &parser.StringLiteral{
+				Val:      "foo",
+				PosRange: posrange.PositionRange{Start: 0, End: 5},
 			},
 		},
 		{
@@ -2427,23 +2423,21 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 		},
 		{
 			input: `test{a="b"}[5y] @ 1603774699`,
-			expected: &parser.StepInvariantExpr{
-				Expr: &parser.MatrixSelector{
-					VectorSelector: &parser.VectorSelector{
-						Name:      "test",
-						Timestamp: makeInt64Pointer(1603774699000),
-						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, "a", "b"),
-							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
-						},
-						PosRange: posrange.PositionRange{
-							Start: 0,
-							End:   11,
-						},
+			expected: &parser.MatrixSelector{
+				VectorSelector: &parser.VectorSelector{
+					Name:      "test",
+					Timestamp: makeInt64Pointer(1603774699000),
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "a", "b"),
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
 					},
-					Range:  5 * 365 * 24 * time.Hour,
-					EndPos: 28,
+					PosRange: posrange.PositionRange{
+						Start: 0,
+						End:   11,
+					},
 				},
+				Range:  5 * 365 * 24 * time.Hour,
+				EndPos: 28,
 			},
 		},
 		{
@@ -2896,7 +2890,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							},
 							PosRange: posrange.PositionRange{
 								Start: 29,
-								End:   52, // TODO(krajorama): this should be 51. https://github.com/prometheus/prometheus/issues/16053
+								End:   51,
 							},
 						},
 					},
@@ -2942,45 +2936,53 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 			},
 		},
 		{
-			input: `test[5y] @ start()`,
+			input: `sum_over_time(test[5y] @ start())`,
 			expected: &parser.StepInvariantExpr{
-				Expr: &parser.MatrixSelector{
-					VectorSelector: &parser.VectorSelector{
-						Name:       "test",
-						Timestamp:  makeInt64Pointer(timestamp.FromTime(startTime)),
-						StartOrEnd: parser.START,
-						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
-						},
-						PosRange: posrange.PositionRange{
-							Start: 0,
-							End:   4,
+				Expr: &parser.Call{
+					Func: &parser.Function{
+						Name:       "sum_over_time",
+						ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
+						ReturnType: parser.ValueTypeVector,
+					},
+					Args: parser.Expressions{
+						&parser.MatrixSelector{
+							VectorSelector: &parser.VectorSelector{
+								Name:       "test",
+								Timestamp:  makeInt64Pointer(timestamp.FromTime(startTime)),
+								StartOrEnd: parser.START,
+								LabelMatchers: []*labels.Matcher{
+									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
+								},
+								PosRange: posrange.PositionRange{
+									Start: 14,
+									End:   18,
+								},
+							},
+							Range:  5 * 365 * 24 * time.Hour,
+							EndPos: 32,
 						},
 					},
-					Range:  5 * 365 * 24 * time.Hour,
-					EndPos: 18,
+					PosRange: posrange.PositionRange{Start: 0, End: 33},
 				},
 			},
 		},
 		{
 			input: `test[5y] @ end()`,
-			expected: &parser.StepInvariantExpr{
-				Expr: &parser.MatrixSelector{
-					VectorSelector: &parser.VectorSelector{
-						Name:       "test",
-						Timestamp:  makeInt64Pointer(timestamp.FromTime(endTime)),
-						StartOrEnd: parser.END,
-						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
-						},
-						PosRange: posrange.PositionRange{
-							Start: 0,
-							End:   4,
-						},
+			expected: &parser.MatrixSelector{
+				VectorSelector: &parser.VectorSelector{
+					Name:       "test",
+					Timestamp:  makeInt64Pointer(timestamp.FromTime(endTime)),
+					StartOrEnd: parser.END,
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
 					},
-					Range:  5 * 365 * 24 * time.Hour,
-					EndPos: 16,
+					PosRange: posrange.PositionRange{
+						Start: 0,
+						End:   4,
+					},
 				},
+				Range:  5 * 365 * 24 * time.Hour,
+				EndPos: 16,
 			},
 		},
 		{
@@ -3660,81 +3662,6 @@ func TestRateAnnotations(t *testing.T) {
 	}
 }
 
-func TestHistogramQuantileAnnotations(t *testing.T) {
-	testCases := map[string]struct {
-		data                       string
-		expr                       string
-		expectedWarningAnnotations []string
-		expectedInfoAnnotations    []string
-	}{
-		"info annotation for nonmonotonic buckets": {
-			data: `
-				nonmonotonic_bucket{le="0.1"}   0+2x10
-				nonmonotonic_bucket{le="1"}     0+1x10
-				nonmonotonic_bucket{le="10"}    0+5x10
-				nonmonotonic_bucket{le="100"}   0+4x10
-				nonmonotonic_bucket{le="1000"}  0+9x10
-				nonmonotonic_bucket{le="+Inf"}  0+8x10
-			`,
-			expr:                       "histogram_quantile(0.5, nonmonotonic_bucket)",
-			expectedWarningAnnotations: []string{},
-			expectedInfoAnnotations: []string{
-				`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "nonmonotonic_bucket" (1:25)`,
-			},
-		},
-		"warning annotation for missing le label": {
-			data: `
-				myHistogram{abe="0.1"}   0+2x10
-			`,
-			expr: "histogram_quantile(0.5, myHistogram)",
-			expectedWarningAnnotations: []string{
-				`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "myHistogram" (1:25)`,
-			},
-			expectedInfoAnnotations: []string{},
-		},
-		"warning annotation for malformed le label": {
-			data: `
-				myHistogram{le="Hello World"}   0+2x10
-			`,
-			expr: "histogram_quantile(0.5, myHistogram)",
-			expectedWarningAnnotations: []string{
-				`PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World" for metric name "myHistogram" (1:25)`,
-			},
-			expectedInfoAnnotations: []string{},
-		},
-		"warning annotation for mixed histograms": {
-			data: `
-				mixedHistogram{le="0.1"}   0+2x10
-				mixedHistogram{le="1"}     0+3x10
-				mixedHistogram{}           {{schema:0 count:10 sum:50 buckets:[1 2 3]}}
-			`,
-			expr: "histogram_quantile(0.5, mixedHistogram)",
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains a mix of classic and native histograms for metric name "mixedHistogram" (1:25)`,
-			},
-			expectedInfoAnnotations: []string{},
-		},
-	}
-	for name, testCase := range testCases {
-		t.Run(name, func(t *testing.T) {
-			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
-			t.Cleanup(func() { _ = store.Close() })
-
-			engine := newTestEngine(t)
-			query, err := engine.NewInstantQuery(context.Background(), store, nil, testCase.expr, timestamp.Time(0).Add(1*time.Minute))
-			require.NoError(t, err)
-			t.Cleanup(query.Close)
-
-			res := query.Exec(context.Background())
-			require.NoError(t, res.Err)
-
-			warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
-			testutil.RequireEqual(t, testCase.expectedWarningAnnotations, warnings)
-			testutil.RequireEqual(t, testCase.expectedInfoAnnotations, infos)
-		})
-	}
-}
-
 func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	// Make a chunk with two normal histograms of the same value.
 	h1 := histogram.Histogram{
@@ -3906,6 +3833,48 @@ eval instant at 10m last_over_time(metric_total{env="1"}[10m])
 # Drops name for other _over_time functions
 eval instant at 10m max_over_time(metric_total{env="1"}[10m])
 	{env="1"} 120
+
+clear
+
+load 1m
+	float{a="b"}									2x10
+	classic_histogram_invalid{abe="0.1"}			2x10
+	native_histogram{a="b", c="d"}					{{sum:0 count:0}}x10
+    histogram_nan{case="100% NaNs"} 				{{schema:0 count:0 sum:0}} {{schema:0 count:3 sum:NaN}}
+    histogram_nan{case="20% NaNs"} 					{{schema:0 count:0 sum:0}} {{schema:0 count:15 sum:NaN buckets:[12]}}
+	conflicting_histogram{le="0.1"}					2x10
+	conflicting_histogram							{{sum:0}}x10
+	nonmonotonic_bucket{le="0.1"}   				0+2x10
+	nonmonotonic_bucket{le="1"}     				0+1x10
+	nonmonotonic_bucket{le="10"}    				0+5x10
+	nonmonotonic_bucket{le="100"}   				0+4x10
+	nonmonotonic_bucket{le="1000"}  				0+9x10
+	nonmonotonic_bucket{le="+Inf"}  				0+8x10
+
+eval instant at 1m histogram_quantile(0.5, classic_histogram_invalid)
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of ""
+
+eval instant at 1m histogram_fraction(0.5, 1, conflicting_histogram)
+	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms
+
+eval instant at 1m histogram_quantile(0.5, nonmonotonic_bucket)
+	expect info msg: PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile)
+	{} 8.5
+
+eval instant at 1m histogram_quantile(1, histogram_nan)
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN
+    {case="100% NaNs"} NaN
+    {case="20% NaNs"} NaN
+
+eval instant at 1m histogram_quantile(0.8, histogram_nan{case="20% NaNs"})
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher
+    {case="20% NaNs"} 1
+
+eval instant at 1m histogram_fraction(-Inf, 0.7071067811865475, histogram_nan)
+    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions
+    {case="100% NaNs"} 0.0
+    {case="20% NaNs"} 0.4
+
 `, engine)
 }
 
@@ -4047,5 +4016,108 @@ func TestSubQueryHistogramsCopy(t *testing.T) {
 		}
 		q.Close()
 		queryable.Close()
+	}
+}
+
+func TestHistogram_CounterResetHint(t *testing.T) {
+	baseT := timestamp.Time(0)
+	load := `
+		load 2m
+		test_histogram {{count:0}}+{{count:1}}x4
+	`
+	testCases := []struct {
+		name  string
+		query string
+		want  histogram.CounterResetHint
+	}{
+		{
+			name:  "adding histograms",
+			query: `test_histogram + test_histogram`,
+			want:  histogram.NotCounterReset,
+		},
+		{
+			name:  "subtraction",
+			query: `test_histogram - test_histogram`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "negated addition",
+			query: `test_histogram + (-test_histogram)`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "negated subtraction",
+			query: `test_histogram - (-test_histogram)`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "unary negation",
+			query: `-test_histogram`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "repeated unary negation",
+			query: `-(-test_histogram)`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "multiplication",
+			query: `2 * test_histogram`,
+			want:  histogram.NotCounterReset,
+		},
+		{
+			name:  "negative multiplication",
+			query: `-1 * test_histogram`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "division",
+			query: `test_histogram / 2`,
+			want:  histogram.NotCounterReset,
+		},
+		{
+			name:  "negative division",
+			query: `test_histogram / -1`,
+			want:  histogram.GaugeType,
+		},
+		// Equality and unequality should always return the LHS:
+		{
+			name:  "equality (not counter reset)",
+			query: `test_histogram == test_histogram`,
+			want:  histogram.NotCounterReset,
+		},
+		{
+			name:  "equality (gauge)",
+			query: `-test_histogram == -test_histogram`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "unequality (not counter reset)",
+			query: `test_histogram != -test_histogram`,
+			want:  histogram.NotCounterReset,
+		},
+		{
+			name:  "unequality (gauge)",
+			query: `-test_histogram != test_histogram`,
+			want:  histogram.GaugeType,
+		},
+	}
+	ctx := context.Background()
+	queryable := promqltest.LoadedStorage(t, load)
+	defer queryable.Close()
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			q, err := engine.NewInstantQuery(ctx, queryable, nil, tc.query, baseT.Add(2*time.Minute))
+			require.NoError(t, err)
+			defer q.Close()
+			res := q.Exec(ctx)
+			require.NoError(t, res.Err)
+			v, err := res.Vector()
+			require.NoError(t, err)
+			require.Len(t, v, 1)
+			require.NotNil(t, v[0].H)
+			require.Equal(t, tc.want, v[0].H.CounterResetHint)
+		})
 	}
 }

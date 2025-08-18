@@ -751,6 +751,7 @@ func setupTestServer(t *testing.T, typ string, toWrite []byte) *httptest.Server 
 
 // TestManagerCTZeroIngestion tests scrape manager for various CT cases.
 func TestManagerCTZeroIngestion(t *testing.T) {
+	t.Parallel()
 	const (
 		// _total suffix is required, otherwise expfmt with OMText will mark metric as "unknown"
 		expectedMetricName        = "expected_metric_total"
@@ -923,6 +924,7 @@ func generateTestHistogram(i int) *dto.Histogram {
 }
 
 func TestManagerCTZeroIngestionHistogram(t *testing.T) {
+	t.Parallel()
 	const mName = "expected_histogram"
 
 	for _, tc := range []struct {
@@ -958,6 +960,7 @@ func TestManagerCTZeroIngestionHistogram(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
@@ -1162,6 +1165,7 @@ func requireTargets(
 
 // TestTargetDisappearsAfterProviderRemoved makes sure that when a provider is dropped, (only) its targets are dropped.
 func TestTargetDisappearsAfterProviderRemoved(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1262,6 +1266,7 @@ scrape_configs:
 // TestOnlyProviderStaleTargetsAreDropped makes sure that when a job has only one provider with multiple targets
 // and when the provider can no longer discover some of those targets, only those stale targets are dropped.
 func TestOnlyProviderStaleTargetsAreDropped(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
