@@ -15,6 +15,7 @@ package remote
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -41,6 +42,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -1085,4 +1087,43 @@ func TestWriteStorage_CanRegisterMetricsAfterClosing(t *testing.T) {
 	s := NewWriteStorage(nil, reg, dir, time.Millisecond, nil)
 	require.NoError(t, s.Close())
 	require.NotPanics(t, func() { NewWriteStorage(nil, reg, dir, time.Millisecond, nil) })
+}
+
+func TestOTLPWriteHandler_Compression(t *testing.T) {
+	timestamp := time.Now()
+	exportRequest := generateOTLPWriteRequest(timestamp)
+
+	run := func(t *testing.T, body []byte, hdr map[string]string) int {
+		req, err := http.NewRequest("", "", bytes.NewReader(body))
+		require.NoError(t, err)
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		appendable := &mockAppendable{}
+		handler := NewOTLPWriteHandler(nil, nil, appendable, func() config.Config { return config.Config{OTLPConfig: config.DefaultOTLPConfig} }, OTLPOptions{})
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec.Result().StatusCode
+	}
+
+	raw, err := exportRequest.MarshalProto()
+	require.NoError(t, err)
+	code := run(t, raw, map[string]string{"Content-Type": "application/x-protobuf"})
+	require.Equal(t, http.StatusOK, code)
+
+	// gzip compression.
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	_, err = zw.Write(raw)
+	require.NoError(t, err)
+	require.NoError(t, zw.Close())
+	code = run(t, gz.Bytes(), map[string]string{"Content-Type": "application/x-protobuf", "Content-Encoding": "gzip"})
+	require.Equal(t, http.StatusOK, code)
+
+	// zstd compression.
+	zenc, err := zstd.NewWriter(nil)
+	require.NoError(t, err)
+	zstdPayload := zenc.EncodeAll(raw, nil)
+	code = run(t, zstdPayload, map[string]string{"Content-Type": "application/x-protobuf", "Content-Encoding": "zstd"})
+	require.Equal(t, http.StatusOK, code)
 }
