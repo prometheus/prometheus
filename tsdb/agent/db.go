@@ -736,22 +736,22 @@ func (db *DB) gc(mint int64) {
 }
 
 // StartTime implements the Storage interface.
-func (db *DB) StartTime() (int64, error) {
+func (*DB) StartTime() (int64, error) {
 	return int64(model.Latest), nil
 }
 
 // Querier implements the Storage interface.
-func (db *DB) Querier(int64, int64) (storage.Querier, error) {
+func (*DB) Querier(int64, int64) (storage.Querier, error) {
 	return nil, ErrUnsupported
 }
 
 // ChunkQuerier implements the Storage interface.
-func (db *DB) ChunkQuerier(int64, int64) (storage.ChunkQuerier, error) {
+func (*DB) ChunkQuerier(int64, int64) (storage.ChunkQuerier, error) {
 	return nil, ErrUnsupported
 }
 
 // ExemplarQuerier implements the Storage interface.
-func (db *DB) ExemplarQuerier(context.Context) (storage.ExemplarQuerier, error) {
+func (*DB) ExemplarQuerier(context.Context) (storage.ExemplarQuerier, error) {
 	return nil, ErrUnsupported
 }
 
@@ -988,7 +988,7 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 	return storage.SeriesRef(series.ref), nil
 }
 
-func (a *appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
+func (*appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
 	// TODO: Wire metadata in the Agent's appender.
 	return 0, nil
 }

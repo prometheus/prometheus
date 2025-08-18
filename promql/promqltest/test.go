@@ -618,7 +618,7 @@ func newLoadCmd(gap time.Duration, withNHCB bool) *loadCmd {
 	}
 }
 
-func (cmd loadCmd) String() string {
+func (loadCmd) String() string {
 	return "load"
 }
 
@@ -895,7 +895,7 @@ func newRangeEvalCmd(expr string, start, end time.Time, step time.Duration, line
 	}
 }
 
-func (ev *evalCmd) String() string {
+func (*evalCmd) String() string {
 	return "eval"
 }
 
@@ -1301,7 +1301,7 @@ func HistogramTestExpression(h *histogram.FloatHistogram) string {
 // clearCmd is a command that wipes the test's storage state.
 type clearCmd struct{}
 
-func (cmd clearCmd) String() string {
+func (clearCmd) String() string {
 	return "clear"
 }
 

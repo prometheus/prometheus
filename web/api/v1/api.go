@@ -186,6 +186,7 @@ type TSDBAdminStats interface {
 	Snapshot(dir string, withHead bool) error
 	Stats(statsByLabelName string, limit int) (*tsdb.Stats, error)
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
+	BlockMetas() ([]tsdb.BlockMeta, error)
 }
 
 type QueryOpts interface {
@@ -265,6 +266,7 @@ func NewAPI(
 	otlpEnabled, otlpDeltaToCumulative, otlpNativeDeltaIngestion bool,
 	ctZeroIngestionEnabled bool,
 	lookbackDelta time.Duration,
+	enableTypeAndUnitLabels bool,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -312,9 +314,10 @@ func NewAPI(
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, ap, configFunc, remote.OTLPOptions{
-			ConvertDelta:  otlpDeltaToCumulative,
-			NativeDelta:   otlpNativeDeltaIngestion,
-			LookbackDelta: lookbackDelta,
+			ConvertDelta:            otlpDeltaToCumulative,
+			NativeDelta:             otlpNativeDeltaIngestion,
+			LookbackDelta:           lookbackDelta,
+			EnableTypeAndUnitLabels: enableTypeAndUnitLabels,
 		})
 	}
 
@@ -409,6 +412,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrapAgent(api.serveTSDBStatus))
+	r.Get("/status/tsdb/blocks", wrapAgent(api.serveTSDBBlocks))
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Get("/notifications", api.notifications)
 	r.Get("/notifications/live", api.notificationsSSE)
@@ -441,7 +445,7 @@ func invalidParamError(err error, parameter string) apiFuncResult {
 	}, nil, nil}
 }
 
-func (api *API) options(*http.Request) apiFuncResult {
+func (*API) options(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
@@ -514,7 +518,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}, nil, warnings, qry.Close}
 }
 
-func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
+func (*API) formatQuery(r *http.Request) (result apiFuncResult) {
 	expr, err := parser.ParseExpr(r.FormValue("query"))
 	if err != nil {
 		return invalidParamError(err, "query")
@@ -523,7 +527,7 @@ func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
 	return apiFuncResult{expr.Pretty(0), nil, nil, nil}
 }
 
-func (api *API) parseQuery(r *http.Request) apiFuncResult {
+func (*API) parseQuery(r *http.Request) apiFuncResult {
 	expr, err := parser.ParseExpr(r.FormValue("query"))
 	if err != nil {
 		return invalidParamError(err, "query")
@@ -994,7 +998,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	return apiFuncResult{metrics, nil, warnings, closer}
 }
 
-func (api *API) dropSeries(_ *http.Request) apiFuncResult {
+func (*API) dropSeries(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, &apiError{errorInternal, errors.New("not implemented")}, nil, nil}
 }
 
@@ -1688,7 +1692,7 @@ type prometheusConfig struct {
 	YAML string `json:"yaml"`
 }
 
-func (api *API) serveRuntimeInfo(_ *http.Request) apiFuncResult {
+func (api *API) serveRuntimeInfo(*http.Request) apiFuncResult {
 	status, err := api.runtimeInfo()
 	if err != nil {
 		return apiFuncResult{status, &apiError{errorInternal, err}, nil, nil}
@@ -1696,18 +1700,18 @@ func (api *API) serveRuntimeInfo(_ *http.Request) apiFuncResult {
 	return apiFuncResult{status, nil, nil, nil}
 }
 
-func (api *API) serveBuildInfo(_ *http.Request) apiFuncResult {
+func (api *API) serveBuildInfo(*http.Request) apiFuncResult {
 	return apiFuncResult{api.buildInfo, nil, nil, nil}
 }
 
-func (api *API) serveConfig(_ *http.Request) apiFuncResult {
+func (api *API) serveConfig(*http.Request) apiFuncResult {
 	cfg := &prometheusConfig{
 		YAML: api.config().String(),
 	}
 	return apiFuncResult{cfg, nil, nil, nil}
 }
 
-func (api *API) serveFlags(_ *http.Request) apiFuncResult {
+func (api *API) serveFlags(*http.Request) apiFuncResult {
 	return apiFuncResult{api.flagsMap, nil, nil, nil}
 }
 
@@ -1743,6 +1747,19 @@ func TSDBStatsFromIndexStats(stats []index.Stat) []TSDBStat {
 		result = append(result, item)
 	}
 	return result
+}
+
+func (api *API) serveTSDBBlocks(*http.Request) apiFuncResult {
+	blockMetas, err := api.db.BlockMetas()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error getting block metadata: %w", err)}, nil, nil}
+	}
+
+	return apiFuncResult{
+		data: map[string][]tsdb.BlockMeta{
+			"blocks": blockMetas,
+		},
+	}
 }
 
 func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {

@@ -1158,7 +1158,7 @@ func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
 
 type errorConfig struct{ err error }
 
-func (e errorConfig) Name() string                                        { return "error" }
+func (errorConfig) Name() string                                          { return "error" }
 func (e errorConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) { return nil, e.err }
 
 // NewDiscovererMetrics implements discovery.Config.
@@ -1176,7 +1176,7 @@ func (lockStaticConfig) NewDiscovererMetrics(prometheus.Registerer, RefreshMetri
 	return &NoopDiscovererMetrics{}
 }
 
-func (s lockStaticConfig) Name() string { return "lockstatic" }
+func (lockStaticConfig) Name() string { return "lockstatic" }
 func (s lockStaticConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) {
 	return (lockStaticDiscoverer)(s), nil
 }
@@ -1521,7 +1521,7 @@ func (*testDiscoverer) NewDiscovererMetrics(prometheus.Registerer, RefreshMetric
 }
 
 // Name implements Config.
-func (t *testDiscoverer) Name() string {
+func (*testDiscoverer) Name() string {
 	return "test"
 }
 

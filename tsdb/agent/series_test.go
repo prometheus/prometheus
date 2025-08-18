@@ -94,7 +94,7 @@ func labelsWithHashCollision() (labels.Labels, labels.Labels) {
 }
 
 // stripeSeriesWithCollidingSeries returns a stripeSeries with two memSeries having the same, colliding, hash.
-func stripeSeriesWithCollidingSeries(_ *testing.T) (*stripeSeries, *memSeries, *memSeries) {
+func stripeSeriesWithCollidingSeries(*testing.T) (*stripeSeries, *memSeries, *memSeries) {
 	lbls1, lbls2 := labelsWithHashCollision()
 	ms1 := memSeries{
 		lset: lbls1,

@@ -1190,17 +1190,17 @@ type printer interface {
 
 type promqlPrinter struct{}
 
-func (p *promqlPrinter) printValue(v model.Value) {
+func (*promqlPrinter) printValue(v model.Value) {
 	fmt.Println(v)
 }
 
-func (p *promqlPrinter) printSeries(val []model.LabelSet) {
+func (*promqlPrinter) printSeries(val []model.LabelSet) {
 	for _, v := range val {
 		fmt.Println(v)
 	}
 }
 
-func (p *promqlPrinter) printLabelValues(val model.LabelValues) {
+func (*promqlPrinter) printLabelValues(val model.LabelValues) {
 	for _, v := range val {
 		fmt.Println(v)
 	}
@@ -1208,17 +1208,17 @@ func (p *promqlPrinter) printLabelValues(val model.LabelValues) {
 
 type jsonPrinter struct{}
 
-func (j *jsonPrinter) printValue(v model.Value) {
+func (*jsonPrinter) printValue(v model.Value) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
 
-func (j *jsonPrinter) printSeries(v []model.LabelSet) {
+func (*jsonPrinter) printSeries(v []model.LabelSet) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
 
-func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
+func (*jsonPrinter) printLabelValues(v model.LabelValues) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }

@@ -258,7 +258,7 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 	return ls
 }
 
-func (p *Pod) findPodContainerStatus(statuses *[]apiv1.ContainerStatus, containerName string) (*apiv1.ContainerStatus, error) {
+func (*Pod) findPodContainerStatus(statuses *[]apiv1.ContainerStatus, containerName string) (*apiv1.ContainerStatus, error) {
 	for _, s := range *statuses {
 		if s.Name == containerName {
 			return &s, nil

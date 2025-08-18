@@ -1494,7 +1494,7 @@ eval instant at 55m increase(metric[90m])
 eval instant at 54m30s increase(metric[90m])
     {type="histogram"} {{count:2512.9166666666665 sum:50.76599326599326 counter_reset_hint:gauge buckets:[10.153198653198652 2502.7634680134674]}}
     {type="counter"} 2512.9166666666665
-    
+
 # End of range coincides with sample. Zero point of count is reached outside of (i.e. before) the range.
 # This means no change of extrapolation is required for the histogram count (and neither for the float counter),
 # however, the 2nd bucket's extrapolation will reach zero within the range. The overestimation is visible
@@ -1523,3 +1523,61 @@ eval instant at 55m histogram_count(increase(metric[55m15s]))
 
 eval instant at 54m30s histogram_count(increase(metric[54m45s]))
     {type="histogram"} 2509.375
+
+clear
+
+# Test that `rate` adds warning when applied to an average of native histograms.
+load 5m
+  metric{id="1"} {{schema:0 sum:4 count:4 buckets:[1 2 1]}}x10
+  metric{id="2"} {{schema:0 sum:4 count:4 buckets:[1 2 1]}}x10
+
+# Don't warn if there is only a single histogram.
+eval instant at 5m rate(avg(metric{id="1"})[10m:])
+  expect no_warn
+  {} {{counter_reset_hint:gauge}}
+
+# Rate warns if histogram is not a counter and avg sets gauge hint.
+eval instant at 5m rate(avg(metric)[10m:])
+  expect warn regex: this native histogram metric is not a counter: ""
+  {} {{counter_reset_hint:gauge}}
+
+# Rate warns if histogram is not a counter and avg_over_time sets gauge hint.
+eval instant at 5m rate(avg_over_time(metric{id="1"}[10m])[5m:])
+  expect warn regex: this native histogram metric is not a counter: "metric"
+  {id="1"} {{counter_reset_hint:gauge}}
+
+# Unary minus turns counters into gauges.
+eval instant at 5m -metric
+  expect no_warn
+  expect no_info
+  {id="1"} {{count:-4 sum:-4 counter_reset_hint:gauge buckets:[-1 -2 -1]}}
+  {id="2"} {{count:-4 sum:-4 counter_reset_hint:gauge buckets:[-1 -2 -1]}}
+
+clear
+
+# Test histogram_quantile annotations.
+load 1m
+	nonmonotonic_bucket{le="0.1"}   0+2x10
+	nonmonotonic_bucket{le="1"}     0+1x10
+	nonmonotonic_bucket{le="10"}    0+5x10
+	nonmonotonic_bucket{le="100"}   0+4x10
+	nonmonotonic_bucket{le="1000"}  0+9x10
+	nonmonotonic_bucket{le="+Inf"}  0+8x10
+	myHistogram1{abe="0.1"}   0+2x10
+	myHistogram2{le="Hello World"}   0+2x10
+	mixedHistogram{le="0.1"}   0+2x10
+	mixedHistogram{le="1"}     0+3x10
+	mixedHistogram{}           {{schema:0 count:10 sum:50 buckets:[1 2 3]}}
+
+eval instant at 1m histogram_quantile(0.5, nonmonotonic_bucket)
+	expect info msg: PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "nonmonotonic_bucket"
+	{} 8.5
+
+eval instant at 1m histogram_quantile(0.5, myHistogram1)
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "myHistogram1"
+
+eval instant at 1m histogram_quantile(0.5, myHistogram2)
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World" for metric name "myHistogram2"
+
+eval instant at 1m histogram_quantile(0.5, mixedHistogram)
+	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "mixedHistogram"

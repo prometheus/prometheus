@@ -474,7 +474,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 		for _, t := range targets {
 			// Replicate .Labels().IsEmpty() with a loop here to avoid generating garbage.
 			nonEmpty := false
-			t.LabelsRange(func(_ labels.Label) { nonEmpty = true })
+			t.LabelsRange(func(labels.Label) { nonEmpty = true })
 			switch {
 			case nonEmpty:
 				all = append(all, t)
@@ -1116,7 +1116,7 @@ func (c *scrapeCache) setType(mfName []byte, t model.MetricType) ([]byte, *metaE
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	e, ok := c.metadata[yoloString(mfName)]
+	e, ok := c.metadata[string(mfName)]
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(mfName)] = e
@@ -1133,7 +1133,7 @@ func (c *scrapeCache) setHelp(mfName, help []byte) ([]byte, *metaEntry) {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	e, ok := c.metadata[yoloString(mfName)]
+	e, ok := c.metadata[string(mfName)]
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(mfName)] = e
@@ -1150,7 +1150,7 @@ func (c *scrapeCache) setUnit(mfName, unit []byte) ([]byte, *metaEntry) {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	e, ok := c.metadata[yoloString(mfName)]
+	e, ok := c.metadata[string(mfName)]
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(mfName)] = e

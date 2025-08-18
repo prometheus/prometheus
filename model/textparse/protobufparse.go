@@ -299,7 +299,7 @@ func (p *ProtobufParser) Unit() ([]byte, []byte) {
 
 // Comment always returns nil because comments aren't supported by the protobuf
 // format.
-func (p *ProtobufParser) Comment() []byte {
+func (*ProtobufParser) Comment() []byte {
 	return nil
 }
 
