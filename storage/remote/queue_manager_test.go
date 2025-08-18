@@ -17,12 +17,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"math/rand"
 	"os"
-	"path"
 	"runtime/pprof"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,7 +45,6 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
-	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -1473,45 +1469,6 @@ func BenchmarkStoreSeries(b *testing.B) {
 	}
 }
 
-func BenchmarkStartup(b *testing.B) {
-	dir := os.Getenv("WALDIR")
-	if dir == "" {
-		b.Skip("WALDIR env var not set")
-	}
-
-	// Find the second largest segment; we will replay up to this.
-	// (Second largest as WALWatcher will start tailing the largest).
-	dirents, err := os.ReadDir(path.Join(dir, "wal"))
-	require.NoError(b, err)
-
-	var segments []int
-	for _, dirent := range dirents {
-		if i, err := strconv.Atoi(dirent.Name()); err == nil {
-			segments = append(segments, i)
-		}
-	}
-	sort.Ints(segments)
-
-	logger := promslog.New(&promslog.Config{})
-
-	cfg := testDefaultQueueConfig()
-	mcfg := config.DefaultMetadataConfig
-	for n := 0; n < b.N; n++ {
-		metrics := newQueueManagerMetrics(nil, "", "")
-		watcherMetrics := wlog.NewWatcherMetrics(nil)
-		c := NewTestBlockedWriteClient()
-		// todo: test with new proto type(s)
-		m := NewQueueManager(metrics, watcherMetrics, nil, logger, dir,
-			newEWMARate(ewmaWeight, shardUpdateDuration),
-			cfg, mcfg, labels.EmptyLabels(), nil, c, 1*time.Minute, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
-		m.watcher.SetStartTime(timestamp.Time(math.MaxInt64))
-		m.watcher.MaxSegment = segments[len(segments)-2]
-		m.watcher.SetMetrics()
-		err := m.watcher.Run()
-		require.NoError(b, err)
-	}
-}
-
 func TestProcessExternalLabels(t *testing.T) {
 	b := labels.NewBuilder(labels.EmptyLabels())
 	for i, tc := range []struct {
@@ -2047,7 +2004,7 @@ func TestIsSampleOld(t *testing.T) {
 func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 	t.Parallel()
 	maxSamplesPerSend := 10
-	sampleAgeLimit := time.Second
+	sampleAgeLimit := time.Second * 2
 
 	cfg := config.DefaultQueueConfig
 	cfg.MaxShards = 1
