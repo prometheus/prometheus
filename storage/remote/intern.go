@@ -22,11 +22,10 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 )
 
-var noReferenceReleases = promauto.NewCounter(prometheus.CounterOpts{
+var noReferenceReleases = prometheus.NewCounter(prometheus.CounterOpts{
 	Namespace: namespace,
 	Subsystem: subsystem,
 	Name:      "string_interner_zero_reference_releases_total",
@@ -48,7 +47,19 @@ func newEntry(s string) *entry {
 	return &entry{s: s}
 }
 
-func newPool() *pool {
+func newPool(reg prometheus.Registerer) *pool {
+	if reg != nil {
+		if err := reg.Register(noReferenceReleases); err != nil {
+			if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
+				// Reuse the existing collector so increments go to the same series.
+				noReferenceReleases = are.ExistingCollector.(prometheus.Counter)
+			} else {
+				// Preserve current behavior for unexpected errors.
+				panic(err)
+			}
+		}
+	}
+
 	return &pool{
 		pool: map[string]*entry{},
 	}

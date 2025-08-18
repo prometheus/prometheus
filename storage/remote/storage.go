@@ -61,20 +61,27 @@ type Storage struct {
 	// For reads.
 	queryables             []storage.SampleAndChunkQueryable
 	localStartTimeCallback startTimeCallback
+
+	readRemotes map[string]struct{}
 }
 
 // NewStorage returns a remote.Storage.
 func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager) *Storage {
+	// Register remote storage metrics in custom registry.
+	if reg != nil {
+		reg.MustRegister(samplesIn, histogramsIn, exemplarsIn)
+	}
+
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
 	deduper := logging.Dedupe(l, 1*time.Minute)
 	logger := slog.New(deduper)
-
 	s := &Storage{
 		logger:                 logger,
 		deduper:                deduper,
 		localStartTimeCallback: stCallback,
+		readRemotes:            make(map[string]struct{}),
 	}
 	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm)
 	return s
@@ -93,9 +100,13 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		return err
 	}
 
+	// Track active remote_read keys in the current config.
+	activeReadRemotes := make(map[string]struct{})
+
 	// Update read clients
 	readHashes := make(map[string]struct{})
 	queryables := make([]storage.SampleAndChunkQueryable, 0, len(conf.RemoteReadConfigs))
+
 	for _, rrConf := range conf.RemoteReadConfigs {
 		hash, err := toHash(rrConf)
 		if err != nil {
@@ -108,13 +119,15 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		}
 		readHashes[hash] = struct{}{}
 
-		// Set the queue name to the config hash if the user has not set
-		// a name in their remote write config so we can still differentiate
-		// between queues that have the same remote write endpoint.
+		// Generate the remote name.
 		name := hash[:6]
 		if rrConf.Name != "" {
 			name = rrConf.Name
 		}
+
+		// Generate the remote key and track it.
+		key := name + "|" + rrConf.URL.String()
+		activeReadRemotes[key] = struct{}{}
 
 		c, err := NewReadClient(name, &ClientConfig{
 			URL:              rrConf.URL,
@@ -122,7 +135,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			ChunkedReadLimit: rrConf.ChunkedReadLimit,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
 			Headers:          rrConf.Headers,
-		})
+		}, s.rws.reg)
 		if err != nil {
 			return err
 		}
@@ -131,6 +144,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		if !rrConf.FilterExternalLabels {
 			externalLabels = labels.EmptyLabels()
 		}
+
 		queryables = append(queryables, NewSampleAndChunkQueryableClient(
 			c,
 			externalLabels,
@@ -139,6 +153,16 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			s.localStartTimeCallback,
 		))
 	}
+
+	// Unregister metrics for any remote_read configs that were removed
+	for oldKey := range s.readRemotes {
+		if _, stillExists := activeReadRemotes[oldKey]; !stillExists {
+			unregisterRemoteReadMetrics(oldKey)
+		}
+	}
+
+	// Save new state
+	s.readRemotes = activeReadRemotes
 	s.queryables = queryables
 
 	return nil

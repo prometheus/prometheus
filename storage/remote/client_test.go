@@ -26,6 +26,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -368,7 +369,12 @@ func TestReadClient(t *testing.T) {
 				Timeout:          model.Duration(test.timeout),
 				ChunkedReadLimit: config.DefaultChunkedReadLimit,
 			}
-			c, err := NewReadClient("test", conf)
+			reg := prometheus.NewRegistry()
+			old := prometheus.DefaultRegisterer
+			prometheus.DefaultRegisterer = reg
+			t.Cleanup(func() { prometheus.DefaultRegisterer = old })
+			t.Cleanup(func() { unregisterRemoteReadMetrics("test|" + conf.URL.String()) })
+			c, err := NewReadClient("test", conf, reg)
 			require.NoError(t, err)
 
 			query := &prompb.Query{}
@@ -922,7 +928,7 @@ func TestReadMultipleWithChunks(t *testing.T) {
 				ChunkedReadLimit: config.DefaultChunkedReadLimit,
 			}
 
-			client, err := NewReadClient("test", cfg)
+			client, err := NewReadClient("test", cfg, prometheus.NewRegistry())
 			require.NoError(t, err)
 
 			// Test ReadMultiple

@@ -24,7 +24,6 @@ import (
 	"net/http/httptrace"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -64,8 +63,6 @@ var (
 		config.RemoteWriteProtoMsgV1: appProtoContentType, // Also application/x-protobuf;proto=prometheus.WriteRequest but simplified for compatibility with 1.x spec.
 		config.RemoteWriteProtoMsgV2: appProtoContentType + ";proto=io.prometheus.write.v2.Request",
 	}
-
-	remoteReadMetricCache sync.Map // key: remoteName+url, value: *readClientMetrics
 
 	AcceptedResponseTypes = []prompb.ReadRequest_ResponseType{
 		prompb.ReadRequest_STREAMED_XOR_CHUNKS,
@@ -115,38 +112,17 @@ type ReadClient interface {
 	ReadMultiple(ctx context.Context, queries []*prompb.Query, sortSeries bool) (storage.SeriesSet, error)
 }
 
-type readClientMetrics struct {
-	readQueries          prometheus.Gauge
-	readQueriesTotalVec  *prometheus.CounterVec
-	readQueryDurationVec prometheus.ObserverVec
-	reg                  prometheus.Registerer
-}
-
-func newRemoteReadMetrics(
-	name string,
-	url string,
-	_ prometheus.Registerer, // ignored: remote-read carve-out uses the global registry
-) (
-	prometheus.Gauge,
-	*prometheus.CounterVec,
-	prometheus.ObserverVec,
+func newRemoteReadMetrics(name string, url string, reg prometheus.Registerer) (
+	readQueries prometheus.Gauge,
+	readQueriesTotal *prometheus.CounterVec,
+	readQueryDuration prometheus.ObserverVec,
 ) {
-	key := name + "|" + url
-
-	// Reuse existing collectors (no unregister, no reset) if we've already created them.
-	if oldVal, ok := remoteReadMetricCache.Load(key); ok {
-		if old, ok := oldVal.(*readClientMetrics); ok {
-			return old.readQueries, old.readQueriesTotalVec, old.readQueryDurationVec
-		}
-	}
-
-	// Carve-out: keep using the global registerer for remote-read.
 	wrappedReg := prometheus.WrapRegistererWith(prometheus.Labels{
 		"remote_name": name,
 		"endpoint":    url,
-	}, prometheus.DefaultRegisterer)
+	}, reg)
 
-	readQueries := prometheus.NewGauge(prometheus.GaugeOpts{
+	readQueries = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Subsystem: "remote_read_client",
 		Name:      "queries",
@@ -171,48 +147,9 @@ func newRemoteReadMetrics(
 		NativeHistogramMinResetDuration: time.Hour,
 	}, []string{"response_type"})
 
-	// Register OR reuse if already present (avoid panics and counter resets).
-	if err := wrappedReg.Register(readQueries); err != nil {
-		if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
-			readQueries = are.ExistingCollector.(prometheus.Gauge)
-		} else {
-			panic(err)
-		}
-	}
-	if err := wrappedReg.Register(readQueriesTotalVec); err != nil {
-		if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
-			readQueriesTotalVec = are.ExistingCollector.(*prometheus.CounterVec)
-		} else {
-			panic(err)
-		}
-	}
-	if err := wrappedReg.Register(readQueryDurationVec); err != nil {
-		if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
-			readQueryDurationVec = are.ExistingCollector.(*prometheus.HistogramVec)
-		} else {
-			panic(err)
-		}
-	}
-
-	remoteReadMetricCache.Store(key, &readClientMetrics{
-		readQueries:          readQueries,
-		readQueriesTotalVec:  readQueriesTotalVec,
-		readQueryDurationVec: readQueryDurationVec,
-		reg:                  wrappedReg, // keep for explicit cleanup when a remote is removed
-	})
+	wrappedReg.MustRegister(readQueries, readQueriesTotalVec, readQueryDurationVec)
 
 	return readQueries, readQueriesTotalVec, readQueryDurationVec
-}
-
-// Unregister metrics for a removed remote_read config.
-func unregisterRemoteReadMetrics(key string) {
-	if val, ok := remoteReadMetricCache.LoadAndDelete(key); ok {
-		if m, ok := val.(*readClientMetrics); ok && m.reg != nil {
-			m.reg.Unregister(m.readQueries)
-			m.reg.Unregister(m.readQueriesTotalVec)
-			m.reg.Unregister(m.readQueryDurationVec)
-		}
-	}
 }
 
 // NewReadClient creates a new client for remote read.
@@ -232,15 +169,8 @@ func NewReadClient(name string, conf *ClientConfig, reg prometheus.Registerer, o
 	acceptedResponseTypes := conf.AcceptedResponseTypes
 	if len(acceptedResponseTypes) == 0 {
 		acceptedResponseTypes = AcceptedResponseTypes
-	}
 
-	// Always create metrics; helper uses the default registry for the carve-out.
-	var (
-		readQueries         prometheus.Gauge
-		readQueriesTotal    *prometheus.CounterVec
-		readQueriesDuration prometheus.ObserverVec
-	)
-	readQueries, readQueriesTotal, readQueriesDuration = newRemoteReadMetrics(name, conf.URL.String(), reg)
+	}
 
 	return &Client{
 		remoteName:            name,
@@ -249,9 +179,9 @@ func NewReadClient(name string, conf *ClientConfig, reg prometheus.Registerer, o
 		timeout:               time.Duration(conf.Timeout),
 		chunkedReadLimit:      conf.ChunkedReadLimit,
 		acceptedResponseTypes: acceptedResponseTypes,
-		readQueries:           readQueries,
-		readQueriesTotal:      readQueriesTotal,
-		readQueriesDuration:   readQueriesDuration,
+		readQueries:           remoteReadQueries.WithLabelValues(name, conf.URL.String()),
+		readQueriesTotal:      remoteReadQueriesTotal.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: conf.URL.String()}),
+		readQueriesDuration:   remoteReadQueryDuration.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: conf.URL.String()}),
 	}, nil
 }
 

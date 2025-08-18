@@ -356,7 +356,7 @@ func main() {
 
 	switch parsedCmd {
 	case sdCheckCmd.FullCommand():
-		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, prometheus.DefaultRegisterer))
+		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, prometheus.NewRegistry()))
 
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newConfigLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkConfigIgnoreUnknownFields, model.UTF8Validation, model.Duration(*checkLookbackDelta)), *configFiles...))

@@ -51,9 +51,10 @@ var (
 	errNaNOrInf = errors.New("value is NaN or Inf")
 )
 
-func init() {
-	prometheus.MustRegister(templateTextExpansionFailures)
-	prometheus.MustRegister(templateTextExpansionTotal)
+// RegisterTemplateMetrics registers the template metrics. Caller is responsible for calling this only once per registry.
+func RegisterTemplateMetrics(registry prometheus.Registerer) {
+	registry.MustRegister(templateTextExpansionFailures)
+	registry.MustRegister(templateTextExpansionTotal)
 }
 
 // A version of vector that's easier to use from templates.
