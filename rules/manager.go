@@ -137,6 +137,13 @@ type ManagerOptions struct {
 // NewManager returns an implementation of Manager, ready to be started
 // by calling the Run method.
 func NewManager(o *ManagerOptions) *Manager {
+	switch o.NameValidationScheme {
+	case model.UTF8Validation, model.LegacyValidation:
+	case model.UnsetValidation:
+		o.NameValidationScheme = model.UTF8Validation
+	default:
+		panic(fmt.Errorf("unrecognized name validation scheme: %s", o.NameValidationScheme))
+	}
 	if o.Metrics == nil {
 		o.Metrics = NewGroupMetrics(o.Registerer)
 	}

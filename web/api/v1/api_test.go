@@ -311,12 +311,11 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 	}
 	engine := promqltest.NewTestEngineWithOpts(m.testing, engineOpts)
 	opts := &rules.ManagerOptions{
-		NameValidationScheme: model.UTF8Validation,
-		QueryFunc:            rules.EngineQueryFunc(engine, storage),
-		Appendable:           storage,
-		Context:              context.Background(),
-		Logger:               promslog.NewNopLogger(),
-		NotifyFunc:           func(context.Context, string, ...*rules.Alert) {},
+		QueryFunc:  rules.EngineQueryFunc(engine, storage),
+		Appendable: storage,
+		Context:    context.Background(),
+		Logger:     promslog.NewNopLogger(),
+		NotifyFunc: func(context.Context, string, ...*rules.Alert) {},
 	}
 
 	var r []rules.Rule

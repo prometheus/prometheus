@@ -98,9 +98,7 @@ type GroupOptions struct {
 func NewGroup(o GroupOptions) *Group {
 	opts := o.Opts
 	if opts == nil {
-		opts = &ManagerOptions{
-			NameValidationScheme: model.UTF8Validation,
-		}
+		opts = &ManagerOptions{}
 	}
 	metrics := opts.Metrics
 	if metrics == nil {
