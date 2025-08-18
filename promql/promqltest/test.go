@@ -531,7 +531,6 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 
 // parseAsStringLiteral returns the expected string from an expect string expression.
 // It is valid for the line to match the expect string prefix exactly, and an empty string is returned.
-// For other string we expect there to be a single space between the prefix and the literal value.
 func parseAsStringLiteral(line string) (string, error) {
 	if line == expectStringPrefix {
 		return "", nil
@@ -875,6 +874,8 @@ func newInstantEvalCmd(expr string, start time.Time, line int) *evalCmd {
 		metrics:      map[uint64]labels.Labels{},
 		expected:     map[uint64]entry{},
 		expectedCmds: map[expectCmdType][]expectCmd{},
+
+		excludeFromRangeQuery: false,
 	}
 }
 
@@ -1455,8 +1456,10 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 }
 
 func (t *test) execInstantEval(cmd *evalCmd, engine promql.QueryEngine) error {
-	var queries []atModifierTestCase
-
+	queries, err := atModifierTestCases(cmd.expr, cmd.eval)
+	if err != nil {
+		return err
+	}
 	queries = append([]atModifierTestCase{{expr: cmd.expr, evalTime: cmd.eval}}, queries...)
 	for _, iq := range queries {
 		if err := t.runInstantQuery(iq, cmd, engine); err != nil {
