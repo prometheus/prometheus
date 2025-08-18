@@ -346,7 +346,7 @@ func (t *test) parseExpectRangeVector(line string) (*time.Time, *time.Time, *tim
 
 // parseDurations parses the given from, to and step strings to Durations.
 // Additionally, a check is performed to ensure to is before from.
-func (t *test) parseDurations(from, to, step string) (*model.Duration, *model.Duration, *model.Duration, error) {
+func (*test) parseDurations(from, to, step string) (*model.Duration, *model.Duration, *model.Duration, error) {
 	parsedFrom, err := model.ParseDuration(from)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("invalid start timestamp definition %q: %w", from, err)
