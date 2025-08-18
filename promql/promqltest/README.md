@@ -107,11 +107,11 @@ eval range from <start> to <end> step <step> <query>
 * `<step>` is the step of the range query, and uses the same syntax as `<time>` (eg. `30s`) 
 * `<expect>`(optional) specifies expected annotations, errors, or result ordering.
 * `<expect range vector>` (optional) for an instant query you can specify expected range vector timestamps
+* `<expect string>` (optional) for matching an empty string literal
+* `<expect string> <string>` (optional) for matching a string literal
 * `<series>` and `<points>` specify the expected values, and follow the same syntax as for `load` above
 
-Note - a string literal instant series is now suppported. The string literal can be defined by placing the string within quotes (""). 
-
-This is only valid for an instant query.
+String literals results only supported for an instant query.
 
 For instance;
 
