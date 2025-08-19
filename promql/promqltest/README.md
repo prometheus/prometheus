@@ -108,7 +108,7 @@ eval range from <start> to <end> step <step> <query>
 * `<expect>`(optional) specifies expected annotations, errors, or result ordering.
 * `<expect range vector>` (optional) for an instant query you can specify expected range vector timestamps
 * `<expect string>` (optional) for matching an empty string literal
-* `<expect string> <string>` (optional) for matching a string literal
+* `<expect string> "<string>"` (optional) for matching a string literal
 * `<series>` and `<points>` specify the expected values, and follow the same syntax as for `load` above
 
 ### `expect string`
@@ -121,8 +121,10 @@ For example;
 
 ```
 eval instant at 50m ("Foo")
- expect string Foo
+ expect string "Foo"
 ```
+
+The expected string value must be within quotes. Double or back quotes are supported.
 
 ### `expect range vector`
 

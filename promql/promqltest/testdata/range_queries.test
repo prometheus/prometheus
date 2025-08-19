@@ -76,7 +76,7 @@ load 10s
   some_metric{env="a"} 1+1x5
   some_metric{env="b"} 2+2x5
 
-# Return a range vector - note that we use the range vector to define our expected timestamps in the result vectors
+# Return a range vector - note the use of the expect range vector directive which defines expected range
 eval instant at 1m some_metric[1m]
   expect range vector from 10s to 1m step 10s
   some_metric{env="a"} 2 3 4 5 6

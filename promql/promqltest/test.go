@@ -480,7 +480,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			cmd.start = *start
 			cmd.end = *end
 			cmd.step = *step
-			cmd.isInstantRangeQuery = true
+			cmd.eval = *end
 			cmd.excludeFromRangeQuery = true
 
 			continue
@@ -530,7 +530,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 }
 
 // parseAsStringLiteral returns the expected string from an expect string expression.
-// It is valid for the line top match the expect string prefix exactly, and an empty string is returned.
+// It is valid for the line to match the expect string prefix exactly, and an empty string is returned.
 // For other string we expect there to be a single space between the prefix and the literal value.
 func parseAsStringLiteral(line string) (string, error) {
 	if line == expectStringPrefix {
@@ -542,7 +542,11 @@ func parseAsStringLiteral(line string) (string, error) {
 		return "", errors.New("expected string literal not valid")
 	}
 
-	return parts[1], nil
+	if str, err := strconv.Unquote(parts[1]); err != nil {
+		return "", errors.New("expected string literal must be within quotes")
+	} else {
+		return str, nil
+	}
 }
 
 // getLines returns trimmed lines after removing the comments.
@@ -778,6 +782,7 @@ type evalCmd struct {
 	end   time.Time
 	step  time.Duration
 	line  int
+	eval  time.Time
 
 	isRange                   bool // if false, instant query
 	fail, warn, ordered, info bool
@@ -795,11 +800,6 @@ type evalCmd struct {
 
 	// if true and this is an instant query then we will not test this in a range query scenario
 	excludeFromRangeQuery bool
-
-	// if true and this is an instant query then we will exclude it from adding additional at modifier test cases
-	excludeFromAtModifier bool
-
-	isInstantRangeQuery bool
 }
 
 func (ev *evalCmd) isOrdered() bool {
@@ -869,14 +869,12 @@ func newInstantEvalCmd(expr string, start time.Time, line int) *evalCmd {
 	return &evalCmd{
 		expr:  expr,
 		start: start,
+		eval:  start,
 		line:  line,
 
 		metrics:      map[uint64]labels.Labels{},
 		expected:     map[uint64]entry{},
 		expectedCmds: map[expectCmdType][]expectCmd{},
-
-		excludeFromRangeQuery: false,
-		excludeFromAtModifier: false,
 	}
 }
 
@@ -1118,10 +1116,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		}
 	case promql.String:
 		if ev.expectedString != val.V {
-			if len(ev.expectedString) == 0 {
-				return fmt.Errorf("expected empty string but got %v", val.V)
-			}
-			return fmt.Errorf("expected string %v but got %v", ev.expectedString, val.V)
+			return fmt.Errorf("expected string \"%v\" but got \"%v\"", ev.expectedString, val.V)
 		}
 	default:
 		panic(fmt.Errorf("promql.Test.compareResult: unexpected result type %T", result))
@@ -1461,22 +1456,8 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 
 func (t *test) execInstantEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	var queries []atModifierTestCase
-	var err error
 
-	// if we are expecting a range vector result (ie metric[5m]) then the eval time is set to the end
-	evalTime := cmd.start
-	if cmd.isInstantRangeQuery {
-		evalTime = cmd.end
-	}
-
-	if !cmd.excludeFromAtModifier {
-		queries, err = atModifierTestCases(cmd.expr, evalTime)
-		if err != nil {
-			return err
-		}
-	}
-
-	queries = append([]atModifierTestCase{{expr: cmd.expr, evalTime: evalTime}}, queries...)
+	queries = append([]atModifierTestCase{{expr: cmd.expr, evalTime: cmd.eval}}, queries...)
 	for _, iq := range queries {
 		if err := t.runInstantQuery(iq, cmd, engine); err != nil {
 			return err
