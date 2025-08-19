@@ -395,6 +395,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.CTZeroIngestionEnabled,
 		o.LookbackDelta,
 		o.EnableTypeAndUnitLabels,
+		nil,
 	)
 
 	if o.RoutePrefix != "/" {
