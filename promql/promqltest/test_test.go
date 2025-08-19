@@ -1011,6 +1011,18 @@ eval instant at 0m http_requests
 			`,
 			expectedError: `error in eval some_metric[1m] (line 5): expected metric {__name__="some_metric", env="b"} not found`,
 		},
+		"instant query with range result - result has a series which is not expected": {
+			input: `
+				load 10s
+  					some_metric{env="a"} 1+1x5
+					some_metric{env="b"} 1+1x5
+
+				eval instant at 1m some_metric[1m]
+					expect range vector from 10s to 1m step 10s
+  					some_metric{env="a"} 2 3 4 5 6
+			`,
+			expectedError: `error in eval some_metric[1m] (line 6): unexpected metric {__name__="some_metric", env="b"} in result, has 5 float points [2 @[10000] 3 @[20000] 4 @[30000] 5 @[40000] 6 @[50000]] and 0 histogram points []`,
+		},
 		"instant query with range result - result has a value that is not expected": {
 			input: `
 				load 10s
