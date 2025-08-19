@@ -541,11 +541,12 @@ func parseAsStringLiteral(line string) (string, error) {
 		return "", errors.New("expected string literal not valid")
 	}
 
-	if str, err := strconv.Unquote(parts[1]); err != nil {
+	str, err := strconv.Unquote(parts[1])
+	if err != nil {
 		return "", errors.New("expected string literal must be within quotes")
-	} else {
-		return str, nil
 	}
+
+	return str, nil
 }
 
 // getLines returns trimmed lines after removing the comments.
@@ -1459,6 +1460,7 @@ func (t *test) execInstantEval(cmd *evalCmd, engine promql.QueryEngine) error {
 		return err
 	}
 	queries = append([]atModifierTestCase{{expr: cmd.expr, evalTime: cmd.eval}}, queries...)
+
 	for _, iq := range queries {
 		if err := t.runInstantQuery(iq, cmd, engine); err != nil {
 			return err
