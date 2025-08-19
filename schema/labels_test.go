@@ -31,10 +31,11 @@ func TestMetadata(t *testing.T) {
 		Unit:         "seconds",
 		Temporality:  "delta",
 		Monotonicity: "true",
+		OTelType:     "sum",
 	}
 
 	for _, tcase := range []struct {
-		emptyName, emptyType, emptyUnit, emptyTemporality, emptyMonotonicity bool
+		emptyName, emptyType, emptyUnit, emptyTemporality, emptyMonotonicity, emptyOTelType bool
 	}{
 		{},
 		{emptyName: true},
@@ -42,6 +43,7 @@ func TestMetadata(t *testing.T) {
 		{emptyUnit: true},
 		{emptyTemporality: true},
 		{emptyMonotonicity: true},
+		{emptyOTelType: true},
 		{emptyName: true, emptyType: true, emptyUnit: true, emptyTemporality: true},
 	} {
 		var (
@@ -75,6 +77,10 @@ func TestMetadata(t *testing.T) {
 				lb.Add(metricMonotonicity, testMeta.Monotonicity)
 				expectedMeta.Monotonicity = testMeta.Monotonicity
 			}
+			if !tcase.emptyOTelType {
+				lb.Add(metricOTelType, testMeta.OTelType)
+				expectedMeta.OTelType = testMeta.OTelType
+			}
 			lb.Sort()
 			expectedLabels = lb.Labels()
 		}
@@ -93,6 +99,7 @@ func TestMetadata(t *testing.T) {
 				require.Equal(t, tcase.emptyUnit, expectedMeta.IsEmptyFor(metricUnit))
 				require.Equal(t, tcase.emptyTemporality, expectedMeta.IsEmptyFor(metricTemporality))
 				require.Equal(t, tcase.emptyMonotonicity, expectedMeta.IsEmptyFor(metricMonotonicity))
+				require.Equal(t, tcase.emptyOTelType, expectedMeta.IsEmptyFor(metricOTelType))
 			}
 			{
 				// From Metadata to labels for various builders.
@@ -129,8 +136,9 @@ func TestIgnoreOverriddenMetadataLabelsScratchBuilder(t *testing.T) {
 				Unit:         "seconds",
 				Temporality:  "delta",
 				Monotonicity: "true",
+				OTelType:     "sum",
 			},
-			expectedLabels: labels.FromStrings(metricName, "metric_total", metricType, string(model.MetricTypeCounter), metricUnit, "seconds", metricTemporality, "delta", metricMonotonicity, "true", "foo", "bar"),
+			expectedLabels: labels.FromStrings(metricName, "metric_total", metricType, string(model.MetricTypeCounter), metricUnit, "seconds", metricTemporality, "delta", metricMonotonicity, "true", metricOTelType, "sum", "foo", "bar"),
 		},
 		{
 			highPrioMeta: Metadata{
@@ -178,6 +186,7 @@ func TestIsMetadataLabel(t *testing.T) {
 		{"__unit__", true},
 		{"__temporality__", true},
 		{"__monotonicity__", true},
+		{"__otel_type__", true},
 		{"foo", false},
 		{"bar", false},
 		{"__other__", false},

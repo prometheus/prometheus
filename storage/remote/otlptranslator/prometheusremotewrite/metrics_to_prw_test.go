@@ -683,13 +683,19 @@ func createPromFloatSeriesWithTemporality(name, temporality string, ts time.Time
 }
 
 func createPromFloatSeriesWithTemporalityAndMonotonicity(name, temporality, monotonicity string, ts time.Time) prompb.TimeSeries {
+	labels := []prompb.Label{
+		{Name: "__monotonicity__", Value: monotonicity},
+		{Name: "__name__", Value: name},
+		{Name: "__temporality__", Value: temporality},
+		{Name: "test_label", Value: "test_value"},
+	}
+
+	if monotonicity == "false" {
+		labels = append(labels, prompb.Label{Name: "__otel_type__", Value: "sum"})
+	}
+
 	return prompb.TimeSeries{
-		Labels: []prompb.Label{
-			{Name: "__monotonicity__", Value: monotonicity},
-			{Name: "__name__", Value: name},
-			{Name: "__temporality__", Value: temporality},
-			{Name: "test_label", Value: "test_value"},
-		},
+		Labels: labels,
 		Samples: []prompb.Sample{{
 			Value:     5,
 			Timestamp: ts.UnixMilli(),

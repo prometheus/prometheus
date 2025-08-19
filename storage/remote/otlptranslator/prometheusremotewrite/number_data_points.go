@@ -104,6 +104,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 				lbls = append(lbls, prompb.Label{Name: "__monotonicity__", Value: "true"})
 			} else {
 				lbls = append(lbls, prompb.Label{Name: "__monotonicity__", Value: "false"})
+				lbls = append(lbls, prompb.Label{Name: "__otel_type__", Value: "sum"})
 			}
 		}
 
