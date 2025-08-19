@@ -518,7 +518,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
-		baseLabels, err := createAttributes(resource, pt.Attributes(), scope, settings, nil, false, metadata, 0)
+		baseLabels, err := createAttributes(resource, pt.Attributes(), scope, settings, nil, false, metadata, pmetric.AggregationTemporalityUnspecified)
 		if err != nil {
 			return err
 		}
@@ -666,7 +666,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, earlies
 		// Do not pass identifying attributes as ignoreAttrs below.
 		identifyingAttrs = nil
 	}
-	labels, err := createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, prompb.MetricMetadata{}, 0, model.MetricNameLabel, name)
+	labels, err := createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, prompb.MetricMetadata{}, pmetric.AggregationTemporalityUnspecified, model.MetricNameLabel, name)
 	if err != nil {
 		return err
 	}

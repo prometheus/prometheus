@@ -45,7 +45,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 			nil,
 			true,
 			metadata,
-			0,
+			pmetric.AggregationTemporalityUnspecified,
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)
