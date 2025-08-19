@@ -52,6 +52,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		if err != nil {
 			return err
 		}
+
 		sample := &prompb.Sample{
 			// convert ns to ms
 			Timestamp: convertTimeStamp(pt.Timestamp()),
@@ -73,7 +74,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 }
 
 func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, settings Settings, metadata prompb.MetricMetadata, scope scope, temporality pmetric.AggregationTemporality,
+	resource pcommon.Resource, settings Settings, metadata prompb.MetricMetadata, scope scope, temporality pmetric.AggregationTemporality, isMonotonic bool,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -96,6 +97,16 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		if err != nil {
 			return err
 		}
+
+		if settings.AllowDeltaTemporality && temporality == pmetric.AggregationTemporalityDelta {
+			// Add monotonicity label for delta Sum metrics
+			if isMonotonic {
+				lbls = append(lbls, prompb.Label{Name: "__monotonicity__", Value: "true"})
+			} else {
+				lbls = append(lbls, prompb.Label{Name: "__monotonicity__", Value: "false"})
+			}
+		}
+
 		sample := &prompb.Sample{
 			// convert ns to ms
 			Timestamp: convertTimeStamp(pt.Timestamp()),
