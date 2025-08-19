@@ -874,8 +874,6 @@ func newInstantEvalCmd(expr string, start time.Time, line int) *evalCmd {
 		metrics:      map[uint64]labels.Labels{},
 		expected:     map[uint64]entry{},
 		expectedCmds: map[expectCmdType][]expectCmd{},
-
-		excludeFromRangeQuery: false,
 	}
 }
 
