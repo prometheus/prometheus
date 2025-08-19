@@ -527,8 +527,8 @@ func (*writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage
 type OTLPOptions struct {
 	// Convert delta samples to their cumulative equivalent by aggregating in-memory
 	ConvertDelta bool
-	// Store the raw delta samples as metrics with unknown type (we don't have a proper type for delta yet, therefore
-	// marking the metric type as unknown for now).
+	// Store the raw delta samples as metrics with a __temporality__ label set to "delta", and
+	// a __type__ label set to "gauge"/"gaugehistogram" (if EnableTypeAndUnitLabels is also set to "true").
 	// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
 	NativeDelta bool
 	// LookbackDelta is the query lookback delta.
