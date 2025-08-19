@@ -290,7 +290,7 @@ func NewAPI(
 	ctZeroIngestionEnabled bool,
 	lookbackDelta time.Duration,
 	enableTypeAndUnitLabels bool,
-  overrideErrorCode OverrideErrorCode,
+	overrideErrorCode OverrideErrorCode,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
