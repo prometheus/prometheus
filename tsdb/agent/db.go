@@ -633,6 +633,7 @@ Loop:
 
 // keepSeriesInWALCheckpointFn returns a function that is used to determine whether a series record should be kept in the checkpoint.
 // last is the last WAL segment that was considered for checkpointing.
+// NOTE: the agent implementation here is different from the Prometheus implementation, in that it uses WAL segment numbers instead of timestamps.
 func (db *DB) keepSeriesInWALCheckpointFn(last int) func(id chunks.HeadSeriesRef) bool {
 	return func(id chunks.HeadSeriesRef) bool {
 		// Keep the record if the series exists in the db.
