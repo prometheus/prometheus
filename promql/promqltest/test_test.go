@@ -995,7 +995,7 @@ eval instant at 0m http_requests
 		"instant query with error string literal": {
 			input: `
 				eval instant at 50m ("Foo")
-					expect string Bar
+					expect string "Bar"
 			`,
 			expectedError: `error in eval ("Foo") (line 2): expected string "Bar" but got "Foo"`,
 		},
