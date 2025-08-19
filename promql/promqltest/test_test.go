@@ -1056,7 +1056,7 @@ eval instant at 0m http_requests
 			`,
 			expectedError: `error in eval some_metric_with_stale_marker[3m] (line 5): expected 3 float points and 0 histogram points for {__name__="some_metric_with_stale_marker"}, but got 2 float points [1 @[60000] 3 @[180000]] and 0 histogram points []`,
 		},
-		"instant query with range result - result has a sample where non is expected": {
+		"instant query with range result - result has a sample where none is expected": {
 			input: `
 				load 1m
 				  some_metric_with_stale_marker 0 1 2 3
