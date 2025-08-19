@@ -466,7 +466,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 }
 
 func TestShutdown(t *testing.T) {
-	t.Parallel()
+	// Not t.Parallel() because the test became flaky; see https://github.com/prometheus/prometheus/issues/17045
 	deadline := 1 * time.Second
 	c := NewTestBlockedWriteClient()
 
