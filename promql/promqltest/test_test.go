@@ -999,7 +999,7 @@ eval instant at 0m http_requests
 			`,
 			expectedError: `error in eval ("Foo") (line 2): expected string "Bar" but got "Foo"`,
 		},
-		"instant query with range result - result has a series that is not expected": {
+		"instant query with range result - result does not have a series that is expected": {
 			input: `
 				load 10s
   					some_metric{env="a"} 1+1x5
