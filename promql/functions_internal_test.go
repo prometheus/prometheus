@@ -121,7 +121,7 @@ func TestHistogramRate_Annotations(t *testing.T) {
 			},
 			wantAnnotations: newAnnotations(
 				annotations.NewNativeHistogramNotGaugeWarning(metricName, pos),
-				annotations.NewHistogramCounterResetCollisionWarning(pos),
+				annotations.NewHistogramCounterResetCollisionWarning(pos, annotations.HistogramSub),
 			),
 		},
 	} {

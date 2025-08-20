@@ -2960,7 +2960,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 					return 0, nil, false, err
 				}
 				if counterResetCollision {
-					err = annotations.NewHistogramCounterResetCollisionWarning(pos)
+					err = annotations.NewHistogramCounterResetCollisionWarning(pos, annotations.HistogramAdd)
 				}
 				return 0, res.Compact(0), true, err
 			case parser.SUB:
@@ -2969,7 +2969,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 					return 0, nil, false, err
 				}
 				if counterResetCollision {
-					err = annotations.NewHistogramCounterResetCollisionWarning(pos)
+					err = annotations.NewHistogramCounterResetCollisionWarning(pos, annotations.HistogramSub)
 				}
 				return 0, res.Compact(0), true, err
 			case parser.EQLC:

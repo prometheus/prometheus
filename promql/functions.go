@@ -264,7 +264,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 	}
 
 	if counterResetCollision {
-		annos.Add(annotations.NewHistogramCounterResetCollisionWarning(pos))
+		annos.Add(annotations.NewHistogramCounterResetCollisionWarning(pos, annotations.HistogramSub))
 	}
 
 	if isCounter {
@@ -281,7 +281,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 					}
 				}
 				if counterResetCollision {
-					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(pos))
+					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(pos, annotations.HistogramAdd))
 				}
 			}
 			prev = curr
@@ -403,7 +403,7 @@ func instantValue(vals Matrix, args parser.Expressions, out Vector, isRate bool)
 				return out, annos.Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, args.PositionRange()))
 			}
 			if counterResetCollision {
-				annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args.PositionRange()))
+				annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args.PositionRange(), annotations.HistogramSub))
 			}
 		}
 		resultSample.H.CounterResetHint = histogram.GaugeType
@@ -721,14 +721,14 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					return mean, err
 				}
 				if counterResetCollision {
-					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange()))
+					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramSub))
 				}
 				_, counterResetCollision, err = mean.Add(toAdd)
 				if err != nil {
 					return mean, err
 				}
 				if counterResetCollision {
-					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange()))
+					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
 				}
 			}
 			return mean, nil
@@ -927,7 +927,7 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					return sum, err
 				}
 				if counterResetCollision {
-					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange()))
+					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
 				}
 			}
 			return sum, nil
