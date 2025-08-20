@@ -68,7 +68,7 @@ eval instant at 50m " Foo "
     expect string " Foo "
 
 eval instant at 50m ("")
-	expect string
+	expect string ""
 
 eval instant at 50m ""
-	expect string
+   	expect string ""

@@ -47,14 +47,13 @@ import (
 )
 
 var (
-	patSpace        = regexp.MustCompile("[\t ]+")
-	patLoad         = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)$`)
-	patEvalInstant  = regexp.MustCompile(`^eval(?:_(fail|warn|ordered|info))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
-	patEvalRange    = regexp.MustCompile(`^eval(?:_(fail|warn|info))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
-	patExpect       = regexp.MustCompile(`^expect\s+(ordered|fail|warn|no_warn|info|no_info)(?:\s+(regex|msg):(.+))?$`)
-	patMatchAny     = regexp.MustCompile(`^.*$`)
-	patExpectRange  = regexp.MustCompile(`^` + rangeVectorPrefix + `\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+)$`)
-	patExpectString = regexp.MustCompile(`^` + expectStringPrefix + `\s(.+)$`)
+	patSpace       = regexp.MustCompile("[\t ]+")
+	patLoad        = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)$`)
+	patEvalInstant = regexp.MustCompile(`^eval(?:_(fail|warn|ordered|info))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
+	patEvalRange   = regexp.MustCompile(`^eval(?:_(fail|warn|info))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
+	patExpect      = regexp.MustCompile(`^expect\s+(ordered|fail|warn|no_warn|info|no_info)(?:\s+(regex|msg):(.+))?$`)
+	patMatchAny    = regexp.MustCompile(`^.*$`)
+	patExpectRange = regexp.MustCompile(`^` + rangeVectorPrefix + `\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+)$`)
 )
 
 const (
@@ -533,17 +532,17 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 // It is valid for the line to match the expect string prefix exactly, and an empty string is returned.
 func parseAsStringLiteral(line string) (string, error) {
 	if line == expectStringPrefix {
-		return "", nil
+		return "", errors.New("expected string literal not valid - a quoted string literal is required")
 	}
 
-	parts := patExpectString.FindStringSubmatch(line)
-	if len(parts) != 2 {
-		return "", errors.New("expected string literal not valid")
+	str := strings.TrimPrefix(line, expectStringPrefix+" ")
+	if len(str) == 0 {
+		return "", errors.New("expected string literal not valid - a quoted string literal is required")
 	}
 
-	str, err := strconv.Unquote(parts[1])
+	str, err := strconv.Unquote(str)
 	if err != nil {
-		return "", errors.New("expected string literal must be within quotes")
+		return "", errors.New("expected string literal not valid - check that the string is correctly quoted")
 	}
 
 	return str, nil

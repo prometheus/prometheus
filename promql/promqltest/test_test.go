@@ -977,18 +977,25 @@ eval instant at 0m http_requests
 				eval instant at 50m ("")
 					expect string
 			`,
+			expectedError: `error in eval ("") (line 3): expected string literal not valid - a quoted string literal is required`,
+		},
+		"instant query with string literal with correctly quoted empty string": {
+			input: `
+				eval instant at 50m ("")
+					expect string ""
+			`,
 		},
 		"instant query with string literal - not quoted": {
 			input: `
 				eval instant at 50m ("Foo")
 					expect string Foo
 			`,
-			expectedError: `error in eval ("Foo") (line 3): expected string literal must be within quotes`,
+			expectedError: `error in eval ("Foo") (line 3): expected string literal not valid - check that the string is correctly quoted`,
 		},
 		"instant query with empty string literal": {
 			input: `
 				eval instant at 50m ("Foo")
-					expect string
+					expect string ""
 			`,
 			expectedError: `error in eval ("Foo") (line 2): expected string "" but got "Foo"`,
 		},
