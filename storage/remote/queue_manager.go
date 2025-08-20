@@ -407,17 +407,17 @@ type QueueManager struct {
 	reshardDisableStartTimestamp atomic.Int64 // Time that reshard was disabled.
 	reshardDisableEndTimestamp   atomic.Int64 // Time that reshard is disabled until.
 
-	logger                *slog.Logger
-	flushDeadline         time.Duration
-	cfg                   config.QueueConfig
-	mcfg                  config.MetadataConfig
-	externalLabels        []labels.Label
-	relabelConfigs        []*relabel.Config
-	sendExemplars         bool
-	sendNativeHistograms  bool
+	logger                  *slog.Logger
+	flushDeadline           time.Duration
+	cfg                     config.QueueConfig
+	mcfg                    config.MetadataConfig
+	externalLabels          []labels.Label
+	relabelConfigs          []*relabel.Config
+	sendExemplars           bool
+	sendNativeHistograms    bool
 	enableTypeAndUnitLabels bool
-	watcher               *wlog.Watcher
-	metadataWatcher       *MetadataWatcher
+	watcher                 *wlog.Watcher
+	metadataWatcher         *MetadataWatcher
 
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
@@ -484,15 +484,15 @@ func NewQueueManager(
 
 	logger = logger.With(remoteName, client.Name(), endpoint, client.Endpoint())
 	t := &QueueManager{
-		logger:                logger,
-		flushDeadline:         flushDeadline,
-		cfg:                   cfg,
-		mcfg:                  mCfg,
-		externalLabels:        extLabelsSlice,
-		relabelConfigs:        relabelConfigs,
-		storeClient:           client,
-		sendExemplars:         enableExemplarRemoteWrite,
-		sendNativeHistograms:  enableNativeHistogramRemoteWrite,
+		logger:                  logger,
+		flushDeadline:           flushDeadline,
+		cfg:                     cfg,
+		mcfg:                    mCfg,
+		externalLabels:          extLabelsSlice,
+		relabelConfigs:          relabelConfigs,
+		storeClient:             client,
+		sendExemplars:           enableExemplarRemoteWrite,
+		sendNativeHistograms:    enableNativeHistogramRemoteWrite,
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
@@ -1924,11 +1924,36 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(d.metadata.Unit)
 			nPendingMetadata++
 		} else {
+			metricType := writev2.Metadata_METRIC_TYPE_UNSPECIFIED
+			var unit string
+			if enableTypeAndUnitLabels {
+				typeValue := d.seriesLabels.Get("__type__")
+				unit = d.seriesLabels.Get("__unit__")
+				if typeValue != "" || unit != "" {
+					// convert string type to MetricMetadata_MetricType
+					switch typeValue {
+					case "counter":
+						metricType = writev2.Metadata_METRIC_TYPE_COUNTER
+					case "gauge":
+						metricType = writev2.Metadata_METRIC_TYPE_GAUGE
+					case "histogram":
+						metricType = writev2.Metadata_METRIC_TYPE_HISTOGRAM
+					case "summary":
+						metricType = writev2.Metadata_METRIC_TYPE_SUMMARY
+					case "info":
+						metricType = writev2.Metadata_METRIC_TYPE_INFO
+					case "stateset":
+						metricType = writev2.Metadata_METRIC_TYPE_STATESET
+					default:
+						metricType = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
+					}
+				}
+			}
 			// Safeguard against sending garbage in case of not having metadata
 			// for whatever reason.
-			pendingData[nPending].Metadata.Type = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
+			pendingData[nPending].Metadata.Type = metricType
 			pendingData[nPending].Metadata.HelpRef = 0
-			pendingData[nPending].Metadata.UnitRef = 0
+			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(unit)
 		}
 
 		if sendExemplars {

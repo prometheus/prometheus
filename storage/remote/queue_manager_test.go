@@ -2332,7 +2332,6 @@ func BenchmarkBuildTimeSeries(b *testing.B) {
 	}
 }
 
-// TestPopulateV2TimeSeries_typeAndUnitLabels tests that the populateV2TimeSeries function correctly populates the type and unit labels.
 func TestPopulateV2TimeSeries_typeAndUnitLabels(t *testing.T) {
 	symbolTable := writev2.NewSymbolTable()
 
