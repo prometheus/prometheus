@@ -631,17 +631,20 @@ Loop:
 	}
 }
 
-// keepSeriesInWALCheckpoint is used to determine whether a series record should be kept in the checkpoint
+// keepSeriesInWALCheckpointFn returns a function that is used to determine whether a series record should be kept in the checkpoint.
 // last is the last WAL segment that was considered for checkpointing.
-func (db *DB) keepSeriesInWALCheckpoint(id chunks.HeadSeriesRef, last int) bool {
-	// Keep the record if the series exists in the db.
-	if db.series.GetByID(id) != nil {
-		return true
-	}
+// NOTE: the agent implementation here is different from the Prometheus implementation, in that it uses WAL segment numbers instead of timestamps.
+func (db *DB) keepSeriesInWALCheckpointFn(last int) func(id chunks.HeadSeriesRef) bool {
+	return func(id chunks.HeadSeriesRef) bool {
+		// Keep the record if the series exists in the db.
+		if db.series.GetByID(id) != nil {
+			return true
+		}
 
-	// Keep the record if the series was recently deleted.
-	seg, ok := db.deleted[id]
-	return ok && seg > last
+		// Keep the record if the series was recently deleted.
+		seg, ok := db.deleted[id]
+		return ok && seg > last
+	}
 }
 
 func (db *DB) truncate(mint int64) error {
@@ -678,7 +681,7 @@ func (db *DB) truncate(mint int64) error {
 
 	db.metrics.checkpointCreationTotal.Inc()
 
-	if _, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpoint, mint); err != nil {
+	if _, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint); err != nil {
 		db.metrics.checkpointCreationFail.Inc()
 		var cerr *wlog.CorruptionErr
 		if errors.As(err, &cerr) {
