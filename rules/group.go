@@ -1092,13 +1092,13 @@ func (m dependencyMap) isIndependent(r Rule) bool {
 
 // buildDependencyMap builds a data-structure which contains the relationships between rules within a group.
 //
-// Alert rules, by definition, cannot have any dependents - but they can have dependencies. Any recording rule on whose
-// output an Alert rule depends will not be able to run concurrently.
+// Both Alert and RecordingRule can have dependents and dependencies. Alert can have dependents if another rule,
+// with in the group, queries ALERTS or ALERTS_FOR_NAME metrics.
 //
 // There is a class of rule expressions which are considered "indeterminate", because either relationships cannot be
 // inferred, or concurrent evaluation of rules depending on these series would produce undefined/unexpected behaviour:
 //   - wildcard queriers like {cluster="prod1"} which would match every series with that label selector
-//   - any "meta" series (series produced by Prometheus itself) like ALERTS, ALERTS_FOR_STATE
+//   - any "meta" series (series produced by Prometheus itself) like ALERTS, ALERTS_FOR_STATE without "alertname" label
 //
 // Rules which are independent can run concurrently with no side-effects.
 func buildDependencyMap(rules []Rule) dependencyMap {
@@ -1139,20 +1139,31 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 				}
 
 				// Rules which depend on "meta-metrics" like ALERTS and ALERTS_FOR_STATE will have undefined behaviour
-				// if they run concurrently.
+				// if they run concurrently, unless we're able to pinpoint them to specific rules by looking at the
+				// "alertname" label matcher (if any).
+				var alertsMatcher *labels.Matcher
 				if nameMatcher.Matches(alertMetricName) || nameMatcher.Matches(alertForStateMetricName) {
-					indeterminate = true
-					return nil
+					for _, m := range n.LabelMatchers {
+						if m.Name == labels.AlertName {
+							alertsMatcher = m
+							break
+						}
+					}
+
+					if alertsMatcher == nil {
+						indeterminate = true
+						return nil
+					}
 				}
 
-				// Find rules which depend on the output of this rule.
+				// Find the other rules that this rule depends on.
 				for _, other := range rules {
 					if other == rule {
 						continue
 					}
 
 					otherName := other.Name()
-					if nameMatcher.Matches(otherName) {
+					if nameMatcher.Matches(otherName) || (alertsMatcher != nil && alertsMatcher.Matches(otherName)) {
 						dependencies[other] = append(dependencies[other], rule)
 					}
 				}
