@@ -155,6 +155,7 @@ var (
 	NativeHistogramQuantileNaNResultInfo    = fmt.Errorf("%w: input to histogram_quantile has NaN observations, result is NaN", PromQLInfo)
 	NativeHistogramQuantileNaNSkewInfo      = fmt.Errorf("%w: input to histogram_quantile has NaN observations, result is skewed higher", PromQLInfo)
 	NativeHistogramFractionNaNsInfo         = fmt.Errorf("%w: input to histogram_fraction has NaN observations, which are excluded from all fractions", PromQLInfo)
+	HistogramCounterResetCollisionWarning   = fmt.Errorf("%w: conflicting counter resets during histogram", PromQLWarning)
 )
 
 type annoErr struct {
@@ -354,5 +355,26 @@ func NewNativeHistogramFractionNaNsInfo(metricName string, pos posrange.Position
 	return annoErr{
 		PositionRange: pos,
 		Err:           maybeAddMetricName(NativeHistogramFractionNaNsInfo, metricName),
+	}
+}
+
+type HistogramOperation string
+
+const (
+	HistogramAdd HistogramOperation = "addition"
+	HistogramSub HistogramOperation = "subtraction"
+)
+
+// NewHistogramCounterResetCollisionWarning is used when two counter histograms are added or subtracted where one has
+// a CounterReset hint and the other has NotCounterReset.
+func NewHistogramCounterResetCollisionWarning(pos posrange.PositionRange, operation HistogramOperation) error {
+	switch operation {
+	case HistogramAdd, HistogramSub:
+	default:
+		operation = "unknown operation"
+	}
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %s", HistogramCounterResetCollisionWarning, operation),
 	}
 }
