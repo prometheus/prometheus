@@ -2364,7 +2364,6 @@ func BenchmarkBuildTimeSeries(b *testing.B) {
 }
 
 func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
-	logger := promslog.New(&promslog.Config{})
 	metrics := newQueueManagerMetrics(nil, "", "")
 	initialCount := client_testutil.ToFloat64(metrics.unexpectedMetadataTotal)
 	symbolTable := writev2.NewSymbolTable()
@@ -2388,7 +2387,6 @@ func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
 	require.Equal(t, 2, nUnexpected, "Should count 2 unexpected metadata")
 
 	if nUnexpected > 0 {
-		logger.Warn("unexpected metadata in populateV2TimeSeries", "count", nUnexpected)
 		metrics.unexpectedMetadataTotal.Add(float64(nUnexpected))
 	}
 	finalCount := client_testutil.ToFloat64(metrics.unexpectedMetadataTotal)
