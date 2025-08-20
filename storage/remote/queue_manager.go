@@ -415,7 +415,7 @@ type QueueManager struct {
 	relabelConfigs        []*relabel.Config
 	sendExemplars         bool
 	sendNativeHistograms  bool
-	sendTypeAndUnitLabels bool
+	enableTypeAndUnitLabels bool
 	watcher               *wlog.Watcher
 	metadataWatcher       *MetadataWatcher
 
@@ -493,7 +493,7 @@ func NewQueueManager(
 		storeClient:           client,
 		sendExemplars:         enableExemplarRemoteWrite,
 		sendNativeHistograms:  enableNativeHistogramRemoteWrite,
-		sendTypeAndUnitLabels: enableTypeAndUnitLabels,
+		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
 		seriesMetadata:       make(map[chunks.HeadSeriesRef]*metadata.Metadata),
@@ -1546,7 +1546,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			}
 			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, encBuf, compr)
 		case config.RemoteWriteProtoMsgV2:
-			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.sendTypeAndUnitLabels)
+			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
 			_ = s.sendV2Samples(ctx, pendingDataV2[:n], symbolTable.Symbols(), nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, &pBufRaw, encBuf, compr)
 			symbolTable.Reset()
@@ -1914,7 +1914,7 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	return accumulatedStats, err
 }
 
-func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool) (int, int, int, int) {
+func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms bool, enableTypeAndUnitLabels bool) (int, int, int, int) {
 	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
@@ -1924,34 +1924,11 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(d.metadata.Unit)
 			nPendingMetadata++
 		} else {
-			metricType := writev2.Metadata_METRIC_TYPE_UNSPECIFIED
-			var unit string
-			if enableTypeAndUnitLabels {
-				typeValue := d.seriesLabels.Get("__type__")
-				unit = d.seriesLabels.Get("__unit__")
-				// convert string type to MetricMetadata_MetricType
-				switch typeValue {
-				case "counter":
-					metricType = writev2.Metadata_METRIC_TYPE_COUNTER
-				case "gauge":
-					metricType = writev2.Metadata_METRIC_TYPE_GAUGE
-				case "histogram":
-					metricType = writev2.Metadata_METRIC_TYPE_HISTOGRAM
-				case "summary":
-					metricType = writev2.Metadata_METRIC_TYPE_SUMMARY
-				case "info":
-					metricType = writev2.Metadata_METRIC_TYPE_INFO
-				case "stateset":
-					metricType = writev2.Metadata_METRIC_TYPE_STATESET
-				default:
-					metricType = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
-				}
-			}
 			// Safeguard against sending garbage in case of not having metadata
 			// for whatever reason.
-			pendingData[nPending].Metadata.Type = metricType
+			pendingData[nPending].Metadata.Type = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
 			pendingData[nPending].Metadata.HelpRef = 0
-			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(unit)
+			pendingData[nPending].Metadata.UnitRef = 0
 		}
 
 		if sendExemplars {
