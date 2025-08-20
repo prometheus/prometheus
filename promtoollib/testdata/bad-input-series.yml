@@ -1,0 +1,4 @@
+tests:
+  - input_series:
+      - series: 'up{job="prometheus", instance="localhost:9090"'
+        values: "0+0x1440"
