@@ -283,7 +283,7 @@ type Writer struct {
 	wbuf    fileutil.BufWriter
 	n       int64
 	crc32   hash.Hash
-	buf     [binary.MaxVarintLen32]byte
+	buf     [MaxChunkLengthFieldSize]byte
 
 	segmentSize   int64
 	useUncachedIO bool
