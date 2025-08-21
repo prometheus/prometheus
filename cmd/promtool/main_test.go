@@ -62,6 +62,23 @@ func TestMain(m *testing.M) {
 	os.Exit(exitCode)
 }
 
+// Promtool executes the promtool command with the given arguments as a separate process.
+// It returns the output and any error encountered.
+func Promtool(args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, promtoolPath, append([]string{"-test.main"}, args...)...)
+
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+
+	if err := cmd.Run(); err != nil {
+		return stdout.String(), fmt.Errorf("command failed: %w", err)
+	}
+	return stdout.String(), nil
+}
+
 func TestQueryRange(t *testing.T) {
 	t.Parallel()
 	s, getRequest := mockServer(200, `{"status": "success", "data": {"resultType": "matrix", "result": []}}`)
@@ -530,12 +547,11 @@ func TestExitCodes(t *testing.T) {
 			for _, lintFatal := range []bool{true, false} {
 				t.Run(strconv.FormatBool(lintFatal), func(t *testing.T) {
 					t.Parallel()
-					args := []string{"-test.main", "check", "config", "testdata/" + c.file}
+					args := []string{"check", "config", "testdata/" + c.file}
 					if lintFatal {
 						args = append(args, "--lint-fatal")
 					}
-					tool := exec.Command(promtoolPath, args...)
-					err := tool.Run()
+					_, err := Promtool(args...)
 					if c.exitCode == 0 || (c.lintIssue && !lintFatal) {
 						require.NoError(t, err)
 						return
@@ -561,22 +577,11 @@ func TestDocumentation(t *testing.T) {
 		t.SkipNow()
 	}
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
-	cmd := exec.CommandContext(ctx, promtoolPath, "-test.main", "write-documentation")
+	output, err := Promtool("write-documentation")
+	require.NoError(t, err)
 
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-
-	if err := cmd.Run(); err != nil {
-		var exitError *exec.ExitError
-		if errors.As(err, &exitError) && exitError.ExitCode() != 0 {
-			fmt.Println("Command failed with non-zero exit code")
-		}
-	}
-
-	generatedContent := strings.ReplaceAll(stdout.String(), filepath.Base(promtoolPath), strings.TrimSuffix(filepath.Base(promtoolPath), ".test"))
+	generatedContent := strings.ReplaceAll(output, filepath.Base(promtoolPath), strings.TrimSuffix(filepath.Base(promtoolPath), ".test"))
 
 	expectedContent, err := os.ReadFile(filepath.Join("..", "..", "docs", "command-line", "promtool.md"))
 	require.NoError(t, err)
@@ -655,10 +660,7 @@ func TestCheckRules(t *testing.T) {
 func TestCheckRulesWithFeatureFlag(t *testing.T) {
 	// As opposed to TestCheckRules calling CheckRules directly we run promtool
 	// so the feature flag parsing can be tested.
-
-	args := []string{"-test.main", "--enable-feature=promql-experimental-functions", "--enable-feature=promql-duration-expr", "--enable-feature=promql-extended-range-selectors", "check", "rules", "testdata/features.yml"}
-	tool := exec.Command(promtoolPath, args...)
-	err := tool.Run()
+	_, err := Promtool("--enable-feature=promql-experimental-functions", "--enable-feature=promql-duration-expr", "--enable-feature=promql-extended-range-selectors", "check", "rules", "testdata/features.yml")
 	require.NoError(t, err)
 }
 
@@ -763,9 +765,8 @@ func TestTSDBDumpCommand(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			args := []string{"-test.main", "tsdb", c.subCmd, storage.Dir()}
-			cmd := exec.Command(promtoolPath, args...)
-			require.NoError(t, cmd.Run())
+			_, err := Promtool("tsdb", c.subCmd, storage.Dir())
+			require.NoError(t, err)
 		})
 	}
 }
