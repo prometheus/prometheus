@@ -48,11 +48,11 @@ func init() {
 var promtoolPath = os.Args[0]
 
 // TestMain allows tests to invoke promtool's main() function in a separate process.
-// If the "-test.main" flag is present, it removes the flag and calls main().
+// If the "--invoke-main" flag is present, it removes the flag and calls main().
 // Otherwise, it runs the standard test suite.
 func TestMain(m *testing.M) {
 	for i, arg := range os.Args {
-		if arg == "-test.main" {
+		if arg == "--invoke-main" {
 			os.Args = append(os.Args[:i], os.Args[i+1:]...)
 			main()
 			return
@@ -439,7 +439,7 @@ func TestExitCodes(t *testing.T) {
 			for _, lintFatal := range []bool{true, false} {
 				t.Run(strconv.FormatBool(lintFatal), func(t *testing.T) {
 					t.Parallel()
-					args := []string{"-test.main", "check", "config", "testdata/" + c.file}
+					args := []string{"--invoke-main", "check", "config", "testdata/" + c.file}
 					if lintFatal {
 						args = append(args, "--lint-fatal")
 					}
@@ -473,7 +473,7 @@ func TestDocumentation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, promtoolPath, "-test.main", "write-documentation")
+	cmd := exec.CommandContext(ctx, promtoolPath, "--invoke-main", "write-documentation")
 
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
@@ -565,7 +565,7 @@ func TestCheckRulesWithFeatureFlag(t *testing.T) {
 	// As opposed to TestCheckRules calling CheckRules directly we run promtool
 	// so the feature flag parsing can be tested.
 
-	args := []string{"-test.main", "--enable-feature=promql-experimental-functions", "check", "rules", "testdata/features.yml"}
+	args := []string{"--invoke-main", "--enable-feature=promql-experimental-functions", "check", "rules", "testdata/features.yml"}
 	tool := exec.Command(promtoolPath, args...)
 	err := tool.Run()
 	require.NoError(t, err)
@@ -672,7 +672,7 @@ func TestTSDBDumpCommand(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			args := []string{"-test.main", "tsdb", c.subCmd, storage.Dir()}
+			args := []string{"--invoke-main", "tsdb", c.subCmd, storage.Dir()}
 			cmd := exec.Command(promtoolPath, args...)
 			require.NoError(t, cmd.Run())
 		})
