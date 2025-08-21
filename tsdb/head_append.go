@@ -782,6 +782,7 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 	switch {
 	case h != nil:
 		zeroHistogram := &histogram.Histogram{
+			// The CTZeroSample represents a counter reset by definition.
 			CounterResetHint: histogram.CounterReset,
 		}
 		s.Lock()
@@ -822,6 +823,7 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 		a.histogramSeries = append(a.histogramSeries, s)
 	case fh != nil:
 		zeroFloatHistogram := &histogram.FloatHistogram{
+			// The CTZeroSample represents a counter reset by definition.
 			CounterResetHint: histogram.CounterReset,
 		}
 		s.Lock()
