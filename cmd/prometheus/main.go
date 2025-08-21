@@ -118,6 +118,19 @@ func (klogv1Writer) Write(p []byte) (n int, err error) {
 		klogv2.InfoDepth(klogv1OutputCallDepth, string(p[klogv1DefaultPrefixLength:]))
 	}
 
+	switch p[1] {
+	case 'I':
+		klogv2.InfoDepth(klogv1OutputCallDepth, string(p[klogv1DefaultPrefixLength:]))
+	case 'W':
+		klogv2.WarningDepth(klogv1OutputCallDepth, string(p[klogv1DefaultPrefixLength:]))
+	case 'E':
+		klogv2.ErrorDepth(klogv1OutputCallDepth, string(p[klogv1DefaultPrefixLength:]))
+	case 'F':
+		klogv2.FatalDepth(klogv1OutputCallDepth, string(p[klogv1DefaultPrefixLength:]))
+	default:
+		klogv2.InfoDepth(klogv1OutputCallDepth, string(p[klogv1DefaultPrefixLength:]))
+	}
+
 	return len(p), nil
 }
 
