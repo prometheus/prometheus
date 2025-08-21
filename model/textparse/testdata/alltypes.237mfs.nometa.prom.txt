@@ -1541,6 +1541,7 @@ prometheus_sd_file_scan_duration_seconds_sum 4.751347856999997
 prometheus_sd_file_scan_duration_seconds_count 11812
 prometheus_sd_file_watcher_errors_total 0
 prometheus_sd_http_failures_total 0
+prometheus_sd_http_requests_total 0
 prometheus_sd_kubernetes_events_total{event="add",role="endpoints"} 0
 prometheus_sd_kubernetes_events_total{event="add",role="endpointslice"} 0
 prometheus_sd_kubernetes_events_total{event="add",role="ingress"} 0

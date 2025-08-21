@@ -1793,6 +1793,9 @@ prometheus_sd_file_watcher_errors_total 0
 # HELP prometheus_sd_http_failures_total Number of HTTP service discovery refresh failures.
 # TYPE prometheus_sd_http_failures_total counter
 prometheus_sd_http_failures_total 0
+# HELP prometheus_sd_http_requests_total Total number of HTTP service discovery requests.
+# TYPE prometheus_sd_http_requests_total counter
+prometheus_sd_http_requests_total 0
 # HELP prometheus_sd_kubernetes_events_total The number of Kubernetes events handled.
 # TYPE prometheus_sd_kubernetes_events_total counter
 prometheus_sd_kubernetes_events_total{event="add",role="endpoints"} 0

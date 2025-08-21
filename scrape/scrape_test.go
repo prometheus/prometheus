@@ -1494,11 +1494,11 @@ func TestPromTextToProto(t *testing.T) {
 		}
 		got = append(got, mf.GetName())
 	}
-	require.Len(t, got, 237)
+	require.Len(t, got, 238)
 	// Check a few to see if those are not dups.
 	require.Equal(t, "go_gc_cycles_automatic_gc_cycles_total", got[0])
-	require.Equal(t, "prometheus_sd_kuma_fetch_duration_seconds", got[128])
-	require.Equal(t, "promhttp_metric_handler_requests_total", got[236])
+	require.Equal(t, "prometheus_sd_kuma_fetch_duration_seconds", got[129])
+	require.Equal(t, "promhttp_metric_handler_requests_total", got[237])
 }
 
 // BenchmarkScrapeLoopAppend benchmarks a core append function in a scrapeLoop
