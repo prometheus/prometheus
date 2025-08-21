@@ -781,7 +781,10 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 
 	switch {
 	case h != nil:
-		zeroHistogram := &histogram.Histogram{}
+		zeroHistogram := &histogram.Histogram{
+			// The CTZeroSample represents a counter reset by definition.
+			CounterResetHint: histogram.CounterReset,
+		}
 		s.Lock()
 
 		// TODO(krajorama): reorganize Commit() to handle samples in append order
@@ -819,7 +822,10 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 		})
 		a.histogramSeries = append(a.histogramSeries, s)
 	case fh != nil:
-		zeroFloatHistogram := &histogram.FloatHistogram{}
+		zeroFloatHistogram := &histogram.FloatHistogram{
+			// The CTZeroSample represents a counter reset by definition.
+			CounterResetHint: histogram.CounterReset,
+		}
 		s.Lock()
 
 		// TODO(krajorama): reorganize Commit() to handle samples in append order
