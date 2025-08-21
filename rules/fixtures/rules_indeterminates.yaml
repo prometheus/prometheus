@@ -1,6 +1,7 @@
 groups:
   - name: indeterminate
     rules:
+      # This shouldn't run in parallel because of the open matcher
       - record: job:http_requests:rate1m
         expr: sum by (job)(rate(http_requests_total[1m]))
       - record: job:http_requests:rate5m
@@ -13,6 +14,5 @@ groups:
         expr: sum by (job)(rate(http_requests_total[1h]))
       - record: job:http_requests:rate2h
         expr: sum by (job)(rate(http_requests_total[2h]))
-      # This shouldn't run in parallel because of the missing metric name
       - record: matcher
         expr: '{job="job1"}'

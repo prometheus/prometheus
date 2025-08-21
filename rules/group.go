@@ -1098,7 +1098,6 @@ func (m dependencyMap) isIndependent(r Rule) bool {
 // There is a class of rule expressions which are considered "indeterminate", because either relationships cannot be
 // inferred, or concurrent evaluation of rules depending on these series would produce undefined/unexpected behaviour:
 //   - wildcard queriers like {cluster="prod1"} which would match every series with that label selector
-//   - any "meta" series (series produced by Prometheus itself) like ALERTS, ALERTS_FOR_STATE without "alertname" label
 //
 // Rules which are independent can run concurrently with no side-effects.
 func buildDependencyMap(rules []Rule) dependencyMap {
@@ -1138,33 +1137,43 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 					return nil
 				}
 
-				// Rules which depend on "meta-metrics" like ALERTS and ALERTS_FOR_STATE will have undefined behaviour
-				// if they run concurrently, unless we're able to pinpoint them to specific rules by looking at the
-				// "alertname" label matcher (if any).
-				var alertsMatcher *labels.Matcher
-				if nameMatcher.Matches(alertMetricName) || nameMatcher.Matches(alertForStateMetricName) {
+				// Check if the vector selector is querying "meta-metrics" like ALERTS and ALERTS_FOR_STATE and, if so,
+				// find out the "alertname" label matcher (it could be missing).
+				nameMatchesAlerts := nameMatcher.Matches(alertMetricName) || nameMatcher.Matches(alertForStateMetricName)
+				var alertsNameMatcher *labels.Matcher
+				if nameMatchesAlerts {
 					for _, m := range n.LabelMatchers {
 						if m.Name == labels.AlertName {
-							alertsMatcher = m
+							alertsNameMatcher = m
 							break
 						}
-					}
-
-					if alertsMatcher == nil {
-						indeterminate = true
-						return nil
 					}
 				}
 
 				// Find the other rules that this rule depends on.
 				for _, other := range rules {
+					// Rules are defined in order in a rule group. Once we find our rule we can stop searching
+					// because next rules can't be considered dependencies of this rule by specification, given
+					// they are defined later in the group. The next rules can still query this rule, but they're
+					// just not strict dependencies to honor.
 					if other == rule {
-						continue
+						break
 					}
 
 					otherName := other.Name()
-					if nameMatcher.Matches(otherName) || (alertsMatcher != nil && alertsMatcher.Matches(otherName)) {
+
+					// If this rule vector selector matches the other rule name, then it's a dependency.
+					if nameMatcher.Matches(otherName) {
 						dependencies[other] = append(dependencies[other], rule)
+						continue
+					}
+
+					// If this rule vector selector is querying the alerts meta-metrics and the other rule
+					// is an alerting rule, then we check if the "alertname" matches. If it does, then it's a dependency.
+					if _, otherIsAlertingRule := other.(*AlertingRule); nameMatchesAlerts && otherIsAlertingRule {
+						if alertsNameMatcher == nil || alertsNameMatcher.Matches(otherName) {
+							dependencies[other] = append(dependencies[other], rule)
+						}
 					}
 				}
 			}
