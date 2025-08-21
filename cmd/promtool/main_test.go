@@ -47,6 +47,9 @@ func init() {
 
 var promtoolPath = os.Args[0]
 
+// TestMain allows tests to invoke promtool's main() function in a separate process.
+// If the "-test.main" flag is present, it removes the flag and calls main().
+// Otherwise, it runs the standard test suite.
 func TestMain(m *testing.M) {
 	for i, arg := range os.Args {
 		if arg == "-test.main" {
