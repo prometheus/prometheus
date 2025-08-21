@@ -1929,24 +1929,8 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			if enableTypeAndUnitLabels {
 				typeValue := d.seriesLabels.Get("__type__")
 				unit = d.seriesLabels.Get("__unit__")
-				if typeValue != "" || unit != "" {
-					// convert string type to MetricMetadata_MetricType
-					switch typeValue {
-					case "counter":
-						metricType = writev2.Metadata_METRIC_TYPE_COUNTER
-					case "gauge":
-						metricType = writev2.Metadata_METRIC_TYPE_GAUGE
-					case "histogram":
-						metricType = writev2.Metadata_METRIC_TYPE_HISTOGRAM
-					case "summary":
-						metricType = writev2.Metadata_METRIC_TYPE_SUMMARY
-					case "info":
-						metricType = writev2.Metadata_METRIC_TYPE_INFO
-					case "stateset":
-						metricType = writev2.Metadata_METRIC_TYPE_STATESET
-					default:
-						metricType = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
-					}
+				if typeValue != "" {
+					metricType = modelTypeToWriteV2Type(typeValue)
 				}
 			}
 			// Safeguard against sending garbage in case of not having metadata
@@ -1993,6 +1977,25 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		}
 	}
 	return nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata
+}
+
+func modelTypeToWriteV2Type(typeValue string) writev2.Metadata_MetricType {
+	switch typeValue {
+	case string(model.MetricTypeCounter):
+		return writev2.Metadata_METRIC_TYPE_COUNTER
+	case string(model.MetricTypeGauge):
+		return writev2.Metadata_METRIC_TYPE_GAUGE
+	case string(model.MetricTypeHistogram):
+		return writev2.Metadata_METRIC_TYPE_HISTOGRAM
+	case string(model.MetricTypeSummary):
+		return writev2.Metadata_METRIC_TYPE_SUMMARY
+	case string(model.MetricTypeInfo):
+		return writev2.Metadata_METRIC_TYPE_INFO
+	case string(model.MetricTypeStateset):
+		return writev2.Metadata_METRIC_TYPE_STATESET
+	default:
+		return writev2.Metadata_METRIC_TYPE_UNSPECIFIED
+	}
 }
 
 func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt func(int) error, onRetry func()) error {
