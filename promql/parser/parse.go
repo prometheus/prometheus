@@ -432,13 +432,16 @@ func (*parser) assembleVectorSelector(vs *VectorSelector) {
 	}
 }
 
-func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateExpr) {
+func (p *parser) newAggregateExpr(op Item, modifier, args Node, overread bool) (ret *AggregateExpr) {
 	ret = modifier.(*AggregateExpr)
 	arguments := args.(Expressions)
 
 	ret.PosRange = posrange.PositionRange{
 		Start: op.Pos,
 		End:   p.lastClosing,
+	}
+	if overread {
+		ret.PosRange.End = p.lex.findPrevRightParen(p.lastClosing)
 	}
 
 	ret.Op = op.Typ
@@ -491,13 +494,15 @@ func (p *parser) mergeMaps(left, right *map[string]interface{}) (ret *map[string
 
 func (p *parser) histogramsIncreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
 	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
-		return a.Add(b)
+		res, _, err := a.Add(b)
+		return res, err
 	})
 }
 
 func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
 	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
-		return a.Sub(b)
+		res, _, err := a.Sub(b)
+		return res, err
 	})
 }
 

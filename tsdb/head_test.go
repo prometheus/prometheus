@@ -162,6 +162,10 @@ func populateTestWL(t testing.TB, w *wlog.WL, recs []interface{}, buf []byte) []
 			buf = enc.Tombstones(v, buf)
 		case []record.RefExemplar:
 			buf = enc.Exemplars(v, buf)
+		case []record.RefHistogramSample:
+			buf, _ = enc.HistogramSamples(v, buf)
+		case []record.RefFloatHistogramSample:
+			buf, _ = enc.FloatHistogramSamples(v, buf)
 		case []record.RefMmapMarker:
 			buf = enc.MmapMarkers(v, buf)
 		case []record.RefMetadata:
@@ -766,9 +770,7 @@ func TestHead_ReadWAL(t *testing.T) {
 			// But it should have a WAL expiry set.
 			keepUntil, ok := head.getWALExpiry(101)
 			require.True(t, ok)
-			_, last, err := wlog.Segments(w.Dir())
-			require.NoError(t, err)
-			require.Equal(t, last, keepUntil)
+			require.Equal(t, int64(101), keepUntil)
 			// Only the duplicate series record should have a WAL expiry set.
 			_, ok = head.getWALExpiry(50)
 			require.False(t, ok)
@@ -886,17 +888,265 @@ func TestHead_WALMultiRef(t *testing.T) {
 	}}, series)
 }
 
+func TestHead_WALCheckpointMultiRef(t *testing.T) {
+	cases := []struct {
+		name               string
+		walEntries         []interface{}
+		expectedWalExpiry  int64
+		walTruncateMinT    int64
+		expectedWalEntries []interface{}
+	}{
+		{
+			name: "Samples only; keep needed duplicate series record",
+			walEntries: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefSample{
+					{Ref: 1, T: 100, V: 1},
+					{Ref: 2, T: 200, V: 2},
+					{Ref: 2, T: 500, V: 3},
+				},
+			},
+			expectedWalExpiry: 500,
+			walTruncateMinT:   500,
+			expectedWalEntries: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefSample{
+					{Ref: 2, T: 500, V: 3},
+				},
+			},
+		},
+		{
+			name: "Tombstones only; keep needed duplicate series record",
+			walEntries: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+				[]tombstones.Stone{
+					{Ref: 1, Intervals: []tombstones.Interval{{Mint: 0, Maxt: 100}}},
+					{Ref: 2, Intervals: []tombstones.Interval{{Mint: 0, Maxt: 200}}},
+					{Ref: 2, Intervals: []tombstones.Interval{{Mint: 0, Maxt: 500}}},
+				},
+			},
+			expectedWalExpiry: 500,
+			walTruncateMinT:   500,
+			expectedWalEntries: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+				[]tombstones.Stone{
+					{Ref: 2, Intervals: []tombstones.Interval{{Mint: 0, Maxt: 500}}},
+				},
+			},
+		},
+		{
+			name: "Exemplars only; keep needed duplicate series record",
+			walEntries: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefExemplar{
+					{Ref: 1, T: 100, V: 1, Labels: labels.FromStrings("trace_id", "asdf")},
+					{Ref: 2, T: 200, V: 2, Labels: labels.FromStrings("trace_id", "asdf")},
+					{Ref: 2, T: 500, V: 3, Labels: labels.FromStrings("trace_id", "asdf")},
+				},
+			},
+			expectedWalExpiry: 500,
+			walTruncateMinT:   500,
+			expectedWalEntries: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefExemplar{
+					{Ref: 2, T: 500, V: 3, Labels: labels.FromStrings("trace_id", "asdf")},
+				},
+			},
+		},
+		{
+			name: "Histograms only; keep needed duplicate series record",
+			walEntries: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 1, T: 100, H: &histogram.Histogram{}},
+					{Ref: 2, T: 200, H: &histogram.Histogram{}},
+					{Ref: 2, T: 500, H: &histogram.Histogram{}},
+				},
+			},
+			expectedWalExpiry: 500,
+			walTruncateMinT:   500,
+			expectedWalEntries: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 2, T: 500, H: &histogram.Histogram{}},
+				},
+			},
+		},
+		{
+			name: "Float histograms only; keep needed duplicate series record",
+			walEntries: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 1, T: 100, FH: &histogram.FloatHistogram{}},
+					{Ref: 2, T: 200, FH: &histogram.FloatHistogram{}},
+					{Ref: 2, T: 500, FH: &histogram.FloatHistogram{}},
+				},
+			},
+			expectedWalExpiry: 500,
+			walTruncateMinT:   500,
+			expectedWalEntries: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: 500, FH: &histogram.FloatHistogram{}},
+				},
+			},
+		},
+		{
+			name: "All record types; keep needed duplicate series record until last record",
+			// Series with 2 refs and samples for both
+			walEntries: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefSample{
+					{Ref: 2, T: 500, V: 3},
+				},
+				[]tombstones.Stone{
+					{Ref: 2, Intervals: []tombstones.Interval{{Mint: 0, Maxt: 500}}},
+				},
+				[]record.RefExemplar{
+					{Ref: 2, T: 800, V: 2, Labels: labels.FromStrings("trace_id", "asdf")},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 2, T: 500, H: &histogram.Histogram{}},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: 500, FH: &histogram.FloatHistogram{}},
+				},
+			},
+			expectedWalExpiry: 800,
+			walTruncateMinT:   700,
+			expectedWalEntries: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefExemplar{
+					{Ref: 2, T: 800, V: 2, Labels: labels.FromStrings("trace_id", "asdf")},
+				},
+			},
+		},
+		{
+			name: "All record types; drop expired duplicate series record",
+			// Series with 2 refs and samples for both
+			walEntries: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+					{Ref: 2, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefSample{
+					{Ref: 2, T: 500, V: 2},
+					{Ref: 1, T: 900, V: 3},
+				},
+				[]tombstones.Stone{
+					{Ref: 2, Intervals: []tombstones.Interval{{Mint: 0, Maxt: 750}}},
+				},
+				[]record.RefExemplar{
+					{Ref: 2, T: 800, V: 2, Labels: labels.FromStrings("trace_id", "asdf")},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 2, T: 600, H: &histogram.Histogram{}},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: 700, FH: &histogram.FloatHistogram{}},
+				},
+			},
+			expectedWalExpiry: 800,
+			walTruncateMinT:   900,
+			expectedWalEntries: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefSample{
+					{Ref: 1, T: 900, V: 3},
+				},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, w := newTestHead(t, 1000, compression.None, false)
+			t.Cleanup(func() {
+				require.NoError(t, h.Close())
+			})
+
+			populateTestWL(t, w, tc.walEntries, nil)
+			first, _, err := wlog.Segments(w.Dir())
+			require.NoError(t, err)
+
+			require.NoError(t, h.Init(0))
+
+			keepUntil, ok := h.getWALExpiry(2)
+			require.True(t, ok)
+			require.Equal(t, tc.expectedWalExpiry, keepUntil)
+
+			// Each truncation creates a new segment, so attempt truncations until a checkpoint is created
+			for {
+				h.lastWALTruncationTime.Store(0) // Reset so that it's always time to truncate the WAL
+				err := h.truncateWAL(tc.walTruncateMinT)
+				require.NoError(t, err)
+				f, _, err := wlog.Segments(w.Dir())
+				require.NoError(t, err)
+				if f > first {
+					break
+				}
+			}
+
+			// Read test WAL , checkpoint first
+			checkpointDir, _, err := wlog.LastCheckpoint(w.Dir())
+			require.NoError(t, err)
+			cprecs := readTestWAL(t, checkpointDir)
+			recs := readTestWAL(t, w.Dir())
+			recs = append(cprecs, recs...)
+
+			// Use testutil.RequireEqual which handles labels properly with dedupelabels
+			testutil.RequireEqual(t, tc.expectedWalEntries, recs)
+		})
+	}
+}
+
 func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 	existingRef := 1
 	existingLbls := labels.FromStrings("foo", "bar")
-	deletedKeepUntil := 10
+	keepUntil := int64(10)
 
 	cases := []struct {
-		name      string
-		prepare   func(t *testing.T, h *Head)
-		seriesRef chunks.HeadSeriesRef
-		last      int
-		expected  bool
+		name     string
+		prepare  func(t *testing.T, h *Head)
+		mint     int64
+		expected bool
 	}{
 		{
 			name: "keep series still in the head",
@@ -904,26 +1154,22 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 				_, _, err := h.getOrCreateWithID(chunks.HeadSeriesRef(existingRef), existingLbls.Hash(), existingLbls, false)
 				require.NoError(t, err)
 			},
-			seriesRef: chunks.HeadSeriesRef(existingRef),
-			expected:  true,
+			expected: true,
 		},
 		{
-			name: "keep deleted series with keepUntil > last",
-			prepare: func(_ *testing.T, h *Head) {
-				h.setWALExpiry(chunks.HeadSeriesRef(existingRef), deletedKeepUntil)
-			},
-			seriesRef: chunks.HeadSeriesRef(existingRef),
-			last:      deletedKeepUntil - 1,
-			expected:  true,
+			name:     "keep series with keepUntil > mint",
+			mint:     keepUntil - 1,
+			expected: true,
 		},
 		{
-			name: "drop deleted series with keepUntil <= last",
-			prepare: func(_ *testing.T, h *Head) {
-				h.setWALExpiry(chunks.HeadSeriesRef(existingRef), deletedKeepUntil)
-			},
-			seriesRef: chunks.HeadSeriesRef(existingRef),
-			last:      deletedKeepUntil,
-			expected:  false,
+			name:     "keep series with keepUntil = mint",
+			mint:     keepUntil,
+			expected: true,
+		},
+		{
+			name:     "drop series with keepUntil < mint",
+			mint:     keepUntil + 1,
+			expected: false,
 		},
 	}
 
@@ -936,10 +1182,12 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 
 			if tc.prepare != nil {
 				tc.prepare(t, h)
+			} else {
+				h.updateWALExpiry(chunks.HeadSeriesRef(existingRef), keepUntil)
 			}
 
-			kept := h.keepSeriesInWALCheckpoint(tc.seriesRef, tc.last)
-			require.Equal(t, tc.expected, kept)
+			keep := h.keepSeriesInWALCheckpointFn(tc.mint)
+			require.Equal(t, tc.expected, keep(chunks.HeadSeriesRef(existingRef)))
 		})
 	}
 }
@@ -2917,6 +3165,7 @@ func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
 }
 
 func TestHeadSeriesChunkRace(t *testing.T) {
+	t.Parallel()
 	for i := 0; i < 1000; i++ {
 		testHeadSeriesChunkRace(t)
 	}
@@ -2944,6 +3193,7 @@ func TestIsolationWithoutAdd(t *testing.T) {
 }
 
 func TestOutOfOrderSamplesMetric(t *testing.T) {
+	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
 			options := DefaultOptions()
@@ -3546,6 +3796,7 @@ func TestIteratorSeekIntoBuffer(t *testing.T) {
 
 // Tests https://github.com/prometheus/prometheus/issues/8221.
 func TestChunkNotFoundHeadGCRace(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	db.DisableCompactions()
 	ctx := context.Background()
@@ -3612,6 +3863,7 @@ func TestChunkNotFoundHeadGCRace(t *testing.T) {
 
 // Tests https://github.com/prometheus/prometheus/issues/9079.
 func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	db.DisableCompactions()
 	ctx := context.Background()
@@ -3705,6 +3957,7 @@ func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 }
 
 func TestWaitForPendingReadersInTimeRange(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	db.DisableCompactions()
 
@@ -6435,7 +6688,7 @@ func TestStripeSeries_gc(t *testing.T) {
 	s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
 	hash := ms1.lset.Hash()
 
-	s.gc(0, 0)
+	s.gc(0, 0, nil)
 
 	// Verify that we can get neither ms1 nor ms2 after gc-ing corresponding series
 	got := s.getByHash(hash, ms1.lset)
@@ -6865,4 +7118,152 @@ func testHeadAppendHistogramAndCommitConcurrency(t *testing.T, appendFn func(sto
 	}()
 
 	wg.Wait()
+}
+
+func TestHead_NumStaleSeries(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	t.Cleanup(func() {
+		require.NoError(t, head.Close())
+	})
+	require.NoError(t, head.Init(0))
+
+	// Initially, no series should be stale.
+	require.Equal(t, uint64(0), head.NumStaleSeries())
+
+	appendSample := func(lbls labels.Labels, ts int64, val float64) {
+		app := head.Appender(context.Background())
+		_, err := app.Append(0, lbls, ts, val)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+	appendHistogram := func(lbls labels.Labels, ts int64, val *histogram.Histogram) {
+		app := head.Appender(context.Background())
+		_, err := app.AppendHistogram(0, lbls, ts, val, nil)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+	appendFloatHistogram := func(lbls labels.Labels, ts int64, val *histogram.FloatHistogram) {
+		app := head.Appender(context.Background())
+		_, err := app.AppendHistogram(0, lbls, ts, nil, val)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	verifySeriesCounts := func(numStaleSeries, numSeries int) {
+		require.Equal(t, uint64(numStaleSeries), head.NumStaleSeries())
+		require.Equal(t, uint64(numSeries), head.NumSeries())
+	}
+
+	restartHeadAndVerifySeriesCounts := func(numStaleSeries, numSeries int) {
+		verifySeriesCounts(numStaleSeries, numSeries)
+
+		require.NoError(t, head.Close())
+
+		wal, err := wlog.NewSize(nil, nil, filepath.Join(head.opts.ChunkDirRoot, "wal"), 32768, compression.None)
+		require.NoError(t, err)
+		head, err = NewHead(nil, nil, wal, nil, head.opts, nil)
+		require.NoError(t, err)
+		require.NoError(t, head.Init(0))
+
+		verifySeriesCounts(numStaleSeries, numSeries)
+	}
+
+	// Create some series with normal samples.
+	series1 := labels.FromStrings("name", "series1", "label", "value1")
+	series2 := labels.FromStrings("name", "series2", "label", "value2")
+	series3 := labels.FromStrings("name", "series3", "label", "value3")
+
+	// Add normal samples to all series.
+	appendSample(series1, 100, 1)
+	appendSample(series2, 100, 2)
+	appendSample(series3, 100, 3)
+	// Still no stale series.
+	verifySeriesCounts(0, 3)
+
+	// Make series1 stale by appending a stale sample. Now we should have 1 stale series.
+	appendSample(series1, 200, math.Float64frombits(value.StaleNaN))
+	verifySeriesCounts(1, 3)
+
+	// Make series2 stale as well.
+	appendSample(series2, 200, math.Float64frombits(value.StaleNaN))
+	verifySeriesCounts(2, 3)
+	restartHeadAndVerifySeriesCounts(2, 3)
+
+	// Add a non-stale sample to series1. It should not be counted as stale now.
+	appendSample(series1, 300, 10)
+	verifySeriesCounts(1, 3)
+	restartHeadAndVerifySeriesCounts(1, 3)
+
+	// Test that series3 doesn't become stale when we add another normal sample.
+	appendSample(series3, 200, 10)
+	verifySeriesCounts(1, 3)
+
+	// Test histogram stale samples as well.
+	series4 := labels.FromStrings("name", "series4", "type", "histogram")
+	h := tsdbutil.GenerateTestHistograms(1)[0]
+	appendHistogram(series4, 100, h)
+	verifySeriesCounts(1, 4)
+
+	// Make histogram series stale.
+	staleHist := h.Copy()
+	staleHist.Sum = math.Float64frombits(value.StaleNaN)
+	appendHistogram(series4, 200, staleHist)
+	verifySeriesCounts(2, 4)
+
+	// Test float histogram stale samples.
+	series5 := labels.FromStrings("name", "series5", "type", "float_histogram")
+	fh := tsdbutil.GenerateTestFloatHistograms(1)[0]
+	appendFloatHistogram(series5, 100, fh)
+	verifySeriesCounts(2, 5)
+	restartHeadAndVerifySeriesCounts(2, 5)
+
+	// Make float histogram series stale.
+	staleFH := fh.Copy()
+	staleFH.Sum = math.Float64frombits(value.StaleNaN)
+	appendFloatHistogram(series5, 200, staleFH)
+	verifySeriesCounts(3, 5)
+
+	// Make histogram sample non-stale and stale back again.
+	appendHistogram(series4, 210, h)
+	verifySeriesCounts(2, 5)
+	appendHistogram(series4, 220, staleHist)
+	verifySeriesCounts(3, 5)
+
+	// Make float histogram sample non-stale and stale back again.
+	appendFloatHistogram(series5, 210, fh)
+	verifySeriesCounts(2, 5)
+	appendFloatHistogram(series5, 220, staleFH)
+	verifySeriesCounts(3, 5)
+
+	// Series 1 and 3 are not stale at this point. Add a new sample to series 1 and series 5,
+	// so after the GC and removing series 2, 3, 4, we should be left with 1 stale and 1 non-stale series.
+	appendSample(series1, 400, 10)
+	appendFloatHistogram(series5, 400, staleFH)
+	restartHeadAndVerifySeriesCounts(3, 5)
+
+	// This will test restarting with snapshot.
+	head.opts.EnableMemorySnapshotOnShutdown = true
+	restartHeadAndVerifySeriesCounts(3, 5)
+
+	// Test garbage collection behavior - stale series should be decremented when GC'd.
+	// Force a garbage collection by truncating old data.
+	require.NoError(t, head.Truncate(300))
+
+	// After truncation, run GC to collect old chunks/series.
+	head.gc()
+
+	// series 1 and series 5 are left.
+	verifySeriesCounts(1, 2)
+
+	// Test creating a new series for each of float, histogram, float histogram that starts as stale.
+	// This should be counted as stale.
+	series6 := labels.FromStrings("name", "series6", "direct", "stale")
+	series7 := labels.FromStrings("name", "series7", "direct", "stale")
+	series8 := labels.FromStrings("name", "series8", "direct", "stale")
+	appendSample(series6, 400, math.Float64frombits(value.StaleNaN))
+	verifySeriesCounts(2, 3)
+	appendHistogram(series7, 400, staleHist)
+	verifySeriesCounts(3, 4)
+	appendFloatHistogram(series8, 400, staleFH)
+	verifySeriesCounts(4, 5)
 }

@@ -17,12 +17,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"math/rand"
 	"os"
-	"path"
 	"runtime/pprof"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,7 +45,6 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
-	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -68,6 +64,7 @@ func newHighestTimestampMetric() *maxTimestamp {
 }
 
 func TestBasicContentNegotiation(t *testing.T) {
+	t.Parallel()
 	queueConfig := config.DefaultQueueConfig
 	queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
 	queueConfig.MaxShards = 1
@@ -199,6 +196,7 @@ func TestBasicContentNegotiation(t *testing.T) {
 }
 
 func TestSampleDelivery(t *testing.T) {
+	t.Parallel()
 	// Let's create an even number of send batches, so we don't run into the
 	// batch timeout case.
 	n := 3
@@ -405,6 +403,7 @@ func TestWALMetadataDelivery(t *testing.T) {
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
+	t.Parallel()
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			// Let's send one less sample than batch size, and wait the timeout duration
@@ -433,6 +432,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 }
 
 func TestSampleDeliveryOrder(t *testing.T) {
+	t.Parallel()
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			ts := 10
@@ -466,6 +466,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 }
 
 func TestShutdown(t *testing.T) {
+	// Not t.Parallel() because the test became flaky; see https://github.com/prometheus/prometheus/issues/17045
 	deadline := 1 * time.Second
 	c := NewTestBlockedWriteClient()
 
@@ -521,6 +522,7 @@ func TestSeriesReset(t *testing.T) {
 }
 
 func TestReshard(t *testing.T) {
+	t.Parallel()
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			size := 10 // Make bigger to find more races.
@@ -559,6 +561,7 @@ func TestReshard(t *testing.T) {
 }
 
 func TestReshardRaceWithStop(t *testing.T) {
+	t.Parallel()
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			c := NewTestWriteClient(protoMsg)
@@ -597,6 +600,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 }
 
 func TestReshardPartialBatch(t *testing.T) {
+	t.Parallel()
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			samples, series := createTimeseries(1, 10)
@@ -751,6 +755,7 @@ func TestShouldReshard(t *testing.T) {
 // TestDisableReshardOnRetry asserts that resharding should be disabled when a
 // recoverable error is returned from remote_write.
 func TestDisableReshardOnRetry(t *testing.T) {
+	t.Parallel()
 	onStoredContext, onStoreCalled := context.WithCancel(context.Background())
 	defer onStoreCalled()
 
@@ -1418,12 +1423,13 @@ func BenchmarkStoreSeries(b *testing.B) {
 		{Name: "replica", Value: "1"},
 	}
 	relabelConfigs := []*relabel.Config{{
-		SourceLabels: model.LabelNames{"namespace"},
-		Separator:    ";",
-		Regex:        relabel.MustNewRegexp("kube.*"),
-		TargetLabel:  "job",
-		Replacement:  "$1",
-		Action:       relabel.Replace,
+		SourceLabels:         model.LabelNames{"namespace"},
+		Separator:            ";",
+		Regex:                relabel.MustNewRegexp("kube.*"),
+		TargetLabel:          "job",
+		Replacement:          "$1",
+		Action:               relabel.Replace,
+		NameValidationScheme: model.UTF8Validation,
 	}}
 	testCases := []struct {
 		name           string
@@ -1460,45 +1466,6 @@ func BenchmarkStoreSeries(b *testing.B) {
 				m.StoreSeries(series, 0)
 			}
 		})
-	}
-}
-
-func BenchmarkStartup(b *testing.B) {
-	dir := os.Getenv("WALDIR")
-	if dir == "" {
-		b.Skip("WALDIR env var not set")
-	}
-
-	// Find the second largest segment; we will replay up to this.
-	// (Second largest as WALWatcher will start tailing the largest).
-	dirents, err := os.ReadDir(path.Join(dir, "wal"))
-	require.NoError(b, err)
-
-	var segments []int
-	for _, dirent := range dirents {
-		if i, err := strconv.Atoi(dirent.Name()); err == nil {
-			segments = append(segments, i)
-		}
-	}
-	sort.Ints(segments)
-
-	logger := promslog.New(&promslog.Config{})
-
-	cfg := testDefaultQueueConfig()
-	mcfg := config.DefaultMetadataConfig
-	for n := 0; n < b.N; n++ {
-		metrics := newQueueManagerMetrics(nil, "", "")
-		watcherMetrics := wlog.NewWatcherMetrics(nil)
-		c := NewTestBlockedWriteClient()
-		// todo: test with new proto type(s)
-		m := NewQueueManager(metrics, watcherMetrics, nil, logger, dir,
-			newEWMARate(ewmaWeight, shardUpdateDuration),
-			cfg, mcfg, labels.EmptyLabels(), nil, c, 1*time.Minute, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
-		m.watcher.SetStartTime(timestamp.Time(math.MaxInt64))
-		m.watcher.MaxSegment = segments[len(segments)-2]
-		m.watcher.SetMetrics()
-		err := m.watcher.Run()
-		require.NoError(b, err)
 	}
 }
 
@@ -1999,6 +1966,7 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 }
 
 func TestDropOldTimeSeries(t *testing.T) {
+	t.Parallel()
 	// Test both v1 and v2 remote write protocols
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
@@ -2034,8 +2002,9 @@ func TestIsSampleOld(t *testing.T) {
 
 // Simulates scenario in which remote write endpoint is down and a subset of samples is dropped due to age limit while backoffing.
 func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
+	t.Parallel()
 	maxSamplesPerSend := 10
-	sampleAgeLimit := time.Second
+	sampleAgeLimit := time.Second * 2
 
 	cfg := config.DefaultQueueConfig
 	cfg.MaxShards = 1

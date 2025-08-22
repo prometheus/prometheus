@@ -294,6 +294,9 @@ func (h *FloatHistogram) Mul(factor float64) *FloatHistogram {
 	for i := range h.NegativeBuckets {
 		h.NegativeBuckets[i] *= factor
 	}
+	if factor < 0 {
+		h.CounterResetHint = GaugeType
+	}
 	return h
 }
 
@@ -317,6 +320,9 @@ func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
 	for i := range h.NegativeBuckets {
 		h.NegativeBuckets[i] /= scalar
 	}
+	if scalar < 0 {
+		h.CounterResetHint = GaugeType
+	}
 	return h
 }
 
@@ -330,15 +336,18 @@ func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
 // The method reconciles differences in the zero threshold and in the schema, and
 // changes them if needed. The other histogram will not be modified in any case.
 // Adding is currently only supported between 2 exponential histograms, or between
-// 2 custom buckets histograms with the exact same custom bounds.
+// 2 custom buckets histograms with the exact same custom bounds. If CounterResetHint
+// values conflict, the receiver's hint is set to unknown, and counterResetCollision
+// is returned as true. A counter reset conflict occurs iff one of two histograms indicate
+// a counter reset (CounterReset) while the other indicates no reset (NotCounterReset).
 //
 // This method returns a pointer to the receiving histogram for convenience.
-func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
+func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counterResetCollision bool, err error) {
 	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
-		return nil, ErrHistogramsIncompatibleSchema
+		return nil, false, ErrHistogramsIncompatibleSchema
 	}
 	if h.UsesCustomBuckets() && !FloatBucketsMatch(h.CustomValues, other.CustomValues) {
-		return nil, ErrHistogramsIncompatibleBounds
+		return nil, false, ErrHistogramsIncompatibleBounds
 	}
 
 	switch {
@@ -362,7 +371,7 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
 		// They are a direct collision of CounterReset and NotCounterReset.
 		// Conservatively set the CounterResetHint to "unknown" and issue a warning.
 		h.CounterResetHint = UnknownCounterReset
-		// TODO(trevorwhitney): Actually issue the warning as soon as the plumbing for it is in place
+		counterResetCollision = true
 	}
 
 	if !h.UsesCustomBuckets() {
@@ -381,7 +390,7 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
 
 	if h.UsesCustomBuckets() {
 		h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
-		return h, nil
+		return h, counterResetCollision, nil
 	}
 
 	var (
@@ -405,17 +414,21 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
 	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
 	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hNegativeSpans, hNegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
 
-	return h, nil
+	return h, counterResetCollision, nil
 }
 
 // Sub works like Add but subtracts the other histogram.
-func (h *FloatHistogram) Sub(other *FloatHistogram) (*FloatHistogram, error) {
+func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counterResetCollision bool, err error) {
 	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
-		return nil, ErrHistogramsIncompatibleSchema
+		return nil, false, ErrHistogramsIncompatibleSchema
 	}
 	if h.UsesCustomBuckets() && !FloatBucketsMatch(h.CustomValues, other.CustomValues) {
-		return nil, ErrHistogramsIncompatibleBounds
+		return nil, false, ErrHistogramsIncompatibleBounds
 	}
+
+	counterResetCollision = hasCounterResetCollision(h, other)
+
+	h.CounterResetHint = GaugeType
 
 	if !h.UsesCustomBuckets() {
 		otherZeroCount := h.reconcileZeroBuckets(other)
@@ -433,7 +446,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (*FloatHistogram, error) {
 
 	if h.UsesCustomBuckets() {
 		h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
-		return h, nil
+		return h, counterResetCollision, nil
 	}
 
 	var (
@@ -456,7 +469,14 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (*FloatHistogram, error) {
 	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
 	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hNegativeSpans, hNegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
 
-	return h, nil
+	return h, counterResetCollision, nil
+}
+
+// hasCounterResetCollision returns true iff one of two histogram indicates
+// a counter reset (CounterReset) while the other indicates no reset (NotCounterReset).
+func hasCounterResetCollision(a, b *FloatHistogram) bool {
+	return a.CounterResetHint == CounterReset && b.CounterResetHint == NotCounterReset ||
+		a.CounterResetHint == NotCounterReset && b.CounterResetHint == CounterReset
 }
 
 // Equals returns true if the given float histogram matches exactly.

@@ -334,9 +334,10 @@ func TestDroppedTargetsList(t *testing.T) {
 			MetricNameEscapingScheme:   model.AllowUTF8,
 			RelabelConfigs: []*relabel.Config{
 				{
-					Action:       relabel.Drop,
-					Regex:        relabel.MustNewRegexp("dropMe"),
-					SourceLabels: model.LabelNames{"job"},
+					Action:               relabel.Drop,
+					Regex:                relabel.MustNewRegexp("dropMe"),
+					SourceLabels:         model.LabelNames{"job"},
+					NameValidationScheme: model.UTF8Validation,
 				},
 			},
 		}
@@ -442,6 +443,7 @@ func (*testLoop) getCache() *scrapeCache {
 }
 
 func TestScrapePoolStop(t *testing.T) {
+	t.Parallel()
 	sp := &scrapePool{
 		activeTargets: map[uint64]*Target{},
 		loops:         map[uint64]loop{},
@@ -501,6 +503,7 @@ func TestScrapePoolStop(t *testing.T) {
 }
 
 func TestScrapePoolReload(t *testing.T) {
+	t.Parallel()
 	var mtx sync.Mutex
 	numTargets := 20
 
@@ -866,6 +869,7 @@ func TestScrapePoolAppender(t *testing.T) {
 }
 
 func TestScrapePoolRaces(t *testing.T) {
+	t.Parallel()
 	interval, _ := model.ParseDuration("1s")
 	timeout, _ := model.ParseDuration("500ms")
 	newConfig := func() *config.ScrapeConfig {
@@ -998,6 +1002,7 @@ func newBasicScrapeLoopWithFallback(t testing.TB, ctx context.Context, scraper s
 }
 
 func TestScrapeLoopStopBeforeRun(t *testing.T) {
+	t.Parallel()
 	scraper := &testScraper{}
 	sl := newBasicScrapeLoop(t, context.Background(), scraper, nil, 1)
 
@@ -1102,6 +1107,7 @@ func TestScrapeLoopStop(t *testing.T) {
 }
 
 func TestScrapeLoopRun(t *testing.T) {
+	t.Parallel()
 	var (
 		signal = make(chan struct{}, 1)
 		errc   = make(chan error)
@@ -1367,10 +1373,11 @@ func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 		labels: labels.FromStrings("pod_label_invalid_012\xff", "test"),
 	}
 	relabelConfig := []*relabel.Config{{
-		Action:      relabel.LabelMap,
-		Regex:       relabel.MustNewRegexp("pod_label_invalid_(.+)"),
-		Separator:   ";",
-		Replacement: "$1",
+		Action:               relabel.LabelMap,
+		Regex:                relabel.MustNewRegexp("pod_label_invalid_(.+)"),
+		Separator:            ";",
+		Replacement:          "$1",
+		NameValidationScheme: model.UTF8Validation,
 	}}
 	sl := newBasicScrapeLoop(t, ctx, &testScraper{}, s.Appender, 0)
 	sl.sampleMutator = func(l labels.Labels) labels.Labels {
@@ -3922,6 +3929,7 @@ func TestCheckAddError(t *testing.T) {
 }
 
 func TestScrapeReportSingleAppender(t *testing.T) {
+	t.Parallel()
 	s := teststorage.New(t)
 	defer s.Close()
 
@@ -4182,18 +4190,20 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 		MetricNameEscapingScheme:   model.AllowUTF8,
 		RelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{model.ScrapeIntervalLabel},
-				Regex:        relabel.MustNewRegexp("2s"),
-				Replacement:  "3s",
-				TargetLabel:  model.ScrapeIntervalLabel,
-				Action:       relabel.Replace,
+				SourceLabels:         model.LabelNames{model.ScrapeIntervalLabel},
+				Regex:                relabel.MustNewRegexp("2s"),
+				Replacement:          "3s",
+				TargetLabel:          model.ScrapeIntervalLabel,
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
 			},
 			{
-				SourceLabels: model.LabelNames{model.ScrapeTimeoutLabel},
-				Regex:        relabel.MustNewRegexp("500ms"),
-				Replacement:  "750ms",
-				TargetLabel:  model.ScrapeTimeoutLabel,
-				Action:       relabel.Replace,
+				SourceLabels:         model.LabelNames{model.ScrapeTimeoutLabel},
+				Regex:                relabel.MustNewRegexp("500ms"),
+				Replacement:          "750ms",
+				TargetLabel:          model.ScrapeTimeoutLabel,
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 	}
@@ -4220,20 +4230,22 @@ func TestLeQuantileReLabel(t *testing.T) {
 		JobName: "test",
 		MetricRelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{"le", "__name__"},
-				Regex:        relabel.MustNewRegexp("(\\d+)\\.0+;.*_bucket"),
-				Replacement:  relabel.DefaultRelabelConfig.Replacement,
-				Separator:    relabel.DefaultRelabelConfig.Separator,
-				TargetLabel:  "le",
-				Action:       relabel.Replace,
+				SourceLabels:         model.LabelNames{"le", "__name__"},
+				Regex:                relabel.MustNewRegexp("(\\d+)\\.0+;.*_bucket"),
+				Replacement:          relabel.DefaultRelabelConfig.Replacement,
+				Separator:            relabel.DefaultRelabelConfig.Separator,
+				TargetLabel:          "le",
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
 			},
 			{
-				SourceLabels: model.LabelNames{"quantile"},
-				Regex:        relabel.MustNewRegexp("(\\d+)\\.0+"),
-				Replacement:  relabel.DefaultRelabelConfig.Replacement,
-				Separator:    relabel.DefaultRelabelConfig.Separator,
-				TargetLabel:  "quantile",
-				Action:       relabel.Replace,
+				SourceLabels:         model.LabelNames{"quantile"},
+				Regex:                relabel.MustNewRegexp("(\\d+)\\.0+"),
+				Replacement:          relabel.DefaultRelabelConfig.Replacement,
+				Separator:            relabel.DefaultRelabelConfig.Separator,
+				TargetLabel:          "quantile",
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 		SampleLimit:                100,
@@ -4331,6 +4343,7 @@ test_summary_count 199
 
 // Testing whether we can automatically convert scraped classic histograms into native histograms with custom buckets.
 func TestConvertClassicHistogramsToNHCB(t *testing.T) {
+	t.Parallel()
 	genTestCounterText := func(name string, value int, withMetadata bool) string {
 		if withMetadata {
 			return fmt.Sprintf(`
@@ -4741,6 +4754,7 @@ metric: <
 			}
 
 			t.Run(fmt.Sprintf("%s with %s", name, metricsTextName), func(t *testing.T) {
+				t.Parallel()
 				simpleStorage := teststorage.New(t)
 				defer simpleStorage.Close()
 
@@ -4862,18 +4876,20 @@ func TestTypeUnitReLabel(t *testing.T) {
 		JobName: "test",
 		MetricRelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{"__name__"},
-				Regex:        relabel.MustNewRegexp(".*_total$"),
-				Replacement:  "counter",
-				TargetLabel:  "__type__",
-				Action:       relabel.Replace,
+				SourceLabels:         model.LabelNames{"__name__"},
+				Regex:                relabel.MustNewRegexp(".*_total$"),
+				Replacement:          "counter",
+				TargetLabel:          "__type__",
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
 			},
 			{
-				SourceLabels: model.LabelNames{"__name__"},
-				Regex:        relabel.MustNewRegexp(".*_bytes$"),
-				Replacement:  "bytes",
-				TargetLabel:  "__unit__",
-				Action:       relabel.Replace,
+				SourceLabels:         model.LabelNames{"__name__"},
+				Regex:                relabel.MustNewRegexp(".*_bytes$"),
+				Replacement:          "bytes",
+				TargetLabel:          "__unit__",
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 		SampleLimit:                100,
@@ -5367,6 +5383,7 @@ scrape_configs:
 }
 
 func TestTargetScrapeConfigWithLabels(t *testing.T) {
+	t.Parallel()
 	const (
 		configTimeout        = 1500 * time.Millisecond
 		expectedTimeout      = "1.5"
@@ -5482,25 +5499,28 @@ func TestTargetScrapeConfigWithLabels(t *testing.T) {
 				Params:                     url.Values{"param": []string{secondParam}},
 				RelabelConfigs: []*relabel.Config{
 					{
-						Action:       relabel.DefaultRelabelConfig.Action,
-						Regex:        relabel.DefaultRelabelConfig.Regex,
-						SourceLabels: relabel.DefaultRelabelConfig.SourceLabels,
-						TargetLabel:  model.ScrapeTimeoutLabel,
-						Replacement:  expectedTimeoutLabel,
+						Action:               relabel.DefaultRelabelConfig.Action,
+						Regex:                relabel.DefaultRelabelConfig.Regex,
+						SourceLabels:         relabel.DefaultRelabelConfig.SourceLabels,
+						TargetLabel:          model.ScrapeTimeoutLabel,
+						Replacement:          expectedTimeoutLabel,
+						NameValidationScheme: model.UTF8Validation,
 					},
 					{
-						Action:       relabel.DefaultRelabelConfig.Action,
-						Regex:        relabel.DefaultRelabelConfig.Regex,
-						SourceLabels: relabel.DefaultRelabelConfig.SourceLabels,
-						TargetLabel:  paramLabel,
-						Replacement:  expectedParam,
+						Action:               relabel.DefaultRelabelConfig.Action,
+						Regex:                relabel.DefaultRelabelConfig.Regex,
+						SourceLabels:         relabel.DefaultRelabelConfig.SourceLabels,
+						TargetLabel:          paramLabel,
+						Replacement:          expectedParam,
+						NameValidationScheme: model.UTF8Validation,
 					},
 					{
-						Action:       relabel.DefaultRelabelConfig.Action,
-						Regex:        relabel.DefaultRelabelConfig.Regex,
-						SourceLabels: relabel.DefaultRelabelConfig.SourceLabels,
-						TargetLabel:  model.MetricsPathLabel,
-						Replacement:  expectedPath,
+						Action:               relabel.DefaultRelabelConfig.Action,
+						Regex:                relabel.DefaultRelabelConfig.Regex,
+						SourceLabels:         relabel.DefaultRelabelConfig.SourceLabels,
+						TargetLabel:          model.MetricsPathLabel,
+						Replacement:          expectedPath,
+						NameValidationScheme: model.UTF8Validation,
 					},
 				},
 			},
@@ -5521,6 +5541,7 @@ func TestTargetScrapeConfigWithLabels(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			select {
 			case <-run(t, c.cfg, c.targets):
 			case <-time.After(10 * time.Second):

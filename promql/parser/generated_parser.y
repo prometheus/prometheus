@@ -244,15 +244,15 @@ expr            :
  */
 
 aggregate_expr  : aggregate_op aggregate_modifier function_call_body
-                        { $$ = yylex.(*parser).newAggregateExpr($1, $2, $3) }
+                        { $$ = yylex.(*parser).newAggregateExpr($1, $2, $3, false) }
                 | aggregate_op function_call_body aggregate_modifier
-                        { $$ = yylex.(*parser).newAggregateExpr($1, $3, $2) }
+                        { $$ = yylex.(*parser).newAggregateExpr($1, $3, $2, false) }
                 | aggregate_op function_call_body
-                        { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2) }
+                        { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2, true) }
                 | aggregate_op error
                         {
                         yylex.(*parser).unexpected("aggregation","");
-                        $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, Expressions{})
+                        $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, Expressions{}, false)
                         }
                 ;
 
@@ -364,14 +364,14 @@ grouping_label_list:
 
 grouping_label  : maybe_label
                         {
-                        if !model.LabelName($1.Val).IsValid() {
+                        if !model.UTF8Validation.IsValidLabelName($1.Val) {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"invalid label name for grouping: %q", $1.Val)
                         }
                         $$ = $1
                         }
                 | STRING {
                         unquoted := yylex.(*parser).unquoteString($1.Val)
-                        if !model.LabelName(unquoted).IsValid() {
+                        if !model.UTF8Validation.IsValidLabelName(unquoted) {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"invalid label name for grouping: %q", unquoted)
                         }
                         $$ = $1
