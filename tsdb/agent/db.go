@@ -648,6 +648,7 @@ func (db *DB) keepSeriesInWALCheckpointFn(last int) func(id chunks.HeadSeriesRef
 }
 
 func (db *DB) truncate(mint int64) error {
+	db.logger.Info("series GC started")
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
 
