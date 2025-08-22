@@ -57,3 +57,18 @@ eval instant at 50m 0 / 0
 
 eval instant at 50m 1 % 0
 	NaN
+
+eval instant at 50m ("Foo")
+	expect string `Foo`
+
+eval instant at 50m "Foo"
+	expect string "Foo"
+
+eval instant at 50m " Foo "
+    expect string " Foo "
+
+eval instant at 50m ("")
+	expect string ""
+
+eval instant at 50m ""
+   	expect string ""

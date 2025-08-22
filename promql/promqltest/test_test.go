@@ -948,6 +948,144 @@ eval instant at 0m http_requests
 `,
 			expectedError: `error in eval http_requests (line 12): invalid expect lines, multiple expect fail lines are not allowed`,
 		},
+		"instant query with string literal": {
+			input: `
+				eval instant at 50m ("Foo")
+					expect string "Foo"
+			`,
+		},
+		"instant query with string literal with leading space": {
+			input: `
+				eval instant at 50m (" Foo")
+					expect string " Foo"
+			`,
+		},
+		"instant query with string literal with trailing space": {
+			input: `
+				eval instant at 50m ("Foo ")
+					expect string "Foo "
+			`,
+		},
+		"instant query with string literal as space": {
+			input: `
+				eval instant at 50m (" ")
+					expect string " "
+			`,
+		},
+		"instant query with string literal with empty string": {
+			input: `
+				eval instant at 50m ("")
+					expect string
+			`,
+			expectedError: `error in eval ("") (line 3): expected string literal not valid - a quoted string literal is required`,
+		},
+		"instant query with string literal with correctly quoted empty string": {
+			input: `
+				eval instant at 50m ("")
+					expect string ""
+			`,
+		},
+		"instant query with string literal - not quoted": {
+			input: `
+				eval instant at 50m ("Foo")
+					expect string Foo
+			`,
+			expectedError: `error in eval ("Foo") (line 3): expected string literal not valid - check that the string is correctly quoted`,
+		},
+		"instant query with empty string literal": {
+			input: `
+				eval instant at 50m ("Foo")
+					expect string ""
+			`,
+			expectedError: `error in eval ("Foo") (line 2): expected string "" but got "Foo"`,
+		},
+		"instant query with error string literal": {
+			input: `
+				eval instant at 50m ("Foo")
+					expect string "Bar"
+			`,
+			expectedError: `error in eval ("Foo") (line 2): expected string "Bar" but got "Foo"`,
+		},
+		"instant query with range result - result does not have a series that is expected": {
+			input: `
+				load 10s
+  					some_metric{env="a"} 1+1x5
+
+				eval instant at 1m some_metric[1m]
+					expect range vector from 10s to 1m step 10s
+  					some_metric{env="a"} 2 3 4 5 6
+  					some_metric{env="b"} 4 6 8 10 12
+			`,
+			expectedError: `error in eval some_metric[1m] (line 5): expected metric {__name__="some_metric", env="b"} not found`,
+		},
+		"instant query with range result - result has a series which is not expected": {
+			input: `
+				load 10s
+  					some_metric{env="a"} 1+1x5
+					some_metric{env="b"} 1+1x5
+
+				eval instant at 1m some_metric[1m]
+					expect range vector from 10s to 1m step 10s
+  					some_metric{env="a"} 2 3 4 5 6
+			`,
+			expectedError: `error in eval some_metric[1m] (line 6): unexpected metric {__name__="some_metric", env="b"} in result, has 5 float points [2 @[10000] 3 @[20000] 4 @[30000] 5 @[40000] 6 @[50000]] and 0 histogram points []`,
+		},
+		"instant query with range result - result has a value that is not expected": {
+			input: `
+				load 10s
+  					some_metric{env="a"} 1+1x5
+
+				eval instant at 1m some_metric[1m]
+					expect range vector from 10s to 1m step 10s
+  					some_metric{env="a"} 9 3 4 5 6
+			`,
+			expectedError: `error in eval some_metric[1m] (line 5): expected float value at index 0 (t=10000) for {__name__="some_metric", env="a"} to be 9, but got 2 (result has 5 float points [2 @[10000] 3 @[20000] 4 @[30000] 5 @[40000] 6 @[50000]] and 0 histogram points [])`,
+		},
+		"instant query with range result - invalid expect range vector directive": {
+			input: `
+				load 10s
+  					some_metric{env="a"} 1+1x5
+
+				eval instant at 1m some_metric[1m]
+					expect range vector from 10s
+  					some_metric{env="a"} 2 3 4 5 6
+			`,
+			expectedError: `error in eval some_metric[1m] (line 6): invalid range vector definition "expect range vector from 10s"`,
+		},
+		"instant query with range result - result matches expected value": {
+			input: `
+				load 1m
+				  some_metric{env="1"} 0+1x4
+				  some_metric{env="2"} 0+2x4
+				
+				eval instant at 2m some_metric[2m]
+				  expect range vector from 1m to 2m step 60s
+					some_metric{env="1"} 1 2
+					some_metric{env="2"} 2 4
+			`,
+		},
+		"instant query with range result - result has a is missing a sample": {
+			input: `
+				load 1m
+				  some_metric_with_stale_marker 0 1 stale 3
+				
+				eval instant at 3m some_metric_with_stale_marker[3m]
+					expect range vector from 1m to 3m step 60s
+					some_metric_with_stale_marker{} 1 2 3
+			`,
+			expectedError: `error in eval some_metric_with_stale_marker[3m] (line 5): expected 3 float points and 0 histogram points for {__name__="some_metric_with_stale_marker"}, but got 2 float points [1 @[60000] 3 @[180000]] and 0 histogram points []`,
+		},
+		"instant query with range result - result has a sample where none is expected": {
+			input: `
+				load 1m
+				  some_metric_with_stale_marker 0 1 2 3
+				
+				eval instant at 3m some_metric_with_stale_marker[3m]
+					expect range vector from 1m to 3m step 60s
+					some_metric_with_stale_marker{} 1 _ 3
+			`,
+			expectedError: `error in eval some_metric_with_stale_marker[3m] (line 5): expected 2 float points and 0 histogram points for {__name__="some_metric_with_stale_marker"}, but got 3 float points [1 @[60000] 2 @[120000] 3 @[180000]] and 0 histogram points []`,
+		},
 	}
 
 	for name, testCase := range testCases {
