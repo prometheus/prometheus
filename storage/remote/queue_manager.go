@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -1927,11 +1928,9 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			metricType := writev2.Metadata_METRIC_TYPE_UNSPECIFIED
 			var unit string
 			if enableTypeAndUnitLabels {
-				typeValue := d.seriesLabels.Get("__type__")
-				unit = d.seriesLabels.Get("__unit__")
-				if typeValue != "" {
-					metricType = modelTypeToWriteV2Type(typeValue)
-				}
+				metadata := schema.NewMetadataFromLabels(d.seriesLabels)
+				metricType = modelTypeToWriteV2Type(string(metadata.Type))
+				unit = metadata.Unit
 			}
 			// Safeguard against sending garbage in case of not having metadata
 			// for whatever reason.
