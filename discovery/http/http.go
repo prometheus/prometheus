@@ -155,6 +155,9 @@ func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Increment the request count metric at the start of the request.
+	d.metrics.requestsCount.Inc()
+
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Prometheus-Refresh-Interval-Seconds", strconv.FormatFloat(d.refreshInterval.Seconds(), 'f', -1, 64))
