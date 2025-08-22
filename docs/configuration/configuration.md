@@ -3021,6 +3021,12 @@ azuread:
   [ managed_identity:
       [ client_id: <string> ] ]
 
+  # Azure Workload Identity.
+  [ workload_identity:
+     client_id: <string>
+     tenant_id: <string>
+     [ token_file_path: <string> | default = "/var/run/secrets/azure/tokens/azure-identity-token" ] ]
+
   # Azure OAuth.
   [ oauth:
       [ client_id: <string> ]
