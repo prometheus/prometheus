@@ -373,7 +373,7 @@ func (node *VectorSelector) String() string {
 	switch {
 	case node.Timestamp != nil:
 		b.WriteString(" @ ")
-		fmt.Fprintf(b, "%.3f", float64(*node.Timestamp)/1000.0)
+		b.Write(strconv.AppendFloat(b.AvailableBuffer(), float64(*node.Timestamp)/1000.0, 'f', 3, 64))
 	case node.StartOrEnd == START:
 		b.WriteString(" @ start()")
 	case node.StartOrEnd == END:
