@@ -43,6 +43,7 @@ jobs:
       - run: go test --tags=slicelabels -race ./cmd/prometheus ./prompb/io/prometheus/client
       - run: go test --tags=forcedirectio -race ./tsdb/
       - run: GOARCH=386 go test ./...
+      - run: GOARCH=arm64 go test ./...
       - uses: ./.github/promci/actions/check_proto
         with:
           version: "3.15.8"
