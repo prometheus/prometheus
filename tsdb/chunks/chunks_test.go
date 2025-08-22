@@ -58,3 +58,59 @@ func TestWriterWithDefaultSegmentSize(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, d, 1, "expected only one segment to be created to hold both chunks")
 }
+
+// TestWriterSegmentFileSize demonstrates that WriteChunks overestimates chunk sizes,
+// causing unnecessary segment splits, and quantifies the estimation error.
+func TestWriterSegmentFileSize(t *testing.T) {
+	chunkMeta1, err := ChunkFromSamples([]Sample{
+		sample{t: 10, f: 11},
+	})
+	require.NoError(t, err)
+
+	chunkMeta2, err := ChunkFromSamples([]Sample{
+		sample{t: 20, f: 11},
+	})
+	require.NoError(t, err)
+
+	// First, write both chunks to a segment with a large enough size.
+	dir1 := t.TempDir()
+	writer1, err := NewWriter(dir1, WithSegmentSize(100)) // Large enough to hold both chunks.
+	require.NoError(t, err)
+	require.NoError(t, writer1.WriteChunks(chunkMeta1, chunkMeta2))
+	require.NoError(t, writer1.Close())
+
+	files, err := os.ReadDir(dir1)
+	require.NoError(t, err)
+	require.Len(t, files, 1, "one segment file should contain both chunks")
+
+	// Get the actual size of the created segment file.
+	segmentInfo, err := os.Stat(dir1 + "/000001")
+	require.NoError(t, err)
+	actualSegmentFileSize := segmentInfo.Size()
+
+	// Now, use the actual segment file size as the limit: chunks split due to overestimation.
+	dir2 := t.TempDir()
+	writer2, err := NewWriter(dir2, WithSegmentSize(actualSegmentFileSize))
+	require.NoError(t, err)
+	require.NoError(t, writer2.WriteChunks(chunkMeta1, chunkMeta2))
+	require.NoError(t, writer2.Close())
+
+	files2, err := os.ReadDir(dir2)
+	require.NoError(t, err)
+	require.Len(t, files2, 2, "bug: there are 2 segment files instead of 1")
+
+	// The estimation error occurs because WriteChunks always assumes MaxChunkLengthFieldSize (5 bytes)
+	// for the chunk length field, but in this test, each chunk only needs 1 byte for the length field.
+	estimationError := 2 * (MaxChunkLengthFieldSize - 1)
+
+	// Finally, use the actual segment file size + estimation error as the limit: both chunks fit again.
+	dir3 := t.TempDir()
+	writer3, err := NewWriter(dir3, WithSegmentSize(actualSegmentFileSize+int64(estimationError)))
+	require.NoError(t, err)
+	require.NoError(t, writer3.WriteChunks(chunkMeta1, chunkMeta2))
+	require.NoError(t, writer3.Close())
+
+	files3, err := os.ReadDir(dir3)
+	require.NoError(t, err)
+	require.Len(t, files3, 1, "the Writer creates a single segment file if the segment size limit is %d bytes larger than necessary", estimationError)
+}
