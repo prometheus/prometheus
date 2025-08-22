@@ -310,7 +310,7 @@ For more details, see the [proposal](https://github.com/prometheus/proposals/pul
 Enables experimental `anchored` and `smoothed` modifiers for PromQL range and instant selectors. These modifiers provide more control over how range boundaries are handled in functions like `rate` and `increase`, especially with missing or irregular data.
 
 - `anchored`: Uses the most recent sample (within the lookback delta) at or before each boundary, or alternatively the first/last sample within the range. No extrapolation or interpolation is applied, so this is useful to get the direct difference between sample values.
-- `smoothed`: Linearly interpolates values at the range boundaries, using all available data for more accurate results with irregular scrapes or missing samples. Use with **rate** and **deriv**.
+- `smoothed`: Linearly interpolates values at the range boundaries, using the sample values before and after the boundaries for an improved estimation that is robust against irregular scrapes and missing samples. However, it requires a sample after the evaluation interval to work properly, see note below.
 
 Example queries:
 `increase(http_requests_total[5m] anchored)`
