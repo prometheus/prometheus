@@ -498,12 +498,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 	)
 
 	for i, chk := range chks {
-		// Each chunk contains: data length + encoding + the data itself + crc32
-		chkDataLenVarintSize := binary.PutUvarint(w.buf[:], uint64(len(chk.Chunk.Bytes())))
-		chkSize := int64(chkDataLenVarintSize)   // The data length is a variable length field.
-		chkSize += ChunkEncodingSize             // The chunk encoding.
-		chkSize += int64(len(chk.Chunk.Bytes())) // The data itself.
-		chkSize += crc32.Size                    // The 4 bytes of crc32.
+		chkSize := EncodedSizeInBytes(chk.Chunk, w.buf[:])
 		batchSize += chkSize
 
 		// Cut a new batch when it is not the first chunk(to avoid empty segments) and
