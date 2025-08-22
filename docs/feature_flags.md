@@ -318,7 +318,7 @@ Example queries:
 
 > **Note for alerting and recording rules:**
 > The `smoothed` modifier requires samples after the evaluation interval, so using it directly in alerting or recording rules will typically *under-estimate* the result, as future samples are not available at evaluation time.
-> To use `smoothed` safely in rules, you **must** apply a `query_offset` (e.g., `offset 1m`) to ensure the calculation window is fully in the past and all needed samples are available.  
+> To use `smoothed` safely in rules, you **must** apply a `query_offset` to the rule group (see [documentation](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#rule_group)) to ensure the calculation window is fully in the past and all needed samples are available.  
 > For critical alerting, set the offset to at least one scrape interval; for less critical or more resilient use cases, consider a larger offset (multiple scrape intervals) to tolerate missed scrapes.
 
 **Note**: Extended Range Selectors enables PromQL arithmetic expressions in time durations.
