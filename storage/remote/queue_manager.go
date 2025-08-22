@@ -64,35 +64,35 @@ const (
 type queueManagerMetrics struct {
 	reg prometheus.Registerer
 
-	samplesTotal            prometheus.Counter
-	exemplarsTotal          prometheus.Counter
-	histogramsTotal         prometheus.Counter
-	metadataTotal           prometheus.Counter
-	failedSamplesTotal      prometheus.Counter
-	failedExemplarsTotal    prometheus.Counter
-	failedHistogramsTotal   prometheus.Counter
-	failedMetadataTotal     prometheus.Counter
-	retriedSamplesTotal     prometheus.Counter
-	retriedExemplarsTotal   prometheus.Counter
-	retriedHistogramsTotal  prometheus.Counter
-	retriedMetadataTotal    prometheus.Counter
-	droppedSamplesTotal     *prometheus.CounterVec
-	droppedExemplarsTotal   *prometheus.CounterVec
-	droppedHistogramsTotal  *prometheus.CounterVec
-	enqueueRetriesTotal     prometheus.Counter
-	sentBatchDuration       prometheus.Histogram
-	highestSentTimestamp    *maxTimestamp
-	pendingSamples          prometheus.Gauge
-	pendingExemplars        prometheus.Gauge
-	pendingHistograms       prometheus.Gauge
-	shardCapacity           prometheus.Gauge
-	numShards               prometheus.Gauge
-	maxNumShards            prometheus.Gauge
-	minNumShards            prometheus.Gauge
-	desiredNumShards        prometheus.Gauge
-	sentBytesTotal          prometheus.Counter
-	metadataBytesTotal      prometheus.Counter
-	maxSamplesPerSend       prometheus.Gauge
+	samplesTotal           prometheus.Counter
+	exemplarsTotal         prometheus.Counter
+	histogramsTotal        prometheus.Counter
+	metadataTotal          prometheus.Counter
+	failedSamplesTotal     prometheus.Counter
+	failedExemplarsTotal   prometheus.Counter
+	failedHistogramsTotal  prometheus.Counter
+	failedMetadataTotal    prometheus.Counter
+	retriedSamplesTotal    prometheus.Counter
+	retriedExemplarsTotal  prometheus.Counter
+	retriedHistogramsTotal prometheus.Counter
+	retriedMetadataTotal   prometheus.Counter
+	droppedSamplesTotal    *prometheus.CounterVec
+	droppedExemplarsTotal  *prometheus.CounterVec
+	droppedHistogramsTotal *prometheus.CounterVec
+	enqueueRetriesTotal    prometheus.Counter
+	sentBatchDuration      prometheus.Histogram
+	highestSentTimestamp   *maxTimestamp
+	pendingSamples         prometheus.Gauge
+	pendingExemplars       prometheus.Gauge
+	pendingHistograms      prometheus.Gauge
+	shardCapacity          prometheus.Gauge
+	numShards              prometheus.Gauge
+	maxNumShards           prometheus.Gauge
+	minNumShards           prometheus.Gauge
+	desiredNumShards       prometheus.Gauge
+	sentBytesTotal         prometheus.Counter
+	metadataBytesTotal     prometheus.Counter
+	maxSamplesPerSend      prometheus.Gauge
 }
 
 func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManagerMetrics {
