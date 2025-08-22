@@ -559,6 +559,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 }
 
 func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, base *BlockMeta) ([]ulid.ULID, error) {
+	c.logger.Info("write block started")
 	start := time.Now()
 
 	uid := ulid.MustNew(ulid.Now(), rand.Reader)
@@ -596,7 +597,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 	}
 
 	c.logger.Info(
-		"write block",
+		"write block completed",
 		"mint", meta.MinTime,
 		"maxt", meta.MaxTime,
 		"ulid", meta.ULID,
