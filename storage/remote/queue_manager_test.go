@@ -2364,8 +2364,6 @@ func BenchmarkBuildTimeSeries(b *testing.B) {
 }
 
 func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
-	metrics := newQueueManagerMetrics(nil, "", "")
-	initialCount := client_testutil.ToFloat64(metrics.unexpectedMetadataTotal)
 	symbolTable := writev2.NewSymbolTable()
 	pendingData := make([]writev2.TimeSeries, 4)
 
@@ -2385,10 +2383,4 @@ func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
 	require.Equal(t, 0, nHistograms, "Should count 0 histograms")
 	require.Equal(t, 0, nMetadata, "Should count 0 processed metadata")
 	require.Equal(t, 2, nUnexpected, "Should count 2 unexpected metadata")
-
-	if nUnexpected > 0 {
-		metrics.unexpectedMetadataTotal.Add(float64(nUnexpected))
-	}
-	finalCount := client_testutil.ToFloat64(metrics.unexpectedMetadataTotal)
-	require.Equal(t, initialCount+2.0, finalCount, "unexpectedMetadataTotal should be incremented by 2")
 }
