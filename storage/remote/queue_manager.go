@@ -93,7 +93,6 @@ type queueManagerMetrics struct {
 	sentBytesTotal          prometheus.Counter
 	metadataBytesTotal      prometheus.Counter
 	maxSamplesPerSend       prometheus.Gauge
-	unexpectedMetadataTotal prometheus.Counter
 }
 
 func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManagerMetrics {
@@ -314,14 +313,6 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "The maximum number of samples to be sent, in a single request, to the remote storage. Note that, when sending of exemplars over remote write is enabled, exemplars count towards this limt.",
 		ConstLabels: constLabels,
 	})
-	m.unexpectedMetadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace:   namespace,
-		Subsystem:   subsystem,
-		Name:        "unexpected_metadata_total",
-		Help:        "Total number of unexpected metadata entries in populateV2TimeSeries indicating routing bugs.",
-		ConstLabels: constLabels,
-	})
-
 	return m
 }
 
@@ -357,7 +348,6 @@ func (m *queueManagerMetrics) register() {
 			m.sentBytesTotal,
 			m.metadataBytesTotal,
 			m.maxSamplesPerSend,
-			m.unexpectedMetadataTotal,
 		)
 	}
 }
@@ -393,7 +383,6 @@ func (m *queueManagerMetrics) unregister() {
 		m.reg.Unregister(m.sentBytesTotal)
 		m.reg.Unregister(m.metadataBytesTotal)
 		m.reg.Unregister(m.maxSamplesPerSend)
-		m.reg.Unregister(m.unexpectedMetadataTotal)
 	}
 }
 
@@ -1556,7 +1545,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
 			if nUnexpectedMetadata > 0 {
-				s.qm.metrics.unexpectedMetadataTotal.Add(float64(nUnexpectedMetadata))
+				s.qm.logger.Warn("unexpected metadata sType in populateV2TimeSeries", "count", nUnexpectedMetadata)
 			}
 			_ = s.sendV2Samples(ctx, pendingDataV2[:n], symbolTable.Symbols(), nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, &pBufRaw, encBuf, compr)
 			symbolTable.Reset()
