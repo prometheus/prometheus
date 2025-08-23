@@ -275,3 +275,30 @@ groups:
         summary: "Instance {{ $labels.instance }} down"
         description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 5 minutes."
 ```
+
+### Time within tests
+
+It should be noted that in all tests, either in `alert_test_case` or
+`promql_test_case`, the output from all functions related to the current time,
+for example the `time()` and `day_of_*()` functions, will output a consistent value
+for tests.
+
+At the start of the test evaluation, `time()` returns 0 and therefore when under test
+`time()` will return a value of `0 + eval_time`.
+
+If you need to write tests for alerts that use functions relating to the current
+time, make sure that the values given to your `input_series` are placed far
+enough in the past, relative to the evaluation time described above. The values
+can for example be negative timestamps so that with a very small `eval_time` the
+alert can be expected to trigger.
+
+Another method that's known to work is to instead bump `eval_time` in the future
+so that the timestamp output by `time()` will be a higher value and the values
+in `input_series` will be far enough apart from that point in time so that the
+alerts will trigger. This method has the downside of making promtool generate a
+timeseries database that contains a value for each `input_series` for each
+`interval` for the given test. This can become very slow relatively easily and
+can end up consuming a lot of RAM for running your test. By instead using values
+for `input_series` relative to the timestamp described above even though the
+values go into negative numbers, you can keep `eval_time` fairly lower and avoid
+making your tests run very slowly.
