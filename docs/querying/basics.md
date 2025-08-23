@@ -31,7 +31,7 @@ evaluate to one of four types:
 * **Scalar** - a simple numeric floating point value
 * **String** - a simple string value; currently unused
 
-Depending on the use case (e.g., when graphing vs. displaying the output of an
+Depending on the use case (e.g. when graphing vs. displaying the output of an
 expression), only some of these types are legal as the result of a
 user-specified expression.
 For [instant queries](api.md#instant-queries), any of the above data types are allowed as the root of the expression.
