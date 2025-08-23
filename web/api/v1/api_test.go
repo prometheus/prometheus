@@ -4642,7 +4642,7 @@ func (t *testCodec) CanEncode(*Response) bool {
 }
 
 func (t *testCodec) Encode(*Response) ([]byte, error) {
-	return []byte(fmt.Sprintf("response from %v codec", t.contentType)), nil
+	return fmt.Appendf(nil, "response from %v codec", t.contentType), nil
 }
 
 func TestExtractQueryOpts(t *testing.T) {
