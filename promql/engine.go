@@ -323,25 +323,29 @@ type EngineOpts struct {
 	EnableDelayedNameRemoval bool
 	// EnableTypeAndUnitLabels will allow PromQL Engine to make decisions based on the type and unit labels.
 	EnableTypeAndUnitLabels bool
+
+	// EnableEvalAlignedSubqueries controls whether the experimental aligned subqueries syntax "[range::step]" is enabled.
+	EnableEvalAlignedSubqueries bool
 }
 
 // Engine handles the lifetime of queries from beginning to end.
 // It is connected to a querier.
 type Engine struct {
-	logger                   *slog.Logger
-	metrics                  *engineMetrics
-	timeout                  time.Duration
-	maxSamplesPerQuery       int
-	activeQueryTracker       QueryTracker
-	queryLogger              QueryLogger
-	queryLoggerLock          sync.RWMutex
-	lookbackDelta            time.Duration
-	noStepSubqueryIntervalFn func(rangeMillis int64) int64
-	enableAtModifier         bool
-	enableNegativeOffset     bool
-	enablePerStepStats       bool
-	enableDelayedNameRemoval bool
-	enableTypeAndUnitLabels  bool
+	logger                      *slog.Logger
+	metrics                     *engineMetrics
+	timeout                     time.Duration
+	maxSamplesPerQuery          int
+	activeQueryTracker          QueryTracker
+	queryLogger                 QueryLogger
+	queryLoggerLock             sync.RWMutex
+	lookbackDelta               time.Duration
+	noStepSubqueryIntervalFn    func(rangeMillis int64) int64
+	enableAtModifier            bool
+	enableNegativeOffset        bool
+	enablePerStepStats          bool
+	enableDelayedNameRemoval    bool
+	enableTypeAndUnitLabels     bool
+	enableEvalAlignedSubqueries bool
 }
 
 // NewEngine returns a new engine.
@@ -422,18 +426,19 @@ func NewEngine(opts EngineOpts) *Engine {
 	}
 
 	return &Engine{
-		timeout:                  opts.Timeout,
-		logger:                   opts.Logger,
-		metrics:                  metrics,
-		maxSamplesPerQuery:       opts.MaxSamples,
-		activeQueryTracker:       opts.ActiveQueryTracker,
-		lookbackDelta:            opts.LookbackDelta,
-		noStepSubqueryIntervalFn: opts.NoStepSubqueryIntervalFn,
-		enableAtModifier:         opts.EnableAtModifier,
-		enableNegativeOffset:     opts.EnableNegativeOffset,
-		enablePerStepStats:       opts.EnablePerStepStats,
-		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
-		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
+		timeout:                     opts.Timeout,
+		logger:                      opts.Logger,
+		metrics:                     metrics,
+		maxSamplesPerQuery:          opts.MaxSamples,
+		activeQueryTracker:          opts.ActiveQueryTracker,
+		lookbackDelta:               opts.LookbackDelta,
+		noStepSubqueryIntervalFn:    opts.NoStepSubqueryIntervalFn,
+		enableAtModifier:            opts.EnableAtModifier,
+		enableNegativeOffset:        opts.EnableNegativeOffset,
+		enablePerStepStats:          opts.EnablePerStepStats,
+		enableDelayedNameRemoval:    opts.EnableDelayedNameRemoval,
+		enableTypeAndUnitLabels:     opts.EnableTypeAndUnitLabels,
+		enableEvalAlignedSubqueries: opts.EnableEvalAlignedSubqueries,
 	}
 }
 
@@ -546,16 +551,17 @@ func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start
 }
 
 var (
-	ErrValidationAtModifierDisabled     = errors.New("@ modifier is disabled")
-	ErrValidationNegativeOffsetDisabled = errors.New("negative offset is disabled")
+	ErrValidationAtModifierDisabled            = errors.New("@ modifier is disabled")
+	ErrValidationNegativeOffsetDisabled        = errors.New("negative offset is disabled")
+	ErrValidationEvalAlignedSubqueriesDisabled = errors.New("evaluation time aligned subqueries are disabled")
 )
 
 func (ng *Engine) validateOpts(expr parser.Expr) error {
-	if ng.enableAtModifier && ng.enableNegativeOffset {
+	if ng.enableAtModifier && ng.enableNegativeOffset && ng.enableEvalAlignedSubqueries {
 		return nil
 	}
 
-	var atModifierUsed, negativeOffsetUsed bool
+	var atModifierUsed, negativeOffsetUsed, evalAlignedSubqueriesUsed bool
 
 	var validationErr error
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
@@ -584,6 +590,9 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 			if n.OriginalOffset < 0 {
 				negativeOffsetUsed = true
 			}
+			if n.Aligned {
+				evalAlignedSubqueriesUsed = true
+			}
 		}
 
 		if atModifierUsed && !ng.enableAtModifier {
@@ -592,6 +601,10 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 		}
 		if negativeOffsetUsed && !ng.enableNegativeOffset {
 			validationErr = ErrValidationNegativeOffsetDisabled
+			return validationErr
+		}
+		if evalAlignedSubqueriesUsed && !ng.enableEvalAlignedSubqueries {
+			validationErr = ErrValidationEvalAlignedSubqueriesDisabled
 			return validationErr
 		}
 
@@ -1079,6 +1092,14 @@ type evaluator struct {
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
 	querier                  storage.Querier
+}
+
+// gcd returns the greatest common divisor of a and b.
+func gcd(a, b int64) int64 {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return a
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1620,8 +1641,10 @@ func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr
 		vs.Offset = subq.OriginalOffset + time.Duration(ev.startTimestamp-*subq.Timestamp)*time.Millisecond
 	}
 	ms := &parser.MatrixSelector{
-		Range:          subq.Range,
-		VectorSelector: vs,
+		Range:               subq.Range,
+		VectorSelector:      vs,
+		AlignedFromSubquery: subq.Aligned,
+		AlignedStep:         subq.Step,
 	}
 	for _, s := range mat {
 		// Set any "NotCounterReset" and "CounterReset" hints in native
@@ -1783,6 +1806,9 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		arg := e.Args[matrixArgIndex]
 		sel := arg.(*parser.MatrixSelector)
 		selVS := sel.VectorSelector.(*parser.VectorSelector)
+		// Capture whether the original argument was an aligned subquery and its step.
+		alignedSubquery := sel.AlignedFromSubquery
+		alignedStepMillis := durationMilliseconds(sel.AlignedStep)
 
 		ws, err := checkAndExpandSeriesSet(ctx, sel)
 		warnings.Merge(ws)
@@ -1792,7 +1818,14 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		mat := make(Matrix, 0, len(selVS.Series)) // Output matrix.
 		offset := durationMilliseconds(selVS.Offset)
 		selRange := durationMilliseconds(sel.Range)
-		stepRange := min(selRange, ev.interval)
+		stepRange := selRange
+		if !alignedSubquery && stepRange > ev.interval {
+			// For regular subqueries/matrix selectors, keeping only last ev.interval worth of
+			// buffered samples is enough between steps. For aligned subqueries (::), the set of
+			// valid points depends on the current evaluation time, so we must retain the whole
+			// range window to avoid dropping points still needed at the next step.
+			stepRange = ev.interval
+		}
 		// Reuse objects across steps to save memory allocations.
 		var floats []FPoint
 		var histograms []HPoint
@@ -1831,6 +1864,15 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				DropName: dropName,
 			}
 			inMatrix[0].Metric = selVS.Series[i].Labels()
+
+			// For aligned subqueries, prepare reusable buffers per series to avoid per-step allocations when building filtered views.
+			var alignedFloats []FPoint
+			var alignedHistograms []HPoint
+			if alignedSubquery && alignedStepMillis > 0 {
+				expected := selRange/alignedStepMillis + 1
+				alignedFloats = make([]FPoint, 0, expected)
+				alignedHistograms = make([]HPoint, 0, expected)
+			}
 			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 				step++
 				// Set the non-matrix arguments.
@@ -1854,14 +1896,59 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				if len(floats)+len(histograms) == 0 {
 					continue
 				}
-				inMatrix[0].Floats = floats
-				inMatrix[0].Histograms = histograms
+				// For aligned subqueries (::), present to the function only the points aligned
+				// to the current evaluation time, but keep the full slices intact across steps.
+				//
+				// We carry the whole window buffer across outer steps:
+				//	window at ts: (E-range, E]  with E = ts - offset
+				//  aligned step = S
+				//  filter rule: keep T iff (E - T) % S == 0
+				//
+				// all samples:       *  *  *  *  *  *  *  *  *
+				//                    |-----window (E-range, E]------|
+				// per-step filtered:       .        .        .      (only E, E-S, E-2S, ...)
+				//
+				// Ordinary ':' uses epoch-aligned grid and can safely window-reduce between steps.
+				if alignedSubquery && alignedStepMillis > 0 {
+					want := (ts - offset) % alignedStepMillis
+					// Build filtered views without mutating the carry-over slices.
+
+					alignedFloats = alignedFloats[:0]
+					for _, fp := range floats {
+						if fp.T%alignedStepMillis == want {
+							alignedFloats = append(alignedFloats, fp)
+						}
+					}
+					inMatrix[0].Floats = alignedFloats
+
+					alignedHistograms = alignedHistograms[:0]
+					for _, hp := range histograms {
+						if hp.T%alignedStepMillis == want {
+							alignedHistograms = append(alignedHistograms, hp)
+						}
+					}
+					inMatrix[0].Histograms = alignedHistograms
+
+					// If aligned filtering removed all samples for this step, skip the function call to preserve
+					// the same semantics as regular subqueries, where empty windows result in no output sample at this step.
+					if len(inMatrix[0].Floats) == 0 && len(inMatrix[0].Histograms) == 0 {
+						continue
+					}
+				} else {
+					inMatrix[0].Floats = floats
+					inMatrix[0].Histograms = histograms
+				}
 				enh.Ts = ts
 
 				// Make the function call.
 				outVec, annos := call(vectorVals, inMatrix, e.Args, enh)
 				warnings.Merge(annos)
-				ev.samplesStats.IncrementSamplesAtStep(step, int64(len(floats)+totalHPointSize(histograms)))
+				if alignedSubquery && alignedStepMillis > 0 {
+					// Count only the samples actually used at this step.
+					ev.samplesStats.IncrementSamplesAtStep(step, int64(len(inMatrix[0].Floats)+totalHPointSize(inMatrix[0].Histograms)))
+				} else {
+					ev.samplesStats.IncrementSamplesAtStep(step, int64(len(floats)+totalHPointSize(histograms)))
+				}
 
 				enh.Out = outVec[:0]
 				if len(outVec) > 0 {
@@ -2083,9 +2170,22 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			newEv.interval = ev.noStepSubqueryIntervalFn(rangeMillis)
 		}
 
-		// Start with the first timestamp after (ev.startTimestamp - offset - range)
-		// that is aligned with the step (multiple of 'newEv.interval').
+		if e.Aligned && ev.startTimestamp != ev.endTimestamp && newEv.interval > 0 && ev.interval > 0 {
+			// Let's ensure that inner and outer intervals align to each outher:
+			//	0     10    20    30    40    50    60
+			//  *-----------------*-----------------*   outer ticks
+			//  *-----------*-----------*-----------*   inner ticks
+			//  *-----*-----*-----*-----*-----*-----*   densified ticks by greatest common divisor
+			g := gcd(newEv.interval, ev.interval)
+			if g > 0 && g < newEv.interval {
+				newEv.interval = g
+			}
+		}
+
 		newEv.startTimestamp = newEv.interval * ((ev.startTimestamp - offsetMillis - rangeMillis) / newEv.interval)
+		if e.Aligned {
+			newEv.startTimestamp += newEv.endTimestamp - newEv.interval*(newEv.endTimestamp/newEv.interval)
+		}
 		if newEv.startTimestamp <= (ev.startTimestamp - offsetMillis - rangeMillis) {
 			newEv.startTimestamp += newEv.interval
 		}

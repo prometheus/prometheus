@@ -1,0 +1,121 @@
+# Aligned subqueries — targeted behavioral tests
+#
+# Focus on cases that make the difference between regular (:) and aligned (::) subqueries explicit.
+
+# 1) Comparison of regular (:) vs aligned (::) with non-matching step
+#    Data step=10s, inner step=20s, so epoch-aligned vs eval-time-aligned differ.
+load 10s
+  test_counter 0+1x100
+
+# Regular (instant)
+eval instant at 50s sum_over_time(test_counter[30s:20s])
+  {} 4
+
+# Regular (range)
+eval range from 50s to 80s step 10s sum_over_time(test_counter[30s:20s])
+  {} 4 10 6 14
+
+# Aligned (instant)
+eval instant at 50s sum_over_time(test_counter[30s::20s])
+  {} 8
+
+# Aligned (range)
+eval range from 50s to 80s step 10s sum_over_time(test_counter[30s::20s])
+  {} 8 10 12 14
+
+# With offset: sequences differ for : vs ::
+eval instant at 60s sum_over_time(test_counter[30s:20s] offset 10s)
+  {} 4
+
+eval range from 60s to 80s step 10s sum_over_time(test_counter[30s:20s] offset 10s)
+  {} 4 10 6
+
+eval instant at 60s sum_over_time(test_counter[30s::20s] offset 10s)
+  {} 8
+
+eval range from 60s to 80s step 10s sum_over_time(test_counter[30s::20s] offset 10s)
+  {} 8 10 12
+
+clear
+
+# 2) Non-divisible alignment cases (epoch vs eval-time alignment)
+#    Data step=1s, inner step=7s, t not divisible by 7 → different sums.
+load 1s
+  phase_metric 0+1x200
+
+# Instant at 50s and 55s
+eval instant at 50s sum_over_time(phase_metric[30s:7s])
+  {} 175
+
+eval instant at 50s sum_over_time(phase_metric[30s::7s])
+  {} 180
+
+eval instant at 55s sum_over_time(phase_metric[30s:7s])
+  {} 154
+
+eval instant at 55s sum_over_time(phase_metric[30s::7s])
+  {} 205
+
+# Range 50..70 step 5s
+eval range from 50s to 70s step 5s sum_over_time(phase_metric[30s:7s])
+  {} 175 154 182 210 280
+
+eval range from 50s to 70s step 5s sum_over_time(phase_metric[30s::7s])
+  {} 180 205 230 255 280
+
+clear
+
+# 3) @-modifier — difference with non-divisible step
+#    @ anchors the subquery; regular remains epoch-aligned, aligned uses @-time.
+load 1s
+  at_phase 0+1x300
+
+# Instant at 200s with @100s
+# Regular (:) in (70,100]: {77,84,91,98} → 350
+eval instant at 200s sum_over_time(at_phase[30s:7s] @ 100)
+  {} 350
+
+# Aligned (::) in (70,100]: {100,93,86,79,72} → 430
+eval instant at 200s sum_over_time(at_phase[30s::7s] @ 100)
+  {} 430
+
+clear
+
+# 4) Step larger than range — : may be empty, :: always includes t
+load 10s
+  step_metric 0+1x20
+
+eval range from 50s to 80s step 15s avg_over_time(step_metric[10s:20s])
+  {} _ 6 8
+
+eval range from 50s to 80s step 15s avg_over_time(step_metric[10s::20s])
+  {} 5 6 8
+
+clear
+
+## 5) Millisecond-range regression — ensure no panic and empty result
+load 10s
+  http_requests_total 0+10x1000
+
+eval range from 0 to 1m53s1ms step 10s avg_over_time(rate(http_requests_total[5m])[30m::10m])
+  expect no_info
+  expect no_warn
+  #empty
+
+clear
+
+# 6) Histogram difference — non-matching step shows :: includes t
+load 10s
+  hist_metric {{sum:10 count:10}}+{{sum:10 count:10}}x20
+
+# Regular (:) at 50s with step=20s picks epoch-aligned points within (20,50].
+# Due to cumulative histogram values and window semantics, the sum reflects
+# multiple underlying samples in the window.
+eval instant at 50s sum_over_time(hist_metric[30s:20s])
+  {} {{sum:50 count:50}}
+
+# Aligned (::) at 50s includes t and aligns backward by 20s. With cumulative
+# histogram data, the sum over aligned points reflects the higher cumulative
+# values at later timestamps.
+eval instant at 50s sum_over_time(hist_metric[30s::20s])
+  {} {{sum:100 count:100}}

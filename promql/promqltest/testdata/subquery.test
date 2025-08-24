@@ -97,10 +97,10 @@ eval instant at 1000s rate(sum_over_time(metric1_total[30s:10s])[50s:10s])
 
 eval instant at 1000s rate(sum_over_time(metric2_total[30s:10s])[50s:10s])
   {} 0.6000000000000001
-  
+
 eval instant at 1000s rate(sum_over_time(metric3_total[30s:10s])[50s:10s])
   {} 0.9
-  
+
 eval instant at 1000s rate(sum_over_time((metric1_total+metric2_total+metric3_total)[30s:10s])[30s:10s])
   {} 1.8
 
