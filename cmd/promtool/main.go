@@ -61,7 +61,10 @@ import (
 	"github.com/prometheus/prometheus/util/documentcli"
 )
 
-var promqlEnableDelayedNameRemoval = false
+var (
+	promqlEnableDelayedNameRemoval    = false
+	promqlEnableEvalAlignedSubqueries = false
+)
 
 func init() {
 	// This can be removed when the legacy global mode is fully deprecated.
@@ -346,6 +349,8 @@ func main() {
 				parser.EnableExperimentalFunctions = true
 			case "promql-delayed-name-removal":
 				promqlEnableDelayedNameRemoval = true
+			case "promql-eval-aligned-subqueries":
+				promqlEnableEvalAlignedSubqueries = true
 			case "":
 				continue
 			default:
@@ -407,9 +412,10 @@ func main() {
 		}
 		os.Exit(RulesUnitTestResult(results,
 			promqltest.LazyLoaderOpts{
-				EnableAtModifier:         true,
-				EnableNegativeOffset:     true,
-				EnableDelayedNameRemoval: promqlEnableDelayedNameRemoval,
+				EnableAtModifier:            true,
+				EnableNegativeOffset:        true,
+				EnableDelayedNameRemoval:    promqlEnableDelayedNameRemoval,
+				EnableEvalAlignedSubqueries: promqlEnableEvalAlignedSubqueries,
 			},
 			*testRulesRun,
 			*testRulesDiff,
