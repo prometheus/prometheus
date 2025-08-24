@@ -207,8 +207,9 @@ type flagConfig struct {
 	featureList []string
 	// These options are extracted from featureList
 	// for ease of use.
-	enablePerStepStats       bool
-	enableConcurrentRuleEval bool
+	enablePerStepStats                bool
+	enableConcurrentRuleEval          bool
+	enablePromQLEvalAlignedSubqueries bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -254,6 +255,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "promql-duration-expr":
 				parser.ExperimentalDurationExpr = true
 				logger.Info("Experimental duration expression parsing enabled.")
+			case "promql-eval-aligned-subqueries":
+				c.enablePromQLEvalAlignedSubqueries = true
+				logger.Info("Experimental aligned subqueries enabled.")
 			case "native-histograms":
 				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
 				t := true
@@ -564,7 +568,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative, promql-duration-expr, use-uncached-io, promql-extended-range-selectors. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative, promql-duration-expr, use-uncached-io, promql-extended-range-selectors, promql-eval-aligned-subqueries. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -860,11 +864,12 @@ func main() {
 			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
 			// EnableAtModifier and EnableNegativeOffset have to be
 			// always on for regular PromQL as of Prometheus v2.33.
-			EnableAtModifier:         true,
-			EnableNegativeOffset:     true,
-			EnablePerStepStats:       cfg.enablePerStepStats,
-			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
-			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
+			EnableAtModifier:            true,
+			EnableNegativeOffset:        true,
+			EnablePerStepStats:          cfg.enablePerStepStats,
+			EnableDelayedNameRemoval:    cfg.promqlEnableDelayedNameRemoval,
+			EnableTypeAndUnitLabels:     cfg.scrape.EnableTypeAndUnitLabels,
+			EnableEvalAlignedSubqueries: cfg.enablePromQLEvalAlignedSubqueries,
 		}
 
 		queryEngine = promql.NewEngine(opts)
