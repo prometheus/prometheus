@@ -1443,12 +1443,10 @@ func (h *Head) performChunkSnapshot() error {
 	startTime := time.Now()
 	stats, err := h.ChunkSnapshot()
 	elapsed := time.Since(startTime)
-	if err == nil {
-		h.logger.Info("chunk snapshot complete", "duration", elapsed.String(), "num_series", stats.TotalSeries, "dir", stats.Dir)
-	}
 	if err != nil {
 		return fmt.Errorf("chunk snapshot: %w", err)
 	}
+	h.logger.Info("chunk snapshot complete", "duration", elapsed.String(), "num_series", stats.TotalSeries, "dir", stats.Dir)
 	return nil
 }
 
