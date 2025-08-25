@@ -502,7 +502,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				go namespaceInf.Run(ctx.Done())
 			}
 
-			eps := NewEndpoints(
+			eps := NewEndpointSlice(
 				d.logger.With("role", "endpoint"),
 				d.newIndexedEndpointsInformer(elw),
 				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
@@ -512,7 +512,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, eps)
-			go eps.endpointsInf.Run(ctx.Done())
+			go eps.endpointSliceInf.Run(ctx.Done())
 			go eps.serviceInf.Run(ctx.Done())
 			go eps.podInf.Run(ctx.Done())
 		}
@@ -717,51 +717,48 @@ func (d *Discovery) newIndexedPodsInformer(plw *cache.ListWatch) cache.SharedInd
 func (d *Discovery) newIndexedEndpointsInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
 	indexers := make(map[string]cache.IndexFunc)
 	indexers[podIndex] = func(obj interface{}) ([]string, error) {
-		e, ok := obj.(*apiv1.Endpoints)
+		e, ok := obj.(*disv1.EndpointSlice)
 		if !ok {
 			return nil, errors.New("object is not endpoints")
 		}
 		var pods []string
-		for _, target := range e.Subsets {
-			for _, addr := range target.Addresses {
-				if addr.TargetRef != nil && addr.TargetRef.Kind == "Pod" {
-					pods = append(pods, namespacedName(addr.TargetRef.Namespace, addr.TargetRef.Name))
-				}
+		for _, target := range e.Endpoints {
+			if target.TargetRef != nil && target.TargetRef.Kind == "Pod" {
+				pods = append(pods, namespacedName(target.TargetRef.Namespace, target.TargetRef.Name))
 			}
 		}
 		return pods, nil
 	}
+	if !d.attachMetadata.Node {
+		return d.mustNewSharedIndexInformer(plw, &disv1.EndpointSlice{}, resyncDisabled, indexers)
+	}
 
-	if d.attachMetadata.Node {
-		indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
-			e, ok := obj.(*apiv1.Endpoints)
-			if !ok {
-				return nil, errors.New("object is not endpoints")
-			}
-			var nodes []string
-			for _, target := range e.Subsets {
-				for _, addr := range target.Addresses {
-					if addr.TargetRef != nil {
-						switch addr.TargetRef.Kind {
-						case "Pod":
-							if addr.NodeName != nil {
-								nodes = append(nodes, *addr.NodeName)
-							}
-						case "Node":
-							nodes = append(nodes, addr.TargetRef.Name)
-						}
+	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
+		e, ok := obj.(*disv1.EndpointSlice)
+		if !ok {
+			return nil, errors.New("object is not endpoints")
+		}
+		var nodes []string
+		for _, target := range e.Endpoints {
+			if target.TargetRef != nil {
+				switch target.TargetRef.Kind {
+				case "Pod":
+					if target.NodeName != nil {
+						nodes = append(nodes, *target.NodeName)
 					}
+				case "Node":
+					nodes = append(nodes, target.TargetRef.Name)
 				}
 			}
-			return nodes, nil
 		}
+		return nodes, nil
 	}
 
 	if d.attachMetadata.Namespace {
 		indexers[cache.NamespaceIndex] = cache.MetaNamespaceIndexFunc
 	}
 
-	return d.mustNewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncDisabled, indexers)
+	return d.mustNewSharedIndexInformer(plw, &disv1.EndpointSlice{}, resyncDisabled, indexers)
 }
 
 func (d *Discovery) newIndexedEndpointSlicesInformer(plw *cache.ListWatch, object runtime.Object) cache.SharedIndexInformer {
@@ -832,16 +829,16 @@ func (d *Discovery) newIndexedIngressesInformer(ilw *cache.ListWatch) cache.Shar
 	return d.mustNewSharedIndexInformer(ilw, &networkv1.Ingress{}, resyncDisabled, indexers)
 }
 
-func (d *Discovery) informerWatchErrorHandler(r *cache.Reflector, err error) {
+func (d *Discovery) informerWatchErrorHandler(ctx context.Context, r *cache.Reflector, err error) {
 	d.metrics.failuresCount.Inc()
-	cache.DefaultWatchErrorHandler(r, err)
+	cache.DefaultWatchErrorHandler(ctx, r, err)
 }
 
 func (d *Discovery) mustNewSharedInformer(lw cache.ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration) cache.SharedInformer {
 	informer := cache.NewSharedInformer(lw, exampleObject, defaultEventHandlerResyncPeriod)
 	// Invoking SetWatchErrorHandler should fail only if the informer has been started beforehand.
 	// Such a scenario would suggest an incorrect use of the API, thus the panic.
-	if err := informer.SetWatchErrorHandler(d.informerWatchErrorHandler); err != nil {
+	if err := informer.SetWatchErrorHandlerWithContext(d.informerWatchErrorHandler); err != nil {
 		panic(err)
 	}
 	return informer
@@ -851,7 +848,7 @@ func (d *Discovery) mustNewSharedIndexInformer(lw cache.ListerWatcher, exampleOb
 	informer := cache.NewSharedIndexInformer(lw, exampleObject, defaultEventHandlerResyncPeriod, indexers)
 	// Invoking SetWatchErrorHandler should fail only if the informer has been started beforehand.
 	// Such a scenario would suggest an incorrect use of the API, thus the panic.
-	if err := informer.SetWatchErrorHandler(d.informerWatchErrorHandler); err != nil {
+	if err := informer.SetWatchErrorHandlerWithContext(d.informerWatchErrorHandler); err != nil {
 		panic(err)
 	}
 	return informer
