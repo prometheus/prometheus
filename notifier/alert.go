@@ -84,6 +84,17 @@ func relabelAlerts(relabelConfigs []*relabel.Config, externalLabels labels.Label
 		if !keep {
 			continue
 		}
+
+		// If relabeling has altered the labels, create a new Alert to preserve immutability.
+		if !labels.Equal(a.Labels, lb.Labels()) {
+			a = &Alert{
+				Annotations:  a.Annotations,
+				StartsAt:     a.StartsAt,
+				EndsAt:       a.EndsAt,
+				GeneratorURL: a.GeneratorURL,
+			}
+		}
+
 		a.Labels = lb.Labels()
 		relabeledAlerts = append(relabeledAlerts, a)
 	}
