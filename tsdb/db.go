@@ -98,6 +98,16 @@ func DefaultOptions() *Options {
 
 // Options of the DB storage.
 type Options struct {
+	// staleSeriesCompactionInterval is same as below option with same name, but is atomic so that we can do live updates without locks.
+	// This is the one that must be used by the code.
+	staleSeriesCompactionInterval atomic.Int64
+	// staleSeriesCompactionThreshold is same as below option with same name, but is atomic so that we can do live updates without locks.
+	// This is the one that must be used by the code.
+	staleSeriesCompactionThreshold atomic.Float64
+	// staleSeriesImmediateCompactionThreshold is same as below option with same name, but is atomic so that we can do live updates without locks.
+	// This is the one that must be used by the code.
+	staleSeriesImmediateCompactionThreshold atomic.Float64
+
 	// Segments (wal files) max size.
 	// WALSegmentSize = 0, segment size is default size.
 	// WALSegmentSize > 0, segment size is WALSegmentSize.
@@ -832,6 +842,10 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 		rngs = ExponentialBlockRanges(opts.MinBlockDuration, 10, 3)
 	}
 
+	opts.staleSeriesCompactionInterval.Store(int64(opts.StaleSeriesCompactionInterval))
+	opts.staleSeriesCompactionThreshold.Store(opts.StaleSeriesCompactionThreshold)
+	opts.staleSeriesImmediateCompactionThreshold.Store(opts.StaleSeriesImmediateCompactionThreshold)
+
 	return opts, rngs
 }
 
@@ -1103,15 +1117,13 @@ func (db *DB) run(ctx context.Context) {
 
 	backoff := time.Duration(0)
 
-	nextStaleSeriesCompactionTime := time.Now().Round(db.opts.StaleSeriesCompactionInterval)
-	if nextStaleSeriesCompactionTime.Before(time.Now()) {
-		nextStaleSeriesCompactionTime = nextStaleSeriesCompactionTime.Add(db.opts.StaleSeriesCompactionInterval)
-	}
-
-	staleSeriesWaitDur := time.Until(nextStaleSeriesCompactionTime)
-	if db.opts.StaleSeriesCompactionInterval <= 0 {
-		// Long enough interval so that we don't schedule a stale series compaction.
-		staleSeriesWaitDur = 365 * 24 * time.Hour
+	staleSeriesCompactionInterval := time.Duration(db.opts.staleSeriesCompactionInterval.Load())
+	nextStaleSeriesCompactionTime := nextStepAlignedTime(staleSeriesCompactionInterval)
+	timedStaleSeriesCompactionActive := true
+	if staleSeriesCompactionInterval <= 0 {
+		// Far enough so that we don't schedule a stale series compaction.
+		timedStaleSeriesCompactionActive = false
+		nextStaleSeriesCompactionTime = time.Now().Add(365 * 24 * time.Hour)
 	}
 
 	for {
@@ -1119,6 +1131,11 @@ func (db *DB) run(ctx context.Context) {
 		case <-db.stopc:
 			return
 		case <-time.After(backoff):
+		}
+
+		staleSeriesWaitDur := time.Until(nextStaleSeriesCompactionTime)
+		if staleSeriesWaitDur < 0 {
+			staleSeriesWaitDur = 0
 		}
 
 		select {
@@ -1132,8 +1149,8 @@ func (db *DB) run(ctx context.Context) {
 			// TODO: check if normal compaction is soon, and don't run stale series compaction if it is soon.
 			numStaleSeries, numSeries := db.Head().NumStaleSeries(), db.Head().NumSeries()
 			staleSeriesRatio := float64(numStaleSeries) / float64(numSeries)
-			if db.autoCompact && db.opts.StaleSeriesImmediateCompactionThreshold > 0 &&
-				staleSeriesRatio >= db.opts.StaleSeriesImmediateCompactionThreshold {
+			if db.autoCompact && db.opts.staleSeriesImmediateCompactionThreshold.Load() > 0 &&
+				staleSeriesRatio >= db.opts.staleSeriesImmediateCompactionThreshold.Load() {
 				if err := db.CompactStaleHead(); err != nil {
 					db.logger.Error("immediate stale series compaction failed", "err", err)
 				}
@@ -1145,6 +1162,14 @@ func (db *DB) run(ctx context.Context) {
 			}
 			// We attempt mmapping of head chunks regularly.
 			db.head.mmapHeadChunks()
+
+			staleSeriesCompactionInterval := time.Duration(db.opts.staleSeriesCompactionInterval.Load())
+			if !timedStaleSeriesCompactionActive && staleSeriesCompactionInterval > 0 {
+				// The config was updated in realtime.
+				timedStaleSeriesCompactionActive = true
+				nextStaleSeriesCompactionTime = nextStepAlignedTime(staleSeriesCompactionInterval)
+			}
+
 		case <-db.compactc:
 			db.metrics.compactionsTriggered.Inc()
 
@@ -1161,23 +1186,39 @@ func (db *DB) run(ctx context.Context) {
 			}
 			db.autoCompactMtx.Unlock()
 		case <-time.After(staleSeriesWaitDur):
+			staleSeriesCompactionInterval := time.Duration(db.opts.staleSeriesCompactionInterval.Load())
+			if staleSeriesCompactionInterval <= 0 {
+				// The config was updated in realtime.
+				// Far enough so that we don't schedule a stale series compaction.
+				timedStaleSeriesCompactionActive = false
+				nextStaleSeriesCompactionTime = time.Now().Add(365 * 24 * time.Hour)
+				continue
+			}
+
 			// TODO: check if normal compaction is soon, and don't run stale series compaction if it is soon.
 			numStaleSeries, numSeries := db.Head().NumStaleSeries(), db.Head().NumSeries()
 			staleSeriesRatio := float64(numStaleSeries) / float64(numSeries)
-			if db.autoCompact && db.opts.StaleSeriesCompactionThreshold > 0 &&
-				staleSeriesRatio >= db.opts.StaleSeriesCompactionThreshold {
+			if db.autoCompact && db.opts.staleSeriesCompactionThreshold.Load() > 0 &&
+				staleSeriesRatio >= db.opts.staleSeriesCompactionThreshold.Load() {
 				if err := db.CompactStaleHead(); err != nil {
 					db.logger.Error("scheduled stale series compaction failed", "err", err)
 				}
 			}
 
-			nextStaleSeriesCompactionTime = nextStaleSeriesCompactionTime.Add(db.opts.StaleSeriesCompactionInterval)
-			staleSeriesWaitDur = time.Until(nextStaleSeriesCompactionTime)
+			nextStaleSeriesCompactionTime = nextStepAlignedTime(db.opts.StaleSeriesCompactionInterval)
 
 		case <-db.stopc:
 			return
 		}
 	}
+}
+
+func nextStepAlignedTime(step time.Duration) (next time.Time) {
+	next = time.Now().Round(step)
+	if next.Before(time.Now()) {
+		next = next.Add(step)
+	}
+	return
 }
 
 // Appender opens a new appender against the database.
@@ -1206,6 +1247,13 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	oooTimeWindow := int64(0)
 	if conf.StorageConfig.TSDBConfig != nil {
 		oooTimeWindow = conf.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
+		db.opts.staleSeriesCompactionInterval.Store(int64(conf.StorageConfig.TSDBConfig.StaleSeriesCompactionInterval))
+		db.opts.staleSeriesCompactionThreshold.Store(conf.StorageConfig.TSDBConfig.StaleSeriesCompactionThreshold)
+		db.opts.staleSeriesImmediateCompactionThreshold.Store(conf.StorageConfig.TSDBConfig.StaleSeriesImmediateCompactionThreshold)
+	} else {
+		db.opts.staleSeriesCompactionInterval.Store(0)
+		db.opts.staleSeriesCompactionThreshold.Store(0)
+		db.opts.staleSeriesImmediateCompactionThreshold.Store(0)
 	}
 	if oooTimeWindow < 0 {
 		oooTimeWindow = 0
