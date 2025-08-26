@@ -1960,9 +1960,6 @@ loop:
 	if err != nil {
 		return
 	}
-	if err = sl.updateStaleMarkers(app, defTime); err != nil {
-		return
-	}
 
 	ruleSamples, ruleErr := sl.ruleEngine.EvaluateRules(scrapeBatch, ts, sl.sampleMutator)
 	if ruleErr != nil {
@@ -1991,7 +1988,7 @@ loop:
 			seriesAdded++
 		}
 	}
-
+	err = sl.updateStaleMarkers(app, defTime)
 	return
 }
 
