@@ -1239,7 +1239,7 @@ type seriesAndTimestamp struct {
 // the given funcCall with the values computed for each expression at that
 // step. The return value is the combination into time series of all the
 // function call results.
-func (ev *evaluator) rangeEval(ctx context.Context, funcCall func([]Vector, Matrix, *EvalNodeHelper) (Vector, annotations.Annotations), exprs ...parser.Expr) (Matrix, annotations.Annotations) {
+func (ev *evaluator) rangeEval(ctx context.Context, funcCall func([]Vector, *EvalNodeHelper) (Vector, annotations.Annotations), exprs ...parser.Expr) (Matrix, annotations.Annotations) {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 	matrixes := make([]Matrix, len(exprs))
 	originalNumSamples := ev.currentSamples
@@ -1273,7 +1273,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, funcCall func([]Vector, Matr
 
 		// Make the function call.
 		enh.Ts = ts
-		result, ws := funcCall(vectors, nil, enh)
+		result, ws := funcCall(vectors, enh)
 		enh.Out = result[:0] // Reuse result vector.
 		warnings.Merge(ws)
 
@@ -1754,7 +1754,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				sortedGrouping = append(sortedGrouping, valueLabel.Val)
 				slices.Sort(sortedGrouping)
 			}
-			return ev.rangeEval(ctx, func(v []Vector, _ Matrix, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, func(v []Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				return ev.aggregationCountValues(e, sortedGrouping, valueLabel.Val, v[0], enh)
 			}, e.Expr)
 		}
@@ -1831,7 +1831,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		if !matrixArg {
 			// Does not have a matrix argument.
-			return ev.rangeEval(ctx, func(v []Vector, _ Matrix, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, func(v []Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				vec, annos := call(v, nil, e.Args, enh)
 				return vec, warnings.Merge(annos)
 			}, e.Args...)
@@ -2060,7 +2060,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 	case *parser.BinaryExpr:
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeScalar:
-			return ev.rangeEval(ctx, func(v []Vector, _ Matrix, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, func(v []Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				val := scalarBinop(e.Op, v[0][0].F, v[1][0].F)
 				return append(enh.Out, Sample{F: val}), nil
 			}, e.LHS, e.RHS)
@@ -2086,13 +2086,13 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			}
 
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeScalar:
-			return ev.rangeEval(ctx, func(v []Vector, _ Matrix, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, func(v []Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				vec, err := ev.VectorscalarBinop(e.Op, v[0], Scalar{V: v[1][0].F}, false, e.ReturnBool, enh, e.PositionRange())
 				return vec, handleVectorBinopError(err, e)
 			}, e.LHS, e.RHS)
 
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeVector:
-			return ev.rangeEval(ctx, func(v []Vector, _ Matrix, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, func(v []Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				vec, err := ev.VectorscalarBinop(e.Op, v[1], Scalar{V: v[0][0].F}, true, e.ReturnBool, enh, e.PositionRange())
 				return vec, handleVectorBinopError(err, e)
 			}, e.LHS, e.RHS)
@@ -2100,7 +2100,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 	case *parser.NumberLiteral:
 		span.SetAttributes(attribute.Float64("value", e.Val))
-		return ev.rangeEval(ctx, func(v []Vector, _ Matrix, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+		return ev.rangeEval(ctx, func(v []Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 			return append(enh.Out, Sample{F: e.Val, Metric: labels.EmptyLabels()}), nil
 		})
 
@@ -2266,7 +2266,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 		seriesIterators[i] = storage.NewMemoizedIterator(it, durationMilliseconds(ev.lookbackDelta)-1)
 	}
 
-	return ev.rangeEval(ctx, func(v []Vector, _ Matrix, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return ev.rangeEval(ctx, func(v []Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 		if vs.Timestamp != nil {
 			// This is a special case for "timestamp()" when the @ modifier is used, to ensure that
 			// we return a point for each time step in this case.
