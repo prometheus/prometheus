@@ -1701,7 +1701,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		sl.cache.iterDone(true)
 	}()
 
-	// Make a new batch for evaluating scrape rules
+	// Make a new batch for evaluating scrape rules.
 	scrapeBatch := sl.ruleEngine.NewScrapeBatch()
 
 loop:
@@ -1755,6 +1755,9 @@ loop:
 		if parsedTimestamp != nil {
 			t = *parsedTimestamp
 		}
+		if isHistogram && !sl.enableNativeHistogramIngestion {
+			continue
+		}
 
 		var (
 			ref  storage.SeriesRef
@@ -1769,7 +1772,7 @@ loop:
 			p.Labels(&lset)
 			hash = lset.Hash()
 		}
-		if isHistogram && sl.enableNativeHistogramIngestion {
+		if isHistogram {
 			if h != nil {
 				scrapeBatch.AddHistogramSample(lset, t, h.ToFloat(nil))
 			} else {

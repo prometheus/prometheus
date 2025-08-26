@@ -1032,6 +1032,20 @@ func (a *ScrapeRuleConfig) Validate() error {
 			err = errors.New("matrix selectors are not allowed in scrape rule expressions")
 			return err
 		}
+		if n, ok := node.(*parser.VectorSelector); ok {
+			if n.OriginalOffset != 0 || n.OriginalOffsetExpr != nil {
+				err = errors.New("offset modifier is not allowed in scrape rule expressions")
+				return err
+			}
+			if n.Timestamp != nil {
+				err = errors.New("timestamps are not allowed in scrape rule expressions")
+				return err
+			}
+			if n.StartOrEnd != 0 {
+				err = errors.New("start() and end() modifiers are not allowed in scrape rule expressions")
+				return err
+			}
+		}
 		return nil
 	})
 
