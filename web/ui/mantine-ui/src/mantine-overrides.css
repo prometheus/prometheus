@@ -1,4 +1,5 @@
-.mantine-Badge-label {
-  overflow: unset;
-  text-overflow: unset;
+.mantine-Button-label {
+  font-weight: bold;
+  font-size: 16px;
+  color: #ff6b6b;
 }
