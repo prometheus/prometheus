@@ -1792,10 +1792,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		mat := make(Matrix, 0, len(selVS.Series)) // Output matrix.
 		offset := durationMilliseconds(selVS.Offset)
 		selRange := durationMilliseconds(sel.Range)
-		stepRange := selRange
-		if stepRange > ev.interval {
-			stepRange = ev.interval
-		}
+		stepRange := min(selRange, ev.interval)
 		// Reuse objects across steps to save memory allocations.
 		var floats []FPoint
 		var histograms []HPoint
@@ -3327,10 +3324,7 @@ seriesLoop:
 		var r float64
 		switch op {
 		case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
-			k = int64(fParam)
-			if k > int64(len(inputMatrix)) {
-				k = int64(len(inputMatrix))
-			}
+			k = min(int64(fParam), int64(len(inputMatrix)))
 			if k < 1 {
 				if enh.Ts != ev.endTimestamp {
 					advanceRemainingSeries(enh.Ts, si+1)

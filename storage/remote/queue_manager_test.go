@@ -1594,11 +1594,8 @@ func TestCalculateDesiredShards(t *testing.T) {
 		sin := inputRate * int64(shardUpdateDuration/time.Second)
 		addSamples(sin, ts)
 
-		sout := int64(m.numShards*cfg.MaxSamplesPerSend) * int64(shardUpdateDuration/(100*time.Millisecond))
 		// You can't send samples that don't exist so cap at the number of pending samples.
-		if sout > pendingSamples {
-			sout = pendingSamples
-		}
+		sout := min(int64(m.numShards*cfg.MaxSamplesPerSend)*int64(shardUpdateDuration/(100*time.Millisecond)), pendingSamples)
 		sendSamples(sout, ts)
 
 		t.Log("desiredShards", m.numShards, "pendingSamples", pendingSamples)

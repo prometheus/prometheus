@@ -233,10 +233,7 @@ func (q *mergeGenericQuerier) mergeResults(lq labelGenericQueriers, hints *Label
 }
 
 func mergeStrings(a, b []string) []string {
-	maxl := len(a)
-	if len(b) > len(a) {
-		maxl = len(b)
-	}
+	maxl := max(len(b), len(a))
 	res := make([]string, 0, maxl*10/9)
 
 	for len(a) > 0 && len(b) > 0 {

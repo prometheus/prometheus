@@ -230,10 +230,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 	// First iteration to find out two things:
 	// - What's the smallest relevant schema?
 	// - Are all data points histograms?
-	minSchema := prev.Schema
-	if last.Schema < minSchema {
-		minSchema = last.Schema
-	}
+	minSchema := min(last.Schema, prev.Schema)
 	for _, currPoint := range points[1 : len(points)-1] {
 		curr := currPoint.H
 		if curr == nil {

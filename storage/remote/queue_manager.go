@@ -558,10 +558,7 @@ func (t *QueueManager) AppendWatcherMetadata(ctx context.Context, metadata []scr
 	pBuf := proto.NewBuffer(nil)
 	numSends := int(math.Ceil(float64(len(metadata)) / float64(t.mcfg.MaxSamplesPerSend)))
 	for i := 0; i < numSends; i++ {
-		last := (i + 1) * t.mcfg.MaxSamplesPerSend
-		if last > len(metadata) {
-			last = len(metadata)
-		}
+		last := min((i+1)*t.mcfg.MaxSamplesPerSend, len(metadata))
 		err := t.sendMetadataWithBackoff(ctx, mm[i*t.mcfg.MaxSamplesPerSend:last], pBuf)
 		if err != nil {
 			t.metrics.failedMetadataTotal.Add(float64(last - (i * t.mcfg.MaxSamplesPerSend)))
@@ -2028,11 +2025,7 @@ func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt 
 		onRetry()
 		t.logger.Warn("Failed to send batch, retrying", "err", err)
 
-		backoff = sleepDuration * 2
-
-		if backoff > t.cfg.MaxBackoff {
-			backoff = t.cfg.MaxBackoff
-		}
+		backoff = min(sleepDuration*2, t.cfg.MaxBackoff)
 
 		try++
 	}
