@@ -251,7 +251,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 	}
 
 	h := last.CopyToSchema(minSchema)
-	_, counterResetCollision, err := h.Sub(prev)
+	_, _, err := h.Sub(prev)
 	if err != nil {
 		if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 			return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
@@ -260,25 +260,18 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 		}
 	}
 
-	if counterResetCollision {
-		annos.Add(annotations.NewHistogramCounterResetCollisionWarning(pos, annotations.HistogramSub))
-	}
-
 	if isCounter {
 		// Second iteration to deal with counter resets.
 		for _, currPoint := range points[1:] {
 			curr := currPoint.H
 			if curr.DetectReset(prev) {
-				_, counterResetCollision, err := h.Add(prev)
+				_, _, err := h.Add(prev)
 				if err != nil {
 					if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 						return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
 					} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
 						return nil, annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, pos))
 					}
-				}
-				if counterResetCollision {
-					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(pos, annotations.HistogramAdd))
 				}
 			}
 			prev = curr
@@ -393,14 +386,11 @@ func instantValue(vals Matrix, args parser.Expressions, out Vector, isRate bool)
 			annos.Add(annotations.NewNativeHistogramNotGaugeWarning(metricName, args.PositionRange()))
 		}
 		if !isRate || !ss[1].H.DetectReset(ss[0].H) {
-			_, counterResetCollision, err := resultSample.H.Sub(ss[0].H)
+			_, _, err := resultSample.H.Sub(ss[0].H)
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				return out, annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, args.PositionRange()))
 			} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
 				return out, annos.Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, args.PositionRange()))
-			}
-			if counterResetCollision {
-				annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args.PositionRange(), annotations.HistogramSub))
 			}
 		}
 		resultSample.H.CounterResetHint = histogram.GaugeType
