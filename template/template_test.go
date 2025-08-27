@@ -590,7 +590,7 @@ func TestTemplateExpansion(t *testing.T) {
 type scenario struct {
 	text        string
 	output      string
-	input       interface{}
+	input       any
 	options     []string
 	queryResult promql.Vector
 	shouldFail  bool

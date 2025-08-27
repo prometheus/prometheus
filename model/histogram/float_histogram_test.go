@@ -3270,7 +3270,7 @@ func TestFloatCustomBucketsIterators(t *testing.T) {
 
 				it = c.h.AllReverseBucketIterator()
 				length := len(c.expPositiveBuckets)
-				for j := 0; j < length; j++ {
+				for j := range length {
 					i := length - j - 1
 					b := c.expPositiveBuckets[i]
 					require.True(t, it.Next(), "all reverse bucket iterator exhausted too early")
@@ -3286,7 +3286,7 @@ func TestFloatCustomBucketsIterators(t *testing.T) {
 				require.False(t, it.Next(), "positive bucket iterator not exhausted")
 
 				it = c.h.PositiveReverseBucketIterator()
-				for j := 0; j < length; j++ {
+				for j := range length {
 					i := length - j - 1
 					b := c.expPositiveBuckets[i]
 					require.True(t, it.Next(), "positive reverse bucket iterator exhausted too early")

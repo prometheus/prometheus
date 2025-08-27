@@ -66,7 +66,7 @@ func (SDConfig) Name() string {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))

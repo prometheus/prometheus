@@ -43,24 +43,24 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, in
 	// These metrics will have data for all test time range
 	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
 	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
-	for j := 0; j < 10; j++ {
+	for j := range 10 {
 		metrics = append(metrics, labels.FromStrings("__name__", "h_one", "le", strconv.Itoa(j)))
 	}
 	metrics = append(metrics, labels.FromStrings("__name__", "h_one", "le", "+Inf"))
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		metrics = append(metrics, labels.FromStrings("__name__", "a_ten", "l", strconv.Itoa(i)))
 		metrics = append(metrics, labels.FromStrings("__name__", "b_ten", "l", strconv.Itoa(i)))
-		for j := 0; j < 10; j++ {
+		for j := range 10 {
 			metrics = append(metrics, labels.FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
 		}
 		metrics = append(metrics, labels.FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", "+Inf"))
 	}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		metrics = append(metrics, labels.FromStrings("__name__", "a_hundred", "l", strconv.Itoa(i)))
 		metrics = append(metrics, labels.FromStrings("__name__", "b_hundred", "l", strconv.Itoa(i)))
-		for j := 0; j < 10; j++ {
+		for j := range 10 {
 			metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
 		}
 		metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", "+Inf"))
@@ -70,7 +70,7 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, in
 	// Number points for each different label value of "l" for the sparse series
 	pointsPerSparseSeries := numIntervals / 50
 
-	for s := 0; s < numIntervals; s++ {
+	for s := range numIntervals {
 		a := stor.Appender(context.Background())
 		ts := int64(s * interval)
 		for i, metric := range metrics {
@@ -525,7 +525,7 @@ func generateInfoFunctionTestSeries(tb testing.TB, stor *teststorage.TestStorage
 	// Generate http_server_request_duration_seconds_count metrics with instance and job labels, and http_status_code label.
 	// the classic target_info metrics is gauge type.
 	metrics := make([]labels.Labels, 0, infoSeriesNum+len(statusCodes))
-	for i := 0; i < infoSeriesNum; i++ {
+	for i := range infoSeriesNum {
 		clusterName := "us-east"
 		if i >= infoSeriesNum/2 {
 			clusterName = "eu-south"
@@ -550,7 +550,7 @@ func generateInfoFunctionTestSeries(tb testing.TB, stor *teststorage.TestStorage
 	// Append the generated metrics and samples to the storage.
 	refs := make([]storage.SeriesRef, len(metrics))
 
-	for i := 0; i < numIntervals; i++ {
+	for i := range numIntervals {
 		a := stor.Appender(context.Background())
 		ts := int64(i * interval)
 		for j, metric := range metrics[:infoSeriesNum] {

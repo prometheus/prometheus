@@ -20,14 +20,14 @@ type ServerListResponse struct {
 }
 
 type Server struct {
-	AvailabilityZone string                 `json:"availabilityZone"`
-	ID               string                 `json:"id"`
-	Labels           map[string]interface{} `json:"labels"`
-	MachineType      string                 `json:"machineType"`
-	Name             string                 `json:"name"`
-	Nics             []ServerNetwork        `json:"nics"`
-	PowerStatus      string                 `json:"powerStatus"`
-	Status           string                 `json:"status"`
+	AvailabilityZone string          `json:"availabilityZone"`
+	ID               string          `json:"id"`
+	Labels           map[string]any  `json:"labels"`
+	MachineType      string          `json:"machineType"`
+	Name             string          `json:"name"`
+	Nics             []ServerNetwork `json:"nics"`
+	PowerStatus      string          `json:"powerStatus"`
+	Status           string          `json:"status"`
 }
 
 // ServerNetwork Describes the object that matches servers to its networks.

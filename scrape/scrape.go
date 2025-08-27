@@ -1262,7 +1262,7 @@ func newScrapeLoop(ctx context.Context,
 		l = promslog.NewNopLogger()
 	}
 	if buffers == nil {
-		buffers = pool.New(1e3, 1e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
+		buffers = pool.New(1e3, 1e6, 3, func(sz int) any { return make([]byte, 0, sz) })
 	}
 	if cache == nil {
 		cache = newScrapeCache(metrics)

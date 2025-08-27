@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"maps"
 	"math"
 	"os"
 	"path"
@@ -821,9 +822,7 @@ func TestUpdate(t *testing.T) {
 	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil)
 	require.NoError(t, err)
 
-	for h, g := range ruleManager.groups {
-		ogs[h] = g
-	}
+	maps.Copy(ogs, ruleManager.groups)
 
 	// Update interval and reload.
 	for i, g := range rgs.Groups {
@@ -2480,8 +2479,6 @@ func TestBoundedRuleEvalConcurrency(t *testing.T) {
 	// Evaluate groups concurrently (like they normally do).
 	var wg sync.WaitGroup
 	for _, group := range groups {
-		group := group
-
 		wg.Add(1)
 		go func() {
 			group.Eval(ctx, time.Now())
@@ -2532,7 +2529,7 @@ func TestGroup_Eval_RaceConditionOnStoppingGroupEvaluationWhileRulesAreEvaluated
 	<-ruleManager.block
 
 	// Update the group a decent number of times to simulate start and stopping in the middle of an evaluation.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		err := ruleManager.Update(time.Second, files, labels.EmptyLabels(), "", nil)
 		require.NoError(t, err)
 

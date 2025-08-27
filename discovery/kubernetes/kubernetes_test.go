@@ -302,7 +302,6 @@ func TestFailuresCountMetric(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(string(tc.role), func(t *testing.T) {
 			t.Parallel()
 

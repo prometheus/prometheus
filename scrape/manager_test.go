@@ -594,7 +594,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	defer m.Stop()
 
 	tgSent := make(map[string][]*targetgroup.Group)
-	for x := 0; x < 10; x++ {
+	for x := range 10 {
 		tgSent[strconv.Itoa(x)] = []*targetgroup.Group{
 			{
 				Source: strconv.Itoa(x),
@@ -1056,7 +1056,7 @@ scrape_configs:
 func TestUnregisterMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	// Check that all metrics can be unregistered, allowing a second manager to be created.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		opts := Options{}
 		manager, err := NewManager(&opts, nil, nil, nil, reg)
 		require.NotNil(t, manager)

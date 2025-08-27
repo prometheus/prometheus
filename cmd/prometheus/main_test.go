@@ -202,7 +202,6 @@ func TestSendAlerts(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		tc := tc
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			senderFunc := senderFunc(func(alerts ...*notifier.Alert) {
 				require.NotEmpty(t, tc.in, "sender called with 0 alert")

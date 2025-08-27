@@ -308,7 +308,7 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 		startIndex := (oldNextIndex - count + int64(len(oldBuffer))) % int64(len(oldBuffer))
 
 		var buf [1024]byte
-		for i := int64(0); i < count; i++ {
+		for i := range count {
 			idx := (startIndex + i) % int64(len(oldBuffer))
 			if oldBuffer[idx].ref != nil {
 				ce.migrate(&oldBuffer[idx], buf[:])

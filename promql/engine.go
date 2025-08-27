@@ -633,7 +633,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 			logger := slog.New(l)
 			f := make([]slog.Attr, 0, 16) // Probably enough up front to not need to reallocate on append.
 
-			params := make(map[string]interface{}, 4)
+			params := make(map[string]any, 4)
 			params["query"] = q.q
 			if eq, ok := q.Statement().(*parser.EvalStmt); ok {
 				params["start"] = formatDate(eq.Start)
@@ -650,7 +650,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 				f = append(f, slog.Any("spanID", span.SpanContext().SpanID()))
 			}
 			if origin := ctx.Value(QueryOrigin{}); origin != nil {
-				for k, v := range origin.(map[string]interface{}) {
+				for k, v := range origin.(map[string]any) {
 					f = append(f, slog.Any(k, v))
 				}
 			}
@@ -1082,7 +1082,7 @@ type evaluator struct {
 }
 
 // errorf causes a panic with the input formatted into an error.
-func (ev *evaluator) errorf(format string, args ...interface{}) {
+func (ev *evaluator) errorf(format string, args ...any) {
 	ev.error(fmt.Errorf(format, args...))
 }
 
@@ -1792,10 +1792,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		mat := make(Matrix, 0, len(selVS.Series)) // Output matrix.
 		offset := durationMilliseconds(selVS.Offset)
 		selRange := durationMilliseconds(sel.Range)
-		stepRange := selRange
-		if stepRange > ev.interval {
-			stepRange = ev.interval
-		}
+		stepRange := min(selRange, ev.interval)
 		// Reuse objects across steps to save memory allocations.
 		var floats []FPoint
 		var histograms []HPoint
@@ -3327,10 +3324,7 @@ seriesLoop:
 		var r float64
 		switch op {
 		case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
-			k = int64(fParam)
-			if k > int64(len(inputMatrix)) {
-				k = int64(len(inputMatrix))
-			}
+			k = min(int64(fParam), int64(len(inputMatrix)))
 			if k < 1 {
 				if enh.Ts != ev.endTimestamp {
 					advanceRemainingSeries(enh.Ts, si+1)
@@ -3697,7 +3691,7 @@ func changesMetricSchema(op parser.ItemType) bool {
 }
 
 // NewOriginContext returns a new context with data about the origin attached.
-func NewOriginContext(ctx context.Context, data map[string]interface{}) context.Context {
+func NewOriginContext(ctx context.Context, data map[string]any) context.Context {
 	return context.WithValue(ctx, QueryOrigin{}, data)
 }
 

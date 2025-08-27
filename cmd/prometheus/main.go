@@ -673,7 +673,7 @@ func main() {
 	// Set Go runtime parameters before we get too far into initialization.
 	updateGoGC(cfgFile, logger)
 	if cfg.maxprocsEnable {
-		l := func(format string, a ...interface{}) {
+		l := func(format string, a ...any) {
 			logger.Info(fmt.Sprintf(strings.TrimPrefix(format, "maxprocs: "), a...), "component", "automaxprocs")
 		}
 		if _, err := maxprocs.Set(maxprocs.Logger(l)); err != nil {

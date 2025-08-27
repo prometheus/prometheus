@@ -215,7 +215,7 @@ func (c *AzureADConfig) Validate() error {
 }
 
 // UnmarshalYAML unmarshal the Azure AD config yaml.
-func (c *AzureADConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *AzureADConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	type plain AzureADConfig
 	*c = AzureADConfig{}
 	if err := unmarshal((*plain)(c)); err != nil {

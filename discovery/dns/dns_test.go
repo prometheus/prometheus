@@ -251,7 +251,6 @@ func TestDNS(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -282,8 +281,8 @@ func TestSDConfigUnmarshalYAML(t *testing.T) {
 		return d
 	}
 
-	unmarshal := func(d []byte) func(interface{}) error {
-		return func(o interface{}) error {
+	unmarshal := func(d []byte) func(any) error {
+		return func(o any) error {
 			return yaml.Unmarshal(d, o)
 		}
 	}

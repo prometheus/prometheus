@@ -291,10 +291,7 @@ func (p *PromParser) nextToken() token {
 }
 
 func (p *PromParser) parseError(exp string, got token) error {
-	e := p.l.i + 1
-	if len(p.l.b) < e {
-		e = len(p.l.b)
-	}
+	e := min(len(p.l.b), p.l.i+1)
 	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
 }
 

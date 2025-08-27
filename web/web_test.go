@@ -487,7 +487,7 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

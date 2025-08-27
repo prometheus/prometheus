@@ -183,16 +183,16 @@ type RuntimeInfo struct {
 
 // Response contains a response to a HTTP API request.
 type Response struct {
-	Status    status      `json:"status"`
-	Data      interface{} `json:"data,omitempty"`
-	ErrorType string      `json:"errorType,omitempty"`
-	Error     string      `json:"error,omitempty"`
-	Warnings  []string    `json:"warnings,omitempty"`
-	Infos     []string    `json:"infos,omitempty"`
+	Status    status   `json:"status"`
+	Data      any      `json:"data,omitempty"`
+	ErrorType string   `json:"errorType,omitempty"`
+	Error     string   `json:"error,omitempty"`
+	Warnings  []string `json:"warnings,omitempty"`
+	Infos     []string `json:"infos,omitempty"`
 }
 
 type apiFuncResult struct {
-	data      interface{}
+	data      any
 	err       *apiError
 	warnings  annotations.Annotations
 	finalizer func()
@@ -1468,7 +1468,7 @@ type RuleGroup struct {
 	LastEvaluation time.Time `json:"lastEvaluation"`
 }
 
-type Rule interface{}
+type Rule any
 
 type AlertingRule struct {
 	// State can be "pending", "firing", "inactive".
@@ -2002,7 +2002,7 @@ func (api *API) cleanTombstones(*http.Request) apiFuncResult {
 
 // Query string is needed to get the position information for the annotations, and it
 // can be empty if the position information isn't needed.
-func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings annotations.Annotations, query string) {
+func (api *API) respond(w http.ResponseWriter, req *http.Request, data any, warnings annotations.Annotations, query string) {
 	statusMessage := statusSuccess
 	warn, info := warnings.AsStrings(query, 10, 10)
 
@@ -2050,7 +2050,7 @@ func (api *API) negotiateCodec(req *http.Request, resp *Response) (Codec, error)
 	return defaultCodec, nil
 }
 
-func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
+func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data any) {
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	b, err := json.Marshal(&Response{
 		Status:    statusError,

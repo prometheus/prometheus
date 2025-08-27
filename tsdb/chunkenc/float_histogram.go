@@ -551,7 +551,7 @@ func (a *FloatHistogramAppender) appendFloatHistogram(t int64, h *histogram.Floa
 		numPBuckets, numNBuckets := countSpans(h.PositiveSpans), countSpans(h.NegativeSpans)
 		if numPBuckets > 0 {
 			a.pBuckets = make([]xorValue, numPBuckets)
-			for i := 0; i < numPBuckets; i++ {
+			for i := range numPBuckets {
 				a.pBuckets[i] = xorValue{
 					value:   h.PositiveBuckets[i],
 					leading: 0xff,
@@ -562,7 +562,7 @@ func (a *FloatHistogramAppender) appendFloatHistogram(t int64, h *histogram.Floa
 		}
 		if numNBuckets > 0 {
 			a.nBuckets = make([]xorValue, numNBuckets)
-			for i := 0; i < numNBuckets; i++ {
+			for i := range numNBuckets {
 				a.nBuckets[i] = xorValue{
 					value:   h.NegativeBuckets[i],
 					leading: 0xff,

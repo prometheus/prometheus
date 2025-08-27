@@ -32,7 +32,7 @@ import (
 )
 
 func repeatError(query string, err error, start, startStep, end, endStep, count int) (errs ParseErrors) {
-	for i := 0; i < count; i++ {
+	for i := range count {
 		errs = append(errs, ParseErr{
 			PositionRange: posrange.PositionRange{
 				Start: posrange.Pos(start + (i * startStep)),

@@ -297,11 +297,11 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 		metrics: newDBMetrics(reg),
 	}
 
-	db.bufPool.New = func() interface{} {
+	db.bufPool.New = func() any {
 		return make([]byte, 0, 1024)
 	}
 
-	db.appenderPool.New = func() interface{} {
+	db.appenderPool.New = func() any {
 		return &appender{
 			DB:                     db,
 			pendingSeries:          make([]record.RefSeries, 0, 100),
@@ -440,7 +440,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 		dec     = record.NewDecoder(syms)
 		lastRef = chunks.HeadSeriesRef(db.nextRef.Load())
 
-		decoded = make(chan interface{}, 10)
+		decoded = make(chan any, 10)
 		errCh   = make(chan error, 1)
 	)
 

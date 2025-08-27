@@ -61,12 +61,11 @@ func TestConcurrentRangeQueries(t *testing.T) {
 	// Limit the number of queries running at the same time.
 	const numConcurrent = 4
 	sem := make(chan struct{}, numConcurrent)
-	for i := 0; i < numConcurrent; i++ {
+	for range numConcurrent {
 		sem <- struct{}{}
 	}
 	var g errgroup.Group
 	for _, c := range cases {
-		c := c
 		if strings.Contains(c.expr, "count_values") && c.steps > 10 {
 			continue // This test is too big to run with -race.
 		}
