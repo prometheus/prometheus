@@ -642,8 +642,7 @@ func TestRemovedNextStackoverflow(t *testing.T) {
 	var full []storage.SeriesRef
 	var remove []storage.SeriesRef
 
-	var i storage.SeriesRef
-	for i = range github.com / prometheus / prometheus / storage.SeriesRef(1e7) {
+	for i := range storage.SeriesRef(1e7) {
 		full = append(full, i)
 		remove = append(remove, i)
 	}
