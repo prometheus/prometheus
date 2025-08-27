@@ -151,11 +151,6 @@ func (c *FloatHistogramChunk) Appender() (Appender, error) {
 		nBuckets:     nBuckets,
 		sum:          it.sum,
 	}
-	if it.numTotal == 0 {
-		a.sum.leading = 0xff
-		a.cnt.leading = 0xff
-		a.zCnt.leading = 0xff
-	}
 	return a, nil
 }
 

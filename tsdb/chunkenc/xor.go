@@ -120,9 +120,6 @@ func (c *XORChunk) Appender() (Appender, error) {
 		leading:  it.leading,
 		trailing: it.trailing,
 	}
-	if it.numTotal == 0 {
-		a.leading = 0xff
-	}
 	return a, nil
 }
 
