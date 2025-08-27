@@ -5336,8 +5336,6 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 		samples   []chunks.Sample
 		expChunks int
 		err       error
-		// If this is empty, samples above will be taken instead of this.
-		addToExp []chunks.Sample
 	}{
 		// Histograms that end up in the expected samples are copied here so that we
 		// can independently set the CounterResetHint later.
@@ -5377,43 +5375,29 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 			samples: []chunks.Sample{sample{t: 100, fh: floatHists[4].Copy()}},
 			err:     storage.ErrOutOfOrderSample,
 		},
+		// The three next tests all failed before #15177 was fixed.
 		{
-			// Combination of histograms and float64 in the same commit. The behaviour is undefined, but we want to also
-			// verify how TSDB would behave. Here the histogram is appended at the end, hence will be considered as out of order.
 			samples: []chunks.Sample{
 				sample{t: 400, f: 4},
-				sample{t: 500, h: hists[5]}, // This won't be committed.
+				sample{t: 500, h: hists[5]},
 				sample{t: 600, f: 6},
 			},
-			addToExp: []chunks.Sample{
-				sample{t: 400, f: 4},
-				sample{t: 600, f: 6},
-			},
-			expChunks: 7, // Only 1 new chunk for float64.
+			expChunks: 9, // Each of the three samples above creates a new chunk because the type changes.
 		},
 		{
-			// Here the histogram is appended at the end, hence the first histogram is out of order.
 			samples: []chunks.Sample{
-				sample{t: 700, h: hists[7]}, // Out of order w.r.t. the next float64 sample that is appended first.
+				sample{t: 700, h: hists[7]},
 				sample{t: 800, f: 8},
 				sample{t: 900, h: hists[9]},
 			},
-			addToExp: []chunks.Sample{
-				sample{t: 800, f: 8},
-				sample{t: 900, h: hists[9].Copy()},
-			},
-			expChunks: 8, // float64 added to old chunk, only 1 new for histograms.
+			expChunks: 12, // Again each sample creates a new chunk.
 		},
 		{
-			// Float histogram is appended at the end.
 			samples: []chunks.Sample{
-				sample{t: 1000, fh: floatHists[7]}, // Out of order w.r.t. the next histogram.
+				sample{t: 1000, fh: floatHists[7]},
 				sample{t: 1100, h: hists[9]},
 			},
-			addToExp: []chunks.Sample{
-				sample{t: 1100, h: hists[9].Copy()},
-			},
-			expChunks: 8,
+			expChunks: 14, // Even changes between float and integer histogram create new chunks.
 		},
 	}
 
@@ -5431,11 +5415,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 
 		if a.err == nil {
 			require.NoError(t, app.Commit())
-			if len(a.addToExp) > 0 {
-				expResult = append(expResult, a.addToExp...)
-			} else {
-				expResult = append(expResult, a.samples...)
-			}
+			expResult = append(expResult, a.samples...)
 			checkExpChunks(a.expChunks)
 		} else {
 			require.NoError(t, app.Rollback())
@@ -6751,7 +6731,27 @@ func TestHeadAppender_AppendFloatWithSameTimestampAsPreviousHistogram(t *testing
 
 func TestHeadAppender_AppendCT(t *testing.T) {
 	testHistogram := tsdbutil.GenerateTestHistogram(1)
+	testHistogram.CounterResetHint = histogram.NotCounterReset
 	testFloatHistogram := tsdbutil.GenerateTestFloatHistogram(1)
+	testFloatHistogram.CounterResetHint = histogram.NotCounterReset
+	// TODO(beorn7): Once issue #15346 is fixed, the CounterResetHint of the
+	// following two zero histograms should be histogram.CounterReset.
+	testZeroHistogram := &histogram.Histogram{
+		Schema:          testHistogram.Schema,
+		ZeroThreshold:   testHistogram.ZeroThreshold,
+		PositiveSpans:   testHistogram.PositiveSpans,
+		NegativeSpans:   testHistogram.NegativeSpans,
+		PositiveBuckets: []int64{0, 0, 0, 0},
+		NegativeBuckets: []int64{0, 0, 0, 0},
+	}
+	testZeroFloatHistogram := &histogram.FloatHistogram{
+		Schema:          testFloatHistogram.Schema,
+		ZeroThreshold:   testFloatHistogram.ZeroThreshold,
+		PositiveSpans:   testFloatHistogram.PositiveSpans,
+		NegativeSpans:   testFloatHistogram.NegativeSpans,
+		PositiveBuckets: []float64{0, 0, 0, 0},
+		NegativeBuckets: []float64{0, 0, 0, 0},
+	}
 	type appendableSamples struct {
 		ts      int64
 		fSample float64
@@ -6783,12 +6783,10 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 				{ts: 101, h: testHistogram, ct: 1},
 			},
 			expectedSamples: func() []chunks.Sample {
-				hNoCounterReset := *testHistogram
-				hNoCounterReset.CounterResetHint = histogram.NotCounterReset
 				return []chunks.Sample{
-					sample{t: 1, h: &histogram.Histogram{}},
+					sample{t: 1, h: testZeroHistogram},
 					sample{t: 100, h: testHistogram},
-					sample{t: 101, h: &hNoCounterReset},
+					sample{t: 101, h: testHistogram},
 				}
 			}(),
 		},
@@ -6799,12 +6797,10 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 				{ts: 101, fh: testFloatHistogram, ct: 1},
 			},
 			expectedSamples: func() []chunks.Sample {
-				fhNoCounterReset := *testFloatHistogram
-				fhNoCounterReset.CounterResetHint = histogram.NotCounterReset
 				return []chunks.Sample{
-					sample{t: 1, fh: &histogram.FloatHistogram{}},
+					sample{t: 1, fh: testZeroFloatHistogram},
 					sample{t: 100, fh: testFloatHistogram},
-					sample{t: 101, fh: &fhNoCounterReset},
+					sample{t: 101, fh: testFloatHistogram},
 				}
 			}(),
 		},
@@ -6827,12 +6823,10 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 				{ts: 101, h: testHistogram, ct: 1},
 			},
 			expectedSamples: func() []chunks.Sample {
-				hNoCounterReset := *testHistogram
-				hNoCounterReset.CounterResetHint = histogram.NotCounterReset
 				return []chunks.Sample{
-					sample{t: 1, h: &histogram.Histogram{}},
+					sample{t: 1, h: testZeroHistogram},
 					sample{t: 100, h: testHistogram},
-					sample{t: 101, h: &hNoCounterReset},
+					sample{t: 101, h: testHistogram},
 				}
 			}(),
 		},
@@ -6843,12 +6837,10 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 				{ts: 101, fh: testFloatHistogram, ct: 1},
 			},
 			expectedSamples: func() []chunks.Sample {
-				fhNoCounterReset := *testFloatHistogram
-				fhNoCounterReset.CounterResetHint = histogram.NotCounterReset
 				return []chunks.Sample{
-					sample{t: 1, fh: &histogram.FloatHistogram{}},
+					sample{t: 1, fh: testZeroFloatHistogram},
 					sample{t: 100, fh: testFloatHistogram},
-					sample{t: 101, fh: &fhNoCounterReset},
+					sample{t: 101, fh: testFloatHistogram},
 				}
 			}(),
 		},
@@ -6872,9 +6864,9 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 				{ts: 102, h: testHistogram, ct: 101},
 			},
 			expectedSamples: []chunks.Sample{
-				sample{t: 1, h: &histogram.Histogram{}},
+				sample{t: 1, h: testZeroHistogram},
 				sample{t: 100, h: testHistogram},
-				sample{t: 101, h: &histogram.Histogram{CounterResetHint: histogram.UnknownCounterReset}},
+				sample{t: 101, h: testZeroHistogram},
 				sample{t: 102, h: testHistogram},
 			},
 		},
@@ -6885,9 +6877,9 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 				{ts: 102, fh: testFloatHistogram, ct: 101},
 			},
 			expectedSamples: []chunks.Sample{
-				sample{t: 1, fh: &histogram.FloatHistogram{}},
+				sample{t: 1, fh: testZeroFloatHistogram},
 				sample{t: 100, fh: testFloatHistogram},
-				sample{t: 101, fh: &histogram.FloatHistogram{CounterResetHint: histogram.UnknownCounterReset}},
+				sample{t: 101, fh: testZeroFloatHistogram},
 				sample{t: 102, fh: testFloatHistogram},
 			},
 		},
@@ -6910,12 +6902,10 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 				{ts: 101, h: testHistogram, ct: 100},
 			},
 			expectedSamples: func() []chunks.Sample {
-				hNoCounterReset := *testHistogram
-				hNoCounterReset.CounterResetHint = histogram.NotCounterReset
 				return []chunks.Sample{
-					sample{t: 1, h: &histogram.Histogram{}},
+					sample{t: 1, h: testZeroHistogram},
 					sample{t: 100, h: testHistogram},
-					sample{t: 101, h: &hNoCounterReset},
+					sample{t: 101, h: testHistogram},
 				}
 			}(),
 		},
@@ -6926,12 +6916,10 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 				{ts: 101, fh: testFloatHistogram, ct: 100},
 			},
 			expectedSamples: func() []chunks.Sample {
-				fhNoCounterReset := *testFloatHistogram
-				fhNoCounterReset.CounterResetHint = histogram.NotCounterReset
 				return []chunks.Sample{
-					sample{t: 1, fh: &histogram.FloatHistogram{}},
+					sample{t: 1, fh: testZeroFloatHistogram},
 					sample{t: 100, fh: testFloatHistogram},
-					sample{t: 101, fh: &fhNoCounterReset},
+					sample{t: 101, fh: testFloatHistogram},
 				}
 			}(),
 		},
