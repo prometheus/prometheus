@@ -72,21 +72,6 @@ func (c *FloatHistogramChunk) NumSamples() int {
 	return int(binary.BigEndian.Uint16(c.Bytes()))
 }
 
-// Layout returns the histogram layout. Only call this on chunks that have at
-// least one sample.
-func (c *FloatHistogramChunk) Layout() (
-	schema int32, zeroThreshold float64,
-	negativeSpans, positiveSpans []histogram.Span,
-	customValues []float64,
-	err error,
-) {
-	if c.NumSamples() == 0 {
-		panic("FloatHistogramChunk.Layout() called on an empty chunk")
-	}
-	b := newBReader(c.Bytes()[2:])
-	return readHistogramChunkLayout(&b)
-}
-
 // GetCounterResetHeader returns the info about the first 2 bits of the chunk
 // header.
 func (c *FloatHistogramChunk) GetCounterResetHeader() CounterResetHeader {
