@@ -833,7 +833,7 @@ func TestProtobufParse(t *testing.T) {
 	}{
 		{
 			name:   "parseClassicHistograms=false/enableTypeAndUnitLabels=false",
-			parser: NewProtobufParser(inputBuf.Bytes(), false, false, labels.NewSymbolTable()),
+			parser: NewProtobufParser(inputBuf.Bytes(), false, false, false, labels.NewSymbolTable()),
 			expected: []parsedEntry{
 				{
 					m:    "go_build_info",
@@ -1468,7 +1468,7 @@ func TestProtobufParse(t *testing.T) {
 		},
 		{
 			name:   "parseClassicHistograms=false/enableTypeAndUnitLabels=true",
-			parser: NewProtobufParser(inputBuf.Bytes(), false, true, labels.NewSymbolTable()),
+			parser: NewProtobufParser(inputBuf.Bytes(), false, true, false, labels.NewSymbolTable()),
 			expected: []parsedEntry{
 				{
 					m:    "go_build_info",
@@ -2140,7 +2140,7 @@ func TestProtobufParse(t *testing.T) {
 		},
 		{
 			name:   "parseClassicHistograms=true/enableTypeAndUnitLabels=false",
-			parser: NewProtobufParser(inputBuf.Bytes(), true, false, labels.NewSymbolTable()),
+			parser: NewProtobufParser(inputBuf.Bytes(), true, false, false, labels.NewSymbolTable()),
 			expected: []parsedEntry{
 				{
 					m:    "go_build_info",
