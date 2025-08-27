@@ -293,11 +293,11 @@ func (w *Watcher) Run() error {
 
 	// Backfill from the checkpoint first if it exists.
 	lastCheckpoint, checkpointIndex, err := LastCheckpoint(w.walDir)
-	if err != nil && !errors.Is(err, record.ErrNotFound) {
+	switch {
+	case errors.Is(err, record.ErrNotFound): // Noop
+	case err != nil:
 		return fmt.Errorf("tsdb.LastCheckpoint: %w", err)
-	}
-
-	if err == nil {
+	default:
 		if err = w.readCheckpoint(lastCheckpoint, (*Watcher).readSegment); err != nil {
 			return fmt.Errorf("readCheckpoint: %w", err)
 		}
