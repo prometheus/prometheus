@@ -410,7 +410,7 @@ func listCheckpoints(dir string) (refs []checkpointRef, err error) {
 		return nil, err
 	}
 
-	for i := 0; i < len(files); i++ {
+	for i := range files {
 		fi := files[i]
 		if !strings.HasPrefix(fi.Name(), CheckpointPrefix) {
 			continue

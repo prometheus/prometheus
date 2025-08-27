@@ -201,7 +201,7 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 		Length: 0,
 	})
 
-	for i := 0; i < numBuckets; i++ {
+	for i := range numBuckets {
 		nextBucketIdx := (int32(i)+offset)>>scaleDown + 1
 		if bucketIdx == nextBucketIdx { // We have not collected enough buckets to merge yet.
 			count += int64(bucketCounts[i])
@@ -224,7 +224,7 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 		} else {
 			// We have found a small gap (or no gap at all).
 			// Insert empty buckets as needed.
-			for j := int32(0); j < gap; j++ {
+			for range gap {
 				appendDelta(0)
 			}
 		}
@@ -246,7 +246,7 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 	} else {
 		// We have found a small gap (or no gap at all).
 		// Insert empty buckets as needed.
-		for j := int32(0); j < gap; j++ {
+		for range gap {
 			appendDelta(0)
 		}
 	}

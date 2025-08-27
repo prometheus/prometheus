@@ -110,7 +110,7 @@ func getConfigType(out reflect.Type) reflect.Type {
 
 // UnmarshalYAMLWithInlineConfigs helps implement yaml.Unmarshal for structs
 // that have a Configs field that should be inlined.
-func UnmarshalYAMLWithInlineConfigs(out interface{}, unmarshal func(interface{}) error) error {
+func UnmarshalYAMLWithInlineConfigs(out any, unmarshal func(any) error) error {
 	outVal := reflect.ValueOf(out)
 	if outVal.Kind() != reflect.Ptr {
 		return fmt.Errorf("discovery: can only unmarshal into a struct pointer: %T", out)
@@ -198,7 +198,7 @@ func readConfigs(structVal reflect.Value, startField int) (Configs, error) {
 
 // MarshalYAMLWithInlineConfigs helps implement yaml.Marshal for structs
 // that have a Configs field that should be inlined.
-func MarshalYAMLWithInlineConfigs(in interface{}) (interface{}, error) {
+func MarshalYAMLWithInlineConfigs(in any) (any, error) {
 	inVal := reflect.ValueOf(in)
 	for inVal.Kind() == reflect.Ptr {
 		inVal = inVal.Elem()

@@ -770,7 +770,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 
 			// See if label names we want are in the series.
 			numLabels := d.Uvarint()
-			for i := 0; i < numLabels; i++ {
+			for range numLabels {
 				lno := uint32(d.Uvarint())
 				lvo := uint32(d.Uvarint())
 
@@ -1797,7 +1797,7 @@ func (*Decoder) LabelNamesOffsetsFor(b []byte) ([]uint32, error) {
 	k := d.Uvarint()
 
 	offsets := make([]uint32, k)
-	for i := 0; i < k; i++ {
+	for i := range k {
 		offsets[i] = uint32(d.Uvarint())
 		_ = d.Uvarint() // skip the label value
 
@@ -1814,7 +1814,7 @@ func (dec *Decoder) LabelValueFor(ctx context.Context, b []byte, label string) (
 	d := encoding.Decbuf{B: b}
 	k := d.Uvarint()
 
-	for i := 0; i < k; i++ {
+	for range k {
 		lno := uint32(d.Uvarint())
 		lvo := uint32(d.Uvarint())
 

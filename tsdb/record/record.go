@@ -262,7 +262,7 @@ func (*Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, err
 		// We can skip the rest of the fields (if we encounter any), but we must decode them anyway
 		// so we can correctly align with the start with the next metadata record.
 		var unit, help string
-		for i := 0; i < numFields; i++ {
+		for range numFields {
 			fieldName := dec.UvarintStr()
 			fieldValue := dec.UvarintStr()
 			switch fieldName {
@@ -293,7 +293,7 @@ func (*Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, err
 func (d *Decoder) DecodeLabels(dec *encoding.Decbuf) labels.Labels {
 	d.builder.Reset()
 	nLabels := dec.Uvarint()
-	for i := 0; i < nLabels; i++ {
+	for range nLabels {
 		lName := dec.UvarintBytes()
 		lValue := dec.UvarintBytes()
 		d.builder.UnsafeAddBytes(lName, lValue)

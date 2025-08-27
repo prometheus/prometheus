@@ -840,14 +840,14 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 	require.Equal(b, uint64(1000), db.Head().NumSeries())
 
 	var bufRequests [][]byte
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		buf, _, _, err = buildWriteRequest(nil, genSeriesWithSample(1000, int64(80+i)*time.Minute.Milliseconds()), nil, nil, nil, nil, "snappy")
 		require.NoError(b, err)
 		bufRequests = append(bufRequests, buf)
 	}
 
 	b.ResetTimer()
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		req, err = http.NewRequest("", "", bytes.NewReader(bufRequests[i]))
 		require.NoError(b, err)
 
@@ -860,7 +860,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 
 func genSeriesWithSample(numSeries int, ts int64) []prompb.TimeSeries {
 	var series []prompb.TimeSeries
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		s := prompb.TimeSeries{
 			Labels:  []prompb.Label{{Name: "__name__", Value: fmt.Sprintf("test_metric_%d", i)}},
 			Samples: []prompb.Sample{{Value: float64(i), Timestamp: ts}},
@@ -916,7 +916,7 @@ type mockMetadata struct {
 }
 
 // Wrapper to instruct go-cmp package to compare a list of structs with unexported fields.
-func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...interface{}) {
+func requireEqual(t *testing.T, expected, actual any, msgAndArgs ...any) {
 	t.Helper()
 
 	testutil.RequireEqualWithOptions(t, expected, actual,

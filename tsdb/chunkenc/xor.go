@@ -330,7 +330,7 @@ func (it *xorIterator) Next() ValueType {
 
 	var d byte
 	// read delta-of-delta
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		d <<= 1
 		bit, err := it.br.readBitFast()
 		if err != nil {

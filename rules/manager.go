@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	maps0 "maps"
 	"net/url"
 	"path/filepath"
 	"slices"
@@ -582,9 +583,7 @@ func FromMaps(maps ...map[string]string) labels.Labels {
 	mLables := make(map[string]string)
 
 	for _, m := range maps {
-		for k, v := range m {
-			mLables[k] = v
-		}
+		maps0.Copy(mLables, m)
 	}
 
 	return labels.FromMap(mLables)

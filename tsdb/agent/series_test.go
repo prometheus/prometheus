@@ -36,7 +36,7 @@ func TestNoDeadlock(t *testing.T) {
 	)
 
 	wg.Add(numWorkers)
-	for i := 0; i < numWorkers; i++ {
+	for range numWorkers {
 		go func() {
 			defer wg.Done()
 			<-started
@@ -45,7 +45,7 @@ func TestNoDeadlock(t *testing.T) {
 	}
 
 	wg.Add(numWorkers)
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		go func(i int) {
 			defer wg.Done()
 			<-started

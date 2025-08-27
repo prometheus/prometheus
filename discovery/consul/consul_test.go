@@ -437,8 +437,8 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 }
 
 func TestUnmarshalConfig(t *testing.T) {
-	unmarshal := func(d []byte) func(interface{}) error {
-		return func(o interface{}) error {
+	unmarshal := func(d []byte) func(any) error {
+		return func(o any) error {
 			return yaml.Unmarshal(d, o)
 		}
 	}

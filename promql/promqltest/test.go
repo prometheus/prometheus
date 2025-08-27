@@ -219,7 +219,7 @@ func newTestStorage(t testutil.T) storage.Storage { return teststorage.New(t) }
 //go:embed testdata
 var testsFs embed.FS
 
-func raise(line int, format string, v ...interface{}) error {
+func raise(line int, format string, v ...any) error {
 	return &parser.ParseErr{
 		LineOffset: line,
 		Err:        fmt.Errorf(format, v...),
@@ -1527,7 +1527,7 @@ func NewLazyLoader(input string, opts LazyLoaderOpts) (*LazyLoader, error) {
 func (ll *LazyLoader) parse(input string) error {
 	lines := getLines(input)
 	// Accepts only 'load' command.
-	for i := 0; i < len(lines); i++ {
+	for i := range lines {
 		l := lines[i]
 		if len(l) == 0 {
 			continue

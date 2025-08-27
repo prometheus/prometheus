@@ -42,7 +42,7 @@ import (
 func ExponentialBlockRanges(minSize int64, steps, stepSize int) []int64 {
 	ranges := make([]int64, 0, steps)
 	curRange := minSize
-	for i := 0; i < steps; i++ {
+	for range steps {
 		ranges = append(ranges, curRange)
 		curRange *= int64(stepSize)
 	}

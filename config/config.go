@@ -367,7 +367,7 @@ func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 // NOTE: This method should not be used outside of this package. Use Load or LoadFile instead.
-func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *Config) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultConfig
 	// We want to set c to the defaults and then overwrite it with the input.
 	// To make unmarshal fill the plain data struct rather than calling UnmarshalYAML
@@ -594,7 +594,7 @@ func (c *GlobalConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *GlobalConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	// Create a clean global config as the previous one was already populated
 	// by the default due to the YAML parser behavior for empty blocks.
 	gc := &GlobalConfig{}
@@ -630,11 +630,7 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return errors.New("global scrape timeout greater than scrape interval")
 	}
 	if gc.ScrapeTimeout == 0 {
-		if DefaultGlobalConfig.ScrapeTimeout > gc.ScrapeInterval {
-			gc.ScrapeTimeout = gc.ScrapeInterval
-		} else {
-			gc.ScrapeTimeout = DefaultGlobalConfig.ScrapeTimeout
-		}
+		gc.ScrapeTimeout = min(DefaultGlobalConfig.ScrapeTimeout, gc.ScrapeInterval)
 	}
 	if gc.EvaluationInterval == 0 {
 		gc.EvaluationInterval = DefaultGlobalConfig.EvaluationInterval
@@ -790,7 +786,7 @@ func (c *ScrapeConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultScrapeConfig
 	if err := discovery.UnmarshalYAMLWithInlineConfigs(c, unmarshal); err != nil {
 		return err
@@ -841,11 +837,7 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		return fmt.Errorf("scrape timeout greater than scrape interval for scrape config with job name %q", c.JobName)
 	}
 	if c.ScrapeTimeout == 0 {
-		if globalConfig.ScrapeTimeout > c.ScrapeInterval {
-			c.ScrapeTimeout = c.ScrapeInterval
-		} else {
-			c.ScrapeTimeout = globalConfig.ScrapeTimeout
-		}
+		c.ScrapeTimeout = min(globalConfig.ScrapeTimeout, c.ScrapeInterval)
 	}
 	if c.BodySizeLimit == 0 {
 		c.BodySizeLimit = globalConfig.BodySizeLimit
@@ -970,7 +962,7 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 }
 
 // MarshalYAML implements the yaml.Marshaler interface.
-func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
+func (c *ScrapeConfig) MarshalYAML() (any, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
 }
 
@@ -1024,7 +1016,7 @@ type TSDBConfig struct {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (t *TSDBConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (t *TSDBConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*t = TSDBConfig{}
 	type plain TSDBConfig
 	if err := unmarshal((*plain)(t)); err != nil {
@@ -1046,7 +1038,7 @@ const (
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (t *TracingClientType) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (t *TracingClientType) UnmarshalYAML(unmarshal func(any) error) error {
 	*t = TracingClientType("")
 	type plain TracingClientType
 	if err := unmarshal((*plain)(t)); err != nil {
@@ -1080,7 +1072,7 @@ func (t *TracingConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (t *TracingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (t *TracingConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*t = TracingConfig{
 		ClientType: TracingClientGRPC,
 	}
@@ -1140,7 +1132,7 @@ func (c *AlertingConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *AlertingConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	// Create a clean global config as the previous one was already populated
 	// by the default due to the YAML parser behavior for empty blocks.
 	*c = AlertingConfig{}
@@ -1175,7 +1167,7 @@ func (a AlertmanagerConfigs) ToMap() map[string]*AlertmanagerConfig {
 type AlertmanagerAPIVersion string
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (v *AlertmanagerAPIVersion) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (v *AlertmanagerAPIVersion) UnmarshalYAML(unmarshal func(any) error) error {
 	*v = AlertmanagerAPIVersion("")
 	type plain AlertmanagerAPIVersion
 	if err := unmarshal((*plain)(v)); err != nil {
@@ -1234,7 +1226,7 @@ func (c *AlertmanagerConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultAlertmanagerConfig
 	if err := discovery.UnmarshalYAMLWithInlineConfigs(c, unmarshal); err != nil {
 		return err
@@ -1291,7 +1283,7 @@ func (c *AlertmanagerConfig) Validate(nameValidationScheme model.ValidationSchem
 }
 
 // MarshalYAML implements the yaml.Marshaler interface.
-func (c *AlertmanagerConfig) MarshalYAML() (interface{}, error) {
+func (c *AlertmanagerConfig) MarshalYAML() (any, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
 }
 
@@ -1395,7 +1387,7 @@ func (c *RemoteWriteConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultRemoteWriteConfig
 	type plain RemoteWriteConfig
 	if err := unmarshal((*plain)(c)); err != nil {
@@ -1560,7 +1552,7 @@ func (c *RemoteReadConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultRemoteReadConfig
 	type plain RemoteReadConfig
 	if err := unmarshal((*plain)(c)); err != nil {
@@ -1620,7 +1612,7 @@ type OTLPConfig struct {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *OTLPConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultOTLPConfig
 	type plain OTLPConfig
 	if err := unmarshal((*plain)(c)); err != nil {
