@@ -89,6 +89,9 @@ func (c *FloatHistogramChunk) Compact() {
 
 // Appender implements the Chunk interface.
 func (c *FloatHistogramChunk) Appender() (Appender, error) {
+	if len(c.b.stream) == 3 { // Avoid allocating an Iterator when chunk is empty.
+		return &FloatHistogramAppender{b: &c.b, t: math.MinInt64, sum: xorValue{leading: 0xff}, cnt: xorValue{leading: 0xff}, zCnt: xorValue{leading: 0xff}}, nil
+	}
 	it := c.iterator(nil)
 
 	// To get an appender, we must know the state it would have if we had
@@ -132,11 +135,6 @@ func (c *FloatHistogramChunk) Appender() (Appender, error) {
 		pBuckets:     pBuckets,
 		nBuckets:     nBuckets,
 		sum:          it.sum,
-	}
-	if it.numTotal == 0 {
-		a.sum.leading = 0xff
-		a.cnt.leading = 0xff
-		a.zCnt.leading = 0xff
 	}
 	return a, nil
 }

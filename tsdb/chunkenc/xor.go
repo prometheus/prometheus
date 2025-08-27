@@ -98,6 +98,9 @@ func (c *XORChunk) Compact() {
 // It is not valid to call Appender() multiple times concurrently or to use multiple
 // Appenders on the same chunk.
 func (c *XORChunk) Appender() (Appender, error) {
+	if len(c.b.stream) == 2 { // Avoid allocating an Iterator when chunk is empty.
+		return &xorAppender{b: &c.b, t: math.MinInt64, leading: 0xff}, nil
+	}
 	it := c.iterator(nil)
 
 	// To get an appender we must know the state it would have if we had
@@ -116,9 +119,6 @@ func (c *XORChunk) Appender() (Appender, error) {
 		tDelta:   it.tDelta,
 		leading:  it.leading,
 		trailing: it.trailing,
-	}
-	if it.numTotal == 0 {
-		a.leading = 0xff
 	}
 	return a, nil
 }
