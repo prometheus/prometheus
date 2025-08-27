@@ -53,7 +53,7 @@ func newRuleEngine(
 
 // NewScrapeBatch creates a new Batch which can be used to add samples from a single scrape.
 // Rules are always evaluated on a single Batch.
-func (r *ruleEngine) NewScrapeBatch() Batch {
+func (*ruleEngine) NewScrapeBatch() Batch {
 	return &batch{
 		samples: make([]Sample, 0),
 	}
@@ -162,15 +162,15 @@ func (b *batch) Select(_ context.Context, _ bool, _ *storage.SelectHints, matche
 	}
 }
 
-func (b *batch) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*batch) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (b *batch) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*batch) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (b *batch) Close() error { return nil }
+func (*batch) Close() error { return nil }
 
 type seriesSet struct {
 	i       int
@@ -197,35 +197,35 @@ func (s *seriesSet) At() storage.Series {
 	})
 }
 
-func (s *seriesSet) Err() error                        { return nil }
-func (s *seriesSet) Warnings() annotations.Annotations { return nil }
+func (*seriesSet) Err() error                        { return nil }
+func (*seriesSet) Warnings() annotations.Annotations { return nil }
 
 // nopRuleEngine does not produce any new floats when evaluating rules.
 type nopRuleEngine struct{}
 
-func (n nopRuleEngine) NewScrapeBatch() Batch { return &nopBatch{} }
+func (nopRuleEngine) NewScrapeBatch() Batch { return &nopBatch{} }
 
-func (n nopRuleEngine) EvaluateRules(Batch, time.Time, labelsMutator) ([]Sample, error) {
+func (nopRuleEngine) EvaluateRules(Batch, time.Time, labelsMutator) ([]Sample, error) {
 	return nil, nil
 }
 
 type nopBatch struct{}
 
-func (b *nopBatch) AddFloatSample(labels.Labels, int64, float64) {}
+func (*nopBatch) AddFloatSample(labels.Labels, int64, float64) {}
 
-func (b *nopBatch) AddHistogramSample(labels.Labels, int64, *histogram.FloatHistogram) {
+func (*nopBatch) AddHistogramSample(labels.Labels, int64, *histogram.FloatHistogram) {
 }
 
-func (b *nopBatch) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*nopBatch) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (b *nopBatch) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*nopBatch) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (b *nopBatch) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+func (*nopBatch) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 	return nil
 }
 
-func (b *nopBatch) Close() error { return nil }
+func (*nopBatch) Close() error { return nil }

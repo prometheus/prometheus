@@ -32,8 +32,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/prometheus/prometheus/promql"
-
 	"github.com/klauspost/compress/gzip"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -54,6 +52,7 @@ import (
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/namevalidationutil"

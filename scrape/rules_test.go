@@ -17,12 +17,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/promql"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 )
 
 func TestRuleEngine(t *testing.T) {
