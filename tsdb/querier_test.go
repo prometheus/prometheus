@@ -3258,7 +3258,9 @@ func BenchmarkQueries(b *testing.B) {
 					qHead, err := NewBlockQuerier(NewRangeHead(head, 1, nSamples), 1, nSamples)
 					require.NoError(b, err)
 					isoState := head.oooIso.TrackReadAfter(0)
-					qOOOHead := NewHeadAndOOOQuerier(1, 1, nSamples, head, isoState, qHead)
+					oooQHead, err := NewBlockQuerier(newOOORangeHead(1, 1, nSamples, head, isoState), 1, nSamples)
+					require.NoError(b, err)
+					qOOOHead := NewHeadAndOOOQuerier(oooQHead, qHead)
 
 					queryTypes = append(queryTypes, qt{
 						fmt.Sprintf("_Head_oooPercent:%d", oooPercentage), qOOOHead,

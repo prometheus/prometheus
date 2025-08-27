@@ -508,33 +508,50 @@ func (*OOOCompactionHeadIndexReader) LabelNamesFor(context.Context, index.Postin
 	return nil, errors.New("not implemented")
 }
 
+type oooRangeHead struct {
+	*RangeHead
+	inoMint, mint, maxt int64
+	oooIsoState         *oooIsolationState
+}
+
+func newOOORangeHead(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState) *oooRangeHead {
+	return &oooRangeHead{
+		RangeHead:   NewRangeHead(head, mint, maxt),
+		inoMint:     inoMint,
+		mint:        mint,
+		maxt:        maxt,
+		oooIsoState: oooIsoState,
+	}
+}
+
+func (h *oooRangeHead) Index() (IndexReader, error) {
+	return NewHeadAndOOOIndexReader(h.head, h.inoMint, h.mint, h.maxt, h.oooIsoState.minRef), nil
+}
+
+func (h *oooRangeHead) Chunks() (ChunkReader, error) {
+	cr := &headChunkReader{
+		head:     h.head,
+		mint:     h.mint,
+		maxt:     h.maxt,
+		isoState: h.head.iso.State(h.mint, h.maxt),
+	}
+	return NewHeadAndOOOChunkReader(h.head, h.mint, h.maxt, cr, h.oooIsoState, 0), nil
+}
+
 func (*OOOCompactionHeadIndexReader) Close() error {
 	return nil
 }
 
 // HeadAndOOOQuerier queries both the head and the out-of-order head.
 type HeadAndOOOQuerier struct {
-	mint, maxt int64
-	head       *Head
-	index      IndexReader
-	chunkr     ChunkReader
+	oooQuerier storage.Querier
 	querier    storage.Querier // Used for LabelNames, LabelValues, but may be nil if head was truncated in the mean time, in which case we ignore it and not close it in the end.
 }
 
-func NewHeadAndOOOQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.Querier) storage.Querier {
-	cr := &headChunkReader{
-		head:     head,
-		mint:     mint,
-		maxt:     maxt,
-		isoState: head.iso.State(mint, maxt),
-	}
+func NewHeadAndOOOQuerier(oooHeadQuerier, headQuerier storage.Querier) storage.Querier {
 	return &HeadAndOOOQuerier{
-		mint:    mint,
-		maxt:    maxt,
-		head:    head,
-		index:   NewHeadAndOOOIndexReader(head, inoMint, mint, maxt, oooIsoState.minRef),
-		chunkr:  NewHeadAndOOOChunkReader(head, mint, maxt, cr, oooIsoState, 0),
-		querier: querier,
+		oooQuerier: oooHeadQuerier,
+		querier:    headQuerier,
 	}
 }
 
@@ -553,7 +570,9 @@ func (q *HeadAndOOOQuerier) LabelNames(ctx context.Context, hints *storage.Label
 }
 
 func (q *HeadAndOOOQuerier) Close() error {
-	q.chunkr.Close()
+	if err := q.oooQuerier.Close(); err != nil {
+		return err
+	}
 	if q.querier == nil {
 		return nil
 	}
@@ -561,32 +580,19 @@ func (q *HeadAndOOOQuerier) Close() error {
 }
 
 func (q *HeadAndOOOQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	return selectSeriesSet(ctx, sortSeries, hints, matchers, q.index, q.chunkr, q.head.tombstones, q.mint, q.maxt)
+	return q.oooQuerier.Select(ctx, sortSeries, hints, matchers...)
 }
 
 // HeadAndOOOChunkQuerier queries both the head and the out-of-order head.
 type HeadAndOOOChunkQuerier struct {
-	mint, maxt int64
-	head       *Head
-	index      IndexReader
-	chunkr     ChunkReader
+	oooQuerier storage.ChunkQuerier
 	querier    storage.ChunkQuerier
 }
 
-func NewHeadAndOOOChunkQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.ChunkQuerier) storage.ChunkQuerier {
-	cr := &headChunkReader{
-		head:     head,
-		mint:     mint,
-		maxt:     maxt,
-		isoState: head.iso.State(mint, maxt),
-	}
+func NewHeadAndOOOChunkQuerier(oooHeadQuerier, headQuerier storage.ChunkQuerier) storage.ChunkQuerier {
 	return &HeadAndOOOChunkQuerier{
-		mint:    mint,
-		maxt:    maxt,
-		head:    head,
-		index:   NewHeadAndOOOIndexReader(head, inoMint, mint, maxt, oooIsoState.minRef),
-		chunkr:  NewHeadAndOOOChunkReader(head, mint, maxt, cr, oooIsoState, 0),
-		querier: querier,
+		oooQuerier: oooHeadQuerier,
+		querier:    headQuerier,
 	}
 }
 
@@ -605,7 +611,9 @@ func (q *HeadAndOOOChunkQuerier) LabelNames(ctx context.Context, hints *storage.
 }
 
 func (q *HeadAndOOOChunkQuerier) Close() error {
-	q.chunkr.Close()
+	if err := q.oooQuerier.Close(); err != nil {
+		return err
+	}
 	if q.querier == nil {
 		return nil
 	}
@@ -613,5 +621,5 @@ func (q *HeadAndOOOChunkQuerier) Close() error {
 }
 
 func (q *HeadAndOOOChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
-	return selectChunkSeriesSet(ctx, sortSeries, hints, matchers, rangeHeadULID, q.index, q.chunkr, q.head.tombstones, q.mint, q.maxt)
+	return q.oooQuerier.Select(ctx, sortSeries, hints, matchers...)
 }
