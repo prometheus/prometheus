@@ -26,6 +26,8 @@ import (
 	"sync"
 	"time"
 
+	"os"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -38,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/strutil"
+	"gopkg.in/yaml.v3"
 )
 
 // QueryFunc processes PromQL queries.
@@ -322,6 +325,11 @@ func (m *Manager) LoadGroups(
 	shouldRestore := !m.restored || m.restoreNewRuleGroups
 
 	for _, fn := range filenames {
+		if b, err := os.ReadFile(fn); err == nil {
+			if hasMultipleYAMLDocuments(b) {
+				m.logger.Warn("Multiple YAML documents detected; only the first will be used", "file", fn)
+			}
+		}
 		rgs, errs := m.opts.GroupLoader.Load(fn, ignoreUnknownFields, m.opts.NameValidationScheme)
 		if errs != nil {
 			return nil, errs
@@ -616,4 +624,10 @@ func ParseFiles(patterns []string, nameValidationScheme model.ValidationScheme) 
 		}
 	}
 	return nil
+}
+
+func hasMultipleYAMLDocuments(b []byte) bool {
+	var docCount int
+	err := yaml.Unmarshal(b, &docCount)
+	return err == nil && docCount > 1
 }
