@@ -34,24 +34,26 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
+// TODO: Remove along with timestampTracker logic once we can be sure no user
+// will encounter a gap that these metrics cover but other metrics don't.
 var (
 	samplesIn = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "samples_in_total",
-		Help:      "Samples in to remote storage, compare to samples out for queue managers.",
+		Help:      "Samples in to remote storage, compare to samples out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_samples_dropped_total",
 	})
 	exemplarsIn = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "exemplars_in_total",
-		Help:      "Exemplars in to remote storage, compare to exemplars out for queue managers.",
+		Help:      "Exemplars in to remote storage, compare to exemplars out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_exemplars_dropped_total",
 	})
 	histogramsIn = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "histograms_in_total",
-		Help:      "HistogramSamples in to remote storage, compare to histograms out for queue managers.",
+		Help:      "HistogramSamples in to remote storage, compare to histograms out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_histograms_dropped_total",
 	})
 )
 
@@ -90,12 +92,14 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 		dir:               dir,
 		interner:          newPool(),
 		scraper:           sm,
+		// TODO: Remove along with timestampTracker logic once we can be sure no user
+		// will encounter a gap that this metric covers but other metrics don't.
 		highestTimestamp: &maxTimestamp{
 			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 				Namespace: namespace,
 				Subsystem: subsystem,
 				Name:      "highest_timestamp_in_seconds",
-				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch. Initialized to 0 when no data has been received yet.",
+				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch. Initialized to 0 when no data has been received yet. Deprecated, check prometheus_remote_storage_queue_highest_timestamp_seconds which is more accurate.",
 			}),
 		},
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
