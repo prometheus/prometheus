@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -2418,14 +2419,13 @@ func TestPopulateV2TimeSeries_typeAndUnitLabels(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			batch := make([]timeSeries, 1)
 			builder := labels.NewScratchBuilder(2)
-			builder.Add("__name__", "test_metric_"+tc.name)
+			metadata := schema.Metadata{
+				Name: "test_metric_" + tc.name,
+				Type: model.MetricType(tc.typeLabel),
+				Unit: tc.unitLabel,
+			}
 
-			if tc.typeLabel != "" {
-				builder.Add("__type__", tc.typeLabel)
-			}
-			if tc.unitLabel != "" {
-				builder.Add("__unit__", tc.unitLabel)
-			}
+			metadata.AddToLabels(&builder)
 
 			batch[0] = timeSeries{
 				seriesLabels: builder.Labels(),
