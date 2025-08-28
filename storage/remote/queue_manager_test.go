@@ -2333,6 +2333,27 @@ func BenchmarkBuildTimeSeries(b *testing.B) {
 	}
 }
 
+func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
+	symbolTable := writev2.NewSymbolTable()
+	pendingData := make([]writev2.TimeSeries, 4)
+
+	batch := []timeSeries{
+		{sType: tSample, seriesLabels: labels.FromStrings("__name__", "metric1")},
+		{sType: tMetadata, seriesLabels: labels.FromStrings("__name__", "metric2")},
+		{sType: tSample, seriesLabels: labels.FromStrings("__name__", "metric3")},
+		{sType: tMetadata, seriesLabels: labels.FromStrings("__name__", "metric4")},
+	}
+
+	nSamples, nExemplars, nHistograms, nMetadata, nUnexpected := populateV2TimeSeries(
+		&symbolTable, batch, pendingData, false, false, false)
+
+	require.Equal(t, 2, nSamples, "Should count 2 samples")
+	require.Equal(t, 0, nExemplars, "Should count 0 exemplars")
+	require.Equal(t, 0, nHistograms, "Should count 0 histograms")
+	require.Equal(t, 0, nMetadata, "Should count 0 processed metadata")
+	require.Equal(t, 2, nUnexpected, "Should count 2 unexpected metadata")
+}
+
 func TestPopulateV2TimeSeries_typeAndUnitLabels(t *testing.T) {
 	symbolTable := writev2.NewSymbolTable()
 
