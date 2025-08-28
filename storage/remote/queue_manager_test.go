@@ -24,7 +24,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -50,6 +49,7 @@ import (
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 const defaultFlushDeadline = 1 * time.Minute
@@ -469,7 +469,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 
 func TestShutdown(t *testing.T) {
 	t.Parallel()
-	synctest.Run(func() {
+	synctest.Test(t, func(t *testing.T) {
 		deadline := 15 * time.Second
 		c := NewTestBlockedWriteClient()
 

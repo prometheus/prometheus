@@ -181,5 +181,8 @@ output:
 
 run:
   timeout: 15m
+  # TODO: remove once 1.25 is the min version
+  build-tags:
+    - goexperiment.synctest
 
 version: "2"
