@@ -1893,7 +1893,7 @@ func (m *seriesHashmap) del(hash uint64, ref chunks.HeadSeriesRef) {
 
 const (
 	// DefaultStripeSize is the default number of entries to allocate in the stripeSeries hash map.
-	DefaultStripeSize = 1 << 14
+	DefaultStripeSize = 256
 )
 
 // stripeSeries holds series by HeadSeriesRef ("ID") and also by hash of their labels.
