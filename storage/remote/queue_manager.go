@@ -1975,25 +1975,6 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 	return nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata
 }
 
-func modelTypeToWriteV2Type(typeValue string) writev2.Metadata_MetricType {
-	switch typeValue {
-	case string(model.MetricTypeCounter):
-		return writev2.Metadata_METRIC_TYPE_COUNTER
-	case string(model.MetricTypeGauge):
-		return writev2.Metadata_METRIC_TYPE_GAUGE
-	case string(model.MetricTypeHistogram):
-		return writev2.Metadata_METRIC_TYPE_HISTOGRAM
-	case string(model.MetricTypeSummary):
-		return writev2.Metadata_METRIC_TYPE_SUMMARY
-	case string(model.MetricTypeInfo):
-		return writev2.Metadata_METRIC_TYPE_INFO
-	case string(model.MetricTypeStateset):
-		return writev2.Metadata_METRIC_TYPE_STATESET
-	default:
-		return writev2.Metadata_METRIC_TYPE_UNSPECIFIED
-	}
-}
-
 func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt func(int) error, onRetry func()) error {
 	backoff := t.cfg.MinBackoff
 	sleepDuration := model.Duration(0)
