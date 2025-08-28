@@ -24,7 +24,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -35,7 +34,6 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -51,13 +49,10 @@ import (
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 const defaultFlushDeadline = 1 * time.Minute
-
-func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
-}
 
 func TestBasicContentNegotiation(t *testing.T) {
 	t.Parallel()
@@ -463,7 +458,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 
 func TestShutdown(t *testing.T) {
 	t.Parallel()
-	synctest.Run(func() {
+	synctest.Test(t, func(t *testing.T) {
 		deadline := 15 * time.Second
 		c := NewTestBlockedWriteClient()
 

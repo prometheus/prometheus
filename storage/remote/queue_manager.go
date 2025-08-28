@@ -1458,15 +1458,12 @@ func (q *queue) ReturnForReuse(batch []timeSeries) {
 // FlushAndShutdown stops the queue and flushes any samples. No appends can be
 // made after this is called.
 func (q *queue) FlushAndShutdown(done <-chan struct{}) {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
 loop:
 	for q.tryEnqueueingBatch(done) {
 		select {
 		case <-done:
 			break loop
-		case <-ticker.C:
+		case <-time.After(time.Second):
 		}
 	}
 
