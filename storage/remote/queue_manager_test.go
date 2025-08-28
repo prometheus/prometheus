@@ -132,7 +132,7 @@ func TestBasicContentNegotiation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 			defer s.Close()
 
 			var (
@@ -241,7 +241,7 @@ func TestSampleDelivery(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("%s-%s", tc.protoMsg, tc.name), func(t *testing.T) {
 			dir := t.TempDir()
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 			defer s.Close()
 
 			var (
@@ -363,7 +363,7 @@ func TestMetadataDelivery(t *testing.T) {
 
 func TestWALMetadataDelivery(t *testing.T) {
 	dir := t.TempDir()
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 	defer s.Close()
 
 	cfg := config.DefaultQueueConfig
