@@ -2432,7 +2432,6 @@ func TestPopulateV2TimeSeries_typeAndUnitLabels(t *testing.T) {
 				value:        123.45,
 				timestamp:    time.Now().UnixMilli(),
 				sType:        tSample,
-				metadata:     nil, // Setting metadata to nil to force use of labels
 			}
 
 			pendingData := make([]writev2.TimeSeries, 1)
