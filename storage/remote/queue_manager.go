@@ -1925,18 +1925,15 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(d.metadata.Unit)
 			nPendingMetadata++
 		} else {
-			metricType := writev2.Metadata_METRIC_TYPE_UNSPECIFIED
-			var unit string
+			var m schema.Metadata
 			if enableTypeAndUnitLabels {
-				metadata := schema.NewMetadataFromLabels(d.seriesLabels)
-				metricType = modelTypeToWriteV2Type(string(metadata.Type))
-				unit = metadata.Unit
+				m = schema.NewMetadataFromLabels(d.seriesLabels)
 			}
 			// Safeguard against sending garbage in case of not having metadata
 			// for whatever reason.
-			pendingData[nPending].Metadata.Type = metricType
+			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(m.Type)
+			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(m.Unit)
 			pendingData[nPending].Metadata.HelpRef = 0
-			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(unit)
 		}
 
 		if sendExemplars {
