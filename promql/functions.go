@@ -780,6 +780,34 @@ func funcCountOverTime(_ []Vector, matrixVals Matrix, _ parser.Expressions, enh 
 	}), nil
 }
 
+// === first_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
+func funcFirstOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	el := matrixVal[0]
+
+	var f FPoint
+	if len(el.Floats) > 0 {
+		f = el.Floats[0]
+	}
+
+	var h HPoint
+	if len(el.Histograms) > 0 {
+		h = el.Histograms[0]
+	}
+
+	// If a float data point exists and is older than any histogram data
+	// points, return it.
+	if h.H == nil || (len(el.Floats) > 0 && f.T < h.T) {
+		return append(enh.Out, Sample{
+			Metric: el.Metric,
+			F:      f.F,
+		}), nil
+	}
+	return append(enh.Out, Sample{
+		Metric: el.Metric,
+		H:      h.H.Copy(),
+	}), nil
+}
+
 // === last_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
 func funcLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	el := matrixVal[0]
@@ -829,6 +857,26 @@ func funcMadOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		}
 		return quantile(0.5, values)
 	}), annos
+}
+
+// === ts_of_first_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
+func funcTsOfFirstOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	el := matrixVal[0]
+
+	var tf int64 = math.MaxInt64
+	if len(el.Floats) > 0 {
+		tf = el.Floats[0].T
+	}
+
+	var th int64 = math.MaxInt64
+	if len(el.Histograms) > 0 {
+		th = el.Histograms[0].T
+	}
+
+	return append(enh.Out, Sample{
+		Metric: el.Metric,
+		F:      float64(min(tf, th)) / 1000,
+	}), nil
 }
 
 // === ts_of_last_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
@@ -1801,6 +1849,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"delta":                        funcDelta,
 	"deriv":                        funcDeriv,
 	"exp":                          funcExp,
+	"first_over_time":              funcFirstOverTime,
 	"floor":                        funcFloor,
 	"histogram_avg":                funcHistogramAvg,
 	"histogram_count":              funcHistogramCount,
@@ -1824,6 +1873,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"mad_over_time":                funcMadOverTime,
 	"max_over_time":                funcMaxOverTime,
 	"min_over_time":                funcMinOverTime,
+	"ts_of_first_over_time":        funcTsOfFirstOverTime,
 	"ts_of_last_over_time":         funcTsOfLastOverTime,
 	"ts_of_max_over_time":          funcTsOfMaxOverTime,
 	"ts_of_min_over_time":          funcTsOfMinOverTime,
