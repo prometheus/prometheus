@@ -160,7 +160,7 @@ func TestWriteStorageApplyConfigsDuringCommit(t *testing.T) {
 	wg.Add(2000)
 
 	start := make(chan struct{})
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		go func(i int) {
 			<-start
 			conf := &config.Config{
@@ -174,7 +174,7 @@ func TestWriteStorageApplyConfigsDuringCommit(t *testing.T) {
 		}(i)
 	}
 
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		go func() {
 			<-start
 			s.Notify()

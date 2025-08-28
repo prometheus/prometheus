@@ -36,7 +36,7 @@ import (
 
 // floatFormatBufPool is exclusively used in formatOpenMetricsFloat.
 var floatFormatBufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		// To contain at most 17 digits and additional syntax for a float64.
 		b := make([]byte, 0, 24)
 		return &b

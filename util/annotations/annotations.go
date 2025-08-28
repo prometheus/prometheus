@@ -16,6 +16,7 @@ package annotations
 import (
 	"errors"
 	"fmt"
+	"maps"
 
 	"github.com/prometheus/common/model"
 
@@ -55,9 +56,7 @@ func (a *Annotations) Merge(aa Annotations) Annotations {
 		}
 		*a = Annotations{}
 	}
-	for key, val := range aa {
-		(*a)[key] = val
-	}
+	maps.Copy((*a), aa)
 	return *a
 }
 

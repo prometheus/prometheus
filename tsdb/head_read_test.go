@@ -368,7 +368,7 @@ func TestMemSeries_chunk(t *testing.T) {
 	}
 
 	memChunkPool := &sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &memChunk{}
 		},
 	}

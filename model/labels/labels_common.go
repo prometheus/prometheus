@@ -84,12 +84,12 @@ func (ls *Labels) UnmarshalJSON(b []byte) error {
 }
 
 // MarshalYAML implements yaml.Marshaler.
-func (ls Labels) MarshalYAML() (interface{}, error) {
+func (ls Labels) MarshalYAML() (any, error) {
 	return ls.Map(), nil
 }
 
 // UnmarshalYAML implements yaml.Unmarshaler.
-func (ls *Labels) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (ls *Labels) UnmarshalYAML(unmarshal func(any) error) error {
 	var m map[string]string
 
 	if err := unmarshal(&m); err != nil {

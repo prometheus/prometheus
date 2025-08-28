@@ -249,7 +249,7 @@ func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
 
 					done := sync.WaitGroup{}
 					done.Add(concurrentWrites)
-					for w := 0; w < concurrentWrites; w++ {
+					for range concurrentWrites {
 						go func() {
 							start.Wait()
 							for j := range jobs {

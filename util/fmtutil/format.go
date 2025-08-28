@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"sort"
 	"time"
 
@@ -116,9 +117,7 @@ func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Me
 		// Preserve metric name order with first quantile labels timeseries then sum suffix timeseries and finally count suffix timeseries
 		// Add Summary quantile timeseries
 		quantileLabels := make(map[string]string, len(labels)+1)
-		for key, value := range labels {
-			quantileLabels[key] = value
-		}
+		maps.Copy(quantileLabels, labels)
 
 		for _, q := range m.GetSummary().Quantile {
 			quantileLabels[model.QuantileLabel] = fmt.Sprint(q.GetQuantile())
@@ -137,9 +136,7 @@ func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Me
 		// Preserve metric name order with first bucket suffix timeseries then sum suffix timeseries and finally count suffix timeseries
 		// Add Histogram bucket timeseries
 		bucketLabels := make(map[string]string, len(labels)+1)
-		for key, value := range labels {
-			bucketLabels[key] = value
-		}
+		maps.Copy(bucketLabels, labels)
 		for _, b := range m.GetHistogram().Bucket {
 			bucketLabels[model.MetricNameLabel] = metricName + bucketStr
 			bucketLabels[model.BucketLabel] = fmt.Sprint(b.GetUpperBound())
@@ -186,9 +183,7 @@ func makeLabelsMap(m *dto.Metric, metricName string, extraLabels map[string]stri
 	labels[model.MetricNameLabel] = metricName
 
 	// add extra labels
-	for key, value := range extraLabels {
-		labels[key] = value
-	}
+	maps.Copy(labels, extraLabels)
 
 	// add metric labels
 	for _, label := range m.Label {

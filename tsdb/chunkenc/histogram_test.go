@@ -1736,10 +1736,10 @@ func BenchmarkAppendable(b *testing.B) {
 		ZeroThreshold: 0.001,
 		ZeroCount:     5,
 	}
-	for i := 0; i < numSpans; i++ {
+	for range numSpans {
 		h.PositiveSpans = append(h.PositiveSpans, histogram.Span{Offset: 5, Length: spanLength})
 		h.NegativeSpans = append(h.NegativeSpans, histogram.Span{Offset: 5, Length: spanLength})
-		for j := 0; j < spanLength; j++ {
+		for j := range spanLength {
 			h.PositiveBuckets = append(h.PositiveBuckets, int64(j))
 			h.NegativeBuckets = append(h.NegativeBuckets, int64(j))
 		}

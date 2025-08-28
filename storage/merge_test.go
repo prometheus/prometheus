@@ -1329,10 +1329,10 @@ func TestChainSampleIteratorSeekHistogramCounterResetHint(t *testing.T) {
 
 func makeSeries(numSeries, numSamples int) []Series {
 	series := []Series{}
-	for j := 0; j < numSeries; j++ {
+	for j := range numSeries {
 		labels := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
 		samples := []chunks.Sample{}
-		for k := 0; k < numSamples; k++ {
+		for k := range numSamples {
 			samples = append(samples, fSample{t: int64(k), f: float64(k)})
 		}
 		series = append(series, NewListSeries(labels, samples))
@@ -1393,9 +1393,9 @@ func BenchmarkMergeSeriesSet(b *testing.B) {
 func BenchmarkMergeLabelValuesWithLimit(b *testing.B) {
 	var queriers []genericQuerier
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		var lbls []string
-		for j := 0; j < 100000; j++ {
+		for j := range 100000 {
 			lbls = append(lbls, fmt.Sprintf("querier_%d_label_%d", i, j))
 		}
 		q := &mockQuerier{resp: lbls}
@@ -1680,7 +1680,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 }
 
 // Check slice but ignore difference between nil and empty.
-func requireEqualSlice[T any](t require.TestingT, a, b []T, msgAndArgs ...interface{}) {
+func requireEqualSlice[T any](t require.TestingT, a, b []T, msgAndArgs ...any) {
 	if len(a) == 0 {
 		require.Empty(t, b, msgAndArgs...)
 	} else {

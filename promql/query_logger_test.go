@@ -48,7 +48,7 @@ func TestQueryLogging(t *testing.T) {
 	}
 
 	// Check for inserts of queries.
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		start := 1 + i*entrySize
 		end := start + entrySize
 
@@ -60,7 +60,7 @@ func TestQueryLogging(t *testing.T) {
 	}
 
 	// Check if all queries have been deleted.
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		queryLogger.Delete(1 + i*entrySize)
 	}
 	require.True(t, regexp.MustCompile(`^\x00+$`).Match(fileAsBytes[1:1+entrySize*4]),
@@ -94,7 +94,7 @@ func TestIndexReuse(t *testing.T) {
 	}
 
 	// Check all bytes and verify new query was inserted at index 2
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		start := 1 + i*entrySize
 		end := start + entrySize
 

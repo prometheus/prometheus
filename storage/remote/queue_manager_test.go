@@ -341,7 +341,7 @@ func TestMetadataDelivery(t *testing.T) {
 
 	metadata := []scrape.MetricMetadata{}
 	numMetadata := 1532
-	for i := 0; i < numMetadata; i++ {
+	for i := range numMetadata {
 		metadata = append(metadata, scrape.MetricMetadata{
 			MetricFamily: "prometheus_remote_storage_sent_metadata_bytes_" + strconv.Itoa(i),
 			Type:         model.MetricTypeCounter,
@@ -439,7 +439,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 			n := config.DefaultQueueConfig.MaxSamplesPerSend * ts
 			samples := make([]record.RefSample, 0, n)
 			series := make([]record.RefSeries, 0, n)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				name := fmt.Sprintf("test_metric_%d", i%ts)
 				samples = append(samples, record.RefSample{
 					Ref: chunks.HeadSeriesRef(i),
@@ -509,9 +509,9 @@ func TestSeriesReset(t *testing.T) {
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
 	m := newTestQueueManager(t, cfg, mcfg, deadline, c, config.RemoteWriteProtoMsgV1)
-	for i := 0; i < numSegments; i++ {
+	for i := range numSegments {
 		series := []record.RefSeries{}
-		for j := 0; j < numSeries; j++ {
+		for j := range numSeries {
 			series = append(series, record.RefSeries{Ref: chunks.HeadSeriesRef((i * 100) + j), Labels: labels.FromStrings("a", "a")})
 		}
 		m.StoreSeries(series, i)
@@ -619,7 +619,7 @@ func TestReshardPartialBatch(t *testing.T) {
 
 			m.Start()
 
-			for i := 0; i < 100; i++ {
+			for range 100 {
 				done := make(chan struct{})
 				go func() {
 					m.Append(samples)
@@ -666,7 +666,7 @@ func TestQueueFilledDeadlock(t *testing.T) {
 			m.Start()
 			defer m.Stop()
 
-			for i := 0; i < 100; i++ {
+			for range 100 {
 				done := make(chan struct{})
 				go func() {
 					time.Sleep(batchSendDeadline)
@@ -820,9 +820,9 @@ func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([
 	samples := make([]record.RefSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
 	lb := labels.NewScratchBuilder(1 + len(extraLabels))
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		name := fmt.Sprintf("test_metric_%d", i)
-		for j := 0; j < numSamples; j++ {
+		for j := range numSamples {
 			samples = append(samples, record.RefSample{
 				Ref: chunks.HeadSeriesRef(i),
 				T:   int64(j),
@@ -851,7 +851,7 @@ func createProtoTimeseriesWithOld(numSamples, baseTs int64, _ ...labels.Label) [
 	samples := make([]prompb.TimeSeries, numSamples)
 	// use a fixed rand source so tests are consistent
 	r := rand.New(rand.NewSource(99))
-	for j := int64(0); j < numSamples; j++ {
+	for j := range numSamples {
 		name := fmt.Sprintf("test_metric_%d", j)
 
 		samples[j] = prompb.TimeSeries{
@@ -874,9 +874,9 @@ func createProtoTimeseriesWithOld(numSamples, baseTs int64, _ ...labels.Label) [
 func createExemplars(numExemplars, numSeries int) ([]record.RefExemplar, []record.RefSeries) {
 	exemplars := make([]record.RefExemplar, 0, numExemplars)
 	series := make([]record.RefSeries, 0, numSeries)
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		name := fmt.Sprintf("test_metric_%d", i)
-		for j := 0; j < numExemplars; j++ {
+		for j := range numExemplars {
 			e := record.RefExemplar{
 				Ref:    chunks.HeadSeriesRef(i),
 				T:      int64(j),
@@ -897,9 +897,9 @@ func createHistograms(numSamples, numSeries int, floatHistogram bool) ([]record.
 	histograms := make([]record.RefHistogramSample, 0, numSamples)
 	floatHistograms := make([]record.RefFloatHistogramSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		name := fmt.Sprintf("test_metric_%d", i)
-		for j := 0; j < numSamples; j++ {
+		for j := range numSamples {
 			hist := &histogram.Histogram{
 				Schema:          2,
 				ZeroThreshold:   1e-128,
@@ -1594,11 +1594,11 @@ func TestCalculateDesiredShards(t *testing.T) {
 		sin := inputRate * int64(shardUpdateDuration/time.Second)
 		addSamples(sin, ts)
 
-		sout := int64(m.numShards*cfg.MaxSamplesPerSend) * int64(shardUpdateDuration/(100*time.Millisecond))
-		// You can't send samples that don't exist so cap at the number of pending samples.
-		if sout > pendingSamples {
-			sout = pendingSamples
-		}
+		sout := min(
+			// You can't send samples that don't exist so cap at the number of pending samples.
+			int64(m.numShards*cfg.MaxSamplesPerSend)*int64(shardUpdateDuration/(100*time.Millisecond)),
+			pendingSamples,
+		)
 		sendSamples(sout, ts)
 
 		t.Log("desiredShards", m.numShards, "pendingSamples", pendingSamples)
@@ -1868,7 +1868,7 @@ func createDummyTimeSeries(instances int) []timeSeries {
 
 	var result []timeSeries
 	r := rand.New(rand.NewSource(0))
-	for i := 0; i < instances; i++ {
+	for i := range instances {
 		b := labels.NewBuilder(commonLabels)
 		b.Set("pod", "prometheus-"+strconv.Itoa(i))
 		for _, lbls := range metrics {
@@ -2070,7 +2070,7 @@ func createTimeseriesWithRandomLabelCount(id string, seriesCount int, timeAdd ti
 	series := []record.RefSeries{}
 	// use a fixed rand source so tests are consistent
 	r := rand.New(rand.NewSource(99))
-	for i := 0; i < seriesCount; i++ {
+	for i := range seriesCount {
 		s := record.RefSample{
 			Ref: chunks.HeadSeriesRef(i),
 			T:   time.Now().Add(timeAdd).UnixMilli(),
@@ -2098,7 +2098,7 @@ func createTimeseriesWithOldSamples(numSamples, numSeries int, extraLabels ...la
 	samples := make([]record.RefSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
 	lb := labels.NewScratchBuilder(1 + len(extraLabels))
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		name := fmt.Sprintf("test_metric_%d", i)
 		// We create half of the samples in the past.
 		past := timestamp.FromTime(time.Now().Add(-5 * time.Minute))
@@ -2452,7 +2452,7 @@ func TestPopulateV2TimeSeries_typeAndUnitLabels(t *testing.T) {
 			// TODO(@perebaj): Remove this once the feature flag is removed.
 			if tc.enableTypeAndUnitLabels {
 				symbolTable.Reset()
-				nSamples, nExemplars, nHistograms, _ := populateV2TimeSeries(
+				nSamples, nExemplars, nHistograms, _, _ := populateV2TimeSeries(
 					&symbolTable,
 					batch,
 					pendingData,
