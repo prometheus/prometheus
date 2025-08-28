@@ -2336,92 +2336,81 @@ func TestPopulateV2TimeSeries_typeAndUnitLabels(t *testing.T) {
 	symbolTable := writev2.NewSymbolTable()
 
 	testCases := []struct {
-		name                    string
-		typeLabel               string
-		unitLabel               string
-		expectedType            writev2.Metadata_MetricType
-		description             string
-		enableTypeAndUnitLabels bool
+		name         string
+		typeLabel    string
+		unitLabel    string
+		expectedType writev2.Metadata_MetricType
+		description  string
 	}{
 		{
-			name:                    "counter_with_unit",
-			typeLabel:               "counter",
-			unitLabel:               "operations",
-			expectedType:            writev2.Metadata_METRIC_TYPE_COUNTER,
-			description:             "Counter metric with operations unit",
-			enableTypeAndUnitLabels: true,
+			name:         "counter_with_unit",
+			typeLabel:    "counter",
+			unitLabel:    "operations",
+			expectedType: writev2.Metadata_METRIC_TYPE_COUNTER,
+			description:  "Counter metric with operations unit",
 		},
 		{
-			name:                    "gauge_with_bytes",
-			typeLabel:               "gauge",
-			unitLabel:               "bytes",
-			expectedType:            writev2.Metadata_METRIC_TYPE_GAUGE,
-			description:             "Gauge metric with bytes unit",
-			enableTypeAndUnitLabels: true,
+			name:         "gauge_with_bytes",
+			typeLabel:    "gauge",
+			unitLabel:    "bytes",
+			expectedType: writev2.Metadata_METRIC_TYPE_GAUGE,
+			description:  "Gauge metric with bytes unit",
 		},
 		{
-			name:                    "histogram_with_seconds",
-			typeLabel:               "histogram",
-			unitLabel:               "seconds",
-			expectedType:            writev2.Metadata_METRIC_TYPE_HISTOGRAM,
-			description:             "Histogram metric with seconds unit",
-			enableTypeAndUnitLabels: true,
+			name:         "histogram_with_seconds",
+			typeLabel:    "histogram",
+			unitLabel:    "seconds",
+			expectedType: writev2.Metadata_METRIC_TYPE_HISTOGRAM,
+			description:  "Histogram metric with seconds unit",
 		},
 		{
-			name:                    "summary_with_ratio",
-			typeLabel:               "summary",
-			unitLabel:               "ratio",
-			expectedType:            writev2.Metadata_METRIC_TYPE_SUMMARY,
-			description:             "Summary metric with ratio unit",
-			enableTypeAndUnitLabels: true,
+			name:         "summary_with_ratio",
+			typeLabel:    "summary",
+			unitLabel:    "ratio",
+			expectedType: writev2.Metadata_METRIC_TYPE_SUMMARY,
+			description:  "Summary metric with ratio unit",
 		},
 		{
-			name:                    "info_no_unit",
-			typeLabel:               "info",
-			unitLabel:               "",
-			expectedType:            writev2.Metadata_METRIC_TYPE_INFO,
-			description:             "Info metric without unit",
-			enableTypeAndUnitLabels: true,
+			name:         "info_no_unit",
+			typeLabel:    "info",
+			unitLabel:    "",
+			expectedType: writev2.Metadata_METRIC_TYPE_INFO,
+			description:  "Info metric without unit",
 		},
 		{
-			name:                    "stateset_no_unit",
-			typeLabel:               "stateset",
-			unitLabel:               "",
-			expectedType:            writev2.Metadata_METRIC_TYPE_STATESET,
-			description:             "Stateset metric without unit",
-			enableTypeAndUnitLabels: true,
+			name:         "stateset_no_unit",
+			typeLabel:    "stateset",
+			unitLabel:    "",
+			expectedType: writev2.Metadata_METRIC_TYPE_STATESET,
+			description:  "Stateset metric without unit",
 		},
 		{
-			name:                    "unknown_type",
-			typeLabel:               "unknown_type",
-			unitLabel:               "meters",
-			expectedType:            writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
-			description:             "Unknown type defaults to unspecified",
-			enableTypeAndUnitLabels: true,
+			name:         "unknown_type",
+			typeLabel:    "unknown_type",
+			unitLabel:    "meters",
+			expectedType: writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			description:  "Unknown type defaults to unspecified",
 		},
 		{
-			name:                    "empty_type_with_unit",
-			typeLabel:               "",
-			unitLabel:               "watts",
-			expectedType:            writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
-			description:             "Empty type with unit",
-			enableTypeAndUnitLabels: true,
+			name:         "empty_type_with_unit",
+			typeLabel:    "",
+			unitLabel:    "watts",
+			expectedType: writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			description:  "Empty type with unit",
 		},
 		{
-			name:                    "type_no_unit",
-			typeLabel:               "gauge",
-			unitLabel:               "",
-			expectedType:            writev2.Metadata_METRIC_TYPE_GAUGE,
-			description:             "Type without unit",
-			enableTypeAndUnitLabels: true,
+			name:         "type_no_unit",
+			typeLabel:    "gauge",
+			unitLabel:    "",
+			expectedType: writev2.Metadata_METRIC_TYPE_GAUGE,
+			description:  "Type without unit",
 		},
 		{
-			name:                    "no_type_no_unit",
-			typeLabel:               "",
-			unitLabel:               "",
-			expectedType:            writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
-			description:             "No type and no unit",
-			enableTypeAndUnitLabels: true,
+			name:         "no_type_no_unit",
+			typeLabel:    "",
+			unitLabel:    "",
+			expectedType: writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			description:  "No type and no unit",
 		},
 	}
 
@@ -2448,31 +2437,27 @@ func TestPopulateV2TimeSeries_typeAndUnitLabels(t *testing.T) {
 
 			pendingData := make([]writev2.TimeSeries, 1)
 
-			// Test with feature flag enabled.
-			// TODO(@perebaj): Remove this once the feature flag is removed.
-			if tc.enableTypeAndUnitLabels {
-				symbolTable.Reset()
-				nSamples, nExemplars, nHistograms, _, _ := populateV2TimeSeries(
-					&symbolTable,
-					batch,
-					pendingData,
-					false, // sendExemplars
-					false, // sendNativeHistograms
-					true,  // enableTypeAndUnitLabels
-				)
+			symbolTable.Reset()
+			nSamples, nExemplars, nHistograms, _, _ := populateV2TimeSeries(
+				&symbolTable,
+				batch,
+				pendingData,
+				false, // sendExemplars
+				false, // sendNativeHistograms
+				true,  // enableTypeAndUnitLabels
+			)
 
-				require.Equal(t, 1, nSamples, "Should have 1 sample")
-				require.Equal(t, 0, nExemplars, "Should have 0 exemplars")
-				require.Equal(t, 0, nHistograms, "Should have 0 histograms")
+			require.Equal(t, 1, nSamples, "Should have 1 sample")
+			require.Equal(t, 0, nExemplars, "Should have 0 exemplars")
+			require.Equal(t, 0, nHistograms, "Should have 0 histograms")
 
-				require.Equal(t, tc.expectedType, pendingData[0].Metadata.Type,
-					"Type should match expected for %s", tc.description)
+			require.Equal(t, tc.expectedType, pendingData[0].Metadata.Type,
+				"Type should match expected for %s", tc.description)
 
-				unitRef := pendingData[0].Metadata.UnitRef
+			unitRef := pendingData[0].Metadata.UnitRef
 
-				symbols := symbolTable.Symbols()
-				require.Equal(t, tc.unitLabel, symbols[unitRef], "Unit should match")
-			}
+			symbols := symbolTable.Symbols()
+			require.Equal(t, tc.unitLabel, symbols[unitRef], "Unit should match")
 		})
 	}
 }
