@@ -59,9 +59,8 @@ type Storage struct {
 	rws *WriteStorage
 
 	// For reads.
-	queryables              []storage.SampleAndChunkQueryable
-	localStartTimeCallback  startTimeCallback
-	EnableTypeAndUnitLabels bool
+	queryables             []storage.SampleAndChunkQueryable
+	localStartTimeCallback startTimeCallback
 }
 
 // NewStorage returns a remote.Storage.
