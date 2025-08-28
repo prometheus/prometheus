@@ -98,6 +98,16 @@ func DefaultOptions() *Options {
 
 // Options of the DB storage.
 type Options struct {
+	// staleSeriesCompactionInterval is same as below option with same name, but is atomic so that we can do live updates without locks.
+	// This is the one that must be used by the code.
+	staleSeriesCompactionInterval atomic.Int64
+	// staleSeriesCompactionThreshold is same as below option with same name, but is atomic so that we can do live updates without locks.
+	// This is the one that must be used by the code.
+	staleSeriesCompactionThreshold atomic.Float64
+	// staleSeriesImmediateCompactionThreshold is same as below option with same name, but is atomic so that we can do live updates without locks.
+	// This is the one that must be used by the code.
+	staleSeriesImmediateCompactionThreshold atomic.Float64
+
 	// Segments (wal files) max size.
 	// WALSegmentSize = 0, segment size is default size.
 	// WALSegmentSize > 0, segment size is WALSegmentSize.
@@ -222,6 +232,19 @@ type Options struct {
 
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
+
+	// StaleSeriesCompactionInterval tells at what interval to attempt stale series compaction
+	// if the number of stale series crosses the given threshold.
+	StaleSeriesCompactionInterval time.Duration
+
+	// StaleSeriesCompactionThreshold is a number between 0.0-1.0 indicating the % of stale series in
+	// the in-memory Head block. If the % of stale series crosses this threshold, stale series
+	// compaction will be run in the next stale series compaction interval.
+	StaleSeriesCompactionThreshold float64
+
+	// StaleSeriesImmediateCompactionThreshold is a number between 0.0-1.0 indicating the % of stale series in
+	// the in-memory Head block. If the % of stale series crosses this threshold, stale series is run immediately.
+	StaleSeriesImmediateCompactionThreshold float64
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -818,6 +841,11 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 		// configured maximum block duration.
 		rngs = ExponentialBlockRanges(opts.MinBlockDuration, 10, 3)
 	}
+
+	opts.staleSeriesCompactionInterval.Store(int64(opts.StaleSeriesCompactionInterval))
+	opts.staleSeriesCompactionThreshold.Store(opts.StaleSeriesCompactionThreshold)
+	opts.staleSeriesImmediateCompactionThreshold.Store(opts.StaleSeriesImmediateCompactionThreshold)
+
 	return opts, rngs
 }
 
@@ -1089,11 +1117,25 @@ func (db *DB) run(ctx context.Context) {
 
 	backoff := time.Duration(0)
 
+	staleSeriesCompactionInterval := time.Duration(db.opts.staleSeriesCompactionInterval.Load())
+	nextStaleSeriesCompactionTime := nextStepAlignedTime(staleSeriesCompactionInterval)
+	timedStaleSeriesCompactionActive := true
+	if staleSeriesCompactionInterval <= 0 {
+		// Far enough so that we don't schedule a stale series compaction.
+		timedStaleSeriesCompactionActive = false
+		nextStaleSeriesCompactionTime = time.Now().Add(365 * 24 * time.Hour)
+	}
+
 	for {
 		select {
 		case <-db.stopc:
 			return
 		case <-time.After(backoff):
+		}
+
+		staleSeriesWaitDur := time.Until(nextStaleSeriesCompactionTime)
+		if staleSeriesWaitDur < 0 {
+			staleSeriesWaitDur = 0
 		}
 
 		select {
@@ -1104,12 +1146,30 @@ func (db *DB) run(ctx context.Context) {
 			}
 			db.cmtx.Unlock()
 
+			// TODO: check if normal compaction is soon, and don't run stale series compaction if it is soon.
+			numStaleSeries, numSeries := db.Head().NumStaleSeries(), db.Head().NumSeries()
+			staleSeriesRatio := float64(numStaleSeries) / float64(numSeries)
+			if db.autoCompact && db.opts.staleSeriesImmediateCompactionThreshold.Load() > 0 &&
+				staleSeriesRatio >= db.opts.staleSeriesImmediateCompactionThreshold.Load() {
+				if err := db.CompactStaleHead(); err != nil {
+					db.logger.Error("immediate stale series compaction failed", "err", err)
+				}
+			}
+
 			select {
 			case db.compactc <- struct{}{}:
 			default:
 			}
 			// We attempt mmapping of head chunks regularly.
 			db.head.mmapHeadChunks()
+
+			staleSeriesCompactionInterval := time.Duration(db.opts.staleSeriesCompactionInterval.Load())
+			if !timedStaleSeriesCompactionActive && staleSeriesCompactionInterval > 0 {
+				// The config was updated in realtime.
+				timedStaleSeriesCompactionActive = true
+				nextStaleSeriesCompactionTime = nextStepAlignedTime(staleSeriesCompactionInterval)
+			}
+
 		case <-db.compactc:
 			db.metrics.compactionsTriggered.Inc()
 
@@ -1125,10 +1185,40 @@ func (db *DB) run(ctx context.Context) {
 				db.metrics.compactionsSkipped.Inc()
 			}
 			db.autoCompactMtx.Unlock()
+		case <-time.After(staleSeriesWaitDur):
+			staleSeriesCompactionInterval := time.Duration(db.opts.staleSeriesCompactionInterval.Load())
+			if staleSeriesCompactionInterval <= 0 {
+				// The config was updated in realtime.
+				// Far enough so that we don't schedule a stale series compaction.
+				timedStaleSeriesCompactionActive = false
+				nextStaleSeriesCompactionTime = time.Now().Add(365 * 24 * time.Hour)
+				continue
+			}
+
+			// TODO: check if normal compaction is soon, and don't run stale series compaction if it is soon.
+			numStaleSeries, numSeries := db.Head().NumStaleSeries(), db.Head().NumSeries()
+			staleSeriesRatio := float64(numStaleSeries) / float64(numSeries)
+			if db.autoCompact && db.opts.staleSeriesCompactionThreshold.Load() > 0 &&
+				staleSeriesRatio >= db.opts.staleSeriesCompactionThreshold.Load() {
+				if err := db.CompactStaleHead(); err != nil {
+					db.logger.Error("scheduled stale series compaction failed", "err", err)
+				}
+			}
+
+			nextStaleSeriesCompactionTime = nextStepAlignedTime(db.opts.StaleSeriesCompactionInterval)
+
 		case <-db.stopc:
 			return
 		}
 	}
+}
+
+func nextStepAlignedTime(step time.Duration) (next time.Time) {
+	next = time.Now().Round(step)
+	if next.Before(time.Now()) {
+		next = next.Add(step)
+	}
+	return
 }
 
 // Appender opens a new appender against the database.
@@ -1157,6 +1247,13 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	oooTimeWindow := int64(0)
 	if conf.StorageConfig.TSDBConfig != nil {
 		oooTimeWindow = conf.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
+		db.opts.staleSeriesCompactionInterval.Store(int64(conf.StorageConfig.TSDBConfig.StaleSeriesCompactionInterval))
+		db.opts.staleSeriesCompactionThreshold.Store(conf.StorageConfig.TSDBConfig.StaleSeriesCompactionThreshold)
+		db.opts.staleSeriesImmediateCompactionThreshold.Store(conf.StorageConfig.TSDBConfig.StaleSeriesImmediateCompactionThreshold)
+	} else {
+		db.opts.staleSeriesCompactionInterval.Store(0)
+		db.opts.staleSeriesCompactionThreshold.Store(0)
+		db.opts.staleSeriesImmediateCompactionThreshold.Store(0)
 	}
 	if oooTimeWindow < 0 {
 		oooTimeWindow = 0
@@ -1485,6 +1582,51 @@ func (db *DB) compactHead(head *RangeHead) error {
 
 	db.head.RebuildSymbolTable(db.logger)
 
+	return nil
+}
+
+// CompactStaleHead compacts all the stale series that do no have out-of-order data into persistent blocks.
+// If a stale series has out-of-order data, it is not possible to tell if the series stopped getting any data completely.
+func (db *DB) CompactStaleHead() error {
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+
+	db.logger.Info("Starting stale series compaction")
+
+	staleSeriesRefs, err := db.head.SortedStaleSeriesRefsNoOOOData(context.Background())
+	if err != nil {
+		return err
+	}
+	meta := &BlockMeta{}
+	meta.Compaction.SetStaleSeries()
+	mint, maxt := db.head.opts.ChunkRange*(db.head.MinTime()/db.head.opts.ChunkRange), db.head.MaxTime()
+	for ; mint < maxt; mint += db.head.chunkRange.Load() {
+		staleHead := NewStaleHead(db.Head(), mint, mint+db.head.chunkRange.Load()-1, staleSeriesRefs)
+
+		uids, err := db.compactor.Write(db.dir, staleHead, staleHead.MinTime(), staleHead.BlockMaxTime(), meta)
+		if err != nil {
+			return fmt.Errorf("persist stale head: %w", err)
+		}
+
+		db.logger.Info("Stale series block created", "ulids", fmt.Sprintf("%v", uids), "min_time", mint, "max_time", maxt)
+
+		if err := db.reloadBlocks(); err != nil {
+			multiErr := tsdb_errors.NewMulti(fmt.Errorf("reloadBlocks blocks: %w", err))
+			for _, uid := range uids {
+				if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
+					multiErr.Add(fmt.Errorf("delete persisted stale head block after failed db reloadBlocks:%s: %w", uid, errRemoveAll))
+				}
+			}
+			return multiErr.Err()
+		}
+	}
+
+	if err := db.head.truncateStaleSeries(staleSeriesRefs, maxt); err != nil {
+		return fmt.Errorf("head truncate: %w", err)
+	}
+	db.head.RebuildSymbolTable(db.logger)
+
+	db.logger.Info("Ending stale series compaction")
 	return nil
 }
 
@@ -1945,7 +2087,7 @@ func (db *DB) inOrderBlocksMaxTime() (maxt int64, ok bool) {
 	maxt, ok = int64(math.MinInt64), false
 	// If blocks are overlapping, last block might not have the max time. So check all blocks.
 	for _, b := range db.Blocks() {
-		if !b.meta.Compaction.FromOutOfOrder() && b.meta.MaxTime > maxt {
+		if !b.meta.Compaction.FromOutOfOrder() && !b.meta.Compaction.FromStaleSeries() && b.meta.MaxTime > maxt {
 			ok = true
 			maxt = b.meta.MaxTime
 		}
