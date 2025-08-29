@@ -64,7 +64,7 @@ type Storage struct {
 }
 
 // NewStorage returns a remote.Storage.
-func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager) *Storage {
+func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels bool) *Storage {
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
@@ -76,7 +76,7 @@ func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeC
 		deduper:                deduper,
 		localStartTimeCallback: stCallback,
 	}
-	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm)
+	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm, enableTypeAndUnitLabels)
 	return s
 }
 
