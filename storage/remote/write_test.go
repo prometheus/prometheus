@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -117,7 +118,7 @@ func TestWriteStorageApplyConfig_NoDuplicateWriteConfigs(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil)
+			s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false)
 			conf := &config.Config{
 				GlobalConfig:       config.DefaultGlobalConfig,
 				RemoteWriteConfigs: tc.cfgs,
@@ -143,7 +144,7 @@ func TestWriteStorageApplyConfig_RestartOnNameChange(t *testing.T) {
 	hash, err := toHash(cfg)
 	require.NoError(t, err)
 
-	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil)
+	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false)
 
 	conf := &config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
@@ -165,7 +166,7 @@ func TestWriteStorageApplyConfig_RestartOnNameChange(t *testing.T) {
 func TestWriteStorageApplyConfig_UpdateWithRegisterer(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil, false)
 	c1 := &config.RemoteWriteConfig{
 		Name: "named",
 		URL: &common_config.URL{
@@ -206,7 +207,7 @@ func TestWriteStorageApplyConfig_UpdateWithRegisterer(t *testing.T) {
 func TestWriteStorageApplyConfig_Lifecycle(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -222,7 +223,7 @@ func TestWriteStorageApplyConfig_Lifecycle(t *testing.T) {
 func TestWriteStorageApplyConfig_UpdateExternalLabels(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil, false)
 
 	externalLabels := labels.FromStrings("external", "true")
 	conf := &config.Config{
@@ -250,7 +251,7 @@ func TestWriteStorageApplyConfig_UpdateExternalLabels(t *testing.T) {
 func TestWriteStorageApplyConfig_Idempotent(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false)
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -274,14 +275,15 @@ func TestWriteStorageApplyConfig_Idempotent(t *testing.T) {
 func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false)
 
 	c0 := &config.RemoteWriteConfig{
 		RemoteTimeout: model.Duration(10 * time.Second),
 		QueueConfig:   config.DefaultQueueConfig,
 		WriteRelabelConfigs: []*relabel.Config{
 			{
-				Regex: relabel.MustNewRegexp(".+"),
+				Regex:                relabel.MustNewRegexp(".+"),
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 		ProtobufMessage: config.RemoteWriteProtoMsgV1,
@@ -328,7 +330,10 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 
 	storeHashes()
 	// Update c0 and c2.
-	c0.WriteRelabelConfigs[0] = &relabel.Config{Regex: relabel.MustNewRegexp("foo")}
+	c0.WriteRelabelConfigs[0] = &relabel.Config{
+		Regex:                relabel.MustNewRegexp("foo"),
+		NameValidationScheme: model.UTF8Validation,
+	}
 	c2.RemoteTimeout = model.Duration(50 * time.Second)
 	conf = &config.Config{
 		GlobalConfig:       config.GlobalConfig{},
@@ -392,7 +397,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 		{
 			name: "NoTranslation/NoTypeAndUnitLabels",
 			otlpCfg: config.OTLPConfig{
-				TranslationStrategy: config.NoTranslation,
+				TranslationStrategy: otlptranslator.NoTranslation,
 			},
 			expectedSamples: []mockSample{
 				{
@@ -418,7 +423,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 		{
 			name: "NoTranslation/WithTypeAndUnitLabels",
 			otlpCfg: config.OTLPConfig{
-				TranslationStrategy: config.NoTranslation,
+				TranslationStrategy: otlptranslator.NoTranslation,
 			},
 			typeAndUnitLabels: true,
 			expectedSamples: []mockSample{
@@ -447,7 +452,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 		{
 			name: "UnderscoreEscapingWithSuffixes/NoTypeAndUnitLabels",
 			otlpCfg: config.OTLPConfig{
-				TranslationStrategy: config.UnderscoreEscapingWithSuffixes,
+				TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
 			},
 			expectedSamples: []mockSample{
 				{
@@ -473,7 +478,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 		{
 			name: "UnderscoreEscapingWithoutSuffixes",
 			otlpCfg: config.OTLPConfig{
-				TranslationStrategy: config.UnderscoreEscapingWithoutSuffixes,
+				TranslationStrategy: otlptranslator.UnderscoreEscapingWithoutSuffixes,
 			},
 			expectedSamples: []mockSample{
 				{
@@ -499,7 +504,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 		{
 			name: "UnderscoreEscapingWithSuffixes/WithTypeAndUnitLabels",
 			otlpCfg: config.OTLPConfig{
-				TranslationStrategy: config.UnderscoreEscapingWithSuffixes,
+				TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
 			},
 			typeAndUnitLabels: true,
 			expectedSamples: []mockSample{
@@ -528,7 +533,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 		{
 			name: "NoUTF8EscapingWithSuffixes/NoTypeAndUnitLabels",
 			otlpCfg: config.OTLPConfig{
-				TranslationStrategy: config.NoUTF8EscapingWithSuffixes,
+				TranslationStrategy: otlptranslator.NoUTF8EscapingWithSuffixes,
 			},
 			expectedSamples: []mockSample{
 				{
@@ -554,7 +559,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 		{
 			name: "NoUTF8EscapingWithSuffixes/WithTypeAndUnitLabels",
 			otlpCfg: config.OTLPConfig{
-				TranslationStrategy: config.NoUTF8EscapingWithSuffixes,
+				TranslationStrategy: otlptranslator.NoUTF8EscapingWithSuffixes,
 			},
 			typeAndUnitLabels: true,
 			expectedSamples: []mockSample{
@@ -757,7 +762,7 @@ func TestOTLPDelta(t *testing.T) {
 		{t: milli(1), l: ls, v: 1}, // +1
 		{t: milli(2), l: ls, v: 3}, // +2
 	}
-	if diff := cmp.Diff(want, appendable.samples, cmp.Exporter(func(_ reflect.Type) bool { return true })); diff != "" {
+	if diff := cmp.Diff(want, appendable.samples, cmp.Exporter(func(reflect.Type) bool { return true })); diff != "" {
 		t.Fatal(diff)
 	}
 }
@@ -1077,7 +1082,7 @@ func TestWriteStorage_CanRegisterMetricsAfterClosing(t *testing.T) {
 	dir := t.TempDir()
 	reg := prometheus.NewPedanticRegistry()
 
-	s := NewWriteStorage(nil, reg, dir, time.Millisecond, nil)
+	s := NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false)
 	require.NoError(t, s.Close())
-	require.NotPanics(t, func() { NewWriteStorage(nil, reg, dir, time.Millisecond, nil) })
+	require.NotPanics(t, func() { NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false) })
 }

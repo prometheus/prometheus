@@ -347,10 +347,10 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	}
 	h.SetReady(NotReady)
 
-	factorySPr := func(_ context.Context) api_v1.ScrapePoolsRetriever { return h.scrapeManager }
-	factoryTr := func(_ context.Context) api_v1.TargetRetriever { return h.scrapeManager }
-	factoryAr := func(_ context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
-	FactoryRr := func(_ context.Context) api_v1.RulesRetriever { return h.ruleManager }
+	factorySPr := func(context.Context) api_v1.ScrapePoolsRetriever { return h.scrapeManager }
+	factoryTr := func(context.Context) api_v1.TargetRetriever { return h.scrapeManager }
+	factoryAr := func(context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
+	FactoryRr := func(context.Context) api_v1.RulesRetriever { return h.ruleManager }
 
 	var app storage.Appendable
 	if o.EnableRemoteWriteReceiver || o.EnableOTLPWriteReceiver {
@@ -395,6 +395,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.CTZeroIngestionEnabled,
 		o.LookbackDelta,
 		o.EnableTypeAndUnitLabels,
+		nil,
 	)
 
 	if o.RoutePrefix != "/" {

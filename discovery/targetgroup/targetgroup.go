@@ -37,7 +37,7 @@ func (tg Group) String() string {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (tg *Group) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (tg *Group) UnmarshalYAML(unmarshal func(any) error) error {
 	g := struct {
 		Targets []string       `yaml:"targets"`
 		Labels  model.LabelSet `yaml:"labels"`
@@ -56,7 +56,7 @@ func (tg *Group) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 // MarshalYAML implements the yaml.Marshaler interface.
-func (tg Group) MarshalYAML() (interface{}, error) {
+func (tg Group) MarshalYAML() (any, error) {
 	g := &struct {
 		Targets []string       `yaml:"targets"`
 		Labels  model.LabelSet `yaml:"labels,omitempty"`

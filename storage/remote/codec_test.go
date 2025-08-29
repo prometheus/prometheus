@@ -537,7 +537,7 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 	require.Equal(t, expected, fh)
 
 	// Keep calling Next() until the end.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		require.Equal(t, chunkenc.ValHistogram, it.Next())
 	}
 
@@ -719,9 +719,9 @@ func (c *mockChunkSeriesSet) At() storage.ChunkSeries {
 	}
 }
 
-func (c *mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
+func (*mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
-func (c *mockChunkSeriesSet) Err() error {
+func (*mockChunkSeriesSet) Err() error {
 	return nil
 }
 
@@ -748,7 +748,7 @@ func (c *mockChunkIterator) Next() bool {
 	return c.index < len(c.chunks)
 }
 
-func (c *mockChunkIterator) Err() error {
+func (*mockChunkIterator) Err() error {
 	return nil
 }
 
@@ -986,7 +986,7 @@ func TestChunkedSeriesSet(t *testing.T) {
 // mockFlusher implements http.Flusher.
 type mockFlusher struct{}
 
-func (f *mockFlusher) Flush() {}
+func (*mockFlusher) Flush() {}
 
 type oneShotCloser struct {
 	r      io.Reader
@@ -1025,7 +1025,7 @@ func buildTestChunks(t *testing.T) []prompb.Chunk {
 
 	time := startTime
 
-	for i := 0; i < numTestChunks; i++ {
+	for i := range numTestChunks {
 		c := chunkenc.NewXORChunk()
 
 		a, err := c.Appender()
@@ -1033,7 +1033,7 @@ func buildTestChunks(t *testing.T) []prompb.Chunk {
 
 		minTimeMs := time
 
-		for j := 0; j < numSamplesPerTestChunk; j++ {
+		for j := range numSamplesPerTestChunk {
 			a.Append(time, float64(i+j))
 			time += int64(1000)
 		}

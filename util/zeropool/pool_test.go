@@ -51,7 +51,7 @@ func TestPool(t *testing.T) {
 		var counter atomic.Int64
 
 		do := make(chan struct{}, 1e6)
-		for i := 0; i < iterations; i++ {
+		for range int(iterations) {
 			do <- struct{}{}
 		}
 		close(do)
@@ -59,7 +59,7 @@ func TestPool(t *testing.T) {
 		run := make(chan struct{})
 		done := sync.WaitGroup{}
 		done.Add(concurrency)
-		for i := 0; i < concurrency; i++ {
+		for i := range concurrency {
 			go func(worker int) {
 				<-run
 				for range do {

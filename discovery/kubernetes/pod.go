@@ -71,15 +71,15 @@ func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace cac
 		queue:                 workqueue.NewNamed(RolePod.String()),
 	}
 	_, err := p.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(o interface{}) {
+		AddFunc: func(o any) {
 			podAddCount.Inc()
 			p.enqueue(o)
 		},
-		DeleteFunc: func(o interface{}) {
+		DeleteFunc: func(o any) {
 			podDeleteCount.Inc()
 			p.enqueue(o)
 		},
-		UpdateFunc: func(_, o interface{}) {
+		UpdateFunc: func(_, o any) {
 			podUpdateCount.Inc()
 			p.enqueue(o)
 		},
@@ -90,15 +90,15 @@ func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace cac
 
 	if p.withNodeMetadata {
 		_, err = p.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(o interface{}) {
+			AddFunc: func(o any) {
 				node := o.(*apiv1.Node)
 				p.enqueuePodsForNode(node.Name)
 			},
-			UpdateFunc: func(_, o interface{}) {
+			UpdateFunc: func(_, o any) {
 				node := o.(*apiv1.Node)
 				p.enqueuePodsForNode(node.Name)
 			},
-			DeleteFunc: func(o interface{}) {
+			DeleteFunc: func(o any) {
 				nodeName, err := nodeName(o)
 				if err != nil {
 					l.Error("Error getting Node name", "err", err)
@@ -113,7 +113,7 @@ func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace cac
 
 	if p.withNamespaceMetadata {
 		_, err = p.namespaceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			UpdateFunc: func(_, o interface{}) {
+			UpdateFunc: func(_, o any) {
 				namespace := o.(*apiv1.Namespace)
 				p.enqueuePodsForNamespace(namespace.Name)
 			},
@@ -128,7 +128,7 @@ func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace cac
 	return p
 }
 
-func (p *Pod) enqueue(obj interface{}) {
+func (p *Pod) enqueue(obj any) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		return
@@ -195,7 +195,7 @@ func (p *Pod) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool 
 	return true
 }
 
-func convertToPod(o interface{}) (*apiv1.Pod, error) {
+func convertToPod(o any) (*apiv1.Pod, error) {
 	pod, ok := o.(*apiv1.Pod)
 	if ok {
 		return pod, nil
@@ -258,7 +258,7 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 	return ls
 }
 
-func (p *Pod) findPodContainerStatus(statuses *[]apiv1.ContainerStatus, containerName string) (*apiv1.ContainerStatus, error) {
+func (*Pod) findPodContainerStatus(statuses *[]apiv1.ContainerStatus, containerName string) (*apiv1.ContainerStatus, error) {
 	for _, s := range *statuses {
 		if s.Name == containerName {
 			return &s, nil

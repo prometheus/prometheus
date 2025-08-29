@@ -146,11 +146,11 @@ func (m *MetricStreamingDecoder) resetMetric() {
 	}
 }
 
-func (m *MetricStreamingDecoder) GetMetric() {
+func (*MetricStreamingDecoder) GetMetric() {
 	panic("don't use GetMetric, use Metric directly")
 }
 
-func (m *MetricStreamingDecoder) GetLabel() {
+func (*MetricStreamingDecoder) GetLabel() {
 	panic("don't use GetLabel, use Label instead")
 }
 
@@ -177,6 +177,7 @@ func (m *MetricStreamingDecoder) Label(b scratchBuilder) error {
 // via UnsafeAddBytes method to reuse strings.
 func parseLabel(dAtA []byte, b scratchBuilder) error {
 	var name, value []byte
+	var unsafeName string
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -236,8 +237,9 @@ func parseLabel(dAtA []byte, b scratchBuilder) error {
 				return io.ErrUnexpectedEOF
 			}
 			name = dAtA[iNdEx:postIndex]
-			if !model.LabelName(name).IsValid() {
-				return fmt.Errorf("invalid label name: %s", name)
+			unsafeName = yoloString(name)
+			if !model.UTF8Validation.IsValidLabelName(unsafeName) {
+				return fmt.Errorf("invalid label name: %s", unsafeName)
 			}
 			iNdEx = postIndex
 		case 2:

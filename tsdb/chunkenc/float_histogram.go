@@ -58,7 +58,7 @@ type xorValue struct {
 }
 
 // Encoding returns the encoding type.
-func (c *FloatHistogramChunk) Encoding() Encoding {
+func (*FloatHistogramChunk) Encoding() Encoding {
 	return EncFloatHistogram
 }
 
@@ -70,21 +70,6 @@ func (c *FloatHistogramChunk) Bytes() []byte {
 // NumSamples returns the number of samples in the chunk.
 func (c *FloatHistogramChunk) NumSamples() int {
 	return int(binary.BigEndian.Uint16(c.Bytes()))
-}
-
-// Layout returns the histogram layout. Only call this on chunks that have at
-// least one sample.
-func (c *FloatHistogramChunk) Layout() (
-	schema int32, zeroThreshold float64,
-	negativeSpans, positiveSpans []histogram.Span,
-	customValues []float64,
-	err error,
-) {
-	if c.NumSamples() == 0 {
-		panic("FloatHistogramChunk.Layout() called on an empty chunk")
-	}
-	b := newBReader(c.Bytes()[2:])
-	return readHistogramChunkLayout(&b)
 }
 
 // GetCounterResetHeader returns the info about the first 2 bits of the chunk
@@ -104,6 +89,9 @@ func (c *FloatHistogramChunk) Compact() {
 
 // Appender implements the Chunk interface.
 func (c *FloatHistogramChunk) Appender() (Appender, error) {
+	if len(c.b.stream) == 3 { // Avoid allocating an Iterator when chunk is empty.
+		return &FloatHistogramAppender{b: &c.b, t: math.MinInt64, sum: xorValue{leading: 0xff}, cnt: xorValue{leading: 0xff}, zCnt: xorValue{leading: 0xff}}, nil
+	}
 	it := c.iterator(nil)
 
 	// To get an appender, we must know the state it would have if we had
@@ -147,11 +135,6 @@ func (c *FloatHistogramChunk) Appender() (Appender, error) {
 		pBuckets:     pBuckets,
 		nBuckets:     nBuckets,
 		sum:          it.sum,
-	}
-	if it.numTotal == 0 {
-		a.sum.leading = 0xff
-		a.cnt.leading = 0xff
-		a.zCnt.leading = 0xff
 	}
 	return a, nil
 }
@@ -215,7 +198,7 @@ func (a *FloatHistogramAppender) NumSamples() int {
 
 // Append implements Appender. This implementation panics because normal float
 // samples must never be appended to a histogram chunk.
-func (a *FloatHistogramAppender) Append(int64, float64) {
+func (*FloatHistogramAppender) Append(int64, float64) {
 	panic("appended a float sample to a histogram chunk")
 }
 
@@ -568,7 +551,7 @@ func (a *FloatHistogramAppender) appendFloatHistogram(t int64, h *histogram.Floa
 		numPBuckets, numNBuckets := countSpans(h.PositiveSpans), countSpans(h.NegativeSpans)
 		if numPBuckets > 0 {
 			a.pBuckets = make([]xorValue, numPBuckets)
-			for i := 0; i < numPBuckets; i++ {
+			for i := range numPBuckets {
 				a.pBuckets[i] = xorValue{
 					value:   h.PositiveBuckets[i],
 					leading: 0xff,
@@ -579,7 +562,7 @@ func (a *FloatHistogramAppender) appendFloatHistogram(t int64, h *histogram.Floa
 		}
 		if numNBuckets > 0 {
 			a.nBuckets = make([]xorValue, numNBuckets)
-			for i := 0; i < numNBuckets; i++ {
+			for i := range numNBuckets {
 				a.nBuckets[i] = xorValue{
 					value:   h.NegativeBuckets[i],
 					leading: 0xff,
@@ -688,7 +671,7 @@ func (a *FloatHistogramAppender) recode(
 
 // recodeHistogram converts the current histogram (in-place) to accommodate an expansion of the set of
 // (positive and/or negative) buckets used.
-func (a *FloatHistogramAppender) recodeHistogram(
+func (*FloatHistogramAppender) recodeHistogram(
 	fh *histogram.FloatHistogram,
 	pBackwardInter, nBackwardInter []Insert,
 ) {
@@ -702,7 +685,7 @@ func (a *FloatHistogramAppender) recodeHistogram(
 	}
 }
 
-func (a *FloatHistogramAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
+func (*FloatHistogramAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float histogram chunk")
 }
 
@@ -872,11 +855,11 @@ func (it *floatHistogramIterator) Seek(t int64) ValueType {
 	return ValFloatHistogram
 }
 
-func (it *floatHistogramIterator) At() (int64, float64) {
+func (*floatHistogramIterator) At() (int64, float64) {
 	panic("cannot call floatHistogramIterator.At")
 }
 
-func (it *floatHistogramIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+func (*floatHistogramIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	panic("cannot call floatHistogramIterator.AtHistogram")
 }
 

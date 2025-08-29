@@ -109,7 +109,7 @@ func TestAlertingRuleTemplateWithHistogram(t *testing.T) {
 		NegativeBuckets: []float64{-2, 2, 2, 7, 5, 5, 2},
 	}
 
-	q := func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) {
+	q := func(context.Context, string, time.Time) (promql.Vector, error) {
 		return []promql.Sample{{H: &h}}, nil
 	}
 
@@ -678,7 +678,7 @@ func TestQueryForStateSeries(t *testing.T) {
 	tests := []testInput{
 		// Test for empty series.
 		{
-			selectMockFunction: func(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+			selectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 				return storage.EmptySeriesSet()
 			},
 			expectedSeries: nil,
@@ -686,7 +686,7 @@ func TestQueryForStateSeries(t *testing.T) {
 		},
 		// Test for error series.
 		{
-			selectMockFunction: func(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+			selectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 				return storage.ErrSeriesSet(testError)
 			},
 			expectedSeries: nil,
@@ -694,7 +694,7 @@ func TestQueryForStateSeries(t *testing.T) {
 		},
 		// Test for mock series.
 		{
-			selectMockFunction: func(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+			selectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 				return storage.TestSeriesSet(storage.MockSeries(
 					[]int64{1, 2, 3},
 					[]float64{1, 2, 3},
@@ -771,15 +771,16 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 		QueueCapacity: 1,
 		RelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{"a1"},
-				Regex:        relabel.MustNewRegexp("(.+)"),
-				TargetLabel:  "a1",
-				Replacement:  "bug",
-				Action:       "replace",
+				SourceLabels:         model.LabelNames{"a1"},
+				Regex:                relabel.MustNewRegexp("(.+)"),
+				TargetLabel:          "a1",
+				Replacement:          "bug",
+				Action:               "replace",
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 	}
-	nm := notifier.NewManager(&opts, promslog.NewNopLogger())
+	nm := notifier.NewManager(&opts, model.UTF8Validation, promslog.NewNopLogger())
 
 	f := SendAlerts(nm, "")
 	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {

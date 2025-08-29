@@ -89,7 +89,7 @@ func (s stepStat) String() string {
 
 // MarshalJSON implements json.Marshaler.
 func (s stepStat) MarshalJSON() ([]byte, error) {
-	return json.Marshal([...]interface{}{float64(s.T) / 1000, s.V})
+	return json.Marshal([...]any{float64(s.T) / 1000, s.V})
 }
 
 // queryTimings with all query timers mapped to durations.
@@ -323,7 +323,7 @@ func NewQuerySamples(enablePerStepStats bool) *QuerySamples {
 	return &qs
 }
 
-func (qs *QuerySamples) NewChild() *QuerySamples {
+func (*QuerySamples) NewChild() *QuerySamples {
 	return NewQuerySamples(false)
 }
 

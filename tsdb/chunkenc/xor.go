@@ -71,7 +71,7 @@ func (c *XORChunk) Reset(stream []byte) {
 }
 
 // Encoding returns the encoding type.
-func (c *XORChunk) Encoding() Encoding {
+func (*XORChunk) Encoding() Encoding {
 	return EncXOR
 }
 
@@ -98,6 +98,9 @@ func (c *XORChunk) Compact() {
 // It is not valid to call Appender() multiple times concurrently or to use multiple
 // Appenders on the same chunk.
 func (c *XORChunk) Appender() (Appender, error) {
+	if len(c.b.stream) == 2 { // Avoid allocating an Iterator when chunk is empty.
+		return &xorAppender{b: &c.b, t: math.MinInt64, leading: 0xff}, nil
+	}
 	it := c.iterator(nil)
 
 	// To get an appender we must know the state it would have if we had
@@ -116,9 +119,6 @@ func (c *XORChunk) Appender() (Appender, error) {
 		tDelta:   it.tDelta,
 		leading:  it.leading,
 		trailing: it.trailing,
-	}
-	if it.numTotal == 0 {
-		a.leading = 0xff
 	}
 	return a, nil
 }
@@ -223,11 +223,11 @@ func (a *xorAppender) writeVDelta(v float64) {
 	xorWrite(a.b, v, a.v, &a.leading, &a.trailing)
 }
 
-func (a *xorAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
+func (*xorAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float chunk")
 }
 
-func (a *xorAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
+func (*xorAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a float histogram sample to a float chunk")
 }
 
@@ -263,11 +263,11 @@ func (it *xorIterator) At() (int64, float64) {
 	return it.t, it.val
 }
 
-func (it *xorIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+func (*xorIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	panic("cannot call xorIterator.AtHistogram")
 }
 
-func (it *xorIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+func (*xorIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	panic("cannot call xorIterator.AtFloatHistogram")
 }
 
@@ -330,7 +330,7 @@ func (it *xorIterator) Next() ValueType {
 
 	var d byte
 	// read delta-of-delta
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		d <<= 1
 		bit, err := it.br.readBitFast()
 		if err != nil {

@@ -105,7 +105,7 @@ func (e *Call) Pretty(level int) string {
 	return s
 }
 
-func (e *EvalStmt) Pretty(_ int) string {
+func (e *EvalStmt) Pretty(int) string {
 	return "EVAL " + e.Expr.String()
 }
 

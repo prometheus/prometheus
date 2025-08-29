@@ -93,7 +93,7 @@ func TestTargetGroupJSONMarshal(t *testing.T) {
 }
 
 func TestTargetGroupYamlMarshal(t *testing.T) {
-	marshal := func(g interface{}) []byte {
+	marshal := func(g any) []byte {
 		d, err := yaml.Marshal(g)
 		if err != nil {
 			panic(err)
@@ -134,8 +134,8 @@ func TestTargetGroupYamlMarshal(t *testing.T) {
 }
 
 func TestTargetGroupYamlUnmarshal(t *testing.T) {
-	unmarshal := func(d []byte) func(interface{}) error {
-		return func(o interface{}) error {
+	unmarshal := func(d []byte) func(any) error {
+		return func(o any) error {
 			return yaml.Unmarshal(d, o)
 		}
 	}

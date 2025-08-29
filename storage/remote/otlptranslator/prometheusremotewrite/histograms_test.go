@@ -399,7 +399,7 @@ func BenchmarkConvertBucketLayout(b *testing.B) {
 	for _, scenario := range scenarios {
 		buckets := pmetric.NewExponentialHistogramDataPointBuckets()
 		buckets.SetOffset(0)
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			if i%(scenario.gap+1) == 0 {
 				buckets.BucketCounts().Append(10)
 			} else {
@@ -847,15 +847,16 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			namer := otlptranslator.MetricNamer{
 				WithMetricSuffixes: true,
 			}
+			name, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
+			require.NoError(t, err)
 			annots, err := converter.addExponentialHistogramDataPoints(
 				context.Background(),
 				metric.ExponentialHistogram().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					ExportCreatedMetric:  true,
 					PromoteScopeMetadata: tt.promoteScope,
 				},
-				prompb.MetricMetadata{MetricFamilyName: namer.Build(TranslatorMetricFromOtelMetric(metric))},
+				prompb.MetricMetadata{MetricFamilyName: name},
 				pmetric.AggregationTemporalityCumulative,
 				tt.scope,
 			)
@@ -986,7 +987,7 @@ func BenchmarkConvertHistogramBucketsToNHCBLayout(b *testing.B) {
 
 	for _, scenario := range scenarios {
 		var buckets []uint64
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			if i%(scenario.gap+1) == 0 {
 				buckets = append(buckets, uint64(10))
 			} else {
@@ -1303,16 +1304,17 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			namer := otlptranslator.MetricNamer{
 				WithMetricSuffixes: true,
 			}
+			name, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
+			require.NoError(t, err)
 			annots, err := converter.addCustomBucketsHistogramDataPoints(
 				context.Background(),
 				metric.Histogram().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					ExportCreatedMetric:     true,
 					ConvertHistogramsToNHCB: true,
 					PromoteScopeMetadata:    tt.promoteScope,
 				},
-				prompb.MetricMetadata{MetricFamilyName: namer.Build(TranslatorMetricFromOtelMetric(metric))},
+				prompb.MetricMetadata{MetricFamilyName: name},
 				pmetric.AggregationTemporalityCumulative,
 				tt.scope,
 			)

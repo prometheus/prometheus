@@ -596,10 +596,7 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 		if alert.needsSending(ts, resendDelay) {
 			alert.LastSentAt = ts
 			// Allow for two Eval or Alertmanager send failures.
-			delta := resendDelay
-			if interval > resendDelay {
-				delta = interval
-			}
+			delta := max(interval, resendDelay)
 			alert.ValidUntil = ts.Add(4 * delta)
 			anew := *alert
 			// The notifier re-uses the labels slice, hence make a copy.

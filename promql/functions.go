@@ -230,10 +230,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 	// First iteration to find out two things:
 	// - What's the smallest relevant schema?
 	// - Are all data points histograms?
-	minSchema := prev.Schema
-	if last.Schema < minSchema {
-		minSchema = last.Schema
-	}
+	minSchema := min(last.Schema, prev.Schema)
 	for _, currPoint := range points[1 : len(points)-1] {
 		curr := currPoint.H
 		if curr == nil {
@@ -254,7 +251,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 	}
 
 	h := last.CopyToSchema(minSchema)
-	_, err := h.Sub(prev)
+	_, counterResetCollision, err := h.Sub(prev)
 	if err != nil {
 		if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 			return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
@@ -263,18 +260,25 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 		}
 	}
 
+	if counterResetCollision {
+		annos.Add(annotations.NewHistogramCounterResetCollisionWarning(pos, annotations.HistogramSub))
+	}
+
 	if isCounter {
 		// Second iteration to deal with counter resets.
 		for _, currPoint := range points[1:] {
 			curr := currPoint.H
 			if curr.DetectReset(prev) {
-				_, err := h.Add(prev)
+				_, counterResetCollision, err := h.Add(prev)
 				if err != nil {
 					if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 						return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
 					} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
 						return nil, annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, pos))
 					}
+				}
+				if counterResetCollision {
+					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(pos, annotations.HistogramAdd))
 				}
 			}
 			prev = curr
@@ -283,7 +287,6 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 		annos.Add(annotations.NewNativeHistogramNotGaugeWarning(metricName, pos))
 	}
 
-	h.CounterResetHint = histogram.GaugeType
 	return h.Compact(0), annos
 }
 
@@ -390,11 +393,14 @@ func instantValue(vals Matrix, args parser.Expressions, out Vector, isRate bool)
 			annos.Add(annotations.NewNativeHistogramNotGaugeWarning(metricName, args.PositionRange()))
 		}
 		if !isRate || !ss[1].H.DetectReset(ss[0].H) {
-			_, err := resultSample.H.Sub(ss[0].H)
+			_, counterResetCollision, err := resultSample.H.Sub(ss[0].H)
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				return out, annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, args.PositionRange()))
 			} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
 				return out, annos.Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, args.PositionRange()))
+			}
+			if counterResetCollision {
+				annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args.PositionRange(), annotations.HistogramSub))
 			}
 		}
 		resultSample.H.CounterResetHint = histogram.GaugeType
@@ -700,19 +706,26 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 	// the current implementation is accurate enough for practical purposes.
 	if len(firstSeries.Floats) == 0 {
 		// The passed values only contain histograms.
+		var annos annotations.Annotations
 		vec, err := aggrHistOverTime(matrixVal, enh, func(s Series) (*histogram.FloatHistogram, error) {
 			mean := s.Histograms[0].H.Copy()
 			for i, h := range s.Histograms[1:] {
 				count := float64(i + 2)
 				left := h.H.Copy().Div(count)
 				right := mean.Copy().Div(count)
-				toAdd, err := left.Sub(right)
+				toAdd, counterResetCollision, err := left.Sub(right)
 				if err != nil {
 					return mean, err
 				}
-				_, err = mean.Add(toAdd)
+				if counterResetCollision {
+					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramSub))
+				}
+				_, counterResetCollision, err = mean.Add(toAdd)
 				if err != nil {
 					return mean, err
+				}
+				if counterResetCollision {
+					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
 				}
 			}
 			return mean, nil
@@ -725,7 +738,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				return enh.Out, annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, args[0].PositionRange()))
 			}
 		}
-		return vec, nil
+		return vec, annos
 	}
 	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
 		var (
@@ -902,12 +915,16 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 	}
 	if len(firstSeries.Floats) == 0 {
 		// The passed values only contain histograms.
+		var annos annotations.Annotations
 		vec, err := aggrHistOverTime(matrixVal, enh, func(s Series) (*histogram.FloatHistogram, error) {
 			sum := s.Histograms[0].H.Copy()
 			for _, h := range s.Histograms[1:] {
-				_, err := sum.Add(h.H)
+				_, counterResetCollision, err := sum.Add(h.H)
 				if err != nil {
 					return sum, err
+				}
+				if counterResetCollision {
+					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
 				}
 			}
 			return sum, nil
@@ -920,7 +937,7 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				return enh.Out, annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, args[0].PositionRange()))
 			}
 		}
-		return vec, nil
+		return vec, annos
 	}
 	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
 		var sum, c float64
@@ -1018,7 +1035,7 @@ func funcAbsentOverTime(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNod
 
 // === present_over_time(Vector parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcPresentOverTime(_ []Vector, matrixVals Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return aggrOverTime(matrixVals, enh, func(_ Series) float64 {
+	return aggrOverTime(matrixVals, enh, func(Series) float64 {
 		return 1
 	}), nil
 }
@@ -1154,7 +1171,7 @@ func funcDeg(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeH
 }
 
 // === pi() Scalar ===
-func funcPi(_ []Vector, _ Matrix, _ parser.Expressions, _ *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcPi([]Vector, Matrix, parser.Expressions, *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return Vector{Sample{F: math.Pi}}, nil
 }
 
@@ -1463,7 +1480,11 @@ func funcHistogramQuantile(vectorVals []Vector, _ Matrix, args parser.Expression
 		if len(mb.buckets) > 0 {
 			res, forcedMonotonicity, _ := BucketQuantile(q, mb.buckets)
 			if forcedMonotonicity {
-				annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(mb.metric.Get(labels.MetricName), args[1].PositionRange()))
+				if enh.enableDelayedNameRemoval {
+					annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(mb.metric.Get(labels.MetricName), args[1].PositionRange()))
+				} else {
+					annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo("", args[1].PositionRange()))
+				}
 			}
 
 			if !enh.enableDelayedNameRemoval {
@@ -1584,7 +1605,7 @@ func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressio
 	if err != nil {
 		panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
 	}
-	if !model.LabelName(dst).IsValid() {
+	if !model.UTF8Validation.IsValidLabelName(dst) {
 		panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
 	}
 
@@ -1632,12 +1653,12 @@ func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions)
 	)
 	for i := 3; i < len(args); i++ {
 		src := stringFromArg(args[i])
-		if !model.LabelName(src).IsValid() {
+		if !model.UTF8Validation.IsValidLabelName(src) {
 			panic(fmt.Errorf("invalid source label name in label_join(): %s", src))
 		}
 		srcLabels[i-3] = src
 	}
-	if !model.LabelName(dst).IsValid() {
+	if !model.UTF8Validation.IsValidLabelName(dst) {
 		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
 
@@ -1869,11 +1890,11 @@ func (s vectorByValueHeap) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
-func (s *vectorByValueHeap) Push(x interface{}) {
+func (s *vectorByValueHeap) Push(x any) {
 	*s = append(*s, *(x.(*Sample)))
 }
 
-func (s *vectorByValueHeap) Pop() interface{} {
+func (s *vectorByValueHeap) Pop() any {
 	old := *s
 	n := len(old)
 	el := old[n-1]
@@ -1899,11 +1920,11 @@ func (s vectorByReverseValueHeap) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
-func (s *vectorByReverseValueHeap) Push(x interface{}) {
+func (s *vectorByReverseValueHeap) Push(x any) {
 	*s = append(*s, *(x.(*Sample)))
 }
 
-func (s *vectorByReverseValueHeap) Pop() interface{} {
+func (s *vectorByReverseValueHeap) Pop() any {
 	old := *s
 	n := len(old)
 	el := old[n-1]
@@ -1946,14 +1967,12 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 }
 
 func stringFromArg(e parser.Expr) string {
-	tmp := unwrapStepInvariantExpr(e) // Unwrap StepInvariant
-	unwrapParenExpr(&tmp)             // Optionally unwrap ParenExpr
-	return tmp.(*parser.StringLiteral).Val
+	return e.(*parser.StringLiteral).Val
 }
 
 func stringSliceFromArgs(args parser.Expressions) []string {
 	tmp := make([]string, len(args))
-	for i := 0; i < len(args); i++ {
+	for i := range args {
 		tmp[i] = stringFromArg(args[i])
 	}
 	return tmp

@@ -172,7 +172,7 @@ func (p *OpenMetricsParser) Series() ([]byte, *int64, float64) {
 
 // Histogram returns (nil, nil, nil, nil) for now because OpenMetrics does not
 // support sparse histograms yet.
-func (p *OpenMetricsParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
+func (*OpenMetricsParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
 	return nil, nil, nil, nil
 }
 
@@ -436,10 +436,7 @@ func (p *OpenMetricsParser) nextToken() token {
 }
 
 func (p *OpenMetricsParser) parseError(exp string, got token) error {
-	e := p.l.i + 1
-	if len(p.l.b) < e {
-		e = len(p.l.b)
-	}
+	e := min(len(p.l.b), p.l.i+1)
 	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
 }
 

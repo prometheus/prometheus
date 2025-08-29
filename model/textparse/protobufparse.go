@@ -36,7 +36,7 @@ import (
 
 // floatFormatBufPool is exclusively used in formatOpenMetricsFloat.
 var floatFormatBufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		// To contain at most 17 digits and additional syntax for a float64.
 		b := make([]byte, 0, 24)
 		return &b
@@ -299,7 +299,7 @@ func (p *ProtobufParser) Unit() ([]byte, []byte) {
 
 // Comment always returns nil because comments aren't supported by the protobuf
 // format.
-func (p *ProtobufParser) Comment() []byte {
+func (*ProtobufParser) Comment() []byte {
 	return nil
 }
 
@@ -428,7 +428,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		// We are at the beginning of a metric family. Put only the name
 		// into entryBytes and validate only name, help, and type for now.
 		name := p.dec.GetName()
-		if !model.IsValidMetricName(model.LabelValue(name)) {
+		if !model.UTF8Validation.IsValidMetricName(name) {
 			return EntryInvalid, fmt.Errorf("invalid metric name: %s", name)
 		}
 		if help := p.dec.GetHelp(); !utf8.ValidString(help) {
