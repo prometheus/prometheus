@@ -2354,7 +2354,7 @@ func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
 	require.Equal(t, 2, nUnexpected, "Should count 2 unexpected metadata")
 }
 
-func TestPopulateV2TimeSeries_typeAndUnitLabels(t *testing.T) {
+func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
 	symbolTable := writev2.NewSymbolTable()
 
 	testCases := []struct {
