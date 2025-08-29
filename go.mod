@@ -15,6 +15,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.31.12
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.16
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.254.1
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.65.0
 	github.com/aws/aws-sdk-go-v2/service/lightsail v1.49.1
 	github.com/aws/aws-sdk-go-v2/service/sts v1.38.6
 	github.com/aws/smithy-go v1.23.0
