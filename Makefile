@@ -196,3 +196,8 @@ update-all-go-deps:
 .PHONY: check-node-version
 check-node-version:
 	@./scripts/check-node-version.sh
+
+.PHONY: bump-go-version
+bump-go-version:
+	@echo ">> bumping Go minor version"
+	@./scripts/bump_go_version.sh
