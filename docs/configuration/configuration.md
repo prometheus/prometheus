@@ -366,6 +366,10 @@ dns_sd_configs:
 ec2_sd_configs:
   [ - <ec2_sd_config> ... ]
 
+# List of ECS service discovery configurations.
+ecs_sd_configs:
+  [ - <ecs_sd_config> ... ]
+
 # List of Eureka service discovery configurations.
 eureka_sd_configs:
   [ - <eureka_sd_config> ... ]
@@ -1232,6 +1236,89 @@ The [relabeling phase](#relabel_config) is the preferred and more powerful
 way to filter targets based on arbitrary labels. For users with thousands of
 instances it can be more efficient to use the EC2 API directly which has
 support for filtering instances.
+
+### `<ecs_sd_config>`
+
+ECS SD configurations allow retrieving scrape targets from AWS ECS
+containers. The private IP address is used by default, but may be changed to
+the public IP address with relabeling.
+
+The IAM credentials used must have the following permissions to discover
+scrape targets:
+
+- `ecs:ListClusters`
+- `ecs:DescribeClusters`
+- `ecs:ListServices`
+- `ecs:DescribeServices`
+- `ecs:ListTasks`
+- `ecs:DescribeTasks`
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_ecs_cluster`: the name of the ECS cluster
+* `__meta_ecs_cluster_arn`: the ARN of the ECS cluster
+* `__meta_ecs_service`: the name of the ECS service
+* `__meta_ecs_service_arn`: the ARN of the ECS service
+* `__meta_ecs_service_status`: the status of the ECS service
+* `__meta_ecs_task_group`: the ECS task group (typically service:service-name)
+* `__meta_ecs_task_arn`: the ARN of the ECS task
+* `__meta_ecs_task_definition`: the ARN of the ECS task definition
+* `__meta_ecs_ip_address`: the private IP address of the task
+* `__meta_ecs_launch_type`: the launch type of the task (EC2 or Fargate)
+* `__meta_ecs_desired_status`: the desired status of the task
+* `__meta_ecs_last_status`: the last known status of the task
+* `__meta_ecs_health_status`: the health status of the task
+* `__meta_ecs_platform_family`: the platform family (e.g., Linux, Windows)
+* `__meta_ecs_platform_version`: the platform version
+* `__meta_ecs_subnet_id`: the subnet ID where the task is running
+* `__meta_ecs_availability_zone`: the availability zone where the task is running
+* `__meta_ecs_region`: the AWS region
+* `__meta_ecs_tag_cluster_<tagkey>`: each cluster tag value, keyed by tag name
+* `__meta_ecs_tag_service_<tagkey>`: each service tag value, keyed by tag name
+* `__meta_ecs_tag_task_<tagkey>`: each task tag value, keyed by tag name
+
+See below for the configuration options for ECS discovery:
+
+```yaml
+# The information to access the ECS API.
+
+# The AWS region. If blank, the region from the instance metadata is used.
+[ region: <string> ]
+
+# Custom endpoint to be used.
+[ endpoint: <string> ]
+
+# The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
+# and `AWS_SECRET_ACCESS_KEY` are used.
+[ access_key: <string> ]
+[ secret_key: <secret> ]
+
+# Named AWS profile used to connect to the API.
+[ profile: <string> ]
+
+# AWS Role ARN, an alternative to using AWS API keys.
+[ role_arn: <string> ]
+
+# List of ECS cluster ARNs to discover. If empty, all clusters in the region are discovered.
+# This can significantly improve performance when you only need to monitor specific clusters.
+clusters:
+  [ - <string> ... ]
+
+# Refresh interval to re-read the task list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# The port to scrape metrics from. If the task exposes multiple ports,
+# you can use relabeling to choose which port to scrape.
+[ port: <int> | default = 80 ]
+
+# Maximum number of concurrent requests to the AWS ECS API.
+# Increase this value for better performance with large deployments, but be aware of AWS API rate limits.
+[ request_concurrency: <int> | default = 20 ]
+
+# HTTP client settings, including authentication methods (such as basic auth and
+# authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+[ <http_config> ]
+```
 
 ### `<openstack_sd_config>`
 
