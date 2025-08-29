@@ -255,42 +255,6 @@ func (f QueryableFunc) Querier(mint, maxt int64) (Querier, error) {
 	return f(mint, maxt)
 }
 
-type CombinedAppendOptions struct {
-	DiscardOutOfOrder bool
-
-	// AppendCTAsZero ensures that CT is appended as fake zero sample on all append methods.
-	AppendCTAsZero bool
-}
-
-// CombinedAppender provides batched appends against a storage.
-// It must be completed with a call to Commit or Rollback and must not be reused afterwards.
-//
-// Operations on the Appender interface are not goroutine-safe.
-//
-// The type of samples (float64, histogram, etc) appended for a given series must remain same within an Appender.
-// The behaviour is undefined if samples of different types are appended to the same series in a single Commit().
-type CombinedAppender interface {
-	// AppendSample appends a sample and related exemplars, metadata, and created timestamp to the storage.
-	AppendSample(ref SeriesRef, ls labels.Labels, meta metadata.Metadata, ct, t int64, v float64, es []exemplar.Exemplar) (SeriesRef, error)
-
-	// AppendHistogram appends a histogram and related exemplars, metadata, and created timestamp to the storage.
-	AppendHistogram(ref SeriesRef, ls labels.Labels, meta metadata.Metadata, ct, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram, es []exemplar.Exemplar) (SeriesRef, error)
-
-	// Commit submits the collected samples and purges the batch. If Commit
-	// returns a non-nil error, it also rolls back all modifications made in
-	// the appender so far, as Rollback would do. In any case, an Appender
-	// must not be used anymore after Commit has been called.
-	Commit() error
-
-	// Rollback rolls back all modifications made in the appender so far.
-	// Appender has to be discarded after rollback.
-	Rollback() error
-
-	// SetOptions configures the appender with specific append options such as
-	// discarding out-of-order samples even if out-of-order is enabled in the TSDB.
-	SetOptions(opts *CombinedAppendOptions)
-}
-
 type AppendOptions struct {
 	DiscardOutOfOrder bool
 }
@@ -302,8 +266,6 @@ type AppendOptions struct {
 //
 // The type of samples (float64, histogram, etc) appended for a given series must remain same within an Appender.
 // The behaviour is undefined if samples of different types are appended to the same series in a single Commit().
-//
-// DEPRECATED: Use CombinedAppender instead, this interface and TSDB support for it will be removed at one point.
 type Appender interface {
 	// Append adds a sample pair for the given series.
 	// An optional series reference can be provided to accelerate calls.
@@ -338,7 +300,7 @@ type Appender interface {
 // GetRef is an extra interface on Appenders used by downstream projects
 // (e.g. Cortex) to avoid maintaining a parallel set of references.
 type GetRef interface {
-	// GetRef returns reference number that can be used to pass to Appender.Append(),
+	// Returns reference number that can be used to pass to Appender.Append(),
 	// and a set of labels that will not cause another copy when passed to Appender.Append().
 	// 0 means the appender does not have a reference to this series.
 	// hash should be a hash of lset.
