@@ -26,6 +26,8 @@ type httpMetrics struct {
 
 	failuresCount prometheus.Counter
 
+	requestsCount prometheus.Counter
+
 	metricRegisterer discovery.MetricRegisterer
 }
 
@@ -37,10 +39,16 @@ func newDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetric
 				Name: "prometheus_sd_http_failures_total",
 				Help: "Number of HTTP service discovery refresh failures.",
 			}),
+		requestsCount: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Name: "prometheus_sd_http_requests_total",
+				Help: "Total number of HTTP service discovery requests.",
+			}),
 	}
 
 	m.metricRegisterer = discovery.NewMetricRegisterer(reg, []prometheus.Collector{
 		m.failuresCount,
+		m.requestsCount,
 	})
 
 	return m
