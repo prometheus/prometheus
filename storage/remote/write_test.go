@@ -37,17 +37,16 @@ import (
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
-	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/collector/pdata/pcommon"
-	"go.opentelemetry.io/collector/pdata/pmetric"
-	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 )
 
 func testRemoteWriteConfig() *config.RemoteWriteConfig {
@@ -385,87 +384,53 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 	require.NoError(t, s.Close())
 }
 
+// TODO(bwplotka): Move all the OTLP handler tests to `write_handler_test.go`.
+// write.go and write_test.go are for sending (client side).
+
 func TestOTLPWriteHandler(t *testing.T) {
-	timestamp := time.Now()
-	var zeroTime time.Time
-	exportRequest := generateOTLPWriteRequest(timestamp, zeroTime)
+	// Compile pieces of expectations that does not depend on translation or type and unit labels, for readability.
+	expectedBaseSamples := []mockSample{
+		{m: metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "test-counter-description"}, v: 10.0},
+		{m: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "bytes", Help: "test-gauge-description"}, v: 10.0},
+		{m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"}, v: 30.0},
+		{m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"}, v: 12.0},
+		{m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"}, v: 2.0},
+		{m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"}, v: 4.0},
+		{m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"}, v: 6.0},
+		{m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"}, v: 8.0},
+		{m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"}, v: 10.0},
+		{m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"}, v: 12.0},
+		{m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"}, v: 12.0},
+		{m: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "", Help: "Target metadata"}, v: 1},
+	}
+
+	ts := time.Now()
+	st := ts.Add(-1 * time.Millisecond)
+	exportRequest := generateOTLPWriteRequest(ts, st)
 	for _, testCase := range []struct {
 		name              string
 		otlpCfg           config.OTLPConfig
 		typeAndUnitLabels bool
-		expectedSamples   []mockSample
-		expectedMetadata  []mockMetadata
+		expectedSeries    []labels.Labels
 	}{
 		{
 			name: "NoTranslation/NoTypeAndUnitLabels",
 			otlpCfg: config.OTLPConfig{
 				TranslationStrategy: otlptranslator.NoTranslation,
 			},
-			expectedSamples: []mockSample{
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.counter", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					t: timestamp.UnixMilli(),
-					v: 10.0,
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "target_info", "host.name", "test-host", "instance", "test-instance", "job", "test-service"),
-					t: timestamp.UnixMilli(),
-					v: 1,
-				},
-			},
-			expectedMetadata: []mockMetadata{
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.counter", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "test-counter-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.gauge", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "bytes", Help: "test-gauge-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_sum", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_count", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "0"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "1"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "2"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "3"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "4"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "5"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "+Inf"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.exponential.histogram", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-exponential-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "target_info", "host.name", "test-host", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "", Help: "Target metadata"},
-				},
+			expectedSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "test.counter", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test.gauge", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_sum", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_count", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "0"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "1"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "2"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "3"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "4"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "5"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "+Inf"),
+				labels.FromStrings(model.MetricNameLabel, "target_info", "host.name", "test-host", "instance", "test-instance", "job", "test-service"),
 			},
 		},
 		{
@@ -474,145 +439,39 @@ func TestOTLPWriteHandler(t *testing.T) {
 				TranslationStrategy: otlptranslator.NoTranslation,
 			},
 			typeAndUnitLabels: true,
-			expectedSamples: []mockSample{
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.counter", "__type__", "counter", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					t: timestamp.UnixMilli(),
-					v: 10.0,
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "target_info", "host.name", "test-host", "instance", "test-instance", "job", "test-service"),
-					t: timestamp.UnixMilli(),
-					v: 1,
-				},
-			},
-			expectedMetadata: []mockMetadata{
-				{
-					// Metadata labels follow series labels.
-					l: labels.FromStrings(model.MetricNameLabel, "test.counter", "__type__", "counter", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "test-counter-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.gauge", "__type__", "gauge", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "bytes", Help: "test-gauge-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_sum", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_count", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "0"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "1"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "2"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "3"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "4"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "5"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "+Inf"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.exponential.histogram", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-exponential-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "target_info", "host.name", "test-host", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "", Help: "Target metadata"},
-				},
+			expectedSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "test.counter", "__type__", "counter", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test.gauge", "__type__", "gauge", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_sum", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_count", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "0"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "1"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "2"), labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "3"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "4"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "5"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "+Inf"),
+				labels.FromStrings(model.MetricNameLabel, "target_info", "host.name", "test-host", "instance", "test-instance", "job", "test-service"),
 			},
 		},
+		// For the following cases, skip type and unit cases, it has nothing todo with translation.
 		{
-			name: "UnderscoreEscapingWithSuffixes/NoTypeAndUnitLabels",
+			name: "UnderscoreEscapingWithSuffixes",
 			otlpCfg: config.OTLPConfig{
 				TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
 			},
-			expectedSamples: []mockSample{
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_counter_bytes_total", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					t: timestamp.UnixMilli(),
-					v: 10.0,
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "target_info", "host_name", "test-host", "instance", "test-instance", "job", "test-service"),
-					t: timestamp.UnixMilli(),
-					v: 1,
-				},
-			},
-			expectedMetadata: []mockMetadata{
-				// All get _bytes unit suffix and counter also gets _total.
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_counter_bytes_total", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "test-counter-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_gauge_bytes", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "bytes", Help: "test-gauge-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_sum", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_count", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "0"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "1"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "2"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "3"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "4"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "5"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "+Inf"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_exponential_histogram_bytes", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-exponential-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "target_info", "host_name", "test-host", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "", Help: "Target metadata"},
-				},
+			expectedSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "test_counter_bytes_total", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test_gauge_bytes", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_sum", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_count", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "0"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "1"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "2"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "3"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "4"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "5"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "+Inf"),
+				labels.FromStrings(model.MetricNameLabel, "target_info", "host_name", "test-host", "instance", "test-instance", "job", "test-service"),
 			},
 		},
 		{
@@ -620,524 +479,66 @@ func TestOTLPWriteHandler(t *testing.T) {
 			otlpCfg: config.OTLPConfig{
 				TranslationStrategy: otlptranslator.UnderscoreEscapingWithoutSuffixes,
 			},
-			expectedSamples: []mockSample{
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_counter", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					t: timestamp.UnixMilli(),
-					v: 10.0,
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "target_info", "host_name", "test-host", "instance", "test-instance", "job", "test-service"),
-					t: timestamp.UnixMilli(),
-					v: 1,
-				},
-			},
-			expectedMetadata: []mockMetadata{
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_counter", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "test-counter-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_gauge", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "bytes", Help: "test-gauge-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_sum", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_count", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "0"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "1"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "2"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "3"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "4"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "5"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "+Inf"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_exponential_histogram", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-exponential-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "target_info", "host_name", "test-host", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "", Help: "Target metadata"},
-				},
+			expectedSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "test_counter", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test_gauge", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_sum", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_count", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "0"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "1"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "2"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "3"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "4"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "5"),
+				labels.FromStrings(model.MetricNameLabel, "test_histogram_bucket", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "+Inf"),
+				labels.FromStrings(model.MetricNameLabel, "target_info", "host_name", "test-host", "instance", "test-instance", "job", "test-service"),
 			},
 		},
 		{
-			name: "UnderscoreEscapingWithSuffixes/WithTypeAndUnitLabels",
-			otlpCfg: config.OTLPConfig{
-				TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
-			},
-			typeAndUnitLabels: true,
-			expectedSamples: []mockSample{
-				{
-					l: labels.New(labels.Label{Name: "__name__", Value: "test_counter_bytes_total"},
-						labels.Label{Name: "__type__", Value: "counter"},
-						labels.Label{Name: "__unit__", Value: "bytes"},
-						labels.Label{Name: "foo_bar", Value: "baz"},
-						labels.Label{Name: "instance", Value: "test-instance"},
-						labels.Label{Name: "job", Value: "test-service"}),
-					t: timestamp.UnixMilli(),
-					v: 10.0,
-				},
-				{
-					l: labels.New(
-						labels.Label{Name: "__name__", Value: "target_info"},
-						labels.Label{Name: "host_name", Value: "test-host"},
-						labels.Label{Name: "instance", Value: "test-instance"},
-						labels.Label{Name: "job", Value: "test-service"},
-					),
-					t: timestamp.UnixMilli(),
-					v: 1,
-				},
-			},
-			expectedMetadata: []mockMetadata{
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_counter_bytes_total", "__type__", "counter", "__unit__", "bytes", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "test-counter-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_gauge_bytes", "__type__", "gauge", "__unit__", "bytes", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "bytes", Help: "test-gauge-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_sum", "__type__", "histogram", "__unit__", "bytes", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_count", "__type__", "histogram", "__unit__", "bytes", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "__type__", "histogram", "__unit__", "bytes", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "0"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "__type__", "histogram", "__unit__", "bytes", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "1"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "__type__", "histogram", "__unit__", "bytes", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "2"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "__type__", "histogram", "__unit__", "bytes", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "3"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "__type__", "histogram", "__unit__", "bytes", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "4"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "__type__", "histogram", "__unit__", "bytes", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "5"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_histogram_bytes_bucket", "__type__", "histogram", "__unit__", "bytes", "foo_bar", "baz", "instance", "test-instance", "job", "test-service", "le", "+Inf"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test_exponential_histogram_bytes", "__type__", "histogram", "__unit__", "bytes", "foo_bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-exponential-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "target_info", "host_name", "test-host", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "", Help: "Target metadata"},
-				},
-			},
-		},
-		{
-			name: "NoUTF8EscapingWithSuffixes/NoTypeAndUnitLabels",
+			name: "NoUTF8EscapingWithSuffixes",
 			otlpCfg: config.OTLPConfig{
 				TranslationStrategy: otlptranslator.NoUTF8EscapingWithSuffixes,
 			},
-			expectedSamples: []mockSample{
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.counter_bytes_total", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					t: timestamp.UnixMilli(),
-					v: 10.0,
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "target_info", "host.name", "test-host", "instance", "test-instance", "job", "test-service"),
-					t: timestamp.UnixMilli(),
-					v: 1,
-				},
-			},
-			expectedMetadata: []mockMetadata{
-				// All get _bytes unit suffix and counter also gets _total.
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.counter_bytes_total", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "test-counter-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.gauge_bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "bytes", Help: "test-gauge-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_sum", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_count", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "0"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "1"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "2"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "3"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "4"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "5"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "+Inf"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.exponential.histogram_bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-exponential-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "target_info", "host.name", "test-host", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "", Help: "Target metadata"},
-				},
-			},
-		},
-		{
-			name: "NoUTF8EscapingWithSuffixes/WithTypeAndUnitLabels",
-			otlpCfg: config.OTLPConfig{
-				TranslationStrategy: otlptranslator.NoUTF8EscapingWithSuffixes,
-			},
-			typeAndUnitLabels: true,
-			expectedSamples: []mockSample{
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.counter_bytes_total", "__type__", "counter", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					t: timestamp.UnixMilli(),
-					v: 10.0,
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "target_info", "host.name", "test-host", "instance", "test-instance", "job", "test-service"),
-					t: timestamp.UnixMilli(),
-					v: 1,
-				},
-			},
-			expectedMetadata: []mockMetadata{
-				// All get _bytes unit suffix and counter also gets _total.
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.counter_bytes_total", "__type__", "counter", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "test-counter-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.gauge_bytes", "__type__", "gauge", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "bytes", Help: "test-gauge-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_sum", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_count", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "0"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "1"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "2"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "3"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "4"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "5"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "+Inf"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "test.exponential.histogram_bytes", "__type__", "histogram", "__unit__", "bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "test-exponential-histogram-description"},
-				},
-				{
-					l: labels.FromStrings(model.MetricNameLabel, "target_info", "host.name", "test-host", "instance", "test-instance", "job", "test-service"),
-					m: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "", Help: "Target metadata"},
-				},
+			expectedSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "test.counter_bytes_total", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test.gauge_bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_sum", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_count", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "0"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "1"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "2"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "3"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "4"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "5"),
+				labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "+Inf"),
+				labels.FromStrings(model.MetricNameLabel, "target_info", "host.name", "test-host", "instance", "test-instance", "job", "test-service"),
 			},
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			otlpOpts := OTLPOptions{
 				EnableTypeAndUnitLabels: testCase.typeAndUnitLabels,
-				AppendMetadata:          true,
 			}
 			appendable := handleOTLP(t, exportRequest, testCase.otlpCfg, otlpOpts)
-			for _, sample := range testCase.expectedSamples {
-				requireContainsSample(t, appendable.samples, sample)
+
+			expectedSamples := expectedBaseSamples
+			for i, l := range testCase.expectedSeries {
+				expectedSamples[i].l = l
+				expectedSamples[i].t = ts.UnixMilli()
+				expectedSamples[i].st = st.UnixMilli()
+				if l.Get(model.MetricNameLabel) == "target_info" {
+					expectedSamples[i].st = 0 // Target info is artificial and it does not have st (also gauge).
+				}
 			}
-			for _, meta := range testCase.expectedMetadata {
-				requireContainsMetadata(t, appendable.metadata, meta)
-			}
+			requireEqual(t, expectedSamples, appendable.samples)
+
+			// TODO: Test histogram sample?
+
 			require.Len(t, appendable.samples, 12)   // 1 (counter) + 1 (gauge) + 1 (target_info) + 7 (hist_bucket) + 2 (hist_sum, hist_count)
 			require.Len(t, appendable.histograms, 1) // 1 (exponential histogram)
-			require.Len(t, appendable.metadata, 13)  // for each float and histogram sample
 			require.Len(t, appendable.exemplars, 1)  // 1 (exemplar)
 		})
 	}
-}
-
-// Check that start time is ingested if ingestSTZeroSample is enabled
-// and the start time is actually set (non-zero).
-func TestOTLPWriteHandler_StartTime(t *testing.T) {
-	timestamp := time.Now()
-	startTime := timestamp.Add(-1 * time.Millisecond)
-	var zeroTime time.Time
-
-	expectedSamples := []mockSample{
-		{
-			l: labels.FromStrings(model.MetricNameLabel, "test.counter", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-			t: timestamp.UnixMilli(),
-			v: 10.0,
-		},
-		{
-			l: labels.FromStrings(model.MetricNameLabel, "test.gauge", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-			t: timestamp.UnixMilli(),
-			v: 10.0,
-		},
-		{
-			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_sum", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-			t: timestamp.UnixMilli(),
-			v: 30.0,
-		},
-		{
-			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_count", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-			t: timestamp.UnixMilli(),
-			v: 12.0,
-		},
-		{
-			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "0"),
-			t: timestamp.UnixMilli(),
-			v: 2.0,
-		},
-		{
-			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "1"),
-			t: timestamp.UnixMilli(),
-			v: 4.0,
-		},
-		{
-			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "2"),
-			t: timestamp.UnixMilli(),
-			v: 6.0,
-		},
-		{
-			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "3"),
-			t: timestamp.UnixMilli(),
-			v: 8.0,
-		},
-		{
-			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "4"),
-			t: timestamp.UnixMilli(),
-			v: 10.0,
-		},
-		{
-			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "5"),
-			t: timestamp.UnixMilli(),
-			v: 12.0,
-		},
-		{
-			l: labels.FromStrings(model.MetricNameLabel, "test.histogram_bucket", "foo.bar", "baz", "instance", "test-instance", "job", "test-service", "le", "+Inf"),
-			t: timestamp.UnixMilli(),
-			v: 12.0,
-		},
-		{
-			l: labels.FromStrings(model.MetricNameLabel, "target_info", "host.name", "test-host", "instance", "test-instance", "job", "test-service"),
-			t: timestamp.UnixMilli(),
-			v: 1.0,
-		},
-	}
-	expectedHistograms := []mockHistogram{
-		{
-			l: labels.FromStrings(model.MetricNameLabel, "test.exponential.histogram", "foo.bar", "baz", "instance", "test-instance", "job", "test-service"),
-			t: timestamp.UnixMilli(),
-			h: &histogram.Histogram{
-				Schema:          2,
-				ZeroThreshold:   1e-128,
-				ZeroCount:       2,
-				Count:           10,
-				Sum:             30,
-				PositiveSpans:   []histogram.Span{{Offset: 1, Length: 5}},
-				PositiveBuckets: []int64{2, 0, 0, 0, 0},
-			},
-		},
-	}
-
-	expectedSamplesWithSTZero := make([]mockSample, 0, len(expectedSamples)*2-1) // All samples will get ST zero, except target_info.
-	for _, s := range expectedSamples {
-		if s.l.Get(model.MetricNameLabel) != "target_info" {
-			expectedSamplesWithSTZero = append(expectedSamplesWithSTZero, mockSample{
-				l: s.l.Copy(),
-				t: startTime.UnixMilli(),
-				v: 0,
-			})
-		}
-		expectedSamplesWithSTZero = append(expectedSamplesWithSTZero, s)
-	}
-	expectedHistogramsWithSTZero := make([]mockHistogram, 0, len(expectedHistograms)*2)
-	for _, s := range expectedHistograms {
-		if s.l.Get(model.MetricNameLabel) != "target_info" {
-			expectedHistogramsWithSTZero = append(expectedHistogramsWithSTZero, mockHistogram{
-				l: s.l.Copy(),
-				t: startTime.UnixMilli(),
-				h: &histogram.Histogram{},
-			})
-		}
-		expectedHistogramsWithSTZero = append(expectedHistogramsWithSTZero, s)
-	}
-
-	for _, testCase := range []struct {
-		name               string
-		otlpOpts           OTLPOptions
-		startTime          time.Time
-		expectSTZero       bool
-		expectedSamples    []mockSample
-		expectedHistograms []mockHistogram
-	}{
-		{
-			name: "IngestSTZero=false/startTime=0",
-			otlpOpts: OTLPOptions{
-				IngestSTZeroSample: false,
-			},
-			startTime:          zeroTime,
-			expectedSamples:    expectedSamples,
-			expectedHistograms: expectedHistograms,
-		},
-		{
-			name: "IngestSTZero=true/startTime=0",
-			otlpOpts: OTLPOptions{
-				IngestSTZeroSample: true,
-			},
-			startTime:          zeroTime,
-			expectedSamples:    expectedSamples,
-			expectedHistograms: expectedHistograms,
-		},
-		{
-			name: "IngestSTZero=false/startTime=ts-1ms",
-			otlpOpts: OTLPOptions{
-				IngestSTZeroSample: false,
-			},
-			startTime:          startTime,
-			expectedSamples:    expectedSamples,
-			expectedHistograms: expectedHistograms,
-		},
-		{
-			name: "IngestSTZero=true/startTime=ts-1ms",
-			otlpOpts: OTLPOptions{
-				IngestSTZeroSample: true,
-			},
-			startTime:          startTime,
-			expectedSamples:    expectedSamplesWithSTZero,
-			expectedHistograms: expectedHistogramsWithSTZero,
-		},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			exportRequest := generateOTLPWriteRequest(timestamp, testCase.startTime)
-			appendable := handleOTLP(t, exportRequest, config.OTLPConfig{
-				TranslationStrategy: otlptranslator.NoTranslation,
-			}, testCase.otlpOpts)
-			for i, expect := range testCase.expectedSamples {
-				actual := appendable.samples[i]
-				require.True(t, labels.Equal(expect.l, actual.l), "sample labels,pos=%v", i)
-				require.Equal(t, expect.t, actual.t, "sample timestamp,pos=%v", i)
-				require.Equal(t, expect.v, actual.v, "sample value,pos=%v", i)
-			}
-			for i, expect := range testCase.expectedHistograms {
-				actual := appendable.histograms[i]
-				require.True(t, labels.Equal(expect.l, actual.l), "histogram labels,pos=%v", i)
-				require.Equal(t, expect.t, actual.t, "histogram timestamp,pos=%v", i)
-				require.True(t, expect.h.Equals(actual.h), "histogram value,pos=%v", i)
-			}
-			require.Len(t, appendable.samples, len(testCase.expectedSamples))
-			require.Len(t, appendable.histograms, len(testCase.expectedHistograms))
-		})
-	}
-}
-
-func requireContainsSample(t *testing.T, actual []mockSample, expected mockSample) {
-	t.Helper()
-
-	for _, got := range actual {
-		if labels.Equal(expected.l, got.l) && expected.t == got.t && expected.v == got.v {
-			return
-		}
-	}
-	require.Fail(t, fmt.Sprintf("Sample not found: \n"+
-		"expected: %v\n"+
-		"actual  : %v", expected, actual))
-}
-
-func requireContainsMetadata(t *testing.T, actual []mockMetadata, expected mockMetadata) {
-	t.Helper()
-
-	for _, got := range actual {
-		if labels.Equal(expected.l, got.l) && expected.m.Type == got.m.Type && expected.m.Unit == got.m.Unit && expected.m.Help == got.m.Help {
-			return
-		}
-	}
-	require.Fail(t, fmt.Sprintf("Metadata not found: \n"+
-		"expected: %v\n"+
-		"actual  : %v", expected, actual))
 }
 
 func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg config.OTLPConfig, otlpOpts OTLPOptions) *mockAppendable {
@@ -1164,7 +565,7 @@ func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg c
 	return appendable
 }
 
-func generateOTLPWriteRequest(timestamp, startTime time.Time) pmetricotlp.ExportRequest {
+func generateOTLPWriteRequest(ts, startTime time.Time) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
 	// Generate One Counter, One Gauge, One Histogram, One Exponential-Histogram
@@ -1188,14 +589,14 @@ func generateOTLPWriteRequest(timestamp, startTime time.Time) pmetricotlp.Export
 	counterMetric.Sum().SetIsMonotonic(true)
 
 	counterDataPoint := counterMetric.Sum().DataPoints().AppendEmpty()
-	counterDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
+	counterDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(ts))
 	counterDataPoint.SetStartTimestamp(pcommon.NewTimestampFromTime(startTime))
 	counterDataPoint.SetDoubleValue(10.0)
 	counterDataPoint.Attributes().PutStr("foo.bar", "baz")
 
 	counterExemplar := counterDataPoint.Exemplars().AppendEmpty()
 
-	counterExemplar.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
+	counterExemplar.SetTimestamp(pcommon.NewTimestampFromTime(ts))
 	counterExemplar.SetDoubleValue(10.0)
 	counterExemplar.SetSpanID(pcommon.SpanID{0, 1, 2, 3, 4, 5, 6, 7})
 	counterExemplar.SetTraceID(pcommon.TraceID{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15})
@@ -1208,7 +609,7 @@ func generateOTLPWriteRequest(timestamp, startTime time.Time) pmetricotlp.Export
 	gaugeMetric.SetEmptyGauge()
 
 	gaugeDataPoint := gaugeMetric.Gauge().DataPoints().AppendEmpty()
-	gaugeDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
+	gaugeDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(ts))
 	gaugeDataPoint.SetStartTimestamp(pcommon.NewTimestampFromTime(startTime))
 	gaugeDataPoint.SetDoubleValue(10.0)
 	gaugeDataPoint.Attributes().PutStr("foo.bar", "baz")
@@ -1222,7 +623,7 @@ func generateOTLPWriteRequest(timestamp, startTime time.Time) pmetricotlp.Export
 	histogramMetric.Histogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 
 	histogramDataPoint := histogramMetric.Histogram().DataPoints().AppendEmpty()
-	histogramDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
+	histogramDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(ts))
 	histogramDataPoint.SetStartTimestamp(pcommon.NewTimestampFromTime(startTime))
 	histogramDataPoint.ExplicitBounds().FromRaw([]float64{0.0, 1.0, 2.0, 3.0, 4.0, 5.0})
 	histogramDataPoint.BucketCounts().FromRaw([]uint64{2, 2, 2, 2, 2, 2})
@@ -1239,7 +640,7 @@ func generateOTLPWriteRequest(timestamp, startTime time.Time) pmetricotlp.Export
 	exponentialHistogramMetric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 
 	exponentialHistogramDataPoint := exponentialHistogramMetric.ExponentialHistogram().DataPoints().AppendEmpty()
-	exponentialHistogramDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
+	exponentialHistogramDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(ts))
 	exponentialHistogramDataPoint.SetStartTimestamp(pcommon.NewTimestampFromTime(startTime))
 	exponentialHistogramDataPoint.SetScale(2.0)
 	exponentialHistogramDataPoint.Positive().BucketCounts().FromRaw([]uint64{2, 2, 2, 2, 2})
@@ -1292,9 +693,9 @@ func TestOTLPDelta(t *testing.T) {
 	}
 
 	want := []mockSample{
-		{t: milli(0), l: ls, v: 0}, // +0
-		{t: milli(1), l: ls, v: 1}, // +1
-		{t: milli(2), l: ls, v: 3}, // +2
+		{t: milli(0), l: ls, m: metadata.Metadata{Type: model.MetricTypeGauge}, v: 0}, // +0
+		{t: milli(1), l: ls, m: metadata.Metadata{Type: model.MetricTypeGauge}, v: 1}, // +1
+		{t: milli(2), l: ls, m: metadata.Metadata{Type: model.MetricTypeGauge}, v: 3}, // +2
 	}
 	if diff := cmp.Diff(want, appendable.samples, cmp.Exporter(func(reflect.Type) bool { return true })); diff != "" {
 		t.Fatal(diff)
@@ -1474,7 +875,7 @@ func BenchmarkOTLP(b *testing.B) {
 					var total int
 
 					// reqs is a [b.N]*http.Request, divided across the workers.
-					// deltatocumulative requires timestamps to be strictly in
+					// deltatocumulative requires tss to be strictly in
 					// order on a per-series basis. to ensure this, each reqs[k]
 					// contains samples of differently named series, sorted
 					// strictly in time order
@@ -1506,8 +907,8 @@ func BenchmarkOTLP(b *testing.B) {
 					}
 
 					log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-					mock := new(mockAppendable)
-					appendable := syncAppendable{Appendable: mock, lock: new(sync.Mutex)}
+					mock := &mockAppendable{}
+					appendable := syncAppendable{AppendableV2: mock, lock: new(sync.Mutex)}
 					cfgfn := func() config.Config {
 						return config.Config{OTLPConfig: config.DefaultOTLPConfig}
 					}
@@ -1588,28 +989,22 @@ func sampleCount(md pmetric.Metrics) int {
 
 type syncAppendable struct {
 	lock sync.Locker
-	storage.Appendable
+	storage.AppendableV2
 }
 
 type syncAppender struct {
 	lock sync.Locker
-	storage.Appender
+	storage.AppenderV2
 }
 
-func (s syncAppendable) Appender(ctx context.Context) storage.Appender {
-	return syncAppender{Appender: s.Appendable.Appender(ctx), lock: s.lock}
+func (s syncAppendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return syncAppender{AppenderV2: s.AppendableV2.AppenderV2(ctx), lock: s.lock}
 }
 
-func (s syncAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (s syncAppender) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	return s.Appender.Append(ref, l, t, v)
-}
-
-func (s syncAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, f *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	return s.Appender.AppendHistogram(ref, l, t, h, f)
+	return s.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
 }
 
 func TestWriteStorage_CanRegisterMetricsAfterClosing(t *testing.T) {

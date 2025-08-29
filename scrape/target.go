@@ -24,13 +24,14 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
+
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 )
 
 // TargetHealth describes the health state of a target.
@@ -325,13 +326,13 @@ var (
 
 // limitAppender limits the number of total appended samples in a batch.
 type limitAppender struct {
-	storage.Appender
+	storage.AppenderV2
 
 	limit int
 	i     int
 }
 
-func (app *limitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (app *limitAppender) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	// Bypass sample_limit checks only if we have a staleness marker for a known series (ref value is non-zero).
 	// This ensures that if a series is already in TSDB then we always write the marker.
 	if ref == 0 || !value.IsStaleNaN(v) {
@@ -340,56 +341,31 @@ func (app *limitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t in
 			return 0, errSampleLimit
 		}
 	}
-	ref, err := app.Appender.Append(ref, lset, t, v)
-	if err != nil {
-		return 0, err
-	}
-	return ref, nil
-}
-
-func (app *limitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	// Bypass sample_limit checks only if we have a staleness marker for a known series (ref value is non-zero).
-	// This ensures that if a series is already in TSDB then we always write the marker.
-	if ref == 0 || (h != nil && !value.IsStaleNaN(h.Sum)) || (fh != nil && !value.IsStaleNaN(fh.Sum)) {
-		app.i++
-		if app.i > app.limit {
-			return 0, errSampleLimit
-		}
-	}
-	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
-	if err != nil {
-		return 0, err
-	}
-	return ref, nil
+	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
 }
 
 type timeLimitAppender struct {
-	storage.Appender
+	storage.AppenderV2
 
 	maxTime int64
 }
 
-func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (app *timeLimitAppender) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, storage.ErrOutOfBounds
 	}
 
-	ref, err := app.Appender.Append(ref, lset, t, v)
-	if err != nil {
-		return 0, err
-	}
-	return ref, nil
+	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
 }
 
 // bucketLimitAppender limits the number of total appended samples in a batch.
 type bucketLimitAppender struct {
-	storage.Appender
+	storage.AppenderV2
 
 	limit int
 }
 
-func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	var err error
+func (app *bucketLimitAppender) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (_ storage.SeriesRef, err error) {
 	if h != nil {
 		// Return with an early error if the histogram has too many buckets and the
 		// schema is not exponential, in which case we can't reduce the resolution.
@@ -420,20 +396,16 @@ func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labe
 			}
 		}
 	}
-	if ref, err = app.Appender.AppendHistogram(ref, lset, t, h, fh); err != nil {
-		return 0, err
-	}
-	return ref, nil
+	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
 }
 
 type maxSchemaAppender struct {
-	storage.Appender
+	storage.AppenderV2
 
 	maxSchema int32
 }
 
-func (app *maxSchemaAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	var err error
+func (app *maxSchemaAppender) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (_ storage.SeriesRef, err error) {
 	if h != nil {
 		if histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > app.maxSchema {
 			if err = h.ReduceResolution(app.maxSchema); err != nil {
@@ -448,10 +420,7 @@ func (app *maxSchemaAppender) AppendHistogram(ref storage.SeriesRef, lset labels
 			}
 		}
 	}
-	if ref, err = app.Appender.AppendHistogram(ref, lset, t, h, fh); err != nil {
-		return 0, err
-	}
-	return ref, nil
+	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
 }
 
 // PopulateDiscoveredLabels sets base labels on lb from target and group labels and scrape configuration, before relabeling.

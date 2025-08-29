@@ -14,7 +14,6 @@
 package scrape
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -611,18 +610,16 @@ func TestBucketLimitAppender(t *testing.T) {
 		},
 	}
 
-	resApp := &collectResultAppender{}
-
 	for _, c := range cases {
 		for _, floatHisto := range []bool{true, false} {
 			t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
-				app := &bucketLimitAppender{Appender: resApp, limit: c.limit}
+				app := &bucketLimitAppender{AppenderV2: nopAppender{}, limit: c.limit}
 				ts := int64(10 * time.Minute / time.Millisecond)
 				lbls := labels.FromStrings("__name__", "sparse_histogram_series")
 				var err error
 				if floatHisto {
 					fh := c.h.Copy().ToFloat(nil)
-					_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
+					_, err = app.Append(0, lbls, 0, ts, 0, nil, fh, storage.AOptions{})
 					if c.expectError {
 						require.Error(t, err)
 					} else {
@@ -632,7 +629,7 @@ func TestBucketLimitAppender(t *testing.T) {
 					}
 				} else {
 					h := c.h.Copy()
-					_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+					_, err = app.Append(0, lbls, 0, ts, 0, h, nil, storage.AOptions{})
 					if c.expectError {
 						require.Error(t, err)
 					} else {
@@ -697,23 +694,21 @@ func TestMaxSchemaAppender(t *testing.T) {
 		},
 	}
 
-	resApp := &collectResultAppender{}
-
 	for _, c := range cases {
 		for _, floatHisto := range []bool{true, false} {
 			t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
-				app := &maxSchemaAppender{Appender: resApp, maxSchema: c.maxSchema}
+				app := &maxSchemaAppender{AppenderV2: nopAppender{}, maxSchema: c.maxSchema}
 				ts := int64(10 * time.Minute / time.Millisecond)
 				lbls := labels.FromStrings("__name__", "sparse_histogram_series")
 				var err error
 				if floatHisto {
 					fh := c.h.Copy().ToFloat(nil)
-					_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
+					_, err = app.Append(0, lbls, 0, ts, 0, nil, fh, storage.AOptions{})
 					require.Equal(t, c.expectSchema, fh.Schema)
 					require.NoError(t, err)
 				} else {
 					h := c.h.Copy()
-					_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+					_, err = app.Append(0, lbls, 0, ts, 0, h, nil, storage.AOptions{})
 					require.Equal(t, c.expectSchema, h.Schema)
 					require.NoError(t, err)
 				}
@@ -723,39 +718,37 @@ func TestMaxSchemaAppender(t *testing.T) {
 	}
 }
 
-// Test sample_limit when a scrape containst Native Histograms.
+// Test sample_limit when a scrape contains Native Histograms.
 func TestAppendWithSampleLimitAndNativeHistogram(t *testing.T) {
 	const sampleLimit = 2
-	resApp := &collectResultAppender{}
-	sl := newBasicScrapeLoop(t, context.Background(), nil, func(_ context.Context) storage.Appender {
-		return resApp
-	}, 0)
+
+	sl, _, _ := newTestScrapeLoop(t)
 	sl.sampleLimit = sampleLimit
 
 	now := time.Now()
-	app := appender(sl.appender(context.Background()), sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
+	app := appender(sl.appendableV2.AppenderV2(sl.ctx), sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
 
 	// sample_limit is set to 2, so first two scrapes should work
-	_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "foo"), timestamp.FromTime(now), 1)
-	require.NoError(t, err)
+	{
+		ls := labels.FromStrings(model.MetricNameLabel, "foo")
+		ts := timestamp.FromTime(now)
+		_, err := app.Append(0, ls, 0, ts, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
 
 	// Second sample, should be ok.
-	_, err = app.AppendHistogram(
-		0,
-		labels.FromStrings(model.MetricNameLabel, "my_histogram1"),
-		timestamp.FromTime(now),
-		&histogram.Histogram{},
-		nil,
-	)
-	require.NoError(t, err)
+	{
+		ls := labels.FromStrings(model.MetricNameLabel, "my_histogram1")
+		ts := timestamp.FromTime(now)
+		_, err := app.Append(0, ls, 0, ts, 0, &histogram.Histogram{}, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
 
 	// This is third sample with sample_limit=2, it should trigger errSampleLimit.
-	_, err = app.AppendHistogram(
-		0,
-		labels.FromStrings(model.MetricNameLabel, "my_histogram2"),
-		timestamp.FromTime(now),
-		&histogram.Histogram{},
-		nil,
-	)
-	require.ErrorIs(t, err, errSampleLimit)
+	{
+		ls := labels.FromStrings(model.MetricNameLabel, "my_histogram2")
+		ts := timestamp.FromTime(now)
+		_, err := app.Append(0, ls, 0, ts, 0, &histogram.Histogram{}, nil, storage.AOptions{})
+		require.ErrorIs(t, err, errSampleLimit)
+	}
 }

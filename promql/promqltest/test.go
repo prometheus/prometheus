@@ -648,12 +648,12 @@ func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 }
 
 // append the defined time series to the storage.
-func (cmd *loadCmd) append(a storage.Appender) error {
+func (cmd *loadCmd) append(a storage.AppenderV2) error {
 	for h, smpls := range cmd.defs {
-		m := cmd.metrics[h]
+		ls := cmd.metrics[h]
 
 		for _, s := range smpls {
-			if err := appendSample(a, s, m); err != nil {
+			if _, err := a.Append(0, ls, 0, s.T, s.F, nil, s.H, storage.AOptions{}); err != nil {
 				return err
 			}
 		}
@@ -699,7 +699,7 @@ func processClassicHistogramSeries(m labels.Labels, name string, histogramMap ma
 
 // If classic histograms are defined, convert them into native histograms with custom
 // bounds and append the defined time series to the storage.
-func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
+func (cmd *loadCmd) appendCustomHistogram(a storage.AppenderV2) error {
 	histogramMap := map[uint64]tempHistogramWrapper{}
 
 	// Go through all the time series to collate classic histogram data
@@ -754,22 +754,9 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 		}
 		sort.Slice(samples, func(i, j int) bool { return samples[i].T < samples[j].T })
 		for _, s := range samples {
-			if err := appendSample(a, s, histogramWrapper.metric); err != nil {
+			if _, err := a.Append(0, histogramWrapper.metric, 0, s.T, s.F, nil, s.H, storage.AOptions{}); err != nil {
 				return err
 			}
-		}
-	}
-	return nil
-}
-
-func appendSample(a storage.Appender, s promql.Sample, m labels.Labels) error {
-	if s.H != nil {
-		if _, err := a.AppendHistogram(0, m, s.T, nil, s.H); err != nil {
-			return err
-		}
-	} else {
-		if _, err := a.Append(0, m, s.T, s.F); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -1386,7 +1373,7 @@ func (t *test) exec(tc testCommand, engine promql.QueryEngine) error {
 		t.clear()
 
 	case *loadCmd:
-		app := t.storage.Appender(t.context)
+		app := t.storage.AppenderV2(t.context)
 		if err := cmd.append(app); err != nil {
 			app.Rollback()
 			return err
@@ -1699,16 +1686,16 @@ func (ll *LazyLoader) clear() error {
 
 // appendTill appends the defined time series to the storage till the given timestamp (in milliseconds).
 func (ll *LazyLoader) appendTill(ts int64) error {
-	app := ll.storage.Appender(ll.Context())
+	app := ll.storage.AppenderV2(ll.Context())
 	for h, smpls := range ll.loadCmd.defs {
-		m := ll.loadCmd.metrics[h]
+		ls := ll.loadCmd.metrics[h]
 		for i, s := range smpls {
 			if s.T > ts {
 				// Removing the already added samples.
 				ll.loadCmd.defs[h] = smpls[i:]
 				break
 			}
-			if err := appendSample(app, s, m); err != nil {
+			if _, err := app.Append(0, ls, 0, s.T, s.F, nil, s.H, storage.AOptions{}); err != nil {
 				return err
 			}
 			if i == len(smpls)-1 {

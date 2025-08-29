@@ -22,20 +22,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
-	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
-	"github.com/prometheus/prometheus/storage"
 )
 
 func TestFromMetrics(t *testing.T) {
@@ -81,7 +77,7 @@ func TestFromMetrics(t *testing.T) {
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				mockAppender := &mockCombinedAppender{}
+				mockAppender := &mockAppender{}
 				converter := NewPrometheusConverter(mockAppender)
 				payload, wantPromMetrics := createExportRequest(5, 128, 128, 2, 0, tc.settings, tc.temporality)
 				seenFamilyNames := map[string]struct{}{}
@@ -153,7 +149,7 @@ func TestFromMetrics(t *testing.T) {
 
 			generateAttributes(h.Attributes(), "series", 1)
 
-			mockAppender := &mockCombinedAppender{}
+			mockAppender := &mockAppender{}
 			converter := NewPrometheusConverter(mockAppender)
 			annots, err := converter.FromMetrics(
 				context.Background(),
@@ -176,7 +172,7 @@ func TestFromMetrics(t *testing.T) {
 
 	t.Run("context cancellation", func(t *testing.T) {
 		settings := Settings{}
-		converter := NewPrometheusConverter(&mockCombinedAppender{})
+		converter := NewPrometheusConverter(&mockAppender{})
 		ctx, cancel := context.WithCancel(context.Background())
 		// Verify that converter.FromMetrics respects cancellation.
 		cancel()
@@ -189,7 +185,7 @@ func TestFromMetrics(t *testing.T) {
 
 	t.Run("context timeout", func(t *testing.T) {
 		settings := Settings{}
-		converter := NewPrometheusConverter(&mockCombinedAppender{})
+		converter := NewPrometheusConverter(&mockAppender{})
 		// Verify that converter.FromMetrics respects timeout.
 		ctx, cancel := context.WithTimeout(context.Background(), 0)
 		t.Cleanup(cancel)
@@ -222,7 +218,7 @@ func TestFromMetrics(t *testing.T) {
 			generateAttributes(h.Attributes(), "series", 10)
 		}
 
-		converter := NewPrometheusConverter(&mockCombinedAppender{})
+		converter := NewPrometheusConverter(&mockAppender{})
 		annots, err := converter.FromMetrics(context.Background(), request.Metrics(), Settings{})
 		require.NoError(t, err)
 		require.NotEmpty(t, annots)
@@ -255,7 +251,7 @@ func TestFromMetrics(t *testing.T) {
 			generateAttributes(h.Attributes(), "series", 10)
 		}
 
-		converter := NewPrometheusConverter(&mockCombinedAppender{})
+		converter := NewPrometheusConverter(&mockAppender{})
 		annots, err := converter.FromMetrics(
 			context.Background(),
 			request.Metrics(),
@@ -303,7 +299,7 @@ func TestFromMetrics(t *testing.T) {
 			}
 		}
 
-		mockAppender := &mockCombinedAppender{}
+		mockAppender := &mockAppender{}
 		converter := NewPrometheusConverter(mockAppender)
 		annots, err := converter.FromMetrics(
 			context.Background(),
@@ -403,7 +399,7 @@ func TestFromMetrics(t *testing.T) {
 			generateAttributes(point2.Attributes(), "series", 1)
 		}
 
-		mockAppender := &mockCombinedAppender{}
+		mockAppender := &mockAppender{}
 		converter := NewPrometheusConverter(mockAppender)
 		annots, err := converter.FromMetrics(
 			context.Background(),
@@ -660,7 +656,7 @@ func TestTemporality(t *testing.T) {
 				s.CopyTo(sm.Metrics().AppendEmpty())
 			}
 
-			mockAppender := &mockCombinedAppender{}
+			mockAppender := &mockAppender{}
 			c := NewPrometheusConverter(mockAppender)
 			settings := Settings{
 				AllowDeltaTemporality:   tc.allowDelta,
@@ -1061,14 +1057,11 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 												settings,
 												pmetric.AggregationTemporalityCumulative,
 											)
-											appMetrics := NewCombinedAppenderMetrics(prometheus.NewRegistry())
-											noOpLogger := promslog.NewNopLogger()
 											b.ResetTimer()
 
 											for b.Loop() {
-												app := &noOpAppender{}
-												mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
-												converter := NewPrometheusConverter(mockAppender)
+												app := &statsAppender{}
+												converter := NewPrometheusConverter(app)
 												annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
 												require.NoError(b, err)
 												require.Empty(b, annots)
@@ -1090,53 +1083,6 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 			}
 		})
 	}
-}
-
-type noOpAppender struct {
-	samples    int
-	histograms int
-	metadata   int
-}
-
-var _ storage.Appender = &noOpAppender{}
-
-func (a *noOpAppender) Append(_ storage.SeriesRef, _ labels.Labels, _ int64, _ float64) (storage.SeriesRef, error) {
-	a.samples++
-	return 1, nil
-}
-
-func (*noOpAppender) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	return 1, nil
-}
-
-func (a *noOpAppender) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	a.histograms++
-	return 1, nil
-}
-
-func (*noOpAppender) AppendHistogramSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 1, nil
-}
-
-func (a *noOpAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
-	a.metadata++
-	return 1, nil
-}
-
-func (*noOpAppender) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
-	return 1, nil
-}
-
-func (*noOpAppender) Commit() error {
-	return nil
-}
-
-func (*noOpAppender) Rollback() error {
-	return nil
-}
-
-func (*noOpAppender) SetOptions(_ *storage.AppendOptions) {
-	panic("not implemented")
 }
 
 type wantPrometheusMetric struct {

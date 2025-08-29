@@ -30,6 +30,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
+	"github.com/prometheus/prometheus/storage"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
@@ -64,8 +65,15 @@ const (
 // Unpaired string values are ignored. String pairs overwrite OTLP labels if collisions happen and
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
-func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope scope, settings Settings,
-	ignoreAttrs []string, logOnOverwrite bool, meta Metadata, extras ...string,
+func (c *PrometheusConverter) createAttributes(
+	resource pcommon.Resource,
+	attributes pcommon.Map,
+	scope scope,
+	settings Settings,
+	ignoreAttrs []string,
+	logOnOverwrite bool,
+	meta metadata.Metadata,
+	extras ...string,
 ) (labels.Labels, error) {
 	resourceAttrs := resource.Attributes()
 	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
@@ -222,8 +230,13 @@ func aggregationTemporality(metric pmetric.Metric) (pmetric.AggregationTemporali
 // with the user defined bucket boundaries of non-exponential OTel histograms.
 // However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
 // https://github.com/prometheus/prometheus/issues/13485.
-func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, scope scope, meta Metadata,
+func (c *PrometheusConverter) addHistogramDataPoints(
+	ctx context.Context,
+	dataPoints pmetric.HistogramDataPointSlice,
+	resource pcommon.Resource,
+	settings Settings,
+	scope scope,
+	appOpts storage.AOptions,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -231,40 +244,35 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		}
 
 		pt := dataPoints.At(x)
-		timestamp := convertTimeStamp(pt.Timestamp())
-		startTimestamp := convertTimeStamp(pt.StartTimestamp())
-		baseLabels, err := c.createAttributes(resource, pt.Attributes(), scope, settings, nil, false, meta)
+		t := convertTimeStamp(pt.Timestamp())
+		st := convertTimeStamp(pt.StartTimestamp())
+		baseLabels, err := c.createAttributes(resource, pt.Attributes(), scope, settings, nil, false, appOpts.Metadata)
 		if err != nil {
 			return err
 		}
 
-		baseName := meta.MetricFamilyName
-
 		// If the sum is unset, it indicates the _sum metric point should be
 		// omitted
 		if pt.HasSum() {
-			// treat sum as a sample in an individual TimeSeries
 			val := pt.Sum()
 			if pt.Flags().NoRecordedValue() {
 				val = math.Float64frombits(value.StaleNaN)
 			}
-
-			sumlabels := c.addLabels(baseName+sumStr, baseLabels)
-			if err := c.appender.AppendSample(sumlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
+			sumlabels := c.addLabels(appOpts.MetricFamilyName+sumStr, baseLabels)
+			if _, err := c.appender.Append(0, sumlabels, st, t, val, nil, nil, appOpts); err != nil {
 				return err
 			}
 		}
 
-		// treat count as a sample in an individual TimeSeries
 		val := float64(pt.Count())
 		if pt.Flags().NoRecordedValue() {
 			val = math.Float64frombits(value.StaleNaN)
 		}
-
-		countlabels := c.addLabels(baseName+countStr, baseLabels)
-		if err := c.appender.AppendSample(countlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
+		countlabels := c.addLabels(appOpts.MetricFamilyName+countStr, baseLabels)
+		if _, err = c.appender.Append(0, countlabels, st, t, val, nil, nil, appOpts); err != nil {
 			return err
 		}
+
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return err
@@ -299,8 +307,9 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 				val = math.Float64frombits(value.StaleNaN)
 			}
 			boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
-			labels := c.addLabels(baseName+bucketStr, baseLabels, leStr, boundStr)
-			if err := c.appender.AppendSample(labels, meta, startTimestamp, timestamp, val, currentBucketExemplars); err != nil {
+			bktLabels := c.addLabels(appOpts.MetricFamilyName+bucketStr, baseLabels, leStr, boundStr)
+			appOpts.Exemplars = currentBucketExemplars
+			if _, err = c.appender.Append(0, bktLabels, st, t, val, nil, nil, appOpts); err != nil {
 				return err
 			}
 		}
@@ -309,12 +318,12 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		if pt.Flags().NoRecordedValue() {
 			val = math.Float64frombits(value.StaleNaN)
 		}
-		infLabels := c.addLabels(baseName+bucketStr, baseLabels, leStr, pInfStr)
-		if err := c.appender.AppendSample(infLabels, meta, startTimestamp, timestamp, val, exemplars[nextExemplarIdx:]); err != nil {
+		infLabels := c.addLabels(appOpts.MetricFamilyName+bucketStr, baseLabels, leStr, pInfStr)
+		appOpts.Exemplars = exemplars[nextExemplarIdx:]
+		if _, err = c.appender.Append(0, infLabels, st, t, val, nil, nil, appOpts); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -424,8 +433,13 @@ func findMinAndMaxTimestamps(metric pmetric.Metric, minTimestamp, maxTimestamp p
 	return minTimestamp, maxTimestamp
 }
 
-func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
-	settings Settings, scope scope, meta Metadata,
+func (c *PrometheusConverter) addSummaryDataPoints(
+	ctx context.Context,
+	dataPoints pmetric.SummaryDataPointSlice,
+	resource pcommon.Resource,
+	settings Settings,
+	scope scope,
+	appOpts storage.AOptions,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -433,33 +447,28 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		}
 
 		pt := dataPoints.At(x)
-		timestamp := convertTimeStamp(pt.Timestamp())
-		startTimestamp := convertTimeStamp(pt.StartTimestamp())
-		baseLabels, err := c.createAttributes(resource, pt.Attributes(), scope, settings, nil, false, meta)
+		t := convertTimeStamp(pt.Timestamp())
+		st := convertTimeStamp(pt.StartTimestamp())
+		baseLabels, err := c.createAttributes(resource, pt.Attributes(), scope, settings, nil, false, appOpts.Metadata)
 		if err != nil {
 			return err
 		}
 
-		baseName := meta.MetricFamilyName
-
-		// treat sum as a sample in an individual TimeSeries
 		val := pt.Sum()
 		if pt.Flags().NoRecordedValue() {
 			val = math.Float64frombits(value.StaleNaN)
 		}
-		// sum and count of the summary should append suffix to baseName
-		sumlabels := c.addLabels(baseName+sumStr, baseLabels)
-		if err := c.appender.AppendSample(sumlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
+		sumlabels := c.addLabels(appOpts.MetricFamilyName+sumStr, baseLabels)
+		if _, err = c.appender.Append(0, sumlabels, st, t, val, nil, nil, appOpts); err != nil {
 			return err
 		}
 
-		// treat count as a sample in an individual TimeSeries
 		val = float64(pt.Count())
 		if pt.Flags().NoRecordedValue() {
 			val = math.Float64frombits(value.StaleNaN)
 		}
-		countlabels := c.addLabels(baseName+countStr, baseLabels)
-		if err := c.appender.AppendSample(countlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
+		countlabels := c.addLabels(appOpts.MetricFamilyName+countStr, baseLabels)
+		if _, err = c.appender.Append(0, countlabels, st, t, val, nil, nil, appOpts); err != nil {
 			return err
 		}
 
@@ -471,13 +480,12 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 				val = math.Float64frombits(value.StaleNaN)
 			}
 			percentileStr := strconv.FormatFloat(qt.Quantile(), 'f', -1, 64)
-			qtlabels := c.addLabels(baseName, baseLabels, quantileStr, percentileStr)
-			if err := c.appender.AppendSample(qtlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
+			qtlabels := c.addLabels(appOpts.MetricFamilyName, baseLabels, quantileStr, percentileStr)
+			if _, err = c.appender.Append(0, qtlabels, st, t, val, nil, nil, appOpts); err != nil {
 				return err
 			}
 		}
 	}
-
 	return nil
 }
 
@@ -530,7 +538,7 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		// Do not pass identifying attributes as ignoreAttrs below.
 		identifyingAttrs = nil
 	}
-	meta := Metadata{
+	appOpts := storage.AOptions{
 		Metadata: metadata.Metadata{
 			Type: model.MetricTypeGauge,
 			Help: "Target metadata",
@@ -538,7 +546,7 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		MetricFamilyName: name,
 	}
 	// TODO: should target info have the __type__ metadata label?
-	lbls, err := c.createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, Metadata{}, model.MetricNameLabel, name)
+	lbls, err := c.createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, metadata.Metadata{}, model.MetricNameLabel, name)
 	if err != nil {
 		return err
 	}
@@ -569,10 +577,10 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 
 	var key targetInfoKey
 	for timestamp := earliestTimestamp; timestamp.Before(latestTimestamp); timestamp = timestamp.Add(interval) {
-		timestampMs := timestamp.UnixMilli()
+		t := timestamp.UnixMilli()
 		key = targetInfoKey{
 			labelsHash: labelsHash,
-			timestamp:  timestampMs,
+			timestamp:  t,
 		}
 		if _, exists := c.seenTargetInfo[key]; exists {
 			// Skip duplicate.
@@ -580,23 +588,25 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		}
 
 		c.seenTargetInfo[key] = struct{}{}
-		if err := c.appender.AppendSample(lbls, meta, 0, timestampMs, float64(1), nil); err != nil {
+		_, err = c.appender.Append(0, lbls, 0, t, 1.0, nil, nil, appOpts)
+		if err != nil {
 			return err
 		}
 	}
 
 	// Append the final sample at latestTimestamp.
-	finalTimestampMs := latestTimestamp.UnixMilli()
+	finalT := latestTimestamp.UnixMilli()
 	key = targetInfoKey{
 		labelsHash: labelsHash,
-		timestamp:  finalTimestampMs,
+		timestamp:  finalT,
 	}
 	if _, exists := c.seenTargetInfo[key]; exists {
 		return nil
 	}
 
 	c.seenTargetInfo[key] = struct{}{}
-	return c.appender.AppendSample(lbls, meta, 0, finalTimestampMs, float64(1), nil)
+	_, err = c.appender.Append(0, lbls, 0, finalT, 1.0, nil, nil, appOpts)
+	return err
 }
 
 // convertTimeStamp converts OTLP timestamp in ns to timestamp in ms.
