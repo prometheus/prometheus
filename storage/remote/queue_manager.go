@@ -40,7 +40,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
-	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -408,17 +407,16 @@ type QueueManager struct {
 	reshardDisableStartTimestamp atomic.Int64 // Time that reshard was disabled.
 	reshardDisableEndTimestamp   atomic.Int64 // Time that reshard is disabled until.
 
-	logger                  *slog.Logger
-	flushDeadline           time.Duration
-	cfg                     config.QueueConfig
-	mcfg                    config.MetadataConfig
-	externalLabels          []labels.Label
-	relabelConfigs          []*relabel.Config
-	sendExemplars           bool
-	sendNativeHistograms    bool
-	enableTypeAndUnitLabels bool
-	watcher                 *wlog.Watcher
-	metadataWatcher         *MetadataWatcher
+	logger               *slog.Logger
+	flushDeadline        time.Duration
+	cfg                  config.QueueConfig
+	mcfg                 config.MetadataConfig
+	externalLabels       []labels.Label
+	relabelConfigs       []*relabel.Config
+	sendExemplars        bool
+	sendNativeHistograms bool
+	watcher              *wlog.Watcher
+	metadataWatcher      *MetadataWatcher
 
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
@@ -470,7 +468,6 @@ func NewQueueManager(
 	sm ReadyScrapeManager,
 	enableExemplarRemoteWrite bool,
 	enableNativeHistogramRemoteWrite bool,
-	enableTypeAndUnitLabels bool,
 	protoMsg config.RemoteWriteProtoMsg,
 ) *QueueManager {
 	if logger == nil {
@@ -485,16 +482,15 @@ func NewQueueManager(
 
 	logger = logger.With(remoteName, client.Name(), endpoint, client.Endpoint())
 	t := &QueueManager{
-		logger:                  logger,
-		flushDeadline:           flushDeadline,
-		cfg:                     cfg,
-		mcfg:                    mCfg,
-		externalLabels:          extLabelsSlice,
-		relabelConfigs:          relabelConfigs,
-		storeClient:             client,
-		sendExemplars:           enableExemplarRemoteWrite,
-		sendNativeHistograms:    enableNativeHistogramRemoteWrite,
-		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
+		logger:               logger,
+		flushDeadline:        flushDeadline,
+		cfg:                  cfg,
+		mcfg:                 mCfg,
+		externalLabels:       extLabelsSlice,
+		relabelConfigs:       relabelConfigs,
+		storeClient:          client,
+		sendExemplars:        enableExemplarRemoteWrite,
+		sendNativeHistograms: enableNativeHistogramRemoteWrite,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
 		seriesMetadata:       make(map[chunks.HeadSeriesRef]*metadata.Metadata),
@@ -1544,7 +1540,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			}
 			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, encBuf, compr)
 		case config.RemoteWriteProtoMsgV2:
-			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels)
+			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
 			if nUnexpectedMetadata > 0 {
 				s.qm.logger.Warn("unexpected metadata sType in populateV2TimeSeries", "count", nUnexpectedMetadata)
@@ -1915,7 +1911,7 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	return accumulatedStats, err
 }
 
-func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool) (int, int, int, int, int) {
+func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms bool) (int, int, int, int, int) {
 	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
@@ -1925,15 +1921,11 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(d.metadata.Unit)
 			nPendingMetadata++
 		} else {
-			var m schema.Metadata
-			if enableTypeAndUnitLabels {
-				m = schema.NewMetadataFromLabels(d.seriesLabels)
-			}
 			// Safeguard against sending garbage in case of not having metadata
 			// for whatever reason.
-			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(m.Type)
-			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(m.Unit)
+			pendingData[nPending].Metadata.Type = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
 			pendingData[nPending].Metadata.HelpRef = 0
+			pendingData[nPending].Metadata.UnitRef = 0
 		}
 
 		if sendExemplars {

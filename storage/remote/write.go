@@ -73,12 +73,11 @@ type WriteStorage struct {
 	quit              chan struct{}
 
 	// For timestampTracker.
-	highestTimestamp        *maxTimestamp
-	enableTypeAndUnitLabels bool
+	highestTimestamp *maxTimestamp
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels bool) *WriteStorage {
+func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager) *WriteStorage {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
@@ -102,7 +101,6 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch. Initialized to 0 when no data has been received yet.",
 			}),
 		},
-		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 	}
 	if reg != nil {
 		reg.MustRegister(rws.highestTimestamp)
@@ -213,7 +211,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.scraper,
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
-			rws.enableTypeAndUnitLabels,
 			rwConf.ProtobufMessage,
 		)
 		// Keep track of which queues are new so we know which to start.
