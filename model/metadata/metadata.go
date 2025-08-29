@@ -21,3 +21,7 @@ type Metadata struct {
 	Unit string           `json:"unit"`
 	Help string           `json:"help"`
 }
+
+func (m Metadata) IsEmpty() bool {
+	return (m.Type == "" || m.Type == model.MetricTypeUnknown) && m.Unit == "" && m.Help == ""
+}
