@@ -11,10 +11,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 include ../../../Makefile.common
 
-build:
+build: ## Build Prometheus remote storage adapter examples.
 	@echo ">> building example_write_adapter"
 	@$(GO) build -o example_write_adapter/example_write_adapter ./example_write_adapter
 	@echo ">> building remote_storage_adapter"
