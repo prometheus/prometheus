@@ -254,15 +254,15 @@ eval instant at 20m irate(http_requests_histogram{path="/b"}[6m])
   	expect no_warn
 
 eval instant at 20m irate(http_requests_histogram{path="/c"}[20m])
-	expect warn
+	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram"
 	{path="/c"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
 eval instant at 20m irate(http_requests_histogram{path="/d"}[20m])
-	expect warn
+	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram"
 	{path="/d"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
 eval instant at 20m irate(http_requests_histogram{path="/e"}[20m])
-  expect warn
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram"
 
 eval instant at 20m irate(http_requests_histogram{path="/f"}[20m])
   	expect no_warn
@@ -293,12 +293,12 @@ eval instant at 20m delta(http_requests_gauge[20m])
 
 # delta emits warn annotation for non-gauge histogram types.
 eval instant at 20m delta(http_requests_counter[20m])
-	expect warn
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_counter"
 	{path="/foo"} {{schema:0 sum:4 count:8 buckets:[4 4 4]}}
 
 # delta emits warn annotation for mix of histogram and floats.
 eval instant at 20m delta(http_requests_mix[20m])
-	expect warn
+	expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_mix"
 	#empty
 
 clear
@@ -337,21 +337,21 @@ eval instant at 20m idelta(http_requests_histogram{path="/b"}[6m])
 	expect no_warn
 
 eval instant at 20m idelta(http_requests_histogram{path="/c"}[20m])
-	expect warn
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram"
 	{path="/c"} {{sum:1 count:1 counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests_histogram{path="/d"}[20m])
-	expect warn
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram"
 	{path="/d"} {{sum:1 count:1 counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests_histogram{path="/e"}[20m])
-  expect warn
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram"
 
 eval instant at 20m idelta(http_requests_histogram{path="/f"}[20m])
-  expect warn
+  expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "http_requests_histogram"
 
 eval instant at 20m idelta(http_requests_histogram{path="/g"}[20m])
-	expect warn
+	expect warn msg: PromQL warning: vector contains histograms with incompatible custom buckets for metric name "http_requests_histogram"
 
 clear
 

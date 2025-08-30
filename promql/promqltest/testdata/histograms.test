@@ -708,3 +708,22 @@ eval instant at 0 histogram_fraction(-Inf, 1, series)
   expect no_info
   expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series"
   # Should return no results.
+
+clear
+
+load 1m
+    reset {{schema:0 sum:1 count:0 buckets:[1 1 1]}} {{schema:0 sum:1 count:2 buckets:[1 1 1]}} {{schema:0 sum:1 count:3 buckets:[1 1 1]}}  {{schema:0 sum:1 count:2 buckets:[1 1 1]}}
+
+# Trigger an annotation about conflicting counter resets by going through the
+# HistogramStatsIterator, which creates counter reset hints on the fly.
+eval instant at 5m 1*histogram_count(sum_over_time(reset[5m]))
+    expect warn msg: PromQL warning: conflicting counter resets during histogram addition
+    {} 7
+
+# Ensure that the annotation does not happen with rate.
+eval instant at 5m 1*histogram_count(rate(reset[5m]))
+    expect no_warn
+    {} 0.0175
+
+# NOTE: The `1*` part in the two expressions above should not be needed.
+# See discussion on https://github.com/prometheus/prometheus/pull/17094 .

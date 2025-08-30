@@ -362,6 +362,7 @@ type HistogramOperation string
 const (
 	HistogramAdd HistogramOperation = "addition"
 	HistogramSub HistogramOperation = "subtraction"
+	HistogramAgg HistogramOperation = "aggregation"
 )
 
 // NewHistogramCounterResetCollisionWarning is used when two counter histograms are added or subtracted where one has
