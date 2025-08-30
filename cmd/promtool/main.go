@@ -856,6 +856,9 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return true, true
 	}
+	if hasMultipleYAMLDocuments(data) {
+		fmt.Fprintln(os.Stderr, "  WARNING: multiple YAML documents detected; only the first will be used")
+	}
 	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme)
 	if errs != nil {
 		failed = true
@@ -890,6 +893,11 @@ func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 	hasErrors := false
 	for _, f := range files {
 		fmt.Println("Checking", f)
+		if b, err := os.ReadFile(f); err == nil {
+			if hasMultipleYAMLDocuments(b) {
+				fmt.Fprintln(os.Stderr, "  WARNING: multiple YAML documents detected; only the first will be used")
+			}
+		}
 		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme)
 		if errs != nil {
 			failed = true
@@ -1380,4 +1388,23 @@ func labelsDeletePromQL(query, name string) error {
 
 	fmt.Println(expr.Pretty(0))
 	return nil
+}
+
+func hasMultipleYAMLDocuments(b []byte) bool {
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	count := 0
+	for {
+		var v interface{}
+		if err := dec.Decode(&v); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return false
+		}
+		count++
+		if count > 1 {
+			return true
+		}
+	}
+	return false
 }
