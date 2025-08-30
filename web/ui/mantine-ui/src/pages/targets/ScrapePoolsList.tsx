@@ -303,6 +303,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                             <Table.Tr>
                               <Table.Th w="25%">Endpoint</Table.Th>
                               <Table.Th>Labels</Table.Th>
+                              <Table.Th w={120}>Scrape Interval</Table.Th>
                               <Table.Th w={230}>Last scrape</Table.Th>
                               <Table.Th w={100}>State</Table.Th>
                             </Table.Tr>
@@ -330,6 +331,27 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                                       labels={target.labels}
                                       discoveredLabels={target.discoveredLabels}
                                     />
+                                  </Table.Td>
+                                  <Table.Td valign="top">
+                                    <Tooltip
+                                      label="Target scrape interval"
+                                      withArrow
+                                    >
+                                      <Badge
+                                        variant="light"
+                                        className={badgeClasses.statsBadge}
+                                        styles={{
+                                          label: { textTransform: "none" },
+                                        }}
+                                        leftSection={
+                                          <IconInfoCircle
+                                            style={badgeIconStyle}
+                                          />
+                                        }
+                                      >
+                                        {target.scrapeInterval}
+                                      </Badge>
+                                    </Tooltip>
                                   </Table.Td>
                                   <Table.Td valign="top">
                                     <Group gap="xs" wrap="wrap">
@@ -391,7 +413,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                                 </Table.Tr>
                                 {target.lastError && (
                                   <Table.Tr>
-                                    <Table.Td colSpan={5} valign="top">
+                                    <Table.Td colSpan={6} valign="top">
                                       <Alert
                                         color="red"
                                         mb="sm"
