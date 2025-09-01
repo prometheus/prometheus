@@ -107,7 +107,7 @@ func (b *combinedAppender) AppendHistogram(_ string, ls labels.Labels, meta meta
 	if h == nil {
 		// Sanity check, we should never get here with a nil histogram.
 		b.logger.Error("Received nil histogram in CombinedAppender.AppendHistogram", "series", ls.String())
-		return nil
+		return errors.New("internal error, attempted to append nil histogram")
 	}
 	return b.appendFloatOrHistogram(ls, meta, t, ct, 0, h, es)
 }

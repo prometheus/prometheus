@@ -815,6 +815,18 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 		requireEqualOpAndRef(t, "UpdateMetadata", newRef, app.records[5])
 		requireEqualOpAndRef(t, "AppendExemplar", newRef, app.records[6])
 	})
+
+	t.Run("check that invoking AppendHistogram returns an error for nil histogram", func(t *testing.T) {
+		app := &appenderRecorder{}
+		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
+
+		ls := labels.FromStrings(
+			model.MetricNameLabel, "test_bytes_total",
+			"foo", "bar",
+		)
+		err := capp.AppendHistogram("test_bytes_total", ls, metadata.Metadata{}, 4, 2, nil, nil)
+		require.Error(t, err)
+	})
 }
 
 func requireEqualOpAndRef(t *testing.T, expectedOp string, expectedRef storage.SeriesRef, actual appenderRecord) {
