@@ -133,15 +133,17 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 		} else {
 			newRef, err = b.app.AppendCTZeroSample(ref, ls, t, ct)
 		}
-		if newRef != 0 {
-			// Do not lose the reference to the series if CT failed.
+		if err != nil {
+			if !errors.Is(err, storage.ErrOutOfOrderCT) {
+				// Even for the first sample OOO is a common scenario because
+				// we can't tell if a CT was already ingested in a previous request.
+				// We ignore the error.
+				b.logger.Warn("Error when appending CT from OTLP", "err", err, "series", ls.String(), "created_timestamp", ct, "timestamp", t, "sample_type", sampleType(h))
+			}
+		} else {
+			// We only use the returned reference on success as otherwise an
+			// error of CT append could invalidate the series reference.
 			ref = newRef
-		}
-		if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
-			// Even for the first sample OOO is a common scenario because
-			// we can't tell if a CT was already ingested in a previous request.
-			// We ignore the error.
-			b.logger.Warn("Error when appending CT from OTLP", "err", err, "series", ls.String(), "created_timestamp", ct, "timestamp", t, "sample_type", sampleType(h))
 		}
 	}
 	{
