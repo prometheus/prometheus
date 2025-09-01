@@ -34,7 +34,7 @@ import (
 )
 
 var parserPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &parser{}
 	},
 }
@@ -62,7 +62,7 @@ type parser struct {
 
 	yyParser yyParserImpl
 
-	generatedParserResult interface{}
+	generatedParserResult any
 	parseErrors           ParseErrors
 }
 
@@ -273,7 +273,7 @@ func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue
 }
 
 // addParseErrf formats the error and appends it to the list of parsing errors.
-func (p *parser) addParseErrf(positionRange posrange.PositionRange, format string, args ...interface{}) {
+func (p *parser) addParseErrf(positionRange posrange.PositionRange, format string, args ...any) {
 	p.addParseErr(positionRange, fmt.Errorf(format, args...))
 }
 
@@ -475,13 +475,13 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node, overread bool) (
 }
 
 // newMap is used when building the FloatHistogram from a map.
-func (*parser) newMap() (ret map[string]interface{}) {
-	return map[string]interface{}{}
+func (*parser) newMap() (ret map[string]any) {
+	return map[string]any{}
 }
 
 // mergeMaps is used to combine maps as they're used to later build the Float histogram.
 // This will merge the right map into the left map.
-func (p *parser) mergeMaps(left, right *map[string]interface{}) (ret *map[string]interface{}) {
+func (p *parser) mergeMaps(left, right *map[string]any) (ret *map[string]any) {
 	for key, value := range *right {
 		if _, ok := (*left)[key]; ok {
 			p.addParseErrf(posrange.PositionRange{}, "duplicate key \"%s\" in histogram", key)
@@ -494,13 +494,15 @@ func (p *parser) mergeMaps(left, right *map[string]interface{}) (ret *map[string
 
 func (p *parser) histogramsIncreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
 	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
-		return a.Add(b)
+		res, _, err := a.Add(b)
+		return res, err
 	})
 }
 
 func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
 	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
-		return a.Sub(b)
+		res, _, err := a.Sub(b)
+		return res, err
 	})
 }
 
@@ -528,7 +530,7 @@ func (*parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint6
 }
 
 // buildHistogramFromMap is used in the grammar to take then individual parts of the histogram and complete it.
-func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) *histogram.FloatHistogram {
+func (p *parser) buildHistogramFromMap(desc *map[string]any) *histogram.FloatHistogram {
 	output := &histogram.FloatHistogram{}
 
 	val, ok := (*desc)["schema"]
@@ -621,7 +623,7 @@ func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) *histogram.
 	return output
 }
 
-func (p *parser) buildHistogramBucketsAndSpans(desc *map[string]interface{}, bucketsKey, offsetKey string,
+func (p *parser) buildHistogramBucketsAndSpans(desc *map[string]any, bucketsKey, offsetKey string,
 ) (buckets []float64, spans []histogram.Span) {
 	bucketCount := 0
 	val, ok := (*desc)[bucketsKey]
@@ -894,7 +896,7 @@ func parseDuration(ds string) (time.Duration, error) {
 // parseGenerated invokes the yacc generated parser.
 // The generated parser gets the provided startSymbol injected into
 // the lexer stream, based on which grammar will be used.
-func (p *parser) parseGenerated(startSymbol ItemType) interface{} {
+func (p *parser) parseGenerated(startSymbol ItemType) any {
 	p.InjectItem(startSymbol)
 
 	p.yyParser.Parse(p)

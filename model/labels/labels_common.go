@@ -53,7 +53,7 @@ func (ls Labels) String() string {
 			b.WriteByte(',')
 			b.WriteByte(' ')
 		}
-		if !model.LabelName(l.Name).IsValidLegacy() {
+		if !model.LegacyValidation.IsValidLabelName(l.Name) {
 			b.Write(strconv.AppendQuote(b.AvailableBuffer(), l.Name))
 		} else {
 			b.WriteString(l.Name)
@@ -84,12 +84,12 @@ func (ls *Labels) UnmarshalJSON(b []byte) error {
 }
 
 // MarshalYAML implements yaml.Marshaler.
-func (ls Labels) MarshalYAML() (interface{}, error) {
+func (ls Labels) MarshalYAML() (any, error) {
 	return ls.Map(), nil
 }
 
 // UnmarshalYAML implements yaml.Unmarshaler.
-func (ls *Labels) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (ls *Labels) UnmarshalYAML(unmarshal func(any) error) error {
 	var m map[string]string
 
 	if err := unmarshal(&m); err != nil {
@@ -106,18 +106,11 @@ func (ls Labels) IsValid(validationScheme model.ValidationScheme) bool {
 		if l.Name == model.MetricNameLabel {
 			// If the default validation scheme has been overridden with legacy mode,
 			// we need to call the special legacy validation checker.
-			if validationScheme == model.LegacyValidation && !model.IsValidLegacyMetricName(string(model.LabelValue(l.Value))) {
-				return strconv.ErrSyntax
-			}
-			if !model.IsValidMetricName(model.LabelValue(l.Value)) {
+			if !validationScheme.IsValidMetricName(l.Value) {
 				return strconv.ErrSyntax
 			}
 		}
-		if validationScheme == model.LegacyValidation {
-			if !model.LabelName(l.Name).IsValidLegacy() || !model.LabelValue(l.Value).IsValid() {
-				return strconv.ErrSyntax
-			}
-		} else if !model.LabelName(l.Name).IsValid() || !model.LabelValue(l.Value).IsValid() {
+		if !validationScheme.IsValidLabelName(l.Name) || !model.LabelValue(l.Value).IsValid() {
 			return strconv.ErrSyntax
 		}
 		return nil

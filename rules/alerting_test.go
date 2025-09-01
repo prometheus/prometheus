@@ -771,15 +771,16 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 		QueueCapacity: 1,
 		RelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{"a1"},
-				Regex:        relabel.MustNewRegexp("(.+)"),
-				TargetLabel:  "a1",
-				Replacement:  "bug",
-				Action:       "replace",
+				SourceLabels:         model.LabelNames{"a1"},
+				Regex:                relabel.MustNewRegexp("(.+)"),
+				TargetLabel:          "a1",
+				Replacement:          "bug",
+				Action:               "replace",
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 	}
-	nm := notifier.NewManager(&opts, promslog.NewNopLogger())
+	nm := notifier.NewManager(&opts, model.UTF8Validation, promslog.NewNopLogger())
 
 	f := SendAlerts(nm, "")
 	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -334,9 +335,10 @@ func TestDroppedTargetsList(t *testing.T) {
 			MetricNameEscapingScheme:   model.AllowUTF8,
 			RelabelConfigs: []*relabel.Config{
 				{
-					Action:       relabel.Drop,
-					Regex:        relabel.MustNewRegexp("dropMe"),
-					SourceLabels: model.LabelNames{"job"},
+					Action:               relabel.Drop,
+					Regex:                relabel.MustNewRegexp("dropMe"),
+					SourceLabels:         model.LabelNames{"job"},
+					NameValidationScheme: model.UTF8Validation,
 				},
 			},
 		}
@@ -458,7 +460,7 @@ func TestScrapePoolStop(t *testing.T) {
 	// clean them and the respective targets up. It must wait until each loop's
 	// stop function returned before returning itself.
 
-	for i := 0; i < numTargets; i++ {
+	for i := range numTargets {
 		t := &Target{
 			labels:       labels.FromStrings(model.AddressLabel, fmt.Sprintf("example.com:%d", i)),
 			scrapeConfig: &config.ScrapeConfig{},
@@ -546,7 +548,7 @@ func TestScrapePoolReload(t *testing.T) {
 	// loops and start new ones. A new loop must not be started before the preceding
 	// one terminated.
 
-	for i := 0; i < numTargets; i++ {
+	for i := range numTargets {
 		labels := labels.FromStrings(model.AddressLabel, fmt.Sprintf("example.com:%d", i))
 		t := &Target{
 			labels:       labels,
@@ -568,9 +570,7 @@ func TestScrapePoolReload(t *testing.T) {
 	done := make(chan struct{})
 
 	beforeTargets := map[uint64]*Target{}
-	for h, t := range sp.activeTargets {
-		beforeTargets[h] = t
-	}
+	maps.Copy(beforeTargets, sp.activeTargets)
 
 	reloadTime := time.Now()
 
@@ -690,7 +690,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 	}
 
 	tgs := []*targetgroup.Group{}
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		tgs = append(tgs,
 			&targetgroup.Group{
 				Targets: []model.LabelSet{
@@ -903,7 +903,7 @@ func TestScrapePoolRaces(t *testing.T) {
 	require.Len(t, active, expectedActive, "Invalid number of active targets")
 	require.Len(t, dropped, expectedDropped, "Invalid number of dropped targets")
 
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		time.Sleep(10 * time.Millisecond)
 		sp.reload(newConfig())
 	}
@@ -1372,10 +1372,11 @@ func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 		labels: labels.FromStrings("pod_label_invalid_012\xff", "test"),
 	}
 	relabelConfig := []*relabel.Config{{
-		Action:      relabel.LabelMap,
-		Regex:       relabel.MustNewRegexp("pod_label_invalid_(.+)"),
-		Separator:   ";",
-		Replacement: "$1",
+		Action:               relabel.LabelMap,
+		Regex:                relabel.MustNewRegexp("pod_label_invalid_(.+)"),
+		Separator:            ";",
+		Replacement:          "$1",
+		NameValidationScheme: model.UTF8Validation,
 	}}
 	sl := newBasicScrapeLoop(t, ctx, &testScraper{}, s.Appender, 0)
 	sl.sampleMutator = func(l labels.Labels) labels.Labels {
@@ -1435,7 +1436,7 @@ func makeTestGauges(n int) []byte {
 	sb := bytes.Buffer{}
 	fmt.Fprintf(&sb, "# TYPE metric_a gauge\n")
 	fmt.Fprintf(&sb, "# HELP metric_a help text\n")
-	for i := 0; i < n; i++ {
+	for i := range n {
 		fmt.Fprintf(&sb, "metric_a{foo=\"%d\",bar=\"%d\"} 1\n", i, i*100)
 	}
 	fmt.Fprintf(&sb, "# EOF\n")
@@ -1815,7 +1816,7 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 		numScrapes++
 		if numScrapes < 5 {
 			s := ""
-			for i := 0; i < 500; i++ {
+			for i := range 500 {
 				s = fmt.Sprintf("%smetric_%d_%d 42\n", s, i, numScrapes)
 			}
 			w.Write([]byte(s + "&"))
@@ -1927,7 +1928,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 	}
 }
 
-func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...interface{}) {
+func requireEqual(t *testing.T, expected, actual any, msgAndArgs ...any) {
 	t.Helper()
 	testutil.RequireEqualWithOptions(t, expected, actual,
 		[]cmp.Option{cmp.Comparer(equalFloatSamples), cmp.AllowUnexported(histogramSample{})},
@@ -3892,7 +3893,7 @@ func TestReuseCacheRace(t *testing.T) {
 			MetricNameValidationScheme: model.UTF8Validation,
 			MetricNameEscapingScheme:   model.AllowUTF8,
 		}
-		buffers = pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
+		buffers = pool.New(1e3, 100e6, 3, func(sz int) any { return make([]byte, 0, sz) })
 		sp, _   = newScrapePool(cfg, app, 0, nil, buffers, &Options{}, newTestScrapeMetrics(t))
 		t1      = &Target{
 			labels:       labels.FromStrings("labelNew", "nameNew"),
@@ -4188,18 +4189,20 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 		MetricNameEscapingScheme:   model.AllowUTF8,
 		RelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{model.ScrapeIntervalLabel},
-				Regex:        relabel.MustNewRegexp("2s"),
-				Replacement:  "3s",
-				TargetLabel:  model.ScrapeIntervalLabel,
-				Action:       relabel.Replace,
+				SourceLabels:         model.LabelNames{model.ScrapeIntervalLabel},
+				Regex:                relabel.MustNewRegexp("2s"),
+				Replacement:          "3s",
+				TargetLabel:          model.ScrapeIntervalLabel,
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
 			},
 			{
-				SourceLabels: model.LabelNames{model.ScrapeTimeoutLabel},
-				Regex:        relabel.MustNewRegexp("500ms"),
-				Replacement:  "750ms",
-				TargetLabel:  model.ScrapeTimeoutLabel,
-				Action:       relabel.Replace,
+				SourceLabels:         model.LabelNames{model.ScrapeTimeoutLabel},
+				Regex:                relabel.MustNewRegexp("500ms"),
+				Replacement:          "750ms",
+				TargetLabel:          model.ScrapeTimeoutLabel,
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 	}
@@ -4226,20 +4229,22 @@ func TestLeQuantileReLabel(t *testing.T) {
 		JobName: "test",
 		MetricRelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{"le", "__name__"},
-				Regex:        relabel.MustNewRegexp("(\\d+)\\.0+;.*_bucket"),
-				Replacement:  relabel.DefaultRelabelConfig.Replacement,
-				Separator:    relabel.DefaultRelabelConfig.Separator,
-				TargetLabel:  "le",
-				Action:       relabel.Replace,
+				SourceLabels:         model.LabelNames{"le", "__name__"},
+				Regex:                relabel.MustNewRegexp("(\\d+)\\.0+;.*_bucket"),
+				Replacement:          relabel.DefaultRelabelConfig.Replacement,
+				Separator:            relabel.DefaultRelabelConfig.Separator,
+				TargetLabel:          "le",
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
 			},
 			{
-				SourceLabels: model.LabelNames{"quantile"},
-				Regex:        relabel.MustNewRegexp("(\\d+)\\.0+"),
-				Replacement:  relabel.DefaultRelabelConfig.Replacement,
-				Separator:    relabel.DefaultRelabelConfig.Separator,
-				TargetLabel:  "quantile",
-				Action:       relabel.Replace,
+				SourceLabels:         model.LabelNames{"quantile"},
+				Regex:                relabel.MustNewRegexp("(\\d+)\\.0+"),
+				Replacement:          relabel.DefaultRelabelConfig.Replacement,
+				Separator:            relabel.DefaultRelabelConfig.Separator,
+				TargetLabel:          "quantile",
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 		SampleLimit:                100,
@@ -4351,7 +4356,7 @@ func TestConvertClassicHistogramsToNHCB(t *testing.T) {
 `, name, value)
 	}
 	genTestHistText := func(name string, withMetadata bool) string {
-		data := map[string]interface{}{
+		data := map[string]any{
 			"name": name,
 		}
 		b := &bytes.Buffer{}
@@ -4870,18 +4875,20 @@ func TestTypeUnitReLabel(t *testing.T) {
 		JobName: "test",
 		MetricRelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{"__name__"},
-				Regex:        relabel.MustNewRegexp(".*_total$"),
-				Replacement:  "counter",
-				TargetLabel:  "__type__",
-				Action:       relabel.Replace,
+				SourceLabels:         model.LabelNames{"__name__"},
+				Regex:                relabel.MustNewRegexp(".*_total$"),
+				Replacement:          "counter",
+				TargetLabel:          "__type__",
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
 			},
 			{
-				SourceLabels: model.LabelNames{"__name__"},
-				Regex:        relabel.MustNewRegexp(".*_bytes$"),
-				Replacement:  "bytes",
-				TargetLabel:  "__unit__",
-				Action:       relabel.Replace,
+				SourceLabels:         model.LabelNames{"__name__"},
+				Regex:                relabel.MustNewRegexp(".*_bytes$"),
+				Replacement:          "bytes",
+				TargetLabel:          "__unit__",
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 		SampleLimit:                100,
@@ -5137,7 +5144,7 @@ func BenchmarkTargetScraperGzip(b *testing.B) {
 		{metricsCount: 100000},
 	}
 
-	for i := 0; i < len(scenarios); i++ {
+	for i := range scenarios {
 		var buf bytes.Buffer
 		var name string
 		gw := gzip.NewWriter(&buf)
@@ -5258,7 +5265,6 @@ func TestNativeHistogramMaxSchemaSet(t *testing.T) {
 		},
 	}
 	for name, tc := range testcases {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			testNativeHistogramMaxSchemaSet(t, tc.minBucketFactor, tc.expectedSchema)
@@ -5491,25 +5497,28 @@ func TestTargetScrapeConfigWithLabels(t *testing.T) {
 				Params:                     url.Values{"param": []string{secondParam}},
 				RelabelConfigs: []*relabel.Config{
 					{
-						Action:       relabel.DefaultRelabelConfig.Action,
-						Regex:        relabel.DefaultRelabelConfig.Regex,
-						SourceLabels: relabel.DefaultRelabelConfig.SourceLabels,
-						TargetLabel:  model.ScrapeTimeoutLabel,
-						Replacement:  expectedTimeoutLabel,
+						Action:               relabel.DefaultRelabelConfig.Action,
+						Regex:                relabel.DefaultRelabelConfig.Regex,
+						SourceLabels:         relabel.DefaultRelabelConfig.SourceLabels,
+						TargetLabel:          model.ScrapeTimeoutLabel,
+						Replacement:          expectedTimeoutLabel,
+						NameValidationScheme: model.UTF8Validation,
 					},
 					{
-						Action:       relabel.DefaultRelabelConfig.Action,
-						Regex:        relabel.DefaultRelabelConfig.Regex,
-						SourceLabels: relabel.DefaultRelabelConfig.SourceLabels,
-						TargetLabel:  paramLabel,
-						Replacement:  expectedParam,
+						Action:               relabel.DefaultRelabelConfig.Action,
+						Regex:                relabel.DefaultRelabelConfig.Regex,
+						SourceLabels:         relabel.DefaultRelabelConfig.SourceLabels,
+						TargetLabel:          paramLabel,
+						Replacement:          expectedParam,
+						NameValidationScheme: model.UTF8Validation,
 					},
 					{
-						Action:       relabel.DefaultRelabelConfig.Action,
-						Regex:        relabel.DefaultRelabelConfig.Regex,
-						SourceLabels: relabel.DefaultRelabelConfig.SourceLabels,
-						TargetLabel:  model.MetricsPathLabel,
-						Replacement:  expectedPath,
+						Action:               relabel.DefaultRelabelConfig.Action,
+						Regex:                relabel.DefaultRelabelConfig.Regex,
+						SourceLabels:         relabel.DefaultRelabelConfig.SourceLabels,
+						TargetLabel:          model.MetricsPathLabel,
+						Replacement:          expectedPath,
+						NameValidationScheme: model.UTF8Validation,
 					},
 				},
 			},

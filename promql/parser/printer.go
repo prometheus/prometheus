@@ -41,7 +41,7 @@ func tree(node Node, level string) string {
 
 	level += " · · ·"
 
-	for _, e := range Children(node) {
+	for e := range ChildrenIter(node) {
 		t += tree(e, level)
 	}
 
@@ -100,7 +100,7 @@ func joinLabels(ss []string) string {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		if !model.IsValidLegacyMetricName(string(model.LabelValue(s))) {
+		if !model.LegacyValidation.IsValidMetricName(s) {
 			b.Write(strconv.AppendQuote(b.AvailableBuffer(), s))
 		} else {
 			b.WriteString(s)

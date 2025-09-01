@@ -367,7 +367,7 @@ func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 // NOTE: This method should not be used outside of this package. Use Load or LoadFile instead.
-func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *Config) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultConfig
 	// We want to set c to the defaults and then overwrite it with the input.
 	// To make unmarshal fill the plain data struct rather than calling UnmarshalYAML
@@ -413,6 +413,10 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		jobNames[scfg.JobName] = struct{}{}
 	}
 
+	if err := c.AlertingConfig.Validate(c.GlobalConfig.MetricNameValidationScheme); err != nil {
+		return err
+	}
+
 	rwNames := map[string]struct{}{}
 	for _, rwcfg := range c.RemoteWriteConfigs {
 		if rwcfg == nil {
@@ -421,6 +425,9 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		// Skip empty names, we fill their name with their config hash in remote write code.
 		if _, ok := rwNames[rwcfg.Name]; ok && rwcfg.Name != "" {
 			return fmt.Errorf("found multiple remote write configs with job name %q", rwcfg.Name)
+		}
+		if err := rwcfg.Validate(c.GlobalConfig.MetricNameValidationScheme); err != nil {
+			return err
 		}
 		rwNames[rwcfg.Name] = struct{}{}
 	}
@@ -587,7 +594,7 @@ func (c *GlobalConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *GlobalConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	// Create a clean global config as the previous one was already populated
 	// by the default due to the YAML parser behavior for empty blocks.
 	gc := &GlobalConfig{}
@@ -596,8 +603,14 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
+	switch gc.MetricNameValidationScheme {
+	case model.UTF8Validation, model.LegacyValidation:
+	default:
+		gc.MetricNameValidationScheme = DefaultGlobalConfig.MetricNameValidationScheme
+	}
+
 	if err := gc.ExternalLabels.Validate(func(l labels.Label) error {
-		if !model.LabelName(l.Name).IsValid() {
+		if !gc.MetricNameValidationScheme.IsValidLabelName(l.Name) {
 			return fmt.Errorf("%q is not a valid label name", l.Name)
 		}
 		if !model.LabelValue(l.Value).IsValid() {
@@ -617,11 +630,7 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return errors.New("global scrape timeout greater than scrape interval")
 	}
 	if gc.ScrapeTimeout == 0 {
-		if DefaultGlobalConfig.ScrapeTimeout > gc.ScrapeInterval {
-			gc.ScrapeTimeout = gc.ScrapeInterval
-		} else {
-			gc.ScrapeTimeout = DefaultGlobalConfig.ScrapeTimeout
-		}
+		gc.ScrapeTimeout = min(DefaultGlobalConfig.ScrapeTimeout, gc.ScrapeInterval)
 	}
 	if gc.EvaluationInterval == 0 {
 		gc.EvaluationInterval = DefaultGlobalConfig.EvaluationInterval
@@ -777,7 +786,7 @@ func (c *ScrapeConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultScrapeConfig
 	if err := discovery.UnmarshalYAMLWithInlineConfigs(c, unmarshal); err != nil {
 		return err
@@ -828,11 +837,7 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		return fmt.Errorf("scrape timeout greater than scrape interval for scrape config with job name %q", c.JobName)
 	}
 	if c.ScrapeTimeout == 0 {
-		if globalConfig.ScrapeTimeout > c.ScrapeInterval {
-			c.ScrapeTimeout = c.ScrapeInterval
-		} else {
-			c.ScrapeTimeout = globalConfig.ScrapeTimeout
-		}
+		c.ScrapeTimeout = min(globalConfig.ScrapeTimeout, c.ScrapeInterval)
 	}
 	if c.BodySizeLimit == 0 {
 		c.BodySizeLimit = globalConfig.BodySizeLimit
@@ -878,11 +883,9 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 
 	switch globalConfig.MetricNameValidationScheme {
-	case model.UnsetValidation:
-		globalConfig.MetricNameValidationScheme = model.UTF8Validation
 	case model.LegacyValidation, model.UTF8Validation:
 	default:
-		return fmt.Errorf("unknown global name validation method specified, must be either '', 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
+		return errors.New("global name validation method must be set")
 	}
 	// Scrapeconfig validation scheme matches global if left blank.
 	localValidationUnset := false
@@ -944,11 +947,22 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		c.AlwaysScrapeClassicHistograms = &global
 	}
 
+	for _, rc := range c.RelabelConfigs {
+		if err := rc.Validate(c.MetricNameValidationScheme); err != nil {
+			return err
+		}
+	}
+	for _, rc := range c.MetricRelabelConfigs {
+		if err := rc.Validate(c.MetricNameValidationScheme); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 // MarshalYAML implements the yaml.Marshaler interface.
-func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
+func (c *ScrapeConfig) MarshalYAML() (any, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
 }
 
@@ -1002,7 +1016,7 @@ type TSDBConfig struct {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (t *TSDBConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (t *TSDBConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*t = TSDBConfig{}
 	type plain TSDBConfig
 	if err := unmarshal((*plain)(t)); err != nil {
@@ -1024,7 +1038,7 @@ const (
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (t *TracingClientType) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (t *TracingClientType) UnmarshalYAML(unmarshal func(any) error) error {
 	*t = TracingClientType("")
 	type plain TracingClientType
 	if err := unmarshal((*plain)(t)); err != nil {
@@ -1058,7 +1072,7 @@ func (t *TracingConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (t *TracingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (t *TracingConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*t = TracingConfig{
 		ClientType: TracingClientGRPC,
 	}
@@ -1096,6 +1110,20 @@ type AlertingConfig struct {
 	AlertmanagerConfigs AlertmanagerConfigs `yaml:"alertmanagers,omitempty"`
 }
 
+func (c *AlertingConfig) Validate(nameValidationScheme model.ValidationScheme) error {
+	for _, rc := range c.AlertRelabelConfigs {
+		if err := rc.Validate(nameValidationScheme); err != nil {
+			return err
+		}
+	}
+	for _, rc := range c.AlertmanagerConfigs {
+		if err := rc.Validate(nameValidationScheme); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SetDirectory joins any relative file paths with dir.
 func (c *AlertingConfig) SetDirectory(dir string) {
 	for _, c := range c.AlertmanagerConfigs {
@@ -1104,7 +1132,7 @@ func (c *AlertingConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *AlertingConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	// Create a clean global config as the previous one was already populated
 	// by the default due to the YAML parser behavior for empty blocks.
 	*c = AlertingConfig{}
@@ -1139,7 +1167,7 @@ func (a AlertmanagerConfigs) ToMap() map[string]*AlertmanagerConfig {
 type AlertmanagerAPIVersion string
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (v *AlertmanagerAPIVersion) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (v *AlertmanagerAPIVersion) UnmarshalYAML(unmarshal func(any) error) error {
 	*v = AlertmanagerAPIVersion("")
 	type plain AlertmanagerAPIVersion
 	if err := unmarshal((*plain)(v)); err != nil {
@@ -1198,7 +1226,7 @@ func (c *AlertmanagerConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultAlertmanagerConfig
 	if err := discovery.UnmarshalYAMLWithInlineConfigs(c, unmarshal); err != nil {
 		return err
@@ -1240,8 +1268,22 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	return nil
 }
 
+func (c *AlertmanagerConfig) Validate(nameValidationScheme model.ValidationScheme) error {
+	for _, rc := range c.AlertRelabelConfigs {
+		if err := rc.Validate(nameValidationScheme); err != nil {
+			return err
+		}
+	}
+	for _, rc := range c.RelabelConfigs {
+		if err := rc.Validate(nameValidationScheme); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // MarshalYAML implements the yaml.Marshaler interface.
-func (c *AlertmanagerConfig) MarshalYAML() (interface{}, error) {
+func (c *AlertmanagerConfig) MarshalYAML() (any, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
 }
 
@@ -1345,7 +1387,7 @@ func (c *RemoteWriteConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultRemoteWriteConfig
 	type plain RemoteWriteConfig
 	if err := unmarshal((*plain)(c)); err != nil {
@@ -1375,6 +1417,16 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	}
 
 	return validateAuthConfigs(c)
+}
+
+func (c *RemoteWriteConfig) Validate(nameValidationScheme model.ValidationScheme) error {
+	for _, rc := range c.WriteRelabelConfigs {
+		if err := rc.Validate(nameValidationScheme); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // validateAuthConfigs validates that at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured.
@@ -1500,7 +1552,7 @@ func (c *RemoteReadConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultRemoteReadConfig
 	type plain RemoteReadConfig
 	if err := unmarshal((*plain)(c)); err != nil {
@@ -1560,7 +1612,7 @@ type OTLPConfig struct {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *OTLPConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultOTLPConfig
 	type plain OTLPConfig
 	if err := unmarshal((*plain)(c)); err != nil {

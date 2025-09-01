@@ -248,7 +248,7 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 	ctx := context.Background()
 	{
 		// Appending 121 samples because on the 121st a new chunk will be created.
-		for i := 0; i < 121; i++ {
+		for range 121 {
 			app := db.Appender(ctx)
 			_, err := app.Append(0, labels.FromStrings("foo", "bar"), maxt, 0)
 			expSamples = append(expSamples, sample{t: maxt, f: 0})
@@ -436,7 +436,7 @@ func TestDeleteSimple(t *testing.T) {
 			app := db.Appender(ctx)
 
 			smpls := make([]float64, numSamples)
-			for i := int64(0); i < numSamples; i++ {
+			for i := range numSamples {
 				smpls[i] = rand.Float64()
 				app.Append(0, labels.FromStrings("a", "b"), i, smpls[i])
 			}
@@ -645,7 +645,7 @@ func TestDB_Snapshot(t *testing.T) {
 	ctx := context.Background()
 	app := db.Appender(ctx)
 	mint := int64(1414141414000)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		_, err := app.Append(0, labels.FromStrings("foo", "bar"), mint+int64(i), 1.0)
 		require.NoError(t, err)
 	}
@@ -691,7 +691,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	ctx := context.Background()
 	app := db.Appender(ctx)
 	mint := int64(1414141414000)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		_, err := app.Append(0, labels.FromStrings("foo", "bar"), mint+int64(i), 1.0)
 		require.NoError(t, err)
 	}
@@ -743,7 +743,7 @@ func TestDB_SnapshotWithDelete(t *testing.T) {
 	app := db.Appender(ctx)
 
 	smpls := make([]float64, numSamples)
-	for i := int64(0); i < numSamples; i++ {
+	for i := range numSamples {
 		smpls[i] = rand.Float64()
 		app.Append(0, labels.FromStrings("a", "b"), i, smpls[i])
 	}
@@ -889,7 +889,7 @@ func TestDB_e2e(t *testing.T) {
 		series := []chunks.Sample{}
 
 		ts := rand.Int63n(300)
-		for i := 0; i < numDatapoints; i++ {
+		for range numDatapoints {
 			v := rand.Float64()
 
 			series = append(series, sample{ts, v, nil, nil})
@@ -940,7 +940,7 @@ func TestDB_e2e(t *testing.T) {
 
 		sort.Sort(matched)
 
-		for i := 0; i < numRanges; i++ {
+		for range numRanges {
 			mint := rand.Int63n(300)
 			maxt := mint + rand.Int63n(timeInterval*int64(numDatapoints))
 
@@ -1065,7 +1065,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 			opts.WALSegmentSize = segmentSize
 			db := openTestDB(t, opts, nil)
 
-			for i := int64(0); i < 155; i++ {
+			for i := range int64(155) {
 				app := db.Appender(context.Background())
 				ref, err := app.Append(0, labels.FromStrings("wal"+strconv.Itoa(int(i)), "size"), i, rand.Float64())
 				require.NoError(t, err)
@@ -1113,7 +1113,7 @@ func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBefore
 		var enc record.Encoder
 		var samples []record.RefSample
 
-		for ts := 0; ts < numSamplesBeforeSeriesCreation; ts++ {
+		for ts := range numSamplesBeforeSeriesCreation {
 			samples = append(samples, record.RefSample{
 				Ref: chunks.HeadSeriesRef(uint64(seriesRef)),
 				T:   int64(ts),
@@ -1180,7 +1180,7 @@ func TestTombstoneClean(t *testing.T) {
 	app := db.Appender(ctx)
 
 	smpls := make([]float64, numSamples)
-	for i := int64(0); i < numSamples; i++ {
+	for i := range numSamples {
 		smpls[i] = rand.Float64()
 		app.Append(0, labels.FromStrings("a", "b"), i, smpls[i])
 	}
@@ -1275,7 +1275,7 @@ func TestTombstoneCleanResultEmptyBlock(t *testing.T) {
 	app := db.Appender(ctx)
 
 	smpls := make([]float64, numSamples)
-	for i := int64(0); i < numSamples; i++ {
+	for i := range numSamples {
 		smpls[i] = rand.Float64()
 		app.Append(0, labels.FromStrings("a", "b"), i, smpls[i])
 	}
@@ -1322,7 +1322,7 @@ func TestTombstoneCleanFail(t *testing.T) {
 	// Create some blocks pending for compaction.
 	// totalBlocks should be >=2 so we have enough blocks to trigger compaction failure.
 	totalBlocks := 2
-	for i := 0; i < totalBlocks; i++ {
+	for i := range totalBlocks {
 		blockDir := createBlock(t, db.Dir(), genSeries(1, 1, int64(i), int64(i)+1))
 		block, err := OpenBlock(nil, blockDir, nil, nil)
 		require.NoError(t, err)
@@ -1557,7 +1557,7 @@ func TestSizeRetention(t *testing.T) {
 	// Create a WAL checkpoint, and compare sizes.
 	first, last, err := wlog.Segments(db.Head().wal.Dir())
 	require.NoError(t, err)
-	_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef, int) bool { return false }, 0)
+	_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0)
 	require.NoError(t, err)
 	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err = db.Head().wal.Size()
@@ -1852,7 +1852,7 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 	blockRange := db.compactor.(*LeveledCompactor).ranges[0]
 	label := labels.FromStrings("foo", "bar")
 
-	for i := int64(0); i < 3; i++ {
+	for i := range int64(3) {
 		_, err := app.Append(0, label, i*blockRange, 0)
 		require.NoError(t, err)
 		_, err = app.Append(0, label, i*blockRange+1000, 0)
@@ -1909,7 +1909,7 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 	blockRange := db.compactor.(*LeveledCompactor).ranges[0]
 	label := labels.FromStrings("foo", "bar")
 
-	for i := int64(0); i < 5; i++ {
+	for i := range int64(5) {
 		_, err := app.Append(0, label, i*blockRange, 0)
 		require.NoError(t, err)
 		_, err = app.Append(0, labels.FromStrings("blockID", strconv.FormatInt(i, 10)), i*blockRange, 0)
@@ -2267,8 +2267,8 @@ func TestCorrectNumTombstones(t *testing.T) {
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
-	for i := int64(0); i < 3; i++ {
-		for j := int64(0); j < 15; j++ {
+	for i := range int64(3) {
+		for j := range int64(15) {
 			_, err := app.Append(0, defaultLabel, i*blockRange+j, 0)
 			require.NoError(t, err)
 		}
@@ -2333,7 +2333,7 @@ func TestBlockRanges(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	for x := 0; x < 100; x++ {
+	for range 100 {
 		if len(db.Blocks()) == 2 {
 			break
 		}
@@ -2373,7 +2373,7 @@ func TestBlockRanges(t *testing.T) {
 	_, err = app.Append(0, lbl, thirdBlockMaxt+rangeToTriggerCompaction, rand.Float64()) // Trigger a compaction
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	for x := 0; x < 100; x++ {
+	for range 100 {
 		if len(db.Blocks()) == 4 {
 			break
 		}
@@ -2629,7 +2629,7 @@ func TestDBReadOnly_Querier_NoAlteration(t *testing.T) {
 		}()
 
 		// Append until the first mmapped head chunk.
-		for i := 0; i < 121; i++ {
+		for i := range 121 {
 			app := db.Appender(context.Background())
 			_, err := app.Append(0, labels.FromStrings("foo", "bar"), int64(i), 0)
 			require.NoError(t, err)
@@ -2687,7 +2687,7 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 		for {
 			app := db.Appender(ctx)
 
-			for j := 0; j < 100; j++ {
+			for j := range 100 {
 				_, err := app.Append(0, labels.FromStrings("foo", "bar", "a", strconv.Itoa(j)), int64(iter), float64(iter))
 				require.NoError(t, err)
 			}
@@ -2712,7 +2712,7 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 	// This is a race condition, so do a few tests to tickle it.
 	// Usually most will fail.
 	inconsistencies := 0
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		func() {
 			querier, err := db.Querier(0, 1000000)
 			require.NoError(t, err)
@@ -3039,7 +3039,7 @@ func TestChunkReader_ConcurrentReads(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for _, chk := range chks {
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			wg.Add(1)
 			go func(chunk chunks.Meta) {
 				defer wg.Done()
@@ -3082,7 +3082,7 @@ func TestCompactHead(t *testing.T) {
 	app := db.Appender(ctx)
 	var expSamples []sample
 	maxt := 100
-	for i := 0; i < maxt; i++ {
+	for i := range maxt {
 		val := rand.Float64()
 		_, err := app.Append(0, labels.FromStrings("a", "b"), int64(i), val)
 		require.NoError(t, err)
@@ -3306,7 +3306,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 	lbls := labels.FromStrings("foo_d", "choco_bar")
 	// Append samples spanning 59 block ranges.
 	app := db.Appender(context.Background())
-	for i := int64(0); i < 60; i++ {
+	for i := range int64(60) {
 		_, err := app.Append(0, lbls, blockRange*i, rand.Float64())
 		require.NoError(t, err)
 		_, err = app.Append(0, lbls, (blockRange*i)+blockRange/2, rand.Float64())
@@ -3460,7 +3460,7 @@ func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t 
 
 	// Generate the metrics we're going to append.
 	metrics := make([]labels.Labels, 0, numSeries)
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		metrics = append(metrics, labels.FromStrings(labels.MetricName, fmt.Sprintf("test_%d", i)))
 	}
 
@@ -3534,7 +3534,7 @@ func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t 
 	// Stress the memory and call GC. This is required to increase the chances
 	// the chunk memory area is released to the kernel.
 	var buf []byte
-	for i := 0; i < numStressIterations; i++ {
+	for i := range numStressIterations {
 		//nolint:staticcheck
 		buf = append(buf, make([]byte, minStressAllocationBytes+rand.Int31n(maxStressAllocationBytes-minStressAllocationBytes))...)
 		if i%1000 == 0 {
@@ -3596,7 +3596,7 @@ func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChun
 
 	// Generate the metrics we're going to append.
 	metrics := make([]labels.Labels, 0, numSeries)
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		metrics = append(metrics, labels.FromStrings(labels.MetricName, fmt.Sprintf("test_%d", i)))
 	}
 
@@ -3668,7 +3668,7 @@ func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChun
 	// Stress the memory and call GC. This is required to increase the chances
 	// the chunk memory area is released to the kernel.
 	var buf []byte
-	for i := 0; i < numStressIterations; i++ {
+	for i := range numStressIterations {
 		//nolint:staticcheck
 		buf = append(buf, make([]byte, minStressAllocationBytes+rand.Int31n(maxStressAllocationBytes-minStressAllocationBytes))...)
 		if i%1000 == 0 {
@@ -3970,8 +3970,8 @@ func TestOOOWALWrite(t *testing.T) {
 
 	scenarios := map[string]struct {
 		appendSample       func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error)
-		expectedOOORecords []interface{}
-		expectedInORecords []interface{}
+		expectedOOORecords []any
+		expectedInORecords []any
 	}{
 		"float": {
 			appendSample: func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error) {
@@ -3979,7 +3979,7 @@ func TestOOOWALWrite(t *testing.T) {
 				require.NoError(t, err)
 				return seriesRef, nil
 			},
-			expectedOOORecords: []interface{}{
+			expectedOOORecords: []any{
 				// The MmapRef in this are not hand calculated, and instead taken from the test run.
 				// What is important here is the order of records, and that MmapRef increases for each record.
 				[]record.RefMmapMarker{
@@ -4031,7 +4031,7 @@ func TestOOOWALWrite(t *testing.T) {
 					{Ref: 2, T: minutes(53), V: 53},
 				},
 			},
-			expectedInORecords: []interface{}{
+			expectedInORecords: []any{
 				[]record.RefSeries{
 					{Ref: 1, Labels: s1},
 					{Ref: 2, Labels: s2},
@@ -4070,7 +4070,7 @@ func TestOOOWALWrite(t *testing.T) {
 				require.NoError(t, err)
 				return seriesRef, nil
 			},
-			expectedOOORecords: []interface{}{
+			expectedOOORecords: []any{
 				// The MmapRef in this are not hand calculated, and instead taken from the test run.
 				// What is important here is the order of records, and that MmapRef increases for each record.
 				[]record.RefMmapMarker{
@@ -4122,7 +4122,7 @@ func TestOOOWALWrite(t *testing.T) {
 					{Ref: 2, T: minutes(53), H: tsdbutil.GenerateTestHistogram(53)},
 				},
 			},
-			expectedInORecords: []interface{}{
+			expectedInORecords: []any{
 				[]record.RefSeries{
 					{Ref: 1, Labels: s1},
 					{Ref: 2, Labels: s2},
@@ -4161,7 +4161,7 @@ func TestOOOWALWrite(t *testing.T) {
 				require.NoError(t, err)
 				return seriesRef, nil
 			},
-			expectedOOORecords: []interface{}{
+			expectedOOORecords: []any{
 				// The MmapRef in this are not hand calculated, and instead taken from the test run.
 				// What is important here is the order of records, and that MmapRef increases for each record.
 				[]record.RefMmapMarker{
@@ -4213,7 +4213,7 @@ func TestOOOWALWrite(t *testing.T) {
 					{Ref: 2, T: minutes(53), FH: tsdbutil.GenerateTestFloatHistogram(53)},
 				},
 			},
-			expectedInORecords: []interface{}{
+			expectedInORecords: []any{
 				[]record.RefSeries{
 					{Ref: 1, Labels: s1},
 					{Ref: 2, Labels: s2},
@@ -4252,7 +4252,7 @@ func TestOOOWALWrite(t *testing.T) {
 				require.NoError(t, err)
 				return seriesRef, nil
 			},
-			expectedOOORecords: []interface{}{
+			expectedOOORecords: []any{
 				// The MmapRef in this are not hand calculated, and instead taken from the test run.
 				// What is important here is the order of records, and that MmapRef increases for each record.
 				[]record.RefMmapMarker{
@@ -4304,7 +4304,7 @@ func TestOOOWALWrite(t *testing.T) {
 					{Ref: 2, T: minutes(53), H: tsdbutil.GenerateTestCustomBucketsHistogram(53)},
 				},
 			},
-			expectedInORecords: []interface{}{
+			expectedInORecords: []any{
 				[]record.RefSeries{
 					{Ref: 1, Labels: s1},
 					{Ref: 2, Labels: s2},
@@ -4343,7 +4343,7 @@ func TestOOOWALWrite(t *testing.T) {
 				require.NoError(t, err)
 				return seriesRef, nil
 			},
-			expectedOOORecords: []interface{}{
+			expectedOOORecords: []any{
 				// The MmapRef in this are not hand calculated, and instead taken from the test run.
 				// What is important here is the order of records, and that MmapRef increases for each record.
 				[]record.RefMmapMarker{
@@ -4395,7 +4395,7 @@ func TestOOOWALWrite(t *testing.T) {
 					{Ref: 2, T: minutes(53), FH: tsdbutil.GenerateTestCustomBucketsFloatHistogram(53)},
 				},
 			},
-			expectedInORecords: []interface{}{
+			expectedInORecords: []any{
 				[]record.RefSeries{
 					{Ref: 1, Labels: s1},
 					{Ref: 2, Labels: s2},
@@ -4438,8 +4438,8 @@ func TestOOOWALWrite(t *testing.T) {
 
 func testOOOWALWrite(t *testing.T,
 	appendSample func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error),
-	expectedOOORecords []interface{},
-	expectedInORecords []interface{},
+	expectedOOORecords []any,
+	expectedInORecords []any,
 ) {
 	dir := t.TempDir()
 
@@ -4495,7 +4495,7 @@ func testOOOWALWrite(t *testing.T,
 	appendSample(app, s2, 53)
 	require.NoError(t, app.Commit())
 
-	getRecords := func(walDir string) []interface{} {
+	getRecords := func(walDir string) []any {
 		sr, err := wlog.NewSegmentsReader(walDir)
 		require.NoError(t, err)
 		r := wlog.NewReader(sr)
@@ -4503,7 +4503,7 @@ func testOOOWALWrite(t *testing.T,
 			require.NoError(t, sr.Close())
 		}()
 
-		var records []interface{}
+		var records []any
 		dec := record.NewDecoder(nil)
 		for r.Next() {
 			rec := r.Record()
@@ -4562,7 +4562,7 @@ func TestDBPanicOnMmappingHeadChunk(t *testing.T) {
 		app := db.Appender(context.Background())
 		var ref storage.SeriesRef
 		lbls := labels.FromStrings("__name__", "testing", "foo", "bar")
-		for i := 0; i < numSamples; i++ {
+		for i := range numSamples {
 			ref, err = app.Append(ref, lbls, lastTs, float64(lastTs))
 			require.NoError(t, err)
 			lastTs += itvl
@@ -4738,7 +4738,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	// Let's create a checkpoint.
 	first, last, err := wlog.Segments(w.Dir())
 	require.NoError(t, err)
-	keep := func(id chunks.HeadSeriesRef, _ int) bool {
+	keep := func(id chunks.HeadSeriesRef) bool {
 		return id != 3
 	}
 	_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0)
@@ -7600,7 +7600,7 @@ func testOOOCompactionFailure(t *testing.T, scenario sampleTypeScenario) {
 	// OOO compaction fails 5 times.
 	originalCompactor := db.compactor
 	db.compactor = &mockCompactorFailing{t: t}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		require.Error(t, db.CompactOOOHead(ctx))
 	}
 	require.Empty(t, db.Blocks())
@@ -9170,9 +9170,9 @@ func TestChunkQuerierReadWriteRace(t *testing.T) {
 	writer := func() error {
 		<-time.After(5 * time.Millisecond) // Initial pause while readers start.
 		ts := 0
-		for i := 0; i < 500; i++ {
+		for range 500 {
 			app := db.Appender(context.Background())
-			for j := 0; j < 10; j++ {
+			for range 10 {
 				ts++
 				_, err := app.Append(0, lbls, int64(ts), float64(ts*100))
 				if err != nil {
@@ -9434,7 +9434,7 @@ func TestGenerateCompactionDelay(t *testing.T) {
 		// The offset is generated and changed while opening.
 		assertDelay(db.opts.CompactionDelay, c.compactionDelayPercent)
 
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			assertDelay(db.generateCompactionDelay(), c.compactionDelayPercent)
 		}
 	}

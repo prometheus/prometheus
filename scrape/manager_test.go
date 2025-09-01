@@ -188,11 +188,12 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeTimeout:  model.Duration(time.Second),
 				RelabelConfigs: []*relabel.Config{
 					{
-						Action:       relabel.Replace,
-						Regex:        relabel.MustNewRegexp("(.*)"),
-						SourceLabels: model.LabelNames{"custom"},
-						Replacement:  "${1}",
-						TargetLabel:  string(model.AddressLabel),
+						Action:               relabel.Replace,
+						Regex:                relabel.MustNewRegexp("(.*)"),
+						SourceLabels:         model.LabelNames{"custom"},
+						Replacement:          "${1}",
+						TargetLabel:          string(model.AddressLabel),
+						NameValidationScheme: model.UTF8Validation,
 					},
 				},
 			},
@@ -226,11 +227,12 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeTimeout:  model.Duration(time.Second),
 				RelabelConfigs: []*relabel.Config{
 					{
-						Action:       relabel.Replace,
-						Regex:        relabel.MustNewRegexp("(.*)"),
-						SourceLabels: model.LabelNames{"custom"},
-						Replacement:  "${1}",
-						TargetLabel:  string(model.AddressLabel),
+						Action:               relabel.Replace,
+						Regex:                relabel.MustNewRegexp("(.*)"),
+						SourceLabels:         model.LabelNames{"custom"},
+						Replacement:          "${1}",
+						TargetLabel:          string(model.AddressLabel),
+						NameValidationScheme: model.UTF8Validation,
 					},
 				},
 			},
@@ -450,6 +452,10 @@ func TestPopulateLabels(t *testing.T) {
 	for _, c := range cases {
 		in := maps.Clone(c.in)
 		lb := labels.NewBuilder(labels.EmptyLabels())
+		c.cfg.MetricNameValidationScheme = model.UTF8Validation
+		for i := range c.cfg.RelabelConfigs {
+			c.cfg.RelabelConfigs[i].NameValidationScheme = model.UTF8Validation
+		}
 		res, err := PopulateLabels(lb, c.cfg, c.in, nil)
 		if c.err != "" {
 			require.EqualError(t, err, c.err)
@@ -588,7 +594,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	defer m.Stop()
 
 	tgSent := make(map[string][]*targetgroup.Group)
-	for x := 0; x < 10; x++ {
+	for x := range 10 {
 		tgSent[strconv.Itoa(x)] = []*targetgroup.Group{
 			{
 				Source: strconv.Itoa(x),
@@ -1050,7 +1056,7 @@ scrape_configs:
 func TestUnregisterMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	// Check that all metrics can be unregistered, allowing a second manager to be created.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		opts := Options{}
 		manager, err := NewManager(&opts, nil, nil, nil, reg)
 		require.NotNil(t, manager)

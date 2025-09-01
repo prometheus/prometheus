@@ -75,7 +75,7 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, int64(1), interned.refs.Load(), "wrong interned refs count")
 
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		released := make(chan struct{})
 		go func() {
 			interner.release(testString)

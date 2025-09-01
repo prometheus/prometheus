@@ -80,7 +80,7 @@ const (
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *Role) UnmarshalYAML(unmarshal func(any) error) error {
 	if err := unmarshal((*string)(c)); err != nil {
 		return err
 	}
@@ -160,7 +160,7 @@ type AttachMetadataConfig struct {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
@@ -234,7 +234,7 @@ type NamespaceDiscovery struct {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *NamespaceDiscovery) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *NamespaceDiscovery) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = NamespaceDiscovery{}
 	type plain NamespaceDiscovery
 	return unmarshal((*plain)(c))
@@ -698,7 +698,7 @@ func (d *Discovery) newNamespaceInformer(ctx context.Context) cache.SharedInform
 func (d *Discovery) newIndexedPodsInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
 	indexers := make(map[string]cache.IndexFunc)
 	if d.attachMetadata.Node {
-		indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
+		indexers[nodeIndex] = func(obj any) ([]string, error) {
 			pod, ok := obj.(*apiv1.Pod)
 			if !ok {
 				return nil, errors.New("object is not a pod")
@@ -716,7 +716,7 @@ func (d *Discovery) newIndexedPodsInformer(plw *cache.ListWatch) cache.SharedInd
 
 func (d *Discovery) newIndexedEndpointsInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
 	indexers := make(map[string]cache.IndexFunc)
-	indexers[podIndex] = func(obj interface{}) ([]string, error) {
+	indexers[podIndex] = func(obj any) ([]string, error) {
 		e, ok := obj.(*apiv1.Endpoints)
 		if !ok {
 			return nil, errors.New("object is not endpoints")
@@ -733,7 +733,7 @@ func (d *Discovery) newIndexedEndpointsInformer(plw *cache.ListWatch) cache.Shar
 	}
 
 	if d.attachMetadata.Node {
-		indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
+		indexers[nodeIndex] = func(obj any) ([]string, error) {
 			e, ok := obj.(*apiv1.Endpoints)
 			if !ok {
 				return nil, errors.New("object is not endpoints")
@@ -766,7 +766,7 @@ func (d *Discovery) newIndexedEndpointsInformer(plw *cache.ListWatch) cache.Shar
 
 func (d *Discovery) newIndexedEndpointSlicesInformer(plw *cache.ListWatch, object runtime.Object) cache.SharedIndexInformer {
 	indexers := make(map[string]cache.IndexFunc)
-	indexers[serviceIndex] = func(obj interface{}) ([]string, error) {
+	indexers[serviceIndex] = func(obj any) ([]string, error) {
 		e, ok := obj.(*disv1.EndpointSlice)
 		if !ok {
 			return nil, errors.New("object is not an endpointslice")
@@ -781,7 +781,7 @@ func (d *Discovery) newIndexedEndpointSlicesInformer(plw *cache.ListWatch, objec
 	}
 
 	if d.attachMetadata.Node {
-		indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
+		indexers[nodeIndex] = func(obj any) ([]string, error) {
 			e, ok := obj.(*disv1.EndpointSlice)
 			if !ok {
 				return nil, errors.New("object is not an endpointslice")
@@ -886,7 +886,7 @@ func namespacedName(namespace, name string) string {
 
 // nodeName knows how to handle the cache.DeletedFinalStateUnknown tombstone.
 // It assumes the MetaNamespaceKeyFunc keyFunc is used, which uses the node name as the tombstone key.
-func nodeName(o interface{}) (string, error) {
+func nodeName(o any) (string, error) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(o)
 	if err != nil {
 		return "", err

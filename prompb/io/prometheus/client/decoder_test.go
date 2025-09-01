@@ -177,7 +177,7 @@ func TestMetricStreamingDecoder(t *testing.T) {
 func TestMetricStreamingDecoder_LabelsCorruption(t *testing.T) {
 	lastScrapeSize := 0
 	var allPreviousLabels []labels.Labels
-	buffers := pool.New(128, 1024, 2, func(sz int) interface{} { return make([]byte, 0, sz) })
+	buffers := pool.New(128, 1024, 2, func(sz int) any { return make([]byte, 0, sz) })
 	builder := labels.NewScratchBuilder(0)
 	for _, labelsCount := range []int{1, 2, 3, 5, 8, 5, 3, 2, 1} {
 		// Get buffer from pool like in scrape.go
@@ -230,7 +230,7 @@ func generateMetricFamilyText(labelsCount int) string {
 	randomName := fmt.Sprintf("metric_%d", rand.Intn(1000))
 	randomHelp := fmt.Sprintf("Test metric to demonstrate forced corruption %d.", rand.Intn(1000))
 	labels10 := ""
-	for i := 0; i < labelsCount; i++ {
+	for range labelsCount {
 		labels10 += generateLabels()
 	}
 	return fmt.Sprintf(`name: "%s"

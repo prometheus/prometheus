@@ -94,7 +94,7 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < maxConcurrency; i++ {
+	for range maxConcurrency {
 		q := engine.NewTestQuery(f)
 		wg.Add(1)
 		go func() {
@@ -134,7 +134,7 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	// Terminate remaining queries.
-	for i := 0; i < maxConcurrency; i++ {
+	for range maxConcurrency {
 		block <- struct{}{}
 	}
 
@@ -2193,7 +2193,7 @@ func TestQueryLogger_basic(t *testing.T) {
 	engine.SetQueryLogger(f1)
 	queryExec()
 	logLines := getLogLines(t, ql1File)
-	require.Contains(t, logLines[0], "params", map[string]interface{}{"query": "test statement"})
+	require.Contains(t, logLines[0], "params", map[string]any{"query": "test statement"})
 	require.Len(t, logLines, 1)
 
 	l := len(logLines)
@@ -2246,7 +2246,7 @@ func TestQueryLogger_fields(t *testing.T) {
 	engine.SetQueryLogger(f1)
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
-	ctx = promql.NewOriginContext(ctx, map[string]interface{}{"foo": "bar"})
+	ctx = promql.NewOriginContext(ctx, map[string]any{"foo": "bar"})
 	defer cancelCtx()
 	query := engine.NewTestQuery(func(ctx context.Context) error {
 		return contextDone(ctx, "test statement execution")
@@ -2279,7 +2279,7 @@ func TestQueryLogger_error(t *testing.T) {
 	engine.SetQueryLogger(f1)
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
-	ctx = promql.NewOriginContext(ctx, map[string]interface{}{"foo": "bar"})
+	ctx = promql.NewOriginContext(ctx, map[string]any{"foo": "bar"})
 	defer cancelCtx()
 	testErr := errors.New("failure")
 	query := engine.NewTestQuery(func(context.Context) error {
@@ -2291,7 +2291,7 @@ func TestQueryLogger_error(t *testing.T) {
 
 	logLines := getLogLines(t, ql1File)
 	require.Contains(t, logLines[0], "error", testErr)
-	require.Contains(t, logLines[0], "params", map[string]interface{}{"query": "test statement"})
+	require.Contains(t, logLines[0], "params", map[string]any{"query": "test statement"})
 }
 
 func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
@@ -3339,7 +3339,6 @@ metric 0 1 2
 	}
 
 	for _, c := range cases {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
 			engine := promqltest.NewTestEngine(t, false, c.engineLookback, promqltest.DefaultMaxSamplesPerQuery)
 			storage := promqltest.LoadedStorage(t, load)
@@ -3987,7 +3986,7 @@ func TestSubQueryHistogramsCopy(t *testing.T) {
 	testQuery := `rate({__name__="http_request_duration_seconds"}[3m])`
 	ctx := context.Background()
 
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		queryable := promqltest.LoadedStorage(t, load)
 		engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 
@@ -3998,7 +3997,7 @@ func TestSubQueryHistogramsCopy(t *testing.T) {
 		queryable.Close()
 	}
 
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		queryable := promqltest.LoadedStorage(t, load)
 		engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 

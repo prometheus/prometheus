@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -148,9 +149,10 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
-		name         string
-		reqHeaders   map[string]string
-		expectedCode int
+		name          string
+		reqHeaders    map[string]string
+		expectedCode  int
+		expectedError string
 	}{
 		{
 			name: "correct PRW 2.0 headers",
@@ -170,9 +172,10 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			expectedCode: http.StatusNoContent, // We don't check for now.
 		},
 		{
-			name:         "no headers",
-			reqHeaders:   map[string]string{},
-			expectedCode: http.StatusUnsupportedMediaType,
+			name:          "no headers",
+			reqHeaders:    map[string]string{},
+			expectedCode:  http.StatusUnsupportedMediaType,
+			expectedError: "prometheus.WriteRequest protobuf message is not accepted by this server; accepted [io.prometheus.write.v2.Request]",
 		},
 		{
 			name: "missing content-type",
@@ -184,7 +187,8 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			// (default) it would be empty message parsed and ok response.
 			// This is perhaps better, than 415 for previously working 1.0 flow with
 			// no content-type.
-			expectedCode: http.StatusUnsupportedMediaType,
+			expectedCode:  http.StatusUnsupportedMediaType,
+			expectedError: "prometheus.WriteRequest protobuf message is not accepted by this server; accepted [io.prometheus.write.v2.Request]",
 		},
 		{
 			name: "missing content-encoding",
@@ -201,7 +205,8 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
-			expectedCode: http.StatusUnsupportedMediaType,
+			expectedCode:  http.StatusUnsupportedMediaType,
+			expectedError: "expected application/x-protobuf as the first (media) part, got yolo content-type",
 		},
 		{
 			name: "wrong content-type2",
@@ -210,7 +215,8 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
-			expectedCode: http.StatusUnsupportedMediaType,
+			expectedCode:  http.StatusUnsupportedMediaType,
+			expectedError: "got application/x-protobuf;proto=yolo content type; unknown remote write protobuf message yolo, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request",
 		},
 		{
 			name: "not supported content-encoding",
@@ -219,7 +225,8 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 				"Content-Encoding":       "zstd",
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
-			expectedCode: http.StatusUnsupportedMediaType,
+			expectedCode:  http.StatusUnsupportedMediaType,
+			expectedError: "zstd encoding (compression) is not accepted by this server; only snappy is acceptable",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -240,8 +247,47 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			require.NoError(t, err)
 			_ = resp.Body.Close()
 			require.Equal(t, tc.expectedCode, resp.StatusCode, string(out))
+			if tc.expectedCode/100 == 2 {
+				return
+			}
+
+			// Invalid request case - no samples should be written.
+			require.Equal(t, tc.expectedError, strings.TrimSpace(string(out)))
+			require.Empty(t, appendable.samples)
+			require.Empty(t, appendable.histograms)
+			require.Empty(t, appendable.exemplars)
 		})
 	}
+
+	t.Run("unsupported v1 request", func(t *testing.T) {
+		payload, _, _, err := buildWriteRequest(promslog.NewNopLogger(), writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
+		require.NoError(t, err)
+		req, err := http.NewRequest("", "", bytes.NewReader(payload))
+		require.NoError(t, err)
+		for k, v := range map[string]string{
+			"Content-Type":     remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV1],
+			"Content-Encoding": compression.Snappy,
+		} {
+			req.Header.Set(k, v)
+		}
+
+		appendable := &mockAppendable{}
+		handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false)
+
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+
+		resp := recorder.Result()
+		out, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		require.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode, string(out))
+
+		require.Equal(t, "prometheus.WriteRequest protobuf message is not accepted by this server; accepted [io.prometheus.write.v2.Request]", strings.TrimSpace(string(out)))
+		require.Empty(t, appendable.samples)
+		require.Empty(t, appendable.histograms)
+		require.Empty(t, appendable.exemplars)
+	})
 }
 
 func TestRemoteWriteHandler_V1Message(t *testing.T) {
@@ -794,14 +840,14 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 	require.Equal(b, uint64(1000), db.Head().NumSeries())
 
 	var bufRequests [][]byte
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		buf, _, _, err = buildWriteRequest(nil, genSeriesWithSample(1000, int64(80+i)*time.Minute.Milliseconds()), nil, nil, nil, nil, "snappy")
 		require.NoError(b, err)
 		bufRequests = append(bufRequests, buf)
 	}
 
 	b.ResetTimer()
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		req, err = http.NewRequest("", "", bytes.NewReader(bufRequests[i]))
 		require.NoError(b, err)
 
@@ -814,7 +860,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 
 func genSeriesWithSample(numSeries int, ts int64) []prompb.TimeSeries {
 	var series []prompb.TimeSeries
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		s := prompb.TimeSeries{
 			Labels:  []prompb.Label{{Name: "__name__", Value: fmt.Sprintf("test_metric_%d", i)}},
 			Samples: []prompb.Sample{{Value: float64(i), Timestamp: ts}},
@@ -870,7 +916,7 @@ type mockMetadata struct {
 }
 
 // Wrapper to instruct go-cmp package to compare a list of structs with unexported fields.
-func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...interface{}) {
+func requireEqual(t *testing.T, expected, actual any, msgAndArgs ...any) {
 	t.Helper()
 
 	testutil.RequireEqualWithOptions(t, expected, actual,

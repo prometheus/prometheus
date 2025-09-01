@@ -65,21 +65,6 @@ func (c *HistogramChunk) NumSamples() int {
 	return int(binary.BigEndian.Uint16(c.Bytes()))
 }
 
-// Layout returns the histogram layout. Only call this on chunks that have at
-// least one sample.
-func (c *HistogramChunk) Layout() (
-	schema int32, zeroThreshold float64,
-	negativeSpans, positiveSpans []histogram.Span,
-	customValues []float64,
-	err error,
-) {
-	if c.NumSamples() == 0 {
-		panic("HistogramChunk.Layout() called on an empty chunk")
-	}
-	b := newBReader(c.Bytes()[2:])
-	return readHistogramChunkLayout(&b)
-}
-
 // CounterResetHeader defines the first 2 bits of the chunk header.
 type CounterResetHeader byte
 
@@ -115,6 +100,9 @@ func (c *HistogramChunk) Compact() {
 
 // Appender implements the Chunk interface.
 func (c *HistogramChunk) Appender() (Appender, error) {
+	if len(c.b.stream) == 3 { // Avoid allocating an Iterator when chunk is empty.
+		return &HistogramAppender{b: &c.b, t: math.MinInt64, leading: 0xff}, nil
+	}
 	it := c.iterator(nil)
 
 	// To get an appender, we must know the state it would have if we had
@@ -148,9 +136,6 @@ func (c *HistogramChunk) Appender() (Appender, error) {
 		sum:      it.sum,
 		leading:  it.leading,
 		trailing: it.trailing,
-	}
-	if it.numTotal == 0 {
-		a.leading = 0xff
 	}
 	return a, nil
 }

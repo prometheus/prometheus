@@ -201,7 +201,7 @@ func unquoteChar(s string, quote byte) (value rune, multibyte bool, tail string,
 			err = ErrSyntax
 			return
 		}
-		for j := 0; j < 2; j++ { // One digit already; two more.
+		for j := range 2 { // One digit already; two more.
 			x := rune(s[j]) - '0'
 			if x < 0 || x > 7 {
 				err = ErrSyntax

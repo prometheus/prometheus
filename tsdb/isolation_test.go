@@ -87,7 +87,7 @@ func BenchmarkIsolation(b *testing.B) {
 			wg := sync.WaitGroup{}
 			start := make(chan struct{})
 
-			for g := 0; g < goroutines; g++ {
+			for range goroutines {
 				wg.Add(1)
 
 				go func() {
@@ -117,7 +117,7 @@ func BenchmarkIsolationWithState(b *testing.B) {
 			wg := sync.WaitGroup{}
 			start := make(chan struct{})
 
-			for g := 0; g < goroutines; g++ {
+			for range goroutines {
 				wg.Add(1)
 
 				go func() {

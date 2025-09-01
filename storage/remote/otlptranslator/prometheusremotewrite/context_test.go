@@ -26,12 +26,12 @@ func TestEveryNTimes(t *testing.T) {
 		n: n,
 	}
 
-	for i := 0; i < n; i++ {
+	for range n {
 		require.NoError(t, e.checkContext(ctx))
 	}
 
 	cancel()
-	for i := 0; i < n-1; i++ {
+	for range n - 1 {
 		require.NoError(t, e.checkContext(ctx))
 	}
 	require.EqualError(t, e.checkContext(ctx), context.Canceled.Error())
