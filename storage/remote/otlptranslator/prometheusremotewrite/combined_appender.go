@@ -117,12 +117,16 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 	series, exists := b.refs[hash]
 	ref := series.ref
 	if exists && !labels.Equal(series.ls, ls) {
-		// Hash collision, this is a new series.
+		// Hash collision. The series reference we stored is pointing to a
+		// different series so we cannot use it, we need to reset the
+		// reference and cache.
+		// Note: we don't need to keep track of conflicts here,
+		// the TSDB will handle that part when we pass 0 reference.
 		exists = false
 		ref = 0
 	}
-	updateSeries := !exists || series.ct != ct
-	if updateSeries && ct != 0 && b.ingestCTZeroSample {
+	updateRefs := !exists || series.ct != ct
+	if updateRefs && ct != 0 && b.ingestCTZeroSample {
 		var newRef storage.SeriesRef
 		if h != nil {
 			newRef, err = b.app.AppendHistogramCTZeroSample(ref, ls, t, ct, h, nil)
@@ -167,7 +171,7 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 	}
 
 	if !exists || series.meta.Help != meta.Help || series.meta.Type != meta.Type || series.meta.Unit != meta.Unit {
-		updateSeries = true
+		updateRefs = true
 		// If this is the first time we see this series, set the metadata.
 		_, err := b.app.UpdateMetadata(ref, ls, meta)
 		if err != nil {
@@ -176,7 +180,7 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 		}
 	}
 
-	if updateSeries {
+	if updateRefs {
 		b.refs[hash] = seriesRef{
 			ref:  ref,
 			ct:   ct,
