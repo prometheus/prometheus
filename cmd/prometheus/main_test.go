@@ -21,6 +21,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -880,4 +881,87 @@ scrape_configs:
 			}, 15*time.Second, 500*time.Millisecond)
 		})
 	}
+}
+
+// This test verifies that metrics for the highest timestamps per queue account for relabelling.
+// See: https://github.com/prometheus/prometheus/pull/17065.
+func TestRemoteWrite_PerQueueMetricsAfterRelabeling(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "prometheus.yml")
+
+	port := testutil.RandomUnprivilegedPort(t)
+	targetPort := testutil.RandomUnprivilegedPort(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("should never be reached")
+	}))
+	t.Cleanup(server.Close)
+
+	// Simulate a remote write relabeling that doesn't yield any series.
+	config := fmt.Sprintf(`
+global:
+  scrape_interval: 1s
+scrape_configs:
+  - job_name: 'self'
+    static_configs:
+      - targets: ['localhost:%d']
+  - job_name: 'target'
+    static_configs:
+      - targets: ['localhost:%d']
+
+remote_write:
+  - url: %s
+    write_relabel_configs:
+      - source_labels: [job,__name__]
+        regex: 'target,special_metric'
+        action: keep
+`, port, targetPort, server.URL)
+	require.NoError(t, os.WriteFile(configFile, []byte(config), 0o777))
+
+	prom := prometheusCommandWithLogging(
+		t,
+		configFile,
+		port,
+		fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
+	)
+	require.NoError(t, prom.Start())
+
+	require.Eventually(t, func() bool {
+		r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+		if err != nil {
+			return false
+		}
+		defer r.Body.Close()
+		if r.StatusCode != http.StatusOK {
+			return false
+		}
+
+		metrics, err := io.ReadAll(r.Body)
+		if err != nil {
+			return false
+		}
+
+		gHighestTimestamp, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_highest_timestamp_in_seconds")
+		// The highest timestamp at storage level sees all samples, it should also consider the ones that are filtered out by relabeling.
+		if err != nil || gHighestTimestamp == 0 {
+			return false
+		}
+
+		// The queue shouldn't see and send any sample, all samples are dropped due to relabeling, the metrics should reflect that.
+		droppedSamples, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeCounter, "prometheus_remote_storage_samples_dropped_total")
+		if err != nil || droppedSamples == 0 {
+			return false
+		}
+
+		highestTimestamp, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_queue_highest_timestamp_seconds")
+		require.NoError(t, err)
+		require.Zero(t, highestTimestamp)
+
+		highestSentTimestamp, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_queue_highest_sent_timestamp_seconds")
+		require.NoError(t, err)
+		require.Zero(t, highestSentTimestamp)
+		return true
+	}, 10*time.Second, 100*time.Millisecond)
 }
