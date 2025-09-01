@@ -1,2 +1,5 @@
-*.gz
-embed.go
+# NOTE: unlike upstream, we want the assets to be committed in the repository because build environments don't have access to Yarn and external package repositories.
+# This means that every time we update to a new Prometheus version, 'make assets-compress' should be run and the resulting file committed to the repository.
+# Simply adding the files is not sufficient since the ART workflow is based on rebases and looses ignored but added files.
+# *.gz
+# embed.go
