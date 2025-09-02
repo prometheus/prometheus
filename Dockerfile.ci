@@ -1,7 +1,13 @@
-- name: Build image (CI Dockerfile)
-  uses: docker/build-push-action@v6
-  with:
-    context: .
-    file: Dockerfile.ci
-    push: false
-    tags: local/prometheus:ci
+# Dockerfile.ci — minimal runtime image using the binary built in job 1
+FROM gcr.io/distroless/static:nonroot
+WORKDIR /
+
+# The CI workflow builds bin/prometheus and downloads it in the docker job
+COPY bin/prometheus /bin/prometheus
+
+# Track this file in your repo (see .gitignore below)
+COPY prometheus.yml /etc/prometheus/prometheus.yml
+
+EXPOSE 9090
+USER nonroot:nonroot
+ENTRYPOINT ["/bin/prometheus","--config.file=/etc/prometheus/prometheus.yml","--storage.tsdb.path=/prometheus","--web.enable-lifecycle"]
