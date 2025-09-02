@@ -980,11 +980,10 @@ type scrapeCache struct {
 	// be a pointer so we can update it.
 	droppedSeries map[string]*uint64
 
-	// seriesCur and seriesPrev store the labels of series that were seen
-	// in the current and previous scrape.
+	// Series that were seen in the current and previous scrape, for staleness detection.
 	// We hold two maps and swap them out to save allocations.
-	seriesCur  map[uint64]*cacheEntry
-	seriesPrev map[uint64]*cacheEntry
+	seriesCur  map[storage.SeriesRef]*cacheEntry
+	seriesPrev map[storage.SeriesRef]*cacheEntry
 
 	// TODO(bwplotka): Consider moving Metadata API to use WAL instead of scrape loop to
 	// avoid locking (using metadata API can block scraping).
@@ -1011,8 +1010,8 @@ func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	return &scrapeCache{
 		series:        map[string]*cacheEntry{},
 		droppedSeries: map[string]*uint64{},
-		seriesCur:     map[uint64]*cacheEntry{},
-		seriesPrev:    map[uint64]*cacheEntry{},
+		seriesCur:     map[storage.SeriesRef]*cacheEntry{},
+		seriesPrev:    map[storage.SeriesRef]*cacheEntry{},
 		metadata:      map[string]*metaEntry{},
 		metrics:       metrics,
 	}
@@ -1103,13 +1102,13 @@ func (c *scrapeCache) getDropped(met []byte) bool {
 	return ok
 }
 
-func (c *scrapeCache) trackStaleness(hash uint64, ce *cacheEntry) {
-	c.seriesCur[hash] = ce
+func (c *scrapeCache) trackStaleness(ref storage.SeriesRef, ce *cacheEntry) {
+	c.seriesCur[ref] = ce
 }
 
 func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool) {
-	for h, ce := range c.seriesPrev {
-		if _, ok := c.seriesCur[h]; !ok {
+	for ref, ce := range c.seriesPrev {
+		if _, ok := c.seriesCur[ref]; !ok {
 			if !f(ce.ref, ce.lset) {
 				break
 			}
@@ -1808,7 +1807,7 @@ loop:
 
 		if err == nil {
 			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil {
-				sl.cache.trackStaleness(ce.hash, ce)
+				sl.cache.trackStaleness(ce.ref, ce)
 			}
 		}
 
@@ -1829,7 +1828,7 @@ loop:
 			if ce != nil && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
 				// Bypass staleness logic if there is an explicit timestamp.
 				// But make sure we only do this if we have a cache entry (ce) for our series.
-				sl.cache.trackStaleness(hash, ce)
+				sl.cache.trackStaleness(ref, ce)
 			}
 			if sampleAdded && sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
