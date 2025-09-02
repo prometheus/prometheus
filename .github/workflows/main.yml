@@ -1,0 +1,96 @@
+name: CI (CO2 Task 2)
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build_test_package:
+    name: Build, Test, Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install reporters (JUnit)
+        run: go install github.com/jstemmer/go-junit-report/v2@latest
+
+      # ---- BUILD (reproducible) ----
+      - name: Build
+        run: |
+          go mod download
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -buildid=" -o bin/prometheus ./cmd/prometheus
+
+      # ---- TEST + COVERAGE ----
+      - name: Test (JSON + coverage + JUnit)
+        run: |
+          mkdir -p reports
+          go test ./... -count=1 -race -coverprofile=reports/coverage.out -json > reports/test.json || true
+          cat reports/test.json | go-junit-report -parser gojson > reports/junit.xml || true
+          go tool cover -func=reports/coverage.out || true
+          go tool cover -html=reports/coverage.out -o reports/coverage.html || true
+
+      # ---- PACKAGE ARTIFACT ----
+      - name: Package tarball
+        run: |
+          mkdir -p dist
+          OS=$(go env GOOS); ARCH=$(go env GOARCH); VER=${GITHUB_SHA::7}
+          tar -czf dist/prometheus_${VER}_${OS}_${ARCH}.tar.gz bin/prometheus prometheus.yml
+
+      - name: Upload build/test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-test-artifacts
+          path: |
+            bin/**
+            reports/**
+            dist/**
+            prometheus.yml
+
+  docker_staging:
+    name: Docker (staging)
+    runs-on: ubuntu-latest
+    needs: build_test_package
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: local/prometheus:ci
+
+      - name: Save image as artifact (optional evidence)
+        run: |
+          docker save local/prometheus:ci -o prometheus_ci_image.tar
+        shell: bash
+
+      - name: Upload Docker artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-tar
+          path: prometheus_ci_image.tar
