@@ -253,6 +253,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "promql-duration-expr":
 				parser.ExperimentalDurationExpr = true
 				logger.Info("Experimental duration expression parsing enabled.")
+			case "promql-normalise-le-quantile-labels":
+				parser.NormaliseLeAndQuantileMatchers = true
+				logger.Info("Experimental normalising of 'le' and 'quantile' labels for PromQL enabled.")
 			case "native-histograms":
 				c.tsdb.EnableNativeHistograms = true
 				c.scrape.EnableNativeHistogramsIngestion = true
