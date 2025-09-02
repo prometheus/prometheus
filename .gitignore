@@ -3,6 +3,7 @@
 /*.yaml
 /*.yml
 *.exe
+!prometheus.yml
 
 /prometheus
 /promtool
