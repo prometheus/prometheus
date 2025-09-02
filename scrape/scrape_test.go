@@ -4775,6 +4775,8 @@ metric: <
 					}
 					content = buf.Bytes()
 				case "text/plain", "":
+					// The input text fragments already have a newline at the
+					// end, so we just concatenate them without separator.
 					content = []byte(strings.Join(metricsText.text, ""))
 					contentType = "text/plain"
 				default:
