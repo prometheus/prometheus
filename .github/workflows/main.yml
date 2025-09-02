@@ -1,7 +1,7 @@
 name: CI (CO2 Task 2)
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, edit-style ]
   pull_request:
 
 permissions:
@@ -17,20 +17,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Go
+      - name: Set up Go (built-in cache)
         uses: actions/setup-go@v5
         with:
           go-version: "1.22.x"
-
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          cache: true
 
       - name: Install reporters (JUnit)
         run: go install github.com/jstemmer/go-junit-report/v2@latest
@@ -51,6 +42,10 @@ jobs:
           go tool cover -html=reports/coverage.out -o reports/coverage.html || true
 
       # ---- PACKAGE ARTIFACT ----
+      - name: Ensure prometheus.yml present
+        run: |
+          test -f prometheus.yml || (echo "prometheus.yml missing in repo root"; exit 1)
+
       - name: Package tarball
         run: |
           mkdir -p dist
@@ -68,7 +63,7 @@ jobs:
             prometheus.yml
 
   docker_staging:
-    name: Docker (staging, upstream artifact path)
+    name: Docker (staging, simple Dockerfile)
     runs-on: ubuntu-latest
     needs: build_test_package
     steps:
@@ -77,63 +72,29 @@ jobs:
         with:
           persist-credentials: false
 
-      # promu and the cross-build expect Go available
-      - name: Set up Go
+      - name: Set up Go (for build stage cache)
         uses: actions/setup-go@v5
         with:
           go-version: "1.22.x"
+          cache: true
 
-      # npm licenses target needs Node
-      - name: Set up Node (for npm_licenses)
-        uses: actions/setup-node@v4
+      - name: Sanity check config
+        run: |
+          ls -lah .
+          test -f prometheus.yml || (echo "prometheus.yml missing"; exit 1)
+
+      # Build from source inside the image (no promu/npm_licenses needed)
+      - name: Build image (Dockerfile.simple)
+        uses: docker/build-push-action@v6
         with:
-          node-version: "18"
+          context: .
+          file: Dockerfile.simple
+          push: false
+          tags: local/prometheus:ci
 
-      # 1) make promu (prepares promu usage / tooling)
-      - name: Install promu and run 'make promu'
-        run: |
-          go install github.com/prometheus/promu@latest
-          make promu
-
-      # 2) promu crossbuild -p linux/amd64 (produces .build/linux-amd64/{prometheus,promtool})
-      - name: Cross build artifacts (linux/amd64)
-        env:
-          GOOS: linux
-          GOARCH: amd64
-        run: |
-          promu --version
-          promu crossbuild -p linux/amd64
-          ls -lah .build/linux-amd64 || true
-
-      # 3) make npm_licenses (produces npm_licenses.tar.bz2 expected by the Dockerfile)
-      - name: Generate npm licenses tarball
-        run: |
-          make npm_licenses
-          test -f npm_licenses.tar.bz2 || (echo "npm_licenses.tar.bz2 missing" && exit 1)
-
-      # (optional) sanity check for files the Dockerfile will COPY
-      - name: Sanity check required Docker inputs
-        run: |
-          test -f .build/linux-amd64/prometheus || (echo "prometheus binary missing" && exit 1)
-          test -f .build/linux-amd64/promtool   || (echo "promtool binary missing" && exit 1)
-          test -f documentation/examples/prometheus.yml || (echo "example prometheus.yml missing" && exit 1)
-          test -f npm_licenses.tar.bz2 || (echo "npm_licenses.tar.bz2 missing" && exit 1)
-
-      # 4) make common-docker-amd64 (builds image using your upstream Dockerfile)
-      - name: Build Docker image via Make (common-docker-amd64)
-        run: |
-          make common-docker-amd64
-
-      # Optionally export whatever tag your Makefile produced. If the make target
-      # tags as 'prometheus:amd64' or similar, adjust the name below.
       - name: Save image as artifact (optional evidence)
-        run: |
-          # Adjust TAG to match what 'make common-docker-amd64' produced.
-          # Example guesses: 'prometheus:amd64' or 'quay.io/prometheus/prometheus:amd64'
-          TAG="prometheus:amd64"
-          (docker image inspect "$TAG" >/dev/null 2>&1) || TAG="$(docker images --format '{{.Repository}}:{{.Tag}}' | head -n1)"
-          echo "Saving image $TAG"
-          docker save "$TAG" -o prometheus_ci_image.tar
+        run: docker save local/prometheus:ci -o prometheus_ci_image.tar
+        shell: bash
 
       - name: Upload Docker artifact
         uses: actions/upload-artifact@v4
