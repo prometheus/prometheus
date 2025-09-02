@@ -3891,7 +3891,7 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 			return nil
 		}
 
-		for i := len(path) - 1; i > 0; i-- { // Walk backwards up the path.
+		for i := len(path) - 1; i >= 0; i-- { // Walk backwards up the path.
 			call, ok := path[i].(*parser.Call)
 			if !ok {
 				continue
