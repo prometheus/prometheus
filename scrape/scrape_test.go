@@ -4484,7 +4484,6 @@ metric: <
 		%s
 		%s
 	>
-	timestamp_ms: 1234568
 >
 `, name, classic, expo)
 	}
@@ -4700,31 +4699,29 @@ metric: <
 		require.Equal(t, expectedCount, count, "number of histogram series not as expected")
 	}
 
-	tru := true
-	fals := false
 	for metricsTextName, metricsText := range metricsTexts {
 		for name, tc := range map[string]struct {
-			alwaysScrapeClassicHistograms *bool
-			convertClassicHistToNHCB      *bool
+			alwaysScrapeClassicHistograms bool
+			convertClassicHistToNHCB      bool
 		}{
 			"convert with scrape": {
-				alwaysScrapeClassicHistograms: &tru,
-				convertClassicHistToNHCB:      &tru,
+				alwaysScrapeClassicHistograms: true,
+				convertClassicHistToNHCB:      true,
 			},
 			"convert without scrape": {
-				alwaysScrapeClassicHistograms: &fals,
-				convertClassicHistToNHCB:      &tru,
+				alwaysScrapeClassicHistograms: false,
+				convertClassicHistToNHCB:      true,
 			},
 			"scrape without convert": {
-				alwaysScrapeClassicHistograms: &tru,
-				convertClassicHistToNHCB:      &fals,
+				alwaysScrapeClassicHistograms: true,
+				convertClassicHistToNHCB:      false,
 			},
 			"scrape with nil convert": {
-				alwaysScrapeClassicHistograms: &tru,
+				alwaysScrapeClassicHistograms: true,
 			},
 			"neither scrape nor convert": {
-				alwaysScrapeClassicHistograms: &fals,
-				convertClassicHistToNHCB:      &fals,
+				alwaysScrapeClassicHistograms: false,
+				convertClassicHistToNHCB:      false,
 			},
 		} {
 			var expectedClassicHistCount, expectedNativeHistCount int
@@ -4733,19 +4730,19 @@ metric: <
 				expectedNativeHistCount = 1
 				expectCustomBuckets = false
 				expectedClassicHistCount = 0
-				if metricsText.hasClassic && tc.alwaysScrapeClassicHistograms != nil && *tc.alwaysScrapeClassicHistograms {
+				if metricsText.hasClassic && tc.alwaysScrapeClassicHistograms {
 					expectedClassicHistCount = 1
 				}
 			} else if metricsText.hasClassic {
 				switch {
-				case tc.convertClassicHistToNHCB == nil || !*tc.convertClassicHistToNHCB:
+				case !tc.convertClassicHistToNHCB:
 					expectedClassicHistCount = 1
 					expectedNativeHistCount = 0
-				case tc.alwaysScrapeClassicHistograms != nil && *tc.alwaysScrapeClassicHistograms && *tc.convertClassicHistToNHCB:
+				case tc.alwaysScrapeClassicHistograms && tc.convertClassicHistToNHCB:
 					expectedClassicHistCount = 1
 					expectedNativeHistCount = 1
 					expectCustomBuckets = true
-				case (tc.alwaysScrapeClassicHistograms == nil || !*tc.alwaysScrapeClassicHistograms) && *tc.convertClassicHistToNHCB:
+				case !tc.alwaysScrapeClassicHistograms && tc.convertClassicHistToNHCB:
 					expectedClassicHistCount = 0
 					expectedNativeHistCount = 1
 					expectCustomBuckets = true
@@ -4757,70 +4754,34 @@ metric: <
 				simpleStorage := teststorage.New(t)
 				defer simpleStorage.Close()
 
-				config := &config.ScrapeConfig{
-					JobName:                        "test",
-					SampleLimit:                    100,
-					Scheme:                         "http",
-					ScrapeInterval:                 model.Duration(50 * time.Millisecond),
-					ScrapeTimeout:                  model.Duration(49 * time.Millisecond),
-					AlwaysScrapeClassicHistograms:  tc.alwaysScrapeClassicHistograms,
-					ConvertClassicHistogramsToNHCB: tc.convertClassicHistToNHCB,
-					MetricNameValidationScheme:     model.UTF8Validation,
-					MetricNameEscapingScheme:       model.AllowUTF8,
-				}
+				sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return simpleStorage.Appender(ctx) }, 0)
+				sl.alwaysScrapeClassicHist = tc.alwaysScrapeClassicHistograms
+				sl.convertClassicHistToNHCB = tc.convertClassicHistToNHCB
+				sl.enableNativeHistogramIngestion = true
+				app := simpleStorage.Appender(context.Background())
 
-				scrapeCount := 0
-				scraped := make(chan bool)
-
-				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-					if metricsText.contentType != "" {
-						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
-						for _, text := range metricsText.text {
-							buf := &bytes.Buffer{}
-							// In case of protobuf, we have to create the binary representation.
-							pb := &dto.MetricFamily{}
-							// From text to proto message.
-							require.NoError(t, proto.UnmarshalText(text, pb))
-							// From proto message to binary protobuf.
-							protoBuf, err := proto.Marshal(pb)
-							require.NoError(t, err)
-
-							// Write first length, then binary protobuf.
-							varintBuf := binary.AppendUvarint(nil, uint64(len(protoBuf)))
-							buf.Write(varintBuf)
-							buf.Write(protoBuf)
-							w.Write(buf.Bytes())
-						}
-					} else {
-						for _, text := range metricsText.text {
-							fmt.Fprint(w, text)
-						}
+				var content []byte
+				contentType := metricsText.contentType
+				switch contentType {
+				case "application/vnd.google.protobuf":
+					buf := &bytes.Buffer{}
+					for _, text := range metricsText.text {
+						// In case of protobuf, we have to create the binary representation.
+						pb := &dto.MetricFamily{}
+						// From text to proto message.
+						require.NoError(t, proto.UnmarshalText(text, pb))
+						// From proto message to binary protobuf.
+						buf.Write(protoMarshalDelimited(t, pb))
 					}
-					scrapeCount++
-					if scrapeCount > 2 {
-						close(scraped)
-					}
-				}))
-				defer ts.Close()
-
-				sp, err := newScrapePool(config, simpleStorage, 0, nil, nil, &Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond), EnableNativeHistogramsIngestion: true}, newTestScrapeMetrics(t))
-				require.NoError(t, err)
-				defer sp.stop()
-
-				testURL, err := url.Parse(ts.URL)
-				require.NoError(t, err)
-				sp.Sync([]*targetgroup.Group{
-					{
-						Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(testURL.Host)}},
-					},
-				})
-				require.Eventually(t, func() bool { return len(sp.ActiveTargets()) == 1 }, 5*time.Second, 50*time.Millisecond)
-
-				select {
-				case <-time.After(5 * time.Second):
-					t.Fatalf("target was not scraped")
-				case <-scraped:
+					content = buf.Bytes()
+				case "text/plain", "":
+					content = []byte(strings.Join(metricsText.text, ""))
+					contentType = "text/plain"
+				default:
+					t.Error("unexpected content type")
 				}
+				sl.append(app, content, contentType, time.Now())
+				require.NoError(t, app.Commit())
 
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
