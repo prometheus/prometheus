@@ -5112,6 +5112,51 @@ var testExpr = []struct {
 			},
 		},
 	},
+	// Test query rewrite for 'le' and 'quantile' labels.
+	{
+		input: "some_metric{le=\"2\"}",
+		expected: &VectorSelector{
+			Name: "some_metric",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchRegexp, "le", "2|2.0"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 19},
+		},
+	},
+	{
+		input: "some_metric{le=\"2.0\"}",
+		expected: &VectorSelector{
+			Name: "some_metric",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, "le", "2.0"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 21},
+		},
+	},
+	{
+		input: "some_metric{quantile=\"2\"}",
+		expected: &VectorSelector{
+			Name: "some_metric",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchRegexp, "quantile", "2|2.0"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 25},
+		},
+	},
+	{
+		input: "some_metric{quantile=\"2.0\"}",
+		expected: &VectorSelector{
+			Name: "some_metric",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, "quantile", "2.0"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 27},
+		},
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
@@ -5133,9 +5178,12 @@ func TestParseExpressions(t *testing.T) {
 	EnableExperimentalFunctions = true
 	// Enable experimental duration expression parsing.
 	ExperimentalDurationExpr = true
+	// Enable experimental normalisation of le and quantile labels.
+	NormaliseLeAndQuantileMatchers = true
 	t.Cleanup(func() {
 		EnableExperimentalFunctions = false
 		ExperimentalDurationExpr = false
+		NormaliseLeAndQuantileMatchers = false
 	})
 
 	for _, test := range testExpr {
