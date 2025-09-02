@@ -1,0 +1,7 @@
+- name: Build image (CI Dockerfile)
+  uses: docker/build-push-action@v6
+  with:
+    context: .
+    file: Dockerfile.ci
+    push: false
+    tags: local/prometheus:ci
