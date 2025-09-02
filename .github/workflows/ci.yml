@@ -14,7 +14,7 @@ jobs:
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
-      image: quay.io/prometheus/golang-builder:1.24-base
+      image: quay.io/prometheus/golang-builder:1.25-base
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -32,7 +32,7 @@ jobs:
     name: More Go tests
     runs-on: ubuntu-latest
     container:
-      image: quay.io/prometheus/golang-builder:1.24-base
+      image: quay.io/prometheus/golang-builder:1.25-base
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -55,7 +55,7 @@ jobs:
       GOTOOLCHAIN: local
     container:
       # The go version in this image should be N-1 wrt test_go.
-      image: quay.io/prometheus/golang-builder:1.23-base
+      image: quay.io/prometheus/golang-builder:1.24-base
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -70,7 +70,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.24-base
+      image: quay.io/prometheus/golang-builder:1.25-base
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -97,7 +97,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version: 1.24.x
+          go-version: 1.25.x
       - run: |
           $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
           go test $TestTargets -vet=off -v
@@ -109,7 +109,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.24-base
+      image: quay.io/prometheus/golang-builder:1.25-base
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -208,7 +208,7 @@ jobs:
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           cache: false
-          go-version: 1.24.x
+          go-version: 1.25.x
       - name: Run goyacc and check for diff
         run: make install-goyacc check-generated-parser
   golangci:
@@ -222,7 +222,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version: 1.24.x
+          go-version: 1.25.x
       - name: Install snmp_exporter/generator dependencies
         run: sudo apt-get update && sudo apt-get -y install libsnmp-dev
         if: github.repository == 'prometheus/snmp_exporter'
