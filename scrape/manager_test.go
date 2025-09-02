@@ -26,6 +26,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -51,6 +52,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/runutil"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -620,6 +622,63 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	default:
 		require.Fail(t, "No scrape loops reload was triggered after targets update.")
 	}
+}
+
+func TestManagerDuplicateAfterRelabellingWarning(t *testing.T) {
+	var buf bytes.Buffer
+	logger := promslog.New(&promslog.Config{Writer: &buf})
+	opts := Options{WarnDuplicateTargets: true}
+	s := teststorage.New(t)
+	defer s.Close()
+
+	m, err := NewManager(&opts, logger, nil, s, prometheus.NewRegistry())
+	require.NoError(t, err)
+
+	const configStr = `
+scrape_configs:
+  - job_name: "jobOne"
+    static_configs:
+      - targets: [ "localhost:9000" ]
+        labels: { foo: "bar" }
+    relabel_configs:
+      - action: labeldrop
+        regex: "job|foo"
+
+  - job_name: "jobTwo"
+    static_configs:
+      - targets: [ "localhost:9000" ]
+        labels: { foo: "baz" }
+    relabel_configs:
+      - action: labeldrop
+        regex: "job|foo"
+`
+	cfg, err := config.Load(configStr, promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Len(t, cfg.ScrapeConfigs, 2)
+
+	m.ApplyConfig(cfg)
+
+	getStatic := func(sc *config.ScrapeConfig) []*targetgroup.Group {
+		sd := sc.ServiceDiscoveryConfigs[0].(discovery.StaticConfig)
+		return sd
+	}
+
+	tsets := make(chan map[string][]*targetgroup.Group)
+	go func() {
+		require.NoError(t, m.Run(tsets))
+	}()
+	defer m.Stop()
+
+	tsets <- map[string][]*targetgroup.Group{
+		"jobOne": getStatic(cfg.ScrapeConfigs[0]),
+		"jobTwo": getStatic(cfg.ScrapeConfigs[1]),
+	}
+
+	m.reload()
+
+	require.Eventually(t, func() bool {
+		return strings.Contains(buf.String(), "Found active targets with same labels after relabelling")
+	}, 500*time.Millisecond, 50*time.Millisecond)
 }
 
 func TestSetOffsetSeed(t *testing.T) {
