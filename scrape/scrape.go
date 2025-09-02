@@ -981,7 +981,6 @@ type scrapeCache struct {
 	droppedSeries map[string]*uint64
 
 	// Series that were seen in the current and previous scrape, for staleness detection.
-	// We hold two maps and swap them out to save allocations.
 	seriesCur  map[storage.SeriesRef]*cacheEntry
 	seriesPrev map[storage.SeriesRef]*cacheEntry
 
@@ -1059,13 +1058,9 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		c.metaMtx.Unlock()
 	}
 
-	// Swap current and previous series.
+	// Swap current and previous series then clear the new current, to save allocations.
 	c.seriesPrev, c.seriesCur = c.seriesCur, c.seriesPrev
-
-	// We have to delete every single key in the map.
-	for k := range c.seriesCur {
-		delete(c.seriesCur, k)
-	}
+	clear(c.seriesCur)
 
 	c.iter++
 }
