@@ -38,8 +38,8 @@ jobs:
         uses: docker://prominfra/prombench:master
         with:
           args: >-
-            until make all_nodes_deleted; do echo "waiting for nodepools to be deleted"; sleep 10; done;
             make deploy;
+            until make all_nodes_running; do echo "waiting for nodepools to be created"; sleep 10; done;
       - name: Update status to failure
         if: failure()
         run: >-
@@ -73,8 +73,8 @@ jobs:
         uses: docker://prominfra/prombench:master
         with:
           args: >-
-            until make all_nodes_running; do echo "waiting for nodepools to be created"; sleep 10; done;
             make clean;
+            until make all_nodes_deleted; do echo "waiting for nodepools to be deleted"; sleep 10; done;
       - name: Update status to failure
         if: failure()
         run: >-
@@ -108,10 +108,10 @@ jobs:
         uses: docker://prominfra/prombench:master
         with:
           args: >-
-            until make all_nodes_running; do echo "waiting for nodepools to be created"; sleep 10; done;
             make clean;
             until make all_nodes_deleted; do echo "waiting for nodepools to be deleted"; sleep 10; done;
             make deploy;
+            until make all_nodes_running; do echo "waiting for nodepools to be created"; sleep 10; done;
       - name: Update status to failure
         if: failure()
         run: >-
