@@ -921,7 +921,7 @@ func (it *floatHistogramIterator) Reset(b []byte) {
 	it.numTotal = binary.BigEndian.Uint16(b)
 	it.numRead = 0
 
-	it.counterResetHeader = CounterResetHeader(b[2] & CounterResetHeaderMask)
+	it.counterResetHeader = CounterResetHeader(b[histogramFlagPos] & CounterResetHeaderMask)
 
 	it.t, it.tDelta = 0, 0
 	it.cnt, it.zCnt, it.sum = xorValue{}, xorValue{}, xorValue{}
