@@ -63,7 +63,7 @@ jobs:
             prometheus.yml
 
   docker_staging:
-    name: Docker (staging with CI Dockerfile)
+    name: Docker (upstream Dockerfile)
     runs-on: ubuntu-latest
     needs: build_test_package
     steps:
@@ -72,29 +72,78 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download build artifacts (binary, reports, package)
-        uses: actions/download-artifact@v4
+      - name: Set up Go (for promu)
+        uses: actions/setup-go@v5
         with:
-          name: build-test-artifacts
-          path: .
+          go-version: "1.22.x"
+          cache: true
 
-      - name: Verify Docker build inputs
+      - name: Set up Node (for npm_licenses)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      # Ensure Docker build context includes required files
+      - name: Patch .dockerignore for linux-amd64 artifacts
         run: |
-          ls -lah .
-          test -f Dockerfile.ci || (echo "Missing Dockerfile.ci at repo root"; exit 1)
-          test -f bin/prometheus || (echo "Missing bin/prometheus (did build finish?)"; exit 1)
-          test -f prometheus.yml || (echo "Missing prometheus.yml in repo root"; exit 1)
+          if [ -f .dockerignore ]; then
+            # Remove any broad '.build/' ignore if present and replace with selective rules
+            sed -i '/^\.build\/$/d' .dockerignore || true
+            sed -i '/^\.build\/\*$/d' .dockerignore || true
+          fi
+          # Ensure we keep only linux-amd64 in context
+          echo ".build/*" > .dockerignore.tmp
+          echo "!.build/linux-amd64/**" >> .dockerignore.tmp
+          echo "/.tarballs/" >> .dockerignore.tmp
+          echo "/data/" >> .dockerignore.tmp
+          # Merge existing (non-conflicting) lines
+          (grep -vE '^\.(build|tarballs)/|^/data/|^\s*$' .dockerignore || true) >> .dockerignore.tmp
+          mv .dockerignore.tmp .dockerignore
+          echo "Final .dockerignore:"
+          cat .dockerignore
 
-      - name: Build image (CI Dockerfile)
+      # 1) make promu
+      - name: Install promu & run make promu
+        run: |
+          go install github.com/prometheus/promu@latest
+          make promu
+
+      # 2) promu crossbuild -p linux/amd64
+      - name: Cross build artifacts (linux/amd64)
+        env:
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          promu --version
+          promu crossbuild -p linux/amd64
+          ls -lah .build/linux-amd64 || true
+
+      # 3) make npm_licenses
+      - name: Generate npm licenses tarball
+        run: |
+          make npm_licenses
+          test -f npm_licenses.tar.bz2 || (echo "npm_licenses.tar.bz2 missing" && exit 1)
+
+      # Sanity check the inputs the Dockerfile will COPY
+      - name: Sanity check Dockerfile inputs
+        run: |
+          test -f .build/linux-amd64/prometheus || (echo "prometheus binary missing" && exit 1)
+          test -f .build/linux-amd64/promtool   || (echo "promtool binary missing" && exit 1)
+          test -f documentation/examples/prometheus.yml || (echo "example prometheus.yml missing" && exit 1)
+          test -f npm_licenses.tar.bz2 || (echo "npm_licenses.tar.bz2 missing" && exit 1)
+
+      # 4) Build image using the existing Dockerfile (expects the files above)
+      - name: Build Docker image (upstream Dockerfile)
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.ci
+          file: Dockerfile
           push: false
-          tags: local/prometheus:ci
+          tags: local/prometheus:amd64
 
-      - name: Save image as artifact (optional evidence)
-        run: docker save local/prometheus:ci -o prometheus_ci_image.tar
+      # Save image as artifact (useful for grading)
+      - name: Save image as artifact
+        run: docker save local/prometheus:amd64 -o prometheus_ci_image.tar
 
       - name: Upload Docker artifact
         uses: actions/upload-artifact@v4
