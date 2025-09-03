@@ -188,6 +188,11 @@ func (oh *HeadAndOOOIndexReader) LabelValues(ctx context.Context, name string, h
 	return labelValuesWithMatchers(ctx, oh, name, hints, matchers...)
 }
 
+// IndexLookupPlanner returns the index lookup planner for this reader.
+func (oh *HeadAndOOOIndexReader) IndexLookupPlanner() index.LookupPlanner {
+	return oh.head.opts.IndexLookupPlanner
+}
+
 func lessByMinTimeAndMinRef(a, b chunks.Meta) int {
 	switch {
 	case a.MinTime < b.MinTime:
@@ -510,6 +515,11 @@ func (*OOOCompactionHeadIndexReader) LabelNamesFor(context.Context, index.Postin
 
 func (*OOOCompactionHeadIndexReader) Close() error {
 	return nil
+}
+
+// IndexLookupPlanner returns the index lookup planner for this reader.
+func (ir *OOOCompactionHeadIndexReader) IndexLookupPlanner() index.LookupPlanner {
+	return ir.ch.head.opts.IndexLookupPlanner
 }
 
 // HeadAndOOOQuerier queries both the head and the out-of-order head.
