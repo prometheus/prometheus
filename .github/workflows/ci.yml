@@ -11,6 +11,9 @@ jobs:
   test_go:
     name: Go tests
     runs-on: ubuntu-latest
+    env:
+      # TODO: remove once 1.25 is the min version
+      GOEXPERIMENT: synctest
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
@@ -53,6 +56,8 @@ jobs:
     env:
       # Enforce the Go version.
       GOTOOLCHAIN: local
+      # TODO: remove once 1.25 is the min version
+      GOEXPERIMENT: synctest
     container:
       # The go version in this image should be N-1 wrt test_go.
       image: quay.io/prometheus/golang-builder:1.23-base
@@ -91,6 +96,9 @@ jobs:
   test_windows:
     name: Go tests on Windows
     runs-on: windows-latest
+    env:
+      # TODO: remove once 1.25 is the min version
+      GOEXPERIMENT: synctest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
