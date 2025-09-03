@@ -4,6 +4,7 @@
 /*.yml
 *.exe
 !prometheus.yml
+!docker-compose-up.yml
 
 /prometheus
 /promtool
