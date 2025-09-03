@@ -3920,7 +3920,7 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 				break pathLoop
 			}
 		}
-		return errors.New("stop")
+		return nil
 	})
 }
 
