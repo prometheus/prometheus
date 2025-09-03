@@ -1066,7 +1066,7 @@ type metricStat struct {
 func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
 	// Lacking information about what the intended validation scheme is, use the
 	// deprecated library bool.
-	//nolint:gocritic
+	//nolint:staticcheck
 	p := expfmt.NewTextParser(model.NameValidationScheme)
 	metricFamilies, err := p.TextToMetricFamilies(r)
 	if err != nil {

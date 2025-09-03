@@ -49,7 +49,7 @@ var MetricMetadataTypeValue = map[string]int32{
 func MetricTextToWriteRequest(input io.Reader, labels map[string]string) (*prompb.WriteRequest, error) {
 	// Lacking information about what the intended validation scheme is, use the
 	// deprecated library bool.
-	//nolint:gocritic
+	//nolint:staticcheck
 	parser := expfmt.NewTextParser(model.NameValidationScheme)
 	mf, err := parser.TextToMetricFamilies(input)
 	if err != nil {
