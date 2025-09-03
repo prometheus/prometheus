@@ -663,7 +663,7 @@ func reloadPrometheusConfig(t *testing.T, reloadURL string) {
 func getMetricValue(t *testing.T, body io.Reader, metricType model.MetricType, metricName string) (float64, error) {
 	t.Helper()
 
-	p := expfmt.TextParser{}
+	p := expfmt.NewTextParser(model.UTF8Validation)
 	metricFamilies, err := p.TextToMetricFamilies(body)
 	if err != nil {
 		return 0, err
