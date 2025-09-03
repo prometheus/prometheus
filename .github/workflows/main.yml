@@ -26,16 +26,13 @@ jobs:
       - name: Install reporters (JUnit)
         run: go install github.com/jstemmer/go-junit-report/v2@latest
 
-      # ---- BUILD via Makefile (reproducible) ----
-      # Use Makefile's build (skipping UI by setting PREBUILT_ASSETS_STATIC_DIR)
-      - name: make build (skip UI build)
+      # ---- BUILD (reproducible) ----
+      - name: Build
         run: |
-          make build PREBUILT_ASSETS_STATIC_DIR=.
-          # Makefile writes the binary under .build/<os>-<arch>/
-          mkdir -p bin
-          cp .build/linux-amd64/prometheus bin/prometheus
+          go mod download
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -buildid=" -o bin/prometheus ./cmd/prometheus
 
-      # ---- BUILD REPORT (pre-test) ----
+      # ---- NEW: BUILD REPORT (pre-test) ----
       - name: Generate build report (pre-test)
         run: |
           set -e
@@ -46,14 +43,19 @@ jobs:
           DATE_UTC="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           GOVERS="$(go version)"
           MOD_ROOT="$(go list -m)"
+          # Verify modules and capture output (non-fatal if it prints warnings)
           MOD_VERIFY="$(go mod verify 2>&1 || true)"
+          # Binary info
           BIN_PATH="bin/prometheus"
           if [ ! -f "$BIN_PATH" ]; then
             echo "ERROR: $BIN_PATH missing. Build step must succeed before report."; exit 1
           fi
           BIN_SIZE_BYTES="$(wc -c < "$BIN_PATH" | xargs)"
           BIN_SHA256="$(sha256sum "$BIN_PATH" | awk '{print $1}')"
+          # Write dependency list
           go list -m all > reports/dependencies.txt
+
+          # Markdown report
           {
             echo "# Build Report"
             echo ""
@@ -77,7 +79,7 @@ jobs:
             echo "## Build Command"
             echo ""
             echo "\`\`\`bash"
-            echo "make build PREBUILT_ASSETS_STATIC_DIR=."
+            echo "CGO_ENABLED=0 go build -trimpath -ldflags \"-s -w -buildid=\" -o bin/prometheus ./cmd/prometheus"
             echo "\`\`\`"
             echo ""
             echo "## Module Verification"
@@ -92,6 +94,8 @@ jobs:
             echo "- Size (bytes): \`$BIN_SIZE_BYTES\`"
             echo "- SHA256: \`$BIN_SHA256\`"
           } > reports/BUILD_REPORT.md
+
+          # Minimal JSON summary (no jq dependency)
           cat > reports/build.json <<EOF
           {
             "date_utc": "$DATE_UTC",
@@ -108,14 +112,8 @@ jobs:
           }
           EOF
 
-      # ---- TEST via Makefile (executes Go tests; UI skipped) ----
-      - name: make test (GO_ONLY)
-        run: |
-          make test GO_ONLY=1 || true
-
-      # ---- TEST REPORTS (JSON + coverage + JUnit) ----
-      # We run a dedicated 'go test' once to capture reports for the assignment
-      - name: Test reports (JSON + coverage + JUnit)
+      # ---- TEST + COVERAGE ----
+      - name: Test (JSON + coverage + JUnit)
         run: |
           mkdir -p reports
           go test ./... -count=1 -race -coverprofile=reports/coverage.out -json > reports/test.json || true
