@@ -150,7 +150,11 @@ func TestConfiguredService(t *testing.T) {
 			require.NoError(t, metrics.Register())
 			defer metrics.Unregister()
 
-			_, err := NewDiscovery(conf, nil, metrics)
+			_, err := NewDiscovery(conf, discovery.DiscovererOptions{
+				Logger:  nil,
+				Metrics: metrics,
+				SetName: "nomad",
+			})
 			if tc.acceptedURL {
 				require.NoError(t, err)
 			} else {
@@ -178,7 +182,11 @@ func TestNomadSDRefresh(t *testing.T) {
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:  promslog.NewNopLogger(),
+		Metrics: metrics,
+		SetName: "nomad",
+	})
 	require.NoError(t, err)
 
 	tgs, err := d.refresh(context.Background())

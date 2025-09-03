@@ -259,7 +259,11 @@ func TestDNS(t *testing.T) {
 			metrics := tc.config.NewDiscovererMetrics(reg, refreshMetrics)
 			require.NoError(t, metrics.Register())
 
-			sd, err := NewDiscovery(tc.config, nil, metrics)
+			sd, err := NewDiscovery(tc.config, discovery.DiscovererOptions{
+				Logger:  nil,
+				Metrics: metrics,
+				SetName: "dns",
+			})
 			require.NoError(t, err)
 			sd.lookupFn = tc.lookup
 
