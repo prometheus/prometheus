@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"net"
 	"strconv"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -233,7 +234,21 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 		}
 
 		if svc.Spec.Type == apiv1.ServiceTypeLoadBalancer {
-			labelSet[serviceLoadBalancerIP] = lv(svc.Spec.LoadBalancerIP)
+			if len(svc.Status.LoadBalancer.Ingress) > 0 {
+				ips := make([]string, 0, len(svc.Status.LoadBalancer.Ingress))
+				for _, ing := range svc.Status.LoadBalancer.Ingress {
+					if ing.IP != "" {
+						ips = append(ips, ing.IP)
+					}
+				}
+				if len(ips) > 0 {
+					labelSet[serviceLoadBalancerIP] = lv(strings.Join(ips, ","))
+				} else {
+					labelSet[serviceLoadBalancerIP] = lv(svc.Spec.LoadBalancerIP)
+				}
+			} else {
+				labelSet[serviceLoadBalancerIP] = lv(svc.Spec.LoadBalancerIP)
+			}
 		}
 
 		tg.Targets = append(tg.Targets, labelSet)
