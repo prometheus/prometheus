@@ -26,43 +26,91 @@ jobs:
       - name: Install reporters (JUnit)
         run: go install github.com/jstemmer/go-junit-report/v2@latest
 
-      # ---- BUILD (reproducible) + CAPTURE LOG ----
-      - name: Build (capture log)
+      # ---- BUILD (reproducible) ----
+      - name: Build
         run: |
-          mkdir -p reports
-          go mod download 2>&1 | tee -a reports/build.log
-          { CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -buildid=" -o bin/prometheus ./cmd/prometheus; } 2>&1 | tee -a reports/build.log
+          go mod download
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -buildid=" -o bin/prometheus ./cmd/prometheus
 
-      # ---- BUILD REPORT (before tests) ----
-      - name: Generate build report
+      # ---- NEW: BUILD REPORT (pre-test) ----
+      - name: Generate build report (pre-test)
         run: |
+          set -e
           mkdir -p reports
           COMMIT="${GITHUB_SHA}"
-          DATEUTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-          GO_VER="$(go version)"
-          BIN_INFO="$(ls -lh bin/prometheus || true)"
-          BIN_SHA="$(sha256sum bin/prometheus | awk '{print $1}' || true)"
-          MOD_GRAPH="$(go list -m all || true)"
+          REF="${GITHUB_REF}"
+          RUN_ID="${GITHUB_RUN_ID}"
+          DATE_UTC="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          GOVERS="$(go version)"
+          MOD_ROOT="$(go list -m)"
+          # Verify modules and capture output (non-fatal if it prints warnings)
+          MOD_VERIFY="$(go mod verify 2>&1 || true)"
+          # Binary info
+          BIN_PATH="bin/prometheus"
+          if [ ! -f "$BIN_PATH" ]; then
+            echo "ERROR: $BIN_PATH missing. Build step must succeed before report."; exit 1
+          fi
+          BIN_SIZE_BYTES="$(wc -c < "$BIN_PATH" | xargs)"
+          BIN_SHA256="$(sha256sum "$BIN_PATH" | awk '{print $1}')"
+          # Write dependency list
+          go list -m all > reports/dependencies.txt
 
+          # Markdown report
           {
             echo "# Build Report"
-            echo
-            echo "**Commit:** ${COMMIT}"
-            echo "**Date (UTC):** ${DATEUTC}"
-            echo "**Go version:** ${GO_VER}"
-            echo "**Repro flags:** \`-trimpath\`, \`-ldflags \"-s -w -buildid=\"\`, \`CGO_ENABLED=0\`"
-            echo
+            echo ""
+            echo "- **Date (UTC):** $DATE_UTC"
+            echo "- **Commit:** $COMMIT"
+            echo "- **Ref:** $REF"
+            echo "- **Run ID:** $RUN_ID"
+            echo ""
+            echo "## Environment"
+            echo ""
+            echo "\`\`\`"
+            echo "$GOVERS"
+            go env
+            echo "\`\`\`"
+            echo ""
+            echo "## Module"
+            echo ""
+            echo "- Root module: \`$MOD_ROOT\`"
+            echo "- Full dependency list: see \`reports/dependencies.txt\`"
+            echo ""
+            echo "## Build Command"
+            echo ""
+            echo "\`\`\`bash"
+            echo "CGO_ENABLED=0 go build -trimpath -ldflags \"-s -w -buildid=\" -o bin/prometheus ./cmd/prometheus"
+            echo "\`\`\`"
+            echo ""
+            echo "## Module Verification"
+            echo ""
+            echo "\`\`\`"
+            echo "$MOD_VERIFY"
+            echo "\`\`\`"
+            echo ""
             echo "## Binary"
-            echo "\`\`\`"
-            echo "${BIN_INFO}"
-            echo "SHA256: ${BIN_SHA}"
-            echo "\`\`\`"
-            echo
-            echo "## Module graph"
-            echo "\`\`\`"
-            echo "${MOD_GRAPH}"
-            echo "\`\`\`"
+            echo ""
+            echo "- Path: \`$BIN_PATH\`"
+            echo "- Size (bytes): \`$BIN_SIZE_BYTES\`"
+            echo "- SHA256: \`$BIN_SHA256\`"
           } > reports/BUILD_REPORT.md
+
+          # Minimal JSON summary (no jq dependency)
+          cat > reports/build.json <<EOF
+          {
+            "date_utc": "$DATE_UTC",
+            "commit": "$COMMIT",
+            "ref": "$REF",
+            "run_id": "$RUN_ID",
+            "go_version": "$GOVERS",
+            "module_root": "$MOD_ROOT",
+            "binary": {
+              "path": "$BIN_PATH",
+              "size_bytes": $BIN_SIZE_BYTES,
+              "sha256": "$BIN_SHA256"
+            }
+          }
+          EOF
 
       # ---- TEST + COVERAGE ----
       - name: Test (JSON + coverage + JUnit)
@@ -90,7 +138,7 @@ jobs:
           name: build-test-artifacts
           path: |
             bin/**
-            reports/**           # <-- includes BUILD_REPORT.md and build.log
+            reports/**
             dist/**
             prometheus.yml
 
