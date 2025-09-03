@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -83,6 +84,46 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, in
 		_, err := a.Append(0, metric, ts, float64(s)/float64(len(metrics)))
 		if err != nil {
 			return err
+		}
+		if err := a.Commit(); err != nil {
+			return err
+		}
+	}
+
+	stor.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
+	stor.Compact(ctx)
+	return nil
+}
+
+func setupJoinQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, interval, numIntervals, numInstances int) error {
+	ctx := context.Background()
+
+	commonLabels := []string{
+		"environment", "staging",
+		"cluster", "test-kubernetes-cluster",
+		"namespace", "test-kubernetes-namespace",
+		"job", "worker",
+		"rpc_method", "fetch-my-data-from-this-service",
+		"domain", "test-domain",
+	}
+
+	var metrics []labels.Labels
+	for range numInstances {
+		instance := uuid.New().String()
+		labelsWithInstance := append(commonLabels, "instance", instance)
+
+		metrics = append(metrics, labels.FromStrings(append(labelsWithInstance, "__name__", "rpc_request_success_total")...))
+		metrics = append(metrics, labels.FromStrings(append(labelsWithInstance, "__name__", "rpc_request_error_total")...))
+	}
+
+	refs := make([]storage.SeriesRef, len(metrics))
+
+	for s := range numIntervals {
+		a := stor.Appender(context.Background())
+		ts := int64(s * interval)
+		for i, metric := range metrics {
+			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
+			refs[i] = ref
 		}
 		if err := a.Commit(); err != nil {
 			return err
@@ -293,6 +334,69 @@ func BenchmarkRangeQuery(b *testing.B) {
 			ctx := context.Background()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
+				qry, err := engine.NewRangeQuery(
+					ctx, stor, nil, c.expr,
+					time.Unix(int64((numIntervals-c.steps)*10), 0),
+					time.Unix(int64(numIntervals*10), 0), time.Second*10)
+				if err != nil {
+					b.Fatal(err)
+				}
+				res := qry.Exec(ctx)
+				if res.Err != nil {
+					b.Fatal(res.Err)
+				}
+				qry.Close()
+			}
+		})
+	}
+}
+
+func BenchmarkJoinQuery(b *testing.B) {
+	stor := teststorage.New(b)
+	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
+	defer stor.Close()
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 50000000,
+		Timeout:    100 * time.Second,
+	}
+	engine := promqltest.NewTestEngineWithOpts(b, opts)
+
+	const interval = 10000 // 10s interval.
+	// A day of data plus 10k steps.
+	numIntervals := 8640 + 10000
+
+	err := setupJoinQueryTestData(stor, engine, interval, numIntervals, 1000)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	cases := []benchCase{
+		{
+			expr:  `rpc_request_success_total + rpc_request_error_total`,
+			steps: 10000,
+		},
+		{
+			expr:  `rpc_request_success_total AND rpc_request_error_total{instance=~"0.*"}`,
+			steps: 10000,
+		},
+		{
+			expr:  `rpc_request_success_total OR rpc_request_error_total{instance=~"0.*"}`,
+			steps: 10000,
+		},
+		{
+			expr:  `rpc_request_success_total UNLESS rpc_request_error_total{instance=~"0.*"}`,
+			steps: 10000,
+		},
+	}
+
+	for _, c := range cases {
+		name := fmt.Sprintf("expr=%s,steps=%d", c.expr, c.steps)
+		b.Run(name, func(b *testing.B) {
+			ctx := context.Background()
+			b.ReportAllocs()
+			for range b.N {
 				qry, err := engine.NewRangeQuery(
 					ctx, stor, nil, c.expr,
 					time.Unix(int64((numIntervals-c.steps)*10), 0),
