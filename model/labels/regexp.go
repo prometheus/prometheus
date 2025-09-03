@@ -16,11 +16,13 @@ package labels
 import (
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
+	"go.uber.org/atomic"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -84,6 +86,33 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 	}
 
 	return m, nil
+}
+
+// NewFastRegexMatcherWithTimeTracker returns a matcher which will track the time spent running the matcher.
+// duration is incremented every 64 Matcher.Matches() invocations and multiplied by 64;
+// the assumption is that all previous 63 invocations took the same time.
+func NewFastRegexMatcherWithTimeTracker(regex string, duration *atomic.Duration) (*FastRegexMatcher, error) {
+	m, err := NewFastRegexMatcher(regex)
+	if err != nil {
+		return nil, err
+	}
+	withDifferentObserver := *m
+	sampler := atomic.NewInt64(-1)
+	oldMatchString := m.matchString
+	withDifferentObserver.matchString = func(s string) bool {
+		const sampleRate = 64
+		if tick := sampler.Inc(); tick%sampleRate == 0 {
+			defer func(start time.Time) {
+				d := time.Since(start)
+				if tick != 0 {
+					d *= sampleRate
+				}
+				duration.Add(d)
+			}(time.Now())
+		}
+		return oldMatchString(s)
+	}
+	return &withDifferentObserver, nil
 }
 
 // compileMatchStringFunction returns the function to run by MatchString().
