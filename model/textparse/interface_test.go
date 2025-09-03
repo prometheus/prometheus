@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/mimeutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -143,7 +144,7 @@ func TestNewParser(t *testing.T) {
 			validateParser: requirePromParser,
 		},
 		"protobuf": {
-			contentType:    "application/vnd.google.protobuf",
+			contentType:    mimeutil.GoogleProtobufMimeType,
 			validateParser: requireProtobufParser,
 		},
 		"plain-text-with-version": {
