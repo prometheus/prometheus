@@ -3897,7 +3897,7 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 			}
 			break
 		}
-		return errors.New("stop")
+		return nil
 	})
 }
 

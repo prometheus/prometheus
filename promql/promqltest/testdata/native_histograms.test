@@ -1581,3 +1581,20 @@ eval instant at 1m histogram_quantile(0.5, myHistogram2)
 
 eval instant at 1m histogram_quantile(0.5, mixedHistogram)
 	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "mixedHistogram"
+
+clear
+
+# Test edge cases of HistogramStatsIterator detection.
+# We access the same series multiple times within the same expression,
+# once with and once without HistogramStatsIterator. The results here
+# at least prove that we do not use HistogramStatsIterator where we
+# should not.
+load 1m
+     histogram {{schema:0 count:10 sum:50 counter_reset_hint:gauge buckets:[1 2 3 4]}}
+
+eval instant at 1m histogram_count(histogram unless histogram_quantile(0.5, histogram) < 3)
+     {} 10
+
+eval instant at 1m histogram_quantile(0.5, histogram unless histogram_count(histogram) == 0)
+     {} 3.1748021039363987
+
