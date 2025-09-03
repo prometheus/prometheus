@@ -1447,7 +1447,7 @@ func makeTestGauges(n int) []byte {
 func promTextToProto(tb testing.TB, text []byte) []byte {
 	tb.Helper()
 
-	var p expfmt.TextParser
+	p := expfmt.NewTextParser(model.UTF8Validation)
 	fams, err := p.TextToMetricFamilies(bytes.NewReader(text))
 	if err != nil {
 		tb.Fatal(err)
