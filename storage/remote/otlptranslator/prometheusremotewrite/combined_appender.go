@@ -36,10 +36,10 @@ import (
 type CombinedAppender interface {
 	// AppendSample appends a sample and related exemplars, metadata, and
 	// created timestamp to the storage.
-	AppendSample(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) error
+	AppendSample(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, ct, t int64, v float64, es []exemplar.Exemplar) error
 	// AppendHistogram appends a histogram and related exemplars, metadata, and
 	// created timestamp to the storage.
-	AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) error
+	AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, ct, t int64, h *histogram.Histogram, es []exemplar.Exemplar) error
 }
 
 // CombinedAppenderMetrics is for the metrics observed by the
@@ -99,20 +99,20 @@ type combinedAppender struct {
 	refs map[uint64]seriesRef
 }
 
-func (b *combinedAppender) AppendSample(_ string, ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) (err error) {
-	return b.appendFloatOrHistogram(ls, meta, t, ct, v, nil, es)
+func (b *combinedAppender) AppendSample(_ string, ls labels.Labels, meta metadata.Metadata, ct, t int64, v float64, es []exemplar.Exemplar) (err error) {
+	return b.appendFloatOrHistogram(ls, meta, ct, t, v, nil, es)
 }
 
-func (b *combinedAppender) AppendHistogram(_ string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
+func (b *combinedAppender) AppendHistogram(_ string, ls labels.Labels, meta metadata.Metadata, ct, t int64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
 	if h == nil {
 		// Sanity check, we should never get here with a nil histogram.
 		b.logger.Error("Received nil histogram in CombinedAppender.AppendHistogram", "series", ls.String())
 		return errors.New("internal error, attempted to append nil histogram")
 	}
-	return b.appendFloatOrHistogram(ls, meta, t, ct, 0, h, es)
+	return b.appendFloatOrHistogram(ls, meta, ct, t, 0, h, es)
 }
 
-func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
+func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadata.Metadata, ct, t int64, v float64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
 	hash := ls.Hash()
 	series, exists := b.refs[hash]
 	ref := series.ref

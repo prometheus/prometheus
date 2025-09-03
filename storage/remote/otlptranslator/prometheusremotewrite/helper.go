@@ -244,7 +244,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			}
 
 			sumlabels := c.addLabels(baseName+sumStr, baseLabels)
-			if err := c.appender.AppendSample(baseName, sumlabels, meta, timestamp, startTimestamp, val, nil); err != nil {
+			if err := c.appender.AppendSample(baseName, sumlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
 				return err
 			}
 		}
@@ -256,7 +256,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		}
 
 		countlabels := c.addLabels(baseName+countStr, baseLabels)
-		if err := c.appender.AppendSample(baseName, countlabels, meta, timestamp, startTimestamp, val, nil); err != nil {
+		if err := c.appender.AppendSample(baseName, countlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
 			return err
 		}
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
@@ -294,7 +294,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			}
 			boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
 			labels := c.addLabels(baseName+bucketStr, baseLabels, leStr, boundStr)
-			if err := c.appender.AppendSample(baseName, labels, meta, timestamp, startTimestamp, val, currentBucketExemplars); err != nil {
+			if err := c.appender.AppendSample(baseName, labels, meta, startTimestamp, timestamp, val, currentBucketExemplars); err != nil {
 				return err
 			}
 		}
@@ -304,7 +304,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		infLabels := c.addLabels(baseName+bucketStr, baseLabels, leStr, pInfStr)
-		if err := c.appender.AppendSample(baseName, infLabels, meta, timestamp, startTimestamp, val, exemplars[nextExemplarIdx:]); err != nil {
+		if err := c.appender.AppendSample(baseName, infLabels, meta, startTimestamp, timestamp, val, exemplars[nextExemplarIdx:]); err != nil {
 			return err
 		}
 	}
@@ -441,7 +441,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		}
 		// sum and count of the summary should append suffix to baseName
 		sumlabels := c.addLabels(baseName+sumStr, baseLabels)
-		if err := c.appender.AppendSample(baseName, sumlabels, meta, timestamp, startTimestamp, val, nil); err != nil {
+		if err := c.appender.AppendSample(baseName, sumlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
 			return err
 		}
 
@@ -451,7 +451,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		countlabels := c.addLabels(baseName+countStr, baseLabels)
-		if err := c.appender.AppendSample(baseName, countlabels, meta, timestamp, startTimestamp, val, nil); err != nil {
+		if err := c.appender.AppendSample(baseName, countlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
 			return err
 		}
 
@@ -464,7 +464,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 			}
 			percentileStr := strconv.FormatFloat(qt.Quantile(), 'f', -1, 64)
 			qtlabels := c.addLabels(baseName, baseLabels, quantileStr, percentileStr)
-			if err := c.appender.AppendSample(baseName, qtlabels, meta, timestamp, startTimestamp, val, nil); err != nil {
+			if err := c.appender.AppendSample(baseName, qtlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
 				return err
 			}
 		}
@@ -552,11 +552,11 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 	}
 	interval := settings.LookbackDelta / 2
 	for timestamp := earliestTimestamp; timestamp.Before(latestTimestamp); timestamp = timestamp.Add(interval) {
-		if err := c.appender.AppendSample(name, lbls, meta, timestamp.UnixMilli(), 0, float64(1), nil); err != nil {
+		if err := c.appender.AppendSample(name, lbls, meta, 0, timestamp.UnixMilli(), float64(1), nil); err != nil {
 			return err
 		}
 	}
-	return c.appender.AppendSample(name, lbls, meta, latestTimestamp.UnixMilli(), 0, float64(1), nil)
+	return c.appender.AppendSample(name, lbls, meta, 0, latestTimestamp.UnixMilli(), float64(1), nil)
 }
 
 // convertTimeStamp converts OTLP timestamp in ns to timestamp in ms.

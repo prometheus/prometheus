@@ -74,7 +74,7 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			return annots, err
 		}
 		// OTel exponential histograms are always Int Histograms.
-		if err = c.appender.AppendHistogram(promName, lbls, meta, ts, ct, hp, exemplars); err != nil {
+		if err = c.appender.AppendHistogram(promName, lbls, meta, ct, ts, hp, exemplars); err != nil {
 			return annots, err
 		}
 	}
@@ -292,7 +292,7 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 		if err != nil {
 			return annots, err
 		}
-		if err = c.appender.AppendHistogram(promName, lbls, meta, ts, ct, hp, exemplars); err != nil {
+		if err = c.appender.AppendHistogram(promName, lbls, meta, ct, ts, hp, exemplars); err != nil {
 			return annots, err
 		}
 	}

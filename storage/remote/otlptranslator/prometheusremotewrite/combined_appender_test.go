@@ -65,7 +65,7 @@ type combinedHistogram struct {
 	es               []exemplar.Exemplar
 }
 
-func (m *mockCombinedAppender) AppendSample(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, v float64, es []exemplar.Exemplar) error {
+func (m *mockCombinedAppender) AppendSample(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, ct, t int64, v float64, es []exemplar.Exemplar) error {
 	m.pendingSamples = append(m.pendingSamples, combinedSample{
 		metricFamilyName: metricFamilyName,
 		ls:               ls,
@@ -78,7 +78,7 @@ func (m *mockCombinedAppender) AppendSample(metricFamilyName string, ls labels.L
 	return nil
 }
 
-func (m *mockCombinedAppender) AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, t, ct int64, h *histogram.Histogram, es []exemplar.Exemplar) error {
+func (m *mockCombinedAppender) AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, ct, t int64, h *histogram.Histogram, es []exemplar.Exemplar) error {
 	m.pendingHistograms = append(m.pendingHistograms, combinedHistogram{
 		metricFamilyName: metricFamilyName,
 		ls:               ls,
@@ -150,7 +150,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					Type: model.MetricTypeCounter,
 					Unit: "bytes",
 					Help: "some help",
-				}, now.UnixMilli(), 0, 42.0, testExemplars))
+				}, 0, now.UnixMilli(), 42.0, testExemplars))
 			},
 			expectedSamples: []sample{
 				{
@@ -169,7 +169,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					Type: model.MetricTypeCounter,
 					Unit: "bytes",
 					Help: "some help",
-				}, now.UnixMilli(), 1, 42.0, nil))
+				}, 1, now.UnixMilli(), 42.0, nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -187,7 +187,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					Type: model.MetricTypeCounter,
 					Unit: "bytes",
 					Help: "some help",
-				}, now.UnixMilli(), now.Add(-2*time.Minute).UnixMilli(), 42.0, nil))
+				}, now.Add(-2*time.Minute).UnixMilli(), now.UnixMilli(), 42.0, nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -227,7 +227,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					Type: model.MetricTypeCounter,
 					Unit: "bytes",
 					Help: "some help",
-				}, now.UnixMilli(), now.Add(time.Minute).UnixMilli(), 42.0, nil))
+				}, now.Add(time.Minute).UnixMilli(), now.UnixMilli(), 42.0, nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -245,7 +245,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					Type: model.MetricTypeCounter,
 					Unit: "bytes",
 					Help: "some help",
-				}, now.UnixMilli(), 0, tsdbutil.GenerateTestHistogram(42), testExemplars))
+				}, 0, now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), testExemplars))
 			},
 			expectedSamples: []sample{
 				{
@@ -264,7 +264,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					Type: model.MetricTypeCounter,
 					Unit: "bytes",
 					Help: "some help",
-				}, now.UnixMilli(), 1, tsdbutil.GenerateTestHistogram(42), nil))
+				}, 1, now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -282,7 +282,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					Type: model.MetricTypeCounter,
 					Unit: "bytes",
 					Help: "some help",
-				}, now.UnixMilli(), now.Add(-2*time.Minute).UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
+				}, now.Add(-2*time.Minute).UnixMilli(), now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -323,7 +323,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					Type: model.MetricTypeCounter,
 					Unit: "bytes",
 					Help: "some help",
-				}, now.UnixMilli(), now.Add(time.Minute).UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
+				}, now.Add(time.Minute).UnixMilli(), now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -341,7 +341,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					Type: model.MetricTypeCounter,
 					Unit: "bytes",
 					Help: "some help",
-				}, now.UnixMilli(), 0, 42.0, nil))
+				}, 0, now.UnixMilli(), 42.0, nil))
 				require.NoError(t, app.AppendSample("test_bytes_total", labels.FromStrings(
 					model.MetricNameLabel, "test_bytes_total",
 					"foo", "bar",
@@ -349,7 +349,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					Type: model.MetricTypeCounter,
 					Unit: "bytes",
 					Help: "some help",
-				}, now.Add(15*time.Second).UnixMilli(), 0, 62.0, nil))
+				}, 0, now.Add(15*time.Second).UnixMilli(), 62.0, nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -371,7 +371,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					Type: model.MetricTypeCounter,
 					Unit: "bytes",
 					Help: "some help",
-				}, now.UnixMilli(), 0, tsdbutil.GenerateTestHistogram(42), nil))
+				}, 0, now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
 				require.NoError(t, app.AppendHistogram("test_bytes_total", labels.FromStrings(
 					model.MetricNameLabel, "test_bytes_total",
 					"foo", "bar",
@@ -379,7 +379,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					Type: model.MetricTypeCounter,
 					Unit: "bytes",
 					Help: "some help",
-				}, now.Add(15*time.Second).UnixMilli(), 0, tsdbutil.GenerateTestHistogram(62), nil))
+				}, 0, now.Add(15*time.Second).UnixMilli(), tsdbutil.GenerateTestHistogram(62), nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -401,7 +401,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					Type: model.MetricTypeCounter,
 					Unit: "bytes",
 					Help: "some help",
-				}, now.Add(-3*time.Second).UnixMilli(), now.Add(-4*time.Second).UnixMilli(), 42.0, nil))
+				}, now.Add(-4*time.Second).UnixMilli(), now.Add(-3*time.Second).UnixMilli(), 42.0, nil))
 				require.NoError(t, app.AppendSample("test_bytes_total", labels.FromStrings(
 					model.MetricNameLabel, "test_bytes_total",
 					"foo", "bar",
@@ -409,7 +409,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					Type: model.MetricTypeCounter,
 					Unit: "bytes",
 					Help: "some help",
-				}, now.UnixMilli(), now.Add(-1*time.Second).UnixMilli(), 62.0, nil))
+				}, now.Add(-1*time.Second).UnixMilli(), now.UnixMilli(), 62.0, nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -518,7 +518,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeCounter,
 			Unit: "bytes",
 			Help: "some help",
-		}, 2, 1, 42.0, nil))
+		}, 1, 2, 42.0, nil))
 
 		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
 			model.MetricNameLabel, "test_bytes_total",
@@ -527,7 +527,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeCounter,
 			Unit: "bytes",
 			Help: "some help",
-		}, 4, 3, 62.0, []exemplar.Exemplar{
+		}, 3, 4, 62.0, []exemplar.Exemplar{
 			{
 				Labels: labels.FromStrings("tracid", "122"),
 				Value:  1337,
@@ -556,7 +556,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeCounter,
 			Unit: "bytes",
 			Help: "some help",
-		}, 2, 1, 42.0, nil))
+		}, 1, 2, 42.0, nil))
 		app.appendCTZeroSampleError = errors.New("test error")
 		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
 			model.MetricNameLabel, "test_bytes_total",
@@ -565,7 +565,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeCounter,
 			Unit: "bytes",
 			Help: "some help",
-		}, 4, 3, 62.0, nil))
+		}, 3, 4, 62.0, nil))
 
 		require.Len(t, app.records, 5)
 		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
@@ -589,7 +589,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeCounter,
 			Unit: "bytes",
 			Help: "some help",
-		}, 2, 1, 42.0, nil))
+		}, 1, 2, 42.0, nil))
 		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
 			model.MetricNameLabel, "test_bytes_total",
 			"foo", "bar",
@@ -597,7 +597,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeCounter,
 			Unit: "bytes",
 			Help: "some other help",
-		}, 4, 3, 62.0, nil))
+		}, 3, 4, 62.0, nil))
 		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
 			model.MetricNameLabel, "test_bytes_total",
 			"foo", "bar",
@@ -605,7 +605,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeCounter,
 			Unit: "bytes",
 			Help: "some other help",
-		}, 5, 3, 162.0, nil))
+		}, 3, 5, 162.0, nil))
 
 		require.Len(t, app.records, 7)
 		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
@@ -630,7 +630,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeCounter,
 			Unit: "bytes",
 			Help: "some help",
-		}, 2, 1, 42.0, nil))
+		}, 1, 2, 42.0, nil))
 		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
 			model.MetricNameLabel, "test_bytes_total",
 			"foo", "bar",
@@ -638,7 +638,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeCounter,
 			Unit: "seconds",
 			Help: "some help",
-		}, 4, 3, 62.0, nil))
+		}, 3, 4, 62.0, nil))
 		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
 			model.MetricNameLabel, "test_bytes_total",
 			"foo", "bar",
@@ -646,7 +646,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeCounter,
 			Unit: "seconds",
 			Help: "some help",
-		}, 5, 3, 162.0, nil))
+		}, 3, 5, 162.0, nil))
 
 		require.Len(t, app.records, 7)
 		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
@@ -671,7 +671,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeCounter,
 			Unit: "bytes",
 			Help: "some help",
-		}, 2, 1, 42.0, nil))
+		}, 1, 2, 42.0, nil))
 		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
 			model.MetricNameLabel, "test_bytes_total",
 			"foo", "bar",
@@ -679,7 +679,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeGauge,
 			Unit: "bytes",
 			Help: "some help",
-		}, 4, 3, 62.0, nil))
+		}, 3, 4, 62.0, nil))
 		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
 			model.MetricNameLabel, "test_bytes_total",
 			"foo", "bar",
@@ -687,7 +687,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeGauge,
 			Unit: "bytes",
 			Help: "some help",
-		}, 5, 3, 162.0, nil))
+		}, 3, 5, 162.0, nil))
 
 		require.Len(t, app.records, 7)
 		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
@@ -712,7 +712,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeCounter,
 			Unit: "bytes",
 			Help: "some help",
-		}, 2, 0, 42.0, []exemplar.Exemplar{
+		}, 0, 2, 42.0, []exemplar.Exemplar{
 			{
 				Labels: labels.FromStrings("tracid", "122"),
 				Value:  1337,
@@ -736,7 +736,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeCounter,
 			Unit: "bytes",
 			Help: "some help",
-		}, 2, 1, 42.0, nil))
+		}, 1, 2, 42.0, nil))
 		app.appendError = errors.New("test error")
 		require.Error(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
 			model.MetricNameLabel, "test_bytes_total",
@@ -745,7 +745,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeCounter,
 			Unit: "bytes",
 			Help: "some other help",
-		}, 4, 3, 62.0, []exemplar.Exemplar{
+		}, 3, 4, 62.0, []exemplar.Exemplar{
 			{
 				Labels: labels.FromStrings("tracid", "122"),
 				Value:  1337,
@@ -778,7 +778,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeCounter,
 			Unit: "bytes",
 			Help: "some help",
-		}, 2, 1, 42.0, nil))
+		}, 1, 2, 42.0, nil))
 
 		hash := ls.Hash()
 		cappImpl := capp.(*combinedAppender)
@@ -795,7 +795,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			Type: model.MetricTypeCounter,
 			Unit: "bytes",
 			Help: "some help",
-		}, 4, 3, 62.0, []exemplar.Exemplar{
+		}, 3, 4, 62.0, []exemplar.Exemplar{
 			{
 				Labels: labels.FromStrings("tracid", "122"),
 				Value:  1337,
