@@ -10,7 +10,7 @@ time.
 
 When you send a query request to Prometheus, it can be an _instant query_, evaluated at one point in time,
 or a _range query_ at equally-spaced steps between a start and an end time. PromQL works exactly the same
-in each cases; the range query is just like an instant query run multiple times at different timestamps.
+in each case; the range query is just like an instant query run multiple times at different timestamps.
 
 In the Prometheus UI, the "Table" tab is for instant queries and the "Graph" tab is for range queries.
 
@@ -31,7 +31,7 @@ evaluate to one of four types:
 * **Scalar** - a simple numeric floating point value
 * **String** - a simple string value; currently unused
 
-Depending on the use-case (e.g. when graphing vs. displaying the output of an
+Depending on the use case (e.g. when graphing vs. displaying the output of an
 expression), only some of these types are legal as the result of a
 user-specified expression.
 For [instant queries](api.md#instant-queries), any of the above data types are allowed as the root of the expression.
@@ -308,7 +308,7 @@ Note that this allows a query to look ahead of its evaluation time.
 
 The `@` modifier allows changing the evaluation time for individual instant
 and range vectors in a query. The time supplied to the `@` modifier
-is a unix timestamp and described with a float literal.
+is a Unix timestamp and described with a float literal.
 
 For example, the following expression returns the value of
 `http_requests_total` at `2021-01-04T07:40:00+00:00`:
