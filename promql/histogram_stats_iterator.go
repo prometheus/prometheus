@@ -61,6 +61,11 @@ func (hsi *HistogramStatsIterator) Next() chunkenc.ValueType {
 // Seek mostly relays to the underlying iterator, but changes a ValHistogram
 // return into a ValFloatHistogram return.
 func (hsi *HistogramStatsIterator) Seek(t int64) chunkenc.ValueType {
+	// If the Seek is going to move the iterator, we have to forget the
+	// lastFH.
+	if t > hsi.AtT() {
+		hsi.lastFH = nil
+	}
 	vt := hsi.Iterator.Seek(t)
 	if vt == chunkenc.ValHistogram {
 		return chunkenc.ValFloatHistogram
