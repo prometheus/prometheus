@@ -378,6 +378,10 @@ func BenchmarkJoinQuery(b *testing.B) {
 			steps: 10000,
 		},
 		{
+			expr:  `rpc_request_success_total + ON (job, instance) GROUP_LEFT rpc_request_error_total`,
+			steps: 10000,
+		},
+		{
 			expr:  `rpc_request_success_total AND rpc_request_error_total{instance=~"0.*"}`,
 			steps: 10000,
 		},
