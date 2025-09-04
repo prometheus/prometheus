@@ -29,15 +29,16 @@ import (
 type HistogramStatsIterator struct {
 	chunkenc.Iterator
 
-	currentFH *histogram.FloatHistogram
-	lastFH    *histogram.FloatHistogram
+	current       *histogram.FloatHistogram
+	last          *histogram.FloatHistogram
+	lastIsCurrent bool
 }
 
 // NewHistogramStatsIterator creates a new HistogramStatsIterator.
 func NewHistogramStatsIterator(it chunkenc.Iterator) *HistogramStatsIterator {
 	return &HistogramStatsIterator{
-		Iterator:  it,
-		currentFH: &histogram.FloatHistogram{},
+		Iterator: it,
+		current:  &histogram.FloatHistogram{},
 	}
 }
 
@@ -45,12 +46,14 @@ func NewHistogramStatsIterator(it chunkenc.Iterator) *HistogramStatsIterator {
 // objects already allocated where possible.
 func (hsi *HistogramStatsIterator) Reset(it chunkenc.Iterator) {
 	hsi.Iterator = it
-	hsi.lastFH = nil
+	hsi.last = nil
+	hsi.lastIsCurrent = false
 }
 
 // Next mostly relays to the underlying iterator, but changes a ValHistogram
 // return into a ValFloatHistogram return.
 func (hsi *HistogramStatsIterator) Next() chunkenc.ValueType {
+	hsi.lastIsCurrent = false
 	vt := hsi.Iterator.Next()
 	if vt == chunkenc.ValHistogram {
 		return chunkenc.ValFloatHistogram
@@ -62,9 +65,10 @@ func (hsi *HistogramStatsIterator) Next() chunkenc.ValueType {
 // return into a ValFloatHistogram return.
 func (hsi *HistogramStatsIterator) Seek(t int64) chunkenc.ValueType {
 	// If the Seek is going to move the iterator, we have to forget the
-	// lastFH.
+	// lastFH and mark the currentFH as not current anymore.
 	if t > hsi.AtT() {
-		hsi.lastFH = nil
+		hsi.last = nil
+		hsi.lastIsCurrent = false
 	}
 	vt := hsi.Iterator.Seek(t)
 	if vt == chunkenc.ValHistogram {
@@ -83,47 +87,65 @@ func (*HistogramStatsIterator) AtHistogram(*histogram.Histogram) (int64, *histog
 // hint (not UnknownCounterReset) if the previous sample has been accessed with
 // the same iterator.
 func (hsi *HistogramStatsIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	var t int64
-	t, hsi.currentFH = hsi.Iterator.AtFloatHistogram(hsi.currentFH)
-	if value.IsStaleNaN(hsi.currentFH.Sum) {
-		return t, &histogram.FloatHistogram{Sum: hsi.currentFH.Sum}
+	populateFH := func(src *histogram.FloatHistogram, detectReset bool) {
+		h := histogram.FloatHistogram{
+			CounterResetHint: src.CounterResetHint,
+			Count:            src.Count,
+			Sum:              src.Sum,
+		}
+		if detectReset {
+			h.CounterResetHint = hsi.getResetHint(src.CounterResetHint)
+		}
+		if fh == nil {
+			// Note that we cannot simply write `fh = &h` here
+			// because that would let h escape to the heap.
+			fh = &histogram.FloatHistogram{}
+			*fh = h
+		} else {
+			h.CopyTo(fh)
+		}
 	}
 
-	if fh == nil {
-		fh = &histogram.FloatHistogram{
-			CounterResetHint: hsi.getFloatResetHint(hsi.currentFH.CounterResetHint),
-			Count:            hsi.currentFH.Count,
-			Sum:              hsi.currentFH.Sum,
-		}
-		hsi.setLastFH(hsi.currentFH)
+	if hsi.lastIsCurrent {
+		// Nothing changed since last AtFloatHistogram call. Return a
+		// copy of the stored last histogram rather than doing counter
+		// reset detection again (which would yield a potentially wrong
+		// result of "no counter reset").
+		populateFH(hsi.last, false)
+		return hsi.AtT(), fh
+	}
+
+	var t int64
+	t, hsi.current = hsi.Iterator.AtFloatHistogram(hsi.current)
+	if value.IsStaleNaN(hsi.current.Sum) {
+		populateFH(hsi.current, false)
 		return t, fh
 	}
-
-	returnValue := histogram.FloatHistogram{
-		CounterResetHint: hsi.getFloatResetHint(hsi.currentFH.CounterResetHint),
-		Count:            hsi.currentFH.Count,
-		Sum:              hsi.currentFH.Sum,
-	}
-	returnValue.CopyTo(fh)
-
-	hsi.setLastFH(hsi.currentFH)
+	populateFH(hsi.current, true)
+	hsi.setLastFromCurrent(fh.CounterResetHint)
 	return t, fh
 }
 
-func (hsi *HistogramStatsIterator) setLastFH(fh *histogram.FloatHistogram) {
-	if hsi.lastFH == nil {
-		hsi.lastFH = fh.Copy()
+// setLastFromCurrent stores a copy of hsi.current as hsi.last. The
+// CounterResetHint of hsi.last is set to the provided value, though. This is
+// meant to store the value we have calculated on the fly so that we can return
+// the same without re-calculation in case AtFloatHistogram is called multiple
+// times.
+func (hsi *HistogramStatsIterator) setLastFromCurrent(hint histogram.CounterResetHint) {
+	if hsi.last == nil {
+		hsi.last = hsi.current.Copy()
 	} else {
-		fh.CopyTo(hsi.lastFH)
+		hsi.current.CopyTo(hsi.last)
 	}
+	hsi.last.CounterResetHint = hint
+	hsi.lastIsCurrent = true
 }
 
-func (hsi *HistogramStatsIterator) getFloatResetHint(hint histogram.CounterResetHint) histogram.CounterResetHint {
+func (hsi *HistogramStatsIterator) getResetHint(hint histogram.CounterResetHint) histogram.CounterResetHint {
 	if hint != histogram.UnknownCounterReset {
 		return hint
 	}
-	prevFH := hsi.lastFH
-	if prevFH == nil {
+	if hsi.last == nil {
 		// We don't know if there's a counter reset. Note that this
 		// generally will trigger an explicit counter reset detection by
 		// the PromQL engine, which in turn isn't as reliable in this
@@ -134,7 +156,7 @@ func (hsi *HistogramStatsIterator) getFloatResetHint(hint histogram.CounterReset
 		// place.
 		return histogram.UnknownCounterReset
 	}
-	if hsi.currentFH.DetectReset(prevFH) {
+	if hsi.current.DetectReset(hsi.last) {
 		return histogram.CounterReset
 	}
 	return histogram.NotCounterReset
