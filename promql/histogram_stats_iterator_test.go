@@ -116,10 +116,16 @@ func TestHistogramStatsDecoding(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			check := func(statsIterator *HistogramStatsIterator) {
 				decodedStats := make([]*histogram.FloatHistogram, 0)
-				for statsIterator.Next() != chunkenc.ValNone {
-					_, h := statsIterator.AtFloatHistogram(nil)
-					decodedStats = append(decodedStats, h)
+				for typ := statsIterator.Next(); typ != chunkenc.ValNone; typ = statsIterator.Next() {
+					require.Equal(t, chunkenc.ValFloatHistogram, typ)
+					t1, h1 := statsIterator.AtFloatHistogram(nil)
+					// Call AtFloatHistogram again to check for idempotency.
+					t2, h2 := statsIterator.AtFloatHistogram(nil)
+					require.Equal(t, t1, t2)
+					require.True(t, h1.Equals(h2)) // require.Equal does not work with sum=NaN.
+					decodedStats = append(decodedStats, h1)
 				}
+				require.NoError(t, statsIterator.Err())
 				for i := 0; i < len(tc.histograms); i++ {
 					require.Equal(t, tc.expectedHints[i], decodedStats[i].CounterResetHint)
 					fh := tc.histograms[i].ToFloat(nil)
@@ -170,6 +176,9 @@ func TestHistogramStatsMixedUse(t *testing.T) {
 	typ = statsIterator.Next()
 	require.Equal(t, chunkenc.ValFloatHistogram, typ)
 	_, h = statsIterator.AtFloatHistogram(nil)
+	// We call AtFloatHistogram here again "randomly" to check idempotency.
+	_, h2 := statsIterator.AtFloatHistogram(nil)
+	require.True(t, h.Equals(h2))
 	actualHints[1] = h.CounterResetHint
 	typ = statsIterator.Next()
 	require.Equal(t, chunkenc.ValFloatHistogram, typ)
