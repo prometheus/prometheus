@@ -1,14 +1,14 @@
 module github.com/prometheus/prometheus/documentation/examples/remote_storage
 
-go 1.24.0
+go 1.23.0
 
 require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v1.0.0
 	github.com/influxdata/influxdb-client-go/v2 v2.14.0
-	github.com/prometheus/client_golang v1.23.0-rc.1
-	github.com/prometheus/common v0.66.0
+	github.com/prometheus/client_golang v1.23.2
+	github.com/prometheus/common v0.66.1
 	github.com/prometheus/prometheus v0.305.1-0.20250905124657-5c2e43f09c03
 	github.com/stretchr/testify v1.11.1
 )
@@ -100,7 +100,7 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
+	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/crypto v0.41.0 // indirect
 	golang.org/x/net v0.43.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
@@ -113,11 +113,11 @@ require (
 	google.golang.org/protobuf v1.36.8 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apimachinery v0.34.0 // indirect
-	k8s.io/client-go v0.34.0 // indirect
+	k8s.io/apimachinery v0.32.3 // indirect
+	k8s.io/client-go v0.32.3 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
-	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397 // indirect
-	sigs.k8s.io/yaml v1.6.0 // indirect
+	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
+	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
 exclude (

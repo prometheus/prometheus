@@ -83,6 +83,7 @@ require (
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/goleak v1.3.0
 	go.uber.org/multierr v1.11.0
+	go.yaml.in/yaml/v2 v2.4.2
 	golang.org/x/oauth2 v0.30.0
 	golang.org/x/sync v0.16.0
 	golang.org/x/sys v0.35.0
@@ -91,7 +92,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20250603155806-513f23925822
 	google.golang.org/grpc v1.73.0
 	google.golang.org/protobuf v1.36.8
-	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.32.3
 	k8s.io/apimachinery v0.32.3
@@ -120,7 +120,7 @@ require (
 	go.opentelemetry.io/collector/internal/telemetry v0.129.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelzap v0.11.0 // indirect
 	go.opentelemetry.io/otel/log v0.12.2 // indirect
-	go.yaml.in/yaml/v2 v2.4.2 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
 require (
