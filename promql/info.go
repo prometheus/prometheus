@@ -362,9 +362,8 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 				enh.rightSigs[sig] = s
 			default:
 				// The two info samples have the same timestamp - conflict.
-				ev.errorf(fmt.Sprintf(
-					"found duplicate series for info metric: existing %s @ %d, new %s @ %d",
-					existing.Metric.String(), existingOrigT, s.Metric.String(), origT))
+				ev.errorf("found duplicate series for info metric: existing %s @ %d, new %s @ %d",
+					existing.Metric.String(), existingOrigT, s.Metric.String(), origT)
 			}
 		} else {
 			enh.rightSigs[sig] = s
