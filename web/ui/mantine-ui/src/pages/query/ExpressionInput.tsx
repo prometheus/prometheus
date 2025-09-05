@@ -285,7 +285,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
             ...completionKeymap,
             ...lintKeymap,
           ]),
-          placeholder("Enter expression (press Shift+Enter for newlines)"),
+          placeholder("Enter PromQL expression... (Shift+Enter for newline)"),
           enableSyntaxHighlighting
             ? syntaxHighlighting(
                 theme === "light" ? promqlHighlighter : darkPromqlHighlighter
