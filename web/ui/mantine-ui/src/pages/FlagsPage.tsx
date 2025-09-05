@@ -129,7 +129,7 @@ export default function FlagsPage() {
     <InfoPageStack>
       <InfoPageCard>
         <TextInput
-          placeholder="Filter by flag name or value"
+          placeholder="Filter by flag"
           mb="md"
           autoFocus
           leftSection={<IconSearch style={inputIconStyle} />}
