@@ -45,6 +45,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 			nil,
 			true,
 			metadata,
+			pmetric.AggregationTemporalityUnspecified,
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)
@@ -72,7 +73,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 }
 
 func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, settings Settings, metadata prompb.MetricMetadata, scope scope,
+	resource pcommon.Resource, settings Settings, metadata prompb.MetricMetadata, scope scope, temporality pmetric.AggregationTemporality,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -88,6 +89,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			nil,
 			true,
 			metadata,
+			temporality,
 			model.MetricNameLabel,
 			metadata.MetricFamilyName,
 		)
