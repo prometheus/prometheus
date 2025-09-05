@@ -14,7 +14,6 @@
 package promql
 
 import (
-	"bytes"
 	"container/heap"
 	"context"
 	"errors"
@@ -1132,15 +1131,17 @@ type EvalSeriesHelper struct {
 	signature int
 
 	// Using lazy initialization to memoize metric hashes because there are cases when hashes are not needed for some metrics.
-	lazyHash *uint64
+	lazyHash *lazyHashValue
 }
 
-func (h *EvalSeriesHelper) getOrComputeHash(metric labels.Labels) uint64 {
-	if hash := *h.lazyHash; hash != 0 {
-		return hash
+type lazyHashValue uint64
+
+func (h *lazyHashValue) getOrCompute(metric labels.Labels) uint64 {
+	if hash := *h; hash != 0 {
+		return uint64(hash)
 	}
 	hash := metric.Hash()
-	*h.lazyHash = hash
+	*h = lazyHashValue(hash)
 	return hash
 }
 
@@ -1149,6 +1150,17 @@ type metricHashes []uint64
 type metricWithHash struct {
 	metric labels.Labels
 	hash   uint64
+}
+
+type sampleWithHash struct {
+	sample Sample
+
+	// Using lazy initialization to memoize metric hashes because there are cases when hashes are not needed for some metrics.
+	lazyHash *lazyHashValue
+}
+
+type hashPair struct {
+	l, r uint64
 }
 
 // EvalNodeHelper stores extra information and caches for evaluating a single node across steps.
@@ -1165,14 +1177,13 @@ type EvalNodeHelper struct {
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
 	nativeHistogramSamples       []Sample
 
-	lb           *labels.Builder
-	lblBuf       []byte
-	lblResultBuf []byte
+	lb     *labels.Builder
+	lblBuf []byte
 
 	// For binary vector matching.
-	rightSigs    map[int]Sample
+	rightSigs    map[int]sampleWithHash
 	matchedSigs  map[int]map[uint64]struct{}
-	resultMetric map[string]metricWithHash
+	resultMetric map[hashPair]metricWithHash
 	numSigs      int
 
 	// For info series matching.
@@ -1303,7 +1314,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 
 	var (
 		signatures [][]int
-		lazyHashes []metricHashes
+		lazyHashes [][]lazyHashValue
 		bufHelpers [][]EvalSeriesHelper // Buffer updated on each step
 	)
 
@@ -1311,14 +1322,14 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 	// every single series in the matrix.
 	if prepSeries != nil {
 		signatures = make([][]int, len(exprs))
-		lazyHashes = make([]metricHashes, len(exprs))
+		lazyHashes = make([][]lazyHashValue, len(exprs))
 		bufHelpers = make([][]EvalSeriesHelper, len(exprs))
 
 		seenStrSigs := make(map[string]int)
 
 		for i := range exprs {
 			signatures[i] = make([]int, len(matrixes[i]))
-			lazyHashes[i] = make(metricHashes, len(matrixes[i]))
+			lazyHashes[i] = make([]lazyHashValue, len(matrixes[i]))
 			bufHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 
 			for si, series := range matrixes[i] {
@@ -1347,7 +1358,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 			var (
 				bh      []EvalSeriesHelper
 				sigs    []int
-				lHashes metricHashes
+				lHashes []lazyHashValue
 			)
 			if prepSeries != nil {
 				bh = bufHelpers[i][:0]
@@ -2619,7 +2630,7 @@ func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lh
 		// If there's a matching entry in the right-hand side Vector, add the sample.
 		if rightSigs[lhsh[i].signature] {
 			enh.Out = append(enh.Out, ls)
-			enh.outHashes = append(enh.outHashes, lhsh[i].getOrComputeHash(ls.Metric))
+			enh.outHashes = append(enh.outHashes, lhsh[i].lazyHash.getOrCompute(ls.Metric))
 		}
 	}
 	return enh.Out, enh.outHashes
@@ -2632,13 +2643,13 @@ func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhs
 	case len(lhs) == 0: // Short-circuit.
 		enh.Out = append(enh.Out, rhs...)
 		for i, rs := range rhs {
-			enh.outHashes = append(enh.outHashes, rhsh[i].getOrComputeHash(rs.Metric))
+			enh.outHashes = append(enh.outHashes, rhsh[i].lazyHash.getOrCompute(rs.Metric))
 		}
 		return enh.Out, enh.outHashes
 	case len(rhs) == 0:
 		enh.Out = append(enh.Out, lhs...)
 		for i, ls := range lhs {
-			enh.outHashes = append(enh.outHashes, lhsh[i].getOrComputeHash(ls.Metric))
+			enh.outHashes = append(enh.outHashes, lhsh[i].lazyHash.getOrCompute(ls.Metric))
 		}
 		return enh.Out, enh.outHashes
 	}
@@ -2648,13 +2659,13 @@ func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhs
 	for i, ls := range lhs {
 		leftSigs[lhsh[i].signature] = true
 		enh.Out = append(enh.Out, ls)
-		enh.outHashes = append(enh.outHashes, lhsh[i].getOrComputeHash(ls.Metric))
+		enh.outHashes = append(enh.outHashes, lhsh[i].lazyHash.getOrCompute(ls.Metric))
 	}
 	// Add all right-hand side elements which have not been added from the left-hand side.
 	for j, rs := range rhs {
 		if !leftSigs[rhsh[j].signature] {
 			enh.Out = append(enh.Out, rs)
-			enh.outHashes = append(enh.outHashes, rhsh[j].getOrComputeHash(rs.Metric))
+			enh.outHashes = append(enh.outHashes, rhsh[j].lazyHash.getOrCompute(rs.Metric))
 		}
 	}
 	return enh.Out, enh.outHashes
@@ -2669,7 +2680,7 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 	if len(lhs) == 0 || len(rhs) == 0 {
 		enh.Out = append(enh.Out, lhs...)
 		for i, ls := range lhs {
-			enh.outHashes = append(enh.outHashes, lhsh[i].getOrComputeHash(ls.Metric))
+			enh.outHashes = append(enh.outHashes, lhsh[i].lazyHash.getOrCompute(ls.Metric))
 		}
 		return enh.Out, enh.outHashes
 	}
@@ -2682,7 +2693,7 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 	for i, ls := range lhs {
 		if !rightSigs[lhsh[i].signature] {
 			enh.Out = append(enh.Out, ls)
-			enh.outHashes = append(enh.outHashes, lhsh[i].getOrComputeHash(ls.Metric))
+			enh.outHashes = append(enh.outHashes, lhsh[i].lazyHash.getOrCompute(ls.Metric))
 		}
 	}
 	return enh.Out, enh.outHashes
@@ -2705,9 +2716,9 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		lhsh, rhsh = rhsh, lhsh
 	}
 
-	// All samples from the rhs hashed by the matching label/values.
+	// All samples from the rhs mapped by the matching label/values.
 	if enh.rightSigs == nil {
-		enh.rightSigs = make(map[int]Sample, len(enh.Out))
+		enh.rightSigs = make(map[int]sampleWithHash, len(enh.Out))
 	} else {
 		clear(enh.rightSigs)
 	}
@@ -2715,7 +2726,8 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 	// Add all rhs samples to a map so we can easily find matches later.
 	for i, rs := range rhs {
-		sig := rhsh[i].signature
+		rh := rhsh[i]
+		sig := rh.signature
 		// The rhs is guaranteed to be the 'one' side. Having multiple samples
 		// with the same signature means that the matching is many-to-many.
 		if duplSample, found := rightSigs[sig]; found {
@@ -2727,9 +2739,12 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			matchedLabels := rs.Metric.MatchLabels(matching.On, matching.MatchingLabels...)
 			// Many-to-many matching not allowed.
 			ev.errorf("found duplicate series for the match group %s on the %s hand-side of the operation: [%s, %s]"+
-				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, rs.Metric.String(), duplSample.Metric.String())
+				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, rs.Metric.String(), duplSample.sample.Metric.String())
 		}
-		rightSigs[sig] = rs
+		rightSigs[sig] = sampleWithHash{
+			sample:   rs,
+			lazyHash: rh.lazyHash,
+		}
 	}
 
 	// Tracks the match-signature. For one-to-one operations the value is nil. For many-to-one
@@ -2745,12 +2760,14 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	// the binary operation.
 	var lastErr error
 	for i, ls := range lhs {
-		sig := lhsh[i].signature
+		lh := lhsh[i]
+		sig := lh.signature
 
-		rs, found := rightSigs[sig] // Look for a match in the rhs Vector.
+		rh, found := rightSigs[sig] // Look for a match in the rhs Vector.
 		if !found {
 			continue
 		}
+		rs := rh.sample
 
 		// Account for potentially swapped sidedness.
 		fl, fr := ls.F, rs.F
@@ -2776,8 +2793,13 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			continue
 		}
 
-		dropMetricName := !ev.enableDelayedNameRemoval && returnBool
-		metric := resultMetric(ls.Metric, rs.Metric, op, matching, dropMetricName, enh)
+		var (
+			lHash = lh.lazyHash.getOrCompute(ls.Metric)
+			rHash = rh.lazyHash.getOrCompute(rs.Metric)
+
+			dropMetricName = !ev.enableDelayedNameRemoval && returnBool
+		)
+		metric := resultMetric(ls.Metric, rs.Metric, lHash, rHash, op, matching, dropMetricName, enh)
 
 		insertedSigs, exists := matchedSigs[sig]
 		if matching.Card == parser.CardOneToOne {
@@ -2827,23 +2849,17 @@ func signatureFunc(on bool, b []byte, names ...string) func(labels.Labels) strin
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
 // binary operation and the matching options.
-func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, dropMetricName bool, enh *EvalNodeHelper) metricWithHash {
+func resultMetric(lhs, rhs labels.Labels, lHash, rHash uint64, op parser.ItemType, matching *parser.VectorMatching, dropMetricName bool, enh *EvalNodeHelper) metricWithHash {
 	if enh.resultMetric == nil {
-		enh.resultMetric = make(map[string]metricWithHash, len(enh.Out))
+		enh.resultMetric = make(map[hashPair]metricWithHash, len(enh.Out))
+	}
+
+	hashKey := hashPair{l: lHash, r: rHash}
+	if ret, ok := enh.resultMetric[hashKey]; ok {
+		return ret
 	}
 
 	enh.resetBuilder(lhs)
-	buf := bytes.NewBuffer(enh.lblResultBuf[:0])
-	enh.lblBuf = lhs.Bytes(enh.lblBuf)
-	buf.Write(enh.lblBuf)
-	enh.lblBuf = rhs.Bytes(enh.lblBuf)
-	buf.Write(enh.lblBuf)
-	enh.lblResultBuf = buf.Bytes()
-
-	if ret, ok := enh.resultMetric[string(enh.lblResultBuf)]; ok {
-		return ret
-	}
-	str := string(enh.lblResultBuf)
 
 	if dropMetricName || changesMetricSchema(op) {
 		// Setting empty Metadata causes the deletion of those if they exists.
@@ -2871,7 +2887,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 		metric: metric,
 		hash:   metric.Hash(),
 	}
-	enh.resultMetric[str] = ret
+	enh.resultMetric[hashKey] = ret
 
 	return ret
 }
@@ -4051,7 +4067,7 @@ func (s histogramStatsSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 // output is used as a buffer.
 // If bufHelpers and seriesHelpers are provided, seriesHelpers[i] is appended to bufHelpers for every input index i.
 // The gathered Vector and bufHelper are returned.
-func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelpers []EvalSeriesHelper, signatures []int, lazyHashes metricHashes) (Vector, []EvalSeriesHelper) {
+func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelpers []EvalSeriesHelper, signatures []int, lazyHashes []lazyHashValue) (Vector, []EvalSeriesHelper) {
 	output = output[:0]
 	for i, series := range input {
 		switch {
