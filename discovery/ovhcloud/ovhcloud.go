@@ -101,7 +101,7 @@ func createClient(config *SDConfig) (*ovh.Client, error) {
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, options.Logger, options.Metrics)
+	return NewDiscovery(c, options.Logger, options.Metrics, options.ConfigName)
 }
 
 func init() {
@@ -148,7 +148,7 @@ func newRefresher(conf *SDConfig, logger *slog.Logger) (refresher, error) {
 }
 
 // NewDiscovery returns a new OVHcloud Discoverer which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics, configName string) (*refresh.Discovery, error) {
 	m, ok := metrics.(*ovhcloudMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
@@ -163,6 +163,7 @@ func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.Discove
 		refresh.Options{
 			Logger:              logger,
 			Mech:                "ovhcloud",
+			Config:              configName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            r.refresh,
 			MetricsInstantiator: m.refreshMetrics,

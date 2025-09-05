@@ -47,7 +47,7 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	md, err := NewDiscovery(&conf, nil, metrics)
+	md, err := NewDiscovery(&conf, nil, metrics, "uyuni")
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func TestUyuniSDSkipLogin(t *testing.T) {
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	md, err := NewDiscovery(&conf, nil, metrics)
+	md, err := NewDiscovery(&conf, nil, metrics, "uyuni")
 	if err != nil {
 		t.Error(err)
 	}

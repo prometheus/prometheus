@@ -58,7 +58,6 @@ func NewRefreshMetrics(reg prometheus.Registerer) RefreshMetricsManager {
 
 // Instantiate returns metrics out of metric vectors for a given mechanism and config.
 func (m *RefreshMetricsVecs) Instantiate(mech, config string) *RefreshMetrics {
-
 	return &RefreshMetrics{
 		Failures: m.failuresVec.WithLabelValues(mech, config),
 		Duration: m.durationVec.WithLabelValues(mech, config),

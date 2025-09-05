@@ -49,7 +49,7 @@ func TestHTTPValidRefresh(t *testing.T) {
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics, "http")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -94,7 +94,7 @@ func TestHTTPInvalidCode(t *testing.T) {
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics, "http")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -123,7 +123,7 @@ func TestHTTPInvalidFormat(t *testing.T) {
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics, "http")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -442,7 +442,7 @@ func TestSourceDisappeared(t *testing.T) {
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics, "http")
 	require.NoError(t, err)
 	for _, test := range cases {
 		ctx := context.Background()

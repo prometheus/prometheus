@@ -127,7 +127,7 @@ func (*SDConfig) Name() string { return "azure" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.Metrics)
+	return NewDiscovery(c, opts.Logger, opts.Metrics, opts.ConfigName)
 }
 
 func validateAuthParam(param, name string) error {
@@ -178,7 +178,7 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new AzureDiscovery which periodically refreshes its targets.
-func NewDiscovery(cfg *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func NewDiscovery(cfg *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics, configName string) (*Discovery, error) {
 	m, ok := metrics.(*azureMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
@@ -200,6 +200,7 @@ func NewDiscovery(cfg *SDConfig, logger *slog.Logger, metrics discovery.Discover
 		refresh.Options{
 			Logger:              logger,
 			Mech:                "azure",
+			Config:              configName,
 			Interval:            time.Duration(cfg.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,
