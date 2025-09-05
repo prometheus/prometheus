@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
 
@@ -204,8 +205,10 @@ type Decoder struct {
 	builder labels.ScratchBuilder
 }
 
-func NewDecoder(*labels.SymbolTable) Decoder { // FIXME remove t
-	return Decoder{builder: labels.NewScratchBuilder(0)}
+func NewDecoder(*labels.SymbolTable) Decoder { // FIXME remove t (or use scratch builder with symbols)
+	b := labels.NewScratchBuilder(0)
+	b.SetUnsafeAdd(true)
+	return Decoder{builder: b}
 }
 
 // Type returns the type of the record.
@@ -289,6 +292,10 @@ func (*Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, err
 	return metadata, nil
 }
 
+func yoloString(b []byte) string {
+	return unsafe.String(unsafe.SliceData(b), len(b))
+}
+
 // DecodeLabels decodes one set of labels from buf.
 func (d *Decoder) DecodeLabels(dec *encoding.Decbuf) labels.Labels {
 	d.builder.Reset()
@@ -296,7 +303,7 @@ func (d *Decoder) DecodeLabels(dec *encoding.Decbuf) labels.Labels {
 	for range nLabels {
 		lName := dec.UvarintBytes()
 		lValue := dec.UvarintBytes()
-		d.builder.UnsafeAddBytes(lName, lValue)
+		d.builder.Add(yoloString(lName), yoloString(lValue))
 	}
 	return d.builder.Labels()
 }
