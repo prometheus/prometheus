@@ -48,7 +48,7 @@ host: %s
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	d, err := NewDockerDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDockerDiscovery(&cfg, promslog.NewNopLogger(), metrics, "docker_swarm")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -226,7 +226,7 @@ host: %s
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
-	d, err := NewDockerDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDockerDiscovery(&cfg, promslog.NewNopLogger(), metrics, "docker_swarm")
 	require.NoError(t, err)
 
 	ctx := context.Background()

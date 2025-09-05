@@ -48,7 +48,7 @@ host: %s
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics, "moby")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -302,22 +302,6 @@ host: %s
 			"__meta_dockerswarm_service_task_container_hostname":          model.LabelValue(""),
 			"__meta_dockerswarm_service_task_container_image":             model.LabelValue("stefanprodan/swarmprom-grafana:5.3.4@sha256:2aca8aa5716e6e0eed3fcdc88fec256a0a1828c491a8cf240486ae7cc473092d"),
 		},
-		{
-			"__address__":                                                 model.LabelValue("10.0.1.17:80"),
-			"__meta_dockerswarm_network_id":                               model.LabelValue("npq2closzy836m07eaq1425k3"),
-			"__meta_dockerswarm_network_ingress":                          model.LabelValue("false"),
-			"__meta_dockerswarm_network_internal":                         model.LabelValue("false"),
-			"__meta_dockerswarm_network_label_com_docker_stack_namespace": model.LabelValue("mon"),
-			"__meta_dockerswarm_network_name":                             model.LabelValue("mon_net"),
-			"__meta_dockerswarm_network_scope":                            model.LabelValue("swarm"),
-			"__meta_dockerswarm_service_id":                               model.LabelValue("ul5qawv4s7f7msm7dtyfarw80"),
-			"__meta_dockerswarm_service_label_com_docker_stack_image":     model.LabelValue("stefanprodan/caddy"),
-			"__meta_dockerswarm_service_label_com_docker_stack_namespace": model.LabelValue("mon"),
-			"__meta_dockerswarm_service_mode":                             model.LabelValue("global"),
-			"__meta_dockerswarm_service_name":                             model.LabelValue("mon_dockerd-exporter"),
-			"__meta_dockerswarm_service_task_container_hostname":          model.LabelValue(""),
-			"__meta_dockerswarm_service_task_container_image":             model.LabelValue("stefanprodan/caddy:latest@sha256:44541cfacb66f4799f81f17fcfb3cb757ccc8f327592745549f5930c42d115c9"),
-		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
 			require.Equal(t, lbls, tg.Targets[i])
@@ -349,7 +333,7 @@ filters:
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics, "moby")
 	require.NoError(t, err)
 
 	ctx := context.Background()

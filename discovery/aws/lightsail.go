@@ -94,7 +94,7 @@ func (*LightsailSDConfig) Name() string { return "lightsail" }
 
 // NewDiscoverer returns a Discoverer for the Lightsail Config.
 func (c *LightsailSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewLightsailDiscovery(c, opts.Logger, opts.Metrics)
+	return NewLightsailDiscovery(c, opts.Logger, opts.Metrics, opts.ConfigName)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the Lightsail Config.
@@ -131,7 +131,7 @@ type LightsailDiscovery struct {
 }
 
 // NewLightsailDiscovery returns a new LightsailDiscovery which periodically refreshes its targets.
-func NewLightsailDiscovery(conf *LightsailSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*LightsailDiscovery, error) {
+func NewLightsailDiscovery(conf *LightsailSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics, configName string) (*LightsailDiscovery, error) {
 	m, ok := metrics.(*lightsailMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
@@ -148,6 +148,7 @@ func NewLightsailDiscovery(conf *LightsailSDConfig, logger *slog.Logger, metrics
 		refresh.Options{
 			Logger:              logger,
 			Mech:                "lightsail",
+			Config:              configName,
 			Interval:            time.Duration(d.cfg.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,

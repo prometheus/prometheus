@@ -57,7 +57,7 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics, "digitalocean")
 	require.NoError(t, err)
 	endpoint, err := url.Parse(sdmock.Mock.Endpoint())
 	require.NoError(t, err)

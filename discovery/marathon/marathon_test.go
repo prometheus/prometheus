@@ -51,7 +51,7 @@ func testUpdateServices(client appListClient) ([]*targetgroup.Group, error) {
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	md, err := NewDiscovery(cfg, nil, metrics)
+	md, err := NewDiscovery(cfg, nil, metrics, "marathon")
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	md, err := NewDiscovery(cfg, nil, metrics)
+	md, err := NewDiscovery(cfg, nil, metrics, "marathon")
 	require.NoError(t, err)
 
 	md.appsClient = func(context.Context, *http.Client, string) (*appList, error) {
