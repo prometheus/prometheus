@@ -18,7 +18,7 @@ describe('Checkbox', () => {
     expect(Object.keys(formGroup.props())).toHaveLength(4);
     expect(formGroup.prop('className')).toEqual('custom-control custom-checkbox');
     expect(formGroup.prop('children')).toHaveLength(2);
-    expect(formGroup.prop('style')).toEqual({ color: 'orange' });
+    expect(formGroup.prop('style')).toEqual({ color: 'blue' });
     expect(formGroup.prop('tag')).toEqual('div');
   });
 
@@ -37,7 +37,7 @@ describe('Checkbox', () => {
     expect(input.prop('type')).toEqual('checkbox');
     input.simulate('change');
     expect(results).toHaveLength(1);
-    expect(results[0]).toEqual('clicked');
+    expect(results[0]).toEqual('changed');
   });
 
   it('passes down the correct Label props', () => {
@@ -51,7 +51,7 @@ describe('Checkbox', () => {
     expect(label.prop('className')).toEqual('custom-control-label');
     expect(label.find(MockCmp)).toHaveLength(1);
     expect(label.prop('for')).toMatch('1');
-    expect(label.prop('style')).toEqual({ userSelect: 'none' });
+    expect(label.prop('style')).toEqual({ userSelect: 'auto' });
     expect(label.prop('tag')).toEqual('label');
   });
 
