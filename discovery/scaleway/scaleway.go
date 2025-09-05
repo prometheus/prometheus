@@ -168,7 +168,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 }
 
 func (c SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(&c, options.Logger, options.Metrics)
+	return NewDiscovery(&c, options.Logger, options.Metrics, options.ConfigName)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -185,7 +185,7 @@ func init() {
 // the Discoverer interface.
 type Discovery struct{}
 
-func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics, configName string) (*refresh.Discovery, error) {
 	m, ok := metrics.(*scalewayMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
@@ -200,6 +200,7 @@ func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.Discove
 		refresh.Options{
 			Logger:              logger,
 			Mech:                "scaleway",
+			Config:              configName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            r.refresh,
 			MetricsInstantiator: m.refreshMetrics,
