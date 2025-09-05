@@ -217,6 +217,9 @@ func TestExprString(t *testing.T) {
 		{
 			in: "foo[200 - min(step() + 10s, -max(step() ^ 2, 3))]",
 		},
+		{
+			in: `predict_linear(foo[1h], 3000)`,
+		},
 	}
 
 	for _, test := range inputs {
@@ -230,6 +233,27 @@ func TestExprString(t *testing.T) {
 			}
 
 			require.Equal(t, exp, expr.String())
+		})
+	}
+}
+
+func BenchmarkExprString(b *testing.B) {
+	inputs := []string{
+		`sum by(code) (task:errors:rate10s{job="s"})`,
+		`max( 100 * (1 - avg by(instance) (irate(node_cpu_seconds_total{instance=~".*cust01.prd.*",mode="idle"}[86400s]))))`,
+		`http_requests_total{job="api-server", group="canary"} + rate(http_requests_total{job="api-server"}[10m]) * 5 * 60`,
+		`sum by (pod) ((kube_pod_container_status_restarts_total{namespace="mynamespace",cluster="mycluster"} - kube_pod_container_status_restarts_total{namespace="mynamespace}",cluster="mycluster}"} offset 10m) >= 1 and ignoring (reason) min_over_time(kube_pod_container_status_last_terminated_reason{namespace="mynamespace",cluster="mycluster",reason="OOMKilled"}[10m]) == 1)`,
+		`sum by (pod) ((kube_pod_container_status_restarts_total{cluster="mycluster",namespace="mynamespace"} - kube_pod_container_status_restarts_total{cluster="mycluster",namespace="mynamespace}"} offset 10m) >= 1 and ignoring (reason) min_over_time(kube_pod_container_status_last_terminated_reason{cluster="mycluster",namespace="mynamespace",reason="OOMKilled"}[10m]) == 1)`, // Sort matchers.
+		`label_replace(testmetric, "dst", "destination-value-$1", "src", "source-value-(.*)")`,
+	}
+
+	for _, test := range inputs {
+		b.Run(readable(test), func(b *testing.B) {
+			expr, err := ParseExpr(test)
+			require.NoError(b, err)
+			for i := 0; i < b.N; i++ {
+				_ = expr.String()
+			}
 		})
 	}
 }
