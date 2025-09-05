@@ -18,7 +18,7 @@ describe('Checkbox', () => {
     expect(Object.keys(formGroup.props())).toHaveLength(4);
     expect(formGroup.prop('className')).toEqual('custom-control custom-checkbox');
     expect(formGroup.prop('children')).toHaveLength(2);
-    expect(formGroup.prop('style')).toEqual({ color: 'blue' });
+    expect(formGroup.prop('style')).toEqual({ color: 'green' });
     expect(formGroup.prop('tag')).toEqual('div');
   });
 
