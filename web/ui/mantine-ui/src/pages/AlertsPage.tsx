@@ -414,7 +414,7 @@ export default function AlertsPage() {
               o as keyof typeof alertsPageData.globalCounts
             ]
           }
-          placeholder="Filter by rule group state"
+          placeholder="Filter by the state of the alerting rule"
           values={(stateFilter?.filter((v) => v !== null) as string[]) || []}
           onChange={(values) => setStateFilter(values)}
         />
