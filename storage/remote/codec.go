@@ -340,7 +340,7 @@ func (e errSeriesSet) Err() error {
 	return e.err
 }
 
-func (e errSeriesSet) Warnings() annotations.Annotations { return nil }
+func (errSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // concreteSeriesSet implements storage.SeriesSet.
 type concreteSeriesSet struct {
@@ -357,11 +357,11 @@ func (c *concreteSeriesSet) At() storage.Series {
 	return c.series[c.cur-1]
 }
 
-func (c *concreteSeriesSet) Err() error {
+func (*concreteSeriesSet) Err() error {
 	return nil
 }
 
-func (c *concreteSeriesSet) Warnings() annotations.Annotations { return nil }
+func (*concreteSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // concreteSeries implements storage.Series.
 type concreteSeries struct {
@@ -536,7 +536,7 @@ func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 }
 
 // Err implements chunkenc.Iterator.
-func (c *concreteSeriesIterator) Err() error {
+func (*concreteSeriesIterator) Err() error {
 	return nil
 }
 
@@ -547,8 +547,9 @@ type chunkedSeriesSet struct {
 	mint, maxt    int64
 	cancel        func(error)
 
-	current storage.Series
-	err     error
+	current   storage.Series
+	err       error
+	exhausted bool
 }
 
 func NewChunkedSeriesSet(chunkedReader *ChunkedReader, respBody io.ReadCloser, mint, maxt int64, cancel func(error)) storage.SeriesSet {
@@ -564,6 +565,12 @@ func NewChunkedSeriesSet(chunkedReader *ChunkedReader, respBody io.ReadCloser, m
 // Next return true if there is a next series and false otherwise. It will
 // block until the next series is available.
 func (s *chunkedSeriesSet) Next() bool {
+	if s.exhausted {
+		// Don't try to read the next series again.
+		// This prevents errors like "http: read on closed response body" if Next() is called after it has already returned false.
+		return false
+	}
+
 	res := &prompb.ChunkedReadResponse{}
 
 	err := s.chunkedReader.NextProto(res)
@@ -575,6 +582,7 @@ func (s *chunkedSeriesSet) Next() bool {
 
 		_ = s.respBody.Close()
 		s.cancel(err)
+		s.exhausted = true
 
 		return false
 	}
@@ -599,7 +607,7 @@ func (s *chunkedSeriesSet) Err() error {
 	return s.err
 }
 
-func (s *chunkedSeriesSet) Warnings() annotations.Annotations {
+func (*chunkedSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
@@ -758,10 +766,10 @@ func (it *chunkedSeriesIterator) Err() error {
 // also making sure that there are no labels with duplicate names.
 func validateLabelsAndMetricName(ls []prompb.Label) error {
 	for i, l := range ls {
-		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
+		if l.Name == labels.MetricName && !model.UTF8Validation.IsValidMetricName(l.Value) {
 			return fmt.Errorf("invalid metric name: %v", l.Value)
 		}
-		if !model.LabelName(l.Name).IsValid() {
+		if !model.UTF8Validation.IsValidLabelName(l.Name) {
 			return fmt.Errorf("invalid label name: %v", l.Name)
 		}
 		if !model.LabelValue(l.Value).IsValid() {

@@ -150,3 +150,12 @@ eval instant at 10m increase(native_histogram[10m:3m])
 # by the sub-query multiple times.
 eval instant at 10m increase(native_histogram[10m:15s])
   {} {{count:30.769230769230766 sum:30.769230769230766}}
+
+# When range < resolution and the first evaluation time is out of range.
+load 5m
+	foo 3+0x10
+
+eval instant at 12m min_over_time((topk(1, foo))[1m:5m])
+	expect no_info
+	expect no_warn
+	#empty

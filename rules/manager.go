@@ -18,13 +18,16 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	maps0 "maps"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"golang.org/x/sync/semaphore"
 
@@ -106,6 +109,7 @@ type NotifyFunc func(ctx context.Context, expr string, alerts ...*Alert)
 
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
+	NameValidationScheme      model.ValidationScheme
 	ExternalURL               *url.URL
 	QueryFunc                 QueryFunc
 	NotifyFunc                NotifyFunc
@@ -134,6 +138,17 @@ type ManagerOptions struct {
 // NewManager returns an implementation of Manager, ready to be started
 // by calling the Run method.
 func NewManager(o *ManagerOptions) *Manager {
+	switch o.NameValidationScheme {
+	case model.UTF8Validation, model.LegacyValidation:
+	case model.UnsetValidation:
+		o.NameValidationScheme = model.UTF8Validation
+	default:
+		panic(fmt.Errorf("unrecognized name validation scheme: %s", o.NameValidationScheme))
+	}
+	if o.Context == nil {
+		o.Context = context.Background()
+	}
+
 	if o.Metrics == nil {
 		o.Metrics = NewGroupMetrics(o.Registerer)
 	}
@@ -288,7 +303,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 
 // GroupLoader is responsible for loading rule groups from arbitrary sources and parsing them.
 type GroupLoader interface {
-	Load(identifier string, ignoreUnknownFields bool) (*rulefmt.RuleGroups, []error)
+	Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error)
 	Parse(query string) (parser.Expr, error)
 }
 
@@ -296,8 +311,8 @@ type GroupLoader interface {
 // and parser.ParseExpr.
 type FileLoader struct{}
 
-func (FileLoader) Load(identifier string, ignoreUnknownFields bool) (*rulefmt.RuleGroups, []error) {
-	return rulefmt.ParseFile(identifier, ignoreUnknownFields)
+func (FileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme)
 }
 
 func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.ParseExpr(query) }
@@ -311,7 +326,7 @@ func (m *Manager) LoadGroups(
 	shouldRestore := !m.restored || m.restoreNewRuleGroups
 
 	for _, fn := range filenames {
-		rgs, errs := m.opts.GroupLoader.Load(fn, ignoreUnknownFields)
+		rgs, errs := m.opts.GroupLoader.Load(fn, ignoreUnknownFields, m.opts.NameValidationScheme)
 		if errs != nil {
 			return nil, errs
 		}
@@ -464,7 +479,7 @@ type RuleDependencyController interface {
 type ruleDependencyController struct{}
 
 // AnalyseRules implements RuleDependencyController.
-func (c ruleDependencyController) AnalyseRules(rules []Rule) {
+func (ruleDependencyController) AnalyseRules(rules []Rule) {
 	depMap := buildDependencyMap(rules)
 
 	if depMap == nil {
@@ -484,7 +499,7 @@ type ConcurrentRules []int
 // Its purpose is to bound the amount of concurrency in rule evaluations to avoid overwhelming the Prometheus
 // server with additional query load. Concurrency is controlled globally, not on a per-group basis.
 type RuleConcurrencyController interface {
-	// SplitGroupIntoBatches returns an ordered slice of of ConcurrentRules, which are batches of rules that can be evaluated concurrently.
+	// SplitGroupIntoBatches returns an ordered slice of ConcurrentRules, which are batches of rules that can be evaluated concurrently.
 	// The rules are represented by their index from the input rule group.
 	SplitGroupIntoBatches(ctx context.Context, group *Group) []ConcurrentRules
 
@@ -508,11 +523,11 @@ func newRuleConcurrencyController(maxConcurrency int64) RuleConcurrencyControlle
 	}
 }
 
-func (c *concurrentRuleEvalController) Allow(_ context.Context, _ *Group, _ Rule) bool {
+func (c *concurrentRuleEvalController) Allow(context.Context, *Group, Rule) bool {
 	return c.sema.TryAcquire(1)
 }
 
-func (c *concurrentRuleEvalController) SplitGroupIntoBatches(_ context.Context, g *Group) []ConcurrentRules {
+func (*concurrentRuleEvalController) SplitGroupIntoBatches(_ context.Context, g *Group) []ConcurrentRules {
 	// Using the rule dependency controller information (rules being identified as having no dependencies or no dependants),
 	// we can safely run the following concurrent groups:
 	// 1. Concurrently, all rules that have no dependencies
@@ -548,7 +563,7 @@ func (c *concurrentRuleEvalController) SplitGroupIntoBatches(_ context.Context, 
 	return order
 }
 
-func (c *concurrentRuleEvalController) Done(_ context.Context) {
+func (c *concurrentRuleEvalController) Done(context.Context) {
 	c.sema.Release(1)
 }
 
@@ -557,25 +572,52 @@ var _ RuleConcurrencyController = &sequentialRuleEvalController{}
 // sequentialRuleEvalController is a RuleConcurrencyController that runs every rule sequentially.
 type sequentialRuleEvalController struct{}
 
-func (c sequentialRuleEvalController) Allow(_ context.Context, _ *Group, _ Rule) bool {
+func (sequentialRuleEvalController) Allow(context.Context, *Group, Rule) bool {
 	return false
 }
 
-func (c sequentialRuleEvalController) SplitGroupIntoBatches(_ context.Context, _ *Group) []ConcurrentRules {
+func (sequentialRuleEvalController) SplitGroupIntoBatches(context.Context, *Group) []ConcurrentRules {
 	return nil
 }
 
-func (c sequentialRuleEvalController) Done(_ context.Context) {}
+func (sequentialRuleEvalController) Done(context.Context) {}
 
 // FromMaps returns new sorted Labels from the given maps, overriding each other in order.
 func FromMaps(maps ...map[string]string) labels.Labels {
 	mLables := make(map[string]string)
 
 	for _, m := range maps {
-		for k, v := range m {
-			mLables[k] = v
-		}
+		maps0.Copy(mLables, m)
 	}
 
 	return labels.FromMap(mLables)
+}
+
+// ParseFiles parses the rule files corresponding to glob patterns.
+func ParseFiles(patterns []string, nameValidationScheme model.ValidationScheme) error {
+	files := map[string]string{}
+	for _, pat := range patterns {
+		fns, err := filepath.Glob(pat)
+		if err != nil {
+			return fmt.Errorf("failed retrieving rule files for %q: %w", pat, err)
+		}
+		for _, fn := range fns {
+			absPath, err := filepath.Abs(fn)
+			if err != nil {
+				absPath = fn
+			}
+			cleanPath, err := filepath.EvalSymlinks(absPath)
+			if err != nil {
+				return fmt.Errorf("failed evaluating rule file path %q (pattern: %q): %w", absPath, pat, err)
+			}
+			files[cleanPath] = pat
+		}
+	}
+	for fn, pat := range files {
+		_, errs := rulefmt.ParseFile(fn, false, nameValidationScheme)
+		if len(errs) > 0 {
+			return fmt.Errorf("parse rules from file %q (pattern: %q): %w", fn, pat, errors.Join(errs...))
+		}
+	}
+	return nil
 }

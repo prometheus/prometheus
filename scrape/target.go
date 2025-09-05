@@ -144,7 +144,7 @@ func (t *Target) SetMetadataStore(s MetricMetadataStore) {
 func (t *Target) hash() uint64 {
 	h := fnv.New64a()
 
-	h.Write([]byte(fmt.Sprintf("%016d", t.labels.Hash())))
+	fmt.Fprintf(h, "%016d", t.labels.Hash())
 	h.Write([]byte(t.URL().String()))
 
 	return h.Sum64()
@@ -332,7 +332,9 @@ type limitAppender struct {
 }
 
 func (app *limitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	if !value.IsStaleNaN(v) {
+	// Bypass sample_limit checks only if we have a staleness marker for a known series (ref value is non-zero).
+	// This ensures that if a series is already in TSDB then we always write the marker.
+	if ref == 0 || !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
 			return 0, errSampleLimit

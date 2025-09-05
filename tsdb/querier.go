@@ -77,8 +77,8 @@ func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, er
 	}, nil
 }
 
-func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	res, err := q.index.SortedLabelValues(ctx, name, matchers...)
+func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	res, err := q.index.SortedLabelValues(ctx, name, hints, matchers...)
 	return res, nil, err
 }
 
@@ -390,8 +390,9 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 	return it, it.Err()
 }
 
-func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
-	allValues, err := r.LabelValues(ctx, name)
+func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
+	// Limit is applied at the end, after filtering.
+	allValues, err := r.LabelValues(ctx, name, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetching values of label %s: %w", name, err)
 	}
@@ -428,6 +429,9 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 
 	// If we don't have any matchers for other labels, then we're done.
 	if !hasMatchersForOtherLabels {
+		if hints != nil && hints.Limit > 0 && len(allValues) > hints.Limit {
+			allValues = allValues[:hints.Limit]
+		}
 		return allValues, nil
 	}
 
@@ -451,6 +455,9 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 	values := make([]string, 0, len(indexes))
 	for _, idx := range indexes {
 		values = append(values, allValues[idx])
+		if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
+			break
+		}
 	}
 
 	return values, nil
@@ -525,7 +532,7 @@ func (b *blockBaseSeriesSet) Next() bool {
 		// Count those in range to size allocation (roughly - ignoring tombstones).
 		nChks := 0
 		for _, chk := range b.bufChks {
-			if !(chk.MaxTime < b.mint || chk.MinTime > b.maxt) {
+			if chk.MaxTime >= b.mint && chk.MinTime <= b.maxt {
 				nChks++
 			}
 		}
@@ -581,7 +588,7 @@ func (b *blockBaseSeriesSet) Err() error {
 	return b.p.Err()
 }
 
-func (b *blockBaseSeriesSet) Warnings() annotations.Annotations { return nil }
+func (*blockBaseSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // populateWithDelGenericSeriesIterator allows to iterate over given chunk
 // metas. In each iteration it ensures that chunks are trimmed based on given
@@ -1259,4 +1266,4 @@ func (cr nopChunkReader) ChunkOrIterable(chunks.Meta) (chunkenc.Chunk, chunkenc.
 	return cr.emptyChunk, nil, nil
 }
 
-func (cr nopChunkReader) Close() error { return nil }
+func (nopChunkReader) Close() error { return nil }

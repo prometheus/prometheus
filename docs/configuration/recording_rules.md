@@ -1,9 +1,8 @@
 ---
-title: Recording rules
+title: Defining recording rules
+nav_title: Recording rules
 sort_rank: 2
 ---
-
-# Defining recording rules
 
 ## Configuring rules
 
@@ -16,10 +15,6 @@ Rule files use YAML.
 
 The rule files can be reloaded at runtime by sending `SIGHUP` to the Prometheus
 process. The changes are only applied if all rule files are well-formatted.
-
-_Note about native histograms (experimental feature): Native histogram are always
-recorded as gauge histograms (for now). Most cases will create gauge histograms
-naturally, e.g. after `rate()`._
 
 ## Syntax-checking rules
 
@@ -38,7 +33,7 @@ When the file is syntactically valid, the checker prints a textual
 representation of the parsed rules to standard output and then exits with
 a `0` return status.
 
-If there are any syntax errors or invalid input arguments, it prints an error 
+If there are any syntax errors or invalid input arguments, it prints an error
 message to standard error and exits with a `1` return status.
 
 ## Recording rules
@@ -75,7 +70,8 @@ groups:
 ```
 
 ### `<rule_group>`
-```
+
+```yaml
 # The name of the group. Must be unique within a file.
 name: <string>
 
@@ -102,7 +98,7 @@ rules:
 
 The syntax for recording rules is:
 
-```
+```yaml
 # The name of the time series to output to. Must be a valid metric name.
 record: <string>
 
@@ -118,7 +114,7 @@ labels:
 
 The syntax for alerting rules is:
 
-```
+```yaml
 # The name of the alert. Must be a valid label value.
 alert: <string>
 
@@ -147,7 +143,7 @@ annotations:
 See also the
 [best practices for naming metrics created by recording rules](https://prometheus.io/docs/practices/rules/#recording-rules).
 
-# Limiting alerts and series
+## Limiting alerts and series
 
 A limit for alerts produced by alerting rules and series produced recording rules
 can be configured per-group. When the limit is exceeded, _all_ series produced
@@ -156,9 +152,9 @@ the rule, active, pending, or inactive, are cleared as well. The event will be
 recorded as an error in the evaluation, and as such no stale markers are
 written.
 
-# Rule query offset
+## Rule query offset
 This is useful to ensure the underlying metrics have been received and stored in Prometheus. Metric availability delays are more likely to occur when Prometheus is running as a remote write target due to the nature of distributed systems, but can also occur when there's anomalies with scraping and/or short evaluation intervals.
 
-# Failed rule evaluations due to slow evaluation
+## Failed rule evaluations due to slow evaluation
 
-If a rule group hasn't finished evaluating before its next evaluation is supposed to start (as defined by the `evaluation_interval`), the next evaluation will be skipped. Subsequent evaluations of the rule group will continue to be skipped until the initial evaluation either completes or times out. When this happens, there will be a gap in the metric produced by the recording rule. The `rule_group_iterations_missed_total` metric will be incremented for each missed iteration of the rule group. 
+If a rule group hasn't finished evaluating before its next evaluation is supposed to start (as defined by the `evaluation_interval`), the next evaluation will be skipped. Subsequent evaluations of the rule group will continue to be skipped until the initial evaluation either completes or times out. When this happens, there will be a gap in the metric produced by the recording rule. The `rule_group_iterations_missed_total` metric will be incremented for each missed iteration of the rule group.

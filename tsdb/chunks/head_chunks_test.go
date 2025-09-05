@@ -69,7 +69,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	var firstFileName string
 	for hrw.curFileSequence < 3 || hrw.chkWriter.Buffered() == 0 {
 		addChunks := func(numChunks int) {
-			for i := 0; i < numChunks; i++ {
+			for range numChunks {
 				seriesRef, chkRef, mint, maxt, chunk, isOOO := createChunk(t, totalChunks, hrw)
 				totalChunks++
 				expectedData = append(expectedData, expectedDataType{
@@ -129,7 +129,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 
 	// Checking on-disk bytes for the first file.
 	require.Len(t, hrw.mmappedChunkFiles, 3, "expected 3 mmapped files, got %d", len(hrw.mmappedChunkFiles))
-	require.Equal(t, len(hrw.mmappedChunkFiles), len(hrw.closers))
+	require.Len(t, hrw.closers, len(hrw.mmappedChunkFiles))
 
 	actualBytes, err := os.ReadFile(firstFileName)
 	require.NoError(t, err)
@@ -208,9 +208,9 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 
 		files, err := os.ReadDir(hrw.dir.Name())
 		require.NoError(t, err)
-		require.Equal(t, len(remainingFiles), len(files), "files on disk")
-		require.Equal(t, len(remainingFiles), len(hrw.mmappedChunkFiles), "hrw.mmappedChunkFiles")
-		require.Equal(t, len(remainingFiles), len(hrw.closers), "closers")
+		require.Len(t, files, len(remainingFiles), "files on disk")
+		require.Len(t, hrw.mmappedChunkFiles, len(remainingFiles), "hrw.mmappedChunkFiles")
+		require.Len(t, hrw.closers, len(remainingFiles), "closers")
 
 		for _, i := range remainingFiles {
 			_, ok := hrw.mmappedChunkFiles[i]
@@ -325,9 +325,9 @@ func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
 
 		files, err := os.ReadDir(hrw.dir.Name())
 		require.NoError(t, err)
-		require.Equal(t, len(remainingFiles), len(files), "files on disk")
-		require.Equal(t, len(remainingFiles), len(hrw.mmappedChunkFiles), "hrw.mmappedChunkFiles")
-		require.Equal(t, len(remainingFiles), len(hrw.closers), "closers")
+		require.Len(t, files, len(remainingFiles), "files on disk")
+		require.Len(t, hrw.mmappedChunkFiles, len(remainingFiles), "hrw.mmappedChunkFiles")
+		require.Len(t, hrw.closers, len(remainingFiles), "closers")
 
 		for _, i := range remainingFiles {
 			_, ok := hrw.mmappedChunkFiles[i]
@@ -433,7 +433,7 @@ func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
 	hrw = createChunkDiskMapper(t, dir)
 
 	// Forcefully failing IterateAllChunks.
-	require.Error(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding, _ bool) error {
+	require.Error(t, hrw.IterateAllChunks(func(HeadSeriesRef, ChunkDiskMapperRef, int64, int64, uint16, chunkenc.Encoding, bool) error {
 		return errors.New("random error")
 	}))
 
@@ -545,7 +545,7 @@ func createChunkDiskMapper(t *testing.T, dir string) *ChunkDiskMapper {
 	hrw, err := NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), DefaultWriteBufferSize, writeQueueSize)
 	require.NoError(t, err)
 	require.False(t, hrw.fileMaxtSet)
-	require.NoError(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding, _ bool) error {
+	require.NoError(t, hrw.IterateAllChunks(func(HeadSeriesRef, ChunkDiskMapperRef, int64, int64, uint16, chunkenc.Encoding, bool) error {
 		return nil
 	}))
 	require.True(t, hrw.fileMaxtSet)
@@ -558,7 +558,7 @@ func randomChunk(t *testing.T) chunkenc.Chunk {
 	length := rand.Int() % 120
 	app, err := chunk.Appender()
 	require.NoError(t, err)
-	for i := 0; i < length; i++ {
+	for range length {
 		app.Append(rand.Int63(), rand.Float64())
 	}
 	return chunk
@@ -574,7 +574,7 @@ func createChunk(t *testing.T, idx int, hrw *ChunkDiskMapper) (seriesRef HeadSer
 	if rand.Intn(2) == 0 {
 		isOOO = true
 	}
-	chunkRef = hrw.WriteChunk(seriesRef, mint, maxt, chunk, isOOO, func(_ error) {
+	chunkRef = hrw.WriteChunk(seriesRef, mint, maxt, chunk, isOOO, func(error) {
 		require.NoError(t, err)
 		close(awaitCb)
 	})

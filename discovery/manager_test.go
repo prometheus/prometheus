@@ -668,7 +668,6 @@ func TestTargetUpdatesOrder(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		tc := tc
 		t.Run(tc.title, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -695,7 +694,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 			for x := 0; x < totalUpdatesCount; x++ {
 				select {
 				case <-ctx.Done():
-					require.FailNow(t, "%d: no update arrived within the timeout limit", x)
+					t.Fatalf("%d: no update arrived within the timeout limit", x)
 				case tgs := <-provUpdates:
 					discoveryManager.updateGroup(poolKey{setName: strconv.Itoa(i), provider: tc.title}, tgs)
 					for _, got := range discoveryManager.allGroups() {
@@ -769,12 +768,10 @@ func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Grou
 			}
 		}
 	}
-	if match != present {
-		msg := ""
-		if !present {
-			msg = "not"
-		}
-		require.FailNow(t, "%q should %s be present in Targets labels: %q", label, msg, mergedTargets)
+	if present {
+		require.Truef(t, match, "%q must be present in Targets labels: %q", label, mergedTargets)
+	} else {
+		require.Falsef(t, match, "%q must be absent in Targets labels: %q", label, mergedTargets)
 	}
 }
 
@@ -1091,9 +1088,9 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	targetGroups, ok := discoveryManager.targets[p]
 	require.True(t, ok, "'%v' should be present in targets", p)
 	// Otherwise the targetGroups will leak, see https://github.com/prometheus/prometheus/issues/12436.
-	require.Empty(t, targetGroups, 0, "'%v' should no longer have any associated target groups", p)
+	require.Empty(t, targetGroups, "'%v' should no longer have any associated target groups", p)
 	require.Len(t, syncedTargets, 1, "an update with no targetGroups should still be sent.")
-	require.Empty(t, syncedTargets["prometheus"], 0)
+	require.Empty(t, syncedTargets["prometheus"])
 }
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
@@ -1160,7 +1157,7 @@ func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
 
 type errorConfig struct{ err error }
 
-func (e errorConfig) Name() string                                        { return "error" }
+func (errorConfig) Name() string                                          { return "error" }
 func (e errorConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) { return nil, e.err }
 
 // NewDiscovererMetrics implements discovery.Config.
@@ -1178,7 +1175,7 @@ func (lockStaticConfig) NewDiscovererMetrics(prometheus.Registerer, RefreshMetri
 	return &NoopDiscovererMetrics{}
 }
 
-func (s lockStaticConfig) Name() string { return "lockstatic" }
+func (lockStaticConfig) Name() string { return "lockstatic" }
 func (s lockStaticConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) {
 	return (lockStaticDiscoverer)(s), nil
 }
@@ -1352,7 +1349,6 @@ func TestCoordinationWithReceiver(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.title, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -1373,10 +1369,10 @@ func TestCoordinationWithReceiver(t *testing.T) {
 				time.Sleep(expected.delay)
 				select {
 				case <-ctx.Done():
-					require.FailNow(t, "step %d: no update received in the expected timeframe", i)
+					t.Fatalf("step %d: no update received in the expected timeframe", i)
 				case tgs, ok := <-mgr.SyncCh():
 					require.True(t, ok, "step %d: discovery manager channel is closed", i)
-					require.Equal(t, len(expected.tgs), len(tgs), "step %d: targets mismatch", i)
+					require.Len(t, tgs, len(expected.tgs), "step %d: targets mismatch", i)
 
 					for k := range expected.tgs {
 						_, ok := tgs[k]
@@ -1473,7 +1469,7 @@ func TestTargetSetTargetGroupsUpdateDuringApplyConfig(t *testing.T) {
 	wg.Add(2000)
 
 	start := make(chan struct{})
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		go func() {
 			<-start
 			td.update([]*targetgroup.Group{
@@ -1487,7 +1483,7 @@ func TestTargetSetTargetGroupsUpdateDuringApplyConfig(t *testing.T) {
 		}()
 	}
 
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		go func(i int) {
 			<-start
 			c := map[string]Configs{
@@ -1523,7 +1519,7 @@ func (*testDiscoverer) NewDiscovererMetrics(prometheus.Registerer, RefreshMetric
 }
 
 // Name implements Config.
-func (t *testDiscoverer) Name() string {
+func (*testDiscoverer) Name() string {
 	return "test"
 }
 
@@ -1547,7 +1543,7 @@ func (t *testDiscoverer) update(tgs []*targetgroup.Group) {
 func TestUnregisterMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	// Check that all metrics can be unregistered, allowing a second manager to be created.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		ctx, cancel := context.WithCancel(context.Background())
 
 		refreshMetrics, sdMetrics := NewTestMetrics(t, reg)
@@ -1563,4 +1559,54 @@ func TestUnregisterMetrics(t *testing.T) {
 		refreshMetrics.Unregister()
 		cancel()
 	}
+}
+
+// Calling ApplyConfig() that removes providers at the same time as shutting down
+// the manager should not hang.
+func TestConfigReloadAndShutdownRace(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	_, sdMetrics := NewTestMetrics(t, reg)
+
+	mgrCtx, mgrCancel := context.WithCancel(context.Background())
+	discoveryManager := NewManager(mgrCtx, promslog.NewNopLogger(), reg, sdMetrics)
+	require.NotNil(t, discoveryManager)
+	discoveryManager.updatert = 100 * time.Millisecond
+
+	var wgDiscovery sync.WaitGroup
+	wgDiscovery.Add(1)
+	go func() {
+		discoveryManager.Run()
+		wgDiscovery.Done()
+	}()
+	time.Sleep(time.Millisecond * 200)
+
+	var wgBg sync.WaitGroup
+	updateChan := discoveryManager.SyncCh()
+	wgBg.Add(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		defer wgBg.Done()
+		select {
+		case <-ctx.Done():
+			return
+		case <-updateChan:
+		}
+	}()
+
+	c := map[string]Configs{
+		"prometheus": {staticConfig("bar:9090")},
+	}
+	discoveryManager.ApplyConfig(c)
+
+	delete(c, "prometheus")
+	wgBg.Add(1)
+	go func() {
+		discoveryManager.ApplyConfig(c)
+		wgBg.Done()
+	}()
+	mgrCancel()
+	wgDiscovery.Wait()
+
+	cancel()
+	wgBg.Wait()
 }

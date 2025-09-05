@@ -43,6 +43,10 @@ eval instant at 10m rate(metric_total{env="1"}[10m])
 eval instant at 10m last_over_time(metric_total{env="1"}[10m])
 	metric_total{env="1"} 120
 
+# Does not drop __name__ for first_over_time function.
+eval instant at 10m first_over_time(metric_total{env="1"}[10m])
+	metric_total{env="1"} 60
+
 # Drops name for other _over_time functions.
 eval instant at 10m max_over_time(metric_total{env="1"}[10m])
 	{env="1"} 120
@@ -73,7 +77,8 @@ eval instant at 10m sum by (__name__, env) (metric_total{env="1"})
 
 # Aggregation operators by __name__ lead to duplicate labelset errors (aggregation is partitioned by not yet removed __name__ label).
 # This is an accidental side effect of delayed __name__ label dropping
-eval_fail instant at 10m sum by (__name__) (rate({env="1"}[10m]))
+eval instant at 10m sum by (__name__) (rate({env="1"}[10m]))
+  expect fail
 
 # Aggregation operators aggregate metrics with same labelset and to-be-dropped names.
 # This is an accidental side effect of delayed __name__ label dropping

@@ -61,6 +61,8 @@ import (
 	"github.com/prometheus/prometheus/util/documentcli"
 )
 
+var promqlEnableDelayedNameRemoval = false
+
 func init() {
 	// This can be removed when the legacy global mode is fully deprecated.
 	//nolint:staticcheck
@@ -86,6 +88,8 @@ var (
 	// Same as lintRulesOptions, but including scrape config linting options as well.
 	lintConfigOptions = append(append([]string{}, lintRulesOptions...), lintOptionTooLongScrapeInterval)
 )
+
+const httpConfigFileDescription = "HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool"
 
 func main() {
 	var (
@@ -136,11 +140,11 @@ func main() {
 	).Required().ExistingFiles()
 
 	checkServerHealthCmd := checkCmd.Command("healthy", "Check if the Prometheus server is healthy.")
-	checkServerHealthCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
+	checkServerHealthCmd.Flag("http.config.file", httpConfigFileDescription).PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 	checkServerHealthCmd.Flag("url", "The URL for the Prometheus server.").Default("http://localhost:9090").URLVar(&serverURL)
 
 	checkServerReadyCmd := checkCmd.Command("ready", "Check if the Prometheus server is ready.")
-	checkServerReadyCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
+	checkServerReadyCmd.Flag("http.config.file", httpConfigFileDescription).PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 	checkServerReadyCmd.Flag("url", "The URL for the Prometheus server.").Default("http://localhost:9090").URLVar(&serverURL)
 
 	checkRulesCmd := checkCmd.Command("rules", "Check if the rule files are valid or not.")
@@ -163,7 +167,7 @@ func main() {
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
 	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
-	queryCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
+	queryCmd.Flag("http.config.file", httpConfigFileDescription).PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 
 	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
 	queryInstantCmd.Arg("server", "Prometheus server to query.").Required().URLVar(&serverURL)
@@ -208,7 +212,7 @@ func main() {
 	queryAnalyzeCmd.Flag("match", "Series selector. Can be specified multiple times.").Required().StringsVar(&queryAnalyzeCfg.matchers)
 
 	pushCmd := app.Command("push", "Push to a Prometheus server.")
-	pushCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
+	pushCmd.Flag("http.config.file", httpConfigFileDescription).PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 	pushMetricsCmd := pushCmd.Command("metrics", "Push metrics to a prometheus remote write (for testing purpose only).")
 	pushMetricsCmd.Arg("remote-write-url", "Prometheus remote write url to push metrics.").Required().URLVar(&remoteWriteURL)
 	metricFiles := pushMetricsCmd.Arg(
@@ -255,15 +259,15 @@ func main() {
 	tsdbDumpCmd := tsdbCmd.Command("dump", "Dump samples from a TSDB.")
 	dumpPath := tsdbDumpCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
 	dumpSandboxDirRoot := tsdbDumpCmd.Flag("sandbox-dir-root", "Root directory where a sandbox directory will be created, this sandbox is used in case WAL replay generates chunks (default is the database path). The sandbox is cleaned up at the end.").String()
-	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
-	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
+	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump, in milliseconds since the Unix epoch.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
+	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump, in milliseconds since the Unix epoch.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
 	dumpMatch := tsdbDumpCmd.Flag("match", "Series selector. Can be specified multiple times.").Default("{__name__=~'(?s:.*)'}").Strings()
 
 	tsdbDumpOpenMetricsCmd := tsdbCmd.Command("dump-openmetrics", "[Experimental] Dump samples from a TSDB into OpenMetrics text format, excluding native histograms and staleness markers, which are not representable in OpenMetrics.")
 	dumpOpenMetricsPath := tsdbDumpOpenMetricsCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
 	dumpOpenMetricsSandboxDirRoot := tsdbDumpOpenMetricsCmd.Flag("sandbox-dir-root", "Root directory where a sandbox directory will be created, this sandbox is used in case WAL replay generates chunks (default is the database path). The sandbox is cleaned up at the end.").String()
-	dumpOpenMetricsMinTime := tsdbDumpOpenMetricsCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
-	dumpOpenMetricsMaxTime := tsdbDumpOpenMetricsCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
+	dumpOpenMetricsMinTime := tsdbDumpOpenMetricsCmd.Flag("min-time", "Minimum timestamp to dump, in milliseconds since the Unix epoch.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
+	dumpOpenMetricsMaxTime := tsdbDumpOpenMetricsCmd.Flag("max-time", "Maximum timestamp to dump, in milliseconds since the Unix epoch.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
 	dumpOpenMetricsMatch := tsdbDumpOpenMetricsCmd.Flag("match", "Series selector. Can be specified multiple times.").Default("{__name__=~'(?s:.*)'}").Strings()
 
 	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
@@ -275,7 +279,7 @@ func main() {
 	importFilePath := openMetricsImportCmd.Arg("input file", "OpenMetrics file to read samples from.").Required().String()
 	importDBPath := openMetricsImportCmd.Arg("output directory", "Output directory for generated blocks.").Default(defaultDBPath).String()
 	importRulesCmd := importCmd.Command("rules", "Create blocks of data for new recording rules.")
-	importRulesCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
+	importRulesCmd.Flag("http.config.file", httpConfigFileDescription).PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 	importRulesCmd.Flag("url", "The URL for the Prometheus API with the data where the rule will be backfilled from.").Default("http://localhost:9090").URLVar(&serverURL)
 	importRulesStart := importRulesCmd.Flag("start", "The time to start backfilling the new rule from. Must be a RFC3339 formatted date or Unix timestamp. Required.").
 		Required().String()
@@ -304,7 +308,7 @@ func main() {
 	promQLLabelsDeleteQuery := promQLLabelsDeleteCmd.Arg("query", "PromQL query.").Required().String()
 	promQLLabelsDeleteName := promQLLabelsDeleteCmd.Arg("name", "Name of the label to delete.").Required().String()
 
-	featureList := app.Flag("enable-feature", "Comma separated feature names to enable. Currently unused.").Default("").Strings()
+	featureList := app.Flag("enable-feature", "Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details").Default("").Strings()
 
 	documentationCmd := app.Command("write-documentation", "Generate command line documentation. Internal use.").Hidden()
 
@@ -338,10 +342,14 @@ func main() {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
 			switch o {
+			case "promql-experimental-functions":
+				parser.EnableExperimentalFunctions = true
+			case "promql-delayed-name-removal":
+				promqlEnableDelayedNameRemoval = true
 			case "":
 				continue
 			default:
-				fmt.Printf("  WARNING: --enable-feature is currently a no-op")
+				fmt.Printf("  WARNING: Unknown feature passed to --enable-feature: %s", o)
 			}
 		}
 	}
@@ -351,7 +359,7 @@ func main() {
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, prometheus.DefaultRegisterer))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newConfigLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkConfigIgnoreUnknownFields, model.Duration(*checkLookbackDelta)), *configFiles...))
+		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newConfigLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkConfigIgnoreUnknownFields, model.UTF8Validation, model.Duration(*checkLookbackDelta)), *configFiles...))
 
 	case checkServerHealthCmd.FullCommand():
 		os.Exit(checkErr(CheckServerStatus(serverURL, checkHealth, httpRoundTripper)))
@@ -363,7 +371,7 @@ func main() {
 		os.Exit(CheckWebConfig(*webConfigFiles...))
 
 	case checkRulesCmd.FullCommand():
-		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesIgnoreUnknownFields), *ruleFiles...))
+		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesIgnoreUnknownFields, model.UTF8Validation), *ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
@@ -399,8 +407,9 @@ func main() {
 		}
 		os.Exit(RulesUnitTestResult(results,
 			promqltest.LazyLoaderOpts{
-				EnableAtModifier:     true,
-				EnableNegativeOffset: true,
+				EnableAtModifier:         true,
+				EnableNegativeOffset:     true,
+				EnableDelayedNameRemoval: promqlEnableDelayedNameRemoval,
 			},
 			*testRulesRun,
 			*testRulesDiff,
@@ -427,7 +436,7 @@ func main() {
 		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration, *openMetricsLabels))
 
 	case importRulesCmd.FullCommand():
-		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, *importRulesFiles...)))
+		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, model.UTF8Validation, *importRulesFiles...)))
 
 	case queryAnalyzeCmd.FullCommand():
 		os.Exit(checkErr(queryAnalyzeCfg.run(serverURL, httpRoundTripper)))
@@ -459,17 +468,19 @@ func checkExperimental(f bool) {
 var errLint = errors.New("lint error")
 
 type rulesLintConfig struct {
-	all                 bool
-	duplicateRules      bool
-	fatal               bool
-	ignoreUnknownFields bool
+	all                  bool
+	duplicateRules       bool
+	fatal                bool
+	ignoreUnknownFields  bool
+	nameValidationScheme model.ValidationScheme
 }
 
-func newRulesLintConfig(stringVal string, fatal, ignoreUnknownFields bool) rulesLintConfig {
+func newRulesLintConfig(stringVal string, fatal, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) rulesLintConfig {
 	items := strings.Split(stringVal, ",")
 	ls := rulesLintConfig{
-		fatal:               fatal,
-		ignoreUnknownFields: ignoreUnknownFields,
+		fatal:                fatal,
+		ignoreUnknownFields:  ignoreUnknownFields,
+		nameValidationScheme: nameValidationScheme,
 	}
 	for _, setting := range items {
 		switch setting {
@@ -495,7 +506,7 @@ type configLintConfig struct {
 	lookbackDelta model.Duration
 }
 
-func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, lookbackDelta model.Duration) configLintConfig {
+func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme, lookbackDelta model.Duration) configLintConfig {
 	c := configLintConfig{
 		rulesLintConfig: rulesLintConfig{
 			fatal: fatal,
@@ -524,7 +535,7 @@ func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, loo
 	}
 
 	if len(rulesOptions) > 0 {
-		c.rulesLintConfig = newRulesLintConfig(strings.Join(rulesOptions, ","), fatal, ignoreUnknownFields)
+		c.rulesLintConfig = newRulesLintConfig(strings.Join(rulesOptions, ","), fatal, ignoreUnknownFields, nameValidationScheme)
 	}
 
 	return c
@@ -845,7 +856,7 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return true, true
 	}
-	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields)
+	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme)
 	if errs != nil {
 		failed = true
 		fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -879,7 +890,7 @@ func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 	hasErrors := false
 	for _, f := range files {
 		fmt.Println("Checking", f)
-		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields)
+		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme)
 		if errs != nil {
 			failed = true
 			fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -1053,7 +1064,10 @@ type metricStat struct {
 }
 
 func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
-	p := expfmt.TextParser{}
+	// Lacking information about what the intended validation scheme is, use the
+	// deprecated library bool.
+	//nolint:staticcheck
+	p := expfmt.NewTextParser(model.NameValidationScheme)
 	metricFamilies, err := p.TextToMetricFamilies(r)
 	if err != nil {
 		return nil, 0, fmt.Errorf("error while parsing text to metric families: %w", err)
@@ -1181,17 +1195,17 @@ type printer interface {
 
 type promqlPrinter struct{}
 
-func (p *promqlPrinter) printValue(v model.Value) {
+func (*promqlPrinter) printValue(v model.Value) {
 	fmt.Println(v)
 }
 
-func (p *promqlPrinter) printSeries(val []model.LabelSet) {
+func (*promqlPrinter) printSeries(val []model.LabelSet) {
 	for _, v := range val {
 		fmt.Println(v)
 	}
 }
 
-func (p *promqlPrinter) printLabelValues(val model.LabelValues) {
+func (*promqlPrinter) printLabelValues(val model.LabelValues) {
 	for _, v := range val {
 		fmt.Println(v)
 	}
@@ -1199,24 +1213,24 @@ func (p *promqlPrinter) printLabelValues(val model.LabelValues) {
 
 type jsonPrinter struct{}
 
-func (j *jsonPrinter) printValue(v model.Value) {
+func (*jsonPrinter) printValue(v model.Value) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
 
-func (j *jsonPrinter) printSeries(v []model.LabelSet) {
+func (*jsonPrinter) printSeries(v []model.LabelSet) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
 
-func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
+func (*jsonPrinter) printLabelValues(v model.LabelValues) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
 
 // importRules backfills recording rules from the files provided. The output are blocks of data
 // at the outputDir location.
-func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outputDir string, evalInterval, maxBlockDuration time.Duration, files ...string) error {
+func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outputDir string, evalInterval, maxBlockDuration time.Duration, nameValidationScheme model.ValidationScheme, files ...string) error {
 	ctx := context.Background()
 	var stime, etime time.Time
 	var err error
@@ -1239,11 +1253,12 @@ func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outpu
 	}
 
 	cfg := ruleImporterConfig{
-		outputDir:        outputDir,
-		start:            stime,
-		end:              etime,
-		evalInterval:     evalInterval,
-		maxBlockDuration: maxBlockDuration,
+		outputDir:            outputDir,
+		start:                stime,
+		end:                  etime,
+		evalInterval:         evalInterval,
+		maxBlockDuration:     maxBlockDuration,
+		nameValidationScheme: nameValidationScheme,
 	}
 	api, err := newAPI(url, roundTripper, nil)
 	if err != nil {

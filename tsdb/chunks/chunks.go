@@ -14,7 +14,6 @@
 package chunks
 
 import (
-	"bufio"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -281,12 +280,13 @@ func checkCRC32(data, sum []byte) error {
 type Writer struct {
 	dirFile *os.File
 	files   []*os.File
-	wbuf    *bufio.Writer
+	wbuf    fileutil.BufWriter
 	n       int64
 	crc32   hash.Hash
 	buf     [binary.MaxVarintLen32]byte
 
-	segmentSize int64
+	segmentSize   int64
+	useUncachedIO bool
 }
 
 const (
@@ -294,21 +294,40 @@ const (
 	DefaultChunkSegmentSize = 512 * 1024 * 1024
 )
 
-// NewWriterWithSegSize returns a new writer against the given directory
-// and allows setting a custom size for the segments.
-func NewWriterWithSegSize(dir string, segmentSize int64) (*Writer, error) {
-	return newWriter(dir, segmentSize)
+type writerOptions struct {
+	segmentSize   int64
+	useUncachedIO bool
 }
 
-// NewWriter returns a new writer against the given directory
-// using the default segment size.
-func NewWriter(dir string) (*Writer, error) {
-	return newWriter(dir, DefaultChunkSegmentSize)
+type WriterOption func(*writerOptions)
+
+func WithUncachedIO(enabled bool) WriterOption {
+	return func(o *writerOptions) {
+		o.useUncachedIO = enabled
+	}
 }
 
-func newWriter(dir string, segmentSize int64) (*Writer, error) {
-	if segmentSize <= 0 {
-		segmentSize = DefaultChunkSegmentSize
+// WithSegmentSize sets the chunk segment size for the writer.
+// Passing a value less than or equal to 0 causes the default segment size (DefaultChunkSegmentSize) to be used.
+func WithSegmentSize(segmentSize int64) WriterOption {
+	return func(o *writerOptions) {
+		if segmentSize <= 0 {
+			segmentSize = DefaultChunkSegmentSize
+		}
+
+		o.segmentSize = segmentSize
+	}
+}
+
+// NewWriter returns a new writer against the given directory.
+// It uses DefaultChunkSegmentSize as the default segment size.
+func NewWriter(dir string, opts ...WriterOption) (*Writer, error) {
+	options := &writerOptions{
+		segmentSize: DefaultChunkSegmentSize,
+	}
+
+	for _, opt := range opts {
+		opt(options)
 	}
 
 	if err := os.MkdirAll(dir, 0o777); err != nil {
@@ -319,10 +338,11 @@ func newWriter(dir string, segmentSize int64) (*Writer, error) {
 		return nil, err
 	}
 	return &Writer{
-		dirFile:     dirFile,
-		n:           0,
-		crc32:       newCRC32(),
-		segmentSize: segmentSize,
+		dirFile:       dirFile,
+		n:             0,
+		crc32:         newCRC32(),
+		segmentSize:   options.segmentSize,
+		useUncachedIO: options.useUncachedIO,
 	}, nil
 }
 
@@ -333,7 +353,7 @@ func (w *Writer) tail() *os.File {
 	return w.files[len(w.files)-1]
 }
 
-// finalizeTail writes all pending data to the current tail file,
+// finalizeTail writes all pending data to the current tail file if any,
 // truncates its size, and closes it.
 func (w *Writer) finalizeTail() error {
 	tf := w.tail()
@@ -341,8 +361,10 @@ func (w *Writer) finalizeTail() error {
 		return nil
 	}
 
-	if err := w.wbuf.Flush(); err != nil {
-		return err
+	if w.wbuf != nil {
+		if err := w.wbuf.Flush(); err != nil {
+			return err
+		}
 	}
 	if err := tf.Sync(); err != nil {
 		return err
@@ -373,9 +395,25 @@ func (w *Writer) cut() error {
 
 	w.files = append(w.files, f)
 	if w.wbuf != nil {
-		w.wbuf.Reset(f)
+		if err := w.wbuf.Reset(f); err != nil {
+			return err
+		}
 	} else {
-		w.wbuf = bufio.NewWriterSize(f, 8*1024*1024)
+		var (
+			wbuf fileutil.BufWriter
+			err  error
+		)
+		size := 8 * 1024 * 1024
+		if w.useUncachedIO {
+			// Uncached IO is implemented using direct I/O for now.
+			wbuf, err = fileutil.NewDirectIOWriter(f, size)
+		} else {
+			wbuf, err = fileutil.NewBufioWriterWithSeek(f, size)
+		}
+		if err != nil {
+			return err
+		}
+		w.wbuf = wbuf
 	}
 
 	return nil
@@ -434,8 +472,9 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 		return 0, nil, 0, fmt.Errorf("open final file: %w", err)
 	}
 	// Skip header for further writes.
-	if _, err := f.Seek(int64(n), 0); err != nil {
-		return 0, nil, 0, fmt.Errorf("seek in final file: %w", err)
+	offset := int64(n)
+	if _, err := f.Seek(offset, 0); err != nil {
+		return 0, nil, 0, fmt.Errorf("seek to %d in final file: %w", offset, err)
 	}
 	return n, f, seq, nil
 }

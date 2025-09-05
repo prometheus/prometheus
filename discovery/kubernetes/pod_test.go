@@ -16,6 +16,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"maps"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -95,11 +96,11 @@ func makeMultiPortPods() *v1.Pod {
 	}
 }
 
-func makePods() *v1.Pod {
+func makePods(namespace string) *v1.Pod {
 	return &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
-			Namespace: "default",
+			Namespace: namespace,
 			UID:       types.UID("abc123"),
 		},
 		Spec: v1.PodSpec{
@@ -337,7 +338,7 @@ func TestPodDiscoveryAdd(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			obj := makePods()
+			obj := makePods("default")
 			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
@@ -347,13 +348,13 @@ func TestPodDiscoveryAdd(t *testing.T) {
 
 func TestPodDiscoveryDelete(t *testing.T) {
 	t.Parallel()
-	obj := makePods()
+	obj := makePods("default")
 	n, c := makeDiscovery(RolePod, NamespaceDiscovery{}, obj)
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			obj := makePods()
+			obj := makePods("default")
 			c.CoreV1().Pods(obj.Namespace).Delete(context.Background(), obj.Name, metav1.DeleteOptions{})
 		},
 		expectedMaxItems: 2,
@@ -399,7 +400,7 @@ func TestPodDiscoveryUpdate(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			obj := makePods()
+			obj := makePods("default")
 			c.CoreV1().Pods(obj.Namespace).Update(context.Background(), obj, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
@@ -410,9 +411,9 @@ func TestPodDiscoveryUpdate(t *testing.T) {
 func TestPodDiscoveryUpdateEmptyPodIP(t *testing.T) {
 	t.Parallel()
 	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
-	initialPod := makePods()
+	initialPod := makePods("default")
 
-	updatedPod := makePods()
+	updatedPod := makePods("default")
 	updatedPod.Status.PodIP = ""
 
 	k8sDiscoveryTest{
@@ -437,14 +438,12 @@ func TestPodDiscoveryNamespaces(t *testing.T) {
 	n, c := makeDiscovery(RolePod, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
 
 	expected := expectedPodTargetGroups("ns1")
-	for k, v := range expectedPodTargetGroups("ns2") {
-		expected[k] = v
-	}
+	maps.Copy(expected, expectedPodTargetGroups("ns2"))
 	k8sDiscoveryTest{
 		discovery: n,
 		beforeRun: func() {
 			for _, ns := range []string{"ns1", "ns2"} {
-				pod := makePods()
+				pod := makePods("default")
 				pod.Namespace = ns
 				c.CoreV1().Pods(pod.Namespace).Create(context.Background(), pod, metav1.CreateOptions{})
 			}
@@ -463,7 +462,7 @@ func TestPodDiscoveryOwnNamespace(t *testing.T) {
 		discovery: n,
 		beforeRun: func() {
 			for _, ns := range []string{"own-ns", "non-own-ns"} {
-				pod := makePods()
+				pod := makePods("default")
 				pod.Namespace = ns
 				c.CoreV1().Pods(pod.Namespace).Create(context.Background(), pod, metav1.CreateOptions{})
 			}
@@ -485,7 +484,7 @@ func TestPodDiscoveryWithNodeMetadata(t *testing.T) {
 			nodes := makeNode("testnode", "", "", nodeLbls, nil)
 			c.CoreV1().Nodes().Create(context.Background(), nodes, metav1.CreateOptions{})
 
-			pods := makePods()
+			pods := makePods("default")
 			c.CoreV1().Pods(pods.Namespace).Create(context.Background(), pods, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 2,
@@ -507,7 +506,7 @@ func TestPodDiscoveryWithNodeMetadataUpdateNode(t *testing.T) {
 			c.CoreV1().Nodes().Create(context.Background(), nodes, metav1.CreateOptions{})
 		},
 		afterStart: func() {
-			pods := makePods()
+			pods := makePods("default")
 			c.CoreV1().Pods(pods.Namespace).Create(context.Background(), pods, metav1.CreateOptions{})
 
 			nodes := makeNode("testnode", "", "", nodeLbls, nil)
@@ -515,5 +514,116 @@ func TestPodDiscoveryWithNodeMetadataUpdateNode(t *testing.T) {
 		},
 		expectedMaxItems: 2,
 		expectedRes:      expectedPodTargetGroupsWithNodeMeta("default", "testnode", nodeLbls),
+	}.Run(t)
+}
+
+func TestPodDiscoveryWithNamespaceMetadata(t *testing.T) {
+	t.Parallel()
+
+	ns := "test-ns"
+	nsLabels := map[string]string{"app": "web", "tier": "frontend"}
+	nsAnnotations := map[string]string{"maintainer": "devops", "build": "v3.4.5"}
+
+	n, _ := makeDiscoveryWithMetadata(RolePod, NamespaceDiscovery{}, AttachMetadataConfig{Namespace: true}, makeNamespace(ns, nsLabels, nsAnnotations), makePods(ns))
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			fmt.Sprintf("pod/%s/testpod", ns): {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                   "1.2.3.4:9000",
+						"__meta_kubernetes_pod_container_image":         "testcontainer:latest",
+						"__meta_kubernetes_pod_container_name":          "testcontainer",
+						"__meta_kubernetes_pod_container_port_name":     "testport",
+						"__meta_kubernetes_pod_container_port_number":   "9000",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
+						"__meta_kubernetes_pod_container_id":            "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_namespace":                              model.LabelValue(ns),
+					"__meta_kubernetes_namespace_annotation_maintainer":        "devops",
+					"__meta_kubernetes_namespace_annotationpresent_maintainer": "true",
+					"__meta_kubernetes_namespace_annotation_build":             "v3.4.5",
+					"__meta_kubernetes_namespace_annotationpresent_build":      "true",
+					"__meta_kubernetes_namespace_label_app":                    "web",
+					"__meta_kubernetes_namespace_labelpresent_app":             "true",
+					"__meta_kubernetes_namespace_label_tier":                   "frontend",
+					"__meta_kubernetes_namespace_labelpresent_tier":            "true",
+					"__meta_kubernetes_pod_name":                               "testpod",
+					"__meta_kubernetes_pod_ip":                                 "1.2.3.4",
+					"__meta_kubernetes_pod_ready":                              "true",
+					"__meta_kubernetes_pod_phase":                              "Running",
+					"__meta_kubernetes_pod_node_name":                          "testnode",
+					"__meta_kubernetes_pod_host_ip":                            "2.3.4.5",
+					"__meta_kubernetes_pod_uid":                                "abc123",
+				},
+				Source: fmt.Sprintf("pod/%s/testpod", ns),
+			},
+		},
+	}.Run(t)
+}
+
+func TestPodDiscoveryWithUpdatedNamespaceMetadata(t *testing.T) {
+	t.Parallel()
+
+	ns := "test-ns"
+	nsLabels := map[string]string{"app": "api", "tier": "backend"}
+	nsAnnotations := map[string]string{"maintainer": "platform", "build": "v4.5.6"}
+
+	namespace := makeNamespace(ns, nsLabels, nsAnnotations)
+	n, c := makeDiscoveryWithMetadata(RolePod, NamespaceDiscovery{}, AttachMetadataConfig{Namespace: true}, namespace, makePods(ns))
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			namespace.Labels["app"] = "service"
+			namespace.Labels["zone"] = "us-east"
+			namespace.Annotations["maintainer"] = "sre"
+			namespace.Annotations["deployment"] = "canary"
+			c.CoreV1().Namespaces().Update(context.Background(), namespace, metav1.UpdateOptions{})
+		},
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			fmt.Sprintf("pod/%s/testpod", ns): {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                   "1.2.3.4:9000",
+						"__meta_kubernetes_pod_container_image":         "testcontainer:latest",
+						"__meta_kubernetes_pod_container_name":          "testcontainer",
+						"__meta_kubernetes_pod_container_port_name":     "testport",
+						"__meta_kubernetes_pod_container_port_number":   "9000",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
+						"__meta_kubernetes_pod_container_id":            "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_namespace":                              model.LabelValue(ns),
+					"__meta_kubernetes_namespace_annotation_maintainer":        "sre",
+					"__meta_kubernetes_namespace_annotationpresent_maintainer": "true",
+					"__meta_kubernetes_namespace_annotation_build":             "v4.5.6",
+					"__meta_kubernetes_namespace_annotationpresent_build":      "true",
+					"__meta_kubernetes_namespace_annotation_deployment":        "canary",
+					"__meta_kubernetes_namespace_annotationpresent_deployment": "true",
+					"__meta_kubernetes_namespace_label_app":                    "service",
+					"__meta_kubernetes_namespace_labelpresent_app":             "true",
+					"__meta_kubernetes_namespace_label_tier":                   "backend",
+					"__meta_kubernetes_namespace_labelpresent_tier":            "true",
+					"__meta_kubernetes_namespace_label_zone":                   "us-east",
+					"__meta_kubernetes_namespace_labelpresent_zone":            "true",
+					"__meta_kubernetes_pod_name":                               "testpod",
+					"__meta_kubernetes_pod_ip":                                 "1.2.3.4",
+					"__meta_kubernetes_pod_ready":                              "true",
+					"__meta_kubernetes_pod_phase":                              "Running",
+					"__meta_kubernetes_pod_node_name":                          "testnode",
+					"__meta_kubernetes_pod_host_ip":                            "2.3.4.5",
+					"__meta_kubernetes_pod_uid":                                "abc123",
+				},
+				Source: fmt.Sprintf("pod/%s/testpod", ns),
+			},
+		},
 	}.Run(t)
 }

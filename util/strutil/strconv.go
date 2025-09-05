@@ -54,10 +54,10 @@ func SanitizeFullLabelName(name string) string {
 	}
 	var validSb strings.Builder
 	for i, b := range name {
-		if !((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || (b >= '0' && b <= '9' && i > 0)) {
-			validSb.WriteRune('_')
-		} else {
+		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || (b >= '0' && b <= '9' && i > 0) {
 			validSb.WriteRune(b)
+		} else {
+			validSb.WriteRune('_')
 		}
 	}
 	return validSb.String()

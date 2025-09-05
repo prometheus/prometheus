@@ -27,6 +27,6 @@ func (s *memSeries) labels() labels.Labels {
 }
 
 // RebuildSymbolTable is a no-op when not using dedupelabels.
-func (h *Head) RebuildSymbolTable(_ *slog.Logger) *labels.SymbolTable {
+func (*Head) RebuildSymbolTable(*slog.Logger) *labels.SymbolTable {
 	return nil
 }

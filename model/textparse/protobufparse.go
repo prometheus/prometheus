@@ -31,11 +31,12 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
+	"github.com/prometheus/prometheus/schema"
 )
 
 // floatFormatBufPool is exclusively used in formatOpenMetricsFloat.
 var floatFormatBufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		// To contain at most 17 digits and additional syntax for a float64.
 		b := make([]byte, 0, 24)
 		return &b
@@ -72,23 +73,25 @@ type ProtobufParser struct {
 	exemplarReturned bool
 
 	// state is marked by the entry we are processing. EntryInvalid implies
-	// that we have to decode the next MetricFamily.
+	// that we have to decode the next MetricDescriptor.
 	state Entry
 
 	// Whether to also parse a classic histogram that is also present as a
 	// native histogram.
-	parseClassicHistograms bool
+	parseClassicHistograms  bool
+	enableTypeAndUnitLabels bool
 }
 
 // NewProtobufParser returns a parser for the payload in the byte slice.
-func NewProtobufParser(b []byte, parseClassicHistograms bool, st *labels.SymbolTable) Parser {
+func NewProtobufParser(b []byte, parseClassicHistograms, enableTypeAndUnitLabels bool, st *labels.SymbolTable) Parser {
 	return &ProtobufParser{
 		dec:        dto.NewMetricStreamingDecoder(b),
 		entryBytes: &bytes.Buffer{},
 		builder:    labels.NewScratchBuilderWithSymbolTable(st, 16), // TODO(bwplotka): Try base builder.
 
-		state:                  EntryInvalid,
-		parseClassicHistograms: parseClassicHistograms,
+		state:                   EntryInvalid,
+		parseClassicHistograms:  parseClassicHistograms,
+		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 	}
 }
 
@@ -296,7 +299,7 @@ func (p *ProtobufParser) Unit() ([]byte, []byte) {
 
 // Comment always returns nil because comments aren't supported by the protobuf
 // format.
-func (p *ProtobufParser) Comment() []byte {
+func (*ProtobufParser) Comment() []byte {
 	return nil
 }
 
@@ -425,7 +428,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		// We are at the beginning of a metric family. Put only the name
 		// into entryBytes and validate only name, help, and type for now.
 		name := p.dec.GetName()
-		if !model.IsValidMetricName(model.LabelValue(name)) {
+		if !model.UTF8Validation.IsValidMetricName(name) {
 			return EntryInvalid, fmt.Errorf("invalid metric name: %s", name)
 		}
 		if help := p.dec.GetHelp(); !utf8.ValidString(help) {
@@ -551,10 +554,27 @@ func (p *ProtobufParser) Next() (Entry, error) {
 // * p.fieldsDone depending on p.fieldPos.
 func (p *ProtobufParser) onSeriesOrHistogramUpdate() error {
 	p.builder.Reset()
-	p.builder.Add(labels.MetricName, p.getMagicName())
 
-	if err := p.dec.Label(&p.builder); err != nil {
-		return err
+	if p.enableTypeAndUnitLabels {
+		_, typ := p.Type()
+
+		m := schema.Metadata{
+			Name: p.getMagicName(),
+			Type: typ,
+			Unit: p.dec.GetUnit(),
+		}
+		m.AddToLabels(&p.builder)
+		if err := p.dec.Label(schema.IgnoreOverriddenMetadataLabelsScratchBuilder{
+			Overwrite:      m,
+			ScratchBuilder: &p.builder,
+		}); err != nil {
+			return err
+		}
+	} else {
+		p.builder.Add(labels.MetricName, p.getMagicName())
+		if err := p.dec.Label(&p.builder); err != nil {
+			return err
+		}
 	}
 
 	if needed, name, value := p.getMagicLabel(); needed {

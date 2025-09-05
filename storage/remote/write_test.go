@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -117,7 +118,7 @@ func TestWriteStorageApplyConfig_NoDuplicateWriteConfigs(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil)
+			s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false)
 			conf := &config.Config{
 				GlobalConfig:       config.DefaultGlobalConfig,
 				RemoteWriteConfigs: tc.cfgs,
@@ -143,7 +144,7 @@ func TestWriteStorageApplyConfig_RestartOnNameChange(t *testing.T) {
 	hash, err := toHash(cfg)
 	require.NoError(t, err)
 
-	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil)
+	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false)
 
 	conf := &config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
@@ -165,7 +166,7 @@ func TestWriteStorageApplyConfig_RestartOnNameChange(t *testing.T) {
 func TestWriteStorageApplyConfig_UpdateWithRegisterer(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil, false)
 	c1 := &config.RemoteWriteConfig{
 		Name: "named",
 		URL: &common_config.URL{
@@ -206,7 +207,7 @@ func TestWriteStorageApplyConfig_UpdateWithRegisterer(t *testing.T) {
 func TestWriteStorageApplyConfig_Lifecycle(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -222,7 +223,7 @@ func TestWriteStorageApplyConfig_Lifecycle(t *testing.T) {
 func TestWriteStorageApplyConfig_UpdateExternalLabels(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil, false)
 
 	externalLabels := labels.FromStrings("external", "true")
 	conf := &config.Config{
@@ -250,7 +251,7 @@ func TestWriteStorageApplyConfig_UpdateExternalLabels(t *testing.T) {
 func TestWriteStorageApplyConfig_Idempotent(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false)
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -274,14 +275,15 @@ func TestWriteStorageApplyConfig_Idempotent(t *testing.T) {
 func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false)
 
 	c0 := &config.RemoteWriteConfig{
 		RemoteTimeout: model.Duration(10 * time.Second),
 		QueueConfig:   config.DefaultQueueConfig,
 		WriteRelabelConfigs: []*relabel.Config{
 			{
-				Regex: relabel.MustNewRegexp(".+"),
+				Regex:                relabel.MustNewRegexp(".+"),
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 		ProtobufMessage: config.RemoteWriteProtoMsgV1,
@@ -328,7 +330,10 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 
 	storeHashes()
 	// Update c0 and c2.
-	c0.WriteRelabelConfigs[0] = &relabel.Config{Regex: relabel.MustNewRegexp("foo")}
+	c0.WriteRelabelConfigs[0] = &relabel.Config{
+		Regex:                relabel.MustNewRegexp("foo"),
+		NameValidationScheme: model.UTF8Validation,
+	}
 	c2.RemoteTimeout = model.Duration(50 * time.Second)
 	conf = &config.Config{
 		GlobalConfig:       config.GlobalConfig{},
@@ -381,8 +386,232 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 }
 
 func TestOTLPWriteHandler(t *testing.T) {
-	exportRequest := generateOTLPWriteRequest()
+	timestamp := time.Now()
+	exportRequest := generateOTLPWriteRequest(timestamp)
+	for _, testCase := range []struct {
+		name              string
+		otlpCfg           config.OTLPConfig
+		typeAndUnitLabels bool
+		expectedSamples   []mockSample
+	}{
+		{
+			name: "NoTranslation/NoTypeAndUnitLabels",
+			otlpCfg: config.OTLPConfig{
+				TranslationStrategy: otlptranslator.NoTranslation,
+			},
+			expectedSamples: []mockSample{
+				{
+					l: labels.New(labels.Label{Name: "__name__", Value: "test.counter"},
+						labels.Label{Name: "foo.bar", Value: "baz"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"}),
+					t: timestamp.UnixMilli(),
+					v: 10.0,
+				},
+				{
+					l: labels.New(
+						labels.Label{Name: "__name__", Value: "target_info"},
+						labels.Label{Name: "host.name", Value: "test-host"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"},
+					),
+					t: timestamp.UnixMilli(),
+					v: 1,
+				},
+			},
+		},
+		{
+			name: "NoTranslation/WithTypeAndUnitLabels",
+			otlpCfg: config.OTLPConfig{
+				TranslationStrategy: otlptranslator.NoTranslation,
+			},
+			typeAndUnitLabels: true,
+			expectedSamples: []mockSample{
+				{
+					l: labels.New(labels.Label{Name: "__name__", Value: "test.counter"},
+						labels.Label{Name: "__type__", Value: "counter"},
+						labels.Label{Name: "__unit__", Value: "bytes"},
+						labels.Label{Name: "foo.bar", Value: "baz"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"}),
+					t: timestamp.UnixMilli(),
+					v: 10.0,
+				},
+				{
+					l: labels.New(
+						labels.Label{Name: "__name__", Value: "target_info"},
+						labels.Label{Name: "host.name", Value: "test-host"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"},
+					),
+					t: timestamp.UnixMilli(),
+					v: 1,
+				},
+			},
+		},
+		{
+			name: "UnderscoreEscapingWithSuffixes/NoTypeAndUnitLabels",
+			otlpCfg: config.OTLPConfig{
+				TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
+			},
+			expectedSamples: []mockSample{
+				{
+					l: labels.New(labels.Label{Name: "__name__", Value: "test_counter_bytes_total"},
+						labels.Label{Name: "foo_bar", Value: "baz"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"}),
+					t: timestamp.UnixMilli(),
+					v: 10.0,
+				},
+				{
+					l: labels.New(
+						labels.Label{Name: "__name__", Value: "target_info"},
+						labels.Label{Name: "host_name", Value: "test-host"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"},
+					),
+					t: timestamp.UnixMilli(),
+					v: 1,
+				},
+			},
+		},
+		{
+			name: "UnderscoreEscapingWithoutSuffixes",
+			otlpCfg: config.OTLPConfig{
+				TranslationStrategy: otlptranslator.UnderscoreEscapingWithoutSuffixes,
+			},
+			expectedSamples: []mockSample{
+				{
+					l: labels.New(labels.Label{Name: "__name__", Value: "test_counter"},
+						labels.Label{Name: "foo_bar", Value: "baz"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"}),
+					t: timestamp.UnixMilli(),
+					v: 10.0,
+				},
+				{
+					l: labels.New(
+						labels.Label{Name: "__name__", Value: "target_info"},
+						labels.Label{Name: "host_name", Value: "test-host"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"},
+					),
+					t: timestamp.UnixMilli(),
+					v: 1,
+				},
+			},
+		},
+		{
+			name: "UnderscoreEscapingWithSuffixes/WithTypeAndUnitLabels",
+			otlpCfg: config.OTLPConfig{
+				TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
+			},
+			typeAndUnitLabels: true,
+			expectedSamples: []mockSample{
+				{
+					l: labels.New(labels.Label{Name: "__name__", Value: "test_counter_bytes_total"},
+						labels.Label{Name: "__type__", Value: "counter"},
+						labels.Label{Name: "__unit__", Value: "bytes"},
+						labels.Label{Name: "foo_bar", Value: "baz"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"}),
+					t: timestamp.UnixMilli(),
+					v: 10.0,
+				},
+				{
+					l: labels.New(
+						labels.Label{Name: "__name__", Value: "target_info"},
+						labels.Label{Name: "host_name", Value: "test-host"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"},
+					),
+					t: timestamp.UnixMilli(),
+					v: 1,
+				},
+			},
+		},
+		{
+			name: "NoUTF8EscapingWithSuffixes/NoTypeAndUnitLabels",
+			otlpCfg: config.OTLPConfig{
+				TranslationStrategy: otlptranslator.NoUTF8EscapingWithSuffixes,
+			},
+			expectedSamples: []mockSample{
+				{
+					l: labels.New(labels.Label{Name: "__name__", Value: "test.counter_bytes_total"},
+						labels.Label{Name: "foo.bar", Value: "baz"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"}),
+					t: timestamp.UnixMilli(),
+					v: 10.0,
+				},
+				{
+					l: labels.New(
+						labels.Label{Name: "__name__", Value: "target_info"},
+						labels.Label{Name: "host.name", Value: "test-host"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"},
+					),
+					t: timestamp.UnixMilli(),
+					v: 1,
+				},
+			},
+		},
+		{
+			name: "NoUTF8EscapingWithSuffixes/WithTypeAndUnitLabels",
+			otlpCfg: config.OTLPConfig{
+				TranslationStrategy: otlptranslator.NoUTF8EscapingWithSuffixes,
+			},
+			typeAndUnitLabels: true,
+			expectedSamples: []mockSample{
+				{
+					l: labels.New(labels.Label{Name: "__name__", Value: "test.counter_bytes_total"},
+						labels.Label{Name: "__type__", Value: "counter"},
+						labels.Label{Name: "__unit__", Value: "bytes"},
+						labels.Label{Name: "foo.bar", Value: "baz"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"}),
+					t: timestamp.UnixMilli(),
+					v: 10.0,
+				},
+				{
+					l: labels.New(
+						labels.Label{Name: "__name__", Value: "target_info"},
+						labels.Label{Name: "host.name", Value: "test-host"},
+						labels.Label{Name: "instance", Value: "test-instance"},
+						labels.Label{Name: "job", Value: "test-service"},
+					),
+					t: timestamp.UnixMilli(),
+					v: 1,
+				},
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			appendable := handleOTLP(t, exportRequest, testCase.otlpCfg, testCase.typeAndUnitLabels)
+			for _, sample := range testCase.expectedSamples {
+				requireContainsSample(t, appendable.samples, sample)
+			}
+			require.Len(t, appendable.samples, 12)   // 1 (counter) + 1 (gauge) + 1 (target_info) + 7 (hist_bucket) + 2 (hist_sum, hist_count)
+			require.Len(t, appendable.histograms, 1) // 1 (exponential histogram)
+			require.Len(t, appendable.exemplars, 1)  // 1 (exemplar)
+		})
+	}
+}
 
+func requireContainsSample(t *testing.T, actual []mockSample, expected mockSample) {
+	t.Helper()
+
+	for _, got := range actual {
+		if labels.Equal(expected.l, got.l) && expected.t == got.t && expected.v == got.v {
+			return
+		}
+	}
+	require.Fail(t, fmt.Sprintf("Sample not found: \n"+
+		"expected: %v\n"+
+		"actual  : %v", expected, actual))
+}
+
+func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg config.OTLPConfig, typeAndUnitLabels bool) *mockAppendable {
 	buf, err := exportRequest.MarshalProto()
 	require.NoError(t, err)
 
@@ -393,29 +622,24 @@ func TestOTLPWriteHandler(t *testing.T) {
 	appendable := &mockAppendable{}
 	handler := NewOTLPWriteHandler(nil, nil, appendable, func() config.Config {
 		return config.Config{
-			OTLPConfig: config.DefaultOTLPConfig,
+			OTLPConfig: otlpCfg,
 		}
-	}, OTLPOptions{})
-
+	}, OTLPOptions{EnableTypeAndUnitLabels: typeAndUnitLabels})
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 
 	resp := recorder.Result()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	require.Len(t, appendable.samples, 12)   // 1 (counter) + 1 (gauge) + 1 (target_info) + 7 (hist_bucket) + 2 (hist_sum, hist_count)
-	require.Len(t, appendable.histograms, 1) // 1 (exponential histogram)
-	require.Len(t, appendable.exemplars, 1)  // 1 (exemplar)
+	return appendable
 }
 
-func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
+func generateOTLPWriteRequest(timestamp time.Time) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
 	// Generate One Counter, One Gauge, One Histogram, One Exponential-Histogram
 	// with resource attributes: service.name="test-service", service.instance.id="test-instance", host.name="test-host"
 	// with metric attribute: foo.bar="baz"
-
-	timestamp := time.Now()
 
 	resourceMetric := d.ResourceMetrics().AppendEmpty()
 	resourceMetric.Resource().Attributes().PutStr("service.name", "test-service")
@@ -426,8 +650,9 @@ func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
 
 	// Generate One Counter
 	counterMetric := scopeMetric.Metrics().AppendEmpty()
-	counterMetric.SetName("test-counter")
+	counterMetric.SetName("test.counter")
 	counterMetric.SetDescription("test-counter-description")
+	counterMetric.SetUnit("By")
 	counterMetric.SetEmptySum()
 	counterMetric.Sum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 	counterMetric.Sum().SetIsMonotonic(true)
@@ -446,8 +671,9 @@ func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
 
 	// Generate One Gauge
 	gaugeMetric := scopeMetric.Metrics().AppendEmpty()
-	gaugeMetric.SetName("test-gauge")
+	gaugeMetric.SetName("test.gauge")
 	gaugeMetric.SetDescription("test-gauge-description")
+	gaugeMetric.SetUnit("By")
 	gaugeMetric.SetEmptyGauge()
 
 	gaugeDataPoint := gaugeMetric.Gauge().DataPoints().AppendEmpty()
@@ -457,8 +683,9 @@ func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
 
 	// Generate One Histogram
 	histogramMetric := scopeMetric.Metrics().AppendEmpty()
-	histogramMetric.SetName("test-histogram")
+	histogramMetric.SetName("test.histogram")
 	histogramMetric.SetDescription("test-histogram-description")
+	histogramMetric.SetUnit("By")
 	histogramMetric.SetEmptyHistogram()
 	histogramMetric.Histogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 
@@ -472,8 +699,9 @@ func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
 
 	// Generate One Exponential-Histogram
 	exponentialHistogramMetric := scopeMetric.Metrics().AppendEmpty()
-	exponentialHistogramMetric.SetName("test-exponential-histogram")
+	exponentialHistogramMetric.SetName("test.exponential.histogram")
 	exponentialHistogramMetric.SetDescription("test-exponential-histogram-description")
+	exponentialHistogramMetric.SetUnit("By")
 	exponentialHistogramMetric.SetEmptyExponentialHistogram()
 	exponentialHistogramMetric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 
@@ -534,7 +762,7 @@ func TestOTLPDelta(t *testing.T) {
 		{t: milli(1), l: ls, v: 1}, // +1
 		{t: milli(2), l: ls, v: 3}, // +2
 	}
-	if diff := cmp.Diff(want, appendable.samples, cmp.Exporter(func(_ reflect.Type) bool { return true })); diff != "" {
+	if diff := cmp.Diff(want, appendable.samples, cmp.Exporter(func(reflect.Type) bool { return true })); diff != "" {
 		t.Fatal(diff)
 	}
 }
@@ -848,4 +1076,13 @@ func (s syncAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t 
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	return s.Appender.AppendHistogram(ref, l, t, h, f)
+}
+
+func TestWriteStorage_CanRegisterMetricsAfterClosing(t *testing.T) {
+	dir := t.TempDir()
+	reg := prometheus.NewPedanticRegistry()
+
+	s := NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false)
+	require.NoError(t, s.Close())
+	require.NotPanics(t, func() { NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false) })
 }

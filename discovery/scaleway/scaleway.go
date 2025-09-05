@@ -55,7 +55,7 @@ const (
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *role) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *role) UnmarshalYAML(unmarshal func(any) error) error {
 	if err := unmarshal((*string)(c)); err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.Ref
 	}
 }
 
-func (c SDConfig) Name() string {
+func (SDConfig) Name() string {
 	return "scaleway"
 }
 
@@ -125,7 +125,7 @@ func (c SDConfig) secretKeyForConfig() string {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))

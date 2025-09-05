@@ -57,7 +57,7 @@ func NewZookeeperLogger(logger *slog.Logger) ZookeeperLogger {
 }
 
 // Printf implements zk.Logger.
-func (zl ZookeeperLogger) Printf(s string, i ...interface{}) {
+func (zl ZookeeperLogger) Printf(s string, i ...any) {
 	zl.logger.Info(s, i...)
 }
 

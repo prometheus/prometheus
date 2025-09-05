@@ -103,7 +103,7 @@ func (c *DockerSDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *DockerSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *DockerSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultDockerSDConfig
 	type plain DockerSDConfig
 	err := unmarshal((*plain)(c))
@@ -235,10 +235,7 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		containerNetworkMode := container.NetworkMode(c.HostConfig.NetworkMode)
 		if len(networks) == 0 {
 			// Try to lookup shared networks
-			for {
-				if !containerNetworkMode.IsContainer() {
-					break
-				}
+			for containerNetworkMode.IsContainer() {
 				tmpContainer, exists := allContainers[containerNetworkMode.ConnectedContainer()]
 				if !exists {
 					break

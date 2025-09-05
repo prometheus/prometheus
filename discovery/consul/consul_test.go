@@ -425,20 +425,20 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 		d := newDiscovery(t, config)
 
 		// Should be empty if not initialized.
-		require.Equal(t, "", d.clientDatacenter)
+		require.Empty(t, d.clientDatacenter)
 
 		err = d.getDatacenter()
 
 		// An error should be returned.
 		require.EqualError(t, err, tc.errMessage)
 		// Should still be empty.
-		require.Equal(t, "", d.clientDatacenter)
+		require.Empty(t, d.clientDatacenter)
 	}
 }
 
 func TestUnmarshalConfig(t *testing.T) {
-	unmarshal := func(d []byte) func(interface{}) error {
-		return func(o interface{}) error {
+	unmarshal := func(d []byte) func(any) error {
+		return func(o any) error {
 			return yaml.Unmarshal(d, o)
 		}
 	}

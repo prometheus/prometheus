@@ -149,9 +149,10 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
-		name         string
-		reqHeaders   map[string]string
-		expectedCode int
+		name          string
+		reqHeaders    map[string]string
+		expectedCode  int
+		expectedError string
 	}{
 		{
 			name: "correct PRW 2.0 headers",
@@ -171,9 +172,10 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			expectedCode: http.StatusNoContent, // We don't check for now.
 		},
 		{
-			name:         "no headers",
-			reqHeaders:   map[string]string{},
-			expectedCode: http.StatusUnsupportedMediaType,
+			name:          "no headers",
+			reqHeaders:    map[string]string{},
+			expectedCode:  http.StatusUnsupportedMediaType,
+			expectedError: "prometheus.WriteRequest protobuf message is not accepted by this server; accepted [io.prometheus.write.v2.Request]",
 		},
 		{
 			name: "missing content-type",
@@ -185,7 +187,8 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			// (default) it would be empty message parsed and ok response.
 			// This is perhaps better, than 415 for previously working 1.0 flow with
 			// no content-type.
-			expectedCode: http.StatusUnsupportedMediaType,
+			expectedCode:  http.StatusUnsupportedMediaType,
+			expectedError: "prometheus.WriteRequest protobuf message is not accepted by this server; accepted [io.prometheus.write.v2.Request]",
 		},
 		{
 			name: "missing content-encoding",
@@ -202,7 +205,8 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
-			expectedCode: http.StatusUnsupportedMediaType,
+			expectedCode:  http.StatusUnsupportedMediaType,
+			expectedError: "expected application/x-protobuf as the first (media) part, got yolo content-type",
 		},
 		{
 			name: "wrong content-type2",
@@ -211,7 +215,8 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
-			expectedCode: http.StatusUnsupportedMediaType,
+			expectedCode:  http.StatusUnsupportedMediaType,
+			expectedError: "got application/x-protobuf;proto=yolo content type; unknown remote write protobuf message yolo, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request",
 		},
 		{
 			name: "not supported content-encoding",
@@ -220,7 +225,8 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 				"Content-Encoding":       "zstd",
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
-			expectedCode: http.StatusUnsupportedMediaType,
+			expectedCode:  http.StatusUnsupportedMediaType,
+			expectedError: "zstd encoding (compression) is not accepted by this server; only snappy is acceptable",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -241,8 +247,47 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			require.NoError(t, err)
 			_ = resp.Body.Close()
 			require.Equal(t, tc.expectedCode, resp.StatusCode, string(out))
+			if tc.expectedCode/100 == 2 {
+				return
+			}
+
+			// Invalid request case - no samples should be written.
+			require.Equal(t, tc.expectedError, strings.TrimSpace(string(out)))
+			require.Empty(t, appendable.samples)
+			require.Empty(t, appendable.histograms)
+			require.Empty(t, appendable.exemplars)
 		})
 	}
+
+	t.Run("unsupported v1 request", func(t *testing.T) {
+		payload, _, _, err := buildWriteRequest(promslog.NewNopLogger(), writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
+		require.NoError(t, err)
+		req, err := http.NewRequest("", "", bytes.NewReader(payload))
+		require.NoError(t, err)
+		for k, v := range map[string]string{
+			"Content-Type":     remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV1],
+			"Content-Encoding": compression.Snappy,
+		} {
+			req.Header.Set(k, v)
+		}
+
+		appendable := &mockAppendable{}
+		handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false)
+
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+
+		resp := recorder.Result()
+		out, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		require.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode, string(out))
+
+		require.Equal(t, "prometheus.WriteRequest protobuf message is not accepted by this server; accepted [io.prometheus.write.v2.Request]", strings.TrimSpace(string(out)))
+		require.Empty(t, appendable.samples)
+		require.Empty(t, appendable.histograms)
+		require.Empty(t, appendable.exemplars)
+	})
 }
 
 func TestRemoteWriteHandler_V1Message(t *testing.T) {
@@ -391,7 +436,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			desc: "Partial write; first series with one dup histogram sample",
 			input: func() []writev2.TimeSeries {
 				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
-				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, f.Timeseries[0].Histograms[1])
+				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, f.Timeseries[0].Histograms[len(f.Timeseries[0].Histograms)-1])
 				return f.Timeseries
 			}(),
 			expectedCode:     http.StatusBadRequest,
@@ -483,7 +528,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			// Double check mandatory 2.0 stats.
 			// writeV2RequestFixture has 2 series with 1 sample, 2 histograms, 1 exemplar each.
 			expectHeaderValue(t, 2, resp.Header.Get(rw20WrittenSamplesHeader))
-			expectHeaderValue(t, 4, resp.Header.Get(rw20WrittenHistogramsHeader))
+			expectHeaderValue(t, 8, resp.Header.Get(rw20WrittenHistogramsHeader))
 			if tc.appendExemplarErr != nil {
 				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenExemplarsHeader))
 			} else {
@@ -496,6 +541,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				i, j, k, m int
 			)
 			for _, ts := range writeV2RequestFixture.Timeseries {
+				zeroHistogramIngested := false
+				zeroFloatHistogramIngested := false
 				ls := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
 
 				for _, s := range ts.Samples {
@@ -509,20 +556,26 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				for _, hp := range ts.Histograms {
 					if hp.IsFloatHistogram() {
 						fh := hp.ToFloatHistogram()
-						if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+						if !zeroFloatHistogramIngested && ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
 							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, nil, &histogram.FloatHistogram{}}, appendable.histograms[k])
 							k++
+							zeroFloatHistogramIngested = true
 						}
 						requireEqual(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
 					} else {
 						h := hp.ToIntHistogram()
-						if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+						if !zeroHistogramIngested && ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
 							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, &histogram.Histogram{}, nil}, appendable.histograms[k])
 							k++
+							zeroHistogramIngested = true
 						}
 						requireEqual(t, mockHistogram{ls, hp.Timestamp, h, nil}, appendable.histograms[k])
 					}
 					k++
+				}
+				if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+					require.True(t, zeroHistogramIngested)
+					require.True(t, zeroFloatHistogramIngested)
 				}
 				if tc.appendExemplarErr == nil {
 					for _, e := range ts.Exemplars {
@@ -659,31 +712,58 @@ func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 }
 
 func BenchmarkRemoteWriteHandler(b *testing.B) {
-	const labelValue = "abcdefg'hijlmn234!@#$%^&*()_+~`\"{}[],./<>?hello0123hiOlá你好Dzieńdobry9Zd8ra765v4stvuyte"
-	var reqs []*http.Request
-	for i := 0; i < b.N; i++ {
-		num := strings.Repeat(strconv.Itoa(i), 16)
-		buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
-			Labels: []prompb.Label{
-				{Name: "__name__", Value: "test_metric"},
-				{Name: "test_label_name_" + num, Value: labelValue + num},
-			},
-			Histograms: []prompb.Histogram{prompb.FromIntHistogram(0, &testHistogram)},
-		}}, nil, nil, nil, nil, "snappy")
-		require.NoError(b, err)
-		req, err := http.NewRequest("", "", bytes.NewReader(buf))
-		require.NoError(b, err)
-		reqs = append(reqs, req)
+	labelStrings := []string{
+		"__name__", "test_metric",
+		"test_label_name", "abcdefg'hijlmn234!@#$%^&*()_+~`\"{}[],./<>?hello0123hiOlá你好Dzieńdobry9Zd8ra765v4stvuyte",
 	}
+	v1Labels := prompb.FromLabels(labels.FromStrings(labelStrings...), nil)
 
-	appendable := &mockAppendable{}
-	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
-	recorder := httptest.NewRecorder()
+	testCases := []struct {
+		name        string
+		payloadFunc func() ([]byte, error)
+		protoFormat config.RemoteWriteProtoMsg
+	}{
+		{
+			name: "V1 Write",
+			payloadFunc: func() ([]byte, error) {
+				buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
+					Labels:     v1Labels,
+					Histograms: []prompb.Histogram{prompb.FromIntHistogram(0, &testHistogram)},
+				}}, nil, nil, nil, nil, "snappy")
+				return buf, err
+			},
+			protoFormat: config.RemoteWriteProtoMsgV1,
+		},
+		{
+			name: "V2 Write",
+			payloadFunc: func() ([]byte, error) {
+				buf, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{{
+					LabelsRefs: []uint32{0, 1, 2, 3},
+					Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, &testHistogram)},
+				}}, labelStrings,
+					nil, nil, nil, "snappy")
+				return buf, err
+			},
+			protoFormat: config.RemoteWriteProtoMsgV2,
+		},
+	}
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			appendable := &mockAppendable{}
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{tc.protoFormat}, false)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				buf, err := tc.payloadFunc()
+				require.NoError(b, err)
+				req, err := http.NewRequest("", "", bytes.NewReader(buf))
+				require.NoError(b, err)
+				b.StartTimer()
 
-	b.ResetTimer()
-	for _, req := range reqs {
-		handler.ServeHTTP(recorder, req)
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, req)
+			}
+		})
 	}
 }
 
@@ -760,14 +840,14 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 	require.Equal(b, uint64(1000), db.Head().NumSeries())
 
 	var bufRequests [][]byte
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		buf, _, _, err = buildWriteRequest(nil, genSeriesWithSample(1000, int64(80+i)*time.Minute.Milliseconds()), nil, nil, nil, nil, "snappy")
 		require.NoError(b, err)
 		bufRequests = append(bufRequests, buf)
 	}
 
 	b.ResetTimer()
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		req, err = http.NewRequest("", "", bytes.NewReader(bufRequests[i]))
 		require.NoError(b, err)
 
@@ -780,7 +860,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 
 func genSeriesWithSample(numSeries int, ts int64) []prompb.TimeSeries {
 	var series []prompb.TimeSeries
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		s := prompb.TimeSeries{
 			Labels:  []prompb.Label{{Name: "__name__", Value: fmt.Sprintf("test_metric_%d", i)}},
 			Samples: []prompb.Sample{{Value: float64(i), Timestamp: ts}},
@@ -836,7 +916,7 @@ type mockMetadata struct {
 }
 
 // Wrapper to instruct go-cmp package to compare a list of structs with unexported fields.
-func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...interface{}) {
+func requireEqual(t *testing.T, expected, actual any, msgAndArgs ...any) {
 	t.Helper()
 
 	testutil.RequireEqualWithOptions(t, expected, actual,
@@ -844,7 +924,7 @@ func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...inte
 		msgAndArgs...)
 }
 
-func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
+func (m *mockAppendable) Appender(context.Context) storage.Appender {
 	if m.latestSample == nil {
 		m.latestSample = map[uint64]int64{}
 	}
@@ -860,7 +940,7 @@ func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	return m
 }
 
-func (m *mockAppendable) SetOptions(_ *storage.AppendOptions) {
+func (*mockAppendable) SetOptions(*storage.AppendOptions) {
 	panic("unimplemented")
 }
 

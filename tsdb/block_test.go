@@ -232,7 +232,7 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 	ctx := context.Background()
 
 	var seriesEntries []storage.Series
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.FromStrings(
 			"tens", fmt.Sprintf("value%d", i/10),
 			"unique", fmt.Sprintf("value%d", i),
@@ -254,7 +254,7 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 	defer func() { require.NoError(t, indexReader.Close()) }()
 
 	var uniqueWithout30s []string
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		if i/10 != 3 {
 			uniqueWithout30s = append(uniqueWithout30s, fmt.Sprintf("value%d", i))
 		}
@@ -299,11 +299,11 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			actualValues, err := indexReader.SortedLabelValues(ctx, tt.labelName, tt.matchers...)
+			actualValues, err := indexReader.SortedLabelValues(ctx, tt.labelName, nil, tt.matchers...)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedValues, actualValues)
 
-			actualValues, err = indexReader.LabelValues(ctx, tt.labelName, tt.matchers...)
+			actualValues, err = indexReader.LabelValues(ctx, tt.labelName, nil, tt.matchers...)
 			sort.Strings(actualValues)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedValues, actualValues)
@@ -429,7 +429,7 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 
 	var seriesEntries []storage.Series
 	metricCount := 1000000
-	for i := 0; i < metricCount; i++ {
+	for i := range metricCount {
 		// Note these series are not created in sort order: 'value2' sorts after 'value10'.
 		// This makes a big difference to the benchmark timing.
 		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.FromStrings(
@@ -459,7 +459,7 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 	b.ReportAllocs()
 
 	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
-		actualValues, err := indexReader.LabelValues(ctx, "b_tens", matchers...)
+		actualValues, err := indexReader.LabelValues(ctx, "b_tens", nil, matchers...)
 		require.NoError(b, err)
 		require.Len(b, actualValues, 9)
 	}
@@ -470,7 +470,7 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 	ctx := context.Background()
 
 	var seriesEntries []storage.Series
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.FromStrings(
 			"unique", fmt.Sprintf("value%d", i),
 		), []chunks.Sample{sample{100, 0, nil, nil}}))
@@ -602,7 +602,7 @@ func testPostingsForLabelMatching(t *testing.T, offset storage.SeriesRef, setUp 
 		{
 			name:      "missing label",
 			labelName: "missing",
-			match: func(_ string) bool {
+			match: func(string) bool {
 				return true
 			},
 			exp: nil,
@@ -856,7 +856,7 @@ func genSeriesFromSampleGenerator(totalSeries, labelCount int, mint, maxt, step 
 
 	series := make([]storage.Series, totalSeries)
 
-	for i := 0; i < totalSeries; i++ {
+	for i := range totalSeries {
 		lbls := make(map[string]string, labelCount)
 		lbls[defaultLabelName] = strconv.Itoa(i)
 		for j := 1; len(lbls) < labelCount; j++ {

@@ -19,8 +19,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -130,7 +132,7 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *reg
 		if t.Interval == 0 {
 			t.Interval = unitTestInp.EvaluationInterval
 		}
-		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, unitTestInp.RuleFiles...)
+		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, unitTestInp.FuzzyCompare, unitTestInp.RuleFiles...)
 		if ers != nil {
 			for _, e := range ers {
 				tc.Fail(e.Error())
@@ -159,6 +161,7 @@ type unitTestFile struct {
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
 	GroupEvalOrder     []string       `yaml:"group_eval_order"`
 	Tests              []testGroup    `yaml:"tests"`
+	FuzzyCompare       bool           `yaml:"fuzzy_compare,omitempty"`
 }
 
 // resolveAndGlobFilepaths joins all relative paths in a configuration
@@ -197,7 +200,7 @@ type testGroup struct {
 }
 
 // test performs the unit tests.
-func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug, ignoreUnknownFields bool, ruleFiles ...string) (outErr []error) {
+func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug, ignoreUnknownFields, fuzzyCompare bool, ruleFiles ...string) (outErr []error) {
 	if debug {
 		testStart := time.Now()
 		fmt.Printf("DEBUG: Starting test %s\n", testname)
@@ -223,7 +226,7 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 		QueryFunc:  rules.EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
 		Appendable: suite.Storage(),
 		Context:    context.Background(),
-		NotifyFunc: func(_ context.Context, _ string, _ ...*rules.Alert) {},
+		NotifyFunc: func(context.Context, string, ...*rules.Alert) {},
 		Logger:     promslog.NewNopLogger(),
 	}
 	m := rules.NewManager(opts)
@@ -236,6 +239,14 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 	// Bounds for evaluating the rules.
 	mint := time.Unix(0, 0).UTC()
 	maxt := mint.Add(tg.maxEvalTime())
+
+	// Optional floating point compare fuzzing.
+	var compareFloat64 cmp.Option = cmp.Options{}
+	if fuzzyCompare {
+		compareFloat64 = cmp.Comparer(func(x, y float64) bool {
+			return x == y || math.Nextafter(x, math.Inf(-1)) == y || math.Nextafter(x, math.Inf(1)) == y
+		})
+	}
 
 	// Pre-processing some data for testing alerts.
 	// All this preparation is so that we can test alerts as we evaluate the rules.
@@ -268,9 +279,7 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 	for k := range alertEvalTimesMap {
 		alertEvalTimes = append(alertEvalTimes, k)
 	}
-	sort.Slice(alertEvalTimes, func(i, j int) bool {
-		return alertEvalTimes[i] < alertEvalTimes[j]
-	})
+	slices.Sort(alertEvalTimes)
 
 	// Current index in alertEvalTimes what we are looking at.
 	curr := 0
@@ -311,12 +320,8 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 			return errs
 		}
 
-		for {
-			if !(curr < len(alertEvalTimes) && ts.Sub(mint) <= time.Duration(alertEvalTimes[curr]) &&
-				time.Duration(alertEvalTimes[curr]) < ts.Add(evalInterval).Sub(mint)) {
-				break
-			}
-
+		for curr < len(alertEvalTimes) && ts.Sub(mint) <= time.Duration(alertEvalTimes[curr]) &&
+			time.Duration(alertEvalTimes[curr]) < ts.Add(evalInterval).Sub(mint) {
 			// We need to check alerts for this time.
 			// If 'ts <= `eval_time=alertEvalTimes[curr]` < ts+evalInterval'
 			// then we compare alerts with the Eval at `ts`.
@@ -374,7 +379,7 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 				sort.Sort(gotAlerts)
 				sort.Sort(expAlerts)
 
-				if !cmp.Equal(expAlerts, gotAlerts, cmp.Comparer(labels.Equal)) {
+				if !cmp.Equal(expAlerts, gotAlerts, cmp.Comparer(labels.Equal), compareFloat64) {
 					var testName string
 					if tg.TestGroupName != "" {
 						testName = fmt.Sprintf("    name: %s,\n", tg.TestGroupName)
@@ -482,7 +487,7 @@ Outer:
 		sort.Slice(gotSamples, func(i, j int) bool {
 			return labels.Compare(gotSamples[i].Labels, gotSamples[j].Labels) <= 0
 		})
-		if !cmp.Equal(expSamples, gotSamples, cmp.Comparer(labels.Equal)) {
+		if !cmp.Equal(expSamples, gotSamples, cmp.Comparer(labels.Equal), compareFloat64) {
 			errs = append(errs, fmt.Errorf("    expr: %q, time: %s,\n        exp: %v\n        got: %v", testCase.Expr,
 				testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples)))
 		}

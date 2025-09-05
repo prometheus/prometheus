@@ -64,7 +64,7 @@ func testUpdateServices(client appListClient) ([]*targetgroup.Group, error) {
 func TestMarathonSDHandleError(t *testing.T) {
 	var (
 		errTesting = errors.New("testing failure")
-		client     = func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+		client     = func(context.Context, *http.Client, string) (*appList, error) {
 			return nil, errTesting
 		}
 	)
@@ -74,7 +74,7 @@ func TestMarathonSDHandleError(t *testing.T) {
 }
 
 func TestMarathonSDEmptyList(t *testing.T) {
-	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) { return &appList{}, nil }
+	client := func(context.Context, *http.Client, string) (*appList, error) { return &appList{}, nil }
 	tgs, err := testUpdateServices(client)
 	require.NoError(t, err)
 	require.Empty(t, tgs, "Expected no target groups.")
@@ -107,7 +107,7 @@ func marathonTestAppList(labels map[string]string, runningTasks int) *appList {
 }
 
 func TestMarathonSDSendGroup(t *testing.T) {
-	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+	client := func(context.Context, *http.Client, string) (*appList, error) {
 		return marathonTestAppList(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
@@ -135,7 +135,7 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 	md, err := NewDiscovery(cfg, nil, metrics)
 	require.NoError(t, err)
 
-	md.appsClient = func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+	md.appsClient = func(context.Context, *http.Client, string) (*appList, error) {
 		return marathonTestAppList(marathonValidLabel, 1), nil
 	}
 	tgs, err := md.refresh(context.Background())
@@ -143,7 +143,7 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 	require.Len(t, tgs, 1, "Expected 1 targetgroup.")
 	tg1 := tgs[0]
 
-	md.appsClient = func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+	md.appsClient = func(context.Context, *http.Client, string) (*appList, error) {
 		return marathonTestAppList(marathonValidLabel, 0), nil
 	}
 	tgs, err = md.refresh(context.Background())
@@ -184,7 +184,7 @@ func marathonTestAppListWithMultiplePorts(labels map[string]string, runningTasks
 }
 
 func TestMarathonSDSendGroupWithMultiplePort(t *testing.T) {
-	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+	client := func(context.Context, *http.Client, string) (*appList, error) {
 		return marathonTestAppListWithMultiplePorts(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
@@ -202,7 +202,7 @@ func TestMarathonSDSendGroupWithMultiplePort(t *testing.T) {
 
 	tgt = tg.Targets[1]
 	require.Equal(t, "mesos-slave1:32000", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]),
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]),
 		"Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
 }
 
@@ -229,7 +229,7 @@ func marathonTestZeroTaskPortAppList(labels map[string]string, runningTasks int)
 }
 
 func TestMarathonZeroTaskPorts(t *testing.T) {
-	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+	client := func(context.Context, *http.Client, string) (*appList, error) {
 		return marathonTestZeroTaskPortAppList(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
@@ -287,7 +287,7 @@ func marathonTestAppListWithPortDefinitions(labels map[string]string, runningTas
 }
 
 func TestMarathonSDSendGroupWithPortDefinitions(t *testing.T) {
-	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+	client := func(context.Context, *http.Client, string) (*appList, error) {
 		return marathonTestAppListWithPortDefinitions(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
@@ -300,9 +300,9 @@ func TestMarathonSDSendGroupWithPortDefinitions(t *testing.T) {
 
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:1234", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]),
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]),
 		"Wrong portMappings label from the first port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]),
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]),
 		"Wrong portDefinitions label from the first port.")
 
 	tgt = tg.Targets[1]
@@ -341,7 +341,7 @@ func marathonTestAppListWithPortDefinitionsRequirePorts(labels map[string]string
 }
 
 func TestMarathonSDSendGroupWithPortDefinitionsRequirePorts(t *testing.T) {
-	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+	client := func(context.Context, *http.Client, string) (*appList, error) {
 		return marathonTestAppListWithPortDefinitionsRequirePorts(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
@@ -354,12 +354,12 @@ func TestMarathonSDSendGroupWithPortDefinitionsRequirePorts(t *testing.T) {
 
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:31000", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
 
 	tgt = tg.Targets[1]
 	require.Equal(t, "mesos-slave1:32000", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
 	require.Equal(t, "yes", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }
 
@@ -388,7 +388,7 @@ func marathonTestAppListWithPorts(labels map[string]string, runningTasks int) *a
 }
 
 func TestMarathonSDSendGroupWithPorts(t *testing.T) {
-	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+	client := func(context.Context, *http.Client, string) (*appList, error) {
 		return marathonTestAppListWithPorts(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
@@ -401,13 +401,13 @@ func TestMarathonSDSendGroupWithPorts(t *testing.T) {
 
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:31000", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
 
 	tgt = tg.Targets[1]
 	require.Equal(t, "mesos-slave1:32000", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }
 
 func marathonTestAppListWithContainerPortMappings(labels map[string]string, runningTasks int) *appList {
@@ -444,7 +444,7 @@ func marathonTestAppListWithContainerPortMappings(labels map[string]string, runn
 }
 
 func TestMarathonSDSendGroupWithContainerPortMappings(t *testing.T) {
-	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+	client := func(context.Context, *http.Client, string) (*appList, error) {
 		return marathonTestAppListWithContainerPortMappings(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
@@ -458,12 +458,12 @@ func TestMarathonSDSendGroupWithContainerPortMappings(t *testing.T) {
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:12345", string(tgt[model.AddressLabel]), "Wrong target address.")
 	require.Equal(t, "yes", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
 
 	tgt = tg.Targets[1]
 	require.Equal(t, "mesos-slave1:32000", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }
 
 func marathonTestAppListWithDockerContainerPortMappings(labels map[string]string, runningTasks int) *appList {
@@ -500,7 +500,7 @@ func marathonTestAppListWithDockerContainerPortMappings(labels map[string]string
 }
 
 func TestMarathonSDSendGroupWithDockerContainerPortMappings(t *testing.T) {
-	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+	client := func(context.Context, *http.Client, string) (*appList, error) {
 		return marathonTestAppListWithDockerContainerPortMappings(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
@@ -514,12 +514,12 @@ func TestMarathonSDSendGroupWithDockerContainerPortMappings(t *testing.T) {
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:31000", string(tgt[model.AddressLabel]), "Wrong target address.")
 	require.Equal(t, "yes", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
 
 	tgt = tg.Targets[1]
 	require.Equal(t, "mesos-slave1:12345", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }
 
 func marathonTestAppListWithContainerNetworkAndPortMappings(labels map[string]string, runningTasks int) *appList {
@@ -560,7 +560,7 @@ func marathonTestAppListWithContainerNetworkAndPortMappings(labels map[string]st
 }
 
 func TestMarathonSDSendGroupWithContainerNetworkAndPortMapping(t *testing.T) {
-	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+	client := func(context.Context, *http.Client, string) (*appList, error) {
 		return marathonTestAppListWithContainerNetworkAndPortMappings(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
@@ -574,10 +574,10 @@ func TestMarathonSDSendGroupWithContainerNetworkAndPortMapping(t *testing.T) {
 	tgt := tg.Targets[0]
 	require.Equal(t, "1.2.3.4:8080", string(tgt[model.AddressLabel]), "Wrong target address.")
 	require.Equal(t, "yes", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
 
 	tgt = tg.Targets[1]
 	require.Equal(t, "1.2.3.4:1234", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }
