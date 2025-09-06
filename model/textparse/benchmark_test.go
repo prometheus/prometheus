@@ -156,9 +156,10 @@ func benchParse(b *testing.B, data []byte, parser string) {
 			return NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
 		}
 	case "omtext_with_nhcb":
-		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
-			p := NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
-			return NewNHCBParser(p, st, false)
+		newParserFn = func(buf []byte, st *labels.SymbolTable) Parser {
+			p, err := New(buf, "application/openmetrics-text", "", false, true, false, false, st)
+			require.NoError(b, err)
+			return p
 		}
 	default:
 		b.Fatal("unknown parser", parser)
