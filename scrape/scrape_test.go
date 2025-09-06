@@ -2097,7 +2097,12 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
 	metric := []byte(`metric{n="1"} 1`)
-	p, warning := textparse.New(metric, "text/plain", "", false, false, false, false, labels.NewSymbolTable())
+	p, warning := textparse.New(metric, "text/plain", "", textparse.ParserOptions{
+		ParseClassicHistograms:         false,
+		ConvertClassicHistogramsToNHCB: false,
+		SkipOMCTSeries:                 false,
+		EnableTypeAndUnitLabels:        false,
+	}, labels.NewSymbolTable())
 	require.NotNil(t, p)
 	require.NoError(t, warning)
 

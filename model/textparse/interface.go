@@ -122,6 +122,13 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 	return fallbackType, fmt.Errorf("received unsupported Content-Type %q, using fallback_scrape_protocol %q", contentType, fallbackType)
 }
 
+type ParserOptions struct {
+	ParseClassicHistograms         bool
+	ConvertClassicHistogramsToNHCB bool
+	SkipOMCTSeries                 bool
+	EnableTypeAndUnitLabels        bool
+}
+
 // New returns a new parser of the byte slice.
 //
 // This function no longer guarantees to return a valid parser.
@@ -130,7 +137,7 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 // An error may also be returned if fallbackType had to be used or there was some
 // other error parsing the supplied Content-Type.
 // If the returned parser is nil then the scrape must fail.
-func New(b []byte, contentType, fallbackType string, parseClassicHistograms, convertClassicHistogramsToNHCB, skipOMCTSeries, enableTypeAndUnitLabels bool, st *labels.SymbolTable) (Parser, error) {
+func New(b []byte, contentType, fallbackType string, opts ParserOptions, st *labels.SymbolTable) (Parser, error) {
 	mediaType, err := extractMediaType(contentType, fallbackType)
 	// err may be nil or something we want to warn about.
 
@@ -138,19 +145,19 @@ func New(b []byte, contentType, fallbackType string, parseClassicHistograms, con
 	switch mediaType {
 	case "application/openmetrics-text":
 		baseParser = NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
-			o.skipCTSeries = skipOMCTSeries
-			o.enableTypeAndUnitLabels = enableTypeAndUnitLabels
+			o.skipCTSeries = opts.SkipOMCTSeries
+			o.enableTypeAndUnitLabels = opts.EnableTypeAndUnitLabels
 		})
 	case "application/vnd.google.protobuf":
-		baseParser = NewProtobufParser(b, parseClassicHistograms, enableTypeAndUnitLabels, st)
+		baseParser = NewProtobufParser(b, opts.ParseClassicHistograms, opts.EnableTypeAndUnitLabels, st)
 	case "text/plain":
-		baseParser = NewPromParser(b, st, enableTypeAndUnitLabels)
+		baseParser = NewPromParser(b, st, opts.EnableTypeAndUnitLabels)
 	default:
 		return nil, err
 	}
 
-	if baseParser != nil && convertClassicHistogramsToNHCB {
-		baseParser = NewNHCBParser(baseParser, st, parseClassicHistograms)
+	if baseParser != nil && opts.ConvertClassicHistogramsToNHCB {
+		baseParser = NewNHCBParser(baseParser, st, opts.ParseClassicHistograms)
 	}
 
 	return baseParser, err

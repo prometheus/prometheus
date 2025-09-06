@@ -446,7 +446,12 @@ foobar{quantile="0.99"} 150.1`
 		},
 	}
 
-	p, err := New([]byte(input), "application/openmetrics-text", "", false, true, false, false, labels.NewSymbolTable())
+	p, err := New([]byte(input), "application/openmetrics-text", "", ParserOptions{
+		ParseClassicHistograms:         false,
+		ConvertClassicHistogramsToNHCB: true,
+		SkipOMCTSeries:                 false,
+		EnableTypeAndUnitLabels:        false,
+	}, labels.NewSymbolTable())
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	got := testParse(t, p)
@@ -512,7 +517,12 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 		},
 	}
 
-	p, err := New([]byte(input), "application/openmetrics-text", "", false, true, false, false, labels.NewSymbolTable())
+	p, err := New([]byte(input), "application/openmetrics-text", "", ParserOptions{
+		ParseClassicHistograms:         false,
+		ConvertClassicHistogramsToNHCB: true,
+		SkipOMCTSeries:                 false,
+		EnableTypeAndUnitLabels:        false,
+	}, labels.NewSymbolTable())
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	got := testParse(t, p)
@@ -599,21 +609,36 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 		func() (string, parserFactory, []int, parserOptions) {
 			factory := func(keepClassic, nhcb bool) (Parser, error) {
 				inputBuf := createTestProtoBufHistogram(t)
-				return New(inputBuf.Bytes(), "application/vnd.google.protobuf", "", keepClassic, nhcb, false, false, labels.NewSymbolTable())
+				return New(inputBuf.Bytes(), "application/vnd.google.protobuf", "", ParserOptions{
+					ParseClassicHistograms:         keepClassic,
+					ConvertClassicHistogramsToNHCB: nhcb,
+					SkipOMCTSeries:                 false,
+					EnableTypeAndUnitLabels:        false,
+				}, labels.NewSymbolTable())
 			}
 			return "ProtoBuf", factory, []int{1, 2, 3}, parserOptions{useUTF8sep: true, hasCreatedTimeStamp: true}
 		},
 		func() (string, parserFactory, []int, parserOptions) {
 			factory := func(keepClassic, nhcb bool) (Parser, error) {
 				input := createTestOpenMetricsHistogram()
-				return New([]byte(input), "application/openmetrics-text", "", keepClassic, nhcb, false, false, labels.NewSymbolTable())
+				return New([]byte(input), "application/openmetrics-text", "", ParserOptions{
+					ParseClassicHistograms:         keepClassic,
+					ConvertClassicHistogramsToNHCB: nhcb,
+					SkipOMCTSeries:                 false,
+					EnableTypeAndUnitLabels:        false,
+				}, labels.NewSymbolTable())
 			}
 			return "OpenMetrics", factory, []int{1}, parserOptions{hasCreatedTimeStamp: true}
 		},
 		func() (string, parserFactory, []int, parserOptions) {
 			factory := func(keepClassic, nhcb bool) (Parser, error) {
 				input := createTestPromHistogram()
-				return New([]byte(input), "text/plain", "", keepClassic, nhcb, false, false, labels.NewSymbolTable())
+				return New([]byte(input), "text/plain", "", ParserOptions{
+					ParseClassicHistograms:         keepClassic,
+					ConvertClassicHistogramsToNHCB: nhcb,
+					SkipOMCTSeries:                 false,
+					EnableTypeAndUnitLabels:        false,
+				}, labels.NewSymbolTable())
 			}
 			return "Prometheus", factory, []int{1}, parserOptions{}
 		},
@@ -976,7 +1001,12 @@ something_bucket{a="b",le="+Inf"} 9
 		},
 	}
 
-	p, err := New([]byte(input), "application/openmetrics-text", "", false, true, false, false, labels.NewSymbolTable())
+	p, err := New([]byte(input), "application/openmetrics-text", "", ParserOptions{
+		ParseClassicHistograms:         false,
+		ConvertClassicHistogramsToNHCB: true,
+		SkipOMCTSeries:                 false,
+		EnableTypeAndUnitLabels:        false,
+	}, labels.NewSymbolTable())
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	got := testParse(t, p)
@@ -1122,7 +1152,12 @@ metric: <
 		},
 	}
 
-	p, err := New(buf.Bytes(), "application/vnd.google.protobuf", "", false, true, false, false, labels.NewSymbolTable())
+	p, err := New(buf.Bytes(), "application/vnd.google.protobuf", "", ParserOptions{
+		ParseClassicHistograms:         false,
+		ConvertClassicHistogramsToNHCB: true,
+		SkipOMCTSeries:                 false,
+		EnableTypeAndUnitLabels:        false,
+	}, labels.NewSymbolTable())
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	got := testParse(t, p)
