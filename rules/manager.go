@@ -145,6 +145,10 @@ func NewManager(o *ManagerOptions) *Manager {
 	default:
 		panic(fmt.Errorf("unrecognized name validation scheme: %s", o.NameValidationScheme))
 	}
+	if o.Context == nil {
+		o.Context = context.Background()
+	}
+
 	if o.Metrics == nil {
 		o.Metrics = NewGroupMetrics(o.Registerer)
 	}

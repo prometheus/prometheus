@@ -1817,11 +1817,11 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		it := storage.NewBuffer(selRange)
 		var chkIter chunkenc.Iterator
 
-		// The last_over_time function acts like offset; thus, it
-		// should keep the metric name.  For all the other range
-		// vector functions, the only change needed is to drop the
-		// metric name in the output.
-		dropName := e.Func.Name != "last_over_time"
+		// The last_over_time and first_over_time functions act like
+		// offset; thus, they should keep the metric name.  For all the
+		// other range vector functions, the only change needed is to
+		// drop the metric name in the output.
+		dropName := (e.Func.Name != "last_over_time" && e.Func.Name != "first_over_time")
 		vectorVals := make([]Vector, len(e.Args)-1)
 		for i, s := range selVS.Series {
 			if err := contextDone(ctx, "expression evaluation"); err != nil {
@@ -3088,10 +3088,13 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if h != nil {
 				group.hasHistogram = true
 				if group.histogramValue != nil {
-					_, _, err := group.histogramValue.Add(h)
+					_, counterResetCollision, err := group.histogramValue.Add(h)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
+					}
+					if counterResetCollision {
+						annos.Add(annotations.NewHistogramCounterResetCollisionWarning(e.Expr.PositionRange(), annotations.HistogramAgg))
 					}
 				}
 				// Otherwise the aggregation contained floats
@@ -3141,17 +3144,23 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				if group.histogramValue != nil {
 					left := h.Copy().Div(group.groupCount)
 					right := group.histogramValue.Copy().Div(group.groupCount)
-					toAdd, _, err := left.Sub(right)
+					toAdd, counterResetCollision, err := left.Sub(right)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
 						continue
 					}
-					_, _, err = group.histogramValue.Add(toAdd)
+					if counterResetCollision {
+						annos.Add(annotations.NewHistogramCounterResetCollisionWarning(e.Expr.PositionRange(), annotations.HistogramAgg))
+					}
+					_, counterResetCollision, err = group.histogramValue.Add(toAdd)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
 						continue
+					}
+					if counterResetCollision {
+						annos.Add(annotations.NewHistogramCounterResetCollisionWarning(e.Expr.PositionRange(), annotations.HistogramAgg))
 					}
 				}
 				// Otherwise the aggregation contained floats

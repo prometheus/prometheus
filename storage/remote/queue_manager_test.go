@@ -53,17 +53,6 @@ import (
 
 const defaultFlushDeadline = 1 * time.Minute
 
-func newHighestTimestampMetric() *maxTimestamp {
-	return &maxTimestamp{
-		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "highest_timestamp_in_seconds",
-			Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch. Initialized to 0 when no data has been received yet",
-		}),
-	}
-}
-
 func TestBasicContentNegotiation(t *testing.T) {
 	t.Parallel()
 	queueConfig := config.DefaultQueueConfig
@@ -323,7 +312,7 @@ func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, pro
 func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg config.RemoteWriteProtoMsg) *QueueManager {
 	dir := t.TempDir()
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), nil, false, false, false, protoMsg)
 
 	return m
 }
@@ -783,7 +772,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		}
 	)
 
-	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, config.RemoteWriteProtoMsgV1)
+	m := NewQueueManager(metrics, nil, nil, nil, "", cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), nil, false, false, false, config.RemoteWriteProtoMsgV1)
 	m.StoreSeries(fakeSeries, 0)
 
 	// Attempt to samples while the manager is running. We immediately stop the
@@ -1460,7 +1449,8 @@ func BenchmarkStoreSeries(b *testing.B) {
 				cfg := config.DefaultQueueConfig
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
-				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, config.RemoteWriteProtoMsgV1)
+
+				m := NewQueueManager(metrics, nil, nil, nil, dir, cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), nil, false, false, false, config.RemoteWriteProtoMsgV1)
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -1560,9 +1550,8 @@ func TestCalculateDesiredShards(t *testing.T) {
 	addSamples := func(s int64, ts time.Duration) {
 		pendingSamples += s
 		samplesIn.incr(s)
-		samplesIn.tick()
 
-		m.highestRecvTimestamp.Set(float64(startedAt.Add(ts).Unix()))
+		m.metrics.highestTimestamp.Set(float64(startedAt.Add(ts).Unix()))
 	}
 
 	// helper function for sending samples.
@@ -1619,7 +1608,6 @@ func TestCalculateDesiredShardsDetail(t *testing.T) {
 		prevShards      int
 		dataIn          int64 // Quantities normalised to seconds.
 		dataOut         int64
-		dataDropped     int64
 		dataOutDuration float64
 		backlog         float64
 		expectedShards  int
@@ -1766,11 +1754,9 @@ func TestCalculateDesiredShardsDetail(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m.numShards = tc.prevShards
 			forceEMWA(samplesIn, tc.dataIn*int64(shardUpdateDuration/time.Second))
-			samplesIn.tick()
 			forceEMWA(m.dataOut, tc.dataOut*int64(shardUpdateDuration/time.Second))
-			forceEMWA(m.dataDropped, tc.dataDropped*int64(shardUpdateDuration/time.Second))
 			forceEMWA(m.dataOutDuration, int64(tc.dataOutDuration*float64(shardUpdateDuration)))
-			m.highestRecvTimestamp.value = tc.backlog // Not Set() because it can only increase value.
+			m.metrics.highestTimestamp.value = tc.backlog // Not Set() because it can only increase value.
 
 			require.Equal(t, tc.expectedShards, m.calculateDesiredShards())
 		})
@@ -2478,6 +2464,180 @@ func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
 
 			symbols := symbolTable.Symbols()
 			require.Equal(t, tc.unitLabel, symbols[unitRef], "Unit should match")
+		})
+	}
+}
+
+func TestHighestTimestampOnAppend(t *testing.T) {
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			nSamples := 11 * config.DefaultQueueConfig.Capacity
+			nSeries := 3
+			samples, series := createTimeseries(nSamples, nSeries)
+
+			_, m := newTestClientAndQueueManager(t, defaultFlushDeadline, protoMsg)
+			m.Start()
+			defer m.Stop()
+
+			require.Equal(t, 0.0, m.metrics.highestTimestamp.Get())
+
+			m.StoreSeries(series, 0)
+			require.True(t, m.Append(samples))
+
+			// Check that Append sets the highest timestamp correctly.
+			highestTs := float64((nSamples - 1) / 1000)
+			require.Greater(t, highestTs, 0.0)
+			require.Equal(t, highestTs, m.metrics.highestTimestamp.Get())
+		})
+	}
+}
+
+func TestAppendHistogramSchemaValidation(t *testing.T) {
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(string(protoMsg), func(t *testing.T) {
+			c := NewTestWriteClient(protoMsg)
+			cfg := testDefaultQueueConfig()
+			mcfg := config.DefaultMetadataConfig
+			cfg.MaxShards = 1
+
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m.sendNativeHistograms = true
+
+			// Create series for the histograms
+			series := []record.RefSeries{
+				{
+					Ref:    chunks.HeadSeriesRef(0),
+					Labels: labels.FromStrings("__name__", "test_histogram"),
+				},
+			}
+			m.StoreSeries(series, 0)
+
+			// Create histograms with different schemas
+			histograms := []record.RefHistogramSample{
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567890,
+					H: &histogram.Histogram{
+						Schema:          0, // Valid schema.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           2,
+						Sum:             5.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []int64{2},
+						NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						NegativeBuckets: []int64{1},
+					},
+				},
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567891,
+					H: &histogram.Histogram{
+						Schema:          histogram.CustomBucketsSchema, // Not valid for version 1.0.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           1,
+						Sum:             3.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []int64{1},
+						CustomValues:    []float64{2.0},
+					},
+				},
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567892,
+					H: &histogram.Histogram{
+						Schema:          0, // Valid schema.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           2,
+						Sum:             5.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []int64{2},
+						NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						NegativeBuckets: []int64{1},
+					},
+				},
+			}
+
+			floatHistograms := []record.RefFloatHistogramSample{
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567890,
+					FH: &histogram.FloatHistogram{
+						Schema:          0, // Valid schema.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           2,
+						Sum:             5.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []float64{2.0},
+						NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						NegativeBuckets: []float64{1.0},
+					},
+				},
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567891,
+					FH: &histogram.FloatHistogram{
+						Schema:          histogram.CustomBucketsSchema, // Not valid for version 1.0.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           1,
+						Sum:             3.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []float64{1.0},
+						CustomValues:    []float64{2.0},
+					},
+				},
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567892,
+					FH: &histogram.FloatHistogram{
+						Schema:          0, // Valid schema.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           2,
+						Sum:             5.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []float64{2.0},
+						NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						NegativeBuckets: []float64{1.0},
+					},
+				},
+			}
+
+			if protoMsg == config.RemoteWriteProtoMsgV1 {
+				c.expectHistograms([]record.RefHistogramSample{histograms[0], histograms[2]}, series)
+				c.expectFloatHistograms([]record.RefFloatHistogramSample{floatHistograms[0], floatHistograms[2]}, series)
+			} else {
+				c.expectHistograms(histograms, series)
+				c.expectFloatHistograms(floatHistograms, series)
+			}
+
+			m.Start()
+			defer m.Stop()
+
+			// Get initial dropped histograms count
+			initialDropped := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported))
+
+			require.True(t, m.AppendHistograms(histograms))
+			require.True(t, m.AppendFloatHistograms(floatHistograms))
+
+			// Wait for the valid histogram to be received
+			c.waitForExpectedData(t, 30*time.Second)
+
+			// Verify that one histogram was dropped due to invalid schema
+			finalDropped := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported))
+
+			if protoMsg == config.RemoteWriteProtoMsgV1 {
+				require.Equal(t, initialDropped+2.0, finalDropped, "Expected exactly two histograms to be dropped due to invalid schema")
+			} else {
+				require.Equal(t, initialDropped, finalDropped, "No histograms should be dropped")
+			}
+
+			// Verify no failed histograms (this would indicate a different type of error)
+			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal))
 		})
 	}
 }

@@ -254,15 +254,15 @@ eval instant at 20m irate(http_requests_histogram{path="/b"}[6m])
   	expect no_warn
 
 eval instant at 20m irate(http_requests_histogram{path="/c"}[20m])
-	expect warn
+	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram"
 	{path="/c"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
 eval instant at 20m irate(http_requests_histogram{path="/d"}[20m])
-	expect warn
+	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram"
 	{path="/d"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
 eval instant at 20m irate(http_requests_histogram{path="/e"}[20m])
-  expect warn
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram"
 
 eval instant at 20m irate(http_requests_histogram{path="/f"}[20m])
   	expect no_warn
@@ -293,12 +293,12 @@ eval instant at 20m delta(http_requests_gauge[20m])
 
 # delta emits warn annotation for non-gauge histogram types.
 eval instant at 20m delta(http_requests_counter[20m])
-	expect warn
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_counter"
 	{path="/foo"} {{schema:0 sum:4 count:8 buckets:[4 4 4]}}
 
 # delta emits warn annotation for mix of histogram and floats.
 eval instant at 20m delta(http_requests_mix[20m])
-	expect warn
+	expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_mix"
 	#empty
 
 clear
@@ -337,21 +337,21 @@ eval instant at 20m idelta(http_requests_histogram{path="/b"}[6m])
 	expect no_warn
 
 eval instant at 20m idelta(http_requests_histogram{path="/c"}[20m])
-	expect warn
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram"
 	{path="/c"} {{sum:1 count:1 counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests_histogram{path="/d"}[20m])
-	expect warn
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram"
 	{path="/d"} {{sum:1 count:1 counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests_histogram{path="/e"}[20m])
-  expect warn
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram"
 
 eval instant at 20m idelta(http_requests_histogram{path="/f"}[20m])
-  expect warn
+  expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "http_requests_histogram"
 
 eval instant at 20m idelta(http_requests_histogram{path="/g"}[20m])
-	expect warn
+	expect warn msg: PromQL warning: vector contains histograms with incompatible custom buckets for metric name "http_requests_histogram"
 
 clear
 
@@ -1320,6 +1320,28 @@ eval instant at 95s ts_of_last_over_time(metric_histogram{type="only_histogram"}
 eval instant at 95s ts_of_last_over_time(metric_histogram{type="mix"}[90s])
 	{type="mix"} 50.265
 
+# Tests for ts_of_first_over_time
+clear
+load 10s53ms
+	metric _ _ 1 2 3 _ _
+	metric_histogram{type="only_histogram"} {{schema:1 sum:2 count:3}}x4
+	metric_histogram{type="mix"} _ 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} 1
+
+eval instant at 90s ts_of_first_over_time(metric[90s])
+	{} 20.106
+
+eval instant at 95s ts_of_first_over_time(metric[90s])
+	{} 20.106
+
+eval instant at 15s ts_of_first_over_time(metric[90s])
+	#empty
+
+eval instant at 95s ts_of_first_over_time(metric_histogram{type="only_histogram"}[90s])
+	{type="only_histogram"} 10.053
+
+eval instant at 95s ts_of_first_over_time(metric_histogram{type="mix"}[90s])
+	{type="mix"} 10.053
+
 # Tests for quantile_over_time
 clear
 
@@ -1520,7 +1542,19 @@ load 10s
 	data{type="some_nan3"} NaN 0 1
 	data{type="only_nan"} NaN NaN NaN
 	data_histogram{type="only_histogram"} {{schema:0 sum:1 count:2}} {{schema:0 sum:2 count:3}} {{schema:0 sum:3 count:4}}
-	data_histogram{type="mix_samples"} 0 1 {{schema:0 sum:1 count:2}} {{schema:0 sum:2 count:3}}
+	data_histogram{type="mix_samples_hlast"} 0 1 {{schema:0 sum:1 count:2}} {{schema:0 sum:2 count:3}}
+	data_sparse{type="sparse_numbers"} _ 5 2 _ 4 _
+	data_empty{type="empty_series"} _ _ _ _ _ _ _ _ _ _ _ _ _
+
+# workaround for https://github.com/prometheus/prometheus/issues/17025 causing histogram samples
+# before float samples in a load directive to be silently dropped as (incorrectly) out-of-order.
+# By splitting the vector across two loads, a commit is forced inbetween so the
+# ordering will be handled correctly.
+load 10s
+	data_histogram{type="mix_samples_hfirst"} {{schema:0 sum:1 count:2}} {{schema:0 sum:9 count:3}}
+
+load 10s
+	data_histogram{type="mix_samples_hfirst"} _ _ 4 1
 
 eval instant at 1m min_over_time(data[2m])
 	expect no_info
@@ -1534,9 +1568,13 @@ eval instant at 1m min_over_time(data_histogram{type="only_histogram"}[2m])
 	expect no_info
 	#empty
 
-eval instant at 1m min_over_time(data_histogram{type="mix_samples"}[2m])
+eval instant at 1m min_over_time(data_histogram{type=~"mix_samples.*"}[2m])
 	expect info
-	{type="mix_samples"} 0
+	{type="mix_samples_hlast"} 0
+	{type="mix_samples_hfirst"} 1
+
+eval instant at 1m min_over_time(data_sparse[2m])
+	{type="sparse_numbers"} 2
 
 eval instant at 1m max_over_time(data[2m])
 	expect no_info
@@ -1550,11 +1588,15 @@ eval instant at 1m max_over_time(data_histogram{type="only_histogram"}[2m])
 	expect no_info
 	#empty
 
-eval instant at 1m max_over_time(data_histogram{type="mix_samples"}[2m])
+eval instant at 1m max_over_time(data_histogram{type=~"mix_samples.*"}[2m])
 	expect info
-	{type="mix_samples"} 1
+	{type="mix_samples_hlast"} 1
+	{type="mix_samples_hfirst"} 4
 
-eval instant at 1m last_over_time({__name__=~"data(_histogram)?"}[2m])
+eval instant at 1m max_over_time(data_sparse[2m])
+	{type="sparse_numbers"} 5
+
+eval instant at 1m last_over_time({__name__=~"data(_histogram|_sparse|_empty)?"}[2m])
 	expect no_info
 	data{type="numbers"} 3
 	data{type="some_nan"} NaN
@@ -1562,9 +1604,23 @@ eval instant at 1m last_over_time({__name__=~"data(_histogram)?"}[2m])
 	data{type="some_nan3"} 1
 	data{type="only_nan"} NaN
 	data_histogram{type="only_histogram"} {{schema:0 sum:3 count:4}}
-	data_histogram{type="mix_samples"} {{schema:0 sum:2 count:3}}
+	data_histogram{type="mix_samples_hlast"} {{schema:0 sum:2 count:3}}
+	data_histogram{type="mix_samples_hfirst"} 1
+	data_sparse{type="sparse_numbers"} 4
 
-eval instant at 1m count_over_time({__name__=~"data(_histogram)?"}[2m])
+eval instant at 1m first_over_time({__name__=~"data(_histogram|_sparse|_empty)?"}[2m])
+	expect no_info
+	data{type="numbers"} 2
+	data{type="some_nan"} 2
+	data{type="some_nan2"} 2
+	data{type="some_nan3"} NaN
+	data{type="only_nan"} NaN
+	data_histogram{type="only_histogram"} {{schema:0 sum:1 count:2}}
+	data_histogram{type="mix_samples_hlast"} 0
+	data_histogram{type="mix_samples_hfirst"} {{schema:0 sum:1 count:2}}
+	data_sparse{type="sparse_numbers"} 5
+
+eval instant at 1m count_over_time({__name__=~"data(_histogram|_sparse|_empty)?"}[2m])
 	expect no_info
 	{type="numbers"} 3
 	{type="some_nan"} 3
@@ -1572,7 +1628,9 @@ eval instant at 1m count_over_time({__name__=~"data(_histogram)?"}[2m])
 	{type="some_nan3"} 3
 	{type="only_nan"} 3
 	{type="only_histogram"} 3
-	{type="mix_samples"} 4
+	{type="mix_samples_hlast"} 4
+	{type="mix_samples_hfirst"} 4
+	{type="sparse_numbers"} 3
 
 clear
 
