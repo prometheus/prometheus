@@ -84,10 +84,12 @@ type ProtobufParser struct {
 
 // NewProtobufParser returns a parser for the payload in the byte slice.
 func NewProtobufParser(b []byte, parseClassicHistograms, enableTypeAndUnitLabels bool, st *labels.SymbolTable) Parser {
+	builder := labels.NewScratchBuilderWithSymbolTable(st, 16)
+	builder.SetUnsafeAdd(true)
 	return &ProtobufParser{
 		dec:        dto.NewMetricStreamingDecoder(b),
 		entryBytes: &bytes.Buffer{},
-		builder:    labels.NewScratchBuilderWithSymbolTable(st, 16), // TODO(bwplotka): Try base builder.
+		builder:    builder,
 
 		state:                   EntryInvalid,
 		parseClassicHistograms:  parseClassicHistograms,
@@ -564,10 +566,7 @@ func (p *ProtobufParser) onSeriesOrHistogramUpdate() error {
 			Unit: p.dec.GetUnit(),
 		}
 		m.AddToLabels(&p.builder)
-		if err := p.dec.Label(schema.IgnoreOverriddenMetadataLabelsScratchBuilder{
-			Overwrite:      m,
-			ScratchBuilder: &p.builder,
-		}); err != nil {
+		if err := p.dec.Label(m.NewIgnoreOverriddenMetadataLabelScratchBuilder(&p.builder)); err != nil {
 			return err
 		}
 	} else {
