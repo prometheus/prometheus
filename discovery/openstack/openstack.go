@@ -78,7 +78,7 @@ func (*SDConfig) Name() string { return "openstack" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.Metrics)
+	return NewDiscovery(c, opts.Logger, opts.Metrics, opts.ConfigName)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -145,7 +145,7 @@ type refresher interface {
 }
 
 // NewDiscovery returns a new OpenStack Discoverer which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, l *slog.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
+func NewDiscovery(conf *SDConfig, l *slog.Logger, metrics discovery.DiscovererMetrics, configName string) (*refresh.Discovery, error) {
 	m, ok := metrics.(*openstackMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
@@ -159,6 +159,7 @@ func NewDiscovery(conf *SDConfig, l *slog.Logger, metrics discovery.DiscovererMe
 		refresh.Options{
 			Logger:              l,
 			Mech:                "openstack",
+			Config:              configName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            r.refresh,
 			MetricsInstantiator: m.refreshMetrics,
