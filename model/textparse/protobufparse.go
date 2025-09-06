@@ -34,7 +34,7 @@ import (
 	"github.com/prometheus/prometheus/schema"
 )
 
-// floatFormatBufPool is exclusively used in formatOpenMetricsFloat.
+// floatFormatBufPool is exclusively used in FormatOpenMetricsFloat.
 var floatFormatBufPool = sync.Pool{
 	New: func() any {
 		// To contain at most 17 digits and additional syntax for a float64.
@@ -632,7 +632,7 @@ func (p *ProtobufParser) getMagicLabel() (bool, string, string) {
 		qq := p.dec.GetSummary().GetQuantile()
 		q := qq[p.fieldPos]
 		p.fieldsDone = p.fieldPos == len(qq)-1
-		return true, model.QuantileLabel, formatOpenMetricsFloat(q.GetQuantile())
+		return true, model.QuantileLabel, FormatOpenMetricsFloat(q.GetQuantile())
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
 		bb := p.dec.GetHistogram().GetBucket()
 		if p.fieldPos >= len(bb) {
@@ -641,15 +641,15 @@ func (p *ProtobufParser) getMagicLabel() (bool, string, string) {
 		}
 		b := bb[p.fieldPos]
 		p.fieldsDone = math.IsInf(b.GetUpperBound(), +1)
-		return true, model.BucketLabel, formatOpenMetricsFloat(b.GetUpperBound())
+		return true, model.BucketLabel, FormatOpenMetricsFloat(b.GetUpperBound())
 	}
 	return false, "", ""
 }
 
-// formatOpenMetricsFloat works like the usual Go string formatting of a float
+// FormatOpenMetricsFloat works like the usual Go string formatting of a float
 // but appends ".0" if the resulting number would otherwise contain neither a
 // "." nor an "e".
-func formatOpenMetricsFloat(f float64) string {
+func FormatOpenMetricsFloat(f float64) string {
 	// A few common cases hardcoded.
 	switch {
 	case f == 1:
