@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
 	"github.com/prometheus/prometheus/schema"
+	"github.com/prometheus/prometheus/util/convertnhcb"
 )
 
 // floatFormatBufPool is exclusively used in formatOpenMetricsFloat.
@@ -78,20 +79,28 @@ type ProtobufParser struct {
 
 	// Whether to also parse a classic histogram that is also present as a
 	// native histogram.
-	parseClassicHistograms  bool
+	parseClassicHistograms bool
+	// Whether to add type and unit labels.
 	enableTypeAndUnitLabels bool
+
+	// Whether to convert classic histograms to native histograms with custom buckets.
+	convertClassicHistogramsToNHCB bool
+	// We need to preload NHCB since we cannot do error handling in Histogram().
+	nhcbH  *histogram.Histogram
+	nhcbFH *histogram.FloatHistogram
 }
 
 // NewProtobufParser returns a parser for the payload in the byte slice.
-func NewProtobufParser(b []byte, parseClassicHistograms, enableTypeAndUnitLabels bool, st *labels.SymbolTable) Parser {
+func NewProtobufParser(b []byte, parseClassicHistograms, convertClassicHistogramsToNHCB, enableTypeAndUnitLabels bool, st *labels.SymbolTable) Parser {
 	return &ProtobufParser{
 		dec:        dto.NewMetricStreamingDecoder(b),
 		entryBytes: &bytes.Buffer{},
 		builder:    labels.NewScratchBuilderWithSymbolTable(st, 16), // TODO(bwplotka): Try base builder.
 
-		state:                   EntryInvalid,
-		parseClassicHistograms:  parseClassicHistograms,
-		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
+		state:                          EntryInvalid,
+		parseClassicHistograms:         parseClassicHistograms,
+		convertClassicHistogramsToNHCB: convertClassicHistogramsToNHCB,
+		enableTypeAndUnitLabels:        enableTypeAndUnitLabels,
 	}
 }
 
@@ -181,6 +190,15 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 		ts = &p.dec.TimestampMs // To save memory allocations, never nil.
 		h  = p.dec.GetHistogram()
 	)
+
+	if !isNativeHistogram(h) {
+		// This only happens if we have a classic histogram and
+		// we converted it to NHCB already in Next.
+		if *ts != 0 {
+			return p.entryBytes.Bytes(), ts, p.nhcbH, p.nhcbFH
+		}
+		return p.entryBytes.Bytes(), nil, p.nhcbH, p.nhcbFH
+	}
 
 	if p.parseClassicHistograms && len(h.GetBucket()) > 0 {
 		p.redoClassic = true
@@ -406,6 +424,8 @@ func (p *ProtobufParser) CreatedTimestamp() int64 {
 // read.
 func (p *ProtobufParser) Next() (Entry, error) {
 	p.exemplarReturned = false
+	p.nhcbH = nil
+	p.nhcbFH = nil
 	switch p.state {
 	// Invalid state occurs on:
 	// * First Next() call.
@@ -468,10 +488,19 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		p.state = EntryType
 	case EntryType:
 		t := p.dec.GetType()
-		if (t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM) &&
-			isNativeHistogram(p.dec.GetHistogram()) {
+		switch {
+		case (t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM) && isNativeHistogram(p.dec.GetHistogram()):
 			p.state = EntryHistogram
-		} else {
+		case (t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM) && (p.convertClassicHistogramsToNHCB && !p.parseClassicHistograms):
+			// The first series only have classic histogram that we need to
+			// convert to NHCB without returning as classic.
+			var err error
+			p.nhcbH, p.nhcbFH, err = p.convertToNHCB(t)
+			if err != nil {
+				return EntryInvalid, err
+			}
+			p.state = EntryHistogram
+		default:
 			p.state = EntrySeries
 		}
 		if err := p.onSeriesOrHistogramUpdate(); err != nil {
@@ -504,9 +533,23 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			// If this is a metric family containing native
 			// histograms, it means we are here thanks to redoClassic state.
 			// Return to native histograms for the consistent flow.
-			if (t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM) &&
-				isNativeHistogram(p.dec.GetHistogram()) {
-				p.state = EntryHistogram
+			if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
+				h := p.dec.GetHistogram()
+				if isNativeHistogram(h) {
+					p.state = EntryHistogram
+				} else if p.convertClassicHistogramsToNHCB {
+					// We still need to spit out the NHCB.
+					var err error
+					p.nhcbH, p.nhcbFH, err = p.convertToNHCB(t)
+					if err != nil {
+						return EntryInvalid, err
+					}
+					p.state = EntryHistogram
+					if err := p.onSeriesOrHistogramUpdate(); err != nil {
+						return EntryInvalid, err
+					}
+					return p.state, nil
+				}
 			}
 		}
 		// Is there another series?
@@ -521,13 +564,17 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			return EntryInvalid, err
 		}
 	case EntryHistogram:
-		// Was Histogram() called and parseClassicHistograms is true?
-		if p.redoClassic {
+		switchToClassic := func() (Entry, error) {
 			p.redoClassic = false
 			p.fieldPos = -3
 			p.fieldsDone = false
 			p.state = EntrySeries
 			return p.Next() // Switch to classic histogram.
+		}
+
+		// Was Histogram() called and parseClassicHistograms is true?
+		if p.redoClassic {
+			return switchToClassic()
 		}
 
 		// Is there another series?
@@ -537,6 +584,25 @@ func (p *ProtobufParser) Next() (Entry, error) {
 				return p.Next()
 			}
 			return EntryInvalid, err
+		}
+
+		// Does the next series only have classic histogram that we need to
+		// convert to NHCB without returning as classic?
+		h := p.dec.GetHistogram()
+		if !isNativeHistogram(h) {
+			// It's a classic histogram.
+			if !p.convertClassicHistogramsToNHCB || p.parseClassicHistograms {
+				// Switch to classic if we don't need to convert to NHCB or
+				// we do, but only after returning the classic histogram.
+				return switchToClassic()
+			}
+
+			t := p.dec.GetType()
+			var err error
+			p.nhcbH, p.nhcbFH, err = p.convertToNHCB(t)
+			if err != nil {
+				return EntryInvalid, err
+			}
 		}
 		if err := p.onSeriesOrHistogramUpdate(); err != nil {
 			return EntryInvalid, err
@@ -689,4 +755,41 @@ func isNativeHistogram(h *dto.Histogram) bool {
 		len(h.GetNegativeSpan()) > 0 ||
 		h.GetZeroThreshold() > 0 ||
 		h.GetZeroCount() > 0
+}
+
+func (p *ProtobufParser) convertToNHCB(t dto.MetricType) (*histogram.Histogram, *histogram.FloatHistogram, error) {
+	h := p.dec.GetHistogram()
+	temp := convertnhcb.NewTempHistogram()
+	v := h.GetSampleCountFloat()
+	if v == 0 {
+		v = float64(h.GetSampleCount())
+	}
+	if err := temp.SetCount(v); err != nil {
+		return nil, nil, err
+	}
+
+	if err := temp.SetSum(h.GetSampleSum()); err != nil {
+		return nil, nil, err
+	}
+	for _, b := range h.GetBucket() {
+		v := b.GetCumulativeCountFloat()
+		if v == 0 {
+			v = float64(b.GetCumulativeCount())
+		}
+		if err := temp.SetBucketCount(b.GetUpperBound(), v); err != nil {
+			return nil, nil, err
+		}
+	}
+	ch, cfh, err := temp.Convert()
+	if err != nil {
+		return nil, nil, err
+	}
+	if t == dto.MetricType_GAUGE_HISTOGRAM {
+		if ch != nil {
+			ch.CounterResetHint = histogram.GaugeType
+		} else {
+			cfh.CounterResetHint = histogram.GaugeType
+		}
+	}
+	return ch, cfh, nil
 }

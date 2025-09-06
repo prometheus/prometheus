@@ -182,7 +182,7 @@ foobar{quantile="0.99"} 150.1`
 			m:   "hh",
 			typ: model.MetricTypeHistogram,
 		}, {
-			m: `hh{}`,
+			m: `hh`,
 			shs: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
 				Count:           1,
@@ -203,7 +203,7 @@ foobar{quantile="0.99"} 150.1`
 			m:   "hhh",
 			typ: model.MetricTypeHistogram,
 		}, {
-			m: `hhh{}`,
+			m: `hhh`,
 			shs: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
 				Count:           1,
@@ -333,7 +333,7 @@ foobar{quantile="0.99"} 150.1`
 			m:   "baz",
 			typ: model.MetricTypeHistogram,
 		}, {
-			m: `baz{}`,
+			m: `baz`,
 			shs: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
 				Count:           17,
@@ -361,7 +361,7 @@ foobar{quantile="0.99"} 150.1`
 			m:   "something",
 			typ: model.MetricTypeHistogram,
 		}, {
-			m: `something{}`,
+			m: `something`,
 			shs: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
 				Count:           18,
@@ -479,7 +479,7 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 			m:   "something",
 			typ: model.MetricTypeHistogram,
 		}, {
-			m: `something{}`,
+			m: `something`,
 			shs: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
 				Count:           18,
@@ -737,7 +737,7 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 						// Always expect NHCB series after classic.
 						nhcbSeries := []parsedEntry{
 							{
-								m: metric + "{}",
+								m: metric,
 								shs: &histogram.Histogram{
 									Schema:          histogram.CustomBucketsSchema,
 									Count:           175,
@@ -1107,7 +1107,7 @@ metric: <
 			typ: model.MetricTypeHistogram,
 		},
 		{
-			m: "test_histogram2{}",
+			m: "test_histogram2",
 			shs: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
 				Count:           175,
