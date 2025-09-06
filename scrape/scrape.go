@@ -1634,7 +1634,12 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		return
 	}
 
-	p, err := textparse.New(b, contentType, sl.fallbackScrapeProtocol, sl.alwaysScrapeClassicHist, sl.convertClassicHistToNHCB, sl.enableCTZeroIngestion, sl.enableTypeAndUnitLabels, sl.symbolTable)
+	p, err := textparse.New(b, contentType, sl.fallbackScrapeProtocol, sl.symbolTable,
+		textparse.WithParseClassicHistogramsEnabled(sl.alwaysScrapeClassicHist),
+		textparse.WithClassicHistogramsToNHCBEnabled(sl.convertClassicHistToNHCB),
+		textparse.WithSkipOMCTSeriesEnabled(sl.enableCTZeroIngestion),
+		textparse.WithTypeAndUnitLabelsEnabled(sl.enableTypeAndUnitLabels),
+	)
 	if p == nil {
 		sl.l.Error(
 			"Failed to determine correct type of scrape target.",

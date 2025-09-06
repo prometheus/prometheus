@@ -122,6 +122,43 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 	return fallbackType, fmt.Errorf("received unsupported Content-Type %q, using fallback_scrape_protocol %q", contentType, fallbackType)
 }
 
+type parserOptions struct {
+	EnableTypeAndUnitLabels        bool
+	ConvertClassicHistogramsToNHCB bool
+
+	// Proto parsing only.
+	ParseClassicHistograms bool
+
+	// OpenMetrics only.
+	SkipOMCTSeries bool
+}
+
+type ParserOptions func(*parserOptions)
+
+func WithTypeAndUnitLabelsEnabled(b bool) ParserOptions {
+	return func(o *parserOptions) {
+		o.EnableTypeAndUnitLabels = b
+	}
+}
+
+func WithClassicHistogramsToNHCBEnabled(b bool) ParserOptions {
+	return func(o *parserOptions) {
+		o.ConvertClassicHistogramsToNHCB = b
+	}
+}
+
+func WithParseClassicHistogramsEnabled(b bool) ParserOptions {
+	return func(o *parserOptions) {
+		o.ParseClassicHistograms = b
+	}
+}
+
+func WithSkipOMCTSeriesEnabled(b bool) ParserOptions {
+	return func(o *parserOptions) {
+		o.SkipOMCTSeries = b
+	}
+}
+
 // New returns a new parser of the byte slice.
 //
 // This function no longer guarantees to return a valid parser.
@@ -130,7 +167,13 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 // An error may also be returned if fallbackType had to be used or there was some
 // other error parsing the supplied Content-Type.
 // If the returned parser is nil then the scrape must fail.
-func New(b []byte, contentType, fallbackType string, parseClassicHistograms, convertClassicHistogramsToNHCB, skipOMCTSeries, enableTypeAndUnitLabels bool, st *labels.SymbolTable) (Parser, error) {
+func New(b []byte, contentType, fallbackType string, st *labels.SymbolTable, opts ...ParserOptions) (Parser, error) {
+	options := &parserOptions{}
+
+	for _, opt := range opts {
+		opt(options)
+	}
+
 	mediaType, err := extractMediaType(contentType, fallbackType)
 	// err may be nil or something we want to warn about.
 
@@ -138,19 +181,19 @@ func New(b []byte, contentType, fallbackType string, parseClassicHistograms, con
 	switch mediaType {
 	case "application/openmetrics-text":
 		baseParser = NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
-			o.skipCTSeries = skipOMCTSeries
-			o.enableTypeAndUnitLabels = enableTypeAndUnitLabels
+			o.skipCTSeries = options.SkipOMCTSeries
+			o.enableTypeAndUnitLabels = options.EnableTypeAndUnitLabels
 		})
 	case "application/vnd.google.protobuf":
-		baseParser = NewProtobufParser(b, parseClassicHistograms, enableTypeAndUnitLabels, st)
+		baseParser = NewProtobufParser(b, options.ParseClassicHistograms, options.EnableTypeAndUnitLabels, st)
 	case "text/plain":
-		baseParser = NewPromParser(b, st, enableTypeAndUnitLabels)
+		baseParser = NewPromParser(b, st, options.EnableTypeAndUnitLabels)
 	default:
 		return nil, err
 	}
 
-	if baseParser != nil && convertClassicHistogramsToNHCB {
-		baseParser = NewNHCBParser(baseParser, st, parseClassicHistograms)
+	if baseParser != nil && options.ConvertClassicHistogramsToNHCB {
+		baseParser = NewNHCBParser(baseParser, st, options.ParseClassicHistograms)
 	}
 
 	return baseParser, err
