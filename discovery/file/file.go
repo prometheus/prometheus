@@ -33,7 +33,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
