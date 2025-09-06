@@ -62,6 +62,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/util/mimeutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -2953,7 +2954,7 @@ func TestScrapeProtocolHeader(t *testing.T) {
 		{
 			name:          "prometheus protobuf",
 			proto:         PrometheusProto,
-			expectedValue: "application/vnd.google.protobuf",
+			expectedValue: mimeutil.GoogleProtobufMimeType,
 		},
 		{
 			name:          "prometheus text 0.0.4",

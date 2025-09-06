@@ -64,6 +64,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/mimeutil"
 	"github.com/prometheus/prometheus/util/pool"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -1534,7 +1535,7 @@ func BenchmarkScrapeLoopAppend(b *testing.B) {
 			}{
 				{name: "PromText", contentType: "text/plain", parsable: data.parsableText},
 				{name: "OMText", contentType: "application/openmetrics-text", parsable: data.parsableText},
-				{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: metricsProto},
+				{name: "PromProto", contentType: mimeutil.GoogleProtobufMimeType, parsable: metricsProto},
 			} {
 				b.Run(fmt.Sprintf("fmt=%v", bcase.name), func(b *testing.B) {
 					ctx, sl := simpleTestScrapeLoop(b)
@@ -2232,7 +2233,7 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now()
-	total, added, seriesAdded, err := sl.append(app, msg, "application/vnd.google.protobuf", now)
+	total, added, seriesAdded, err := sl.append(app, msg, mimeutil.GoogleProtobufMimeType, now)
 	require.NoError(t, err)
 	require.Equal(t, 3, total)
 	require.Equal(t, 3, added)
@@ -2255,7 +2256,7 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 	require.NoError(t, err)
 
 	now = time.Now()
-	total, added, seriesAdded, err = sl.append(app, msg, "application/vnd.google.protobuf", now)
+	total, added, seriesAdded, err = sl.append(app, msg, mimeutil.GoogleProtobufMimeType, now)
 	require.NoError(t, err)
 	require.Equal(t, 3, total)
 	require.Equal(t, 3, added)
@@ -2278,7 +2279,7 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 	require.NoError(t, err)
 
 	now = time.Now()
-	total, added, seriesAdded, err = sl.append(app, msg, "application/vnd.google.protobuf", now)
+	total, added, seriesAdded, err = sl.append(app, msg, mimeutil.GoogleProtobufMimeType, now)
 	if !errors.Is(err, errBucketLimit) {
 		t.Fatalf("Did not see expected histogram bucket limit error: %s", err)
 	}
@@ -2597,7 +2598,7 @@ metric: <
 >
 
 `,
-			contentType: "application/vnd.google.protobuf",
+			contentType: mimeutil.GoogleProtobufMimeType,
 			histograms: []histogramSample{{
 				t:      1234568,
 				metric: labels.FromStrings("__name__", "test_histogram"),
@@ -2715,7 +2716,7 @@ metric: <
 
 `,
 			alwaysScrapeClassicHist: true,
-			contentType:             "application/vnd.google.protobuf",
+			contentType:             mimeutil.GoogleProtobufMimeType,
 			floats: []floatSample{
 				{metric: labels.FromStrings("__name__", "test_histogram_count"), t: 1234568, f: 175},
 				{metric: labels.FromStrings("__name__", "test_histogram_sum"), t: 1234568, f: 0.0008280461746287094},
@@ -2760,7 +2761,7 @@ metric: <
 		},
 		{
 			title:                           "Native histogram with exemplars and no classic buckets",
-			contentType:                     "application/vnd.google.protobuf",
+			contentType:                     mimeutil.GoogleProtobufMimeType,
 			enableNativeHistogramsIngestion: true,
 			scrapeText: `name: "test_histogram"
 help: "Test histogram."
@@ -2860,7 +2861,7 @@ metric: <
 		},
 		{
 			title:                           "Native histogram with exemplars but ingestion disabled",
-			contentType:                     "application/vnd.google.protobuf",
+			contentType:                     mimeutil.GoogleProtobufMimeType,
 			enableNativeHistogramsIngestion: false,
 			scrapeText: `name: "test_histogram"
 help: "Test histogram."
@@ -2969,7 +2970,7 @@ metric: <
 			}
 
 			buf := &bytes.Buffer{}
-			if test.contentType == "application/vnd.google.protobuf" {
+			if test.contentType == mimeutil.GoogleProtobufMimeType {
 				require.NoError(t, textToProto(test.scrapeText, buf))
 			} else {
 				buf.WriteString(test.scrapeText)
@@ -3273,8 +3274,8 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 				require.NotContainsf(t, accept, "escaping=allow-utf-8", "Expected Accept header to not allow utf8, got %q", accept)
 			}
 			if protobufParsing {
-				require.True(t, strings.HasPrefix(accept, "application/vnd.google.protobuf;"),
-					"Expected Accept header to prefer application/vnd.google.protobuf.")
+				require.True(t, strings.HasPrefix(accept, mimeutil.GoogleProtobufMimeType+";"),
+					"Expected Accept header to prefer "+mimeutil.GoogleProtobufMimeType)
 			}
 
 			contentTypes := strings.Split(accept, ",")
@@ -4632,7 +4633,7 @@ metric: <
 				genTestCounterProto("test_metric_3_bucket", 1),
 				genTestHistProto("test_histogram_3", true, false),
 			},
-			contentType: "application/vnd.google.protobuf",
+			contentType: mimeutil.GoogleProtobufMimeType,
 			hasClassic:  true,
 		},
 		"protobuf, in different order": {
@@ -4653,7 +4654,7 @@ metric: <
 				genTestCounterProto("test_metric_3_sum", 1),
 				genTestCounterProto("test_metric_3_bucket", 1),
 			},
-			contentType: "application/vnd.google.protobuf",
+			contentType: mimeutil.GoogleProtobufMimeType,
 			hasClassic:  true,
 		},
 		"protobuf, with additional native exponential histogram": {
@@ -4674,7 +4675,7 @@ metric: <
 				genTestCounterProto("test_metric_3_bucket", 1),
 				genTestHistProto("test_histogram_3", true, true),
 			},
-			contentType:    "application/vnd.google.protobuf",
+			contentType:    mimeutil.GoogleProtobufMimeType,
 			hasClassic:     true,
 			hasExponential: true,
 		},
@@ -4696,7 +4697,7 @@ metric: <
 				genTestCounterProto("test_metric_3_bucket", 1),
 				genTestHistProto("test_histogram_3", false, true),
 			},
-			contentType:    "application/vnd.google.protobuf",
+			contentType:    mimeutil.GoogleProtobufMimeType,
 			hasExponential: true,
 		},
 	}
@@ -4843,7 +4844,7 @@ metric: <
 				var content []byte
 				contentType := metricsText.contentType
 				switch contentType {
-				case "application/vnd.google.protobuf":
+				case mimeutil.GoogleProtobufMimeType:
 					buf := &bytes.Buffer{}
 					for _, text := range metricsText.text {
 						// In case of protobuf, we have to create the binary representation.

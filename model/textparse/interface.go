@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/mimeutil"
 )
 
 // Parser parses samples from a byte slice of samples in different exposition formats.
@@ -112,7 +113,7 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 	// We have a valid media type, either we recognise it and can use it
 	// or we have to error.
 	switch mediaType {
-	case "application/openmetrics-text", "application/vnd.google.protobuf", "text/plain":
+	case "application/openmetrics-text", mimeutil.GoogleProtobufMimeType, "text/plain":
 		return mediaType, nil
 	}
 	// We're here because we have no recognised mediaType.
@@ -140,7 +141,7 @@ func New(b []byte, contentType, fallbackType string, parseClassicHistograms, ski
 			o.skipCTSeries = skipOMCTSeries
 			o.enableTypeAndUnitLabels = enableTypeAndUnitLabels
 		}), err
-	case "application/vnd.google.protobuf":
+	case mimeutil.GoogleProtobufMimeType:
 		return NewProtobufParser(b, parseClassicHistograms, enableTypeAndUnitLabels, st), err
 	case "text/plain":
 		return NewPromParser(b, st, enableTypeAndUnitLabels), err
