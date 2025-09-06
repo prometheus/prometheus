@@ -303,6 +303,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                             <Table.Tr>
                               <Table.Th w="25%">Endpoint</Table.Th>
                               <Table.Th>Labels</Table.Th>
+                              <Table.Th w={120}>Scrape Interval</Table.Th>
                               <Table.Th w={230}>Last scrape</Table.Th>
                               <Table.Th w={100}>State</Table.Th>
                             </Table.Tr>
@@ -334,6 +335,39 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                                   <Table.Td valign="top">
                                     <Group gap="xs" wrap="wrap">
                                       <Tooltip
+                                        label={`Scrape interval: ${target.scrapeInterval}`}
+                                        withArrow
+                                      >
+                                        <Badge
+                                          variant="light"
+                                          className={badgeClasses.statsBadge}
+                                          styles={{
+                                            label: { textTransform: "none" },
+                                          }}
+                                        >
+                                          {target.scrapeInterval}
+                                        </Badge>
+                                      </Tooltip>
+                                      
+                                      <Tooltip
+                                        label={`Scrape timeout: ${target.scrapeTimeout}`}
+                                        withArrow
+                                      >
+                                        <Badge
+                                          variant="light"
+                                          className={badgeClasses.statsBadge}
+                                          styles={{
+                                            label: { textTransform: "none" },
+                                          }}
+                                        >
+                                          {target.scrapeTimeout}
+                                        </Badge>
+                                      </Tooltip>
+                                    </Group>
+                                  </Table.Td>
+                                  <Table.Td valign="top">
+                                    <Group gap="xs" wrap="wrap">
+                                      <Tooltip
                                         label="Last target scrape"
                                         withArrow
                                       >
@@ -357,7 +391,13 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                                       </Tooltip>
 
                                       <Tooltip
-                                        label="Duration of last target scrape"
+                                        label={
+                                          <Stack gap={0}>
+                                            <Text size="xs">Duration of last target scrape</Text>
+                                            <Text size="xs">Interval: {target.scrapeInterval}</Text>
+                                            <Text size="xs">Timeout: {target.scrapeTimeout}</Text>
+                                          </Stack>
+                                        }
                                         withArrow
                                       >
                                         <Badge
@@ -391,7 +431,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                                 </Table.Tr>
                                 {target.lastError && (
                                   <Table.Tr>
-                                    <Table.Td colSpan={5} valign="top">
+                                    <Table.Td colSpan={6} valign="top">
                                       <Alert
                                         color="red"
                                         mb="sm"
