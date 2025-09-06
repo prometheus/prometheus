@@ -130,23 +130,30 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 // An error may also be returned if fallbackType had to be used or there was some
 // other error parsing the supplied Content-Type.
 // If the returned parser is nil then the scrape must fail.
-func New(b []byte, contentType, fallbackType string, parseClassicHistograms, skipOMCTSeries, enableTypeAndUnitLabels bool, st *labels.SymbolTable) (Parser, error) {
+func New(b []byte, contentType, fallbackType string, parseClassicHistograms, convertClassicHistogramsToNHCB, skipOMCTSeries, enableTypeAndUnitLabels bool, st *labels.SymbolTable) (Parser, error) {
 	mediaType, err := extractMediaType(contentType, fallbackType)
 	// err may be nil or something we want to warn about.
 
+	var baseParser Parser
 	switch mediaType {
 	case "application/openmetrics-text":
-		return NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
+		baseParser = NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
 			o.skipCTSeries = skipOMCTSeries
 			o.enableTypeAndUnitLabels = enableTypeAndUnitLabels
-		}), err
+		})
 	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b, parseClassicHistograms, enableTypeAndUnitLabels, st), err
+		baseParser = NewProtobufParser(b, parseClassicHistograms, enableTypeAndUnitLabels, st)
 	case "text/plain":
-		return NewPromParser(b, st, enableTypeAndUnitLabels), err
+		baseParser = NewPromParser(b, st, enableTypeAndUnitLabels)
 	default:
 		return nil, err
 	}
+
+	if baseParser != nil && convertClassicHistogramsToNHCB {
+		baseParser = NewNHCBParser(baseParser, st, parseClassicHistograms)
+	}
+
+	return baseParser, err
 }
 
 // Entry represents the type of a parsed entry.
