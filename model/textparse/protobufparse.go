@@ -488,19 +488,14 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		p.state = EntryType
 	case EntryType:
 		t := p.dec.GetType()
-		switch {
-		case (t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM) && isNativeHistogram(p.dec.GetHistogram()):
-			p.state = EntryHistogram
-		case (t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM) && (p.convertClassicHistogramsToNHCB && !p.parseClassicHistograms):
-			// The first series only have classic histogram that we need to
-			// convert to NHCB without returning as classic.
-			var err error
-			p.nhcbH, p.nhcbFH, err = p.convertToNHCB(t)
-			if err != nil {
-				return EntryInvalid, err
+		if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
+			if !isNativeHistogram(p.dec.GetHistogram()) {
+				p.state = EntrySeries
+				p.fieldPos = -3 // We have not returned anything, let p.Next() increment it to -2.
+				return p.Next()
 			}
 			p.state = EntryHistogram
-		default:
+		} else {
 			p.state = EntrySeries
 		}
 		if err := p.onSeriesOrHistogramUpdate(); err != nil {
@@ -514,9 +509,12 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			t == dto.MetricType_GAUGE_HISTOGRAM {
 			// Non-trivial series (complex metrics, with magic suffixes).
 
+			isClassicHistogram := (t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM) && !isNativeHistogram(p.dec.GetHistogram())
+			skipSeries := p.convertClassicHistogramsToNHCB && isClassicHistogram && !p.parseClassicHistograms
+
 			// Did we iterate over all the classic representations fields?
 			// NOTE: p.fieldsDone is updated on p.onSeriesOrHistogramUpdate.
-			if !p.fieldsDone {
+			if !p.fieldsDone && !skipSeries {
 				// Still some fields to iterate over.
 				p.fieldPos++
 				if err := p.onSeriesOrHistogramUpdate(); err != nil {
@@ -533,9 +531,10 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			// If this is a metric family containing native
 			// histograms, it means we are here thanks to redoClassic state.
 			// Return to native histograms for the consistent flow.
+			// If this is a metric family containing classic histograms,
+			// it means we might need to do NHCB conversion.
 			if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
-				h := p.dec.GetHistogram()
-				if isNativeHistogram(h) {
+				if !isClassicHistogram {
 					p.state = EntryHistogram
 				} else if p.convertClassicHistogramsToNHCB {
 					// We still need to spit out the NHCB.
@@ -586,24 +585,13 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			return EntryInvalid, err
 		}
 
-		// Does the next series only have classic histogram that we need to
-		// convert to NHCB without returning as classic?
-		h := p.dec.GetHistogram()
-		if !isNativeHistogram(h) {
-			// It's a classic histogram.
-			if !p.convertClassicHistogramsToNHCB || p.parseClassicHistograms {
-				// Switch to classic if we don't need to convert to NHCB or
-				// we do, but only after returning the classic histogram.
-				return switchToClassic()
-			}
-
-			t := p.dec.GetType()
-			var err error
-			p.nhcbH, p.nhcbFH, err = p.convertToNHCB(t)
-			if err != nil {
-				return EntryInvalid, err
-			}
+		// If this is a metric family does not contain native
+		// histograms, it means we are here thanks to NHCB conversion.
+		// Return to classic histograms for the consistent flow.
+		if !isNativeHistogram(p.dec.GetHistogram()) {
+			return switchToClassic()
 		}
+
 		if err := p.onSeriesOrHistogramUpdate(); err != nil {
 			return EntryInvalid, err
 		}
