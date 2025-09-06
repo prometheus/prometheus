@@ -85,6 +85,8 @@ type ProtobufParser struct {
 
 	// Whether to convert classic histograms to native histograms with custom buckets.
 	convertClassicHistogramsToNHCB bool
+	// Reusable classic to NHCB converter.
+	tmpNHCB convertnhcb.TempHistogram
 	// We need to preload NHCB since we cannot do error handling in Histogram().
 	nhcbH  *histogram.Histogram
 	nhcbFH *histogram.FloatHistogram
@@ -99,8 +101,9 @@ func NewProtobufParser(b []byte, parseClassicHistograms, convertClassicHistogram
 
 		state:                          EntryInvalid,
 		parseClassicHistograms:         parseClassicHistograms,
-		convertClassicHistogramsToNHCB: convertClassicHistogramsToNHCB,
 		enableTypeAndUnitLabels:        enableTypeAndUnitLabels,
+		convertClassicHistogramsToNHCB: convertClassicHistogramsToNHCB,
+		tmpNHCB:                        convertnhcb.NewTempHistogram(),
 	}
 }
 
@@ -747,16 +750,16 @@ func isNativeHistogram(h *dto.Histogram) bool {
 
 func (p *ProtobufParser) convertToNHCB(t dto.MetricType) (*histogram.Histogram, *histogram.FloatHistogram, error) {
 	h := p.dec.GetHistogram()
-	temp := convertnhcb.NewTempHistogram()
+	p.tmpNHCB.Reset()
 	v := h.GetSampleCountFloat()
 	if v == 0 {
 		v = float64(h.GetSampleCount())
 	}
-	if err := temp.SetCount(v); err != nil {
+	if err := p.tmpNHCB.SetCount(v); err != nil {
 		return nil, nil, err
 	}
 
-	if err := temp.SetSum(h.GetSampleSum()); err != nil {
+	if err := p.tmpNHCB.SetSum(h.GetSampleSum()); err != nil {
 		return nil, nil, err
 	}
 	for _, b := range h.GetBucket() {
@@ -764,11 +767,11 @@ func (p *ProtobufParser) convertToNHCB(t dto.MetricType) (*histogram.Histogram, 
 		if v == 0 {
 			v = float64(b.GetCumulativeCount())
 		}
-		if err := temp.SetBucketCount(b.GetUpperBound(), v); err != nil {
+		if err := p.tmpNHCB.SetBucketCount(b.GetUpperBound(), v); err != nil {
 			return nil, nil, err
 		}
 	}
-	ch, cfh, err := temp.Convert()
+	ch, cfh, err := p.tmpNHCB.Convert()
 	if err != nil {
 		return nil, nil, err
 	}
