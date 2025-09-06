@@ -255,6 +255,74 @@ func (f QueryableFunc) Querier(mint, maxt int64) (Querier, error) {
 	return f(mint, maxt)
 }
 
+// AppendV2Options provides options for implementations of the
+// AppenderV2 interface.
+type AppendV2Options struct {
+	DiscardOutOfOrder bool
+
+	// AppendCTAsZero ensures that CT is appended as fake zero sample on all append methods.
+	AppendCTAsZero bool
+}
+
+// Metadata stores a series' metadata information.
+type Metadata struct {
+	metadata.Metadata
+
+	// MetricFamilyName (optional) stores metric family name of the series that
+	// this metadata relates too. If the client of the AppenderV2 has this information
+	// (e.g. from scrape), it's recommended to pass it to the appender.
+	// Some implementation store Metadata per metric family and this information
+	// allows them to avoid slow and prone to error metric family detection.
+	MetricFamilyName string
+}
+
+// IsEmpty returns true if metadata structure is empty, including unknown type case.
+func (m Metadata) IsEmpty() bool {
+	return m.Metadata.IsEmpty() && m.MetricFamilyName == ""
+}
+
+// AppenderV2 provides batched appends against a storage for either float or histogram samples.
+// It must be completed with a call to Commit or Rollback and must not be reused afterwards.
+//
+// Operations on the Appender interface are not goroutine-safe.
+//
+// The type of samples (float64, histogram, etc) appended for a given series must remain same within an Appender.
+// The behaviour is undefined if samples of different types are appended to the same series in a single Commit().
+// TODO(krajorama): Undefined behaviour might change in https://github.com/prometheus/prometheus/issues/15177
+//
+// NOTE(bwplotka): This interface is experimental, migration of Prometheus pieces is in progress.
+type AppenderV2 interface {
+	// AppendSample appends a float sample and related exemplars, metadata, and created timestamp to the storage.
+	//
+	// Implementations MUST return error if historically core sample data (v and t) were not successfully appended.
+	// Implementations MAY return nil error (success) if the core data was appended, but any of the auxiliary data appends
+	// like exemplars, CT as zero, or metadata failed.
+	AppendSample(ref SeriesRef, ls labels.Labels, meta Metadata, ct, t int64, v float64, es []exemplar.Exemplar) (SeriesRef, error)
+
+	// AppendHistogram appends a float or int histogram sample and related exemplars, metadata, and created timestamp to the storage.
+	//
+	// Implementations MUST return error if historically core histogram data (h/fh and t) were not successfully appended.
+	// Implementations MAY return nil error (success) if the core data was appended, but any of the auxiliary data appends
+	// like exemplars, CT as zero, or metadata failed.
+	AppendHistogram(ref SeriesRef, ls labels.Labels, meta Metadata, ct, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram, es []exemplar.Exemplar) (SeriesRef, error)
+
+	// Commit submits the collected samples and purges the batch. If Commit
+	// returns a non-nil error, it also rolls back all modifications made in
+	// the appender so far, as Rollback would do. In any case, an Appender
+	// must not be used anymore after Commit has been called.
+	Commit() error
+
+	// Rollback rolls back all modifications made in the appender so far.
+	// Appender has to be discarded after rollback.
+	Rollback() error
+
+	// SetOptions configures the appender with specific append options such as
+	// discarding out-of-order samples even if out-of-order is enabled in the TSDB.
+	SetOptions(opts *AppendV2Options)
+}
+
+// AppendOptions provides options for implementations of the
+// Appender interface.
 type AppendOptions struct {
 	DiscardOutOfOrder bool
 }
@@ -266,6 +334,8 @@ type AppendOptions struct {
 //
 // The type of samples (float64, histogram, etc) appended for a given series must remain same within an Appender.
 // The behaviour is undefined if samples of different types are appended to the same series in a single Commit().
+//
+// WARNING(bwplotka): This interface might be deprecated soon, try AppenderV2 instead.
 type Appender interface {
 	// Append adds a sample pair for the given series.
 	// An optional series reference can be provided to accelerate calls.
@@ -300,7 +370,7 @@ type Appender interface {
 // GetRef is an extra interface on Appenders used by downstream projects
 // (e.g. Cortex) to avoid maintaining a parallel set of references.
 type GetRef interface {
-	// Returns reference number that can be used to pass to Appender.Append(),
+	// GetRef returns reference number that can be used to pass to Appender.Append(),
 	// and a set of labels that will not cause another copy when passed to Appender.Append().
 	// 0 means the appender does not have a reference to this series.
 	// hash should be a hash of lset.
