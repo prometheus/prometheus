@@ -537,25 +537,29 @@ type OTLPOptions struct {
 	LookbackDelta time.Duration
 	// Add type and unit labels to the metrics.
 	EnableTypeAndUnitLabels bool
+	// IngestCTZeroSample enables writing zero samples based on the start time
+	// of metrics.
+	IngestCTZeroSample bool
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
 // writes them to the provided appendable.
-func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendable storage.Appendable, configFunc func() config.Config, opts OTLPOptions) http.Handler {
+func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, configFunc func() config.Config, opts OTLPOptions) http.Handler {
 	if opts.NativeDelta && opts.ConvertDelta {
 		// This should be validated when iterating through feature flags, so not expected to fail here.
 		panic("cannot enable native delta ingestion and delta2cumulative conversion at the same time")
 	}
 
 	ex := &rwExporter{
-		writeHandler: &writeHandler{
-			logger:     logger,
-			appendable: appendable,
-		},
+		logger:                  logger,
+		appendable:              appendable,
 		config:                  configFunc,
 		allowDeltaTemporality:   opts.NativeDelta,
 		lookbackDelta:           opts.LookbackDelta,
+		ingestCTZeroSample:      opts.IngestCTZeroSample,
 		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
+		// Register metrics.
+		metrics: otlptranslator.NewCombinedAppenderMetrics(reg),
 	}
 
 	wh := &otlpWriteHandler{logger: logger, defaultConsumer: ex}
@@ -589,18 +593,26 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 }
 
 type rwExporter struct {
-	*writeHandler
+	logger                  *slog.Logger
+	appendable              storage.Appendable
 	config                  func() config.Config
 	allowDeltaTemporality   bool
 	lookbackDelta           time.Duration
+	ingestCTZeroSample      bool
 	enableTypeAndUnitLabels bool
+
+	// Metrics.
+	metrics otlptranslator.CombinedAppenderMetrics
 }
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
 	otlpCfg := rw.config().OTLPConfig
-
-	converter := otlptranslator.NewPrometheusConverter()
-
+	app := &timeLimitAppender{
+		Appender: rw.appendable.Appender(ctx),
+		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
+	}
+	combinedAppender := otlptranslator.NewCombinedAppender(app, rw.logger, rw.ingestCTZeroSample, rw.metrics)
+	converter := otlptranslator.NewPrometheusConverter(combinedAppender)
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
 		AddMetricSuffixes:                 otlpCfg.TranslationStrategy.ShouldAddSuffixes(),
 		AllowUTF8:                         !otlpCfg.TranslationStrategy.ShouldEscape(),
@@ -612,18 +624,18 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		LookbackDelta:                     rw.lookbackDelta,
 		EnableTypeAndUnitLabels:           rw.enableTypeAndUnitLabels,
 	})
-	if err != nil {
-		rw.logger.Warn("Error translating OTLP metrics to Prometheus write request", "err", err)
-	}
+
+	defer func() {
+		if err != nil {
+			_ = app.Rollback()
+			return
+		}
+		err = app.Commit()
+	}()
 	ws, _ := annots.AsStrings("", 0, 0)
 	if len(ws) > 0 {
 		rw.logger.Warn("Warnings translating OTLP metrics to Prometheus write request", "warnings", ws)
 	}
-
-	err = rw.write(ctx, &prompb.WriteRequest{
-		Timeseries: converter.TimeSeries(),
-		Metadata:   converter.Metadata(),
-	})
 	return err
 }
 
