@@ -123,10 +123,14 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 }
 
 type ParserOptions struct {
-	ParseClassicHistograms         bool
-	ConvertClassicHistogramsToNHCB bool
-	SkipOMCTSeries                 bool
 	EnableTypeAndUnitLabels        bool
+	ConvertClassicHistogramsToNHCB bool
+
+	// Proto parsing only.
+	ParseClassicHistograms bool
+
+	// OpenMetrics only.
+	SkipOMCTSeries bool
 }
 
 // New returns a new parser of the byte slice.

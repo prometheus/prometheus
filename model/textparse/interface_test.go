@@ -168,12 +168,7 @@ func TestNewParser(t *testing.T) {
 
 			fallbackProtoMediaType := tt.fallbackScrapeProtocol.HeaderMediaType()
 
-			p, err := New([]byte{}, tt.contentType, fallbackProtoMediaType, ParserOptions{
-				ParseClassicHistograms:         false,
-				ConvertClassicHistogramsToNHCB: false,
-				SkipOMCTSeries:                 false,
-				EnableTypeAndUnitLabels:        false,
-			}, labels.NewSymbolTable())
+			p, err := New([]byte{}, tt.contentType, fallbackProtoMediaType, ParserOptions{}, labels.NewSymbolTable())
 			tt.validateParser(t, p)
 			if tt.err == "" {
 				require.NoError(t, err)

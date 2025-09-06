@@ -61,12 +61,7 @@ const (
 var symbolTable = labels.NewSymbolTable()
 
 func fuzzParseMetricWithContentType(in []byte, contentType string) int {
-	p, warning := textparse.New(in, contentType, "", textparse.ParserOptions{
-		ParseClassicHistograms:         false,
-		ConvertClassicHistogramsToNHCB: false,
-		SkipOMCTSeries:                 false,
-		EnableTypeAndUnitLabels:        false,
-	}, symbolTable)
+	p, warning := textparse.New(in, contentType, "", textparse.ParserOptions{}, symbolTable)
 	if p == nil || warning != nil {
 		// An invalid content type is being passed, which should not happen
 		// in this context.
