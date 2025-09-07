@@ -55,7 +55,7 @@ func NewCombinedAppenderMetrics(reg prometheus.Registerer) CombinedAppenderMetri
 			Namespace: "prometheus",
 			Subsystem: "api",
 			Name:      "otlp_appended_samples_without_metadata_total",
-			Help:      "The total number of received OTLP data points which were ingested without corresponding metadata.",
+			Help:      "The total number of samples ingested from OTLP without corresponding metadata.",
 		}),
 		outOfOrderExemplars: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
