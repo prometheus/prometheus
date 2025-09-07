@@ -258,10 +258,10 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 		baseSigs = append(baseSigs, sigs)
 	}
 
-	infoSigs := make([]string, 0, len(infoMat))
+	infoSigs := make(map[uint64]string, len(infoMat))
 	for _, s := range infoMat {
 		name := s.Metric.Map()[labels.MetricName]
-		infoSigs = append(infoSigs, sigfs[name](s.Metric))
+		infoSigs[s.Metric.Hash()] = sigfs[name](s.Metric)
 	}
 
 	var warnings annotations.Annotations
@@ -331,7 +331,7 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 
 // combineWithInfoVector combines base and info Vectors.
 // Base series in ignoreSeries are not combined.
-func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[int]struct{}, baseSigs []map[string]string, infoSigs []string, enh *EvalNodeHelper, dataLabelMatchers map[string][]*labels.Matcher) (Vector, error) {
+func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[int]struct{}, baseSigs []map[string]string, infoSigs map[uint64]string, enh *EvalNodeHelper, dataLabelMatchers map[string][]*labels.Matcher) (Vector, error) {
 	if len(base) == 0 {
 		return nil, nil // Short-circuit: nothing is going to match.
 	}
@@ -343,14 +343,14 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 		clear(enh.rightSigs)
 	}
 
-	for i, s := range info {
+	for _, s := range info {
 		if s.H != nil {
 			ev.error(errors.New("info sample should be float"))
 		}
 		// We encode original info sample timestamps via the float value.
 		origT := int64(s.F)
 
-		sig := infoSigs[i]
+		sig := infoSigs[s.Metric.Hash()]
 		if existing, exists := enh.rightSigs[sig]; exists {
 			// We encode original info sample timestamps via the float value.
 			existingOrigT := int64(existing.F)
@@ -362,8 +362,8 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 				enh.rightSigs[sig] = s
 			default:
 				// The two info samples have the same timestamp - conflict.
-				name := s.Metric.Map()[labels.MetricName]
-				ev.errorf("found duplicate series for info metric %s", name)
+				ev.errorf("found duplicate series for info metric: existing %s @ %d, new %s @ %d",
+					existing.Metric.String(), existingOrigT, s.Metric.String(), origT)
 			}
 		} else {
 			enh.rightSigs[sig] = s

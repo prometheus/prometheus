@@ -22,7 +22,7 @@ import (
 	"path"
 	"path/filepath"
 
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 )
 
 //go:generate go run generate.go

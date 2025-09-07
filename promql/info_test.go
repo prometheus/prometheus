@@ -136,5 +136,20 @@ eval range from 1m to 4m step 1m info(metric @ 60)
 # offset operator works also with info.
 eval range from 1m to 4m step 1m info(metric offset 1m)
   metric{data="info", instance="a", job="1", label="value"} 0 0 2 3
+
+clear
+
+load 1m
+	data_metric{instance="a", job="work"} 10 20 30
+	data_metric{instance="b", job="work"} 11 21 31
+	info_metric{instance="b", job="work", state="stopped"} 1 1 _
+	info_metric{instance="b", job="work", state="running"} _ _ 1
+	info_metric{instance="a", job="work", state="running"} 1 1 1
+
+eval range from 0 to 2m step 1m info(data_metric, {__name__="info_metric"})
+	data_metric{instance="a", job="work", state="running"} 10 20 30
+	data_metric{instance="b", job="work", state="stopped"} 11 21 _
+	data_metric{instance="b", job="work", state="running"} _  _ 31
+
 `, engine)
 }

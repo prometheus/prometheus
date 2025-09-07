@@ -2491,3 +2491,153 @@ func TestHighestTimestampOnAppend(t *testing.T) {
 		})
 	}
 }
+
+func TestAppendHistogramSchemaValidation(t *testing.T) {
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(string(protoMsg), func(t *testing.T) {
+			c := NewTestWriteClient(protoMsg)
+			cfg := testDefaultQueueConfig()
+			mcfg := config.DefaultMetadataConfig
+			cfg.MaxShards = 1
+
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m.sendNativeHistograms = true
+
+			// Create series for the histograms
+			series := []record.RefSeries{
+				{
+					Ref:    chunks.HeadSeriesRef(0),
+					Labels: labels.FromStrings("__name__", "test_histogram"),
+				},
+			}
+			m.StoreSeries(series, 0)
+
+			// Create histograms with different schemas
+			histograms := []record.RefHistogramSample{
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567890,
+					H: &histogram.Histogram{
+						Schema:          0, // Valid schema.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           2,
+						Sum:             5.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []int64{2},
+						NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						NegativeBuckets: []int64{1},
+					},
+				},
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567891,
+					H: &histogram.Histogram{
+						Schema:          histogram.CustomBucketsSchema, // Not valid for version 1.0.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           1,
+						Sum:             3.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []int64{1},
+						CustomValues:    []float64{2.0},
+					},
+				},
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567892,
+					H: &histogram.Histogram{
+						Schema:          0, // Valid schema.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           2,
+						Sum:             5.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []int64{2},
+						NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						NegativeBuckets: []int64{1},
+					},
+				},
+			}
+
+			floatHistograms := []record.RefFloatHistogramSample{
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567890,
+					FH: &histogram.FloatHistogram{
+						Schema:          0, // Valid schema.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           2,
+						Sum:             5.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []float64{2.0},
+						NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						NegativeBuckets: []float64{1.0},
+					},
+				},
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567891,
+					FH: &histogram.FloatHistogram{
+						Schema:          histogram.CustomBucketsSchema, // Not valid for version 1.0.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           1,
+						Sum:             3.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []float64{1.0},
+						CustomValues:    []float64{2.0},
+					},
+				},
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567892,
+					FH: &histogram.FloatHistogram{
+						Schema:          0, // Valid schema.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           2,
+						Sum:             5.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []float64{2.0},
+						NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						NegativeBuckets: []float64{1.0},
+					},
+				},
+			}
+
+			if protoMsg == config.RemoteWriteProtoMsgV1 {
+				c.expectHistograms([]record.RefHistogramSample{histograms[0], histograms[2]}, series)
+				c.expectFloatHistograms([]record.RefFloatHistogramSample{floatHistograms[0], floatHistograms[2]}, series)
+			} else {
+				c.expectHistograms(histograms, series)
+				c.expectFloatHistograms(floatHistograms, series)
+			}
+
+			m.Start()
+			defer m.Stop()
+
+			// Get initial dropped histograms count
+			initialDropped := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported))
+
+			require.True(t, m.AppendHistograms(histograms))
+			require.True(t, m.AppendFloatHistograms(floatHistograms))
+
+			// Wait for the valid histogram to be received
+			c.waitForExpectedData(t, 30*time.Second)
+
+			// Verify that one histogram was dropped due to invalid schema
+			finalDropped := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported))
+
+			if protoMsg == config.RemoteWriteProtoMsgV1 {
+				require.Equal(t, initialDropped+2.0, finalDropped, "Expected exactly two histograms to be dropped due to invalid schema")
+			} else {
+				require.Equal(t, initialDropped, finalDropped, "No histograms should be dropped")
+			}
+
+			// Verify no failed histograms (this would indicate a different type of error)
+			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal))
+		})
+	}
+}

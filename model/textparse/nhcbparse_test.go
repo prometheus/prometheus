@@ -446,8 +446,9 @@ foobar{quantile="0.99"} 150.1`
 		},
 	}
 
-	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
-	p = NewNHCBParser(p, labels.NewSymbolTable(), false)
+	p, err := New([]byte(input), "application/openmetrics-text", "", false, true, false, false, labels.NewSymbolTable())
+	require.NoError(t, err)
+	require.NotNil(t, p)
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -511,9 +512,9 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 		},
 	}
 
-	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
-
-	p = NewNHCBParser(p, labels.NewSymbolTable(), false)
+	p, err := New([]byte(input), "application/openmetrics-text", "", false, true, false, false, labels.NewSymbolTable())
+	require.NoError(t, err)
+	require.NotNil(t, p)
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -578,7 +579,7 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 	}
 
 	// Create parser from keep classic option.
-	type parserFactory func(bool) Parser
+	type parserFactory func(keepClassic, nhcb bool) (Parser, error)
 
 	type testCase struct {
 		name    string
@@ -596,23 +597,23 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 	// supported by the parser and parser options.
 	parsers := []func() (string, parserFactory, []int, parserOptions){
 		func() (string, parserFactory, []int, parserOptions) {
-			factory := func(keepClassic bool) Parser {
+			factory := func(keepClassic, nhcb bool) (Parser, error) {
 				inputBuf := createTestProtoBufHistogram(t)
-				return NewProtobufParser(inputBuf.Bytes(), keepClassic, false, labels.NewSymbolTable())
+				return New(inputBuf.Bytes(), "application/vnd.google.protobuf", "", keepClassic, nhcb, false, false, labels.NewSymbolTable())
 			}
 			return "ProtoBuf", factory, []int{1, 2, 3}, parserOptions{useUTF8sep: true, hasCreatedTimeStamp: true}
 		},
 		func() (string, parserFactory, []int, parserOptions) {
-			factory := func(bool) Parser {
+			factory := func(keepClassic, nhcb bool) (Parser, error) {
 				input := createTestOpenMetricsHistogram()
-				return NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+				return New([]byte(input), "application/openmetrics-text", "", keepClassic, nhcb, false, false, labels.NewSymbolTable())
 			}
 			return "OpenMetrics", factory, []int{1}, parserOptions{hasCreatedTimeStamp: true}
 		},
 		func() (string, parserFactory, []int, parserOptions) {
-			factory := func(bool) Parser {
+			factory := func(keepClassic, nhcb bool) (Parser, error) {
 				input := createTestPromHistogram()
-				return NewPromParser([]byte(input), labels.NewSymbolTable(), false)
+				return New([]byte(input), "text/plain", "", keepClassic, nhcb, false, false, labels.NewSymbolTable())
 			}
 			return "Prometheus", factory, []int{1}, parserOptions{}
 		},
@@ -760,10 +761,9 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			p := tc.parser(tc.classic)
-			if tc.nhcb {
-				p = NewNHCBParser(p, labels.NewSymbolTable(), tc.classic)
-			}
+			p, err := tc.parser(tc.classic, tc.nhcb)
+			require.NoError(t, err)
+			require.NotNil(t, p)
 			got := testParse(t, p)
 			requireEntries(t, tc.exp, got)
 		})
@@ -976,8 +976,9 @@ something_bucket{a="b",le="+Inf"} 9
 		},
 	}
 
-	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
-	p = NewNHCBParser(p, labels.NewSymbolTable(), false)
+	p, err := New([]byte(input), "application/openmetrics-text", "", false, true, false, false, labels.NewSymbolTable())
+	require.NoError(t, err)
+	require.NotNil(t, p)
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -1121,8 +1122,9 @@ metric: <
 		},
 	}
 
-	p := NewProtobufParser(buf.Bytes(), false, false, labels.NewSymbolTable())
-	p = NewNHCBParser(p, labels.NewSymbolTable(), false)
+	p, err := New(buf.Bytes(), "application/vnd.google.protobuf", "", false, true, false, false, labels.NewSymbolTable())
+	require.NoError(t, err)
+	require.NotNil(t, p)
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
