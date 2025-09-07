@@ -29,6 +29,26 @@ import (
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
 )
 
+func metricFamiliesToProtobuf(t testing.TB, testMetricFamilies []string) *bytes.Buffer {
+	varintBuf := make([]byte, binary.MaxVarintLen32)
+	buf := &bytes.Buffer{}
+
+	for _, tmf := range testMetricFamilies {
+		pb := &dto.MetricFamily{}
+		// From text to proto message.
+		require.NoError(t, proto.UnmarshalText(tmf, pb))
+		// From proto message to binary protobuf.
+		protoBuf, err := proto.Marshal(pb)
+		require.NoError(t, err)
+
+		// Write first length, then binary protobuf.
+		varintLength := binary.PutUvarint(varintBuf, uint64(len(protoBuf)))
+		buf.Write(varintBuf[:varintLength])
+		buf.Write(protoBuf)
+	}
+	return buf
+}
+
 func createTestProtoBuf(t testing.TB) *bytes.Buffer {
 	t.Helper()
 
@@ -804,24 +824,7 @@ metric: <
 `,
 	}
 
-	varintBuf := make([]byte, binary.MaxVarintLen32)
-	buf := &bytes.Buffer{}
-
-	for _, tmf := range testMetricFamilies {
-		pb := &dto.MetricFamily{}
-		// From text to proto message.
-		require.NoError(t, proto.UnmarshalText(tmf, pb))
-		// From proto message to binary protobuf.
-		protoBuf, err := proto.Marshal(pb)
-		require.NoError(t, err)
-
-		// Write first length, then binary protobuf.
-		varintLength := binary.PutUvarint(varintBuf, uint64(len(protoBuf)))
-		buf.Write(varintBuf[:varintLength])
-		buf.Write(protoBuf)
-	}
-
-	return buf
+	return metricFamiliesToProtobuf(t, testMetricFamilies)
 }
 
 func TestProtobufParse(t *testing.T) {
@@ -3366,22 +3369,7 @@ metric: <
 `,
 	}
 
-	varintBuf := make([]byte, binary.MaxVarintLen32)
-	buf := &bytes.Buffer{}
-
-	for _, tmf := range testMetricFamilies {
-		pb := &dto.MetricFamily{}
-		// From text to proto message.
-		require.NoError(t, proto.UnmarshalText(tmf, pb))
-		// From proto message to binary protobuf.
-		protoBuf, err := proto.Marshal(pb)
-		require.NoError(t, err)
-
-		// Write first length, then binary protobuf.
-		varintLength := binary.PutUvarint(varintBuf, uint64(len(protoBuf)))
-		buf.Write(varintBuf[:varintLength])
-		buf.Write(protoBuf)
-	}
+	buf := metricFamiliesToProtobuf(t, testMetricFamilies)
 
 	data := buf.Bytes()
 
