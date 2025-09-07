@@ -31,7 +31,6 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -264,7 +263,7 @@ func TestCreateAttributes(t *testing.T) {
 				}),
 				PromoteScopeMetadata: tc.promoteScope,
 			}
-			lbls, err := c.createAttributes(resource, attrs, tc.scope, settings, tc.ignoreAttrs, false, metadata.Metadata{}, model.MetricNameLabel, "test_metric")
+			lbls, err := c.createAttributes(resource, attrs, tc.scope, settings, tc.ignoreAttrs, false, Metadata{}, model.MetricNameLabel, "test_metric")
 			require.NoError(t, err)
 
 			testutil.RequireEqual(t, lbls, tc.expectedLabels)
@@ -502,9 +501,10 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				Settings{
 					PromoteScopeMetadata: tt.promoteScope,
 				},
-				metric.Name(),
 				tt.scope,
-				metadata.Metadata{},
+				Metadata{
+					MetricFamilyName: metric.Name(),
+				},
 			)
 			require.NoError(t, mockAppender.Commit())
 
@@ -664,9 +664,10 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				Settings{
 					PromoteScopeMetadata: tt.promoteScope,
 				},
-				metric.Name(),
 				tt.scope,
-				metadata.Metadata{},
+				Metadata{
+					MetricFamilyName: metric.Name(),
+				},
 			)
 			require.NoError(t, mockAppender.Commit())
 

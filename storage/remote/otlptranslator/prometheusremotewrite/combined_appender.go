@@ -31,15 +31,28 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+// Metadata extends metadata.Metadata with the metric family name.
+// OTLP calculates the metric family name for all metrics and uses
+// it for generating summary, histogram series by adding the magic
+// suffixes. The metric family name is passed down to the appender
+// in case the storage needs it for metadata updates.
+// Known user is Mimir that implements /api/v1/metadata and uses
+// Remote-Write 1.0 for this. Might be removed later if no longer
+// needed by any downstream project.
+type Metadata struct {
+	metadata.Metadata
+	MetricFamilyName string
+}
+
 // CombinedAppender is similar to storage.Appender, but combines updates to
 // metadata, created timestamps, exemplars and samples into a single call.
 type CombinedAppender interface {
 	// AppendSample appends a sample and related exemplars, metadata, and
 	// created timestamp to the storage.
-	AppendSample(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, ct, t int64, v float64, es []exemplar.Exemplar) error
+	AppendSample(ls labels.Labels, meta Metadata, ct, t int64, v float64, es []exemplar.Exemplar) error
 	// AppendHistogram appends a histogram and related exemplars, metadata, and
 	// created timestamp to the storage.
-	AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, ct, t int64, h *histogram.Histogram, es []exemplar.Exemplar) error
+	AppendHistogram(ls labels.Labels, meta Metadata, ct, t int64, h *histogram.Histogram, es []exemplar.Exemplar) error
 }
 
 // CombinedAppenderMetrics is for the metrics observed by the
@@ -99,17 +112,17 @@ type combinedAppender struct {
 	refs map[uint64]seriesRef
 }
 
-func (b *combinedAppender) AppendSample(_ string, ls labels.Labels, meta metadata.Metadata, ct, t int64, v float64, es []exemplar.Exemplar) (err error) {
-	return b.appendFloatOrHistogram(ls, meta, ct, t, v, nil, es)
+func (b *combinedAppender) AppendSample(ls labels.Labels, meta Metadata, ct, t int64, v float64, es []exemplar.Exemplar) (err error) {
+	return b.appendFloatOrHistogram(ls, meta.Metadata, ct, t, v, nil, es)
 }
 
-func (b *combinedAppender) AppendHistogram(_ string, ls labels.Labels, meta metadata.Metadata, ct, t int64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
+func (b *combinedAppender) AppendHistogram(ls labels.Labels, meta Metadata, ct, t int64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
 	if h == nil {
 		// Sanity check, we should never get here with a nil histogram.
 		b.logger.Error("Received nil histogram in CombinedAppender.AppendHistogram", "series", ls.String())
 		return errors.New("internal error, attempted to append nil histogram")
 	}
-	return b.appendFloatOrHistogram(ls, meta, ct, t, 0, h, es)
+	return b.appendFloatOrHistogram(ls, meta.Metadata, ct, t, 0, h, es)
 }
 
 func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadata.Metadata, ct, t int64, v float64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {

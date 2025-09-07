@@ -176,10 +176,13 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					errs = multierr.Append(errs, err)
 					continue
 				}
-				meta := metadata.Metadata{
-					Type: otelMetricTypeToPromMetricType(metric),
-					Unit: unitNamer.Build(metric.Unit()),
-					Help: metric.Description(),
+				meta := Metadata{
+					Metadata: metadata.Metadata{
+						Type: otelMetricTypeToPromMetricType(metric),
+						Unit: unitNamer.Build(metric.Unit()),
+						Help: metric.Description(),
+					},
+					MetricFamilyName: promName,
 				}
 
 				// handle individual metrics based on type
@@ -191,7 +194,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, promName, scope, meta); err != nil {
+					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -203,7 +206,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, settings, promName, scope, meta); err != nil {
+					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -217,7 +220,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					}
 					if settings.ConvertHistogramsToNHCB {
 						ws, err := c.addCustomBucketsHistogramDataPoints(
-							ctx, dataPoints, resource, settings, promName, temporality, scope, meta,
+							ctx, dataPoints, resource, settings, temporality, scope, meta,
 						)
 						annots.Merge(ws)
 						if err != nil {
@@ -227,7 +230,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 							}
 						}
 					} else {
-						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName, scope, meta); err != nil {
+						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 							errs = multierr.Append(errs, err)
 							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 								return
@@ -245,7 +248,6 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						dataPoints,
 						resource,
 						settings,
-						promName,
 						temporality,
 						scope,
 						meta,
@@ -263,7 +265,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, promName, scope, meta); err != nil {
+					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return

@@ -24,12 +24,11 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 )
 
 func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, settings Settings, name string, scope scope, meta metadata.Metadata,
+	resource pcommon.Resource, settings Settings, scope scope, meta Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -46,7 +45,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 			true,
 			meta,
 			model.MetricNameLabel,
-			name,
+			meta.MetricFamilyName,
 		)
 		if err != nil {
 			return err
@@ -63,7 +62,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		}
 		ts := convertTimeStamp(pt.Timestamp())
 		ct := convertTimeStamp(pt.StartTimestamp())
-		if err := c.appender.AppendSample(name, labels, meta, ct, ts, val, nil); err != nil {
+		if err := c.appender.AppendSample(labels, meta, ct, ts, val, nil); err != nil {
 			return err
 		}
 	}
@@ -72,7 +71,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 }
 
 func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, settings Settings, name string, scope scope, meta metadata.Metadata,
+	resource pcommon.Resource, settings Settings, scope scope, meta Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -89,7 +88,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			true,
 			meta,
 			model.MetricNameLabel,
-			name,
+			meta.MetricFamilyName,
 		)
 		if err != nil {
 			return nil
@@ -110,7 +109,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		if err != nil {
 			return err
 		}
-		if err := c.appender.AppendSample(name, lbls, meta, ct, ts, val, exemplars); err != nil {
+		if err := c.appender.AppendSample(lbls, meta, ct, ts, val, exemplars); err != nil {
 			return err
 		}
 	}

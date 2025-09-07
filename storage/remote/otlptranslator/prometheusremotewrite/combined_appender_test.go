@@ -65,11 +65,11 @@ type combinedHistogram struct {
 	es               []exemplar.Exemplar
 }
 
-func (m *mockCombinedAppender) AppendSample(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, ct, t int64, v float64, es []exemplar.Exemplar) error {
+func (m *mockCombinedAppender) AppendSample(ls labels.Labels, meta Metadata, ct, t int64, v float64, es []exemplar.Exemplar) error {
 	m.pendingSamples = append(m.pendingSamples, combinedSample{
-		metricFamilyName: metricFamilyName,
+		metricFamilyName: meta.MetricFamilyName,
 		ls:               ls,
-		meta:             meta,
+		meta:             meta.Metadata,
 		t:                t,
 		ct:               ct,
 		v:                v,
@@ -78,11 +78,11 @@ func (m *mockCombinedAppender) AppendSample(metricFamilyName string, ls labels.L
 	return nil
 }
 
-func (m *mockCombinedAppender) AppendHistogram(metricFamilyName string, ls labels.Labels, meta metadata.Metadata, ct, t int64, h *histogram.Histogram, es []exemplar.Exemplar) error {
+func (m *mockCombinedAppender) AppendHistogram(ls labels.Labels, meta Metadata, ct, t int64, h *histogram.Histogram, es []exemplar.Exemplar) error {
 	m.pendingHistograms = append(m.pendingHistograms, combinedHistogram{
-		metricFamilyName: metricFamilyName,
+		metricFamilyName: meta.MetricFamilyName,
 		ls:               ls,
-		meta:             meta,
+		meta:             meta.Metadata,
 		t:                t,
 		ct:               ct,
 		h:                h,
@@ -136,6 +136,28 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 		},
 	}
 
+	seriesLabels := labels.FromStrings(
+		model.MetricNameLabel, "test_bytes_total",
+		"foo", "bar",
+	)
+	floatMetadata := Metadata{
+		Metadata: metadata.Metadata{
+			Type: model.MetricTypeCounter,
+			Unit: "bytes",
+			Help: "some help",
+		},
+		MetricFamilyName: "test_bytes_total",
+	}
+
+	histogramMetadata := Metadata{
+		Metadata: metadata.Metadata{
+			Type: model.MetricTypeHistogram,
+			Unit: "bytes",
+			Help: "some help",
+		},
+		MetricFamilyName: "test_bytes",
+	}
+
 	testCases := map[string]struct {
 		appendFunc        func(*testing.T, CombinedAppender)
 		expectedSamples   []sample
@@ -143,14 +165,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 	}{
 		"single float sample, zero CT": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
-				require.NoError(t, app.AppendSample("test_bytes_total", labels.FromStrings(
-					model.MetricNameLabel, "test_bytes_total",
-					"foo", "bar",
-				), metadata.Metadata{
-					Type: model.MetricTypeCounter,
-					Unit: "bytes",
-					Help: "some help",
-				}, 0, now.UnixMilli(), 42.0, testExemplars))
+				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, 0, now.UnixMilli(), 42.0, testExemplars))
 			},
 			expectedSamples: []sample{
 				{
@@ -162,14 +177,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 		},
 		"single float sample, very old CT": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
-				require.NoError(t, app.AppendSample("test_bytes_total", labels.FromStrings(
-					model.MetricNameLabel, "test_bytes_total",
-					"foo", "bar",
-				), metadata.Metadata{
-					Type: model.MetricTypeCounter,
-					Unit: "bytes",
-					Help: "some help",
-				}, 1, now.UnixMilli(), 42.0, nil))
+				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, 1, now.UnixMilli(), 42.0, nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -180,14 +188,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 		},
 		"single float sample, normal CT": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
-				require.NoError(t, app.AppendSample("test_bytes_total", labels.FromStrings(
-					model.MetricNameLabel, "test_bytes_total",
-					"foo", "bar",
-				), metadata.Metadata{
-					Type: model.MetricTypeCounter,
-					Unit: "bytes",
-					Help: "some help",
-				}, now.Add(-2*time.Minute).UnixMilli(), now.UnixMilli(), 42.0, nil))
+				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, now.Add(-2*time.Minute).UnixMilli(), now.UnixMilli(), 42.0, nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -202,14 +203,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 		},
 		"single float sample, CT same time as sample": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
-				require.NoError(t, app.AppendSample("test_bytes_total", labels.FromStrings(
-					model.MetricNameLabel, "test_bytes_total",
-					"foo", "bar",
-				), metadata.Metadata{
-					Type: model.MetricTypeCounter,
-					Unit: "bytes",
-					Help: "some help",
-				}, now.UnixMilli(), now.UnixMilli(), 42.0, nil))
+				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, now.UnixMilli(), now.UnixMilli(), 42.0, nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -220,14 +214,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 		},
 		"single float sample, CT in the future of the sample": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
-				require.NoError(t, app.AppendSample("test_bytes_total", labels.FromStrings(
-					model.MetricNameLabel, "test_bytes_total",
-					"foo", "bar",
-				), metadata.Metadata{
-					Type: model.MetricTypeCounter,
-					Unit: "bytes",
-					Help: "some help",
-				}, now.Add(time.Minute).UnixMilli(), now.UnixMilli(), 42.0, nil))
+				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, now.Add(time.Minute).UnixMilli(), now.UnixMilli(), 42.0, nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -238,14 +225,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 		},
 		"single histogram sample, zero CT": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
-				require.NoError(t, app.AppendHistogram("test_bytes_total", labels.FromStrings(
-					model.MetricNameLabel, "test_bytes_total",
-					"foo", "bar",
-				), metadata.Metadata{
-					Type: model.MetricTypeCounter,
-					Unit: "bytes",
-					Help: "some help",
-				}, 0, now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), testExemplars))
+				require.NoError(t, app.AppendHistogram(seriesLabels.Copy(), histogramMetadata, 0, now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), testExemplars))
 			},
 			expectedSamples: []sample{
 				{
@@ -257,14 +237,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 		},
 		"single histogram sample, very old CT": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
-				require.NoError(t, app.AppendHistogram("test_bytes_total", labels.FromStrings(
-					model.MetricNameLabel, "test_bytes_total",
-					"foo", "bar",
-				), metadata.Metadata{
-					Type: model.MetricTypeCounter,
-					Unit: "bytes",
-					Help: "some help",
-				}, 1, now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
+				require.NoError(t, app.AppendHistogram(seriesLabels.Copy(), histogramMetadata, 1, now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -275,14 +248,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 		},
 		"single histogram sample, normal CT": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
-				require.NoError(t, app.AppendHistogram("test_bytes_total", labels.FromStrings(
-					model.MetricNameLabel, "test_bytes_total",
-					"foo", "bar",
-				), metadata.Metadata{
-					Type: model.MetricTypeCounter,
-					Unit: "bytes",
-					Help: "some help",
-				}, now.Add(-2*time.Minute).UnixMilli(), now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
+				require.NoError(t, app.AppendHistogram(seriesLabels.Copy(), histogramMetadata, now.Add(-2*time.Minute).UnixMilli(), now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -298,14 +264,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 		},
 		"single histogram sample, CT same time as sample": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
-				require.NoError(t, app.AppendHistogram("test_bytes_total", labels.FromStrings(
-					model.MetricNameLabel, "test_bytes_total",
-					"foo", "bar",
-				), metadata.Metadata{
-					Type: model.MetricTypeCounter,
-					Unit: "bytes",
-					Help: "some help",
-				}, now.UnixMilli(), now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
+				require.NoError(t, app.AppendHistogram(seriesLabels.Copy(), histogramMetadata, now.UnixMilli(), now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -316,14 +275,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 		},
 		"single histogram sample, CT in the future of the sample": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
-				require.NoError(t, app.AppendHistogram("test_bytes_total", labels.FromStrings(
-					model.MetricNameLabel, "test_bytes_total",
-					"foo", "bar",
-				), metadata.Metadata{
-					Type: model.MetricTypeCounter,
-					Unit: "bytes",
-					Help: "some help",
-				}, now.Add(time.Minute).UnixMilli(), now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
+				require.NoError(t, app.AppendHistogram(seriesLabels.Copy(), histogramMetadata, now.Add(time.Minute).UnixMilli(), now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -334,22 +286,8 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 		},
 		"multiple float samples": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
-				require.NoError(t, app.AppendSample("test_bytes_total", labels.FromStrings(
-					model.MetricNameLabel, "test_bytes_total",
-					"foo", "bar",
-				), metadata.Metadata{
-					Type: model.MetricTypeCounter,
-					Unit: "bytes",
-					Help: "some help",
-				}, 0, now.UnixMilli(), 42.0, nil))
-				require.NoError(t, app.AppendSample("test_bytes_total", labels.FromStrings(
-					model.MetricNameLabel, "test_bytes_total",
-					"foo", "bar",
-				), metadata.Metadata{
-					Type: model.MetricTypeCounter,
-					Unit: "bytes",
-					Help: "some help",
-				}, 0, now.Add(15*time.Second).UnixMilli(), 62.0, nil))
+				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, 0, now.UnixMilli(), 42.0, nil))
+				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, 0, now.Add(15*time.Second).UnixMilli(), 62.0, nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -364,22 +302,8 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 		},
 		"multiple histogram samples": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
-				require.NoError(t, app.AppendHistogram("test_bytes_total", labels.FromStrings(
-					model.MetricNameLabel, "test_bytes_total",
-					"foo", "bar",
-				), metadata.Metadata{
-					Type: model.MetricTypeCounter,
-					Unit: "bytes",
-					Help: "some help",
-				}, 0, now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
-				require.NoError(t, app.AppendHistogram("test_bytes_total", labels.FromStrings(
-					model.MetricNameLabel, "test_bytes_total",
-					"foo", "bar",
-				), metadata.Metadata{
-					Type: model.MetricTypeCounter,
-					Unit: "bytes",
-					Help: "some help",
-				}, 0, now.Add(15*time.Second).UnixMilli(), tsdbutil.GenerateTestHistogram(62), nil))
+				require.NoError(t, app.AppendHistogram(seriesLabels.Copy(), histogramMetadata, 0, now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
+				require.NoError(t, app.AppendHistogram(seriesLabels.Copy(), histogramMetadata, 0, now.Add(15*time.Second).UnixMilli(), tsdbutil.GenerateTestHistogram(62), nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -394,22 +318,8 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 		},
 		"float samples with CT changing": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
-				require.NoError(t, app.AppendSample("test_bytes_total", labels.FromStrings(
-					model.MetricNameLabel, "test_bytes_total",
-					"foo", "bar",
-				), metadata.Metadata{
-					Type: model.MetricTypeCounter,
-					Unit: "bytes",
-					Help: "some help",
-				}, now.Add(-4*time.Second).UnixMilli(), now.Add(-3*time.Second).UnixMilli(), 42.0, nil))
-				require.NoError(t, app.AppendSample("test_bytes_total", labels.FromStrings(
-					model.MetricNameLabel, "test_bytes_total",
-					"foo", "bar",
-				), metadata.Metadata{
-					Type: model.MetricTypeCounter,
-					Unit: "bytes",
-					Help: "some help",
-				}, now.Add(-1*time.Second).UnixMilli(), now.UnixMilli(), 62.0, nil))
+				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, now.Add(-4*time.Second).UnixMilli(), now.Add(-3*time.Second).UnixMilli(), 42.0, nil))
+				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, now.Add(-1*time.Second).UnixMilli(), now.UnixMilli(), 62.0, nil))
 			},
 			expectedSamples: []sample{
 				{
@@ -507,27 +417,27 @@ type sample struct {
 // TestCombinedAppenderSeriesRefs checks that the combined appender
 // correctly uses and updates the series references in the internal map.
 func TestCombinedAppenderSeriesRefs(t *testing.T) {
+	seriesLabels := labels.FromStrings(
+		model.MetricNameLabel, "test_bytes_total",
+		"foo", "bar",
+	)
+
+	floatMetadata := Metadata{
+		Metadata: metadata.Metadata{
+			Type: model.MetricTypeCounter,
+			Unit: "bytes",
+			Help: "some help",
+		},
+		MetricFamilyName: "test_bytes_total",
+	}
+
 	t.Run("happy case with CT zero, reference is passed and reused", func(t *testing.T) {
 		app := &appenderRecorder{}
 		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
 
-		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
-			model.MetricNameLabel, "test_bytes_total",
-			"foo", "bar",
-		), metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "bytes",
-			Help: "some help",
-		}, 1, 2, 42.0, nil))
+		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 1, 2, 42.0, nil))
 
-		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
-			model.MetricNameLabel, "test_bytes_total",
-			"foo", "bar",
-		), metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "bytes",
-			Help: "some help",
-		}, 3, 4, 62.0, []exemplar.Exemplar{
+		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 3, 4, 62.0, []exemplar.Exemplar{
 			{
 				Labels: labels.FromStrings("tracid", "122"),
 				Value:  1337,
@@ -549,23 +459,10 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 		app := &appenderRecorder{}
 		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
 
-		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
-			model.MetricNameLabel, "test_bytes_total",
-			"foo", "bar",
-		), metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "bytes",
-			Help: "some help",
-		}, 1, 2, 42.0, nil))
+		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 1, 2, 42.0, nil))
+
 		app.appendCTZeroSampleError = errors.New("test error")
-		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
-			model.MetricNameLabel, "test_bytes_total",
-			"foo", "bar",
-		), metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "bytes",
-			Help: "some help",
-		}, 3, 4, 62.0, nil))
+		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 3, 4, 62.0, nil))
 
 		require.Len(t, app.records, 5)
 		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
@@ -582,30 +479,12 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 		app := &appenderRecorder{}
 		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
 
-		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
-			model.MetricNameLabel, "test_bytes_total",
-			"foo", "bar",
-		), metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "bytes",
-			Help: "some help",
-		}, 1, 2, 42.0, nil))
-		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
-			model.MetricNameLabel, "test_bytes_total",
-			"foo", "bar",
-		), metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "bytes",
-			Help: "some other help",
-		}, 3, 4, 62.0, nil))
-		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
-			model.MetricNameLabel, "test_bytes_total",
-			"foo", "bar",
-		), metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "bytes",
-			Help: "some other help",
-		}, 3, 5, 162.0, nil))
+		newMetadata := floatMetadata
+		newMetadata.Help = "some other help"
+
+		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 1, 2, 42.0, nil))
+		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), newMetadata, 3, 4, 62.0, nil))
+		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), newMetadata, 3, 5, 162.0, nil))
 
 		require.Len(t, app.records, 7)
 		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
@@ -623,30 +502,12 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 		app := &appenderRecorder{}
 		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
 
-		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
-			model.MetricNameLabel, "test_bytes_total",
-			"foo", "bar",
-		), metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "bytes",
-			Help: "some help",
-		}, 1, 2, 42.0, nil))
-		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
-			model.MetricNameLabel, "test_bytes_total",
-			"foo", "bar",
-		), metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "seconds",
-			Help: "some help",
-		}, 3, 4, 62.0, nil))
-		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
-			model.MetricNameLabel, "test_bytes_total",
-			"foo", "bar",
-		), metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "seconds",
-			Help: "some help",
-		}, 3, 5, 162.0, nil))
+		newMetadata := floatMetadata
+		newMetadata.Unit = "seconds"
+
+		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 1, 2, 42.0, nil))
+		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), newMetadata, 3, 4, 62.0, nil))
+		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), newMetadata, 3, 5, 162.0, nil))
 
 		require.Len(t, app.records, 7)
 		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
@@ -664,30 +525,12 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 		app := &appenderRecorder{}
 		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
 
-		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
-			model.MetricNameLabel, "test_bytes_total",
-			"foo", "bar",
-		), metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "bytes",
-			Help: "some help",
-		}, 1, 2, 42.0, nil))
-		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
-			model.MetricNameLabel, "test_bytes_total",
-			"foo", "bar",
-		), metadata.Metadata{
-			Type: model.MetricTypeGauge,
-			Unit: "bytes",
-			Help: "some help",
-		}, 3, 4, 62.0, nil))
-		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
-			model.MetricNameLabel, "test_bytes_total",
-			"foo", "bar",
-		), metadata.Metadata{
-			Type: model.MetricTypeGauge,
-			Unit: "bytes",
-			Help: "some help",
-		}, 3, 5, 162.0, nil))
+		newMetadata := floatMetadata
+		newMetadata.Type = model.MetricTypeGauge
+
+		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 1, 2, 42.0, nil))
+		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), newMetadata, 3, 4, 62.0, nil))
+		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), newMetadata, 3, 5, 162.0, nil))
 
 		require.Len(t, app.records, 7)
 		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
@@ -705,14 +548,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 		app := &appenderRecorder{}
 		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
 		app.appendError = errors.New("test error")
-		require.Error(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
-			model.MetricNameLabel, "test_bytes_total",
-			"foo", "bar",
-		), metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "bytes",
-			Help: "some help",
-		}, 0, 2, 42.0, []exemplar.Exemplar{
+		require.Error(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 0, 1, 42.0, []exemplar.Exemplar{
 			{
 				Labels: labels.FromStrings("tracid", "122"),
 				Value:  1337,
@@ -729,23 +565,13 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 	t.Run("metadata, exemplars are updated if append failed but reference is valid", func(t *testing.T) {
 		app := &appenderRecorder{}
 		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
-		require.NoError(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
-			model.MetricNameLabel, "test_bytes_total",
-			"foo", "bar",
-		), metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "bytes",
-			Help: "some help",
-		}, 1, 2, 42.0, nil))
+
+		newMetadata := floatMetadata
+		newMetadata.Help = "some other help"
+
+		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 1, 2, 42.0, nil))
 		app.appendError = errors.New("test error")
-		require.Error(t, capp.AppendSample("test_bytes_total", labels.FromStrings(
-			model.MetricNameLabel, "test_bytes_total",
-			"foo", "bar",
-		), metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "bytes",
-			Help: "some other help",
-		}, 3, 4, 62.0, []exemplar.Exemplar{
+		require.Error(t, capp.AppendSample(seriesLabels.Copy(), newMetadata, 3, 4, 62.0, []exemplar.Exemplar{
 			{
 				Labels: labels.FromStrings("tracid", "122"),
 				Value:  1337,
@@ -774,11 +600,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			"foo", "bar",
 		)
 
-		require.NoError(t, capp.AppendSample("test_bytes_total", ls, metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "bytes",
-			Help: "some help",
-		}, 1, 2, 42.0, nil))
+		require.NoError(t, capp.AppendSample(ls, floatMetadata, 1, 2, 42.0, nil))
 
 		hash := ls.Hash()
 		cappImpl := capp.(*combinedAppender)
@@ -791,11 +613,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 		// This simulates a conflict with an existing series.
 		cappImpl.refs[hash] = series
 
-		require.NoError(t, capp.AppendSample("test_bytes_total", ls, metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "bytes",
-			Help: "some help",
-		}, 3, 4, 62.0, []exemplar.Exemplar{
+		require.NoError(t, capp.AppendSample(ls, floatMetadata, 3, 4, 62.0, []exemplar.Exemplar{
 			{
 				Labels: labels.FromStrings("tracid", "122"),
 				Value:  1337,
@@ -824,7 +642,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			model.MetricNameLabel, "test_bytes_total",
 			"foo", "bar",
 		)
-		err := capp.AppendHistogram("test_bytes_total", ls, metadata.Metadata{}, 4, 2, nil, nil)
+		err := capp.AppendHistogram(ls, Metadata{}, 4, 2, nil, nil)
 		require.Error(t, err)
 	})
 }

@@ -122,9 +122,10 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				Settings{
 					PromoteScopeMetadata: tt.promoteScope,
 				},
-				metric.Name(),
 				tt.scope,
-				metadata.Metadata{},
+				Metadata{
+					MetricFamilyName: metric.Name(),
+				},
 			)
 			require.NoError(t, mockAppender.Commit())
 
@@ -351,9 +352,10 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				Settings{
 					PromoteScopeMetadata: tt.promoteScope,
 				},
-				metric.Name(),
 				tt.scope,
-				metadata.Metadata{},
+				Metadata{
+					MetricFamilyName: metric.Name(),
+				},
 			)
 			require.NoError(t, mockAppender.Commit())
 

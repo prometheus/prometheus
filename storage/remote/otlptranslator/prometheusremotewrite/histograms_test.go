@@ -868,10 +868,11 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				Settings{
 					PromoteScopeMetadata: tt.promoteScope,
 				},
-				name,
 				pmetric.AggregationTemporalityCumulative,
 				tt.scope,
-				metadata.Metadata{},
+				Metadata{
+					MetricFamilyName: name,
+				},
 			)
 			require.NoError(t, err)
 			require.Empty(t, annots)
@@ -1341,10 +1342,11 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 					ConvertHistogramsToNHCB: true,
 					PromoteScopeMetadata:    tt.promoteScope,
 				},
-				name,
 				pmetric.AggregationTemporalityCumulative,
 				tt.scope,
-				metadata.Metadata{},
+				Metadata{
+					MetricFamilyName: name,
+				},
 			)
 
 			require.NoError(t, err)

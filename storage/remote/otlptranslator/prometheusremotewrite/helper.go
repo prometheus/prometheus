@@ -65,7 +65,7 @@ const (
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
 func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope scope, settings Settings,
-	ignoreAttrs []string, logOnOverwrite bool, meta metadata.Metadata, extras ...string,
+	ignoreAttrs []string, logOnOverwrite bool, meta Metadata, extras ...string,
 ) (labels.Labels, error) {
 	resourceAttrs := resource.Attributes()
 	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
@@ -219,7 +219,7 @@ func aggregationTemporality(metric pmetric.Metric) (pmetric.AggregationTemporali
 // However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
 // https://github.com/prometheus/prometheus/issues/13485.
 func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, baseName string, scope scope, meta metadata.Metadata,
+	resource pcommon.Resource, settings Settings, scope scope, meta Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -234,6 +234,8 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			return err
 		}
 
+		baseName := meta.MetricFamilyName
+
 		// If the sum is unset, it indicates the _sum metric point should be
 		// omitted
 		if pt.HasSum() {
@@ -244,7 +246,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			}
 
 			sumlabels := c.addLabels(baseName+sumStr, baseLabels)
-			if err := c.appender.AppendSample(baseName, sumlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
+			if err := c.appender.AppendSample(sumlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
 				return err
 			}
 		}
@@ -256,7 +258,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		}
 
 		countlabels := c.addLabels(baseName+countStr, baseLabels)
-		if err := c.appender.AppendSample(baseName, countlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
+		if err := c.appender.AppendSample(countlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
 			return err
 		}
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
@@ -294,7 +296,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			}
 			boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
 			labels := c.addLabels(baseName+bucketStr, baseLabels, leStr, boundStr)
-			if err := c.appender.AppendSample(baseName, labels, meta, startTimestamp, timestamp, val, currentBucketExemplars); err != nil {
+			if err := c.appender.AppendSample(labels, meta, startTimestamp, timestamp, val, currentBucketExemplars); err != nil {
 				return err
 			}
 		}
@@ -304,7 +306,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		infLabels := c.addLabels(baseName+bucketStr, baseLabels, leStr, pInfStr)
-		if err := c.appender.AppendSample(baseName, infLabels, meta, startTimestamp, timestamp, val, exemplars[nextExemplarIdx:]); err != nil {
+		if err := c.appender.AppendSample(infLabels, meta, startTimestamp, timestamp, val, exemplars[nextExemplarIdx:]); err != nil {
 			return err
 		}
 	}
@@ -419,7 +421,7 @@ func findMinAndMaxTimestamps(metric pmetric.Metric, minTimestamp, maxTimestamp p
 }
 
 func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
-	settings Settings, baseName string, scope scope, meta metadata.Metadata,
+	settings Settings, scope scope, meta Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -434,6 +436,8 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 			return err
 		}
 
+		baseName := meta.MetricFamilyName
+
 		// treat sum as a sample in an individual TimeSeries
 		val := pt.Sum()
 		if pt.Flags().NoRecordedValue() {
@@ -441,7 +445,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		}
 		// sum and count of the summary should append suffix to baseName
 		sumlabels := c.addLabels(baseName+sumStr, baseLabels)
-		if err := c.appender.AppendSample(baseName, sumlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
+		if err := c.appender.AppendSample(sumlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
 			return err
 		}
 
@@ -451,7 +455,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		countlabels := c.addLabels(baseName+countStr, baseLabels)
-		if err := c.appender.AppendSample(baseName, countlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
+		if err := c.appender.AppendSample(countlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
 			return err
 		}
 
@@ -464,7 +468,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 			}
 			percentileStr := strconv.FormatFloat(qt.Quantile(), 'f', -1, 64)
 			qtlabels := c.addLabels(baseName, baseLabels, quantileStr, percentileStr)
-			if err := c.appender.AppendSample(baseName, qtlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
+			if err := c.appender.AppendSample(qtlabels, meta, startTimestamp, timestamp, val, nil); err != nil {
 				return err
 			}
 		}
@@ -522,12 +526,15 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		// Do not pass identifying attributes as ignoreAttrs below.
 		identifyingAttrs = nil
 	}
-	meta := metadata.Metadata{
-		Type: model.MetricTypeGauge,
-		Help: "Target metadata",
+	meta := Metadata{
+		Metadata: metadata.Metadata{
+			Type: model.MetricTypeGauge,
+			Help: "Target metadata",
+		},
+		MetricFamilyName: name,
 	}
 	// TODO: should target info have the __type__ metadata label?
-	lbls, err := c.createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, metadata.Metadata{}, model.MetricNameLabel, name)
+	lbls, err := c.createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, Metadata{}, model.MetricNameLabel, name)
 	if err != nil {
 		return err
 	}
@@ -552,11 +559,11 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 	}
 	interval := settings.LookbackDelta / 2
 	for timestamp := earliestTimestamp; timestamp.Before(latestTimestamp); timestamp = timestamp.Add(interval) {
-		if err := c.appender.AppendSample(name, lbls, meta, 0, timestamp.UnixMilli(), float64(1), nil); err != nil {
+		if err := c.appender.AppendSample(lbls, meta, 0, timestamp.UnixMilli(), float64(1), nil); err != nil {
 			return err
 		}
 	}
-	return c.appender.AppendSample(name, lbls, meta, 0, latestTimestamp.UnixMilli(), float64(1), nil)
+	return c.appender.AppendSample(lbls, meta, 0, latestTimestamp.UnixMilli(), float64(1), nil)
 }
 
 // convertTimeStamp converts OTLP timestamp in ns to timestamp in ms.
