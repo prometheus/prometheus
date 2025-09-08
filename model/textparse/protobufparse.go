@@ -752,6 +752,9 @@ func isNativeHistogram(h *dto.Histogram) bool {
 func (p *ProtobufParser) convertToNHCB(t dto.MetricType) (*histogram.Histogram, *histogram.FloatHistogram, error) {
 	h := p.dec.GetHistogram()
 	p.tmpNHCB.Reset()
+	// TODO(krajorama): convertnhcb should support setting integer mode up
+	// front since we know it here. That would avoid the converter having
+	// to guess it based on counts.
 	v := h.GetSampleCountFloat()
 	if v == 0 {
 		v = float64(h.GetSampleCount())
