@@ -21,28 +21,29 @@ import (
 
 const (
 	// Special label names and selectors for schema.Metadata fields.
-	// They are currently private to ensure __name__, __type__ and __unit__ are used
+	// They are currently private to ensure __name__, __type__, __unit__ and __temporality__ are used
 	// together and remain extensible in Prometheus. See NewMetadataFromLabels and Metadata
 	// methods for the interactions with the labels package structs.
-	metricName = "__name__"
-	metricType = "__type__"
-	metricUnit = "__unit__"
+	metricName        = "__name__"
+	metricType        = "__type__"
+	metricUnit        = "__unit__"
+	metricTemporality = "__temporality__"
 )
 
 // IsMetadataLabel returns true if the given label name is a special
 // schema Metadata label.
 func IsMetadataLabel(name string) bool {
-	return name == metricName || name == metricType || name == metricUnit
+	return name == metricName || name == metricType || name == metricUnit || name == metricTemporality
 }
 
 // Metadata represents the core metric schema/metadata elements that:
 // * are describing and identifying the metric schema/shape (e.g. name, type and unit).
 // * are contributing to the general metric/series identity.
-// * with the type-and-unit feature, are stored as Prometheus labels.
+// * with the type-and-unit and delta temporality features, are stored as Prometheus labels.
 //
 // Historically, similar information was encoded in the labels.MetricName (suffixes)
 // and in the separate metadata.Metadata structures. However, with the
-// type-and-unit-label feature (PROM-39), this information can be now stored directly
+// type-and-unit-label feature (PROM-39) and the delta temporality feature, this information can be now stored directly
 // in the special schema metadata labels, which offers better reliability (e.g. atomicity),
 // compatibility and, in many cases, efficiency.
 //
@@ -74,6 +75,9 @@ type Metadata struct {
 	// TODO(bwplotka): Consider a stricter validation and rules e.g. lowercase only or UCUM standard.
 	// Read more in https://github.com/prometheus/proposals/blob/main/proposals/2024-09-25_metadata-labels.md#more-strict-unit-and-type-value-definition
 	Unit string
+	// Temporality represents the metric temporality. Empty string means temporality is not set.
+	// Valid values are "cumulative" and "delta".
+	Temporality string
 }
 
 // NewMetadataFromLabels returns the schema metadata from the labels.
@@ -83,9 +87,10 @@ func NewMetadataFromLabels(ls labels.Labels) Metadata {
 		typ = model.MetricType(got)
 	}
 	return Metadata{
-		Name: ls.Get(metricName),
-		Type: typ,
-		Unit: ls.Get(metricUnit),
+		Name:        ls.Get(metricName),
+		Type:        typ,
+		Unit:        ls.Get(metricUnit),
+		Temporality: ls.Get(metricTemporality),
 	}
 }
 
@@ -105,6 +110,8 @@ func (m Metadata) IsEmptyFor(labelName string) bool {
 		return m.IsTypeEmpty()
 	case metricUnit:
 		return m.Unit == ""
+	case metricTemporality:
+		return m.Temporality == ""
 	default:
 		return true
 	}
@@ -122,6 +129,9 @@ func (m Metadata) AddToLabels(b *labels.ScratchBuilder) {
 	if m.Unit != "" {
 		b.Add(metricUnit, m.Unit)
 	}
+	if m.Temporality != "" {
+		b.Add(metricTemporality, m.Temporality)
+	}
 }
 
 // SetToLabels injects metric schema metadata as labels into the labels.Builder.
@@ -137,6 +147,7 @@ func (m Metadata) SetToLabels(b *labels.Builder) {
 		b.Set(metricType, string(m.Type))
 	}
 	b.Set(metricUnit, m.Unit)
+	b.Set(metricTemporality, m.Temporality)
 }
 
 // IgnoreOverriddenMetadataLabelsScratchBuilder is a wrapper over labels scratch builder

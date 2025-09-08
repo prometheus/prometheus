@@ -2,6 +2,7 @@
 
 ## main / unreleased
 
+* [FEATURE] OTLP receiver: Add `__temporality__` label to ingested delta metrics. 
 * [BUGFIX] OTLP receiver: Generate `target_info` samples between the earliest and latest samples per resource. #16737
 * [BUGFIX] Config: Infer escaping scheme when scrape config validation scheme is set.
 * [BUGFIX] PromQL: Fix info function on churning series. #17135

@@ -285,8 +285,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Converting delta OTLP metrics to cumulative")
 			case "otlp-native-delta-ingestion":
 				// Experimental OTLP native delta ingestion.
-				// This currently just stores the raw delta value as-is with unknown metric type. Better typing and
-				// type-aware functions may come later.
+				// This currently stores the raw delta value as-is with a __temporality__
+				// label set to "delta". It is recommended to also enable the type-and-unit-labels flag; if enabled,
+				// a __type__ label set to "gauge"/"gaugehistogram" will also be added.
 				// See proposal: https://github.com/prometheus/proposals/pull/48
 				c.web.NativeOTLPDeltaIngestion = true
 				logger.Info("Enabling native ingestion of delta OTLP metrics, storing the raw sample values without conversion. WARNING: Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
