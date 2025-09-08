@@ -123,14 +123,14 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 }
 
 type parserOptions struct {
-	EnableTypeAndUnitLabels        bool
-	ConvertClassicHistogramsToNHCB bool
+	enableTypeAndUnitLabels        bool
+	convertClassicHistogramsToNHCB bool
 
 	// Proto parsing only.
-	ParseClassicHistograms bool
+	parseClassicHistograms bool
 
 	// OpenMetrics only.
-	SkipOMCTSeries bool
+	skipOMCTSeries bool
 
 	fallbackType string
 
@@ -143,7 +143,7 @@ type ParserOptions func(*parserOptions)
 // in the parsed metrics.
 func WithTypeAndUnitLabels(b bool) ParserOptions {
 	return func(o *parserOptions) {
-		o.EnableTypeAndUnitLabels = b
+		o.enableTypeAndUnitLabels = b
 	}
 }
 
@@ -151,7 +151,7 @@ func WithTypeAndUnitLabels(b bool) ParserOptions {
 // to Native Histogram with Custom Buckets (NHCB) format.
 func WithClassicHistogramsToNHCB(b bool) ParserOptions {
 	return func(o *parserOptions) {
-		o.ConvertClassicHistogramsToNHCB = b
+		o.convertClassicHistogramsToNHCB = b
 	}
 }
 
@@ -161,7 +161,7 @@ func WithClassicHistogramsToNHCB(b bool) ParserOptions {
 // This migration mode is currently only supported for proto formats, but might be added to future exposition formats.
 func WithKeepClassicOnClassicAndNativeHistograms(b bool) ParserOptions {
 	return func(o *parserOptions) {
-		o.ParseClassicHistograms = b
+		o.parseClassicHistograms = b
 	}
 }
 
@@ -169,7 +169,7 @@ func WithKeepClassicOnClassicAndNativeHistograms(b bool) ParserOptions {
 // during parsing.
 func WithOMCTSeriesSkipped(b bool) ParserOptions {
 	return func(o *parserOptions) {
-		o.SkipOMCTSeries = b
+		o.skipOMCTSeries = b
 	}
 }
 
@@ -211,19 +211,19 @@ func New(b []byte, contentType string, opts ...ParserOptions) (Parser, error) {
 	switch mediaType {
 	case "application/openmetrics-text":
 		baseParser = NewOpenMetricsParser(b, options.st, func(o *openMetricsParserOptions) {
-			o.skipCTSeries = options.SkipOMCTSeries
-			o.enableTypeAndUnitLabels = options.EnableTypeAndUnitLabels
+			o.skipCTSeries = options.skipOMCTSeries
+			o.enableTypeAndUnitLabels = options.enableTypeAndUnitLabels
 		})
 	case "application/vnd.google.protobuf":
-		baseParser = NewProtobufParser(b, options.ParseClassicHistograms, options.EnableTypeAndUnitLabels, options.st)
+		baseParser = NewProtobufParser(b, options.parseClassicHistograms, options.enableTypeAndUnitLabels, options.st)
 	case "text/plain":
-		baseParser = NewPromParser(b, options.st, options.EnableTypeAndUnitLabels)
+		baseParser = NewPromParser(b, options.st, options.enableTypeAndUnitLabels)
 	default:
 		return nil, err
 	}
 
-	if baseParser != nil && options.ConvertClassicHistogramsToNHCB {
-		baseParser = NewNHCBParser(baseParser, options.st, options.ParseClassicHistograms)
+	if baseParser != nil && options.convertClassicHistogramsToNHCB {
+		baseParser = NewNHCBParser(baseParser, options.st, options.parseClassicHistograms)
 	}
 
 	return baseParser, err
