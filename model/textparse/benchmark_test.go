@@ -157,7 +157,7 @@ func benchParse(b *testing.B, data []byte, parser string) {
 		}
 	case "omtext_with_nhcb":
 		newParserFn = func(buf []byte, st *labels.SymbolTable) Parser {
-			p, err := New(buf, "application/openmetrics-text", "", st, WithClassicHistogramsToNHCBEnabled(true))
+			p, err := New(buf, "application/openmetrics-text", WithLabelsSymbolTable(st), WithClassicHistogramsToNHCB(true))
 			require.NoError(b, err)
 			return p
 		}

@@ -131,31 +131,61 @@ type parserOptions struct {
 
 	// OpenMetrics only.
 	SkipOMCTSeries bool
+
+	fallbackType string
+
+	st *labels.SymbolTable
 }
 
 type ParserOptions func(*parserOptions)
 
-func WithTypeAndUnitLabelsEnabled(b bool) ParserOptions {
+// WithTypeAndUnitLabels tells parser to include type and unit metadata as labels
+// in the parsed metrics.
+func WithTypeAndUnitLabels(b bool) ParserOptions {
 	return func(o *parserOptions) {
 		o.EnableTypeAndUnitLabels = b
 	}
 }
 
-func WithClassicHistogramsToNHCBEnabled(b bool) ParserOptions {
+// WithClassicHistogramsToNHCB tells parser to convert classic histograms
+// to Native Histogram with Custom Buckets (NHCB) format.
+func WithClassicHistogramsToNHCB(b bool) ParserOptions {
 	return func(o *parserOptions) {
 		o.ConvertClassicHistogramsToNHCB = b
 	}
 }
 
-func WithParseClassicHistogramsEnabled(b bool) ParserOptions {
+// WithKeepClassicOnClassicAndNativeHistograms tells parser to keep classic histograms in
+// cases where both classic and native histograms are exposes for a single series.
+//
+// This migration mode is currently only supported for proto formats, but might be added to future exposition formats.
+func WithKeepClassicOnClassicAndNativeHistograms(b bool) ParserOptions {
 	return func(o *parserOptions) {
 		o.ParseClassicHistograms = b
 	}
 }
 
-func WithSkipOMCTSeriesEnabled(b bool) ParserOptions {
+// WithOMCTSeriesSkipped tells parser to skip OpenMetrics created timestamp series
+// during parsing.
+func WithOMCTSeriesSkipped(b bool) ParserOptions {
 	return func(o *parserOptions) {
 		o.SkipOMCTSeries = b
+	}
+}
+
+// WithFallbackType sets the fallback media type to use when Content-Type
+// cannot be parsed or is unsupported.
+func WithFallbackType(fallbackType string) ParserOptions {
+	return func(o *parserOptions) {
+		o.fallbackType = fallbackType
+	}
+}
+
+// WithLabelsSymbolTable sets the symbol table to use for label interning
+// during parsing.
+func WithLabelsSymbolTable(st *labels.SymbolTable) ParserOptions {
+	return func(o *parserOptions) {
+		o.st = st
 	}
 }
 
@@ -167,33 +197,33 @@ func WithSkipOMCTSeriesEnabled(b bool) ParserOptions {
 // An error may also be returned if fallbackType had to be used or there was some
 // other error parsing the supplied Content-Type.
 // If the returned parser is nil then the scrape must fail.
-func New(b []byte, contentType, fallbackType string, st *labels.SymbolTable, opts ...ParserOptions) (Parser, error) {
+func New(b []byte, contentType string, opts ...ParserOptions) (Parser, error) {
 	options := &parserOptions{}
 
 	for _, opt := range opts {
 		opt(options)
 	}
 
-	mediaType, err := extractMediaType(contentType, fallbackType)
+	mediaType, err := extractMediaType(contentType, options.fallbackType)
 	// err may be nil or something we want to warn about.
 
 	var baseParser Parser
 	switch mediaType {
 	case "application/openmetrics-text":
-		baseParser = NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
+		baseParser = NewOpenMetricsParser(b, options.st, func(o *openMetricsParserOptions) {
 			o.skipCTSeries = options.SkipOMCTSeries
 			o.enableTypeAndUnitLabels = options.EnableTypeAndUnitLabels
 		})
 	case "application/vnd.google.protobuf":
-		baseParser = NewProtobufParser(b, options.ParseClassicHistograms, options.EnableTypeAndUnitLabels, st)
+		baseParser = NewProtobufParser(b, options.ParseClassicHistograms, options.EnableTypeAndUnitLabels, options.st)
 	case "text/plain":
-		baseParser = NewPromParser(b, st, options.EnableTypeAndUnitLabels)
+		baseParser = NewPromParser(b, options.st, options.EnableTypeAndUnitLabels)
 	default:
 		return nil, err
 	}
 
 	if baseParser != nil && options.ConvertClassicHistogramsToNHCB {
-		baseParser = NewNHCBParser(baseParser, st, options.ParseClassicHistograms)
+		baseParser = NewNHCBParser(baseParser, options.st, options.ParseClassicHistograms)
 	}
 
 	return baseParser, err
