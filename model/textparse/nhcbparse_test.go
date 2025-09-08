@@ -1094,6 +1094,7 @@ metric: <
 	requireEntries(t, exp, got)
 }
 
+// TestNHCBNotCorruptMetricNameAfterRead is a regression test for https://github.com/prometheus/prometheus/issues/17075.
 func TestNHCBNotCorruptMetricNameAfterRead(t *testing.T) {
 	inputOM := `# HELP test_histogram_seconds Just a test histogram
 # TYPE test_histogram_seconds histogram
