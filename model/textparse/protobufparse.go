@@ -507,6 +507,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 	case EntrySeries:
 		// Potentially a second series in the metric family.
 		t := p.dec.GetType()
+		decodeNext := true
 		if t == dto.MetricType_SUMMARY ||
 			t == dto.MetricType_HISTOGRAM ||
 			t == dto.MetricType_GAUGE_HISTOGRAM {
@@ -547,20 +548,20 @@ func (p *ProtobufParser) Next() (Entry, error) {
 						return EntryInvalid, err
 					}
 					p.state = EntryHistogram
-					if err := p.onSeriesOrHistogramUpdate(); err != nil {
-						return EntryInvalid, err
-					}
-					return p.state, nil
+					// We have an NHCB to emit, no need to decode the next series.
+					decodeNext = false
 				}
 			}
 		}
 		// Is there another series?
-		if err := p.dec.NextMetric(); err != nil {
-			if errors.Is(err, io.EOF) {
-				p.state = EntryInvalid
-				return p.Next()
+		if decodeNext {
+			if err := p.dec.NextMetric(); err != nil {
+				if errors.Is(err, io.EOF) {
+					p.state = EntryInvalid
+					return p.Next()
+				}
+				return EntryInvalid, err
 			}
-			return EntryInvalid, err
 		}
 		if err := p.onSeriesOrHistogramUpdate(); err != nil {
 			return EntryInvalid, err
