@@ -2097,7 +2097,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
 	metric := []byte(`metric{n="1"} 1`)
-	p, warning := textparse.New(metric, "text/plain", textparse.WithLabelsSymbolTable(labels.NewSymbolTable()))
+	p, warning := textparse.New(metric, "text/plain", labels.NewSymbolTable())
 	require.NotNil(t, p)
 	require.NoError(t, warning)
 
@@ -2951,6 +2951,7 @@ metric: <
 				return mutateReportSampleLabels(l, discoveryLabels)
 			}
 			sl.alwaysScrapeClassicHist = test.alwaysScrapeClassicHist
+			sl.rebuildParserOptions()
 
 			now := time.Now()
 
@@ -4837,6 +4838,7 @@ metric: <
 				sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return simpleStorage.Appender(ctx) }, 0)
 				sl.alwaysScrapeClassicHist = tc.alwaysScrapeClassicHistograms
 				sl.convertClassicHistToNHCB = tc.convertClassicHistToNHCB
+				sl.rebuildParserOptions()
 				sl.enableNativeHistogramIngestion = true
 				app := simpleStorage.Appender(context.Background())
 
