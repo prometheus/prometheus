@@ -77,7 +77,9 @@ func (t *SymbolsTable) Reset() {
 }
 
 // desymbolizeLabels decodes label references, with given symbols to labels.
-// This function requires labelRefs to have an even number of elements (name-value pairs). It will return an error if this invariant is violated.
+// This function requires labelRefs to have an even number of elements (name-value pairs) and
+// all references must be valid indices within the symbols table. It will return an error if
+// these invariants are violated.
 func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []string) (labels.Labels, error) {
 	if len(labelRefs)%2 != 0 {
 		return labels.EmptyLabels(), fmt.Errorf("invalid labelRefs length %d", len(labelRefs))
@@ -85,7 +87,11 @@ func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []s
 
 	b.Reset()
 	for i := 0; i < len(labelRefs); i += 2 {
-		b.Add(symbols[labelRefs[i]], symbols[labelRefs[i+1]])
+		nameRef, valueRef := labelRefs[i], labelRefs[i+1]
+		if int(nameRef) >= len(symbols) || int(valueRef) >= len(symbols) {
+			return labels.EmptyLabels(), fmt.Errorf("labelRefs [%d, %d] outside of symbols table (size %d)", nameRef, valueRef, len(symbols))
+		}
+		b.Add(symbols[nameRef], symbols[valueRef])
 	}
 	b.Sort()
 	return b.Labels(), nil
