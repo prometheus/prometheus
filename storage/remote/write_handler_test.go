@@ -405,7 +405,6 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		{
 			desc: "Partial write; first series with odd number of label refs",
 			input: append(
-				// Series with odd number of label references - this would cause panic before the fix.
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 3}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
 				writeV2RequestFixture.Timeseries...),
 			expectedCode:     http.StatusBadRequest,
