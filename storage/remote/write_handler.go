@@ -390,7 +390,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 	for _, ts := range req.Timeseries {
 		ls, err := ts.ToLabels(&b, req.Symbols)
 		if err != nil {
-			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid label references: %w", err))
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing labels for series %v: %w", ts.LabelsRefs, err))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
 		}
@@ -481,7 +481,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		for _, ep := range ts.Exemplars {
 			e, err := ep.ToExemplar(&b, req.Symbols)
 			if err != nil {
-				badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid exemplar label references: %w", err))
+				badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing exemplar for series %v: %w", ls.String(), err))
 				continue
 			}
 			ref, err = app.AppendExemplar(ref, ls, e)

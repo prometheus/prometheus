@@ -408,7 +408,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 3}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
 				writeV2RequestFixture.Timeseries...),
 			expectedCode:     http.StatusBadRequest,
-			expectedRespBody: "invalid label references: invalid labelRefs length 3\n",
+			expectedRespBody: "parsing labels for series [1 2 3]: invalid labelRefs length 3\n",
 		},
 		{
 			desc: "Partial write; first series with out-of-bounds symbol references",
@@ -416,7 +416,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 999}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
 				writeV2RequestFixture.Timeseries...),
 			expectedCode:     http.StatusBadRequest,
-			expectedRespBody: "invalid label references: labelRefs [1, 999] outside of symbols table (size 18)\n",
+			expectedRespBody: "parsing timeseries labels for series [1 999]: labelRefs 1 (name) = 999 (value) outside of symbols table (size 18)\n",
 		},
 		{
 			desc: "Partial write; first series with one OOO sample",

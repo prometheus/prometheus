@@ -89,7 +89,7 @@ func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []s
 	for i := 0; i < len(labelRefs); i += 2 {
 		nameRef, valueRef := labelRefs[i], labelRefs[i+1]
 		if int(nameRef) >= len(symbols) || int(valueRef) >= len(symbols) {
-			return labels.EmptyLabels(), fmt.Errorf("labelRefs [%d, %d] outside of symbols table (size %d)", nameRef, valueRef, len(symbols))
+			return labels.EmptyLabels(), fmt.Errorf("labelRefs %d (name) = %d (value) outside of symbols table (size %d)", nameRef, valueRef, len(symbols))
 		}
 		b.Add(symbols[nameRef], symbols[valueRef])
 	}
