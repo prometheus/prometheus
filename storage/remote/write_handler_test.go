@@ -403,6 +403,15 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedRespBody: "invalid labels for series, labels {__name__=\"test_metric1\", test_metric1=\"test_metric1\", test_metric1=\"test_metric1\"}, duplicated label test_metric1\n",
 		},
 		{
+			desc: "Partial write; first series with odd number of label refs",
+			input: append(
+				// Series with odd number of label references - this would cause panic before the fix.
+				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 3}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				writeV2RequestFixture.Timeseries...),
+			expectedCode:     http.StatusBadRequest,
+			expectedRespBody: "invalid label references: invalid labelRefs length 3\n",
+		},
+		{
 			desc: "Partial write; first series with one OOO sample",
 			input: func() []writev2.TimeSeries {
 				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
@@ -543,7 +552,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			for _, ts := range writeV2RequestFixture.Timeseries {
 				zeroHistogramIngested := false
 				zeroFloatHistogramIngested := false
-				ls := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
+				ls, err := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
+				require.NoError(t, err)
 
 				for _, s := range ts.Samples {
 					if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
@@ -579,7 +589,9 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				}
 				if tc.appendExemplarErr == nil {
 					for _, e := range ts.Exemplars {
-						exemplarLabels := e.ToExemplar(&b, writeV2RequestFixture.Symbols).Labels
+						ex, err := e.ToExemplar(&b, writeV2RequestFixture.Symbols)
+						require.NoError(t, err)
+						exemplarLabels := ex.Labels
 						requireEqual(t, mockExemplar{ls, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
 						j++
 					}

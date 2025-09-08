@@ -13,7 +13,11 @@
 
 package writev2
 
-import "github.com/prometheus/prometheus/model/labels"
+import (
+	"fmt"
+
+	"github.com/prometheus/prometheus/model/labels"
+)
 
 // SymbolsTable implements table for easy symbol use.
 type SymbolsTable struct {
@@ -73,11 +77,17 @@ func (t *SymbolsTable) Reset() {
 }
 
 // desymbolizeLabels decodes label references, with given symbols to labels.
-func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []string) labels.Labels {
+// This function requires labelRefs to have an even number of elements (name-value pairs).
+// It will return an error if this invariant is violated
+func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []string) (labels.Labels, error) {
+	if len(labelRefs)%2 != 0 {
+		return labels.EmptyLabels(), fmt.Errorf("invalid labelRefs length %d", len(labelRefs))
+	}
+
 	b.Reset()
 	for i := 0; i < len(labelRefs); i += 2 {
 		b.Add(symbols[labelRefs[i]], symbols[labelRefs[i+1]])
 	}
 	b.Sort()
-	return b.Labels()
+	return b.Labels(), nil
 }
