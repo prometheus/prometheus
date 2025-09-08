@@ -212,7 +212,7 @@ func New(b []byte, contentType string, st *labels.SymbolTable, opts ...ParserOpt
 			o.enableTypeAndUnitLabels = options.enableTypeAndUnitLabels
 		})
 	case "application/vnd.google.protobuf":
-		baseParser = NewProtobufParser(b, options.parseClassicHistograms, options.enableTypeAndUnitLabels, st)
+		return NewProtobufParser(b, options.parseClassicHistograms, options.convertClassicHistogramsToNHCB, options.enableTypeAndUnitLabels, st), err
 	case "text/plain":
 		baseParser = NewPromParser(b, st, options.enableTypeAndUnitLabels)
 	default:

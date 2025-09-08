@@ -16,6 +16,7 @@ package textparse
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
@@ -27,6 +28,26 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
 )
+
+func metricFamiliesToProtobuf(t testing.TB, testMetricFamilies []string) *bytes.Buffer {
+	varintBuf := make([]byte, binary.MaxVarintLen32)
+	buf := &bytes.Buffer{}
+
+	for _, tmf := range testMetricFamilies {
+		pb := &dto.MetricFamily{}
+		// From text to proto message.
+		require.NoError(t, proto.UnmarshalText(tmf, pb))
+		// From proto message to binary protobuf.
+		protoBuf, err := proto.Marshal(pb)
+		require.NoError(t, err)
+
+		// Write first length, then binary protobuf.
+		varintLength := binary.PutUvarint(varintBuf, uint64(len(protoBuf)))
+		buf.Write(varintBuf[:varintLength])
+		buf.Write(protoBuf)
+	}
+	return buf
+}
 
 func createTestProtoBuf(t testing.TB) *bytes.Buffer {
 	t.Helper()
@@ -803,24 +824,7 @@ metric: <
 `,
 	}
 
-	varintBuf := make([]byte, binary.MaxVarintLen32)
-	buf := &bytes.Buffer{}
-
-	for _, tmf := range testMetricFamilies {
-		pb := &dto.MetricFamily{}
-		// From text to proto message.
-		require.NoError(t, proto.UnmarshalText(tmf, pb))
-		// From proto message to binary protobuf.
-		protoBuf, err := proto.Marshal(pb)
-		require.NoError(t, err)
-
-		// Write first length, then binary protobuf.
-		varintLength := binary.PutUvarint(varintBuf, uint64(len(protoBuf)))
-		buf.Write(varintBuf[:varintLength])
-		buf.Write(protoBuf)
-	}
-
-	return buf
+	return metricFamiliesToProtobuf(t, testMetricFamilies)
 }
 
 func TestProtobufParse(t *testing.T) {
@@ -833,7 +837,7 @@ func TestProtobufParse(t *testing.T) {
 	}{
 		{
 			name:   "parseClassicHistograms=false/enableTypeAndUnitLabels=false",
-			parser: NewProtobufParser(inputBuf.Bytes(), false, false, labels.NewSymbolTable()),
+			parser: NewProtobufParser(inputBuf.Bytes(), false, false, false, labels.NewSymbolTable()),
 			expected: []parsedEntry{
 				{
 					m:    "go_build_info",
@@ -1468,7 +1472,7 @@ func TestProtobufParse(t *testing.T) {
 		},
 		{
 			name:   "parseClassicHistograms=false/enableTypeAndUnitLabels=true",
-			parser: NewProtobufParser(inputBuf.Bytes(), false, true, labels.NewSymbolTable()),
+			parser: NewProtobufParser(inputBuf.Bytes(), false, false, true, labels.NewSymbolTable()),
 			expected: []parsedEntry{
 				{
 					m:    "go_build_info",
@@ -2140,7 +2144,7 @@ func TestProtobufParse(t *testing.T) {
 		},
 		{
 			name:   "parseClassicHistograms=true/enableTypeAndUnitLabels=false",
-			parser: NewProtobufParser(inputBuf.Bytes(), true, false, labels.NewSymbolTable()),
+			parser: NewProtobufParser(inputBuf.Bytes(), true, false, false, labels.NewSymbolTable()),
 			expected: []parsedEntry{
 				{
 					m:    "go_build_info",
@@ -3211,6 +3215,1137 @@ func TestProtobufParse(t *testing.T) {
 			)
 			got := testParse(t, p)
 			requireEntries(t, exp, got)
+		})
+	}
+}
+
+// TestProtobufParseWithNHCB is only concerned with classic histograms.
+func TestProtobufParseWithNHCB(t *testing.T) {
+	testMetricFamilies := []string{
+		`name: "test_histogram1"
+help: "Similar histogram as before but now without sparse buckets."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 175
+    sample_sum: 0.000828
+    bucket: <
+      cumulative_count: 2
+      upper_bound: -0.00048
+    >
+    bucket: <
+      cumulative_count: 4
+      upper_bound: -0.00038
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "59727"
+        >
+        value: -0.00038
+        timestamp: <
+          seconds: 1625851153
+          nanos: 146848499
+        >
+      >
+    >
+    bucket: <
+      cumulative_count: 16
+      upper_bound: 1
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "5617"
+        >
+        value: -0.000295
+      >
+    >
+    schema: 0
+    zero_threshold: 0
+  >
+>
+
+`,
+		`name: "test_histogram2_seconds"
+help: "Similar histogram as before but now with integer buckets."
+type: HISTOGRAM
+unit: "seconds"
+metric: <
+  histogram: <
+    sample_count: 6
+    sample_sum: 50
+    bucket: <
+      cumulative_count: 2
+      upper_bound: -20
+    >
+    bucket: <
+      cumulative_count: 4
+      upper_bound: 20
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "59727"
+        >
+        value: 15
+        timestamp: <
+          seconds: 1625851153
+          nanos: 146848499
+        >
+      >
+    >
+    bucket: <
+      cumulative_count: 6
+      upper_bound: 30
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "5617"
+        >
+        value: 25
+		timestamp: <
+          seconds: 1625851153
+          nanos: 146848499
+        >
+      >
+    >
+    schema: 0
+    zero_threshold: 0
+  >
+>
+
+`,
+		`name: "test_histogram_family"
+help: "Test histogram metric family with two very simple histograms."
+type: HISTOGRAM
+metric: <
+  label: <
+    name: "foo"
+    value: "bar"
+  >
+  histogram: <
+    sample_count: 5
+    sample_sum: 12.1
+    bucket: <
+      cumulative_count: 2
+      upper_bound: 1.1
+    >
+    bucket: <
+      cumulative_count: 3
+      upper_bound: 2.2
+    >
+  >
+>
+metric: <
+  label: <
+    name: "foo"
+    value: "baz"
+  >
+  histogram: <
+    sample_count: 6
+    sample_sum: 13.1
+    bucket: <
+      cumulative_count: 0
+      upper_bound: 1.1
+    >
+    bucket: <
+      cumulative_count: 5
+      upper_bound: 2.2
+    >
+  >
+>
+
+`,
+		`name: "empty_histogram"
+help: "A histogram without observations and with a zero threshold of zero but with a no-op span to identify it as a native histogram."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    positive_span: <
+      offset: 0
+      length: 0
+    >
+  >
+>
+
+`,
+	}
+
+	buf := metricFamiliesToProtobuf(t, testMetricFamilies)
+
+	data := buf.Bytes()
+
+	testCases := []struct {
+		keepClassic bool
+		typeAndUnit bool
+		expected    []parsedEntry
+	}{
+		{
+			keepClassic: false,
+			typeAndUnit: false,
+			expected: []parsedEntry{
+				{
+					m:    "test_histogram1",
+					help: "Similar histogram as before but now without sparse buckets.",
+				},
+				{
+					m:   "test_histogram1",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram1",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            175,
+						Sum:              0.000828,
+						Schema:           -53,
+						PositiveSpans: []histogram.Span{
+							{Length: 4},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{2, 0, 10, 147},
+						CustomValues:    []float64{-0.00048, -0.00038, 1},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram1",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00038, HasTs: true, Ts: 1625851153146},
+						// The second exemplar has no timestamp.
+					},
+				},
+				{
+					m:    "test_histogram2_seconds",
+					help: "Similar histogram as before but now with integer buckets.",
+				},
+				{
+					m:    "test_histogram2_seconds",
+					unit: "seconds",
+				},
+				{
+					m:   "test_histogram2_seconds",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram2_seconds",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            6,
+						Sum:              50,
+						Schema:           -53,
+						PositiveSpans: []histogram.Span{
+							{Length: 3},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{2, 0, 0},
+						CustomValues:    []float64{-20, 20, 30},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram2_seconds",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: 15, HasTs: true, Ts: 1625851153146},
+						{Labels: labels.FromStrings("dummyID", "5617"), Value: 25, HasTs: true, Ts: 1625851153146},
+					},
+				},
+				{
+					m:    "test_histogram_family",
+					help: "Test histogram metric family with two very simple histograms.",
+				},
+				{
+					m:   "test_histogram_family",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram_family\xfffoo\xffbar",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            5,
+						Sum:              12.1,
+						Schema:           -53,
+						PositiveSpans: []histogram.Span{
+							{Length: 3},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{2, -1, 1},
+						CustomValues:    []float64{1.1, 2.2},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family",
+						"foo", "bar",
+					),
+				},
+				{
+					m: "test_histogram_family\xfffoo\xffbaz",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            6,
+						Sum:              13.1,
+						Schema:           -53,
+						PositiveSpans: []histogram.Span{
+							{Offset: 1, Length: 2},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{5, -4},
+						CustomValues:    []float64{1.1, 2.2},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family",
+						"foo", "baz",
+					),
+				},
+				{
+					m:    "empty_histogram",
+					help: "A histogram without observations and with a zero threshold of zero but with a no-op span to identify it as a native histogram.",
+				},
+				{
+					m:   "empty_histogram",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "empty_histogram",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						PositiveSpans:    []histogram.Span{},
+						NegativeSpans:    []histogram.Span{},
+					},
+					lset: labels.FromStrings(
+						"__name__", "empty_histogram",
+					),
+				},
+			},
+		},
+		{
+			keepClassic: true,
+			typeAndUnit: false,
+			expected: []parsedEntry{
+				{
+					m:    "test_histogram1",
+					help: "Similar histogram as before but now without sparse buckets.",
+				},
+				{
+					m:   "test_histogram1",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram1_count",
+					v: 175,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram1_count",
+					),
+				},
+				{
+					m: "test_histogram1_sum",
+					v: 0.000828,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram1_sum",
+					),
+				},
+				{
+					m: "test_histogram1_bucket\xffle\xff-0.00048",
+					v: 2,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram1_bucket",
+						"le", "-0.00048",
+					),
+				},
+				{
+					m: "test_histogram1_bucket\xffle\xff-0.00038",
+					v: 4,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram1_bucket",
+						"le", "-0.00038",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00038, HasTs: true, Ts: 1625851153146},
+					},
+				},
+				{
+					m: "test_histogram1_bucket\xffle\xff1.0",
+					v: 16,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram1_bucket",
+						"le", "1.0",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.000295, HasTs: false},
+					},
+				},
+				{
+					m: "test_histogram1_bucket\xffle\xff+Inf",
+					v: 175,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram1_bucket",
+						"le", "+Inf",
+					),
+				},
+				{
+					m: "test_histogram1",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            175,
+						Sum:              0.000828,
+						Schema:           -53,
+						PositiveSpans: []histogram.Span{
+							{Length: 4},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{2, 0, 10, 147},
+						CustomValues:    []float64{-0.00048, -0.00038, 1},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram1",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00038, HasTs: true, Ts: 1625851153146},
+						// The second exemplar has no timestamp.
+					},
+				},
+				{
+					m:    "test_histogram2_seconds",
+					help: "Similar histogram as before but now with integer buckets.",
+				},
+				{
+					m:    "test_histogram2_seconds",
+					unit: "seconds",
+				},
+				{
+					m:   "test_histogram2_seconds",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram2_seconds_count",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram2_seconds_count",
+					),
+				},
+				{
+					m: "test_histogram2_seconds_sum",
+					v: 50,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram2_seconds_sum",
+					),
+				},
+				{
+					m: "test_histogram2_seconds_bucket\xffle\xff-20.0",
+					v: 2,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram2_seconds_bucket",
+						"le", "-20.0",
+					),
+				},
+				{
+					m: "test_histogram2_seconds_bucket\xffle\xff20.0",
+					v: 4,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram2_seconds_bucket",
+						"le", "20.0",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: 15, HasTs: true, Ts: 1625851153146},
+					},
+				},
+				{
+					m: "test_histogram2_seconds_bucket\xffle\xff30.0",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram2_seconds_bucket",
+						"le", "30.0",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "5617"), Value: 25, HasTs: true, Ts: 1625851153146},
+					},
+				},
+				{
+					m: "test_histogram2_seconds_bucket\xffle\xff+Inf",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram2_seconds_bucket",
+						"le", "+Inf",
+					),
+				},
+				{
+					m: "test_histogram2_seconds",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            6,
+						Sum:              50,
+						Schema:           -53,
+						PositiveSpans: []histogram.Span{
+							{Length: 3},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{2, 0, 0},
+						CustomValues:    []float64{-20, 20, 30},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram2_seconds",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: 15, HasTs: true, Ts: 1625851153146},
+						{Labels: labels.FromStrings("dummyID", "5617"), Value: 25, HasTs: true, Ts: 1625851153146},
+					},
+				},
+				{
+					m:    "test_histogram_family",
+					help: "Test histogram metric family with two very simple histograms.",
+				},
+				{
+					m:   "test_histogram_family",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram_family_count\xfffoo\xffbar",
+					v: 5,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_count",
+						"foo", "bar",
+					),
+				},
+				{
+					m: "test_histogram_family_sum\xfffoo\xffbar",
+					v: 12.1,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_sum",
+						"foo", "bar",
+					),
+				},
+				{
+					m: "test_histogram_family_bucket\xfffoo\xffbar\xffle\xff1.1",
+					v: 2,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"foo", "bar",
+						"le", "1.1",
+					),
+				},
+				{
+					m: "test_histogram_family_bucket\xfffoo\xffbar\xffle\xff2.2",
+					v: 3,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"foo", "bar",
+						"le", "2.2",
+					),
+				},
+				{
+					m: "test_histogram_family_bucket\xfffoo\xffbar\xffle\xff+Inf",
+					v: 5,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"foo", "bar",
+						"le", "+Inf",
+					),
+				},
+				{
+					m: "test_histogram_family\xfffoo\xffbar",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            5,
+						Sum:              12.1,
+						Schema:           -53,
+						PositiveSpans: []histogram.Span{
+							{Length: 3},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{2, -1, 1},
+						CustomValues:    []float64{1.1, 2.2},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family",
+						"foo", "bar",
+					),
+				},
+				{
+					m: "test_histogram_family_count\xfffoo\xffbaz",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_count",
+						"foo", "baz",
+					),
+				},
+				{
+					m: "test_histogram_family_sum\xfffoo\xffbaz",
+					v: 13.1,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_sum",
+						"foo", "baz",
+					),
+				},
+				{
+					m: "test_histogram_family_bucket\xfffoo\xffbaz\xffle\xff1.1",
+					v: 0,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"foo", "baz",
+						"le", "1.1",
+					),
+				},
+				{
+					m: "test_histogram_family_bucket\xfffoo\xffbaz\xffle\xff2.2",
+					v: 5,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"foo", "baz",
+						"le", "2.2",
+					),
+				},
+				{
+					m: "test_histogram_family_bucket\xfffoo\xffbaz\xffle\xff+Inf",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"foo", "baz",
+						"le", "+Inf",
+					),
+				},
+				{
+					m: "test_histogram_family\xfffoo\xffbaz",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            6,
+						Sum:              13.1,
+						Schema:           -53,
+						PositiveSpans: []histogram.Span{
+							{Offset: 1, Length: 2},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{5, -4},
+						CustomValues:    []float64{1.1, 2.2},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family",
+						"foo", "baz",
+					),
+				},
+				{
+					m:    "empty_histogram",
+					help: "A histogram without observations and with a zero threshold of zero but with a no-op span to identify it as a native histogram.",
+				},
+				{
+					m:   "empty_histogram",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "empty_histogram",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						PositiveSpans:    []histogram.Span{},
+						NegativeSpans:    []histogram.Span{},
+					},
+					lset: labels.FromStrings(
+						"__name__", "empty_histogram",
+					),
+				},
+			},
+		},
+		{
+			keepClassic: false,
+			typeAndUnit: true,
+			expected: []parsedEntry{
+				{
+					m:    "test_histogram1",
+					help: "Similar histogram as before but now without sparse buckets.",
+				},
+				{
+					m:   "test_histogram1",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram1\xff__type__\xffhistogram",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            175,
+						Sum:              0.000828,
+						Schema:           -53,
+						PositiveSpans: []histogram.Span{
+							{Length: 4},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{2, 0, 10, 147},
+						CustomValues:    []float64{-0.00048, -0.00038, 1},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram1",
+						"__type__", "histogram",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00038, HasTs: true, Ts: 1625851153146},
+						// The second exemplar has no timestamp.
+					},
+				},
+				{
+					m:    "test_histogram2_seconds",
+					help: "Similar histogram as before but now with integer buckets.",
+				},
+				{
+					m:    "test_histogram2_seconds",
+					unit: "seconds",
+				},
+				{
+					m:   "test_histogram2_seconds",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram2_seconds\xff__type__\xffhistogram\xff__unit__\xffseconds",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            6,
+						Sum:              50,
+						Schema:           -53,
+						PositiveSpans: []histogram.Span{
+							{Length: 3},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{2, 0, 0},
+						CustomValues:    []float64{-20, 20, 30},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram2_seconds",
+						"__type__", "histogram",
+						"__unit__", "seconds",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: 15, HasTs: true, Ts: 1625851153146},
+						{Labels: labels.FromStrings("dummyID", "5617"), Value: 25, HasTs: true, Ts: 1625851153146},
+					},
+				},
+				{
+					m:    "test_histogram_family",
+					help: "Test histogram metric family with two very simple histograms.",
+				},
+				{
+					m:   "test_histogram_family",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram_family\xff__type__\xffhistogram\xfffoo\xffbar",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            5,
+						Sum:              12.1,
+						Schema:           -53,
+						PositiveSpans: []histogram.Span{
+							{Length: 3},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{2, -1, 1},
+						CustomValues:    []float64{1.1, 2.2},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family",
+						"__type__", "histogram",
+						"foo", "bar",
+					),
+				},
+				{
+					m: "test_histogram_family\xff__type__\xffhistogram\xfffoo\xffbaz",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            6,
+						Sum:              13.1,
+						Schema:           -53,
+						PositiveSpans: []histogram.Span{
+							{Offset: 1, Length: 2},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{5, -4},
+						CustomValues:    []float64{1.1, 2.2},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family",
+						"__type__", "histogram",
+						"foo", "baz",
+					),
+				},
+				{
+					m:    "empty_histogram",
+					help: "A histogram without observations and with a zero threshold of zero but with a no-op span to identify it as a native histogram.",
+				},
+				{
+					m:   "empty_histogram",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "empty_histogram\xff__type__\xffhistogram",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						PositiveSpans:    []histogram.Span{},
+						NegativeSpans:    []histogram.Span{},
+					},
+					lset: labels.FromStrings(
+						"__name__", "empty_histogram",
+						"__type__", "histogram",
+					),
+				},
+			},
+		},
+		{
+			keepClassic: true,
+			typeAndUnit: true,
+			expected: []parsedEntry{
+				{
+					m:    "test_histogram1",
+					help: "Similar histogram as before but now without sparse buckets.",
+				},
+				{
+					m:   "test_histogram1",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram1_count\xff__type__\xffhistogram",
+					v: 175,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram1_count",
+						"__type__", "histogram",
+					),
+				},
+				{
+					m: "test_histogram1_sum\xff__type__\xffhistogram",
+					v: 0.000828,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram1_sum",
+						"__type__", "histogram",
+					),
+				},
+				{
+					m: "test_histogram1_bucket\xff__type__\xffhistogram\xffle\xff-0.00048",
+					v: 2,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram1_bucket",
+						"__type__", "histogram",
+						"le", "-0.00048",
+					),
+				},
+				{
+					m: "test_histogram1_bucket\xff__type__\xffhistogram\xffle\xff-0.00038",
+					v: 4,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram1_bucket",
+						"__type__", "histogram",
+						"le", "-0.00038",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00038, HasTs: true, Ts: 1625851153146},
+					},
+				},
+				{
+					m: "test_histogram1_bucket\xff__type__\xffhistogram\xffle\xff1.0",
+					v: 16,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram1_bucket",
+						"__type__", "histogram",
+						"le", "1.0",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.000295, HasTs: false},
+					},
+				},
+				{
+					m: "test_histogram1_bucket\xff__type__\xffhistogram\xffle\xff+Inf",
+					v: 175,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram1_bucket",
+						"__type__", "histogram",
+						"le", "+Inf",
+					),
+				},
+				{
+					m: "test_histogram1\xff__type__\xffhistogram",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            175,
+						Sum:              0.000828,
+						Schema:           -53,
+						PositiveSpans: []histogram.Span{
+							{Length: 4},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{2, 0, 10, 147},
+						CustomValues:    []float64{-0.00048, -0.00038, 1},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram1",
+						"__type__", "histogram",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00038, HasTs: true, Ts: 1625851153146},
+						// The second exemplar has no timestamp.
+					},
+				},
+				{
+					m:    "test_histogram2_seconds",
+					help: "Similar histogram as before but now with integer buckets.",
+				},
+				{
+					m:    "test_histogram2_seconds",
+					unit: "seconds",
+				},
+				{
+					m:   "test_histogram2_seconds",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram2_seconds_count\xff__type__\xffhistogram\xff__unit__\xffseconds",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram2_seconds_count",
+						"__type__", "histogram",
+						"__unit__", "seconds",
+					),
+				},
+				{
+					m: "test_histogram2_seconds_sum\xff__type__\xffhistogram\xff__unit__\xffseconds",
+					v: 50,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram2_seconds_sum",
+						"__type__", "histogram",
+						"__unit__", "seconds",
+					),
+				},
+				{
+					m: "test_histogram2_seconds_bucket\xff__type__\xffhistogram\xff__unit__\xffseconds\xffle\xff-20.0",
+					v: 2,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram2_seconds_bucket",
+						"__type__", "histogram",
+						"__unit__", "seconds",
+						"le", "-20.0",
+					),
+				},
+				{
+					m: "test_histogram2_seconds_bucket\xff__type__\xffhistogram\xff__unit__\xffseconds\xffle\xff20.0",
+					v: 4,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram2_seconds_bucket",
+						"__type__", "histogram",
+						"__unit__", "seconds",
+						"le", "20.0",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: 15, HasTs: true, Ts: 1625851153146},
+					},
+				},
+				{
+					m: "test_histogram2_seconds_bucket\xff__type__\xffhistogram\xff__unit__\xffseconds\xffle\xff30.0",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram2_seconds_bucket",
+						"__type__", "histogram",
+						"__unit__", "seconds",
+						"le", "30.0",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "5617"), Value: 25, HasTs: true, Ts: 1625851153146},
+					},
+				},
+				{
+					m: "test_histogram2_seconds_bucket\xff__type__\xffhistogram\xff__unit__\xffseconds\xffle\xff+Inf",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram2_seconds_bucket",
+						"__type__", "histogram",
+						"__unit__", "seconds",
+						"le", "+Inf",
+					),
+				},
+				{
+					m: "test_histogram2_seconds\xff__type__\xffhistogram\xff__unit__\xffseconds",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            6,
+						Sum:              50,
+						Schema:           -53,
+						PositiveSpans: []histogram.Span{
+							{Length: 3},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{2, 0, 0},
+						CustomValues:    []float64{-20, 20, 30},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram2_seconds",
+						"__type__", "histogram",
+						"__unit__", "seconds",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: 15, HasTs: true, Ts: 1625851153146},
+						{Labels: labels.FromStrings("dummyID", "5617"), Value: 25, HasTs: true, Ts: 1625851153146},
+					},
+				},
+				{
+					m:    "test_histogram_family",
+					help: "Test histogram metric family with two very simple histograms.",
+				},
+				{
+					m:   "test_histogram_family",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram_family_count\xff__type__\xffhistogram\xfffoo\xffbar",
+					v: 5,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_count",
+						"__type__", "histogram",
+						"foo", "bar",
+					),
+				},
+				{
+					m: "test_histogram_family_sum\xff__type__\xffhistogram\xfffoo\xffbar",
+					v: 12.1,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_sum",
+						"__type__", "histogram",
+						"foo", "bar",
+					),
+				},
+				{
+					m: "test_histogram_family_bucket\xff__type__\xffhistogram\xfffoo\xffbar\xffle\xff1.1",
+					v: 2,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"__type__", "histogram",
+						"foo", "bar",
+						"le", "1.1",
+					),
+				},
+				{
+					m: "test_histogram_family_bucket\xff__type__\xffhistogram\xfffoo\xffbar\xffle\xff2.2",
+					v: 3,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"__type__", "histogram",
+						"foo", "bar",
+						"le", "2.2",
+					),
+				},
+				{
+					m: "test_histogram_family_bucket\xff__type__\xffhistogram\xfffoo\xffbar\xffle\xff+Inf",
+					v: 5,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"__type__", "histogram",
+						"foo", "bar",
+						"le", "+Inf",
+					),
+				},
+				{
+					m: "test_histogram_family\xff__type__\xffhistogram\xfffoo\xffbar",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            5,
+						Sum:              12.1,
+						Schema:           -53,
+						PositiveSpans: []histogram.Span{
+							{Length: 3},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{2, -1, 1},
+						CustomValues:    []float64{1.1, 2.2},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family",
+						"__type__", "histogram",
+						"foo", "bar",
+					),
+				},
+				{
+					m: "test_histogram_family_count\xff__type__\xffhistogram\xfffoo\xffbaz",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_count",
+						"__type__", "histogram",
+						"foo", "baz",
+					),
+				},
+				{
+					m: "test_histogram_family_sum\xff__type__\xffhistogram\xfffoo\xffbaz",
+					v: 13.1,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_sum",
+						"__type__", "histogram",
+						"foo", "baz",
+					),
+				},
+				{
+					m: "test_histogram_family_bucket\xff__type__\xffhistogram\xfffoo\xffbaz\xffle\xff1.1",
+					v: 0,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"__type__", "histogram",
+						"foo", "baz",
+						"le", "1.1",
+					),
+				},
+				{
+					m: "test_histogram_family_bucket\xff__type__\xffhistogram\xfffoo\xffbaz\xffle\xff2.2",
+					v: 5,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"__type__", "histogram",
+						"foo", "baz",
+						"le", "2.2",
+					),
+				},
+				{
+					m: "test_histogram_family_bucket\xff__type__\xffhistogram\xfffoo\xffbaz\xffle\xff+Inf",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"__type__", "histogram",
+						"foo", "baz",
+						"le", "+Inf",
+					),
+				},
+				{
+					m: "test_histogram_family\xff__type__\xffhistogram\xfffoo\xffbaz",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            6,
+						Sum:              13.1,
+						Schema:           -53,
+						PositiveSpans: []histogram.Span{
+							{Offset: 1, Length: 2},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{5, -4},
+						CustomValues:    []float64{1.1, 2.2},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family",
+						"__type__", "histogram",
+						"foo", "baz",
+					),
+				},
+				{
+					m:    "empty_histogram",
+					help: "A histogram without observations and with a zero threshold of zero but with a no-op span to identify it as a native histogram.",
+				},
+				{
+					m:   "empty_histogram",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "empty_histogram\xff__type__\xffhistogram",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						PositiveSpans:    []histogram.Span{},
+						NegativeSpans:    []histogram.Span{},
+					},
+					lset: labels.FromStrings(
+						"__name__", "empty_histogram",
+						"__type__", "histogram",
+					),
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		name := fmt.Sprintf("keepClassic=%v,typeAndUnit=%v", tc.keepClassic, tc.typeAndUnit)
+		t.Run(name, func(t *testing.T) {
+			p := NewProtobufParser(data, tc.keepClassic, true, tc.typeAndUnit, labels.NewSymbolTable())
+			got := testParse(t, p)
+			requireEntries(t, tc.expected, got)
 		})
 	}
 }
