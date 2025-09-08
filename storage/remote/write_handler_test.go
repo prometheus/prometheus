@@ -416,7 +416,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 999}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
 				writeV2RequestFixture.Timeseries...),
 			expectedCode:     http.StatusBadRequest,
-			expectedRespBody: "parsing timeseries labels for series [1 999]: labelRefs 1 (name) = 999 (value) outside of symbols table (size 18)\n",
+			expectedRespBody: "parsing labels for series [1 999]: labelRefs 1 (name) = 999 (value) outside of symbols table (size 18)\n",
 		},
 		{
 			desc: "Partial write; first series with one OOO sample",
