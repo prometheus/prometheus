@@ -126,10 +126,11 @@ type parserOptions struct {
 	enableTypeAndUnitLabels        bool
 	convertClassicHistogramsToNHCB bool
 
-	// Proto parsing only.
+	// Whether to also parse a classic histogram that is also present as a
+	// native histogram. (Proto parsing only).
 	parseClassicHistograms bool
 
-	// OpenMetrics only.
+	// Whether to skip _created timestamp series during OpenMetrics parsing.
 	skipOMCTSeries bool
 
 	fallbackType string
