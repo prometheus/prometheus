@@ -603,6 +603,12 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				}
 				return float64(val)
 			}),
+			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+				Name: "prometheus_tsdb_last_series_id",
+				Help: "The last(maximum) series ID currently in use.",
+			}, func() float64 {
+				return float64(h.lastSeriesID.Load())
+			}),
 			m.walReplayUnknownRefsTotal,
 			m.wblReplayUnknownRefsTotal,
 		)
@@ -1757,10 +1763,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels, pendingCommit bool) 
 		return s, false, nil
 	}
 
-	// Optimistically assume that we are the first one to create the series.
-	id := chunks.HeadSeriesRef(h.lastSeriesID.Inc())
-
-	return h.getOrCreateWithID(id, hash, lset, pendingCommit)
+	return h.getOrCreateWithID(0, hash, lset, pendingCommit)
 }
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
@@ -1770,6 +1773,9 @@ func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labe
 			shardHash = labels.StableHash(lset)
 		}
 
+		if id == 0 {
+			id = chunks.HeadSeriesRef(h.lastSeriesID.Inc())
+		}
 		return newMemSeries(lset, id, shardHash, h.opts.IsolationDisabled, pendingCommit)
 	})
 	if err != nil {
