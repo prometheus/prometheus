@@ -1635,31 +1635,28 @@ load 1m
 
 # Trigger an annotation about conflicting counter resets by going through the
 # HistogramStatsIterator, which creates counter reset hints on the fly.
-eval instant at 5m 1*histogram_count(sum_over_time(reset{timing="late"}[5m]))
+eval instant at 5m histogram_count(sum_over_time(reset{timing="late"}[5m]))
     expect warn msg: PromQL warning: conflicting counter resets during histogram addition
     {timing="late"} 7
 
-eval instant at 5m 1*histogram_count(sum(reset))
+eval instant at 5m histogram_count(sum(reset))
     expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation
     {} 5
 
-eval instant at 5m 1*histogram_count(avg(reset))
+eval instant at 5m histogram_count(avg(reset))
     expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation
     {} 2.5
 
 # No annotation with the right timing.
-eval instant at 30s 1*histogram_count(sum(reset))
+eval instant at 30s histogram_count(sum(reset))
     expect no_warn
     {} 3
 
-eval instant at 30s 1*histogram_count(avg(reset))
+eval instant at 30s histogram_count(avg(reset))
     expect no_warn
     {} 1.5
 
 # Ensure that the annotation does not happen with rate.
-eval instant at 5m 1*histogram_count(rate(reset{timing="late"}[5m]))
+eval instant at 5m histogram_count(rate(reset{timing="late"}[5m]))
     expect no_warn
     {timing="late"} 0.0175
-
-# NOTE: The `1*` part in the expressions above should not be needed.
-# It can be removed once https://github.com/prometheus/prometheus/pull/17127 is merged.
