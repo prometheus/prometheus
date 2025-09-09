@@ -18,7 +18,6 @@ import (
 	"io"
 	"math"
 	"strconv"
-	"strings"
 
 	"github.com/prometheus/common/model"
 
@@ -373,7 +372,16 @@ func (p *NHCBParser) processNHCB() bool {
 			p.hNHCB = nil
 			p.fhNHCB = fh
 		}
-		p.metricStringNHCB = p.tempLsetNHCB.Get(labels.MetricName) + strings.ReplaceAll(p.tempLsetNHCB.DropMetricName().String(), ", ", ",")
+
+		lblsWithMetricName := p.tempLsetNHCB.DropMetricName()
+		// Ensure we return `metric` instead of `metric{}` for name only
+		// series, for consistency with wrapped parsers.
+		if lblsWithMetricName.IsEmpty() {
+			p.metricStringNHCB = p.tempLsetNHCB.Get(labels.MetricName)
+		} else {
+			p.metricStringNHCB = p.tempLsetNHCB.Get(labels.MetricName) + lblsWithMetricName.StringNoSpace()
+		}
+
 		p.bytesNHCB = []byte(p.metricStringNHCB)
 		p.lsetNHCB = p.tempLsetNHCB
 		p.swapExemplars()

@@ -403,6 +403,22 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedRespBody: "invalid labels for series, labels {__name__=\"test_metric1\", test_metric1=\"test_metric1\", test_metric1=\"test_metric1\"}, duplicated label test_metric1\n",
 		},
 		{
+			desc: "Partial write; first series with odd number of label refs",
+			input: append(
+				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 3}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				writeV2RequestFixture.Timeseries...),
+			expectedCode:     http.StatusBadRequest,
+			expectedRespBody: "parsing labels for series [1 2 3]: invalid labelRefs length 3\n",
+		},
+		{
+			desc: "Partial write; first series with out-of-bounds symbol references",
+			input: append(
+				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 999}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				writeV2RequestFixture.Timeseries...),
+			expectedCode:     http.StatusBadRequest,
+			expectedRespBody: "parsing labels for series [1 999]: labelRefs 1 (name) = 999 (value) outside of symbols table (size 18)\n",
+		},
+		{
 			desc: "Partial write; first series with one OOO sample",
 			input: func() []writev2.TimeSeries {
 				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
@@ -543,7 +559,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			for _, ts := range writeV2RequestFixture.Timeseries {
 				zeroHistogramIngested := false
 				zeroFloatHistogramIngested := false
-				ls := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
+				ls, err := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
+				require.NoError(t, err)
 
 				for _, s := range ts.Samples {
 					if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
@@ -579,7 +596,9 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				}
 				if tc.appendExemplarErr == nil {
 					for _, e := range ts.Exemplars {
-						exemplarLabels := e.ToExemplar(&b, writeV2RequestFixture.Symbols).Labels
+						ex, err := e.ToExemplar(&b, writeV2RequestFixture.Symbols)
+						require.NoError(t, err)
+						exemplarLabels := ex.Labels
 						requireEqual(t, mockExemplar{ls, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
 						j++
 					}
@@ -948,8 +967,8 @@ func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v
 	if m.appendSampleErr != nil {
 		return 0, m.appendSampleErr
 	}
-
-	latestTs := m.latestSample[l.Hash()]
+	hash := l.Hash()
+	latestTs := m.latestSample[hash]
 	if t < latestTs {
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -964,9 +983,9 @@ func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v
 		return 0, tsdb.ErrInvalidSample
 	}
 
-	m.latestSample[l.Hash()] = t
+	m.latestSample[hash] = t
 	m.samples = append(m.samples, mockSample{l, t, v})
-	return 0, nil
+	return storage.SeriesRef(hash), nil
 }
 
 func (m *mockAppendable) Commit() error {
@@ -984,12 +1003,12 @@ func (m *mockAppendable) Rollback() error {
 	return nil
 }
 
-func (m *mockAppendable) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+func (m *mockAppendable) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	if m.appendExemplarErr != nil {
 		return 0, m.appendExemplarErr
 	}
 
-	latestTs := m.latestExemplar[l.Hash()]
+	latestTs := m.latestExemplar[uint64(ref)]
 	if e.Ts < latestTs {
 		return 0, storage.ErrOutOfOrderExemplar
 	}
@@ -997,21 +1016,21 @@ func (m *mockAppendable) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e 
 		return 0, storage.ErrDuplicateExemplar
 	}
 
-	m.latestExemplar[l.Hash()] = e.Ts
+	m.latestExemplar[uint64(ref)] = e.Ts
 	m.exemplars = append(m.exemplars, mockExemplar{l, e.Labels, e.Ts, e.Value})
-	return 0, nil
+	return ref, nil
 }
 
 func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if m.appendHistogramErr != nil {
 		return 0, m.appendHistogramErr
 	}
-
+	hash := l.Hash()
 	var latestTs int64
 	if h != nil {
-		latestTs = m.latestHistogram[l.Hash()]
+		latestTs = m.latestHistogram[hash]
 	} else {
-		latestTs = m.latestFloatHist[l.Hash()]
+		latestTs = m.latestFloatHist[hash]
 	}
 	if t < latestTs {
 		return 0, storage.ErrOutOfOrderSample
@@ -1028,12 +1047,12 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	}
 
 	if h != nil {
-		m.latestHistogram[l.Hash()] = t
+		m.latestHistogram[hash] = t
 	} else {
-		m.latestFloatHist[l.Hash()] = t
+		m.latestFloatHist[hash] = t
 	}
 	m.histograms = append(m.histograms, mockHistogram{l, t, h, fh})
-	return 0, nil
+	return storage.SeriesRef(hash), nil
 }
 
 func (m *mockAppendable) AppendHistogramCTZeroSample(_ storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
@@ -1045,12 +1064,12 @@ func (m *mockAppendable) AppendHistogramCTZeroSample(_ storage.SeriesRef, l labe
 	if ct > t {
 		return 0, storage.ErrOutOfOrderSample
 	}
-
+	hash := l.Hash()
 	var latestTs int64
 	if h != nil {
-		latestTs = m.latestHistogram[l.Hash()]
+		latestTs = m.latestHistogram[hash]
 	} else {
-		latestTs = m.latestFloatHist[l.Hash()]
+		latestTs = m.latestFloatHist[hash]
 	}
 	if ct < latestTs {
 		return 0, storage.ErrOutOfOrderSample
@@ -1068,22 +1087,22 @@ func (m *mockAppendable) AppendHistogramCTZeroSample(_ storage.SeriesRef, l labe
 	}
 
 	if h != nil {
-		m.latestHistogram[l.Hash()] = ct
+		m.latestHistogram[hash] = ct
 		m.histograms = append(m.histograms, mockHistogram{l, ct, &histogram.Histogram{}, nil})
 	} else {
-		m.latestFloatHist[l.Hash()] = ct
+		m.latestFloatHist[hash] = ct
 		m.histograms = append(m.histograms, mockHistogram{l, ct, nil, &histogram.FloatHistogram{}})
 	}
-	return 0, nil
+	return storage.SeriesRef(hash), nil
 }
 
-func (m *mockAppendable) UpdateMetadata(_ storage.SeriesRef, l labels.Labels, mp metadata.Metadata) (storage.SeriesRef, error) {
+func (m *mockAppendable) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, mp metadata.Metadata) (storage.SeriesRef, error) {
 	if m.updateMetadataErr != nil {
 		return 0, m.updateMetadataErr
 	}
 
 	m.metadata = append(m.metadata, mockMetadata{l: l, m: mp})
-	return 0, nil
+	return ref, nil
 }
 
 func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
@@ -1095,8 +1114,8 @@ func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, l labels.Labels
 	if ct > t {
 		return 0, storage.ErrOutOfOrderSample
 	}
-
-	latestTs := m.latestSample[l.Hash()]
+	hash := l.Hash()
+	latestTs := m.latestSample[hash]
 	if ct < latestTs {
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -1111,7 +1130,7 @@ func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, l labels.Labels
 		return 0, tsdb.ErrInvalidSample
 	}
 
-	m.latestSample[l.Hash()] = ct
+	m.latestSample[hash] = ct
 	m.samples = append(m.samples, mockSample{l, ct, 0})
-	return 0, nil
+	return storage.SeriesRef(hash), nil
 }

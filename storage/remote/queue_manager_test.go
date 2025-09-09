@@ -1245,7 +1245,11 @@ func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, erro
 	}
 	b := labels.NewScratchBuilder(0)
 	for i, rts := range v2Req.Timeseries {
-		rts.ToLabels(&b, v2Req.Symbols).Range(func(l labels.Label) {
+		lbls, err := rts.ToLabels(&b, v2Req.Symbols)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert labels: %w", err)
+		}
+		lbls.Range(func(l labels.Label) {
 			req.Timeseries[i].Labels = append(req.Timeseries[i].Labels, prompb.Label{
 				Name:  l.Name,
 				Value: l.Value,
@@ -1256,7 +1260,11 @@ func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, erro
 		for j, e := range rts.Exemplars {
 			exemplars[j].Value = e.Value
 			exemplars[j].Timestamp = e.Timestamp
-			e.ToExemplar(&b, v2Req.Symbols).Labels.Range(func(l labels.Label) {
+			ex, err := e.ToExemplar(&b, v2Req.Symbols)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert exemplar: %w", err)
+			}
+			ex.Labels.Range(func(l labels.Label) {
 				exemplars[j].Labels = append(exemplars[j].Labels, prompb.Label{
 					Name:  l.Name,
 					Value: l.Value,
@@ -1282,7 +1290,10 @@ func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, erro
 
 		// Convert v2 metadata to v1 format.
 		if rts.Metadata.Type != writev2.Metadata_METRIC_TYPE_UNSPECIFIED {
-			labels := rts.ToLabels(&b, v2Req.Symbols)
+			labels, err := rts.ToLabels(&b, v2Req.Symbols)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert metadata labels: %w", err)
+			}
 			metadata := rts.ToMetadata(v2Req.Symbols)
 
 			metricFamilyName := labels.String()

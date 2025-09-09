@@ -15,18 +15,15 @@ package textparse
 
 import (
 	"bytes"
-	"encoding/binary"
 	"strconv"
 	"testing"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
 )
 
 func TestNHCBParserOnOMParser(t *testing.T) {
@@ -182,7 +179,7 @@ foobar{quantile="0.99"} 150.1`
 			m:   "hh",
 			typ: model.MetricTypeHistogram,
 		}, {
-			m: `hh{}`,
+			m: `hh`,
 			shs: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
 				Count:           1,
@@ -203,7 +200,7 @@ foobar{quantile="0.99"} 150.1`
 			m:   "hhh",
 			typ: model.MetricTypeHistogram,
 		}, {
-			m: `hhh{}`,
+			m: `hhh`,
 			shs: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
 				Count:           1,
@@ -333,7 +330,7 @@ foobar{quantile="0.99"} 150.1`
 			m:   "baz",
 			typ: model.MetricTypeHistogram,
 		}, {
-			m: `baz{}`,
+			m: `baz`,
 			shs: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
 				Count:           17,
@@ -361,7 +358,7 @@ foobar{quantile="0.99"} 150.1`
 			m:   "something",
 			typ: model.MetricTypeHistogram,
 		}, {
-			m: `something{}`,
+			m: `something`,
 			shs: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
 				Count:           18,
@@ -479,7 +476,7 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 			m:   "something",
 			typ: model.MetricTypeHistogram,
 		}, {
-			m: `something{}`,
+			m: `something`,
 			shs: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
 				Count:           18,
@@ -737,7 +734,7 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 						// Always expect NHCB series after classic.
 						nhcbSeries := []parsedEntry{
 							{
-								m: metric + "{}",
+								m: metric,
 								shs: &histogram.Histogram{
 									Schema:          histogram.CustomBucketsSchema,
 									Count:           175,
@@ -893,24 +890,7 @@ metric: <
 >
 `}
 
-	varintBuf := make([]byte, binary.MaxVarintLen32)
-	buf := &bytes.Buffer{}
-
-	for _, tmf := range testMetricFamilies {
-		pb := &dto.MetricFamily{}
-		// From text to proto message.
-		require.NoError(t, proto.UnmarshalText(tmf, pb))
-		// From proto message to binary protobuf.
-		protoBuf, err := proto.Marshal(pb)
-		require.NoError(t, err)
-
-		// Write first length, then binary protobuf.
-		varintLength := binary.PutUvarint(varintBuf, uint64(len(protoBuf)))
-		buf.Write(varintBuf[:varintLength])
-		buf.Write(protoBuf)
-	}
-
-	return buf
+	return metricFamiliesToProtobuf(t, testMetricFamilies)
 }
 
 func createTestOpenMetricsHistogram() string {
@@ -1054,22 +1034,7 @@ metric: <
   timestamp_ms: 1234568
 >`}
 
-	varintBuf := make([]byte, binary.MaxVarintLen32)
-	buf := &bytes.Buffer{}
-
-	for _, tmf := range testMetricFamilies {
-		pb := &dto.MetricFamily{}
-		// From text to proto message.
-		require.NoError(t, proto.UnmarshalText(tmf, pb))
-		// From proto message to binary protobuf.
-		protoBuf, err := proto.Marshal(pb)
-		require.NoError(t, err)
-
-		// Write first length, then binary protobuf.
-		varintLength := binary.PutUvarint(varintBuf, uint64(len(protoBuf)))
-		buf.Write(varintBuf[:varintLength])
-		buf.Write(protoBuf)
-	}
+	buf := metricFamiliesToProtobuf(t, testMetricFamilies)
 
 	exp := []parsedEntry{
 		{
@@ -1107,7 +1072,7 @@ metric: <
 			typ: model.MetricTypeHistogram,
 		},
 		{
-			m: "test_histogram2{}",
+			m: "test_histogram2",
 			shs: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
 				Count:           175,
@@ -1127,4 +1092,88 @@ metric: <
 	require.NotNil(t, p)
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
+}
+
+// TestNHCBNotCorruptMetricNameAfterRead is a regression test for https://github.com/prometheus/prometheus/issues/17075.
+func TestNHCBNotCorruptMetricNameAfterRead(t *testing.T) {
+	inputOM := `# HELP test_histogram_seconds Just a test histogram
+# TYPE test_histogram_seconds histogram
+test_histogram_seconds_count 10
+test_histogram_seconds_sum 100
+test_histogram_seconds_bucket{le="10"} 10
+test_histogram_seconds_bucket{le="+Inf"} 10
+# HELP different_metric Just a different metric
+# TYPE different_metric histogram
+different_metric_count 5
+different_metric_sum 50
+different_metric_bucket{le="10"} 5
+different_metric_bucket{le="+Inf"} 5
+# EOF`
+
+	testMetricFamilies := []string{`name: "test_histogram_seconds"
+help: "Just a test histogram"
+type: HISTOGRAM
+metric: <
+  histogram: <
+	sample_count: 10
+	sample_sum: 100
+	bucket: <
+	  cumulative_count: 10
+	  upper_bound: 10
+	>
+  >
+>`, `name: "different_metric"
+help: "Just a different metric"
+type: HISTOGRAM
+metric: <
+  histogram: <
+	sample_count: 5
+	sample_sum: 50
+	bucket: <
+	  cumulative_count: 5
+	  upper_bound: 10
+	>
+  >
+>`}
+
+	buf := metricFamiliesToProtobuf(t, testMetricFamilies)
+
+	testCases := []struct {
+		input []byte
+		typ   string
+	}{
+		{input: buf.Bytes(), typ: "application/vnd.google.protobuf"},
+		{input: []byte(inputOM), typ: "text/plain"},
+		{input: []byte(inputOM), typ: "application/openmetrics-text"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.typ, func(t *testing.T) {
+			p, err := New(tc.input, tc.typ, "", false, true, false, false, labels.NewSymbolTable())
+			require.NoError(t, err)
+			require.NotNil(t, p)
+
+			getNext := func() Entry {
+				e, err := p.Next()
+				require.NoError(t, err)
+				return e
+			}
+
+			require.Equal(t, EntryHelp, getNext())
+			lastMFName, lastHelp := p.Help()
+			require.Equal(t, "test_histogram_seconds", string(lastMFName))
+			require.Equal(t, "Just a test histogram", string(lastHelp))
+
+			require.Equal(t, EntryType, getNext())
+			var lastType model.MetricType
+			lastMFName, lastType = p.Type()
+			require.Equal(t, "test_histogram_seconds", string(lastMFName))
+			require.Equal(t, model.MetricTypeHistogram, lastType)
+
+			require.Equal(t, EntryHistogram, getNext())
+			_, _, h, _ := p.Histogram()
+			require.NotNil(t, h)
+			require.Equal(t, "test_histogram_seconds", string(lastMFName))
+		})
+	}
 }
