@@ -1606,6 +1606,7 @@ func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr
 	val, ws := ev.eval(ctx, subq)
 	// But do incorporate the peak from the subquery.
 	samplesStats.UpdatePeakFromSubquery(ev.samplesStats)
+	samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, ev.samplesStats.TotalSamples)
 	ev.samplesStats = samplesStats
 	mat := val.(Matrix)
 	vs := &parser.VectorSelector{
