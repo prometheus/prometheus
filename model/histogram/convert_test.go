@@ -57,16 +57,16 @@ func TestNHCBtoClassic(t *testing.T) {
 				Sum:             60,
 			},
 			output: &TempHistogram{
-				buckets: []tempHistogramBucket{
-					{le: 1, count: 5},
-					{le: 2, count: 15},
-					{le: 3, count: 30},
-					{le: float64(math.Inf(1)), count: 30},
+				Buckets: []TempHistogramBucket{
+					{Le: 1, Count: 5},
+					{Le: 2, Count: 15},
+					{Le: 3, Count: 30},
+					{Le: float64(math.Inf(1)), Count: 30},
 				},
-				count:    30,
-				sum:      60,
-				err:      nil,
-				hasCount: true,
+				Count:    30,
+				Sum:      60,
+				Err:      nil,
+				HasCount: true,
 			},
 			isErrNeeded: false,
 		},
@@ -80,16 +80,16 @@ func TestNHCBtoClassic(t *testing.T) {
 				Sum:             0,
 			},
 			output: &TempHistogram{
-				buckets: []tempHistogramBucket{
-					{le: 1, count: 0},
-					{le: 2, count: 0},
-					{le: 3, count: 0},
-					{le: float64(math.Inf(1)), count: 0},
+				Buckets: []TempHistogramBucket{
+					{Le: 1, Count: 0},
+					{Le: 2, Count: 0},
+					{Le: 3, Count: 0},
+					{Le: float64(math.Inf(1)), Count: 0},
 				},
-				count:    0,
-				sum:      0,
-				err:      nil,
-				hasCount: true,
+				Count:    0,
+				Sum:      0,
+				Err:      nil,
+				HasCount: true,
 			},
 			isErrNeeded: false,
 		},
@@ -106,15 +106,15 @@ func TestNHCBtoClassic(t *testing.T) {
 				require.NoError(t, err)
 				require.NotNil(t, result)
 
-				require.Equal(t, tt.output.count, result.count, "count mismatch")
-				require.Equal(t, tt.output.sum, result.sum, "sum mismatch")
-				require.Equal(t, tt.output.hasCount, result.hasCount, "hasCount mismatch")
+				require.Equal(t, tt.output.Count, result.Count, "count mismatch")
+				require.Equal(t, tt.output.Sum, result.Sum, "sum mismatch")
+				require.Equal(t, tt.output.HasCount, result.HasCount, "hasCount mismatch")
 
-				require.Len(t, result.buckets, len(tt.output.buckets), "bucket count mismatch")
+				require.Len(t, result.Buckets, len(tt.output.Buckets), "bucket count mismatch")
 
-				for i := range result.buckets {
-					require.Equal(t, tt.output.buckets[i].le, result.buckets[i].le, "bucket[%d].le mismatch", i)
-					require.Equal(t, tt.output.buckets[i].count, result.buckets[i].count, "bucket[%d].count mismatch", i)
+				for i := range result.Buckets {
+					require.Equal(t, tt.output.Buckets[i].Le, result.Buckets[i].Le, "bucket[%d].le mismatch", i)
+					require.Equal(t, tt.output.Buckets[i].Count, result.Buckets[i].Count, "bucket[%d].count mismatch", i)
 				}
 			}
 		})

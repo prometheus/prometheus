@@ -5,17 +5,17 @@ import (
 	"math"
 )
 
-type tempHistogramBucket struct {
-	le    float64
-	count float64
+type TempHistogramBucket struct {
+	Le    float64
+	Count float64
 }
 
 type TempHistogram struct {
-	buckets  []tempHistogramBucket
-	count    float64
-	sum      float64
-	err      error
-	hasCount bool
+	Buckets  []TempHistogramBucket
+	Count    float64
+	Sum      float64
+	Err      error
+	HasCount bool
 }
 
 func ConvertNHCBToClassicHistogram(nhcb *FloatHistogram) (*TempHistogram, error) {
@@ -35,27 +35,29 @@ func ConvertNHCBToClassicHistogram(nhcb *FloatHistogram) (*TempHistogram, error)
 		return nil, errors.New("number of buckets must match number of custom values")
 	}
 
-	var buckets []tempHistogramBucket
+	var buckets []TempHistogramBucket
 	var currCount float64
 
 	for i, upperBound := range nhcb.CustomValues {
 		currCount += nhcb.PositiveBuckets[i]
-		buckets = append(buckets, tempHistogramBucket{
-			le:    upperBound,
-			count: currCount,
+		buckets = append(buckets, TempHistogramBucket{
+			Le:    upperBound,
+			Count: currCount,
 		})
 	}
 
-	buckets = append(buckets, tempHistogramBucket{
-		le:    math.Inf(1),
-		count: nhcb.Count,
+	buckets = append(buckets, TempHistogramBucket{
+		Le:    math.Inf(1),
+		Count: nhcb.Count,
 	})
 
 	return &TempHistogram{
-		buckets:  buckets,
-		count:    nhcb.Count,
-		sum:      nhcb.Sum,
-		err:      nil,
-		hasCount: true,
+		Buckets:  buckets,
+		Count:    nhcb.Count,
+		Sum:      nhcb.Sum,
+		Err:      nil,
+		HasCount: true,
 	}, nil
 }
+
+// add methods to append labels?

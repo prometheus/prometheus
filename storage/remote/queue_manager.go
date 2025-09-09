@@ -430,6 +430,7 @@ type QueueManager struct {
 	sendExemplars           bool
 	sendNativeHistograms    bool
 	enableTypeAndUnitLabels bool
+	convertNHCBToClassic    bool
 	watcher                 *wlog.Watcher
 	metadataWatcher         *MetadataWatcher
 
@@ -482,6 +483,7 @@ func NewQueueManager(
 	enableNativeHistogramRemoteWrite bool,
 	enableTypeAndUnitLabels bool,
 	protoMsg config.RemoteWriteProtoMsg,
+	convertNHCBToClassic bool,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -525,6 +527,8 @@ func NewQueueManager(
 
 		protoMsg: protoMsg,
 		compr:    compression.Snappy, // Hardcoded for now, but scaffolding exists for likely future use.
+
+		convertNHCBToClassic: convertNHCBToClassic,
 	}
 
 	walMetadata := t.protoMsg != config.RemoteWriteProtoMsgV1
@@ -884,11 +888,63 @@ outer:
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
-		if t.protoMsg == config.RemoteWriteProtoMsgV1 && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
-			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
-			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
-			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
-			continue
+		if t.convertNHCBToClassic {
+			// we make labels here :D
+			t.seriesMtx.Lock()
+			lbls, ok := t.seriesLabels[h.Ref]
+			if !ok {
+				if _, ok := t.droppedSeries[h.Ref]; !ok {
+					t.logger.Info("Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
+					t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+				} else {
+					t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+				}
+				t.seriesMtx.Unlock()
+				continue
+			}
+			meta := t.seriesMetadata[h.Ref]
+			t.seriesMtx.Unlock()
+			// we convert the NHCB to classic here.
+			// add labels for the buckets.
+			classicHistogram, err := histogram.ConvertNHCBToClassicHistogram(h.FH)
+			if err != nil {
+				t.logger.Error("Dropped histogram for series due to conversion error", "ref", h.Ref)
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+			} else {
+				baseName := lbls.Get("__name__")
+				// we need add labels for the buckets.
+				// enqueue it
+				for _, bucket := range classicHistogram.Buckets {
+					bucketLabels := labels.NewBuilder(lbls)
+					bucketLabels.Set("__name__", baseName+"_bucket")
+					bucketLabels.Set("le", fmt.Sprintf("%g", bucket.Le))
+					t.shards.enqueue(h.Ref, timeSeries{
+						seriesLabels: bucketLabels.Labels(),
+						metadata:     meta,
+						timestamp:    h.T,
+						value:        bucket.Count,
+						sType:        tSample,
+					})
+				}
+				countLabels := labels.NewBuilder(lbls)
+				countLabels.Set("__name__", baseName+"_count")
+				t.shards.enqueue(h.Ref, timeSeries{
+					seriesLabels: countLabels.Labels(),
+					metadata:     meta,
+					timestamp:    h.T,
+					value:        classicHistogram.Count,
+					sType:        tSample,
+				})
+				sumLabels := labels.NewBuilder(lbls)
+				sumLabels.Set("__name__", baseName+"_sum")
+				t.shards.enqueue(h.Ref, timeSeries{
+					seriesLabels: sumLabels.Labels(),
+					metadata:     meta,
+					timestamp:    h.T,
+					value:        classicHistogram.Sum,
+					sType:        tSample,
+				})
+			}
 		}
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[h.Ref]
