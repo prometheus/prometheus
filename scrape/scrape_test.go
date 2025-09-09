@@ -5660,6 +5660,42 @@ func TestScrapeWithScrapeRules(t *testing.T) {
 		expectedFloats  []floatSample
 	}{
 		{
+			name: "scrape rules without aggregation",
+			scrape: `
+metric{l1="1", l2="1"} 3
+metric{l1="1", l2="2"} 5`,
+			discoveryLabels: []string{"instance", "local"},
+			scrapeRules: []*config.ScrapeRuleConfig{
+				{
+					Expr:   "metric",
+					Record: "metric:scrape_rule",
+				},
+			},
+			relabelConfig: nil,
+			expectedFloats: []floatSample{
+				{
+					metric: labels.FromStrings("__name__", "metric", "instance", "local", "l1", "1", "l2", "1"),
+					t:      ts.UnixMilli(),
+					f:      3,
+				},
+				{
+					metric: labels.FromStrings("__name__", "metric", "instance", "local", "l1", "1", "l2", "2"),
+					t:      ts.UnixMilli(),
+					f:      5,
+				},
+				{
+					metric: labels.FromStrings("__name__", "metric:scrape_rule", "instance", "local", "l1", "1", "l2", "1"),
+					t:      ts.UnixMilli(),
+					f:      3,
+				},
+				{
+					metric: labels.FromStrings("__name__", "metric:scrape_rule", "instance", "local", "l1", "1", "l2", "2"),
+					t:      ts.UnixMilli(),
+					f:      5,
+				},
+			},
+		},
+		{
 			name: "scrape rules without relabeling",
 			scrape: `
 metric{l1="1", l2="1"} 3
