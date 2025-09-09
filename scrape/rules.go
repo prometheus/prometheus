@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -110,8 +111,8 @@ func (r *ruleEngine) EvaluateRules(b Batch, ts time.Time, sampleMutator labelsMu
 // Batch is used to collect floats from a single scrape.
 type Batch interface {
 	storage.Querier
-	AddFloatSample(labels.Labels, int64, float64)
-	AddHistogramSample(labels.Labels, int64, *histogram.FloatHistogram)
+	AddFloatSample(textparse.Parser, int64, float64)
+	AddHistogramSample(textparse.Parser, int64, *histogram.FloatHistogram)
 }
 
 type batch struct {
@@ -125,7 +126,9 @@ type Sample struct {
 	fh     *histogram.FloatHistogram
 }
 
-func (b *batch) AddFloatSample(lbls labels.Labels, t int64, f float64) {
+func (b *batch) AddFloatSample(p textparse.Parser, t int64, f float64) {
+	var lbls labels.Labels
+	p.Labels(&lbls)
 	b.samples = append(b.samples, Sample{
 		metric: lbls,
 		t:      t,
@@ -133,7 +136,9 @@ func (b *batch) AddFloatSample(lbls labels.Labels, t int64, f float64) {
 	})
 }
 
-func (b *batch) AddHistogramSample(lbls labels.Labels, t int64, fh *histogram.FloatHistogram) {
+func (b *batch) AddHistogramSample(p textparse.Parser, t int64, fh *histogram.FloatHistogram) {
+	var lbls labels.Labels
+	p.Labels(&lbls)
 	b.samples = append(b.samples, Sample{
 		metric: lbls,
 		t:      t,
@@ -211,9 +216,9 @@ func (nopRuleEngine) EvaluateRules(Batch, time.Time, labelsMutator) ([]Sample, e
 
 type nopBatch struct{}
 
-func (*nopBatch) AddFloatSample(labels.Labels, int64, float64) {}
+func (*nopBatch) AddFloatSample(textparse.Parser, int64, float64) {}
 
-func (*nopBatch) AddHistogramSample(labels.Labels, int64, *histogram.FloatHistogram) {
+func (*nopBatch) AddHistogramSample(textparse.Parser, int64, *histogram.FloatHistogram) {
 }
 
 func (*nopBatch) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {

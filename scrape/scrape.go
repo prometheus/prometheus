@@ -1773,12 +1773,12 @@ loop:
 		}
 		if isHistogram {
 			if h != nil {
-				scrapeBatch.AddHistogramSample(lset, t, h.ToFloat(nil))
+				scrapeBatch.AddHistogramSample(p, t, h.ToFloat(nil))
 			} else {
-				scrapeBatch.AddHistogramSample(lset, t, fh)
+				scrapeBatch.AddHistogramSample(p, t, fh)
 			}
 		} else {
-			scrapeBatch.AddFloatSample(lset, t, val)
+			scrapeBatch.AddFloatSample(p, t, val)
 		}
 
 		if sl.cache.getDropped(met) {
