@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# Test for __name__ label drop.
+load 1m
+  metric_total{env="1"} 0+1x10
+  metric_total{env="2"} 0+3x10
+
+eval instant at 10m sum by (__name__) (metric_total{env="1"} or rate(metric_total{env="2"}[5m]))
+  metric_total 10.05
+
+eval instant at 10m sum by (__name__) (rate(metric_total{env="2"}[5m]) or metric_total{env="1"})
+  {} 10.05
