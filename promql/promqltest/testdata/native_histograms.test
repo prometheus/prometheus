@@ -1608,6 +1608,24 @@ eval instant at 1m histogram_quantile(0.5, myHistogram2)
 eval instant at 1m histogram_quantile(0.5, mixedHistogram)
 	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "mixedHistogram"
 
+clear
+
+# A counter reset only in a bucket. Sub-queries still need to detect
+# it via explicit counter reset detection. This test also runs it with
+# histogram_count in the expression to make sure that the
+# HistogramStatsIterator is not used. (The latter fails to correctly
+# do the counter resets because Seek is used with sub-queries. And the
+# explicit counter reset detection done with sub-queries cannot access
+# the buckets anymore, if HistogramStatsIterator is used.)
+load 1m
+     h{} {{schema:0 count:1 sum:10 buckets:[1]}}+{{}}x20 {{schema:0 count:1 sum:10 buckets:[0 1]}}+{{}}x20
+
+# Both evals below should yield the same value for the count.
+eval instant at 41m histogram_count(increase(h[40m:9m]))
+    {} 1.4814814814814814
+
+eval instant at 41m increase(h[40m:9m])
+    {} {{count:1.4814814814814814 sum:14.814814814814813 counter_reset_hint:gauge offset:1 buckets:[1.4814814814814814]}}
 
 clear
 
@@ -1617,31 +1635,28 @@ load 1m
 
 # Trigger an annotation about conflicting counter resets by going through the
 # HistogramStatsIterator, which creates counter reset hints on the fly.
-eval instant at 5m 1*histogram_count(sum_over_time(reset{timing="late"}[5m]))
+eval instant at 5m histogram_count(sum_over_time(reset{timing="late"}[5m]))
     expect warn msg: PromQL warning: conflicting counter resets during histogram addition
     {timing="late"} 7
 
-eval instant at 5m 1*histogram_count(sum(reset))
+eval instant at 5m histogram_count(sum(reset))
     expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation
     {} 5
 
-eval instant at 5m 1*histogram_count(avg(reset))
+eval instant at 5m histogram_count(avg(reset))
     expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation
     {} 2.5
 
 # No annotation with the right timing.
-eval instant at 30s 1*histogram_count(sum(reset))
+eval instant at 30s histogram_count(sum(reset))
     expect no_warn
     {} 3
 
-eval instant at 30s 1*histogram_count(avg(reset))
+eval instant at 30s histogram_count(avg(reset))
     expect no_warn
     {} 1.5
 
 # Ensure that the annotation does not happen with rate.
-eval instant at 5m 1*histogram_count(rate(reset{timing="late"}[5m]))
+eval instant at 5m histogram_count(rate(reset{timing="late"}[5m]))
     expect no_warn
     {timing="late"} 0.0175
-
-# NOTE: The `1*` part in the expressions above should not be needed.
-# It can be removed once https://github.com/prometheus/prometheus/pull/17127 is merged.
