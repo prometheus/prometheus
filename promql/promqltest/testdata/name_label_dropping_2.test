@@ -5,8 +5,22 @@ load 1m
   metric_total{env="1"} 0+1x10
   metric_total{env="2"} 0+3x10
 
+# Metric name is preserved as there is no function that drops it.
+eval instant at 10m sum by (__name__) (metric_total{env="1"})
+  metric_total 10
+
+# Metric name is dropped at the end because of rate and because there is no label function to preserve it.
+eval instant at 10m sum by (__name__) (rate(metric_total{env="2"}[5m]))
+  {} 0.05
+
+# Metric name is preserved with label_replace even though it would have been dropped with rate.
+eval instant at 10m label_replace(sum by (__name__) (rate(metric_total{env="2"}[5m])), "__name__", "$1", "__name__", "(.+)")
+  metric_total 0.05
+
+# Combining the above cases in an OR expression.
 eval instant at 10m sum by (__name__) (metric_total{env="1"} or rate(metric_total{env="2"}[5m]))
   metric_total 10.05
 
+# Changing the order of the OR expression should change the result.
 eval instant at 10m sum by (__name__) (rate(metric_total{env="2"}[5m]) or metric_total{env="1"})
   {} 10.05
