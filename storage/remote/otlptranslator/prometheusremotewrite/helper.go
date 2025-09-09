@@ -88,7 +88,11 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 	c.scratchBuilder.Sort()
 	sortedLabels := c.scratchBuilder.Labels()
 
-	labelNamer := otlptranslator.LabelNamer{UTF8Allowed: settings.AllowUTF8}
+	labelNamer := otlptranslator.LabelNamer{
+		UTF8Allowed:                 settings.AllowUTF8,
+		UnderscoreLabelSanitization: settings.LabelNameUnderscoreLabelSanitization,
+		PreserveMultipleUnderscores: settings.LabelNamePreserveMultipleUnderscores,
+	}
 
 	if settings.AllowUTF8 {
 		// UTF8 is allowed, so conflicts aren't possible.

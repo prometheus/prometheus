@@ -54,6 +54,12 @@ type Settings struct {
 	// PromoteScopeMetadata controls whether to promote OTel scope metadata to metric labels.
 	PromoteScopeMetadata    bool
 	EnableTypeAndUnitLabels bool
+	// LabelNameUnderscoreLabelSanitization controls whether to enable prepending of 'key' to labels
+	// starting with '_'. Reserved labels starting with `__` are not modified.
+	LabelNameUnderscoreLabelSanitization bool
+	// LabelNamePreserveMultipleUnderscores enables preserving of multiple
+	// consecutive underscores in label names when AllowUTF8 is false.
+	LabelNamePreserveMultipleUnderscores bool
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
