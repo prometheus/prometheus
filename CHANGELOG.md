@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+* [ENHANCEMENT] TSDB: Track stale series in the Head block based on stale sample. #16925
+
 ## 3.6.0-rc.0 / 2025-08-12
 
 * [FEATURE] PromQL: Add `step()`, and `min()` and `max()` on durations, behind feature flag `promql-duration-expr`. #16777
