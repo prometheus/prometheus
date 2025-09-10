@@ -158,6 +158,8 @@ type HeadOptions struct {
 
 	OutOfOrderTimeWindow atomic.Int64
 	OutOfOrderCapMax     atomic.Int64
+	// Minimum wall-clock interval between OOO head chunk creations per series. 0 disables rate limiting.
+	OutOfOrderOOOChunkMinIntervalMillis atomic.Int64
 
 	// EnableNativeHistograms enables the ingestion of native histograms.
 	EnableNativeHistograms atomic.Bool
@@ -2215,6 +2217,7 @@ type memSeriesOOOFields struct {
 	oooMmappedChunks []*mmappedChunk    // Immutable chunks on disk containing OOO samples.
 	oooHeadChunk     *oooHeadChunk      // Most recent chunk for ooo samples in memory that's still being built.
 	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0].
+	lastOOOChunkCutAtUnixMilli int64    // Wall-clock time in ms when we last cut an OOO head chunk (rate limiting).
 }
 
 func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, isolationDisabled, pendingCommit bool) *memSeries {

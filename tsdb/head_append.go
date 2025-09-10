@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"time"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -39,6 +40,10 @@ type initAppender struct {
 }
 
 var _ storage.GetRef = &initAppender{}
+
+// ErrOOOChunkRateLimited is returned when creating a new out-of-order head chunk would violate the configured
+// per-series rate limit for OOO chunk creation.
+var ErrOOOChunkRateLimited = errors.New("out-of-order chunk creation rate limited")
 
 func (a *initAppender) SetOptions(opts *storage.AppendOptions) {
 	if a.app != nil {
@@ -381,6 +386,24 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 			return 0, storage.ErrOutOfOrderSample
 		}
+		// Enforce per-series OOO chunk cut rate limiting if configured.
+		if isOOO {
+			minInterval := a.head.opts.OutOfOrderOOOChunkMinIntervalMillis.Load()
+			if minInterval > 0 {
+				capMax := a.head.opts.OutOfOrderCapMax.Load()
+				needNewOOOChunk := s.ooo == nil || s.ooo.oooHeadChunk == nil || s.ooo.oooHeadChunk.chunk.NumSamples() == int(capMax)
+				if needNewOOOChunk {
+					nowMs := time.Now().UnixMilli()
+					last := int64(0)
+					if s.ooo != nil {
+						last = s.ooo.lastOOOChunkCutAtUnixMilli
+					}
+					if last != 0 && nowMs-last < minInterval {
+						return 0, ErrOOOChunkRateLimited
+					}
+				}
+			}
+		}
 		s.pendingCommit = true
 	}
 	if delta > 0 {
@@ -694,6 +717,28 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		if err != nil {
 			s.pendingCommit = true
 		}
+		// Enforce per-series OOO chunk cut rate limiting if configured for histogram OOO samples.
+		if err == nil {
+			isOOO, _, _ := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+			if isOOO {
+				minInterval := a.head.opts.OutOfOrderOOOChunkMinIntervalMillis.Load()
+				if minInterval > 0 {
+					capMax := a.head.opts.OutOfOrderCapMax.Load()
+					needNewOOOChunk := s.ooo == nil || s.ooo.oooHeadChunk == nil || s.ooo.oooHeadChunk.chunk.NumSamples() == int(capMax)
+					if needNewOOOChunk {
+						nowMs := time.Now().UnixMilli()
+						last := int64(0)
+						if s.ooo != nil {
+							last = s.ooo.lastOOOChunkCutAtUnixMilli
+						}
+						if last != 0 && nowMs-last < minInterval {
+							s.Unlock()
+							return 0, ErrOOOChunkRateLimited
+						}
+					}
+				}
+			}
+		}
 		s.Unlock()
 		if delta > 0 {
 			a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
@@ -728,6 +773,28 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err == nil {
 			s.pendingCommit = true
+		}
+		// Enforce per-series OOO chunk cut rate limiting if configured for float histogram OOO samples.
+		if err == nil {
+			isOOO, _, _ := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+			if isOOO {
+				minInterval := a.head.opts.OutOfOrderOOOChunkMinIntervalMillis.Load()
+				if minInterval > 0 {
+					capMax := a.head.opts.OutOfOrderCapMax.Load()
+					needNewOOOChunk := s.ooo == nil || s.ooo.oooHeadChunk == nil || s.ooo.oooHeadChunk.chunk.NumSamples() == int(capMax)
+					if needNewOOOChunk {
+						nowMs := time.Now().UnixMilli()
+						last := int64(0)
+						if s.ooo != nil {
+							last = s.ooo.lastOOOChunkCutAtUnixMilli
+						}
+						if last != 0 && nowMs-last < minInterval {
+							s.Unlock()
+							return 0, ErrOOOChunkRateLimited
+						}
+					}
+				}
+			}
 		}
 		s.Unlock()
 		if delta > 0 {
@@ -1934,6 +2001,8 @@ func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.Chunk
 		minTime: mint,
 		maxTime: math.MinInt64,
 	}
+	// Stamp the wall-clock time when this OOO head chunk was created for rate limiting.
+	s.ooo.lastOOOChunkCutAtUnixMilli = time.Now().UnixMilli()
 
 	return s.ooo.oooHeadChunk, ref
 }
