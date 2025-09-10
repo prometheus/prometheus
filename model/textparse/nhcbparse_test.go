@@ -596,21 +596,21 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 		func() (string, parserFactory, []int, parserOptions) {
 			factory := func(keepClassic, nhcb bool) (Parser, error) {
 				inputBuf := createTestProtoBufHistogram(t)
-				return New(inputBuf.Bytes(), "application/vnd.google.protobuf", labels.NewSymbolTable(), ParserOptions{ParseClassicHistograms: keepClassic, ConvertClassicHistogramsToNHCB: nhcb})
+				return New(inputBuf.Bytes(), "application/vnd.google.protobuf", labels.NewSymbolTable(), ParserOptions{KeepClassicOnClassicAndNativeHistograms: keepClassic, ConvertClassicHistogramsToNHCB: nhcb})
 			}
 			return "ProtoBuf", factory, []int{1, 2, 3}, parserOptions{useUTF8sep: true, hasCreatedTimeStamp: true}
 		},
 		func() (string, parserFactory, []int, parserOptions) {
 			factory := func(keepClassic, nhcb bool) (Parser, error) {
 				input := createTestOpenMetricsHistogram()
-				return New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{ParseClassicHistograms: keepClassic, ConvertClassicHistogramsToNHCB: nhcb})
+				return New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{KeepClassicOnClassicAndNativeHistograms: keepClassic, ConvertClassicHistogramsToNHCB: nhcb})
 			}
 			return "OpenMetrics", factory, []int{1}, parserOptions{hasCreatedTimeStamp: true}
 		},
 		func() (string, parserFactory, []int, parserOptions) {
 			factory := func(keepClassic, nhcb bool) (Parser, error) {
 				input := createTestPromHistogram()
-				return New([]byte(input), "text/plain", labels.NewSymbolTable(), ParserOptions{ParseClassicHistograms: keepClassic, ConvertClassicHistogramsToNHCB: nhcb})
+				return New([]byte(input), "text/plain", labels.NewSymbolTable(), ParserOptions{KeepClassicOnClassicAndNativeHistograms: keepClassic, ConvertClassicHistogramsToNHCB: nhcb})
 			}
 			return "Prometheus", factory, []int{1}, parserOptions{}
 		},

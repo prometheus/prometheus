@@ -123,17 +123,25 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 }
 
 type ParserOptions struct {
-	EnableTypeAndUnitLabels        bool
+	// EnableTypeAndUnitLabels enables parsing and inclusion of type and unit labels
+	// in the parsed metrics.
+	EnableTypeAndUnitLabels bool
+
+	// ConvertClassicHistogramsToNHCB enables conversion of classic histograms
+	// to native histogram custom buckets (NHCB) format.
 	ConvertClassicHistogramsToNHCB bool
 
-	// Whether to also parse a classic histogram that is also present as a
-	// native histogram. (Proto parsing only).
-	ParseClassicHistograms bool
+	// KeepClassicOnClassicAndNativeHistograms causes parser to output classic histogram
+	// that is also present as a native histogram. (Proto parsing only).
+	KeepClassicOnClassicAndNativeHistograms bool
 
-	// Whether to skip _created timestamp series during OpenMetrics parsing.
-	SkipOMCTSeries bool
+	// OpenMetricsSkipCTSeries determines whether to skip `_created` timestamp series
+	// during (OpenMetrics parsing only).
+	OpenMetricsSkipCTSeries bool
 
-	FallbackType string
+	// FallbackContentType specifies the fallback content type to use when the provided
+	// Content-Type header cannot be parsed or is not supported.
+	FallbackContentType string
 }
 
 // New returns a new parser of the byte slice.
@@ -149,18 +157,18 @@ func New(b []byte, contentType string, st *labels.SymbolTable, opts ParserOption
 		st = labels.NewSymbolTable()
 	}
 
-	mediaType, err := extractMediaType(contentType, opts.FallbackType)
+	mediaType, err := extractMediaType(contentType, opts.FallbackContentType)
 	// err may be nil or something we want to warn about.
 
 	var baseParser Parser
 	switch mediaType {
 	case "application/openmetrics-text":
 		baseParser = NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
-			o.skipCTSeries = opts.SkipOMCTSeries
+			o.skipCTSeries = opts.OpenMetricsSkipCTSeries
 			o.enableTypeAndUnitLabels = opts.EnableTypeAndUnitLabels
 		})
 	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b, opts.ParseClassicHistograms, opts.ConvertClassicHistogramsToNHCB, opts.EnableTypeAndUnitLabels, st), err
+		return NewProtobufParser(b, opts.KeepClassicOnClassicAndNativeHistograms, opts.ConvertClassicHistogramsToNHCB, opts.EnableTypeAndUnitLabels, st), err
 	case "text/plain":
 		baseParser = NewPromParser(b, st, opts.EnableTypeAndUnitLabels)
 	default:
@@ -168,7 +176,7 @@ func New(b []byte, contentType string, st *labels.SymbolTable, opts ParserOption
 	}
 
 	if baseParser != nil && opts.ConvertClassicHistogramsToNHCB {
-		baseParser = NewNHCBParser(baseParser, st, opts.ParseClassicHistograms)
+		baseParser = NewNHCBParser(baseParser, st, opts.KeepClassicOnClassicAndNativeHistograms)
 	}
 
 	return baseParser, err

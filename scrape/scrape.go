@@ -1636,11 +1636,11 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 	}
 
 	p, err := textparse.New(b, contentType, sl.symbolTable, textparse.ParserOptions{
-		EnableTypeAndUnitLabels:        sl.enableTypeAndUnitLabels,
-		ConvertClassicHistogramsToNHCB: sl.convertClassicHistToNHCB,
-		ParseClassicHistograms:         sl.alwaysScrapeClassicHist,
-		SkipOMCTSeries:                 sl.enableCTZeroIngestion,
-		FallbackType:                   sl.fallbackScrapeProtocol,
+		EnableTypeAndUnitLabels:                 sl.enableTypeAndUnitLabels,
+		ConvertClassicHistogramsToNHCB:          sl.convertClassicHistToNHCB,
+		KeepClassicOnClassicAndNativeHistograms: sl.alwaysScrapeClassicHist,
+		OpenMetricsSkipCTSeries:                 sl.enableCTZeroIngestion,
+		FallbackContentType:                     sl.fallbackScrapeProtocol,
 	})
 	if p == nil {
 		sl.l.Error(
