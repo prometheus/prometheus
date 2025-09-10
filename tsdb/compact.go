@@ -90,6 +90,7 @@ type LeveledCompactor struct {
 	postingsEncoder             index.PostingsEncoder
 	postingsDecoderFactory      PostingsDecoderFactory
 	enableOverlappingCompaction bool
+	CacheOnlySeriesSymbols      bool
 }
 
 type CompactorMetrics struct {
@@ -174,6 +175,8 @@ type LeveledCompactorOptions struct {
 	Metrics *CompactorMetrics
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
+	// CacheOnlySeriesSymbols enables caching of TSDB symbols only when adding series.
+	CacheOnlySeriesSymbols bool
 }
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
@@ -182,6 +185,8 @@ func DefaultPostingsDecoderFactory(*BlockMeta) index.PostingsDecoder {
 	return index.DecodePostingsRaw
 }
 
+// NewLeveledCompactor returns a new LeveledCompactor.
+// It's the same as calling NewLeveledCompactorWithOptions with mergeFunc, and enabled overlapping compaction.
 func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
 	return NewLeveledCompactorWithOptions(ctx, r, l, ranges, pool, LeveledCompactorOptions{
 		MergeFunc:                   mergeFunc,
@@ -226,6 +231,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		postingsEncoder:             pe,
 		postingsDecoderFactory:      opts.PD,
 		enableOverlappingCompaction: opts.EnableOverlappingCompaction,
+		CacheOnlySeriesSymbols:      opts.CacheOnlySeriesSymbols,
 	}, nil
 }
 
@@ -669,7 +675,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 		}
 	}
 
-	indexw, err := index.NewWriterWithEncoder(c.ctx, filepath.Join(tmp, indexFilename), c.postingsEncoder)
+	indexw, err := index.NewWriterWithEncoder(c.ctx, filepath.Join(tmp, indexFilename), c.postingsEncoder, c.CacheOnlySeriesSymbols)
 	if err != nil {
 		return fmt.Errorf("open index writer: %w", err)
 	}
