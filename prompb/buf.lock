@@ -4,7 +4,5 @@ deps:
   - remote: buf.build
     owner: gogo
     repository: protobuf
-    branch: main
-    commit: 4df00b267f944190a229ce3695781e99
-    digest: b1-sjLgsg7CzrkOrIjBDh3s-l0aMjE6oqTj85-OsoopKAw=
-    create_time: 2021-08-10T00:14:28.345069Z
+    commit: e1dbca2775a74a89955a99990de45a53
+    digest: shake256:2523041b61927813260d369e632adb1938da2e9a0e10c42c6fca1b38acdb04661046bf20a2d99a7c9fb69676a63f9655147667dca8d49cea1644114fa97c0add

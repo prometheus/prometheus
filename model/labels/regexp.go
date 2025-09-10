@@ -63,13 +63,13 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 		// available, even if the string matcher is faster.
 		m.matchString = m.stringMatcher.Matches
 	} else {
-		parsed, err := syntax.Parse(v, syntax.Perl)
+		parsed, err := syntax.Parse(v, syntax.Perl|syntax.DotNL)
 		if err != nil {
 			return nil, err
 		}
 		// Simplify the syntax tree to run faster.
 		parsed = parsed.Simplify()
-		m.re, err = regexp.Compile("^(?:" + parsed.String() + ")$")
+		m.re, err = regexp.Compile("^(?s:" + parsed.String() + ")$")
 		if err != nil {
 			return nil, err
 		}
@@ -95,12 +95,7 @@ func (m *FastRegexMatcher) compileMatchStringFunction() func(string) bool {
 
 	return func(s string) bool {
 		if len(m.setMatches) != 0 {
-			for _, match := range m.setMatches {
-				if match == s {
-					return true
-				}
-			}
-			return false
+			return slices.Contains(m.setMatches, s)
 		}
 		if m.prefix != "" && !strings.HasPrefix(s, m.prefix) {
 			return false
@@ -771,16 +766,11 @@ func (m *equalMultiStringSliceMatcher) setMatches() []string {
 
 func (m *equalMultiStringSliceMatcher) Matches(s string) bool {
 	if m.caseSensitive {
-		for _, v := range m.values {
-			if s == v {
-				return true
-			}
-		}
-	} else {
-		for _, v := range m.values {
-			if strings.EqualFold(s, v) {
-				return true
-			}
+		return slices.Contains(m.values, s)
+	}
+	for _, v := range m.values {
+		if strings.EqualFold(s, v) {
+			return true
 		}
 	}
 	return false
@@ -802,7 +792,7 @@ type equalMultiStringMapMatcher struct {
 
 func (m *equalMultiStringMapMatcher) add(s string) {
 	if !m.caseSensitive {
-		s = toNormalisedLower(s)
+		s = toNormalisedLower(s, nil) // Don't pass a stack buffer here - it will always escape to heap.
 	}
 
 	m.values[s] = struct{}{}
@@ -840,15 +830,24 @@ func (m *equalMultiStringMapMatcher) setMatches() []string {
 }
 
 func (m *equalMultiStringMapMatcher) Matches(s string) bool {
-	if !m.caseSensitive {
-		s = toNormalisedLower(s)
+	if len(m.values) > 0 {
+		sNorm := s
+		var a [32]byte
+		if !m.caseSensitive {
+			sNorm = toNormalisedLower(s, a[:])
+		}
+		if _, ok := m.values[sNorm]; ok {
+			return true
+		}
 	}
 
-	if _, ok := m.values[s]; ok {
-		return true
-	}
 	if m.minPrefixLen > 0 && len(s) >= m.minPrefixLen {
-		for _, matcher := range m.prefixes[s[:m.minPrefixLen]] {
+		prefix := s[:m.minPrefixLen]
+		var a [32]byte
+		if !m.caseSensitive {
+			prefix = toNormalisedLower(s[:m.minPrefixLen], a[:])
+		}
+		for _, matcher := range m.prefixes[prefix] {
 			if matcher.Matches(s) {
 				return true
 			}
@@ -859,22 +858,37 @@ func (m *equalMultiStringMapMatcher) Matches(s string) bool {
 
 // toNormalisedLower normalise the input string using "Unicode Normalization Form D" and then convert
 // it to lower case.
-func toNormalisedLower(s string) string {
-	var buf []byte
+func toNormalisedLower(s string, a []byte) string {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c >= utf8.RuneSelf {
 			return strings.Map(unicode.ToLower, norm.NFKD.String(s))
 		}
 		if 'A' <= c && c <= 'Z' {
-			if buf == nil {
-				buf = []byte(s)
-			}
-			buf[i] = c + 'a' - 'A'
+			return toNormalisedLowerSlow(s, i, a)
 		}
 	}
-	if buf == nil {
-		return s
+	return s
+}
+
+// toNormalisedLowerSlow is split from toNormalisedLower because having a call
+// to `copy` slows it down even when it is not called.
+func toNormalisedLowerSlow(s string, i int, a []byte) string {
+	var buf []byte
+	if cap(a) > len(s) {
+		buf = a[:len(s)]
+		copy(buf, s)
+	} else {
+		buf = []byte(s)
+	}
+	for ; i < len(s); i++ {
+		c := s[i]
+		if c >= utf8.RuneSelf {
+			return strings.Map(unicode.ToLower, norm.NFKD.String(s))
+		}
+		if 'A' <= c && c <= 'Z' {
+			buf[i] = c + 'a' - 'A'
+		}
 	}
 	return yoloString(buf)
 }
@@ -967,7 +981,7 @@ func optimizeEqualOrPrefixStringMatchers(input StringMatcher, threshold int) Str
 		return true
 	}
 
-	analysePrefixMatcherCallback := func(prefix string, prefixCaseSensitive bool, matcher StringMatcher) bool {
+	analysePrefixMatcherCallback := func(prefix string, prefixCaseSensitive bool, _ StringMatcher) bool {
 		// Ensure we don't have mixed case sensitivity.
 		if caseSensitiveSet && caseSensitive != prefixCaseSensitive {
 			return false
@@ -1002,7 +1016,7 @@ func optimizeEqualOrPrefixStringMatchers(input StringMatcher, threshold int) Str
 	findEqualOrPrefixStringMatchers(input, func(matcher *equalStringMatcher) bool {
 		multiMatcher.add(matcher.s)
 		return true
-	}, func(prefix string, prefixCaseSensitive bool, matcher StringMatcher) bool {
+	}, func(prefix string, _ bool, matcher StringMatcher) bool {
 		multiMatcher.addPrefix(prefix, caseSensitive, matcher)
 		return true
 	})

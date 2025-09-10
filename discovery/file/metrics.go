@@ -30,7 +30,7 @@ type fileMetrics struct {
 	metricRegisterer discovery.MetricRegisterer
 }
 
-func newDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	fm := &fileMetrics{
 		fileSDReadErrorsCount: prometheus.NewCounter(
 			prometheus.CounterOpts{

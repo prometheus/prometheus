@@ -1,0 +1,57 @@
+groups:
+  - name: my-group-name
+    interval: 30s # defaults to global interval
+    rules:
+      - &highalert
+        alert: &alertname HighAlert
+        expr: &expr |
+          sum without(instance) (rate(errors_total[5m]))
+          /
+          sum without(instance) (rate(requests_total[5m]))
+        for: 5m
+        labels:
+          severity: &severity critical
+        annotations:
+          description: &description "stuff's happening with {{ $.labels.service }}"
+
+      # Mix recording rules in the same list
+      - record: &recordname "new_metric"
+        expr: *expr
+        labels:
+          abc: edf
+          uvw: xyz
+
+      - alert: *alertname
+        expr: *expr
+        for: 5m
+        labels:
+          severity: *severity
+        annotations:
+          description: *description
+
+      - <<: *highalert
+        alert: HighAlert2
+
+  - name: my-another-name
+    interval: 30s # defaults to global interval
+    rules:
+      - alert: *alertname
+        expr: *expr
+        for: 5m
+        labels:
+          severity: *severity
+        annotations:
+          description: *description
+
+      - record: *recordname
+        expr: *expr
+
+      - alert: *alertname
+        expr: *expr
+        labels:
+          severity: *severity
+        annotations:
+          description: *description
+
+      - <<: *highalert
+        alert: HighAlert2

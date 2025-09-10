@@ -258,7 +258,7 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
-    label: 'holt_winters',
+    label: 'double_exponential_smoothing',
     detail: 'function',
     info: 'Calculate smoothed value of input series',
     type: 'function',
@@ -345,6 +345,24 @@ export const functionIdentifierTerms = [
     label: 'min_over_time',
     detail: 'function',
     info: 'Return the minimum value over time for input series',
+    type: 'function',
+  },
+  {
+    label: 'ts_of_max_over_time',
+    detail: 'function',
+    info: 'Return the timestamp of the maximum value over time for input series',
+    type: 'function',
+  },
+  {
+    label: 'ts_of_min_over_time',
+    detail: 'function',
+    info: 'Return the timestamp of the minimum value over time for input series',
+    type: 'function',
+  },
+  {
+    label: 'ts_of_last_over_time',
+    detail: 'function',
+    info: 'Return the timestamp of the last value over time for input series',
     type: 'function',
   },
   {

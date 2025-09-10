@@ -205,7 +205,7 @@ export const bucketRangeString = ([boundaryRule, leftBoundary, rightBoundary, _]
   number,
   string,
   string,
-  string
+  string,
 ]): string => {
   return `${leftDelim(boundaryRule)}${leftBoundary} -> ${rightBoundary}${rightDelim(boundaryRule)}`;
 };

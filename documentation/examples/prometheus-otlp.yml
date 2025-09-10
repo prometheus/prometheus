@@ -1,0 +1,31 @@
+# my global config
+global:
+  evaluation_interval: 15s # Evaluate rules every 15 seconds. The default is every 1 minute.
+
+otlp:
+  # Recommended attributes to be promoted to labels.
+  promote_resource_attributes:
+    - service.instance.id
+    - service.name
+    - service.namespace
+    - cloud.availability_zone
+    - cloud.region
+    - container.name
+    - deployment.environment.name
+    - k8s.cluster.name
+    - k8s.container.name
+    - k8s.cronjob.name
+    - k8s.daemonset.name
+    - k8s.deployment.name
+    - k8s.job.name
+    - k8s.namespace.name
+    - k8s.pod.name
+    - k8s.replicaset.name
+    - k8s.statefulset.name
+  # Ingest OTLP data keeping all characters in metric/label names.
+  translation_strategy: NoUTF8EscapingWithSuffixes
+
+storage:
+  # OTLP is a push-based protocol, Out of order samples is a common scenario.
+  tsdb:
+    out_of_order_time_window: 30m

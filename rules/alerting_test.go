@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -109,7 +109,7 @@ func TestAlertingRuleTemplateWithHistogram(t *testing.T) {
 		NegativeBuckets: []float64{-2, 2, 2, 7, 5, 5, 2},
 	}
 
-	q := func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
+	q := func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) {
 		return []promql.Sample{{H: &h}}, nil
 	}
 
@@ -276,7 +276,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	ruleWithExternalLabels := NewAlertingRule(
 		"ExternalLabelExists",
@@ -287,7 +287,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.FromStrings("foo", "bar", "dings", "bums"),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	result := promql.Vector{
 		promql.Sample{
@@ -371,7 +371,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	ruleWithExternalURL := NewAlertingRule(
 		"ExternalURLExists",
@@ -382,7 +382,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"http://localhost:1234",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	result := promql.Vector{
 		promql.Sample{
@@ -466,7 +466,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	result := promql.Vector{
 		promql.Sample{
@@ -527,7 +527,7 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 `),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	evalTime := time.Unix(0, 0)
 
@@ -607,7 +607,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
@@ -651,7 +651,7 @@ func TestAlertingRuleLimit(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 
 	evalTime := time.Unix(0, 0)
@@ -678,7 +678,7 @@ func TestQueryForStateSeries(t *testing.T) {
 	tests := []testInput{
 		// Test for empty series.
 		{
-			selectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+			selectMockFunction: func(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 				return storage.EmptySeriesSet()
 			},
 			expectedSeries: nil,
@@ -686,7 +686,7 @@ func TestQueryForStateSeries(t *testing.T) {
 		},
 		// Test for error series.
 		{
-			selectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+			selectMockFunction: func(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 				return storage.ErrSeriesSet(testError)
 			},
 			expectedSeries: nil,
@@ -694,7 +694,7 @@ func TestQueryForStateSeries(t *testing.T) {
 		},
 		// Test for mock series.
 		{
-			selectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+			selectMockFunction: func(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 				return storage.TestSeriesSet(storage.MockSeries(
 					[]int64{1, 2, 3},
 					[]float64{1, 2, 3},
@@ -779,7 +779,7 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 			},
 		},
 	}
-	nm := notifier.NewManager(&opts, log.NewNopLogger())
+	nm := notifier.NewManager(&opts, promslog.NewNopLogger())
 
 	f := SendAlerts(nm, "")
 	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {
@@ -986,10 +986,10 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 
-	_, err = rule.Eval(ctx, 0, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
+	_, err = rule.Eval(ctx, 0, now, func(ctx context.Context, _ string, _ time.Time) (promql.Vector, error) {
 		detail = FromOriginContext(ctx)
 		return nil, nil
 	}, nil, 0)
@@ -998,7 +998,9 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 	require.Equal(t, detail, NewRuleDetail(rule))
 }
 
-func TestAlertingRule_SetNoDependentRules(t *testing.T) {
+func TestAlertingRule_SetDependentRules(t *testing.T) {
+	dependentRule := NewRecordingRule("test1", nil, labels.EmptyLabels())
+
 	rule := NewAlertingRule(
 		"test",
 		&parser.NumberLiteral{Val: 1},
@@ -1008,18 +1010,22 @@ func TestAlertingRule_SetNoDependentRules(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	require.False(t, rule.NoDependentRules())
 
-	rule.SetNoDependentRules(false)
+	rule.SetDependentRules([]Rule{dependentRule})
 	require.False(t, rule.NoDependentRules())
+	require.Equal(t, []Rule{dependentRule}, rule.DependentRules())
 
-	rule.SetNoDependentRules(true)
+	rule.SetDependentRules([]Rule{})
 	require.True(t, rule.NoDependentRules())
+	require.Empty(t, rule.DependentRules())
 }
 
-func TestAlertingRule_SetNoDependencyRules(t *testing.T) {
+func TestAlertingRule_SetDependencyRules(t *testing.T) {
+	dependencyRule := NewRecordingRule("test1", nil, labels.EmptyLabels())
+
 	rule := NewAlertingRule(
 		"test",
 		&parser.NumberLiteral{Val: 1},
@@ -1029,15 +1035,17 @@ func TestAlertingRule_SetNoDependencyRules(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	require.False(t, rule.NoDependencyRules())
 
-	rule.SetNoDependencyRules(false)
+	rule.SetDependencyRules([]Rule{dependencyRule})
 	require.False(t, rule.NoDependencyRules())
+	require.Equal(t, []Rule{dependencyRule}, rule.DependencyRules())
 
-	rule.SetNoDependencyRules(true)
+	rule.SetDependencyRules([]Rule{})
 	require.True(t, rule.NoDependencyRules())
+	require.Empty(t, rule.DependencyRules())
 }
 
 func TestAlertingRule_ActiveAlertsCount(t *testing.T) {

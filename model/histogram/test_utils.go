@@ -19,12 +19,12 @@ func GenerateBigTestHistograms(numHistograms, numBuckets int) []*Histogram {
 	bucketsPerSide := numBuckets / 2
 	spanLength := uint32(bucketsPerSide / numSpans)
 	// Given all bucket deltas are 1, sum bucketsPerSide + 1.
-	observationCount := bucketsPerSide * (1 + bucketsPerSide)
+	observationCount := uint64(bucketsPerSide) * (1 + uint64(bucketsPerSide))
 
 	var histograms []*Histogram
 	for i := 0; i < numHistograms; i++ {
 		h := &Histogram{
-			Count:           uint64(i + observationCount),
+			Count:           uint64(i) + observationCount,
 			ZeroCount:       uint64(i),
 			ZeroThreshold:   1e-128,
 			Sum:             18.4 * float64(i+1),

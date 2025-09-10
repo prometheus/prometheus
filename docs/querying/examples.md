@@ -1,10 +1,8 @@
 ---
-title: Querying examples
+title: Query examples
 nav_title: Examples
 sort_rank: 4
 ---
-
-# Query examples
 
 ## Simple time series selection
 
@@ -25,13 +23,10 @@ for the same vector, making it a [range vector](../basics/#range-vector-selector
 Note that an expression resulting in a range vector cannot be graphed directly,
 but viewed in the tabular ("Console") view of the expression browser.
 
-Using regular expressions, you could select time series only for jobs whose
+Using [regular expressions](./basics.md#regular-expressions), you could select time series only for jobs whose
 name match a certain pattern, in this case, all jobs that end with `server`:
 
     http_requests_total{job=~".*server"}
-
-All regular expressions in Prometheus use [RE2
-syntax](https://github.com/google/re2/wiki/Syntax).
 
 To select all HTTP status codes except 4xx ones, you could run:
 

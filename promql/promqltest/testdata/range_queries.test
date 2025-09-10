@@ -1,18 +1,18 @@
 # sum_over_time with all values
-load 30s
+load 15s
   bar 0 1 10 100 1000
 
-eval range from 0 to 2m step 1m sum_over_time(bar[30s])
+eval range from 0 to 1m step 30s sum_over_time(bar[30s])
   {} 0 11 1100
 
 clear
 
 # sum_over_time with trailing values
-load 30s
+load 15s
   bar 0 1 10 100 1000 0 0 0 0
 
 eval range from 0 to 2m step 1m sum_over_time(bar[30s])
-  {} 0 11 1100
+  {} 0 1100 0
 
 clear
 
@@ -21,15 +21,15 @@ load 30s
   bar 0 1 10 100 1000 10000 100000 1000000 10000000
 
 eval range from 0 to 4m step 1m sum_over_time(bar[30s])
-  {} 0 11 1100 110000 11000000
+  {} 0 10 1000 100000 10000000
 
 clear
 
 # sum_over_time with all values random
-load 30s
+load 15s
   bar 5 17 42 2 7 905 51
 
-eval range from 0 to 3m step 1m sum_over_time(bar[30s])
+eval range from 0 to 90s step 30s sum_over_time(bar[30s])
   {} 5 59 9 956
 
 clear

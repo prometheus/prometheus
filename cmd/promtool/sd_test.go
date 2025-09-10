@@ -18,17 +18,17 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/util/testutil"
-
-	"github.com/stretchr/testify/require"
 )
 
 func TestSDCheckResult(t *testing.T) {
+	t.Parallel()
 	targetGroups := []*targetgroup.Group{{
 		Targets: []model.LabelSet{
 			map[model.LabelName]model.LabelValue{"__address__": "localhost:8080", "foo": "bar"},
@@ -70,5 +70,5 @@ func TestSDCheckResult(t *testing.T) {
 		},
 	}
 
-	testutil.RequireEqual(t, expectedSDCheckResult, getSDCheckResult(targetGroups, scrapeConfig, true))
+	testutil.RequireEqual(t, expectedSDCheckResult, getSDCheckResult(targetGroups, scrapeConfig))
 }

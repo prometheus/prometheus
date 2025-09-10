@@ -277,7 +277,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 	require.Equal(t, 2, recorder.Code/100)
 
 	require.Equal(t, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse", recorder.Result().Header.Get("Content-Type"))
-	require.Equal(t, "", recorder.Result().Header.Get("Content-Encoding"))
+	require.Empty(t, recorder.Result().Header.Get("Content-Encoding"))
 
 	var results []*prompb.ChunkedReadResponse
 	stream := NewChunkedReader(recorder.Result().Body, config.DefaultChunkedReadLimit, nil)
@@ -334,7 +334,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 							Type:      prompb.Chunk_XOR,
 							MinTimeMs: 7200000,
 							MaxTimeMs: 7200000,
-							Data:      []byte("\000\001\200\364\356\006@\307p\000\000\000\000\000\000"),
+							Data:      []byte("\000\001\200\364\356\006@\307p\000\000\000\000\000"),
 						},
 					},
 				},
@@ -381,7 +381,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 							Type:      prompb.Chunk_XOR,
 							MinTimeMs: 14400000,
 							MaxTimeMs: 14400000,
-							Data:      []byte("\000\001\200\350\335\r@\327p\000\000\000\000\000\000"),
+							Data:      []byte("\000\001\200\350\335\r@\327p\000\000\000\000\000"),
 						},
 					},
 				},

@@ -14,9 +14,12 @@
 package chunks
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 func TestReaderWithInvalidBuffer(t *testing.T) {
@@ -25,4 +28,33 @@ func TestReaderWithInvalidBuffer(t *testing.T) {
 
 	_, _, err := r.ChunkOrIterable(Meta{Ref: 0})
 	require.Error(t, err)
+}
+
+func TestWriterWithDefaultSegmentSize(t *testing.T) {
+	chk1, err := ChunkFromSamples([]Sample{
+		sample{t: 10, f: 11},
+		sample{t: 20, f: 12},
+		sample{t: 30, f: 13},
+	})
+	require.NoError(t, err)
+
+	chk2, err := ChunkFromSamples([]Sample{
+		sample{t: 40, h: tsdbutil.GenerateTestHistogram(1)},
+		sample{t: 50, h: tsdbutil.GenerateTestHistogram(2)},
+		sample{t: 60, h: tsdbutil.GenerateTestHistogram(3)},
+	})
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	w, err := NewWriter(dir)
+	require.NoError(t, err)
+
+	err = w.WriteChunks(chk1, chk2)
+	require.NoError(t, err)
+
+	require.NoError(t, w.Close())
+
+	d, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, d, 1, "expected only one segment to be created to hold both chunks")
 }

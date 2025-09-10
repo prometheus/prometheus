@@ -14,6 +14,7 @@
 package histogram
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -101,10 +102,8 @@ func (h *Histogram) Copy() *Histogram {
 	}
 
 	if h.UsesCustomBuckets() {
-		if len(h.CustomValues) != 0 {
-			c.CustomValues = make([]float64, len(h.CustomValues))
-			copy(c.CustomValues, h.CustomValues)
-		}
+		// Custom values are interned, it's ok to copy by reference.
+		c.CustomValues = h.CustomValues
 	} else {
 		c.ZeroThreshold = h.ZeroThreshold
 		c.ZeroCount = h.ZeroCount
@@ -145,9 +144,8 @@ func (h *Histogram) CopyTo(to *Histogram) {
 
 		to.NegativeSpans = clearIfNotNil(to.NegativeSpans)
 		to.NegativeBuckets = clearIfNotNil(to.NegativeBuckets)
-
-		to.CustomValues = resize(to.CustomValues, len(h.CustomValues))
-		copy(to.CustomValues, h.CustomValues)
+		// Custom values are interned, it's ok to copy by reference.
+		to.CustomValues = h.CustomValues
 	} else {
 		to.ZeroThreshold = h.ZeroThreshold
 		to.ZeroCount = h.ZeroCount
@@ -157,8 +155,8 @@ func (h *Histogram) CopyTo(to *Histogram) {
 
 		to.NegativeBuckets = resize(to.NegativeBuckets, len(h.NegativeBuckets))
 		copy(to.NegativeBuckets, h.NegativeBuckets)
-
-		to.CustomValues = clearIfNotNil(to.CustomValues)
+		// Custom values are interned, no need to reset.
+		to.CustomValues = nil
 	}
 
 	to.PositiveSpans = resize(to.PositiveSpans, len(h.PositiveSpans))
@@ -378,9 +376,8 @@ func (h *Histogram) ToFloat(fh *FloatHistogram) *FloatHistogram {
 		fh.ZeroCount = 0
 		fh.NegativeSpans = clearIfNotNil(fh.NegativeSpans)
 		fh.NegativeBuckets = clearIfNotNil(fh.NegativeBuckets)
-
-		fh.CustomValues = resize(fh.CustomValues, len(h.CustomValues))
-		copy(fh.CustomValues, h.CustomValues)
+		// Custom values are interned, it's ok to copy by reference.
+		fh.CustomValues = h.CustomValues
 	} else {
 		fh.ZeroThreshold = h.ZeroThreshold
 		fh.ZeroCount = float64(h.ZeroCount)
@@ -394,7 +391,8 @@ func (h *Histogram) ToFloat(fh *FloatHistogram) *FloatHistogram {
 			currentNegative += float64(b)
 			fh.NegativeBuckets[i] = currentNegative
 		}
-		fh.CustomValues = clearIfNotNil(fh.CustomValues)
+		// Custom values are interned, no need to reset.
+		fh.CustomValues = nil
 	}
 
 	fh.PositiveSpans = resize(fh.PositiveSpans, len(h.PositiveSpans))
@@ -432,16 +430,16 @@ func (h *Histogram) Validate() error {
 			return fmt.Errorf("custom buckets: %w", err)
 		}
 		if h.ZeroCount != 0 {
-			return fmt.Errorf("custom buckets: must have zero count of 0")
+			return errors.New("custom buckets: must have zero count of 0")
 		}
 		if h.ZeroThreshold != 0 {
-			return fmt.Errorf("custom buckets: must have zero threshold of 0")
+			return errors.New("custom buckets: must have zero threshold of 0")
 		}
 		if len(h.NegativeSpans) > 0 {
-			return fmt.Errorf("custom buckets: must not have negative spans")
+			return errors.New("custom buckets: must not have negative spans")
 		}
 		if len(h.NegativeBuckets) > 0 {
-			return fmt.Errorf("custom buckets: must not have negative buckets")
+			return errors.New("custom buckets: must not have negative buckets")
 		}
 	} else {
 		if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
@@ -455,7 +453,7 @@ func (h *Histogram) Validate() error {
 			return fmt.Errorf("negative side: %w", err)
 		}
 		if h.CustomValues != nil {
-			return fmt.Errorf("histogram with exponential schema must not have custom bounds")
+			return errors.New("histogram with exponential schema must not have custom bounds")
 		}
 	}
 	err := checkHistogramBuckets(h.PositiveBuckets, &pCount, true)

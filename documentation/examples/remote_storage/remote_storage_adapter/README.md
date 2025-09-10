@@ -31,7 +31,7 @@ OpenTSDB example:
 InfluxDB example:
 
 ```
-./remote_storage_adapter --influxdb-url=http://localhost:8086/ --influxdb.database=prometheus --influxdb.retention-policy=autogen
+INFLUXDB_AUTH_TOKEN=<token> ./remote_storage_adapter --influxdb-url=http://localhost:8086/ --influxdb.organization=<organization_name> --influxdb.bucket=<bucket_name>
 ```
 
 To show all flags:

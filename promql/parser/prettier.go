@@ -79,6 +79,22 @@ func (e *BinaryExpr) Pretty(level int) string {
 	return fmt.Sprintf("%s\n%s%s%s%s\n%s", e.LHS.Pretty(level+1), indent(level), e.Op, returnBool, matching, e.RHS.Pretty(level+1))
 }
 
+func (e *DurationExpr) Pretty(int) string {
+	var s string
+	fmt.Println("e.LHS", e.LHS)
+	fmt.Println("e.RHS", e.RHS)
+	if e.LHS == nil {
+		// This is a unary negative duration expression.
+		s = fmt.Sprintf("%s %s", e.Op, e.RHS.Pretty(0))
+	} else {
+		s = fmt.Sprintf("%s %s %s", e.LHS.Pretty(0), e.Op, e.RHS.Pretty(0))
+	}
+	if e.Wrapped {
+		s = fmt.Sprintf("(%s)", s)
+	}
+	return s
+}
+
 func (e *Call) Pretty(level int) string {
 	s := indent(level)
 	if !needsSplit(e) {

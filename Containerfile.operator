@@ -1,7 +1,7 @@
 # Copyright Contributors to the Open Cluster Management project
 # Licensed under the Apache License 2.0
 
-FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_9_1.23 AS builder
+FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_9_1.24 AS builder
 
 WORKDIR /workspace
 COPY . .
@@ -10,19 +10,18 @@ RUN cd promu && go build -mod=mod -o /cachi2/output/deps/gomod/bin/promu
 
 WORKDIR /workspace
 # adding the cgo flag here to not break the architecture CI builds
-RUN go mod vendor && /cachi2/output/deps/gomod/bin/promu build -v --cgo --prefix ./
+RUN go mod vendor && \
+  export PREBUILT_ASSETS_STATIC_DIR=web/ui && \
+  /cachi2/output/deps/gomod/bin/promu build -v --prefix ./
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 COPY --from=builder /workspace/prometheus        /bin/prometheus
 COPY --from=builder /workspace/promtool          /bin/promtool
-
 COPY documentation/examples/prometheus.yml  /etc/prometheus/prometheus.yml
-COPY console_libraries/                     /usr/share/prometheus/console_libraries/
-COPY consoles/                              /usr/share/prometheus/consoles/
+
 COPY LICENSE                                /LICENSE
 COPY NOTICE                                 /NOTICE
-
 
 RUN ln -s /usr/share/prometheus/console_libraries /usr/share/prometheus/consoles/ /etc/prometheus/
 RUN mkdir -p /prometheus && \

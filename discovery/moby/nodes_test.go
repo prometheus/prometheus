@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 
@@ -48,7 +48,7 @@ host: %s
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()

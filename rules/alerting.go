@@ -15,14 +15,14 @@ package rules
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
@@ -141,17 +141,18 @@ type AlertingRule struct {
 	// the fingerprint of the labelset they correspond to.
 	active map[uint64]*Alert
 
-	logger log.Logger
+	logger *slog.Logger
 
-	noDependentRules  *atomic.Bool
-	noDependencyRules *atomic.Bool
+	dependenciesMutex sync.RWMutex
+	dependentRules    []Rule
+	dependencyRules   []Rule
 }
 
 // NewAlertingRule constructs a new AlertingRule.
 func NewAlertingRule(
 	name string, vec parser.Expr, hold, keepFiringFor time.Duration,
 	labels, annotations, externalLabels labels.Labels, externalURL string,
-	restored bool, logger log.Logger,
+	restored bool, logger *slog.Logger,
 ) *AlertingRule {
 	el := externalLabels.Map()
 
@@ -171,8 +172,6 @@ func NewAlertingRule(
 		evaluationTimestamp: atomic.NewTime(time.Time{}),
 		evaluationDuration:  atomic.NewDuration(0),
 		lastError:           atomic.NewError(nil),
-		noDependentRules:    atomic.NewBool(false),
-		noDependencyRules:   atomic.NewBool(false),
 	}
 }
 
@@ -316,20 +315,54 @@ func (r *AlertingRule) Restored() bool {
 	return r.restored.Load()
 }
 
-func (r *AlertingRule) SetNoDependentRules(noDependentRules bool) {
-	r.noDependentRules.Store(noDependentRules)
+func (r *AlertingRule) SetDependentRules(dependents []Rule) {
+	r.dependenciesMutex.Lock()
+	defer r.dependenciesMutex.Unlock()
+
+	r.dependentRules = make([]Rule, len(dependents))
+	copy(r.dependentRules, dependents)
 }
 
 func (r *AlertingRule) NoDependentRules() bool {
-	return r.noDependentRules.Load()
+	r.dependenciesMutex.RLock()
+	defer r.dependenciesMutex.RUnlock()
+
+	if r.dependentRules == nil {
+		return false // We don't know if there are dependent rules.
+	}
+
+	return len(r.dependentRules) == 0
 }
 
-func (r *AlertingRule) SetNoDependencyRules(noDependencyRules bool) {
-	r.noDependencyRules.Store(noDependencyRules)
+func (r *AlertingRule) DependentRules() []Rule {
+	r.dependenciesMutex.RLock()
+	defer r.dependenciesMutex.RUnlock()
+	return r.dependentRules
+}
+
+func (r *AlertingRule) SetDependencyRules(dependencies []Rule) {
+	r.dependenciesMutex.Lock()
+	defer r.dependenciesMutex.Unlock()
+
+	r.dependencyRules = make([]Rule, len(dependencies))
+	copy(r.dependencyRules, dependencies)
 }
 
 func (r *AlertingRule) NoDependencyRules() bool {
-	return r.noDependencyRules.Load()
+	r.dependenciesMutex.RLock()
+	defer r.dependenciesMutex.RUnlock()
+
+	if r.dependencyRules == nil {
+		return false // We don't know if there are dependency rules.
+	}
+
+	return len(r.dependencyRules) == 0
+}
+
+func (r *AlertingRule) DependencyRules() []Rule {
+	r.dependenciesMutex.RLock()
+	defer r.dependenciesMutex.RUnlock()
+	return r.dependencyRules
 }
 
 // resolvedRetention is the duration for which a resolved alert instance
@@ -381,7 +414,7 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 			result, err := tmpl.Expand()
 			if err != nil {
 				result = fmt.Sprintf("<error expanding template: %s>", err)
-				level.Warn(r.logger).Log("msg", "Expanding alert template failed", "err", err, "data", tmplData)
+				r.logger.Warn("Expanding alert template failed", "err", err, "data", tmplData)
 			}
 			return result
 		}
@@ -404,7 +437,7 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 		resultFPs[h] = struct{}{}
 
 		if _, ok := alerts[h]; ok {
-			return nil, fmt.Errorf("vector contains metrics with the same labelset after applying alert labels")
+			return nil, errors.New("vector contains metrics with the same labelset after applying alert labels")
 		}
 
 		alerts[h] = &Alert{

@@ -23,13 +23,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-kit/log"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -126,6 +127,20 @@ func TestCheckpoint(t *testing.T) {
 			PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
 		}
 	}
+	makeCustomBucketHistogram := func(i int) *histogram.Histogram {
+		return &histogram.Histogram{
+			Count:         5 + uint64(i*4),
+			ZeroCount:     2 + uint64(i),
+			ZeroThreshold: 0.001,
+			Sum:           18.4 * float64(i+1),
+			Schema:        -53,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			CustomValues: []float64{0, 1, 2, 3, 4},
+		}
+	}
 	makeFloatHistogram := func(i int) *histogram.FloatHistogram {
 		return &histogram.FloatHistogram{
 			Count:         5 + float64(i*4),
@@ -140,8 +155,22 @@ func TestCheckpoint(t *testing.T) {
 			PositiveBuckets: []float64{float64(i + 1), 1, -1, 0},
 		}
 	}
+	makeCustomBucketFloatHistogram := func(i int) *histogram.FloatHistogram {
+		return &histogram.FloatHistogram{
+			Count:         5 + float64(i*4),
+			ZeroCount:     2 + float64(i),
+			ZeroThreshold: 0.001,
+			Sum:           18.4 * float64(i+1),
+			Schema:        -53,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			CustomValues: []float64{0, 1, 2, 3, 4},
+		}
+	}
 
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+	for _, compress := range compression.Types() {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
@@ -166,7 +195,7 @@ func TestCheckpoint(t *testing.T) {
 			require.NoError(t, w.Close())
 
 			// Start a WAL and write records to it as usual.
-			w, err = NewSize(nil, nil, dir, 64*1024, compress)
+			w, err = NewSize(nil, nil, dir, 128*1024, compress)
 			require.NoError(t, err)
 
 			samplesInWAL, histogramsInWAL, floatHistogramsInWAL := 0, 0, 0
@@ -207,7 +236,7 @@ func TestCheckpoint(t *testing.T) {
 				require.NoError(t, w.Log(b))
 				samplesInWAL += 4
 				h := makeHistogram(i)
-				b = enc.HistogramSamples([]record.RefHistogramSample{
+				b, _ = enc.HistogramSamples([]record.RefHistogramSample{
 					{Ref: 0, T: last, H: h},
 					{Ref: 1, T: last + 10000, H: h},
 					{Ref: 2, T: last + 20000, H: h},
@@ -215,12 +244,30 @@ func TestCheckpoint(t *testing.T) {
 				}, nil)
 				require.NoError(t, w.Log(b))
 				histogramsInWAL += 4
+				cbh := makeCustomBucketHistogram(i)
+				b = enc.CustomBucketsHistogramSamples([]record.RefHistogramSample{
+					{Ref: 0, T: last, H: cbh},
+					{Ref: 1, T: last + 10000, H: cbh},
+					{Ref: 2, T: last + 20000, H: cbh},
+					{Ref: 3, T: last + 30000, H: cbh},
+				}, nil)
+				require.NoError(t, w.Log(b))
+				histogramsInWAL += 4
 				fh := makeFloatHistogram(i)
-				b = enc.FloatHistogramSamples([]record.RefFloatHistogramSample{
+				b, _ = enc.FloatHistogramSamples([]record.RefFloatHistogramSample{
 					{Ref: 0, T: last, FH: fh},
 					{Ref: 1, T: last + 10000, FH: fh},
 					{Ref: 2, T: last + 20000, FH: fh},
 					{Ref: 3, T: last + 30000, FH: fh},
+				}, nil)
+				require.NoError(t, w.Log(b))
+				floatHistogramsInWAL += 4
+				cbfh := makeCustomBucketFloatHistogram(i)
+				b = enc.CustomBucketsFloatHistogramSamples([]record.RefFloatHistogramSample{
+					{Ref: 0, T: last, FH: cbfh},
+					{Ref: 1, T: last + 10000, FH: cbfh},
+					{Ref: 2, T: last + 20000, FH: cbfh},
+					{Ref: 3, T: last + 30000, FH: cbfh},
 				}, nil)
 				require.NoError(t, w.Log(b))
 				floatHistogramsInWAL += 4
@@ -244,7 +291,7 @@ func TestCheckpoint(t *testing.T) {
 			}
 			require.NoError(t, w.Close())
 
-			stats, err := Checkpoint(log.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
+			stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef, _ int) bool {
 				return x%2 == 0
 			}, last/2)
 			require.NoError(t, err)
@@ -283,14 +330,14 @@ func TestCheckpoint(t *testing.T) {
 						require.GreaterOrEqual(t, s.T, last/2, "sample with wrong timestamp")
 					}
 					samplesInCheckpoint += len(samples)
-				case record.HistogramSamples:
+				case record.HistogramSamples, record.CustomBucketsHistogramSamples:
 					histograms, err := dec.HistogramSamples(rec, nil)
 					require.NoError(t, err)
 					for _, h := range histograms {
 						require.GreaterOrEqual(t, h.T, last/2, "histogram with wrong timestamp")
 					}
 					histogramsInCheckpoint += len(histograms)
-				case record.FloatHistogramSamples:
+				case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
 					floatHistograms, err := dec.FloatHistogramSamples(rec, nil)
 					require.NoError(t, err)
 					for _, h := range floatHistograms {
@@ -338,7 +385,7 @@ func TestCheckpoint(t *testing.T) {
 func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	// Create a new wlog with invalid data.
 	dir := t.TempDir()
-	w, err := NewSize(nil, nil, dir, 64*1024, CompressionNone)
+	w, err := NewSize(nil, nil, dir, 64*1024, compression.None)
 	require.NoError(t, err)
 	var enc record.Encoder
 	require.NoError(t, w.Log(enc.Series([]record.RefSeries{
@@ -354,7 +401,7 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	require.NoError(t, f.Close())
 
 	// Run the checkpoint and since the wlog contains corrupt data this should return an error.
-	_, err = Checkpoint(log.NewNopLogger(), w, 0, 1, nil, 0)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, nil, 0)
 	require.Error(t, err)
 
 	// Walk the wlog dir to make sure there are no tmp folder left behind after the error.

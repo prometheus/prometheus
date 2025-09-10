@@ -1,0 +1,19 @@
+.panelHealthOk {
+  border-left: 5px solid
+    light-dark(var(--mantine-color-green-3), var(--mantine-color-green-8)) !important;
+}
+
+.panelHealthErr {
+  border-left: 5px solid
+    light-dark(var(--mantine-color-red-3), var(--mantine-color-red-9)) !important;
+}
+
+.panelHealthWarn {
+  border-left: 5px solid
+    light-dark(var(--mantine-color-orange-3), var(--mantine-color-yellow-9)) !important;
+}
+
+.panelHealthUnknown {
+  border-left: 5px solid
+    light-dark(var(--mantine-color-gray-3), var(--mantine-color-gray-6)) !important;
+}

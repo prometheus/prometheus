@@ -17,6 +17,7 @@ interface RuleGroup {
   rules: Rule[];
   evaluationTime: string;
   lastEvaluation: string;
+  labels: Record<string, string>;
 }
 
 export interface RulesMap {
@@ -105,10 +106,10 @@ export const RulesContent: FC<RulesContentProps> = ({ response }) => {
                             <strong>keep_firing_for:</strong> {formatDuration(r.keepFiringFor * 1000)}
                           </div>
                         )}
-                        {r.labels && Object.keys(r.labels).length > 0 && (
+                        {Object.keys(Object.assign({ ...g.labels }, { ...r.labels })).length > 0 && (
                           <div>
                             <strong>labels:</strong>
-                            {Object.entries(r.labels).map(([key, value]) => (
+                            {Object.entries(Object.assign({ ...g.labels }, { ...r.labels })).map(([key, value]) => (
                               <div className="ml-4" key={key}>
                                 {key}: {value}
                               </div>

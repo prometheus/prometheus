@@ -45,7 +45,7 @@ func sortSamples(samples []backfillSample) {
 	})
 }
 
-func queryAllSeries(t testing.TB, q storage.Querier, expectedMinTime, expectedMaxTime int64) []backfillSample {
+func queryAllSeries(t testing.TB, q storage.Querier, _, _ int64) []backfillSample {
 	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 	samples := []backfillSample{}
 	for ss.Next() {
@@ -86,6 +86,7 @@ func testBlocks(t *testing.T, db *tsdb.DB, expectedMinTime, expectedMaxTime, exp
 }
 
 func TestBackfill(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		ToParse              string
 		IsOk                 bool
@@ -729,6 +730,7 @@ after_eof 1 2
 	}
 	for _, test := range tests {
 		t.Run(test.Description, func(t *testing.T) {
+			t.Parallel()
 			t.Logf("Test:%s", test.Description)
 
 			outputDir := t.TempDir()

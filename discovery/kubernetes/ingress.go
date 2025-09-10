@@ -17,14 +17,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	v1 "k8s.io/api/networking/v1"
-	"k8s.io/api/networking/v1beta1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
@@ -33,14 +31,14 @@ import (
 
 // Ingress implements discovery of Kubernetes ingress.
 type Ingress struct {
-	logger   log.Logger
+	logger   *slog.Logger
 	informer cache.SharedInformer
 	store    cache.Store
 	queue    *workqueue.Type
 }
 
 // NewIngress returns a new ingress discovery.
-func NewIngress(l log.Logger, inf cache.SharedInformer, eventCount *prometheus.CounterVec) *Ingress {
+func NewIngress(l *slog.Logger, inf cache.SharedInformer, eventCount *prometheus.CounterVec) *Ingress {
 	ingressAddCount := eventCount.WithLabelValues(RoleIngress.String(), MetricLabelRoleAdd)
 	ingressUpdateCount := eventCount.WithLabelValues(RoleIngress.String(), MetricLabelRoleUpdate)
 	ingressDeleteCount := eventCount.WithLabelValues(RoleIngress.String(), MetricLabelRoleDelete)
@@ -67,7 +65,7 @@ func NewIngress(l log.Logger, inf cache.SharedInformer, eventCount *prometheus.C
 		},
 	})
 	if err != nil {
-		level.Error(l).Log("msg", "Error adding ingresses event handler.", "err", err)
+		l.Error("Error adding ingresses event handler.", "err", err)
 	}
 	return s
 }
@@ -87,7 +85,7 @@ func (i *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 	if !cache.WaitForCacheSync(ctx.Done(), i.informer.HasSynced) {
 		if !errors.Is(ctx.Err(), context.Canceled) {
-			level.Error(i.logger).Log("msg", "ingress informer unable to sync cache")
+			i.logger.Error("ingress informer unable to sync cache")
 		}
 		return
 	}
@@ -123,23 +121,18 @@ func (i *Ingress) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 		return true
 	}
 
-	var ia ingressAdaptor
-	switch ingress := o.(type) {
-	case *v1.Ingress:
-		ia = newIngressAdaptorFromV1(ingress)
-	case *v1beta1.Ingress:
-		ia = newIngressAdaptorFromV1beta1(ingress)
-	default:
-		level.Error(i.logger).Log("msg", "converting to Ingress object failed", "err",
+	if ingress, ok := o.(*v1.Ingress); ok {
+		send(ctx, ch, i.buildIngress(*ingress))
+	} else {
+		i.logger.Error("converting to Ingress object failed", "err",
 			fmt.Errorf("received unexpected object: %v", o))
 		return true
 	}
-	send(ctx, ch, i.buildIngress(ia))
 	return true
 }
 
-func ingressSource(s ingressAdaptor) string {
-	return ingressSourceFromNamespaceAndName(s.namespace(), s.name())
+func ingressSource(s v1.Ingress) string {
+	return ingressSourceFromNamespaceAndName(s.Namespace, s.Name)
 }
 
 func ingressSourceFromNamespaceAndName(namespace, name string) string {
@@ -153,15 +146,15 @@ const (
 	ingressClassNameLabel = metaLabelPrefix + "ingress_class_name"
 )
 
-func ingressLabels(ingress ingressAdaptor) model.LabelSet {
+func ingressLabels(ingress v1.Ingress) model.LabelSet {
 	// Each label and annotation will create two key-value pairs in the map.
 	ls := make(model.LabelSet)
-	ls[namespaceLabel] = lv(ingress.namespace())
-	if cls := ingress.ingressClassName(); cls != nil {
+	ls[namespaceLabel] = lv(ingress.Namespace)
+	if cls := ingress.Spec.IngressClassName; cls != nil {
 		ls[ingressClassNameLabel] = lv(*cls)
 	}
 
-	addObjectMetaLabels(ls, ingress.getObjectMeta(), RoleIngress)
+	addObjectMetaLabels(ls, ingress.ObjectMeta, RoleIngress)
 
 	return ls
 }
@@ -181,19 +174,39 @@ func pathsFromIngressPaths(ingressPaths []string) []string {
 	return paths
 }
 
-func (i *Ingress) buildIngress(ingress ingressAdaptor) *targetgroup.Group {
+func rulePaths(rule v1.IngressRule) []string {
+	rv := rule.IngressRuleValue
+	if rv.HTTP == nil {
+		return nil
+	}
+	paths := make([]string, len(rv.HTTP.Paths))
+	for n, p := range rv.HTTP.Paths {
+		paths[n] = p.Path
+	}
+	return paths
+}
+
+func tlsHosts(ingressTLS []v1.IngressTLS) []string {
+	var hosts []string
+	for _, tls := range ingressTLS {
+		hosts = append(hosts, tls.Hosts...)
+	}
+	return hosts
+}
+
+func (i *Ingress) buildIngress(ingress v1.Ingress) *targetgroup.Group {
 	tg := &targetgroup.Group{
 		Source: ingressSource(ingress),
 	}
 	tg.Labels = ingressLabels(ingress)
 
-	for _, rule := range ingress.rules() {
+	for _, rule := range ingress.Spec.Rules {
 		scheme := "http"
-		paths := pathsFromIngressPaths(rule.paths())
+		paths := pathsFromIngressPaths(rulePaths(rule))
 
 	out:
-		for _, pattern := range ingress.tlsHosts() {
-			if matchesHostnamePattern(pattern, rule.host()) {
+		for _, pattern := range tlsHosts(ingress.Spec.TLS) {
+			if matchesHostnamePattern(pattern, rule.Host) {
 				scheme = "https"
 				break out
 			}
@@ -201,9 +214,9 @@ func (i *Ingress) buildIngress(ingress ingressAdaptor) *targetgroup.Group {
 
 		for _, path := range paths {
 			tg.Targets = append(tg.Targets, model.LabelSet{
-				model.AddressLabel: lv(rule.host()),
+				model.AddressLabel: lv(rule.Host),
 				ingressSchemeLabel: lv(scheme),
-				ingressHostLabel:   lv(rule.host()),
+				ingressHostLabel:   lv(rule.Host),
 				ingressPathLabel:   lv(path),
 			})
 		}

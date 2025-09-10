@@ -17,32 +17,34 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"io"
+	"log/slog"
 	"reflect"
+	"runtime"
 	"sync"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/osutil"
 	"github.com/prometheus/prometheus/util/pool"
 )
 
 // NewManager is the Manager constructor.
-func NewManager(o *Options, logger log.Logger, newScrapeFailureLogger func(string) (log.Logger, error), app storage.Appendable, registerer prometheus.Registerer) (*Manager, error) {
+func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error), app storage.Appendable, registerer prometheus.Registerer) (*Manager, error) {
 	if o == nil {
 		o = &Options{}
 	}
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 
 	sm, err := newScrapeMetrics(registerer)
@@ -70,8 +72,7 @@ func NewManager(o *Options, logger log.Logger, newScrapeFailureLogger func(strin
 
 // Options are the configuration parameters to the scrape manager.
 type Options struct {
-	ExtraMetrics  bool
-	NoDefaultPort bool
+	ExtraMetrics bool
 	// Option used by downstream scraper users like OpenTelemetry Collector
 	// to help lookup metric metadata. Should be false for Prometheus.
 	PassMetadataInContext bool
@@ -88,6 +89,9 @@ type Options struct {
 	// Option to enable the ingestion of native histograms.
 	EnableNativeHistogramsIngestion bool
 
+	// EnableTypeAndUnitLabels
+	EnableTypeAndUnitLabels bool
+
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
 
@@ -95,13 +99,11 @@ type Options struct {
 	skipOffsetting bool
 }
 
-const DefaultNameEscapingScheme = model.ValueEncodingEscaping
-
 // Manager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups from the discovery manager.
 type Manager struct {
 	opts      *Options
-	logger    log.Logger
+	logger    *slog.Logger
 	append    storage.Appendable
 	graceShut chan struct{}
 
@@ -109,8 +111,8 @@ type Manager struct {
 	mtxScrape              sync.Mutex // Guards the fields below.
 	scrapeConfigs          map[string]*config.ScrapeConfig
 	scrapePools            map[string]*scrapePool
-	newScrapeFailureLogger func(string) (log.Logger, error)
-	scrapeFailureLoggers   map[string]log.Logger
+	newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error)
+	scrapeFailureLoggers   map[string]FailureLogger
 	targetSets             map[string][]*targetgroup.Group
 	buffers                *pool.Pool
 
@@ -176,21 +178,26 @@ func (m *Manager) reload() {
 		if _, ok := m.scrapePools[setName]; !ok {
 			scrapeConfig, ok := m.scrapeConfigs[setName]
 			if !ok {
-				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
+				m.logger.Error("error reloading target set", "err", "invalid config id:"+setName)
+				continue
+			}
+			if scrapeConfig.ConvertClassicHistogramsToNHCBEnabled() && m.opts.EnableCreatedTimestampZeroIngestion {
+				// TODO(krajorama): fix https://github.com/prometheus/prometheus/issues/15137
+				m.logger.Error("error reloading target set", "err", "cannot convert classic histograms to native histograms with custom buckets and ingest created timestamp zero samples at the same time due to https://github.com/prometheus/prometheus/issues/15137")
 				continue
 			}
 			m.metrics.targetScrapePools.Inc()
-			sp, err := newScrapePool(scrapeConfig, m.append, m.offsetSeed, log.With(m.logger, "scrape_pool", setName), m.buffers, m.opts, m.metrics)
+			sp, err := newScrapePool(scrapeConfig, m.append, m.offsetSeed, m.logger.With("scrape_pool", setName), m.buffers, m.opts, m.metrics)
 			if err != nil {
 				m.metrics.targetScrapePoolsFailed.Inc()
-				level.Error(m.logger).Log("msg", "error creating new scrape pool", "err", err, "scrape_pool", setName)
+				m.logger.Error("error creating new scrape pool", "err", err, "scrape_pool", setName)
 				continue
 			}
 			m.scrapePools[setName] = sp
 			if l, ok := m.scrapeFailureLoggers[scrapeConfig.ScrapeFailureLogFile]; ok {
 				sp.SetScrapeFailureLogger(l)
 			} else {
-				level.Error(sp.logger).Log("msg", "No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", setName)
+				sp.logger.Error("No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", setName)
 			}
 		}
 
@@ -247,7 +254,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	}
 
 	c := make(map[string]*config.ScrapeConfig)
-	scrapeFailureLoggers := map[string]log.Logger{
+	scrapeFailureLoggers := map[string]FailureLogger{
 		"": nil, // Emptying the file name sets the scrape logger to nil.
 	}
 	for _, scfg := range scfgs {
@@ -255,23 +262,23 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 		if _, ok := scrapeFailureLoggers[scfg.ScrapeFailureLogFile]; !ok {
 			// We promise to reopen the file on each reload.
 			var (
-				l   log.Logger
-				err error
+				logger FailureLogger
+				err    error
 			)
 			if m.newScrapeFailureLogger != nil {
-				if l, err = m.newScrapeFailureLogger(scfg.ScrapeFailureLogFile); err != nil {
+				if logger, err = m.newScrapeFailureLogger(scfg.ScrapeFailureLogFile); err != nil {
 					return err
 				}
 			}
-			scrapeFailureLoggers[scfg.ScrapeFailureLogFile] = l
+			scrapeFailureLoggers[scfg.ScrapeFailureLogFile] = logger
 		}
 	}
 	m.scrapeConfigs = c
 
 	oldScrapeFailureLoggers := m.scrapeFailureLoggers
 	for _, s := range oldScrapeFailureLoggers {
-		if closer, ok := s.(io.Closer); ok {
-			defer closer.Close()
+		if s != nil {
+			defer s.Close()
 		}
 	}
 
@@ -282,29 +289,55 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	}
 
 	// Cleanup and reload pool if the configuration has changed.
-	var failed bool
-	for name, sp := range m.scrapePools {
-		switch cfg, ok := m.scrapeConfigs[name]; {
-		case !ok:
-			sp.stop()
-			delete(m.scrapePools, name)
-		case !reflect.DeepEqual(sp.config, cfg):
-			err := sp.reload(cfg)
-			if err != nil {
-				level.Error(m.logger).Log("msg", "error reloading scrape pool", "err", err, "scrape_pool", name)
-				failed = true
-			}
-			fallthrough
-		case ok:
-			if l, ok := m.scrapeFailureLoggers[cfg.ScrapeFailureLogFile]; ok {
-				sp.SetScrapeFailureLogger(l)
-			} else {
-				level.Error(sp.logger).Log("msg", "No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", name)
-			}
-		}
-	}
+	var (
+		failed   atomic.Bool
+		wg       sync.WaitGroup
+		toDelete sync.Map // Stores the list of names of pools to delete.
+	)
 
-	if failed {
+	// Use a buffered channel to limit reload concurrency.
+	// Each scrape pool writes the channel before we start to reload it and read from it at the end.
+	// This means only N pools can be reloaded at the same time.
+	canReload := make(chan int, runtime.GOMAXPROCS(0))
+	for poolName, pool := range m.scrapePools {
+		canReload <- 1
+		wg.Add(1)
+		cfg, ok := m.scrapeConfigs[poolName]
+		// Reload each scrape pool in a dedicated goroutine so we don't have to wait a long time
+		// if we have a lot of scrape pools to update.
+		go func(name string, sp *scrapePool, cfg *config.ScrapeConfig, ok bool) {
+			defer func() {
+				wg.Done()
+				<-canReload
+			}()
+			switch {
+			case !ok:
+				sp.stop()
+				toDelete.Store(name, struct{}{})
+			case !reflect.DeepEqual(sp.config, cfg):
+				err := sp.reload(cfg)
+				if err != nil {
+					m.logger.Error("error reloading scrape pool", "err", err, "scrape_pool", name)
+					failed.Store(true)
+				}
+				fallthrough
+			case ok:
+				if l, ok := m.scrapeFailureLoggers[cfg.ScrapeFailureLogFile]; ok {
+					sp.SetScrapeFailureLogger(l)
+				} else {
+					sp.logger.Error("No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", name)
+				}
+			}
+		}(poolName, pool, cfg, ok)
+	}
+	wg.Wait()
+
+	toDelete.Range(func(name, _ any) bool {
+		delete(m.scrapePools, name.(string))
+		return true
+	})
+
+	if failed.Load() {
 		return errors.New("failed to apply the new configuration")
 	}
 	return nil

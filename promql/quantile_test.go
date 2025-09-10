@@ -24,29 +24,29 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 	eps := 1e-12
 
 	for name, tc := range map[string]struct {
-		getInput       func() buckets // The buckets can be modified in-place so return a new one each time.
+		getInput       func() Buckets // The buckets can be modified in-place so return a new one each time.
 		expectedForced bool
 		expectedFixed  bool
 		expectedValues map[float64]float64
 	}{
 		"simple - monotonic": {
-			getInput: func() buckets {
-				return buckets{
+			getInput: func() Buckets {
+				return Buckets{
 					{
-						upperBound: 10,
-						count:      10,
+						UpperBound: 10,
+						Count:      10,
 					}, {
-						upperBound: 15,
-						count:      15,
+						UpperBound: 15,
+						Count:      15,
 					}, {
-						upperBound: 20,
-						count:      15,
+						UpperBound: 20,
+						Count:      15,
 					}, {
-						upperBound: 30,
-						count:      15,
+						UpperBound: 30,
+						Count:      15,
 					}, {
-						upperBound: math.Inf(1),
-						count:      15,
+						UpperBound: math.Inf(1),
+						Count:      15,
 					},
 				}
 			},
@@ -60,23 +60,23 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 			},
 		},
 		"simple - non-monotonic middle": {
-			getInput: func() buckets {
-				return buckets{
+			getInput: func() Buckets {
+				return Buckets{
 					{
-						upperBound: 10,
-						count:      10,
+						UpperBound: 10,
+						Count:      10,
 					}, {
-						upperBound: 15,
-						count:      15,
+						UpperBound: 15,
+						Count:      15,
 					}, {
-						upperBound: 20,
-						count:      15.00000000001, // Simulate the case there's a small imprecision in float64.
+						UpperBound: 20,
+						Count:      15.00000000001, // Simulate the case there's a small imprecision in float64.
 					}, {
-						upperBound: 30,
-						count:      15,
+						UpperBound: 30,
+						Count:      15,
 					}, {
-						upperBound: math.Inf(1),
-						count:      15,
+						UpperBound: math.Inf(1),
+						Count:      15,
 					},
 				}
 			},
@@ -90,41 +90,41 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 			},
 		},
 		"real example - monotonic": {
-			getInput: func() buckets {
-				return buckets{
+			getInput: func() Buckets {
+				return Buckets{
 					{
-						upperBound: 1,
-						count:      6454661.3014166197,
+						UpperBound: 1,
+						Count:      6454661.3014166197,
 					}, {
-						upperBound: 5,
-						count:      8339611.2001912938,
+						UpperBound: 5,
+						Count:      8339611.2001912938,
 					}, {
-						upperBound: 10,
-						count:      14118319.2444762159,
+						UpperBound: 10,
+						Count:      14118319.2444762159,
 					}, {
-						upperBound: 25,
-						count:      14130031.5272856522,
+						UpperBound: 25,
+						Count:      14130031.5272856522,
 					}, {
-						upperBound: 50,
-						count:      46001270.3030008152,
+						UpperBound: 50,
+						Count:      46001270.3030008152,
 					}, {
-						upperBound: 64,
-						count:      46008473.8585563600,
+						UpperBound: 64,
+						Count:      46008473.8585563600,
 					}, {
-						upperBound: 80,
-						count:      46008473.8585563600,
+						UpperBound: 80,
+						Count:      46008473.8585563600,
 					}, {
-						upperBound: 100,
-						count:      46008473.8585563600,
+						UpperBound: 100,
+						Count:      46008473.8585563600,
 					}, {
-						upperBound: 250,
-						count:      46008473.8585563600,
+						UpperBound: 250,
+						Count:      46008473.8585563600,
 					}, {
-						upperBound: 1000,
-						count:      46008473.8585563600,
+						UpperBound: 1000,
+						Count:      46008473.8585563600,
 					}, {
-						upperBound: math.Inf(1),
-						count:      46008473.8585563600,
+						UpperBound: math.Inf(1),
+						Count:      46008473.8585563600,
 					},
 				}
 			},
@@ -138,41 +138,41 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 			},
 		},
 		"real example - non-monotonic": {
-			getInput: func() buckets {
-				return buckets{
+			getInput: func() Buckets {
+				return Buckets{
 					{
-						upperBound: 1,
-						count:      6454661.3014166225,
+						UpperBound: 1,
+						Count:      6454661.3014166225,
 					}, {
-						upperBound: 5,
-						count:      8339611.2001912957,
+						UpperBound: 5,
+						Count:      8339611.2001912957,
 					}, {
-						upperBound: 10,
-						count:      14118319.2444762159,
+						UpperBound: 10,
+						Count:      14118319.2444762159,
 					}, {
-						upperBound: 25,
-						count:      14130031.5272856504,
+						UpperBound: 25,
+						Count:      14130031.5272856504,
 					}, {
-						upperBound: 50,
-						count:      46001270.3030008227,
+						UpperBound: 50,
+						Count:      46001270.3030008227,
 					}, {
-						upperBound: 64,
-						count:      46008473.8585563824,
+						UpperBound: 64,
+						Count:      46008473.8585563824,
 					}, {
-						upperBound: 80,
-						count:      46008473.8585563898,
+						UpperBound: 80,
+						Count:      46008473.8585563898,
 					}, {
-						upperBound: 100,
-						count:      46008473.8585563824,
+						UpperBound: 100,
+						Count:      46008473.8585563824,
 					}, {
-						upperBound: 250,
-						count:      46008473.8585563824,
+						UpperBound: 250,
+						Count:      46008473.8585563824,
 					}, {
-						upperBound: 1000,
-						count:      46008473.8585563898,
+						UpperBound: 1000,
+						Count:      46008473.8585563898,
 					}, {
-						upperBound: math.Inf(1),
-						count:      46008473.8585563824,
+						UpperBound: math.Inf(1),
+						Count:      46008473.8585563824,
 					},
 				}
 			},
@@ -186,53 +186,53 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 			},
 		},
 		"real example 2 - monotonic": {
-			getInput: func() buckets {
-				return buckets{
+			getInput: func() Buckets {
+				return Buckets{
 					{
-						upperBound: 0.005,
-						count:      9.6,
+						UpperBound: 0.005,
+						Count:      9.6,
 					}, {
-						upperBound: 0.01,
-						count:      9.688888889,
+						UpperBound: 0.01,
+						Count:      9.688888889,
 					}, {
-						upperBound: 0.025,
-						count:      9.755555556,
+						UpperBound: 0.025,
+						Count:      9.755555556,
 					}, {
-						upperBound: 0.05,
-						count:      9.844444444,
+						UpperBound: 0.05,
+						Count:      9.844444444,
 					}, {
-						upperBound: 0.1,
-						count:      9.888888889,
+						UpperBound: 0.1,
+						Count:      9.888888889,
 					}, {
-						upperBound: 0.25,
-						count:      9.888888889,
+						UpperBound: 0.25,
+						Count:      9.888888889,
 					}, {
-						upperBound: 0.5,
-						count:      9.888888889,
+						UpperBound: 0.5,
+						Count:      9.888888889,
 					}, {
-						upperBound: 1,
-						count:      9.888888889,
+						UpperBound: 1,
+						Count:      9.888888889,
 					}, {
-						upperBound: 2.5,
-						count:      9.888888889,
+						UpperBound: 2.5,
+						Count:      9.888888889,
 					}, {
-						upperBound: 5,
-						count:      9.888888889,
+						UpperBound: 5,
+						Count:      9.888888889,
 					}, {
-						upperBound: 10,
-						count:      9.888888889,
+						UpperBound: 10,
+						Count:      9.888888889,
 					}, {
-						upperBound: 25,
-						count:      9.888888889,
+						UpperBound: 25,
+						Count:      9.888888889,
 					}, {
-						upperBound: 50,
-						count:      9.888888889,
+						UpperBound: 50,
+						Count:      9.888888889,
 					}, {
-						upperBound: 100,
-						count:      9.888888889,
+						UpperBound: 100,
+						Count:      9.888888889,
 					}, {
-						upperBound: math.Inf(1),
-						count:      9.888888889,
+						UpperBound: math.Inf(1),
+						Count:      9.888888889,
 					},
 				}
 			},
@@ -246,53 +246,53 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 			},
 		},
 		"real example 2 - non-monotonic": {
-			getInput: func() buckets {
-				return buckets{
+			getInput: func() Buckets {
+				return Buckets{
 					{
-						upperBound: 0.005,
-						count:      9.6,
+						UpperBound: 0.005,
+						Count:      9.6,
 					}, {
-						upperBound: 0.01,
-						count:      9.688888889,
+						UpperBound: 0.01,
+						Count:      9.688888889,
 					}, {
-						upperBound: 0.025,
-						count:      9.755555556,
+						UpperBound: 0.025,
+						Count:      9.755555556,
 					}, {
-						upperBound: 0.05,
-						count:      9.844444444,
+						UpperBound: 0.05,
+						Count:      9.844444444,
 					}, {
-						upperBound: 0.1,
-						count:      9.888888889,
+						UpperBound: 0.1,
+						Count:      9.888888889,
 					}, {
-						upperBound: 0.25,
-						count:      9.888888889,
+						UpperBound: 0.25,
+						Count:      9.888888889,
 					}, {
-						upperBound: 0.5,
-						count:      9.888888889,
+						UpperBound: 0.5,
+						Count:      9.888888889,
 					}, {
-						upperBound: 1,
-						count:      9.888888889,
+						UpperBound: 1,
+						Count:      9.888888889,
 					}, {
-						upperBound: 2.5,
-						count:      9.888888889,
+						UpperBound: 2.5,
+						Count:      9.888888889,
 					}, {
-						upperBound: 5,
-						count:      9.888888889,
+						UpperBound: 5,
+						Count:      9.888888889,
 					}, {
-						upperBound: 10,
-						count:      9.888888889001, // Simulate the case there's a small imprecision in float64.
+						UpperBound: 10,
+						Count:      9.888888889001, // Simulate the case there's a small imprecision in float64.
 					}, {
-						upperBound: 25,
-						count:      9.888888889,
+						UpperBound: 25,
+						Count:      9.888888889,
 					}, {
-						upperBound: 50,
-						count:      9.888888888999, // Simulate the case there's a small imprecision in float64.
+						UpperBound: 50,
+						Count:      9.888888888999, // Simulate the case there's a small imprecision in float64.
 					}, {
-						upperBound: 100,
-						count:      9.888888889,
+						UpperBound: 100,
+						Count:      9.888888889,
 					}, {
-						upperBound: math.Inf(1),
-						count:      9.888888889,
+						UpperBound: math.Inf(1),
+						Count:      9.888888889,
 					},
 				}
 			},
@@ -308,7 +308,7 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			for q, v := range tc.expectedValues {
-				res, forced, fixed := bucketQuantile(q, tc.getInput())
+				res, forced, fixed := BucketQuantile(q, tc.getInput())
 				require.Equal(t, tc.expectedForced, forced)
 				require.Equal(t, tc.expectedFixed, fixed)
 				require.InEpsilon(t, v, res, eps)

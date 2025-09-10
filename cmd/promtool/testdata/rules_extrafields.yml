@@ -1,0 +1,33 @@
+# This is the rules file. It has an extra "ownership"
+# field in the second group. promtool should ignore this field
+# and not return an error with --ignore-unknown-fields.
+
+groups:
+  - name: alerts
+    namespace: "foobar"
+    rules:
+      - alert: InstanceDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "Instance {{ $labels.instance }} down"
+          description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 5 minutes."
+      - alert: AlwaysFiring
+        expr: 1
+
+  - name: rules
+    ownership:
+      service: "test"
+    rules:
+      - record: job:test:count_over_time1m
+        expr: sum without(instance) (count_over_time(test[1m]))
+
+      # A recording rule that doesn't depend on input series.
+      - record: fixed_data
+        expr: 1
+
+      # Subquery with default resolution test.
+      - record: suquery_interval_test
+        expr: count_over_time(up[5m:])

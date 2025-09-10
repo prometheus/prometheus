@@ -18,8 +18,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/go-kit/log"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/util/testutil"
@@ -60,15 +60,11 @@ func TestDirLockerUsage(t *testing.T, open func(t *testing.T, data string, creat
 
 	for _, c := range cases {
 		t.Run(fmt.Sprintf("%+v", c), func(t *testing.T) {
-			tmpdir, err := os.MkdirTemp("", "test")
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				require.NoError(t, os.RemoveAll(tmpdir))
-			})
+			tmpdir := t.TempDir()
 
 			// Test preconditions (file already exists + lockfile option)
 			if c.fileAlreadyExists {
-				tmpLocker, err := NewDirLocker(tmpdir, "tsdb", log.NewNopLogger(), nil)
+				tmpLocker, err := NewDirLocker(tmpdir, "tsdb", promslog.NewNopLogger(), nil)
 				require.NoError(t, err)
 				err = os.WriteFile(tmpLocker.path, []byte{}, 0o644)
 				require.NoError(t, err)
@@ -82,7 +78,7 @@ func TestDirLockerUsage(t *testing.T, open func(t *testing.T, data string, creat
 
 			// Check that the lockfile is always deleted
 			if !c.lockFileDisabled {
-				_, err = os.Stat(locker.path)
+				_, err := os.Stat(locker.path)
 				require.True(t, os.IsNotExist(err), "lockfile was not deleted")
 			}
 		})

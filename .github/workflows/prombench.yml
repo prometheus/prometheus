@@ -2,6 +2,8 @@ on:
   repository_dispatch:
     types: [prombench_start, prombench_restart, prombench_stop]
 name: Prombench Workflow
+permissions:
+  contents: read
 env:
   AUTH_FILE: ${{ secrets.TEST_INFRA_PROVIDER_AUTH }}
   CLUSTER_NAME: test-infra
@@ -15,6 +17,8 @@ env:
   PR_NUMBER: ${{ github.event.client_payload.PR_NUMBER }}
   PROVIDER: gke
   RELEASE: ${{ github.event.client_payload.RELEASE }}
+  BENCHMARK_VERSION: ${{ github.event.client_payload.BENCHMARK_VERSION }}
+  BENCHMARK_DIRECTORY: ${{ github.event.client_payload.BENCHMARK_DIRECTORY }}
   ZONE: europe-west3-a
 jobs:
   benchmark_start:

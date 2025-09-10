@@ -16,8 +16,8 @@ package tracing
 import (
 	"testing"
 
-	"github.com/go-kit/log"
 	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace/noop"
@@ -28,7 +28,7 @@ import (
 func TestInstallingNewTracerProvider(t *testing.T) {
 	tpBefore := otel.GetTracerProvider()
 
-	m := NewManager(log.NewNopLogger())
+	m := NewManager(promslog.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
@@ -41,7 +41,7 @@ func TestInstallingNewTracerProvider(t *testing.T) {
 }
 
 func TestReinstallingTracerProvider(t *testing.T) {
-	m := NewManager(log.NewNopLogger())
+	m := NewManager(promslog.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
@@ -76,7 +76,7 @@ func TestReinstallingTracerProvider(t *testing.T) {
 }
 
 func TestReinstallingTracerProviderWithTLS(t *testing.T) {
-	m := NewManager(log.NewNopLogger())
+	m := NewManager(promslog.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
@@ -96,7 +96,7 @@ func TestReinstallingTracerProviderWithTLS(t *testing.T) {
 }
 
 func TestUninstallingTracerProvider(t *testing.T) {
-	m := NewManager(log.NewNopLogger())
+	m := NewManager(promslog.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
@@ -118,7 +118,7 @@ func TestUninstallingTracerProvider(t *testing.T) {
 }
 
 func TestTracerProviderShutdown(t *testing.T) {
-	m := NewManager(log.NewNopLogger())
+	m := NewManager(promslog.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",

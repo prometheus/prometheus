@@ -1,0 +1,4 @@
+global:
+  metric_name_validation_scheme: legacy
+otlp:
+  translation_strategy: NoTranslation

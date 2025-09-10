@@ -25,7 +25,7 @@ import (
 type multiError []error
 
 // NewMulti returns multiError with provided errors added if not nil.
-func NewMulti(errs ...error) multiError { //nolint:revive // unexported-return.
+func NewMulti(errs ...error) multiError { //nolint:revive // unexported-return
 	m := multiError{}
 	m.Add(errs...)
 	return m
@@ -92,6 +92,11 @@ func (es nonNilMultiError) Is(target error) bool {
 		}
 	}
 	return false
+}
+
+// Unwrap returns the list of errors contained in the multiError.
+func (es nonNilMultiError) Unwrap() []error {
+	return es.errs
 }
 
 // CloseAll closes all given closers while recording error in MultiError.

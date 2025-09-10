@@ -15,10 +15,9 @@ package ionos
 
 import (
 	"errors"
-	"fmt"
+	"log/slog"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -43,10 +42,10 @@ func init() {
 type Discovery struct{}
 
 // NewDiscovery returns a new refresh.Discovery for IONOS Cloud.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
 	m, ok := metrics.(*ionosMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if conf.ionosEndpoint == "" {
@@ -90,7 +89,7 @@ type SDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &ionosMetrics{
 		refreshMetrics: rmi,
 	}

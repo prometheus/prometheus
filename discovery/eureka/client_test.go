@@ -172,7 +172,7 @@ func TestFetchApps(t *testing.T) {
 </applications>`
 
 	// Simulate apps with a valid XML response.
-	respHandler := func(w http.ResponseWriter, r *http.Request) {
+	respHandler := func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/xml")
 		io.WriteString(w, appsXML)
@@ -199,7 +199,7 @@ func TestFetchApps(t *testing.T) {
 
 func Test500ErrorHttpResponse(t *testing.T) {
 	// Simulate 500 error.
-	respHandler := func(w http.ResponseWriter, r *http.Request) {
+	respHandler := func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/xml")
 		io.WriteString(w, ``)

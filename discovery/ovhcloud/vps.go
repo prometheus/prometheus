@@ -16,13 +16,12 @@ package ovhcloud
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"net/url"
 	"path"
 	"strconv"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/ovh/go-ovh/ovh"
 	"github.com/prometheus/common/model"
 
@@ -68,10 +67,10 @@ type virtualPrivateServer struct {
 type vpsDiscovery struct {
 	*refresh.Discovery
 	config *SDConfig
-	logger log.Logger
+	logger *slog.Logger
 }
 
-func newVpsDiscovery(conf *SDConfig, logger log.Logger) *vpsDiscovery {
+func newVpsDiscovery(conf *SDConfig, logger *slog.Logger) *vpsDiscovery {
 	return &vpsDiscovery{config: conf, logger: logger}
 }
 
@@ -133,10 +132,7 @@ func (d *vpsDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) {
 	for _, vpsName := range vpsList {
 		vpsDetailed, err := getVpsDetails(client, vpsName)
 		if err != nil {
-			err := level.Warn(d.logger).Log("msg", fmt.Sprintf("%s: Could not get details of %s", d.getSource(), vpsName), "err", err.Error())
-			if err != nil {
-				return nil, err
-			}
+			d.logger.Warn(fmt.Sprintf("%s: Could not get details of %s", d.getSource(), vpsName), "err", err.Error())
 			continue
 		}
 		vpsDetailedList = append(vpsDetailedList, *vpsDetailed)

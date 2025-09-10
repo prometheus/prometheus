@@ -3,8 +3,6 @@ title: HTTP API
 sort_rank: 7
 ---
 
-# HTTP API
-
 The current stable HTTP API is reachable under `/api/v1` on a Prometheus
 server. Any non-breaking additions will be added under that endpoint.
 
@@ -32,7 +30,7 @@ will be returned in the data field.
 
 The JSON response envelope format is as follows:
 
-```
+```json
 {
   "status": "success" | "error",
   "data": <data>,
@@ -45,7 +43,7 @@ The JSON response envelope format is as follows:
   // Only set if there were warnings while executing the request.
   // There will still be data in the data field.
   "warnings": ["<string>"],
-  // Only set if there were info-level annnotations while executing the request.
+  // Only set if there were info-level annotations while executing the request.
   "infos": ["<string>"]
 }
 ```
@@ -59,7 +57,7 @@ timestamps are always represented as Unix timestamps in seconds.
 * `<series_selector>`: Prometheus [time series
 selectors](basics.md#time-series-selectors) like `http_requests_total` or
 `http_requests_total{method=~"(GET|POST)"}` and need to be URL-encoded.
-* `<duration>`: [Prometheus duration strings](basics.md#time-durations).
+* `<duration>`: [the subset of Prometheus float literals using time units](basics.md#float-literals-and-time-durations).
 For example, `5m` refers to a duration of 5 minutes.
 * `<bool>`: boolean values (strings `true` and `false`).
 
@@ -86,6 +84,7 @@ URL query parameters:
 - `time=<rfc3339 | unix_timestamp>`: Evaluation timestamp. Optional.
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.
+- `limit=<number>`: Maximum number of returned series. Doesn’t affect scalars or strings but truncates the number of series for matrices and vectors. Optional. 0 means disabled.
 
 The current server time is used if the `time` parameter is omitted.
 
@@ -95,7 +94,7 @@ query that may breach server-side URL character limits.
 
 The `data` section of the query result has the following format:
 
-```
+```json
 {
   "resultType": "matrix" | "vector" | "scalar" | "string",
   "result": <value>
@@ -109,8 +108,11 @@ formats](#expression-query-result-formats).
 The following example evaluates the expression `up` at the time
 `2015-07-01T20:10:51.781Z`:
 
+```bash
+curl 'http://localhost:9090/api/v1/query?query=up&time=2015-07-01T20:10:51.781Z'
+```
+
 ```json
-$ curl 'http://localhost:9090/api/v1/query?query=up&time=2015-07-01T20:10:51.781Z'
 {
    "status" : "success",
    "data" : {
@@ -154,6 +156,7 @@ URL query parameters:
 - `step=<duration | float>`: Query resolution step width in `duration` format or float number of seconds.
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.
+- `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -161,7 +164,7 @@ query that may breach server-side URL character limits.
 
 The `data` section of the query result has the following format:
 
-```
+```json
 {
   "resultType": "matrix",
   "result": <value>
@@ -174,8 +177,11 @@ format](#range-vectors).
 The following example evaluates the expression `up` over a 30-second range with
 a query resolution of 15 seconds.
 
+```bash
+curl 'http://localhost:9090/api/v1/query_range?query=up&start=2015-07-01T20:10:30.781Z&end=2015-07-01T20:11:00.781Z&step=15s'
+```
+
 ```json
-$ curl 'http://localhost:9090/api/v1/query_range?query=up&start=2015-07-01T20:10:30.781Z&end=2015-07-01T20:11:00.781Z&step=15s'
 {
    "status" : "success",
    "data" : {
@@ -231,11 +237,86 @@ The `data` section of the query result is a string containing the formatted quer
 
 The following example formats the expression `foo/bar`:
 
+```bash
+curl 'http://localhost:9090/api/v1/format_query?query=foo/bar'
+```
+
 ```json
-$ curl 'http://localhost:9090/api/v1/format_query?query=foo/bar'
 {
    "status" : "success",
    "data" : "foo / bar"
+}
+```
+
+## Parsing a PromQL expressions into a abstract syntax tree (AST)
+
+This endpoint is **experimental** and might change in the future. It is currently only meant to be used by Prometheus' own web UI, and the endpoint name and exact format returned may change from one Prometheus version to another. It may also be removed again in case it is no longer needed by the UI.
+
+The following endpoint parses a PromQL expression and returns it as a JSON-formatted AST (abstract syntax tree) representation:
+
+```
+GET /api/v1/parse_query
+POST /api/v1/parse_query
+```
+
+URL query parameters:
+
+- `query=<string>`: Prometheus expression query string.
+
+You can URL-encode these parameters directly in the request body by using the `POST` method and
+`Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
+query that may breach server-side URL character limits.
+
+The `data` section of the query result is a string containing the AST of the parsed query expression.
+
+The following example parses the expression `foo/bar`:
+
+```bash
+curl 'http://localhost:9090/api/v1/parse_query?query=foo/bar'
+```
+
+```json
+{
+   "data" : {
+      "bool" : false,
+      "lhs" : {
+         "matchers" : [
+            {
+               "name" : "__name__",
+               "type" : "=",
+               "value" : "foo"
+            }
+         ],
+         "name" : "foo",
+         "offset" : 0,
+         "startOrEnd" : null,
+         "timestamp" : null,
+         "type" : "vectorSelector"
+      },
+      "matching" : {
+         "card" : "one-to-one",
+         "include" : [],
+         "labels" : [],
+         "on" : false
+      },
+      "op" : "/",
+      "rhs" : {
+         "matchers" : [
+            {
+               "name" : "__name__",
+               "type" : "=",
+               "value" : "bar"
+            }
+         ],
+         "name" : "bar",
+         "offset" : 0,
+         "startOrEnd" : null,
+         "timestamp" : null,
+         "type" : "vectorSelector"
+      },
+      "type" : "binaryExpr"
+   },
+   "status" : "success"
 }
 ```
 
@@ -272,8 +353,11 @@ contain the label name/value pairs which identify each series.
 The following example returns all series that match either of the selectors
 `up` or `process_start_time_seconds{job="prometheus"}`:
 
+```bash
+curl -g 'http://localhost:9090/api/v1/series?' --data-urlencode 'match[]=up' --data-urlencode 'match[]=process_start_time_seconds{job="prometheus"}'
+```
+
 ```json
-$ curl -g 'http://localhost:9090/api/v1/series?' --data-urlencode 'match[]=up' --data-urlencode 'match[]=process_start_time_seconds{job="prometheus"}'
 {
    "status" : "success",
    "data" : [
@@ -318,8 +402,11 @@ The `data` section of the JSON response is a list of string label names.
 
 Here is an example.
 
+```bash
+curl 'localhost:9090/api/v1/labels'
+```
+
 ```json
-$ curl 'localhost:9090/api/v1/labels'
 {
     "status": "success",
     "data": [
@@ -364,18 +451,46 @@ URL query parameters:
   series from which to read the label values. Optional.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
-
 The `data` section of the JSON response is a list of string label values.
 
-This example queries for all label values for the `job` label:
+This example queries for all label values for the `http_status_code` label:
+
+```bash
+curl http://localhost:9090/api/v1/label/http_status_code/values
+```
 
 ```json
-$ curl http://localhost:9090/api/v1/label/job/values
 {
    "status" : "success",
    "data" : [
-      "node",
-      "prometheus"
+      "200",
+      "504"
+   ]
+}
+```
+
+Label names can optionally be encoded using the Values Escaping method, and is necessary if a name includes the `/` character. To encode a name in this way:
+
+* Prepend the label with `U__`.
+* Letters, numbers, and colons appear as-is.
+* Convert single underscores to double underscores.
+* For all other characters, use the UTF-8 codepoint as a hex integer, surrounded
+  by underscores.  So ` ` becomes `_20_` and a `.` becomes `_2e_`.
+
+ More information about text escaping can be found in the original UTF-8 [Proposal document](https://github.com/prometheus/proposals/blob/main/proposals/2023-08-21-utf8.md#text-escaping).
+
+This example queries for all label values for the `http.status_code` label:
+
+```bash
+curl http://localhost:9090/api/v1/label/U__http_2e_status_code/values
+```
+
+```json
+{
+   "status" : "success",
+   "data" : [
+      "200",
+      "404"
    ]
 }
 ```
@@ -396,8 +511,11 @@ URL query parameters:
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp.
 
+```bash
+curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metric_total&start=2020-09-14T15:22:25.479Z&end=2020-09-14T15:23:25.479Z'
+```
+
 ```json
-$ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metric_total&start=2020-09-14T15:22:25.479Z&end=2020-09-14T15:23:25.479Z'
 {
     "status": "success",
     "data": [
@@ -463,7 +581,7 @@ is explained in detail in its own section below.
 Range vectors are returned as result type `matrix`. The corresponding
 `result` property has the following format:
 
-```
+```json
 [
   {
     "metric": { "<label_name>": "<label_value>", ... },
@@ -485,7 +603,7 @@ and [`sort_by_label`](functions.md#sort_by_label) have no effect for range vecto
 Instant vectors are returned as result type `vector`. The corresponding
 `result` property has the following format:
 
-```
+```json
 [
   {
     "metric": { "<label_name>": "<label_value>", ... },
@@ -499,7 +617,7 @@ Instant vectors are returned as result type `vector`. The corresponding
 Each series could have the `"value"` key, or the `"histogram"` key, but not both.
 
 Series are not guaranteed to be returned in any particular order unless a function
-such as [`sort`](functions.md#sort) or [`sort_by_label`](functions.md#sort_by_label)`
+such as [`sort`](functions.md#sort) or [`sort_by_label`](functions.md#sort_by_label)
 is used.
 
 ### Scalars
@@ -507,7 +625,7 @@ is used.
 Scalar results are returned as result type `scalar`. The corresponding
 `result` property has the following format:
 
-```
+```json
 [ <unix_time>, "<scalar_value>" ]
 ```
 
@@ -516,7 +634,7 @@ Scalar results are returned as result type `scalar`. The corresponding
 String results are returned as result type `string`. The corresponding
 `result` property has the following format:
 
-```
+```json
 [ <unix_time>, "<string_value>" ]
 ```
 
@@ -527,7 +645,7 @@ The `<histogram>` placeholder used above is formatted as follows.
 _Note that native histograms are an experimental feature, and the format below
 might still change._
 
-```
+```json
 {
   "count": "<count_of_observations>",
   "sum": "<sum_of_observations>",
@@ -561,8 +679,11 @@ Dropped targets are subject to `keep_dropped_targets` limit, if set.
 `labels` represents the label set after relabeling has occurred.
 `discoveredLabels` represent the unmodified labels retrieved during service discovery before relabeling has occurred.
 
+```bash
+curl http://localhost:9090/api/v1/targets
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/targets
 {
   "status": "success",
   "data": {
@@ -599,6 +720,7 @@ $ curl http://localhost:9090/api/v1/targets
           "__scrape_timeout__": "10s",
           "job": "node"
         },
+        "scrapePool": "node"
       }
     ]
   }
@@ -610,9 +732,12 @@ The `state` query parameter allows the caller to filter by active or dropped tar
 Note that an empty array is still returned for targets that are filtered out.
 Other values are ignored.
 
+```bash
+curl 'http://localhost:9090/api/v1/targets?state=active'
+```
+
 ```json
-$ curl 'http://localhost:9090/api/v1/targets?state=active'
-{
+
   "status": "success",
   "data": {
     "activeTargets": [
@@ -643,9 +768,12 @@ $ curl 'http://localhost:9090/api/v1/targets?state=active'
 
 The `scrapePool` query parameter allows the caller to filter by scrape pool name.
 
+```bash
+curl 'http://localhost:9090/api/v1/targets?scrapePool=node_exporter'
+```
+
 ```json
-$ curl 'http://localhost:9090/api/v1/targets?scrapePool=node_exporter'
-{
+
   "status": "success",
   "data": {
     "activeTargets": [
@@ -693,12 +821,16 @@ URL query parameters:
 - `rule_name[]=<string>`: only return rules with the given rule name. If the parameter is repeated, rules with any of the provided names are returned. If we've filtered out all the rules of a group, the group is not returned. When the parameter is absent or empty, no filtering is done.
 - `rule_group[]=<string>`: only return rules with the given rule group name. If the parameter is repeated, rules with any of the provided rule group names are returned. When the parameter is absent or empty, no filtering is done.
 - `file[]=<string>`: only return rules with the given filepath. If the parameter is repeated, rules with any of the provided filepaths are returned. When the parameter is absent or empty, no filtering is done.
-- `exclude_alerts=<bool>`: only return rules, do not return active alerts. 
+- `exclude_alerts=<bool>`: only return rules, do not return active alerts.
 - `match[]=<label_selector>`: only return rules that have configured labels that satisfy the label selectors. If the parameter is repeated, rules that match any of the sets of label selectors are returned. Note that matching is on the labels in the definition of each rule, not on the values after template expansion (for alerting rules). Optional.
+- `group_limit=<number>`: The `group_limit` parameter allows you to specify a limit for the number of rule groups that is returned in a single response. If the total number of rule groups exceeds the specified `group_limit` value, the response will include a `groupNextToken` property. You can use the value of this `groupNextToken` property in subsequent requests in the `group_next_token` parameter to paginate over the remaining rule groups. The `groupNextToken` property will not be present in the final response, indicating that you have retrieved all the available rule groups. Please note that there are no guarantees regarding the consistency of the response if the rule groups are being modified during the pagination process.
+- `group_next_token`: the pagination token that was returned in previous request when the `group_limit` property is set. The pagination token is used to iteratively paginate over a large number of rule groups. To use the `group_next_token` parameter, the `group_limit` parameter also need to be present. If a rule group that coincides with the next token is removed while you are paginating over the rule groups, a response with status code 400 will be returned.
+
+```bash
+curl http://localhost:9090/api/v1/rules
+```
 
 ```json
-$ curl http://localhost:9090/api/v1/rules
-
 {
     "data": {
         "groups": [
@@ -761,9 +893,11 @@ guarantees as the overarching API v1.
 GET /api/v1/alerts
 ```
 
-```json
-$ curl http://localhost:9090/api/v1/alerts
+```bash
+curl http://localhost:9090/api/v1/alerts
+```
 
+```json
 {
     "data": {
         "alerts": [
@@ -808,6 +942,9 @@ curl -G http://localhost:9091/api/v1/targets/metadata \
     --data-urlencode 'metric=go_goroutines' \
     --data-urlencode 'match_target={job="prometheus"}' \
     --data-urlencode 'limit=2'
+```
+
+```json
 {
   "status": "success",
   "data": [
@@ -834,11 +971,14 @@ curl -G http://localhost:9091/api/v1/targets/metadata \
 ```
 
 The following example returns metadata for all metrics for all targets with
-label `instance="127.0.0.1:9090`.
+label `instance="127.0.0.1:9090"`.
 
-```json
+```bash
 curl -G http://localhost:9091/api/v1/targets/metadata \
     --data-urlencode 'match_target={instance="127.0.0.1:9090"}'
+```
+
+```json
 {
   "status": "success",
   "data": [
@@ -887,9 +1027,11 @@ The `data` section of the query result consists of an object where each key is a
 
 The following example returns two metrics. Note that the metric `http_requests_total` has more than one object in the list. At least one target has a value for `HELP` that do not match with the rest.
 
-```json
+```bash
 curl -G http://localhost:9090/api/v1/metadata?limit=2
+```
 
+```json
 {
   "status": "success",
   "data": {
@@ -918,9 +1060,11 @@ curl -G http://localhost:9090/api/v1/metadata?limit=2
 
 The following example returns only one metadata entry for each metric.
 
-```json
+```bash
 curl -G http://localhost:9090/api/v1/metadata?limit_per_metric=1
+```
 
+```json
 {
   "status": "success",
   "data": {
@@ -944,9 +1088,11 @@ curl -G http://localhost:9090/api/v1/metadata?limit_per_metric=1
 
 The following example returns metadata only for the metric `http_requests_total`.
 
-```json
+```bash
 curl -G http://localhost:9090/api/v1/metadata?metric=http_requests_total
+```
 
+```json
 {
   "status": "success",
   "data": {
@@ -977,8 +1123,11 @@ GET /api/v1/alertmanagers
 
 Both the active and dropped Alertmanagers are part of the response.
 
+```bash
+curl http://localhost:9090/api/v1/alertmanagers
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/alertmanagers
 {
   "status": "success",
   "data": {
@@ -1011,8 +1160,11 @@ GET /api/v1/status/config
 The config is returned as dumped YAML file. Due to limitation of the YAML
 library, YAML comments are not included.
 
+```bash
+curl http://localhost:9090/api/v1/status/config
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/status/config
 {
   "status": "success",
   "data": {
@@ -1031,8 +1183,11 @@ GET /api/v1/status/flags
 
 All values are of the result type `string`.
 
+```bash
+curl http://localhost:9090/api/v1/status/flags
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/status/flags
 {
   "status": "success",
   "data": {
@@ -1058,13 +1213,18 @@ GET /api/v1/status/runtimeinfo
 
 The returned values are of different types, depending on the nature of the runtime property.
 
+```bash
+curl http://localhost:9090/api/v1/status/runtimeinfo
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/status/runtimeinfo
 {
   "status": "success",
   "data": {
     "startTime": "2019-11-02T17:23:59.301361365+01:00",
     "CWD": "/",
+    "hostname" : "DESKTOP-717H17Q",
+    "serverTime": "2025-01-05T18:27:33Z",
     "reloadConfigSuccess": true,
     "lastConfigTime": "2019-11-02T17:23:59+01:00",
     "timeSeriesCount": 873,
@@ -1092,8 +1252,11 @@ GET /api/v1/status/buildinfo
 
 All values are of the result type `string`.
 
+```bash
+curl http://localhost:9090/api/v1/status/buildinfo
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/status/buildinfo
 {
   "status": "success",
   "data": {
@@ -1119,9 +1282,11 @@ The following endpoint returns various cardinality statistics about the Promethe
 GET /api/v1/status/tsdb
 ```
 URL query parameters:
+
 - `limit=<number>`: Limit the number of returned items to a given number for each set of statistics. By default, 10 items are returned.
 
-The `data` section of the query result consists of
+The `data` section of the query result consists of:
+
 - **headStats**: This provides the following data about the head block of the TSDB:
   - **numSeries**: The number of series.
   - **chunkCount**: The number of chunks.
@@ -1132,8 +1297,11 @@ The `data` section of the query result consists of
 - **memoryInBytesByLabelName** This will provide a list of the label names and memory used in bytes. Memory usage is calculated by adding the length of all values for a given label name.
 - **seriesCountByLabelPair** This will provide a list of label value pairs and their series count.
 
+```bash
+curl http://localhost:9090/api/v1/status/tsdb
+```
+
 ```json
-$ curl http://localhost:9090/api/v1/status/tsdb
 {
   "status": "success",
   "data": {
@@ -1197,16 +1365,19 @@ The following endpoint returns information about the WAL replay:
 GET /api/v1/status/walreplay
 ```
 
-**read**: The number of segments replayed so far.
-**total**: The total number segments needed to be replayed.
-**progress**: The progress of the replay (0 - 100%).
-**state**: The state of the replay. Possible states:
-- **waiting**: Waiting for the replay to start.
-- **in progress**: The replay is in progress.
-- **done**: The replay has finished.
+- **read**: The number of segments replayed so far.
+- **total**: The total number segments needed to be replayed.
+- **progress**: The progress of the replay (0 - 100%).
+- **state**: The state of the replay. Possible states:
+  - **waiting**: Waiting for the replay to start.
+  - **in progress**: The replay is in progress.
+  - **done**: The replay has finished.
+
+```bash
+curl http://localhost:9090/api/v1/status/walreplay
+```
 
 ```json
-$ curl http://localhost:9090/api/v1/status/walreplay
 {
   "status": "success",
   "data": {
@@ -1238,8 +1409,11 @@ URL query parameters:
 
 - `skip_head=<bool>`: Skip data present in the head block. Optional.
 
+```bash
+curl -XPOST http://localhost:9090/api/v1/admin/tsdb/snapshot
+```
+
 ```json
-$ curl -XPOST http://localhost:9090/api/v1/admin/tsdb/snapshot
 {
   "status": "success",
   "data": {
@@ -1271,8 +1445,8 @@ Not mentioning both start and end times would clear all the data for the matched
 
 Example:
 
-```json
-$ curl -X POST \
+```bash
+curl -X POST \
   -g 'http://localhost:9090/api/v1/admin/tsdb/delete_series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
 ```
 
@@ -1292,8 +1466,8 @@ PUT /api/v1/admin/tsdb/clean_tombstones
 
 This takes no parameters or body.
 
-```json
-$ curl -XPOST http://localhost:9090/api/v1/admin/tsdb/clean_tombstones
+```bash
+curl -XPOST http://localhost:9090/api/v1/admin/tsdb/clean_tombstones
 ```
 
 *New in v2.1 and supports PUT from v2.9*
@@ -1319,8 +1493,89 @@ is not considered an efficient way of ingesting samples. Use it
 with caution for specific low-volume use cases. It is not suitable for
 replacing the ingestion via scraping.
 
-Enable the OTLP receiver by the feature flag
-`--enable-feature=otlp-write-receiver`. When enabled, the OTLP receiver
+Enable the OTLP receiver by setting
+`--web.enable-otlp-receiver`. When enabled, the OTLP receiver
 endpoint is `/api/v1/otlp/v1/metrics`.
 
 *New in v2.47*
+
+### OTLP Delta
+
+Prometheus can convert incoming metrics from delta temporality to their cumulative equivalent.
+This is done using [deltatocumulative](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor) from the OpenTelemetry Collector.
+
+To enable, pass `--enable-feature=otlp-deltatocumulative`.
+
+*New in v3.2*
+
+## Notifications
+
+The following endpoints provide information about active status notifications concerning the Prometheus server itself.
+Notifications are used in the web UI.
+
+These endpoints are **experimental**. They may change in the future.
+
+### Active Notifications
+
+The `/api/v1/notifications` endpoint returns a list of all currently active notifications.
+
+```
+GET /api/v1/notifications
+```
+
+Example:
+
+```bash
+curl http://localhost:9090/api/v1/notifications
+```
+
+```
+{
+  "status": "success",
+  "data": [
+    {
+      "text": "Prometheus is shutting down and gracefully stopping all operations.",
+      "date": "2024-10-07T12:33:08.551376578+02:00",
+      "active": true
+    }
+  ]
+}
+```
+
+*New in v3.0*
+
+### Live Notifications
+
+The `/api/v1/notifications/live` endpoint streams live notifications as they occur, using [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html#server-sent-events). Deleted notifications are sent with `active: false`. Active notifications will be sent when connecting to the endpoint.
+
+```
+GET /api/v1/notifications/live
+```
+
+Example:
+
+```bash
+curl http://localhost:9090/api/v1/notifications/live
+```
+
+```
+data: {
+  "status": "success",
+  "data": [
+    {
+      "text": "Prometheus is shutting down and gracefully stopping all operations.",
+      "date": "2024-10-07T12:33:08.551376578+02:00",
+      "active": true
+    }
+  ]
+}
+```
+
+**Note:** The `/notifications/live` endpoint will return a `204 No Content` response if the maximum number of subscribers has been reached. You can set the maximum number of listeners with the flag `--web.max-notifications-subscribers`, which defaults to 16.
+
+```
+GET /api/v1/notifications/live
+204 No Content
+```
+
+*New in v3.0*

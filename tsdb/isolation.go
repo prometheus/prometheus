@@ -275,12 +275,11 @@ func (txr *txRing) cleanupAppendIDsBelow(bound uint64) {
 	pos := int(txr.txIDFirst)
 
 	for txr.txIDCount > 0 {
-		if txr.txIDs[pos] < bound {
-			txr.txIDFirst++
-			txr.txIDCount--
-		} else {
+		if txr.txIDs[pos] >= bound {
 			break
 		}
+		txr.txIDFirst++
+		txr.txIDCount--
 
 		pos++
 		if pos == len(txr.txIDs) {

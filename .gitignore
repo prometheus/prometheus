@@ -22,9 +22,12 @@ benchmark.txt
 /documentation/examples/remote_storage/example_write_adapter/example_write_adapter
 
 npm_licenses.tar.bz2
-/web/ui/static/react
+# Track the needed assets for the 2 UIs.
+/web/ui/static/**
+!/web/ui/static/**/
+!/web/ui/static/**/*.gz
 
-/vendor
+#/vendor
 /.build
 
 /**/node_modules

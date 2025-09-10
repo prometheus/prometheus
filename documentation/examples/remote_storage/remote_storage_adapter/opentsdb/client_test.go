@@ -43,14 +43,14 @@ func TestMarshalStoreSamplesRequest(t *testing.T) {
 		Value:     3.1415,
 		Tags:      tagsFromMetric(metric),
 	}
-	expectedJSON := []byte(`{"metric":"test_.metric","timestamp":4711,"value":3.1415,"tags":{"many_chars":"abc_21ABC_.012-3_2145_C3_B667_7E89./","testlabel":"test_.value"}}`)
+	expectedJSON := `{"metric":"test_.metric","timestamp":4711,"value":3.1415,"tags":{"many_chars":"abc_21ABC_.012-3_2145_C3_B667_7E89./","testlabel":"test_.value"}}`
 
 	resultingJSON, err := json.Marshal(request)
 	require.NoError(t, err, "Marshal(request) resulted in err.")
-	require.Equal(t, expectedJSON, resultingJSON)
+	require.JSONEq(t, expectedJSON, string(resultingJSON))
 
 	var unmarshaledRequest StoreSamplesRequest
-	err = json.Unmarshal(expectedJSON, &unmarshaledRequest)
+	err = json.Unmarshal([]byte(expectedJSON), &unmarshaledRequest)
 	require.NoError(t, err, "Unmarshal(expectedJSON, &unmarshaledRequest) resulted in err.")
 	require.Equal(t, request, unmarshaledRequest)
 }

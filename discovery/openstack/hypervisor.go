@@ -16,14 +16,14 @@ package openstack
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 
-	"github.com/go-kit/log"
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack"
-	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/hypervisors"
-	"github.com/gophercloud/gophercloud/pagination"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/hypervisors"
+	"github.com/gophercloud/gophercloud/v2/pagination"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -43,14 +43,14 @@ type HypervisorDiscovery struct {
 	provider     *gophercloud.ProviderClient
 	authOpts     *gophercloud.AuthOptions
 	region       string
-	logger       log.Logger
+	logger       *slog.Logger
 	port         int
 	availability gophercloud.Availability
 }
 
 // newHypervisorDiscovery returns a new hypervisor discovery.
 func newHypervisorDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
-	port int, region string, availability gophercloud.Availability, l log.Logger,
+	port int, region string, availability gophercloud.Availability, l *slog.Logger,
 ) *HypervisorDiscovery {
 	return &HypervisorDiscovery{
 		provider: provider, authOpts: opts,
@@ -59,8 +59,7 @@ func newHypervisorDiscovery(provider *gophercloud.ProviderClient, opts *gophercl
 }
 
 func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	h.provider.Context = ctx
-	err := openstack.Authenticate(h.provider, *h.authOpts)
+	err := openstack.Authenticate(ctx, h.provider, *h.authOpts)
 	if err != nil {
 		return nil, fmt.Errorf("could not authenticate to OpenStack: %w", err)
 	}
@@ -78,7 +77,7 @@ func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group
 	// OpenStack API reference
 	// https://developer.openstack.org/api-ref/compute/#list-hypervisors-details
 	pagerHypervisors := hypervisors.List(client, nil)
-	err = pagerHypervisors.EachPage(func(page pagination.Page) (bool, error) {
+	err = pagerHypervisors.EachPage(ctx, func(_ context.Context, page pagination.Page) (bool, error) {
 		hypervisorList, err := hypervisors.ExtractHypervisors(page)
 		if err != nil {
 			return false, fmt.Errorf("could not extract hypervisors: %w", err)

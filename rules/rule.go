@@ -62,19 +62,25 @@ type Rule interface {
 	// NOTE: Used dynamically by rules.html template.
 	GetEvaluationTimestamp() time.Time
 
-	// SetNoDependentRules sets whether there's no other rule in the rule group that depends on this rule.
-	SetNoDependentRules(bool)
+	// SetDependentRules sets rules which depend on the output of this rule.
+	SetDependentRules(rules []Rule)
 
 	// NoDependentRules returns true if it's guaranteed that in the rule group there's no other rule
 	// which depends on this one. In case this function returns false there's no such guarantee, which
 	// means there may or may not be other rules depending on this one.
 	NoDependentRules() bool
 
-	// SetNoDependencyRules sets whether this rule doesn't depend on the output of any rule in the rule group.
-	SetNoDependencyRules(bool)
+	// DependentRules returns the rules which depend on the output of this rule.
+	DependentRules() []Rule
+
+	// SetDependencyRules sets rules on which this rule depends.
+	SetDependencyRules(rules []Rule)
 
 	// NoDependencyRules returns true if it's guaranteed that this rule doesn't depend on the output of
 	// any other rule in the group. In case this function returns false there's no such guarantee, which
 	// means the rule may or may not depend on other rules.
 	NoDependencyRules() bool
+
+	// DependencyRules returns the rules on which this rule depends.
+	DependencyRules() []Rule
 }

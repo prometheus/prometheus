@@ -15,7 +15,9 @@ package moby
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -23,15 +25,14 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -110,7 +111,7 @@ func (c *DockerSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		return err
 	}
 	if c.Host == "" {
-		return fmt.Errorf("host missing")
+		return errors.New("host missing")
 	}
 	if _, err = url.Parse(c.Host); err != nil {
 		return err
@@ -128,10 +129,10 @@ type DockerDiscovery struct {
 }
 
 // NewDockerDiscovery returns a new DockerDiscovery which periodically refreshes its targets.
-func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*DockerDiscovery, error) {
+func NewDockerDiscovery(conf *DockerSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*DockerDiscovery, error) {
 	m, ok := metrics.(*dockerMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	d := &DockerDiscovery{
@@ -172,7 +173,7 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger, metrics discove
 			}),
 			client.WithScheme(hostURL.Scheme),
 			client.WithHTTPHeaders(map[string]string{
-				"User-Agent": userAgent,
+				"User-Agent": version.PrometheusUserAgent(),
 			}),
 		)
 	}
@@ -209,7 +210,7 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		return nil, fmt.Errorf("error while computing network labels: %w", err)
 	}
 
-	allContainers := make(map[string]types.Container)
+	allContainers := make(map[string]container.Summary)
 	for _, c := range containers {
 		allContainers[c.ID] = c
 	}
@@ -234,18 +235,14 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		containerNetworkMode := container.NetworkMode(c.HostConfig.NetworkMode)
 		if len(networks) == 0 {
 			// Try to lookup shared networks
-			for {
-				if containerNetworkMode.IsContainer() {
-					tmpContainer, exists := allContainers[containerNetworkMode.ConnectedContainer()]
-					if !exists {
-						break
-					}
-					networks = tmpContainer.NetworkSettings.Networks
-					containerNetworkMode = container.NetworkMode(tmpContainer.HostConfig.NetworkMode)
-					if len(networks) > 0 {
-						break
-					}
-				} else {
+			for containerNetworkMode.IsContainer() {
+				tmpContainer, exists := allContainers[containerNetworkMode.ConnectedContainer()]
+				if !exists {
+					break
+				}
+				networks = tmpContainer.NetworkSettings.Networks
+				containerNetworkMode = container.NetworkMode(tmpContainer.HostConfig.NetworkMode)
+				if len(networks) > 0 {
 					break
 				}
 			}

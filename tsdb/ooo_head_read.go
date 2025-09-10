@@ -20,7 +20,7 @@ import (
 	"math"
 	"slices"
 
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -112,7 +112,7 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 					return nil
 				}
 				for _, chk := range chks {
-					addChunk(c.minTime, c.maxTime, ref, chk.chunk)
+					addChunk(chk.minTime, chk.maxTime, ref, chk.chunk)
 				}
 			} else {
 				var emptyChunk chunkenc.Chunk
@@ -176,16 +176,16 @@ type multiMeta struct {
 
 // LabelValues needs to be overridden from the headIndexReader implementation
 // so we can return labels within either in-order range or ooo range.
-func (oh *HeadAndOOOIndexReader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+func (oh *HeadAndOOOIndexReader) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	if oh.maxt < oh.head.MinTime() && oh.maxt < oh.head.MinOOOTime() || oh.mint > oh.head.MaxTime() && oh.mint > oh.head.MaxOOOTime() {
 		return []string{}, nil
 	}
 
 	if len(matchers) == 0 {
-		return oh.head.postings.LabelValues(ctx, name), nil
+		return oh.head.postings.LabelValues(ctx, name, hints), nil
 	}
 
-	return labelValuesWithMatchers(ctx, oh, name, matchers...)
+	return labelValuesWithMatchers(ctx, oh, name, hints, matchers...)
 }
 
 func lessByMinTimeAndMinRef(a, b chunks.Meta) int {
@@ -450,6 +450,10 @@ func (ir *OOOCompactionHeadIndexReader) PostingsForLabelMatching(context.Context
 	return index.ErrPostings(errors.New("not supported"))
 }
 
+func (ir *OOOCompactionHeadIndexReader) PostingsForAllLabelValues(context.Context, string) index.Postings {
+	return index.ErrPostings(errors.New("not supported"))
+}
+
 func (ir *OOOCompactionHeadIndexReader) SortedPostings(p index.Postings) index.Postings {
 	// This will already be sorted from the Postings() call above.
 	return p
@@ -480,15 +484,15 @@ func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *l
 	return getOOOSeriesChunks(s, ir.ch.mint, ir.ch.maxt, 0, ir.ch.lastMmapRef, false, 0, chks)
 }
 
-func (ir *OOOCompactionHeadIndexReader) SortedLabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+func (ir *OOOCompactionHeadIndexReader) SortedLabelValues(_ context.Context, _ string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+func (ir *OOOCompactionHeadIndexReader) LabelValues(_ context.Context, _ string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) PostingsForMatchers(_ context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+func (ir *OOOCompactionHeadIndexReader) PostingsForMatchers(_ context.Context, _ bool, _ ...*labels.Matcher) (index.Postings, error) {
 	return nil, errors.New("not implemented")
 }
 
@@ -500,7 +504,7 @@ func (ir *OOOCompactionHeadIndexReader) LabelValueFor(context.Context, storage.S
 	return "", errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error) {
+func (ir *OOOCompactionHeadIndexReader) LabelNamesFor(_ context.Context, _ index.Postings) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 

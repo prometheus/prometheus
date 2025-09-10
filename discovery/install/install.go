@@ -36,6 +36,7 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/ovhcloud"     // register ovhcloud
 	_ "github.com/prometheus/prometheus/discovery/puppetdb"     // register puppetdb
 	_ "github.com/prometheus/prometheus/discovery/scaleway"     // register scaleway
+	_ "github.com/prometheus/prometheus/discovery/stackit"      // register stackit
 	_ "github.com/prometheus/prometheus/discovery/triton"       // register triton
 	_ "github.com/prometheus/prometheus/discovery/uyuni"        // register uyuni
 	_ "github.com/prometheus/prometheus/discovery/vultr"        // register vultr

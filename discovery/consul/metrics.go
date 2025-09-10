@@ -31,7 +31,7 @@ type consulMetrics struct {
 	metricRegisterer discovery.MetricRegisterer
 }
 
-func newDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	m := &consulMetrics{
 		rpcFailuresCount: prometheus.NewCounter(
 			prometheus.CounterOpts{

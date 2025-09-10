@@ -15,21 +15,23 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
-
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -89,12 +91,12 @@ func createTestAgentDB(t testing.TB, reg prometheus.Registerer, opts *Options) *
 	t.Helper()
 
 	dbDir := t.TempDir()
-	rs := remote.NewStorage(log.NewNopLogger(), reg, startTime, dbDir, time.Second*30, nil, false)
+	rs := remote.NewStorage(promslog.NewNopLogger(), reg, startTime, dbDir, time.Second*30, nil)
 	t.Cleanup(func() {
 		require.NoError(t, rs.Close())
 	})
 
-	db, err := Open(log.NewNopLogger(), reg, rs, dbDir, opts)
+	db, err := Open(promslog.NewNopLogger(), reg, rs, dbDir, opts)
 	require.NoError(t, err)
 	return db
 }
@@ -161,6 +163,18 @@ func TestCommit(t *testing.T) {
 		}
 	}
 
+	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		customBucketHistograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), customBucketHistograms[i], nil)
+			require.NoError(t, err)
+		}
+	}
+
 	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
 	for _, l := range lbls {
 		lset := labels.New(l...)
@@ -169,6 +183,18 @@ func TestCommit(t *testing.T) {
 
 		for i := 0; i < numHistograms; i++ {
 			_, err := app.AppendHistogram(0, lset, int64(i), nil, floatHistograms[i])
+			require.NoError(t, err)
+		}
+	}
+
+	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		customBucketFloatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), nil, customBucketFloatHistograms[i])
 			require.NoError(t, err)
 		}
 	}
@@ -204,13 +230,13 @@ func TestCommit(t *testing.T) {
 			require.NoError(t, err)
 			walSamplesCount += len(samples)
 
-		case record.HistogramSamples:
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
 			var histograms []record.RefHistogramSample
 			histograms, err = dec.HistogramSamples(rec, histograms)
 			require.NoError(t, err)
 			walHistogramCount += len(histograms)
 
-		case record.FloatHistogramSamples:
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
 			var floatHistograms []record.RefFloatHistogramSample
 			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
 			require.NoError(t, err)
@@ -227,11 +253,11 @@ func TestCommit(t *testing.T) {
 	}
 
 	// Check that the WAL contained the same number of committed series/samples/exemplars.
-	require.Equal(t, numSeries*3, walSeriesCount, "unexpected number of series")
+	require.Equal(t, numSeries*5, walSeriesCount, "unexpected number of series")
 	require.Equal(t, numSeries*numDatapoints, walSamplesCount, "unexpected number of samples")
 	require.Equal(t, numSeries*numDatapoints, walExemplarsCount, "unexpected number of exemplars")
-	require.Equal(t, numSeries*numHistograms, walHistogramCount, "unexpected number of histograms")
-	require.Equal(t, numSeries*numHistograms, walFloatHistogramCount, "unexpected number of float histograms")
+	require.Equal(t, numSeries*numHistograms*2, walHistogramCount, "unexpected number of histograms")
+	require.Equal(t, numSeries*numHistograms*2, walFloatHistogramCount, "unexpected number of float histograms")
 }
 
 func TestRollback(t *testing.T) {
@@ -267,11 +293,35 @@ func TestRollback(t *testing.T) {
 		}
 	}
 
+	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), histograms[i], nil)
+			require.NoError(t, err)
+		}
+	}
+
 	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
 		floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), nil, floatHistograms[i])
+			require.NoError(t, err)
+		}
+	}
+
+	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
 
 		for i := 0; i < numHistograms; i++ {
 			_, err := app.AppendHistogram(0, lset, int64(i), nil, floatHistograms[i])
@@ -319,13 +369,13 @@ func TestRollback(t *testing.T) {
 			require.NoError(t, err)
 			walExemplarsCount += len(exemplars)
 
-		case record.HistogramSamples:
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
 			var histograms []record.RefHistogramSample
 			histograms, err = dec.HistogramSamples(rec, histograms)
 			require.NoError(t, err)
 			walHistogramCount += len(histograms)
 
-		case record.FloatHistogramSamples:
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
 			var floatHistograms []record.RefFloatHistogramSample
 			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
 			require.NoError(t, err)
@@ -336,7 +386,7 @@ func TestRollback(t *testing.T) {
 	}
 
 	// Check that only series get stored after calling Rollback.
-	require.Equal(t, numSeries*3, walSeriesCount, "series should have been written to WAL")
+	require.Equal(t, numSeries*5, walSeriesCount, "series should have been written to WAL")
 	require.Equal(t, 0, walSamplesCount, "samples should not have been written to WAL")
 	require.Equal(t, 0, walExemplarsCount, "exemplars should not have been written to WAL")
 	require.Equal(t, 0, walHistogramCount, "histograms should not have been written to WAL")
@@ -385,6 +435,19 @@ func TestFullTruncateWAL(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
+	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(lastTs), histograms[i], nil)
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
 	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
 	for _, l := range lbls {
 		lset := labels.New(l...)
@@ -398,11 +461,24 @@ func TestFullTruncateWAL(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
+	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(lastTs), nil, floatHistograms[i])
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
 	// Truncate WAL with mint to GC all the samples.
 	s.truncate(lastTs + 1)
 
 	m := gatherFamily(t, reg, "prometheus_agent_deleted_series")
-	require.Equal(t, float64(numSeries*3), m.Metric[0].Gauge.GetValue(), "agent wal truncate mismatch of deleted series count")
+	require.Equal(t, float64(numSeries*5), m.Metric[0].Gauge.GetValue(), "agent wal truncate mismatch of deleted series count")
 }
 
 func TestPartialTruncateWAL(t *testing.T) {
@@ -412,7 +488,6 @@ func TestPartialTruncateWAL(t *testing.T) {
 	)
 
 	opts := DefaultOptions()
-	opts.TruncateFrequency = time.Minute * 2
 
 	reg := prometheus.NewRegistry()
 	s := createTestAgentDB(t, reg, opts)
@@ -447,11 +522,37 @@ func TestPartialTruncateWAL(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
+	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram_batch-1", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numDatapoints)
+
+		for i := 0; i < numDatapoints; i++ {
+			_, err := app.AppendHistogram(0, lset, lastTs, histograms[i], nil)
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
 	lbls = labelsForTest(t.Name()+"_float_histogram_batch-1", numSeries)
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
 		floatHistograms := tsdbutil.GenerateTestFloatHistograms(numDatapoints)
+
+		for i := 0; i < numDatapoints; i++ {
+			_, err := app.AppendHistogram(0, lset, lastTs, nil, floatHistograms[i])
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram_batch-1", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numDatapoints)
 
 		for i := 0; i < numDatapoints; i++ {
 			_, err := app.AppendHistogram(0, lset, lastTs, nil, floatHistograms[i])
@@ -486,6 +587,19 @@ func TestPartialTruncateWAL(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
+	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram_batch-2", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numDatapoints)
+
+		for i := 0; i < numDatapoints; i++ {
+			_, err := app.AppendHistogram(0, lset, lastTs, histograms[i], nil)
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
 	lbls = labelsForTest(t.Name()+"_float_histogram_batch-2", numSeries)
 	for _, l := range lbls {
 		lset := labels.New(l...)
@@ -499,11 +613,25 @@ func TestPartialTruncateWAL(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
+	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram_batch-2", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numDatapoints)
+
+		for i := 0; i < numDatapoints; i++ {
+			_, err := app.AppendHistogram(0, lset, lastTs, nil, floatHistograms[i])
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
 	// Truncate WAL with mint to GC only the first batch of 800 series and retaining 2nd batch of 800 series.
 	s.truncate(lastTs - 1)
 
 	m := gatherFamily(t, reg, "prometheus_agent_deleted_series")
-	require.Equal(t, float64(numSeries*3), m.Metric[0].Gauge.GetValue(), "agent wal truncate mismatch of deleted series count")
+	require.Len(t, m.Metric, 1)
+	require.Equal(t, float64(numSeries*5), m.Metric[0].Gauge.GetValue(), "agent wal truncate mismatch of deleted series count")
 }
 
 func TestWALReplay(t *testing.T) {
@@ -539,11 +667,35 @@ func TestWALReplay(t *testing.T) {
 		}
 	}
 
+	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, lastTs, histograms[i], nil)
+			require.NoError(t, err)
+		}
+	}
+
 	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
 		floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, lastTs, nil, floatHistograms[i])
+			require.NoError(t, err)
+		}
+	}
+
+	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
 
 		for i := 0; i < numHistograms; i++ {
 			_, err := app.AppendHistogram(0, lset, lastTs, nil, floatHistograms[i])
@@ -569,7 +721,7 @@ func TestWALReplay(t *testing.T) {
 
 	// Check if all the series are retrieved back from the WAL.
 	m := gatherFamily(t, reg, "prometheus_agent_active_series")
-	require.Equal(t, float64(numSeries*3), m.Metric[0].Gauge.GetValue(), "agent wal replay mismatch of active series count")
+	require.Equal(t, float64(numSeries*5), m.Metric[0].Gauge.GetValue(), "agent wal replay mismatch of active series count")
 
 	// Check if lastTs of the samples retrieved from the WAL is retained.
 	metrics := replayStorage.series.series
@@ -583,9 +735,9 @@ func TestWALReplay(t *testing.T) {
 
 func TestLockfile(t *testing.T) {
 	tsdbutil.TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*tsdbutil.DirLocker, testutil.Closer) {
-		logger := log.NewNopLogger()
+		logger := promslog.NewNopLogger()
 		reg := prometheus.NewRegistry()
-		rs := remote.NewStorage(logger, reg, startTime, data, time.Second*30, nil, false)
+		rs := remote.NewStorage(logger, reg, startTime, data, time.Second*30, nil)
 		t.Cleanup(func() {
 			require.NoError(t, rs.Close())
 		})
@@ -605,12 +757,12 @@ func TestLockfile(t *testing.T) {
 
 func Test_ExistingWAL_NextRef(t *testing.T) {
 	dbDir := t.TempDir()
-	rs := remote.NewStorage(log.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
+	rs := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil)
 	defer func() {
 		require.NoError(t, rs.Close())
 	}()
 
-	db, err := Open(log.NewNopLogger(), nil, rs, dbDir, DefaultOptions())
+	db, err := Open(promslog.NewNopLogger(), nil, rs, dbDir, DefaultOptions())
 	require.NoError(t, err)
 
 	seriesCount := 10
@@ -638,9 +790,11 @@ func Test_ExistingWAL_NextRef(t *testing.T) {
 	require.NoError(t, db.Close())
 
 	// Create a new storage and see what nextRef is initialized to.
-	db, err = Open(log.NewNopLogger(), nil, rs, dbDir, DefaultOptions())
+	db, err = Open(promslog.NewNopLogger(), nil, rs, dbDir, DefaultOptions())
 	require.NoError(t, err)
-	defer require.NoError(t, db.Close())
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
 
 	require.Equal(t, uint64(seriesCount+histogramCount), db.nextRef.Load(), "nextRef should be equal to the number of series written across the entire WAL")
 }
@@ -799,6 +953,18 @@ func TestDBAllowOOOSamples(t *testing.T) {
 		}
 	}
 
+	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
+
+		for i := offset; i < numDatapoints+offset; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), histograms[i-offset], nil)
+			require.NoError(t, err)
+		}
+	}
+
 	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
 	for _, l := range lbls {
 		lset := labels.New(l...)
@@ -811,10 +977,22 @@ func TestDBAllowOOOSamples(t *testing.T) {
 		}
 	}
 
+	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
+
+		for i := offset; i < numDatapoints+offset; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), nil, floatHistograms[i-offset])
+			require.NoError(t, err)
+		}
+	}
+
 	require.NoError(t, app.Commit())
 	m := gatherFamily(t, reg, "prometheus_agent_samples_appended_total")
 	require.Equal(t, float64(20), m.Metric[0].Counter.GetValue(), "agent wal mismatch of total appended samples")
-	require.Equal(t, float64(40), m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
+	require.Equal(t, float64(80), m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
 	require.NoError(t, s.Close())
 
 	// Hack: s.wal.Dir() is the /wal subdirectory of the original storage path.
@@ -863,6 +1041,18 @@ func TestDBAllowOOOSamples(t *testing.T) {
 		}
 	}
 
+	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries*2)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
+
+		for i := 0; i < numDatapoints; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), histograms[i], nil)
+			require.NoError(t, err)
+		}
+	}
+
 	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries*2)
 	for _, l := range lbls {
 		lset := labels.New(l...)
@@ -875,10 +1065,22 @@ func TestDBAllowOOOSamples(t *testing.T) {
 		}
 	}
 
+	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries*2)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
+
+		for i := 0; i < numDatapoints; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), nil, floatHistograms[i])
+			require.NoError(t, err)
+		}
+	}
+
 	require.NoError(t, app.Commit())
 	m = gatherFamily(t, reg2, "prometheus_agent_samples_appended_total")
 	require.Equal(t, float64(40), m.Metric[0].Counter.GetValue(), "agent wal mismatch of total appended samples")
-	require.Equal(t, float64(80), m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
+	require.Equal(t, float64(160), m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
 	require.NoError(t, db.Close())
 }
 
@@ -930,6 +1132,249 @@ func TestDBOutOfOrderTimeWindow(t *testing.T) {
 			require.NoError(t, s.Close())
 		})
 	}
+}
+
+type walSample struct {
+	t    int64
+	f    float64
+	h    *histogram.Histogram
+	lbls labels.Labels
+	ref  storage.SeriesRef
+}
+
+func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
+	t.Parallel()
+
+	type appendableSample struct {
+		t            int64
+		ct           int64
+		v            float64
+		lbls         labels.Labels
+		h            *histogram.Histogram
+		expectsError bool
+	}
+
+	testHistogram := tsdbutil.GenerateTestHistograms(1)[0]
+	zeroHistogram := &histogram.Histogram{}
+
+	lbls := labelsForTest(t.Name(), 1)
+	defLbls := labels.New(lbls[0]...)
+
+	testCases := []struct {
+		name                string
+		inputSamples        []appendableSample
+		expectedSamples     []*walSample
+		expectedSeriesCount int
+	}{
+		{
+			name: "in order ct+normal sample/floatSamples",
+			inputSamples: []appendableSample{
+				{t: 100, ct: 1, v: 10, lbls: defLbls},
+				{t: 101, ct: 1, v: 10, lbls: defLbls},
+			},
+			expectedSamples: []*walSample{
+				{t: 1, f: 0, lbls: defLbls},
+				{t: 100, f: 10, lbls: defLbls},
+				{t: 101, f: 10, lbls: defLbls},
+			},
+		},
+		{
+			name: "CT+float && CT+histogram samples",
+			inputSamples: []appendableSample{
+				{
+					t:    100,
+					ct:   30,
+					v:    20,
+					lbls: defLbls,
+				},
+				{
+					t:    300,
+					ct:   230,
+					h:    testHistogram,
+					lbls: defLbls,
+				},
+			},
+			expectedSamples: []*walSample{
+				{t: 30, f: 0, lbls: defLbls},
+				{t: 100, f: 20, lbls: defLbls},
+				{t: 230, h: zeroHistogram, lbls: defLbls},
+				{t: 300, h: testHistogram, lbls: defLbls},
+			},
+			expectedSeriesCount: 1,
+		},
+		{
+			name: "CT+float && CT+histogram samples with error",
+			inputSamples: []appendableSample{
+				{
+					// invalid CT
+					t:            100,
+					ct:           100,
+					v:            10,
+					lbls:         defLbls,
+					expectsError: true,
+				},
+				{
+					// invalid CT histogram
+					t:            300,
+					ct:           300,
+					h:            testHistogram,
+					lbls:         defLbls,
+					expectsError: true,
+				},
+			},
+			expectedSamples: []*walSample{
+				{t: 100, f: 10, lbls: defLbls},
+				{t: 300, h: testHistogram, lbls: defLbls},
+			},
+			expectedSeriesCount: 0,
+		},
+		{
+			name: "In order ct+normal sample/histogram",
+			inputSamples: []appendableSample{
+				{t: 100, h: testHistogram, ct: 1, lbls: defLbls},
+				{t: 101, h: testHistogram, ct: 1, lbls: defLbls},
+			},
+			expectedSamples: []*walSample{
+				{t: 1, h: &histogram.Histogram{}},
+				{t: 100, h: testHistogram},
+				{t: 101, h: &histogram.Histogram{CounterResetHint: histogram.NotCounterReset}},
+			},
+		},
+		{
+			name: "ct+normal then OOO sample/float",
+			inputSamples: []appendableSample{
+				{t: 60_000, ct: 40_000, v: 10, lbls: defLbls},
+				{t: 120_000, ct: 40_000, v: 10, lbls: defLbls},
+				{t: 180_000, ct: 40_000, v: 10, lbls: defLbls},
+				{t: 50_000, ct: 40_000, v: 10, lbls: defLbls},
+			},
+			expectedSamples: []*walSample{
+				{t: 40_000, f: 0, lbls: defLbls},
+				{t: 50_000, f: 10, lbls: defLbls},
+				{t: 60_000, f: 10, lbls: defLbls},
+				{t: 120_000, f: 10, lbls: defLbls},
+				{t: 180_000, f: 10, lbls: defLbls},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			reg := prometheus.NewRegistry()
+			opts := DefaultOptions()
+			opts.OutOfOrderTimeWindow = 360_000
+			s := createTestAgentDB(t, reg, opts)
+			app := s.Appender(context.TODO())
+
+			for _, sample := range tc.inputSamples {
+				// We supposed to write a Histogram to the WAL
+				if sample.h != nil {
+					_, err := app.AppendHistogramCTZeroSample(0, sample.lbls, sample.t, sample.ct, zeroHistogram, nil)
+					if !errors.Is(err, storage.ErrOutOfOrderCT) {
+						require.Equal(t, sample.expectsError, err != nil, "expected error: %v, got: %v", sample.expectsError, err)
+					}
+
+					_, err = app.AppendHistogram(0, sample.lbls, sample.t, sample.h, nil)
+					require.NoError(t, err)
+				} else {
+					// We supposed to write a float sample to the WAL
+					_, err := app.AppendCTZeroSample(0, sample.lbls, sample.t, sample.ct)
+					if !errors.Is(err, storage.ErrOutOfOrderCT) {
+						require.Equal(t, sample.expectsError, err != nil, "expected error: %v, got: %v", sample.expectsError, err)
+					}
+
+					_, err = app.Append(0, sample.lbls, sample.t, sample.v)
+					require.NoError(t, err)
+				}
+			}
+
+			require.NoError(t, app.Commit())
+			// Close the DB to ensure all data is flushed to the WAL
+			require.NoError(t, s.Close())
+
+			// Check that we dont have any OOO samples in the WAL by checking metrics
+			families, err := reg.Gather()
+			require.NoError(t, err, "failed to gather metrics")
+			for _, f := range families {
+				if f.GetName() == "prometheus_agent_out_of_order_samples_total" {
+					t.Fatalf("unexpected metric %s", f.GetName())
+				}
+			}
+
+			outputSamples := readWALSamples(t, s.wal.Dir())
+
+			require.Len(t, outputSamples, len(tc.expectedSamples), "Expected %d samples", len(tc.expectedSamples))
+
+			for i, expectedSample := range tc.expectedSamples {
+				for _, sample := range outputSamples {
+					if sample.t == expectedSample.t && sample.lbls.String() == expectedSample.lbls.String() {
+						if expectedSample.h != nil {
+							require.Equal(t, expectedSample.h, sample.h, "histogram value mismatch (sample index %d)", i)
+						} else {
+							require.Equal(t, expectedSample.f, sample.f, "value mismatch (sample index %d)", i)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func readWALSamples(t *testing.T, walDir string) []*walSample {
+	t.Helper()
+	sr, err := wlog.NewSegmentsReader(walDir)
+	require.NoError(t, err)
+	defer func(sr io.ReadCloser) {
+		err := sr.Close()
+		require.NoError(t, err)
+	}(sr)
+
+	r := wlog.NewReader(sr)
+	dec := record.NewDecoder(labels.NewSymbolTable())
+
+	var (
+		samples    []record.RefSample
+		histograms []record.RefHistogramSample
+
+		lastSeries    record.RefSeries
+		outputSamples = make([]*walSample, 0)
+	)
+
+	for r.Next() {
+		rec := r.Record()
+		switch dec.Type(rec) {
+		case record.Series:
+			series, err := dec.Series(rec, nil)
+			require.NoError(t, err)
+			lastSeries = series[0]
+		case record.Samples:
+			samples, err = dec.Samples(rec, samples[:0])
+			require.NoError(t, err)
+			for _, s := range samples {
+				outputSamples = append(outputSamples, &walSample{
+					t:    s.T,
+					f:    s.V,
+					lbls: lastSeries.Labels.Copy(),
+					ref:  storage.SeriesRef(lastSeries.Ref),
+				})
+			}
+		case record.HistogramSamples:
+			histograms, err = dec.HistogramSamples(rec, histograms[:0])
+			require.NoError(t, err)
+			for _, h := range histograms {
+				outputSamples = append(outputSamples, &walSample{
+					t:    h.T,
+					h:    h.H,
+					lbls: lastSeries.Labels.Copy(),
+					ref:  storage.SeriesRef(lastSeries.Ref),
+				})
+			}
+		}
+	}
+
+	return outputSamples
 }
 
 func BenchmarkCreateSeries(b *testing.B) {

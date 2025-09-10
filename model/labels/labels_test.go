@@ -27,6 +27,8 @@ import (
 )
 
 func TestLabels_String(t *testing.T) {
+	s254 := strings.Repeat("x", 254) // Edge cases for stringlabels encoding.
+	s255 := strings.Repeat("x", 255)
 	cases := []struct {
 		labels   Labels
 		expected string
@@ -38,6 +40,18 @@ func TestLabels_String(t *testing.T) {
 		{
 			labels:   Labels{},
 			expected: "{}",
+		},
+		{
+			labels:   FromStrings("service.name", "t1", "whatever\\whatever", "t2"),
+			expected: `{"service.name"="t1", "whatever\\whatever"="t2"}`,
+		},
+		{
+			labels:   FromStrings("aaa", "111", "xx", s254),
+			expected: `{aaa="111", xx="` + s254 + `"}`,
+		},
+		{
+			labels:   FromStrings("aaa", "111", "xx", s255),
+			expected: `{aaa="111", xx="` + s255 + `"}`,
 		},
 	}
 	for _, c := range cases {
@@ -280,10 +294,9 @@ func TestLabels_IsValid(t *testing.T) {
 
 func TestLabels_ValidationModes(t *testing.T) {
 	for _, test := range []struct {
-		input      Labels
-		globalMode model.ValidationScheme
-		callMode   model.ValidationScheme
-		expected   bool
+		input    Labels
+		callMode model.ValidationScheme
+		expected bool
 	}{
 		{
 			input: FromStrings(
@@ -291,9 +304,8 @@ func TestLabels_ValidationModes(t *testing.T) {
 				"hostname", "localhost",
 				"job", "check",
 			),
-			globalMode: model.UTF8Validation,
-			callMode:   model.UTF8Validation,
-			expected:   true,
+			callMode: model.UTF8Validation,
+			expected: true,
 		},
 		{
 			input: FromStrings(
@@ -301,31 +313,8 @@ func TestLabels_ValidationModes(t *testing.T) {
 				"\xc5 bad utf8", "localhost",
 				"job", "check",
 			),
-			globalMode: model.UTF8Validation,
-			callMode:   model.UTF8Validation,
-			expected:   false,
-		},
-		{
-			// Setting the common model to legacy validation and then trying to check for UTF-8 on a
-			// per-call basis is not supported.
-			input: FromStrings(
-				"__name__", "test.utf8.metric",
-				"hostname", "localhost",
-				"job", "check",
-			),
-			globalMode: model.LegacyValidation,
-			callMode:   model.UTF8Validation,
-			expected:   false,
-		},
-		{
-			input: FromStrings(
-				"__name__", "test",
-				"hostname", "localhost",
-				"job", "check",
-			),
-			globalMode: model.LegacyValidation,
-			callMode:   model.LegacyValidation,
-			expected:   true,
+			callMode: model.UTF8Validation,
+			expected: false,
 		},
 		{
 			input: FromStrings(
@@ -333,9 +322,8 @@ func TestLabels_ValidationModes(t *testing.T) {
 				"hostname", "localhost",
 				"job", "check",
 			),
-			globalMode: model.UTF8Validation,
-			callMode:   model.LegacyValidation,
-			expected:   false,
+			callMode: model.LegacyValidation,
+			expected: false,
 		},
 		{
 			input: FromStrings(
@@ -343,12 +331,10 @@ func TestLabels_ValidationModes(t *testing.T) {
 				"host.name", "localhost",
 				"job", "check",
 			),
-			globalMode: model.UTF8Validation,
-			callMode:   model.LegacyValidation,
-			expected:   false,
+			callMode: model.LegacyValidation,
+			expected: false,
 		},
 	} {
-		model.NameValidationScheme = test.globalMode
 		require.Equal(t, test.expected, test.input.IsValid(test.callMode))
 	}
 }
@@ -527,7 +513,7 @@ func TestLabels_Has(t *testing.T) {
 }
 
 func TestLabels_Get(t *testing.T) {
-	require.Equal(t, "", FromStrings("aaa", "111", "bbb", "222").Get("foo"))
+	require.Empty(t, FromStrings("aaa", "111", "bbb", "222").Get("foo"))
 	require.Equal(t, "111", FromStrings("aaaa", "111", "bbb", "222").Get("aaaa"))
 	require.Equal(t, "222", FromStrings("aaaa", "111", "bbb", "222").Get("bbb"))
 }
@@ -537,8 +523,22 @@ func TestLabels_DropMetricName(t *testing.T) {
 	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "aaa", "111").DropMetricName()))
 
 	original := FromStrings("__aaa__", "111", MetricName, "myname", "bbb", "222")
-	check := FromStrings("__aaa__", "111", MetricName, "myname", "bbb", "222")
+	check := original.Copy()
 	require.True(t, Equal(FromStrings("__aaa__", "111", "bbb", "222"), check.DropMetricName()))
+	require.True(t, Equal(original, check))
+}
+
+func TestLabels_DropReserved(t *testing.T) {
+	shouldDropFn := func(n string) bool {
+		return n == MetricName || n == "__something__"
+	}
+	require.True(t, Equal(FromStrings("aaa", "111", "bbb", "222"), FromStrings("aaa", "111", "bbb", "222").DropReserved(shouldDropFn)))
+	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "aaa", "111").DropReserved(shouldDropFn)))
+	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "__something__", string(model.MetricTypeCounter), "aaa", "111").DropReserved(shouldDropFn)))
+
+	original := FromStrings("__aaa__", "111", MetricName, "myname", "bbb", "222")
+	check := original.Copy()
+	require.True(t, Equal(FromStrings("__aaa__", "111", "bbb", "222"), check.DropReserved(shouldDropFn)))
 	require.True(t, Equal(original, check))
 }
 
@@ -954,7 +954,7 @@ func TestMarshaling(t *testing.T) {
 	expectedJSON := "{\"aaa\":\"111\",\"bbb\":\"2222\",\"ccc\":\"33333\"}"
 	b, err := json.Marshal(lbls)
 	require.NoError(t, err)
-	require.Equal(t, expectedJSON, string(b))
+	require.JSONEq(t, expectedJSON, string(b))
 
 	var gotJ Labels
 	err = json.Unmarshal(b, &gotJ)
@@ -964,7 +964,7 @@ func TestMarshaling(t *testing.T) {
 	expectedYAML := "aaa: \"111\"\nbbb: \"2222\"\nccc: \"33333\"\n"
 	b, err = yaml.Marshal(lbls)
 	require.NoError(t, err)
-	require.Equal(t, expectedYAML, string(b))
+	require.YAMLEq(t, expectedYAML, string(b))
 
 	var gotY Labels
 	err = yaml.Unmarshal(b, &gotY)
@@ -980,7 +980,7 @@ func TestMarshaling(t *testing.T) {
 	b, err = json.Marshal(f)
 	require.NoError(t, err)
 	expectedJSONFromStruct := "{\"a_labels\":" + expectedJSON + "}"
-	require.Equal(t, expectedJSONFromStruct, string(b))
+	require.JSONEq(t, expectedJSONFromStruct, string(b))
 
 	var gotFJ foo
 	err = json.Unmarshal(b, &gotFJ)
@@ -990,7 +990,7 @@ func TestMarshaling(t *testing.T) {
 	b, err = yaml.Marshal(f)
 	require.NoError(t, err)
 	expectedYAMLFromStruct := "a_labels:\n  aaa: \"111\"\n  bbb: \"2222\"\n  ccc: \"33333\"\n"
-	require.Equal(t, expectedYAMLFromStruct, string(b))
+	require.YAMLEq(t, expectedYAMLFromStruct, string(b))
 
 	var gotFY foo
 	err = yaml.Unmarshal(b, &gotFY)

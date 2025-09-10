@@ -21,7 +21,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -182,8 +181,7 @@ func TestTritonSDRefreshNoServer(t *testing.T) {
 	td, m, _ := newTritonDiscovery(conf)
 
 	_, err := td.refresh(context.Background())
-	require.Error(t, err)
-	require.True(t, strings.Contains(err.Error(), "an error occurred when requesting targets from the discovery endpoint"))
+	require.ErrorContains(t, err, "an error occurred when requesting targets from the discovery endpoint")
 	m.Unregister()
 }
 
@@ -193,8 +191,7 @@ func TestTritonSDRefreshCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := td.refresh(ctx)
-	require.Error(t, err)
-	require.True(t, strings.Contains(err.Error(), context.Canceled.Error()))
+	require.ErrorContains(t, err, context.Canceled.Error())
 	m.Unregister()
 }
 
@@ -233,7 +230,7 @@ func TestTritonSDRefreshCNsWithHostname(t *testing.T) {
 func testTritonSDRefresh(t *testing.T, c SDConfig, dstr string) []model.LabelSet {
 	var (
 		td, m, _ = newTritonDiscovery(c)
-		s        = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s        = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			fmt.Fprintln(w, dstr)
 		}))
 	)

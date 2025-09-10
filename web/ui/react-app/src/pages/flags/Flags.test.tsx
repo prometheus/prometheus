@@ -26,7 +26,6 @@ const sampleFlagsResponse = {
   'storage.tsdb.min-block-duration': '2h',
   'storage.tsdb.no-lockfile': 'false',
   'storage.tsdb.path': 'data/',
-  'storage.tsdb.retention': '0s',
   'storage.tsdb.retention.size': '0B',
   'storage.tsdb.retention.time': '0s',
   'storage.tsdb.wal-compression': 'false',

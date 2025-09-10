@@ -43,8 +43,8 @@ const (
 func TestTargetLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
 	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
-	b := labels.NewScratchBuilder(0)
-	got := target.Labels(&b)
+	b := labels.NewBuilder(labels.EmptyLabels())
+	got := target.Labels(b)
 	require.Equal(t, want, got)
 	i := 0
 	target.LabelsRange(func(l labels.Label) {
@@ -103,9 +103,11 @@ func TestTargetOffset(t *testing.T) {
 }
 
 func TestTargetURL(t *testing.T) {
-	params := url.Values{
-		"abc": []string{"foo", "bar", "baz"},
-		"xyz": []string{"hoo"},
+	scrapeConfig := &config.ScrapeConfig{
+		Params: url.Values{
+			"abc": []string{"foo", "bar", "baz"},
+			"xyz": []string{"hoo"},
+		},
 	}
 	labels := labels.FromMap(map[string]string{
 		model.AddressLabel:     "example.com:1234",
@@ -114,7 +116,7 @@ func TestTargetURL(t *testing.T) {
 		"__param_abc":          "overwrite",
 		"__param_cde":          "huu",
 	})
-	target := NewTarget(labels, labels, params)
+	target := NewTarget(labels, scrapeConfig, nil, nil)
 
 	// The reserved labels are concatenated into a full URL. The first value for each
 	// URL query parameter can be set/modified via labels as well.
@@ -139,13 +141,13 @@ func newTestTarget(targetURL string, _ time.Duration, lbls labels.Labels) *Targe
 	lb.Set(model.AddressLabel, strings.TrimPrefix(targetURL, "http://"))
 	lb.Set(model.MetricsPathLabel, "/metrics")
 
-	return &Target{labels: lb.Labels()}
+	return &Target{labels: lb.Labels(), scrapeConfig: &config.ScrapeConfig{}}
 }
 
 func TestNewHTTPBearerToken(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(_ http.ResponseWriter, r *http.Request) {
 				expected := "Bearer 1234"
 				received := r.Header.Get("Authorization")
 				require.Equal(t, expected, received, "Authorization header was not set correctly.")
@@ -166,7 +168,7 @@ func TestNewHTTPBearerToken(t *testing.T) {
 func TestNewHTTPBearerTokenFile(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(_ http.ResponseWriter, r *http.Request) {
 				expected := "Bearer 12345"
 				received := r.Header.Get("Authorization")
 				require.Equal(t, expected, received, "Authorization header was not set correctly.")
@@ -187,7 +189,7 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 func TestNewHTTPBasicAuth(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(_ http.ResponseWriter, r *http.Request) {
 				username, password, ok := r.BasicAuth()
 				require.True(t, ok, "Basic authorization header was not set correctly.")
 				require.Equal(t, "user", username)
@@ -212,7 +214,7 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 func TestNewHTTPCACert(t *testing.T) {
 	server := httptest.NewUnstartedServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
 				w.Write([]byte{})
 			},
@@ -236,7 +238,7 @@ func TestNewHTTPCACert(t *testing.T) {
 func TestNewHTTPClientCert(t *testing.T) {
 	server := httptest.NewUnstartedServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
 				w.Write([]byte{})
 			},
@@ -265,7 +267,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 func TestNewHTTPWithServerName(t *testing.T) {
 	server := httptest.NewUnstartedServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
 				w.Write([]byte{})
 			},
@@ -290,7 +292,7 @@ func TestNewHTTPWithServerName(t *testing.T) {
 func TestNewHTTPWithBadServerName(t *testing.T) {
 	server := httptest.NewUnstartedServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
 				w.Write([]byte{})
 			},
@@ -348,10 +350,84 @@ func TestTargetsFromGroup(t *testing.T) {
 		ScrapeInterval: model.Duration(1 * time.Minute),
 	}
 	lb := labels.NewBuilder(labels.EmptyLabels())
-	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, false, nil, lb)
+	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, nil, lb)
 	require.Len(t, targets, 1)
 	require.Len(t, failures, 1)
 	require.EqualError(t, failures[0], expectedError)
+}
+
+// TestTargetsFromGroupWithLabelKeepDrop aims to demonstrate and reinforce the current behavior: relabeling's "labelkeep" and "labeldrop"
+// are applied to all labels of a target, including internal ones (labels starting with "__" such as "__address__").
+// This will be helpful for cases like https://github.com/prometheus/prometheus/issues/12355.
+func TestTargetsFromGroupWithLabelKeepDrop(t *testing.T) {
+	tests := []struct {
+		name             string
+		cfgText          string
+		targets          []model.LabelSet
+		shouldDropTarget bool
+	}{
+		{
+			name: "no relabeling",
+			cfgText: `
+global:
+  metric_name_validation_scheme: legacy
+scrape_configs:
+  - job_name: job1
+    static_configs:
+      - targets: ["localhost:9090"]
+`,
+			targets: []model.LabelSet{{model.AddressLabel: "localhost:9090"}},
+		},
+		{
+			name: "labelkeep",
+			cfgText: `
+global:
+  metric_name_validation_scheme: legacy
+scrape_configs:
+  - job_name: job1
+    static_configs:
+      - targets: ["localhost:9090"]
+    relabel_configs:
+      - regex: 'foo'
+        action: labelkeep
+`,
+			targets:          []model.LabelSet{{model.AddressLabel: "localhost:9090"}},
+			shouldDropTarget: true,
+		},
+		{
+			name: "labeldrop",
+			cfgText: `
+global:
+  metric_name_validation_scheme: legacy
+scrape_configs:
+  - job_name: job1
+    static_configs:
+      - targets: ["localhost:9090"]
+    relabel_configs:
+      - regex: '__address__'
+        action: labeldrop
+`,
+			targets:          []model.LabelSet{{model.AddressLabel: "localhost:9090"}},
+			shouldDropTarget: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := loadConfiguration(t, tt.cfgText)
+			lb := labels.NewBuilder(labels.EmptyLabels())
+			targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: tt.targets}, config.ScrapeConfigs[0], nil, lb)
+
+			if tt.shouldDropTarget {
+				require.Len(t, failures, 1)
+				require.EqualError(t, failures[0], "instance 0 in group : no address")
+				require.Empty(t, targets)
+			} else {
+				require.Empty(t, failures)
+				require.Len(t, targets, 1)
+			}
+		})
+	}
 }
 
 func BenchmarkTargetsFromGroup(b *testing.B) {
@@ -435,7 +511,7 @@ scrape_configs:
 			lb := labels.NewBuilder(labels.EmptyLabels())
 			group := &targetgroup.Group{Targets: targets}
 			for i := 0; i < b.N; i++ {
-				tgets, _ = TargetsFromGroup(group, config.ScrapeConfigs[0], false, tgets, lb)
+				tgets, _ = TargetsFromGroup(group, config.ScrapeConfigs[0], tgets, lb)
 				if len(targets) != nTargets {
 					b.Fatalf("Expected %d targets, got %d", nTargets, len(targets))
 				}

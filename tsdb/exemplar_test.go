@@ -20,6 +20,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -497,5 +498,42 @@ func BenchmarkResizeExemplars(b *testing.B) {
 				es.Resize(tc.endSize)
 			}
 		})
+	}
+}
+
+// TestCircularExemplarStorage_Concurrent_AddExemplar_Resize tries to provoke a data race between AddExemplar and Resize.
+// Run with race detection enabled.
+func TestCircularExemplarStorage_Concurrent_AddExemplar_Resize(t *testing.T) {
+	exs, err := NewCircularExemplarStorage(0, eMetrics)
+	require.NoError(t, err)
+	es := exs.(*CircularExemplarStorage)
+
+	l := labels.FromStrings("service", "asdf")
+	e := exemplar.Exemplar{
+		Labels: labels.FromStrings("trace_id", "qwerty"),
+		Value:  0.1,
+		Ts:     1,
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	t.Cleanup(wg.Wait)
+
+	started := make(chan struct{})
+
+	go func() {
+		defer wg.Done()
+
+		<-started
+		for i := 0; i < 100; i++ {
+			require.NoError(t, es.AddExemplar(l, e))
+		}
+	}()
+
+	for i := 0; i < 100; i++ {
+		es.Resize(int64(i + 1))
+		if i == 0 {
+			close(started)
+		}
 	}
 }

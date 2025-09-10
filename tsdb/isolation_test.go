@@ -72,7 +72,7 @@ func TestIsolation(t *testing.T) {
 
 func countOpenReads(iso *isolation) int {
 	count := 0
-	iso.TraverseOpenReads(func(s *isolationState) bool {
+	iso.TraverseOpenReads(func(_ *isolationState) bool {
 		count++
 		return true
 	})

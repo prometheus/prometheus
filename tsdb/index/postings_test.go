@@ -392,8 +392,8 @@ func BenchmarkMerge(t *testing.B) {
 		refs = append(refs, temp)
 	}
 
-	its := make([]Postings, len(refs))
-	for _, nSeries := range []int{1, 10, 100, 1000, 10000, 100000} {
+	its := make([]*ListPostings, len(refs))
+	for _, nSeries := range []int{1, 10, 10000, 100000} {
 		t.Run(strconv.Itoa(nSeries), func(bench *testing.B) {
 			ctx := context.Background()
 			for i := 0; i < bench.N; i++ {
@@ -939,7 +939,7 @@ func BenchmarkPostings_Stats(b *testing.B) {
 	}
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		p.Stats("__name__", 10)
+		p.Stats("__name__", 10, labels.SizeOfLabels)
 	}
 }
 
@@ -954,7 +954,8 @@ func TestMemPostingsStats(t *testing.T) {
 	p.Add(2, labels.FromStrings("label", "value1"))
 
 	// call the Stats method to calculate the cardinality statistics
-	stats := p.Stats("label", 10)
+	// passing a fake calculation so we get the same result regardless of compilation -tags.
+	stats := p.Stats("label", 10, func(name, value string, n uint64) uint64 { return uint64(len(name)+len(value)) * n })
 
 	// assert that the expected statistics were calculated
 	require.Equal(t, uint64(2), stats.CardinalityMetricsStats[0].Count)
@@ -963,7 +964,7 @@ func TestMemPostingsStats(t *testing.T) {
 	require.Equal(t, uint64(3), stats.CardinalityLabelStats[0].Count)
 	require.Equal(t, "label", stats.CardinalityLabelStats[0].Name)
 
-	require.Equal(t, uint64(24), stats.LabelValueStats[0].Count)
+	require.Equal(t, uint64(44), stats.LabelValueStats[0].Count)
 	require.Equal(t, "label", stats.LabelValueStats[0].Name)
 
 	require.Equal(t, uint64(2), stats.LabelValuePairsStats[0].Count)
@@ -978,7 +979,7 @@ func TestMemPostings_Delete(t *testing.T) {
 	p.Add(2, labels.FromStrings("lbl1", "b"))
 	p.Add(3, labels.FromStrings("lbl2", "a"))
 
-	before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+	before := p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 	deletedRefs := map[storage.SeriesRef]struct{}{
 		2: {},
 	}
@@ -986,7 +987,7 @@ func TestMemPostings_Delete(t *testing.T) {
 		{Name: "lbl1", Value: "b"}: {},
 	}
 	p.Delete(deletedRefs, affectedLabels)
-	after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+	after := p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 
 	// Make sure postings gotten before the delete have the old data when
 	// iterated over.
@@ -1000,7 +1001,7 @@ func TestMemPostings_Delete(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []storage.SeriesRef{1, 3}, expanded)
 
-	deleted := p.Get("lbl1", "b")
+	deleted := p.Postings(context.Background(), "lbl1", "b")
 	expanded, err = ExpandPostings(deleted)
 	require.NoError(t, err)
 	require.Empty(t, expanded, "expected empty postings, got %v", expanded)
@@ -1072,7 +1073,7 @@ func BenchmarkMemPostings_Delete(b *testing.B) {
 									return
 								default:
 									// Get a random value of this label.
-									p.Get(lbl, itoa(rand.Intn(10000))).Next()
+									p.Postings(context.Background(), lbl, itoa(rand.Intn(10000))).Next()
 								}
 							}
 						}(i)
@@ -1243,63 +1244,78 @@ func TestPostingsWithIndexHeap(t *testing.T) {
 func TestListPostings(t *testing.T) {
 	t.Run("empty list", func(t *testing.T) {
 		p := NewListPostings(nil)
+		require.Equal(t, 0, p.(*ListPostings).Len())
 		require.False(t, p.Next())
 		require.False(t, p.Seek(10))
 		require.False(t, p.Next())
 		require.NoError(t, p.Err())
+		require.Equal(t, 0, p.(*ListPostings).Len())
 	})
 
 	t.Run("one posting", func(t *testing.T) {
 		t.Run("next", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10})
+			require.Equal(t, 1, p.(*ListPostings).Len())
 			require.True(t, p.Next())
 			require.Equal(t, storage.SeriesRef(10), p.At())
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
+			require.Equal(t, 0, p.(*ListPostings).Len())
 		})
 		t.Run("seek less", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10})
+			require.Equal(t, 1, p.(*ListPostings).Len())
 			require.True(t, p.Seek(5))
 			require.Equal(t, storage.SeriesRef(10), p.At())
 			require.True(t, p.Seek(5))
 			require.Equal(t, storage.SeriesRef(10), p.At())
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
+			require.Equal(t, 0, p.(*ListPostings).Len())
 		})
 		t.Run("seek equal", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10})
+			require.Equal(t, 1, p.(*ListPostings).Len())
 			require.True(t, p.Seek(10))
 			require.Equal(t, storage.SeriesRef(10), p.At())
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
+			require.Equal(t, 0, p.(*ListPostings).Len())
 		})
 		t.Run("seek more", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10})
+			require.Equal(t, 1, p.(*ListPostings).Len())
 			require.False(t, p.Seek(15))
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
+			require.Equal(t, 0, p.(*ListPostings).Len())
 		})
 		t.Run("seek after next", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10})
+			require.Equal(t, 1, p.(*ListPostings).Len())
 			require.True(t, p.Next())
 			require.False(t, p.Seek(15))
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
+			require.Equal(t, 0, p.(*ListPostings).Len())
 		})
 	})
 
 	t.Run("multiple postings", func(t *testing.T) {
 		t.Run("next", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10, 20})
+			require.Equal(t, 2, p.(*ListPostings).Len())
 			require.True(t, p.Next())
 			require.Equal(t, storage.SeriesRef(10), p.At())
 			require.True(t, p.Next())
 			require.Equal(t, storage.SeriesRef(20), p.At())
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
+			require.Equal(t, 0, p.(*ListPostings).Len())
 		})
 		t.Run("seek", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10, 20})
+			require.Equal(t, 2, p.(*ListPostings).Len())
 			require.True(t, p.Seek(5))
 			require.Equal(t, storage.SeriesRef(10), p.At())
 			require.True(t, p.Seek(5))
@@ -1314,23 +1330,30 @@ func TestListPostings(t *testing.T) {
 			require.Equal(t, storage.SeriesRef(20), p.At())
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
+			require.Equal(t, 0, p.(*ListPostings).Len())
 		})
 		t.Run("seek lest than last", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10, 20, 30, 40, 50})
+			require.Equal(t, 5, p.(*ListPostings).Len())
 			require.True(t, p.Seek(45))
 			require.Equal(t, storage.SeriesRef(50), p.At())
 			require.False(t, p.Next())
+			require.Equal(t, 0, p.(*ListPostings).Len())
 		})
 		t.Run("seek exactly last", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10, 20, 30, 40, 50})
+			require.Equal(t, 5, p.(*ListPostings).Len())
 			require.True(t, p.Seek(50))
 			require.Equal(t, storage.SeriesRef(50), p.At())
 			require.False(t, p.Next())
+			require.Equal(t, 0, p.(*ListPostings).Len())
 		})
 		t.Run("seek more than last", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10, 20, 30, 40, 50})
+			require.Equal(t, 5, p.(*ListPostings).Len())
 			require.False(t, p.Seek(60))
 			require.False(t, p.Next())
+			require.Equal(t, 0, p.(*ListPostings).Len())
 		})
 	})
 
@@ -1409,12 +1432,15 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 	slowRegexp := "^" + slowRegexpString() + "$"
 	b.Logf("Slow regexp length = %d", len(slowRegexp))
 	slow := regexp.MustCompile(slowRegexp)
+	const seriesPerLabel = 10
 
 	for _, labelValueCount := range []int{1_000, 10_000, 100_000} {
 		b.Run(fmt.Sprintf("labels=%d", labelValueCount), func(b *testing.B) {
 			mp := NewMemPostings()
 			for i := 0; i < labelValueCount; i++ {
-				mp.Add(storage.SeriesRef(i), labels.FromStrings("label", strconv.Itoa(i)))
+				for j := 0; j < seriesPerLabel; j++ {
+					mp.Add(storage.SeriesRef(i*seriesPerLabel+j), labels.FromStrings("__name__", strconv.Itoa(j), "label", strconv.Itoa(i)))
+				}
 			}
 
 			fp, err := ExpandPostings(mp.PostingsForLabelMatching(context.Background(), "label", fast.MatchString))
@@ -1432,6 +1458,18 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 			b.Run("matcher=slow", func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					mp.PostingsForLabelMatching(context.Background(), "label", slow.MatchString).Next()
+				}
+			})
+
+			b.Run("matcher=all", func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					// Match everything.
+					p := mp.PostingsForLabelMatching(context.Background(), "label", func(_ string) bool { return true })
+					var sum storage.SeriesRef
+					// Iterate through all results to exercise merge function.
+					for p.Next() {
+						sum += p.At()
+					}
 				}
 			})
 		})
@@ -1458,6 +1496,21 @@ func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
 	refs, err := ExpandPostings(p)
 	require.NoError(t, err)
 	require.Equal(t, []storage.SeriesRef{2, 4}, refs)
+}
+
+func TestMemPostings_PostingsForAllLabelValues(t *testing.T) {
+	mp := NewMemPostings()
+	mp.Add(1, labels.FromStrings("foo", "1"))
+	mp.Add(2, labels.FromStrings("foo", "2"))
+	mp.Add(3, labels.FromStrings("foo", "3"))
+	mp.Add(4, labels.FromStrings("foo", "4"))
+
+	p := mp.PostingsForAllLabelValues(context.Background(), "foo")
+	require.NoError(t, p.Err())
+	refs, err := ExpandPostings(p)
+	require.NoError(t, err)
+	// All postings for the label should be returned.
+	require.Equal(t, []storage.SeriesRef{1, 2, 3, 4}, refs)
 }
 
 func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {

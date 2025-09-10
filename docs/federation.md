@@ -3,8 +3,6 @@ title: Federation
 sort_rank: 6
 ---
 
-# Federation
-
 Federation allows a Prometheus server to scrape selected time series from
 another Prometheus server.
 

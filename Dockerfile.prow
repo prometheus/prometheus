@@ -1,22 +1,21 @@
 # Copyright Contributors to the Open Cluster Management project
 
-FROM registry.ci.openshift.org/stolostron/builder:go1.23-linux AS builder
+FROM registry.ci.openshift.org/stolostron/builder:go1.24-linux AS builder
 
 WORKDIR /workspace
 COPY . .
 
+ENV PREBUILT_ASSETS_STATIC_DIR=web/ui
 RUN go mod vendor
 # adding the cgo flag here to not break the architecture CI builds
 RUN go install github.com/prometheus/promu@v0.17.0 && promu build -v --cgo --prefix ./
 
-FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 COPY --from=builder /workspace/prometheus        /bin/prometheus
 COPY --from=builder /workspace/promtool          /bin/promtool
-
 COPY documentation/examples/prometheus.yml  /etc/prometheus/prometheus.yml
-COPY console_libraries/                     /usr/share/prometheus/console_libraries/
-COPY consoles/                              /usr/share/prometheus/consoles/
+
 COPY LICENSE                                /LICENSE
 COPY NOTICE                                 /NOTICE
 
@@ -32,5 +31,3 @@ WORKDIR    /prometheus
 ENTRYPOINT [ "/bin/prometheus" ]
 CMD        [ "--config.file=/etc/prometheus/prometheus.yml", \
              "--storage.tsdb.path=/prometheus", \
-             "--web.console.libraries=/usr/share/prometheus/console_libraries", \
-             "--web.console.templates=/usr/share/prometheus/consoles" ]

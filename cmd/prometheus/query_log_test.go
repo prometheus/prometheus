@@ -88,18 +88,11 @@ func (p *queryLogTest) setQueryLog(t *testing.T, queryLogFile string) {
 	_, err = p.configFile.Seek(0, 0)
 	require.NoError(t, err)
 	if queryLogFile != "" {
-		_, err = p.configFile.Write([]byte(fmt.Sprintf("global:\n  query_log_file: %s\n", queryLogFile)))
+		_, err = fmt.Fprintf(p.configFile, "global:\n  query_log_file: %s\n", queryLogFile)
 		require.NoError(t, err)
 	}
 	_, err = p.configFile.Write([]byte(p.configuration()))
 	require.NoError(t, err)
-}
-
-// reloadConfig reloads the configuration using POST.
-func (p *queryLogTest) reloadConfig(t *testing.T) {
-	r, err := http.Post(fmt.Sprintf("http://%s:%d%s/-/reload", p.host, p.port, p.prefix), "text/plain", nil)
-	require.NoError(t, err)
-	require.Equal(t, 200, r.StatusCode)
 }
 
 // query runs a query according to the test origin.
@@ -125,10 +118,59 @@ func (p *queryLogTest) query(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 200, r.StatusCode)
 	case ruleOrigin:
-		time.Sleep(2 * time.Second)
+		// Poll the /api/v1/rules endpoint until a new rule evaluation is detected.
+		var lastEvalTime time.Time
+		for {
+			r, err := http.Get(fmt.Sprintf("http://%s:%d/api/v1/rules", p.host, p.port))
+			require.NoError(t, err)
+
+			rulesBody, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			defer r.Body.Close()
+
+			// Parse the rules response to find the last evaluation time.
+			newEvalTime := parseLastEvaluation(rulesBody)
+			if newEvalTime.After(lastEvalTime) {
+				if !lastEvalTime.IsZero() {
+					break
+				}
+				lastEvalTime = newEvalTime
+			}
+
+			time.Sleep(100 * time.Millisecond)
+		}
 	default:
 		panic("can't query this origin")
 	}
+}
+
+// parseLastEvaluation extracts the last evaluation timestamp from the /api/v1/rules response.
+func parseLastEvaluation(rulesBody []byte) time.Time {
+	var ruleResponse struct {
+		Status string `json:"status"`
+		Data   struct {
+			Groups []struct {
+				Rules []struct {
+					LastEvaluation string `json:"lastEvaluation"`
+				} `json:"rules"`
+			} `json:"groups"`
+		} `json:"data"`
+	}
+
+	err := json.Unmarshal(rulesBody, &ruleResponse)
+	if err != nil {
+		return time.Time{}
+	}
+
+	for _, group := range ruleResponse.Data.Groups {
+		for _, rule := range group.Rules {
+			if evalTime, err := time.Parse(time.RFC3339Nano, rule.LastEvaluation); err == nil {
+				return evalTime
+			}
+		}
+	}
+
+	return time.Time{}
 }
 
 // queryString returns the expected queryString of a this test.
@@ -259,6 +301,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	}, p.params()...)
 
 	prom := exec.Command(promPath, params...)
+	reloadURL := fmt.Sprintf("http://%s:%d%s/-/reload", p.host, p.port, p.prefix)
 
 	// Log stderr in case of failure.
 	stderr, err := prom.StderrPipe()
@@ -286,7 +329,7 @@ func (p *queryLogTest) run(t *testing.T) {
 		p.query(t)
 		require.Empty(t, readQueryLog(t, queryLogFile.Name()))
 		p.setQueryLog(t, queryLogFile.Name())
-		p.reloadConfig(t)
+		reloadPrometheusConfig(t, reloadURL)
 	}
 
 	p.query(t)
@@ -301,7 +344,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	p.validateLastQuery(t, ql)
 
 	p.setQueryLog(t, "")
-	p.reloadConfig(t)
+	reloadPrometheusConfig(t, reloadURL)
 	if !p.exactQueryCount() {
 		qc = len(readQueryLog(t, queryLogFile.Name()))
 	}
@@ -313,7 +356,7 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	qc = len(ql)
 	p.setQueryLog(t, queryLogFile.Name())
-	p.reloadConfig(t)
+	reloadPrometheusConfig(t, reloadURL)
 
 	p.query(t)
 	qc++
@@ -322,7 +365,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	if p.exactQueryCount() {
 		require.Len(t, ql, qc)
 	} else {
-		require.Greater(t, len(ql), qc, "no queries logged")
+		require.GreaterOrEqual(t, len(ql), qc, "no queries logged")
 	}
 	p.validateLastQuery(t, ql)
 	qc = len(ql)
@@ -353,11 +396,11 @@ func (p *queryLogTest) run(t *testing.T) {
 	if p.exactQueryCount() {
 		require.Len(t, ql, qc)
 	} else {
-		require.Greater(t, len(ql), qc, "no queries logged")
+		require.GreaterOrEqual(t, len(ql), qc, "no queries logged")
 	}
 	p.validateLastQuery(t, ql)
 
-	p.reloadConfig(t)
+	reloadPrometheusConfig(t, reloadURL)
 
 	p.query(t)
 
@@ -393,6 +436,7 @@ func readQueryLog(t *testing.T, path string) []queryLogLine {
 	file, err := os.Open(path)
 	require.NoError(t, err)
 	defer file.Close()
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var q queryLogLine
@@ -406,6 +450,7 @@ func TestQueryLog(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
+	t.Parallel()
 
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
@@ -424,6 +469,7 @@ func TestQueryLog(t *testing.T) {
 					}
 
 					t.Run(p.String(), func(t *testing.T) {
+						t.Parallel()
 						p.run(t)
 					})
 				}

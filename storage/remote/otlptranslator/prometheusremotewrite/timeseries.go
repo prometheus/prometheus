@@ -39,3 +39,8 @@ func (c *PrometheusConverter) TimeSeries() []prompb.TimeSeries {
 
 	return allTS
 }
+
+// Metadata returns a slice of the prompb.Metadata that were converted from OTel format.
+func (c *PrometheusConverter) Metadata() []prompb.MetricMetadata {
+	return c.metadata
+}

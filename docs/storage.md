@@ -3,8 +3,6 @@ title: Storage
 sort_rank: 5
 ---
 
-# Storage
-
 Prometheus includes a local on-disk time series database, but also optionally integrates with remote storage systems.
 
 ## Local storage
@@ -61,10 +59,10 @@ A Prometheus server's data directory looks something like this:
 Note that a limitation of local storage is that it is not clustered or
 replicated. Thus, it is not arbitrarily scalable or durable in the face of
 drive or node outages and should be managed like any other single node
-database. 
+database.
 
-[Snapshots](querying/api.md#snapshot) are recommended for backups. Backups 
-made without snapshots run the risk of losing data that was recorded since 
+[Snapshots](querying/api.md#snapshot) are recommended for backups. Backups
+made without snapshots run the risk of losing data that was recorded since
 the last WAL sync, which typically happens every two hours. With proper
 architecture, it is possible to retain years of data in local storage.
 
@@ -75,22 +73,21 @@ performance, and efficiency.
 
 For further details on file format, see [TSDB format](/tsdb/docs/format/README.md).
 
-## Compaction
+### Compaction
 
 The initial two-hour blocks are eventually compacted into longer blocks in the background.
 
 Compaction will create larger blocks containing data spanning up to 10% of the retention time,
 or 31 days, whichever is smaller.
 
-## Operational aspects
+### Operational aspects
 
 Prometheus has several flags that configure local storage. The most important are:
 
 - `--storage.tsdb.path`: Where Prometheus writes its database. Defaults to `data/`.
-- `--storage.tsdb.retention.time`: How long to retain samples in storage. When this flag is
-  set, it overrides `storage.tsdb.retention`. If neither this flag nor `storage.tsdb.retention`
-  nor `storage.tsdb.retention.size` is set, the retention time defaults to `15d`.
-  Supported units: y, w, d, h, m, s, ms.
+- `--storage.tsdb.retention.time`: How long to retain samples in storage. If neither
+  this flag nor `storage.tsdb.retention.size` is set, the retention time defaults to
+  `15d`. Supported units: y, w, d, h, m, s, ms.
 - `--storage.tsdb.retention.size`: The maximum number of bytes of storage blocks to retain.
   The oldest data will be removed first. Defaults to `0` or disabled. Units supported:
   B, KB, MB, GB, TB, PB, EB. Ex: "512MB". Based on powers-of-2, so 1KB is 1024B. Only
@@ -98,7 +95,6 @@ Prometheus has several flags that configure local storage. The most important ar
   chunks are counted in the total size. So the minimum requirement for the disk is the
   peak space taken by the `wal` (the WAL and Checkpoint) and `chunks_head`
   (m-mapped Head chunks) directory combined (peaks every 2 hours).
-- `--storage.tsdb.retention`: Deprecated in favor of `storage.tsdb.retention.time`.
 - `--storage.tsdb.wal-compression`: Enables compression of the write-ahead log (WAL).
   Depending on your data, you can expect the WAL size to be halved with little extra
   cpu load. This flag was introduced in 2.11.0 and enabled by default in 2.20.0.
@@ -117,13 +113,12 @@ time series you scrape (fewer targets or fewer series per target), or you
 can increase the scrape interval. However, reducing the number of series is
 likely more effective, due to compression of samples within a series.
 
-If your local storage becomes corrupted for whatever reason, the best
-strategy to address the problem is to shut down Prometheus then remove the
-entire storage directory. You can also try removing individual block directories,
-or the WAL directory to resolve the problem. Note that this means losing
-approximately two hours data per block directory. Again, Prometheus's local
-storage is not intended to be durable long-term storage; external solutions
-offer extended retention and data durability.
+If your local storage becomes corrupted to the point where Prometheus will not
+start it is recommended to backup the storage directory and restore the
+corrupted block directories from your backups. If you do not have backups the
+last resort is to remove the corrupted files. For example you can try removing
+individual block directories or the write-ahead-log (wal) files. Note that this
+means losing the data for the time range those blocks or wal covers.
 
 CAUTION: Non-POSIX compliant filesystems are not supported for Prometheus'
 local storage as unrecoverable corruptions may happen. NFS filesystems
@@ -137,16 +132,16 @@ will be used.
 Expired block cleanup happens in the background. It may take up to two hours
 to remove expired blocks. Blocks must be fully expired before they are removed.
 
-## Right-Sizing Retention Size
+### Right-Sizing Retention Size
 
-If you are utilizing `storage.tsdb.retention.size` to set a size limit, you 
-will want to consider the right size for this value relative to the storage you 
-have allocated for Prometheus. It is wise to reduce the retention size to provide 
-a buffer, ensuring that older entries will be removed before the allocated storage 
+If you are utilizing `storage.tsdb.retention.size` to set a size limit, you
+will want to consider the right size for this value relative to the storage you
+have allocated for Prometheus. It is wise to reduce the retention size to provide
+a buffer, ensuring that older entries will be removed before the allocated storage
 for Prometheus becomes full.
 
-At present, we recommend setting the retention size to, at most, 80-85% of your 
-allocated Prometheus disk space. This increases the likelihood that older entires 
+At present, we recommend setting the retention size to, at most, 80-85% of your
+allocated Prometheus disk space. This increases the likelihood that older entries
 will be removed prior to hitting any disk limitations.
 
 ## Remote storage integrations

@@ -76,7 +76,7 @@ func copyFile(src, dest string) error {
 func readDirs(src string) ([]string, error) {
 	var files []string
 
-	err := filepath.Walk(src, func(path string, f os.FileInfo, err error) error {
+	err := filepath.Walk(src, func(path string, _ os.FileInfo, _ error) error {
 		relativePath := strings.TrimPrefix(path, src)
 		if len(relativePath) > 0 {
 			files = append(files, relativePath)

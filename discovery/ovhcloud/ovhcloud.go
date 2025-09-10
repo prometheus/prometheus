@@ -17,10 +17,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/ovh/go-ovh/ovh"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -54,7 +54,7 @@ type SDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &ovhcloudMetrics{
 		refreshMetrics: rmi,
 	}
@@ -137,7 +137,7 @@ func parseIPList(ipList []string) ([]netip.Addr, error) {
 	return ipAddresses, nil
 }
 
-func newRefresher(conf *SDConfig, logger log.Logger) (refresher, error) {
+func newRefresher(conf *SDConfig, logger *slog.Logger) (refresher, error) {
 	switch conf.Service {
 	case "vps":
 		return newVpsDiscovery(conf, logger), nil
@@ -148,10 +148,10 @@ func newRefresher(conf *SDConfig, logger log.Logger) (refresher, error) {
 }
 
 // NewDiscovery returns a new OVHcloud Discoverer which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
 	m, ok := metrics.(*ovhcloudMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	r, err := newRefresher(conf, logger)

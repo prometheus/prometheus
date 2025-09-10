@@ -10,7 +10,7 @@ git_user="prombot"
 branch="repo_sync"
 commit_msg="Update common Prometheus files"
 pr_title="Synchronize common files from prometheus/prometheus"
-pr_msg="Propagating changes from prometheus/prometheus default branch."
+pr_msg="Propagating changes from prometheus/prometheus default branch.\n\n*Source can be found [here](https://github.com/prometheus/prometheus/blob/main/scripts/sync_repo_files.sh).*"
 orgs="prometheus prometheus-community"
 
 color_red='\e[31m'

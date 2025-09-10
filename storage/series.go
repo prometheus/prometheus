@@ -65,7 +65,7 @@ func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]chunks.Sampl
 		if err != nil {
 			return &ChunkSeriesEntry{
 				Lset: lset,
-				ChunkIteratorFn: func(it chunks.Iterator) chunks.Iterator {
+				ChunkIteratorFn: func(_ chunks.Iterator) chunks.Iterator {
 					return errChunksIterator{err: err}
 				},
 			}
@@ -170,6 +170,34 @@ func (it *listSeriesIterator) Seek(t int64) chunkenc.ValueType {
 }
 
 func (it *listSeriesIterator) Err() error { return nil }
+
+type listSeriesIteratorWithCopy struct {
+	*listSeriesIterator
+}
+
+func NewListSeriesIteratorWithCopy(samples Samples) chunkenc.Iterator {
+	return &listSeriesIteratorWithCopy{
+		listSeriesIterator: &listSeriesIterator{samples: samples, idx: -1},
+	}
+}
+
+func (it *listSeriesIteratorWithCopy) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
+	t, ih := it.listSeriesIterator.AtHistogram(nil)
+	if h == nil || ih == nil {
+		return t, ih
+	}
+	ih.CopyTo(h)
+	return t, h
+}
+
+func (it *listSeriesIteratorWithCopy) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	t, ih := it.listSeriesIterator.AtFloatHistogram(nil)
+	if fh == nil || ih == nil {
+		return t, ih
+	}
+	ih.CopyTo(fh)
+	return t, fh
+}
 
 type listChunkSeriesIterator struct {
 	chks []chunks.Meta

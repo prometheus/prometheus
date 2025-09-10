@@ -30,7 +30,7 @@ import (
 	"github.com/prometheus/common/version"
 )
 
-var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+var userAgent = version.PrometheusUserAgent()
 
 // ResourceClient exposes the xDS protocol for a single resource type.
 // See https://www.envoyproxy.io/docs/envoy/latest/api-docs/xds_protocol#rest-json-polling-subscriptions .

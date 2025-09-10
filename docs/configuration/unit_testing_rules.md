@@ -1,9 +1,7 @@
 ---
-title: Unit Testing for Rules
+title: Unit testing for rules
 sort_rank: 6
 ---
-
-# Unit Testing for Rules
 
 You can use `promtool` to test your rules.
 
@@ -23,6 +21,10 @@ rule_files:
   [ - <file_name> ]
 
 [ evaluation_interval: <duration> | default = 1m ]
+
+# Setting fuzzy_compare true will very slightly weaken floating point comparisons.
+# This will (effectively) ignore differences in the last bit of the mantissa.
+[ fuzzy_compare: <boolean> | default = false ]
 
 # The order in which group names are listed below will be the order of evaluation of
 # rule groups (at a given evaluation time). The order is guaranteed only for the groups mentioned below.
@@ -95,20 +97,22 @@ series: <string>
 #     {{schema:1 sum:-0.3 count:3.1 z_bucket:7.1 z_bucket_w:0.05 buckets:[5.1 10 7] offset:-3 n_buckets:[4.1 5] n_offset:-5 counter_reset_hint:gauge}}
 #     Native histograms support the same expanding notation as floating point numbers, i.e. 'axn', 'a+bxn' and 'a-bxn'.
 #     All properties are optional and default to 0. The order is not important. The following properties are supported:
-#     - schema (int): 
-#         Currently valid schema numbers are -4 <= n <= 8. They are all for
-#         base-2 bucket schemas, where 1 is a bucket boundary in each case, and
+#     - schema (int):
+#         Currently valid schema numbers are -53 and -4 <= n <= 8.
+#         Schema -53 is the custom buckets schema, upper bucket boundaries are defined in custom_values
+#         like for classic histograms, and you shouldn't use z_bucket, z_bucket_w, n_buckets, n_offset.
+#         The rest are base-2 standard schemas, where 1.0 is a bucket boundary in each case, and
 #         then each power of two is divided into 2^n logarithmic buckets.  Or
 #         in other words, each bucket boundary is the previous boundary times
 #         2^(2^-n).
-#     - sum (float): 
+#     - sum (float):
 #         The sum of all observations, including the zero bucket.
-#     - count (non-negative float): 
+#     - count (non-negative float):
 #         The number of observations, including those that are NaN and including the zero bucket.
-#     - z_bucket (non-negative float): 
+#     - z_bucket (non-negative float):
 #         The sum of all observations in the zero bucket.
-#     - z_bucket_w (non-negative float): 
-#         The width of the zero bucket. 
+#     - z_bucket_w (non-negative float):
+#         The width of the zero bucket.
 #         If z_bucket_w > 0, the zero bucket contains all observations -z_bucket_w <= x <= z_bucket_w.
 #         Otherwise, the zero bucket only contains observations that are exactly 0.
 #     - buckets (list of non-negative floats):
@@ -121,6 +125,10 @@ series: <string>
 #         The starting index of the first entry in the negative buckets.
 #     - counter_reset_hint (one of 'unknown', 'reset', 'not_reset' or 'gauge')
 #         The counter reset hint associated with this histogram. Defaults to 'unknown' if not set.
+#     - custom_values (list of floats in ascending order):
+#         The upper limits for custom buckets when schema is -53. 
+#         These have the same role as the 'le' numbers in classic histograms.
+#         Do not append '+Inf' at the end, it is implicit.
 values: <string>
 ```
 

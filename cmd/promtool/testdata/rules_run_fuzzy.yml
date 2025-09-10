@@ -1,0 +1,43 @@
+# Minimal test case to see that fuzzy compare is working as expected.
+# It should allow slight floating point differences through. Larger
+# floating point differences should still fail.
+
+evaluation_interval: 1m
+fuzzy_compare: true
+
+tests:
+  - name: correct fuzzy match
+    input_series:
+      - series: test_low
+        values: 2.9999999999999996
+      - series: test_high
+        values: 3.0000000000000004
+    promql_expr_test:
+      - expr: test_low
+        eval_time: 0
+        exp_samples:
+          - labels: test_low
+            value: 3
+      - expr: test_high
+        eval_time: 0
+        exp_samples:
+          - labels: test_high
+            value: 3
+
+  - name: wrong fuzzy match
+    input_series:
+      - series: test_low
+        values: 2.9999999999999987
+      - series: test_high
+        values: 3.0000000000000013
+    promql_expr_test:
+      - expr: test_low
+        eval_time: 0
+        exp_samples:
+          - labels: test_low
+            value: 3
+      - expr: test_high
+        eval_time: 0
+        exp_samples:
+          - labels: test_high
+            value: 3

@@ -3,8 +3,6 @@ title: Getting started
 sort_rank: 1
 ---
 
-# Getting started
-
 This guide is a "Hello World"-style tutorial which shows how to install,
 configure, and use a simple Prometheus instance. You will download and run
 Prometheus locally, configure it to scrape itself and an example application,
@@ -200,7 +198,7 @@ To record the time series resulting from this expression into a new metric
 called `job_instance_mode:node_cpu_seconds:avg_rate5m`, create a file
 with the following recording rule and save it as `prometheus.rules.yml`:
 
-```
+```yaml
 groups:
 - name: cpu-node
   rules:
@@ -262,6 +260,9 @@ process ID.
 ## Shutting down your instance gracefully.
 
 While Prometheus does have recovery mechanisms in the case that there is an
-abrupt process failure it is recommend to use the `SIGTERM` signal to cleanly
-shutdown a Prometheus instance. If you're running on Linux this can be performed
-by using `kill -s SIGTERM <PID>`, replacing `<PID>` with your Prometheus process ID.
+abrupt process failure it is recommended to use signals or interrupts for a
+clean shutdown of a Prometheus instance. On Linux, this can be done by sending
+the `SIGTERM` or `SIGINT` signals to the Prometheus process. For example, you
+can use `kill -s <SIGNAL> <PID>`, replacing `<SIGNAL>` with the signal name
+and `<PID>` with the Prometheus process ID. Alternatively, you can press the
+interrupt character at the controlling terminal, which by default is `^C` (Control-C).

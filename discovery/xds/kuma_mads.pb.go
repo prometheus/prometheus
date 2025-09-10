@@ -23,13 +23,14 @@ package xds
 
 import (
 	context "context"
+	reflect "reflect"
+	sync "sync"
+
 	v3 "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	_ "github.com/envoyproxy/protoc-gen-validate/validate"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	reflect "reflect"
-	sync "sync"
 )
 
 const (

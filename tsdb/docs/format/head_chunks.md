@@ -37,3 +37,7 @@ is used while replaying the chunks.
 | series ref <8 byte> | mint <8 byte, uint64> | maxt <8 byte, uint64> | encoding <1 byte> | len <uvarint> | data <bytes> │ CRC32 <4 byte> │
 └─────────────────────┴───────────────────────┴───────────────────────┴───────────────────┴───────────────┴──────────────┴────────────────┘
 ```
+
+## OOO encoding
+
+Head chunks use the highest bit of the `encoding` field to indicate whether it is out-of-order (1) or not (0). This bit is not set for chunks in the on-disk blocks.
