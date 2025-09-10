@@ -122,64 +122,18 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 	return fallbackType, fmt.Errorf("received unsupported Content-Type %q, using fallback_scrape_protocol %q", contentType, fallbackType)
 }
 
-type parserOptions struct {
-	enableTypeAndUnitLabels        bool
-	convertClassicHistogramsToNHCB bool
+type ParserOptions struct {
+	EnableTypeAndUnitLabels        bool
+	ConvertClassicHistogramsToNHCB bool
 
 	// Whether to also parse a classic histogram that is also present as a
 	// native histogram. (Proto parsing only).
-	parseClassicHistograms bool
+	ParseClassicHistograms bool
 
 	// Whether to skip _created timestamp series during OpenMetrics parsing.
-	skipOMCTSeries bool
+	SkipOMCTSeries bool
 
-	fallbackType string
-
-	st *labels.SymbolTable
-}
-
-type ParserOptions func(*parserOptions)
-
-// WithTypeAndUnitLabels tells parser to include type and unit metadata as labels
-// in the parsed metrics.
-func WithTypeAndUnitLabels() ParserOptions {
-	return func(o *parserOptions) {
-		o.enableTypeAndUnitLabels = true
-	}
-}
-
-// WithClassicHistogramsToNHCB tells parser to convert classic histograms
-// to Native Histogram with Custom Buckets (NHCB) format.
-func WithClassicHistogramsToNHCB() ParserOptions {
-	return func(o *parserOptions) {
-		o.convertClassicHistogramsToNHCB = true
-	}
-}
-
-// WithKeepClassicOnClassicAndNativeHistograms tells parser to keep classic histograms in
-// cases where both classic and native histograms are exposes for a single series.
-//
-// This migration mode is currently only supported for proto formats, but might be added to future exposition formats.
-func WithKeepClassicOnClassicAndNativeHistograms() ParserOptions {
-	return func(o *parserOptions) {
-		o.parseClassicHistograms = true
-	}
-}
-
-// WithOMCTSeriesSkipped tells parser to skip OpenMetrics created timestamp series
-// during parsing.
-func WithOMCTSeriesSkipped() ParserOptions {
-	return func(o *parserOptions) {
-		o.skipOMCTSeries = true
-	}
-}
-
-// WithFallbackType sets the fallback media type to use when Content-Type
-// cannot be parsed or is unsupported.
-func WithFallbackType(fallbackType string) ParserOptions {
-	return func(o *parserOptions) {
-		o.fallbackType = fallbackType
-	}
+	FallbackType string
 }
 
 // New returns a new parser of the byte slice.
@@ -190,38 +144,31 @@ func WithFallbackType(fallbackType string) ParserOptions {
 // An error may also be returned if fallbackType had to be used or there was some
 // other error parsing the supplied Content-Type.
 // If the returned parser is nil then the scrape must fail.
-func New(b []byte, contentType string, st *labels.SymbolTable, opts ...ParserOptions) (Parser, error) {
-	options := &parserOptions{}
-
-	for _, opt := range opts {
-		opt(options)
-	}
-
+func New(b []byte, contentType string, st *labels.SymbolTable, opts ParserOptions) (Parser, error) {
 	if st == nil {
 		st = labels.NewSymbolTable()
 	}
-	options.st = st
 
-	mediaType, err := extractMediaType(contentType, options.fallbackType)
+	mediaType, err := extractMediaType(contentType, opts.FallbackType)
 	// err may be nil or something we want to warn about.
 
 	var baseParser Parser
 	switch mediaType {
 	case "application/openmetrics-text":
 		baseParser = NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
-			o.skipCTSeries = options.skipOMCTSeries
-			o.enableTypeAndUnitLabels = options.enableTypeAndUnitLabels
+			o.skipCTSeries = opts.SkipOMCTSeries
+			o.enableTypeAndUnitLabels = opts.EnableTypeAndUnitLabels
 		})
 	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b, options.parseClassicHistograms, options.convertClassicHistogramsToNHCB, options.enableTypeAndUnitLabels, st), err
+		return NewProtobufParser(b, opts.ParseClassicHistograms, opts.ConvertClassicHistogramsToNHCB, opts.EnableTypeAndUnitLabels, st), err
 	case "text/plain":
-		baseParser = NewPromParser(b, st, options.enableTypeAndUnitLabels)
+		baseParser = NewPromParser(b, st, opts.EnableTypeAndUnitLabels)
 	default:
 		return nil, err
 	}
 
-	if baseParser != nil && options.convertClassicHistogramsToNHCB {
-		baseParser = NewNHCBParser(baseParser, st, options.parseClassicHistograms)
+	if baseParser != nil && opts.ConvertClassicHistogramsToNHCB {
+		baseParser = NewNHCBParser(baseParser, st, opts.ParseClassicHistograms)
 	}
 
 	return baseParser, err

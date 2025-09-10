@@ -1283,22 +1283,6 @@ func newScrapeLoop(ctx context.Context,
 		appenderCtx = ContextWithTarget(appenderCtx, target)
 	}
 
-	parserOpts := []textparse.ParserOptions{
-		textparse.WithFallbackType(fallbackScrapeProtocol),
-	}
-	if alwaysScrapeClassicHist {
-		parserOpts = append(parserOpts, textparse.WithKeepClassicOnClassicAndNativeHistograms())
-	}
-	if convertClassicHistToNHCB {
-		parserOpts = append(parserOpts, textparse.WithClassicHistogramsToNHCB())
-	}
-	if enableCTZeroIngestion {
-		parserOpts = append(parserOpts, textparse.WithOMCTSeriesSkipped())
-	}
-	if enableTypeAndUnitLabels {
-		parserOpts = append(parserOpts, textparse.WithTypeAndUnitLabels())
-	}
-
 	sl := &scrapeLoop{
 		scraper:                        sc,
 		buffers:                        buffers,
@@ -1321,7 +1305,6 @@ func newScrapeLoop(ctx context.Context,
 		labelLimits:                    labelLimits,
 		interval:                       interval,
 		timeout:                        timeout,
-		parserOptions:                  parserOpts,
 		alwaysScrapeClassicHist:        alwaysScrapeClassicHist,
 		convertClassicHistToNHCB:       convertClassicHistToNHCB,
 		enableCTZeroIngestion:          enableCTZeroIngestion,
@@ -1338,27 +1321,6 @@ func newScrapeLoop(ctx context.Context,
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
 	return sl
-}
-
-// rebuildParserOptions rebuilds the parser options slice.
-// Used when tests modify the boolean fields after construction.
-func (sl *scrapeLoop) rebuildParserOptions() {
-	opts := []textparse.ParserOptions{
-		textparse.WithFallbackType(sl.fallbackScrapeProtocol),
-	}
-	if sl.alwaysScrapeClassicHist {
-		opts = append(opts, textparse.WithKeepClassicOnClassicAndNativeHistograms())
-	}
-	if sl.convertClassicHistToNHCB {
-		opts = append(opts, textparse.WithClassicHistogramsToNHCB())
-	}
-	if sl.enableCTZeroIngestion {
-		opts = append(opts, textparse.WithOMCTSeriesSkipped())
-	}
-	if sl.enableTypeAndUnitLabels {
-		opts = append(opts, textparse.WithTypeAndUnitLabels())
-	}
-	sl.parserOptions = opts
 }
 
 func (sl *scrapeLoop) setScrapeFailureLogger(l FailureLogger) {
@@ -1674,7 +1636,13 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		return
 	}
 
-	p, err := textparse.New(b, contentType, sl.symbolTable, sl.parserOptions...)
+	p, err := textparse.New(b, contentType, sl.symbolTable, textparse.ParserOptions{
+		EnableTypeAndUnitLabels:        sl.enableTypeAndUnitLabels,
+		ConvertClassicHistogramsToNHCB: sl.convertClassicHistToNHCB,
+		ParseClassicHistograms:         sl.alwaysScrapeClassicHist,
+		SkipOMCTSeries:                 sl.enableCTZeroIngestion,
+		FallbackType:                   sl.fallbackScrapeProtocol,
+	})
 	if p == nil {
 		sl.l.Error(
 			"Failed to determine correct type of scrape target.",
