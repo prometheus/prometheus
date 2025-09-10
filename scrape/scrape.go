@@ -933,7 +933,6 @@ type scrapeLoop struct {
 	validationScheme         model.ValidationScheme
 	escapingScheme           model.EscapingScheme
 
-	parserOptions            []textparse.ParserOptions
 	alwaysScrapeClassicHist  bool
 	convertClassicHistToNHCB bool
 	enableCTZeroIngestion    bool
