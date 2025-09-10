@@ -2,7 +2,9 @@
 
 ## main / unreleased
 
-* [ENHANCEMENT] TSDB: Track stale series in the Head block based on stale sample. #16925
+## 3.6.0-rc.1 / 2025-09-09
+
+* [ENHANCEMENT] TSDB: Track stale series in the Head block via the `prometheus_tsdb_head_stale_series` metric. #16925
 
 ## 3.6.0-rc.0 / 2025-08-12
 
