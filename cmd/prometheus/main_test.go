@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +34,7 @@ import (
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -41,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func init() {
@@ -199,7 +202,6 @@ func TestSendAlerts(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		tc := tc
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			senderFunc := senderFunc(func(alerts ...*notifier.Alert) {
 				require.NotEmpty(t, tc.in, "sender called with 0 alert")
@@ -268,7 +270,7 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 				go func() { done <- prom.Wait() }()
 				select {
 				case err := <-done:
-					require.Fail(t, "prometheus should be still running: %v", err)
+					t.Fatalf("prometheus should be still running: %v", err)
 				case <-time.After(startupTime):
 					prom.Process.Kill()
 					<-done
@@ -332,7 +334,7 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 				go func() { done <- prom.Wait() }()
 				select {
 				case err := <-done:
-					require.Fail(t, "prometheus should be still running: %v", err)
+					t.Fatalf("prometheus should be still running: %v", err)
 				case <-time.After(startupTime):
 					prom.Process.Kill()
 					<-done
@@ -643,6 +645,239 @@ func TestRwProtoMsgFlagParser(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, tcase.expected, opt)
 			}
+		})
+	}
+}
+
+// reloadPrometheusConfig sends a reload request to the Prometheus server to apply
+// updated configurations.
+func reloadPrometheusConfig(t *testing.T, reloadURL string) {
+	t.Helper()
+
+	r, err := http.Post(reloadURL, "text/plain", nil)
+	require.NoError(t, err, "Failed to reload Prometheus")
+	require.Equal(t, http.StatusOK, r.StatusCode, "Unexpected status code when reloading Prometheus")
+}
+
+func getMetricValue(t *testing.T, body io.Reader, metricType model.MetricType, metricName string) (float64, error) {
+	t.Helper()
+
+	p := expfmt.TextParser{}
+	metricFamilies, err := p.TextToMetricFamilies(body)
+	if err != nil {
+		return 0, err
+	}
+	metricFamily, ok := metricFamilies[metricName]
+	if !ok {
+		return 0, errors.New("metric family not found")
+	}
+	metric := metricFamily.GetMetric()
+	if len(metric) != 1 {
+		return 0, errors.New("metric not found")
+	}
+	switch metricType {
+	case model.MetricTypeGauge:
+		return metric[0].GetGauge().GetValue(), nil
+	case model.MetricTypeCounter:
+		return metric[0].GetCounter().GetValue(), nil
+	default:
+		t.Fatalf("metric type %s not supported", metricType)
+	}
+
+	return 0, errors.New("cannot get value")
+}
+
+func TestRuntimeGOGCConfig(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name         string
+		config       string
+		gogcEnvVar   string
+		expectedGOGC float64
+	}{
+		{
+			name:         "empty config file",
+			expectedGOGC: 75,
+		},
+		{
+			name:         "empty config file with GOGC env var set",
+			gogcEnvVar:   "66",
+			expectedGOGC: 66,
+		},
+		{
+			name: "gogc set through config",
+			config: `
+runtime:
+  gogc: 77`,
+			expectedGOGC: 77.0,
+		},
+		{
+			name: "gogc set through config and env var",
+			config: `
+runtime:
+  gogc: 77`,
+			gogcEnvVar:   "88",
+			expectedGOGC: 77.0,
+		},
+		{
+			name: "incomplete runtime block",
+			config: `
+runtime:`,
+			expectedGOGC: 75.0,
+		},
+		{
+			name: "incomplete runtime block and GOGC env var set",
+			config: `
+runtime:`,
+			gogcEnvVar:   "88",
+			expectedGOGC: 88.0,
+		},
+		{
+			name: "unrelated config and GOGC env var set",
+			config: `
+global:
+  scrape_interval: 500ms`,
+			gogcEnvVar:   "80",
+			expectedGOGC: 80,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tmpDir := t.TempDir()
+			configFile := filepath.Join(tmpDir, "prometheus.yml")
+
+			port := testutil.RandomUnprivilegedPort(t)
+			os.WriteFile(configFile, []byte(tc.config), 0o777)
+			prom := prometheusCommandWithLogging(
+				t,
+				configFile,
+				port,
+				fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
+				"--web.enable-lifecycle",
+			)
+			// Inject GOGC when set.
+			prom.Env = os.Environ()
+			if tc.gogcEnvVar != "" {
+				prom.Env = append(prom.Env, fmt.Sprintf("GOGC=%s", tc.gogcEnvVar))
+			}
+			require.NoError(t, prom.Start())
+
+			ensureGOGCValue := func(val float64) {
+				var (
+					r   *http.Response
+					err error
+				)
+				// Wait for the /metrics endpoint to be ready.
+				require.Eventually(t, func() bool {
+					r, err = http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+					if err != nil {
+						return false
+					}
+					return r.StatusCode == http.StatusOK
+				}, 5*time.Second, 50*time.Millisecond)
+				defer r.Body.Close()
+
+				// Check the final GOGC that's set, consider go_gc_gogc_percent from /metrics as source of truth.
+				gogc, err := getMetricValue(t, r.Body, model.MetricTypeGauge, "go_gc_gogc_percent")
+				require.NoError(t, err)
+				require.Equal(t, val, gogc)
+			}
+
+			// The value is applied on startup.
+			ensureGOGCValue(tc.expectedGOGC)
+
+			// After a reload with the same config, the value stays the same.
+			reloadURL := fmt.Sprintf("http://127.0.0.1:%d/-/reload", port)
+			reloadPrometheusConfig(t, reloadURL)
+			ensureGOGCValue(tc.expectedGOGC)
+
+			// After a reload with different config, the value gets updated.
+			newConfig := `
+runtime:
+  gogc: 99`
+			os.WriteFile(configFile, []byte(newConfig), 0o777)
+			reloadPrometheusConfig(t, reloadURL)
+			ensureGOGCValue(99.0)
+		})
+	}
+}
+
+// TestHeadCompactionWhileScraping verifies that running a head compaction
+// concurrently with a scrape does not trigger the data race described in
+// https://github.com/prometheus/prometheus/issues/16490.
+func TestHeadCompactionWhileScraping(t *testing.T) {
+	t.Parallel()
+
+	// To increase the chance of reproducing the data race
+	for i := range 5 {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+
+			tmpDir := t.TempDir()
+			configFile := filepath.Join(tmpDir, "prometheus.yml")
+
+			port := testutil.RandomUnprivilegedPort(t)
+			config := fmt.Sprintf(`
+scrape_configs:
+  - job_name: 'self1'
+    scrape_interval: 61ms
+    static_configs:
+      - targets: ['localhost:%d']
+  - job_name: 'self2'
+    scrape_interval: 67ms
+    static_configs:
+      - targets: ['localhost:%d']
+`, port, port)
+			os.WriteFile(configFile, []byte(config), 0o777)
+
+			prom := prometheusCommandWithLogging(
+				t,
+				configFile,
+				port,
+				fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
+				"--storage.tsdb.min-block-duration=100ms",
+			)
+			require.NoError(t, prom.Start())
+
+			require.Eventually(t, func() bool {
+				r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+				if err != nil {
+					return false
+				}
+				defer r.Body.Close()
+				if r.StatusCode != http.StatusOK {
+					return false
+				}
+				metrics, err := io.ReadAll(r.Body)
+				if err != nil {
+					return false
+				}
+
+				// Wait for some compactions to run
+				compactions, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeCounter, "prometheus_tsdb_compactions_total")
+				if err != nil {
+					return false
+				}
+				if compactions < 3 {
+					return false
+				}
+
+				// Sanity check: Some actual scraping was done.
+				series, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeCounter, "prometheus_tsdb_head_series_created_total")
+				require.NoError(t, err)
+				require.NotZero(t, series)
+
+				// No compaction must have failed
+				failures, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeCounter, "prometheus_tsdb_compactions_failed_total")
+				require.NoError(t, err)
+				require.Zero(t, failures)
+				return true
+			}, 15*time.Second, 500*time.Millisecond)
 		})
 	}
 }

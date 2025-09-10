@@ -58,7 +58,7 @@ type xorValue struct {
 }
 
 // Encoding returns the encoding type.
-func (c *FloatHistogramChunk) Encoding() Encoding {
+func (*FloatHistogramChunk) Encoding() Encoding {
 	return EncFloatHistogram
 }
 
@@ -70,21 +70,6 @@ func (c *FloatHistogramChunk) Bytes() []byte {
 // NumSamples returns the number of samples in the chunk.
 func (c *FloatHistogramChunk) NumSamples() int {
 	return int(binary.BigEndian.Uint16(c.Bytes()))
-}
-
-// Layout returns the histogram layout. Only call this on chunks that have at
-// least one sample.
-func (c *FloatHistogramChunk) Layout() (
-	schema int32, zeroThreshold float64,
-	negativeSpans, positiveSpans []histogram.Span,
-	customValues []float64,
-	err error,
-) {
-	if c.NumSamples() == 0 {
-		panic("FloatHistogramChunk.Layout() called on an empty chunk")
-	}
-	b := newBReader(c.Bytes()[2:])
-	return readHistogramChunkLayout(&b)
 }
 
 // GetCounterResetHeader returns the info about the first 2 bits of the chunk
@@ -104,6 +89,9 @@ func (c *FloatHistogramChunk) Compact() {
 
 // Appender implements the Chunk interface.
 func (c *FloatHistogramChunk) Appender() (Appender, error) {
+	if len(c.b.stream) == 3 { // Avoid allocating an Iterator when chunk is empty.
+		return &FloatHistogramAppender{b: &c.b, t: math.MinInt64, sum: xorValue{leading: 0xff}, cnt: xorValue{leading: 0xff}, zCnt: xorValue{leading: 0xff}}, nil
+	}
 	it := c.iterator(nil)
 
 	// To get an appender, we must know the state it would have if we had
@@ -147,11 +135,6 @@ func (c *FloatHistogramChunk) Appender() (Appender, error) {
 		pBuckets:     pBuckets,
 		nBuckets:     nBuckets,
 		sum:          it.sum,
-	}
-	if it.numTotal == 0 {
-		a.sum.leading = 0xff
-		a.cnt.leading = 0xff
-		a.zCnt.leading = 0xff
 	}
 	return a, nil
 }
@@ -215,7 +198,7 @@ func (a *FloatHistogramAppender) NumSamples() int {
 
 // Append implements Appender. This implementation panics because normal float
 // samples must never be appended to a histogram chunk.
-func (a *FloatHistogramAppender) Append(int64, float64) {
+func (*FloatHistogramAppender) Append(int64, float64) {
 	panic("appended a float sample to a histogram chunk")
 }
 
@@ -343,7 +326,7 @@ func (a *FloatHistogramAppender) appendable(h *histogram.FloatHistogram) (
 // original deltas to a new set of deltas to match a new span layout that adds
 // buckets, we simply need to generate a list of inserts.
 //
-// Note: Within expandSpansForward we don't have to worry about the changes to the
+// Note: Within expandFloatSpansAndBuckets we don't have to worry about the changes to the
 // spans themselves, thanks to the iterators we get to work with the more useful
 // bucket indices (which of course directly correspond to the buckets we have to
 // adjust).
@@ -378,6 +361,48 @@ func expandFloatSpansAndBuckets(a, b []histogram.Span, aBuckets []xorValue, bBuc
 		bCount = bBuckets[bCountIdx]
 	}
 
+	// addInsert updates the current Insert with a new insert at the given
+	// bucket index (otherIdx).
+	addInsert := func(inserts []Insert, insert *Insert, otherIdx int) []Insert {
+		if insert.num == 0 {
+			// First insert.
+			insert.bucketIdx = otherIdx
+		} else if insert.bucketIdx+insert.num != otherIdx {
+			// Insert is not continuous from previous insert.
+			inserts = append(inserts, *insert)
+			insert.num = 0
+			insert.bucketIdx = otherIdx
+		}
+		insert.num++
+		return inserts
+	}
+
+	advanceA := func() {
+		if aInter.num > 0 {
+			aInserts = append(aInserts, aInter)
+			aInter.num = 0
+		}
+		aIdx, aOK = ai.Next()
+		aInter.pos++
+		aCountIdx++
+		if aOK {
+			aCount = aBuckets[aCountIdx].value
+		}
+	}
+
+	advanceB := func() {
+		if bInter.num > 0 {
+			bInserts = append(bInserts, bInter)
+			bInter.num = 0
+		}
+		bIdx, bOK = bi.Next()
+		bInter.pos++
+		bCountIdx++
+		if bOK {
+			bCount = bBuckets[bCountIdx]
+		}
+	}
+
 loop:
 	for {
 		switch {
@@ -389,105 +414,37 @@ loop:
 					return nil, nil, false
 				}
 
-				// Finish WIP insert for a and reset.
-				if aInter.num > 0 {
-					aInserts = append(aInserts, aInter)
-					aInter.num = 0
-				}
-
-				// Finish WIP insert for b and reset.
-				if bInter.num > 0 {
-					bInserts = append(bInserts, bInter)
-					bInter.num = 0
-				}
-
-				aIdx, aOK = ai.Next()
-				bIdx, bOK = bi.Next()
-				aInter.pos++ // Advance potential insert position.
-				aCountIdx++  // Advance absolute bucket count index for a.
-				if aOK {
-					aCount = aBuckets[aCountIdx].value
-				}
-				bInter.pos++ // Advance potential insert position.
-				bCountIdx++  // Advance absolute bucket count index for b.
-				if bOK {
-					bCount = bBuckets[bCountIdx]
-				}
+				advanceA()
+				advanceB()
 
 				continue
 			case aIdx < bIdx: // b misses a bucket index that is in a.
 				// This is ok if the count in a is 0, in which case we make a note to
 				// fill in the bucket in b and advance a.
 				if aCount == 0 {
-					bInter.num++ // Mark that we need to insert a bucket in b.
-					bInter.bucketIdx = aIdx
-					// Advance a
-					if aInter.num > 0 {
-						aInserts = append(aInserts, aInter)
-						aInter.num = 0
-					}
-					aIdx, aOK = ai.Next()
-					aInter.pos++
-					aCountIdx++
-					if aOK {
-						aCount = aBuckets[aCountIdx].value
-					}
+					bInserts = addInsert(bInserts, &bInter, aIdx)
+					advanceA()
 					continue
 				}
 				// Otherwise we are missing a bucket that was in use in a, which is a reset.
 				return nil, nil, false
 			case aIdx > bIdx: // a misses a value that is in b. Forward b and recompare.
-				aInter.num++
-				bInter.bucketIdx = bIdx
-				// Advance b
-				if bInter.num > 0 {
-					bInserts = append(bInserts, bInter)
-					bInter.num = 0
-				}
-				bIdx, bOK = bi.Next()
-				bInter.pos++
-				bCountIdx++
-				if bOK {
-					bCount = bBuckets[bCountIdx]
-				}
+				aInserts = addInsert(aInserts, &aInter, bIdx)
+				advanceB()
 			}
 		case aOK && !bOK: // b misses a value that is in a.
 			// This is ok if the count in a is 0, in which case we make a note to
 			// fill in the bucket in b and advance a.
 			if aCount == 0 {
-				bInter.num++
-				bInter.bucketIdx = aIdx
-				// Advance a
-				if aInter.num > 0 {
-					aInserts = append(aInserts, aInter)
-					aInter.num = 0
-				}
-				aIdx, aOK = ai.Next()
-				aInter.pos++ // Advance potential insert position.
-				// Update absolute bucket counts for a.
-				aCountIdx++
-				if aOK {
-					aCount = aBuckets[aCountIdx].value
-				}
+				bInserts = addInsert(bInserts, &bInter, aIdx)
+				advanceA()
 				continue
 			}
 			// Otherwise we are missing a bucket that was in use in a, which is a reset.
 			return nil, nil, false
 		case !aOK && bOK: // a misses a value that is in b. Forward b and recompare.
-			aInter.num++
-			bInter.bucketIdx = bIdx
-			// Advance b
-			if bInter.num > 0 {
-				bInserts = append(bInserts, bInter)
-				bInter.num = 0
-			}
-			bIdx, bOK = bi.Next()
-			bInter.pos++ // Advance potential insert position.
-			// Update absolute bucket counts for b.
-			bCountIdx++
-			if bOK {
-				bCount = bBuckets[bCountIdx]
-			}
+			aInserts = addInsert(aInserts, &aInter, bIdx)
+			advanceB()
 		default: // Both iterators ran out. We're done.
 			if aInter.num > 0 {
 				aInserts = append(aInserts, aInter)
@@ -594,7 +551,7 @@ func (a *FloatHistogramAppender) appendFloatHistogram(t int64, h *histogram.Floa
 		numPBuckets, numNBuckets := countSpans(h.PositiveSpans), countSpans(h.NegativeSpans)
 		if numPBuckets > 0 {
 			a.pBuckets = make([]xorValue, numPBuckets)
-			for i := 0; i < numPBuckets; i++ {
+			for i := range numPBuckets {
 				a.pBuckets[i] = xorValue{
 					value:   h.PositiveBuckets[i],
 					leading: 0xff,
@@ -605,7 +562,7 @@ func (a *FloatHistogramAppender) appendFloatHistogram(t int64, h *histogram.Floa
 		}
 		if numNBuckets > 0 {
 			a.nBuckets = make([]xorValue, numNBuckets)
-			for i := 0; i < numNBuckets; i++ {
+			for i := range numNBuckets {
 				a.nBuckets[i] = xorValue{
 					value:   h.NegativeBuckets[i],
 					leading: 0xff,
@@ -714,7 +671,7 @@ func (a *FloatHistogramAppender) recode(
 
 // recodeHistogram converts the current histogram (in-place) to accommodate an expansion of the set of
 // (positive and/or negative) buckets used.
-func (a *FloatHistogramAppender) recodeHistogram(
+func (*FloatHistogramAppender) recodeHistogram(
 	fh *histogram.FloatHistogram,
 	pBackwardInter, nBackwardInter []Insert,
 ) {
@@ -728,7 +685,7 @@ func (a *FloatHistogramAppender) recodeHistogram(
 	}
 }
 
-func (a *FloatHistogramAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
+func (*FloatHistogramAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float histogram chunk")
 }
 
@@ -782,7 +739,7 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			// The histogram needs to be expanded to have the extra empty buckets
 			// of the chunk.
 			if len(pForwardInserts) == 0 && len(nForwardInserts) == 0 {
-				// No new chunks from the histogram, so the spans of the appender can accommodate the new buckets.
+				// No new buckets from the histogram, so the spans of the appender can accommodate the new buckets.
 				// However we need to make a copy in case the input is sharing spans from an iterator.
 				h.PositiveSpans = make([]histogram.Span, len(a.pSpans))
 				copy(h.PositiveSpans, a.pSpans)
@@ -898,11 +855,11 @@ func (it *floatHistogramIterator) Seek(t int64) ValueType {
 	return ValFloatHistogram
 }
 
-func (it *floatHistogramIterator) At() (int64, float64) {
+func (*floatHistogramIterator) At() (int64, float64) {
 	panic("cannot call floatHistogramIterator.At")
 }
 
-func (it *floatHistogramIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+func (*floatHistogramIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	panic("cannot call floatHistogramIterator.AtHistogram")
 }
 
@@ -946,8 +903,8 @@ func (it *floatHistogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 	fh.NegativeBuckets = resize(fh.NegativeBuckets, len(it.nBuckets))
 	copy(fh.NegativeBuckets, it.nBuckets)
 
-	fh.CustomValues = resize(fh.CustomValues, len(it.customValues))
-	copy(fh.CustomValues, it.customValues)
+	// Custom values are interned. The single copy is in this iterator.
+	fh.CustomValues = it.customValues
 
 	return it.t, fh
 }

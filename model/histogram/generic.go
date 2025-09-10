@@ -402,7 +402,7 @@ func checkHistogramBuckets[BC BucketCount, IBC InternalBucketCount](buckets []IB
 	}
 
 	var last IBC
-	for i := 0; i < len(buckets); i++ {
+	for i := range buckets {
 		var c IBC
 		if deltas {
 			c = last + buckets[i]

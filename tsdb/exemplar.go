@@ -140,11 +140,11 @@ func (ce *CircularExemplarStorage) Appender() *CircularExemplarStorage {
 	return ce
 }
 
-func (ce *CircularExemplarStorage) ExemplarQuerier(_ context.Context) (storage.ExemplarQuerier, error) {
+func (ce *CircularExemplarStorage) ExemplarQuerier(context.Context) (storage.ExemplarQuerier, error) {
 	return ce, nil
 }
 
-func (ce *CircularExemplarStorage) Querier(_ context.Context) (storage.ExemplarQuerier, error) {
+func (ce *CircularExemplarStorage) Querier(context.Context) (storage.ExemplarQuerier, error) {
 	return ce, nil
 }
 
@@ -296,10 +296,7 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 	ce.nextIndex = 0
 
 	// Replay as many entries as needed, starting with oldest first.
-	count := int64(len(oldBuffer))
-	if l < count {
-		count = l
-	}
+	count := min(l, int64(len(oldBuffer)))
 
 	migrated := 0
 
@@ -311,7 +308,7 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 		startIndex := (oldNextIndex - count + int64(len(oldBuffer))) % int64(len(oldBuffer))
 
 		var buf [1024]byte
-		for i := int64(0); i < count; i++ {
+		for i := range count {
 			idx := (startIndex + i) % int64(len(oldBuffer))
 			if oldBuffer[idx].ref != nil {
 				ce.migrate(&oldBuffer[idx], buf[:])

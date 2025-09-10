@@ -112,7 +112,7 @@ func (c *SDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
@@ -194,7 +194,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		events, err := d.client.ListEvents(ctx, &eventsOpts)
 		if err != nil {
 			var e *linodego.Error
-			if !(errors.As(err, &e) && e.Code == http.StatusUnauthorized) {
+			if !errors.As(err, &e) || e.Code != http.StatusUnauthorized {
 				return nil, err
 			}
 			// If we get a 401, the token doesn't have `events:read_only` scope.

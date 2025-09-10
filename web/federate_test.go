@@ -341,7 +341,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		NegativeBuckets: []int64{2, 2, -2, 0},
 	}
 	app := db.Appender(context.Background())
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		l := labels.FromStrings("__name__", "test_metric", "foo", strconv.Itoa(i))
 		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", strconv.Itoa(i))
 		var err error
@@ -392,7 +392,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	require.Equal(t, http.StatusOK, res.Code)
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
-	p := textparse.NewProtobufParser(body, false, labels.NewSymbolTable())
+	p := textparse.NewProtobufParser(body, false, false, labels.NewSymbolTable())
 	var actVec promql.Vector
 	metricFamilies := 0
 	l := labels.Labels{}

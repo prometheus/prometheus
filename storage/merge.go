@@ -64,10 +64,8 @@ func NewMergeQuerier(primaries, secondaries []Querier, mergeFn VerticalSeriesMer
 		queriers = append(queriers, newSecondaryQuerierFrom(q))
 	}
 
-	concurrentSelect := false
-	if len(secondaries) > 0 {
-		concurrentSelect = true
-	}
+	concurrentSelect := len(secondaries) > 0
+
 	return &querierAdapter{&mergeGenericQuerier{
 		mergeFn:          (&seriesMergerAdapter{VerticalSeriesMergeFunc: mergeFn}).Merge,
 		queriers:         queriers,
@@ -111,10 +109,8 @@ func NewMergeChunkQuerier(primaries, secondaries []ChunkQuerier, mergeFn Vertica
 		queriers = append(queriers, newSecondaryQuerierFromChunk(q))
 	}
 
-	concurrentSelect := false
-	if len(secondaries) > 0 {
-		concurrentSelect = true
-	}
+	concurrentSelect := len(secondaries) > 0
+
 	return &chunkQuerierAdapter{&mergeGenericQuerier{
 		mergeFn:          (&chunkSeriesMergerAdapter{VerticalChunkSeriesMergeFunc: mergeFn}).Merge,
 		queriers:         queriers,
@@ -237,10 +233,7 @@ func (q *mergeGenericQuerier) mergeResults(lq labelGenericQueriers, hints *Label
 }
 
 func mergeStrings(a, b []string) []string {
-	maxl := len(a)
-	if len(b) > len(a) {
-		maxl = len(b)
-	}
+	maxl := max(len(b), len(a))
 	res := make([]string, 0, maxl*10/9)
 
 	for len(a) > 0 && len(b) > 0 {
@@ -444,11 +437,11 @@ func (h genericSeriesSetHeap) Less(i, j int) bool {
 	return labels.Compare(a, b) < 0
 }
 
-func (h *genericSeriesSetHeap) Push(x interface{}) {
+func (h *genericSeriesSetHeap) Push(x any) {
 	*h = append(*h, x.(genericSeriesSet))
 }
 
-func (h *genericSeriesSetHeap) Pop() interface{} {
+func (h *genericSeriesSetHeap) Pop() any {
 	old := *h
 	n := len(old)
 	x := old[n-1]
@@ -702,11 +695,11 @@ func (h samplesIteratorHeap) Less(i, j int) bool {
 	return h[i].AtT() < h[j].AtT()
 }
 
-func (h *samplesIteratorHeap) Push(x interface{}) {
+func (h *samplesIteratorHeap) Push(x any) {
 	*h = append(*h, x.(chunkenc.Iterator))
 }
 
-func (h *samplesIteratorHeap) Pop() interface{} {
+func (h *samplesIteratorHeap) Pop() any {
 	old := *h
 	n := len(old)
 	x := old[n-1]
@@ -850,11 +843,11 @@ func (h chunkIteratorHeap) Less(i, j int) bool {
 	return at.MinTime < bt.MinTime
 }
 
-func (h *chunkIteratorHeap) Push(x interface{}) {
+func (h *chunkIteratorHeap) Push(x any) {
 	*h = append(*h, x.(chunks.Iterator))
 }
 
-func (h *chunkIteratorHeap) Pop() interface{} {
+func (h *chunkIteratorHeap) Pop() any {
 	old := *h
 	n := len(old)
 	x := old[n-1]

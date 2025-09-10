@@ -1,9 +1,8 @@
 ---
-title: API Stability
+title: API stability guarantees
+nav_title: API stability
 sort_rank: 11
 ---
-
-# API Stability Guarantees
 
 Prometheus promises API stability within a major version, and strives to avoid
 breaking changes for key features. Some features, which are cosmetic, still
@@ -14,7 +13,7 @@ Things considered stable for 3.x:
 * The query language and data model
 * Alerting and recording rules
 * The ingestion exposition format
-* v1 HTTP API (used by dashboards and UIs)
+* v1 HTTP API (used by dashboards and UIs), excluding endpoints explicitly marked as experimental
 * Configuration file format (minus the service discovery remote read/write, see below)
 * Rule/alert file format
 * Console template syntax and semantics

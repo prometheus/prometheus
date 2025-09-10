@@ -3,8 +3,6 @@ title: Getting started
 sort_rank: 1
 ---
 
-# Getting started
-
 This guide is a "Hello World"-style tutorial which shows how to install,
 configure, and use a simple Prometheus instance. You will download and run
 Prometheus locally, configure it to scrape itself and an example application,
@@ -200,7 +198,7 @@ To record the time series resulting from this expression into a new metric
 called `job_instance_mode:node_cpu_seconds:avg_rate5m`, create a file
 with the following recording rule and save it as `prometheus.rules.yml`:
 
-```
+```yaml
 groups:
 - name: cpu-node
   rules:

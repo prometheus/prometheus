@@ -11,12 +11,18 @@ load 5m
 	http_requests{job="api-server", instance="3", group="canary"}		0+60x10
 	http_requests{job="api-server", instance="histogram_1", group="canary"}       {{schema:0 sum:10 count:10}}x11
 	http_requests{job="api-server", instance="histogram_2", group="canary"}       {{schema:0 sum:20 count:20}}x11
+	foo 1+1x10
+	bar 0 1 0 -1 0 1 0 -1 0 1 0
 
 eval instant at 50m count(limitk by (group) (0, http_requests))
-# empty
+    expect no_info
+    expect no_warn
+    # empty
 
 eval instant at 50m count(limitk by (group) (-1, http_requests))
-# empty
+    expect no_info
+    expect no_warn
+    # empty
 
 # Exercise k==1 special case (as sample is added before the main series loop).
 eval instant at 50m count(limitk by (group) (1, http_requests) and http_requests)
@@ -69,6 +75,10 @@ eval instant at 50m count(limitk(1000, http_requests{instance=~"histogram_[0-9]"
 eval range from 0 to 50m step 5m count(limitk(1000, http_requests{instance=~"histogram_[0-9]"}))
     {} 2+0x10
 
+# Bug #15971.
+eval range from 0m to 50m step 5m count(limitk(scalar(foo), http_requests))
+	{} 1 2 3 4 5 6 7 8 8 8 8
+
 # limit_ratio
 eval range from 0 to 50m step 5m count(limit_ratio(0.0, http_requests))
 # empty
@@ -105,11 +115,13 @@ eval range from 0 to 50m step 5m count(limit_ratio(-1.0, http_requests) and http
     {} 8+0x10
 
 # Capped to 1.0 -> all samples.
-eval_warn range from 0 to 50m step 5m count(limit_ratio(1.1, http_requests) and http_requests)
+eval range from 0 to 50m step 5m count(limit_ratio(1.1, http_requests) and http_requests)
+	expect warn msg: PromQL warning: ratio value should be between -1 and 1, got 1.1, capping to 1
     {} 8+0x10
 
 # Capped to -1.0 -> all samples.
-eval_warn range from 0 to 50m step 5m count(limit_ratio(-1.1, http_requests) and http_requests)
+eval range from 0 to 50m step 5m count(limit_ratio(-1.1, http_requests) and http_requests)
+	expect warn msg: PromQL warning: ratio value should be between -1 and 1, got -1.1, capping to -1
     {} 8+0x10
 
 # Verify that limit_ratio(value) and limit_ratio(1.0-value) return the "complement" of each other.
@@ -137,12 +149,12 @@ eval range from 0 to 50m step 5m count(limit_ratio(0.8, http_requests) or limit_
 eval range from 0 to 50m step 5m count(limit_ratio(0.8, http_requests) and limit_ratio(-0.2, http_requests))
 # empty
 
-# Complement below for [some_ratio, 1.0 - some_ratio], some_ratio derived from time(),
+# Complement below for [some_ratio, - (1.0 - some_ratio)], some_ratio derived from time(),
 # using a small prime number to avoid rounded ratio values, and a small set of them.
-eval range from 0 to 50m step 5m count(limit_ratio(time() % 17/17, http_requests) or limit_ratio(1.0 - (time() % 17/17), http_requests))
+eval range from 0 to 50m step 5m count(limit_ratio(time() % 17/17, http_requests) or limit_ratio( - (1.0 - (time() % 17/17)), http_requests))
     {} 8+0x10
 
-eval range from 0 to 50m step 5m count(limit_ratio(time() % 17/17, http_requests) and limit_ratio(1.0 - (time() % 17/17), http_requests))
+eval range from 0 to 50m step 5m count(limit_ratio(time() % 17/17, http_requests) and limit_ratio( - (1.0 - (time() % 17/17)), http_requests))
 # empty
 
 # Poor man's normality check: ok (loaded samples follow a nice linearity over labels and time).
@@ -156,3 +168,7 @@ eval instant at 50m limit_ratio(1, http_requests{instance="histogram_1"})
 
 eval range from 0 to 50m step 5m limit_ratio(1, http_requests{instance="histogram_1"})
     {__name__="http_requests", group="canary", instance="histogram_1", job="api-server"} {{count:10 sum:10}}x10
+
+# Bug #15971.
+eval range from 0m to 50m step 5m count(limit_ratio(scalar(bar), http_requests))
+	{} _ 8 _ 8 _ 8 _ 8 _ 8 _

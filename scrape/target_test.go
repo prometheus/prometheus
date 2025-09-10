@@ -489,7 +489,7 @@ scrape_configs:
 	for _, nTargets := range []int{1, 10, 100} {
 		b.Run(fmt.Sprintf("%d_targets", nTargets), func(b *testing.B) {
 			targets := []model.LabelSet{}
-			for i := 0; i < nTargets; i++ {
+			for i := range nTargets {
 				labels := model.LabelSet{
 					model.AddressLabel:                            model.LabelValue(fmt.Sprintf("localhost:%d", i)),
 					"__meta_kubernetes_namespace":                 "some_namespace",
@@ -501,7 +501,7 @@ scrape_configs:
 					"__meta_kubernetes_pod_phase":                 "Running",
 				}
 				// Add some more labels, because Kubernetes SD generates a lot
-				for i := 0; i < 10; i++ {
+				for i := range 10 {
 					labels[model.LabelName(fmt.Sprintf("__meta_kubernetes_pod_label_extra%d", i))] = "a_label_abcdefgh"
 					labels[model.LabelName(fmt.Sprintf("__meta_kubernetes_pod_labelpresent_extra%d", i))] = "true"
 				}

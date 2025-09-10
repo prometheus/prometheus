@@ -15,6 +15,7 @@ package remote
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -43,12 +44,12 @@ var (
 		Schema:          2,
 		ZeroThreshold:   1e-128,
 		ZeroCount:       0,
-		Count:           0,
+		Count:           3,
 		Sum:             20,
 		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 		PositiveBuckets: []int64{1},
 		NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-		NegativeBuckets: []int64{-1},
+		NegativeBuckets: []int64{2},
 	}
 
 	writeRequestFixture = &prompb.WriteRequest{
@@ -90,6 +91,15 @@ var (
 		Help: "Test counter for test purposes",
 	}
 
+	testHistogramCustomBuckets = histogram.Histogram{
+		Schema:          histogram.CustomBucketsSchema,
+		Count:           16,
+		Sum:             20,
+		PositiveSpans:   []histogram.Span{{Offset: 1, Length: 2}},
+		PositiveBuckets: []int64{10, -4},     // Means 10 observations for upper bound 1.0 and 6 for upper bound +Inf.
+		CustomValues:    []float64{0.1, 1.0}, // +Inf is implied.
+	}
+
 	// writeV2RequestFixture represents the same request as writeRequestFixture,
 	// but using the v2 representation, plus includes writeV2RequestSeries1Metadata and writeV2RequestSeries2Metadata.
 	// NOTE: Use TestWriteV2RequestFixture and copy the diff to regenerate if needed.
@@ -104,9 +114,14 @@ var (
 					HelpRef: 15, // Symbolized writeV2RequestSeries1Metadata.Help.
 					UnitRef: 16, // Symbolized writeV2RequestSeries1Metadata.Unit.
 				},
-				Samples:          []writev2.Sample{{Value: 1, Timestamp: 10}},
-				Exemplars:        []writev2.Exemplar{{LabelsRefs: []uint32{11, 12}, Value: 1, Timestamp: 10}},
-				Histograms:       []writev2.Histogram{writev2.FromIntHistogram(10, &testHistogram), writev2.FromFloatHistogram(20, testHistogram.ToFloat(nil))},
+				Samples:   []writev2.Sample{{Value: 1, Timestamp: 10}},
+				Exemplars: []writev2.Exemplar{{LabelsRefs: []uint32{11, 12}, Value: 1, Timestamp: 10}},
+				Histograms: []writev2.Histogram{
+					writev2.FromIntHistogram(10, &testHistogram),
+					writev2.FromFloatHistogram(20, testHistogram.ToFloat(nil)),
+					writev2.FromIntHistogram(30, &testHistogramCustomBuckets),
+					writev2.FromFloatHistogram(40, testHistogramCustomBuckets.ToFloat(nil)),
+				},
 				CreatedTimestamp: 1, // CT needs to be lower than the sample's timestamp.
 			},
 			{
@@ -117,13 +132,39 @@ var (
 					HelpRef: 17, // Symbolized writeV2RequestSeries2Metadata.Help.
 					// No unit.
 				},
-				Samples:    []writev2.Sample{{Value: 2, Timestamp: 20}},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{13, 14}, Value: 2, Timestamp: 20}},
-				Histograms: []writev2.Histogram{writev2.FromIntHistogram(30, &testHistogram), writev2.FromFloatHistogram(40, testHistogram.ToFloat(nil))},
+				Samples:   []writev2.Sample{{Value: 2, Timestamp: 20}},
+				Exemplars: []writev2.Exemplar{{LabelsRefs: []uint32{13, 14}, Value: 2, Timestamp: 20}},
+				Histograms: []writev2.Histogram{
+					writev2.FromIntHistogram(50, &testHistogram),
+					writev2.FromFloatHistogram(60, testHistogram.ToFloat(nil)),
+					writev2.FromIntHistogram(70, &testHistogramCustomBuckets),
+					writev2.FromFloatHistogram(80, testHistogramCustomBuckets.ToFloat(nil)),
+				},
 			},
 		},
 	}
 )
+
+func TestHistogramFixtureValid(t *testing.T) {
+	for _, ts := range writeRequestFixture.Timeseries {
+		for _, h := range ts.Histograms {
+			if h.IsFloatHistogram() {
+				require.NoError(t, h.ToFloatHistogram().Validate())
+			} else {
+				require.NoError(t, h.ToIntHistogram().Validate())
+			}
+		}
+	}
+	for _, ts := range writeV2RequestFixture.Timeseries {
+		for _, h := range ts.Histograms {
+			if h.IsFloatHistogram() {
+				require.NoError(t, h.ToFloatHistogram().Validate())
+			} else {
+				require.NoError(t, h.ToIntHistogram().Validate())
+			}
+		}
+	}
+}
 
 func TestWriteV2RequestFixture(t *testing.T) {
 	// Generate dynamically writeV2RequestFixture, reusing v1 fixture elements.
@@ -141,9 +182,14 @@ func TestWriteV2RequestFixture(t *testing.T) {
 					HelpRef: st.Symbolize(writeV2RequestSeries1Metadata.Help),
 					UnitRef: st.Symbolize(writeV2RequestSeries1Metadata.Unit),
 				},
-				Samples:          []writev2.Sample{{Value: 1, Timestamp: 10}},
-				Exemplars:        []writev2.Exemplar{{LabelsRefs: exemplar1LabelRefs, Value: 1, Timestamp: 10}},
-				Histograms:       []writev2.Histogram{writev2.FromIntHistogram(10, &testHistogram), writev2.FromFloatHistogram(20, testHistogram.ToFloat(nil))},
+				Samples:   []writev2.Sample{{Value: 1, Timestamp: 10}},
+				Exemplars: []writev2.Exemplar{{LabelsRefs: exemplar1LabelRefs, Value: 1, Timestamp: 10}},
+				Histograms: []writev2.Histogram{
+					writev2.FromIntHistogram(10, &testHistogram),
+					writev2.FromFloatHistogram(20, testHistogram.ToFloat(nil)),
+					writev2.FromIntHistogram(30, &testHistogramCustomBuckets),
+					writev2.FromFloatHistogram(40, testHistogramCustomBuckets.ToFloat(nil)),
+				},
 				CreatedTimestamp: 1,
 			},
 			{
@@ -153,9 +199,14 @@ func TestWriteV2RequestFixture(t *testing.T) {
 					HelpRef: st.Symbolize(writeV2RequestSeries2Metadata.Help),
 					// No unit.
 				},
-				Samples:    []writev2.Sample{{Value: 2, Timestamp: 20}},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: exemplar2LabelRefs, Value: 2, Timestamp: 20}},
-				Histograms: []writev2.Histogram{writev2.FromIntHistogram(30, &testHistogram), writev2.FromFloatHistogram(40, testHistogram.ToFloat(nil))},
+				Samples:   []writev2.Sample{{Value: 2, Timestamp: 20}},
+				Exemplars: []writev2.Exemplar{{LabelsRefs: exemplar2LabelRefs, Value: 2, Timestamp: 20}},
+				Histograms: []writev2.Histogram{
+					writev2.FromIntHistogram(50, &testHistogram),
+					writev2.FromFloatHistogram(60, testHistogram.ToFloat(nil)),
+					writev2.FromIntHistogram(70, &testHistogramCustomBuckets),
+					writev2.FromFloatHistogram(80, testHistogramCustomBuckets.ToFloat(nil)),
+				},
 			},
 		},
 		Symbols: st.Symbols(),
@@ -486,7 +537,7 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 	require.Equal(t, expected, fh)
 
 	// Keep calling Next() until the end.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		require.Equal(t, chunkenc.ValHistogram, it.Next())
 	}
 
@@ -668,9 +719,9 @@ func (c *mockChunkSeriesSet) At() storage.ChunkSeries {
 	}
 }
 
-func (c *mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
+func (*mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
-func (c *mockChunkSeriesSet) Err() error {
+func (*mockChunkSeriesSet) Err() error {
 	return nil
 }
 
@@ -697,7 +748,7 @@ func (c *mockChunkIterator) Next() bool {
 	return c.index < len(c.chunks)
 }
 
-func (c *mockChunkIterator) Err() error {
+func (*mockChunkIterator) Err() error {
 	return nil
 }
 
@@ -842,7 +893,8 @@ func TestChunkedSeriesSet(t *testing.T) {
 		flusher := &mockFlusher{}
 
 		w := NewChunkedWriter(buf, flusher)
-		r := NewChunkedReader(buf, config.DefaultChunkedReadLimit, nil)
+		wrappedReader := newOneShotCloser(buf)
+		r := NewChunkedReader(wrappedReader, config.DefaultChunkedReadLimit, nil)
 
 		chks := buildTestChunks(t)
 		l := []prompb.Label{
@@ -863,7 +915,7 @@ func TestChunkedSeriesSet(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		ss := NewChunkedSeriesSet(r, io.NopCloser(buf), 0, 14000, func(error) {})
+		ss := NewChunkedSeriesSet(r, wrappedReader, 0, 14000, func(error) {})
 		require.NoError(t, ss.Err())
 		require.Nil(t, ss.Warnings())
 
@@ -888,6 +940,9 @@ func TestChunkedSeriesSet(t *testing.T) {
 		}
 		require.Equal(t, numTestChunks, numResponses)
 		require.NoError(t, ss.Err())
+
+		require.False(t, ss.Next(), "Next() should still return false after it previously returned false")
+		require.NoError(t, ss.Err(), "Err() should not return an error if Next() is called again after it previously returned false")
 	})
 
 	t.Run("chunked reader error", func(t *testing.T) {
@@ -931,7 +986,33 @@ func TestChunkedSeriesSet(t *testing.T) {
 // mockFlusher implements http.Flusher.
 type mockFlusher struct{}
 
-func (f *mockFlusher) Flush() {}
+func (*mockFlusher) Flush() {}
+
+type oneShotCloser struct {
+	r      io.Reader
+	closed bool
+}
+
+func newOneShotCloser(r io.Reader) io.ReadCloser {
+	return &oneShotCloser{r, false}
+}
+
+func (c *oneShotCloser) Read(p []byte) (n int, err error) {
+	if c.closed {
+		return 0, errors.New("already closed")
+	}
+
+	return c.r.Read(p)
+}
+
+func (c *oneShotCloser) Close() error {
+	if c.closed {
+		return errors.New("already closed")
+	}
+
+	c.closed = true
+	return nil
+}
 
 const (
 	numTestChunks          = 3
@@ -944,7 +1025,7 @@ func buildTestChunks(t *testing.T) []prompb.Chunk {
 
 	time := startTime
 
-	for i := 0; i < numTestChunks; i++ {
+	for i := range numTestChunks {
 		c := chunkenc.NewXORChunk()
 
 		a, err := c.Appender()
@@ -952,7 +1033,7 @@ func buildTestChunks(t *testing.T) []prompb.Chunk {
 
 		minTimeMs := time
 
-		for j := 0; j < numSamplesPerTestChunk; j++ {
+		for j := range numSamplesPerTestChunk {
 			a.Append(time, float64(i+j))
 			time += int64(1000)
 		}

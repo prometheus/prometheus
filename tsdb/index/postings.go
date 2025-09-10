@@ -47,7 +47,7 @@ const ensureOrderBatchSize = 1024
 
 // ensureOrderBatchPool is a pool used to recycle batches passed to workers in MemPostings.EnsureOrder().
 var ensureOrderBatchPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		x := make([][]storage.SeriesRef, 0, ensureOrderBatchSize)
 		return &x // Return pointer type as preferred by Pool.
 	},
@@ -168,10 +168,14 @@ func (p *MemPostings) LabelNames() []string {
 }
 
 // LabelValues returns label values for the given name.
-func (p *MemPostings) LabelValues(_ context.Context, name string) []string {
+func (p *MemPostings) LabelValues(_ context.Context, name string, hints *storage.LabelHints) []string {
 	p.mtx.RLock()
 	values := p.lvs[name]
 	p.mtx.RUnlock()
+
+	if hints != nil && hints.Limit > 0 && len(values) > hints.Limit {
+		values = values[:hints.Limit]
+	}
 
 	// The slice from p.lvs[name] is shared between all readers, and it is append-only.
 	// Since it's shared, we need to make a copy of it before returning it to make
@@ -560,10 +564,10 @@ type errPostings struct {
 	err error
 }
 
-func (e errPostings) Next() bool                  { return false }
-func (e errPostings) Seek(storage.SeriesRef) bool { return false }
-func (e errPostings) At() storage.SeriesRef       { return 0 }
-func (e errPostings) Err() error                  { return e.err }
+func (errPostings) Next() bool                  { return false }
+func (errPostings) Seek(storage.SeriesRef) bool { return false }
+func (errPostings) At() storage.SeriesRef       { return 0 }
+func (e errPostings) Err() error                { return e.err }
 
 var emptyPostings = errPostings{}
 
@@ -595,63 +599,62 @@ func Intersect(its ...Postings) Postings {
 	if len(its) == 1 {
 		return its[0]
 	}
-	for _, p := range its {
-		if p == EmptyPostings() {
-			return EmptyPostings()
-		}
+	if slices.Contains(its, EmptyPostings()) {
+		return EmptyPostings()
 	}
 
 	return newIntersectPostings(its...)
 }
 
 type intersectPostings struct {
-	arr []Postings
-	cur storage.SeriesRef
+	postings []Postings        // These are the postings we will be intersecting.
+	current  storage.SeriesRef // The current intersection, if Seek() or Next() has returned true.
 }
 
 func newIntersectPostings(its ...Postings) *intersectPostings {
-	return &intersectPostings{arr: its}
+	return &intersectPostings{postings: its}
 }
 
 func (it *intersectPostings) At() storage.SeriesRef {
-	return it.cur
+	return it.current
 }
 
-func (it *intersectPostings) doNext() bool {
-Loop:
+func (it *intersectPostings) Seek(target storage.SeriesRef) bool {
 	for {
-		for _, p := range it.arr {
-			if !p.Seek(it.cur) {
+		allEqual := true
+		for _, p := range it.postings {
+			if !p.Seek(target) {
 				return false
 			}
-			if p.At() > it.cur {
-				it.cur = p.At()
-				continue Loop
+			if p.At() > target {
+				target = p.At()
+				allEqual = false
 			}
 		}
-		return true
+
+		// if all p.At() are all equal, we found an intersection.
+		if allEqual {
+			it.current = target
+			return true
+		}
 	}
 }
 
 func (it *intersectPostings) Next() bool {
-	for _, p := range it.arr {
+	target := it.current
+	for _, p := range it.postings {
 		if !p.Next() {
 			return false
 		}
-		if p.At() > it.cur {
-			it.cur = p.At()
+		if p.At() > target {
+			target = p.At()
 		}
 	}
-	return it.doNext()
-}
-
-func (it *intersectPostings) Seek(id storage.SeriesRef) bool {
-	it.cur = id
-	return it.doNext()
+	return it.Seek(target)
 }
 
 func (it *intersectPostings) Err() error {
-	for _, p := range it.arr {
+	for _, p := range it.postings {
 		if p.Err() != nil {
 			return p.Err()
 		}
@@ -859,7 +862,7 @@ func (it *ListPostings) Seek(x storage.SeriesRef) bool {
 	return false
 }
 
-func (it *ListPostings) Err() error {
+func (*ListPostings) Err() error {
 	return nil
 }
 
@@ -912,7 +915,7 @@ func (it *bigEndianPostings) Seek(x storage.SeriesRef) bool {
 	return false
 }
 
-func (it *bigEndianPostings) Err() error {
+func (*bigEndianPostings) Err() error {
 	return nil
 }
 
@@ -1020,14 +1023,14 @@ func (h postingsWithIndexHeap) Less(i, j int) bool {
 func (h *postingsWithIndexHeap) Swap(i, j int) { (*h)[i], (*h)[j] = (*h)[j], (*h)[i] }
 
 // Push implements heap.Interface.
-func (h *postingsWithIndexHeap) Push(x interface{}) {
+func (h *postingsWithIndexHeap) Push(x any) {
 	*h = append(*h, x.(postingsWithIndex))
 }
 
 // Pop implements heap.Interface and pops the last element, which is NOT the min element,
 // so this doesn't return the same heap.Pop()
 // Although this method is implemented for correctness, we don't expect it to be used, see popIndex() method for details.
-func (h *postingsWithIndexHeap) Pop() interface{} {
+func (h *postingsWithIndexHeap) Pop() any {
 	old := *h
 	n := len(old)
 	x := old[n-1]

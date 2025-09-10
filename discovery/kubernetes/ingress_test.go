@@ -16,6 +16,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"maps"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -34,11 +35,11 @@ const (
 	TLSWildcard
 )
 
-func makeIngress(tls TLSMode) *v1.Ingress {
+func makeIngress(namespace string, tls TLSMode) *v1.Ingress {
 	ret := &v1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "testingress",
-			Namespace:   "default",
+			Namespace:   namespace,
 			Labels:      map[string]string{"test/label": "testvalue"},
 			Annotations: map[string]string{"test/annotation": "testannotationvalue"},
 		},
@@ -150,7 +151,7 @@ func TestIngressDiscoveryAdd(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			obj := makeIngress(TLSNo)
+			obj := makeIngress("default", TLSNo)
 			c.NetworkingV1().Ingresses("default").Create(context.Background(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
@@ -165,7 +166,7 @@ func TestIngressDiscoveryAddTLS(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			obj := makeIngress(TLSYes)
+			obj := makeIngress("default", TLSYes)
 			c.NetworkingV1().Ingresses("default").Create(context.Background(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
@@ -180,7 +181,7 @@ func TestIngressDiscoveryAddMixed(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			obj := makeIngress(TLSMixed)
+			obj := makeIngress("default", TLSMixed)
 			c.NetworkingV1().Ingresses("default").Create(context.Background(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
@@ -193,15 +194,12 @@ func TestIngressDiscoveryNamespaces(t *testing.T) {
 	n, c := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
 
 	expected := expectedTargetGroups("ns1", TLSNo)
-	for k, v := range expectedTargetGroups("ns2", TLSNo) {
-		expected[k] = v
-	}
+	maps.Copy(expected, expectedTargetGroups("ns2", TLSNo))
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
 			for _, ns := range []string{"ns1", "ns2"} {
-				obj := makeIngress(TLSNo)
-				obj.Namespace = ns
+				obj := makeIngress(ns, TLSNo)
 				c.NetworkingV1().Ingresses(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 			}
 		},
@@ -219,12 +217,136 @@ func TestIngressDiscoveryOwnNamespace(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			for _, ns := range []string{"own-ns", "non-own-ns"} {
-				obj := makeIngress(TLSNo)
-				obj.Namespace = ns
+				obj := makeIngress(ns, TLSNo)
 				c.NetworkingV1().Ingresses(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 			}
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expected,
+	}.Run(t)
+}
+
+func TestIngressDiscoveryWithNamespaceMetadata(t *testing.T) {
+	t.Parallel()
+
+	ns := "test-ns"
+	nsLabels := map[string]string{"service": "web", "layer": "frontend"}
+	nsAnnotations := map[string]string{"contact": "platform", "release": "v5.6.7"}
+
+	n, _ := makeDiscoveryWithMetadata(RoleIngress, NamespaceDiscovery{}, AttachMetadataConfig{Namespace: true}, makeNamespace(ns, nsLabels, nsAnnotations), makeIngress(ns, TLSNo))
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			fmt.Sprintf("ingress/%s/testingress", ns): {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                      "example.com",
+						"__meta_kubernetes_ingress_host":   "example.com",
+						"__meta_kubernetes_ingress_path":   "/",
+						"__meta_kubernetes_ingress_scheme": "http",
+					},
+					{
+						"__address__":                      "example.com",
+						"__meta_kubernetes_ingress_host":   "example.com",
+						"__meta_kubernetes_ingress_path":   "/foo",
+						"__meta_kubernetes_ingress_scheme": "http",
+					},
+					{
+						"__address__":                      "test.example.com",
+						"__meta_kubernetes_ingress_host":   "test.example.com",
+						"__meta_kubernetes_ingress_path":   "/",
+						"__meta_kubernetes_ingress_scheme": "http",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_namespace":                                 model.LabelValue(ns),
+					"__meta_kubernetes_namespace_annotation_contact":              "platform",
+					"__meta_kubernetes_namespace_annotationpresent_contact":       "true",
+					"__meta_kubernetes_namespace_annotation_release":              "v5.6.7",
+					"__meta_kubernetes_namespace_annotationpresent_release":       "true",
+					"__meta_kubernetes_namespace_label_service":                   "web",
+					"__meta_kubernetes_namespace_labelpresent_service":            "true",
+					"__meta_kubernetes_namespace_label_layer":                     "frontend",
+					"__meta_kubernetes_namespace_labelpresent_layer":              "true",
+					"__meta_kubernetes_ingress_name":                              "testingress",
+					"__meta_kubernetes_ingress_label_test_label":                  "testvalue",
+					"__meta_kubernetes_ingress_labelpresent_test_label":           "true",
+					"__meta_kubernetes_ingress_annotation_test_annotation":        "testannotationvalue",
+					"__meta_kubernetes_ingress_annotationpresent_test_annotation": "true",
+					"__meta_kubernetes_ingress_class_name":                        "testclass",
+				},
+				Source: fmt.Sprintf("ingress/%s/testingress", ns),
+			},
+		},
+	}.Run(t)
+}
+
+func TestIngressDiscoveryWithUpdatedNamespaceMetadata(t *testing.T) {
+	t.Parallel()
+
+	ns := "test-ns"
+	nsLabels := map[string]string{"component": "database", "layer": "backend"}
+	nsAnnotations := map[string]string{"contact": "dba", "release": "v6.7.8"}
+
+	namespace := makeNamespace(ns, nsLabels, nsAnnotations)
+	n, c := makeDiscoveryWithMetadata(RoleIngress, NamespaceDiscovery{}, AttachMetadataConfig{Namespace: true}, namespace, makeIngress(ns, TLSNo))
+
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 2,
+		afterStart: func() {
+			namespace.Labels["component"] = "cache"
+			namespace.Labels["region"] = "us-central"
+			namespace.Annotations["contact"] = "sre"
+			namespace.Annotations["monitoring"] = "enabled"
+			c.CoreV1().Namespaces().Update(context.Background(), namespace, metav1.UpdateOptions{})
+		},
+		expectedRes: map[string]*targetgroup.Group{
+			fmt.Sprintf("ingress/%s/testingress", ns): {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                      "example.com",
+						"__meta_kubernetes_ingress_host":   "example.com",
+						"__meta_kubernetes_ingress_path":   "/",
+						"__meta_kubernetes_ingress_scheme": "http",
+					},
+					{
+						"__address__":                      "example.com",
+						"__meta_kubernetes_ingress_host":   "example.com",
+						"__meta_kubernetes_ingress_path":   "/foo",
+						"__meta_kubernetes_ingress_scheme": "http",
+					},
+					{
+						"__address__":                      "test.example.com",
+						"__meta_kubernetes_ingress_host":   "test.example.com",
+						"__meta_kubernetes_ingress_path":   "/",
+						"__meta_kubernetes_ingress_scheme": "http",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_namespace":                                 model.LabelValue(ns),
+					"__meta_kubernetes_namespace_annotation_contact":              "sre",
+					"__meta_kubernetes_namespace_annotationpresent_contact":       "true",
+					"__meta_kubernetes_namespace_annotation_release":              "v6.7.8",
+					"__meta_kubernetes_namespace_annotationpresent_release":       "true",
+					"__meta_kubernetes_namespace_annotation_monitoring":           "enabled",
+					"__meta_kubernetes_namespace_annotationpresent_monitoring":    "true",
+					"__meta_kubernetes_namespace_label_component":                 "cache",
+					"__meta_kubernetes_namespace_labelpresent_component":          "true",
+					"__meta_kubernetes_namespace_label_layer":                     "backend",
+					"__meta_kubernetes_namespace_labelpresent_layer":              "true",
+					"__meta_kubernetes_namespace_label_region":                    "us-central",
+					"__meta_kubernetes_namespace_labelpresent_region":             "true",
+					"__meta_kubernetes_ingress_name":                              "testingress",
+					"__meta_kubernetes_ingress_label_test_label":                  "testvalue",
+					"__meta_kubernetes_ingress_labelpresent_test_label":           "true",
+					"__meta_kubernetes_ingress_annotation_test_annotation":        "testannotationvalue",
+					"__meta_kubernetes_ingress_annotationpresent_test_annotation": "true",
+					"__meta_kubernetes_ingress_class_name":                        "testclass",
+				},
+				Source: fmt.Sprintf("ingress/%s/testingress", ns),
+			},
+		},
 	}.Run(t)
 }

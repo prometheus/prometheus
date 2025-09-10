@@ -38,12 +38,12 @@ func TestWriteAndReadbackTombstones(t *testing.T) {
 
 	stones := NewMemTombstones()
 	// Generate the tombstones.
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		ref += uint64(rand.Int31n(10)) + 1
 		numRanges := rand.Intn(5) + 1
 		dranges := make(Intervals, 0, numRanges)
 		mint := rand.Int63n(time.Now().UnixNano())
-		for j := 0; j < numRanges; j++ {
+		for range numRanges {
 			dranges = dranges.Add(Interval{mint, mint + rand.Int63n(1000)})
 			mint += rand.Int63n(1000) + 1
 		}
@@ -263,13 +263,13 @@ func TestMemTombstonesConcurrency(t *testing.T) {
 	wg.Add(2)
 
 	go func() {
-		for x := 0; x < totalRuns; x++ {
+		for x := range totalRuns {
 			tomb.AddInterval(storage.SeriesRef(x), Interval{int64(x), int64(x)})
 		}
 		wg.Done()
 	}()
 	go func() {
-		for x := 0; x < totalRuns; x++ {
+		for x := range totalRuns {
 			_, err := tomb.Get(storage.SeriesRef(x))
 			require.NoError(t, err)
 		}

@@ -89,7 +89,7 @@ func (s stepStat) String() string {
 
 // MarshalJSON implements json.Marshaler.
 func (s stepStat) MarshalJSON() ([]byte, error) {
-	return json.Marshal([...]interface{}{float64(s.T) / 1000, s.V})
+	return json.Marshal([...]any{float64(s.T) / 1000, s.V})
 }
 
 // queryTimings with all query timers mapped to durations.
@@ -134,7 +134,7 @@ func NewQueryStats(s *Statistics) QueryStats {
 		sp      = s.Samples
 	)
 
-	for s, timer := range tg.TimerGroup.timers {
+	for s, timer := range tg.timers {
 		switch s {
 		case EvalTotalTime:
 			qt.EvalTotalTime = timer.Duration()
@@ -182,7 +182,7 @@ func (qs *QuerySamples) totalSamplesPerStepPoints() []stepStat {
 
 	ts := make([]stepStat, len(qs.TotalSamplesPerStep))
 	for i, c := range qs.TotalSamplesPerStep {
-		ts[i] = stepStat{T: qs.startTimestamp + int64(i)*qs.interval, V: c}
+		ts[i] = stepStat{T: qs.StartTimestamp + int64(i)*qs.Interval, V: c}
 	}
 	return ts
 }
@@ -246,8 +246,8 @@ type QuerySamples struct {
 	TotalSamplesPerStep []int64
 
 	EnablePerStepStats bool
-	startTimestamp     int64
-	interval           int64
+	StartTimestamp     int64
+	Interval           int64
 }
 
 type Stats struct {
@@ -262,8 +262,8 @@ func (qs *QuerySamples) InitStepTracking(start, end, interval int64) {
 
 	numSteps := int((end-start)/interval) + 1
 	qs.TotalSamplesPerStep = make([]int64, numSteps)
-	qs.startTimestamp = start
-	qs.interval = interval
+	qs.StartTimestamp = start
+	qs.Interval = interval
 }
 
 // IncrementSamplesAtStep increments the total samples count. Use this if you know the step index.
@@ -287,7 +287,7 @@ func (qs *QuerySamples) IncrementSamplesAtTimestamp(t, samples int64) {
 	qs.TotalSamples += samples
 
 	if qs.TotalSamplesPerStep != nil {
-		i := int((t - qs.startTimestamp) / qs.interval)
+		i := int((t - qs.StartTimestamp) / qs.Interval)
 		qs.TotalSamplesPerStep[i] += samples
 	}
 }
@@ -323,10 +323,10 @@ func NewQuerySamples(enablePerStepStats bool) *QuerySamples {
 	return &qs
 }
 
-func (qs *QuerySamples) NewChild() *QuerySamples {
+func (*QuerySamples) NewChild() *QuerySamples {
 	return NewQuerySamples(false)
 }
 
 func (qs *QueryTimers) GetSpanTimer(ctx context.Context, qt QueryTiming, observers ...prometheus.Observer) (*SpanTimer, context.Context) {
-	return NewSpanTimer(ctx, qt.SpanOperation(), qs.TimerGroup.GetTimer(qt), observers...)
+	return NewSpanTimer(ctx, qt.SpanOperation(), qs.GetTimer(qt), observers...)
 }

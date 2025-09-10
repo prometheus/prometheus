@@ -37,6 +37,7 @@ import { useDebouncedValue } from "@mantine/hooks";
 import { KVSearch } from "@nexucis/kvsearch";
 import { inputIconStyle } from "../styles";
 import CustomInfiniteScroll from "../components/CustomInfiniteScroll";
+import classes from "./AlertsPage.module.css";
 
 type AlertsPageData = {
   // How many rules are in each state across all groups.
@@ -216,13 +217,8 @@ export default function AlertsPage() {
   // convenient to have in the same file IMO).
   const renderedPageItems = useMemo(
     () =>
-      currentPageGroups.map((g, i) => (
-        <Card
-          shadow="xs"
-          withBorder
-          p="md"
-          key={i} // TODO: Find a stable and definitely unique key.
-        >
+      currentPageGroups.map((g) => (
+        <Card shadow="xs" withBorder p="md" key={`${g.file}-${g.name}`}>
           <Group mb="sm" justify="space-between">
             <Group align="baseline">
               <Text fz="xl" fw={600} c="var(--mantine-primary-color-filled)">
@@ -277,20 +273,11 @@ export default function AlertsPage() {
             <CustomInfiniteScroll
               allItems={g.rules}
               child={({ items }) => (
-                <Accordion multiple variant="separated">
+                <Accordion multiple variant="separated" classNames={classes}>
                   {items.map((r, j) => {
                     return (
                       <Accordion.Item
                         mt={rem(5)}
-                        styles={{
-                          item: {
-                            // TODO: This transparency hack is an OK workaround to make the collapsed items
-                            // have a different background color than their surrounding group card in dark mode,
-                            // but it would be better to use CSS to override the light/dark colors for
-                            // collapsed/expanded accordion items.
-                            backgroundColor: "#c0c0c015",
-                          },
-                        }}
                         key={j}
                         value={j.toString()}
                         className={
@@ -460,15 +447,13 @@ export default function AlertsPage() {
           </Alert>
         )
       )}
-      <Stack>
-        <Pagination
-          total={totalPageCount}
-          value={effectiveActivePage}
-          onChange={setActivePage}
-          hideWithOnePage
-        />
-        {renderedPageItems}
-      </Stack>
+      <Pagination
+        total={totalPageCount}
+        value={effectiveActivePage}
+        onChange={setActivePage}
+        hideWithOnePage
+      />
+      {renderedPageItems}
     </Stack>
   );
 }

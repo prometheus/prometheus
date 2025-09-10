@@ -111,7 +111,7 @@ eval range from <start> to <end> step <step> <query>
 ### `expect` Syntax
 
 ```
-expect <type> <match_type> <string>
+expect <type> <match_type>: <string>
 ```
 
 #### Parameters
@@ -139,8 +139,8 @@ eval instant at 1m sum by (env) (my_metric)
     {env="test"} 20
     
 eval range from 0 to 3m step 1m sum by (env) (my_metric)
-    expect warn msg something went wrong
-    expect info regex something went (wrong|boom)
+    expect warn msg: something went wrong
+    expect info regex: something went (wrong|boom)
     {env="prod"} 2 5 10 20
     {env="test"} 10 20 30 45
 
@@ -148,10 +148,10 @@ eval instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
 expect fail
 
 eval instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
-expect fail msg "vector cannot contain metrics with the same labelset"
+expect fail msg: "vector cannot contain metrics with the same labelset"
 
 eval instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
-expect fail regex "vector cannot contain metrics .*|something else went wrong"
+expect fail regex: "vector cannot contain metrics .*|something else went wrong"
 
 eval instant at 1m sum by (env) (my_metric)
 expect ordered
@@ -164,3 +164,30 @@ There can be multiple `<expect>` lines for a given `<type>`. Each `<type>` valid
 Every `<expect>` line must match at least one corresponding annotation or error.
 
 If at least one `<expect>` line of type `warn` or `info` is present, then all corresponding annotations must have a matching `expect` line.
+
+#### Migrating Test Files to the New Syntax
+
+- All `.test` files in the directory specified by the --dir flag will be updated in place.
+- Deprecated syntax will be replaced with the recommended `expect` line statements.
+
+Usage:
+```sh
+go run ./promql/promqltest/cmd/migrate/main.go --mode=strict [--dir=<directory>]
+```
+
+The `--mode` flag controls how expectations are migrated:
+- `strict`: Strictly migrates all expectations to the new syntax.
+  This is probably more verbose than intended because the old syntax
+  implied many constraints that are often not needed.
+- `basic`: Like `strict` but never creates `no_info` and `no_warn`
+  expectations. This can be a good starting point to manually add 
+  `no_info` and `no_warn` expectations and/or remove `info` and 
+  `warn` expectations as needed.
+- `tolerant`: Only creates `expect fail` and `expect ordered` where
+  appropriate. All desired expectations about presence or absence 
+  of `info` and `warn` have to be added manually.
+
+All three modes create valid passing tests from previously passing tests.
+`basic` and `tolerant` just test fewer expectations than the previous tests.
+
+The --dir flag specifies the directory containing test files to migrate.

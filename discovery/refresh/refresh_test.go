@@ -56,7 +56,7 @@ func TestRefresh(t *testing.T) {
 	}
 
 	var i int
-	refresh := func(_ context.Context) ([]*targetgroup.Group, error) {
+	refresh := func(context.Context) ([]*targetgroup.Group, error) {
 		i++
 		switch i {
 		case 1:

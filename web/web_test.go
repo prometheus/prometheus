@@ -52,11 +52,15 @@ type dbAdapter struct {
 	*tsdb.DB
 }
 
+func (a *dbAdapter) BlockMetas() ([]tsdb.BlockMeta, error) {
+	return a.DB.BlockMetas(), nil
+}
+
 func (a *dbAdapter) Stats(statsByLabelName string, limit int) (*tsdb.Stats, error) {
 	return a.Head().Stats(statsByLabelName, limit), nil
 }
 
-func (a *dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
+func (*dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
 }
 
@@ -483,7 +487,7 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -569,6 +573,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		"/query_range":                 {http.MethodGet, http.MethodPost},
 		"/query_exemplars":             {http.MethodGet, http.MethodPost},
 		"/status/tsdb":                 {http.MethodGet},
+		"/status/tsdb/blocks":          {http.MethodGet},
 		"/alerts":                      {http.MethodGet},
 		"/rules":                       {http.MethodGet},
 		"/admin/tsdb/delete_series":    {http.MethodPost, http.MethodPut},
@@ -624,7 +629,7 @@ func cleanupSnapshot(t *testing.T, dbDir string, resp *http.Response) {
 	b, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(b, snapshot))
-	require.NotZero(t, snapshot.Data.Name, "snapshot directory not returned")
+	require.NotEmpty(t, snapshot.Data.Name, "snapshot directory not returned")
 	require.NoError(t, os.Remove(filepath.Join(dbDir, "snapshots", snapshot.Data.Name)))
 	require.NoError(t, os.Remove(filepath.Join(dbDir, "snapshots")))
 }

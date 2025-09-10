@@ -36,7 +36,7 @@ func TestNoDeadlock(t *testing.T) {
 	)
 
 	wg.Add(numWorkers)
-	for i := 0; i < numWorkers; i++ {
+	for range numWorkers {
 		go func() {
 			defer wg.Done()
 			<-started
@@ -45,7 +45,7 @@ func TestNoDeadlock(t *testing.T) {
 	}
 
 	wg.Add(numWorkers)
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		go func(i int) {
 			defer wg.Done()
 			<-started
@@ -77,13 +77,13 @@ func TestNoDeadlock(t *testing.T) {
 
 func labelsWithHashCollision() (labels.Labels, labels.Labels) {
 	// These two series have the same XXHash; thanks to https://github.com/pstibrany/labels_hash_collisions
-	ls1 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
-	ls2 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
+	ls1 := labels.FromStrings("__name__", "metric", "lbl", "HFnEaGl")
+	ls2 := labels.FromStrings("__name__", "metric", "lbl", "RqcXatm")
 
 	if ls1.Hash() != ls2.Hash() {
-		// These ones are the same when using -tags stringlabels
-		ls1 = labels.FromStrings("__name__", "metric", "lbl", "HFnEaGl")
-		ls2 = labels.FromStrings("__name__", "metric", "lbl", "RqcXatm")
+		// These ones are the same when using -tags slicelabels
+		ls1 = labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
+		ls2 = labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
 	}
 
 	if ls1.Hash() != ls2.Hash() {
@@ -94,7 +94,7 @@ func labelsWithHashCollision() (labels.Labels, labels.Labels) {
 }
 
 // stripeSeriesWithCollidingSeries returns a stripeSeries with two memSeries having the same, colliding, hash.
-func stripeSeriesWithCollidingSeries(_ *testing.T) (*stripeSeries, *memSeries, *memSeries) {
+func stripeSeriesWithCollidingSeries(*testing.T) (*stripeSeries, *memSeries, *memSeries) {
 	lbls1, lbls2 := labelsWithHashCollision()
 	ms1 := memSeries{
 		lset: lbls1,

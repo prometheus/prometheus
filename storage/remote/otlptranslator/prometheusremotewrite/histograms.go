@@ -36,7 +36,7 @@ const defaultZeroThreshold = 1e-128
 // addExponentialHistogramDataPoints adds OTel exponential histogram data points to the corresponding time series
 // as native histogram samples.
 func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Context, dataPoints pmetric.ExponentialHistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string,
+	resource pcommon.Resource, settings Settings, metadata prompb.MetricMetadata, temporality pmetric.AggregationTemporality, scope scope,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 	for x := 0; x < dataPoints.Len(); x++ {
@@ -46,21 +46,26 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 
 		pt := dataPoints.At(x)
 
-		histogram, ws, err := exponentialToNativeHistogram(pt)
+		histogram, ws, err := exponentialToNativeHistogram(pt, temporality)
 		annots.Merge(ws)
 		if err != nil {
 			return annots, err
 		}
 
-		lbls := createAttributes(
+		lbls, err := createAttributes(
 			resource,
 			pt.Attributes(),
+			scope,
 			settings,
 			nil,
 			true,
+			metadata,
 			model.MetricNameLabel,
-			promName,
+			metadata.MetricFamilyName,
 		)
+		if err != nil {
+			return nil, err
+		}
 		ts, _ := c.getOrCreateTimeSeries(lbls)
 		ts.Histograms = append(ts.Histograms, histogram)
 
@@ -76,7 +81,7 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 
 // exponentialToNativeHistogram translates an OTel Exponential Histogram data point
 // to a Prometheus Native Histogram.
-func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prompb.Histogram, annotations.Annotations, error) {
+func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, temporality pmetric.AggregationTemporality) (prompb.Histogram, annotations.Annotations, error) {
 	var annots annotations.Annotations
 	scale := p.Scale()
 	if scale < -4 {
@@ -94,17 +99,27 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prom
 	pSpans, pDeltas := convertBucketsLayout(p.Positive().BucketCounts().AsRaw(), p.Positive().Offset(), scaleDown, true)
 	nSpans, nDeltas := convertBucketsLayout(p.Negative().BucketCounts().AsRaw(), p.Negative().Offset(), scaleDown, true)
 
+	// The counter reset detection must be compatible with Prometheus to
+	// safely set ResetHint to NO. This is not ensured currently.
+	// Sending a sample that triggers counter reset but with ResetHint==NO
+	// would lead to Prometheus panic as it does not double check the hint.
+	// Thus we're explicitly saying UNKNOWN here, which is always safe.
+	// TODO: using created time stamp should be accurate, but we
+	// need to know here if it was used for the detection.
+	// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
+	// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
+	resetHint := prompb.Histogram_UNKNOWN
+
+	if temporality == pmetric.AggregationTemporalityDelta {
+		// If the histogram has delta temporality, set the reset hint to gauge to avoid unnecessary chunk cutting.
+		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/).
+		// This might be changed to a different hint name as gauge type might be misleading for samples that should be
+		// summed over time.
+		resetHint = prompb.Histogram_GAUGE
+	}
+
 	h := prompb.Histogram{
-		// The counter reset detection must be compatible with Prometheus to
-		// safely set ResetHint to NO. This is not ensured currently.
-		// Sending a sample that triggers counter reset but with ResetHint==NO
-		// would lead to Prometheus panic as it does not double check the hint.
-		// Thus we're explicitly saying UNKNOWN here, which is always safe.
-		// TODO: using created time stamp should be accurate, but we
-		// need to know here if it was used for the detection.
-		// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
-		// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
-		ResetHint: prompb.Histogram_UNKNOWN,
+		ResetHint: resetHint,
 		Schema:    scale,
 
 		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: p.ZeroCount()},
@@ -186,7 +201,7 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 		Length: 0,
 	})
 
-	for i := 0; i < numBuckets; i++ {
+	for i := range numBuckets {
 		nextBucketIdx := (int32(i)+offset)>>scaleDown + 1
 		if bucketIdx == nextBucketIdx { // We have not collected enough buckets to merge yet.
 			count += int64(bucketCounts[i])
@@ -209,7 +224,7 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 		} else {
 			// We have found a small gap (or no gap at all).
 			// Insert empty buckets as needed.
-			for j := int32(0); j < gap; j++ {
+			for range gap {
 				appendDelta(0)
 			}
 		}
@@ -231,7 +246,7 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 	} else {
 		// We have found a small gap (or no gap at all).
 		// Insert empty buckets as needed.
-		for j := int32(0); j < gap; j++ {
+		for range gap {
 			appendDelta(0)
 		}
 	}
@@ -241,7 +256,7 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 }
 
 func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string,
+	resource pcommon.Resource, settings Settings, metadata prompb.MetricMetadata, temporality pmetric.AggregationTemporality, scope scope,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 
@@ -252,21 +267,26 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 
 		pt := dataPoints.At(x)
 
-		histogram, ws, err := explicitHistogramToCustomBucketsHistogram(pt)
+		histogram, ws, err := explicitHistogramToCustomBucketsHistogram(pt, temporality)
 		annots.Merge(ws)
 		if err != nil {
 			return annots, err
 		}
 
-		lbls := createAttributes(
+		lbls, err := createAttributes(
 			resource,
 			pt.Attributes(),
+			scope,
 			settings,
 			nil,
 			true,
+			metadata,
 			model.MetricNameLabel,
-			promName,
+			metadata.MetricFamilyName,
 		)
+		if err != nil {
+			return nil, err
+		}
 
 		ts, _ := c.getOrCreateTimeSeries(lbls)
 		ts.Histograms = append(ts.Histograms, histogram)
@@ -281,7 +301,7 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 	return annots, nil
 }
 
-func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint) (prompb.Histogram, annotations.Annotations, error) {
+func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint, temporality pmetric.AggregationTemporality) (prompb.Histogram, annotations.Annotations, error) {
 	var annots annotations.Annotations
 
 	buckets := p.BucketCounts().AsRaw()
@@ -289,18 +309,28 @@ func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint) (pr
 	bucketCounts := buckets[offset:]
 	positiveSpans, positiveDeltas := convertBucketsLayout(bucketCounts, int32(offset), 0, false)
 
+	// The counter reset detection must be compatible with Prometheus to
+	// safely set ResetHint to NO. This is not ensured currently.
+	// Sending a sample that triggers counter reset but with ResetHint==NO
+	// would lead to Prometheus panic as it does not double check the hint.
+	// Thus we're explicitly saying UNKNOWN here, which is always safe.
+	// TODO: using created time stamp should be accurate, but we
+	// need to know here if it was used for the detection.
+	// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
+	// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
+	resetHint := prompb.Histogram_UNKNOWN
+
+	if temporality == pmetric.AggregationTemporalityDelta {
+		// If the histogram has delta temporality, set the reset hint to gauge to avoid unnecessary chunk cutting.
+		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/).
+		// This might be changed to a different hint name as gauge type might be misleading for samples that should be
+		// summed over time.
+		resetHint = prompb.Histogram_GAUGE
+	}
+
 	// TODO(carrieedwards): Add setting to limit maximum bucket count
 	h := prompb.Histogram{
-		// The counter reset detection must be compatible with Prometheus to
-		// safely set ResetHint to NO. This is not ensured currently.
-		// Sending a sample that triggers counter reset but with ResetHint==NO
-		// would lead to Prometheus panic as it does not double check the hint.
-		// Thus we're explicitly saying UNKNOWN here, which is always safe.
-		// TODO: using created time stamp should be accurate, but we
-		// need to know here if it was used for the detection.
-		// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
-		// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
-		ResetHint: prompb.Histogram_UNKNOWN,
+		ResetHint: resetHint,
 		Schema:    histogram.CustomBucketsSchema,
 
 		PositiveSpans:  positiveSpans,

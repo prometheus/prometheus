@@ -93,7 +93,7 @@ func getDedicatedServerDetails(client *ovh.Client, serverName string) (*dedicate
 	return &dedicatedServerDetails, nil
 }
 
-func (d *dedicatedServerDiscovery) getService() string {
+func (*dedicatedServerDiscovery) getService() string {
 	return "dedicated_server"
 }
 

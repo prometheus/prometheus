@@ -117,8 +117,12 @@ func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 
 // RunBuiltinTestsWithStorage runs an acceptance test suite against the provided engine and storage.
 func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage) {
-	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
+	t.Cleanup(func() {
+		parser.EnableExperimentalFunctions = false
+		parser.ExperimentalDurationExpr = false
+	})
 	parser.EnableExperimentalFunctions = true
+	parser.ExperimentalDurationExpr = true
 
 	files, err := fs.Glob(testsFs, "*/*.test")
 	require.NoError(t, err)
@@ -215,7 +219,7 @@ func newTestStorage(t testutil.T) storage.Storage { return teststorage.New(t) }
 //go:embed testdata
 var testsFs embed.FS
 
-func raise(line int, format string, v ...interface{}) error {
+func raise(line int, format string, v ...any) error {
 	return &parser.ParseErr{
 		LineOffset: line,
 		Err:        fmt.Errorf(format, v...),
@@ -267,7 +271,7 @@ func parseExpect(defLine string) (expectCmdType, expectCmd, error) {
 	expectParts := patExpect.FindStringSubmatch(strings.TrimSpace(defLine))
 	expCmd := expectCmd{}
 	if expectParts == nil {
-		return 0, expCmd, errors.New("invalid expect statement, must match `expect <type> <match_type> <string>` format")
+		return 0, expCmd, errors.New("invalid expect statement, must match `expect <type> <match_type>: <string>` format")
 	}
 	var (
 		mode            = expectParts[1]
@@ -310,7 +314,7 @@ func validateExpectedCmds(cmd *evalCmd) error {
 	return nil
 }
 
-func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
+func (*test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	instantParts := patEvalInstant.FindStringSubmatch(lines[i])
 	rangeParts := patEvalRange.FindStringSubmatch(lines[i])
 
@@ -528,7 +532,7 @@ func newLoadCmd(gap time.Duration, withNHCB bool) *loadCmd {
 	}
 }
 
-func (cmd loadCmd) String() string {
+func (loadCmd) String() string {
 	return "load"
 }
 
@@ -791,7 +795,7 @@ func newRangeEvalCmd(expr string, start, end time.Time, step time.Duration, line
 	}
 }
 
-func (ev *evalCmd) String() string {
+func (*evalCmd) String() string {
 	return "eval"
 }
 
@@ -1191,7 +1195,7 @@ func HistogramTestExpression(h *histogram.FloatHistogram) string {
 // clearCmd is a command that wipes the test's storage state.
 type clearCmd struct{}
 
-func (cmd clearCmd) String() string {
+func (clearCmd) String() string {
 	return "clear"
 }
 
@@ -1501,6 +1505,9 @@ type LazyLoaderOpts struct {
 	// Prometheus v2.33). They can still be disabled here for legacy and
 	// other uses.
 	EnableAtModifier, EnableNegativeOffset bool
+	// Currently defaults to false, matches the "promql-delayed-name-removal"
+	// feature flag.
+	EnableDelayedNameRemoval bool
 }
 
 // NewLazyLoader returns an initialized empty LazyLoader.
@@ -1520,7 +1527,7 @@ func NewLazyLoader(input string, opts LazyLoaderOpts) (*LazyLoader, error) {
 func (ll *LazyLoader) parse(input string) error {
 	lines := getLines(input)
 	// Accepts only 'load' command.
-	for i := 0; i < len(lines); i++ {
+	for i := range lines {
 		l := lines[i]
 		if len(l) == 0 {
 			continue
@@ -1563,7 +1570,7 @@ func (ll *LazyLoader) clear() error {
 		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(ll.SubqueryInterval) },
 		EnableAtModifier:         ll.opts.EnableAtModifier,
 		EnableNegativeOffset:     ll.opts.EnableNegativeOffset,
-		EnableDelayedNameRemoval: true,
+		EnableDelayedNameRemoval: ll.opts.EnableDelayedNameRemoval,
 	}
 
 	ll.queryEngine = promql.NewEngine(opts)

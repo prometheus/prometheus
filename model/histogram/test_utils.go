@@ -22,7 +22,7 @@ func GenerateBigTestHistograms(numHistograms, numBuckets int) []*Histogram {
 	observationCount := uint64(bucketsPerSide) * (1 + uint64(bucketsPerSide))
 
 	var histograms []*Histogram
-	for i := 0; i < numHistograms; i++ {
+	for i := range numHistograms {
 		h := &Histogram{
 			Count:           uint64(i) + observationCount,
 			ZeroCount:       uint64(i),
@@ -35,13 +35,13 @@ func GenerateBigTestHistograms(numHistograms, numBuckets int) []*Histogram {
 			PositiveBuckets: make([]int64, bucketsPerSide),
 		}
 
-		for j := 0; j < numSpans; j++ {
+		for j := range numSpans {
 			s := Span{Offset: 1, Length: spanLength}
 			h.NegativeSpans[j] = s
 			h.PositiveSpans[j] = s
 		}
 
-		for j := 0; j < bucketsPerSide; j++ {
+		for j := range bucketsPerSide {
 			h.NegativeBuckets[j] = 1
 			h.PositiveBuckets[j] = 1
 		}

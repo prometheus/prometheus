@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/logging"
@@ -93,7 +94,7 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < maxConcurrency; i++ {
+	for range maxConcurrency {
 		q := engine.NewTestQuery(f)
 		wg.Add(1)
 		go func() {
@@ -133,7 +134,7 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	// Terminate remaining queries.
-	for i := 0; i < maxConcurrency; i++ {
+	for range maxConcurrency {
 		block <- struct{}{}
 	}
 
@@ -249,10 +250,10 @@ type errSeriesSet struct {
 	err error
 }
 
-func (errSeriesSet) Next() bool                          { return false }
-func (errSeriesSet) At() storage.Series                  { return nil }
-func (e errSeriesSet) Err() error                        { return e.err }
-func (e errSeriesSet) Warnings() annotations.Annotations { return nil }
+func (errSeriesSet) Next() bool                        { return false }
+func (errSeriesSet) At() storage.Series                { return nil }
+func (e errSeriesSet) Err() error                      { return e.err }
+func (errSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func TestQueryError(t *testing.T) {
 	opts := promql.EngineOpts{
@@ -1900,15 +1901,6 @@ func TestSubquerySelector(t *testing.T) {
 					},
 					Start: time.Unix(35, 0),
 				},
-				{
-					Query: "metric[0:10s]",
-					Result: promql.Result{
-						nil,
-						promql.Matrix{},
-						nil,
-					},
-					Start: time.Unix(10, 0),
-				},
 			},
 		},
 		{
@@ -2201,7 +2193,7 @@ func TestQueryLogger_basic(t *testing.T) {
 	engine.SetQueryLogger(f1)
 	queryExec()
 	logLines := getLogLines(t, ql1File)
-	require.Contains(t, logLines[0], "params", map[string]interface{}{"query": "test statement"})
+	require.Contains(t, logLines[0], "params", map[string]any{"query": "test statement"})
 	require.Len(t, logLines, 1)
 
 	l := len(logLines)
@@ -2254,7 +2246,7 @@ func TestQueryLogger_fields(t *testing.T) {
 	engine.SetQueryLogger(f1)
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
-	ctx = promql.NewOriginContext(ctx, map[string]interface{}{"foo": "bar"})
+	ctx = promql.NewOriginContext(ctx, map[string]any{"foo": "bar"})
 	defer cancelCtx()
 	query := engine.NewTestQuery(func(ctx context.Context) error {
 		return contextDone(ctx, "test statement execution")
@@ -2287,10 +2279,10 @@ func TestQueryLogger_error(t *testing.T) {
 	engine.SetQueryLogger(f1)
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
-	ctx = promql.NewOriginContext(ctx, map[string]interface{}{"foo": "bar"})
+	ctx = promql.NewOriginContext(ctx, map[string]any{"foo": "bar"})
 	defer cancelCtx()
 	testErr := errors.New("failure")
-	query := engine.NewTestQuery(func(_ context.Context) error {
+	query := engine.NewTestQuery(func(context.Context) error {
 		return testErr
 	})
 
@@ -2299,7 +2291,7 @@ func TestQueryLogger_error(t *testing.T) {
 
 	logLines := getLogLines(t, ql1File)
 	require.Contains(t, logLines[0], "error", testErr)
-	require.Contains(t, logLines[0], "params", map[string]interface{}{"query": "test statement"})
+	require.Contains(t, logLines[0], "params", map[string]any{"query": "test statement"})
 }
 
 func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
@@ -2312,20 +2304,16 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 	}{
 		{
 			input: "123.4567",
-			expected: &parser.StepInvariantExpr{
-				Expr: &parser.NumberLiteral{
-					Val:      123.4567,
-					PosRange: posrange.PositionRange{Start: 0, End: 8},
-				},
+			expected: &parser.NumberLiteral{
+				Val:      123.4567,
+				PosRange: posrange.PositionRange{Start: 0, End: 8},
 			},
 		},
 		{
 			input: `"foo"`,
-			expected: &parser.StepInvariantExpr{
-				Expr: &parser.StringLiteral{
-					Val:      "foo",
-					PosRange: posrange.PositionRange{Start: 0, End: 5},
-				},
+			expected: &parser.StringLiteral{
+				Val:      "foo",
+				PosRange: posrange.PositionRange{Start: 0, End: 5},
 			},
 		},
 		{
@@ -2435,23 +2423,21 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 		},
 		{
 			input: `test{a="b"}[5y] @ 1603774699`,
-			expected: &parser.StepInvariantExpr{
-				Expr: &parser.MatrixSelector{
-					VectorSelector: &parser.VectorSelector{
-						Name:      "test",
-						Timestamp: makeInt64Pointer(1603774699000),
-						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, "a", "b"),
-							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
-						},
-						PosRange: posrange.PositionRange{
-							Start: 0,
-							End:   11,
-						},
+			expected: &parser.MatrixSelector{
+				VectorSelector: &parser.VectorSelector{
+					Name:      "test",
+					Timestamp: makeInt64Pointer(1603774699000),
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "a", "b"),
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
 					},
-					Range:  5 * 365 * 24 * time.Hour,
-					EndPos: 28,
+					PosRange: posrange.PositionRange{
+						Start: 0,
+						End:   11,
+					},
 				},
+				Range:  5 * 365 * 24 * time.Hour,
+				EndPos: 28,
 			},
 		},
 		{
@@ -2904,7 +2890,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							},
 							PosRange: posrange.PositionRange{
 								Start: 29,
-								End:   52,
+								End:   51,
 							},
 						},
 					},
@@ -2950,45 +2936,53 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 			},
 		},
 		{
-			input: `test[5y] @ start()`,
+			input: `sum_over_time(test[5y] @ start())`,
 			expected: &parser.StepInvariantExpr{
-				Expr: &parser.MatrixSelector{
-					VectorSelector: &parser.VectorSelector{
-						Name:       "test",
-						Timestamp:  makeInt64Pointer(timestamp.FromTime(startTime)),
-						StartOrEnd: parser.START,
-						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
-						},
-						PosRange: posrange.PositionRange{
-							Start: 0,
-							End:   4,
+				Expr: &parser.Call{
+					Func: &parser.Function{
+						Name:       "sum_over_time",
+						ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
+						ReturnType: parser.ValueTypeVector,
+					},
+					Args: parser.Expressions{
+						&parser.MatrixSelector{
+							VectorSelector: &parser.VectorSelector{
+								Name:       "test",
+								Timestamp:  makeInt64Pointer(timestamp.FromTime(startTime)),
+								StartOrEnd: parser.START,
+								LabelMatchers: []*labels.Matcher{
+									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
+								},
+								PosRange: posrange.PositionRange{
+									Start: 14,
+									End:   18,
+								},
+							},
+							Range:  5 * 365 * 24 * time.Hour,
+							EndPos: 32,
 						},
 					},
-					Range:  5 * 365 * 24 * time.Hour,
-					EndPos: 18,
+					PosRange: posrange.PositionRange{Start: 0, End: 33},
 				},
 			},
 		},
 		{
 			input: `test[5y] @ end()`,
-			expected: &parser.StepInvariantExpr{
-				Expr: &parser.MatrixSelector{
-					VectorSelector: &parser.VectorSelector{
-						Name:       "test",
-						Timestamp:  makeInt64Pointer(timestamp.FromTime(endTime)),
-						StartOrEnd: parser.END,
-						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
-						},
-						PosRange: posrange.PositionRange{
-							Start: 0,
-							End:   4,
-						},
+			expected: &parser.MatrixSelector{
+				VectorSelector: &parser.VectorSelector{
+					Name:       "test",
+					Timestamp:  makeInt64Pointer(timestamp.FromTime(endTime)),
+					StartOrEnd: parser.END,
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
 					},
-					Range:  5 * 365 * 24 * time.Hour,
-					EndPos: 16,
+					PosRange: posrange.PositionRange{
+						Start: 0,
+						End:   4,
+					},
 				},
+				Range:  5 * 365 * 24 * time.Hour,
+				EndPos: 16,
 			},
 		},
 		{
@@ -3096,7 +3090,8 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 		t.Run(test.input, func(t *testing.T) {
 			expr, err := parser.ParseExpr(test.input)
 			require.NoError(t, err)
-			expr = promql.PreprocessExpr(expr, startTime, endTime)
+			expr, err = promql.PreprocessExpr(expr, startTime, endTime, 0)
+			require.NoError(t, err)
 			if test.outputTest {
 				require.Equal(t, test.input, expr.String(), "error on input '%s'", test.input)
 			}
@@ -3268,11 +3263,6 @@ func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 				},
 			},
 		},
-		"matches series but range is 0": {
-			expr:     "some_metric[0]",
-			ts:       baseT.Add(2 * time.Minute),
-			expected: promql.Matrix{},
-		},
 	}
 
 	for name, testCase := range testCases {
@@ -3349,7 +3339,6 @@ metric 0 1 2
 	}
 
 	for _, c := range cases {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
 			engine := promqltest.NewTestEngine(t, false, c.engineLookback, promqltest.DefaultMaxSamplesPerQuery)
 			storage := promqltest.LoadedStorage(t, load)
@@ -3441,6 +3430,7 @@ func TestRateAnnotations(t *testing.T) {
 	testCases := map[string]struct {
 		data                       string
 		expr                       string
+		typeAndUnitLabelsEnabled   bool
 		expectedWarningAnnotations []string
 		expectedInfoAnnotations    []string
 	}{
@@ -3488,80 +3478,155 @@ func TestRateAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		},
-	}
-	for name, testCase := range testCases {
-		t.Run(name, func(t *testing.T) {
-			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
-			t.Cleanup(func() { _ = store.Close() })
-
-			engine := newTestEngine(t)
-			query, err := engine.NewInstantQuery(context.Background(), store, nil, testCase.expr, timestamp.Time(0).Add(1*time.Minute))
-			require.NoError(t, err)
-			t.Cleanup(query.Close)
-
-			res := query.Exec(context.Background())
-			require.NoError(t, res.Err)
-
-			warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
-			testutil.RequireEqual(t, testCase.expectedWarningAnnotations, warnings)
-			testutil.RequireEqual(t, testCase.expectedInfoAnnotations, infos)
-		})
-	}
-}
-
-func TestHistogramQuantileAnnotations(t *testing.T) {
-	testCases := map[string]struct {
-		data                       string
-		expr                       string
-		expectedWarningAnnotations []string
-		expectedInfoAnnotations    []string
-	}{
-		"info annotation for nonmonotonic buckets": {
+		"info annotation when rate() over series without _total suffix": {
 			data: `
-				nonmonotonic_bucket{le="0.1"}   0+2x10
-				nonmonotonic_bucket{le="1"}     0+1x10
-				nonmonotonic_bucket{le="10"}    0+5x10
-				nonmonotonic_bucket{le="100"}   0+4x10
-				nonmonotonic_bucket{le="1000"}  0+9x10
-				nonmonotonic_bucket{le="+Inf"}  0+8x10
+				series{label="a"} 1 2 3
 			`,
-			expr:                       "histogram_quantile(0.5, nonmonotonic_bucket)",
-			expectedWarningAnnotations: []string{},
+			expr: "rate(series[1m1s])",
 			expectedInfoAnnotations: []string{
-				`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "nonmonotonic_bucket" (1:25)`,
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "series" (1:6)`,
 			},
+			expectedWarningAnnotations: []string{},
 		},
-		"warning annotation for missing le label": {
+		"info annotation when increase() over series without _total suffix": {
 			data: `
-				myHistogram{abe="0.1"}   0+2x10
+				series{label="a"} 1 2 3
 			`,
-			expr: "histogram_quantile(0.5, myHistogram)",
-			expectedWarningAnnotations: []string{
-				`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "myHistogram" (1:25)`,
+			expr: "increase(series[1m1s])",
+			expectedInfoAnnotations: []string{
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "series" (1:10)`,
 			},
-			expectedInfoAnnotations: []string{},
+			expectedWarningAnnotations: []string{},
 		},
-		"warning annotation for malformed le label": {
+		"info annotation when rate() over series without __type__=counter label": {
 			data: `
-				myHistogram{le="Hello World"}   0+2x10
+				series{label="a"} 1 2 3
 			`,
-			expr: "histogram_quantile(0.5, myHistogram)",
-			expectedWarningAnnotations: []string{
-				`PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World" for metric name "myHistogram" (1:25)`,
+			expr:                     "rate(series[1m1s])",
+			typeAndUnitLabelsEnabled: true,
+			expectedInfoAnnotations: []string{
+				`PromQL info: metric might not be a counter, __type__ label is not set to "counter" or "histogram", got "": "series" (1:6)`,
 			},
-			expectedInfoAnnotations: []string{},
+			expectedWarningAnnotations: []string{},
 		},
-		"warning annotation for mixed histograms": {
+		"info annotation when increase() over series without __type__=counter label": {
 			data: `
-				mixedHistogram{le="0.1"}   0+2x10
-				mixedHistogram{le="1"}     0+3x10
-				mixedHistogram{}           {{schema:0 count:10 sum:50 buckets:[1 2 3]}}
+				series{label="a"} 1 2 3
 			`,
-			expr: "histogram_quantile(0.5, mixedHistogram)",
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains a mix of classic and native histograms for metric name "mixedHistogram" (1:25)`,
+			expr:                     "increase(series[1m1s])",
+			typeAndUnitLabelsEnabled: true,
+			expectedInfoAnnotations: []string{
+				`PromQL info: metric might not be a counter, __type__ label is not set to "counter" or "histogram", got "": "series" (1:10)`,
 			},
-			expectedInfoAnnotations: []string{},
+			expectedWarningAnnotations: []string{},
+		},
+		"no info annotation when rate() over series with __type__=counter label": {
+			data: `
+				series{label="a", __type__="counter"} 1 2 3
+			`,
+			expr:                       "rate(series[1m1s])",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when rate() over series with __type__=histogram label": {
+			data: `
+				series{label="a", __type__="histogram"} 1 2 3
+			`,
+			expr:                       "rate(series[1m1s])",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when increase() over series with __type__=counter label": {
+			data: `
+				series{label="a", __type__="counter"} 1 2 3
+			`,
+			expr:                       "increase(series[1m1s])",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when increase() over series with __type__=histogram label": {
+			data: `
+				series{label="a", __type__="histogram"} 1 2 3
+			`,
+			expr:                       "increase(series[1m1s])",
+			typeAndUnitLabelsEnabled:   true,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when rate() over series with _total suffix": {
+			data: `
+				series_total{label="a"} 1 2 3
+			`,
+			expr:                       "rate(series_total[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when rate() over series with _sum suffix": {
+			data: `
+				series_sum{label="a"} 1 2 3
+			`,
+			expr:                       "rate(series_sum[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when rate() over series with _count suffix": {
+			data: `
+				series_count{label="a"} 1 2 3
+			`,
+			expr:                       "rate(series_count[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when rate() over series with _bucket suffix": {
+			data: `
+				series_bucket{label="a"} 1 2 3
+			`,
+			expr:                       "rate(series_bucket[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when increase() over series with _total suffix": {
+			data: `
+				series_total{label="a"} 1 2 3
+			`,
+			expr:                       "increase(series_total[1m1s])",
+			expectedWarningAnnotations: []string{},
+			typeAndUnitLabelsEnabled:   false,
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when increase() over series with _sum suffix": {
+			data: `
+				series_sum{label="a"} 1 2 3
+			`,
+			expr:                       "increase(series_sum[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when increase() over series with _count suffix": {
+			data: `
+				series_count{label="a"} 1 2 3
+			`,
+			expr:                       "increase(series_count[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotation when increase() over series with _bucket suffix": {
+			data: `
+				series_bucket{label="a"} 1 2 3
+			`,
+			expr:                       "increase(series_bucket[1m1s])",
+			typeAndUnitLabelsEnabled:   false,
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
 		},
 	}
 	for name, testCase := range testCases {
@@ -3569,7 +3634,19 @@ func TestHistogramQuantileAnnotations(t *testing.T) {
 			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
 			t.Cleanup(func() { _ = store.Close() })
 
-			engine := newTestEngine(t)
+			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				Logger:                   nil,
+				Reg:                      nil,
+				MaxSamples:               promqltest.DefaultMaxSamplesPerQuery,
+				Timeout:                  100 * time.Minute,
+				NoStepSubqueryIntervalFn: func(int64) int64 { return int64((1 * time.Minute / time.Millisecond / time.Nanosecond)) },
+				EnableAtModifier:         true,
+				EnableNegativeOffset:     true,
+				EnablePerStepStats:       false,
+				LookbackDelta:            0,
+				EnableDelayedNameRemoval: true,
+				EnableTypeAndUnitLabels:  testCase.typeAndUnitLabelsEnabled,
+			})
 			query, err := engine.NewInstantQuery(context.Background(), store, nil, testCase.expr, timestamp.Time(0).Add(1*time.Minute))
 			require.NoError(t, err)
 			t.Cleanup(query.Close)
@@ -3639,7 +3716,7 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	require.Nil(t, newc)
 
 	querier := storage.MockQuerier{
-		SelectMockFunction: func(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+		SelectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 			return &singleSeriesSet{
 				series: mockSeries{chunks: []chunkenc.Chunk{c1, c2, c3}, labelSet: []string{"__name__", "foo"}},
 			}
@@ -3674,10 +3751,10 @@ type singleSeriesSet struct {
 	consumed bool
 }
 
-func (s *singleSeriesSet) Next() bool                       { c := s.consumed; s.consumed = true; return !c }
-func (s singleSeriesSet) At() storage.Series                { return s.series }
-func (s singleSeriesSet) Err() error                        { return nil }
-func (s singleSeriesSet) Warnings() annotations.Annotations { return nil }
+func (s *singleSeriesSet) Next() bool                     { c := s.consumed; s.consumed = true; return !c }
+func (s singleSeriesSet) At() storage.Series              { return s.series }
+func (singleSeriesSet) Err() error                        { return nil }
+func (singleSeriesSet) Warnings() annotations.Annotations { return nil }
 
 type mockSeries struct {
 	chunks   []chunkenc.Chunk
@@ -3755,5 +3832,291 @@ eval instant at 10m last_over_time(metric_total{env="1"}[10m])
 # Drops name for other _over_time functions
 eval instant at 10m max_over_time(metric_total{env="1"}[10m])
 	{env="1"} 120
+
+clear
+
+load 1m
+	float{a="b"}									2x10
+	classic_histogram_invalid{abe="0.1"}			2x10
+	native_histogram{a="b", c="d"}					{{sum:0 count:0}}x10
+    histogram_nan{case="100% NaNs"} 				{{schema:0 count:0 sum:0}} {{schema:0 count:3 sum:NaN}}
+    histogram_nan{case="20% NaNs"} 					{{schema:0 count:0 sum:0}} {{schema:0 count:15 sum:NaN buckets:[12]}}
+	conflicting_histogram{le="0.1"}					2x10
+	conflicting_histogram							{{sum:0}}x10
+	nonmonotonic_bucket{le="0.1"}   				0+2x10
+	nonmonotonic_bucket{le="1"}     				0+1x10
+	nonmonotonic_bucket{le="10"}    				0+5x10
+	nonmonotonic_bucket{le="100"}   				0+4x10
+	nonmonotonic_bucket{le="1000"}  				0+9x10
+	nonmonotonic_bucket{le="+Inf"}  				0+8x10
+
+eval instant at 1m histogram_quantile(0.5, classic_histogram_invalid)
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of ""
+
+eval instant at 1m histogram_fraction(0.5, 1, conflicting_histogram)
+	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms
+
+eval instant at 1m histogram_quantile(0.5, nonmonotonic_bucket)
+	expect info msg: PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile)
+	{} 8.5
+
+eval instant at 1m histogram_quantile(1, histogram_nan)
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN
+    {case="100% NaNs"} NaN
+    {case="20% NaNs"} NaN
+
+eval instant at 1m histogram_quantile(0.8, histogram_nan{case="20% NaNs"})
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher
+    {case="20% NaNs"} 1
+
+eval instant at 1m histogram_fraction(-Inf, 0.7071067811865475, histogram_nan)
+    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions
+    {case="100% NaNs"} 0.0
+    {case="20% NaNs"} 0.4
+
 `, engine)
+}
+
+// TestInconsistentHistogramCount is testing for
+// https://github.com/prometheus/prometheus/issues/16681 which needs mixed
+// integer and float histograms. The promql test framework only uses float
+// histograms, so we cannot move this to promql tests.
+func TestInconsistentHistogramCount(t *testing.T) {
+	dir := t.TempDir()
+
+	opts := tsdb.DefaultHeadOptions()
+	opts.EnableNativeHistograms.Store(true)
+	opts.ChunkDirRoot = dir
+	// We use TSDB head only. By using full TSDB DB, and appending samples to it, closing it would cause unnecessary HEAD compaction, which slows down the test.
+	head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = head.Close()
+	})
+
+	app := head.Appender(context.Background())
+
+	l := labels.FromStrings("__name__", "series_1")
+
+	mint := time.Now().Add(-time.Hour).UnixMilli()
+	maxt := mint
+	dT := int64(15 * 1000) // 15 seconds in milliseconds.
+	inHs := []*histogram.Histogram{
+		{
+			Count: 2,
+			Sum:   100,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 1},
+			},
+			PositiveBuckets: []int64{2},
+		},
+		{
+			Count: 4,
+			Sum:   200,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 1},
+			},
+			PositiveBuckets: []int64{4},
+		},
+		{}, // Empty histogram to trigger counter reset.
+	}
+
+	for i, h := range inHs {
+		maxt = mint + dT*int64(i)
+		_, err = app.AppendHistogram(0, l, maxt, h, nil)
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, app.Commit())
+	queryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+		return tsdb.NewBlockQuerier(head, mint, maxt)
+	})
+
+	engine := promql.NewEngine(promql.EngineOpts{
+		MaxSamples:    1000000,
+		Timeout:       10 * time.Second,
+		LookbackDelta: 5 * time.Minute,
+	})
+
+	var (
+		query       promql.Query
+		queryResult *promql.Result
+		v           promql.Vector
+	)
+
+	query, err = engine.NewInstantQuery(context.Background(), queryable, nil, "(rate(series_1[1m]))", time.UnixMilli(maxt))
+	require.NoError(t, err)
+	queryResult = query.Exec(context.Background())
+	require.NoError(t, queryResult.Err)
+	require.NotNil(t, queryResult)
+	v, err = queryResult.Vector()
+	require.NoError(t, err)
+	require.Len(t, v, 1)
+	require.NotNil(t, v[0].H)
+	require.Greater(t, v[0].H.Count, float64(0))
+	query.Close()
+	countFromHistogram := v[0].H.Count
+
+	query, err = engine.NewInstantQuery(context.Background(), queryable, nil, "histogram_count((rate(series_1[1m])))", time.UnixMilli(maxt))
+	require.NoError(t, err)
+	queryResult = query.Exec(context.Background())
+	require.NoError(t, queryResult.Err)
+	require.NotNil(t, queryResult)
+	v, err = queryResult.Vector()
+	require.NoError(t, err)
+	require.Len(t, v, 1)
+	require.Nil(t, v[0].H)
+	query.Close()
+	countFromFunction := float64(v[0].F)
+
+	require.Equal(t, countFromHistogram, countFromFunction, "histogram_count function should return the same count as the histogram itself")
+}
+
+// TestSubQueryHistogramsCopy reproduces a bug where native histogram values from subqueries are not copied.
+func TestSubQueryHistogramsCopy(t *testing.T) {
+	start := time.Unix(0, 0)
+	end := time.Unix(144, 0)
+	step := time.Second * 3
+
+	load := `load 2m
+			http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:110 sum:818.00 buckets:[1 14 95]}}+{{schema:0 count:110 buckets:[1 14 95]}}x20
+			http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:210 sum:1598.00 buckets:[1 19 190]}}+{{schema:0 count:210 buckets:[1 19 190]}}x30`
+
+	subQuery := `min_over_time({__name__="http_request_duration_seconds"}[1h:1m])`
+	testQuery := `rate({__name__="http_request_duration_seconds"}[3m])`
+	ctx := context.Background()
+
+	for range 100 {
+		queryable := promqltest.LoadedStorage(t, load)
+		engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+		q, err := engine.NewRangeQuery(ctx, queryable, nil, subQuery, start, end, step)
+		require.NoError(t, err)
+		q.Exec(ctx)
+		q.Close()
+		queryable.Close()
+	}
+
+	for range 100 {
+		queryable := promqltest.LoadedStorage(t, load)
+		engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+		q, err := engine.NewRangeQuery(ctx, queryable, nil, testQuery, start, end, step)
+		require.NoError(t, err)
+		result := q.Exec(ctx)
+
+		mat, err := result.Matrix()
+		require.NoError(t, err)
+
+		for _, s := range mat {
+			for _, h := range s.Histograms {
+				require.NotEmpty(t, h.H.PositiveBuckets)
+			}
+		}
+		q.Close()
+		queryable.Close()
+	}
+}
+
+func TestHistogram_CounterResetHint(t *testing.T) {
+	baseT := timestamp.Time(0)
+	load := `
+		load 2m
+		test_histogram {{count:0}}+{{count:1}}x4
+	`
+	testCases := []struct {
+		name  string
+		query string
+		want  histogram.CounterResetHint
+	}{
+		{
+			name:  "adding histograms",
+			query: `test_histogram + test_histogram`,
+			want:  histogram.NotCounterReset,
+		},
+		{
+			name:  "subtraction",
+			query: `test_histogram - test_histogram`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "negated addition",
+			query: `test_histogram + (-test_histogram)`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "negated subtraction",
+			query: `test_histogram - (-test_histogram)`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "unary negation",
+			query: `-test_histogram`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "repeated unary negation",
+			query: `-(-test_histogram)`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "multiplication",
+			query: `2 * test_histogram`,
+			want:  histogram.NotCounterReset,
+		},
+		{
+			name:  "negative multiplication",
+			query: `-1 * test_histogram`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "division",
+			query: `test_histogram / 2`,
+			want:  histogram.NotCounterReset,
+		},
+		{
+			name:  "negative division",
+			query: `test_histogram / -1`,
+			want:  histogram.GaugeType,
+		},
+		// Equality and unequality should always return the LHS:
+		{
+			name:  "equality (not counter reset)",
+			query: `test_histogram == test_histogram`,
+			want:  histogram.NotCounterReset,
+		},
+		{
+			name:  "equality (gauge)",
+			query: `-test_histogram == -test_histogram`,
+			want:  histogram.GaugeType,
+		},
+		{
+			name:  "unequality (not counter reset)",
+			query: `test_histogram != -test_histogram`,
+			want:  histogram.NotCounterReset,
+		},
+		{
+			name:  "unequality (gauge)",
+			query: `-test_histogram != test_histogram`,
+			want:  histogram.GaugeType,
+		},
+	}
+	ctx := context.Background()
+	queryable := promqltest.LoadedStorage(t, load)
+	defer queryable.Close()
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			q, err := engine.NewInstantQuery(ctx, queryable, nil, tc.query, baseT.Add(2*time.Minute))
+			require.NoError(t, err)
+			defer q.Close()
+			res := q.Exec(ctx)
+			require.NoError(t, res.Err)
+			v, err := res.Vector()
+			require.NoError(t, err)
+			require.Len(t, v, 1)
+			require.NotNil(t, v[0].H)
+			require.Equal(t, tc.want, v[0].H.CounterResetHint)
+		})
+	}
 }

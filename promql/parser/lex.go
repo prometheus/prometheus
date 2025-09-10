@@ -140,6 +140,7 @@ var key = map[string]ItemType{
 	// Preprocessors.
 	"start": START,
 	"end":   END,
+	"step":  STEP,
 }
 
 var histogramDesc = map[string]ItemType{
@@ -277,6 +278,7 @@ type Lexer struct {
 	braceOpen   bool // Whether a { is opened.
 	bracketOpen bool // Whether a [ is opened.
 	gotColon    bool // Whether we got a ':' after [ was opened.
+	gotDuration bool // Whether we got a duration after [ was opened.
 	stringOpen  rune // Quote rune of the string currently being read.
 
 	// series description variables for internal PromQL testing framework as well as in promtool rules unit tests.
@@ -345,7 +347,7 @@ func (l *Lexer) acceptRun(valid string) {
 
 // errorf returns an error token and terminates the scan by passing
 // back a nil pointer that will be the next state, terminating l.NextItem.
-func (l *Lexer) errorf(format string, args ...interface{}) stateFn {
+func (l *Lexer) errorf(format string, args ...any) stateFn {
 	*l.itemp = Item{ERROR, l.start, fmt.Sprintf(format, args...)}
 	l.scannedItem = true
 
@@ -461,11 +463,20 @@ func lexStatements(l *Lexer) stateFn {
 			l.backup()
 			return lexKeywordOrIdentifier
 		}
-		if l.gotColon {
-			return l.errorf("unexpected colon %q", r)
+		switch r {
+		case ':':
+			if l.gotColon {
+				return l.errorf("unexpected colon %q", r)
+			}
+			l.emit(COLON)
+			l.gotColon = true
+			return lexStatements
+		case 's', 'S', 'm', 'M':
+			if l.scanDurationKeyword() {
+				return lexStatements
+			}
 		}
-		l.emit(COLON)
-		l.gotColon = true
+		return l.errorf("unexpected character: %q, expected %q", r, ':')
 	case r == '(':
 		l.emit(LEFT_PAREN)
 		l.parenDepth++
@@ -491,7 +502,7 @@ func lexStatements(l *Lexer) stateFn {
 			skipSpaces(l)
 		}
 		l.bracketOpen = true
-		return lexNumberOrDuration
+		return lexDurationExpr
 	case r == ']':
 		if !l.bracketOpen {
 			return l.errorf("unexpected right bracket %q", r)
@@ -512,7 +523,7 @@ func lexHistogram(l *Lexer) stateFn {
 		l.histogramState = histogramStateNone
 		l.next()
 		l.emit(TIMES)
-		return lexNumber
+		return lexValueSequence
 	case histogramStateAdd:
 		l.histogramState = histogramStateNone
 		l.next()
@@ -549,6 +560,8 @@ func lexHistogram(l *Lexer) stateFn {
 		return lexNumber
 	case r == '[':
 		l.bracketOpen = true
+		l.gotColon = false
+		l.gotDuration = false
 		l.emit(LEFT_BRACKET)
 		return lexBuckets
 	case r == '}' && l.peek() == '}':
@@ -671,10 +684,10 @@ func lexInsideBraces(l *Lexer) stateFn {
 		l.backup()
 		l.emit(EQL)
 	case r == '!':
-		switch nr := l.next(); {
-		case nr == '~':
+		switch nr := l.next(); nr {
+		case '~':
 			l.emit(NEQ_REGEX)
-		case nr == '=':
+		case '=':
 			l.emit(NEQ)
 		default:
 			return l.errorf("unexpected character after '!' inside braces: %q", nr)
@@ -886,6 +899,32 @@ func lexNumber(l *Lexer) stateFn {
 	return lexStatements
 }
 
+func (l *Lexer) scanDurationKeyword() bool {
+	for {
+		switch r := l.next(); {
+		case isAlpha(r):
+			// absorb.
+		default:
+			l.backup()
+			word := l.input[l.start:l.pos]
+			kw := strings.ToLower(word)
+			switch kw {
+			case "step":
+				l.emit(STEP)
+				return true
+			case "min":
+				l.emit(MIN)
+				return true
+			case "max":
+				l.emit(MAX)
+				return true
+			default:
+				return false
+			}
+		}
+	}
+}
+
 // lexNumberOrDuration scans a number or a duration Item.
 func lexNumberOrDuration(l *Lexer) stateFn {
 	if l.scanNumber() {
@@ -1076,4 +1115,104 @@ func isDigit(r rune) bool {
 // isAlpha reports whether r is an alphabetic or underscore.
 func isAlpha(r rune) bool {
 	return r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z')
+}
+
+// lexDurationExpr scans arithmetic expressions within brackets for duration expressions.
+func lexDurationExpr(l *Lexer) stateFn {
+	switch r := l.next(); {
+	case r == eof:
+		return l.errorf("unexpected end of input in duration expression")
+	case r == ']':
+		l.emit(RIGHT_BRACKET)
+		l.bracketOpen = false
+		l.gotColon = false
+		return lexStatements
+	case r == ':':
+		l.emit(COLON)
+		if !l.gotDuration {
+			return l.errorf("unexpected colon before duration in duration expression")
+		}
+		if l.gotColon {
+			return l.errorf("unexpected repeated colon in duration expression")
+		}
+		l.gotColon = true
+		return lexDurationExpr
+	case r == '(':
+		l.emit(LEFT_PAREN)
+		l.parenDepth++
+		return lexDurationExpr
+	case r == ')':
+		l.emit(RIGHT_PAREN)
+		l.parenDepth--
+		if l.parenDepth < 0 {
+			return l.errorf("unexpected right parenthesis %q", r)
+		}
+		return lexDurationExpr
+	case isSpace(r):
+		skipSpaces(l)
+		return lexDurationExpr
+	case r == '+':
+		l.emit(ADD)
+		return lexDurationExpr
+	case r == '-':
+		l.emit(SUB)
+		return lexDurationExpr
+	case r == '*':
+		l.emit(MUL)
+		return lexDurationExpr
+	case r == '/':
+		l.emit(DIV)
+		return lexDurationExpr
+	case r == '%':
+		l.emit(MOD)
+		return lexDurationExpr
+	case r == '^':
+		l.emit(POW)
+		return lexDurationExpr
+	case r == ',':
+		l.emit(COMMA)
+		return lexDurationExpr
+	case r == 's' || r == 'S' || r == 'm' || r == 'M':
+		if l.scanDurationKeyword() {
+			return lexDurationExpr
+		}
+		return l.errorf("unexpected character in duration expression: %q", r)
+	case isDigit(r) || (r == '.' && isDigit(l.peek())):
+		l.backup()
+		l.gotDuration = true
+		return lexNumberOrDuration
+	default:
+		return l.errorf("unexpected character in duration expression: %q", r)
+	}
+}
+
+// findPrevRightParen finds the previous right parenthesis.
+// Use in case when the parser had to read ahead to the find the next right
+// parenthesis to decide whether to continue and lost track of the previous right
+// parenthesis position.
+// Only use when outside string literals as those can have runes made up of
+// multiple bytes, which would break the position calculation.
+// Falls back to the input start position on any problem.
+// https://github.com/prometheus/prometheus/issues/16053
+func (l *Lexer) findPrevRightParen(fallbackPos posrange.Pos) posrange.Pos {
+	// Early return on:
+	// - invalid fallback position,
+	// - not enough space for second right parenthesis,
+	// - last read position is after the end, since then we stopped due to the
+	//   end of the input, not a parenthesis, or if last position doesn't hold
+	//   right parenthesis,
+	// - last position doesn't hold right parenthesis.
+	if fallbackPos <= 0 || fallbackPos > posrange.Pos(len(l.input)) || l.lastPos <= 0 || l.lastPos >= posrange.Pos(len(l.input)) || l.input[l.lastPos] != ')' {
+		return fallbackPos
+	}
+	for i := l.lastPos - 1; i > 0; i-- {
+		switch {
+		case l.input[i] == ')':
+			return i + 1
+		case isSpace(rune(l.input[i])):
+		default:
+			return fallbackPos
+		}
+	}
+	return fallbackPos
 }
