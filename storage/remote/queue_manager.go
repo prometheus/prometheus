@@ -2156,8 +2156,8 @@ type timeSeriesWrapper struct {
 }
 
 // getSamples returns the samples in the time series.
-func (w timeSeriesWrapper) getSamples() []interface{} {
-	result := make([]interface{}, len(w.ts.Samples))
+func (w timeSeriesWrapper) getSamples() []any {
+	result := make([]any, len(w.ts.Samples))
 	for i, s := range w.ts.Samples {
 		result[i] = s
 	}
@@ -2165,8 +2165,8 @@ func (w timeSeriesWrapper) getSamples() []interface{} {
 }
 
 // getExemplars returns the exemplars in the time series.
-func (w timeSeriesWrapper) getExemplars() []interface{} {
-	result := make([]interface{}, len(w.ts.Exemplars))
+func (w timeSeriesWrapper) getExemplars() []any {
+	result := make([]any, len(w.ts.Exemplars))
 	for i, e := range w.ts.Exemplars {
 		result[i] = e
 	}
@@ -2174,8 +2174,8 @@ func (w timeSeriesWrapper) getExemplars() []interface{} {
 }
 
 // getHistograms returns the histograms in the time series.
-func (w timeSeriesWrapper) getHistograms() []interface{} {
-	result := make([]interface{}, len(w.ts.Histograms))
+func (w timeSeriesWrapper) getHistograms() []any {
+	result := make([]any, len(w.ts.Histograms))
 	for i, h := range w.ts.Histograms {
 		result[i] = h
 	}
@@ -2188,8 +2188,8 @@ type v2TimeSeriesWrapper struct {
 }
 
 // getSamples returns the samples in the time series.
-func (w v2TimeSeriesWrapper) getSamples() []interface{} {
-	result := make([]interface{}, len(w.ts.Samples))
+func (w v2TimeSeriesWrapper) getSamples() []any {
+	result := make([]any, len(w.ts.Samples))
 	for i, s := range w.ts.Samples {
 		result[i] = s
 	}
@@ -2197,8 +2197,8 @@ func (w v2TimeSeriesWrapper) getSamples() []interface{} {
 }
 
 // getExemplars returns the exemplars in the time series.
-func (w v2TimeSeriesWrapper) getExemplars() []interface{} {
-	result := make([]interface{}, len(w.ts.Exemplars))
+func (w v2TimeSeriesWrapper) getExemplars() []any {
+	result := make([]any, len(w.ts.Exemplars))
 	for i, e := range w.ts.Exemplars {
 		result[i] = e
 	}
@@ -2206,8 +2206,8 @@ func (w v2TimeSeriesWrapper) getExemplars() []interface{} {
 }
 
 // getHistograms returns the histograms in the time series.
-func (w v2TimeSeriesWrapper) getHistograms() []interface{} {
-	result := make([]interface{}, len(w.ts.Histograms))
+func (w v2TimeSeriesWrapper) getHistograms() []any {
+	result := make([]any, len(w.ts.Histograms))
 	for i, h := range w.ts.Histograms {
 		result[i] = h
 	}
