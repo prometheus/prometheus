@@ -910,6 +910,10 @@ func (it *floatHistogramIterator) AtT() int64 {
 	return it.t
 }
 
+func (*floatHistogramIterator) AtCT() int64 {
+	return 0 // CT is not supported at the moment.
+}
+
 func (it *floatHistogramIterator) Err() error {
 	return it.err
 }
