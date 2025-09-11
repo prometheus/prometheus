@@ -28,6 +28,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -41,6 +42,11 @@ var parserPool = sync.Pool{
 
 // ExperimentalDurationExpr is a flag to enable experimental duration expression parsing.
 var ExperimentalDurationExpr bool
+
+// NormaliseLeAndQuantileMatchers is a flag to enable experimental conversion of matchers like
+// le="2" and quantile="2" to le=~"2|2.0" and quantile=~"2|2.0" to match the normalisation
+// of these labels during scrape time.
+var NormaliseLeAndQuantileMatchers bool
 
 type Parser interface {
 	ParseExpr() (Expr, error)
@@ -839,6 +845,31 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 		p.checkAST(n.VectorSelector)
 
 	case *VectorSelector:
+		if NormaliseLeAndQuantileMatchers {
+			for i, m := range n.LabelMatchers {
+				// Rewrite the matchers of type le="2" and quantile="2".
+				if m == nil || m.Type != labels.MatchEqual || (m.Name != model.QuantileLabel && m.Name != model.BucketLabel) {
+					continue
+				}
+				f, err := strconv.ParseFloat(m.Value, 64)
+				if err != nil {
+					continue
+				}
+				omFloat := textparse.FormatOpenMetricsFloat(f)
+				if omFloat == m.Value {
+					// The label value is already in the OpenMetric format, example le="2.0".
+					continue
+				}
+				// Example: changes the matcher from le="2" to le=~"2|2.0".
+				mat, err := labels.NewMatcher(labels.MatchRegexp, m.Name, fmt.Sprintf("%s|%s", m.Value, omFloat))
+				if err == nil {
+					n.LabelMatchers[i] = mat
+				} else {
+					p.addParseErrf(n.PositionRange(), "rewrite of matcher failed: %s", err.Error())
+				}
+			}
+		}
+
 		if n.Name != "" {
 			// In this case the last LabelMatcher is checking for the metric name
 			// set outside the braces. This checks if the name has already been set
