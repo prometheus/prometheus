@@ -277,6 +277,10 @@ func (it *xorIterator) AtT() int64 {
 	return it.t
 }
 
+func (*xorIterator) AtCT() int64 {
+	return 0 // CT is not supported at the moment.
+}
+
 func (it *xorIterator) Err() error {
 	return it.err
 }
