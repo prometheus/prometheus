@@ -19,7 +19,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"math/rand"
 	"strings"
 	"sync"
 	"testing"
@@ -148,10 +147,11 @@ func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels
 		f:      v,
 	})
 
-	if ref == 0 {
-		ref = storage.SeriesRef(rand.Uint64())
-	}
 	if a.next == nil {
+		if ref == 0 {
+			// Use labels hash as a stand-in for unique series reference, to avoid having to track all series.
+			ref = storage.SeriesRef(lset.Hash())
+		}
 		return ref, nil
 	}
 
@@ -195,10 +195,10 @@ func (a *collectResultAppender) UpdateMetadata(ref storage.SeriesRef, l labels.L
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 	a.pendingMetadata = append(a.pendingMetadata, metadataEntry{metric: l, m: m})
-	if ref == 0 {
-		ref = storage.SeriesRef(rand.Uint64())
-	}
 	if a.next == nil {
+		if ref == 0 {
+			ref = storage.SeriesRef(l.Hash())
+		}
 		return ref, nil
 	}
 
