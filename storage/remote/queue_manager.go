@@ -2063,19 +2063,19 @@ func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, meta
 			return filter(w.ts)
 		}
 	}
-	highest, lowest, wrappedTimeSeries, droppedSamples, droppedExemplars, droppedHistograms := buildGenericTimeSeries(wrappedTimeSeries, wrappedFilter)
+	highest, lowest, filteredTimeSeries, droppedSamples, droppedExemplars, droppedHistograms := buildGenericTimeSeries(wrappedTimeSeries, wrappedFilter)
 	if droppedSamples > 0 || droppedExemplars > 0 || droppedHistograms > 0 {
 		logger.Debug("dropped data due to their age", "droppedSamples", droppedSamples, "droppedExemplars", droppedExemplars, "droppedHistograms", droppedHistograms)
 	}
 
 	// Convert back to prompb.TimeSeries.
-	timeSeries = make([]prompb.TimeSeries, len(wrappedTimeSeries))
-	for i, w := range wrappedTimeSeries {
-		timeSeries[i] = w.ts
+	newTimeSeries := make([]prompb.TimeSeries, len(filteredTimeSeries))
+	for i, w := range filteredTimeSeries {
+		newTimeSeries[i] = w.ts
 	}
 
 	req := &prompb.WriteRequest{
-		Timeseries: timeSeries,
+		Timeseries: newTimeSeries,
 		Metadata:   metadata,
 	}
 
@@ -2096,15 +2096,32 @@ func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, meta
 }
 
 func buildV2WriteRequest(logger *slog.Logger, samples []writev2.TimeSeries, labels []string, pBuf *[]byte, filter func(writev2.TimeSeries) bool, buf compression.EncodeBuffer, compr compression.Type) (compressed []byte, highest, lowest int64, _ error) {
-	highest, lowest, timeSeries, droppedSamples, droppedExemplars, droppedHistograms := buildV2TimeSeries(samples, filter)
+	wrappedTimeSeries := make([]v2TimeSeriesWrapper, len(samples))
+	for i, ts := range samples {
+		wrappedTimeSeries[i] = v2TimeSeriesWrapper{ts: ts}
+	}
+
+	var wrappedFilter func(w v2TimeSeriesWrapper) bool
+	if filter != nil {
+		wrappedFilter = func(w v2TimeSeriesWrapper) bool {
+			return filter(w.ts)
+		}
+	}
+	highest, lowest, filteredTimeSeries, droppedSamples, droppedExemplars, droppedHistograms := buildGenericTimeSeries(wrappedTimeSeries, wrappedFilter)
 
 	if droppedSamples > 0 || droppedExemplars > 0 || droppedHistograms > 0 {
 		logger.Debug("dropped data due to their age", "droppedSamples", droppedSamples, "droppedExemplars", droppedExemplars, "droppedHistograms", droppedHistograms)
 	}
 
+	// Convert back to writev2.TimeSeries.
+	newSamples := make([]writev2.TimeSeries, len(filteredTimeSeries))
+	for i, w := range filteredTimeSeries {
+		newSamples[i] = w.ts
+	}
+
 	req := &writev2.Request{
 		Symbols:    labels,
-		Timeseries: timeSeries,
+		Timeseries: newSamples,
 	}
 
 	if pBuf == nil {
@@ -2124,68 +2141,14 @@ func buildV2WriteRequest(logger *slog.Logger, samples []writev2.TimeSeries, labe
 	return compressed, highest, lowest, nil
 }
 
-func buildV2TimeSeries(timeSeries []writev2.TimeSeries, filter func(writev2.TimeSeries) bool) (int64, int64, []writev2.TimeSeries, int, int, int) {
-	var highest int64
-	var lowest int64
-	var droppedSamples, droppedExemplars, droppedHistograms int
-
-	keepIdx := 0
-	lowest = math.MaxInt64
-	for i, ts := range timeSeries {
-		if filter != nil && filter(ts) {
-			if len(ts.Samples) > 0 {
-				droppedSamples++
-			}
-			if len(ts.Exemplars) > 0 {
-				droppedExemplars++
-			}
-			if len(ts.Histograms) > 0 {
-				droppedHistograms++
-			}
-			continue
-		}
-
-		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
-		if len(ts.Samples) > 0 && ts.Samples[0].Timestamp > highest {
-			highest = ts.Samples[0].Timestamp
-		}
-		if len(ts.Exemplars) > 0 && ts.Exemplars[0].Timestamp > highest {
-			highest = ts.Exemplars[0].Timestamp
-		}
-		if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp > highest {
-			highest = ts.Histograms[0].Timestamp
-		}
-
-		// Get the lowest timestamp.
-		if len(ts.Samples) > 0 && ts.Samples[0].Timestamp < lowest {
-			lowest = ts.Samples[0].Timestamp
-		}
-		if len(ts.Exemplars) > 0 && ts.Exemplars[0].Timestamp < lowest {
-			lowest = ts.Exemplars[0].Timestamp
-		}
-		if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp < lowest {
-			lowest = ts.Histograms[0].Timestamp
-		}
-		if i != keepIdx {
-			// We have to swap the kept timeseries with the one which should be dropped.
-			// Copying any elements within timeSeries could cause data corruptions when reusing the slice in a next batch (shards.populateTimeSeries).
-			timeSeries[keepIdx], timeSeries[i] = timeSeries[i], timeSeries[keepIdx]
-		}
-		keepIdx++
-	}
-
-	timeSeries = timeSeries[:keepIdx]
-	return highest, lowest, timeSeries, droppedSamples, droppedExemplars, droppedHistograms
-}
-
 // TimeSeriesData represents the common interface for both prompb.TimeSeries and writev2.TimeSeries.
 type TimeSeriesData interface {
 	// getSamples returns the samples in the time series
-	getSamples() []interface{}
+	getSamples() []any
 	// getExemplars returns the exemplars in the time series
-	getExemplars() []interface{}
+	getExemplars() []any
 	// getHistograms returns the histograms in the time series
-	getHistograms() []interface{}
+	getHistograms() []any
 }
 
 type timeSeriesWrapper struct {
@@ -2212,6 +2175,38 @@ func (w timeSeriesWrapper) getExemplars() []interface{} {
 
 // getHistograms returns the histograms in the time series.
 func (w timeSeriesWrapper) getHistograms() []interface{} {
+	result := make([]interface{}, len(w.ts.Histograms))
+	for i, h := range w.ts.Histograms {
+		result[i] = h
+	}
+	return result
+}
+
+// v2TimeSeriesWrapper wraps writev2.TimeSeries to implement TimeSeriesData interface.
+type v2TimeSeriesWrapper struct {
+	ts writev2.TimeSeries
+}
+
+// getSamples returns the samples in the time series.
+func (w v2TimeSeriesWrapper) getSamples() []interface{} {
+	result := make([]interface{}, len(w.ts.Samples))
+	for i, s := range w.ts.Samples {
+		result[i] = s
+	}
+	return result
+}
+
+// getExemplars returns the exemplars in the time series.
+func (w v2TimeSeriesWrapper) getExemplars() []interface{} {
+	result := make([]interface{}, len(w.ts.Exemplars))
+	for i, e := range w.ts.Exemplars {
+		result[i] = e
+	}
+	return result
+}
+
+// getHistograms returns the histograms in the time series.
+func (w v2TimeSeriesWrapper) getHistograms() []interface{} {
 	result := make([]interface{}, len(w.ts.Histograms))
 	for i, h := range w.ts.Histograms {
 		result[i] = h
