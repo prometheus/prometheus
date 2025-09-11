@@ -72,6 +72,24 @@ func BenchmarkParsePromText(b *testing.B) {
 
 /*
 	export bench=v1 && go test ./model/textparse/... \
+		 -run '^$' -bench '^BenchmarkParseFamilySwitch' \
+		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+	 | tee ${bench}.txt
+*/
+func BenchmarkParseFamilySwitch(b *testing.B) {
+	data := readTestdataFile(b, "family-switch.prom.txt")
+
+	for _, parser := range []string{
+		"promtext",
+	} {
+		b.Run(fmt.Sprintf("parser=%v", parser), func(b *testing.B) {
+			benchParse(b, data, parser)
+		})
+	}
+}
+
+/*
+	export bench=v1 && go test ./model/textparse/... \
 		 -run '^$' -bench '^BenchmarkParsePromText_NoMeta' \
 		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
 	 | tee ${bench}.txt
