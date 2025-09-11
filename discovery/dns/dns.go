@@ -78,7 +78,7 @@ func (*SDConfig) Name() string { return "dns" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(*c, opts.Logger, opts.Metrics)
+	return NewDiscovery(*c, opts.Logger, opts.Metrics, opts.ConfigName)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -118,7 +118,7 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func NewDiscovery(conf SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics, configName string) (*Discovery, error) {
 	m, ok := metrics.(*dnsMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
@@ -154,6 +154,7 @@ func NewDiscovery(conf SDConfig, logger *slog.Logger, metrics discovery.Discover
 		refresh.Options{
 			Logger:              logger,
 			Mech:                "dns",
+			Config:              configName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,

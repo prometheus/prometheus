@@ -57,7 +57,7 @@ func TestVultrSDRefresh(t *testing.T) {
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics, "vultr")
 	require.NoError(t, err)
 	endpoint, err := url.Parse(sdMock.Mock.Endpoint())
 	require.NoError(t, err)
