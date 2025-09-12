@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"time"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -39,6 +40,10 @@ type initAppender struct {
 }
 
 var _ storage.GetRef = &initAppender{}
+
+// ErrOOOChunkRateLimited is returned when creating a new out-of-order head chunk would violate the configured
+// per-series rate limit for OOO chunk creation.
+var ErrOOOChunkRateLimited = errors.New("out-of-order chunk creation rate limited")
 
 func (a *initAppender) SetOptions(opts *storage.AppendOptions) {
 	if a.app != nil {
@@ -381,6 +386,9 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 			return 0, storage.ErrOutOfOrderSample
 		}
+		if err := a.enforceOOOHeadChunkRateLimitLocked(s, isOOO); err != nil {
+			return 0, err
+		}
 		s.pendingCommit = true
 	}
 	if delta > 0 {
@@ -690,8 +698,12 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
-		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-		if err != nil {
+		isOOO, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		if err == nil {
+			if err2 := a.enforceOOOHeadChunkRateLimitLocked(s, isOOO); err2 != nil {
+				s.Unlock()
+				return 0, ErrOOOChunkRateLimited
+			}
 			s.pendingCommit = true
 		}
 		s.Unlock()
@@ -725,8 +737,12 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
-		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		isOOO, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err == nil {
+			if err2 := a.enforceOOOHeadChunkRateLimitLocked(s, isOOO); err2 != nil {
+				s.Unlock()
+				return 0, ErrOOOChunkRateLimited
+			}
 			s.pendingCommit = true
 		}
 		s.Unlock()
@@ -1145,6 +1161,35 @@ func handleAppendableError(err error, appended, oooRejected, oobRejected, tooOld
 	default:
 		*appended--
 	}
+}
+
+// enforceOOOHeadChunkRateLimitLocked enforces the configured minimum interval between OOO head-chunk
+// creations for a series. Caller must hold s.Lock().
+func (a *headAppender) enforceOOOHeadChunkRateLimitLocked(s *memSeries, isOOO bool) error {
+	if !isOOO {
+		return nil
+	}
+	minInterval := a.head.opts.OutOfOrderOOOChunkMinIntervalMillis.Load()
+	if minInterval <= 0 {
+		return nil
+	}
+	capMax := a.head.opts.OutOfOrderCapMax.Load()
+	needNewOOOChunk := s.ooo == nil || s.ooo.oooHeadChunk == nil || s.ooo.oooHeadChunk.chunk.NumSamples() == int(capMax)
+	if !needNewOOOChunk {
+		return nil
+	}
+	var last int64
+	if s.ooo != nil {
+		last = s.ooo.lastOOOChunkCutAtUnixMilli
+	}
+	if last == 0 {
+		return nil
+	}
+	nowMs := time.Now().UnixMilli()
+	if nowMs-last < minInterval {
+		return ErrOOOChunkRateLimited
+	}
+	return nil
 }
 
 // commitSamples processes and commits the samples in the headAppender to the series.
@@ -1934,6 +1979,8 @@ func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.Chunk
 		minTime: mint,
 		maxTime: math.MinInt64,
 	}
+	// Stamp the wall-clock time when this OOO head chunk was created for rate limiting.
+	s.ooo.lastOOOChunkCutAtUnixMilli = time.Now().UnixMilli()
 
 	return s.ooo.oooHeadChunk, ref
 }
