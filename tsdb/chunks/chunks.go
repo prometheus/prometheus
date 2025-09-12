@@ -283,7 +283,7 @@ type Writer struct {
 	wbuf    fileutil.BufWriter
 	n       int64
 	crc32   hash.Hash
-	buf     [binary.MaxVarintLen32]byte
+	buf     [MaxChunkLengthFieldSize]byte
 
 	segmentSize   int64
 	useUncachedIO bool
@@ -498,11 +498,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 	)
 
 	for i, chk := range chks {
-		// Each chunk contains: data length + encoding + the data itself + crc32
-		chkSize := int64(MaxChunkLengthFieldSize) // The data length is a variable length field so use the maximum possible value.
-		chkSize += ChunkEncodingSize              // The chunk encoding.
-		chkSize += int64(len(chk.Chunk.Bytes()))  // The data itself.
-		chkSize += crc32.Size                     // The 4 bytes of crc32.
+		chkSize := EncodedSizeInBytes(chk.Chunk, w.buf[:])
 		batchSize += chkSize
 
 		// Cut a new batch when it is not the first chunk(to avoid empty segments) and
@@ -773,4 +769,15 @@ func sequenceFiles(dir string) ([]string, error) {
 		res = append(res, filepath.Join(dir, fi.Name()))
 	}
 	return res, nil
+}
+
+// EncodedSizeInBytes calculates the total size in bytes of a given chunk,
+// when encoded by the chunks.Writer.
+// It requires a bytes buffer of at least MaxChunkLengthFieldSize size to avoid allocations.
+func EncodedSizeInBytes(chunk chunkenc.Chunk, buf []byte) int64 {
+	size := int64(len(chunk.Bytes()))                   // The chunk data itself.
+	size += int64(binary.PutUvarint(buf, uint64(size))) // The data length is a variable length field.
+	size += ChunkEncodingSize                           // The chunk encoding.
+	size += crc32.Size                                  // The 4 bytes of crc32.
+	return size
 }
