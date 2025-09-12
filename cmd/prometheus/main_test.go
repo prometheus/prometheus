@@ -655,7 +655,11 @@ func TestRwProtoMsgFlagParser(t *testing.T) {
 func reloadPrometheusConfig(t *testing.T, reloadURL string) {
 	t.Helper()
 
-	r, err := http.Post(reloadURL, "text/plain", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, reloadURL, http.NoBody)
+	require.NoError(t, err, "Failed to create reload request")
+	req.Header.Set("Content-Type", "text/plain")
+
+	r, err := http.DefaultClient.Do(req)
 	require.NoError(t, err, "Failed to reload Prometheus")
 	require.Equal(t, http.StatusOK, r.StatusCode, "Unexpected status code when reloading Prometheus")
 }
@@ -775,7 +779,11 @@ global:
 				)
 				// Wait for the /metrics endpoint to be ready.
 				require.Eventually(t, func() bool {
-					r, err = http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+					req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/metrics", port), http.NoBody)
+					if err != nil {
+						return false
+					}
+					r, err = http.DefaultClient.Do(req)
 					if err != nil {
 						return false
 					}
@@ -846,7 +854,11 @@ scrape_configs:
 			require.NoError(t, prom.Start())
 
 			require.Eventually(t, func() bool {
-				r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+				req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/metrics", port), http.NoBody)
+				if err != nil {
+					return false
+				}
+				r, err := http.DefaultClient.Do(req)
 				if err != nil {
 					return false
 				}
@@ -929,7 +941,11 @@ remote_write:
 	require.NoError(t, prom.Start())
 
 	require.Eventually(t, func() bool {
-		r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/metrics", port), http.NoBody)
+		if err != nil {
+			return false
+		}
+		r, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return false
 		}

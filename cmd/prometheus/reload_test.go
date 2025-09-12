@@ -124,7 +124,11 @@ func runTestSteps(t *testing.T, steps []struct {
 
 	baseURL := "http://localhost:" + strconv.Itoa(port)
 	require.Eventually(t, func() bool {
-		resp, err := http.Get(baseURL + "/-/ready")
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, baseURL+"/-/ready", http.NoBody)
+		if err != nil {
+			return false
+		}
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return false
 		}
@@ -144,7 +148,9 @@ func runTestSteps(t *testing.T, steps []struct {
 }
 
 func verifyScrapeInterval(t *testing.T, baseURL, expectedInterval string) bool {
-	resp, err := http.Get(baseURL + "/api/v1/status/config")
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, baseURL+"/api/v1/status/config", http.NoBody)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -162,7 +168,9 @@ func verifyScrapeInterval(t *testing.T, baseURL, expectedInterval string) bool {
 }
 
 func verifyConfigReloadMetric(t *testing.T, baseURL string, expectedValue float64) bool {
-	resp, err := http.Get(baseURL + "/metrics")
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, baseURL+"/metrics", http.NoBody)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 

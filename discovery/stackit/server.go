@@ -126,7 +126,7 @@ func (i *iaasDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, erro
 	q.Set("details", "true")
 	apiURL.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL.String(), http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}

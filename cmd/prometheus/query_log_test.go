@@ -68,12 +68,15 @@ func (p *queryLogTest) skip(t *testing.T) {
 }
 
 // waitForPrometheus waits for Prometheus to be ready.
-func (p *queryLogTest) waitForPrometheus() error {
+func (p *queryLogTest) waitForPrometheus(t *testing.T) error {
 	var err error
 	for range 20 {
 		var r *http.Response
-		if r, err = http.Get(fmt.Sprintf("http://%s:%d%s/-/ready", p.host, p.port, p.prefix)); err == nil && r.StatusCode == http.StatusOK {
-			break
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, fmt.Sprintf("http://%s:%d%s/-/ready", p.host, p.port, p.prefix), http.NoBody)
+		if err == nil {
+			if r, err = http.DefaultClient.Do(req); err == nil && r.StatusCode == http.StatusOK {
+				break
+			}
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
@@ -99,29 +102,35 @@ func (p *queryLogTest) setQueryLog(t *testing.T, queryLogFile string) {
 func (p *queryLogTest) query(t *testing.T) {
 	switch p.origin {
 	case apiOrigin:
-		r, err := http.Get(fmt.Sprintf(
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, fmt.Sprintf(
 			"http://%s:%d%s/api/v1/query_range?step=5&start=0&end=3600&query=%s",
 			p.host,
 			p.port,
 			p.prefix,
 			url.QueryEscape("query_with_api"),
-		))
+		), http.NoBody)
+		require.NoError(t, err)
+		r, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		require.Equal(t, 200, r.StatusCode)
 	case consoleOrigin:
-		r, err := http.Get(fmt.Sprintf(
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, fmt.Sprintf(
 			"http://%s:%d%s/consoles/test.html",
 			p.host,
 			p.port,
 			p.prefix,
-		))
+		), http.NoBody)
+		require.NoError(t, err)
+		r, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		require.Equal(t, 200, r.StatusCode)
 	case ruleOrigin:
 		// Poll the /api/v1/rules endpoint until a new rule evaluation is detected.
 		var lastEvalTime time.Time
 		for {
-			r, err := http.Get(fmt.Sprintf("http://%s:%d/api/v1/rules", p.host, p.port))
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, fmt.Sprintf("http://%s:%d/api/v1/rules", p.host, p.port), nil)
+			require.NoError(t, err)
+			r, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
 
 			rulesBody, err := io.ReadAll(r.Body)
@@ -323,7 +332,7 @@ func (p *queryLogTest) run(t *testing.T) {
 		prom.Process.Kill()
 		prom.Wait()
 	}()
-	require.NoError(t, p.waitForPrometheus())
+	require.NoError(t, p.waitForPrometheus(t))
 
 	if !p.enabledAtStart {
 		p.query(t)

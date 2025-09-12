@@ -14,6 +14,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -35,7 +36,11 @@ func debugWrite(cfg debugWriterConfig) error {
 		for url, filename := range endPointGroup.urlToFilename {
 			url := cfg.serverURL + url
 			fmt.Println("collecting:", url)
-			res, err := http.Get(url)
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, http.NoBody)
+			if err != nil {
+				return fmt.Errorf("error creating HTTP request: %w", err)
+			}
+			res, err := http.DefaultClient.Do(req)
 			if err != nil {
 				return fmt.Errorf("error executing HTTP request: %w", err)
 			}

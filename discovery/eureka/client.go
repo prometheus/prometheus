@@ -81,11 +81,10 @@ const appListPath string = "/apps"
 func fetchApps(ctx context.Context, server string, client *http.Client) (*Applications, error) {
 	url := fmt.Sprintf("%s%s", server, appListPath)
 
-	request, err := http.NewRequest(http.MethodGet, url, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
-	request = request.WithContext(ctx)
 	request.Header.Add("User-Agent", userAgent)
 
 	resp, err := client.Do(request)

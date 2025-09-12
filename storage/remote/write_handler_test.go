@@ -123,7 +123,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			req, err := http.NewRequestWithContext(t.Context(), "", "", bytes.NewReader(payload))
 			require.NoError(t, err)
 			for k, v := range tc.reqHeaders {
 				req.Header.Set(k, v)
@@ -230,7 +230,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			req, err := http.NewRequestWithContext(t.Context(), "", "", bytes.NewReader(payload))
 			require.NoError(t, err)
 			for k, v := range tc.reqHeaders {
 				req.Header.Set(k, v)
@@ -262,7 +262,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 	t.Run("unsupported v1 request", func(t *testing.T) {
 		payload, _, _, err := buildWriteRequest(promslog.NewNopLogger(), writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
 		require.NoError(t, err)
-		req, err := http.NewRequest("", "", bytes.NewReader(payload))
+		req, err := http.NewRequestWithContext(t.Context(), "", "", bytes.NewReader(payload))
 		require.NoError(t, err)
 		for k, v := range map[string]string{
 			"Content-Type":     remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV1],
@@ -294,7 +294,7 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	payload, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
-	req, err := http.NewRequest("", "", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(t.Context(), "", "", bytes.NewReader(payload))
 	require.NoError(t, err)
 
 	// NOTE: Strictly speaking, even for 1.0 we require headers, but we never verified those
@@ -502,7 +502,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), tc.input, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
-			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			req, err := http.NewRequestWithContext(t.Context(), "", "", bytes.NewReader(payload))
 			require.NoError(t, err)
 
 			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
@@ -635,7 +635,7 @@ func TestOutOfOrderSample_V1Message(t *testing.T) {
 			}}, nil, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
-			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			req, err := http.NewRequestWithContext(t.Context(), "", "", bytes.NewReader(payload))
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
@@ -677,7 +677,7 @@ func TestOutOfOrderExemplar_V1Message(t *testing.T) {
 			}}, nil, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
-			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			req, err := http.NewRequestWithContext(t.Context(), "", "", bytes.NewReader(payload))
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
@@ -715,7 +715,7 @@ func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 			}}, nil, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
-			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			req, err := http.NewRequestWithContext(t.Context(), "", "", bytes.NewReader(payload))
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
@@ -775,7 +775,7 @@ func BenchmarkRemoteWriteHandler(b *testing.B) {
 				b.StopTimer()
 				buf, err := tc.payloadFunc()
 				require.NoError(b, err)
-				req, err := http.NewRequest("", "", bytes.NewReader(buf))
+				req, err := http.NewRequestWithContext(b.Context(), "", "", bytes.NewReader(buf))
 				require.NoError(b, err)
 				b.StartTimer()
 
@@ -790,7 +790,7 @@ func TestCommitErr_V1Message(t *testing.T) {
 	payload, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
-	req, err := http.NewRequest("", "", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(t.Context(), "", "", bytes.NewReader(payload))
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{commitErr: errors.New("commit error")}
@@ -810,7 +810,7 @@ func TestCommitErr_V2Message(t *testing.T) {
 	payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
-	req, err := http.NewRequest("", "", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(t.Context(), "", "", bytes.NewReader(payload))
 	require.NoError(t, err)
 
 	req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
@@ -850,7 +850,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 	buf, _, _, err := buildWriteRequest(nil, genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil, nil, "snappy")
 	require.NoError(b, err)
 
-	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	req, err := http.NewRequestWithContext(b.Context(), "", "", bytes.NewReader(buf))
 	require.NoError(b, err)
 
 	recorder := httptest.NewRecorder()
@@ -867,7 +867,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 
 	b.ResetTimer()
 	for i := range 100 {
-		req, err = http.NewRequest("", "", bytes.NewReader(bufRequests[i]))
+		req, err = http.NewRequestWithContext(b.Context(), "", "", bytes.NewReader(bufRequests[i]))
 		require.NoError(b, err)
 
 		recorder = httptest.NewRecorder()
