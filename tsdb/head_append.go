@@ -386,23 +386,8 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 			return 0, storage.ErrOutOfOrderSample
 		}
-		// Enforce per-series OOO chunk cut rate limiting if configured.
-		if isOOO {
-			minInterval := a.head.opts.OutOfOrderOOOChunkMinIntervalMillis.Load()
-			if minInterval > 0 {
-				capMax := a.head.opts.OutOfOrderCapMax.Load()
-				needNewOOOChunk := s.ooo == nil || s.ooo.oooHeadChunk == nil || s.ooo.oooHeadChunk.chunk.NumSamples() == int(capMax)
-				if needNewOOOChunk {
-					nowMs := time.Now().UnixMilli()
-					last := int64(0)
-					if s.ooo != nil {
-						last = s.ooo.lastOOOChunkCutAtUnixMilli
-					}
-					if last != 0 && nowMs-last < minInterval {
-						return 0, ErrOOOChunkRateLimited
-					}
-				}
-			}
+		if err := a.enforceOOOHeadChunkRateLimitLocked(s, isOOO); err != nil {
+		return 0, err
 		}
 		s.pendingCommit = true
 	}
@@ -713,32 +698,15 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
-		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-		if err != nil {
-			s.pendingCommit = true
-		}
-		// Enforce per-series OOO chunk cut rate limiting if configured for histogram OOO samples.
+		isOOO, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err == nil {
-			isOOO, _, _ := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-			if isOOO {
-				minInterval := a.head.opts.OutOfOrderOOOChunkMinIntervalMillis.Load()
-				if minInterval > 0 {
-					capMax := a.head.opts.OutOfOrderCapMax.Load()
-					needNewOOOChunk := s.ooo == nil || s.ooo.oooHeadChunk == nil || s.ooo.oooHeadChunk.chunk.NumSamples() == int(capMax)
-					if needNewOOOChunk {
-						nowMs := time.Now().UnixMilli()
-						last := int64(0)
-						if s.ooo != nil {
-							last = s.ooo.lastOOOChunkCutAtUnixMilli
-						}
-						if last != 0 && nowMs-last < minInterval {
-							s.Unlock()
-							return 0, ErrOOOChunkRateLimited
-						}
-					}
-				}
-			}
+		if err2 := a.enforceOOOHeadChunkRateLimitLocked(s, isOOO); err2 != nil {
+		s.Unlock()
+		return 0, ErrOOOChunkRateLimited
 		}
+		s.pendingCommit = true
+		}
+		
 		s.Unlock()
 		if delta > 0 {
 			a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
@@ -770,32 +738,15 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
-		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		isOOO, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err == nil {
-			s.pendingCommit = true
+		if err2 := a.enforceOOOHeadChunkRateLimitLocked(s, isOOO); err2 != nil {
+		s.Unlock()
+		return 0, ErrOOOChunkRateLimited
 		}
-		// Enforce per-series OOO chunk cut rate limiting if configured for float histogram OOO samples.
-		if err == nil {
-			isOOO, _, _ := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-			if isOOO {
-				minInterval := a.head.opts.OutOfOrderOOOChunkMinIntervalMillis.Load()
-				if minInterval > 0 {
-					capMax := a.head.opts.OutOfOrderCapMax.Load()
-					needNewOOOChunk := s.ooo == nil || s.ooo.oooHeadChunk == nil || s.ooo.oooHeadChunk.chunk.NumSamples() == int(capMax)
-					if needNewOOOChunk {
-						nowMs := time.Now().UnixMilli()
-						last := int64(0)
-						if s.ooo != nil {
-							last = s.ooo.lastOOOChunkCutAtUnixMilli
-						}
-						if last != 0 && nowMs-last < minInterval {
-							s.Unlock()
-							return 0, ErrOOOChunkRateLimited
-						}
-					}
-				}
-			}
+		s.pendingCommit = true
 		}
+		
 		s.Unlock()
 		if delta > 0 {
 			a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
@@ -1212,6 +1163,35 @@ func handleAppendableError(err error, appended, oooRejected, oobRejected, tooOld
 	default:
 		*appended--
 	}
+}
+
+// enforceOOOHeadChunkRateLimitLocked enforces the configured minimum interval between OOO head-chunk
+// creations for a series. Caller must hold s.Lock().
+func (a *headAppender) enforceOOOHeadChunkRateLimitLocked(s *memSeries, isOOO bool) error {
+	if !isOOO {
+		return nil
+	}
+	minInterval := a.head.opts.OutOfOrderOOOChunkMinIntervalMillis.Load()
+	if minInterval <= 0 {
+		return nil
+	}
+	capMax := a.head.opts.OutOfOrderCapMax.Load()
+	needNewOOOChunk := s.ooo == nil || s.ooo.oooHeadChunk == nil || s.ooo.oooHeadChunk.chunk.NumSamples() == int(capMax)
+	if !needNewOOOChunk {
+		return nil
+	}
+	var last int64
+	if s.ooo != nil {
+		last = s.ooo.lastOOOChunkCutAtUnixMilli
+	}
+	if last == 0 {
+		return nil
+	}
+	nowMs := time.Now().UnixMilli()
+	if nowMs-last < minInterval {
+		return ErrOOOChunkRateLimited
+	}
+	return nil
 }
 
 // commitSamples processes and commits the samples in the headAppender to the series.
