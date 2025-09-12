@@ -387,7 +387,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 			return 0, storage.ErrOutOfOrderSample
 		}
 		if err := a.enforceOOOHeadChunkRateLimitLocked(s, isOOO); err != nil {
-		return 0, err
+			return 0, err
 		}
 		s.pendingCommit = true
 	}
@@ -700,13 +700,12 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		// to skip that sample from the WAL and write only in the WBL.
 		isOOO, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err == nil {
-		if err2 := a.enforceOOOHeadChunkRateLimitLocked(s, isOOO); err2 != nil {
-		s.Unlock()
-		return 0, ErrOOOChunkRateLimited
+			if err2 := a.enforceOOOHeadChunkRateLimitLocked(s, isOOO); err2 != nil {
+				s.Unlock()
+				return 0, ErrOOOChunkRateLimited
+			}
+			s.pendingCommit = true
 		}
-		s.pendingCommit = true
-		}
-		
 		s.Unlock()
 		if delta > 0 {
 			a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
@@ -740,13 +739,12 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		// to skip that sample from the WAL and write only in the WBL.
 		isOOO, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err == nil {
-		if err2 := a.enforceOOOHeadChunkRateLimitLocked(s, isOOO); err2 != nil {
-		s.Unlock()
-		return 0, ErrOOOChunkRateLimited
+			if err2 := a.enforceOOOHeadChunkRateLimitLocked(s, isOOO); err2 != nil {
+				s.Unlock()
+				return 0, ErrOOOChunkRateLimited
+			}
+			s.pendingCommit = true
 		}
-		s.pendingCommit = true
-		}
-		
 		s.Unlock()
 		if delta > 0 {
 			a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
