@@ -218,13 +218,32 @@ func BenchmarkMatchType_String(b *testing.B) {
 }
 
 func BenchmarkNewMatcher(b *testing.B) {
-	b.Run("regex matcher with literal", func(b *testing.B) {
-		b.ReportAllocs()
-		b.ResetTimer()
-		for i := 0; i <= b.N; i++ {
-			NewMatcher(MatchRegexp, "foo", "bar")
-		}
-	})
+	type benchCase struct {
+		name string
+		t    MatchType
+		v    string
+	}
+	cases := []benchCase{
+		{
+			name: "regex matcher with literal",
+			t:    MatchRegexp,
+			v:    "bar",
+		},
+		{
+			name: "complicated regex",
+			t:    MatchRegexp,
+			v:    "(a||b){1000}",
+		},
+	}
+	for _, bc := range cases {
+		b.Run(bc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i <= b.N; i++ {
+				NewMatcher(bc.t, "foo", bc.v)
+			}
+		})
+	}
 }
 
 func BenchmarkMatcher_String(b *testing.B) {
