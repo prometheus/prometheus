@@ -151,7 +151,7 @@ func NewDiscovery(conf *SDConfig, logger *slog.Logger, clientOpts []config.HTTPC
 }
 
 func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	req, err := http.NewRequest(http.MethodGet, d.url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +159,7 @@ func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Prometheus-Refresh-Interval-Seconds", strconv.FormatFloat(d.refreshInterval.Seconds(), 'f', -1, 64))
 
-	resp, err := d.client.Do(req.WithContext(ctx))
+	resp, err := d.client.Do(req)
 	if err != nil {
 		d.metrics.failuresCount.Inc()
 		return nil, err
