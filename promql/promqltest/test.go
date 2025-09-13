@@ -243,7 +243,7 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 	for i+1 < len(lines) {
 		i++
 		defLine := lines[i]
-		if len(defLine) == 0 {
+		if defLine == "" {
 			i--
 			break
 		}
@@ -407,7 +407,7 @@ func (*test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	for j := 1; i+1 < len(lines); j++ {
 		i++
 		defLine := lines[i]
-		if len(defLine) == 0 {
+		if defLine == "" {
 			i--
 			break
 		}
@@ -479,7 +479,7 @@ func (t *test) parse(input string) error {
 	// Scan for steps line by line.
 	for i := 0; i < len(lines); i++ {
 		l := lines[i]
-		if len(l) == 0 {
+		if l == "" {
 			continue
 		}
 		var cmd testCommand
@@ -1529,7 +1529,7 @@ func (ll *LazyLoader) parse(input string) error {
 	// Accepts only 'load' command.
 	for i := range lines {
 		l := lines[i]
-		if len(l) == 0 {
+		if l == "" {
 			continue
 		}
 		if strings.HasPrefix(strings.ToLower(patSpace.Split(l, 2)[0]), "load") {

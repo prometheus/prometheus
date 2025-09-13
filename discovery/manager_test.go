@@ -1177,7 +1177,7 @@ func (lockStaticConfig) NewDiscovererMetrics(prometheus.Registerer, RefreshMetri
 
 func (lockStaticConfig) Name() string { return "lockstatic" }
 func (s lockStaticConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) {
-	return (lockStaticDiscoverer)(s), nil
+	return lockStaticDiscoverer(s), nil
 }
 
 type lockStaticDiscoverer lockStaticConfig
