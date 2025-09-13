@@ -31,8 +31,6 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
 
-const maxSamplesInMemory = 5000
-
 type queryRangeAPI interface {
 	QueryRange(ctx context.Context, query string, r v1.Range, opts ...v1.Option) (model.Value, v1.Warnings, error)
 }
@@ -55,6 +53,17 @@ type ruleImporterConfig struct {
 	maxBlockDuration     time.Duration
 	nameValidationScheme model.ValidationScheme
 }
+
+// multipleAppender keeps track of how many series have been added to the current appender.
+// If the max samples have been added, then all series are committed and a new appender is created.
+type multipleAppender struct {
+	maxSamplesInMemory int
+	currentSampleCount int
+	writer             *tsdb.BlockWriter
+	appender           storage.Appender
+}
+
+const maxSamplesInMemory = 5000
 
 // newRuleImporter creates a new rule importer that can be used to parse and evaluate recording rule files and create new series
 // written to disk in blocks.
@@ -194,15 +203,6 @@ func newMultipleAppender(ctx context.Context, blockWriter *tsdb.BlockWriter) *mu
 		writer:             blockWriter,
 		appender:           blockWriter.Appender(ctx),
 	}
-}
-
-// multipleAppender keeps track of how many series have been added to the current appender.
-// If the max samples have been added, then all series are committed and a new appender is created.
-type multipleAppender struct {
-	maxSamplesInMemory int
-	currentSampleCount int
-	writer             *tsdb.BlockWriter
-	appender           storage.Appender
 }
 
 func (m *multipleAppender) add(ctx context.Context, l labels.Labels, t int64, v float64) error {

@@ -82,12 +82,6 @@ import (
 	"github.com/prometheus/prometheus/web"
 )
 
-// klogv1OutputCallDepth is the stack depth where we can find the origin of this call.
-const klogv1OutputCallDepth = 6
-
-// klogv1DefaultPrefixLength is the length of the log prefix that we have to strip out.
-const klogv1DefaultPrefixLength = 53
-
 // klogv1Writer is used in SetOutputBySeverity call below to redirect any calls
 // to klogv1 to end up in klogv2.
 // This is a hack to support klogv1 without use of go-kit/log. It is inspired
@@ -95,83 +89,41 @@ const klogv1DefaultPrefixLength = 53
 // https://github.com/kubernetes/klog/blob/main/examples/coexist_klog_v1_and_v2/coexist_klog_v1_and_v2.go
 type klogv1Writer struct{}
 
-// Write redirects klogv1 calls to klogv2.
-// This is a hack to support klogv1 without use of go-kit/log. It is inspired
-// by klog's upstream klogv1/v2 coexistence example:
-// https://github.com/kubernetes/klog/blob/main/examples/coexist_klog_v1_and_v2/coexist_klog_v1_and_v2.go
-func (klogv1Writer) Write(p []byte) (n int, err error) {
-	if len(p) < klogv1DefaultPrefixLength {
-		klogv2.InfoDepth(klogv1OutputCallDepth, string(p))
-		return len(p), nil
-	}
-
-	switch p[0] {
-	case 'I':
-		klogv2.InfoDepth(klogv1OutputCallDepth, string(p[klogv1DefaultPrefixLength:]))
-	case 'W':
-		klogv2.WarningDepth(klogv1OutputCallDepth, string(p[klogv1DefaultPrefixLength:]))
-	case 'E':
-		klogv2.ErrorDepth(klogv1OutputCallDepth, string(p[klogv1DefaultPrefixLength:]))
-	case 'F':
-		klogv2.FatalDepth(klogv1OutputCallDepth, string(p[klogv1DefaultPrefixLength:]))
-	default:
-		klogv2.InfoDepth(klogv1OutputCallDepth, string(p[klogv1DefaultPrefixLength:]))
-	}
-
-	return len(p), nil
+// agentOptions is a version of agent.Options with defined units. This is required
+// as agent.Option fields are unit agnostic (time).
+type agentOptions struct {
+	WALSegmentSize         units.Base2Bytes
+	WALCompressionType     compression.Type
+	StripeSize             int
+	TruncateFrequency      model.Duration
+	MinWALTime, MaxWALTime model.Duration
+	NoLockfile             bool
+	OutOfOrderTimeWindow   int64
 }
 
-var (
-	appName = "prometheus"
-
-	configSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_config_last_reload_successful",
-		Help: "Whether the last configuration reload attempt was successful.",
-	})
-	configSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_config_last_reload_success_timestamp_seconds",
-		Help: "Timestamp of the last successful configuration reload.",
-	})
-
-	defaultRetentionString   = "15d"
-	defaultRetentionDuration model.Duration
-
-	agentMode                       bool
-	agentOnlyFlags, serverOnlyFlags []string
-)
-
-func init() {
-	// This can be removed when the legacy global mode is fully deprecated.
-	//nolint:staticcheck
-	model.NameValidationScheme = model.UTF8Validation
-
-	prometheus.MustRegister(versioncollector.NewCollector(strings.ReplaceAll(appName, "-", "_")))
-
-	var err error
-	defaultRetentionDuration, err = model.ParseDuration(defaultRetentionString)
-	if err != nil {
-		panic(err)
-	}
-}
-
-// serverOnlyFlag creates server-only kingpin flag.
-func serverOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagClause {
-	return app.Flag(name, fmt.Sprintf("%s Use with server mode only.", help)).
-		PreAction(func(*kingpin.ParseContext) error {
-			// This will be invoked only if flag is actually provided by user.
-			serverOnlyFlags = append(serverOnlyFlags, "--"+name)
-			return nil
-		})
-}
-
-// agentOnlyFlag creates agent-only kingpin flag.
-func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagClause {
-	return app.Flag(name, fmt.Sprintf("%s Use with agent mode only.", help)).
-		PreAction(func(*kingpin.ParseContext) error {
-			// This will be invoked only if flag is actually provided by user.
-			agentOnlyFlags = append(agentOnlyFlags, "--"+name)
-			return nil
-		})
+// tsdbOptions is tsdb.Option version with defined units.
+// This is required as tsdb.Option fields are unit agnostic (time).
+type tsdbOptions struct {
+	WALSegmentSize                 units.Base2Bytes
+	MaxBlockChunkSegmentSize       units.Base2Bytes
+	RetentionDuration              model.Duration
+	MaxBytes                       units.Base2Bytes
+	NoLockfile                     bool
+	WALCompressionType             compression.Type
+	HeadChunksWriteQueueSize       int
+	SamplesPerChunk                int
+	StripeSize                     int
+	MinBlockDuration               model.Duration
+	MaxBlockDuration               model.Duration
+	OutOfOrderTimeWindow           int64
+	EnableExemplarStorage          bool
+	MaxExemplars                   int64
+	EnableMemorySnapshotOnShutdown bool
+	EnableNativeHistograms         bool
+	EnableDelayedCompaction        bool
+	CompactionDelayMaxPercent      int
+	EnableOverlappingCompaction    bool
+	UseUncachedIO                  bool
 }
 
 type flagConfig struct {
@@ -215,6 +167,125 @@ type flagConfig struct {
 	promqlEnableDelayedNameRemoval bool
 
 	promslogConfig promslog.Config
+}
+
+type safePromQLNoStepSubqueryInterval struct {
+	value atomic.Int64
+}
+
+type reloader struct {
+	name     string
+	reloader func(*config.Config) error
+}
+
+// readyStorage implements the Storage interface while allowing to set the actual
+// storage at a later point in time.
+type readyStorage struct {
+	mtx             sync.RWMutex
+	db              storage.Storage
+	startTimeMargin int64
+	stats           *tsdb.DBStats
+}
+
+type notReadyAppender struct{}
+
+// ReadyScrapeManager allows a scrape manager to be retrieved. Even if it's set at a later point in time.
+type readyScrapeManager struct {
+	mtx sync.RWMutex
+	m   *scrape.Manager
+}
+
+// rwProtoMsgFlagParser is a custom parser for config.RemoteWriteProtoMsg enum.
+type rwProtoMsgFlagParser struct {
+	msgs *[]config.RemoteWriteProtoMsg
+}
+
+// klogv1OutputCallDepth is the stack depth where we can find the origin of this call.
+const klogv1OutputCallDepth = 6
+
+// klogv1DefaultPrefixLength is the length of the log prefix that we have to strip out.
+const klogv1DefaultPrefixLength = 53
+
+// ErrNotReady is returned if the underlying scrape manager is not ready yet.
+var ErrNotReady = errors.New("scrape manager not ready")
+
+var (
+	appName = "prometheus"
+
+	configSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_config_last_reload_successful",
+		Help: "Whether the last configuration reload attempt was successful.",
+	})
+	configSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_config_last_reload_success_timestamp_seconds",
+		Help: "Timestamp of the last successful configuration reload.",
+	})
+
+	defaultRetentionString   = "15d"
+	defaultRetentionDuration model.Duration
+
+	agentMode                       bool
+	agentOnlyFlags, serverOnlyFlags []string
+)
+
+// Write redirects klogv1 calls to klogv2.
+// This is a hack to support klogv1 without use of go-kit/log. It is inspired
+// by klog's upstream klogv1/v2 coexistence example:
+// https://github.com/kubernetes/klog/blob/main/examples/coexist_klog_v1_and_v2/coexist_klog_v1_and_v2.go
+func (klogv1Writer) Write(p []byte) (n int, err error) {
+	if len(p) < klogv1DefaultPrefixLength {
+		klogv2.InfoDepth(klogv1OutputCallDepth, string(p))
+		return len(p), nil
+	}
+
+	switch p[0] {
+	case 'I':
+		klogv2.InfoDepth(klogv1OutputCallDepth, string(p[klogv1DefaultPrefixLength:]))
+	case 'W':
+		klogv2.WarningDepth(klogv1OutputCallDepth, string(p[klogv1DefaultPrefixLength:]))
+	case 'E':
+		klogv2.ErrorDepth(klogv1OutputCallDepth, string(p[klogv1DefaultPrefixLength:]))
+	case 'F':
+		klogv2.FatalDepth(klogv1OutputCallDepth, string(p[klogv1DefaultPrefixLength:]))
+	default:
+		klogv2.InfoDepth(klogv1OutputCallDepth, string(p[klogv1DefaultPrefixLength:]))
+	}
+
+	return len(p), nil
+}
+
+func init() {
+	// This can be removed when the legacy global mode is fully deprecated.
+	//nolint:staticcheck
+	model.NameValidationScheme = model.UTF8Validation
+
+	prometheus.MustRegister(versioncollector.NewCollector(strings.ReplaceAll(appName, "-", "_")))
+
+	var err error
+	defaultRetentionDuration, err = model.ParseDuration(defaultRetentionString)
+	if err != nil {
+		panic(err)
+	}
+}
+
+// serverOnlyFlag creates server-only kingpin flag.
+func serverOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagClause {
+	return app.Flag(name, fmt.Sprintf("%s Use with server mode only.", help)).
+		PreAction(func(*kingpin.ParseContext) error {
+			// This will be invoked only if flag is actually provided by user.
+			serverOnlyFlags = append(serverOnlyFlags, "--"+name)
+			return nil
+		})
+}
+
+// agentOnlyFlag creates agent-only kingpin flag.
+func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagClause {
+	return app.Flag(name, fmt.Sprintf("%s Use with agent mode only.", help)).
+		PreAction(func(*kingpin.ParseContext) error {
+			// This will be invoked only if flag is actually provided by user.
+			agentOnlyFlags = append(agentOnlyFlags, "--"+name)
+			return nil
+		})
 }
 
 // setFeatureListOptions sets the corresponding options from the featureList.
@@ -1472,10 +1543,6 @@ func openDBWithMetrics(dir string, logger *slog.Logger, reg prometheus.Registere
 	return db, nil
 }
 
-type safePromQLNoStepSubqueryInterval struct {
-	value atomic.Int64
-}
-
 func durationToInt64Millis(d time.Duration) int64 {
 	return int64(d / time.Millisecond)
 }
@@ -1486,11 +1553,6 @@ func (i *safePromQLNoStepSubqueryInterval) Set(ev model.Duration) {
 
 func (i *safePromQLNoStepSubqueryInterval) Get(int64) int64 {
 	return i.value.Load()
-}
-
-type reloader struct {
-	name     string
-	reloader func(*config.Config) error
 }
 
 func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
@@ -1600,15 +1662,6 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	return eu, nil
 }
 
-// readyStorage implements the Storage interface while allowing to set the actual
-// storage at a later point in time.
-type readyStorage struct {
-	mtx             sync.RWMutex
-	db              storage.Storage
-	startTimeMargin int64
-	stats           *tsdb.DBStats
-}
-
 func (s *readyStorage) ApplyConfig(conf *config.Config) error {
 	db := s.get()
 	if db, ok := db.(*tsdb.DB); ok {
@@ -1700,8 +1753,6 @@ func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 	}
 	return notReadyAppender{}
 }
-
-type notReadyAppender struct{}
 
 // SetOptions does nothing in this appender implementation.
 func (notReadyAppender) SetOptions(*storage.AppendOptions) {}
@@ -1825,15 +1876,6 @@ func (s *readyStorage) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, tsdb.ErrNotReady
 }
 
-// ErrNotReady is returned if the underlying scrape manager is not ready yet.
-var ErrNotReady = errors.New("scrape manager not ready")
-
-// ReadyScrapeManager allows a scrape manager to be retrieved. Even if it's set at a later point in time.
-type readyScrapeManager struct {
-	mtx sync.RWMutex
-	m   *scrape.Manager
-}
-
 // Set the scrape manager.
 func (rm *readyScrapeManager) Set(m *scrape.Manager) {
 	rm.mtx.Lock()
@@ -1852,31 +1894,6 @@ func (rm *readyScrapeManager) Get() (*scrape.Manager, error) {
 	}
 
 	return nil, ErrNotReady
-}
-
-// tsdbOptions is tsdb.Option version with defined units.
-// This is required as tsdb.Option fields are unit agnostic (time).
-type tsdbOptions struct {
-	WALSegmentSize                 units.Base2Bytes
-	MaxBlockChunkSegmentSize       units.Base2Bytes
-	RetentionDuration              model.Duration
-	MaxBytes                       units.Base2Bytes
-	NoLockfile                     bool
-	WALCompressionType             compression.Type
-	HeadChunksWriteQueueSize       int
-	SamplesPerChunk                int
-	StripeSize                     int
-	MinBlockDuration               model.Duration
-	MaxBlockDuration               model.Duration
-	OutOfOrderTimeWindow           int64
-	EnableExemplarStorage          bool
-	MaxExemplars                   int64
-	EnableMemorySnapshotOnShutdown bool
-	EnableNativeHistograms         bool
-	EnableDelayedCompaction        bool
-	CompactionDelayMaxPercent      int
-	EnableOverlappingCompaction    bool
-	UseUncachedIO                  bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1904,18 +1921,6 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 	}
 }
 
-// agentOptions is a version of agent.Options with defined units. This is required
-// as agent.Option fields are unit agnostic (time).
-type agentOptions struct {
-	WALSegmentSize         units.Base2Bytes
-	WALCompressionType     compression.Type
-	StripeSize             int
-	TruncateFrequency      model.Duration
-	MinWALTime, MaxWALTime model.Duration
-	NoLockfile             bool
-	OutOfOrderTimeWindow   int64
-}
-
 func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Options {
 	if outOfOrderTimeWindow < 0 {
 		outOfOrderTimeWindow = 0
@@ -1930,11 +1935,6 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 		NoLockfile:           opts.NoLockfile,
 		OutOfOrderTimeWindow: outOfOrderTimeWindow,
 	}
-}
-
-// rwProtoMsgFlagParser is a custom parser for config.RemoteWriteProtoMsg enum.
-type rwProtoMsgFlagParser struct {
-	msgs *[]config.RemoteWriteProtoMsg
 }
 
 func rwProtoMsgFlagValue(msgs *[]config.RemoteWriteProtoMsg) kingpin.Value {

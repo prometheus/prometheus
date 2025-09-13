@@ -45,6 +45,68 @@ import (
 	"github.com/prometheus/prometheus/util/junitxml"
 )
 
+type series struct {
+	Series string `yaml:"series"`
+	Values string `yaml:"values"`
+}
+
+type alertTestCase struct {
+	EvalTime  model.Duration `yaml:"eval_time"`
+	Alertname string         `yaml:"alertname"`
+	ExpAlerts []alert        `yaml:"exp_alerts"`
+}
+
+type alert struct {
+	ExpLabels      map[string]string `yaml:"exp_labels"`
+	ExpAnnotations map[string]string `yaml:"exp_annotations"`
+}
+
+type promqlTestCase struct {
+	Expr       string         `yaml:"expr"`
+	EvalTime   model.Duration `yaml:"eval_time"`
+	ExpSamples []sample       `yaml:"exp_samples"`
+}
+
+type sample struct {
+	Labels    string  `yaml:"labels"`
+	Value     float64 `yaml:"value"`
+	Histogram string  `yaml:"histogram"` // A non-empty string means Value is ignored.
+}
+
+// parsedSample is a sample with parsed Labels.
+type parsedSample struct {
+	Labels    labels.Labels
+	Value     float64
+	Histogram string // TestExpression() of histogram.FloatHistogram
+}
+
+// testGroup is a group of input series and tests associated with it.
+type testGroup struct {
+	Interval        model.Duration   `yaml:"interval"`
+	InputSeries     []series         `yaml:"input_series"`
+	AlertRuleTests  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
+	PromqlExprTests []promqlTestCase `yaml:"promql_expr_test,omitempty"`
+	ExternalLabels  labels.Labels    `yaml:"external_labels,omitempty"`
+	ExternalURL     string           `yaml:"external_url,omitempty"`
+	TestGroupName   string           `yaml:"name,omitempty"`
+}
+
+// unitTestFile holds the contents of a single unit test file.
+type unitTestFile struct {
+	RuleFiles          []string       `yaml:"rule_files"`
+	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
+	GroupEvalOrder     []string       `yaml:"group_eval_order"`
+	Tests              []testGroup    `yaml:"tests"`
+	FuzzyCompare       bool           `yaml:"fuzzy_compare,omitempty"`
+}
+
+type labelAndAnnotation struct {
+	Labels      labels.Labels
+	Annotations labels.Labels
+}
+
+type labelsAndAnnotations []labelAndAnnotation
+
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
 func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
@@ -155,15 +217,6 @@ func matchesRun(name string, run *regexp.Regexp) bool {
 	return run.MatchString(name)
 }
 
-// unitTestFile holds the contents of a single unit test file.
-type unitTestFile struct {
-	RuleFiles          []string       `yaml:"rule_files"`
-	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
-	GroupEvalOrder     []string       `yaml:"group_eval_order"`
-	Tests              []testGroup    `yaml:"tests"`
-	FuzzyCompare       bool           `yaml:"fuzzy_compare,omitempty"`
-}
-
 // resolveAndGlobFilepaths joins all relative paths in a configuration
 // with a given base directory and replaces all globs with matching files.
 func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
@@ -186,17 +239,6 @@ func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
 	}
 	utf.RuleFiles = globbedFiles
 	return nil
-}
-
-// testGroup is a group of input series and tests associated with it.
-type testGroup struct {
-	Interval        model.Duration   `yaml:"interval"`
-	InputSeries     []series         `yaml:"input_series"`
-	AlertRuleTests  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
-	PromqlExprTests []promqlTestCase `yaml:"promql_expr_test,omitempty"`
-	ExternalLabels  labels.Labels    `yaml:"external_labels,omitempty"`
-	ExternalURL     string           `yaml:"external_url,omitempty"`
-	TestGroupName   string           `yaml:"name,omitempty"`
 }
 
 // test performs the unit tests.
@@ -614,8 +656,6 @@ func indentLines(lines, indent string) string {
 	return sb.String()
 }
 
-type labelsAndAnnotations []labelAndAnnotation
-
 func (la labelsAndAnnotations) Len() int      { return len(la) }
 func (la labelsAndAnnotations) Swap(i, j int) { la[i], la[j] = la[j], la[i] }
 func (la labelsAndAnnotations) Less(i, j int) bool {
@@ -639,48 +679,8 @@ func (la labelsAndAnnotations) String() string {
 	return s
 }
 
-type labelAndAnnotation struct {
-	Labels      labels.Labels
-	Annotations labels.Labels
-}
-
 func (la *labelAndAnnotation) String() string {
 	return "Labels:" + la.Labels.String() + "\nAnnotations:" + la.Annotations.String()
-}
-
-type series struct {
-	Series string `yaml:"series"`
-	Values string `yaml:"values"`
-}
-
-type alertTestCase struct {
-	EvalTime  model.Duration `yaml:"eval_time"`
-	Alertname string         `yaml:"alertname"`
-	ExpAlerts []alert        `yaml:"exp_alerts"`
-}
-
-type alert struct {
-	ExpLabels      map[string]string `yaml:"exp_labels"`
-	ExpAnnotations map[string]string `yaml:"exp_annotations"`
-}
-
-type promqlTestCase struct {
-	Expr       string         `yaml:"expr"`
-	EvalTime   model.Duration `yaml:"eval_time"`
-	ExpSamples []sample       `yaml:"exp_samples"`
-}
-
-type sample struct {
-	Labels    string  `yaml:"labels"`
-	Value     float64 `yaml:"value"`
-	Histogram string  `yaml:"histogram"` // A non-empty string means Value is ignored.
-}
-
-// parsedSample is a sample with parsed Labels.
-type parsedSample struct {
-	Labels    labels.Labels
-	Value     float64
-	Histogram string // TestExpression() of histogram.FloatHistogram
 }
 
 func parsedSamplesString(pss []parsedSample) string {

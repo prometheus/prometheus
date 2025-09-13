@@ -35,11 +35,11 @@ type mockQueryRangeAPI struct {
 	samples model.Matrix
 }
 
+const defaultBlockDuration = time.Duration(tsdb.DefaultBlockDuration) * time.Millisecond
+
 func (mockAPI mockQueryRangeAPI) QueryRange(context.Context, string, v1.Range, ...v1.Option) (model.Value, v1.Warnings, error) {
 	return mockAPI.samples, v1.Warnings{}, nil
 }
-
-const defaultBlockDuration = time.Duration(tsdb.DefaultBlockDuration) * time.Millisecond
 
 // TestBackfillRuleIntegration is an integration test that runs all the rule importer code to confirm the parts work together.
 func TestBackfillRuleIntegration(t *testing.T) {

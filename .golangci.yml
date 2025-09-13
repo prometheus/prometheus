@@ -22,6 +22,7 @@ issues:
 linters:
   # Keep this list sorted alphabetically
   enable:
+    - decorder
     - depguard
     - errorlint
     - exptostd
@@ -74,8 +75,13 @@ linters:
       - linters:
           - godot
         source: "^// ==="
+      - linters:
+          - decorder
+        path: "(config|discovery|documentation|model|notifier|prompb|promql|rules|schema|scrape|storage|template|tracing|tsdb|util|web)"
     warn-unused: true
   settings:
+    decorder:
+      disable-dec-order-check: false
     depguard:
       rules:
         main:

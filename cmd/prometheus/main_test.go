@@ -47,11 +47,7 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func init() {
-	// This can be removed when the legacy global mode is fully deprecated.
-	//nolint:staticcheck
-	model.NameValidationScheme = model.UTF8Validation
-}
+type senderFunc func(alerts ...*notifier.Alert)
 
 const startupTime = 10 * time.Second
 
@@ -60,6 +56,12 @@ var (
 	promConfig  = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
 	agentConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus-agent.yml")
 )
+
+func init() {
+	// This can be removed when the legacy global mode is fully deprecated.
+	//nolint:staticcheck
+	model.NameValidationScheme = model.UTF8Validation
+}
 
 func TestMain(m *testing.M) {
 	for i, arg := range os.Args {
@@ -145,8 +147,6 @@ func TestFailedStartupExitCode(t *testing.T) {
 	status := exitError.Sys().(syscall.WaitStatus)
 	require.Equal(t, expectedExitStatus, status.ExitStatus())
 }
-
-type senderFunc func(alerts ...*notifier.Alert)
 
 func (s senderFunc) Send(alerts ...*notifier.Alert) {
 	s(alerts...)

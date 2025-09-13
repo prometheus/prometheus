@@ -27,6 +27,45 @@ import (
 // during a query.
 type QueryTiming int
 
+type QuerySamples struct {
+	// PeakSamples represent the highest count of samples considered
+	// while evaluating a query. It corresponds to the peak value of
+	// currentSamples, which is in turn compared against the MaxSamples
+	// configured in the engine.
+	PeakSamples int
+
+	// TotalSamples represents the total number of samples scanned
+	// while evaluating a query.
+	TotalSamples int64
+
+	// TotalSamplesPerStep represents the total number of samples scanned
+	// per step while evaluating a query. Each step should be identical to the
+	// TotalSamples when a step is run as an instant query, which means
+	// we intentionally do not account for optimizations that happen inside the
+	// range query engine that reduce the actual work that happens.
+	TotalSamplesPerStep []int64
+
+	EnablePerStepStats bool
+	StartTimestamp     int64
+	Interval           int64
+}
+
+type Statistics struct {
+	Timers  *QueryTimers
+	Samples *QuerySamples
+}
+
+type QueryTimers struct {
+	*TimerGroup
+}
+
+type TotalSamplesPerStep map[int64]int
+
+type Stats struct {
+	TimerStats  *QueryTimers
+	SampleStats *QuerySamples
+}
+
 // Query timings.
 const (
 	EvalTotalTime QueryTiming = iota
@@ -214,45 +253,6 @@ func (s *SpanTimer) Finish() {
 	for _, obs := range s.observers {
 		obs.Observe(s.timer.ElapsedTime().Seconds())
 	}
-}
-
-type Statistics struct {
-	Timers  *QueryTimers
-	Samples *QuerySamples
-}
-
-type QueryTimers struct {
-	*TimerGroup
-}
-
-type TotalSamplesPerStep map[int64]int
-
-type QuerySamples struct {
-	// PeakSamples represent the highest count of samples considered
-	// while evaluating a query. It corresponds to the peak value of
-	// currentSamples, which is in turn compared against the MaxSamples
-	// configured in the engine.
-	PeakSamples int
-
-	// TotalSamples represents the total number of samples scanned
-	// while evaluating a query.
-	TotalSamples int64
-
-	// TotalSamplesPerStep represents the total number of samples scanned
-	// per step while evaluating a query. Each step should be identical to the
-	// TotalSamples when a step is run as an instant query, which means
-	// we intentionally do not account for optimizations that happen inside the
-	// range query engine that reduce the actual work that happens.
-	TotalSamplesPerStep []int64
-
-	EnablePerStepStats bool
-	StartTimestamp     int64
-	Interval           int64
-}
-
-type Stats struct {
-	TimerStats  *QueryTimers
-	SampleStats *QuerySamples
 }
 
 func (qs *QuerySamples) InitStepTracking(start, end, interval int64) {

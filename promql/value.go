@@ -29,10 +29,15 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-func (Matrix) Type() parser.ValueType { return parser.ValueTypeMatrix }
-func (Vector) Type() parser.ValueType { return parser.ValueTypeVector }
-func (Scalar) Type() parser.ValueType { return parser.ValueTypeScalar }
-func (String) Type() parser.ValueType { return parser.ValueTypeString }
+// Matrix is a slice of Series that implements sort.Interface and
+// has a String method.
+type Matrix []Series
+
+// Scalar is a data point that's explicitly not associated with a metric.
+type Scalar struct {
+	T int64
+	V float64
+}
 
 // String represents a string value.
 type String struct {
@@ -40,18 +45,21 @@ type String struct {
 	V string
 }
 
+// Vector is basically only an alias for []Sample, but the contract is that
+// in a Vector, all Samples have the same timestamp.
+type Vector []Sample
+
+func (Matrix) Type() parser.ValueType { return parser.ValueTypeMatrix }
+func (Vector) Type() parser.ValueType { return parser.ValueTypeVector }
+func (Scalar) Type() parser.ValueType { return parser.ValueTypeScalar }
+func (String) Type() parser.ValueType { return parser.ValueTypeString }
+
 func (s String) String() string {
 	return s.V
 }
 
 func (s String) MarshalJSON() ([]byte, error) {
 	return json.Marshal([...]any{float64(s.T) / 1000, s.V})
-}
-
-// Scalar is a data point that's explicitly not associated with a metric.
-type Scalar struct {
-	T int64
-	V float64
 }
 
 func (s Scalar) String() string {
@@ -238,10 +246,6 @@ func (s Sample) MarshalJSON() ([]byte, error) {
 	return json.Marshal(h)
 }
 
-// Vector is basically only an alias for []Sample, but the contract is that
-// in a Vector, all Samples have the same timestamp.
-type Vector []Sample
-
 func (vec Vector) String() string {
 	entries := make([]string, len(vec))
 	for i, s := range vec {
@@ -286,10 +290,6 @@ func (vec Vector) ContainsSameLabelset() bool {
 		return false
 	}
 }
-
-// Matrix is a slice of Series that implements sort.Interface and
-// has a String method.
-type Matrix []Series
 
 func (m Matrix) String() string {
 	// TODO(fabxc): sort, or can we rely on order from the querier?
