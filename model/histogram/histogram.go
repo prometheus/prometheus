@@ -425,7 +425,8 @@ func resize[T any](items []T, n int) []T {
 // the total h.Count).
 func (h *Histogram) Validate() error {
 	var nCount, pCount uint64
-	if h.UsesCustomBuckets() {
+	switch {
+	case IsCustomBucketsSchema(h.Schema):
 		if err := checkHistogramCustomBounds(h.CustomValues, h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
 			return fmt.Errorf("custom buckets: %w", err)
 		}
@@ -441,7 +442,7 @@ func (h *Histogram) Validate() error {
 		if len(h.NegativeBuckets) > 0 {
 			return errors.New("custom buckets: must not have negative buckets")
 		}
-	} else {
+	case IsExponentialSchema(h.Schema):
 		if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
 			return fmt.Errorf("positive side: %w", err)
 		}
@@ -455,6 +456,8 @@ func (h *Histogram) Validate() error {
 		if h.CustomValues != nil {
 			return errors.New("histogram with exponential schema must not have custom bounds")
 		}
+	default:
+		return fmt.Errorf("schema %d: %w", h.Schema, ErrHistogramsInvalidSchema)
 	}
 	err := checkHistogramBuckets(h.PositiveBuckets, &pCount, true)
 	if err != nil {

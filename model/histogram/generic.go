@@ -21,9 +21,11 @@ import (
 )
 
 const (
-	ExponentialSchemaMax int32 = 8
-	ExponentialSchemaMin int32 = -4
-	CustomBucketsSchema  int32 = -53
+	ExponentialSchemaMax         int32 = 8
+	ExponentialSchemaMaxReserved int32 = 52
+	ExponentialSchemaMin         int32 = -4
+	ExponentialSchemaMinReserved int32 = -9
+	CustomBucketsSchema          int32 = -53
 )
 
 var (
@@ -37,6 +39,7 @@ var (
 	ErrHistogramCustomBucketsInfinite = errors.New("histogram custom bounds must be finite")
 	ErrHistogramsIncompatibleSchema   = errors.New("cannot apply this operation on histograms with a mix of exponential and custom bucket schemas")
 	ErrHistogramsIncompatibleBounds   = errors.New("cannot apply this operation on custom buckets histograms with different custom bounds")
+	ErrHistogramsInvalidSchema        = errors.New("histogram has an invalid schema, which must be between -4 and 8 for exponential buckets, or -53 for custom buckets")
 )
 
 func IsCustomBucketsSchema(s int32) bool {
@@ -45,6 +48,10 @@ func IsCustomBucketsSchema(s int32) bool {
 
 func IsExponentialSchema(s int32) bool {
 	return s >= ExponentialSchemaMin && s <= ExponentialSchemaMax
+}
+
+func IsExponentialSchemaReserved(s int32) bool {
+	return s >= ExponentialSchemaMinReserved && s <= ExponentialSchemaMaxReserved
 }
 
 // BucketCount is a type constraint for the count in a bucket, which can be
