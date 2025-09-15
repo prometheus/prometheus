@@ -108,74 +108,50 @@ export class HTTPPrometheusClient implements PrometheusClient {
   }
 
   labelNames(metricName?: string): Promise<string[]> {
-    if (metricName === undefined || metricName === '') {
-      const params: URLSearchParams = new URLSearchParams();
-      if (this.lookbackInterval) {
-        const end = new Date();
-        const start = new Date(end.getTime() - this.lookbackInterval);
-        params.set('start', start.toISOString());
-        params.set('end', end.toISOString());
-      }
-      const request = this.buildRequest(this.labelsEndpoint(), params);
-      // See https://prometheus.io/docs/prometheus/latest/querying/api/#getting-label-names
-      return this.fetchAPI<string[]>(request.uri, {
-        method: this.httpMethod,
-        body: request.body,
-      }).catch((error) => {
-        if (this.errorHandler) {
-          this.errorHandler(error);
-        }
-        return [];
-      });
+    const params: URLSearchParams = new URLSearchParams();
+    if (this.lookbackInterval) {
+      const end = new Date();
+      const start = new Date(end.getTime() - this.lookbackInterval);
+      params.set('start', start.toISOString());
+      params.set('end', end.toISOString());
     }
-
-    return this.series(metricName).then((series) => {
-      const labelNames = new Set<string>();
-      for (const labelSet of series) {
-        for (const [key] of Object.entries(labelSet)) {
-          if (key === '__name__') {
-            continue;
-          }
-          labelNames.add(key);
-        }
+    if (metricName && metricName.length > 0) {
+      params.set('match[]', labelMatchersToString(metricName));
+    }
+    const request = this.buildRequest(this.labelsEndpoint(), params);
+    // See https://prometheus.io/docs/prometheus/latest/querying/api/#getting-label-names
+    return this.fetchAPI<string[]>(request.uri, {
+      method: this.httpMethod,
+      body: request.body,
+    }).catch((error) => {
+      if (this.errorHandler) {
+        this.errorHandler(error);
       }
-      return Array.from(labelNames);
+      return [];
     });
   }
 
   // labelValues return a list of the value associated to the given labelName.
   // In case a metric is provided, then the list of values is then associated to the couple <MetricName, LabelName>
   labelValues(labelName: string, metricName?: string, matchers?: Matcher[]): Promise<string[]> {
-    if (!metricName || metricName.length === 0) {
-      const params: URLSearchParams = new URLSearchParams();
-      if (this.lookbackInterval) {
-        const end = new Date();
-        const start = new Date(end.getTime() - this.lookbackInterval);
-        params.set('start', start.toISOString());
-        params.set('end', end.toISOString());
-      }
-      // See https://prometheus.io/docs/prometheus/latest/querying/api/#querying-label-values
-      return this.fetchAPI<string[]>(`${this.labelValuesEndpoint().replace(/:name/gi, labelName)}?${params}`).catch((error) => {
-        if (this.errorHandler) {
-          this.errorHandler(error);
-        }
-        return [];
-      });
+    const params: URLSearchParams = new URLSearchParams();
+    if (this.lookbackInterval) {
+      const end = new Date();
+      const start = new Date(end.getTime() - this.lookbackInterval);
+      params.set('start', start.toISOString());
+      params.set('end', end.toISOString());
     }
 
-    return this.series(metricName, matchers, labelName).then((series) => {
-      const labelValues = new Set<string>();
-      for (const labelSet of series) {
-        for (const [key, value] of Object.entries(labelSet)) {
-          if (key === '__name__') {
-            continue;
-          }
-          if (key === labelName) {
-            labelValues.add(value);
-          }
-        }
+    if (metricName && metricName.length > 0) {
+      params.set('match[]', labelMatchersToString(metricName, matchers, labelName));
+    }
+
+    // See https://prometheus.io/docs/prometheus/latest/querying/api/#querying-label-values
+    return this.fetchAPI<string[]>(`${this.labelValuesEndpoint().replace(/:name/gi, labelName)}?${params}`).catch((error) => {
+      if (this.errorHandler) {
+        this.errorHandler(error);
       }
-      return Array.from(labelValues);
+      return [];
     });
   }
 
@@ -303,13 +279,18 @@ class Cache {
     }
   }
 
+  getAssociations(metricName: string): Map<string, Set<string>> {
+    let currentAssociation = this.completeAssociation.get(metricName);
+    if (!currentAssociation) {
+      currentAssociation = new Map<string, Set<string>>();
+      this.completeAssociation.set(metricName, currentAssociation);
+    }
+    return currentAssociation;
+  }
+
   setAssociations(metricName: string, series: Map<string, string>[]): void {
     series.forEach((labelSet: Map<string, string>) => {
-      let currentAssociation = this.completeAssociation.get(metricName);
-      if (!currentAssociation) {
-        currentAssociation = new Map<string, Set<string>>();
-        this.completeAssociation.set(metricName, currentAssociation);
-      }
+      const currentAssociation = this.getAssociations(metricName);
 
       for (const [key, value] of Object.entries(labelSet)) {
         if (key === '__name__') {
@@ -321,6 +302,27 @@ class Cache {
         } else {
           labelValues.add(value);
         }
+      }
+    });
+  }
+
+  setLabelValuesAssociation(metricName: string, labelName: string, labelValues: string[]): void {
+    const currentAssociation = this.getAssociations(metricName);
+    const set = currentAssociation.get(labelName);
+    if (set === undefined) {
+      currentAssociation.set(labelName, new Set<string>(labelValues));
+    } else {
+      labelValues.forEach((value) => {
+        set.add(value);
+      });
+    }
+  }
+
+  setLabelNamesAssociation(metricName: string, labelNames: string[]): void {
+    const currentAssociation = this.getAssociations(metricName);
+    labelNames.forEach((labelName) => {
+      if (!currentAssociation.has(labelName)) {
+        currentAssociation.set(labelName, new Set<string>());
       }
     });
   }
@@ -341,7 +343,10 @@ class Cache {
     return this.metricMetadata;
   }
 
-  setLabelNames(labelNames: string[]): void {
+  setLabelNames(labelNames: string[], metricName?: string): void {
+    if (metricName && metricName.length > 0) {
+      this.setLabelNamesAssociation(metricName, labelNames);
+    }
     this.labelNames = labelNames;
   }
 
@@ -353,7 +358,10 @@ class Cache {
     return labelSet ? Array.from(labelSet.keys()) : [];
   }
 
-  setLabelValues(labelName: string, labelValues: string[]): void {
+  setLabelValues(labelName: string, labelValues: string[], metricName?: string): void {
+    if (metricName && metricName.length > 0) {
+      this.setLabelValuesAssociation(metricName, labelName, labelValues);
+    }
     this.labelValues.set(labelName, labelValues);
   }
 
@@ -386,15 +394,9 @@ export class CachedPrometheusClient implements PrometheusClient {
     if (cachedLabel && cachedLabel.length > 0) {
       return Promise.resolve(cachedLabel);
     }
-
-    if (metricName === undefined || metricName === '') {
-      return this.client.labelNames().then((labelNames) => {
-        this.cache.setLabelNames(labelNames);
-        return labelNames;
-      });
-    }
-    return this.series(metricName).then(() => {
-      return this.cache.getLabelNames(metricName);
+    return this.client.labelNames(metricName).then((labelNames) => {
+      this.cache.setLabelNames(labelNames, metricName);
+      return labelNames;
     });
   }
 
@@ -403,16 +405,9 @@ export class CachedPrometheusClient implements PrometheusClient {
     if (cachedLabel && cachedLabel.length > 0) {
       return Promise.resolve(cachedLabel);
     }
-
-    if (metricName === undefined || metricName === '') {
-      return this.client.labelValues(labelName).then((labelValues) => {
-        this.cache.setLabelValues(labelName, labelValues);
-        return labelValues;
-      });
-    }
-
-    return this.series(metricName).then(() => {
-      return this.cache.getLabelValues(labelName, metricName);
+    return this.client.labelValues(labelName, metricName).then((labelValues) => {
+      this.cache.setLabelValues(labelName, labelValues, metricName);
+      return labelValues;
     });
   }
 
