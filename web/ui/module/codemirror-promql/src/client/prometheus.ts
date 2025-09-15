@@ -321,6 +321,9 @@ class Cache {
   setLabelNamesAssociation(metricName: string, labelNames: string[]): void {
     const currentAssociation = this.getAssociations(metricName);
     labelNames.forEach((labelName) => {
+      if (labelName === '__name__') {
+        return;
+      }
       if (!currentAssociation.has(labelName)) {
         currentAssociation.set(labelName, new Set<string>());
       }
@@ -396,7 +399,7 @@ export class CachedPrometheusClient implements PrometheusClient {
     }
     return this.client.labelNames(metricName).then((labelNames) => {
       this.cache.setLabelNames(labelNames, metricName);
-      return labelNames;
+      return this.cache.getLabelNames(metricName);
     });
   }
 
