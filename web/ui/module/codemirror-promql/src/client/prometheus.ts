@@ -36,6 +36,7 @@ export interface PrometheusClient {
   // Note that the returned list can be a superset of those suggestions for the prefix (i.e., including ones without the
   // prefix), as codemirror will filter these out when displaying suggestions to the user.
   metricNames(prefix?: string): Promise<string[]>;
+
   // flags returns flag values that prometheus was configured with.
   flags(): Promise<Record<string, string>>;
 }
@@ -77,7 +78,7 @@ const serviceUnavailable = 503;
 
 // HTTPPrometheusClient is the HTTP client that should be used to get some information from the different endpoint provided by prometheus.
 export class HTTPPrometheusClient implements PrometheusClient {
-  private readonly lookbackInterval = 60 * 60 * 1000 * 12; //12 hours
+  private readonly lookbackInterval: undefined | number; //12 hours
   private readonly url: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly errorHandler?: (error: any) => void;
@@ -91,9 +92,7 @@ export class HTTPPrometheusClient implements PrometheusClient {
   constructor(config: PrometheusConfig) {
     this.url = config.url ? config.url : '';
     this.errorHandler = config.httpErrorHandler;
-    if (config.lookbackInterval) {
-      this.lookbackInterval = config.lookbackInterval;
-    }
+    this.lookbackInterval = config.lookbackInterval;
     if (config.fetchFn) {
       this.fetchFn = config.fetchFn;
     }
@@ -109,16 +108,15 @@ export class HTTPPrometheusClient implements PrometheusClient {
   }
 
   labelNames(metricName?: string): Promise<string[]> {
-    const end = new Date();
-    const start = new Date(end.getTime() - this.lookbackInterval);
     if (metricName === undefined || metricName === '') {
-      const request = this.buildRequest(
-        this.labelsEndpoint(),
-        new URLSearchParams({
-          start: start.toISOString(),
-          end: end.toISOString(),
-        })
-      );
+      const params: URLSearchParams = new URLSearchParams();
+      if (this.lookbackInterval) {
+        const end = new Date();
+        const start = new Date(end.getTime() - this.lookbackInterval);
+        params.set('start', start.toISOString());
+        params.set('end', end.toISOString());
+      }
+      const request = this.buildRequest(this.labelsEndpoint(), params);
       // See https://prometheus.io/docs/prometheus/latest/querying/api/#getting-label-names
       return this.fetchAPI<string[]>(request.uri, {
         method: this.httpMethod,
@@ -148,14 +146,14 @@ export class HTTPPrometheusClient implements PrometheusClient {
   // labelValues return a list of the value associated to the given labelName.
   // In case a metric is provided, then the list of values is then associated to the couple <MetricName, LabelName>
   labelValues(labelName: string, metricName?: string, matchers?: Matcher[]): Promise<string[]> {
-    const end = new Date();
-    const start = new Date(end.getTime() - this.lookbackInterval);
-
     if (!metricName || metricName.length === 0) {
-      const params: URLSearchParams = new URLSearchParams({
-        start: start.toISOString(),
-        end: end.toISOString(),
-      });
+      const params: URLSearchParams = new URLSearchParams();
+      if (this.lookbackInterval) {
+        const end = new Date();
+        const start = new Date(end.getTime() - this.lookbackInterval);
+        params.set('start', start.toISOString());
+        params.set('end', end.toISOString());
+      }
       // See https://prometheus.io/docs/prometheus/latest/querying/api/#querying-label-values
       return this.fetchAPI<string[]>(`${this.labelValuesEndpoint().replace(/:name/gi, labelName)}?${params}`).catch((error) => {
         if (this.errorHandler) {
@@ -191,16 +189,15 @@ export class HTTPPrometheusClient implements PrometheusClient {
   }
 
   series(metricName: string, matchers?: Matcher[], labelName?: string): Promise<Map<string, string>[]> {
-    const end = new Date();
-    const start = new Date(end.getTime() - this.lookbackInterval);
-    const request = this.buildRequest(
-      this.seriesEndpoint(),
-      new URLSearchParams({
-        start: start.toISOString(),
-        end: end.toISOString(),
-        'match[]': labelMatchersToString(metricName, matchers, labelName),
-      })
-    );
+    const params: URLSearchParams = new URLSearchParams();
+    if (this.lookbackInterval) {
+      const end = new Date();
+      const start = new Date(end.getTime() - this.lookbackInterval);
+      params.set('start', start.toISOString());
+      params.set('end', end.toISOString());
+    }
+    params.set('match[]', labelMatchersToString(metricName, matchers, labelName));
+    const request = this.buildRequest(this.seriesEndpoint(), params);
     // See https://prometheus.io/docs/prometheus/latest/querying/api/#finding-series-by-label-matchers
     return this.fetchAPI<Map<string, string>[]>(request.uri, {
       method: this.httpMethod,
