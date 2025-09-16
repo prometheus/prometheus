@@ -114,6 +114,8 @@ eval range from 1m to 4m step 1m info(metric offset 1m)
 
 clear
 
+# info_metric churn:
+
 load 1m
     data_metric{instance="a", job="work"} 10 20 30
     data_metric{instance="b", job="work"} 11 21 31
@@ -125,3 +127,26 @@ eval range from 0 to 2m step 1m info(data_metric, {__name__="info_metric"})
     data_metric{instance="a", job="work", state="running"} 10 20 30
     data_metric{instance="b", job="work", state="stopped"} 11 21 _
     data_metric{instance="b", job="work", state="running"} _  _ 31
+
+clear
+
+# data_metric churn:
+
+load 1m
+	data_metric{instance="a", job="work"} 10 20 stale
+	data_metric{instance="b", job="work"} 11 21 31
+	data_metric{instance="a", job="work", label="new"} _ _ 30
+	info_metric{instance="b", job="work", state="stopped"} 1 1 1
+	info_metric{instance="a", job="work", state="running"} 1 1 1
+
+eval range from 0 to 2m step 1m info(data_metric, {__name__="info_metric"})
+	data_metric{instance="a", job="work", state="running"} 10 20 _
+	data_metric{instance="b", job="work", state="stopped"} 11 21 31
+	data_metric{instance="a", job="work", state="running", label="new"} _ _ 30
+
+eval range from 0 to 2m step 1m info({job="work"}, {__name__="info_metric"})
+	data_metric{instance="a", job="work", state="running"} 10 20 _
+	data_metric{instance="b", job="work", state="stopped"} 11 21 31
+	data_metric{instance="a", job="work", state="running", label="new"} _ _ 30
+	info_metric{instance="b", job="work", state="stopped"} 1 1 1
+	info_metric{instance="a", job="work", state="running"} 1 1 1
