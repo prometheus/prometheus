@@ -65,7 +65,7 @@ func (ls Labels) Bytes(buf []byte) []byte {
 
 // IsZero implements yaml.IsZeroer - if we don't have this then 'omitempty' fields are always omitted.
 func (ls Labels) IsZero() bool {
-	return len(ls.data) == 0
+	return ls.data == ""
 }
 
 // MatchLabels returns a subset of Labels that matches/does not match with the provided label names based on the 'on' boolean.
@@ -379,7 +379,7 @@ func (ls *Labels) CopyFrom(b Labels) {
 
 // IsEmpty returns true if ls represents an empty set of labels.
 func (ls Labels) IsEmpty() bool {
-	return len(ls.data) == 0
+	return ls.data == ""
 }
 
 // Len returns the number of labels; it is relatively slow.
