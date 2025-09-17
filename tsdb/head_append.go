@@ -2229,6 +2229,13 @@ func (a *headAppender) Rollback() (err error) {
 			series.pendingCommit = false
 			series.Unlock()
 		}
+		for i := range b.floatHistograms {
+			series = b.floatHistogramSeries[i]
+			series.Lock()
+			series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
+			series.pendingCommit = false
+			series.Unlock()
+		}
 		b.close(h)
 	}
 	a.batches = a.batches[:0]
