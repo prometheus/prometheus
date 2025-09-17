@@ -23,6 +23,9 @@ import (
 
 type BucketEmitter func(labels labels.Labels, value float64) error
 
+// ConvertNHCBToClassicHistogram converts Native Histogram Custom Buckets (NHCB) to classic histogram series.
+// This conversion is needed in various scenarios where users need to get NHCB back to classic histogram format,
+// such as Remote Write v1 for external system compatibility and migration use cases.
 func ConvertNHCBToClassicHistogram(nhcb interface{}, labels labels.Labels, lblBuilder *labels.Builder, bucketSeries BucketEmitter) error {
 	baseName := labels.Get("__name__")
 	if baseName == "" {
