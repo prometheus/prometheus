@@ -47,7 +47,7 @@ type Endpoints struct {
 	endpointsStore cache.Store
 	serviceStore   cache.Store
 
-	queue *workqueue.Type
+	queue *workqueue.Typed[any]
 }
 
 // NewEndpoints returns a new endpoints discovery.
@@ -79,7 +79,9 @@ func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node,
 		withNodeMetadata:      node != nil,
 		namespaceInf:          namespace,
 		withNamespaceMetadata: namespace != nil,
-		queue:                 workqueue.NewNamed(RoleEndpoint.String()),
+		queue: workqueue.NewTypedWithConfig[any](workqueue.TypedQueueConfig[any]{
+			Name: RoleEndpoint.String(),
+		}),
 	}
 
 	_, err := e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
