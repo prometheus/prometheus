@@ -300,19 +300,87 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 	}()
 
 	app := db.Appender(context.Background())
-	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, 0)
+	_, err := app.Append(0, labels.FromStrings("type", "float"), 0, 0)
+	require.NoError(t, err)
+
+	_, err = app.AppendHistogram(
+		0, labels.FromStrings("type", "histogram"), 0,
+		&histogram.Histogram{Count: 42, Sum: math.NaN()}, nil,
+	)
+	require.NoError(t, err)
+
+	_, err = app.AppendHistogram(
+		0, labels.FromStrings("type", "floathistogram"), 0,
+		nil, &histogram.FloatHistogram{Count: 42, Sum: math.NaN()},
+	)
 	require.NoError(t, err)
 
 	err = app.Rollback()
 	require.NoError(t, err)
 
-	querier, err := db.Querier(0, 1)
+	for _, typ := range []string{"float", "histogram", "floathistogram"} {
+		querier, err := db.Querier(0, 1)
+		require.NoError(t, err)
+		seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "type", typ))
+		require.Equal(t, map[string][]chunks.Sample{}, seriesSet)
+	}
+
+	sr, err := wlog.NewSegmentsReader(db.head.wal.Dir())
 	require.NoError(t, err)
-	defer querier.Close()
+	defer func() {
+		require.NoError(t, sr.Close())
+	}()
 
-	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	// Read records from WAL and check for expected count of series and samples.
+	var (
+		r   = wlog.NewReader(sr)
+		dec = record.NewDecoder(labels.NewSymbolTable())
 
-	require.Equal(t, map[string][]chunks.Sample{}, seriesSet)
+		walSeriesCount, walSamplesCount, walHistogramCount, walFloatHistogramCount, walExemplarsCount int
+	)
+	for r.Next() {
+		rec := r.Record()
+		switch dec.Type(rec) {
+		case record.Series:
+			var series []record.RefSeries
+			series, err = dec.Series(rec, series)
+			require.NoError(t, err)
+			walSeriesCount += len(series)
+
+		case record.Samples:
+			var samples []record.RefSample
+			samples, err = dec.Samples(rec, samples)
+			require.NoError(t, err)
+			walSamplesCount += len(samples)
+
+		case record.Exemplars:
+			var exemplars []record.RefExemplar
+			exemplars, err = dec.Exemplars(rec, exemplars)
+			require.NoError(t, err)
+			walExemplarsCount += len(exemplars)
+
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
+			var histograms []record.RefHistogramSample
+			histograms, err = dec.HistogramSamples(rec, histograms)
+			require.NoError(t, err)
+			walHistogramCount += len(histograms)
+
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+			var floatHistograms []record.RefFloatHistogramSample
+			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
+			require.NoError(t, err)
+			walFloatHistogramCount += len(floatHistograms)
+
+		default:
+		}
+	}
+
+	// Check that only series get stored after calling Rollback.
+	require.Equal(t, 3, walSeriesCount, "series should have been written to WAL")
+	require.Equal(t, 0, walSamplesCount, "samples should not have been written to WAL")
+	require.Equal(t, 0, walExemplarsCount, "exemplars should not have been written to WAL")
+	require.Equal(t, 0, walHistogramCount, "histograms should not have been written to WAL")
+	require.Equal(t, 0, walFloatHistogramCount, "float histograms should not have been written to WAL")
 }
 
 func TestDBAppenderAddRef(t *testing.T) {
