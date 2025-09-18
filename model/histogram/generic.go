@@ -54,6 +54,10 @@ func IsExponentialSchemaReserved(s int32) bool {
 	return s >= ExponentialSchemaMinReserved && s <= ExponentialSchemaMaxReserved
 }
 
+func IsValidSchema(s int32) bool {
+	return IsCustomBucketsSchema(s) || IsExponentialSchema(s)
+}
+
 // BucketCount is a type constraint for the count in a bucket, which can be
 // float64 (for type FloatHistogram) or uint64 (for type Histogram).
 type BucketCount interface {

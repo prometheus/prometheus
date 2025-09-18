@@ -1077,6 +1077,12 @@ func (it *histogramIterator) Next() ValueType {
 			it.err = err
 			return ValNone
 		}
+
+		if !histogram.IsValidSchema(schema) {
+			it.err = fmt.Errorf("invalid histogram schema %d", schema)
+			return ValNone
+		}
+
 		it.schema = schema
 		it.zThreshold = zeroThreshold
 		it.pSpans, it.nSpans = posSpans, negSpans
