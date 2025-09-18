@@ -190,7 +190,9 @@ Loop:
 		isHistogram := s.H != nil
 		formatType := format.FormatType()
 		if isHistogram &&
-			formatType != expfmt.TypeProtoDelim && formatType != expfmt.TypeProtoText && formatType != expfmt.TypeProtoCompact {
+			formatType != expfmt.TypeProtoDelim &&
+			formatType != expfmt.TypeProtoText &&
+			formatType != expfmt.TypeProtoCompact {
 			// Can't serve the native histogram.
 			// TODO(codesome): Serve them when other protocols get the native histogram support.
 			continue
@@ -208,20 +210,30 @@ Loop:
 			}
 			if l.Name == labels.MetricName {
 				nameSeen = true
-				if l.Value == lastMetricName && // We already have the name in the current MetricDescriptor, and we ignore nameless metrics.
-					lastWasHistogram == isHistogram && // The sample type matches (float vs histogram).
-					// If it was a histogram, the histogram type (counter vs gauge) also matches.
-					(!isHistogram || lastHistogramWasGauge == (s.H.CounterResetHint == histogram.GaugeType)) {
+				// We already have the name in the current MetricDescriptor,
+				// and we ignore nameless metrics.
+				if l.Value == lastMetricName &&
+					// The sample type matches (float vs histogram).
+					lastWasHistogram == isHistogram &&
+					// If it was a histogram, the histogram type
+					// (counter vs gauge) also matches.
+					(!isHistogram ||
+						lastHistogramWasGauge == (s.H.CounterResetHint == histogram.GaugeType)) {
 					return nil
 				}
 
-				// Since we now check for the sample type and type of histogram above, we will end up
-				// creating multiple metric families for the same metric name. This would technically be
-				// an invalid exposition. But since the consumer of this is Prometheus, and Prometheus can
-				// parse it fine, we allow it and bend the rules to make federation possible in those cases.
+				// Since we now check for the sample type and
+				// type of histogram above, we will end up
+				// creating multiple metric families for the
+				// same metric name. This would technically be
+				// an invalid exposition. But since the consumer
+				// of this is Prometheus, and Prometheus can
+				// parse it fine, we allow it and bend the rules
+				// to make federation possible in those cases.
 
-				// Need to start a new MetricDescriptor. Ship off the old one (if any) before
-				// creating the new one.
+				// Need to start a new MetricDescriptor. Ship
+				// off the old one (if any) before creating the
+				// new one.
 				if protMetricFam != nil {
 					if err := enc.Encode(protMetricFam); err != nil {
 						return err
