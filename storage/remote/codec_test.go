@@ -548,6 +548,50 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 	require.Equal(t, chunkenc.ValNone, it.Seek(1))
 }
 
+func TestConcreteSeriesIterator_InvalidHistogramSamples(t *testing.T) {
+	for _, schema := range []int32{-100, 100} {
+		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
+			h := prompb.FromIntHistogram(2, &testHistogram)
+			h.Schema = schema
+			fh := prompb.FromFloatHistogram(4, testHistogram.ToFloat(nil))
+			fh.Schema = schema
+			series := &concreteSeries{
+				labels: labels.FromStrings("foo", "bar"),
+				floats: []prompb.Sample{
+					{Value: 1, Timestamp: 0},
+					{Value: 2, Timestamp: 3},
+				},
+				histograms: []prompb.Histogram{
+					h,
+					fh,
+				},
+			}
+			it := series.Iterator(nil)
+			require.Equal(t, chunkenc.ValFloat, it.Next())
+			require.Equal(t, chunkenc.ValNone, it.Next())
+			require.Error(t, it.Err())
+
+			it = series.Iterator(it)
+			require.Equal(t, chunkenc.ValFloat, it.Next())
+			require.Equal(t, chunkenc.ValNone, it.Next())
+			require.Error(t, it.Err())
+
+			it = series.Iterator(it)
+			require.Equal(t, chunkenc.ValNone, it.Seek(1))
+			require.Error(t, it.Err())
+
+			it = series.Iterator(it)
+			require.Equal(t, chunkenc.ValFloat, it.Seek(3))
+			require.Equal(t, chunkenc.ValNone, it.Next())
+			require.Error(t, it.Err())
+
+			it = series.Iterator(it)
+			require.Equal(t, chunkenc.ValNone, it.Seek(4))
+			require.Error(t, it.Err())
+		})
+	}
+}
+
 func TestFromQueryResultWithDuplicates(t *testing.T) {
 	ts1 := prompb.TimeSeries{
 		Labels: []prompb.Label{
