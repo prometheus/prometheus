@@ -313,7 +313,7 @@ Native Histograms are not yet supported by the extended range selectors.
 
 ### `anchored`
 
-Uses the most recent sample (within the lookback delta) at or before each boundary, or alternatively the first/last sample within the range. No extrapolation or interpolation is applied, so this is useful to get the direct difference between sample values.
+Uses the most recent sample (within the lookback delta) at the beginning of the range, or alternatively the first sample within the range if there is no sample within the lookback delta. The last sample within the range is also used at the end of the range. No extrapolation or interpolation is applied, so this is useful to get the direct difference between sample values.
 
 Anchored range selector work with: `resets`, `changes`, `rate`, `increase`, and `delta`.
 
