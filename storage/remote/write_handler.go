@@ -474,7 +474,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			if errors.Is(err, storage.ErrNativeHistogramsDisabled) {
 				// Receiver supports protocol, but cannot process native histograms.
 				nhDisabled = true
-				h.logger.Error("Out of order histogram from remote write", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
+				h.logger.Debug("Native histograms not enabled", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
 				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
 				continue
 			}
