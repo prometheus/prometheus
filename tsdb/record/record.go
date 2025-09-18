@@ -18,6 +18,7 @@ package record
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 
 	"github.com/prometheus/common/model"
@@ -202,10 +203,11 @@ type RefMmapMarker struct {
 // Decoder decodes series, sample, metadata and tombstone records.
 type Decoder struct {
 	builder labels.ScratchBuilder
+	logger  *slog.Logger
 }
 
-func NewDecoder(*labels.SymbolTable) Decoder { // FIXME remove t
-	return Decoder{builder: labels.NewScratchBuilder(0)}
+func NewDecoder(_ *labels.SymbolTable, logger *slog.Logger) Decoder { // FIXME remove t
+	return Decoder{builder: labels.NewScratchBuilder(0), logger: logger}
 }
 
 // Type returns the type of the record.
@@ -433,7 +435,7 @@ func (*Decoder) MmapMarkers(rec []byte, markers []RefMmapMarker) ([]RefMmapMarke
 	return markers, nil
 }
 
-func (*Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) ([]RefHistogramSample, error) {
+func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) ([]RefHistogramSample, error) {
 	dec := encoding.Decbuf{B: rec}
 	t := Type(dec.Byte())
 	if t != HistogramSamples && t != CustomBucketsHistogramSamples {
@@ -457,6 +459,18 @@ func (*Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) ([
 		}
 
 		DecodeHistogram(&dec, rh.H)
+
+		if !histogram.IsKnownSchema(rh.H.Schema) {
+			d.logger.Warn("invalid histogram schema in WAL record", "schema", rh.H.Schema, "timestamp", rh.T)
+			continue
+		}
+		if rh.H.Schema > histogram.ExponentialSchemaMax && rh.H.Schema <= histogram.ExponentialSchemaMaxReserved {
+			// This is a very slow path, but it should only happen if the
+			// record is from a newer Prometheus version that supports higher
+			// resolution.
+			rh.H.ReduceResolution(histogram.ExponentialSchemaMax)
+		}
+
 		histograms = append(histograms, rh)
 	}
 
@@ -525,7 +539,7 @@ func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 	}
 }
 
-func (*Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogramSample) ([]RefFloatHistogramSample, error) {
+func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogramSample) ([]RefFloatHistogramSample, error) {
 	dec := encoding.Decbuf{B: rec}
 	t := Type(dec.Byte())
 	if t != FloatHistogramSamples && t != CustomBucketsFloatHistogramSamples {
@@ -549,6 +563,18 @@ func (*Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogram
 		}
 
 		DecodeFloatHistogram(&dec, rh.FH)
+
+		if !histogram.IsKnownSchema(rh.FH.Schema) {
+			d.logger.Warn("invalid histogram schema in WAL record", "schema", rh.FH.Schema, "timestamp", rh.T)
+			continue
+		}
+		if rh.FH.Schema > histogram.ExponentialSchemaMax && rh.FH.Schema <= histogram.ExponentialSchemaMaxReserved {
+			// This is a very slow path, but it should only happen if the
+			// record is from a newer Prometheus version that supports higher
+			// resolution.
+			rh.FH.ReduceResolution(histogram.ExponentialSchemaMax)
+		}
+
 		histograms = append(histograms, rh)
 	}
 

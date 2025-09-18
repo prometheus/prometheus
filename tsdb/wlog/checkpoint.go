@@ -156,7 +156,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		exemplars             []record.RefExemplar
 		metadata              []record.RefMetadata
 		st                    = labels.NewSymbolTable() // Needed for decoding; labels do not outlive this function.
-		dec                   = record.NewDecoder(st)
+		dec                   = record.NewDecoder(st, logger)
 		enc                   record.Encoder
 		buf                   []byte
 		recs                  [][]byte
