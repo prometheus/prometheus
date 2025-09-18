@@ -472,7 +472,7 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 }
 
 func validateHistogramSchema(h *prompb.Histogram) error {
-	if histogram.IsValidSchema(h.Schema) {
+	if histogram.IsAcceptibleSchema(h.Schema) {
 		return nil
 	}
 	return histogram.InvalidSchemaError(h.Schema)
@@ -500,14 +500,28 @@ func (c *concreteSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *hist
 		panic("iterator is not on an integer histogram sample")
 	}
 	h := c.series.histograms[c.histogramsCur]
-	return h.Timestamp, h.ToIntHistogram()
+	mh := h.ToIntHistogram()
+	if mh.Schema > histogram.ExponentialSchemaMax && mh.Schema <= histogram.ExponentialSchemaMaxReserved {
+		// This is a very slow path, but it should only happen if the
+		// sample is from a newer Prometheus version that supports higher
+		// resolution.
+		mh.ReduceResolution(histogram.ExponentialSchemaMax)
+	}
+	return h.Timestamp, mh
 }
 
 // AtFloatHistogram implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if c.curValType == chunkenc.ValHistogram || c.curValType == chunkenc.ValFloatHistogram {
 		fh := c.series.histograms[c.histogramsCur]
-		return fh.Timestamp, fh.ToFloatHistogram() // integer will be auto-converted.
+		mfh := fh.ToFloatHistogram() // integer will be auto-converted.
+		if mfh.Schema > histogram.ExponentialSchemaMax && mfh.Schema <= histogram.ExponentialSchemaMaxReserved {
+			// This is a very slow path, but it should only happen if the
+			// sample is from a newer Prometheus version that supports higher
+			// resolution.
+			mfh.ReduceResolution(histogram.ExponentialSchemaMax)
+		}
+		return fh.Timestamp, mfh
 	}
 	panic("iterator is not on a histogram sample")
 }

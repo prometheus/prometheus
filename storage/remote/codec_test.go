@@ -592,6 +592,34 @@ func TestConcreteSeriesIterator_InvalidHistogramSamples(t *testing.T) {
 	}
 }
 
+func TestConcreteSeriesIterator_ReducesHighResolutionHistograms(t *testing.T) {
+	for _, schema := range []int32{9, 52} {
+		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
+			h := testHistogram.Copy()
+			h.Schema = schema
+			fh := h.ToFloat(nil)
+			series := &concreteSeries{
+				labels: labels.FromStrings("foo", "bar"),
+				histograms: []prompb.Histogram{
+					prompb.FromIntHistogram(1, h),
+					prompb.FromFloatHistogram(2, fh),
+				},
+			}
+			it := series.Iterator(nil)
+			require.Equal(t, chunkenc.ValHistogram, it.Next())
+			_, gotH := it.AtHistogram(nil)
+			require.Equal(t, histogram.ExponentialSchemaMax, gotH.Schema)
+			_, gotFH := it.AtFloatHistogram(nil)
+			require.Equal(t, histogram.ExponentialSchemaMax, gotFH.Schema)
+			require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
+			_, gotFH = it.AtFloatHistogram(nil)
+			require.Equal(t, histogram.ExponentialSchemaMax, gotFH.Schema)
+			require.Equal(t, chunkenc.ValNone, it.Next())
+			require.NoError(t, it.Err())
+		})
+	}
+}
+
 func TestFromQueryResultWithDuplicates(t *testing.T) {
 	ts1 := prompb.TimeSeries{
 		Labels: []prompb.Label{
