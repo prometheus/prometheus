@@ -95,6 +95,9 @@ type Options struct {
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
 
+	// Option to warn if targets relabelled to same labels
+	WarnDuplicateTargets bool
+
 	// private option for testability.
 	skipOffsetting bool
 }
@@ -213,6 +216,36 @@ func (m *Manager) reload() {
 	}
 	m.mtxScrape.Unlock()
 	wg.Wait()
+
+	if m.opts.WarnDuplicateTargets {
+		m.warnIfTargetsRelabelledToSameLabels()
+	}
+}
+
+func (m *Manager) warnIfTargetsRelabelledToSameLabels() {
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+
+	totalTargets := 0
+	for _, scrapePool := range m.scrapePools {
+		totalTargets += len(scrapePool.activeTargets)
+	}
+
+	activeTargets := make(map[uint64]*Target, totalTargets)
+	for _, scrapePool := range m.scrapePools {
+		for _, target := range scrapePool.activeTargets {
+			tHash := target.hash()
+			_, ok := activeTargets[tHash]
+			if !ok {
+				activeTargets[tHash] = target
+				continue
+			}
+			m.logger.Warn(
+				"Found active targets with same labels after relabelling",
+				"labels", target.labels.String(),
+			)
+		}
+	}
 }
 
 // setOffsetSeed calculates a global offsetSeed per server relying on extra label set.
