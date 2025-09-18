@@ -359,3 +359,56 @@ load 1m
     
 eval instant at 2m15s increase(metric[2m] smoothed)
     {} 12
+
+clear
+eval instant at 1m deriv(foo[3m] smoothed)
+    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with deriv
+
+eval instant at 1m resets(foo[3m] smoothed)
+    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with resets
+
+eval instant at 1m changes(foo[3m] smoothed)
+    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with changes
+
+eval instant at 1m max_over_time(foo[3m] smoothed)
+    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with max_over_time
+
+eval instant at 1m predict_linear(foo[3m] smoothed, 4)
+    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with predict_linear
+
+eval instant at 1m deriv(foo[3m] anchored)
+    expect fail msg: anchored modifier can only be used with: changes, delta, increase, rate, resets - not with deriv
+
+eval instant at 1m resets(foo[3m] anchored)
+
+eval instant at 1m changes(foo[3m] anchored)
+
+eval instant at 1m max_over_time(foo[3m] anchored)
+    expect fail msg: anchored modifier can only be used with: changes, delta, increase, rate, resets - not with max_over_time
+
+eval instant at 1m predict_linear(foo[3m] anchored, 4)
+    expect fail msg: anchored modifier can only be used with: changes, delta, increase, rate, resets - not with predict_linear
+
+clear
+load 10s
+    metric 1+1x10
+    withreset 1+1x4 1+1x5
+    notregular 0 5 100 2 8
+
+eval instant at 10s metric smoothed
+    metric 2
+
+eval instant at 15s metric smoothed
+    metric 2.5
+
+eval instant at 5s metric smoothed
+    metric 1.5
+
+eval instant at 105s metric smoothed
+    metric 11
+
+eval instant at 45s withreset smoothed
+    withreset 3
+
+eval instant at 30s notregular smoothed
+    notregular 2
