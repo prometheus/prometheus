@@ -806,6 +806,84 @@ func TestCommitErr_V1Message(t *testing.T) {
 	require.Equal(t, "commit error\n", string(body))
 }
 
+func TestHistogramValidationErrorHandling(t *testing.T) {
+	// Test that histogram validation errors return HTTP 400 instead of HTTP 500
+	// Create histograms with validation errors
+	invalidCountHist := histogram.Histogram{
+		Schema:          2,
+		ZeroThreshold:   1e-128,
+		ZeroCount:       1,
+		Count:           10,
+		Sum:             20,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []int64{2},
+		NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		NegativeBuckets: []int64{3},
+		// Total: 1 (zero) + 2 (positive) + 3 (negative) = 6, but Count = 10
+	}
+
+	invalidCustomHist := histogram.Histogram{
+		Schema:          histogram.CustomBucketsSchema,
+		Count:           10,
+		Sum:             20,
+		ZeroCount:       1, // Invalid: custom buckets must have zero count of 0
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []int64{10},
+		CustomValues:    []float64{1.0},
+	}
+
+	for _, tc := range []struct {
+		desc     string
+		protoMsg config.RemoteWriteProtoMsg
+		hist     histogram.Histogram
+		expected string
+	}{
+		{"V1 count mismatch", config.RemoteWriteProtoMsgV1, invalidCountHist, "histogram's observation count should equal"},
+		{"V2 count mismatch", config.RemoteWriteProtoMsgV2, invalidCountHist, "histogram's observation count should equal"},
+		{"V1 custom bucket", config.RemoteWriteProtoMsgV1, invalidCustomHist, "custom buckets: must have zero count of 0"},
+		{"V2 custom bucket", config.RemoteWriteProtoMsgV2, invalidCustomHist, "custom buckets: must have zero count of 0"},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			dir := t.TempDir()
+			opts := tsdb.DefaultOptions()
+			opts.EnableNativeHistograms = true
+
+			db, err := tsdb.Open(dir, nil, nil, opts, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{tc.protoMsg}, false)
+			recorder := httptest.NewRecorder()
+
+			var buf []byte
+			if tc.protoMsg == config.RemoteWriteProtoMsgV1 {
+				ts := []prompb.TimeSeries{{
+					Labels:     []prompb.Label{{Name: "__name__", Value: "test"}},
+					Histograms: []prompb.Histogram{prompb.FromIntHistogram(1, &tc.hist)},
+				}}
+				buf, _, _, err = buildWriteRequest(nil, ts, nil, nil, nil, nil, "snappy")
+			} else {
+				st := writev2.NewSymbolTable()
+				ts := []writev2.TimeSeries{{
+					LabelsRefs: st.SymbolizeLabels(labels.FromStrings("__name__", "test"), nil),
+					Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, &tc.hist)},
+				}}
+				buf, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), ts, st.Symbols(), nil, nil, nil, "snappy")
+			}
+			require.NoError(t, err)
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/write", bytes.NewReader(buf))
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[tc.protoMsg])
+			req.Header.Set("Content-Encoding", "snappy")
+
+			handler.ServeHTTP(recorder, req)
+
+			require.Equal(t, http.StatusBadRequest, recorder.Code)
+			require.Contains(t, recorder.Body.String(), tc.expected)
+		})
+	}
+}
+
 func TestCommitErr_V2Message(t *testing.T) {
 	payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
