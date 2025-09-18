@@ -151,6 +151,10 @@ type Iterator interface {
 	// AtT returns the current timestamp.
 	// Before the iterator has advanced, the behaviour is unspecified.
 	AtT() int64
+	// AtCT returns the current created timestamp.
+	// The created timestamp (ct) is optional. The value int64(0) means no timestamp.
+	// Before the iterator has advanced, the behaviour is unspecified.
+	AtCT() int64
 	// Err returns the current error. It should be used only after the
 	// iterator is exhausted, i.e. `Next` or `Seek` have returned ValNone.
 	Err() error
@@ -241,6 +245,10 @@ func (it *mockSeriesIterator) AtT() int64 {
 	return it.timeStamps[it.currIndex]
 }
 
+func (*mockSeriesIterator) AtCT() int64 {
+	return 0
+}
+
 func (it *mockSeriesIterator) Next() ValueType {
 	if it.currIndex < len(it.timeStamps)-1 {
 		it.currIndex++
@@ -269,6 +277,10 @@ func (nopIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogra
 	return math.MinInt64, nil
 }
 func (nopIterator) AtT() int64 { return math.MinInt64 }
+func (nopIterator) AtCT() int64 {
+	return 0
+}
+
 func (nopIterator) Err() error { return nil }
 
 // Pool is used to create and reuse chunk references to avoid allocations.
