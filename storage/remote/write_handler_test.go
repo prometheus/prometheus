@@ -807,80 +807,168 @@ func TestCommitErr_V1Message(t *testing.T) {
 }
 
 func TestHistogramValidationErrorHandling(t *testing.T) {
-	// Test that histogram validation errors return HTTP 400 instead of HTTP 500
-	// Create histograms with validation errors
-	invalidCountHist := histogram.Histogram{
-		Schema:          2,
-		ZeroThreshold:   1e-128,
-		ZeroCount:       1,
-		Count:           10,
-		Sum:             20,
-		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-		PositiveBuckets: []int64{2},
-		NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-		NegativeBuckets: []int64{3},
-		// Total: 1 (zero) + 2 (positive) + 3 (negative) = 6, but Count = 10
-	}
-
-	invalidCustomHist := histogram.Histogram{
-		Schema:          histogram.CustomBucketsSchema,
-		Count:           10,
-		Sum:             20,
-		ZeroCount:       1, // Invalid: custom buckets must have zero count of 0
-		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-		PositiveBuckets: []int64{10},
-		CustomValues:    []float64{1.0},
-	}
-
-	for _, tc := range []struct {
+	testCases := []struct {
 		desc     string
-		protoMsg config.RemoteWriteProtoMsg
 		hist     histogram.Histogram
 		expected string
 	}{
-		{"V1 count mismatch", config.RemoteWriteProtoMsgV1, invalidCountHist, "histogram's observation count should equal"},
-		{"V2 count mismatch", config.RemoteWriteProtoMsgV2, invalidCountHist, "histogram's observation count should equal"},
-		{"V1 custom bucket", config.RemoteWriteProtoMsgV1, invalidCustomHist, "custom buckets: must have zero count of 0"},
-		{"V2 custom bucket", config.RemoteWriteProtoMsgV2, invalidCustomHist, "custom buckets: must have zero count of 0"},
-	} {
-		t.Run(tc.desc, func(t *testing.T) {
-			dir := t.TempDir()
-			opts := tsdb.DefaultOptions()
-			opts.EnableNativeHistograms = true
+		{
+			desc: "count mismatch",
+			hist: histogram.Histogram{
+				Schema:          2,
+				ZeroThreshold:   1e-128,
+				ZeroCount:       1,
+				Count:           10,
+				Sum:             20,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{2},
+				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				NegativeBuckets: []int64{3},
+				// Total: 1 (zero) + 2 (positive) + 3 (negative) = 6, but Count = 10
+			},
+			expected: "histogram's observation count should equal",
+		},
+		{
+			desc: "negative bucket count",
+			hist: histogram.Histogram{
+				Schema:          2,
+				ZeroThreshold:   1e-128,
+				ZeroCount:       1,
+				Count:           10,
+				Sum:             20,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{-2}, // Negative bucket count
+			},
+			expected: "histogram has a bucket whose observation count is negative",
+		},
+		{
+			desc: "span negative offset",
+			hist: histogram.Histogram{
+				Schema:          2,
+				ZeroThreshold:   1e-128,
+				ZeroCount:       1,
+				Count:           3,
+				Sum:             20,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}, {Offset: -1, Length: 1}}, // Second span has negative offset
+				PositiveBuckets: []int64{1, 1},
+			},
+			expected: "histogram has a span whose offset is negative",
+		},
+		{
+			desc: "spans buckets mismatch",
+			hist: histogram.Histogram{
+				Schema:          2,
+				ZeroThreshold:   1e-128,
+				ZeroCount:       1,
+				Count:           3,
+				Sum:             20,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}}, // Length 2 but only 1 bucket
+				PositiveBuckets: []int64{2},
+			},
+			expected: "histogram spans specify different number of buckets",
+		},
+		{
+			desc: "custom buckets zero count",
+			hist: histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           10,
+				Sum:             20,
+				ZeroCount:       1, // Invalid: custom buckets must have zero count of 0
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{10},
+				CustomValues:    []float64{1.0},
+			},
+			expected: "custom buckets: must have zero count of 0",
+		},
+		{
+			desc: "custom buckets zero threshold",
+			hist: histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           10,
+				Sum:             20,
+				ZeroThreshold:   0.1, // Invalid: custom buckets must have zero threshold of 0
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{10},
+				CustomValues:    []float64{1.0},
+			},
+			expected: "custom buckets: must have zero threshold of 0",
+		},
+		{
+			desc: "custom buckets negative spans",
+			hist: histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           10,
+				Sum:             20,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{5},
+				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}}, // Invalid: custom buckets must not have negative spans
+				NegativeBuckets: []int64{5},
+				CustomValues:    []float64{1.0},
+			},
+			expected: "custom buckets: must not have negative spans",
+		},
+		{
+			desc: "custom buckets negative buckets",
+			hist: histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           10,
+				Sum:             20,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{5},
+				NegativeBuckets: []int64{5}, // Invalid: custom buckets must not have negative buckets
+				CustomValues:    []float64{1.0},
+			},
+			expected: "custom buckets: must not have negative buckets",
+		},
+	}
 
-			db, err := tsdb.Open(dir, nil, nil, opts, nil)
-			require.NoError(t, err)
-			t.Cleanup(func() { require.NoError(t, db.Close()) })
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		protoName := "V1"
+		if protoMsg == config.RemoteWriteProtoMsgV2 {
+			protoName = "V2"
+		}
 
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{tc.protoMsg}, false)
-			recorder := httptest.NewRecorder()
+		for _, tc := range testCases {
+			testName := fmt.Sprintf("%s %s", protoName, tc.desc)
+			t.Run(testName, func(t *testing.T) {
+				dir := t.TempDir()
+				opts := tsdb.DefaultOptions()
+				opts.EnableNativeHistograms = true
 
-			var buf []byte
-			if tc.protoMsg == config.RemoteWriteProtoMsgV1 {
-				ts := []prompb.TimeSeries{{
-					Labels:     []prompb.Label{{Name: "__name__", Value: "test"}},
-					Histograms: []prompb.Histogram{prompb.FromIntHistogram(1, &tc.hist)},
-				}}
-				buf, _, _, err = buildWriteRequest(nil, ts, nil, nil, nil, nil, "snappy")
-			} else {
-				st := writev2.NewSymbolTable()
-				ts := []writev2.TimeSeries{{
-					LabelsRefs: st.SymbolizeLabels(labels.FromStrings("__name__", "test"), nil),
-					Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, &tc.hist)},
-				}}
-				buf, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), ts, st.Symbols(), nil, nil, nil, "snappy")
-			}
-			require.NoError(t, err)
+				db, err := tsdb.Open(dir, nil, nil, opts, nil)
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, db.Close()) })
 
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/write", bytes.NewReader(buf))
-			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[tc.protoMsg])
-			req.Header.Set("Content-Encoding", "snappy")
+				handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{protoMsg}, false)
+				recorder := httptest.NewRecorder()
 
-			handler.ServeHTTP(recorder, req)
+				var buf []byte
+				if protoMsg == config.RemoteWriteProtoMsgV1 {
+					ts := []prompb.TimeSeries{{
+						Labels:     []prompb.Label{{Name: "__name__", Value: "test"}},
+						Histograms: []prompb.Histogram{prompb.FromIntHistogram(1, &tc.hist)},
+					}}
+					buf, _, _, err = buildWriteRequest(nil, ts, nil, nil, nil, nil, "snappy")
+				} else {
+					st := writev2.NewSymbolTable()
+					ts := []writev2.TimeSeries{{
+						LabelsRefs: st.SymbolizeLabels(labels.FromStrings("__name__", "test"), nil),
+						Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, &tc.hist)},
+					}}
+					buf, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), ts, st.Symbols(), nil, nil, nil, "snappy")
+				}
+				require.NoError(t, err)
 
-			require.Equal(t, http.StatusBadRequest, recorder.Code)
-			require.Contains(t, recorder.Body.String(), tc.expected)
-		})
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/write", bytes.NewReader(buf))
+				req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[protoMsg])
+				req.Header.Set("Content-Encoding", "snappy")
+
+				handler.ServeHTTP(recorder, req)
+
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+				require.Contains(t, recorder.Body.String(), tc.expected)
+			})
+		}
 	}
 }
 

@@ -803,16 +803,16 @@ func (h *FloatHistogram) Validate() error {
 			return fmt.Errorf("custom buckets: %w", err)
 		}
 		if h.ZeroCount != 0 {
-			return errors.New("custom buckets: must have zero count of 0")
+			return ErrHistogramCustomBucketsZeroCount
 		}
 		if h.ZeroThreshold != 0 {
-			return errors.New("custom buckets: must have zero threshold of 0")
+			return ErrHistogramCustomBucketsZeroThresh
 		}
 		if len(h.NegativeSpans) > 0 {
-			return errors.New("custom buckets: must not have negative spans")
+			return ErrHistogramCustomBucketsNegSpans
 		}
 		if len(h.NegativeBuckets) > 0 {
-			return errors.New("custom buckets: must not have negative buckets")
+			return ErrHistogramCustomBucketsNegBuckets
 		}
 	} else {
 		if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
@@ -826,7 +826,7 @@ func (h *FloatHistogram) Validate() error {
 			return fmt.Errorf("negative side: %w", err)
 		}
 		if h.CustomValues != nil {
-			return errors.New("histogram with exponential schema must not have custom bounds")
+			return ErrHistogramExpSchemaCustomBounds
 		}
 	}
 	err := checkHistogramBuckets(h.PositiveBuckets, &pCount, false)

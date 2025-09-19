@@ -117,8 +117,7 @@ func (*writeHandler) parseProtoMsg(contentType string) (config.RemoteWriteProtoM
 	return config.RemoteWriteProtoMsgV1, nil
 }
 
-// isHistogramValidationError checks if the error is a native histogram validation error
-// that should return HTTP 400 instead of 500.
+// isHistogramValidationError checks if the error is a native histogram validation error.
 func isHistogramValidationError(err error) bool {
 	return errors.Is(err, histogram.ErrHistogramCountMismatch) ||
 		errors.Is(err, histogram.ErrHistogramCountNotBigEnough) ||
@@ -128,11 +127,11 @@ func isHistogramValidationError(err error) bool {
 		errors.Is(err, histogram.ErrHistogramCustomBucketsMismatch) ||
 		errors.Is(err, histogram.ErrHistogramCustomBucketsInvalid) ||
 		errors.Is(err, histogram.ErrHistogramCustomBucketsInfinite) ||
-		strings.Contains(err.Error(), "custom buckets: must have zero count of 0") ||
-		strings.Contains(err.Error(), "custom buckets: must have zero threshold of 0") ||
-		strings.Contains(err.Error(), "custom buckets: must not have negative spans") ||
-		strings.Contains(err.Error(), "custom buckets: must not have negative buckets") ||
-		strings.Contains(err.Error(), "histogram with exponential schema must not have custom bounds")
+		errors.Is(err, histogram.ErrHistogramCustomBucketsZeroCount) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsZeroThresh) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsNegSpans) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsNegBuckets) ||
+		errors.Is(err, histogram.ErrHistogramExpSchemaCustomBounds)
 }
 
 func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
