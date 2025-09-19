@@ -950,13 +950,13 @@ outer:
 					value:        value,
 					sType:        tSample,
 				}) {
-					return fmt.Errorf("conversion error: converted classic histogram sample enqueued")
+					return fmt.Errorf("conversion error: failed to enqueue converted classic histogram sample")
 				}
 				return nil
 			})
 			if err != nil {
 				t.logger.Error("Conversion error", "err", err)
-				t.metrics.droppedHistogramsTotal.WithLabelValues("nhcb_to_classic_nhcb_to_classic_conversion_error").Inc()
+				t.metrics.droppedHistogramsTotal.WithLabelValues("nhcb_to_classic_conversion_error").Inc()
 			}
 			continue
 		}
