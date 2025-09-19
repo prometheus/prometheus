@@ -39,7 +39,7 @@ var (
 	ErrHistogramCustomBucketsInfinite = errors.New("histogram custom bounds must be finite")
 	ErrHistogramsIncompatibleSchema   = errors.New("cannot apply this operation on histograms with a mix of exponential and custom bucket schemas")
 	ErrHistogramsIncompatibleBounds   = errors.New("cannot apply this operation on custom buckets histograms with different custom bounds")
-	ErrHistogramsInvalidSchema        = errors.New("histogram has an invalid schema, which must be between -4 and 8 for exponential buckets, or -53 for custom buckets")
+	ErrHistogramsInvalidSchema        = fmt.Errorf("histogram has an invalid schema, which must be between %d and %d for exponential buckets, or %d for custom buckets", ExponentialSchemaMin, ExponentialSchemaMax, CustomBucketsSchema)
 )
 
 func IsCustomBucketsSchema(s int32) bool {

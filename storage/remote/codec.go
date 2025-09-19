@@ -475,7 +475,7 @@ func validateHistogramSchema(h *prompb.Histogram) error {
 	if histogram.IsValidSchema(h.Schema) {
 		return nil
 	}
-	return fmt.Errorf("invalid histogram schema %d", h.Schema)
+	return return fmt.Errorf("%w, got schema %d", h.Schema, histogram.ErrHistogramsInvalidSchema)
 }
 
 func getHistogramValType(h *prompb.Histogram) chunkenc.ValueType {
