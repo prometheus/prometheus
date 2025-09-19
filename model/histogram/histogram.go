@@ -457,7 +457,7 @@ func (h *Histogram) Validate() error {
 			return errors.New("histogram with exponential schema must not have custom bounds")
 		}
 	default:
-		return fmt.Errorf("schema %d: %w", h.Schema, ErrHistogramsInvalidSchema)
+		return InvalidSchemaError(h.Schema)
 	}
 	err := checkHistogramBuckets(h.PositiveBuckets, &pCount, true)
 	if err != nil {

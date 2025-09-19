@@ -1488,7 +1488,7 @@ func TestFloatHistogramIteratorFailIfSchemaInValid(t *testing.T) {
 
 			it := c.Iterator(nil)
 			require.Equal(t, ValNone, it.Next())
-			require.EqualError(t, it.Err(), fmt.Sprintf("invalid histogram schema %d", schema))
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsInvalidSchema)
 		})
 	}
 }

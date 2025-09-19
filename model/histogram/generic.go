@@ -42,6 +42,10 @@ var (
 	ErrHistogramsInvalidSchema        = fmt.Errorf("histogram has an invalid schema, which must be between %d and %d for exponential buckets, or %d for custom buckets", ExponentialSchemaMin, ExponentialSchemaMax, CustomBucketsSchema)
 )
 
+func InvalidSchemaError(s int32) error {
+	return fmt.Errorf("%w, got schema %d", ErrHistogramsInvalidSchema, s)
+}
+
 func IsCustomBucketsSchema(s int32) bool {
 	return s == CustomBucketsSchema
 }

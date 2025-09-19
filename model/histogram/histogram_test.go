@@ -1569,13 +1569,13 @@ func TestHistogramValidation(t *testing.T) {
 			h: &Histogram{
 				Schema: 10,
 			},
-			errMsg: `schema 10: histogram has an invalid schema, which must be between -4 and 8 for exponential buckets, or -53 for custom buckets`,
+			errMsg: `histogram has an invalid schema, which must be between -4 and 8 for exponential buckets, or -53 for custom buckets, got schema 10`,
 		},
 		"schema too low": {
 			h: &Histogram{
 				Schema: -10,
 			},
-			errMsg: `schema -10: histogram has an invalid schema, which must be between -4 and 8 for exponential buckets, or -53 for custom buckets`,
+			errMsg: `histogram has an invalid schema, which must be between -4 and 8 for exponential buckets, or -53 for custom buckets, got schema -10`,
 		},
 	}
 

@@ -956,7 +956,7 @@ func (it *floatHistogramIterator) Next() ValueType {
 		}
 
 		if !histogram.IsValidSchema(schema) {
-			it.err = fmt.Errorf("invalid histogram schema %d", schema)
+			it.err = histogram.InvalidSchemaError(schema)
 			return ValNone
 		}
 
