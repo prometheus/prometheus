@@ -920,6 +920,31 @@ func TestHistogramValidationErrorHandling(t *testing.T) {
 			},
 			expected: "custom buckets: must not have negative buckets",
 		},
+		{
+			desc: "custom buckets mismatch",
+			hist: histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           10,
+				Sum:             20,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}}, // Length 3 but only 1 custom value
+				PositiveBuckets: []int64{3, 3, 4},
+				CustomValues:    []float64{1.0}, // Should have 3 values for 3 buckets
+			},
+			expected: "histogram custom bounds are too few",
+		},
+		{
+			desc: "count not big enough",
+			hist: histogram.Histogram{
+				Schema:          2,
+				ZeroThreshold:   1e-128,
+				ZeroCount:       0,
+				Count:           5, // Less than total bucket counts (8)
+				Sum:             math.NaN(), // Must be NaN for ErrHistogramCountNotBigEnough
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{8},
+			},
+			expected: "histogram's observation count should be at least",
+		},
 	}
 
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
