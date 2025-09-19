@@ -938,7 +938,7 @@ func TestHistogramValidationErrorHandling(t *testing.T) {
 				Schema:          2,
 				ZeroThreshold:   1e-128,
 				ZeroCount:       0,
-				Count:           5, // Less than total bucket counts (8)
+				Count:           5,          // Less than total bucket counts (8)
 				Sum:             math.NaN(), // Must be NaN for ErrHistogramCountNotBigEnough
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 				PositiveBuckets: []int64{8},
