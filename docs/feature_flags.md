@@ -302,3 +302,14 @@ memory in response to misleading cache growth.
 This is currently implemented using direct I/O.
 
 For more details, see the [proposal](https://github.com/prometheus/proposals/pull/45).
+
+## Normalise `le` and `quantile` labels in PromQL parser
+
+`--enable-feature=promql-normalise-le-quantile-labels`
+
+When enabled, all the PromQL queries will convert the matchers of the form `le="2"` and `quantile="2"`
+to `le=~"2|2.0"` and `quantile=~"2|2.0"`, for both ad-hoc queries and recording rules.
+This feature is intended to help in the migration from Prometheus v2.X to a v3.X.
+From v3.0.0 onwards, `le` and `quantile` labels are normalised by default during scrape time for histograms and summaries.
+
+It is highly recommended to only use this as a means for migration and not a feature that you keep enabled always.
