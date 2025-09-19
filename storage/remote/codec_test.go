@@ -570,24 +570,25 @@ func TestConcreteSeriesIterator_InvalidHistogramSamples(t *testing.T) {
 			require.Equal(t, chunkenc.ValFloat, it.Next())
 			require.Equal(t, chunkenc.ValNone, it.Next())
 			require.Error(t, it.Err())
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
 
 			it = series.Iterator(it)
 			require.Equal(t, chunkenc.ValFloat, it.Next())
 			require.Equal(t, chunkenc.ValNone, it.Next())
-			require.Error(t, it.Err())
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
 
 			it = series.Iterator(it)
 			require.Equal(t, chunkenc.ValNone, it.Seek(1))
-			require.Error(t, it.Err())
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
 
 			it = series.Iterator(it)
 			require.Equal(t, chunkenc.ValFloat, it.Seek(3))
 			require.Equal(t, chunkenc.ValNone, it.Next())
-			require.Error(t, it.Err())
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
 
 			it = series.Iterator(it)
 			require.Equal(t, chunkenc.ValNone, it.Seek(4))
-			require.Error(t, it.Err())
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
 		})
 	}
 }

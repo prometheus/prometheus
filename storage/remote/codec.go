@@ -472,10 +472,10 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 }
 
 func validateHistogramSchema(h *prompb.Histogram) error {
-	if histogram.IsAcceptibleSchema(h.Schema) {
+	if histogram.IsKnownSchema(h.Schema) {
 		return nil
 	}
-	return histogram.InvalidSchemaError(h.Schema)
+	return histogram.UnknownSchemaError(h.Schema)
 }
 
 func getHistogramValType(h *prompb.Histogram) chunkenc.ValueType {

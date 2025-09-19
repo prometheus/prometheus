@@ -1844,12 +1844,12 @@ func TestHistogramIteratorFailIfSchemaInValid(t *testing.T) {
 
 			it := c.Iterator(nil)
 			require.Equal(t, ValNone, it.Next())
-			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsInvalidSchema)
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
 		})
 	}
 }
 
-func TestHistogramIteratorReduceShema(t *testing.T) {
+func TestHistogramIteratorReduceSchema(t *testing.T) {
 	for _, schema := range []int32{9, 52} {
 		t.Run(fmt.Sprintf("schema %d", schema), func(t *testing.T) {
 			h := &histogram.Histogram{
