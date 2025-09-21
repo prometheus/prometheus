@@ -33,9 +33,11 @@ import (
 
 var eMetrics = NewExemplarMetrics(prometheus.DefaultRegisterer)
 
+const OOO_TIME_WINDOW = 2
+
 // Tests the same exemplar cases as AddExemplar, but specifically the ValidateExemplar function so it can be relied on externally.
 func TestValidateExemplar(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(2, eMetrics)
+	exs, err := NewCircularExemplarStorage(2, eMetrics, OOO_TIME_WINDOW)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -76,8 +78,48 @@ func TestValidateExemplar(t *testing.T) {
 	require.Equal(t, storage.ErrExemplarLabelLength, es.ValidateExemplar(l, e4))
 }
 
+func TestAddExemplarForOOOExemplars(t *testing.T) {
+	exs, err := NewCircularExemplarStorage(3, eMetrics, 5) // OOO window = 5
+	require.NoError(t, err)
+	es := exs.(*CircularExemplarStorage)
+
+	l := labels.FromStrings("service", "asdf")
+
+	// Insert in-order exemplars.
+	e1 := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "one"), Value: 0.1, Ts: 10}
+	e2 := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "two"), Value: 0.2, Ts: 20}
+
+	require.NoError(t, es.AddExemplar(l, e1))
+	require.NoError(t, es.AddExemplar(l, e2))
+
+	// Insert OOO exemplar (ts = 15, between e1 and e2).
+	eOOO := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "ooo"), Value: 0.15, Ts: 15}
+	require.NoError(t, es.AddExemplar(l, eOOO))
+	require.Equal(t, es.exemplars[0].next, 2)
+	require.Equal(t, es.exemplars[2].next, 1)
+
+	// Walk linked list from oldest to newest to verify order [10, 15, 20].
+	idx := es.index[string(l.Bytes(nil))]
+	var seq []int64
+	i := idx.oldest
+	for steps := 0; steps < len(es.exemplars); steps++ {
+		seq = append(seq, es.exemplars[i].exemplar.Ts)
+		exemplar := es.exemplars[steps]
+		fmt.Printf("Value: %v, NExt: %v, TS: %v, i:%v,  label: %v\n", exemplar.exemplar.Value, exemplar.next, exemplar.exemplar.Ts, steps, exemplar.ref.seriesLabels)
+		if es.exemplars[i].next == noExemplar {
+			break
+		}
+		i = es.exemplars[i].next
+	}
+	require.Equal(t, []int64{10, 15, 20}, seq)
+
+	// Insert exemplar older than OOOTimeWindow (too far behind newest=20).
+	eTooOld := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "old"), Value: 0.05, Ts: 10}
+	require.Equal(t, storage.ErrTooOldExemplar, es.AddExemplar(l, eTooOld))
+}
+
 func TestAddExemplar(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(2, eMetrics)
+	exs, err := NewCircularExemplarStorage(2, eMetrics, OOO_TIME_WINDOW)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -123,7 +165,7 @@ func TestStorageOverflow(t *testing.T) {
 	// Test that circular buffer index and assignment
 	// works properly, adding more exemplars than can
 	// be stored and then querying for them.
-	exs, err := NewCircularExemplarStorage(5, eMetrics)
+	exs, err := NewCircularExemplarStorage(5, eMetrics, OOO_TIME_WINDOW)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -152,7 +194,7 @@ func TestStorageOverflow(t *testing.T) {
 }
 
 func TestSelectExemplar(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(5, eMetrics)
+	exs, err := NewCircularExemplarStorage(5, eMetrics, OOO_TIME_WINDOW)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -179,7 +221,7 @@ func TestSelectExemplar(t *testing.T) {
 }
 
 func TestSelectExemplar_MultiSeries(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(5, eMetrics)
+	exs, err := NewCircularExemplarStorage(5, eMetrics, OOO_TIME_WINDOW)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -223,7 +265,7 @@ func TestSelectExemplar_MultiSeries(t *testing.T) {
 
 func TestSelectExemplar_TimeRange(t *testing.T) {
 	var lenEs int64 = 5
-	exs, err := NewCircularExemplarStorage(lenEs, eMetrics)
+	exs, err := NewCircularExemplarStorage(lenEs, eMetrics, OOO_TIME_WINDOW)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -251,7 +293,7 @@ func TestSelectExemplar_TimeRange(t *testing.T) {
 // Test to ensure that even though a series matches more than one matcher from the
 // query that it's exemplars are only included in the result a single time.
 func TestSelectExemplar_DuplicateSeries(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(4, eMetrics)
+	exs, err := NewCircularExemplarStorage(4, eMetrics, OOO_TIME_WINDOW)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -286,7 +328,7 @@ func TestSelectExemplar_DuplicateSeries(t *testing.T) {
 }
 
 func TestIndexOverwrite(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(2, eMetrics)
+	exs, err := NewCircularExemplarStorage(2, eMetrics, OOO_TIME_WINDOW)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -374,7 +416,7 @@ func TestResize(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			exs, err := NewCircularExemplarStorage(tc.startSize, eMetrics)
+			exs, err := NewCircularExemplarStorage(tc.startSize, eMetrics, OOO_TIME_WINDOW)
 			require.NoError(t, err)
 			es := exs.(*CircularExemplarStorage)
 
@@ -421,7 +463,7 @@ func BenchmarkAddExemplar(b *testing.B) {
 			b.Run(fmt.Sprintf("%d/%d", n, capacity), func(b *testing.B) {
 				for j := 0; j < b.N; j++ {
 					b.StopTimer()
-					exs, err := NewCircularExemplarStorage(int64(capacity), eMetrics)
+					exs, err := NewCircularExemplarStorage(int64(capacity), eMetrics, OOO_TIME_WINDOW)
 					require.NoError(b, err)
 					es := exs.(*CircularExemplarStorage)
 					var l labels.Labels
@@ -479,7 +521,7 @@ func BenchmarkResizeExemplars(b *testing.B) {
 		b.Run(fmt.Sprintf("%s-%d-to-%d", tc.name, tc.startSize, tc.endSize), func(b *testing.B) {
 			for j := 0; j < b.N; j++ {
 				b.StopTimer()
-				exs, err := NewCircularExemplarStorage(tc.startSize, eMetrics)
+				exs, err := NewCircularExemplarStorage(tc.startSize, eMetrics, OOO_TIME_WINDOW)
 				require.NoError(b, err)
 				es := exs.(*CircularExemplarStorage)
 
@@ -504,7 +546,7 @@ func BenchmarkResizeExemplars(b *testing.B) {
 // TestCircularExemplarStorage_Concurrent_AddExemplar_Resize tries to provoke a data race between AddExemplar and Resize.
 // Run with race detection enabled.
 func TestCircularExemplarStorage_Concurrent_AddExemplar_Resize(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(0, eMetrics)
+	exs, err := NewCircularExemplarStorage(0, eMetrics, OOO_TIME_WINDOW)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 

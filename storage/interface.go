@@ -29,13 +29,16 @@ import (
 
 // The errors exposed.
 var (
-	ErrNotFound = errors.New("not found")
+	ErrNotFound                            = errors.New("not found")
+	ErrOutOfOrderExemplarInsertionNotFound = errors.New("not found out of order exemplar insertion point")
 	// ErrOutOfOrderSample is when out of order support is disabled and the sample is out of order.
 	ErrOutOfOrderSample = errors.New("out of order sample")
 	// ErrOutOfBounds is when out of order support is disabled and the sample is older than the min valid time for the append.
 	ErrOutOfBounds = errors.New("out of bounds")
 	// ErrTooOldSample is when out of order support is enabled but the sample is outside the time window allowed.
 	ErrTooOldSample = errors.New("too old sample")
+	// ErrTooOldExemplar is when exemplar is outside the time out of order window allowed.
+	ErrTooOldExemplar = errors.New("too old exemplar")
 	// ErrDuplicateSampleForTimestamp is when the sample has same timestamp but different value.
 	ErrDuplicateSampleForTimestamp = errDuplicateSampleForTimestamp{}
 	ErrOutOfOrderExemplar          = errors.New("out of order exemplar")
