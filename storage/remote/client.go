@@ -58,6 +58,7 @@ var (
 	// UserAgent represents Prometheus version to use for user agent header.
 	UserAgent = version.PrometheusUserAgent()
 
+	// TODO: replace this with direct usage of https://github.com/prometheus/client_golang/blob/main/exp/api/remote/remote_headers.go#L85
 	remoteWriteContentTypeHeaders = map[remoteapi.WriteMessageType]string{
 		remoteapi.WriteV1MessageType: appProtoContentType, // Also application/x-protobuf;proto=prometheus.WriteRequest but simplified for compatibility with 1.x spec.
 		remoteapi.WriteV2MessageType: appProtoContentType + ";proto=io.prometheus.write.v2.Request",
