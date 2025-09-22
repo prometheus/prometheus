@@ -119,6 +119,7 @@ func (*writeHandler) parseProtoMsg(contentType string) (config.RemoteWriteProtoM
 
 // isHistogramValidationError checks if the error is a native histogram validation error.
 func isHistogramValidationError(err error) bool {
+	// TODO: Consider adding single histogram error type instead of individual sentinel errors.
 	return errors.Is(err, histogram.ErrHistogramCountMismatch) ||
 		errors.Is(err, histogram.ErrHistogramCountNotBigEnough) ||
 		errors.Is(err, histogram.ErrHistogramNegativeBucketCount) ||
@@ -208,7 +209,6 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			case isHistogramValidationError(err):
-				// Invalid histogram data is a bad request to prevent retries.
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			default:
@@ -496,7 +496,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 				continue
 			}
 			if isHistogramValidationError(err) {
-				h.logger.Error("Invalid histogram from remote write", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
+				h.logger.Error("Invalid histogram received", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
 				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
 				continue
 			}

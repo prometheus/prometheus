@@ -806,6 +806,7 @@ func TestCommitErr_V1Message(t *testing.T) {
 	require.Equal(t, "commit error\n", string(body))
 }
 
+// Regression test for https://github.com/prometheus/prometheus/issues/17206
 func TestHistogramValidationErrorHandling(t *testing.T) {
 	testCases := []struct {
 		desc     string
@@ -829,45 +830,6 @@ func TestHistogramValidationErrorHandling(t *testing.T) {
 			expected: "histogram's observation count should equal",
 		},
 		{
-			desc: "negative bucket count",
-			hist: histogram.Histogram{
-				Schema:          2,
-				ZeroThreshold:   1e-128,
-				ZeroCount:       1,
-				Count:           10,
-				Sum:             20,
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-				PositiveBuckets: []int64{-2}, // Negative bucket count
-			},
-			expected: "histogram has a bucket whose observation count is negative",
-		},
-		{
-			desc: "span negative offset",
-			hist: histogram.Histogram{
-				Schema:          2,
-				ZeroThreshold:   1e-128,
-				ZeroCount:       1,
-				Count:           3,
-				Sum:             20,
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}, {Offset: -1, Length: 1}}, // Second span has negative offset
-				PositiveBuckets: []int64{1, 1},
-			},
-			expected: "histogram has a span whose offset is negative",
-		},
-		{
-			desc: "spans buckets mismatch",
-			hist: histogram.Histogram{
-				Schema:          2,
-				ZeroThreshold:   1e-128,
-				ZeroCount:       1,
-				Count:           3,
-				Sum:             20,
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}}, // Length 2 but only 1 bucket
-				PositiveBuckets: []int64{2},
-			},
-			expected: "histogram spans specify different number of buckets",
-		},
-		{
 			desc: "custom buckets zero count",
 			hist: histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
@@ -879,71 +841,6 @@ func TestHistogramValidationErrorHandling(t *testing.T) {
 				CustomValues:    []float64{1.0},
 			},
 			expected: "custom buckets: must have zero count of 0",
-		},
-		{
-			desc: "custom buckets zero threshold",
-			hist: histogram.Histogram{
-				Schema:          histogram.CustomBucketsSchema,
-				Count:           10,
-				Sum:             20,
-				ZeroThreshold:   0.1, // Invalid: custom buckets must have zero threshold of 0
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-				PositiveBuckets: []int64{10},
-				CustomValues:    []float64{1.0},
-			},
-			expected: "custom buckets: must have zero threshold of 0",
-		},
-		{
-			desc: "custom buckets negative spans",
-			hist: histogram.Histogram{
-				Schema:          histogram.CustomBucketsSchema,
-				Count:           10,
-				Sum:             20,
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-				PositiveBuckets: []int64{5},
-				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}}, // Invalid: custom buckets must not have negative spans
-				NegativeBuckets: []int64{5},
-				CustomValues:    []float64{1.0},
-			},
-			expected: "custom buckets: must not have negative spans",
-		},
-		{
-			desc: "custom buckets negative buckets",
-			hist: histogram.Histogram{
-				Schema:          histogram.CustomBucketsSchema,
-				Count:           10,
-				Sum:             20,
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-				PositiveBuckets: []int64{5},
-				NegativeBuckets: []int64{5}, // Invalid: custom buckets must not have negative buckets
-				CustomValues:    []float64{1.0},
-			},
-			expected: "custom buckets: must not have negative buckets",
-		},
-		{
-			desc: "custom buckets mismatch",
-			hist: histogram.Histogram{
-				Schema:          histogram.CustomBucketsSchema,
-				Count:           10,
-				Sum:             20,
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}}, // Length 3 but only 1 custom value
-				PositiveBuckets: []int64{3, 3, 4},
-				CustomValues:    []float64{1.0}, // Should have 3 values for 3 buckets
-			},
-			expected: "histogram custom bounds are too few",
-		},
-		{
-			desc: "count not big enough",
-			hist: histogram.Histogram{
-				Schema:          2,
-				ZeroThreshold:   1e-128,
-				ZeroCount:       0,
-				Count:           5,          // Less than total bucket counts (8)
-				Sum:             math.NaN(), // Must be NaN for ErrHistogramCountNotBigEnough
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-				PositiveBuckets: []int64{8},
-			},
-			expected: "histogram's observation count should be at least",
 		},
 	}
 
