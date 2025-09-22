@@ -397,8 +397,9 @@ URL query parameters:
   series from which to read the label names. Optional.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
-
-The `data` section of the JSON response is a list of string label names.
+The `data` section of the JSON response is a list of string label names. Note
+that the `start` and `end` times are approximate and the result may contain
+label names for series which have no samples in the given interval.
 
 Here is an example.
 
@@ -451,7 +452,10 @@ URL query parameters:
   series from which to read the label values. Optional.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
-The `data` section of the JSON response is a list of string label values.
+The `data` section of the JSON response is a list of string label values. Note
+that the `start` and `end` times are approximate and the result may contain
+label values for series which have no samples in the given interval.
+
 
 This example queries for all label values for the `http_status_code` label:
 
