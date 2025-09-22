@@ -348,7 +348,9 @@ You can URL-encode these parameters directly in the request body by using the `P
 or dynamic number of series selectors that may breach server-side URL character limits.
 
 The `data` section of the query result consists of a list of objects that
-contain the label name/value pairs which identify each series.
+contain the label name/value pairs which identify each series. Note that the
+`start` and `end` times are approximate and the result may contain label values
+for series which have no samples in the given interval.
 
 The following example returns all series that match either of the selectors
 `up` or `process_start_time_seconds{job="prometheus"}`:
