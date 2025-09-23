@@ -844,9 +844,9 @@ func TestHistogramValidationErrorHandling(t *testing.T) {
 		},
 	}
 
-	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		protoName := "V1"
-		if protoMsg == config.RemoteWriteProtoMsgV2 {
+		if protoMsg == remoteapi.WriteV2MessageType {
 			protoName = "V2"
 		}
 
@@ -861,11 +861,11 @@ func TestHistogramValidationErrorHandling(t *testing.T) {
 				require.NoError(t, err)
 				t.Cleanup(func() { require.NoError(t, db.Close()) })
 
-				handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{protoMsg}, false)
+				handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []remoteapi.WriteMessageType{protoMsg}, false)
 				recorder := httptest.NewRecorder()
 
 				var buf []byte
-				if protoMsg == config.RemoteWriteProtoMsgV1 {
+				if protoMsg == remoteapi.WriteV1MessageType {
 					ts := []prompb.TimeSeries{{
 						Labels:     []prompb.Label{{Name: "__name__", Value: "test"}},
 						Histograms: []prompb.Histogram{prompb.FromIntHistogram(1, &tc.hist)},
