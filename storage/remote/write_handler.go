@@ -117,6 +117,24 @@ func (*writeHandler) parseProtoMsg(contentType string) (config.RemoteWriteProtoM
 	return config.RemoteWriteProtoMsgV1, nil
 }
 
+// isHistogramValidationError checks if the error is a native histogram validation error.
+func isHistogramValidationError(err error) bool {
+	// TODO: Consider adding single histogram error type instead of individual sentinel errors.
+	return errors.Is(err, histogram.ErrHistogramCountMismatch) ||
+		errors.Is(err, histogram.ErrHistogramCountNotBigEnough) ||
+		errors.Is(err, histogram.ErrHistogramNegativeBucketCount) ||
+		errors.Is(err, histogram.ErrHistogramSpanNegativeOffset) ||
+		errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsMismatch) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsInvalid) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsInfinite) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsZeroCount) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsZeroThresh) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsNegSpans) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsNegBuckets) ||
+		errors.Is(err, histogram.ErrHistogramExpSchemaCustomBounds)
+}
+
 func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "" {
@@ -188,6 +206,9 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp), errors.Is(err, storage.ErrTooOldSample):
 				// Indicated an out-of-order sample is a bad request to prevent retries.
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			case isHistogramValidationError(err):
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			default:
@@ -471,6 +492,11 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
 				// TODO(bwplotka): Not too spammy log?
 				h.logger.Error("Out of order histogram from remote write", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
+				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
+				continue
+			}
+			if isHistogramValidationError(err) {
+				h.logger.Error("Invalid histogram received", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
 				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
 				continue
 			}
