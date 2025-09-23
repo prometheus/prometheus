@@ -45,10 +45,15 @@ var (
 	ErrHistogramCustomBucketsNegBuckets = errors.New("custom buckets: must not have negative buckets")
 	ErrHistogramExpSchemaCustomBounds   = errors.New("histogram with exponential schema must not have custom bounds")
 	ErrHistogramsInvalidSchema          = fmt.Errorf("histogram has an invalid schema, which must be between %d and %d for exponential buckets, or %d for custom buckets", ExponentialSchemaMin, ExponentialSchemaMax, CustomBucketsSchema)
+	ErrHistogramsUnknownSchema          = fmt.Errorf("histogram has an unknown schema, which must be between %d and %d for exponential buckets, or %d for custom buckets", ExponentialSchemaMinReserved, ExponentialSchemaMaxReserved, CustomBucketsSchema)
 )
 
 func InvalidSchemaError(s int32) error {
 	return fmt.Errorf("%w, got schema %d", ErrHistogramsInvalidSchema, s)
+}
+
+func UnknownSchemaError(s int32) error {
+	return fmt.Errorf("%w, got schema %d", ErrHistogramsUnknownSchema, s)
 }
 
 func IsCustomBucketsSchema(s int32) bool {
@@ -65,6 +70,12 @@ func IsExponentialSchemaReserved(s int32) bool {
 
 func IsValidSchema(s int32) bool {
 	return IsCustomBucketsSchema(s) || IsExponentialSchema(s)
+}
+
+// IsKnownSchema returns bool if we known and accept the schema, but need to
+// reduce resolution to the nearest supported schema.
+func IsKnownSchema(s int32) bool {
+	return IsCustomBucketsSchema(s) || IsExponentialSchemaReserved(s)
 }
 
 // BucketCount is a type constraint for the count in a bucket, which can be

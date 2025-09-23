@@ -1492,3 +1492,33 @@ func TestFloatHistogramIteratorFailIfSchemaInValid(t *testing.T) {
 		})
 	}
 }
+
+func TestFloatHistogramIteratorReduceShema(t *testing.T) {
+	for _, schema := range []int32{9, 52} {
+		t.Run(fmt.Sprintf("schema %d", schema), func(t *testing.T) {
+			h := &histogram.FloatHistogram{
+				Schema:        schema,
+				Count:         10,
+				Sum:           15.0,
+				ZeroThreshold: 1e-100,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []float64{1, 2, 3, 4},
+			}
+
+			c := NewFloatHistogramChunk()
+			app, err := c.Appender()
+			require.NoError(t, err)
+
+			_, _, _, err = app.AppendFloatHistogram(nil, 1, h, false)
+			require.NoError(t, err)
+
+			it := c.Iterator(nil)
+			require.Equal(t, ValFloatHistogram, it.Next())
+			_, rh := it.AtFloatHistogram(nil)
+			require.Equal(t, histogram.ExponentialSchemaMax, rh.Schema)
+		})
+	}
+}
