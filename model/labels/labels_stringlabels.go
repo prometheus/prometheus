@@ -618,12 +618,6 @@ func (b *ScratchBuilder) Add(name, value string) {
 	b.add = append(b.add, Label{Name: name, Value: value})
 }
 
-// UnsafeAddBytes adds a name/value pair using []byte instead of string to reduce memory allocations.
-// The values must remain live until Labels() is called.
-func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
-	b.add = append(b.add, Label{Name: yoloString(name), Value: yoloString(value)})
-}
-
 // Sort the labels added so far by name.
 func (b *ScratchBuilder) Sort() {
 	slices.SortFunc(b.add, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
@@ -679,6 +673,13 @@ func NewScratchBuilderWithSymbolTable(_ *SymbolTable, n int) ScratchBuilder {
 func (*ScratchBuilder) SetSymbolTable(*SymbolTable) {
 	// no-op
 }
+
+// SetUnsafeAdd allows turning on/off the assumptions that added strings are unsafe
+// for reuse. ScratchBuilder implementations that do reuse strings, must clone
+// the strings.
+//
+// Stringlabels implementation, does not reuse added strings, so this operation is noop.
+func (ScratchBuilder) SetUnsafeAdd(bool) {}
 
 // SizeOfLabels returns the approximate space required for n copies of a label.
 func SizeOfLabels(name, value string, n uint64) uint64 {

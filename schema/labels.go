@@ -139,18 +139,22 @@ func (m Metadata) SetToLabels(b *labels.Builder) {
 	b.Set(metricUnit, m.Unit)
 }
 
-// IgnoreOverriddenMetadataLabelsScratchBuilder is a wrapper over labels scratch builder
-// that ignores label additions that would collide with non-empty Overwrite Metadata fields.
-type IgnoreOverriddenMetadataLabelsScratchBuilder struct {
-	*labels.ScratchBuilder
+// NewIgnoreOverriddenMetadataLabelScratchBuilder creates IgnoreOverriddenMetadataLabelScratchBuilder.
+func (m Metadata) NewIgnoreOverriddenMetadataLabelScratchBuilder(b *labels.ScratchBuilder) *IgnoreOverriddenMetadataLabelScratchBuilder {
+	return &IgnoreOverriddenMetadataLabelScratchBuilder{ScratchBuilder: b, overwrite: m}
+}
 
-	Overwrite Metadata
+// IgnoreOverriddenMetadataLabelScratchBuilder is a wrapper over labels.ScratchBuilder
+// that ignores label additions that would collide with non-empty Overwrite Metadata fields.
+type IgnoreOverriddenMetadataLabelScratchBuilder struct {
+	*labels.ScratchBuilder
+	overwrite Metadata
 }
 
 // Add a name/value pair, unless it would collide with the non-empty Overwrite Metadata
 // field. Note if you Add the same name twice you will get a duplicate label, which is invalid.
-func (b IgnoreOverriddenMetadataLabelsScratchBuilder) Add(name, value string) {
-	if !b.Overwrite.IsEmptyFor(name) {
+func (b IgnoreOverriddenMetadataLabelScratchBuilder) Add(name, value string) {
+	if !b.overwrite.IsEmptyFor(name) {
 		return
 	}
 	b.ScratchBuilder.Add(name, value)
