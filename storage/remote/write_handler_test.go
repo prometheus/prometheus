@@ -1297,7 +1297,7 @@ func TestHistogramsReduction(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
 			require.NoError(t, err)
 
 			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[protoMsg])
