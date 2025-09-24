@@ -1222,3 +1222,100 @@ func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, l labels.Labels
 	m.samples = append(m.samples, mockSample{l, ct, 0})
 	return storage.SeriesRef(hash), nil
 }
+
+var (
+	highSchemaHistogram = &histogram.Histogram{
+		Schema: 10,
+		PositiveSpans: []histogram.Span{
+			{
+				Offset: -1,
+				Length: 2,
+			},
+		},
+		PositiveBuckets: []int64{1, 2},
+		NegativeSpans: []histogram.Span{
+			{
+				Offset: 0,
+				Length: 1,
+			},
+		},
+		NegativeBuckets: []int64{1},
+	}
+	reducedSchemaHistogram = &histogram.Histogram{
+		Schema: 8,
+		PositiveSpans: []histogram.Span{
+			{
+				Offset: 0,
+				Length: 1,
+			},
+		},
+		PositiveBuckets: []int64{4},
+		NegativeSpans: []histogram.Span{
+			{
+				Offset: 0,
+				Length: 1,
+			},
+		},
+		NegativeBuckets: []int64{1},
+	}
+)
+
+func TestHistogramsReduction(t *testing.T) {
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		t.Run(string(protoMsg), func(t *testing.T) {
+			appendable := &mockAppendable{}
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{protoMsg}, false)
+
+			var (
+				err     error
+				payload []byte
+			)
+
+			if protoMsg == remoteapi.WriteV1MessageType {
+				payload, _, _, err = buildWriteRequest(nil, []prompb.TimeSeries{
+					{
+						Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric1"}},
+						Histograms: []prompb.Histogram{prompb.FromIntHistogram(1, highSchemaHistogram)},
+					},
+					{
+						Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric2"}},
+						Histograms: []prompb.Histogram{prompb.FromFloatHistogram(2, highSchemaHistogram.ToFloat(nil))},
+					},
+				}, nil, nil, nil, nil, "snappy")
+			} else {
+				payload, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+					{
+						LabelsRefs: []uint32{0, 1},
+						Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, highSchemaHistogram)},
+					},
+					{
+						LabelsRefs: []uint32{0, 2},
+						Histograms: []writev2.Histogram{writev2.FromFloatHistogram(2, highSchemaHistogram.ToFloat(nil))},
+					},
+				}, []string{"__name__", "test_metric1", "test_metric2"},
+					nil, nil, nil, "snappy")
+			}
+			require.NoError(t, err)
+
+			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			require.NoError(t, err)
+
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[protoMsg])
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			resp := recorder.Result()
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNoContent, resp.StatusCode)
+			require.Empty(t, body)
+
+			require.Len(t, appendable.histograms, 2)
+			require.Equal(t, int64(1), appendable.histograms[0].t)
+			require.Equal(t, reducedSchemaHistogram, appendable.histograms[0].h)
+			require.Equal(t, int64(2), appendable.histograms[1].t)
+			require.Equal(t, reducedSchemaHistogram.ToFloat(nil), appendable.histograms[1].fh)
+		})
+	}
+}

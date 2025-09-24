@@ -1565,6 +1565,18 @@ func TestHistogramValidation(t *testing.T) {
 				CustomValues:    []float64{1, 2, 3, 4, 5, 6, 7, 8},
 			},
 		},
+		"schema too high": {
+			h: &Histogram{
+				Schema: 10,
+			},
+			errMsg: `histogram has an invalid schema, which must be between -4 and 8 for exponential buckets, or -53 for custom buckets, got schema 10`,
+		},
+		"schema too low": {
+			h: &Histogram{
+				Schema: -10,
+			},
+			errMsg: `histogram has an invalid schema, which must be between -4 and 8 for exponential buckets, or -53 for custom buckets, got schema -10`,
+		},
 	}
 
 	for testName, tc := range tests {

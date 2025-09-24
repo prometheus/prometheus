@@ -798,7 +798,8 @@ func (h *FloatHistogram) AllReverseBucketIterator() BucketIterator[float64] {
 // create false positives here.
 func (h *FloatHistogram) Validate() error {
 	var nCount, pCount float64
-	if h.UsesCustomBuckets() {
+	switch {
+	case IsCustomBucketsSchema(h.Schema):
 		if err := checkHistogramCustomBounds(h.CustomValues, h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
 			return fmt.Errorf("custom buckets: %w", err)
 		}
@@ -814,7 +815,7 @@ func (h *FloatHistogram) Validate() error {
 		if len(h.NegativeBuckets) > 0 {
 			return ErrHistogramCustomBucketsNegBuckets
 		}
-	} else {
+	case IsExponentialSchema(h.Schema):
 		if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
 			return fmt.Errorf("positive side: %w", err)
 		}
@@ -828,6 +829,8 @@ func (h *FloatHistogram) Validate() error {
 		if h.CustomValues != nil {
 			return ErrHistogramExpSchemaCustomBounds
 		}
+	default:
+		return InvalidSchemaError(h.Schema)
 	}
 	err := checkHistogramBuckets(h.PositiveBuckets, &pCount, false)
 	if err != nil {
