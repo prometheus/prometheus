@@ -21,12 +21,14 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+// BucketEmitter is a callback function type for emitting histogram bucket series.
+// Used in remote write to append converted bucket time series.
 type BucketEmitter func(labels labels.Labels, value float64) error
 
 // ConvertNHCBToClassicHistogram converts Native Histogram Custom Buckets (NHCB) to classic histogram series.
 // This conversion is needed in various scenarios where users need to get NHCB back to classic histogram format,
 // such as Remote Write v1 for external system compatibility and migration use cases.
-func ConvertNHCBToClassicHistogram(nhcb interface{}, labels labels.Labels, lblBuilder *labels.Builder, bucketSeries BucketEmitter) error {
+func ConvertNHCBToClassicHistogram(nhcb any, labels labels.Labels, lblBuilder *labels.Builder, bucketSeries BucketEmitter) error {
 	baseName := labels.Get("__name__")
 	if baseName == "" {
 		return errors.New("metric name label '__name__' is missing")
@@ -46,7 +48,11 @@ func ConvertNHCBToClassicHistogram(nhcb interface{}, labels labels.Labels, lblBu
 		customValues = h.CustomValues
 		positiveBuckets = make([]float64, len(h.PositiveBuckets))
 		for i, v := range h.PositiveBuckets {
-			positiveBuckets[i] = float64(v)
+			if i == 0 {
+				positiveBuckets[i] = float64(v)
+			} else {
+				positiveBuckets[i] = float64(v) + positiveBuckets[i-1]
+			}
 		}
 		count = float64(h.Count)
 		sum = h.Sum
@@ -59,13 +65,16 @@ func ConvertNHCBToClassicHistogram(nhcb interface{}, labels labels.Labels, lblBu
 		return errors.New("unsupported histogram type")
 	}
 
+	// Each customValue corresponds to a positive bucket (aligned with the "le" label).
+	// The lengths of customValues and positiveBuckets must match to avoid inconsistencies
+	// while mapping bucket counts to their upper bounds.
 	if len(customValues) != len(positiveBuckets) {
 		return errors.New("mismatched lengths of custom values and positive buckets")
 	}
 
 	currCount := float64(0)
 	for i := range customValues {
-		currCount += positiveBuckets[i]
+		currCount = positiveBuckets[i]
 		lblBuilder.Reset(labels)
 		lblBuilder.Set("__name__", baseName+"_bucket")
 		lblBuilder.Set("le", fmt.Sprintf("%g", customValues[i]))
