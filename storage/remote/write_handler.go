@@ -250,7 +250,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	samplesWithInvalidLabels := 0
 	samplesAppended := 0
 
-	app := &timeLimitAppender{
+	app := &remoteWriteAppender{
 		Appender: h.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
@@ -365,7 +365,7 @@ func (h *writeHandler) appendV1Histograms(app storage.Appender, hh []prompb.Hist
 // NOTE(bwplotka): TSDB storage is NOT idempotent, so we don't allow "partial retry-able" errors.
 // Once we have 5xx type of error, we immediately stop and rollback all appends.
 func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ WriteResponseStats, errHTTPCode int, _ error) {
-	app := &timeLimitAppender{
+	app := &remoteWriteAppender{
 		Appender: h.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
@@ -642,7 +642,7 @@ type rwExporter struct {
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
 	otlpCfg := rw.config().OTLPConfig
-	app := &timeLimitAppender{
+	app := &remoteWriteAppender{
 		Appender: rw.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
@@ -745,13 +745,13 @@ func hasDelta(md pmetric.Metrics) bool {
 	return false
 }
 
-type timeLimitAppender struct {
+type remoteWriteAppender struct {
 	storage.Appender
 
 	maxTime int64
 }
 
-func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (app *remoteWriteAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}
@@ -763,9 +763,16 @@ func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, 
 	return ref, nil
 }
 
-func (app *timeLimitAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (app *remoteWriteAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
+	}
+
+	if h != nil && histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > histogram.ExponentialSchemaMax {
+		h = h.ReduceResolution(histogram.ExponentialSchemaMax)
+	}
+	if fh != nil && histogram.IsExponentialSchemaReserved(fh.Schema) && fh.Schema > histogram.ExponentialSchemaMax {
+		fh = fh.ReduceResolution(histogram.ExponentialSchemaMax)
 	}
 
 	ref, err := app.Appender.AppendHistogram(ref, l, t, h, fh)
@@ -775,7 +782,7 @@ func (app *timeLimitAppender) AppendHistogram(ref storage.SeriesRef, l labels.La
 	return ref, nil
 }
 
-func (app *timeLimitAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+func (app *remoteWriteAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	if e.Ts > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}

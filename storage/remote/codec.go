@@ -388,6 +388,7 @@ type concreteSeriesIterator struct {
 	histogramsCur int
 	curValType    chunkenc.ValueType
 	series        *concreteSeries
+	err           error
 }
 
 func newConcreteSeriesIterator(series *concreteSeries) chunkenc.Iterator {
@@ -404,10 +405,14 @@ func (c *concreteSeriesIterator) reset(series *concreteSeries) {
 	c.histogramsCur = -1
 	c.curValType = chunkenc.ValNone
 	c.series = series
+	c.err = nil
 }
 
 // Seek implements storage.SeriesIterator.
 func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
+	if c.err != nil {
+		return chunkenc.ValNone
+	}
 	if c.floatsCur == -1 {
 		c.floatsCur = 0
 	}
@@ -439,7 +444,7 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 		if c.series.floats[c.floatsCur].Timestamp <= c.series.histograms[c.histogramsCur].Timestamp {
 			c.curValType = chunkenc.ValFloat
 		} else {
-			c.curValType = getHistogramValType(&c.series.histograms[c.histogramsCur])
+			c.curValType = chunkenc.ValHistogram
 		}
 		// When the timestamps do not overlap the cursor for the non-selected sample type has advanced too
 		// far; we decrement it back down here.
@@ -453,9 +458,24 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	case c.floatsCur < len(c.series.floats):
 		c.curValType = chunkenc.ValFloat
 	case c.histogramsCur < len(c.series.histograms):
-		c.curValType = getHistogramValType(&c.series.histograms[c.histogramsCur])
+		c.curValType = chunkenc.ValHistogram
+	}
+	if c.curValType == chunkenc.ValHistogram {
+		h := &c.series.histograms[c.histogramsCur]
+		c.curValType = getHistogramValType(h)
+		c.err = validateHistogramSchema(h)
+	}
+	if c.err != nil {
+		c.curValType = chunkenc.ValNone
 	}
 	return c.curValType
+}
+
+func validateHistogramSchema(h *prompb.Histogram) error {
+	if histogram.IsValidSchema(h.Schema) {
+		return nil
+	}
+	return histogram.InvalidSchemaError(h.Schema)
 }
 
 func getHistogramValType(h *prompb.Histogram) chunkenc.ValueType {
@@ -504,6 +524,9 @@ const noTS = int64(math.MaxInt64)
 
 // Next implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
+	if c.err != nil {
+		return chunkenc.ValNone
+	}
 	peekFloatTS := noTS
 	if c.floatsCur+1 < len(c.series.floats) {
 		peekFloatTS = c.series.floats[c.floatsCur+1].Timestamp
@@ -532,12 +555,21 @@ func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 		c.histogramsCur++
 		c.curValType = chunkenc.ValFloat
 	}
+
+	if c.curValType == chunkenc.ValHistogram {
+		h := &c.series.histograms[c.histogramsCur]
+		c.curValType = getHistogramValType(h)
+		c.err = validateHistogramSchema(h)
+	}
+	if c.err != nil {
+		c.curValType = chunkenc.ValNone
+	}
 	return c.curValType
 }
 
 // Err implements chunkenc.Iterator.
-func (*concreteSeriesIterator) Err() error {
-	return nil
+func (c *concreteSeriesIterator) Err() error {
+	return c.err
 }
 
 // chunkedSeriesSet implements storage.SeriesSet.
