@@ -2518,8 +2518,14 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 		ss.Floats, ss.Histograms = ev.matrixIterSlice(it, mint, maxt, nil, nil)
 		switch {
 		case vs.Anchored:
+			if ss.Histograms != nil {
+				ev.errorf("anchored modifier is not supported with histograms")
+			}
 			ss.Floats = extendFloats(ss.Floats, matrixMint, matrixMaxt, false)
 		case vs.Smoothed:
+			if ss.Histograms != nil {
+				ev.errorf("anchored modifier is not supported with histograms")
+			}
 			ss.Floats = extendFloats(ss.Floats, matrixMint, matrixMaxt, true)
 		}
 		totalSize := int64(len(ss.Floats)) + int64(totalHPointSize(ss.Histograms))
