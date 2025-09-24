@@ -570,24 +570,53 @@ func TestConcreteSeriesIterator_InvalidHistogramSamples(t *testing.T) {
 			require.Equal(t, chunkenc.ValFloat, it.Next())
 			require.Equal(t, chunkenc.ValNone, it.Next())
 			require.Error(t, it.Err())
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
 
 			it = series.Iterator(it)
 			require.Equal(t, chunkenc.ValFloat, it.Next())
 			require.Equal(t, chunkenc.ValNone, it.Next())
-			require.Error(t, it.Err())
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
 
 			it = series.Iterator(it)
 			require.Equal(t, chunkenc.ValNone, it.Seek(1))
-			require.Error(t, it.Err())
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
 
 			it = series.Iterator(it)
 			require.Equal(t, chunkenc.ValFloat, it.Seek(3))
 			require.Equal(t, chunkenc.ValNone, it.Next())
-			require.Error(t, it.Err())
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
 
 			it = series.Iterator(it)
 			require.Equal(t, chunkenc.ValNone, it.Seek(4))
-			require.Error(t, it.Err())
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
+		})
+	}
+}
+
+func TestConcreteSeriesIterator_ReducesHighResolutionHistograms(t *testing.T) {
+	for _, schema := range []int32{9, 52} {
+		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
+			h := testHistogram.Copy()
+			h.Schema = schema
+			fh := h.ToFloat(nil)
+			series := &concreteSeries{
+				labels: labels.FromStrings("foo", "bar"),
+				histograms: []prompb.Histogram{
+					prompb.FromIntHistogram(1, h),
+					prompb.FromFloatHistogram(2, fh),
+				},
+			}
+			it := series.Iterator(nil)
+			require.Equal(t, chunkenc.ValHistogram, it.Next())
+			_, gotH := it.AtHistogram(nil)
+			require.Equal(t, histogram.ExponentialSchemaMax, gotH.Schema)
+			_, gotFH := it.AtFloatHistogram(nil)
+			require.Equal(t, histogram.ExponentialSchemaMax, gotFH.Schema)
+			require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
+			_, gotFH = it.AtFloatHistogram(nil)
+			require.Equal(t, histogram.ExponentialSchemaMax, gotFH.Schema)
+			require.Equal(t, chunkenc.ValNone, it.Next())
+			require.NoError(t, it.Err())
 		})
 	}
 }
