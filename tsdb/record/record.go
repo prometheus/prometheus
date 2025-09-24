@@ -461,7 +461,7 @@ func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) 
 		DecodeHistogram(&dec, rh.H)
 
 		if !histogram.IsKnownSchema(rh.H.Schema) {
-			d.logger.Warn("invalid histogram schema in WAL record", "schema", rh.H.Schema, "timestamp", rh.T)
+			d.logger.Warn("skipping histogram with unknown schema in WAL record", "schema", rh.H.Schema, "timestamp", rh.T)
 			continue
 		}
 		if rh.H.Schema > histogram.ExponentialSchemaMax && rh.H.Schema <= histogram.ExponentialSchemaMaxReserved {
@@ -565,7 +565,7 @@ func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogr
 		DecodeFloatHistogram(&dec, rh.FH)
 
 		if !histogram.IsKnownSchema(rh.FH.Schema) {
-			d.logger.Warn("invalid histogram schema in WAL record", "schema", rh.FH.Schema, "timestamp", rh.T)
+			d.logger.Warn("skipping histogram with unknown schema in WAL record", "schema", rh.FH.Schema, "timestamp", rh.T)
 			continue
 		}
 		if rh.FH.Schema > histogram.ExponentialSchemaMax && rh.FH.Schema <= histogram.ExponentialSchemaMaxReserved {

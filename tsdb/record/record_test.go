@@ -256,7 +256,7 @@ func TestRecord_DecodeInvalidHistogramSchema(t *testing.T) {
 			decHistograms, err := dec.HistogramSamples(histSamples, nil)
 			require.NoError(t, err)
 			require.Empty(t, decHistograms)
-			require.Contains(t, output.String(), "invalid histogram schema in WAL record")
+			require.Contains(t, output.String(), "skipping histogram with unknown schema in WAL record")
 		})
 	}
 }
@@ -291,7 +291,7 @@ func TestRecord_DecodeInvalidFloatHistogramSchema(t *testing.T) {
 			decHistograms, err := dec.FloatHistogramSamples(histSamples, nil)
 			require.NoError(t, err)
 			require.Empty(t, decHistograms)
-			require.Contains(t, output.String(), "invalid histogram schema in WAL record")
+			require.Contains(t, output.String(), "skipping histogram with unknown schema in WAL record")
 		})
 	}
 }
