@@ -1513,6 +1513,160 @@ load 10s
 	}
 }
 
+func TestExtendedRangeSelectors(t *testing.T) {
+	parser.EnableExtendedRangeSelectors = true
+	t.Cleanup(func() {
+		parser.EnableExtendedRangeSelectors = false
+	})
+
+	engine := newTestEngine(t)
+	storage := promqltest.LoadedStorage(t, `
+	load 10s
+		metric 1+1x10
+		withreset 1+1x4 1+1x5
+		notregular 0 5 100 2 8
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	tc := []struct {
+		query    string
+		t        time.Time
+		expected promql.Matrix
+	}{
+		{
+			query: "metric[10s] smoothed",
+			t:     time.Unix(10, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 2, T: 10000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] smoothed",
+			t:     time.Unix(15, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1.5, T: 5000}, {F: 2, T: 10000}, {F: 2.5, T: 15000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] smoothed",
+			t:     time.Unix(5, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: -5000}, {F: 1, T: 0}, {F: 1.5, T: 5000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] smoothed",
+			t:     time.Unix(105, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 10.5, T: 95000}, {F: 11, T: 100000}, {F: 11, T: 105000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "withreset[10s] smoothed",
+			t:     time.Unix(45, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 4.5, T: 35000}, {F: 5, T: 40000}, {F: 3, T: 45000}},
+					Metric: labels.FromStrings("__name__", "withreset"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] anchored",
+			t:     time.Unix(10, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 2, T: 10000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] anchored",
+			t:     time.Unix(15, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 5000}, {F: 2, T: 10000}, {F: 2, T: 15000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] anchored",
+			t:     time.Unix(5, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: -5000}, {F: 1, T: 0}, {F: 1, T: 5000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] anchored",
+			t:     time.Unix(105, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 10, T: 95000}, {F: 11, T: 100000}, {F: 11, T: 105000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "withreset[10s] anchored",
+			t:     time.Unix(45, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 4, T: 35000}, {F: 5, T: 40000}, {F: 5, T: 45000}},
+					Metric: labels.FromStrings("__name__", "withreset"),
+				},
+			},
+		},
+		{
+			query: "notregular[20s] smoothed",
+			t:     time.Unix(30, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 5, T: 10000}, {F: 100, T: 20000}, {F: 2, T: 30000}},
+					Metric: labels.FromStrings("__name__", "notregular"),
+				},
+			},
+		},
+		{
+			query: "notregular[20s] anchored",
+			t:     time.Unix(30, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 5, T: 10000}, {F: 100, T: 20000}, {F: 2, T: 30000}},
+					Metric: labels.FromStrings("__name__", "notregular"),
+				},
+			},
+		},
+	}
+
+	for _, tc := range tc {
+		t.Run(tc.query, func(t *testing.T) {
+			engine = promqltest.NewTestEngine(t, false, 0, 100)
+			qry, err := engine.NewInstantQuery(context.Background(), storage, nil, tc.query, tc.t)
+			require.NoError(t, err)
+			res := qry.Exec(context.Background())
+			require.NoError(t, res.Err)
+			require.Equal(t, tc.expected, res.Value)
+		})
+	}
+}
+
 func TestAtModifier(t *testing.T) {
 	engine := newTestEngine(t)
 	storage := promqltest.LoadedStorage(t, `
