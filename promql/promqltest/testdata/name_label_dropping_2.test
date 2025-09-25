@@ -1,5 +1,3 @@
-# SPDX-License-Identifier: AGPL-3.0-only
-
 # Test for __name__ label drop.
 load 1m
   metric_total{env="1"} 0+1x10
