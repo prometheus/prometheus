@@ -53,7 +53,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/namevalidationutil"
 	"github.com/prometheus/prometheus/util/pool"
 )
@@ -68,14 +67,9 @@ var AlignScrapeTimestamps = true
 
 var errNameLabelMandatory = fmt.Errorf("missing metric name (%s label)", labels.MetricName)
 
-var _ FailureLogger = (*logging.JSONFileLogger)(nil)
-
-// FailureLogger is an interface that can be used to log all failed
-// scrapes.
-type FailureLogger interface {
-	slog.Handler
-	io.Closer
-}
+// FailureLogger is the handler used to log failed scrapes.
+// Lifecycle (open/close) is managed by the caller (Manager).
+type FailureLogger = slog.Handler
 
 // scrapePool manages scrapes for sets of targets.
 type scrapePool struct {
@@ -258,7 +252,7 @@ func (sp *scrapePool) SetScrapeFailureLogger(l FailureLogger) {
 	sp.scrapeFailureLoggerMtx.Lock()
 	defer sp.scrapeFailureLoggerMtx.Unlock()
 	if l != nil {
-		l = slog.New(l).With("job_name", sp.config.JobName).Handler().(FailureLogger)
+		l = slog.New(l).With("job_name", sp.config.JobName).Handler()
 	}
 	sp.scrapeFailureLogger = l
 
@@ -1326,7 +1320,7 @@ func (sl *scrapeLoop) setScrapeFailureLogger(l FailureLogger) {
 	sl.scrapeFailureLoggerMtx.Lock()
 	defer sl.scrapeFailureLoggerMtx.Unlock()
 	if ts, ok := sl.scraper.(fmt.Stringer); ok && l != nil {
-		l = slog.New(l).With("target", ts.String()).Handler().(FailureLogger)
+		l = slog.New(l).With("target", ts.String()).Handler()
 	}
 	sl.scrapeFailureLogger = l
 }

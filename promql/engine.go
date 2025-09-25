@@ -22,6 +22,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"os"
 	"reflect"
 	"runtime"
 	"slices"
@@ -48,7 +49,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/zeropool"
 )
@@ -120,13 +120,10 @@ type QueryEngine interface {
 	NewRangeQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error)
 }
 
-var _ QueryLogger = (*logging.JSONFileLogger)(nil)
-
-// QueryLogger is an interface that can be used to log all the queries logged
-// by the engine.
+// QueryLogger represents a slog.Handler used by the engine to log queries.
+// Lifecycle (opening/closing files) is managed by the caller.
 type QueryLogger interface {
 	slog.Handler
-	io.Closer
 }
 
 // A Query is derived from a raw query string and can be run against an engine
@@ -334,6 +331,7 @@ type Engine struct {
 	maxSamplesPerQuery       int
 	activeQueryTracker       QueryTracker
 	queryLogger              QueryLogger
+	queryLoggerCloser        io.Closer
 	queryLoggerLock          sync.RWMutex
 	lookbackDelta            time.Duration
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
@@ -445,33 +443,56 @@ func (ng *Engine) Close() error {
 		return nil
 	}
 
+	ng.queryLoggerLock.Lock()
+	if ng.queryLoggerCloser != nil {
+		err := ng.queryLoggerCloser.Close()
+		ng.logger.Warn("Error while closing the query log file", "err", err)
+		ng.queryLoggerCloser = nil
+	}
+	ng.queryLogger = nil
+	ng.queryLoggerLock.Unlock()
+
 	if ng.activeQueryTracker != nil {
-		return ng.activeQueryTracker.Close()
+		if err := ng.activeQueryTracker.Close(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-// SetQueryLogger sets the query logger.
-func (ng *Engine) SetQueryLogger(l QueryLogger) {
+// SetQueryLogger sets the query logger from a file path. Passing an empty string
+// disables query logging. The Engine owns the file lifecycle and closes any
+// previously opened file.
+func (ng *Engine) SetQueryLogger(path string) error {
 	ng.queryLoggerLock.Lock()
 	defer ng.queryLoggerLock.Unlock()
 
-	if ng.queryLogger != nil {
+	// Close previous file if any.
+	if ng.queryLoggerCloser != nil {
 		// An error closing the old file descriptor should
 		// not make reload fail; only log a warning.
-		err := ng.queryLogger.Close()
-		if err != nil {
-			ng.logger.Warn("Error while closing the previous query log file", "err", err)
-		}
+		err := ng.queryLoggerCloser.Close()
+		ng.logger.Warn("Error while closing the previous query log file", "err", err)
+		ng.queryLoggerCloser = nil
 	}
 
-	ng.queryLogger = l
-
-	if l != nil {
-		ng.metrics.queryLogEnabled.Set(1)
-	} else {
+	if path == "" {
+		ng.queryLogger = nil
 		ng.metrics.queryLogEnabled.Set(0)
+		return nil
 	}
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
+	if err != nil {
+		return err
+	}
+	jsonFmt := promslog.NewFormat()
+	_ = jsonFmt.Set("json")
+	handler := promslog.New(&promslog.Config{Format: jsonFmt, Writer: f}).Handler()
+	ng.queryLogger = handler
+	ng.queryLoggerCloser = f
+	ng.metrics.queryLogEnabled.Set(1)
+	return nil
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.

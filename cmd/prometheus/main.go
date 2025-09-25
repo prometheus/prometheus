@@ -76,7 +76,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/agent"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/documentcli"
-	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/notifications"
 	prom_runtime "github.com/prometheus/prometheus/util/runtime"
 	"github.com/prometheus/prometheus/web"
@@ -830,7 +829,6 @@ func main() {
 	scrapeManager, err := scrape.NewManager(
 		&cfg.scrape,
 		logger.With("component", "scrape manager"),
-		logging.NewJSONFileLogger,
 		fanoutStorage,
 		prometheus.DefaultRegisterer,
 	)
@@ -954,17 +952,7 @@ func main() {
 					return nil
 				}
 
-				if cfg.GlobalConfig.QueryLogFile == "" {
-					queryEngine.SetQueryLogger(nil)
-					return nil
-				}
-
-				l, err := logging.NewJSONFileLogger(cfg.GlobalConfig.QueryLogFile)
-				if err != nil {
-					return err
-				}
-				queryEngine.SetQueryLogger(l)
-				return nil
+				return queryEngine.SetQueryLogger(cfg.GlobalConfig.QueryLogFile)
 			},
 		}, {
 			// The Scrape and notifier managers need to reload before the Discovery manager as

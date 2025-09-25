@@ -40,7 +40,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -2187,10 +2186,7 @@ func TestQueryLogger_basic(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	ql1File := filepath.Join(tmpDir, "query1.log")
-	f1, err := logging.NewJSONFileLogger(ql1File)
-	require.NoError(t, err)
-
-	engine.SetQueryLogger(f1)
+	require.NoError(t, engine.SetQueryLogger(ql1File))
 	queryExec()
 	logLines := getLogLines(t, ql1File)
 	require.Contains(t, logLines[0], "params", map[string]any{"query": "test statement"})
@@ -2202,28 +2198,9 @@ func TestQueryLogger_basic(t *testing.T) {
 	l2 := len(logLines)
 	require.Equal(t, l2, 2*l)
 
-	// Test that we close the query logger when unsetting it. The following
-	// attempt to close the file should error.
-	engine.SetQueryLogger(nil)
-	err = f1.Close()
-	require.ErrorContains(t, err, "file already closed", "expected f1 to be closed, got open")
+	// Unset the query logger, promqy.Query works without query log
+	require.NoError(t, engine.SetQueryLogger(""))
 	queryExec()
-
-	// Test that we close the query logger when swapping.
-	ql2File := filepath.Join(tmpDir, "query2.log")
-	f2, err := logging.NewJSONFileLogger(ql2File)
-	require.NoError(t, err)
-	ql3File := filepath.Join(tmpDir, "query3.log")
-	f3, err := logging.NewJSONFileLogger(ql3File)
-	require.NoError(t, err)
-	engine.SetQueryLogger(f2)
-	queryExec()
-	engine.SetQueryLogger(f3)
-	err = f2.Close()
-	require.ErrorContains(t, err, "file already closed", "expected f2 to be closed, got open")
-	queryExec()
-	err = f3.Close()
-	require.NoError(t, err)
 }
 
 func TestQueryLogger_fields(t *testing.T) {
@@ -2237,13 +2214,7 @@ func TestQueryLogger_fields(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	ql1File := filepath.Join(tmpDir, "query1.log")
-	f1, err := logging.NewJSONFileLogger(ql1File)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, f1.Close())
-	})
-
-	engine.SetQueryLogger(f1)
+	require.NoError(t, engine.SetQueryLogger(ql1File))
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	ctx = promql.NewOriginContext(ctx, map[string]any{"foo": "bar"})
@@ -2270,13 +2241,7 @@ func TestQueryLogger_error(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	ql1File := filepath.Join(tmpDir, "query1.log")
-	f1, err := logging.NewJSONFileLogger(ql1File)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, f1.Close())
-	})
-
-	engine.SetQueryLogger(f1)
+	require.NoError(t, engine.SetQueryLogger(ql1File))
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	ctx = promql.NewOriginContext(ctx, map[string]any{"foo": "bar"})

@@ -17,7 +17,9 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"log/slog"
+	"os"
 	"reflect"
 	"runtime"
 	"sync"
@@ -33,13 +35,12 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/osutil"
 	"github.com/prometheus/prometheus/util/pool"
 )
 
 // NewManager is the Manager constructor.
-func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error), app storage.Appendable, registerer prometheus.Registerer) (*Manager, error) {
+func NewManager(o *Options, logger *slog.Logger, app storage.Appendable, registerer prometheus.Registerer) (*Manager, error) {
 	if o == nil {
 		o = &Options{}
 	}
@@ -53,16 +54,15 @@ func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(str
 	}
 
 	m := &Manager{
-		append:                 app,
-		opts:                   o,
-		logger:                 logger,
-		newScrapeFailureLogger: newScrapeFailureLogger,
-		scrapeConfigs:          make(map[string]*config.ScrapeConfig),
-		scrapePools:            make(map[string]*scrapePool),
-		graceShut:              make(chan struct{}),
-		triggerReload:          make(chan struct{}, 1),
-		metrics:                sm,
-		buffers:                pool.New(1e3, 100e6, 3, func(sz int) any { return make([]byte, 0, sz) }),
+		append:        app,
+		opts:          o,
+		logger:        logger,
+		scrapeConfigs: make(map[string]*config.ScrapeConfig),
+		scrapePools:   make(map[string]*scrapePool),
+		graceShut:     make(chan struct{}),
+		triggerReload: make(chan struct{}, 1),
+		metrics:       sm,
+		buffers:       pool.New(1e3, 100e6, 3, func(sz int) any { return make([]byte, 0, sz) }),
 	}
 
 	m.metrics.setTargetMetadataCacheGatherer(m)
@@ -107,14 +107,14 @@ type Manager struct {
 	append    storage.Appendable
 	graceShut chan struct{}
 
-	offsetSeed             uint64     // Global offsetSeed seed is used to spread scrape workload across HA setup.
-	mtxScrape              sync.Mutex // Guards the fields below.
-	scrapeConfigs          map[string]*config.ScrapeConfig
-	scrapePools            map[string]*scrapePool
-	newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error)
-	scrapeFailureLoggers   map[string]FailureLogger
-	targetSets             map[string][]*targetgroup.Group
-	buffers                *pool.Pool
+	offsetSeed           uint64     // Global offsetSeed seed is used to spread scrape workload across HA setup.
+	mtxScrape            sync.Mutex // Guards the fields below.
+	scrapeConfigs        map[string]*config.ScrapeConfig
+	scrapePools          map[string]*scrapePool
+	scrapeFailureLoggers map[string]FailureLogger
+	scrapeFailureClosers map[string]io.Closer
+	targetSets           map[string][]*targetgroup.Group
+	buffers              *pool.Pool
 
 	triggerReload chan struct{}
 
@@ -237,6 +237,11 @@ func (m *Manager) Stop() {
 	for _, sp := range m.scrapePools {
 		sp.stop()
 	}
+	for _, c := range m.scrapeFailureClosers {
+		if c != nil {
+			c.Close()
+		}
+	}
 	close(m.graceShut)
 }
 
@@ -260,32 +265,40 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	scrapeFailureLoggers := map[string]FailureLogger{
 		"": nil, // Emptying the file name sets the scrape logger to nil.
 	}
+	scrapeFailureClosers := map[string]io.Closer{}
 	for _, scfg := range scfgs {
 		c[scfg.JobName] = scfg
 		if _, ok := scrapeFailureLoggers[scfg.ScrapeFailureLogFile]; !ok {
 			// We promise to reopen the file on each reload.
 			var (
 				logger FailureLogger
-				err    error
+				closer io.Closer
 			)
-			if m.newScrapeFailureLogger != nil {
-				if logger, err = m.newScrapeFailureLogger(scfg.ScrapeFailureLogFile); err != nil {
-					return err
+			if scfg.ScrapeFailureLogFile != "" {
+				f, ferr := os.OpenFile(scfg.ScrapeFailureLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
+				if ferr != nil {
+					return ferr
 				}
+				jsonFmt := promslog.NewFormat()
+				_ = jsonFmt.Set("json")
+				logger = promslog.New(&promslog.Config{Format: jsonFmt, Writer: f}).Handler()
+				closer = f
 			}
 			scrapeFailureLoggers[scfg.ScrapeFailureLogFile] = logger
+			scrapeFailureClosers[scfg.ScrapeFailureLogFile] = closer
 		}
 	}
 	m.scrapeConfigs = c
 
-	oldScrapeFailureLoggers := m.scrapeFailureLoggers
-	for _, s := range oldScrapeFailureLoggers {
+	// Close previous closers after we have opened new ones successfully.
+	for _, s := range m.scrapeFailureClosers {
 		if s != nil {
 			defer s.Close()
 		}
 	}
 
 	m.scrapeFailureLoggers = scrapeFailureLoggers
+	m.scrapeFailureClosers = scrapeFailureClosers
 
 	if err := m.setOffsetSeed(cfg.GlobalConfig.ExternalLabels); err != nil {
 		return err
