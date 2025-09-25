@@ -82,7 +82,7 @@ func (*SDConfig) Name() string { return "triton" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return New(opts.Logger, c, opts.Metrics)
+	return New(opts.Logger, c, opts.Metrics, opts.ConfigName)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -146,7 +146,7 @@ type Discovery struct {
 }
 
 // New returns a new Discovery which periodically refreshes its targets.
-func New(logger *slog.Logger, conf *SDConfig, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func New(logger *slog.Logger, conf *SDConfig, metrics discovery.DiscovererMetrics, configName string) (*Discovery, error) {
 	m, ok := metrics.(*tritonMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
@@ -175,6 +175,7 @@ func New(logger *slog.Logger, conf *SDConfig, metrics discovery.DiscovererMetric
 		refresh.Options{
 			Logger:              logger,
 			Mech:                "triton",
+			Config:              configName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,

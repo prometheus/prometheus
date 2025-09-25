@@ -94,7 +94,7 @@ func (*DockerSDConfig) Name() string { return "docker" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *DockerSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDockerDiscovery(c, opts.Logger, opts.Metrics)
+	return NewDockerDiscovery(c, opts.Logger, opts.Metrics, opts.ConfigName)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -129,7 +129,7 @@ type DockerDiscovery struct {
 }
 
 // NewDockerDiscovery returns a new DockerDiscovery which periodically refreshes its targets.
-func NewDockerDiscovery(conf *DockerSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*DockerDiscovery, error) {
+func NewDockerDiscovery(conf *DockerSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics, configName string) (*DockerDiscovery, error) {
 	m, ok := metrics.(*dockerMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
@@ -187,6 +187,7 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger *slog.Logger, metrics disco
 		refresh.Options{
 			Logger:              logger,
 			Mech:                "docker",
+			Config:              configName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,

@@ -88,7 +88,7 @@ func (*SDConfig) Name() string { return "eureka" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.Metrics)
+	return NewDiscovery(c, opts.Logger, opts.Metrics, opts.ConfigName)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -125,7 +125,7 @@ type Discovery struct {
 }
 
 // NewDiscovery creates a new Eureka discovery for the given role.
-func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics, configName string) (*Discovery, error) {
 	m, ok := metrics.(*eurekaMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
@@ -144,6 +144,7 @@ func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.Discove
 		refresh.Options{
 			Logger:              logger,
 			Mech:                "eureka",
+			Config:              configName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,
