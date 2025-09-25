@@ -17,8 +17,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 type BucketExpectation struct {
@@ -187,7 +188,7 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 			})
 			require.Equal(t, tt.expectErr, err != nil, "unexpected error: %v", err)
 			if !tt.expectErr {
-				require.Equal(t, len(tt.expected.buckets), len(got.buckets))
+				require.Len(t, got.buckets, len(tt.expected.buckets))
 				for i, expBucket := range tt.expected.buckets {
 					require.Equal(t, expBucket, got.buckets[i])
 				}
