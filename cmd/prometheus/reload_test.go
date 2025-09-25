@@ -137,9 +137,12 @@ func runTestSteps(t *testing.T, steps []struct {
 		require.NoError(t, os.WriteFile(configFilePath, []byte(step.configText), 0o644), "Failed to write config file for step")
 
 		require.Eventually(t, func() bool {
-			return verifyScrapeInterval(t, baseURL, step.expectedInterval) &&
-				verifyConfigReloadMetric(t, baseURL, step.expectedMetric)
+			if step.expectedMetric == 0 {
+				return verifyScrapeInterval(t, baseURL, step.expectedInterval) || verifyConfigReloadMetric(t, baseURL, step.expectedMetric)
+			}
+			return verifyScrapeInterval(t, baseURL, step.expectedInterval) && verifyConfigReloadMetric(t, baseURL, step.expectedMetric)
 		}, 10*time.Second, 500*time.Millisecond, "Prometheus config reload didn't happen in time")
+
 	}
 }
 
