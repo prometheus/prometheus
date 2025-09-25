@@ -22,13 +22,13 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-type BucketExpectation struct {
+type ExpectedBucket struct {
 	le  string
 	val float64
 }
 
-type ExpectedHistogram struct {
-	buckets []BucketExpectation
+type ExpectedClassicHistogram struct {
+	buckets []ExpectedBucket
 	count   float64
 	sum     float64
 }
@@ -39,19 +39,19 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 		nhcb      any
 		labels    labels.Labels
 		expectErr bool
-		expected  ExpectedHistogram
+		expected  ExpectedClassicHistogram
 	}{
 		{
 			name: "Valid Histogram",
 			nhcb: &Histogram{
 				CustomValues:    []float64{1, 2, 3},
-				PositiveBuckets: []int64{10, 20, 30}, // Delta format: {10, 20, 30} -> Absolute: {10, 30, 60}
+				PositiveBuckets: []int64{10, 20, 30},
 				Count:           60,
 				Sum:             100.0,
 			},
 			labels: labels.FromStrings("__name__", "test_metric"),
-			expected: ExpectedHistogram{
-				buckets: []BucketExpectation{
+			expected: ExpectedClassicHistogram{
+				buckets: []ExpectedBucket{
 					{le: "1", val: 10},
 					{le: "2", val: 30},
 					{le: "3", val: 60},
@@ -70,8 +70,8 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 				Sum:             100.0,
 			},
 			labels: labels.FromStrings("__name__", "test_metric"),
-			expected: ExpectedHistogram{
-				buckets: []BucketExpectation{
+			expected: ExpectedClassicHistogram{
+				buckets: []ExpectedBucket{
 					{le: "1", val: 20},
 					{le: "2", val: 40},
 					{le: "3", val: 60},
@@ -90,8 +90,8 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 				Sum:             0.0,
 			},
 			labels: labels.FromStrings("__name__", "test_metric"),
-			expected: ExpectedHistogram{
-				buckets: []BucketExpectation{
+			expected: ExpectedClassicHistogram{
+				buckets: []ExpectedBucket{
 					{le: "+Inf", val: 0},
 				},
 				count: 0,
@@ -102,7 +102,7 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 			name: "Missing __name__ label",
 			nhcb: &Histogram{
 				CustomValues:    []float64{1, 2, 3},
-				PositiveBuckets: []int64{10, 20, 30}, // Delta format: {10, 20, 30} -> Absolute: {10, 30, 60}
+				PositiveBuckets: []int64{10, 20, 30},
 				Count:           60,
 				Sum:             100.0,
 			},
@@ -119,13 +119,13 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 			name: "Histogram with zero bucket counts",
 			nhcb: &Histogram{
 				CustomValues:    []float64{1, 2, 3},
-				PositiveBuckets: []int64{0, 10, 0}, // Delta format: {0, 10, 0} -> Absolute: {0, 10, 10}
+				PositiveBuckets: []int64{0, 10, 0},
 				Count:           10,
 				Sum:             50.0,
 			},
 			labels: labels.FromStrings("__name__", "test_metric"),
-			expected: ExpectedHistogram{
-				buckets: []BucketExpectation{
+			expected: ExpectedClassicHistogram{
+				buckets: []ExpectedBucket{
 					{le: "1", val: 0},
 					{le: "2", val: 10},
 					{le: "3", val: 10},
@@ -139,7 +139,7 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 			name: "Mismatched bucket lengths",
 			nhcb: &Histogram{
 				CustomValues:    []float64{1, 2},
-				PositiveBuckets: []int64{10, 20, 30}, // Mismatched lengths: 2 vs 3
+				PositiveBuckets: []int64{10, 20, 30},
 				Count:           60,
 				Sum:             100.0,
 			},
@@ -150,13 +150,13 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 			name: "single series Histogram",
 			nhcb: &Histogram{
 				CustomValues:    []float64{1},
-				PositiveBuckets: []int64{10}, // Delta format: {10} -> Absolute: {10}
+				PositiveBuckets: []int64{10},
 				Count:           10,
 				Sum:             20.0,
 			},
 			labels: labels.FromStrings("__name__", "test_metric"),
-			expected: ExpectedHistogram{
-				buckets: []BucketExpectation{
+			expected: ExpectedClassicHistogram{
+				buckets: []ExpectedBucket{
 					{le: "1", val: 10},
 					{le: "+Inf", val: 10},
 				},
@@ -169,11 +169,11 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 	labelBuilder := labels.NewBuilder(labels.EmptyLabels())
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var got ExpectedHistogram
+			var got ExpectedClassicHistogram
 			err := ConvertNHCBToClassicHistogram(tt.nhcb, tt.labels, labelBuilder, func(lbls labels.Labels, val float64) error {
 				switch lbls.Get("__name__") {
 				case tt.labels.Get("__name__") + "_bucket":
-					got.buckets = append(got.buckets, BucketExpectation{
+					got.buckets = append(got.buckets, ExpectedBucket{
 						le:  lbls.Get("le"),
 						val: val,
 					})
