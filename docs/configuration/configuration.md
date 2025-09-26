@@ -1208,6 +1208,9 @@ See below for the configuration options for EC2 discovery:
 # AWS Role ARN, an alternative to using AWS API keys.
 [ role_arn: <string> ]
 
+# Optional External ID that can go along with role_arn.
+[ external_id: <string> ]
+
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 60s ]
 
@@ -2067,6 +2070,9 @@ See below for the configuration options for Lightsail discovery:
 
 # AWS Role ARN, an alternative to using AWS API keys.
 [ role_arn: <string> ]
+
+# Optional External ID that can go along with role_arn.
+[ external_id: <string> ]
 
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 60s ]
