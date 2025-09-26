@@ -3053,7 +3053,6 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 
 // vectorElemBinop evaluates a binary operation between two Vector elements.
 func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram, pos posrange.PositionRange) (float64, *histogram.FloatHistogram, bool, error) {
-	opName := parser.ItemTypeStr[op]
 	switch {
 	case hlhs == nil && hrhs == nil:
 		{
@@ -3092,6 +3091,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			case parser.MUL:
 				return 0, hrhs.Copy().Mul(lhs).Compact(0), true, nil
 			case parser.ADD, parser.SUB, parser.DIV, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
+				opName := parser.ItemTypeStr[op]
 				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
 			}
 		}
@@ -3103,6 +3103,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			case parser.DIV:
 				return 0, hlhs.Copy().Div(rhs).Compact(0), true, nil
 			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
+				opName := parser.ItemTypeStr[op]
 				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
 			}
 		}
@@ -3134,6 +3135,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 				// This operation expects that both histograms are compacted.
 				return 0, hlhs, !hlhs.Equals(hrhs), nil
 			case parser.MUL, parser.DIV, parser.POW, parser.MOD, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
+				opName := parser.ItemTypeStr[op]
 				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
 			}
 		}
