@@ -117,6 +117,24 @@ func (*writeHandler) parseProtoMsg(contentType string) (config.RemoteWriteProtoM
 	return config.RemoteWriteProtoMsgV1, nil
 }
 
+// isHistogramValidationError checks if the error is a native histogram validation error.
+func isHistogramValidationError(err error) bool {
+	// TODO: Consider adding single histogram error type instead of individual sentinel errors.
+	return errors.Is(err, histogram.ErrHistogramCountMismatch) ||
+		errors.Is(err, histogram.ErrHistogramCountNotBigEnough) ||
+		errors.Is(err, histogram.ErrHistogramNegativeBucketCount) ||
+		errors.Is(err, histogram.ErrHistogramSpanNegativeOffset) ||
+		errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsMismatch) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsInvalid) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsInfinite) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsZeroCount) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsZeroThresh) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsNegSpans) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsNegBuckets) ||
+		errors.Is(err, histogram.ErrHistogramExpSchemaCustomBounds)
+}
+
 func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "" {
@@ -190,6 +208,9 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				// Indicated an out-of-order sample is a bad request to prevent retries.
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
+			case isHistogramValidationError(err):
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
 			default:
 				h.logger.Error("Error while remote writing the v1 request", "err", err.Error())
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -229,7 +250,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	samplesWithInvalidLabels := 0
 	samplesAppended := 0
 
-	app := &timeLimitAppender{
+	app := &remoteWriteAppender{
 		Appender: h.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
@@ -344,7 +365,7 @@ func (h *writeHandler) appendV1Histograms(app storage.Appender, hh []prompb.Hist
 // NOTE(bwplotka): TSDB storage is NOT idempotent, so we don't allow "partial retry-able" errors.
 // Once we have 5xx type of error, we immediately stop and rollback all appends.
 func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ WriteResponseStats, errHTTPCode int, _ error) {
-	app := &timeLimitAppender{
+	app := &remoteWriteAppender{
 		Appender: h.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
@@ -471,6 +492,11 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
 				// TODO(bwplotka): Not too spammy log?
 				h.logger.Error("Out of order histogram from remote write", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
+				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
+				continue
+			}
+			if isHistogramValidationError(err) {
+				h.logger.Error("Invalid histogram received", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
 				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
 				continue
 			}
@@ -616,7 +642,7 @@ type rwExporter struct {
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
 	otlpCfg := rw.config().OTLPConfig
-	app := &timeLimitAppender{
+	app := &remoteWriteAppender{
 		Appender: rw.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
@@ -719,13 +745,13 @@ func hasDelta(md pmetric.Metrics) bool {
 	return false
 }
 
-type timeLimitAppender struct {
+type remoteWriteAppender struct {
 	storage.Appender
 
 	maxTime int64
 }
 
-func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (app *remoteWriteAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}
@@ -737,9 +763,16 @@ func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, 
 	return ref, nil
 }
 
-func (app *timeLimitAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (app *remoteWriteAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
+	}
+
+	if h != nil && histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > histogram.ExponentialSchemaMax {
+		h = h.ReduceResolution(histogram.ExponentialSchemaMax)
+	}
+	if fh != nil && histogram.IsExponentialSchemaReserved(fh.Schema) && fh.Schema > histogram.ExponentialSchemaMax {
+		fh = fh.ReduceResolution(histogram.ExponentialSchemaMax)
 	}
 
 	ref, err := app.Appender.AppendHistogram(ref, l, t, h, fh)
@@ -749,7 +782,7 @@ func (app *timeLimitAppender) AppendHistogram(ref storage.SeriesRef, l labels.La
 	return ref, nil
 }
 
-func (app *timeLimitAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+func (app *remoteWriteAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	if e.Ts > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}

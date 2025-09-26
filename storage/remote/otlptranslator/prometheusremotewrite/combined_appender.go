@@ -139,7 +139,7 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 		ref = 0
 	}
 	updateRefs := !exists || series.ct != ct
-	if updateRefs && ct != 0 && b.ingestCTZeroSample {
+	if updateRefs && ct != 0 && ct < t && b.ingestCTZeroSample {
 		var newRef storage.SeriesRef
 		if h != nil {
 			newRef, err = b.app.AppendHistogramCTZeroSample(ref, ls, t, ct, h, nil)
@@ -147,10 +147,14 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 			newRef, err = b.app.AppendCTZeroSample(ref, ls, t, ct)
 		}
 		if err != nil {
-			if !errors.Is(err, storage.ErrOutOfOrderCT) {
+			if !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
 				// Even for the first sample OOO is a common scenario because
 				// we can't tell if a CT was already ingested in a previous request.
 				// We ignore the error.
+				// ErrDuplicateSampleForTimestamp is also a common scenario because
+				// unknown start times in Opentelemetry are indicated by setting
+				// the start time to the same as the first sample time.
+				// https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
 				b.logger.Warn("Error when appending CT from OTLP", "err", err, "series", ls.String(), "created_timestamp", ct, "timestamp", t, "sample_type", sampleType(h))
 			}
 		} else {

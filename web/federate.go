@@ -190,8 +190,13 @@ Loop:
 		isHistogram := s.H != nil
 		formatType := format.FormatType()
 		if isHistogram &&
-			formatType != expfmt.TypeProtoDelim && formatType != expfmt.TypeProtoText && formatType != expfmt.TypeProtoCompact {
-			// Can't serve the native histogram.
+			!s.H.UsesCustomBuckets() &&
+			formatType != expfmt.TypeProtoDelim &&
+			formatType != expfmt.TypeProtoText &&
+			formatType != expfmt.TypeProtoCompact {
+			// Can't serve a native histogram with a non-protobuf format.
+			// (We can serve an NHCB, though, as it is converted to a
+			// classic histogram for federation.)
 			// TODO(codesome): Serve them when other protocols get the native histogram support.
 			continue
 		}
@@ -208,20 +213,30 @@ Loop:
 			}
 			if l.Name == labels.MetricName {
 				nameSeen = true
-				if l.Value == lastMetricName && // We already have the name in the current MetricDescriptor, and we ignore nameless metrics.
-					lastWasHistogram == isHistogram && // The sample type matches (float vs histogram).
-					// If it was a histogram, the histogram type (counter vs gauge) also matches.
-					(!isHistogram || lastHistogramWasGauge == (s.H.CounterResetHint == histogram.GaugeType)) {
+				// We already have the name in the current MetricDescriptor,
+				// and we ignore nameless metrics.
+				if l.Value == lastMetricName &&
+					// The sample type matches (float vs histogram).
+					lastWasHistogram == isHistogram &&
+					// If it was a histogram, the histogram type
+					// (counter vs gauge) also matches.
+					(!isHistogram ||
+						lastHistogramWasGauge == (s.H.CounterResetHint == histogram.GaugeType)) {
 					return nil
 				}
 
-				// Since we now check for the sample type and type of histogram above, we will end up
-				// creating multiple metric families for the same metric name. This would technically be
-				// an invalid exposition. But since the consumer of this is Prometheus, and Prometheus can
-				// parse it fine, we allow it and bend the rules to make federation possible in those cases.
+				// Since we now check for the sample type and
+				// type of histogram above, we will end up
+				// creating multiple metric families for the
+				// same metric name. This would technically be
+				// an invalid exposition. But since the consumer
+				// of this is Prometheus, and Prometheus can
+				// parse it fine, we allow it and bend the rules
+				// to make federation possible in those cases.
 
-				// Need to start a new MetricDescriptor. Ship off the old one (if any) before
-				// creating the new one.
+				// Need to start a new MetricDescriptor. Ship
+				// off the old one (if any) before creating the
+				// new one.
 				if protMetricFam != nil {
 					if err := enc.Encode(protMetricFam); err != nil {
 						return err
@@ -278,32 +293,10 @@ Loop:
 			}
 		} else {
 			lastHistogramWasGauge = s.H.CounterResetHint == histogram.GaugeType
-			protMetric.Histogram = &dto.Histogram{
-				SampleCountFloat: proto.Float64(s.H.Count),
-				SampleSum:        proto.Float64(s.H.Sum),
-				Schema:           proto.Int32(s.H.Schema),
-				ZeroThreshold:    proto.Float64(s.H.ZeroThreshold),
-				ZeroCountFloat:   proto.Float64(s.H.ZeroCount),
-				NegativeCount:    s.H.NegativeBuckets,
-				PositiveCount:    s.H.PositiveBuckets,
-			}
-			if len(s.H.PositiveSpans) > 0 {
-				protMetric.Histogram.PositiveSpan = make([]*dto.BucketSpan, len(s.H.PositiveSpans))
-				for i, sp := range s.H.PositiveSpans {
-					protMetric.Histogram.PositiveSpan[i] = &dto.BucketSpan{
-						Offset: proto.Int32(sp.Offset),
-						Length: proto.Uint32(sp.Length),
-					}
-				}
-			}
-			if len(s.H.NegativeSpans) > 0 {
-				protMetric.Histogram.NegativeSpan = make([]*dto.BucketSpan, len(s.H.NegativeSpans))
-				for i, sp := range s.H.NegativeSpans {
-					protMetric.Histogram.NegativeSpan[i] = &dto.BucketSpan{
-						Offset: proto.Int32(sp.Offset),
-						Length: proto.Uint32(sp.Length),
-					}
-				}
+			if s.H.UsesCustomBuckets() {
+				protMetric.Histogram = makeClassicHistogram(s.H)
+			} else {
+				protMetric.Histogram = makeNativeHistogram(s.H)
 			}
 		}
 		lastWasHistogram = isHistogram
@@ -316,4 +309,69 @@ Loop:
 			h.logger.Error("federation failed", "err", err)
 		}
 	}
+}
+
+// makeNativeHistogram creates a dto.Histogram representing a native histogram.
+// Use only for standard exponential schemas.
+func makeNativeHistogram(h *histogram.FloatHistogram) *dto.Histogram {
+	result := &dto.Histogram{
+		SampleCountFloat: proto.Float64(h.Count),
+		SampleSum:        proto.Float64(h.Sum),
+		Schema:           proto.Int32(h.Schema),
+		ZeroThreshold:    proto.Float64(h.ZeroThreshold),
+		ZeroCountFloat:   proto.Float64(h.ZeroCount),
+		NegativeCount:    h.NegativeBuckets,
+		PositiveCount:    h.PositiveBuckets,
+	}
+	if len(h.PositiveSpans) > 0 {
+		result.PositiveSpan = make([]*dto.BucketSpan, len(h.PositiveSpans))
+		for i, sp := range h.PositiveSpans {
+			result.PositiveSpan[i] = &dto.BucketSpan{
+				Offset: proto.Int32(sp.Offset),
+				Length: proto.Uint32(sp.Length),
+			}
+		}
+	}
+	if len(h.NegativeSpans) > 0 {
+		result.NegativeSpan = make([]*dto.BucketSpan, len(h.NegativeSpans))
+		for i, sp := range h.NegativeSpans {
+			result.NegativeSpan[i] = &dto.BucketSpan{
+				Offset: proto.Int32(sp.Offset),
+				Length: proto.Uint32(sp.Length),
+			}
+		}
+	}
+	return result
+}
+
+// makeClassicHistogram creates a dto.Histogram representing a classic
+// histogram. Use only for NHCB (schema -53).
+func makeClassicHistogram(h *histogram.FloatHistogram) *dto.Histogram {
+	result := &dto.Histogram{
+		SampleCountFloat: proto.Float64(h.Count),
+		SampleSum:        proto.Float64(h.Sum),
+	}
+	result.Bucket = make([]*dto.Bucket, len(h.CustomValues))
+	var (
+		cumulativeCount float64
+		bucketIter      = h.PositiveBucketIterator()
+		bucketAvailable = bucketIter.Next()
+	)
+	for i, le := range h.CustomValues {
+		for bucketAvailable && int(bucketIter.At().Index) < i {
+			bucketAvailable = bucketIter.Next()
+		}
+		if bucketAvailable && int(bucketIter.At().Index) == i {
+			cumulativeCount += bucketIter.At().Count
+		}
+		result.Bucket[i] = &dto.Bucket{
+			UpperBound:           proto.Float64(le),
+			CumulativeCountFloat: proto.Float64(cumulativeCount),
+		}
+	}
+	// Note that we do not add the +Inf bucket explicitly. In the protobuf
+	// exposition format, it is optional. For other exposition formats, the
+	// code converting the protobuf created here into the actual exposition
+	// payload will add the +Inf bucket.
+	return result
 }

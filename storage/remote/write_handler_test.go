@@ -806,6 +806,94 @@ func TestCommitErr_V1Message(t *testing.T) {
 	require.Equal(t, "commit error\n", string(body))
 }
 
+// Regression test for https://github.com/prometheus/prometheus/issues/17206
+func TestHistogramValidationErrorHandling(t *testing.T) {
+	testCases := []struct {
+		desc     string
+		hist     histogram.Histogram
+		expected string
+	}{
+		{
+			desc: "count mismatch",
+			hist: histogram.Histogram{
+				Schema:          2,
+				ZeroThreshold:   1e-128,
+				ZeroCount:       1,
+				Count:           10,
+				Sum:             20,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{2},
+				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				NegativeBuckets: []int64{3},
+				// Total: 1 (zero) + 2 (positive) + 3 (negative) = 6, but Count = 10
+			},
+			expected: "histogram's observation count should equal",
+		},
+		{
+			desc: "custom buckets zero count",
+			hist: histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           10,
+				Sum:             20,
+				ZeroCount:       1, // Invalid: custom buckets must have zero count of 0
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{10},
+				CustomValues:    []float64{1.0},
+			},
+			expected: "custom buckets: must have zero count of 0",
+		},
+	}
+
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		protoName := "V1"
+		if protoMsg == config.RemoteWriteProtoMsgV2 {
+			protoName = "V2"
+		}
+
+		for _, tc := range testCases {
+			testName := fmt.Sprintf("%s %s", protoName, tc.desc)
+			t.Run(testName, func(t *testing.T) {
+				dir := t.TempDir()
+				opts := tsdb.DefaultOptions()
+				opts.EnableNativeHistograms = true
+
+				db, err := tsdb.Open(dir, nil, nil, opts, nil)
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+				handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{protoMsg}, false)
+				recorder := httptest.NewRecorder()
+
+				var buf []byte
+				if protoMsg == config.RemoteWriteProtoMsgV1 {
+					ts := []prompb.TimeSeries{{
+						Labels:     []prompb.Label{{Name: "__name__", Value: "test"}},
+						Histograms: []prompb.Histogram{prompb.FromIntHistogram(1, &tc.hist)},
+					}}
+					buf, _, _, err = buildWriteRequest(nil, ts, nil, nil, nil, nil, "snappy")
+				} else {
+					st := writev2.NewSymbolTable()
+					ts := []writev2.TimeSeries{{
+						LabelsRefs: st.SymbolizeLabels(labels.FromStrings("__name__", "test"), nil),
+						Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, &tc.hist)},
+					}}
+					buf, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), ts, st.Symbols(), nil, nil, nil, "snappy")
+				}
+				require.NoError(t, err)
+
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/write", bytes.NewReader(buf))
+				req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[protoMsg])
+				req.Header.Set("Content-Encoding", "snappy")
+
+				handler.ServeHTTP(recorder, req)
+
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+				require.Contains(t, recorder.Body.String(), tc.expected)
+			})
+		}
+	}
+}
+
 func TestCommitErr_V2Message(t *testing.T) {
 	payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
@@ -1133,4 +1221,101 @@ func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, l labels.Labels
 	m.latestSample[hash] = ct
 	m.samples = append(m.samples, mockSample{l, ct, 0})
 	return storage.SeriesRef(hash), nil
+}
+
+var (
+	highSchemaHistogram = &histogram.Histogram{
+		Schema: 10,
+		PositiveSpans: []histogram.Span{
+			{
+				Offset: -1,
+				Length: 2,
+			},
+		},
+		PositiveBuckets: []int64{1, 2},
+		NegativeSpans: []histogram.Span{
+			{
+				Offset: 0,
+				Length: 1,
+			},
+		},
+		NegativeBuckets: []int64{1},
+	}
+	reducedSchemaHistogram = &histogram.Histogram{
+		Schema: 8,
+		PositiveSpans: []histogram.Span{
+			{
+				Offset: 0,
+				Length: 1,
+			},
+		},
+		PositiveBuckets: []int64{4},
+		NegativeSpans: []histogram.Span{
+			{
+				Offset: 0,
+				Length: 1,
+			},
+		},
+		NegativeBuckets: []int64{1},
+	}
+)
+
+func TestHistogramsReduction(t *testing.T) {
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(string(protoMsg), func(t *testing.T) {
+			appendable := &mockAppendable{}
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{protoMsg}, false)
+
+			var (
+				err     error
+				payload []byte
+			)
+
+			if protoMsg == config.RemoteWriteProtoMsgV1 {
+				payload, _, _, err = buildWriteRequest(nil, []prompb.TimeSeries{
+					{
+						Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric1"}},
+						Histograms: []prompb.Histogram{prompb.FromIntHistogram(1, highSchemaHistogram)},
+					},
+					{
+						Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric2"}},
+						Histograms: []prompb.Histogram{prompb.FromFloatHistogram(2, highSchemaHistogram.ToFloat(nil))},
+					},
+				}, nil, nil, nil, nil, "snappy")
+			} else {
+				payload, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+					{
+						LabelsRefs: []uint32{0, 1},
+						Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, highSchemaHistogram)},
+					},
+					{
+						LabelsRefs: []uint32{0, 2},
+						Histograms: []writev2.Histogram{writev2.FromFloatHistogram(2, highSchemaHistogram.ToFloat(nil))},
+					},
+				}, []string{"__name__", "test_metric1", "test_metric2"},
+					nil, nil, nil, "snappy")
+			}
+			require.NoError(t, err)
+
+			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			require.NoError(t, err)
+
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[protoMsg])
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			resp := recorder.Result()
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNoContent, resp.StatusCode)
+			require.Empty(t, body)
+
+			require.Len(t, appendable.histograms, 2)
+			require.Equal(t, int64(1), appendable.histograms[0].t)
+			require.Equal(t, reducedSchemaHistogram, appendable.histograms[0].h)
+			require.Equal(t, int64(2), appendable.histograms[1].t)
+			require.Equal(t, reducedSchemaHistogram.ToFloat(nil), appendable.histograms[1].fh)
+		})
+	}
 }

@@ -141,6 +141,8 @@ GROUP_LEFT
 GROUP_RIGHT
 IGNORING
 OFFSET
+SMOOTHED
+ANCHORED
 ON
 WITHOUT
 %token keywordsEnd
@@ -187,7 +189,7 @@ START_METRIC_SELECTOR
 %type <int> int
 %type <uint> uint
 %type <float> number series_value signed_number signed_or_unsigned_number
-%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_duration_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector duration_expr paren_duration_expr positive_duration_expr offset_duration_expr
+%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_duration_literal offset_expr anchored_expr smoothed_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector duration_expr paren_duration_expr positive_duration_expr offset_duration_expr
 
 %start start
 
@@ -230,6 +232,8 @@ expr            :
                 | matrix_selector
                 | number_duration_literal
                 | offset_expr
+                | anchored_expr
+                | smoothed_expr
                 | paren_expr
                 | string_literal
                 | subquery_expr
@@ -463,6 +467,20 @@ offset_expr: expr OFFSET offset_duration_expr
                 | expr OFFSET error
                         { yylex.(*parser).unexpected("offset", "number, duration, or step()"); $$ = $1 }
                 ;
+
+/*
+ * Anchored and smoothed modifiers
+ */
+
+anchored_expr: expr ANCHORED
+                {
+                        yylex.(*parser).setAnchored($1)
+                }
+
+smoothed_expr: expr SMOOTHED
+                {
+                        yylex.(*parser).setSmoothed($1)
+                }
 
 /*
  * @ modifiers.

@@ -129,6 +129,8 @@ var key = map[string]ItemType{
 
 	// Keywords.
 	"offset":      OFFSET,
+	"smoothed":    SMOOTHED,
+	"anchored":    ANCHORED,
 	"by":          BY,
 	"without":     WITHOUT,
 	"on":          ON,
