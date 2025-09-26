@@ -6,10 +6,10 @@ sort_rank: 6
 Federation allows a Prometheus server to scrape selected time series from
 another Prometheus server.
 
-_Note about native histograms (experimental feature): To scrape native histograms
-via federation, the scraping Prometheus server needs to run with native histograms
-enabled (via the command line flag `--enable-feature=native-histograms`), implying
-that the protobuf format is used for scraping. Should the federated metrics contain
+_Note about native histograms: To scrape native histograms via federation, the
+scraping Prometheus server needs to run with native histograms enabled (via the
+command line flag `--enable-feature=native-histograms`), implying that the
+protobuf format is used for scraping. Should the federated metrics contain
 a mix of different sample types (float64, counter histogram, gauge histogram) for
 the same metric name, the federation payload will contain multiple metric families
 with the same name (but different types). Technically, this violates the rules of
