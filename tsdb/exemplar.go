@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"unicode/utf8"
@@ -43,7 +44,8 @@ type CircularExemplarStorage struct {
 
 	// Map of series labels as a string to index entry, which points to the first
 	// and last exemplar for the series in the exemplars circular buffer.
-	index map[string]*indexEntry
+	index         map[string]*indexEntry
+	oooTimeWindow int64
 }
 
 type indexEntry struct {
@@ -111,19 +113,76 @@ func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
 	return &m
 }
 
+// Check the ts of prev exemplar of this series and  find insert point.
+// findOOOExemplarInsertion finds where to insert an out-of-order exemplar `e`
+// for the series represented by idx. It returns the index `i` such that the
+// new exemplar should be inserted after slot `i`.
+// If the exemplar should be inserted before the current oldest, it returns idx.oldest.
+// Returns storage.ErrDuplicateExemplar on duplicate.
+func (ce *CircularExemplarStorage) findOOOExemplarInsertion(e exemplar.Exemplar, idx *indexEntry) (int, error) {
+	if idx == nil {
+		return -1, fmt.Errorf("series index not found")
+	}
+
+	// helper: a < b according to (Ts, Value, Labels.Hash())
+	less := func(a, b exemplar.Exemplar) bool {
+		if a.Ts != b.Ts {
+			return a.Ts < b.Ts
+		}
+		if a.Value != b.Value {
+			return a.Value < b.Value
+		}
+		return a.Labels.Hash() < b.Labels.Hash()
+	}
+
+	oldestEx := ce.exemplars[idx.oldest].exemplar
+	// If e is strictly less than the oldest, it belongs before oldest.
+	if less(e, oldestEx) {
+		return idx.oldest, nil
+	}
+
+	i := idx.oldest
+	for {
+		curr := ce.exemplars[i]
+		nextIdx := curr.next
+
+		// If there is no next, we've reached the tail (newest).
+		// Check duplicate with current, then fail to find insertion point.
+		if nextIdx == noExemplar {
+			if e.Equals(curr.exemplar) {
+				return -1, storage.ErrDuplicateExemplar
+			}
+			return -1, fmt.Errorf("could not find out of order exemplar insertion point")
+		}
+
+		nextEx := ce.exemplars[nextIdx].exemplar
+
+		if e.Equals(curr.exemplar) || e.Equals(nextEx) {
+			return -1, storage.ErrDuplicateExemplar
+		}
+
+		// If e < nextEx (by our ordering), then e should be inserted between curr and next.
+		if less(e, nextEx) {
+			return i, nil
+		}
+		i = nextIdx
+	}
+}
+
 // NewCircularExemplarStorage creates a circular in memory exemplar storage.
 // If we assume the average case 95 bytes per exemplar we can fit 5651272 exemplars in
 // 1GB of extra memory, accounting for the fact that this is heap allocated space.
 // If len <= 0, then the exemplar storage is essentially a noop storage but can later be
 // resized to store exemplars.
-func NewCircularExemplarStorage(length int64, m *ExemplarMetrics) (ExemplarStorage, error) {
+func NewCircularExemplarStorage(length int64, m *ExemplarMetrics, oooTimeWindow int64) (ExemplarStorage, error) {
 	if length < 0 {
 		length = 0
 	}
 	c := &CircularExemplarStorage{
-		exemplars: make([]circularBufferEntry, length),
-		index:     make(map[string]*indexEntry, length/estimatedExemplarsPerSeries),
-		metrics:   m,
+		exemplars:     make([]circularBufferEntry, length),
+		index:         make(map[string]*indexEntry, length/estimatedExemplarsPerSeries),
+		metrics:       m,
+		oooTimeWindow: oooTimeWindow,
 	}
 
 	c.metrics.maxExemplars.Set(float64(length))
@@ -133,6 +192,9 @@ func NewCircularExemplarStorage(length int64, m *ExemplarMetrics) (ExemplarStora
 
 func (ce *CircularExemplarStorage) ApplyConfig(cfg *config.Config) error {
 	ce.Resize(cfg.StorageConfig.ExemplarsConfig.MaxExemplars)
+	if cfg.StorageConfig.TSDBConfig != nil {
+		ce.oooTimeWindow = cfg.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
+	}
 	return nil
 }
 
@@ -268,6 +330,10 @@ func (ce *CircularExemplarStorage) validateExemplar(idx *indexEntry, e exemplar.
 		if appended {
 			ce.metrics.outOfOrderExemplars.Inc()
 		}
+		if ce.oooTimeWindow == 0 || newestExemplar.Ts-e.Ts > ce.oooTimeWindow {
+			return storage.ErrTooOldExemplar
+		}
+
 		return storage.ErrOutOfOrderExemplar
 	}
 	return nil
@@ -360,18 +426,28 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 
 	idx, ok := ce.index[string(seriesLabels)]
 	err := ce.validateExemplar(idx, e, true)
-	if err != nil {
-		if errors.Is(err, storage.ErrDuplicateExemplar) {
-			// Duplicate exemplar, noop.
-			return nil
-		}
+	if errors.Is(err, storage.ErrDuplicateExemplar) {
+		return nil
+	}
+
+	if err != nil && !errors.Is(err, storage.ErrOutOfOrderExemplar) {
 		return err
+	}
+
+	isOOO := false
+	insertionIdx := -1
+	if errors.Is(err, storage.ErrOutOfOrderExemplar) {
+		isOOO = true
+		insertionIdx, err = ce.findOOOExemplarInsertion(e, idx)
+		if err != nil {
+			return err
+		}
 	}
 
 	if !ok {
 		idx = &indexEntry{oldest: ce.nextIndex, seriesLabels: l}
 		ce.index[string(seriesLabels)] = idx
-	} else {
+	} else if !isOOO {
 		ce.exemplars[idx.newest].next = ce.nextIndex
 	}
 
@@ -390,10 +466,15 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 
 	// Default the next value to -1 (which we use to detect that we've iterated through all exemplars for a series in Select)
 	// since this is the first exemplar stored for this series.
-	ce.exemplars[ce.nextIndex].next = noExemplar
 	ce.exemplars[ce.nextIndex].exemplar = e
 	ce.exemplars[ce.nextIndex].ref = idx
-	idx.newest = ce.nextIndex
+
+	if !isOOO {
+		idx.newest = ce.nextIndex
+	} else {
+		ce.exemplars[ce.nextIndex].next = ce.exemplars[insertionIdx].next
+		ce.exemplars[insertionIdx].next = ce.nextIndex
+	}
 
 	ce.nextIndex = (ce.nextIndex + 1) % len(ce.exemplars)
 
