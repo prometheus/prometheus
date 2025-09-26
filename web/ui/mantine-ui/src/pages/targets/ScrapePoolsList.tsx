@@ -304,6 +304,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                               <Table.Th w="25%">Endpoint</Table.Th>
                               <Table.Th>Labels</Table.Th>
                               <Table.Th w={230}>Last scrape</Table.Th>
+                              <Table.Th w={180}>Scrape Duration</Table.Th>
                               <Table.Th w={100}>State</Table.Th>
                             </Table.Tr>
                           </Table.Thead>
@@ -355,29 +356,29 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                                           )}
                                         </Badge>
                                       </Tooltip>
-
-                                      <Tooltip
-                                        label="Duration of last target scrape"
-                                        withArrow
-                                      >
-                                        <Badge
-                                          variant="light"
-                                          className={badgeClasses.statsBadge}
-                                          styles={{
-                                            label: { textTransform: "none" },
-                                          }}
-                                          leftSection={
-                                            <IconHourglass
-                                              style={badgeIconStyle}
-                                            />
-                                          }
-                                        >
-                                          {humanizeDuration(
-                                            target.lastScrapeDuration * 1000
-                                          )}
-                                        </Badge>
-                                      </Tooltip>
                                     </Group>
+                                  </Table.Td>
+                                  <Table.Td valign="top">
+                                    <Tooltip
+                                      withArrow
+                                      label={
+                                        <div style={{ lineHeight: 1.2 }}>
+                                          <div>Interval: {target.scrapeInterval}</div>
+                                          <div>Timeout: {target.scrapeTimeout}</div>
+                                        </div>
+                                      }
+                                    >
+                                      <Badge
+                                        variant="light"
+                                        className={badgeClasses.statsBadge}
+                                        styles={{
+                                          label: { textTransform: "none" },
+                                        }}
+                                        leftSection={<IconHourglass style={badgeIconStyle} />}
+                                      >
+                                        {humanizeDuration(target.lastScrapeDuration * 1000)}
+                                      </Badge>
+                                    </Tooltip>
                                   </Table.Td>
                                   <Table.Td valign="top">
                                     <Badge
