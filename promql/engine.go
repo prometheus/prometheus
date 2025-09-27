@@ -3561,12 +3561,18 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			case aggr.incompatibleHistograms:
 				continue
 			case aggr.hasHistogram:
-				if aggr.histogramKahanC != nil {
-					if aggr.histIncrementalMean {
+				if aggr.histIncrementalMean {
+					if aggr.histogramKahanC != nil {
 						aggr.histogramValue, _, _ = aggr.histogramMean.Add(aggr.histogramKahanC)
+						// TODO(crush-on-anechka): handle error returned by Add
 					} else {
-						aggr.histogramValue, _, _ = aggr.histogramValue.Div(aggr.groupCount).Add(
-							aggr.histogramKahanC.Div(aggr.groupCount))
+						aggr.histogramValue = aggr.histogramMean
+					}
+				} else {
+					aggr.histogramValue.Div(aggr.groupCount)
+					if aggr.histogramKahanC != nil {
+						aggr.histogramValue, _, _ = aggr.histogramValue.Add(aggr.histogramKahanC.Div(aggr.groupCount))
+						// TODO(crush-on-anechka): handle error returned by Add
 					}
 				}
 				aggr.histogramValue = aggr.histogramValue.Compact(0)
