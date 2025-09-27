@@ -826,7 +826,6 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				mean, kahanC    *histogram.FloatHistogram
 				count           float64
 				incrementalMean bool
-				err             error
 			)
 			for i, h := range s.Histograms[1:] {
 				count = float64(i + 2)
@@ -836,15 +835,14 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					if kahanC != nil {
 						cCopy = kahanC.Copy()
 					}
-					_, cCopy, err = sumCopy.KahanAdd(h.H, cCopy) // TODO(crush-on-anechka): Handle counterResetCollision after rebase
+					_, counterResetCollision, err := sumCopy.KahanAdd(h.H, cCopy)
 					if err != nil {
 						// TODO(crush-on-anechka): handle error
 						continue
 					}
-					// TODO(crush-on-anechka): Uncomment once counterResetCollision is brought in
-					// if counterResetCollision {
-					// 	annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
-					// }
+					if counterResetCollision {
+						annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
+					}
 					if !sumCopy.HasOverflow() {
 						sum, kahanC = sumCopy, cCopy
 						continue
@@ -860,10 +858,13 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					kahanC.Mul(q)
 				}
 				toAdd := h.H.Copy().Div(count)
-				_, kahanC, err = mean.Mul(q).KahanAdd(toAdd, kahanC)
+				_, counterResetCollision, err := mean.Mul(q).KahanAdd(toAdd, kahanC)
 				if err != nil {
 					// TODO(crush-on-anechka): handle error
 					continue
+				}
+				if counterResetCollision {
+					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
 				}
 			}
 			if incrementalMean {
@@ -1115,11 +1116,13 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		var annos annotations.Annotations
 		vec, err := aggrHistOverTime(matrixVal, enh, func(s Series) (*histogram.FloatHistogram, error) {
 			sum := s.Histograms[0].H.Copy()
-			var comp *histogram.FloatHistogram
-			var err error
+			var (
+				comp                  *histogram.FloatHistogram
+				counterResetCollision bool
+				err                   error
+			)
 			for _, h := range s.Histograms[1:] {
-				var counterResetCollision bool // TODO(crush-on-anechka): Bring counterResetCollision logic into KahanAdd after rebase
-				_, comp, err = sum.KahanAdd(h.H, comp)
+				comp, counterResetCollision, err = sum.KahanAdd(h.H, comp)
 				if err != nil {
 					return sum, err
 				}
@@ -1128,7 +1131,7 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				}
 			}
 			if comp != nil {
-				sum, _, err = sum.Add(comp) // TODO(crush-on-anechka): Handle counterResetCollision after rebase
+				sum, _, err = sum.Add(comp)
 				if err != nil {
 					return sum, err
 				}

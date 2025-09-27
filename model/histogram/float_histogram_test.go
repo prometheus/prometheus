@@ -2309,8 +2309,8 @@ func TestFloatHistogramAdd(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			testHistogramAdd(t, c.in1, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision)
 			testHistogramAdd(t, c.in2, c.in1, c.expected, c.expErrMsg, c.expCounterResetCollision)
-			testHistogramKahanAdd(t, c.in1, nil, c.in2, c.expected, nil, c.expErrMsg)
-			testHistogramKahanAdd(t, c.in2, nil, c.in1, c.expected, nil, c.expErrMsg)
+			testHistogramKahanAdd(t, c.in1, nil, c.in2, c.expected, nil, c.expErrMsg, c.expCounterResetCollision)
+			testHistogramKahanAdd(t, c.in2, nil, c.in1, c.expected, nil, c.expErrMsg, c.expCounterResetCollision)
 		})
 	}
 }
@@ -2322,6 +2322,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 		name                                   string
 		in1, comp, in2, expectedSum, expectedC *FloatHistogram
 		expErrMsg                              string
+		expCounterResetCollision               bool
 	}{
 		{
 			"larger zero bucket in first histogram",
@@ -2370,6 +2371,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				NegativeBuckets: []float64{0, 0.01, 0.01, 0.04, 0.04, 0},
 			},
 			"",
+			false,
 		},
 		{
 			"smaller zero bucket in first histogram",
@@ -2420,6 +2422,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				NegativeBuckets: []float64{0.01, 0.01, 0, 0, 0.04, 0.04},
 			},
 			"",
+			false,
 		},
 		{
 			"first histogram contains zero buckets and Compact is called",
@@ -2459,6 +2462,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				PositiveBuckets: []float64{0.03, 0, 0.05, 0.06},
 			},
 			"",
+			false,
 		},
 		{
 			"reduce resolution",
@@ -2504,12 +2508,26 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				PositiveBuckets: []float64{0.03, 0.05, 0.06, 0, 0},
 			},
 			"",
+			false,
+		},
+		{
+			name: "warn on counter reset hint collision",
+			in1: &FloatHistogram{
+				Schema:           CustomBucketsSchema,
+				CounterResetHint: CounterReset,
+			},
+			in2: &FloatHistogram{
+				Schema:           CustomBucketsSchema,
+				CounterResetHint: NotCounterReset,
+			},
+			expErrMsg:                "",
+			expCounterResetCollision: true,
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			testHistogramKahanAdd(t, c.in1, c.comp, c.in2, c.expectedSum, c.expectedC, c.expErrMsg)
+			testHistogramKahanAdd(t, c.in1, c.comp, c.in2, c.expectedSum, c.expectedC, c.expErrMsg, c.expCounterResetCollision)
 		})
 	}
 }
@@ -2549,7 +2567,9 @@ func testHistogramAdd(t *testing.T, a, b, expected *FloatHistogram, expErrMsg st
 	}
 }
 
-func testHistogramKahanAdd(t *testing.T, a, c, b, expectedSum, expectedC *FloatHistogram, expErrMsg string) {
+func testHistogramKahanAdd(
+	t *testing.T, a, c, b, expectedSum, expectedC *FloatHistogram, expErrMsg string, expCounterResetCollision bool,
+) {
 	var (
 		aCopy           = a.Copy()
 		bCopy           = b.Copy()
@@ -2570,7 +2590,7 @@ func testHistogramKahanAdd(t *testing.T, a, c, b, expectedSum, expectedC *FloatH
 		expectedSumCopy = expectedSum.Copy()
 	}
 
-	_, comp, err := aCopy.KahanAdd(bCopy, cCopy)
+	comp, warn, err := aCopy.KahanAdd(bCopy, cCopy)
 	if expErrMsg != "" {
 		require.EqualError(t, err, expErrMsg)
 	} else {
@@ -2579,7 +2599,7 @@ func testHistogramKahanAdd(t *testing.T, a, c, b, expectedSum, expectedC *FloatH
 
 	var res *FloatHistogram
 	if comp != nil {
-		res, _, err = aCopy.Add(comp) // TODO(crush-on-anechka): Handle counterResetCollision after rebase
+		res, _, err = aCopy.Add(comp)
 		if expErrMsg != "" {
 			require.EqualError(t, err, expErrMsg)
 		} else {
@@ -2590,6 +2610,8 @@ func testHistogramKahanAdd(t *testing.T, a, c, b, expectedSum, expectedC *FloatH
 	if expectedCCopy != nil {
 		require.Equal(t, expectedCCopy, comp)
 	}
+
+	require.Equal(t, expCounterResetCollision, warn)
 
 	if expectedSum != nil {
 		res.Compact(0)
