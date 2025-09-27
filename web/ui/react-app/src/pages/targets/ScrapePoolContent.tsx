@@ -9,7 +9,7 @@ import TargetScrapeDuration from './TargetScrapeDuration';
 import EndpointLink from './EndpointLink';
 import CustomInfiniteScroll, { InfiniteScrollItemsProps } from '../../components/CustomInfiniteScroll';
 
-const columns = ['Endpoint', 'State', 'Labels', 'Last Scrape', 'Scrape Duration', 'Error'];
+const columns = ['Endpoint', 'State', 'Labels', 'Scrape Interval', 'Last Scrape', 'Scrape Duration', 'Error'];
 
 interface ScrapePoolContentProps {
   targets: Target[];
@@ -36,6 +36,13 @@ const ScrapePoolContentTable: FC<InfiniteScrollItemsProps<Target>> = ({ items })
             </td>
             <td className={styles.labels}>
               <TargetLabels discoveredLabels={target.discoveredLabels} labels={target.labels} />
+            </td>
+            <td className={styles['scrape-interval']}>
+              <Badge color="secondary">{target.scrapeInterval}</Badge>
+              <br />
+              <Badge color="secondary" size="sm">
+                {target.scrapeTimeout}
+              </Badge>
             </td>
             <td className={styles['last-scrape']}>{formatRelative(target.lastScrape, now())}</td>
             <td className={styles['scrape-duration']}>
