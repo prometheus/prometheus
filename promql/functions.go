@@ -841,7 +841,6 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				mean, kahanC    *histogram.FloatHistogram
 				count           float64
 				incrementalMean bool
-				err             error
 			)
 			trackCounterReset(sum)
 			for i, h := range s.Histograms[1:] {
@@ -853,7 +852,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					if kahanC != nil {
 						cCopy = kahanC.Copy()
 					}
-					_, cCopy, err = sumCopy.KahanAdd(h.H, cCopy)
+					_, counterResetCollision, err := sumCopy.KahanAdd(h.H, cCopy)
 					if err != nil {
 						// TODO(crush-on-anechka): handle error
 						continue
@@ -877,7 +876,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					kahanC.Mul(q)
 				}
 				toAdd := h.H.Copy().Div(count)
-				_, kahanC, err = mean.Mul(q).KahanAdd(toAdd, kahanC)
+				_, counterResetCollision, err := mean.Mul(q).KahanAdd(toAdd, kahanC)
 				if err != nil {
 					// TODO(crush-on-anechka): handle error
 					continue
@@ -1151,12 +1150,15 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 
 			sum := s.Histograms[0].H.Copy()
 			trackCounterReset(sum)
-			var comp *histogram.FloatHistogram
-			var err error
+			var (
+				comp                  *histogram.FloatHistogram
+				counterResetCollision bool
+				err                   error
+			)
 			for _, h := range s.Histograms[1:] {
 				trackCounterReset(h.H)
 				var nhcbBoundsReconciled bool // TODO(crush-on-anechka): Bring nhcbBoundsReconciled logic into KahanAdd after rebase
-				_, comp, err = sum.KahanAdd(h.H, comp)
+				comp, counterResetCollision, err = sum.KahanAdd(h.H, comp)
 				if err != nil {
 					return sum, err
 				}

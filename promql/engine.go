@@ -3429,16 +3429,15 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 						if group.histogramKahanC != nil {
 							c = group.histogramKahanC.Copy()
 						}
-						_, c, err = v.KahanAdd(h, c) // TODO(crush-on-anechka): Handle counterResetCollision after rebase
+						_, counterResetCollision, err := v.KahanAdd(h, c)
 						if err != nil {
 							handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 							group.incompatibleHistograms = true
 							continue
 						}
-						// TODO(crush-on-anechka): Uncomment once counterResetCollision is brought in
-						// if counterResetCollision {
-						// 	annos.Add(annotations.NewHistogramCounterResetCollisionWarning(e.Expr.PositionRange(), annotations.HistogramAgg))
-						// }
+						if counterResetCollision {
+							annos.Add(annotations.NewHistogramCounterResetCollisionWarning(e.Expr.PositionRange(), annotations.HistogramAgg))
+						}
 						if !v.HasOverflow() {
 							group.histogramValue, group.histogramKahanC = v, c
 							break
@@ -3454,13 +3453,13 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 						group.histogramKahanC.Mul(q)
 					}
 					toAdd := h.Copy().Div(group.groupCount)
-					_, group.histogramKahanC, err = group.histogramMean.Mul(q).KahanAdd(toAdd, group.histogramKahanC) // TODO(crush-on-anechka): Handle counterResetCollision after rebase
+					_, counterResetCollision, err := group.histogramMean.Mul(q).KahanAdd(toAdd, group.histogramKahanC)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
 						continue
 					}
-					// TODO(crush-on-anechka): Uncomment once counterResetCollision is brought in
+					// TODO(crush-on-anechka): Uncomment once nhcbBoundsReconciled is brought in
 					// if nhcbBoundsReconciled {
 					// 	annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(e.Expr.PositionRange(), annotations.HistogramAgg))
 					// }
@@ -3564,9 +3563,9 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			case aggr.hasHistogram:
 				if aggr.histogramKahanC != nil {
 					if aggr.histIncrementalMean {
-						aggr.histogramValue, _ = aggr.histogramMean.Add(aggr.histogramKahanC)
+						aggr.histogramValue, _, _ = aggr.histogramMean.Add(aggr.histogramKahanC)
 					} else {
-						aggr.histogramValue, _ = aggr.histogramValue.Div(aggr.groupCount).Add(
+						aggr.histogramValue, _, _ = aggr.histogramValue.Div(aggr.groupCount).Add(
 							aggr.histogramKahanC.Div(aggr.groupCount))
 					}
 				}
@@ -3600,8 +3599,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				continue
 			case aggr.hasHistogram:
 				if aggr.histogramKahanC != nil {
-					aggr.histogramValue, _ = aggr.histogramValue.Add(aggr.histogramKahanC)
-					// TODO(crush-on-anechka): handle error
+					aggr.histogramValue, _, _ = aggr.histogramValue.Add(aggr.histogramKahanC)
+					// TODO(crush-on-anechka): handle error returned by Add
 				}
 				aggr.histogramValue.Compact(0)
 			default:
