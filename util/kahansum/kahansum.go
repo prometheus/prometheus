@@ -16,6 +16,9 @@ package kahansum
 import "math"
 
 // Inc performs addition of two floating-point numbers using the Kahan summation algorithm.
+// We get incorrect results if this function is inlined; see https://github.com/prometheus/prometheus/issues/16714.
+//
+//go:noinline
 func Inc(inc, sum, c float64) (newSum, newC float64) {
 	t := sum + inc
 	switch {
@@ -32,6 +35,9 @@ func Inc(inc, sum, c float64) (newSum, newC float64) {
 }
 
 // Dec performs subtraction of one floating-point number from another using the Kahan summation algorithm.
+// We get incorrect results if this function is inlined; see https://github.com/prometheus/prometheus/issues/16714.
+//
+//go:noinline
 func Dec(dec, sum, c float64) (newSum, newC float64) {
 	return Inc(-dec, sum, c)
 }
