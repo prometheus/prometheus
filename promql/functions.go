@@ -790,10 +790,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 	if len(firstSeries.Floats) > 0 && len(firstSeries.Histograms) > 0 {
 		return enh.Out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(getMetricName(firstSeries.Metric), args[0].PositionRange()))
 	}
-	// For the average calculation of histograms, we use incremental mean
-	// calculation without the help of Kahan summation (but this should
-	// change, see https://github.com/prometheus/prometheus/issues/14105 ).
-	// For floats, we improve the accuracy with the help of Kahan summation.
+	// We improve the accuracy with the help of Kahan summation.
 	// For a while, we assumed that incremental mean calculation combined
 	// with Kahan summation (see
 	// https://stackoverflow.com/questions/61665473/is-it-beneficial-for-precision-to-calculate-the-incremental-mean-average

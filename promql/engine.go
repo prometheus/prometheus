@@ -3380,14 +3380,9 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			}
 
 		case parser.AVG:
-			// For the average calculation of histograms, we use
-			// incremental mean calculation without the help of
-			// Kahan summation (but this should change, see
-			// https://github.com/prometheus/prometheus/issues/14105
-			// ). For floats, we improve the accuracy with the help
-			// of Kahan summation. For a while, we assumed that
-			// incremental mean calculation combined with Kahan
-			// summation (see
+			// We improve the accuracy with the help of Kahan summation.
+			// For a while, we assumed that incremental mean calculation
+			// combined with Kahan summation (see
 			// https://stackoverflow.com/questions/61665473/is-it-beneficial-for-precision-to-calculate-the-incremental-mean-average
 			// for inspiration) is generally the preferred solution.
 			// However, it then turned out that direct mean
