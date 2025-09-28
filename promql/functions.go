@@ -859,8 +859,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					}
 					_, counterResetCollision, err := sumCopy.KahanAdd(h.H, cCopy)
 					if err != nil {
-						// TODO(crush-on-anechka): handle error
-						continue
+						return sumCopy.Div(count), err
 					}
 					// TODO(crush-on-anechka): Uncomment once nhcbBoundsReconciled is brought in
 					// if nhcbBoundsReconciled {
@@ -883,8 +882,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				toAdd := h.H.Copy().Div(count)
 				_, counterResetCollision, err := mean.Mul(q).KahanAdd(toAdd, kahanC)
 				if err != nil {
-					// TODO(crush-on-anechka): handle error
-					continue
+					return mean, err
 				}
 				// TODO(crush-on-anechka): Uncomment once nhcbBoundsReconciled is brought in
 				// if nhcbBoundsReconciled {
