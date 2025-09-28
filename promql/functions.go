@@ -834,8 +834,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					}
 					_, counterResetCollision, err := sumCopy.KahanAdd(h.H, cCopy)
 					if err != nil {
-						// TODO(crush-on-anechka): handle error
-						continue
+						return sumCopy.Div(count), err
 					}
 					if counterResetCollision {
 						annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
@@ -857,8 +856,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				toAdd := h.H.Copy().Div(count)
 				_, counterResetCollision, err := mean.Mul(q).KahanAdd(toAdd, kahanC)
 				if err != nil {
-					// TODO(crush-on-anechka): handle error
-					continue
+					return mean, err
 				}
 				if counterResetCollision {
 					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
