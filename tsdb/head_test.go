@@ -34,6 +34,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -7255,4 +7256,120 @@ func TestHead_NumStaleSeries(t *testing.T) {
 	verifySeriesCounts(3, 4)
 	appendFloatHistogram(series8, 400, staleFH)
 	verifySeriesCounts(4, 5)
+}
+
+// TestHistogramStalenessConversionMetrics verifies that staleness marker conversion correctly
+// increments the right appender metrics for both histogram and float histogram scenarios
+func TestHistogramStalenessConversionMetrics(t *testing.T) {
+	testCases := []struct {
+		name           string
+		setupHistogram func(app storage.Appender, lbls labels.Labels) error
+	}{
+		{
+			name: "float_staleness_to_histogram",
+			setupHistogram: func(app storage.Appender, lbls labels.Labels) error {
+				h := &histogram.Histogram{
+					Count:           3,
+					Sum:             18.4,
+					Schema:          1,
+					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+					PositiveBuckets: []int64{1, 1},
+				}
+				_, err := app.AppendHistogram(0, lbls, 1000, h, nil)
+				return err
+			},
+		},
+		{
+			name: "float_staleness_to_float_histogram",
+			setupHistogram: func(app storage.Appender, lbls labels.Labels) error {
+				fh := &histogram.FloatHistogram{
+					Count:           3,
+					Sum:             18.4,
+					Schema:          1,
+					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+					PositiveBuckets: []float64{1, 2},
+				}
+				_, err := app.AppendHistogram(0, lbls, 1000, nil, fh)
+				return err
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			head, _ := newTestHead(t, 1000, compression.None, false)
+			defer func() {
+				require.NoError(t, head.Close())
+			}()
+
+			lbls := labels.FromStrings("name", tc.name)
+
+			// Helper to get counter values
+			getFloatCounter := func() float64 {
+				metric := &dto.Metric{}
+				err := head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat).Write(metric)
+				require.NoError(t, err)
+				return metric.GetCounter().GetValue()
+			}
+
+			getHistogramCounter := func() float64 {
+				metric := &dto.Metric{}
+				err := head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Write(metric)
+				require.NoError(t, err)
+				return metric.GetCounter().GetValue()
+			}
+
+			// Step 1: Establish a series with histogram data
+			app := head.Appender(context.Background())
+			err := tc.setupHistogram(app, lbls)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// Step 2: Add a float staleness marker
+			app = head.Appender(context.Background())
+			_, err = app.Append(0, lbls, 2000, math.Float64frombits(value.StaleNaN))
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// Get counter values
+			metricFloatCount := getFloatCounter()
+			metricHistogramCount := getHistogramCounter()
+
+			// Count what was actually stored by querying the series
+			q, err := NewBlockQuerier(head, 0, 3000)
+			require.NoError(t, err)
+			defer q.Close()
+
+			ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "name", tc.name))
+			require.True(t, ss.Next())
+			series := ss.At()
+
+			it := series.Iterator(nil)
+
+			actualFloatSamples := 0
+			actualHistogramSamples := 0
+
+			for {
+				valType := it.Next()
+				if valType == chunkenc.ValNone {
+					break
+				} else if valType == chunkenc.ValFloat {
+					actualFloatSamples++
+				} else if valType == chunkenc.ValHistogram || valType == chunkenc.ValFloatHistogram {
+					actualHistogramSamples++
+				}
+			}
+			require.NoError(t, it.Err())
+
+			// Verify what was actually stored - should be 0 floats, 2 histograms (original + converted staleness marker)
+			require.Equal(t, 0, actualFloatSamples, "Should have 0 float samples stored")
+			require.Equal(t, 2, actualHistogramSamples, "Should have 2 histogram samples: original + converted staleness marker")
+
+			// The metrics should match what was actually stored
+			require.Equal(t, float64(actualFloatSamples), metricFloatCount,
+				"Float counter should match actual float samples stored")
+			require.Equal(t, float64(actualHistogramSamples), metricHistogramCount,
+				"Histogram counter should match actual histogram samples stored")
+		})
+	}
 }
