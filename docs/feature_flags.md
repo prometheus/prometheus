@@ -55,17 +55,17 @@ stable feature.
 
 Native histograms may be directly scraped from targets (see below). Prometheus
 can also convert classic histograms scraped from targets into native histograms
-with custom buckets during scrape. Native histograms may be ingested on
-Remote-Write 1.0, 2.0, OTLP.
+with custom buckets during scrape. Native histograms may be ingested via
+Remote-Write 1.0, 2.0, or OTLP.
 
 Native histograms are currently only supported in the traditional Prometheus
-protobuf exposition format. This feature flag therefore also enables a the
-protobuf parser by changing the default for the `scrape_protocols` scrape
+protobuf exposition format. This feature flag therefore also enables the
+protobuf parser by changing the default `scrape_protocols` scrape
 configuration parameter to `[ PrometheusProto, OpenMetricsText1.0.0,
-OpenMetricsText0.0.1, PrometheusText0.0.4 ]`. Which means that Prometheus
-will try to negotiate the protobuf format first and if the target supports
+OpenMetricsText0.0.1, PrometheusText0.0.4 ]`. This means that Prometheus
+will try to negotiate the protobuf format first, and if the target supports
 the protobuf expostion format then _all_ metrics are ingested via protobuf
-(i.e. not only native histograms). The protobuf format allows to expose
+(i.e. not only native histograms). The protobuf format allows exposing
 classic and native histograms side by side.
 
 With this feature flag disabled, Prometheus will continue to parse the classic
