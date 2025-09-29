@@ -702,3 +702,17 @@ PromQL(VectorSelector(LabelMatchers(QuotedLabelMatcher(QuotedLabelName(StringLit
 
 ==>
 PromQL(VectorSelector(LabelMatchers(QuotedLabelName(StringLiteral), QuotedLabelMatcher(QuotedLabelName(StringLiteral), MatchOp(EqlSingle), StringLiteral))))
+
+# Testing anchored keyword
+
+increase(caddy_http_requests_total[5m] anchored)
+
+==>
+PromQL(FunctionCall(FunctionIdentifier(Increase),FunctionCallBody(AnchoredExpr(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext),Anchored))))
+
+# Testing smoothed keyword
+
+rate(caddy_http_requests_total[5m] smoothed)
+
+==>
+PromQL(FunctionCall(FunctionIdentifier(Rate),FunctionCallBody(SmoothedExpr(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext),Smoothed))))

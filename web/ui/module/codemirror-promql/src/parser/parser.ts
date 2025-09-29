@@ -15,11 +15,14 @@ import { Diagnostic } from '@codemirror/lint';
 import { SyntaxNode, Tree } from '@lezer/common';
 import {
   AggregateExpr,
+  AnchoredExpr,
   And,
   BinaryExpr,
   BoolModifier,
   Bottomk,
+  Changes,
   CountValues,
+  Delta,
   Eql,
   EqlSingle,
   FunctionCall,
@@ -27,6 +30,7 @@ import {
   Gte,
   Gtr,
   Identifier,
+  Increase,
   LabelMatchers,
   LimitK,
   LimitRatio,
@@ -39,6 +43,9 @@ import {
   Quantile,
   QuotedLabelMatcher,
   QuotedLabelName,
+  Rate,
+  Resets,
+  SmoothedExpr,
   StepInvariantExpr,
   SubqueryExpr,
   Topk,
@@ -52,7 +59,7 @@ import { getType } from './type';
 import { buildLabelMatchers } from './matcher';
 import { EditorState } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
-import { getFunction, Matcher, VectorMatchCardinality, ValueType } from '../types';
+import { getFunction, Matcher, ValueType, VectorMatchCardinality } from '../types';
 import { buildVectorMatching } from './vector';
 
 export class Parser {
@@ -121,6 +128,14 @@ export class Parser {
         if (unaryExprType !== ValueType.scalar && unaryExprType !== ValueType.vector) {
           this.addDiagnostic(node, `unary expression only allowed on expressions of type scalar or instant vector, got ${unaryExprType}`);
         }
+        break;
+      }
+      case SmoothedExpr: {
+        this.checkSmoothedExpr(node);
+        break;
+      }
+      case AnchoredExpr: {
+        this.checkAnchoredExpr(node);
         break;
       }
       case SubqueryExpr: {
@@ -297,6 +312,46 @@ export class Parser {
         j = funcSignature.argTypes.length - 1;
       }
       this.expectType(args[i], funcSignature.argTypes[j], `call to function "${funcSignature.name}"`);
+    }
+  }
+
+  private checkSmoothedExpr(node: SyntaxNode): void {
+    // A smoothed expression is supposed to be used in the following functions only:
+    // rate, increase and delta.
+    // So we need to check that the parent is a FunctionCall and that the function name is one of the above.
+    const parent = node.parent?.parent;
+    if (!parent || parent.type.id !== FunctionCall) {
+      this.addDiagnostic(node, 'smoothed expression must be used inside a function call');
+      return;
+    }
+    const funcID = parent.firstChild?.firstChild;
+    if (!funcID) {
+      this.addDiagnostic(node, 'function not defined');
+      return;
+    }
+    const allowedFunctions = [Rate, Increase, Delta];
+    if (!allowedFunctions.includes(funcID.type.id)) {
+      this.addDiagnostic(node, 'smoothed expression can only be used in the following functions: rate, increase and delta');
+    }
+  }
+
+  private checkAnchoredExpr(node: SyntaxNode): void {
+    // An anchored expression is supposed to be used in the following functions only:
+    // resets, changes, rate, increase and delta.
+    // So we need to check that the parent is a FunctionCall and that the function name is one of the above.
+    const parent = node.parent?.parent;
+    if (!parent || parent.type.id !== FunctionCall) {
+      this.addDiagnostic(node, 'anchored expression must be used inside a function call');
+      return;
+    }
+    const funcID = parent.firstChild?.firstChild;
+    if (!funcID) {
+      this.addDiagnostic(node, 'function not defined');
+      return;
+    }
+    const allowedFunctions = [Resets, Changes, Rate, Increase, Delta];
+    if (!allowedFunctions.includes(funcID.type.id)) {
+      this.addDiagnostic(node, 'anchored expression can only be used in the following functions: resets, changes, rate, increase and delta');
     }
   }
 

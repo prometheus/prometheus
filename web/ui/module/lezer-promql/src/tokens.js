@@ -42,6 +42,8 @@ import {
     Topk,
     Unless,
     Without,
+    Smoothed,
+    Anchored,
 } from './parser.terms.js';
 
 const keywordTokens = {
@@ -82,6 +84,8 @@ const contextualKeywordTokens = {
     unless: Unless,
     start: Start,
     end: End,
+    smoothed: Smoothed,
+    anchored: Anchored,
 };
 
 export const extendIdentifier = (value, stack) => {
