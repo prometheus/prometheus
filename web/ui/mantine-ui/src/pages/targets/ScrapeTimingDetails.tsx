@@ -14,11 +14,11 @@ import { Target } from "../../api/responseTypes/targets";
 import badgeClasses from "../../Badge.module.css";
 import { actionIconStyle, badgeIconStyle } from "../../styles";
 
-type ScrapeDetailsProps = {
+type ScrapeTimingDetailsProps = {
   target: Target;
 };
 
-const ScrapeDetails: FC<ScrapeDetailsProps> = ({ target }) => {
+const ScrapeTimingDetails: FC<ScrapeTimingDetailsProps> = ({ target }) => {
   const [showDetails, { toggle: toggleDetails }] = useDisclosure(false);
 
   return (
@@ -38,15 +38,7 @@ const ScrapeDetails: FC<ScrapeDetailsProps> = ({ target }) => {
             </Badge>
           </Tooltip>
 
-          <Tooltip
-            label={
-              <div style={{ lineHeight: 1.2 }}>
-                <div>Interval: {target.scrapeInterval}</div>
-                <div>Timeout: {target.scrapeTimeout}</div>
-              </div>
-            }
-            withArrow
-          >
+          <Tooltip label="Duration of last target scrape" withArrow>
             <Badge
               variant="light"
               className={badgeClasses.statsBadge}
@@ -65,7 +57,7 @@ const ScrapeDetails: FC<ScrapeDetailsProps> = ({ target }) => {
           color="gray"
           variant="light"
           onClick={toggleDetails}
-          title={`${showDetails ? "Hide" : "Show"} scrape configuration details`}
+          title={`${showDetails ? "Hide" : "Show"} additional timing info`}
         >
           {showDetails ? (
             <IconChevronUp style={actionIconStyle} />
@@ -106,4 +98,4 @@ const ScrapeDetails: FC<ScrapeDetailsProps> = ({ target }) => {
   );
 };
 
-export default ScrapeDetails;
+export default ScrapeTimingDetails;

@@ -29,7 +29,7 @@ import CustomInfiniteScroll from "../../components/CustomInfiniteScroll";
 import badgeClasses from "../../Badge.module.css";
 import panelClasses from "../../Panel.module.css";
 import TargetLabels from "./TargetLabels";
-import ScrapeDetails from "./ScrapeDetails";
+import ScrapeTimingDetails from "./ScrapeTimingDetails";
 import { targetPoolDisplayLimit } from "./TargetsPage";
 
 type ScrapePool = {
@@ -324,7 +324,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                                     />
                                   </Table.Td>
                                   <Table.Td valign="top">
-                                    <ScrapeDetails target={target} />
+                                    <ScrapeTimingDetails target={target} />
                                   </Table.Td>
                                   <Table.Td valign="top">
                                     <Badge
