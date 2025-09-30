@@ -131,11 +131,11 @@ export class Parser {
         break;
       }
       case SmoothedExpr: {
-        this.checkSmoothedExpr(node);
+        this.checkAnchoredSmoothedExpr(node, [Rate, Increase, Delta]);
         break;
       }
       case AnchoredExpr: {
-        this.checkAnchoredExpr(node);
+        this.checkAnchoredSmoothedExpr(node, [Resets, Changes, Rate, Increase, Delta]);
         break;
       }
       case SubqueryExpr: {
@@ -315,13 +315,19 @@ export class Parser {
     }
   }
 
-  private checkSmoothedExpr(node: SyntaxNode): void {
-    // A smoothed expression is supposed to be used in the following functions only:
-    // rate, increase and delta.
-    // So we need to check that the parent is a FunctionCall and that the function name is one of the above.
+  private checkAnchoredSmoothedExpr(node: SyntaxNode, allowedFunctions: number[]): void {
+    // A smoothed/anchored expression is supposed to work with range vectors or instant vectors.
+    // So first thing to do is to check the type of the child.
+    // Then, if this is used inside a function call, we need to check that the function is one of the given allowedFunctions.
+    const nodeType = getType(node);
+    if (nodeType !== ValueType.vector && nodeType !== ValueType.matrix) {
+      this.addDiagnostic(node, `smoothed/anchored expression only allowed on instant vector or range vector selector, got ${nodeType} instead`);
+      return;
+    }
     const parent = node.parent?.parent;
     if (!parent || parent.type.id !== FunctionCall) {
-      this.addDiagnostic(node, 'smoothed expression must be used inside a function call');
+      // Since the anchored/smoothed expression is not inside a function call, we cannot check the function name.
+      // This is an acceptable case as the anchored/smoothed expression can be used on any vector expression.
       return;
     }
     const funcID = parent.firstChild?.firstChild;
@@ -329,29 +335,8 @@ export class Parser {
       this.addDiagnostic(node, 'function not defined');
       return;
     }
-    const allowedFunctions = [Rate, Increase, Delta];
     if (!allowedFunctions.includes(funcID.type.id)) {
-      this.addDiagnostic(node, 'smoothed expression can only be used in the following functions: rate, increase and delta');
-    }
-  }
-
-  private checkAnchoredExpr(node: SyntaxNode): void {
-    // An anchored expression is supposed to be used in the following functions only:
-    // resets, changes, rate, increase and delta.
-    // So we need to check that the parent is a FunctionCall and that the function name is one of the above.
-    const parent = node.parent?.parent;
-    if (!parent || parent.type.id !== FunctionCall) {
-      this.addDiagnostic(node, 'anchored expression must be used inside a function call');
-      return;
-    }
-    const funcID = parent.firstChild?.firstChild;
-    if (!funcID) {
-      this.addDiagnostic(node, 'function not defined');
-      return;
-    }
-    const allowedFunctions = [Resets, Changes, Rate, Increase, Delta];
-    if (!allowedFunctions.includes(funcID.type.id)) {
-      this.addDiagnostic(node, 'anchored expression can only be used in the following functions: resets, changes, rate, increase and delta');
+      this.addDiagnostic(node, 'smoothed/anchored expression can only be used in specific functions');
     }
   }
 
