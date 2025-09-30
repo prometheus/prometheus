@@ -7259,7 +7259,7 @@ func TestHead_NumStaleSeries(t *testing.T) {
 }
 
 // TestHistogramStalenessConversionMetrics verifies that staleness marker conversion correctly
-// increments the right appender metrics for both histogram and float histogram scenarios
+// increments the right appender metrics for both histogram and float histogram scenarios.
 func TestHistogramStalenessConversionMetrics(t *testing.T) {
 	testCases := []struct {
 		name           string
@@ -7349,13 +7349,11 @@ func TestHistogramStalenessConversionMetrics(t *testing.T) {
 			actualFloatSamples := 0
 			actualHistogramSamples := 0
 
-			for {
-				valType := it.Next()
-				if valType == chunkenc.ValNone {
-					break
-				} else if valType == chunkenc.ValFloat {
+			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+				switch valType {
+				case chunkenc.ValFloat:
 					actualFloatSamples++
-				} else if valType == chunkenc.ValHistogram || valType == chunkenc.ValFloatHistogram {
+				case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 					actualHistogramSamples++
 				}
 			}
