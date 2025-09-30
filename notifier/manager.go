@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"sync"
 	"time"
 
@@ -184,7 +185,7 @@ func (n *Manager) nextBatch() []*Alert {
 	var alerts []*Alert
 
 	batchSize := min(len(n.queue), n.opts.MaxBatchSize)
-	alerts = append(make([]*Alert, 0, batchSize), n.queue[:batchSize]...)
+	alerts = slices.Clone(n.queue[:batchSize])
 	n.queue = n.queue[batchSize:]
 
 	return alerts
