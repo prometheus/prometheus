@@ -998,7 +998,7 @@ func (h *FloatHistogram) floatBucketIterator(
 	return i
 }
 
-// reverseFloatBucketIterator is a low-level constructor for reverse bucket iterators.
+// newReverseFloatBucketIterator is a low-level constructor for reverse bucket iterators.
 func newReverseFloatBucketIterator(
 	spans []Span, buckets []float64, schema int32, positive bool, customValues []float64,
 ) reverseFloatBucketIterator {
