@@ -49,6 +49,7 @@ import (
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 const defaultFlushDeadline = 1 * time.Minute
@@ -456,38 +457,34 @@ func TestSampleDeliveryOrder(t *testing.T) {
 }
 
 func TestShutdown(t *testing.T) {
-	// Not t.Parallel() because the test became flaky; see https://github.com/prometheus/prometheus/issues/17045
-	deadline := 1 * time.Second
-	c := NewTestBlockedWriteClient()
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		deadline := 15 * time.Second
+		c := NewTestBlockedWriteClient()
 
-	cfg := config.DefaultQueueConfig
-	mcfg := config.DefaultMetadataConfig
+		cfg := config.DefaultQueueConfig
+		mcfg := config.DefaultMetadataConfig
 
-	m := newTestQueueManager(t, cfg, mcfg, deadline, c, config.RemoteWriteProtoMsgV1)
-	n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
-	samples, series := createTimeseries(n, n)
-	m.StoreSeries(series, 0)
-	m.Start()
+		m := newTestQueueManager(t, cfg, mcfg, deadline, c, config.RemoteWriteProtoMsgV1)
+		n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
+		samples, series := createTimeseries(n, n)
+		m.StoreSeries(series, 0)
+		m.Start()
 
-	// Append blocks to guarantee delivery, so we do it in the background.
-	go func() {
-		m.Append(samples)
-	}()
-	time.Sleep(100 * time.Millisecond)
+		// Append blocks to guarantee delivery, so we do it in the background.
+		go func() {
+			m.Append(samples)
+		}()
+		synctest.Wait()
 
-	// Test to ensure that Stop doesn't block.
-	start := time.Now()
-	m.Stop()
-	// The samples will never be delivered, so duration should
-	// be at least equal to deadline, otherwise the flush deadline
-	// was not respected.
-	duration := time.Since(start)
-	if duration > deadline+(deadline/10) {
-		t.Errorf("Took too long to shutdown: %s > %s", duration, deadline)
-	}
-	if duration < deadline {
-		t.Errorf("Shutdown occurred before flush deadline: %s < %s", duration, deadline)
-	}
+		// Test to ensure that Stop doesn't block.
+		start := time.Now()
+		m.Stop()
+		// The samples will never be delivered, so duration should
+		// be at least equal to deadline, otherwise the flush deadline
+		// was not respected.
+		require.Equal(t, time.Since(start), deadline)
+	})
 }
 
 func TestSeriesReset(t *testing.T) {
