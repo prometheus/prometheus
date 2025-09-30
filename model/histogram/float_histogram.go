@@ -826,11 +826,17 @@ func (h *FloatHistogram) Validate() error {
 		if err != nil {
 			return fmt.Errorf("negative side: %w", err)
 		}
+		if h.ZeroCount < 0 {
+			return fmt.Errorf("zero bucket has observation count of %v: %w", h.ZeroCount, ErrHistogramNegativeBucketCount)
+		}
 		if h.CustomValues != nil {
 			return ErrHistogramExpSchemaCustomBounds
 		}
 	default:
 		return InvalidSchemaError(h.Schema)
+	}
+	if h.Count < 0 {
+		return fmt.Errorf("observation count is  %v: %w", h.Count, ErrHistogramNegativeCount)
 	}
 	err := checkHistogramBuckets(h.PositiveBuckets, &pCount, false)
 	if err != nil {
