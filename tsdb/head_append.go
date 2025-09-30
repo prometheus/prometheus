@@ -1331,7 +1331,7 @@ func (a *headAppender) commitFloats(b *appendBatch, acc *appenderCommitContext) 
 					H:   &histogram.Histogram{Sum: s.V},
 				})
 				b.histogramSeries = append(b.histogramSeries, series)
-				// This sample was counted as a float but is now a histogram
+				// This sample was counted as a float but is now a histogram.
 				acc.floatsAppended--
 				acc.histogramsAppended++
 				series.Unlock()
