@@ -393,6 +393,7 @@ Prometheus needs to assign a value at those timestamps for each relevant time
 series. It does so by taking the newest sample that is less than the lookback period ago.
 The lookback period is 5 minutes by default, but can be
 [set with the `--query.lookback-delta` flag](../command-line/prometheus.md)
+or overridden on an individual query via the `lookback_delta` parameter.
 
 If a target scrape or rule evaluation no longer returns a sample for a time
 series that was previously present, this time series will be marked as stale.
