@@ -1171,6 +1171,9 @@ type EvalNodeHelper struct {
 
 	// Additional options for the evaluation.
 	enableDelayedNameRemoval bool
+
+	// Slice of signature sets, indexed by index of exprs passed to rangeEval.
+	stepInvariantSigSet []map[string]struct{}
 }
 
 func (enh *EvalNodeHelper) resetBuilder(lbls labels.Labels) {
@@ -1284,7 +1287,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 			biggestLen = len(matrixes[i])
 		}
 	}
-	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
+	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen), enableDelayedNameRemoval: ev.enableDelayedNameRemoval, stepInvariantSigSet: make([]map[string]struct{}, len(exprs))}
 	type seriesAndTimestamp struct {
 		Series
 		ts int64
@@ -1303,12 +1306,16 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 		seriesHelpers = make([][]EvalSeriesHelper, len(exprs))
 		bufHelpers = make([][]EvalSeriesHelper, len(exprs))
 
-		for i := range exprs {
+		for i, e := range exprs {
 			seriesHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 			bufHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 
 			for si, series := range matrixes[i] {
 				prepSeries(series.Metric, &seriesHelpers[i][si])
+			}
+
+			if _, si := e.(*parser.StepInvariantExpr); si {
+				enh.stepInvariantSigSet[i] = map[string]struct{}{}
 			}
 		}
 	}
@@ -2720,16 +2727,41 @@ func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lh
 		return nil // Short-circuit: AND with nothing is nothing.
 	}
 
-	// The set of signatures for the right-hand side Vector.
-	rightSigs := map[string]struct{}{}
-	// Add all rhs samples to a map so we can easily find matches later.
-	for _, sh := range rhsh {
-		rightSigs[sh.signature] = struct{}{}
+	signatureSet := map[string]struct{}{}
+	switch {
+	// Check if both LHS and RHS are step invariant.
+	case enh.stepInvariantSigSet[0] != nil && enh.stepInvariantSigSet[1] != nil:
+		if lhsh[0].signature == rhsh[0].signature {
+			enh.Out = append(enh.Out, lhs...)
+		}
+		return enh.Out
+	// Check if LHS is step invariant.
+	case enh.stepInvariantSigSet[0] != nil:
+		for i, sh := range rhsh {
+			// If there's a matching entry in the left-hand side Vector, add the sample.
+			if sh.signature == lhsh[0].signature {
+				enh.Out = append(enh.Out, lhs[i])
+			}
+		}
+		return enh.Out
+	// Check if RHS is step invariant.
+	case enh.stepInvariantSigSet[1] != nil:
+		// If so, check if we have already populated the signature set for rhs.
+		if len(enh.stepInvariantSigSet[1]) == 0 {
+			for _, sh := range rhsh {
+				enh.stepInvariantSigSet[1][sh.signature] = struct{}{}
+			}
+		}
+		signatureSet = enh.stepInvariantSigSet[1]
+	default:
+		for _, sh := range rhsh {
+			signatureSet[sh.signature] = struct{}{}
+		}
 	}
 
 	for i, ls := range lhs {
-		// If there's a matching entry in the right-hand side Vector, add the sample.
-		if _, ok := rightSigs[lhsh[i].signature]; ok {
+		// If there's a matching entry in the other Vector, add the sample.
+		if _, ok := signatureSet[lhsh[i].signature]; ok {
 			enh.Out = append(enh.Out, ls)
 		}
 	}
