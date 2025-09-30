@@ -283,7 +283,9 @@ func (n *Manager) targetUpdateLoop(tsets <-chan map[string][]*targetgroup.Group)
 func (n *Manager) sendOneBatch() {
 	alerts := n.nextBatch()
 
-	if !n.sendAll(alerts...) {
+	if n.sendAll(alerts...) {
+		n.metrics.delivered.Add(float64(len(alerts)))
+	} else {
 		n.metrics.dropped.Add(float64(len(alerts)))
 	}
 }
