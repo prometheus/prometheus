@@ -7268,28 +7268,14 @@ func TestHistogramStalenessConversionMetrics(t *testing.T) {
 		{
 			name: "float_staleness_to_histogram",
 			setupHistogram: func(app storage.Appender, lbls labels.Labels) error {
-				h := &histogram.Histogram{
-					Count:           3,
-					Sum:             18.4,
-					Schema:          1,
-					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
-					PositiveBuckets: []int64{1, 1},
-				}
-				_, err := app.AppendHistogram(0, lbls, 1000, h, nil)
+				_, err := app.AppendHistogram(0, lbls, 1000, tsdbutil.GenerateTestHistograms(1)[0], nil)
 				return err
 			},
 		},
 		{
 			name: "float_staleness_to_float_histogram",
 			setupHistogram: func(app storage.Appender, lbls labels.Labels) error {
-				fh := &histogram.FloatHistogram{
-					Count:           3,
-					Sum:             18.4,
-					Schema:          1,
-					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
-					PositiveBuckets: []float64{1, 2},
-				}
-				_, err := app.AppendHistogram(0, lbls, 1000, nil, fh)
+				_, err := app.AppendHistogram(0, lbls, 1000, nil, tsdbutil.GenerateTestFloatHistograms(1)[0])
 				return err
 			},
 		},
@@ -7305,16 +7291,9 @@ func TestHistogramStalenessConversionMetrics(t *testing.T) {
 			lbls := labels.FromStrings("name", tc.name)
 
 			// Helper to get counter values
-			getFloatCounter := func() float64 {
+			getSampleCounter := func(sampleType string) float64 {
 				metric := &dto.Metric{}
-				err := head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat).Write(metric)
-				require.NoError(t, err)
-				return metric.GetCounter().GetValue()
-			}
-
-			getHistogramCounter := func() float64 {
-				metric := &dto.Metric{}
-				err := head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Write(metric)
+				err := head.metrics.samplesAppended.WithLabelValues(sampleType).Write(metric)
 				require.NoError(t, err)
 				return metric.GetCounter().GetValue()
 			}
@@ -7330,10 +7309,6 @@ func TestHistogramStalenessConversionMetrics(t *testing.T) {
 			_, err = app.Append(0, lbls, 2000, math.Float64frombits(value.StaleNaN))
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
-
-			// Get counter values
-			metricFloatCount := getFloatCounter()
-			metricHistogramCount := getHistogramCounter()
 
 			// Count what was actually stored by querying the series
 			q, err := NewBlockQuerier(head, 0, 3000)
@@ -7364,9 +7339,9 @@ func TestHistogramStalenessConversionMetrics(t *testing.T) {
 			require.Equal(t, 2, actualHistogramSamples, "Should have 2 histogram samples: original + converted staleness marker")
 
 			// The metrics should match what was actually stored
-			require.Equal(t, float64(actualFloatSamples), metricFloatCount,
+			require.Equal(t, float64(actualFloatSamples), getSampleCounter(sampleMetricTypeFloat),
 				"Float counter should match actual float samples stored")
-			require.Equal(t, float64(actualHistogramSamples), metricHistogramCount,
+			require.Equal(t, float64(actualHistogramSamples), getSampleCounter(sampleMetricTypeHistogram),
 				"Histogram counter should match actual histogram samples stored")
 		})
 	}
