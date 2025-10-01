@@ -1,5 +1,5 @@
 ---
-title: promtool.exe
+title: promtool
 ---
 
 Tooling for the Prometheus monitoring system.
@@ -33,7 +33,7 @@ Tooling for the Prometheus monitoring system.
 
 
 
-### `promtool.exe help`
+### `promtool help`
 
 Show help.
 
@@ -48,7 +48,7 @@ Show help.
 
 
 
-### `promtool.exe check`
+### `promtool check`
 
 Check the resources for validity.
 
@@ -64,7 +64,7 @@ Check the resources for validity.
 
 
 
-##### `promtool.exe check service-discovery`
+##### `promtool check service-discovery`
 
 Perform service discovery for the given job name and report the results, including relabeling.
 
@@ -89,7 +89,7 @@ Perform service discovery for the given job name and report the results, includi
 
 
 
-##### `promtool.exe check config`
+##### `promtool check config`
 
 Check if the config files are valid or not.
 
@@ -117,7 +117,7 @@ Check if the config files are valid or not.
 
 
 
-##### `promtool.exe check web-config`
+##### `promtool check web-config`
 
 Check if the web config files are valid or not.
 
@@ -132,7 +132,7 @@ Check if the web config files are valid or not.
 
 
 
-##### `promtool.exe check healthy`
+##### `promtool check healthy`
 
 Check if the Prometheus server is healthy.
 
@@ -148,7 +148,7 @@ Check if the Prometheus server is healthy.
 
 
 
-##### `promtool.exe check ready`
+##### `promtool check ready`
 
 Check if the Prometheus server is ready.
 
@@ -164,7 +164,7 @@ Check if the Prometheus server is ready.
 
 
 
-##### `promtool.exe check rules`
+##### `promtool check rules`
 
 Check if the rule files are valid or not.
 
@@ -190,7 +190,7 @@ Check if the rule files are valid or not.
 
 
 
-##### `promtool.exe check metrics`
+##### `promtool check metrics`
 
 Pass Prometheus metrics over stdin to lint them for consistency and correctness.
 
@@ -202,7 +202,7 @@ $ curl -s http://localhost:9090/metrics | promtool check metrics
 
 
 
-### `promtool.exe query`
+### `promtool query`
 
 Run query against a Prometheus server.
 
@@ -218,7 +218,7 @@ Run query against a Prometheus server.
 
 
 
-##### `promtool.exe query instant`
+##### `promtool query instant`
 
 Run instant query.
 
@@ -243,7 +243,7 @@ Run instant query.
 
 
 
-##### `promtool.exe query range`
+##### `promtool query range`
 
 Run range query.
 
@@ -271,7 +271,7 @@ Run range query.
 
 
 
-##### `promtool.exe query series`
+##### `promtool query series`
 
 Run series query.
 
@@ -297,7 +297,7 @@ Run series query.
 
 
 
-##### `promtool.exe query labels`
+##### `promtool query labels`
 
 Run labels query.
 
@@ -324,7 +324,7 @@ Run labels query.
 
 
 
-##### `promtool.exe query analyze`
+##### `promtool query analyze`
 
 Run queries against your Prometheus to analyze the usage pattern of certain metrics.
 
@@ -343,13 +343,13 @@ Run queries against your Prometheus to analyze the usage pattern of certain metr
 
 
 
-### `promtool.exe debug`
+### `promtool debug`
 
 Fetch debug information.
 
 
 
-##### `promtool.exe debug pprof`
+##### `promtool debug pprof`
 
 Fetch profiling debug information.
 
@@ -364,7 +364,7 @@ Fetch profiling debug information.
 
 
 
-##### `promtool.exe debug metrics`
+##### `promtool debug metrics`
 
 Fetch metrics debug information.
 
@@ -379,7 +379,7 @@ Fetch metrics debug information.
 
 
 
-##### `promtool.exe debug all`
+##### `promtool debug all`
 
 Fetch all debug information.
 
@@ -394,7 +394,7 @@ Fetch all debug information.
 
 
 
-### `promtool.exe push`
+### `promtool push`
 
 Push to a Prometheus server.
 
@@ -409,7 +409,7 @@ Push to a Prometheus server.
 
 
 
-##### `promtool.exe push metrics`
+##### `promtool push metrics`
 
 Push metrics to a prometheus remote write (for testing purpose only).
 
@@ -436,7 +436,7 @@ Push metrics to a prometheus remote write (for testing purpose only).
 
 
 
-### `promtool.exe test`
+### `promtool test`
 
 Unit testing.
 
@@ -451,7 +451,7 @@ Unit testing.
 
 
 
-##### `promtool.exe test rules`
+##### `promtool test rules`
 
 Unit tests for rules.
 
@@ -487,19 +487,19 @@ Unit tests for rules.
 
 
 
-### `promtool.exe tsdb`
+### `promtool tsdb`
 
 Run tsdb commands.
 
 
 
-##### `promtool.exe tsdb bench`
+##### `promtool tsdb bench`
 
 Run benchmarks.
 
 
 
-##### `promtool.exe tsdb bench write`
+##### `promtool tsdb bench write`
 
 Run a write performance benchmark.
 
@@ -520,12 +520,12 @@ Run a write performance benchmark.
 
 | Argument | Description | Default |
 | --- | --- | --- |
-| file | Input file with samples data, default is (..\..\tsdb\testdata\20kseries.json). | `..\..\tsdb\testdata\20kseries.json` |
+| file | Input file with samples data, default is (../../tsdb/testdata/20kseries.json). | `../../tsdb/testdata/20kseries.json` |
 
 
 
 
-##### `promtool.exe tsdb analyze`
+##### `promtool tsdb analyze`
 
 Analyze churn, label pair cardinality and compaction efficiency.
 
@@ -552,7 +552,7 @@ Analyze churn, label pair cardinality and compaction efficiency.
 
 
 
-##### `promtool.exe tsdb list`
+##### `promtool tsdb list`
 
 List tsdb blocks.
 
@@ -576,7 +576,7 @@ List tsdb blocks.
 
 
 
-##### `promtool.exe tsdb dump`
+##### `promtool tsdb dump`
 
 Dump samples from a TSDB.
 
@@ -603,7 +603,7 @@ Dump samples from a TSDB.
 
 
 
-##### `promtool.exe tsdb dump-openmetrics`
+##### `promtool tsdb dump-openmetrics`
 
 [Experimental] Dump samples from a TSDB into OpenMetrics text format, excluding native histograms and staleness markers, which are not representable in OpenMetrics.
 
@@ -630,7 +630,7 @@ Dump samples from a TSDB.
 
 
 
-##### `promtool.exe tsdb create-blocks-from`
+##### `promtool tsdb create-blocks-from`
 
 [Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.
 
@@ -646,7 +646,7 @@ Dump samples from a TSDB.
 
 
 
-##### `promtool.exe tsdb create-blocks-from openmetrics`
+##### `promtool tsdb create-blocks-from openmetrics`
 
 Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.
 
@@ -671,7 +671,7 @@ Import samples from OpenMetrics input and produce TSDB blocks. Please refer to t
 
 
 
-##### `promtool.exe tsdb create-blocks-from rules`
+##### `promtool tsdb create-blocks-from rules`
 
 Create blocks of data for new recording rules.
 
@@ -700,13 +700,13 @@ Create blocks of data for new recording rules.
 
 
 
-### `promtool.exe promql`
+### `promtool promql`
 
 PromQL formatting and editing. Requires the `--experimental` flag.
 
 
 
-##### `promtool.exe promql format`
+##### `promtool promql format`
 
 Format PromQL query to pretty printed form.
 
@@ -721,13 +721,13 @@ Format PromQL query to pretty printed form.
 
 
 
-##### `promtool.exe promql label-matchers`
+##### `promtool promql label-matchers`
 
 Edit label matchers contained within an existing PromQL query.
 
 
 
-##### `promtool.exe promql label-matchers set`
+##### `promtool promql label-matchers set`
 
 Set a label matcher in the query.
 
@@ -753,7 +753,7 @@ Set a label matcher in the query.
 
 
 
-##### `promtool.exe promql label-matchers delete`
+##### `promtool promql label-matchers delete`
 
 Delete a label from the query.
 
