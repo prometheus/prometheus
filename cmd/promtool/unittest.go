@@ -70,7 +70,7 @@ func RulesUnitTestWithCoverage(results io.Writer, queryOpts promqltest.LazyLoade
 	var coverageTracker *RuleCoverageTracker
 	if coverageConfig != nil {
 		coverageTracker = NewRuleCoverageTracker(coverageConfig)
-		if ruleFiles != nil && len(ruleFiles) > 0 {
+		if len(ruleFiles) > 0 {
 			if err := coverageTracker.LoadRulesFromFiles(ruleFiles); err != nil {
 				fmt.Fprintf(os.Stderr, "Error loading rules for coverage: %v\n", err)
 				return failureExitCode

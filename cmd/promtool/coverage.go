@@ -24,13 +24,15 @@ import (
 	"time"
 
 	"go.yaml.in/yaml/v2"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/junitxml"
 )
 
-// RuleCoverageTracker tracks test coverage for Prometheus rules
+// RuleCoverageTracker tracks test coverage for Prometheus rules.
 type RuleCoverageTracker struct {
 	mu           sync.RWMutex
 	rules        map[string]*RuleInfo
@@ -40,7 +42,7 @@ type RuleCoverageTracker struct {
 	config       *CoverageConfig
 }
 
-// RuleInfo contains information about a rule
+// RuleInfo contains information about a rule.
 type RuleInfo struct {
 	Name        string            `json:"name"`
 	Group       string            `json:"group"`
@@ -52,7 +54,7 @@ type RuleInfo struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
-// TestDetails contains information about how a rule was tested
+// TestDetails contains information about how a rule was tested.
 type TestDetails struct {
 	RuleName     string    `json:"rule_name"`
 	TestFiles    []string  `json:"test_files"`
@@ -62,7 +64,7 @@ type TestDetails struct {
 	LastTested   time.Time `json:"last_tested"`
 }
 
-// CoverageConfig contains configuration for coverage tracking
+// CoverageConfig contains configuration for coverage tracking.
 type CoverageConfig struct {
 	EnableDependencyAnalysis bool     `json:"enable_dependency_analysis"`
 	MinCoverage              float64  `json:"min_coverage"`
@@ -73,7 +75,7 @@ type CoverageConfig struct {
 	ByGroup                  bool     `json:"by_group"`
 }
 
-// CoverageReport contains the coverage analysis results
+// CoverageReport contains the coverage analysis results.
 type CoverageReport struct {
 	Timestamp        time.Time                 `json:"timestamp"`
 	Summary          CoverageSummary           `json:"summary"`
@@ -84,7 +86,7 @@ type CoverageReport struct {
 	Details          map[string]*TestDetails   `json:"test_details,omitempty"`
 }
 
-// CoverageSummary contains overall coverage statistics
+// CoverageSummary contains overall coverage statistics.
 type CoverageSummary struct {
 	TotalRules      int     `json:"total_rules"`
 	TestedRules     int     `json:"tested_rules"`
@@ -94,14 +96,14 @@ type CoverageSummary struct {
 	RecordCoverage  float64 `json:"record_coverage,omitempty"`
 }
 
-// CoverageStats contains coverage statistics for a category
+// CoverageStats contains coverage statistics for a category.
 type CoverageStats struct {
 	Total      int     `json:"total"`
 	Tested     int     `json:"tested"`
 	Percentage float64 `json:"percentage"`
 }
 
-// NewRuleCoverageTracker creates a new coverage tracker
+// NewRuleCoverageTracker creates a new coverage tracker.
 func NewRuleCoverageTracker(config *CoverageConfig) *RuleCoverageTracker {
 	if config == nil {
 		config = &CoverageConfig{
@@ -117,7 +119,7 @@ func NewRuleCoverageTracker(config *CoverageConfig) *RuleCoverageTracker {
 	}
 }
 
-// LoadRulesFromFiles loads rules from the specified files
+// LoadRulesFromFiles loads rules from the specified files.
 func (rct *RuleCoverageTracker) LoadRulesFromFiles(ruleFiles []string) error {
 	rct.mu.Lock()
 	defer rct.mu.Unlock()
@@ -135,7 +137,7 @@ func (rct *RuleCoverageTracker) LoadRulesFromFiles(ruleFiles []string) error {
 	return nil
 }
 
-// loadRuleFile loads rules from a single file
+// loadRuleFile loads rules from a single file.
 func (rct *RuleCoverageTracker) loadRuleFile(filename string) error {
 	content, err := os.ReadFile(filename)
 	if err != nil {
@@ -160,13 +162,14 @@ func (rct *RuleCoverageTracker) loadRuleFile(filename string) error {
 				Annotations: rule.Annotations,
 			}
 
-			if rule.Alert != "" {
+			switch {
+			case rule.Alert != "":
 				ruleInfo.Name = rule.Alert
 				ruleInfo.Type = "alert"
-			} else if rule.Record != "" {
+			case rule.Record != "":
 				ruleInfo.Name = rule.Record
 				ruleInfo.Type = "record"
-			} else {
+			default:
 				continue // Skip invalid rules
 			}
 
@@ -177,8 +180,8 @@ func (rct *RuleCoverageTracker) loadRuleFile(filename string) error {
 	return nil
 }
 
-// generateRuleID creates a unique identifier for a rule
-func (rct *RuleCoverageTracker) generateRuleID(groupName string, rule rulefmt.Rule) string {
+// generateRuleID creates a unique identifier for a rule.
+func (_ *RuleCoverageTracker) generateRuleID(groupName string, rule rulefmt.Rule) string {
 	if rule.Alert != "" {
 		return fmt.Sprintf("%s/%s", groupName, rule.Alert)
 	}
@@ -188,7 +191,7 @@ func (rct *RuleCoverageTracker) generateRuleID(groupName string, rule rulefmt.Ru
 	return ""
 }
 
-// MarkRuleTested marks a rule as tested
+// MarkRuleTested marks a rule as tested.
 func (rct *RuleCoverageTracker) MarkRuleTested(ruleName string, testFile string, isDirect bool) {
 	rct.mu.Lock()
 	defer rct.mu.Unlock()
@@ -231,7 +234,7 @@ func (rct *RuleCoverageTracker) MarkRuleTested(ruleName string, testFile string,
 	details.LastTested = time.Now()
 }
 
-// MarkExpressionTested analyzes an expression and marks related rules as tested
+// MarkExpressionTested analyzes an expression and marks related rules as tested.
 func (rct *RuleCoverageTracker) MarkExpressionTested(expr string, testFile string) {
 	rct.mu.Lock()
 	defer rct.mu.Unlock()
@@ -272,11 +275,11 @@ func (rct *RuleCoverageTracker) MarkExpressionTested(expr string, testFile strin
 	}
 }
 
-// extractMetricsFromExpr extracts metric names from a PromQL expression
-func (rct *RuleCoverageTracker) extractMetricsFromExpr(expr parser.Expr) []string {
+// extractMetricsFromExpr extracts metric names from a PromQL expression.
+func (_ *RuleCoverageTracker) extractMetricsFromExpr(expr parser.Expr) []string {
 	metrics := []string{}
 
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		if n, ok := node.(*parser.VectorSelector); ok {
 			metrics = append(metrics, n.Name)
 		}
@@ -291,7 +294,7 @@ func (rct *RuleCoverageTracker) extractMetricsFromExpr(expr parser.Expr) []strin
 	return metrics
 }
 
-// analyzeDependencies analyzes rule dependencies
+// analyzeDependencies analyzes rule dependencies.
 func (rct *RuleCoverageTracker) analyzeDependencies() {
 	for ruleID, rule := range rct.rules {
 		if rule.Expression == "" {
@@ -320,7 +323,7 @@ func (rct *RuleCoverageTracker) analyzeDependencies() {
 	}
 }
 
-// GenerateReport generates a coverage report
+// GenerateReport generates a coverage report.
 func (rct *RuleCoverageTracker) GenerateReport() *CoverageReport {
 	rct.mu.RLock()
 	defer rct.mu.RUnlock()
@@ -437,7 +440,7 @@ func (rct *RuleCoverageTracker) GenerateReport() *CoverageReport {
 	return report
 }
 
-// shouldIgnoreRule checks if a rule should be ignored based on patterns
+// shouldIgnoreRule checks if a rule should be ignored based on patterns.
 func (rct *RuleCoverageTracker) shouldIgnoreRule(rule *RuleInfo) bool {
 	if len(rct.config.IgnorePatterns) == 0 {
 		return false
@@ -452,7 +455,7 @@ func (rct *RuleCoverageTracker) shouldIgnoreRule(rule *RuleInfo) bool {
 	return false
 }
 
-// WriteReport writes the coverage report in the specified format
+// WriteReport writes the coverage report in the specified format.
 func (rct *RuleCoverageTracker) WriteReport(report *CoverageReport) error {
 	var output string
 	var err error
@@ -474,14 +477,14 @@ func (rct *RuleCoverageTracker) WriteReport(report *CoverageReport) error {
 
 	// Write to file or stdout
 	if rct.config.OutputFile != "" {
-		return os.WriteFile(rct.config.OutputFile, []byte(output), 0644)
+		return os.WriteFile(rct.config.OutputFile, []byte(output), 0o644)
 	}
 
 	fmt.Print(output)
 	return nil
 }
 
-// formatText formats the report as human-readable text
+// formatText formats the report as human-readable text.
 func (rct *RuleCoverageTracker) formatText(report *CoverageReport) string {
 	var sb strings.Builder
 
@@ -499,7 +502,7 @@ func (rct *RuleCoverageTracker) formatText(report *CoverageReport) string {
 	if len(report.ByType) > 0 {
 		sb.WriteString("\n📈 Coverage by Type:\n")
 		for ruleType, stats := range report.ByType {
-			typeStr := strings.Title(ruleType) + " Rules"
+			typeStr := cases.Title(language.Und).String(ruleType) + " Rules"
 			sb.WriteString(fmt.Sprintf("  ├─ %-15s: %.1f%% (%d/%d)\n",
 				typeStr, stats.Percentage, stats.Tested, stats.Total))
 		}
@@ -540,8 +543,8 @@ func (rct *RuleCoverageTracker) formatText(report *CoverageReport) string {
 	return sb.String()
 }
 
-// formatJSON formats the report as JSON
-func (rct *RuleCoverageTracker) formatJSON(report *CoverageReport) (string, error) {
+// formatJSON formats the report as JSON.
+func (_ *RuleCoverageTracker) formatJSON(report *CoverageReport) (string, error) {
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return "", err
@@ -549,7 +552,7 @@ func (rct *RuleCoverageTracker) formatJSON(report *CoverageReport) (string, erro
 	return string(data), nil
 }
 
-// formatJUnitXML formats the report as JUnit XML
+// formatJUnitXML formats the report as JUnit XML.
 func (rct *RuleCoverageTracker) formatJUnitXML(report *CoverageReport) (string, error) {
 	junit := &junitxml.JUnitXML{}
 
@@ -609,20 +612,21 @@ func (rct *RuleCoverageTracker) formatJUnitXML(report *CoverageReport) (string, 
 	return buf.String(), nil
 }
 
-// getColorForCoverage returns ANSI color code based on coverage percentage
-func (rct *RuleCoverageTracker) getColorForCoverage(percentage float64) string {
-	if percentage >= 80 {
+// getColorForCoverage returns ANSI color code based on coverage percentage.
+func (_ *RuleCoverageTracker) getColorForCoverage(percentage float64) string {
+	switch {
+	case percentage >= 80:
 		return "\033[32m" // Green
-	} else if percentage >= 50 {
+	case percentage >= 50:
 		return "\033[33m" // Yellow
-	} else {
+	default:
 		return "\033[31m" // Red
 	}
 }
 
 const colorReset = "\033[0m"
 
-// CheckCoverageThreshold checks if coverage meets the minimum threshold
+// CheckCoverageThreshold checks if coverage meets the minimum threshold.
 func (rct *RuleCoverageTracker) CheckCoverageThreshold(report *CoverageReport) error {
 	if rct.config.MinCoverage > 0 && report.Summary.CoveragePercent < rct.config.MinCoverage {
 		return fmt.Errorf("coverage %.1f%% is below minimum threshold %.1f%%",
@@ -636,7 +640,7 @@ func (rct *RuleCoverageTracker) CheckCoverageThreshold(report *CoverageReport) e
 	return nil
 }
 
-// Helper function to check if a slice contains a string
+// Helper function to check if a slice contains a string.
 func contains(slice []string, item string) bool {
 	for _, s := range slice {
 		if s == item {

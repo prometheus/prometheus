@@ -47,7 +47,7 @@ groups:
 	// Create temporary test directory
 	tmpDir := t.TempDir()
 	ruleFile := filepath.Join(tmpDir, "rules.yml")
-	err := os.WriteFile(ruleFile, []byte(testRulesContent), 0644)
+	err := os.WriteFile(ruleFile, []byte(testRulesContent), 0o644)
 	require.NoError(t, err)
 
 	t.Run("load rules from files", func(t *testing.T) {
@@ -137,7 +137,7 @@ groups:
 
 		report := tracker.GenerateReport()
 		// Should only report on alert rules, not recording rules
-		require.Equal(t, 2, len(report.UntestedRules))
+		require.Len(t, report.UntestedRules, 2)
 		for _, rule := range report.UntestedRules {
 			require.NotEqual(t, "test_records", rule.Group)
 		}
