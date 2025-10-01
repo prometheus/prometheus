@@ -23,6 +23,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -192,12 +193,16 @@ func TestHandlerSendAll(t *testing.T) {
 	}
 
 	// all ams in all sets are up
-	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	delivered, dropped := h.sendAll(h.queue...)
+	require.Greater(t, delivered, 0, "all sends failed unexpectedly")
+	require.Equal(t, delivered+dropped, len(h.queue), "delivered + dropped should equal total alerts")
 	checkNoErr()
 
-	// the only am in set 1 is down
+	// the only am in set 1 is down, but set 2 is still up
 	status1.Store(int32(http.StatusNotFound))
-	require.False(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	delivered, dropped = h.sendAll(h.queue...)
+	require.Greater(t, delivered, 0, "alerts should still be delivered to set 2")
+	require.Equal(t, delivered+dropped, len(h.queue), "delivered + dropped should equal total alerts")
 	checkNoErr()
 
 	// reset it
@@ -205,12 +210,15 @@ func TestHandlerSendAll(t *testing.T) {
 
 	// only one of the ams in set 2 is down
 	status2.Store(int32(http.StatusInternalServerError))
-	require.True(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
+	delivered, dropped = h.sendAll(h.queue...)
+	require.Greater(t, delivered, 0, "some sends should have succeeded")
 	checkNoErr()
 
-	// both ams in set 2 are down
+	// both ams in set 2 are down, but set 1 is still up
 	status3.Store(int32(http.StatusInternalServerError))
-	require.False(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
+	delivered, dropped = h.sendAll(h.queue...)
+	require.Greater(t, delivered, 0, "alerts should still be delivered to set 1")
+	require.Equal(t, delivered+dropped, len(h.queue), "delivered + dropped should equal total alerts")
 	checkNoErr()
 }
 
@@ -331,21 +339,24 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 	}
 
 	// all ams are up
-	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	delivered, dropped := h.sendAll(h.queue...)
+	require.Greater(t, delivered, 0, "all sends failed unexpectedly")
 	checkNoErr()
 
-	// the only am in set 1 goes down
+	// the only am in set 1 goes down, but set 2 can still get some alerts
 	status1.Store(int32(http.StatusInternalServerError))
-	require.False(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	delivered, dropped = h.sendAll(h.queue...)
+	require.Greater(t, delivered, 0, "some alerts should still be delivered to set 2")
 	checkNoErr()
 
 	// reset set 1
 	status1.Store(int32(http.StatusOK))
 
-	// set 3 loses its only am, but all alerts were dropped
-	// so there was nothing to send, keeping sendAll true
+	// set 3 loses its only am, but set 1 is back up and can deliver all alerts
 	status3.Store(int32(http.StatusInternalServerError))
-	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	delivered, dropped = h.sendAll(h.queue...)
+	require.Greater(t, delivered, 0, "alerts should still be delivered to set 1")
+	require.Equal(t, delivered+dropped, len(h.queue), "delivered + dropped should equal total alerts")
 	checkNoErr()
 
 	// Verify that individual locks are released.
@@ -1214,6 +1225,115 @@ func TestAlerstRelabelingIsIsolated(t *testing.T) {
 		}
 	}
 
-	require.True(t, h.sendAll(h.queue...))
+	delivered, _ := h.sendAll(h.queue...)
+	require.Greater(t, delivered, 0, "alerts should be delivered successfully")
 	checkNoErr()
+}
+
+// TestDeliveredMetricWithRelabeling tests that the delivered metric correctly
+// counts only the alerts that are actually delivered after relabeling filters.
+func TestDeliveredMetricWithRelabeling(t *testing.T) {
+	var (
+		errc     = make(chan error, 1)
+		expected = make([]*Alert, 0)
+		status   atomic.Int32
+	)
+	status.Store(int32(http.StatusOK))
+
+	server := newTestHTTPServerBuilder(&expected, errc, "", "", &status)
+	defer server.Close()
+
+	// Create manager with metrics
+	reg := prometheus.NewRegistry()
+	h := NewManager(&Options{QueueCapacity: 1000}, model.UTF8Validation, nil)
+	h.metrics = newAlertMetrics(reg, 100, func() float64 { return 0 }, func() float64 { return 0 })
+	h.alertmanagers = make(map[string]*alertmanagerSet)
+
+	// Configure alertmanager with relabeling that drops alerts with "drop" label
+	amCfg := config.DefaultAlertmanagerConfig
+	amCfg.Timeout = model.Duration(time.Second)
+	amCfg.AlertRelabelConfigs = []*relabel.Config{
+		{
+			SourceLabels:         model.LabelNames{"drop"},
+			Regex:                relabel.MustNewRegexp("yes"),
+			Action:               relabel.Drop,
+			NameValidationScheme: model.UTF8Validation,
+		},
+	}
+
+	h.alertmanagers = map[string]*alertmanagerSet{
+		"am1": {
+			ams: []alertmanager{
+				alertmanagerMock{
+					urlf: func() string { return server.URL },
+				},
+			},
+			cfg: &amCfg,
+			mtx: sync.RWMutex{},
+		},
+	}
+
+	// Create 3 alerts: 2 will be dropped by relabeling, 1 will be sent
+	alerts := []*Alert{
+		{Labels: labels.FromStrings("alertname", "test1", "drop", "yes")},   // dropped
+		{Labels: labels.FromStrings("alertname", "test2", "drop", "yes")},   // dropped
+		{Labels: labels.FromStrings("alertname", "test3", "keep", "yes")},   // sent
+	}
+
+	// Only the third alert should be expected at the server
+	expected = append(expected, &Alert{
+		Labels: labels.FromStrings("alertname", "test3", "keep", "yes"),
+	})
+
+	// Get initial metric value
+	metricFamilies, err := reg.Gather()
+	require.NoError(t, err)
+
+	var initialDelivered float64
+	for _, mf := range metricFamilies {
+		if mf.GetName() == "prometheus_notifications_delivered_total" {
+			initialDelivered = mf.GetMetric()[0].GetCounter().GetValue()
+			break
+		}
+	}
+
+	// Queue the alerts and send them via sendOneBatch (the real code path)
+	h.Send(alerts...)
+
+	// Debug: check queue length
+	t.Logf("Queue length after Send: %d", len(h.queue))
+
+	h.sendOneBatch()
+
+	// Check no errors occurred
+	select {
+	case err := <-errc:
+		require.NoError(t, err)
+	default:
+	}
+
+	// Get final metric value
+	metricFamilies, err = reg.Gather()
+	require.NoError(t, err)
+
+	var finalDelivered float64
+	for _, mf := range metricFamilies {
+		if mf.GetName() == "prometheus_notifications_delivered_total" {
+			finalDelivered = mf.GetMetric()[0].GetCounter().GetValue()
+			break
+		}
+	}
+
+	deliveredCount := finalDelivered - initialDelivered
+
+	// BUG: This test demonstrates the issue - delivered metric counts original alerts (3)
+	// but only 1 alert was actually sent to alertmanager after relabeling
+	// The metric should count 1 (alerts actually delivered) but counts 3 (input alerts)
+	t.Logf("Original alerts: %d, Actually sent after relabeling: %d, Delivered metric increment: %f",
+		len(alerts), len(expected), deliveredCount)
+
+	// This should now pass with the fixed implementation
+	// Expected: 1 (only the non-dropped alert)
+	require.Equal(t, float64(len(expected)), deliveredCount,
+		"delivered metric should count only alerts actually sent after relabeling, not input alerts")
 }

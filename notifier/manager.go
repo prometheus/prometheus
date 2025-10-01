@@ -283,11 +283,9 @@ func (n *Manager) targetUpdateLoop(tsets <-chan map[string][]*targetgroup.Group)
 func (n *Manager) sendOneBatch() {
 	alerts := n.nextBatch()
 
-	if n.sendAll(alerts...) {
-		n.metrics.delivered.Add(float64(len(alerts)))
-	} else {
-		n.metrics.dropped.Add(float64(len(alerts)))
-	}
+	delivered, dropped := n.sendAll(alerts...)
+	n.metrics.delivered.Add(float64(delivered))
+	n.metrics.dropped.Add(float64(dropped))
 }
 
 func (n *Manager) drainQueue() {
@@ -406,13 +404,16 @@ func (n *Manager) DroppedAlertmanagers() []*url.URL {
 }
 
 // sendAll sends the alerts to all configured Alertmanagers concurrently.
-// It returns true if the alerts could be sent successfully to at least one Alertmanager.
-func (n *Manager) sendAll(alerts ...*Alert) bool {
+// It returns the count of alerts delivered and the count of alerts dropped.
+func (n *Manager) sendAll(alerts ...*Alert) (int, int) {
 	if len(alerts) == 0 {
-		return true
+		return 0, 0
 	}
 
 	begin := time.Now()
+
+	// Track which input alerts were successfully delivered to at least one alertmanager
+	deliveredAlerts := make(map[*Alert]bool)
 
 	// cachedPayload represent 'alerts' marshaled for Alertmanager API v2.
 	// Marshaling happens below. Reference here is for caching between
@@ -426,6 +427,8 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 	var (
 		wg           sync.WaitGroup
 		amSetCovered sync.Map
+		// Store relabeled alerts for each set key
+		amSetAlerts sync.Map
 	)
 	for k, ams := range amSets {
 		var (
@@ -451,6 +454,9 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 			cachedPayload = nil
 		}
 
+		// Store the relabeled alerts for this set
+		amSetAlerts.Store(k, amAlerts)
+
 		switch ams.cfg.APIVersion {
 		case config.AlertmanagerAPIVersionV2:
 			{
@@ -461,7 +467,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					if err != nil {
 						n.logger.Error("Encoding alerts for Alertmanager API v2 failed", "err", err)
 						ams.mtx.RUnlock()
-						return false
+						return 0, len(alerts) // All alerts dropped due to encoding error
 					}
 				}
 
@@ -474,7 +480,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					"err", err,
 				)
 				ams.mtx.RUnlock()
-				return false
+				return 0, len(alerts) // All alerts dropped due to config error
 			}
 		}
 
@@ -512,18 +518,24 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 	wg.Wait()
 
-	// Return false if there are any sets which were attempted (e.g. not filtered
-	// out) but have no successes.
-	allAmSetsCovered := true
-	amSetCovered.Range(func(_, value any) bool {
-		if !value.(bool) {
-			allAmSetsCovered = false
-			return false
+	// Check which alertmanager sets succeeded and mark their alerts as delivered
+	amSetCovered.Range(func(key, value any) bool {
+		if value.(bool) { // This set succeeded
+			k := key.(string)
+			if setAlerts, ok := amSetAlerts.Load(k); ok {
+				amAlerts := setAlerts.([]*Alert)
+				// Mark these alerts as delivered
+				for _, alert := range amAlerts {
+					deliveredAlerts[alert] = true
+				}
+			}
 		}
 		return true
 	})
 
-	return allAmSetsCovered
+	delivered := len(deliveredAlerts)
+	dropped := len(alerts) - delivered
+	return delivered, dropped
 }
 
 func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []byte) error {
