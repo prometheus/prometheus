@@ -423,7 +423,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			input: append(
 				// Series with only exemplars, no samples or histograms.
 				[]writev2.TimeSeries{{
-					LabelsRefs: []uint32{1, 2}, // __name__="test_metric1"
+					LabelsRefs: []uint32{1, 2},
 					Exemplars: []writev2.Exemplar{{
 						LabelsRefs: []uint32{},
 						Value:      1.0,
