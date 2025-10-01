@@ -181,7 +181,7 @@ func (rct *RuleCoverageTracker) loadRuleFile(filename string) error {
 }
 
 // generateRuleID creates a unique identifier for a rule.
-func (_ *RuleCoverageTracker) generateRuleID(groupName string, rule rulefmt.Rule) string {
+func (*RuleCoverageTracker) generateRuleID(groupName string, rule rulefmt.Rule) string {
 	if rule.Alert != "" {
 		return fmt.Sprintf("%s/%s", groupName, rule.Alert)
 	}
@@ -276,7 +276,7 @@ func (rct *RuleCoverageTracker) MarkExpressionTested(expr string, testFile strin
 }
 
 // extractMetricsFromExpr extracts metric names from a PromQL expression.
-func (_ *RuleCoverageTracker) extractMetricsFromExpr(expr parser.Expr) []string {
+func (*RuleCoverageTracker) extractMetricsFromExpr(expr parser.Expr) []string {
 	metrics := []string{}
 
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
@@ -544,7 +544,7 @@ func (rct *RuleCoverageTracker) formatText(report *CoverageReport) string {
 }
 
 // formatJSON formats the report as JSON.
-func (_ *RuleCoverageTracker) formatJSON(report *CoverageReport) (string, error) {
+func (*RuleCoverageTracker) formatJSON(report *CoverageReport) (string, error) {
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return "", err
@@ -613,7 +613,7 @@ func (rct *RuleCoverageTracker) formatJUnitXML(report *CoverageReport) (string, 
 }
 
 // getColorForCoverage returns ANSI color code based on coverage percentage.
-func (_ *RuleCoverageTracker) getColorForCoverage(percentage float64) string {
+func (*RuleCoverageTracker) getColorForCoverage(percentage float64) string {
 	switch {
 	case percentage >= 80:
 		return "\033[32m" // Green
