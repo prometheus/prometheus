@@ -192,7 +192,7 @@ func (*RuleCoverageTracker) generateRuleID(groupName string, rule rulefmt.Rule) 
 }
 
 // MarkRuleTested marks a rule as tested.
-func (rct *RuleCoverageTracker) MarkRuleTested(ruleName string, testFile string, isDirect bool) {
+func (rct *RuleCoverageTracker) MarkRuleTested(ruleName, testFile string, isDirect bool) {
 	rct.mu.Lock()
 	defer rct.mu.Unlock()
 
