@@ -235,7 +235,7 @@ func (rct *RuleCoverageTracker) MarkRuleTested(ruleName, testFile string, isDire
 }
 
 // MarkExpressionTested analyzes an expression and marks related rules as tested.
-func (rct *RuleCoverageTracker) MarkExpressionTested(expr string, testFile string) {
+func (rct *RuleCoverageTracker) MarkExpressionTested(expr, testFile string) {
 	rct.mu.Lock()
 	defer rct.mu.Unlock()
 
