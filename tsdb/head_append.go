@@ -1331,6 +1331,9 @@ func (a *headAppender) commitFloats(b *appendBatch, acc *appenderCommitContext) 
 					H:   &histogram.Histogram{Sum: s.V},
 				})
 				b.histogramSeries = append(b.histogramSeries, series)
+				// This sample was counted as a float but is now a histogram.
+				acc.floatsAppended--
+				acc.histogramsAppended++
 				series.Unlock()
 				continue
 			case series.lastFloatHistogramValue != nil:
@@ -1340,6 +1343,9 @@ func (a *headAppender) commitFloats(b *appendBatch, acc *appenderCommitContext) 
 					FH:  &histogram.FloatHistogram{Sum: s.V},
 				})
 				b.floatHistogramSeries = append(b.floatHistogramSeries, series)
+				// This sample was counted as a float but is now a float histogram.
+				acc.floatsAppended--
+				acc.histogramsAppended++
 				series.Unlock()
 				continue
 			}
