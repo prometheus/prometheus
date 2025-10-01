@@ -427,12 +427,12 @@ func main() {
 
 			coverageConfig := &CoverageConfig{
 				EnableDependencyAnalysis: *testRulesTrackDependencies,
-				MinCoverage:             *testRulesMinCoverage,
-				FailOnUntested:          *testRulesFailOnUntested,
-				IgnorePatterns:          ignorePatterns,
-				OutputFormat:            *testRulesCoverageFormat,
-				OutputFile:              *testRulesCoverageOutput,
-				ByGroup:                 *testRulesCoverageByGroup,
+				MinCoverage:              *testRulesMinCoverage,
+				FailOnUntested:           *testRulesFailOnUntested,
+				IgnorePatterns:           ignorePatterns,
+				OutputFormat:             *testRulesCoverageFormat,
+				OutputFile:               *testRulesCoverageOutput,
+				ByGroup:                  *testRulesCoverageByGroup,
 			}
 
 			// Get rule files
