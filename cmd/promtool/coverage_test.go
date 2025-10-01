@@ -18,8 +18,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/rulefmt"
 )
 
 func TestRuleCoverageTracker(t *testing.T) {
