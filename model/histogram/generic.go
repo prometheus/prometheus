@@ -31,6 +31,7 @@ const (
 var (
 	ErrHistogramCountNotBigEnough       = errors.New("histogram's observation count should be at least the number of observations found in the buckets")
 	ErrHistogramCountMismatch           = errors.New("histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)")
+	ErrHistogramNegativeCount           = errors.New("histogram's observation count is negative")
 	ErrHistogramNegativeBucketCount     = errors.New("histogram has a bucket whose observation count is negative")
 	ErrHistogramSpanNegativeOffset      = errors.New("histogram has a span whose offset is negative")
 	ErrHistogramSpansBucketsMismatch    = errors.New("histogram spans specify different number of buckets than provided")

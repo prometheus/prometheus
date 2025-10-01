@@ -122,6 +122,7 @@ func isHistogramValidationError(err error) bool {
 	// TODO: Consider adding single histogram error type instead of individual sentinel errors.
 	return errors.Is(err, histogram.ErrHistogramCountMismatch) ||
 		errors.Is(err, histogram.ErrHistogramCountNotBigEnough) ||
+		errors.Is(err, histogram.ErrHistogramNegativeCount) ||
 		errors.Is(err, histogram.ErrHistogramNegativeBucketCount) ||
 		errors.Is(err, histogram.ErrHistogramSpanNegativeOffset) ||
 		errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch) ||

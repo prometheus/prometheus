@@ -3527,6 +3527,100 @@ func TestFloatHistogramString(t *testing.T) {
 	}
 }
 
+func TestFloatHistogramValidateNegativeHistogram(t *testing.T) {
+	cases := []struct {
+		name string
+		fh   *FloatHistogram
+	}{
+		{
+			"positive bucket with negative population",
+			&FloatHistogram{
+				Schema:        1,
+				ZeroThreshold: 0.01,
+				ZeroCount:     5.5,
+				Count:         3493.3,
+				Sum:           2349209.324,
+				PositiveSpans: []Span{
+					{-2, 1},
+					{2, 3},
+				},
+				PositiveBuckets: []float64{1, 3.3, -4.2, 0.1},
+				NegativeSpans: []Span{
+					{3, 2},
+					{3, 2},
+				},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000},
+			},
+		},
+		{
+			"negative bucket with negative population",
+			&FloatHistogram{
+				Schema:        1,
+				ZeroThreshold: 0.01,
+				ZeroCount:     5.5,
+				Count:         3493.3,
+				Sum:           2349209.324,
+				PositiveSpans: []Span{
+					{-2, 1},
+					{2, 3},
+				},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
+				NegativeSpans: []Span{
+					{3, 2},
+					{3, 2},
+				},
+				NegativeBuckets: []float64{3.1, -3, 1.234e5, 1000},
+			},
+		},
+		{
+			"negative count",
+			&FloatHistogram{
+				Schema:        1,
+				ZeroThreshold: 0.01,
+				ZeroCount:     5.5,
+				Count:         -3493.3,
+				Sum:           2349209.324,
+				PositiveSpans: []Span{
+					{-2, 1},
+					{2, 3},
+				},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
+				NegativeSpans: []Span{
+					{3, 2},
+					{3, 2},
+				},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000},
+			},
+		},
+		{
+			"zero bucket with negative population",
+			&FloatHistogram{
+				Schema:        1,
+				ZeroThreshold: 0.01,
+				ZeroCount:     -5.5,
+				Count:         3493.3,
+				Sum:           2349209.324,
+				PositiveSpans: []Span{
+					{-2, 1},
+					{2, 3},
+				},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
+				NegativeSpans: []Span{
+					{3, 2},
+					{3, 2},
+				},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000},
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Error(t, c.fh.Validate())
+		})
+	}
+}
+
 func BenchmarkFloatHistogramAllBucketIterator(b *testing.B) {
 	rng := rand.New(rand.NewSource(0))
 
