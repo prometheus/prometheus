@@ -69,7 +69,7 @@ type RefreshMetrics struct {
 
 // RefreshMetricsInstantiator instantiates the metrics used by the "refresh" package.
 type RefreshMetricsInstantiator interface {
-	Instantiate(mech, config string) *RefreshMetrics
+	Instantiate(mech, setName string) *RefreshMetrics
 }
 
 // RefreshMetricsManager is an interface for registering, unregistering, and
