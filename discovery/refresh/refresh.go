@@ -28,7 +28,7 @@ import (
 type Options struct {
 	Logger              *slog.Logger
 	Mech                string
-	ConfigName          string
+	SetName             string
 	Interval            time.Duration
 	RefreshF            func(ctx context.Context) ([]*targetgroup.Group, error)
 	MetricsInstantiator discovery.RefreshMetricsInstantiator
@@ -44,7 +44,7 @@ type Discovery struct {
 
 // NewDiscovery returns a Discoverer function that calls a refresh() function at every interval.
 func NewDiscovery(opts Options) *Discovery {
-	m := opts.MetricsInstantiator.Instantiate(opts.Mech, opts.Config)
+	m := opts.MetricsInstantiator.Instantiate(opts.Mech, opts.SetName)
 
 	var logger *slog.Logger
 	if opts.Logger == nil {

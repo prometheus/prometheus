@@ -47,7 +47,11 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	md, err := NewDiscovery(&conf, nil, metrics, "eureka")
+	md, err := NewDiscovery(&conf, discovery.DiscovererOptions{
+		Logger:  nil,
+		Metrics: metrics,
+		SetName: "eurka",
+	})
 	if err != nil {
 		return nil, err
 	}
