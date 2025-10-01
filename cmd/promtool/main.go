@@ -457,20 +457,19 @@ func main() {
 				ruleFiles,
 				*testRulesFiles...),
 			)
-		} else {
-			os.Exit(RulesUnitTestResult(results,
-				promqltest.LazyLoaderOpts{
-					EnableAtModifier:         true,
-					EnableNegativeOffset:     true,
-					EnableDelayedNameRemoval: promqlEnableDelayedNameRemoval,
-				},
-				*testRulesRun,
-				*testRulesDiff,
-				*testRulesDebug,
-				*testRulesIgnoreUnknownFields,
-				*testRulesFiles...),
-			)
 		}
+		os.Exit(RulesUnitTestResult(results,
+			promqltest.LazyLoaderOpts{
+				EnableAtModifier:         true,
+				EnableNegativeOffset:     true,
+				EnableDelayedNameRemoval: promqlEnableDelayedNameRemoval,
+			},
+			*testRulesRun,
+			*testRulesDiff,
+			*testRulesDebug,
+			*testRulesIgnoreUnknownFields,
+			*testRulesFiles...),
+		)
 
 	case tsdbBenchWriteCmd.FullCommand():
 		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics, *benchWriteNumScrapes)))

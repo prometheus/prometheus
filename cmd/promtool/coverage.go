@@ -509,7 +509,7 @@ func (rct *RuleCoverageTracker) formatText(report *CoverageReport) string {
 	}
 
 	// Coverage by group
-	if report.ByGroup != nil && len(report.ByGroup) > 0 {
+	if len(report.ByGroup) > 0 {
 		sb.WriteString("\n📁 Coverage by Group:\n")
 
 		// Sort groups for consistent output

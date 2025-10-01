@@ -56,7 +56,7 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	return RulesUnitTestWithCoverage(results, queryOpts, runStrings, diffFlag, debug, ignoreUnknownFields, nil, nil, files...)
 }
 
-// RulesUnitTestWithCoverage performs unit testing with optional coverage tracking
+// RulesUnitTestWithCoverage performs unit testing with optional coverage tracking.
 func RulesUnitTestWithCoverage(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, coverageConfig *CoverageConfig, ruleFiles []string, testFiles ...string) int {
 	failed := false
 	junit := &junitxml.JUnitXML{}
@@ -128,10 +128,6 @@ func RulesUnitTestWithCoverage(results io.Writer, queryOpts promqltest.LazyLoade
 		return failureExitCode
 	}
 	return successExitCode
-}
-
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite) []error {
-	return ruleUnitTestWithCoverage(filename, queryOpts, run, diffFlag, debug, ignoreUnknownFields, ts, nil)
 }
 
 func ruleUnitTestWithCoverage(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite, coverageTracker *RuleCoverageTracker) []error {
@@ -248,11 +244,6 @@ type testGroup struct {
 	ExternalLabels  labels.Labels    `yaml:"external_labels,omitempty"`
 	ExternalURL     string           `yaml:"external_url,omitempty"`
 	TestGroupName   string           `yaml:"name,omitempty"`
-}
-
-// test performs the unit tests.
-func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug, ignoreUnknownFields, fuzzyCompare bool, ruleFiles ...string) (outErr []error) {
-	return tg.testWithCoverage(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, fuzzyCompare, nil, "", ruleFiles...)
 }
 
 // testWithCoverage performs the unit tests with optional coverage tracking.
