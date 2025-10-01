@@ -124,8 +124,8 @@ groups:
 
 		output, err := tracker.formatJSON(report)
 		require.NoError(t, err)
-		require.Contains(t, output, `"total_rules":4`)
-		require.Contains(t, output, `"tested_rules":1`)
+		require.Contains(t, output, `"total_rules": 4`)
+		require.Contains(t, output, `"tested_rules": 1`)
 	})
 
 	t.Run("ignore patterns", func(t *testing.T) {
