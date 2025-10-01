@@ -28,7 +28,7 @@ import (
 type Options struct {
 	Logger              *slog.Logger
 	Mech                string
-	Config              string
+	ConfigName          string
 	Interval            time.Duration
 	RefreshF            func(ctx context.Context) ([]*targetgroup.Group, error)
 	MetricsInstantiator discovery.RefreshMetricsInstantiator

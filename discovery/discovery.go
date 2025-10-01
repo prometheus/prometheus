@@ -55,8 +55,8 @@ type DiscovererOptions struct {
 	// ignored; Discoverer implementations must opt-in to reading it.
 	HTTPClientOptions []config.HTTPClientOption
 
-	// ConfigName is the config key (setName/job name) used for metrics labeling.
-	ConfigName string
+	// SetName identifies this discoverer set.
+	SetName string
 }
 
 // RefreshMetrics are used by the "refresh" package.
