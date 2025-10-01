@@ -1,0 +1,111 @@
+{
+  "version": "2.0.0",
+  "initialized": "2025-10-01T06:53:27.365Z",
+  "system": {
+    "enabled": true,
+    "autoStart": false,
+    "maxRetries": 3,
+    "healthCheckInterval": 30000
+  },
+  "queen": {
+    "type": "strategic",
+    "name": "Queen-Genesis",
+    "capabilities": [
+      "task-decomposition",
+      "consensus-building",
+      "resource-allocation",
+      "quality-assessment",
+      "conflict-resolution"
+    ],
+    "decisionThreshold": 0.75,
+    "adaptiveLearning": true
+  },
+  "workers": {
+    "maxWorkers": 8,
+    "defaultCapabilities": [
+      "code-analysis",
+      "implementation",
+      "testing",
+      "documentation"
+    ],
+    "autoScale": true,
+    "scaleThreshold": 0.8,
+    "specializedRoles": [
+      "architect",
+      "researcher",
+      "implementer",
+      "tester",
+      "reviewer"
+    ]
+  },
+  "consensus": {
+    "algorithm": "weighted-majority",
+    "minimumParticipants": 3,
+    "timeoutMs": 30000,
+    "requiredConsensus": 0.67,
+    "votingMethods": [
+      "majority",
+      "weighted",
+      "unanimous",
+      "quorum"
+    ]
+  },
+  "memory": {
+    "enabled": true,
+    "size": 100,
+    "persistenceMode": "database",
+    "sharedMemoryNamespace": "hive-collective",
+    "retentionDays": 30,
+    "compressionEnabled": true,
+    "encryptionEnabled": false
+  },
+  "communication": {
+    "protocol": "secure-messaging",
+    "encryption": false,
+    "messageQueue": {
+      "maxSize": 1000,
+      "priorityLevels": 5,
+      "batchProcessing": true
+    },
+    "channels": [
+      "task-coordination",
+      "knowledge-sharing",
+      "consensus-voting",
+      "error-reporting",
+      "performance-metrics"
+    ]
+  },
+  "integration": {
+    "mcpTools": {
+      "enabled": true,
+      "parallel": true,
+      "timeout": 60000,
+      "fallbackMode": "sequential"
+    },
+    "claudeCode": {
+      "enabled": true,
+      "autoSpawn": true,
+      "coordination": true,
+      "sharedContext": true
+    },
+    "github": {
+      "enabled": false,
+      "autoCommit": false,
+      "branchStrategy": "feature"
+    }
+  },
+  "monitoring": {
+    "enabled": false,
+    "metricsCollection": true,
+    "performanceTracking": true,
+    "healthChecks": true,
+    "alerting": {
+      "enabled": false,
+      "thresholds": {
+        "errorRate": 0.1,
+        "responseTime": 5000,
+        "consensusFailures": 3
+      }
+    }
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "architect": {
+    "name": "System Architect",
+    "description": "Designs system architecture and technical specifications",
+    "capabilities": [
+      "system-design",
+      "architecture-patterns",
+      "scalability-planning",
+      "technology-selection",
+      "documentation"
+    ],
+    "complexity": 0.9,
+    "autonomy": 0.8,
+    "collaboration": 0.7
+  },
+  "researcher": {
+    "name": "Research Specialist",
+    "description": "Conducts research and gathers information for informed decisions",
+    "capabilities": [
+      "information-gathering",
+      "analysis",
+      "trend-identification",
+      "competitive-research",
+      "reporting"
+    ],
+    "complexity": 0.7,
+    "autonomy": 0.9,
+    "collaboration": 0.6
+  },
+  "implementer": {
+    "name": "Implementation Specialist",
+    "description": "Translates designs into working code and solutions",
+    "capabilities": [
+      "coding",
+      "debugging",
+      "integration",
+      "optimization",
+      "deployment"
+    ],
+    "complexity": 0.8,
+    "autonomy": 0.7,
+    "collaboration": 0.8
+  },
+  "tester": {
+    "name": "Quality Assurance Specialist",
+    "description": "Ensures quality through testing and validation",
+    "capabilities": [
+      "testing",
+      "validation",
+      "quality-assurance",
+      "automation",
+      "reporting"
+    ],
+    "complexity": 0.6,
+    "autonomy": 0.8,
+    "collaboration": 0.7
+  },
+  "reviewer": {
+    "name": "Code Review Specialist",
+    "description": "Reviews code quality and provides improvement suggestions",
+    "capabilities": [
+      "code-review",
+      "quality-assessment",
+      "best-practices",
+      "mentoring",
+      "documentation-review"
+    ],
+    "complexity": 0.8,
+    "autonomy": 0.8,
+    "collaboration": 0.9
+  }
+}

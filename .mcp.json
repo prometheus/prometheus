@@ -1,0 +1,39 @@
+{
+  "mcpServers": {
+    "claude-flow@alpha": {
+      "command": "npx",
+      "args": [
+        "claude-flow@alpha",
+        "mcp",
+        "start"
+      ],
+      "type": "stdio"
+    },
+    "ruv-swarm": {
+      "command": "npx",
+      "args": [
+        "ruv-swarm@latest",
+        "mcp",
+        "start"
+      ],
+      "type": "stdio"
+    },
+    "flow-nexus": {
+      "command": "npx",
+      "args": [
+        "flow-nexus@latest",
+        "mcp",
+        "start"
+      ],
+      "type": "stdio"
+    },
+    "agentic-payments": {
+      "command": "npx",
+      "args": [
+        "agentic-payments@latest",
+        "mcp"
+      ],
+      "type": "stdio"
+    }
+  }
+}
