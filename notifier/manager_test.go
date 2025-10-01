@@ -194,15 +194,14 @@ func TestHandlerSendAll(t *testing.T) {
 
 	// all ams in all sets are up
 	delivered, dropped := h.sendAll(h.queue...)
-	require.Greater(t, delivered, 0, "all sends failed unexpectedly")
-	require.Equal(t, delivered+dropped, len(h.queue), "delivered + dropped should equal total alerts")
+	require.Positive(t, delivered, "all sends failed unexpectedly")
+	require.Len(t, h.queue, delivered+dropped, "delivered + dropped should equal total alerts")
 	checkNoErr()
 
 	// the only am in set 1 is down, but set 2 is still up
 	status1.Store(int32(http.StatusNotFound))
-	delivered, dropped = h.sendAll(h.queue...)
-	require.Greater(t, delivered, 0, "alerts should still be delivered to set 2")
-	require.Equal(t, delivered+dropped, len(h.queue), "delivered + dropped should equal total alerts")
+	delivered, _ = h.sendAll(h.queue...)
+	require.Positive(t, delivered, "alerts should still be delivered to set 2")
 	checkNoErr()
 
 	// reset it
@@ -210,15 +209,15 @@ func TestHandlerSendAll(t *testing.T) {
 
 	// only one of the ams in set 2 is down
 	status2.Store(int32(http.StatusInternalServerError))
-	delivered, dropped = h.sendAll(h.queue...)
-	require.Greater(t, delivered, 0, "some sends should have succeeded")
+	delivered, _ = h.sendAll(h.queue...)
+	require.Positive(t, delivered, "some sends should have succeeded")
 	checkNoErr()
 
 	// both ams in set 2 are down, but set 1 is still up
 	status3.Store(int32(http.StatusInternalServerError))
 	delivered, dropped = h.sendAll(h.queue...)
-	require.Greater(t, delivered, 0, "alerts should still be delivered to set 1")
-	require.Equal(t, delivered+dropped, len(h.queue), "delivered + dropped should equal total alerts")
+	require.Positive(t, delivered, "alerts should still be delivered to set 1")
+	require.Len(t, h.queue, delivered+dropped, "delivered + dropped should equal total alerts")
 	checkNoErr()
 }
 
@@ -339,14 +338,14 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 	}
 
 	// all ams are up
-	delivered, dropped := h.sendAll(h.queue...)
-	require.Greater(t, delivered, 0, "all sends failed unexpectedly")
+	delivered, _ := h.sendAll(h.queue...)
+	require.Positive(t, delivered, "all sends failed unexpectedly")
 	checkNoErr()
 
 	// the only am in set 1 goes down, but set 2 can still get some alerts
 	status1.Store(int32(http.StatusInternalServerError))
-	delivered, dropped = h.sendAll(h.queue...)
-	require.Greater(t, delivered, 0, "some alerts should still be delivered to set 2")
+	delivered, _ = h.sendAll(h.queue...)
+	require.Positive(t, delivered, "some alerts should still be delivered to set 2")
 	checkNoErr()
 
 	// reset set 1
@@ -354,9 +353,9 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 
 	// set 3 loses its only am, but set 1 is back up and can deliver all alerts
 	status3.Store(int32(http.StatusInternalServerError))
-	delivered, dropped = h.sendAll(h.queue...)
-	require.Greater(t, delivered, 0, "alerts should still be delivered to set 1")
-	require.Equal(t, delivered+dropped, len(h.queue), "delivered + dropped should equal total alerts")
+	delivered, dropped := h.sendAll(h.queue...)
+	require.Positive(t, delivered, "alerts should still be delivered to set 1")
+	require.Len(t, h.queue, delivered+dropped, "delivered + dropped should equal total alerts")
 	checkNoErr()
 
 	// Verify that individual locks are released.
@@ -1226,7 +1225,7 @@ func TestAlerstRelabelingIsIsolated(t *testing.T) {
 	}
 
 	delivered, _ := h.sendAll(h.queue...)
-	require.Greater(t, delivered, 0, "alerts should be delivered successfully")
+	require.Positive(t, delivered, "alerts should be delivered successfully")
 	checkNoErr()
 }
 
@@ -1275,9 +1274,9 @@ func TestDeliveredMetricWithRelabeling(t *testing.T) {
 
 	// Create 3 alerts: 2 will be dropped by relabeling, 1 will be sent
 	alerts := []*Alert{
-		{Labels: labels.FromStrings("alertname", "test1", "drop", "yes")},   // dropped
-		{Labels: labels.FromStrings("alertname", "test2", "drop", "yes")},   // dropped
-		{Labels: labels.FromStrings("alertname", "test3", "keep", "yes")},   // sent
+		{Labels: labels.FromStrings("alertname", "test1", "drop", "yes")}, // dropped
+		{Labels: labels.FromStrings("alertname", "test2", "drop", "yes")}, // dropped
+		{Labels: labels.FromStrings("alertname", "test3", "keep", "yes")}, // sent
 	}
 
 	// Only the third alert should be expected at the server
