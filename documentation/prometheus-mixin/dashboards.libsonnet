@@ -766,6 +766,7 @@ local row = panel.row;
       dashboard.new('%(prefix)sRemote Write' % $._config.grafanaPrometheus)
       + dashboard.time.withFrom('now-1h')
       + dashboard.withTags($._config.grafanaPrometheus.tags)
+      + dashboard.withUid('cb079f93-fde4-41f0-862b-d4301d7c1c56')
       + dashboard.timepicker.withRefreshIntervals($._config.grafanaPrometheus.refresh)
       + dashboard.withVariables([
         datasourceVariable,
