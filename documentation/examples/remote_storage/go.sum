@@ -33,6 +33,8 @@ github.com/apapsch/go-jsonmerge/v2 v2.0.0 h1:axGnT1gRIfimI7gJifB699GoE/oq+F2MU7D
 github.com/apapsch/go-jsonmerge/v2 v2.0.0/go.mod h1:lvDnEdqiQrp0O42VQGgmlKpxL1AP2+08jFMw88y4klk=
 github.com/armon/go-metrics v0.4.1 h1:hR91U9KYmb6bLBYLQjyM+3j+rcd/UhE+G78SFnF8gJA=
 github.com/armon/go-metrics v0.4.1/go.mod h1:E6amYzXo6aW1tqzoZGT755KkbgrJsSdpwZ+3JqfkOG4=
+github.com/aws/aws-sdk-go v1.55.7 h1:UJrkFq7es5CShfBwlWAC8DA077vp8PyVbQd3lqLiztE=
+github.com/aws/aws-sdk-go v1.55.7/go.mod h1:eRwEWoyTWFMVYVQzKMNHWP5/RV4xIUGMQfXQHfHkpNU=
 github.com/aws/aws-sdk-go-v2 v1.37.0 h1:YtCOESR/pN4j5oA7cVHSfOwIcuh/KwHC4DOSXFbv5F0=
 github.com/aws/aws-sdk-go-v2 v1.37.0/go.mod h1:9Q0OoGQoboYIAJyslFyF1f5K1Ryddop8gqMhWx/n4Wg=
 github.com/aws/aws-sdk-go-v2/config v1.29.14 h1:f+eEi/2cKCg9pqKBoAIwRGzVb70MRKqWX4dg1BDcSJM=
@@ -47,14 +49,10 @@ github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.0 h1:EDped/rNzAhFPhVY0sD
 github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.0/go.mod h1:uUI335jvzpZRPpjYx6ODc/wg1qH+NnoSTK/FwVeK0C0=
 github.com/aws/aws-sdk-go-v2/internal/ini v1.8.3 h1:bIqFDwgGXXN1Kpp99pDOdKMTTb5d2KyU5X/BZxjOkRo=
 github.com/aws/aws-sdk-go-v2/internal/ini v1.8.3/go.mod h1:H5O/EsxDWyU+LP/V8i5sm8cxoZgc2fdNR9bxlOFrQTo=
-github.com/aws/aws-sdk-go-v2/service/ec2 v1.237.0 h1:XHE2G+yaDQql32FZt19QmQt4WuisqQJIkMUSCxeCUl8=
-github.com/aws/aws-sdk-go-v2/service/ec2 v1.237.0/go.mod h1:t11/j/nH9i6bbsPH9xc04BJOsV2nVPUqrB67/TLDsyM=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.0 h1:6+lZi2JeGKtCraAj1rpoZfKqnQ9SptseRZioejfUOLM=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.0/go.mod h1:eb3gfbVIxIoGgJsi9pGne19dhCBpK6opTYpQqAmdy44=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.0 h1:eRhU3Sh8dGbaniI6B+I48XJMrTPRkK4DKo+vqIxziOU=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.0/go.mod h1:paNLV18DZ6FnWE/bd06RIKPDIFpjuvCkGKWTG/GDBeM=
-github.com/aws/aws-sdk-go-v2/service/lightsail v1.44.0 h1:QiiCqpKy0prxq+92uWfESzcb7/8Y9JAamcMOzVYLEoM=
-github.com/aws/aws-sdk-go-v2/service/lightsail v1.44.0/go.mod h1:ESppxYqXQCpCY+KWl3BdkQjmsQX6zxKP39SnDtRDoU0=
 github.com/aws/aws-sdk-go-v2/service/sso v1.25.3 h1:1Gw+9ajCV1jogloEv1RRnvfRFia2cL6c9cuKV2Ps+G8=
 github.com/aws/aws-sdk-go-v2/service/sso v1.25.3/go.mod h1:qs4a9T5EMLl/Cajiw2TcbNt2UNo/Hqlyp+GiuG4CFDI=
 github.com/aws/aws-sdk-go-v2/service/ssooidc v1.30.1 h1:hXmVKytPfTy5axZ+fYbR5d0cFmC3JvwLm5kM83luako=
@@ -196,6 +194,8 @@ github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839 h1:W9WBk7
 github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839/go.mod h1:xaLFMmpvUxqXtVkUJfg9QmT88cDaCJ3ZKgdZ78oO8Qo=
 github.com/ionos-cloud/sdk-go/v6 v6.3.4 h1:jTvGl4LOF8v8OYoEIBNVwbFoqSGAFqn6vGE7sp7/BqQ=
 github.com/ionos-cloud/sdk-go/v6 v6.3.4/go.mod h1:wCVwNJ/21W29FWFUv+fNawOTMlFoP1dS3L+ZuztFW48=
+github.com/jmespath/go-jmespath v0.4.0 h1:BEgLn5cpjn8UN1mAw4NjwDrS35OdebyEtFe+9YPoQUg=
+github.com/jmespath/go-jmespath v0.4.0/go.mod h1:T8mJZnbsbmF+m6zOOFylbeCJqk5+pHWvzYPziyZiYoo=
 github.com/josharian/intern v1.0.0 h1:vlS4z54oSdjm0bgjRigI+G1HpF+tI+9rE5LLzOg8HmY=
 github.com/josharian/intern v1.0.0/go.mod h1:5DoeVV0s6jJacbCEi61lwdGj/aVlrQvzHFFd8Hwg//Y=
 github.com/jpillora/backoff v1.0.0 h1:uvFg412JmmHBHw7iwprIxkPMI+sGQ4kzOWsMeHnm2EA=
@@ -291,8 +291,8 @@ github.com/prometheus/otlptranslator v0.0.2 h1:+1CdeLVrRQ6Psmhnobldo0kTp96Rj80DR
 github.com/prometheus/otlptranslator v0.0.2/go.mod h1:P8AwMgdD7XEr6QRUJ2QWLpiAZTgTE2UYgjlu3svompI=
 github.com/prometheus/procfs v0.16.1 h1:hZ15bTNuirocR6u0JZ6BAHHmwS1p8B4P6MRqxtzMyRg=
 github.com/prometheus/procfs v0.16.1/go.mod h1:teAbpZRB1iIAJYREa1LsoWUXykVXA1KlTmWl8x/U+Is=
-github.com/prometheus/prometheus v0.305.1-0.20250905124657-5c2e43f09c03 h1:NIVtqQm7NTsUcxfjdHuVE7pw3GVjEgwL6a9ADLSj+Wg=
-github.com/prometheus/prometheus v0.305.1-0.20250905124657-5c2e43f09c03/go.mod h1:9D9CfSEbKg087QXXz2ev+G1SoB6MqQE0ll4jCmrgCe0=
+github.com/prometheus/prometheus v0.306.0 h1:Q0Pvz/ZKS6vVWCa1VSgNyNJlEe8hxdRlKklFg7SRhNw=
+github.com/prometheus/prometheus v0.306.0/go.mod h1:7hMSGyZHt0dcmZ5r4kFPJ/vxPQU99N5/BGwSPDxeZrQ=
 github.com/prometheus/sigv4 v0.2.0 h1:qDFKnHYFswJxdzGeRP63c4HlH3Vbn1Yf/Ao2zabtVXk=
 github.com/prometheus/sigv4 v0.2.0/go.mod h1:D04rqmAaPPEUkjRQxGqjoxdyJuyCh6E0M18fZr0zBiE=
 github.com/puzpuzpuz/xsync/v3 v3.5.1 h1:GJYJZwO6IdxN/IKbneznS6yPkVC+c3zyY/j19c++5Fg=
