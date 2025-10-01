@@ -166,8 +166,8 @@ func TestCoverageConfig(t *testing.T) {
 	t.Run("custom config", func(t *testing.T) {
 		config := &CoverageConfig{
 			MinCoverage:              80.0,
-			FailOnUntested:          true,
-			OutputFormat:            "json",
+			FailOnUntested:           true,
+			OutputFormat:             "json",
 			EnableDependencyAnalysis: true,
 		}
 		tracker := NewRuleCoverageTracker(config)

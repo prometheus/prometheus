@@ -64,34 +64,34 @@ type TestDetails struct {
 
 // CoverageConfig contains configuration for coverage tracking
 type CoverageConfig struct {
-	EnableDependencyAnalysis bool    `json:"enable_dependency_analysis"`
-	MinCoverage             float64 `json:"min_coverage"`
-	FailOnUntested          bool    `json:"fail_on_untested"`
-	IgnorePatterns          []string `json:"ignore_patterns,omitempty"`
-	OutputFormat            string   `json:"output_format"`
-	OutputFile              string   `json:"output_file,omitempty"`
-	ByGroup                 bool     `json:"by_group"`
+	EnableDependencyAnalysis bool     `json:"enable_dependency_analysis"`
+	MinCoverage              float64  `json:"min_coverage"`
+	FailOnUntested           bool     `json:"fail_on_untested"`
+	IgnorePatterns           []string `json:"ignore_patterns,omitempty"`
+	OutputFormat             string   `json:"output_format"`
+	OutputFile               string   `json:"output_file,omitempty"`
+	ByGroup                  bool     `json:"by_group"`
 }
 
 // CoverageReport contains the coverage analysis results
 type CoverageReport struct {
-	Timestamp         time.Time                     `json:"timestamp"`
-	Summary           CoverageSummary               `json:"summary"`
-	ByType            map[string]*CoverageStats     `json:"by_type,omitempty"`
-	ByGroup           map[string]*CoverageStats     `json:"by_group,omitempty"`
-	UntestedRules     []*RuleInfo                   `json:"untested_rules"`
-	IndirectlyTested  []*RuleInfo                   `json:"indirectly_tested,omitempty"`
-	Details           map[string]*TestDetails       `json:"test_details,omitempty"`
+	Timestamp        time.Time                 `json:"timestamp"`
+	Summary          CoverageSummary           `json:"summary"`
+	ByType           map[string]*CoverageStats `json:"by_type,omitempty"`
+	ByGroup          map[string]*CoverageStats `json:"by_group,omitempty"`
+	UntestedRules    []*RuleInfo               `json:"untested_rules"`
+	IndirectlyTested []*RuleInfo               `json:"indirectly_tested,omitempty"`
+	Details          map[string]*TestDetails   `json:"test_details,omitempty"`
 }
 
 // CoverageSummary contains overall coverage statistics
 type CoverageSummary struct {
-	TotalRules       int     `json:"total_rules"`
-	TestedRules      int     `json:"tested_rules"`
-	UntestedRules    int     `json:"untested_rules"`
-	CoveragePercent  float64 `json:"coverage_percent"`
-	AlertCoverage    float64 `json:"alert_coverage,omitempty"`
-	RecordCoverage   float64 `json:"record_coverage,omitempty"`
+	TotalRules      int     `json:"total_rules"`
+	TestedRules     int     `json:"tested_rules"`
+	UntestedRules   int     `json:"untested_rules"`
+	CoveragePercent float64 `json:"coverage_percent"`
+	AlertCoverage   float64 `json:"alert_coverage,omitempty"`
+	RecordCoverage  float64 `json:"record_coverage,omitempty"`
 }
 
 // CoverageStats contains coverage statistics for a category
@@ -583,23 +583,23 @@ func (rct *RuleCoverageTracker) formatJUnitXML(report *CoverageReport) (string, 
 	buf.WriteString(`<testsuites name="promtool-coverage">` + "\n")
 
 	// Add coverage summary as properties
-	buf.WriteString(fmt.Sprintf(`  <testsuite name="coverage-report" tests="%d" failures="%d" time="0" timestamp="%s">` + "\n",
+	buf.WriteString(fmt.Sprintf(`  <testsuite name="coverage-report" tests="%d" failures="%d" time="0" timestamp="%s">`+"\n",
 		suite.TestCount, suite.FailureCount, suite.Timestamp))
 
 	buf.WriteString(`    <properties>` + "\n")
-	buf.WriteString(fmt.Sprintf(`      <property name="coverage.overall" value="%.2f"/>` + "\n", report.Summary.CoveragePercent))
-	buf.WriteString(fmt.Sprintf(`      <property name="coverage.alerts" value="%.2f"/>` + "\n", report.Summary.AlertCoverage))
-	buf.WriteString(fmt.Sprintf(`      <property name="coverage.records" value="%.2f"/>` + "\n", report.Summary.RecordCoverage))
+	buf.WriteString(fmt.Sprintf(`      <property name="coverage.overall" value="%.2f"/>`+"\n", report.Summary.CoveragePercent))
+	buf.WriteString(fmt.Sprintf(`      <property name="coverage.alerts" value="%.2f"/>`+"\n", report.Summary.AlertCoverage))
+	buf.WriteString(fmt.Sprintf(`      <property name="coverage.records" value="%.2f"/>`+"\n", report.Summary.RecordCoverage))
 	buf.WriteString(`    </properties>` + "\n")
 
 	// Add test cases
 	for _, tc := range suite.Cases {
 		if len(tc.Failures) > 0 {
-			buf.WriteString(fmt.Sprintf(`    <testcase name="%s" classname="rule">` + "\n", tc.Name))
-			buf.WriteString(fmt.Sprintf(`      <failure message="%s"/>` + "\n", tc.Failures[0]))
+			buf.WriteString(fmt.Sprintf(`    <testcase name="%s" classname="rule">`+"\n", tc.Name))
+			buf.WriteString(fmt.Sprintf(`      <failure message="%s"/>`+"\n", tc.Failures[0]))
 			buf.WriteString(`    </testcase>` + "\n")
 		} else {
-			buf.WriteString(fmt.Sprintf(`    <testcase name="%s" classname="rule"/>` + "\n", tc.Name))
+			buf.WriteString(fmt.Sprintf(`    <testcase name="%s" classname="rule"/>`+"\n", tc.Name))
 		}
 	}
 
