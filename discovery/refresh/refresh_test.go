@@ -76,6 +76,7 @@ func TestRefresh(t *testing.T) {
 		Options{
 			Logger:              nil,
 			Mech:                "test",
+			SetName:             "test-refresh",
 			Interval:            interval,
 			RefreshF:            refresh,
 			MetricsInstantiator: metrics,

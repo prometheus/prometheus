@@ -90,7 +90,11 @@ func newTritonDiscovery(c SDConfig) (*Discovery, discovery.DiscovererMetrics, er
 		return nil, nil, err
 	}
 
-	d, err := New(nil, &c, metrics)
+	d, err := New(&c, discovery.DiscovererOptions{
+		Logger:  nil,
+		Metrics: metrics,
+		SetName: "triton",
+	})
 	if err != nil {
 		return nil, nil, err
 	}

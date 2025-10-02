@@ -16,7 +16,6 @@ package eureka
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -88,7 +87,7 @@ func (*SDConfig) Name() string { return "eureka" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.Metrics)
+	return NewDiscovery(c, opts)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -125,8 +124,8 @@ type Discovery struct {
 }
 
 // NewDiscovery creates a new Eureka discovery for the given role.
-func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
-	m, ok := metrics.(*eurekaMetrics)
+func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery, error) {
+	m, ok := opts.Metrics.(*eurekaMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
 	}
@@ -142,8 +141,9 @@ func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.Discove
 	}
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "eureka",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,
