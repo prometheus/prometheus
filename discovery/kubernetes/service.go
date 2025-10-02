@@ -196,6 +196,8 @@ const (
 	serviceLoadBalancerIP    = metaLabelPrefix + "service_loadbalancer_ip"
 	serviceExternalNameLabel = metaLabelPrefix + "service_external_name"
 	serviceType              = metaLabelPrefix + "service_type"
+	serviceLoadBalancerIPs   = metaLabelPrefix + "service_loadbalancer_ips"
+	serviceLoadBalancerHostnames = metaLabelPrefix + "service_loadbalancer_hostnames"
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {
@@ -236,17 +238,26 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 		if svc.Spec.Type == apiv1.ServiceTypeLoadBalancer {
 			if len(svc.Status.LoadBalancer.Ingress) > 0 {
 				ips := make([]string, 0, len(svc.Status.LoadBalancer.Ingress))
+				hostnames := make([]string, 0, len(svc.Status.LoadBalancer.Ingress))
 				for _, ing := range svc.Status.LoadBalancer.Ingress {
 					if ing.IP != "" {
 						ips = append(ips, ing.IP)
 					}
+					if ing.Hostname != "" {
+						hostnames = append(hostnames, ing.Hostname)
+					}
 				}
 				if len(ips) > 0 {
-					labelSet[serviceLoadBalancerIP] = lv(strings.Join(ips, ","))
-				} else {
-					labelSet[serviceLoadBalancerIP] = lv(svc.Spec.LoadBalancerIP)
+					labelSet[serviceLoadBalancerIPs] = lv(strings.Join(ips, ","))
+					if len(ips) == 1 {
+						labelSet[serviceLoadBalancerIP] = lv(ips[0])
+					}
 				}
-			} else {
+				if len(hostnames) > 0 {
+					labelSet[serviceLoadBalancerHostnames] = lv(strings.Join(hostnames, ","))
+				}
+			} else if svc.Spec.LoadBalancerIP != "" {
+				labelSet[serviceLoadBalancerIPs] = lv(svc.Spec.LoadBalancerIP)
 				labelSet[serviceLoadBalancerIP] = lv(svc.Spec.LoadBalancerIP)
 			}
 		}
