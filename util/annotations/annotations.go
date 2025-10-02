@@ -53,8 +53,8 @@ func (a *Annotations) Add(err error) Annotations {
 	return *a
 }
 
-// Merge adds the contents of the second annotation to the first, modifying
-// the first in-place, and returns the merged first Annotation for convenience.
+// Merge adds the contents of the second set of Annotations to the first, modifying
+// the first in-place, and returns the merged first Annotations for convenience.
 func (a *Annotations) Merge(aa Annotations) Annotations {
 	if *a == nil {
 		if aa == nil {
@@ -179,7 +179,8 @@ type AnnoError interface {
 	// AsStrings(), so before that we deduplicate based on the raw error string when query is empty,
 	// and the full error string with details will only be shown in the end when query is set.
 	SetQuery(string)
-	// We can define custom merge functions to merge AnnoErrors with the same raw error string.
+	// We can define custom merge functions to merge individual annotations of the same type if they have
+	// the same raw error string.
 	Merge(error) error
 }
 
