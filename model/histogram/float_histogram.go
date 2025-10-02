@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"math"
 	"strings"
+
+	"github.com/prometheus/prometheus/util/kahansum"
 )
 
 // FloatHistogram is similar to Histogram but uses float64 for all
@@ -343,39 +345,14 @@ func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
 //
 // This method returns a pointer to the receiving histogram for convenience.
 func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counterResetCollision bool, err error) {
-	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
-		return nil, false, ErrHistogramsIncompatibleSchema
-	}
-	if h.UsesCustomBuckets() && !FloatBucketsMatch(h.CustomValues, other.CustomValues) {
-		return nil, false, ErrHistogramsIncompatibleBounds
+	if err := h.checkSchemaAndBounds(other); err != nil {
+		return nil, false, err
 	}
 
-	switch {
-	case other.CounterResetHint == h.CounterResetHint:
-		// Adding apples to apples, all good. No need to change anything.
-	case h.CounterResetHint == GaugeType:
-		// Adding something else to a gauge. That's probably OK. Outcome is a gauge.
-		// Nothing to do since the receiver is already marked as gauge.
-	case other.CounterResetHint == GaugeType:
-		// Similar to before, but this time the receiver is "something else" and we have to change it to gauge.
-		h.CounterResetHint = GaugeType
-	case h.CounterResetHint == UnknownCounterReset:
-		// With the receiver's CounterResetHint being "unknown", this could still be legitimate
-		// if the caller knows what they are doing. Outcome is then again "unknown".
-		// No need to do anything since the receiver's CounterResetHint is already "unknown".
-	case other.CounterResetHint == UnknownCounterReset:
-		// Similar to before, but now we have to set the receiver's CounterResetHint to "unknown".
-		h.CounterResetHint = UnknownCounterReset
-	default:
-		// All other cases shouldn't actually happen.
-		// They are a direct collision of CounterReset and NotCounterReset.
-		// Conservatively set the CounterResetHint to "unknown" and issue a warning.
-		h.CounterResetHint = UnknownCounterReset
-		counterResetCollision = true
-	}
+	counterResetCollision = h.adjustCounterResetForAddition(other)
 
 	if !h.UsesCustomBuckets() {
-		otherZeroCount := h.reconcileZeroBuckets(other)
+		otherZeroCount := h.reconcileZeroBuckets(other, nil)
 		h.ZeroCount += otherZeroCount
 	}
 	h.Count += other.Count
@@ -417,13 +394,106 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 	return h, counterResetCollision, nil
 }
 
+// KahanAdd works like Add but using the Kahan summation algorithm to minimize numerical errors.
+// c is a histogram holding the Kahan compensation term. It is modified in-place.
+// If c is nil, a suitable histogram is created. In any case, a pointer to the newly created
+// or updated c is returned as updatedC.
+func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (updatedC *FloatHistogram, counterResetCollision bool, err error) {
+	if err := h.checkSchemaAndBounds(other); err != nil {
+		return nil, false, err
+	}
+
+	counterResetCollision = h.adjustCounterResetForAddition(other)
+
+	if c == nil {
+		c = h.newCompensationHistogram()
+	}
+
+	if !h.UsesCustomBuckets() {
+		otherZeroCount := h.reconcileZeroBuckets(other, c)
+		h.ZeroCount, c.ZeroCount = kahansum.Inc(otherZeroCount, h.ZeroCount, c.ZeroCount)
+	}
+	h.Count, c.Count = kahansum.Inc(other.Count, h.Count, c.Count)
+	h.Sum, c.Sum = kahansum.Inc(other.Sum, h.Sum, c.Sum)
+
+	var (
+		hPositiveSpans       = h.PositiveSpans
+		hPositiveBuckets     = h.PositiveBuckets
+		otherPositiveSpans   = other.PositiveSpans
+		otherPositiveBuckets = other.PositiveBuckets
+		cPositiveBuckets     = c.PositiveBuckets
+	)
+
+	if h.UsesCustomBuckets() {
+		h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
+			h.Schema, h.ZeroThreshold, false,
+			hPositiveSpans, hPositiveBuckets,
+			otherPositiveSpans, otherPositiveBuckets,
+			cPositiveBuckets,
+		)
+		return c, counterResetCollision, nil
+	}
+
+	var (
+		hNegativeSpans       = h.NegativeSpans
+		hNegativeBuckets     = h.NegativeBuckets
+		otherNegativeSpans   = other.NegativeSpans
+		otherNegativeBuckets = other.NegativeBuckets
+		cNegativeBuckets     = c.NegativeBuckets
+	)
+
+	switch {
+	case other.Schema < h.Schema:
+		hPositiveSpans, hPositiveBuckets, cPositiveBuckets = kahanReduceResolution(
+			hPositiveSpans, hPositiveBuckets, cPositiveBuckets,
+			h.Schema, other.Schema,
+			true,
+		)
+		hNegativeSpans, hNegativeBuckets, cNegativeBuckets = kahanReduceResolution(
+			hNegativeSpans, hNegativeBuckets, cNegativeBuckets,
+			h.Schema, other.Schema,
+			true,
+		)
+		h.Schema = other.Schema
+
+	case other.Schema > h.Schema:
+		otherPositiveSpans, otherPositiveBuckets = reduceResolution(
+			otherPositiveSpans, otherPositiveBuckets,
+			other.Schema, h.Schema,
+			false, false,
+		)
+		otherNegativeSpans, otherNegativeBuckets = reduceResolution(
+			otherNegativeSpans, otherNegativeBuckets,
+			other.Schema, h.Schema,
+			false, false,
+		)
+	}
+
+	h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
+		h.Schema, h.ZeroThreshold, false,
+		hPositiveSpans, hPositiveBuckets,
+		otherPositiveSpans, otherPositiveBuckets,
+		cPositiveBuckets,
+	)
+	h.NegativeSpans, h.NegativeBuckets, c.NegativeBuckets = kahanAddBuckets(
+		h.Schema, h.ZeroThreshold, false,
+		hNegativeSpans, hNegativeBuckets,
+		otherNegativeSpans, otherNegativeBuckets,
+		cNegativeBuckets,
+	)
+
+	c.Schema = other.Schema
+	c.ZeroThreshold = h.ZeroThreshold
+	c.PositiveSpans = h.PositiveSpans
+	c.NegativeSpans = h.NegativeSpans
+
+	return c, counterResetCollision, nil
+}
+
 // Sub works like Add but subtracts the other histogram.
 func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counterResetCollision bool, err error) {
-	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
-		return nil, false, ErrHistogramsIncompatibleSchema
-	}
-	if h.UsesCustomBuckets() && !FloatBucketsMatch(h.CustomValues, other.CustomValues) {
-		return nil, false, ErrHistogramsIncompatibleBounds
+	if err := h.checkSchemaAndBounds(other); err != nil {
+		return nil, false, err
 	}
 
 	counterResetCollision = hasCounterResetCollision(h, other)
@@ -431,7 +501,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 	h.CounterResetHint = GaugeType
 
 	if !h.UsesCustomBuckets() {
-		otherZeroCount := h.reconcileZeroBuckets(other)
+		otherZeroCount := h.reconcileZeroBuckets(other, nil)
 		h.ZeroCount -= otherZeroCount
 	}
 	h.Count -= other.Count
@@ -477,6 +547,103 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 func hasCounterResetCollision(a, b *FloatHistogram) bool {
 	return a.CounterResetHint == CounterReset && b.CounterResetHint == NotCounterReset ||
 		a.CounterResetHint == NotCounterReset && b.CounterResetHint == CounterReset
+}
+
+// KahanSub works like Sub but using the Kahan summation algorithm to minimize numerical errors.
+// c is a histogram holding the Kahan compensation term. It is modified in-place.
+// If c is nil, a suitable histogram is created. In any case, a pointer to the newly created
+// or updated c is returned as updatedC.
+func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (updatedC *FloatHistogram, counterResetCollision bool, err error) {
+	if err := h.checkSchemaAndBounds(other); err != nil {
+		return nil, false, err
+	}
+
+	counterResetCollision = hasCounterResetCollision(h, other)
+
+	h.CounterResetHint = GaugeType
+
+	if c == nil {
+		c = h.newCompensationHistogram()
+	}
+
+	if !h.UsesCustomBuckets() {
+		otherZeroCount := h.reconcileZeroBuckets(other, c)
+		h.ZeroCount, c.ZeroCount = kahansum.Dec(otherZeroCount, h.ZeroCount, c.ZeroCount)
+	}
+	h.Count, c.Count = kahansum.Dec(other.Count, h.Count, c.Count)
+	h.Sum, c.Sum = kahansum.Dec(other.Sum, h.Sum, c.Sum)
+	var (
+		hPositiveSpans       = h.PositiveSpans
+		hPositiveBuckets     = h.PositiveBuckets
+		otherPositiveSpans   = other.PositiveSpans
+		otherPositiveBuckets = other.PositiveBuckets
+		cPositiveBuckets     = c.PositiveBuckets
+	)
+
+	if h.UsesCustomBuckets() {
+		h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
+			h.Schema, h.ZeroThreshold, true,
+			hPositiveSpans, hPositiveBuckets,
+			otherPositiveSpans, otherPositiveBuckets,
+			cPositiveBuckets,
+		)
+		return c, counterResetCollision, nil
+	}
+
+	var (
+		hNegativeSpans       = h.NegativeSpans
+		hNegativeBuckets     = h.NegativeBuckets
+		otherNegativeSpans   = other.NegativeSpans
+		otherNegativeBuckets = other.NegativeBuckets
+		cNegativeBuckets     = c.NegativeBuckets
+	)
+
+	switch {
+	case other.Schema < h.Schema:
+		hPositiveSpans, hPositiveBuckets, cPositiveBuckets = kahanReduceResolution(
+			hPositiveSpans, hPositiveBuckets, cPositiveBuckets,
+			h.Schema, other.Schema,
+			true,
+		)
+		hNegativeSpans, hNegativeBuckets, cNegativeBuckets = kahanReduceResolution(
+			hNegativeSpans, hNegativeBuckets, cNegativeBuckets,
+			h.Schema, other.Schema,
+			true,
+		)
+		h.Schema = other.Schema
+
+	case other.Schema > h.Schema:
+		otherPositiveSpans, otherPositiveBuckets = reduceResolution(
+			otherPositiveSpans, otherPositiveBuckets,
+			other.Schema, h.Schema,
+			false, false,
+		)
+		otherNegativeSpans, otherNegativeBuckets = reduceResolution(
+			otherNegativeSpans, otherNegativeBuckets,
+			other.Schema, h.Schema,
+			false, false,
+		)
+	}
+
+	h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
+		h.Schema, h.ZeroThreshold, true,
+		hPositiveSpans, hPositiveBuckets,
+		otherPositiveSpans, otherPositiveBuckets,
+		cPositiveBuckets,
+	)
+	h.NegativeSpans, h.NegativeBuckets, c.NegativeBuckets = kahanAddBuckets(
+		h.Schema, h.ZeroThreshold, true,
+		hNegativeSpans, hNegativeBuckets,
+		otherNegativeSpans, otherNegativeBuckets,
+		cNegativeBuckets,
+	)
+
+	c.Schema = other.Schema
+	c.ZeroThreshold = h.ZeroThreshold
+	c.PositiveSpans = h.PositiveSpans
+	c.NegativeSpans = h.NegativeSpans
+
+	return c, counterResetCollision, nil
 }
 
 // Equals returns true if the given float histogram matches exactly.
@@ -582,13 +749,26 @@ func (h *FloatHistogram) Size() int {
 // easier to iterate through. Still, the safest bet is to use maxEmptyBuckets==0
 // and only use a larger number if you know what you are doing.
 func (h *FloatHistogram) Compact(maxEmptyBuckets int) *FloatHistogram {
-	h.PositiveBuckets, h.PositiveSpans = compactBuckets(
-		h.PositiveBuckets, h.PositiveSpans, maxEmptyBuckets, false,
+	h.PositiveBuckets, _, h.PositiveSpans = compactBuckets(
+		h.PositiveBuckets, nil, h.PositiveSpans, maxEmptyBuckets, false,
 	)
-	h.NegativeBuckets, h.NegativeSpans = compactBuckets(
-		h.NegativeBuckets, h.NegativeSpans, maxEmptyBuckets, false,
+	h.NegativeBuckets, _, h.NegativeSpans = compactBuckets(
+		h.NegativeBuckets, nil, h.NegativeSpans, maxEmptyBuckets, false,
 	)
 	return h
+}
+
+// kahanCompact works like Compact, but it is specialized for FloatHistogram's KahanAdd method.
+// c is a histogram holding the Kahan compensation term.
+func (h *FloatHistogram) kahanCompact(maxEmptyBuckets int, c *FloatHistogram,
+) (updatedH, updatedC *FloatHistogram) {
+	h.PositiveBuckets, c.PositiveBuckets, h.PositiveSpans = compactBuckets(
+		h.PositiveBuckets, c.PositiveBuckets, h.PositiveSpans, maxEmptyBuckets, false,
+	)
+	h.NegativeBuckets, c.NegativeBuckets, h.NegativeSpans = compactBuckets(
+		h.NegativeBuckets, c.NegativeBuckets, h.NegativeSpans, maxEmptyBuckets, false,
+	)
+	return h, c
 }
 
 // DetectReset returns true if the receiving histogram is missing any buckets
@@ -652,7 +832,7 @@ func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
 		// ZeroThreshold decreased.
 		return true
 	}
-	previousZeroCount, newThreshold := previous.zeroCountForLargerThreshold(h.ZeroThreshold)
+	previousZeroCount, newThreshold, _ := previous.zeroCountForLargerThreshold(h.ZeroThreshold, nil)
 	if newThreshold != h.ZeroThreshold {
 		// ZeroThreshold is within a populated bucket in previous
 		// histogram.
@@ -847,30 +1027,42 @@ func (h *FloatHistogram) Validate() error {
 }
 
 // zeroCountForLargerThreshold returns what the histogram's zero count would be
-// if the ZeroThreshold had the provided larger (or equal) value. If the
-// provided value is less than the histogram's ZeroThreshold, the method panics.
+// if the ZeroThreshold had the provided larger (or equal) value. It also returns the
+// zero count of the compensation histogram `c` if provided (used for Kahan summation).
+//
+// If the provided ZeroThreshold is less than the histogram's ZeroThreshold, the method panics.
 // If the largerThreshold ends up within a populated bucket of the histogram, it
 // is adjusted upwards to the lower limit of that bucket (all in terms of
 // absolute values) and that bucket's count is included in the returned
 // count. The adjusted threshold is returned, too.
-func (h *FloatHistogram) zeroCountForLargerThreshold(largerThreshold float64) (count, threshold float64) {
+func (h *FloatHistogram) zeroCountForLargerThreshold(
+	largerThreshold float64, c *FloatHistogram) (hZeroCount, threshold, cZeroCount float64,
+) {
+	if c != nil {
+		cZeroCount = c.ZeroCount
+	}
 	// Fast path.
 	if largerThreshold == h.ZeroThreshold {
-		return h.ZeroCount, largerThreshold
+		return h.ZeroCount, largerThreshold, cZeroCount
 	}
 	if largerThreshold < h.ZeroThreshold {
 		panic(fmt.Errorf("new threshold %f is less than old threshold %f", largerThreshold, h.ZeroThreshold))
 	}
 outer:
 	for {
-		count = h.ZeroCount
+		hZeroCount = h.ZeroCount
 		i := h.PositiveBucketIterator()
+		bucketsIdx := 0
 		for i.Next() {
 			b := i.At()
 			if b.Lower >= largerThreshold {
 				break
 			}
-			count += b.Count // Bucket to be merged into zero bucket.
+			// Bucket to be merged into zero bucket.
+			hZeroCount, cZeroCount = kahansum.Inc(b.Count, hZeroCount, cZeroCount)
+			if c != nil {
+				cZeroCount += c.PositiveBuckets[bucketsIdx]
+			}
 			if b.Upper > largerThreshold {
 				// New threshold ended up within a bucket. if it's
 				// populated, we need to adjust largerThreshold before
@@ -880,14 +1072,20 @@ outer:
 				}
 				break
 			}
+			bucketsIdx++
 		}
 		i = h.NegativeBucketIterator()
+		bucketsIdx = 0
 		for i.Next() {
 			b := i.At()
 			if b.Upper <= -largerThreshold {
 				break
 			}
-			count += b.Count // Bucket to be merged into zero bucket.
+			// Bucket to be merged into zero bucket.
+			hZeroCount, cZeroCount = kahansum.Inc(b.Count, hZeroCount, cZeroCount)
+			if c != nil {
+				cZeroCount += c.NegativeBuckets[bucketsIdx]
+			}
 			if b.Lower < -largerThreshold {
 				// New threshold ended up within a bucket. If
 				// it's populated, we need to adjust
@@ -900,15 +1098,17 @@ outer:
 				}
 				break
 			}
+			bucketsIdx++
 		}
-		return count, largerThreshold
+		return hZeroCount, largerThreshold, cZeroCount
 	}
 }
 
 // trimBucketsInZeroBucket removes all buckets that are within the zero
 // bucket. It assumes that the zero threshold is at a bucket boundary and that
 // the counts in the buckets to remove are already part of the zero count.
-func (h *FloatHistogram) trimBucketsInZeroBucket() {
+// c is a histogram holding the Kahan compensation term.
+func (h *FloatHistogram) trimBucketsInZeroBucket(c *FloatHistogram) {
 	i := h.PositiveBucketIterator()
 	bucketsIdx := 0
 	for i.Next() {
@@ -932,26 +1132,35 @@ func (h *FloatHistogram) trimBucketsInZeroBucket() {
 	// We are abusing Compact to trim the buckets set to zero
 	// above. Premature compacting could cause additional cost, but this
 	// code path is probably rarely used anyway.
-	h.Compact(0)
+	if c != nil {
+		h.kahanCompact(0, c)
+	} else {
+		h.Compact(0)
+	}
 }
 
 // reconcileZeroBuckets finds a zero bucket large enough to include the zero
 // buckets of both histograms (the receiving histogram and the other histogram)
 // with a zero threshold that is not within a populated bucket in either
-// histogram. This method modifies the receiving histogram accordingly, but
-// leaves the other histogram as is. Instead, it returns the zero count the
+// histogram. This method modifies the receiving histogram accordingly, and
+// also modifies the compensation histogram `c` (used for Kahan summation) if provided,
+// but leaves the other histogram as is. Instead, it returns the zero count the
 // other histogram would have if it were modified.
-func (h *FloatHistogram) reconcileZeroBuckets(other *FloatHistogram) float64 {
+func (h *FloatHistogram) reconcileZeroBuckets(other, c *FloatHistogram) float64 {
 	otherZeroCount := other.ZeroCount
 	otherZeroThreshold := other.ZeroThreshold
 
 	for otherZeroThreshold != h.ZeroThreshold {
 		if h.ZeroThreshold > otherZeroThreshold {
-			otherZeroCount, otherZeroThreshold = other.zeroCountForLargerThreshold(h.ZeroThreshold)
+			otherZeroCount, otherZeroThreshold, _ = other.zeroCountForLargerThreshold(h.ZeroThreshold, nil)
 		}
 		if otherZeroThreshold > h.ZeroThreshold {
-			h.ZeroCount, h.ZeroThreshold = h.zeroCountForLargerThreshold(otherZeroThreshold)
-			h.trimBucketsInZeroBucket()
+			var cZeroCount float64
+			h.ZeroCount, h.ZeroThreshold, cZeroCount = h.zeroCountForLargerThreshold(otherZeroThreshold, c)
+			if c != nil {
+				c.ZeroCount = cZeroCount
+			}
+			h.trimBucketsInZeroBucket(c)
 		}
 	}
 	return otherZeroCount
@@ -1352,6 +1561,138 @@ func addBuckets(
 	return spansA, bucketsA
 }
 
+// kahanAddBuckets works like addBuckets but it is used in FloatHistogram's KahanAdd method
+// and takes an additional argument, bucketsC, representing buckets of the compensation histogram.
+// It returns the resulting spans/buckets and compensation buckets.
+func kahanAddBuckets(
+	schema int32, threshold float64, negative bool,
+	spansA []Span, bucketsA []float64,
+	spansB []Span, bucketsB []float64,
+	bucketsC []float64,
+) (newSpans []Span, newBucketsA, newBucketsC []float64) {
+	var (
+		iSpan              = -1
+		iBucket            = -1
+		iInSpan            int32
+		indexA             int32
+		indexB             int32
+		bIdxB              int
+		bucketB            float64
+		deltaIndex         int32
+		lowerThanThreshold = true
+	)
+
+	for _, spanB := range spansB {
+		indexB += spanB.Offset
+		for j := 0; j < int(spanB.Length); j++ {
+			if lowerThanThreshold && IsExponentialSchema(schema) && getBoundExponential(indexB, schema) <= threshold {
+				goto nextLoop
+			}
+			lowerThanThreshold = false
+
+			bucketB = bucketsB[bIdxB]
+			if negative {
+				bucketB *= -1
+			}
+
+			if iSpan == -1 {
+				if len(spansA) == 0 || spansA[0].Offset > indexB {
+					// Add bucket before all others.
+					bucketsA = append(bucketsA, 0)
+					copy(bucketsA[1:], bucketsA)
+					bucketsA[0] = bucketB
+					bucketsC = append(bucketsC, 0)
+					copy(bucketsC[1:], bucketsC)
+					bucketsC[0] = 0
+					if len(spansA) > 0 && spansA[0].Offset == indexB+1 {
+						spansA[0].Length++
+						spansA[0].Offset--
+						goto nextLoop
+					}
+					spansA = append(spansA, Span{})
+					copy(spansA[1:], spansA)
+					spansA[0] = Span{Offset: indexB, Length: 1}
+					if len(spansA) > 1 {
+						// Convert the absolute offset in the formerly
+						// first span to a relative offset.
+						spansA[1].Offset -= indexB + 1
+					}
+					goto nextLoop
+				} else if spansA[0].Offset == indexB {
+					// Just add to first bucket.
+					bucketsA[0], bucketsC[0] = kahansum.Inc(bucketB, bucketsA[0], bucketsC[0])
+					goto nextLoop
+				}
+				iSpan, iBucket, iInSpan = 0, 0, 0
+				indexA = spansA[0].Offset
+			}
+			deltaIndex = indexB - indexA
+			for {
+				remainingInSpan := int32(spansA[iSpan].Length) - iInSpan
+				if deltaIndex < remainingInSpan {
+					// Bucket is in current span.
+					iBucket += int(deltaIndex)
+					iInSpan += deltaIndex
+					bucketsA[iBucket], bucketsC[iBucket] = kahansum.Inc(bucketB, bucketsA[iBucket], bucketsC[iBucket])
+					break
+				}
+				deltaIndex -= remainingInSpan
+				iBucket += int(remainingInSpan)
+				iSpan++
+				if iSpan == len(spansA) || deltaIndex < spansA[iSpan].Offset {
+					// Bucket is in gap behind previous span (or there are no further spans).
+					bucketsA = append(bucketsA, 0)
+					copy(bucketsA[iBucket+1:], bucketsA[iBucket:])
+					bucketsA[iBucket] = bucketB
+					bucketsC = append(bucketsC, 0)
+					copy(bucketsC[iBucket+1:], bucketsC[iBucket:])
+					bucketsC[iBucket] = 0
+					switch {
+					case deltaIndex == 0:
+						// Directly after previous span, extend previous span.
+						if iSpan < len(spansA) {
+							spansA[iSpan].Offset--
+						}
+						iSpan--
+						iInSpan = int32(spansA[iSpan].Length)
+						spansA[iSpan].Length++
+						// spansC[iSpan].Length++
+						goto nextLoop
+					case iSpan < len(spansA) && deltaIndex == spansA[iSpan].Offset-1:
+						// Directly before next span, extend next span.
+						iInSpan = 0
+						spansA[iSpan].Offset--
+						spansA[iSpan].Length++
+						goto nextLoop
+					default:
+						// No next span, or next span is not directly adjacent to new bucket.
+						// Add new span.
+						iInSpan = 0
+						if iSpan < len(spansA) {
+							spansA[iSpan].Offset -= deltaIndex + 1
+						}
+						spansA = append(spansA, Span{})
+						copy(spansA[iSpan+1:], spansA[iSpan:])
+						spansA[iSpan] = Span{Length: 1, Offset: deltaIndex}
+						goto nextLoop
+					}
+				} else {
+					// Try start of next span.
+					deltaIndex -= spansA[iSpan].Offset
+					iInSpan = 0
+				}
+			}
+
+		nextLoop:
+			indexA = indexB
+			indexB++
+			bIdxB++
+		}
+	}
+
+	return spansA, bucketsA, bucketsC
+}
+
 func FloatBucketsMatch(b1, b2 []float64) bool {
 	if len(b1) != len(b2) {
 		return false
@@ -1384,4 +1725,175 @@ func (h *FloatHistogram) ReduceResolution(targetSchema int32) *FloatHistogram {
 
 	h.Schema = targetSchema
 	return h
+}
+
+// kahanReduceResolution works like reduceResolution, but it is specialized for FloatHistogram's KahanAdd method.
+// Unlike reduceResolution, which supports both float and integer buckets, this function only operates on float buckets.
+// It also takes an additional argument, originCompBuckets, representing the compensation buckets for the origin histogram.
+// This function modifies both the buckets of the origin histogram and its corresponding compensation histogram.
+func kahanReduceResolution(
+	originSpans []Span,
+	originReceivingBuckets []float64,
+	originCompBuckets []float64,
+	originSchema,
+	targetSchema int32,
+	inplace bool,
+) (newSpans []Span, newReceivingBuckets, newCompBuckets []float64) {
+	var (
+		targetSpans            []Span    // The spans in the target schema.
+		targetReceivingBuckets []float64 // The receiving bucket counts in the target schema.
+		targetCompBuckets      []float64 // The compensation bucket counts in the target schema.
+		bucketIdx              int32     // The index of bucket in the origin schema.
+		bucketCountIdx         int       // The position of a bucket in origin bucket count slice `originBuckets`.
+		targetBucketIdx        int32     // The index of bucket in the target schema.
+		lastTargetBucketIdx    int32     // The index of the last added target bucket.
+	)
+
+	if inplace {
+		// Slice reuse is safe because when reducing the resolution,
+		// target slices don't grow faster than origin slices are being read.
+		targetSpans = originSpans[:0]
+		targetReceivingBuckets = originReceivingBuckets[:0]
+		targetCompBuckets = originCompBuckets[:0]
+	}
+
+	for _, span := range originSpans {
+		// Determine the index of the first bucket in this span.
+		bucketIdx += span.Offset
+		for j := 0; j < int(span.Length); j++ {
+			// Determine the index of the bucket in the target schema from the index in the original schema.
+			targetBucketIdx = targetIdx(bucketIdx, originSchema, targetSchema)
+
+			switch {
+			case len(targetSpans) == 0:
+				// This is the first span in the targetSpans.
+				span := Span{
+					Offset: targetBucketIdx,
+					Length: 1,
+				}
+				targetSpans = append(targetSpans, span)
+				targetReceivingBuckets = append(targetReceivingBuckets, originReceivingBuckets[bucketCountIdx])
+				lastTargetBucketIdx = targetBucketIdx
+				targetCompBuckets = append(targetCompBuckets, originCompBuckets[bucketCountIdx])
+
+			case lastTargetBucketIdx == targetBucketIdx:
+				// The current bucket has to be merged into the same target bucket as the previous bucket.
+				lastBucketIdx := len(targetReceivingBuckets) - 1
+				targetReceivingBuckets[lastBucketIdx], targetCompBuckets[lastBucketIdx] = kahansum.Inc(
+					originReceivingBuckets[bucketCountIdx],
+					targetReceivingBuckets[lastBucketIdx],
+					targetCompBuckets[lastBucketIdx],
+				)
+				targetCompBuckets[lastBucketIdx] += originCompBuckets[bucketCountIdx]
+
+			case (lastTargetBucketIdx + 1) == targetBucketIdx:
+				// The current bucket has to go into a new target bucket,
+				// and that bucket is next to the previous target bucket,
+				// so we add it to the current target span.
+				targetSpans[len(targetSpans)-1].Length++
+				lastTargetBucketIdx++
+				targetReceivingBuckets = append(targetReceivingBuckets, originReceivingBuckets[bucketCountIdx])
+				targetCompBuckets = append(targetCompBuckets, originCompBuckets[bucketCountIdx])
+
+			case (lastTargetBucketIdx + 1) < targetBucketIdx:
+				// The current bucket has to go into a new target bucket,
+				// and that bucket is separated by a gap from the previous target bucket,
+				// so we need to add a new target span.
+				span := Span{
+					Offset: targetBucketIdx - lastTargetBucketIdx - 1,
+					Length: 1,
+				}
+				targetSpans = append(targetSpans, span)
+				lastTargetBucketIdx = targetBucketIdx
+				targetReceivingBuckets = append(targetReceivingBuckets, originReceivingBuckets[bucketCountIdx])
+				targetCompBuckets = append(targetCompBuckets, originCompBuckets[bucketCountIdx])
+			}
+
+			bucketIdx++
+			bucketCountIdx++
+		}
+	}
+
+	return targetSpans, targetReceivingBuckets, targetCompBuckets
+}
+
+// newCompensationHistogram initializes a new compensation histogram that can be used
+// alongside the current FloatHistogram in Kahan summation.
+// The compensation histogram is structured to match the receiving histogram's bucket layout
+// including its schema, zero threshold and custom values, and it shares spans with the receiving
+// histogram. However, the bucket values in the compensation histogram are initialized to zero.
+func (h *FloatHistogram) newCompensationHistogram() *FloatHistogram {
+	c := &FloatHistogram{
+		Schema:          h.Schema,
+		ZeroThreshold:   h.ZeroThreshold,
+		CustomValues:    h.CustomValues,
+		PositiveBuckets: make([]float64, len(h.PositiveBuckets)),
+		PositiveSpans:   h.PositiveSpans,
+		NegativeSpans:   h.NegativeSpans,
+	}
+	if !h.UsesCustomBuckets() {
+		c.NegativeBuckets = make([]float64, len(h.NegativeBuckets))
+	}
+	return c
+}
+
+func (h *FloatHistogram) checkSchemaAndBounds(other *FloatHistogram) error {
+	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
+		return ErrHistogramsIncompatibleSchema
+	}
+	if h.UsesCustomBuckets() && !FloatBucketsMatch(h.CustomValues, other.CustomValues) {
+		return ErrHistogramsIncompatibleBounds
+	}
+	return nil
+}
+
+func (h *FloatHistogram) adjustCounterResetForAddition(other *FloatHistogram) (counterResetCollision bool) {
+	switch {
+	case other.CounterResetHint == h.CounterResetHint:
+		// Adding apples to apples, all good. No need to change anything.
+	case h.CounterResetHint == GaugeType:
+		// Adding something else to a gauge. That's probably OK. Outcome is a gauge.
+		// Nothing to do since the receiver is already marked as gauge.
+	case other.CounterResetHint == GaugeType:
+		// Similar to before, but this time the receiver is "something else" and we have to change it to gauge.
+		h.CounterResetHint = GaugeType
+	case h.CounterResetHint == UnknownCounterReset:
+		// With the receiver's CounterResetHint being "unknown", this could still be legitimate
+		// if the caller knows what they are doing. Outcome is then again "unknown".
+		// No need to do anything since the receiver's CounterResetHint is already "unknown".
+	case other.CounterResetHint == UnknownCounterReset:
+		// Similar to before, but now we have to set the receiver's CounterResetHint to "unknown".
+		h.CounterResetHint = UnknownCounterReset
+	default:
+		// All other cases shouldn't actually happen.
+		// They are a direct collision of CounterReset and NotCounterReset.
+		// Conservatively set the CounterResetHint to "unknown" and issue a warning.
+		h.CounterResetHint = UnknownCounterReset
+		counterResetCollision = true
+	}
+	return counterResetCollision
+}
+
+// HasOverflow reports whether any of the FloatHistogram's fields contain an infinite value.
+// This can happen when aggregating multiple histograms and exceeding float64 capacity.
+func (h *FloatHistogram) HasOverflow() bool {
+	if math.IsInf(h.ZeroCount, 0) || math.IsInf(h.Count, 0) || math.IsInf(h.Sum, 0) {
+		return true
+	}
+	for _, v := range h.PositiveBuckets {
+		if math.IsInf(v, 0) {
+			return true
+		}
+	}
+	for _, v := range h.NegativeBuckets {
+		if math.IsInf(v, 0) {
+			return true
+		}
+	}
+	for _, v := range h.CustomValues {
+		if math.IsInf(v, 0) {
+			return true
+		}
+	}
+	return false
 }

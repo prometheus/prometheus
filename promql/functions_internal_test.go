@@ -19,6 +19,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/util/kahansum"
 )
 
 func TestKahanSumInc(t *testing.T) {
@@ -61,7 +63,7 @@ func TestKahanSumInc(t *testing.T) {
 
 	runTest := func(t *testing.T, a, b, expected float64) {
 		t.Run(fmt.Sprintf("%v + %v = %v", a, b, expected), func(t *testing.T) {
-			sum, c := kahanSumInc(b, a, 0)
+			sum, c := kahansum.Inc(b, a, 0)
 			result := sum + c
 
 			if math.IsNaN(expected) {
