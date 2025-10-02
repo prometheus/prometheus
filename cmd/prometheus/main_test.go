@@ -117,7 +117,7 @@ func TestComputeExternalURL(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		_, err := computeExternalURL(test.input, "0.0.0.0:9090")
+		_, err := computeExternalURL(test.input, "0.0.0.0:9090", false)
 		if test.valid {
 			require.NoError(t, err)
 		} else {
