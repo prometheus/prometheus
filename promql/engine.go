@@ -1290,6 +1290,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 		ts int64
 	}
 	seriess := make(map[uint64]seriesAndTimestamp, biggestLen) // Output series by series hash.
+	seriessOrder := make([]uint64, 0, biggestLen)
 	tempNumSamples := ev.currentSamples
 
 	var (
@@ -1379,6 +1380,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 				ss.ts = ts
 			} else {
 				ss = seriesAndTimestamp{Series{Metric: sample.Metric, DropName: sample.DropName}, ts}
+				seriessOrder = append(seriessOrder, h)
 			}
 			addToSeries(&ss.Series, enh.Ts, sample.F, sample.H, numSteps)
 			seriess[h] = ss
@@ -1394,7 +1396,8 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 	}
 	// Assemble the output matrix. By the time we get here we know we don't have too many samples.
 	mat := make(Matrix, 0, len(seriess))
-	for _, ss := range seriess {
+	for _, h := range seriessOrder {
+		ss := seriess[h]
 		mat = append(mat, ss.Series)
 	}
 	ev.currentSamples = originalNumSamples + mat.TotalSamples()
