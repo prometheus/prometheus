@@ -76,7 +76,8 @@ func (e *testCustomError) SetQuery(query string) {
 }
 
 func (e *testCustomError) Merge(other error) error {
-	o, ok := other.(*testCustomError)
+	o := &testCustomError{}
+	ok := errors.As(other, &o)
 	if !ok {
 		return e
 	}
