@@ -3523,13 +3523,25 @@ func TestRateAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		},
-		"no info annotations when selecting one sample": {
+		"no info annotations when selecting one sample with rate": {
 			data: `
 				series 1 2
 			`,
-			expr:                       "rate(series[10s])",
-			expectedWarningAnnotations: []string{},
-			expectedInfoAnnotations:    []string{},
+			expr: "rate(series[10s])",
+			expectedWarningAnnotations: []string{
+				`PromQL warning: range too short; does not contain enough samples to extrapolate rate (1:6)`,
+			},
+			expectedInfoAnnotations: []string{},
+		},
+		"no info annotations when selecting one sample with irate": {
+			data: `
+				series 1 2
+			`,
+			expr: "irate(series[10s])",
+			expectedWarningAnnotations: []string{
+				`PromQL warning: range too short; does not contain enough samples to extrapolate rate (1:7)`,
+			},
+			expectedInfoAnnotations: []string{},
 		},
 		"no info annotations when no samples due to mixed data types": {
 			data: `

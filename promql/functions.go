@@ -234,7 +234,7 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 			prevValue = currPoint.F
 		}
 	default:
-		// TODO: add RangeTooShortWarning
+		annos.Add(annotations.NewRangeTooShortWarning(args[0].PositionRange()))
 		return enh.Out, annos
 	}
 
@@ -436,9 +436,9 @@ func instantValue(vals Matrix, args parser.Expressions, out Vector, isRate bool)
 
 	// No sense in trying to compute a rate without at least two points. Drop
 	// this Vector element.
-	// TODO: add RangeTooShortWarning
 	if len(samples.Floats)+len(samples.Histograms) < 2 {
-		return out, nil
+		annos.Add(annotations.NewRangeTooShortWarning(args[0].PositionRange()))
+		return out, annos
 	}
 
 	// Add the last 2 float samples if they exist.
