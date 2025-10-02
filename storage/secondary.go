@@ -52,7 +52,7 @@ func newSecondaryQuerierFromChunk(cq ChunkQuerier) genericQuerier {
 func (s *secondaryQuerier) LabelValues(ctx context.Context, name string, hints *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	vals, w, err := s.genericQuerier.LabelValues(ctx, name, hints, matchers...)
 	if err != nil {
-		return nil, w.Add(err), nil
+		return nil, w.AddRaw(err), nil
 	}
 	return vals, w, nil
 }
@@ -60,7 +60,7 @@ func (s *secondaryQuerier) LabelValues(ctx context.Context, name string, hints *
 func (s *secondaryQuerier) LabelNames(ctx context.Context, hints *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	names, w, err := s.genericQuerier.LabelNames(ctx, hints, matchers...)
 	if err != nil {
-		return nil, w.Add(err), nil
+		return nil, w.AddRaw(err), nil
 	}
 	return names, w, nil
 }
@@ -84,7 +84,7 @@ func (s *secondaryQuerier) Select(ctx context.Context, sortSeries bool, hints *S
 				if err := set.Err(); err != nil {
 					// One of the sets failed, ensure current one returning errors as warnings, and rest of the sets return nothing.
 					// (All or nothing logic).
-					s.asyncSets[curr] = warningsOnlySeriesSet(ws.Add(err))
+					s.asyncSets[curr] = warningsOnlySeriesSet(ws.AddRaw(err))
 					for i := range s.asyncSets {
 						if curr == i {
 							continue

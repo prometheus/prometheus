@@ -1540,7 +1540,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				&mockQuerier{resp: []string{"b"}, warnings: nil, err: errStorage},
 			},
 			expectedLabels:   []string{},
-			expectedWarnings: annotations.New().Add(errStorage),
+			expectedWarnings: annotations.New().AddRaw(errStorage),
 		},
 		{
 			name:      "nil primary querier with two failed secondaries",
@@ -1550,7 +1550,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				&mockQuerier{resp: []string{"c"}, warnings: nil, err: errStorage},
 			},
 			expectedLabels:   []string{},
-			expectedWarnings: annotations.New().Add(errStorage),
+			expectedWarnings: annotations.New().AddRaw(errStorage),
 		},
 		{
 			name: "one successful primary querier with failed secondaries",
@@ -1565,30 +1565,30 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				labels.FromStrings("test", "a"),
 			},
 			expectedLabels:   []string{"a"},
-			expectedWarnings: annotations.New().Add(errStorage),
+			expectedWarnings: annotations.New().AddRaw(errStorage),
 		},
 		{
 			name: "successful queriers with warnings",
 			primaries: []Querier{
-				&mockQuerier{resp: []string{"a"}, warnings: annotations.New().Add(warnStorage), err: nil},
+				&mockQuerier{resp: []string{"a"}, warnings: annotations.New().AddRaw(warnStorage), err: nil},
 			},
 			secondaries: []Querier{
-				&mockQuerier{resp: []string{"b"}, warnings: annotations.New().Add(warnStorage), err: nil},
+				&mockQuerier{resp: []string{"b"}, warnings: annotations.New().AddRaw(warnStorage), err: nil},
 			},
 			expectedSelectsSeries: []labels.Labels{
 				labels.FromStrings("test", "a"),
 				labels.FromStrings("test", "b"),
 			},
 			expectedLabels:   []string{"a", "b"},
-			expectedWarnings: annotations.New().Add(warnStorage),
+			expectedWarnings: annotations.New().AddRaw(warnStorage),
 		},
 		{
 			name: "successful queriers with limit",
 			primaries: []Querier{
-				&mockQuerier{resp: []string{"a", "d"}, warnings: annotations.New().Add(warnStorage), err: nil},
+				&mockQuerier{resp: []string{"a", "d"}, warnings: annotations.New().AddRaw(warnStorage), err: nil},
 			},
 			secondaries: []Querier{
-				&mockQuerier{resp: []string{"b", "c"}, warnings: annotations.New().Add(warnStorage), err: nil},
+				&mockQuerier{resp: []string{"b", "c"}, warnings: annotations.New().AddRaw(warnStorage), err: nil},
 			},
 			limit: 2,
 			expectedSelectsSeries: []labels.Labels{
@@ -1596,7 +1596,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				labels.FromStrings("test", "b"),
 			},
 			expectedLabels:   []string{"a", "b"},
-			expectedWarnings: annotations.New().Add(warnStorage),
+			expectedWarnings: annotations.New().AddRaw(warnStorage),
 		},
 	} {
 		var labelHints *LabelHints

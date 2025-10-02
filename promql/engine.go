@@ -3801,7 +3801,7 @@ func handleVectorBinopError(err error, e *parser.BinaryExpr) annotations.Annotat
 	op := parser.ItemTypeStr[e.Op]
 	pos := e.PositionRange()
 	if errors.Is(err, annotations.PromQLInfo) || errors.Is(err, annotations.PromQLWarning) {
-		return annotations.New().Add(err)
+		return annotations.New().AddRaw(err)
 	}
 	// TODO(NeerajGartia21): Test the exact annotation output once the testing framework can do so.
 	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) || errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {

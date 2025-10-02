@@ -65,7 +65,7 @@ func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
 	var err error
 	var ws annotations.Annotations
 
-	warnings := annotations.New().Add(errors.New("custom warning"))
+	warnings := annotations.New().AddRaw(errors.New("custom warning"))
 	e := errWithWarnings{
 		err:      errors.New("custom error"),
 		warnings: warnings,
