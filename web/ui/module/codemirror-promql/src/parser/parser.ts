@@ -15,11 +15,14 @@ import { Diagnostic } from '@codemirror/lint';
 import { SyntaxNode, Tree } from '@lezer/common';
 import {
   AggregateExpr,
+  AnchoredExpr,
   And,
   BinaryExpr,
   BoolModifier,
   Bottomk,
+  Changes,
   CountValues,
+  Delta,
   Eql,
   EqlSingle,
   FunctionCall,
@@ -27,6 +30,7 @@ import {
   Gte,
   Gtr,
   Identifier,
+  Increase,
   LabelMatchers,
   LimitK,
   LimitRatio,
@@ -39,6 +43,9 @@ import {
   Quantile,
   QuotedLabelMatcher,
   QuotedLabelName,
+  Rate,
+  Resets,
+  SmoothedExpr,
   StepInvariantExpr,
   SubqueryExpr,
   Topk,
@@ -52,7 +59,7 @@ import { getType } from './type';
 import { buildLabelMatchers } from './matcher';
 import { EditorState } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
-import { getFunction, Matcher, VectorMatchCardinality, ValueType } from '../types';
+import { getFunction, Matcher, ValueType, VectorMatchCardinality } from '../types';
 import { buildVectorMatching } from './vector';
 
 export class Parser {
@@ -121,6 +128,14 @@ export class Parser {
         if (unaryExprType !== ValueType.scalar && unaryExprType !== ValueType.vector) {
           this.addDiagnostic(node, `unary expression only allowed on expressions of type scalar or instant vector, got ${unaryExprType}`);
         }
+        break;
+      }
+      case SmoothedExpr: {
+        this.checkAnchoredSmoothedExpr(node, [Rate, Increase, Delta]);
+        break;
+      }
+      case AnchoredExpr: {
+        this.checkAnchoredSmoothedExpr(node, [Resets, Changes, Rate, Increase, Delta]);
         break;
       }
       case SubqueryExpr: {
@@ -297,6 +312,31 @@ export class Parser {
         j = funcSignature.argTypes.length - 1;
       }
       this.expectType(args[i], funcSignature.argTypes[j], `call to function "${funcSignature.name}"`);
+    }
+  }
+
+  private checkAnchoredSmoothedExpr(node: SyntaxNode, allowedFunctions: number[]): void {
+    // A smoothed/anchored expression is supposed to work with range vectors or instant vectors.
+    // So first thing to do is to check the type of the child.
+    // Then, if this is used inside a function call, we need to check that the function is one of the given allowedFunctions.
+    const nodeType = getType(node);
+    if (nodeType !== ValueType.vector && nodeType !== ValueType.matrix) {
+      this.addDiagnostic(node, `smoothed/anchored expression only allowed on instant vector or range vector selector, got ${nodeType} instead`);
+      return;
+    }
+    const parent = node.parent?.parent;
+    if (!parent || parent.type.id !== FunctionCall) {
+      // Since the anchored/smoothed expression is not inside a function call, we cannot check the function name.
+      // This is an acceptable case as the anchored/smoothed expression can be used on any vector expression.
+      return;
+    }
+    const funcID = parent.firstChild?.firstChild;
+    if (!funcID) {
+      this.addDiagnostic(node, 'function not defined');
+      return;
+    }
+    if (!allowedFunctions.includes(funcID.type.id)) {
+      this.addDiagnostic(node, 'smoothed/anchored expression can only be used in specific functions');
     }
   }
 
