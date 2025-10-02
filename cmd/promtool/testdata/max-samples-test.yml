@@ -1,0 +1,25 @@
+rule_files:
+  - rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{job="prometheus", instance="localhost:9090"}'
+        values: '1+0x100'
+      - series: 'up{job="node", instance="localhost:9100"}'
+        values: '1+0x100'
+      - series: 'up{job="alertmanager", instance="localhost:9093"}'
+        values: '1+0x100'
+
+    promql_expr_test:
+      - expr: up
+        eval_time: 10m
+        exp_samples:
+          - labels: 'up{job="prometheus", instance="localhost:9090"}'
+            value: 1
+          - labels: 'up{job="node", instance="localhost:9100"}'
+            value: 1
+          - labels: 'up{job="alertmanager", instance="localhost:9093"}'
+            value: 1
