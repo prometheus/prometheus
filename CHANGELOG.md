@@ -9,6 +9,7 @@
 * [FEATURE] Remote-write: Add type and unit labels to outgoing time series in remote-write 2.0 when the `type-and-unit-labels` feature flag is enabled. #17033
 * [FEATURE] TSDB: Track stale series in memory based on stale samples. Exposed via `prometheus_tsdb_head_stale_series`. #16925
 * [FEATURE] OTLP: Write start time of metrics as created time zero samples into TSDB when `created-timestamp-zero-ingestion` feature flag is enabled. #16951
+* [FEATURE] UI: Add scrape interval and scrape timeout to targets page. #17158
 * [ENHANCEMENT] PromQL: Add warn-level annotations for counter reset conflicts in certain histogram operations. #17051 #17094
 * [ENHANCEMENT] PromQL: Test scripting language supports instant queries which return a string literal or a range vector result. #17055
 * [ENHANCEMENT] TSDB: Reduce the resolution of native histograms read from chunks or remote read if the schema is exponential. #17213
@@ -16,7 +17,6 @@
 * [ENHANCEMENT] Remote write: Add logging for unexpected metadata in sample batches, when metadata entries are found in samples-only remote write batches. #17082
 * [ENHANCEMENT] Remote-write: Add `prometheus_remote_storage_queue_highest_timestamp_seconds` metric. #17065
 * [ENHANCEMENT] Rules: Support concurrent evaluation for rules querying `ALERTS` and `ALERTS_FOR_STATE` too. #17064
-* [ENHANCEMENT] Scrape: This PR implements the expandable scrape configuration display requested in #17085. #17158
 * [ENHANCEMENT] TSDB: Log when GC / block write starts. #17074
 * [PERF] OTLP: Write directly to TSDB instead of passing through a Remote-Write adapter when receiving OTLP metrics. #16951
 * [PERF] PromQL: Further optimize querying count and sum from native histograms series. #17127 #17141
