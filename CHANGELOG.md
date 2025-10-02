@@ -1,9 +1,51 @@
 # Changelog
 
-## main / unreleased
+## 3.7.0-rc.0 / 2025-10-02
 
+* [FEATURE] Add support for experimental anchored and smoothed rate. #16457
+* [FEATURE] NHCB support in federation. #17215
+* [FEATURE] PromQL: Add `first_over_time(...)` and `ts_of_first_over_time(...)` behind feature flag `experimental-promql-functions #16963 #17021
+* [FEATURE] Remote-write: add support for Azure Workload Identity as an authentication method for the receiver. #16788
+* [FEATURE] Remote-write: Add type and unit labels to outgoing time series in remote-write 2.0 when the type and unit feature is enabled. #17033
+* [FEATURE] TSDB: Track stale series in the memory based on stale samples. Exposed via `prometheus_tsdb_head_stale_series`. #16925
+* [FEATURE] OTLP: write start time of metrics as created time zero samples into TSDB when created time injection is enabled. #16951
+* [ENHANCEMENT] Add warn-level annotations for counter reset conflicts in certain histogram operations. #17051 #17094
+* [ENHANCEMENT] PromQL: Test scripting language supports instant queries which return a string literal or a range vector result. #17055
+* [ENHANCEMENT] Reduce the resolution of native histograms read from chunks or remote read if the schema is exponential. #17213
+* [ENHANCEMENT] Remote-write: Add logging and metrics for unexpected metadata in samples batches. When metadata entries are found in samples-only remote-write batches. #17034
+* [ENHANCEMENT] Remote write: Add logging for unexpected metadata in samples batches. When metadata entries are found in samples-only remote write batches. #17082
+* [ENHANCEMENT] Remote-write: Add `prometheus_remote_storage_queue_highest_timestamp_seconds` metric. #17065
+* [ENHANCEMENT] Support concurrent evaluation for rules querying `ALERTS` and `ALERTS_FOR_STATE` too. #17064
+* [ENHANCEMENT] This PR implements the expandable scrape configuration display requested in #17085. #17158
+* [ENHANCEMENT] TSDB: Log when GC / block write starts. #17074
+* [PERF] OTLP: write directly to TSDB instead of converting to remote-write protocol first. #16951
+* [PERF] PromQL: further optimize querying count and sum from native histograms series. #17127 #17141
+* [PERF] PromQL: Move more work to preprocessing step. #16896
+* [PERF] PromQL: Reduce allocations when walking the syntax tree. #16593
+* [PERF] PromQL: Speed up PromQL to string conversion. #17067
+* [PERF] Reduce number of logs emitted from OTLP endpoint. No need to log duplicate sample errors. #17201
+* [PERF] TSDB: Optimize appender creation. #16922
+* [PERF] TSDP: Improve reverse index lookup performance. #13971
+* [BUGFIX] Alerting: Mutating alerts relabeling using `replace` actions. #17063
+* [BUGFIX] AWS SD: Replace end-of-life AWS SDK v1 with v2. #16950
 * [BUGFIX] Config: Infer valid escaping scheme when scrape config validation scheme is set. #16923
+* [BUGFIX] Correctly handle appending mixed-typed samples to the same series. #17071
+* [BUGFIX] Drop and log NHCB over Remote-Write 1.0. #17146
+* [BUGFIX] Fix metadata entries handling on `metadata-wal-records` feature for native histograms with custom buckets when scraped with `PrometheusProto` scrape protocol. #17156
+* [BUGFIX] Ignore native histograms with invalid schemas when loading the WAL/WBL and print log message. For high resolution exponential schemas. #17214
+* [BUGFIX] PromQL: Avoid empty metric names in annotations. #16794
+* [BUGFIX] PromQL: Fix character position computed for end of aggregate expression. #16996 #17031
 * [BUGFIX] PromQL: Fix info function on churning series. #17135
+* [BUGFIX] PromQL: Set native histogram to gauge type when subtracting or multiplying/dividing with negative factors. #17004
+* [BUGFIX] Reject unsupported native histogram schemas when attempting to append to TSDB. For scrape and remote-write implement reducing the resolution to fit the maximum if the schema is within the -9 to 52. #17189
+* [BUGFIX] Remote-write: Fix HTTP handler to return after writing error response for invalid compression. #17050
+* [BUGFIX] Remote-Write: return 400 instead of 5xx for wrongly formatted native histograms. #17210
+* [BUGFIX] Scrape: do not create new series in TSDB head by staleness markers. #16429
+* [BUGFIX] TSDB: Correctly adjust appended sample counts when converting float staleness markers to histograms. #17241
+* [BUGFIX] TSDB: Remove misleading `Failed to calculate size of ""wal"" dir` error logs during WAL clean-up. #17006
+* [BUGFIX] TSDB: Use timestamps to track deleted/duplicate series records and prevent erroneously dropping series records during WAL checkpoints. #17029
+* [BUGFIX] UI: fix redirect to path of web.externalUrl if web.routePrefix is configured. #17240
+* [BUGIFX] Remote-Write: Do not panic on invalid symbol table in remote-write 2.0. #17160
 
 ## 3.6.0 / 2025-09-17
 
