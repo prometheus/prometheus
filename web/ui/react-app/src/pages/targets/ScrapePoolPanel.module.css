@@ -23,21 +23,13 @@
 
 .cell {
   height: auto;
-  word-wrap: break-word;
-  word-break: break-all;
 }
 
-.endpoint, .labels {
-  composes: cell;
-  width: 25%;
+.endpoint, .state, .last-scrape {
+  white-space: nowrap;   
 }
 
-.state, .last-scrape {
-  composes: cell;
-  width: 10%;
-}
-
-.errors {
-  composes: cell;
-  width: 30%;
+.labels, .errors {
+  word-break: break-word;  
+  white-space: normal;
 }
