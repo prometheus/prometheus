@@ -419,6 +419,22 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedRespBody: "parsing labels for series [1 999]: labelRefs 1 (name) = 999 (value) outside of symbols table (size 18)\n",
 		},
 		{
+			desc: "Partial write; TimeSeries with only exemplars (no samples or histograms)",
+			input: append(
+				// Series with only exemplars, no samples or histograms.
+				[]writev2.TimeSeries{{
+					LabelsRefs: []uint32{1, 2},
+					Exemplars: []writev2.Exemplar{{
+						LabelsRefs: []uint32{},
+						Value:      1.0,
+						Timestamp:  1,
+					}},
+				}},
+				writeV2RequestFixture.Timeseries...),
+			expectedCode:     http.StatusBadRequest,
+			expectedRespBody: "TimeSeries must contain at least one sample or histogram for series {__name__=\"test_metric1\"}\n",
+		},
+		{
 			desc: "Partial write; first series with one OOO sample",
 			input: func() []writev2.TimeSeries {
 				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
