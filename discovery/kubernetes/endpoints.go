@@ -450,7 +450,7 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 	// by one of the service endpoints, generate targets for them.
 	for _, pe := range seenPods {
 		// PodIP can be empty when a pod is starting or has been evicted.
-		if len(pe.pod.Status.PodIP) == 0 {
+		if pe.pod.Status.PodIP == "" {
 			continue
 		}
 

@@ -63,9 +63,6 @@ linters:
         # TODO(beorn7): Maybe we should enforce this again? There are ~500 offenders right now.
         text: exported (.+) should have comment( \(or a comment on this block\))? or be unexported
       - linters:
-          - gocritic
-        text: "appendAssign"
-      - linters:
           - errcheck
         path: _test.go
       - linters:
@@ -112,6 +109,32 @@ linters:
         - (*net/http.Server).Shutdown
         # Never check for rollback errors as Rollback() is called when a previous error was detected.
         - (github.com/prometheus/prometheus/storage.Appender).Rollback
+    gocritic:
+      enable-all: true
+      disabled-checks:
+        - appendAssign
+        - badLock
+        - commentedOutCode
+        - deferInLoop
+        - evalOrder
+        - exposedSyncMutex
+        - hugeParam
+        - importShadow
+        - nestingReduce
+        - ptrToRefParam
+        - rangeValCopy
+        - regexpSimplify
+        - returnAfterHttpError
+        - sloppyReassign
+        - todoCommentWithoutDetail
+        - tooManyResultsChecker
+        - truncateCmp
+        - typeDefFirst
+        - unlabelStmt
+        - unnamedResult
+        - unnecessaryBlock
+        - unnecessaryDefer
+        - whyNoLint
     govet:
       disable:
         - shadow

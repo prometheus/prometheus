@@ -517,7 +517,7 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 	}
 
 	name := targetMetricName
-	if len(settings.Namespace) > 0 {
+	if settings.Namespace != "" {
 		name = settings.Namespace + "_" + name
 	}
 

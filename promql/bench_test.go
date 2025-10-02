@@ -41,16 +41,20 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, in
 	// representing the number of series each metric name contains.
 	// Metric a_X and b_X are simple metrics where h_X is a histogram.
 	// These metrics will have data for all test time range
-	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
-	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
+	metrics = append(metrics,
+		labels.FromStrings("__name__", "a_one"),
+		labels.FromStrings("__name__", "b_one"),
+	)
 	for j := range 10 {
 		metrics = append(metrics, labels.FromStrings("__name__", "h_one", "le", strconv.Itoa(j)))
 	}
 	metrics = append(metrics, labels.FromStrings("__name__", "h_one", "le", "+Inf"))
 
 	for i := range 10 {
-		metrics = append(metrics, labels.FromStrings("__name__", "a_ten", "l", strconv.Itoa(i)))
-		metrics = append(metrics, labels.FromStrings("__name__", "b_ten", "l", strconv.Itoa(i)))
+		metrics = append(metrics,
+			labels.FromStrings("__name__", "a_ten", "l", strconv.Itoa(i)),
+			labels.FromStrings("__name__", "b_ten", "l", strconv.Itoa(i)),
+		)
 		for j := range 10 {
 			metrics = append(metrics, labels.FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
 		}
@@ -58,8 +62,10 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, in
 	}
 
 	for i := range 100 {
-		metrics = append(metrics, labels.FromStrings("__name__", "a_hundred", "l", strconv.Itoa(i)))
-		metrics = append(metrics, labels.FromStrings("__name__", "b_hundred", "l", strconv.Itoa(i)))
+		metrics = append(metrics,
+			labels.FromStrings("__name__", "a_hundred", "l", strconv.Itoa(i)),
+			labels.FromStrings("__name__", "b_hundred", "l", strconv.Itoa(i)),
+		)
 		for j := range 10 {
 			metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
 		}
@@ -258,8 +264,10 @@ func rangeQueryCases() []benchCase {
 		if !strings.Contains(c.expr, "X") {
 			tmp = append(tmp, c)
 		} else {
-			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "one"), steps: c.steps})
-			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "hundred"), steps: c.steps})
+			tmp = append(tmp,
+				benchCase{expr: strings.ReplaceAll(c.expr, "X", "one"), steps: c.steps},
+				benchCase{expr: strings.ReplaceAll(c.expr, "X", "hundred"), steps: c.steps},
+			)
 		}
 	}
 	cases = tmp
@@ -270,8 +278,10 @@ func rangeQueryCases() []benchCase {
 		if c.steps != 0 {
 			tmp = append(tmp, c)
 		} else {
-			tmp = append(tmp, benchCase{expr: c.expr, steps: 1})
-			tmp = append(tmp, benchCase{expr: c.expr, steps: 1000})
+			tmp = append(tmp,
+				benchCase{expr: c.expr, steps: 1},
+				benchCase{expr: c.expr, steps: 1000},
+			)
 		}
 	}
 	return tmp
