@@ -108,11 +108,7 @@ var (
 // Return false to fall back to default status code.
 type OverrideErrorCode func(errorNum, error) (code int, override bool)
 
-var (
-	LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
-
-	errResultsTruncatedLimit = errors.New("results truncated due to limit")
-)
+var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
 
 type apiError struct {
 	typ errorType
@@ -807,7 +803,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 
 	if limit > 0 && len(names) > limit {
 		names = names[:limit]
-		warnings = warnings.AddRaw(errResultsTruncatedLimit)
+		warnings = warnings.Add(errors.New("results truncated due to limit"))
 	}
 	return apiFuncResult{names, nil, warnings, nil}
 }
@@ -904,7 +900,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	if limit > 0 && len(vals) > limit {
 		vals = vals[:limit]
-		warnings = warnings.AddRaw(errResultsTruncatedLimit)
+		warnings = warnings.Add(errors.New("results truncated due to limit"))
 	}
 
 	return apiFuncResult{vals, nil, warnings, closer}
@@ -1016,7 +1012,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 
 		if limit > 0 && len(metrics) > limit {
 			metrics = metrics[:limit]
-			warnings.AddRaw(errResultsTruncatedLimit)
+			warnings.Add(errors.New("results truncated due to limit"))
 			return apiFuncResult{metrics, nil, warnings, closer}
 		}
 	}
