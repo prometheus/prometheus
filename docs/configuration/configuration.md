@@ -3152,8 +3152,14 @@ with this feature.
 # to the timestamp of the last appended sample for the same series.
 [ out_of_order_time_window: <duration> | default = 0s ]
 
+```
+
+### `<retention>`
+
+```yaml
+
 # Configures data retention settings for TSDB.
-retention:
+[ retention: <retention> ] :
   # How long to retain samples in storage. If neither this option nor the size option
   # is set, the retention time defaults to 15d. Units Supported: y, w, d, h, m, s, ms.
   # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.time.
@@ -3164,6 +3170,7 @@ retention:
   # If set to 0 or not set, size-based retention is disabled.
   # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.size.
   [ size: <size> | default = 0 ]
+
 ```
 
 ### `<exemplars>`
