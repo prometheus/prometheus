@@ -346,9 +346,6 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
 		return nil, false, ErrHistogramsIncompatibleSchema
 	}
-	if h.UsesCustomBuckets() && !FloatBucketsMatch(h.CustomValues, other.CustomValues) {
-		return nil, false, ErrHistogramsIncompatibleBounds
-	}
 
 	switch {
 	case other.CounterResetHint == h.CounterResetHint:
@@ -389,7 +386,19 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 	)
 
 	if h.UsesCustomBuckets() {
-		h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
+		if FloatBucketsMatch(h.CustomValues, other.CustomValues) {
+			h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
+		} else {
+			intersectedBounds := intersectCustomBucketBounds(h.CustomValues, other.CustomValues)
+
+			// Add with mapping - maps both histograms to intersected layout.
+			h.PositiveSpans, h.PositiveBuckets = addCustomBucketsWithMismatches(
+				false,
+				hPositiveSpans, hPositiveBuckets, h.CustomValues,
+				otherPositiveSpans, otherPositiveBuckets, other.CustomValues,
+				intersectedBounds)
+			h.CustomValues = intersectedBounds
+		}
 		return h, counterResetCollision, nil
 	}
 
@@ -422,10 +431,6 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
 		return nil, false, ErrHistogramsIncompatibleSchema
 	}
-	if h.UsesCustomBuckets() && !FloatBucketsMatch(h.CustomValues, other.CustomValues) {
-		return nil, false, ErrHistogramsIncompatibleBounds
-	}
-
 	counterResetCollision = hasCounterResetCollision(h, other)
 
 	h.CounterResetHint = GaugeType
@@ -445,7 +450,19 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 	)
 
 	if h.UsesCustomBuckets() {
-		h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
+		if FloatBucketsMatch(h.CustomValues, other.CustomValues) {
+			h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
+		} else {
+			intersectedBounds := intersectCustomBucketBounds(h.CustomValues, other.CustomValues)
+
+			// Subtract with mapping - maps both histograms to intersected layout.
+			h.PositiveSpans, h.PositiveBuckets = addCustomBucketsWithMismatches(
+				true,
+				hPositiveSpans, hPositiveBuckets, h.CustomValues,
+				otherPositiveSpans, otherPositiveBuckets, other.CustomValues,
+				intersectedBounds)
+			h.CustomValues = intersectedBounds
+		}
 		return h, counterResetCollision, nil
 	}
 
@@ -1344,6 +1361,119 @@ func addBuckets(
 	}
 
 	return spansA, bucketsA
+}
+
+// intersectCustomBucketBounds returns the intersection of two custom bucket boundary sets.
+func intersectCustomBucketBounds(boundsA, boundsB []float64) []float64 {
+	if len(boundsA) == 0 || len(boundsB) == 0 {
+		return nil
+	}
+
+	// Allocate a new slice because FloatHistogram.CustomValues has to be immutable.
+	result := make([]float64, 0, min(len(boundsA), len(boundsB)))
+	i, j := 0, 0
+
+	for i < len(boundsA) && j < len(boundsB) {
+		switch {
+		case math.Float64bits(boundsA[i]) == math.Float64bits(boundsB[j]):
+			result = append(result, boundsA[i])
+			i++
+			j++
+		case boundsA[i] < boundsB[j]:
+			i++
+		default:
+			j++
+		}
+	}
+
+	return result
+}
+
+// addCustomBucketsWithMismatches handles adding/subtracting custom bucket histograms
+// with mismatched bucket layouts by mapping both to an intersected layout.
+func addCustomBucketsWithMismatches(
+	negative bool,
+	spansA []Span, bucketsA, boundsA []float64,
+	spansB []Span, bucketsB, boundsB []float64,
+	intersectedBounds []float64,
+) ([]Span, []float64) {
+	targetBuckets := make([]float64, len(intersectedBounds)+1)
+
+	mapBuckets := func(spans []Span, buckets, bounds []float64, subtract bool) {
+		srcIdx := 0
+		bucketIdx := 0
+		intersectIdx := 0
+
+		for _, span := range spans {
+			srcIdx += int(span.Offset)
+			for range span.Length {
+				if bucketIdx < len(buckets) {
+					value := buckets[bucketIdx]
+
+					// Find target bucket index.
+					targetIdx := len(targetBuckets) - 1 // Default to +Inf bucket.
+					if srcIdx < len(bounds) {
+						srcBound := bounds[srcIdx]
+						// Since both arrays are sorted, we can continue from where we left off.
+						for intersectIdx < len(intersectedBounds) {
+							if math.Float64bits(intersectedBounds[intersectIdx]) == math.Float64bits(srcBound) ||
+								intersectedBounds[intersectIdx] > srcBound {
+								targetIdx = intersectIdx
+								break
+							}
+							intersectIdx++
+						}
+					}
+
+					if subtract {
+						targetBuckets[targetIdx] -= value
+					} else {
+						targetBuckets[targetIdx] += value
+					}
+				}
+				srcIdx++
+				bucketIdx++
+			}
+		}
+	}
+
+	// Map both histograms to the intersected layout.
+	mapBuckets(spansA, bucketsA, boundsA, false)
+	mapBuckets(spansB, bucketsB, boundsB, negative)
+
+	// Build spans and buckets, excluding zero-valued buckets from the final result.
+	destSpans := spansA[:0]          // Reuse spansA capacity for destSpans since we don't need it anymore.
+	destBuckets := targetBuckets[:0] // Reuse targetBuckets capacity for destBuckets since it's guaranteed to be large enough.
+	lastIdx := int32(-1)
+
+	for i, count := range targetBuckets {
+		if count == 0 {
+			continue
+		}
+
+		destBuckets = append(destBuckets, count)
+		idx := int32(i)
+
+		if len(destSpans) > 0 && idx == lastIdx+1 {
+			// Consecutive bucket, extend the last span.
+			destSpans[len(destSpans)-1].Length++
+		} else {
+			// New span needed.
+			offset := idx
+			if len(destSpans) > 0 {
+				// Convert to relative offset from the end of the last span.
+				prevEnd := lastIdx
+				offset = idx - prevEnd - 1
+			}
+			destSpans = append(destSpans, Span{
+				Offset: offset,
+				Length: 1,
+			})
+		}
+		lastIdx = idx
+	}
+
+	return destSpans, destBuckets
 }
 
 func FloatBucketsMatch(b1, b2 []float64) bool {
