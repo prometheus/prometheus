@@ -123,7 +123,7 @@ func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
 
 		cli := &http.Client{Transport: rt}
 
-		req, err := http.NewRequest(http.MethodPost, "https://example.com", strings.NewReader("Hello, world!"))
+		req, err := http.NewRequestWithContext(ad.T().Context(), http.MethodPost, "https://example.com", strings.NewReader("Hello, world!"))
 		ad.Require().NoError(err)
 
 		_, err = cli.Do(req)

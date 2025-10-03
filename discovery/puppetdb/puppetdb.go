@@ -191,7 +191,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, d.url, bytes.NewBuffer(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.url, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := d.client.Do(req.WithContext(ctx))
+	resp, err := d.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
