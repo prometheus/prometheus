@@ -39,7 +39,6 @@ var (
 	ErrHistogramCustomBucketsInvalid    = errors.New("histogram custom bounds must be in strictly increasing order")
 	ErrHistogramCustomBucketsInfinite   = errors.New("histogram custom bounds must be finite")
 	ErrHistogramsIncompatibleSchema     = errors.New("cannot apply this operation on histograms with a mix of exponential and custom bucket schemas")
-	ErrHistogramsIncompatibleBounds     = errors.New("cannot apply this operation on custom buckets histograms with different custom bounds")
 	ErrHistogramCustomBucketsZeroCount  = errors.New("custom buckets: must have zero count of 0")
 	ErrHistogramCustomBucketsZeroThresh = errors.New("custom buckets: must have zero threshold of 0")
 	ErrHistogramCustomBucketsNegSpans   = errors.New("custom buckets: must not have negative spans")

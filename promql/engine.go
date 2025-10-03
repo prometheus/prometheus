@@ -3155,7 +3155,7 @@ type groupedAggregation struct {
 	seen                   bool // Was this output groups seen in the input at this timestamp.
 	hasFloat               bool // Has at least 1 float64 sample aggregated.
 	hasHistogram           bool // Has at least 1 histogram sample aggregated.
-	incompatibleHistograms bool // If true, group has seen mixed exponential and custom buckets, or incompatible custom buckets.
+	incompatibleHistograms bool // If true, group has seen mixed exponential and custom buckets.
 	groupAggrComplete      bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group.
 	incrementalMean        bool // True after reverting to incremental calculation of the mean value.
 }
@@ -3788,8 +3788,6 @@ func handleAggregationError(err error, e *parser.AggregateExpr, metricName strin
 	pos := e.Expr.PositionRange()
 	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 		annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
-	} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-		annos.Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, pos))
 	}
 }
 
@@ -3804,7 +3802,7 @@ func handleVectorBinopError(err error, e *parser.BinaryExpr) annotations.Annotat
 		return annotations.New().Add(err)
 	}
 	// TODO(NeerajGartia21): Test the exact annotation output once the testing framework can do so.
-	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) || errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 		return annotations.New().Add(annotations.NewIncompatibleBucketLayoutInBinOpWarning(op, pos))
 	}
 	return nil
