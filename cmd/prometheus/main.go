@@ -1904,6 +1904,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
 		UseUncachedIO:                  opts.UseUncachedIO,
+		StartupMinRetentionTime:        time.Now().Add(-time.Duration(opts.RetentionDuration)).UnixMilli(),
 	}
 }
 

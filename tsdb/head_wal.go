@@ -290,6 +290,11 @@ Outer:
 					if sam.T < minValidTime {
 						continue // Before minValidTime: discard.
 					}
+
+					if h.opts.StartupMinRetentionTime > 0 && sam.T < h.opts.StartupMinRetentionTime {
+						continue // Before startup min retention time: discard.
+					}
+
 					if r, ok := multiRef[sam.Ref]; ok {
 						// This is a sample for a duplicate series, so we need to keep the series record at least until this record's timestamp.
 						h.updateWALExpiry(sam.Ref, sam.T)
@@ -358,6 +363,11 @@ Outer:
 					if sam.T < minValidTime {
 						continue // Before minValidTime: discard.
 					}
+
+					if h.opts.StartupMinRetentionTime > 0 && sam.T < h.opts.StartupMinRetentionTime {
+						continue // Before startup min retention time: discard.
+					}
+
 					if r, ok := multiRef[sam.Ref]; ok {
 						// This is a histogram sample for a duplicate series, so we need to keep the series record at least until this record's timestamp.
 						h.updateWALExpiry(sam.Ref, sam.T)
@@ -398,6 +408,11 @@ Outer:
 						h.updateWALExpiry(sam.Ref, sam.T)
 						sam.Ref = r
 					}
+
+					if h.opts.StartupMinRetentionTime > 0 && sam.T < h.opts.StartupMinRetentionTime {
+						continue // Before startup min retention time: discard.
+					}
+
 					mod := uint64(sam.Ref) % uint64(concurrency)
 					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, fh: sam.FH})
 				}
