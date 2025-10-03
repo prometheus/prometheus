@@ -322,6 +322,31 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 	return rs, err
 }
 
+// WriteProto sends a protobuf message to the remote write endpoint.
+// This method handles marshaling and compression, then delegates to Store.
+// It accepts prompb.WriteRequest or any type that implements proto.Message.
+func (c *Client) WriteProto(ctx context.Context, msg any) (WriteResponseStats, error) {
+	// Marshal the protobuf message
+	protoMsg, ok := msg.(proto.Message)
+	if !ok {
+		return WriteResponseStats{}, fmt.Errorf("message must implement proto.Message")
+	}
+
+	raw, err := proto.Marshal(protoMsg)
+	if err != nil {
+		return WriteResponseStats{}, fmt.Errorf("failed to marshal proto message: %w", err)
+	}
+
+	// Compress the marshaled data
+	compressed, err := compression.Encode(compression.Snappy, raw, nil)
+	if err != nil {
+		return WriteResponseStats{}, fmt.Errorf("failed to compress data: %w", err)
+	}
+
+	// Use the existing Store method to send the data
+	return c.Store(ctx, compressed, 0)
+}
+
 // retryAfterDuration returns the duration for the Retry-After header. In case of any errors, it
 // returns the defaultBackoff as if the header was never supplied.
 func retryAfterDuration(t string) model.Duration {
