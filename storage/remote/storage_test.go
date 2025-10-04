@@ -130,10 +130,12 @@ func TestIgnoreExternalLabels(t *testing.T) {
 // to avoid change global state and cross impact test execution.
 func baseRemoteWriteConfig(host string) *config.RemoteWriteConfig {
 	cfg := config.DefaultRemoteWriteConfig
+	u, err := url.Parse(host)
+	if err != nil {
+		panic(err)
+	}
 	cfg.URL = &common_config.URL{
-		URL: &url.URL{
-			Host: host,
-		},
+		URL: u,
 	}
 	return &cfg
 }
@@ -142,10 +144,12 @@ func baseRemoteWriteConfig(host string) *config.RemoteWriteConfig {
 // to avoid change global state and cross impact test execution.
 func baseRemoteReadConfig(host string) *config.RemoteReadConfig {
 	cfg := config.DefaultRemoteReadConfig
+	u, err := url.Parse(host)
+	if err != nil {
+		panic(err)
+	}
 	cfg.URL = &common_config.URL{
-		URL: &url.URL{
-			Host: host,
-		},
+		URL: u,
 	}
 	return &cfg
 }
