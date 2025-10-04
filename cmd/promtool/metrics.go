@@ -100,8 +100,6 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 	return successExitCode
 }
 
-// parseAndPushMetrics parses metric data and pushes it to remote write.
-// It uses the WriteProto method which handles marshaling and compression.
 func parseAndPushMetrics(client *remote.Client, data []byte, labels map[string]string) bool {
 	metricsData, err := fmtutil.MetricTextToWriteRequest(bytes.NewReader(data), labels)
 	if err != nil {
