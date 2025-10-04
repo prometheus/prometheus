@@ -110,16 +110,10 @@ func parseAndPushMetrics(client *remote.Client, data []byte, labels map[string]s
 	}
 
 	// Use WriteProto which handles marshaling and compression internally.
-	stats, err := client.WriteProto(context.Background(), metricsData)
+	_, err = client.WriteProto(context.Background(), metricsData)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return false
-	}
-
-	// Log statistics if available
-	if stats.Confirmed && !stats.NoDataWritten() {
-		fmt.Printf("  Remote write acknowledged: %d samples, %d histograms, %d exemplars\n",
-			stats.Samples, stats.Histograms, stats.Exemplars)
 	}
 
 	return true

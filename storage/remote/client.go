@@ -28,6 +28,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -123,6 +124,7 @@ type Client struct {
 
 	writeProtoMsg    config.RemoteWriteProtoMsg
 	writeCompression compression.Type // Not exposed by ClientConfig for now.
+	writeAPI         *remoteapi.API
 }
 
 // ClientConfig configures a client.
@@ -226,6 +228,13 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 		otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
 			return otelhttptrace.NewClientTrace(ctx, otelhttptrace.WithoutSubSpans())
 		}))
+
+	// Initialize the client_golang remote write API
+	writeAPI, err := remoteapi.NewAPI(conf.URL.String(), remoteapi.WithAPIHTTPClient(httpClient))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create remote write API: %w", err)
+	}
+
 	return &Client{
 		remoteName:       name,
 		urlString:        conf.URL.String(),
@@ -234,6 +243,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 		timeout:          time.Duration(conf.Timeout),
 		writeProtoMsg:    writeProtoMsg,
 		writeCompression: compression.Snappy,
+		writeAPI:         writeAPI,
 	}, nil
 }
 
@@ -323,28 +333,26 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 }
 
 // WriteProto sends a protobuf message to the remote write endpoint.
-// This method handles marshaling and compression, then delegates to Store.
-// It accepts prompb.WriteRequest or any type that implements proto.Message.
 func (c *Client) WriteProto(ctx context.Context, msg any) (WriteResponseStats, error) {
-	// Marshal the protobuf message
-	protoMsg, ok := msg.(proto.Message)
-	if !ok {
-		return WriteResponseStats{}, fmt.Errorf("message must implement proto.Message")
+	var msgType remoteapi.WriteMessageType
+	if c.writeProtoMsg == config.RemoteWriteProtoMsgV2 {
+		msgType = remoteapi.WriteV2MessageType
+	} else {
+		msgType = remoteapi.WriteV1MessageType
 	}
 
-	raw, err := proto.Marshal(protoMsg)
+	// Use the client_golang remote API to send the message
+	stats, err := c.writeAPI.Write(ctx, msgType, msg)
 	if err != nil {
-		return WriteResponseStats{}, fmt.Errorf("failed to marshal proto message: %w", err)
+		return WriteResponseStats{}, err
 	}
 
-	// Compress the marshaled data
-	compressed, err := compression.Encode(compression.Snappy, raw, nil)
-	if err != nil {
-		return WriteResponseStats{}, fmt.Errorf("failed to compress data: %w", err)
-	}
-
-	// Use the existing Store method to send the data
-	return c.Store(ctx, compressed, 0)
+	// Convert client_golang WriteResponseStats to our WriteResponseStats
+	return WriteResponseStats{
+		Samples:    stats.Samples,
+		Histograms: stats.Histograms,
+		Exemplars:  stats.Exemplars,
+	}, nil
 }
 
 // retryAfterDuration returns the duration for the Retry-After header. In case of any errors, it
