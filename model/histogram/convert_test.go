@@ -15,6 +15,7 @@ package histogram
 
 import (
 	"errors"
+	"log"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -164,6 +165,24 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 				sum:   20,
 			},
 		},
+		{
+			name: "Duplicate le label",
+			nhcb: &Histogram{
+				CustomValues:    []float64{1},
+				PositiveBuckets: []int64{10},
+				Count:           10,
+				Sum:             20.0,
+			},
+			labels: labels.FromStrings("__name__", "test_metric", "le", "1.5"),
+			expected: ExpectedClassicHistogram{
+				buckets: []ExpectedBucket{
+					{le: "1", val: 10},
+					{le: "+Inf", val: 10},
+				},
+				count: 10,
+				sum:   20,
+			},
+		},
 	}
 
 	labelBuilder := labels.NewBuilder(labels.EmptyLabels())
@@ -171,15 +190,17 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var got ExpectedClassicHistogram
 			err := ConvertNHCBToClassicHistogram(tt.nhcb, tt.labels, labelBuilder, func(lbls labels.Labels, val float64) error {
+				log.Println(tt.labels)
+				log.Println("----", lbls)
 				switch lbls.Get("__name__") {
-				case tt.labels.Get("__name__") + "_bucket":
+				case tt.labels.Get("__name__") + ConvertedLabelSuffix + "_bucket":
 					got.buckets = append(got.buckets, ExpectedBucket{
 						le:  lbls.Get("le"),
 						val: val,
 					})
-				case tt.labels.Get("__name__") + "_count":
+				case tt.labels.Get("__name__") + ConvertedLabelSuffix + "_count":
 					got.count = val
-				case tt.labels.Get("__name__") + "_sum":
+				case tt.labels.Get("__name__") + ConvertedLabelSuffix + "_sum":
 					got.sum = val
 				default:
 					return errors.New("unexpected metric name")
@@ -188,6 +209,8 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 			})
 			require.Equal(t, tt.expectErr, err != nil, "unexpected error: %v", err)
 			if !tt.expectErr {
+				log.Println(got)
+
 				require.Len(t, got.buckets, len(tt.expected.buckets))
 				for i, expBucket := range tt.expected.buckets {
 					require.Equal(t, expBucket, got.buckets[i])
