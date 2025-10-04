@@ -61,7 +61,7 @@ test_metric{label="value2"} 43.0
 test_counter 100
 `,
 			expectedStatus: successExitCode,
-			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+			serverHandler: func(w http.ResponseWriter, _ *http.Request) {
 				// Set v2 response headers with statistics
 				w.Header().Set("X-Prometheus-Remote-Write-Samples-Written", "1")
 				w.Header().Set("X-Prometheus-Remote-Write-Histograms-Written", "0")
@@ -147,7 +147,7 @@ http_requests_total{method="POST",code="200"} 3
 	require.True(t, requestReceived, "Server should have received the request")
 }
 
-// Helper function to write files
+// Helper function to write files.
 func writeFile(path, content string) error {
-	return os.WriteFile(path, []byte(content), 0644)
+	return os.WriteFile(path, []byte(content), 0o644)
 }
