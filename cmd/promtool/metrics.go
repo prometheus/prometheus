@@ -27,7 +27,6 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/fmtutil"
 )
 
@@ -101,7 +100,6 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 	return successExitCode
 }
 
-// TODO(bwplotka): Add PRW 2.0 support.
 func parseAndPushMetrics(client *remote.Client, data []byte, labels map[string]string) bool {
 	metricsData, err := fmtutil.MetricTextToWriteRequest(bytes.NewReader(data), labels)
 	if err != nil {
@@ -109,20 +107,8 @@ func parseAndPushMetrics(client *remote.Client, data []byte, labels map[string]s
 		return false
 	}
 
-	raw, err := metricsData.Marshal()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "  FAILED:", err)
-		return false
-	}
-
-	// Encode the request body into snappy encoding.
-	compressed, err := compression.Encode(compression.Snappy, raw, nil)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "  FAILED:", err)
-		return false
-	}
-
-	_, err = client.Store(context.Background(), compressed, 0)
+	// Use WriteProto which handles marshaling and compression internally.
+	_, err = client.WriteProto(context.Background(), metricsData)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return false
