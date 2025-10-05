@@ -858,15 +858,18 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 	}
 	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme)
 	if errs != nil {
-		failed = true
-		fmt.Fprintln(os.Stderr, "  FAILED:")
 		for _, e := range errs {
-			fmt.Fprintln(os.Stderr, e.Error())
-			hasErrors = hasErrors || !errors.Is(e, errLint)
-		}
-		if hasErrors {
-			return failed, hasErrors
-		}
+            if errors.Is(e, rulefmt.ErrMultiDocWarning) {
+                fmt.Fprintln(os.Stderr, "  WARNING:", e.Error())
+                continue
+            }
+            failed = true
+            fmt.Fprintln(os.Stderr, "  FAILED:", e.Error())
+            hasErrors = hasErrors || !errors.Is(e, errLint)
+        }
+        if hasErrors {
+            return failed, hasErrors
+        }
 	}
 	if n, errs := checkRuleGroups(rgs, ls); errs != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -892,12 +895,15 @@ func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 		fmt.Println("Checking", f)
 		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme)
 		if errs != nil {
-			failed = true
-			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
-				fmt.Fprintln(os.Stderr, e.Error())
-				hasErrors = hasErrors || !errors.Is(e, errLint)
-			}
+                if errors.Is(e, rulefmt.ErrMultiDocWarning) {
+                    fmt.Fprintln(os.Stderr, "  WARNING:", e.Error())
+                    continue
+                }
+                failed = true
+                fmt.Fprintln(os.Stderr, "  FAILED:", e.Error())
+                hasErrors = hasErrors || !errors.Is(e, errLint)
+            }
 			if hasErrors {
 				continue
 			}

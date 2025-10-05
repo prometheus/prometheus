@@ -33,6 +33,10 @@ import (
 	"github.com/prometheus/prometheus/util/namevalidationutil"
 )
 
+var (
+    ErrMultiDocWarning = fmt.Errorf("multiple YAML documents detected in rules file; only the first will be used")
+)
+
 // Error represents semantic errors on parsing rule groups.
 type Error struct {
 	Group    string
@@ -355,6 +359,26 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 	if err != nil && !errors.Is(err, io.EOF) {
 		errs = append(errs, err)
 	}
+
+	// Check for extra documents
+	count := 0
+	for {
+		var extra interface{}
+		err := decoder.Decode(&extra)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			errs = append(errs, err)
+			break
+		}
+		count++
+	}
+	if count > 0 {
+		errs = append(errs, ErrMultiDocWarning)
+		return &groups, errs
+	}
+
 	err = yaml.Unmarshal(content, &node)
 	if err != nil {
 		errs = append(errs, err)
