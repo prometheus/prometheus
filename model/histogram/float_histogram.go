@@ -346,7 +346,7 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
 		return nil, false, ErrHistogramsIncompatibleSchema
 	}
-	if h.UsesCustomBuckets() && !FloatBucketsMatch(h.CustomValues, other.CustomValues) {
+	if h.UsesCustomBuckets() && !CustomBucketBoundsMatch(h.CustomValues, other.CustomValues) {
 		return nil, false, ErrHistogramsIncompatibleBounds
 	}
 
@@ -422,7 +422,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
 		return nil, false, ErrHistogramsIncompatibleSchema
 	}
-	if h.UsesCustomBuckets() && !FloatBucketsMatch(h.CustomValues, other.CustomValues) {
+	if h.UsesCustomBuckets() && !CustomBucketBoundsMatch(h.CustomValues, other.CustomValues) {
 		return nil, false, ErrHistogramsIncompatibleBounds
 	}
 
@@ -500,7 +500,7 @@ func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 	}
 
 	if h.UsesCustomBuckets() {
-		if !FloatBucketsMatch(h.CustomValues, h2.CustomValues) {
+		if !CustomBucketBoundsMatch(h.CustomValues, h2.CustomValues) {
 			return false
 		}
 	}
@@ -513,14 +513,14 @@ func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 	if !spansMatch(h.NegativeSpans, h2.NegativeSpans) {
 		return false
 	}
-	if !FloatBucketsMatch(h.NegativeBuckets, h2.NegativeBuckets) {
+	if !floatBucketsMatch(h.NegativeBuckets, h2.NegativeBuckets) {
 		return false
 	}
 
 	if !spansMatch(h.PositiveSpans, h2.PositiveSpans) {
 		return false
 	}
-	if !FloatBucketsMatch(h.PositiveBuckets, h2.PositiveBuckets) {
+	if !floatBucketsMatch(h.PositiveBuckets, h2.PositiveBuckets) {
 		return false
 	}
 
@@ -639,7 +639,7 @@ func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
 	if h.Count < previous.Count {
 		return true
 	}
-	if h.UsesCustomBuckets() != previous.UsesCustomBuckets() || (h.UsesCustomBuckets() && !FloatBucketsMatch(h.CustomValues, previous.CustomValues)) {
+	if h.UsesCustomBuckets() != previous.UsesCustomBuckets() || (h.UsesCustomBuckets() && !CustomBucketBoundsMatch(h.CustomValues, previous.CustomValues)) {
 		// Mark that something has changed or that the application has been restarted. However, this does
 		// not matter so much since the change in schema will be handled directly in the chunks and PromQL
 		// functions.
@@ -1352,7 +1352,9 @@ func addBuckets(
 	return spansA, bucketsA
 }
 
-func FloatBucketsMatch(b1, b2 []float64) bool {
+// floatBucketsMatch compares bucket values of two float histograms using binary float comparison
+// and returns true if all values match.
+func floatBucketsMatch(b1, b2 []float64) bool {
 	if len(b1) != len(b2) {
 		return false
 	}

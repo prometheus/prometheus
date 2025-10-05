@@ -258,7 +258,7 @@ func (a *FloatHistogramAppender) appendable(h *histogram.FloatHistogram) (
 		return
 	}
 
-	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.FloatBucketsMatch(h.CustomValues, a.customValues) {
+	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.CustomBucketBoundsMatch(h.CustomValues, a.customValues) {
 		counterReset = true
 		return
 	}
@@ -495,7 +495,7 @@ func (a *FloatHistogramAppender) appendableGauge(h *histogram.FloatHistogram) (
 		return
 	}
 
-	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.FloatBucketsMatch(h.CustomValues, a.customValues) {
+	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.CustomBucketBoundsMatch(h.CustomValues, a.customValues) {
 		return
 	}
 

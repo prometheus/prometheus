@@ -79,6 +79,20 @@ func IsKnownSchema(s int32) bool {
 	return IsCustomBucketsSchema(s) || IsExponentialSchemaReserved(s)
 }
 
+// CustomBucketBoundsMatch compares histogram custom bucket bounds (CustomValues)
+// and returns true if all values match.
+func CustomBucketBoundsMatch(c1, c2 []float64) bool {
+	if len(c1) != len(c2) {
+		return false
+	}
+	for i, c := range c1 {
+		if c != c2[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // BucketCount is a type constraint for the count in a bucket, which can be
 // float64 (for type FloatHistogram) or uint64 (for type Histogram).
 type BucketCount interface {
