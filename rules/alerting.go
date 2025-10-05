@@ -536,10 +536,8 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 // State returns the maximum state of alert instances for this rule.
 // StateFiring > StatePending > StateInactive > StateUnknown.
 func (r *AlertingRule) State() AlertState {
-
 	r.activeMtx.Lock()
 	defer r.activeMtx.Unlock()
-	
 	// Check if the rule has been evaluated
 	if r.evaluationTimestamp.Load().IsZero() {
 		return StateUnknown
