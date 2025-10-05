@@ -33,9 +33,7 @@ import (
 	"github.com/prometheus/prometheus/util/namevalidationutil"
 )
 
-var (
-    ErrMultiDocWarning = fmt.Errorf("multiple YAML documents detected in rules file; only the first will be used")
-)
+var ErrMultiDocWarning = errors.New("multiple YAML documents detected in rules file; only the first will be used")
 
 // Error represents semantic errors on parsing rule groups.
 type Error struct {
