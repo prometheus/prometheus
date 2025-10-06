@@ -148,7 +148,7 @@ func (h *writeHandler) Store(r *http.Request, msgType remoteapi.WriteMessageType
 	}
 
 	respStats, errHTTPCode, err := h.writeV2(r.Context(), &req)
-	// Add stats required X-Prometheus-Remote-Write-Written-* response headers even for partial writes.
+	// Add stats required X-Prometheus-Remote-Write-Written-* response headers.
 	wr.Add(respStats)
 	if err != nil {
 		wr.SetStatusCode(errHTTPCode)
