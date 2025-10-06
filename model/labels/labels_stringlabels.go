@@ -614,6 +614,7 @@ func (b *ScratchBuilder) Reset() {
 
 // Add a name/value pair.
 // Note if you Add the same name twice you will get a duplicate label, which is invalid.
+// The values must remain live until Labels() is called.
 func (b *ScratchBuilder) Add(name, value string) {
 	b.add = append(b.add, Label{Name: name, Value: value})
 }
@@ -678,7 +679,7 @@ func (*ScratchBuilder) SetSymbolTable(*SymbolTable) {
 // for reuse. ScratchBuilder implementations that do reuse strings, must clone
 // the strings.
 //
-// Stringlabels implementation, does not reuse added strings, so this operation is noop.
+// StringLabels implementation copies all strings when Labels() is called, so this operation is noop.
 func (ScratchBuilder) SetUnsafeAdd(bool) {}
 
 // SizeOfLabels returns the approximate space required for n copies of a label.

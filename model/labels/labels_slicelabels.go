@@ -483,6 +483,7 @@ func (b *ScratchBuilder) Reset() {
 
 // Add a name/value pair.
 // Note if you Add the same name twice you will get a duplicate label, which is invalid.
+// If SetUnsafeAdd was set to false, the values must remain live until Labels() is called.
 func (b *ScratchBuilder) Add(name, value string) {
 	if b.unsafeAdd {
 		// Underlying label structure for slicelabels shares memory, so we need to

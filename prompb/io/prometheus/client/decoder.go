@@ -154,8 +154,10 @@ func (*MetricStreamingDecoder) GetLabel() {
 	panic("don't use GetLabel, use Label instead")
 }
 
-// unsafeLabelAdder is an interface that expects unsafe label adds.
-// Typically, this means labels.ScratchBuilder with SetUnsafeAdd set to true.
+// unsafeLabelAdder adds labels for a single metric.
+// The "unsafe" word highlights that some strings must not be retained on a
+// caller side. When used with labels.ScratchBuilder ensure it's used
+// with SetUnsafeAdd set to true.
 type unsafeLabelAdder interface {
 	Add(name, value string)
 }
