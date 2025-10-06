@@ -207,7 +207,8 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 			if !tt.expectErr {
 				require.Len(t, emittedSamples, len(tt.expected))
 				for i, expSample := range tt.expected {
-					require.Equal(t, expSample, emittedSamples[i])
+					require.True(t, labels.Equal(expSample.lset, emittedSamples[i].lset), "labels mismatch at index %d: expected %v, got %v", i, expSample.lset, emittedSamples[i].lset)
+					require.Equal(t, expSample.val, emittedSamples[i].val, "value mismatch at index %d", i)
 				}
 			}
 		})
