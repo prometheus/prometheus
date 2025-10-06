@@ -20,7 +20,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// ConvertNHCBToClassicHistogram converts Native Histogram Custom Buckets (NHCB) to classic histogram series.
+// ConvertNHCBToClassic converts Native Histogram Custom Buckets (NHCB) to classic histogram series.
 // This conversion is needed in various scenarios where users need to get NHCB back to classic histogram format,
 // such as Remote Write v1 for external system compatibility and migration use cases.
 func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Builder, emitSeriesFn func(labels labels.Labels, value float64) error) error {
@@ -41,7 +41,7 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 	switch h := nhcb.(type) {
 	case *Histogram:
 		if h.Schema != -53 {
-			return errors.New("unsupported histogram schema, only NHCB converstion is supported")
+			return errors.New("unsupported histogram schema, only NHCB conversion is supported")
 		}
 		customValues = h.CustomValues
 		positiveBuckets = make([]float64, len(h.PositiveBuckets))
@@ -56,7 +56,7 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 		sum = h.Sum
 	case *FloatHistogram:
 		if h.Schema != -53 {
-			return errors.New("unsupported histogram schema, only NHCB converstion is supported")
+			return errors.New("unsupported histogram schema, only NHCB conversion is supported")
 		}
 		customValues = h.CustomValues
 		positiveBuckets = h.PositiveBuckets

@@ -20,7 +20,7 @@ import (
 	"sync"
 )
 
-// floatFormatBufPool is exclusively used in formatOpenMetricsFloat.
+// floatFormatBufPool is exclusively used in FormatOpenMetricsFloat.
 var floatFormatBufPool = sync.Pool{
 	New: func() any {
 		// To contain at most 17 digits and additional syntax for a float64.
@@ -29,7 +29,7 @@ var floatFormatBufPool = sync.Pool{
 	},
 }
 
-// formatOpenMetricsFloat works like the usual Go string formatting of a float
+// FormatOpenMetricsFloat works like the usual Go string formatting of a float
 // but appends ".0" if the resulting number would otherwise contain neither a
 // "." nor an "e".
 func FormatOpenMetricsFloat(f float64) string {
