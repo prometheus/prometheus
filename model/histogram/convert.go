@@ -15,27 +15,22 @@ package histogram
 
 import (
 	"errors"
-	"fmt"
 	"math"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// BucketEmitter is a callback function type for emitting histogram bucket series.
-// Used in remote write to append converted bucket time series.
-type BucketEmitter func(labels labels.Labels, value float64) error
-
 // ConvertNHCBToClassicHistogram converts Native Histogram Custom Buckets (NHCB) to classic histogram series.
 // This conversion is needed in various scenarios where users need to get NHCB back to classic histogram format,
 // such as Remote Write v1 for external system compatibility and migration use cases.
-func ConvertNHCBToClassicHistogram(nhcb any, labels labels.Labels, lblBuilder *labels.Builder, bucketSeries BucketEmitter) error {
-	baseName := labels.Get("__name__")
+func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Builder, emitSeriesFn func(labels labels.Labels, value float64) error) error {
+	baseName := lset.Get("__name__")
 	if baseName == "" {
 		return errors.New("metric name label '__name__' is missing")
 	}
 
-	oldLabels := lblBuilder.Labels()
-	defer lblBuilder.Reset(oldLabels)
+	oldLabels := lsetBuilder.Labels()
+	defer lsetBuilder.Reset(oldLabels)
 
 	var (
 		customValues    []float64
@@ -45,6 +40,9 @@ func ConvertNHCBToClassicHistogram(nhcb any, labels labels.Labels, lblBuilder *l
 
 	switch h := nhcb.(type) {
 	case *Histogram:
+		if h.Schema != -53 {
+			return errors.New("unsupported histogram schema, only NHCB converstion is supported")
+		}
 		customValues = h.CustomValues
 		positiveBuckets = make([]float64, len(h.PositiveBuckets))
 		for i, v := range h.PositiveBuckets {
@@ -57,6 +55,9 @@ func ConvertNHCBToClassicHistogram(nhcb any, labels labels.Labels, lblBuilder *l
 		count = float64(h.Count)
 		sum = h.Sum
 	case *FloatHistogram:
+		if h.Schema != -53 {
+			return errors.New("unsupported histogram schema, only NHCB converstion is supported")
+		}
 		customValues = h.CustomValues
 		positiveBuckets = h.PositiveBuckets
 		count = h.Count
@@ -75,34 +76,30 @@ func ConvertNHCBToClassicHistogram(nhcb any, labels labels.Labels, lblBuilder *l
 	currCount := float64(0)
 	for i := range customValues {
 		currCount = positiveBuckets[i]
-		lblBuilder.Reset(labels)
-		lblBuilder.Set("__name__", baseName+"_bucket")
-		lblBuilder.Set("le", fmt.Sprintf("%g", customValues[i]))
-		bucketLabels := lblBuilder.Labels()
-		if err := bucketSeries(bucketLabels, currCount); err != nil {
+		lsetBuilder.Reset(lset)
+		lsetBuilder.Set("__name__", baseName+"_bucket")
+		lsetBuilder.Set("le", labels.FormatOpenMetricsFloat(customValues[i]))
+		if err := emitSeriesFn(lsetBuilder.Labels(), currCount); err != nil {
 			return err
 		}
 	}
 
-	lblBuilder.Reset(labels)
-	lblBuilder.Set("__name__", baseName+"_bucket")
-	lblBuilder.Set("le", fmt.Sprintf("%g", math.Inf(1)))
-	infBucketLabels := lblBuilder.Labels()
-	if err := bucketSeries(infBucketLabels, currCount); err != nil {
+	lsetBuilder.Reset(lset)
+	lsetBuilder.Set("__name__", baseName+"_bucket")
+	lsetBuilder.Set("le", labels.FormatOpenMetricsFloat(math.Inf(1)))
+	if err := emitSeriesFn(lsetBuilder.Labels(), currCount); err != nil {
 		return err
 	}
 
-	lblBuilder.Reset(labels)
-	lblBuilder.Set("__name__", baseName+"_count")
-	countLabels := lblBuilder.Labels()
-	if err := bucketSeries(countLabels, count); err != nil {
+	lsetBuilder.Reset(lset)
+	lsetBuilder.Set("__name__", baseName+"_count")
+	if err := emitSeriesFn(lsetBuilder.Labels(), count); err != nil {
 		return err
 	}
 
-	lblBuilder.Reset(labels)
-	lblBuilder.Set("__name__", baseName+"_sum")
-	sumLabels := lblBuilder.Labels()
-	if err := bucketSeries(sumLabels, sum); err != nil {
+	lsetBuilder.Reset(lset)
+	lsetBuilder.Set("__name__", baseName+"_sum")
+	if err := emitSeriesFn(lsetBuilder.Labels(), sum); err != nil {
 		return err
 	}
 
