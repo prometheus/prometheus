@@ -1,5 +1,7 @@
 # Changelog
 
+test
+
 ## main / unreleased
 
 * [BUGFIX] OTLP receiver: Generate `target_info` samples between the earliest and latest samples per resource. #16737
