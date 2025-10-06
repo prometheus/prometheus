@@ -129,6 +129,7 @@ func isHistogramValidationError(err error) bool {
 		errors.Is(err, histogram.ErrHistogramCustomBucketsMismatch) ||
 		errors.Is(err, histogram.ErrHistogramCustomBucketsInvalid) ||
 		errors.Is(err, histogram.ErrHistogramCustomBucketsInfinite) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsNaN) ||
 		errors.Is(err, histogram.ErrHistogramCustomBucketsZeroCount) ||
 		errors.Is(err, histogram.ErrHistogramCustomBucketsZeroThresh) ||
 		errors.Is(err, histogram.ErrHistogramCustomBucketsNegSpans) ||
