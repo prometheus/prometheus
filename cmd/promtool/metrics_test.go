@@ -22,70 +22,53 @@ import (
 	"testing"
 	"time"
 
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/stretchr/testify/require"
 )
 
 func TestPushMetrics(t *testing.T) {
 	tests := []struct {
-		name           string
-		metricsData    string
-		expectedStatus int
-		serverHandler  http.HandlerFunc
+		name        string
+		metricsData string
 	}{
 		{
-			name: "successful push with v1",
+			name: "successful push with gauge metrics",
 			metricsData: `# HELP test_metric A test metric
 # TYPE test_metric gauge
 test_metric{label="value1"} 42.0
 test_metric{label="value2"} 43.0
 `,
-			expectedStatus: successExitCode,
-			serverHandler: func(w http.ResponseWriter, r *http.Request) {
-				// Verify request headers
-				require.Equal(t, "snappy", r.Header.Get("Content-Encoding"))
-				require.Equal(t, "application/x-protobuf", r.Header.Get("Content-Type"))
-				require.Equal(t, "0.1.0", r.Header.Get("X-Prometheus-Remote-Write-Version"))
-
-				// Read the body to ensure it's not empty
-				body, err := io.ReadAll(r.Body)
-				require.NoError(t, err)
-				require.NotEmpty(t, body, "Request body should not be empty")
-
-				w.WriteHeader(http.StatusNoContent)
-			},
 		},
 		{
-			name: "successful push with v2 and stats",
+			name: "successful push with counter metrics",
 			metricsData: `# HELP test_counter A test counter
 # TYPE test_counter counter
 test_counter 100
 `,
-			expectedStatus: successExitCode,
-			serverHandler: func(w http.ResponseWriter, _ *http.Request) {
-				// Set v2 response headers with statistics
-				w.Header().Set("X-Prometheus-Remote-Write-Samples-Written", "1")
-				w.Header().Set("X-Prometheus-Remote-Write-Histograms-Written", "0")
-				w.Header().Set("X-Prometheus-Remote-Write-Exemplars-Written", "0")
-				w.WriteHeader(http.StatusNoContent)
-			},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// Create test server
-			server := httptest.NewServer(tc.serverHandler)
+			// Create test server using client_golang's remote write handler.
+			store := &mockStorage{}
+			handler := remoteapi.NewWriteHandler(
+				store,
+				remoteapi.MessageTypes{remoteapi.WriteV1MessageType},
+			)
+
+			server := httptest.NewServer(handler)
 			defer server.Close()
 
 			serverURL, err := url.Parse(server.URL)
 			require.NoError(t, err)
 
-			// Create a temp file with metrics data
+			// Create a temp file with metrics data.
 			tmpFile := t.TempDir() + "/metrics.txt"
-			err = writeFile(tmpFile, tc.metricsData)
+			err = os.WriteFile(tmpFile, []byte(tc.metricsData), 0o644)
 			require.NoError(t, err)
 
-			// Call PushMetrics
+			// Call PushMetrics.
 			status := PushMetrics(
 				serverURL,
 				http.DefaultTransport,
@@ -95,59 +78,43 @@ test_counter 100
 				tmpFile,
 			)
 
-			require.Equal(t, tc.expectedStatus, status)
+			require.Equal(t, successExitCode, status)
+			// Verify that the handler received and processed the request.
+			require.True(t, store.called, "Handler should have been called")
+			require.NoError(t, store.lastErr, "Handler should not have returned an error")
+
+			// Verify proper data propagation.
+			require.NotEmpty(t, store.receivedData, "Request should contain data (compression and decompression successful)")
+			require.Contains(t, store.receivedContentType, "application/x-protobuf", "Content-Type should be protobuf")
 		})
 	}
 }
 
-func TestParseAndPushMetrics(t *testing.T) {
-	// This test verifies that parseAndPushMetrics correctly marshals and compresses data
-	var requestReceived bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestReceived = true
-
-		// Verify the request is properly formatted
-		require.Equal(t, "snappy", r.Header.Get("Content-Encoding"))
-		require.Equal(t, "application/x-protobuf", r.Header.Get("Content-Type"))
-
-		// Read and verify body is not empty
-		body, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
-		require.NotEmpty(t, body, "Marshaled and compressed data should not be empty")
-
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer server.Close()
-
-	serverURL, err := url.Parse(server.URL)
-	require.NoError(t, err)
-
-	// Create test metrics
-	metricsData := `# HELP http_requests_total Total HTTP requests
-# TYPE http_requests_total counter
-http_requests_total{method="GET",code="200"} 1027
-http_requests_total{method="POST",code="200"} 3
-`
-
-	tmpFile := t.TempDir() + "/metrics.txt"
-	err = writeFile(tmpFile, metricsData)
-	require.NoError(t, err)
-
-	// Push metrics
-	status := PushMetrics(
-		serverURL,
-		http.DefaultTransport,
-		map[string]string{},
-		30*time.Second,
-		map[string]string{"job": "test", "instance": "localhost:9090"},
-		tmpFile,
-	)
-
-	require.Equal(t, successExitCode, status)
-	require.True(t, requestReceived, "Server should have received the request")
+// mockStorage is a simple mock for testing the remote write handler.
+type mockStorage struct {
+	called              bool
+	lastErr             error
+	receivedData        []byte
+	receivedContentType string
 }
 
-// Helper function to write files.
-func writeFile(path, content string) error {
-	return os.WriteFile(path, []byte(content), 0o644)
+func (m *mockStorage) Store(req *http.Request, _ remoteapi.WriteMessageType) (*remoteapi.WriteResponse, error) {
+	m.called = true
+
+	// Capture content-type header.
+	m.receivedContentType = req.Header.Get("Content-Type")
+
+	if req.Body != nil {
+		data, err := io.ReadAll(req.Body)
+		if err == nil {
+			m.receivedData = data
+		}
+	}
+
+	if m.lastErr != nil {
+		return nil, m.lastErr
+	}
+	resp := remoteapi.NewWriteResponse()
+	resp.SetStatusCode(http.StatusNoContent)
+	return resp, nil
 }
