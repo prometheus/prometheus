@@ -429,6 +429,12 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			continue
 		}
 
+		// Validate that the TimeSeries has at least one sample or histogram.
+		if len(ts.Samples) == 0 && len(ts.Histograms) == 0 {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("TimeSeries must contain at least one sample or histogram for series %v", ls.String()))
+			continue
+		}
+
 		allSamplesSoFar := rs.AllSamples()
 		var ref storage.SeriesRef
 
