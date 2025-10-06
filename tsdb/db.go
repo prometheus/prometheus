@@ -1162,7 +1162,7 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	if conf.StorageConfig.TSDBConfig != nil {
 		oooTimeWindow = conf.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
 
-		// Update retention configuration if provided
+		// Update retention configuration if provided.
 		if conf.StorageConfig.TSDBConfig.Retention != nil {
 			db.retentionMtx.Lock()
 			if conf.StorageConfig.TSDBConfig.Retention.Time > 0 {

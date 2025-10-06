@@ -3152,11 +3152,6 @@ with this feature.
 # to the timestamp of the last appended sample for the same series.
 [ out_of_order_time_window: <duration> | default = 0s ]
 
-```
-
-### `<retention>`
-
-```yaml
 
 # Configures data retention settings for TSDB.
 [ retention: <retention> ] :
