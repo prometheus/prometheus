@@ -38,6 +38,7 @@ var (
 	ErrHistogramCustomBucketsMismatch   = errors.New("histogram custom bounds are too few")
 	ErrHistogramCustomBucketsInvalid    = errors.New("histogram custom bounds must be in strictly increasing order")
 	ErrHistogramCustomBucketsInfinite   = errors.New("histogram custom bounds must be finite")
+	ErrHistogramCustomBucketsNaN        = errors.New("histogram custom bounds must not be NaN")
 	ErrHistogramsIncompatibleSchema     = errors.New("cannot apply this operation on histograms with a mix of exponential and custom bucket schemas")
 	ErrHistogramsIncompatibleBounds     = errors.New("cannot apply this operation on custom buckets histograms with different custom bounds")
 	ErrHistogramCustomBucketsZeroCount  = errors.New("custom buckets: must have zero count of 0")
@@ -454,6 +455,9 @@ func checkHistogramBuckets[BC BucketCount, IBC InternalBucketCount](buckets []IB
 func checkHistogramCustomBounds(bounds []float64, spans []Span, numBuckets int) error {
 	prev := math.Inf(-1)
 	for _, curr := range bounds {
+		if math.IsNaN(curr) {
+			return ErrHistogramCustomBucketsNaN
+		}
 		if curr <= prev {
 			return fmt.Errorf("previous bound is %f and current is %f: %w", prev, curr, ErrHistogramCustomBucketsInvalid)
 		}
