@@ -104,7 +104,7 @@ func isHistogramValidationError(err error) bool {
 
 // Store implements remoteapi.writeStorage interface.
 func (h *writeHandler) Store(r *http.Request, msgType remoteapi.WriteMessageType) (*remoteapi.WriteResponse, error) {
-	// Store receives request with snappy-decompressed content in body.
+	// Store receives request with decompressed content in body.
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		h.logger.Error("Error reading remote write request body", "err", err.Error())
@@ -131,7 +131,6 @@ func (h *writeHandler) Store(r *http.Request, msgType remoteapi.WriteMessageType
 				wr.SetStatusCode(http.StatusBadRequest)
 				return wr, err
 			default:
-				h.logger.Error("Error while remote writing the v1 request", "err", err.Error())
 				wr.SetStatusCode(http.StatusInternalServerError)
 				return wr, err
 			}
@@ -148,19 +147,13 @@ func (h *writeHandler) Store(r *http.Request, msgType remoteapi.WriteMessageType
 		return wr, err
 	}
 
-	respStats, errHTTPCode, err := h.writeV2(context.Background(), &req)
+	respStats, errHTTPCode, err := h.writeV2(r.Context(), &req)
+	// Add stats required X-Prometheus-Remote-Write-Written-* response headers even for partial writes.
+	wr.Add(respStats)
 	if err != nil {
-		if errHTTPCode/5 == 100 { // 5xx
-			h.logger.Error("Error while remote writing the v2 request", "err", err.Error())
-		}
-		// Add stats required X-Prometheus-Remote-Write-Written-* response headers even for partial writes.
-		wr.Add(respStats)
 		wr.SetStatusCode(errHTTPCode)
 		return wr, err
 	}
-
-	// Add stats required X-Prometheus-Remote-Write-Written-* response headers.
-	wr.Add(respStats)
 	return wr, nil
 }
 

@@ -1936,7 +1936,7 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 	}
 }
 
-// rwProtoMsgFlagParser is a custom parser for remoteapi.MessageTypes enum.
+// rwProtoMsgFlagParser is a custom parser for remoteapi.WriteMessageType enum.
 type rwProtoMsgFlagParser struct {
 	msgs *remoteapi.MessageTypes
 }
