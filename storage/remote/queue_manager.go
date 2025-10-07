@@ -221,7 +221,8 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		ConstLabels: constLabels,
 	})
 	m.processBatchDuration = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{Namespace: namespace,
+		prometheus.HistogramOpts{
+			Namespace:                       namespace,
 			Subsystem:                       subsystem,
 			Name:                            "process_batch_duration_seconds",
 			Help:                            "Duration of processing a batch from the queue to being sent to the remote storage.",
