@@ -121,7 +121,6 @@ func selectContentTypeByQuality(contentTypes string) string {
 		quality := 1.0
 		if qStr, ok := params["q"]; ok {
 			// Parse the quality value
-			var q float64
 			if qParsed, err := strconv.ParseFloat(qStr, 64); err == nil && qParsed >= 0 && qParsed <= 1 {
 				quality = qParsed
 			}
