@@ -2238,7 +2238,6 @@ func (a *headAppender) Rollback() (err error) {
 	}()
 
 	var series *memSeries
-	fmt.Println("ROLLBACK")
 	for _, b := range a.batches {
 		for i := range b.floats {
 			series = b.floatSeries[i]
