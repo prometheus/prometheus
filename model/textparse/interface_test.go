@@ -161,6 +161,22 @@ func TestNewParser(t *testing.T) {
 			fallbackScrapeProtocol: config.PrometheusText0_0_4,
 			err:                    "received unsupported Content-Type \"text/html\", using fallback_scrape_protocol \"text/plain\"",
 		},
+		"comma-separated-content-types-openmetrics-first": {
+			contentType:    "application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.6,application/openmetrics-text;version=0.0.1;q=0.5",
+			validateParser: requireOpenMetricsParser,
+		},
+		"comma-separated-content-types-text-plain-first": {
+			contentType:    "text/plain;version=0.0.4;q=0.3,*/*;q=0.2",
+			validateParser: requirePromParser,
+		},
+		"comma-separated-content-types-full-accept-header": {
+			contentType:    "application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.6,application/openmetrics-text;version=0.0.1;escaping=allow-utf-8;q=0.5,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.4,text/plain;version=0.0.4;escaping=allow-utf-8;q=0.3,*/*;q=0.2",
+			validateParser: requireOpenMetricsParser,
+		},
+		"comma-separated-content-types-protobuf-first": {
+			contentType:    "application/vnd.google.protobuf;q=0.9,text/plain;q=0.1",
+			validateParser: requireProtobufParser,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tt := tt // Copy to local variable before going parallel.

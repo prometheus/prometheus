@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"mime"
+	"strings"
 
 	"github.com/prometheus/common/model"
 
@@ -96,6 +97,12 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 			return "", errors.New("non-compliant scrape target sending blank Content-Type and no fallback_scrape_protocol specified for target")
 		}
 		return fallbackType, fmt.Errorf("non-compliant scrape target sending blank Content-Type, using fallback_scrape_protocol %q", fallbackType)
+	}
+
+	// Some non-compliant targets may return multiple media types (like an Accept header).
+	// Take the first one to be lenient with buggy targets.
+	if strings.Contains(contentType, ",") {
+		contentType = strings.Split(contentType, ",")[0]
 	}
 
 	// We have a contentType, parse it.
