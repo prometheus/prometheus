@@ -82,6 +82,7 @@ type queueManagerMetrics struct {
 	droppedExemplarsTotal  *prometheus.CounterVec
 	droppedHistogramsTotal *prometheus.CounterVec
 	enqueueRetriesTotal    prometheus.Counter
+	processBatchDuration   *prometheus.HistogramVec
 	sentBatchDuration      prometheus.Histogram
 	highestTimestamp       *maxTimestamp
 	highestSentTimestamp   *maxTimestamp
@@ -219,6 +220,18 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "Total number of times enqueue has failed because a shards queue was full.",
 		ConstLabels: constLabels,
 	})
+	m.processBatchDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{Namespace: namespace,
+			Subsystem:                       subsystem,
+			Name:                            "process_batch_duration_seconds",
+			Help:                            "Duration of processing a batch from the queue to being sent to the remote storage.",
+			Buckets:                         append(prometheus.DefBuckets, 25, 60, 120, 300),
+			ConstLabels:                     constLabels,
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		},
+		[]string{"timer_triggered"})
 	m.sentBatchDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace:                       namespace,
 		Subsystem:                       subsystem,
@@ -1702,6 +1715,11 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 	// should be maintained irrespective of success or failure.
 	s.qm.dataOut.incr(int64(sampleCount + exemplarCount + histogramCount + metadataCount))
 	s.qm.dataOutDuration.incr(int64(duration))
+	encodedTimerTriggered := "0"
+	if triggeredByTimer {
+		encodedTimerTriggered = "1"
+	}
+	s.qm.metrics.processBatchDuration.WithLabelValues(encodedTimerTriggered).Observe(duration.Seconds())
 	s.qm.lastSendTimestamp.Store(time.Now().Unix())
 
 	// Pending samples/exemplars/histograms also should be subtracted, as an error means
