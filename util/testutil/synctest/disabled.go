@@ -19,7 +19,7 @@ import (
 	"testing"
 )
 
-func Test(t *testing.T, f func(t *testing.T)) {
+func Test(t *testing.T, _ func(t *testing.T)) {
 	t.Skip("goexperiment.synctest is not enabled")
 }
 

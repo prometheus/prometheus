@@ -16,10 +16,15 @@ package textparse
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
+	"math/rand"
+	"strings"
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/gogo/protobuf/types"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
@@ -27,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
+	"github.com/prometheus/prometheus/util/pool"
 )
 
 func metricFamiliesToProtobuf(t testing.TB, testMetricFamilies []string) *bytes.Buffer {
@@ -4349,3 +4355,187 @@ metric: <
 		})
 	}
 }
+
+func FuzzProtobufParser_Labels(f *testing.F) {
+	// Add to the "seed corpus" the values that are known to reproduce issues
+	// which this test has found in the past. These cases run during regular
+	// testing, as well as the first step of the fuzzing process.
+	f.Add(true, true, int64(123))
+	f.Add(true, false, int64(129))
+	f.Add(false, true, int64(159))
+	f.Add(false, true, int64(-127))
+	f.Fuzz(func(
+		t *testing.T,
+		parseClassicHistogram bool,
+		enableTypeAndUnitLabels bool,
+		randSeed int64,
+	) {
+		var (
+			r              = rand.New(rand.NewSource(randSeed))
+			buffers        = pool.New(1+r.Intn(128), 128+r.Intn(1024), 2, func(sz int) interface{} { return make([]byte, 0, sz) })
+			lastScrapeSize = 0
+			observedLabels []labels.Labels
+			st             = labels.NewSymbolTable()
+		)
+
+		for i := 0; i < 20; i++ { // run multiple iterations to encounter memory corruptions
+			// Get buffer from pool like in scrape.go
+			b := buffers.Get(lastScrapeSize).([]byte)
+			buf := bytes.NewBuffer(b)
+
+			// Generate some scraped data to parse
+			mf := generateFuzzMetricFamily(r)
+			protoBuf, err := proto.Marshal(mf)
+			require.NoError(t, err)
+			sizeBuf := make([]byte, binary.MaxVarintLen32)
+			sizeBufSize := binary.PutUvarint(sizeBuf, uint64(len(protoBuf)))
+			buf.Write(sizeBuf[:sizeBufSize])
+			buf.Write(protoBuf)
+
+			// Use protobuf parser to parse like in real usage
+			b = buf.Bytes()
+			p := NewProtobufParser(b, parseClassicHistogram, false, enableTypeAndUnitLabels, st)
+
+			for {
+				entry, err := p.Next()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				require.NoError(t, err)
+				switch entry {
+				case EntryHelp:
+					name, help := p.Help()
+					require.Equal(t, mf.Name, string(name))
+					require.Equal(t, mf.Help, string(help))
+				case EntryType:
+					name, _ := p.Type()
+					require.Equal(t, mf.Name, string(name))
+				case EntryUnit:
+					name, unit := p.Unit()
+					require.Equal(t, mf.Name, string(name))
+					require.Equal(t, mf.Unit, string(unit))
+				case EntrySeries, EntryHistogram:
+					var lbs labels.Labels
+					p.Labels(&lbs)
+					observedLabels = append(observedLabels, lbs)
+				}
+
+				// Get labels from exemplars
+				for {
+					var e exemplar.Exemplar
+					if !p.Exemplar(&e) {
+						break
+					}
+					observedLabels = append(observedLabels, e.Labels)
+				}
+			}
+
+			// Validate all labels seen so far remain valid. This can find memory corruption issues.
+			for _, l := range observedLabels {
+				require.True(t, l.IsValid(model.LegacyValidation), "encountered corrupted labels: %v", l)
+			}
+
+			lastScrapeSize = len(b)
+			buffers.Put(b)
+		}
+	})
+}
+
+func generateFuzzMetricFamily(
+	r *rand.Rand,
+) *dto.MetricFamily {
+	unit := generateValidLabelName(r)
+	metricName := fmt.Sprintf("%s_%s", generateValidMetricName(r), unit)
+	metricTypeProto := dto.MetricType(r.Intn(len(dto.MetricType_name)))
+	metricFamily := &dto.MetricFamily{
+		Name: metricName,
+		Help: generateHelp(r),
+		Type: metricTypeProto,
+		Unit: unit,
+	}
+	metricsCount := r.Intn(20)
+	for i := 0; i < metricsCount; i++ {
+		metric := dto.Metric{
+			Label: generateFuzzLabels(r),
+		}
+		switch metricTypeProto {
+		case dto.MetricType_GAUGE:
+			metric.Gauge = &dto.Gauge{Value: r.Float64()}
+		case dto.MetricType_COUNTER:
+			metric.Counter = &dto.Counter{Value: r.Float64()}
+		case dto.MetricType_SUMMARY:
+			metric.Summary = &dto.Summary{Quantile: []dto.Quantile{{Quantile: 0.5, Value: r.Float64()}}}
+		case dto.MetricType_HISTOGRAM:
+			metric.Histogram = &dto.Histogram{Exemplars: generateExemplars(r)}
+		}
+		metricFamily.Metric = append(metricFamily.Metric, metric)
+	}
+	return metricFamily
+}
+
+func generateExemplars(r *rand.Rand) []*dto.Exemplar {
+	exemplarsCount := r.Intn(5)
+	exemplars := make([]*dto.Exemplar, 0, exemplarsCount)
+	for i := 0; i < exemplarsCount; i++ {
+		exemplars = append(exemplars, &dto.Exemplar{
+			Label: generateFuzzLabels(r),
+			Value: r.Float64(),
+			Timestamp: &types.Timestamp{
+				Seconds: int64(r.Intn(1000000000)),
+				Nanos:   int32(r.Intn(1000000000)),
+			},
+		})
+	}
+	return exemplars
+}
+
+func generateFuzzLabels(r *rand.Rand) []dto.LabelPair {
+	labelsCount := r.Intn(10)
+	ls := make([]dto.LabelPair, 0, labelsCount)
+	for i := 0; i < labelsCount; i++ {
+		ls = append(ls, dto.LabelPair{
+			Name:  generateValidLabelName(r),
+			Value: generateValidLabelName(r),
+		})
+	}
+	return ls
+}
+
+func generateHelp(r *rand.Rand) string {
+	result := make([]string, 1+r.Intn(20))
+	for i := 0; i < len(result); i++ {
+		result[i] = generateValidLabelName(r)
+	}
+	return strings.Join(result, "_")
+}
+
+func generateValidLabelName(r *rand.Rand) string {
+	return generateString(r, validFirstRunes, validLabelNameRunes)
+}
+
+func generateValidMetricName(r *rand.Rand) string {
+	return generateString(r, validFirstRunes, validMetricNameRunes)
+}
+
+func generateString(r *rand.Rand, firstRunes, restRunes []rune) string {
+	result := make([]rune, 1+r.Intn(20))
+	for i := range result {
+		if i == 0 {
+			result[i] = firstRunes[r.Intn(len(firstRunes))]
+		} else {
+			result[i] = restRunes[r.Intn(len(restRunes))]
+		}
+	}
+	return string(result)
+}
+
+var (
+	validMetricNameRunes = []rune{
+		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+		'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+		'_', ':',
+	}
+	validLabelNameRunes = validMetricNameRunes[:len(validMetricNameRunes)-1] // skip the colon
+	validFirstRunes     = validMetricNameRunes[:52]                          // only the letters
+)
