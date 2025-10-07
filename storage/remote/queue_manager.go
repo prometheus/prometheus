@@ -1556,8 +1556,10 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	}
 	defer stop()
 
-	sendBatch := func(batch []timeSeries, protoMsg config.RemoteWriteProtoMsg, compr compression.Type, timer bool) {
+	sendBatch := func(batch []timeSeries, protoMsg config.RemoteWriteProtoMsg, compr compression.Type, timer bool) func(begin time.Time) {
 		switch protoMsg {
+		// TODO(bwplotka): DRY this (have one logic for both v1 and v2).
+		// See https://github.com/prometheus/prometheus/issues/14409
 		case config.RemoteWriteProtoMsgV1:
 			nPendingSamples, nPendingExemplars, nPendingHistograms := populateTimeSeries(batch, pendingData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
@@ -1565,16 +1567,23 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 				s.qm.logger.Debug("runShard timer ticked, sending buffered data", "samples", nPendingSamples,
 					"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
 			}
-			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, encBuf, compr)
+			rs, err := s.sendSamplesWithBackoff(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, 0, pBuf, encBuf, compr)
+			return func(begin time.Time) {
+				s.updateMetrics(ctx, err, nPendingSamples, nPendingExemplars, nPendingHistograms, 0, rs, time.Since(begin), timer)
+			}
 		case config.RemoteWriteProtoMsgV2:
 			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
 			if nUnexpectedMetadata > 0 {
 				s.qm.logger.Warn("unexpected metadata sType in populateV2TimeSeries", "count", nUnexpectedMetadata)
 			}
-			_ = s.sendV2Samples(ctx, pendingDataV2[:n], symbolTable.Symbols(), nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, &pBufRaw, encBuf, compr)
+			rs, err := s.sendV2SamplesWithBackoff(ctx, pendingDataV2[:n], symbolTable.Symbols(), nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, &pBufRaw, encBuf, compr)
 			symbolTable.Reset()
+			return func(begin time.Time) {
+				s.updateMetrics(ctx, err, nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, rs, time.Since(begin), timer)
+			}
 		}
+		return func(_ time.Time) {}
 	}
 
 	for {
@@ -1600,21 +1609,29 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			if !ok {
 				return
 			}
-
-			sendBatch(batch, s.qm.protoMsg, s.qm.compr, false)
+			begin := time.Now()
+			updateMetrics := sendBatch(batch, s.qm.protoMsg, s.qm.compr, false)
 			// TODO(bwplotka): Previously the return was between popular and send.
 			// Consider this when DRY-ing https://github.com/prometheus/prometheus/issues/14409
 			queue.ReturnForReuse(batch)
+			updateMetrics(begin)
 
 			stop()
+
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 
 		case <-timer.C:
+			begin := time.Now()
 			batch := queue.Batch()
+			var updateMetrics func(time.Time)
 			if len(batch) > 0 {
-				sendBatch(batch, s.qm.protoMsg, s.qm.compr, true)
+				updateMetrics = sendBatch(batch, s.qm.protoMsg, s.qm.compr, true)
 			}
 			queue.ReturnForReuse(batch)
+			if updateMetrics != nil {
+				updateMetrics(begin)
+			}
+
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 		}
 	}
@@ -1661,23 +1678,7 @@ func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sen
 	return nPendingSamples, nPendingExemplars, nPendingHistograms
 }
 
-func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf compression.EncodeBuffer, compr compression.Type) error {
-	begin := time.Now()
-	rs, err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, 0, pBuf, buf, compr)
-	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, 0, rs, time.Since(begin))
-	return err
-}
-
-// TODO(bwplotka): DRY this (have one logic for both v1 and v2).
-// See https://github.com/prometheus/prometheus/issues/14409
-func (s *shards) sendV2Samples(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *[]byte, buf compression.EncodeBuffer, compr compression.Type) error {
-	begin := time.Now()
-	rs, err := s.sendV2SamplesWithBackoff(ctx, samples, labels, sampleCount, exemplarCount, histogramCount, metadataCount, pBuf, buf, compr)
-	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, metadataCount, rs, time.Since(begin))
-	return err
-}
-
-func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exemplarCount, histogramCount, metadataCount int, rs WriteResponseStats, duration time.Duration) {
+func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exemplarCount, histogramCount, metadataCount int, rs WriteResponseStats, duration time.Duration, triggeredByTimer bool) {
 	// Partial errors may happen -- account for that.
 	sampleDiff := sampleCount - rs.Samples
 	if sampleDiff > 0 {
