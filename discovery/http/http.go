@@ -121,23 +121,31 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if parsedURL.Host == "" {
 		return errors.New("host is missing in URL")
 	}
-	// Apply defaults if retry config fields are zero (not specified)
+	// Apply defaults to each retry config field individually if zero (not specified)
 	if c.RetryConfig.MaxAttempts == 0 {
-		c.RetryConfig = DefaultRetryConfig
-	} else {
-		// Validate non-zero retry config
-		if c.RetryConfig.MaxAttempts < 1 {
-			return errors.New("retry_config max_attempts must be at least 1")
-		}
-		if c.RetryConfig.InitialInterval <= 0 {
-			return errors.New("retry_config initial_interval must be greater than 0")
-		}
-		if c.RetryConfig.MaxInterval <= 0 {
-			return errors.New("retry_config max_interval must be greater than 0")
-		}
-		if c.RetryConfig.Multiplier <= 0 {
-			return errors.New("retry_config multiplier must be greater than 0")
-		}
+		c.RetryConfig.MaxAttempts = DefaultRetryConfig.MaxAttempts
+	}
+	if c.RetryConfig.InitialInterval == 0 {
+		c.RetryConfig.InitialInterval = DefaultRetryConfig.InitialInterval
+	}
+	if c.RetryConfig.MaxInterval == 0 {
+		c.RetryConfig.MaxInterval = DefaultRetryConfig.MaxInterval
+	}
+	if c.RetryConfig.Multiplier == 0 {
+		c.RetryConfig.Multiplier = DefaultRetryConfig.Multiplier
+	}
+	// Validate retry config
+	if c.RetryConfig.MaxAttempts < 1 {
+		return errors.New("retry_config max_attempts must be at least 1")
+	}
+	if c.RetryConfig.InitialInterval <= 0 {
+		return errors.New("retry_config initial_interval must be greater than 0")
+	}
+	if c.RetryConfig.MaxInterval <= 0 {
+		return errors.New("retry_config max_interval must be greater than 0")
+	}
+	if c.RetryConfig.Multiplier <= 0 {
+		return errors.New("retry_config multiplier must be greater than 0")
 	}
 	return c.HTTPClientConfig.Validate()
 }
