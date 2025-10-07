@@ -182,11 +182,7 @@ func NewDiscovery(conf *SDConfig, logger *slog.Logger, clientOpts []config.HTTPC
 	}
 	client.Timeout = time.Duration(conf.RefreshInterval)
 
-	// Apply default retry config if not set
 	retryConfig := conf.RetryConfig
-	if retryConfig.MaxAttempts == 0 {
-		retryConfig = DefaultRetryConfig
-	}
 
 	d := &Discovery{
 		url:             conf.URL,
