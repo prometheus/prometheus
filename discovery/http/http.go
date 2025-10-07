@@ -340,7 +340,29 @@ func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 // isRetryableError returns true if the error is a network error that should be retried.
 func isRetryableError(err error) bool {
-	// Network errors are generally retryable
+	// Do not retry on context cancellation or deadline exceeded.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	// Do not retry on URL parsing errors.
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		// If the error is due to a network issue, retry. Otherwise, do not retry.
+		// url.Error may wrap context errors, which we've already checked above.
+		// If the error is a permanent error (e.g., invalid URL), do not retry.
+		// If the error is a temporary network error, retry.
+		if urlErr.Timeout() {
+			return true
+		}
+		// If the underlying error is a net.OpError, check if it's temporary.
+		type temporary interface{ Temporary() bool }
+		if te, ok := urlErr.Err.(temporary); ok {
+			return te.Temporary()
+		}
+		// For other url.Error, do not retry.
+		return false
+	}
+	// For other errors, assume retryable (e.g., network errors).
 	return true
 }
 
