@@ -15,6 +15,7 @@ package histogram
 
 import (
 	"errors"
+	"fmt"
 	"math"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -40,8 +41,8 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 
 	switch h := nhcb.(type) {
 	case *Histogram:
-		if h.Schema != -53 {
-			return errors.New("unsupported histogram schema, only NHCB conversion is supported")
+		if !IsCustomBucketsSchema(h.Schema) {
+			return errors.New("unsupported histogram schema, not a NHCB")
 		}
 		customValues = h.CustomValues
 		positiveBuckets = make([]float64, len(h.PositiveBuckets))
@@ -55,15 +56,15 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 		count = float64(h.Count)
 		sum = h.Sum
 	case *FloatHistogram:
-		if h.Schema != -53 {
-			return errors.New("unsupported histogram schema, only NHCB conversion is supported")
+		if !IsCustomBucketsSchema(h.Schema) {
+			return errors.New("unsupported histogram schema, not a NHCB")
 		}
 		customValues = h.CustomValues
 		positiveBuckets = h.PositiveBuckets
 		count = h.Count
 		sum = h.Sum
 	default:
-		return errors.New("unsupported histogram type")
+		return fmt.Errorf("unsupported histogram type: %T", h)
 	}
 
 	// Each customValue corresponds to a positive bucket (aligned with the "le" label).
