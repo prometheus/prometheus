@@ -1,0 +1,6 @@
+# HELP golang_manual_histogram_seconds This is a histogram with manually selected parameters
+# TYPE golang_manual_histogram_seconds histogram
+golang_manual_histogram_seconds{address="0.0.0.0",generation="20",port="5001"} {count:1,sum:10.0,bucket:[0.005:0,0.01:0,0.025:0,0.05:0,0.1:0,0.25:0,0.5:0,1.0:0,2.5:0,5.0:0,10.0:1,+Inf:1]}
+golang_manual_histogram_seconds{address="0.0.0.0",generation="20",port="5002"} {count:1,sum:10.1,bucket:[0.005:0,0.01:0,0.025:0,0.05:0,0.1:0,0.25:0,0.5:0,1.0:0,2.5:1,5.0:1,10.0:1,+Inf:1]}
+golang_manual_histogram_seconds{address="0.0.0.0",generation="20",port="5003"} {count:6,sum:20.04,bucket:[0.005:0,0.01:0,0.025:0,0.05:0,0.1:0,0.25:0,0.5:1,1.0:2,2.5:3,5.0:4,10.0:5,+Inf:6]}
+# EOF

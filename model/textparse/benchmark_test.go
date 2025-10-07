@@ -23,12 +23,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 // BenchmarkParse... set of benchmarks analyze efficiency of parsing various
@@ -138,32 +140,81 @@ func BenchmarkParseOpenMetricsNHCB(b *testing.B) {
 	}
 }
 
-func benchParse(b *testing.B, data []byte, parser string) {
-	type newParser func([]byte, *labels.SymbolTable) Parser
+// BenchmarkParseOpenMetricsNHCB_OM1vs2 is for demo of the benefit for the complex
+// type format for OM2, assuming Prometheus stores NS and NHCB (and NH) going forward.
+// Format draft: https://github.com/prometheus/docs/pull/2679
+/*
+	export bench=out && go test ./model/textparse/... \
+		 -run '^$' -bench '^BenchmarkParseOpenMetricsNHCB_OM1vs2' \
+		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+	 | tee ${bench}.txt
+*/
+func BenchmarkParseOpenMetricsNHCB_OM1vs2(b *testing.B) {
+	parseCases := []struct {
+		parser string
+		data   []byte
+	}{
+		{
+			parser: "omtext_with_nhcb", // Measure NHCB over OM parser.
+			data:   readTestdataFile(b, "1histogram.om.txt"),
+		},
+		{
+			parser: "om2text_with_nhcb", // https://github.com/prometheus/docs/pull/2679 with NHCB output.
+			data:   readTestdataFile(b, "1histogram.om2.txt"),
+		},
+	}
 
-	var newParserFn newParser
+	// Before we go, test parsing works as expected.
+	gotA := testParse(b, newParser(b, parseCases[0].parser)(parseCases[0].data, labels.NewSymbolTable()))
+	gotB := testParse(b, newParser(b, parseCases[1].parser)(parseCases[1].data, labels.NewSymbolTable()))
+	testutil.RequireEqualWithOptions(b, gotA, gotB, []cmp.Option{cmp.AllowUnexported(parsedEntry{})})
+
+	// For fun, OM2 parser should work with classic histogram too (TODO add separate tests).
+	_ = testParse(b, newParser(b, parseCases[1].parser)(parseCases[0].data, labels.NewSymbolTable()))
+
+	for _, c := range parseCases {
+		b.Run(fmt.Sprintf("parser=%v", c.parser), func(b *testing.B) {
+			benchParse(b, c.data, c.parser)
+		})
+	}
+}
+
+func newParser(t testing.TB, parser string) func([]byte, *labels.SymbolTable) Parser {
+	t.Helper()
+
 	switch parser {
 	case "promtext":
-		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
+		return func(b []byte, st *labels.SymbolTable) Parser {
 			return NewPromParser(b, st, false)
 		}
 	case "promproto":
-		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
+		return func(b []byte, st *labels.SymbolTable) Parser {
 			return NewProtobufParser(b, true, false, false, st)
 		}
 	case "omtext":
-		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
+		return func(b []byte, st *labels.SymbolTable) Parser {
 			return NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
 		}
 	case "omtext_with_nhcb":
-		newParserFn = func(buf []byte, st *labels.SymbolTable) Parser {
+		return func(buf []byte, st *labels.SymbolTable) Parser {
 			p, err := New(buf, "application/openmetrics-text", st, ParserOptions{ConvertClassicHistogramsToNHCB: true})
-			require.NoError(b, err)
+			require.NoError(t, err)
 			return p
 		}
+	case "om2text_with_nhcb":
+		return func(b []byte, st *labels.SymbolTable) Parser {
+			return NewOpenMetrics2Parser(b, st, func(options *openMetrics2ParserOptions) {
+				options.unrollComplexTypes = false
+			})
+		}
 	default:
-		b.Fatal("unknown parser", parser)
+		t.Fatal("unknown parser", parser)
 	}
+	return nil
+}
+
+func benchParse(b *testing.B, data []byte, parser string) {
+	newParserFn := newParser(b, parser)
 
 	var (
 		res labels.Labels

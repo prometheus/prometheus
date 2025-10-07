@@ -226,7 +226,7 @@ func requireEntries(t *testing.T, exp, got []parsedEntry) {
 	})
 }
 
-func testParse(t *testing.T, p Parser) (ret []parsedEntry) {
+func testParse(t testing.TB, p Parser) (ret []parsedEntry) {
 	t.Helper()
 
 	for {
