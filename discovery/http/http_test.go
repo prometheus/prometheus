@@ -454,3 +454,220 @@ func TestSourceDisappeared(t *testing.T) {
 		}
 	}
 }
+
+func TestRetryOnServerError(t *testing.T) {
+	attempt := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempt++
+		if attempt < 3 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, `[{"targets": ["127.0.0.1:9090"]}]`)
+	}))
+	t.Cleanup(ts.Close)
+
+	cfg := SDConfig{
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		URL:              ts.URL,
+		RefreshInterval:  model.Duration(30 * time.Second),
+		RetryConfig: RetryConfig{
+			MaxAttempts:     5,
+			InitialInterval: model.Duration(10 * time.Millisecond),
+			MaxInterval:     model.Duration(100 * time.Millisecond),
+			Multiplier:      2.0,
+		},
+	}
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	tgs, err := d.Refresh(ctx)
+	require.NoError(t, err)
+	require.Len(t, tgs, 1)
+	require.Equal(t, 3, attempt)
+	require.Equal(t, 0.0, getFailureCount(d.metrics.failuresCount))
+}
+
+func TestRetryExhausted(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(ts.Close)
+
+	cfg := SDConfig{
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		URL:              ts.URL,
+		RefreshInterval:  model.Duration(30 * time.Second),
+		RetryConfig: RetryConfig{
+			MaxAttempts:     3,
+			InitialInterval: model.Duration(10 * time.Millisecond),
+			MaxInterval:     model.Duration(100 * time.Millisecond),
+			Multiplier:      2.0,
+		},
+	}
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	_, err = d.Refresh(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "all 3 attempts failed")
+	require.Equal(t, 1.0, getFailureCount(d.metrics.failuresCount))
+}
+
+// TestNoRetryOn4xxErrors tests that the HTTP SD does not retry on 4xx client errors.
+func TestNoRetryOn4xxErrors(t *testing.T) {
+	attempt := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempt++
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(ts.Close)
+
+	cfg := SDConfig{
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		URL:              ts.URL,
+		RefreshInterval:  model.Duration(30 * time.Second),
+		RetryConfig: RetryConfig{
+			MaxAttempts:     5,
+			InitialInterval: model.Duration(10 * time.Millisecond),
+			MaxInterval:     model.Duration(100 * time.Millisecond),
+			Multiplier:      2.0,
+		},
+	}
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	_, err = d.Refresh(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "404 Not Found")
+	// Should not retry on 4xx errors, so only one attempt
+	require.Equal(t, 1, attempt)
+	require.Equal(t, 1.0, getFailureCount(d.metrics.failuresCount))
+}
+
+func TestRetryOn429RateLimit(t *testing.T) {
+	attempt := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempt++
+		if attempt < 2 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, `[{"targets": ["127.0.0.1:9090"]}]`)
+	}))
+	t.Cleanup(ts.Close)
+
+	cfg := SDConfig{
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		URL:              ts.URL,
+		RefreshInterval:  model.Duration(30 * time.Second),
+		RetryConfig: RetryConfig{
+			MaxAttempts:     5,
+			InitialInterval: model.Duration(10 * time.Millisecond),
+			MaxInterval:     model.Duration(100 * time.Millisecond),
+			Multiplier:      2.0,
+		},
+	}
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	tgs, err := d.Refresh(ctx)
+	require.NoError(t, err)
+	require.Len(t, tgs, 1)
+	require.Equal(t, 2, attempt)
+}
+
+func TestDefaultRetryConfig(t *testing.T) {
+	ts := httptest.NewServer(http.FileServer(http.Dir("./fixtures")))
+	t.Cleanup(ts.Close)
+
+	cfg := SDConfig{
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		URL:              ts.URL + "/http_sd.good.json",
+		RefreshInterval:  model.Duration(30 * time.Second),
+		// RetryConfig not specified, should use defaults
+	}
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	require.NoError(t, err)
+
+	// Verify default retry config was applied
+	require.Equal(t, 3, d.retryConfig.MaxAttempts)
+	require.Equal(t, model.Duration(1*time.Second), d.retryConfig.InitialInterval)
+	require.Equal(t, model.Duration(30*time.Second), d.retryConfig.MaxInterval)
+	require.Equal(t, 2.0, d.retryConfig.Multiplier)
+
+	ctx := context.Background()
+	tgs, err := d.Refresh(ctx)
+	require.NoError(t, err)
+	require.Len(t, tgs, 1)
+}
+
+func TestIsRetryableStatusCode(t *testing.T) {
+	cases := []struct {
+		statusCode int
+		retryable  bool
+	}{
+		{http.StatusOK, false},
+		{http.StatusBadRequest, false},
+		{http.StatusUnauthorized, false},
+		{http.StatusForbidden, false},
+		{http.StatusNotFound, false},
+		{http.StatusTooManyRequests, true},
+		{http.StatusInternalServerError, true},
+		{http.StatusBadGateway, true},
+		{http.StatusServiceUnavailable, true},
+		{http.StatusGatewayTimeout, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("status_%d", tc.statusCode), func(t *testing.T) {
+			require.Equal(t, tc.retryable, isRetryableStatusCode(tc.statusCode))
+		})
+	}
+}
