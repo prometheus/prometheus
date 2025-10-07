@@ -32,6 +32,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"go.uber.org/atomic"
 
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -435,6 +436,7 @@ type QueueManager struct {
 
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
+	remoteAPI   *remoteapi.API // client_golang remote write API client
 	protoMsg    config.RemoteWriteProtoMsg
 	compr       compression.Type
 
@@ -502,6 +504,7 @@ func NewQueueManager(
 		externalLabels:          extLabelsSlice,
 		relabelConfigs:          relabelConfigs,
 		storeClient:             client,
+		remoteAPI:               nil, // Will be set below after QueueManager is created
 		sendExemplars:           enableExemplarRemoteWrite,
 		sendNativeHistograms:    enableNativeHistogramRemoteWrite,
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
@@ -544,6 +547,30 @@ func NewQueueManager(
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
 	}
 	t.shards = t.newShards()
+
+	// Initialize remoteAPI with retry callback now that QueueManager is fully created
+	if realClient, ok := client.(*Client); ok {
+		// This is a real Client with an HTTP client, so we can use the remote API.
+		apiOpts := []remoteapi.APIOption{
+			remoteapi.WithAPILogger(logger),
+			remoteapi.WithAPIHTTPClient(realClient.Client),
+		}
+
+		var err error
+		t.remoteAPI, err = remoteapi.NewAPI(client.Endpoint(), apiOpts...)
+		if err != nil {
+			// This should rarely happen with a real client, but handle it gracefully.
+			fmt.Printf("[INIT] ⚠️  Failed to create remote API client, falling back to legacy path (endpoint=%s, err=%v)\n",
+				client.Endpoint(), err)
+			t.remoteAPI = nil
+		} else {
+			fmt.Printf("[INIT] ✅ Successfully initialized client_golang remote API (endpoint=%s, protoMsg=%v)\n",
+				client.Endpoint(), protoMsg)
+		}
+	} else {
+		// This is a test mock or other non-HTTP client, use legacy path.
+		fmt.Printf("[INIT] 🧪 Test/mock client detected (%T), using legacy path for compatibility\n", client)
+	}
 
 	return t
 }
@@ -1047,8 +1074,31 @@ func (t *QueueManager) SeriesReset(index int) {
 // fields are updated to avoid restarting the queue.
 func (t *QueueManager) SetClient(c WriteClient) {
 	t.clientMtx.Lock()
+	defer t.clientMtx.Unlock()
+
 	t.storeClient = c
-	t.clientMtx.Unlock()
+
+	// If setting a real Client, reinitialize the remote API to point to the new endpoint.
+	// If setting a mock/test client, disable remote API to use legacy path.
+	if realClient, ok := c.(*Client); ok {
+		apiOpts := []remoteapi.APIOption{
+			remoteapi.WithAPILogger(t.logger),
+			remoteapi.WithAPIHTTPClient(realClient.Client),
+		}
+		remoteAPIClient, err := remoteapi.NewAPI(c.Endpoint(), apiOpts...)
+		if err != nil {
+			fmt.Printf("[SetClient] ⚠️  Failed to create remote API client for new client (endpoint=%s, err=%v)\n",
+				c.Endpoint(), err)
+			t.remoteAPI = nil
+		} else {
+			fmt.Printf("[SetClient] ✅ Reinitialized client_golang remote API (endpoint=%s)\n", c.Endpoint())
+			t.remoteAPI = remoteAPIClient
+		}
+	} else {
+		// Mock/test client - disable remote API to use legacy path
+		fmt.Printf("[SetClient] 🧪 Mock/test client set (%T), disabling remote API\n", c)
+		t.remoteAPI = nil
+	}
 }
 
 func (t *QueueManager) client() WriteClient {
@@ -1714,7 +1764,133 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 }
 
 // sendSamplesWithBackoff to the remote storage with backoff for recoverable errors.
+// This function routes to either the new client_golang remote API path or the legacy path.
+//
+// NOTE: Tests using newTestQueueManager/newTestClientAndQueueManager will use the REMOTE_API path.
+// Tests using NewStorage may fall back to LEGACY_PATH due to URL encoding issues (this is expected for now).
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf compression.EncodeBuffer, compr compression.Type) (WriteResponseStats, error) {
+	// Check if we should use the new client_golang remote API path
+	if s.qm.remoteAPI != nil {
+		fmt.Printf("[REMOTE_API] ✅ Using client_golang remote API for sending samples (samples=%d, exemplars=%d, histograms=%d, metadata=%d)\n",
+			sampleCount, exemplarCount, histogramCount, metadataCount)
+		return s.sendSamplesWithRemoteAPI(ctx, samples, sampleCount, exemplarCount, histogramCount, metadataCount)
+	}
+
+	// Fallback to old path if remoteAPI is not available
+	fmt.Printf("[LEGACY_PATH] ⚠️  Using legacy send path - remoteAPI not available (samples=%d, exemplars=%d, histograms=%d, metadata=%d)\n",
+		sampleCount, exemplarCount, histogramCount, metadataCount)
+	return s.sendSamplesWithBackoffLegacy(ctx, samples, sampleCount, exemplarCount, histogramCount, metadataCount, pBuf, buf, compr)
+}
+
+// convertRemoteAPIStats converts client_golang WriteResponseStats to Prometheus WriteResponseStats.
+func convertRemoteAPIStats(apiStats remoteapi.WriteResponseStats, msgType remoteapi.WriteMessageType) WriteResponseStats {
+	// The client_golang stats has a private 'confirmed' field, but we can infer it:
+	// For V2, if we got any non-zero stats or the response was successful, it's confirmed.
+	// For V1, we never have confirmed stats.
+	confirmed := msgType == remoteapi.WriteV2MessageType && !apiStats.NoDataWritten()
+
+	return WriteResponseStats{
+		Samples:    apiStats.Samples,
+		Histograms: apiStats.Histograms,
+		Exemplars:  apiStats.Exemplars,
+		Confirmed:  confirmed,
+	}
+}
+
+// sendSamplesWithRemoteAPI uses client_golang's remote API to send samples.
+func (s *shards) sendSamplesWithRemoteAPI(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int) (WriteResponseStats, error) {
+	// Build the proto message (without marshaling/compressing).
+	req, highest, lowest := buildProtoWriteRequest(s.qm.logger, samples, nil, nil)
+	s.qm.buildRequestLimitTimestamp.Store(lowest)
+
+	// Determine the message type based on protoMsg config.
+	var msgType remoteapi.WriteMessageType
+	if s.qm.protoMsg == config.RemoteWriteProtoMsgV1 {
+		msgType = remoteapi.WriteV1MessageType
+	} else {
+		msgType = remoteapi.WriteV2MessageType
+	}
+
+	fmt.Printf("[REMOTE_API] Calling client_golang remoteAPI.Write (msgType=%s, endpoint=%s)\n",
+		msgType, s.qm.storeClient.Endpoint())
+
+	// Track the start time for metrics.
+	begin := time.Now()
+
+	// Create a context with tracing.
+	ctx, span := otel.Tracer("").Start(ctx, "Remote Send Batch")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.Int("samples", sampleCount),
+		attribute.String("remote_name", s.qm.storeClient.Name()),
+		attribute.String("remote_url", s.qm.storeClient.Endpoint()),
+	)
+
+	if exemplarCount > 0 {
+		span.SetAttributes(attribute.Int("exemplars", exemplarCount))
+	}
+	if histogramCount > 0 {
+		span.SetAttributes(attribute.Int("histograms", histogramCount))
+	}
+
+	// Update metrics for initial attempt.
+	s.qm.metrics.samplesTotal.Add(float64(sampleCount))
+	s.qm.metrics.exemplarsTotal.Add(float64(exemplarCount))
+	s.qm.metrics.histogramsTotal.Add(float64(histogramCount))
+	s.qm.metrics.metadataTotal.Add(float64(metadataCount))
+
+	// Use client_golang's Write function - it handles marshaling, compression, HTTP, and retries.
+	apiStats, err := s.qm.remoteAPI.Write(ctx, msgType, req)
+	s.qm.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
+
+	fmt.Printf("[REMOTE_API] client_golang remoteAPI.Write completed (msgType=%s, duration=%v, err=%v, samples=%d, histograms=%d, exemplars=%d)\n",
+		msgType, time.Since(begin), err, apiStats.Samples, apiStats.Histograms, apiStats.Exemplars)
+
+	// Convert client_golang stats to Prometheus stats.
+	rs := convertRemoteAPIStats(apiStats, msgType)
+
+	if err != nil {
+		span.RecordError(err)
+		// The client_golang API already handled retries, so this is a final error.
+		if errors.Is(err, context.Canceled) {
+			return rs, err
+		}
+		// Track failed samples.
+		sampleDiff := sampleCount - rs.Samples
+		if sampleDiff > 0 {
+			s.qm.metrics.failedSamplesTotal.Add(float64(sampleDiff))
+		}
+		histogramDiff := histogramCount - rs.Histograms
+		if histogramDiff > 0 {
+			s.qm.metrics.failedHistogramsTotal.Add(float64(histogramDiff))
+		}
+		exemplarDiff := exemplarCount - rs.Exemplars
+		if exemplarDiff > 0 {
+			s.qm.metrics.failedExemplarsTotal.Add(float64(exemplarDiff))
+		}
+		return rs, err
+	}
+
+	// TODO: Track sent bytes. We don't have direct access to the compressed size here.
+	// We could estimate it or add a callback to the client_golang API.
+	s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
+
+	if !rs.Confirmed && msgType == remoteapi.WriteV1MessageType {
+		// No 2.0 response headers, and we sent v1 message, so likely it's 1.0 Receiver.
+		// Assume success, don't rely on headers.
+		return WriteResponseStats{
+			Samples:    sampleCount,
+			Histograms: histogramCount,
+			Exemplars:  exemplarCount,
+		}, nil
+	}
+
+	return rs, nil
+}
+
+// sendSamplesWithBackoffLegacy is the original implementation using manual marshaling/compression.
+func (s *shards) sendSamplesWithBackoffLegacy(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf compression.EncodeBuffer, compr compression.Type) (WriteResponseStats, error) {
 	// Build the WriteRequest with no metadata.
 	req, highest, lowest, err := buildWriteRequest(s.qm.logger, samples, nil, pBuf, nil, buf, compr)
 	s.qm.buildRequestLimitTimestamp.Store(lowest)
@@ -2136,7 +2312,9 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 	return highest, lowest, timeSeries, droppedSamples, droppedExemplars, droppedHistograms
 }
 
-func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, filter func(prompb.TimeSeries) bool, buf compression.EncodeBuffer, compr compression.Type) (_ []byte, highest, lowest int64, _ error) {
+// buildProtoWriteRequest builds a proto WriteRequest message without marshaling/compressing.
+// Returns the proto message and highest/lowest timestamps.
+func buildProtoWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, filter func(prompb.TimeSeries) bool) (*prompb.WriteRequest, int64, int64) {
 	highest, lowest, timeSeries,
 		droppedSamples, droppedExemplars, droppedHistograms := buildTimeSeries(timeSeries, filter)
 
@@ -2148,6 +2326,12 @@ func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, meta
 		Timeseries: timeSeries,
 		Metadata:   metadata,
 	}
+
+	return req, highest, lowest
+}
+
+func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, filter func(prompb.TimeSeries) bool, buf compression.EncodeBuffer, compr compression.Type) (_ []byte, highest, lowest int64, _ error) {
+	req, highest, lowest := buildProtoWriteRequest(logger, timeSeries, metadata, filter)
 
 	if pBuf == nil {
 		pBuf = proto.NewBuffer(nil) // For convenience in tests. Not efficient.

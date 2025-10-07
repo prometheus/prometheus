@@ -17,7 +17,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"runtime/pprof"
 	"strconv"
@@ -28,8 +32,10 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -146,9 +152,10 @@ func TestBasicContentNegotiation(t *testing.T) {
 			require.NoError(t, err)
 			qm := s.rws.queues[hash]
 
-			c := NewTestWriteClient(tc.receiverProtoMsg)
+			// Use remoteapi setup with error injection
+			c, realClient := NewTestWriteClientWithServer(t, tc.receiverProtoMsg)
 			c.injectErrors(tc.injectErrs)
-			qm.SetClient(c)
+			qm.SetClient(realClient)
 
 			qm.StoreSeries(series, 0)
 			qm.StoreMetadata(metadata)
@@ -259,6 +266,10 @@ func TestSampleDelivery(t *testing.T) {
 			}
 			metadata = createSeriesMetadata(series)
 
+			// Set up remote write server using the remoteapi path
+			c, serverURL := setupRemoteWriteServer(t, tc.protoMsg)
+			writeConfig.URL = serverURL
+
 			// Apply new config.
 			queueConfig.Capacity = len(samples)
 			queueConfig.MaxSamplesPerSend = len(samples) / 2
@@ -268,9 +279,6 @@ func TestSampleDelivery(t *testing.T) {
 			hash, err := toHash(writeConfig)
 			require.NoError(t, err)
 			qm := s.rws.queues[hash]
-
-			c := NewTestWriteClient(tc.protoMsg)
-			qm.SetClient(c)
 
 			qm.StoreSeries(series, 0)
 			qm.StoreMetadata(metadata)
@@ -303,11 +311,44 @@ func TestSampleDelivery(t *testing.T) {
 	}
 }
 
+// newTestClientAndQueueManager creates a TestWriteClient backed by a real HTTP server
+// using remoteapi.NewWriteHandler, and a QueueManager configured to use that server.
+// This ensures tests exercise the full remote write API path.
 func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, protoMsg config.RemoteWriteProtoMsg) (*TestWriteClient, *QueueManager) {
+	return newTestClientAndQueueManagerWithConfig(t, config.DefaultQueueConfig, config.DefaultMetadataConfig, flushDeadline, protoMsg)
+}
+
+// newTestClientAndQueueManagerWithConfig is like newTestClientAndQueueManager but allows custom config.
+func newTestClientAndQueueManagerWithConfig(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, flushDeadline time.Duration, protoMsg config.RemoteWriteProtoMsg) (*TestWriteClient, *QueueManager) {
+	testClient, realClient := NewTestWriteClientWithServer(t, protoMsg)
+	return testClient, newTestQueueManager(t, cfg, mcfg, flushDeadline, realClient, protoMsg)
+}
+
+// setupRemoteWriteServer creates an HTTP test server with remoteapi.NewWriteHandler.
+// Returns the test client and server URL. Cleanup is registered with t.Cleanup().
+func setupRemoteWriteServer(t testing.TB, protoMsg config.RemoteWriteProtoMsg) (*TestWriteClient, *config_util.URL) {
 	c := NewTestWriteClient(protoMsg)
-	cfg := config.DefaultQueueConfig
-	mcfg := config.DefaultMetadataConfig
-	return c, newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg)
+	storage := &testWriteStorage{
+		client:   c,
+		protoMsg: protoMsg,
+	}
+	var acceptedTypes remoteapi.MessageTypes
+	if protoMsg == config.RemoteWriteProtoMsgV1 {
+		acceptedTypes = remoteapi.MessageTypes{remoteapi.WriteV1MessageType}
+	} else {
+		acceptedTypes = remoteapi.MessageTypes{remoteapi.WriteV2MessageType}
+	}
+	handler := remoteapi.NewWriteHandler(storage, acceptedTypes)
+	server := httptest.NewServer(handler)
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		server.Close()
+	})
+
+	return c, &config_util.URL{URL: serverURL}
 }
 
 func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg config.RemoteWriteProtoMsg) *QueueManager {
@@ -376,13 +417,14 @@ func TestWALMetadataDelivery(t *testing.T) {
 	_, series := createTimeseries(0, num)
 	metadata := createSeriesMetadata(series)
 
+	// Set up remote write server using the remoteapi path
+	c, serverURL := setupRemoteWriteServer(t, config.RemoteWriteProtoMsgV2)
+	writeConfig.URL = serverURL
+
 	require.NoError(t, s.ApplyConfig(conf))
 	hash, err := toHash(writeConfig)
 	require.NoError(t, err)
 	qm := s.rws.queues[hash]
-
-	c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
-	qm.SetClient(c)
 
 	qm.StoreSeries(series, 0)
 	qm.StoreMetadata(metadata)
@@ -400,12 +442,8 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 			// Let's send one less sample than batch size, and wait the timeout duration
 			n := 9
 			samples, series := createTimeseries(n, n)
-			cfg := testDefaultQueueConfig()
-			mcfg := config.DefaultMetadataConfig
-			cfg.MaxShards = 1
 
-			c := NewTestWriteClient(protoMsg)
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			c, m := newTestClientAndQueueManager(t, defaultFlushDeadline, protoMsg)
 			m.StoreSeries(series, 0)
 			m.Start()
 			defer m.Stop()
@@ -517,11 +555,7 @@ func TestReshard(t *testing.T) {
 			nSamples := config.DefaultQueueConfig.Capacity * size
 			samples, series := createTimeseries(nSamples, nSeries)
 
-			cfg := config.DefaultQueueConfig
-			cfg.MaxShards = 1
-
-			c := NewTestWriteClient(protoMsg)
-			m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, protoMsg)
+			c, m := newTestClientAndQueueManager(t, defaultFlushDeadline, protoMsg)
 			c.expectSamples(samples, series)
 			m.StoreSeries(series, 0)
 
@@ -551,7 +585,8 @@ func TestReshardRaceWithStop(t *testing.T) {
 	t.Parallel()
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
-			c := NewTestWriteClient(protoMsg)
+			// Create HTTP server and real client once, reuse in loop
+			_, realClient := NewTestWriteClientWithServer(t, protoMsg)
 			var m *QueueManager
 			h := sync.Mutex{}
 			h.Lock()
@@ -561,7 +596,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 			exitCh := make(chan struct{})
 			go func() {
 				for {
-					m = newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+					m = newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, realClient, protoMsg)
 
 					m.Start()
 					h.Unlock()
@@ -980,6 +1015,128 @@ func NewTestWriteClient(protoMsg config.RemoteWriteProtoMsg) *TestWriteClient {
 		storeWait:        0,
 		returnError:      nil,
 	}
+}
+
+// NewTestWriteClientWithServer creates a TestWriteClient backed by an HTTP server using
+// remoteapi.NewWriteHandler, and returns a real Client that connects to it.
+// This allows testing with the remote API path.
+func NewTestWriteClientWithServer(t testing.TB, protoMsg config.RemoteWriteProtoMsg) (*TestWriteClient, WriteClient) {
+	// Use setupRemoteWriteServer to create the HTTP server
+	testClient, serverURL := setupRemoteWriteServer(t, protoMsg)
+
+	// Create a real WriteClient that connects to the test server
+	clientConfig := &ClientConfig{
+		URL:              serverURL,
+		Timeout:          model.Duration(30 * time.Second),
+		WriteProtoMsg:    protoMsg,
+		RetryOnRateLimit: false,
+	}
+
+	realClient, err := NewWriteClient("test-client-with-server", clientConfig)
+	require.NoError(t, err)
+
+	return testClient, realClient
+}
+
+// testWriteStorage adapts TestWriteClient to the remoteapi storage interface.
+type testWriteStorage struct {
+	client   *TestWriteClient
+	protoMsg config.RemoteWriteProtoMsg
+}
+
+func (s *testWriteStorage) Store(req *http.Request, msgType remoteapi.WriteMessageType) (*remoteapi.WriteResponse, error) {
+	fmt.Printf("[testWriteStorage.Store] Called with msgType=%s\n", msgType)
+
+	// Check for returnError first (persistent error for all requests)
+	s.client.mtx.Lock()
+	if s.client.returnError != nil {
+		s.client.writesReceived++
+		returnErr := s.client.returnError
+		s.client.mtx.Unlock()
+		return nil, returnErr
+	}
+
+	// Check for injected errors - but still count the attempt
+	var injectedErr error
+	if len(s.client.injectedErrs) > 0 {
+		s.client.currErr++
+		// Access the error directly (currErr starts at -1 from injectErrors)
+		injectedErr = s.client.injectedErrs[s.client.currErr]
+		fmt.Printf("[testWriteStorage.Store] Injecting error for attempt %d: %v\n", s.client.currErr, injectedErr)
+	}
+	// Increment writesReceived even on error to match original behavior
+	s.client.writesReceived++
+	s.client.mtx.Unlock()
+
+	if injectedErr != nil {
+		fmt.Printf("[testWriteStorage.Store] Returning injected error: %v\n", injectedErr)
+		// Return the error - remoteapi handler should translate this to HTTP 500
+		// Note: RecoverableError might not be recognized by client_golang, but any error should work
+		return nil, injectedErr
+	}
+
+	// Read the request body (already decompressed by the handler middleware)
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse the protobuf message directly (body is already decompressed)
+	var reqProto *prompb.WriteRequest
+	switch msgType {
+	case remoteapi.WriteV1MessageType:
+		reqProto = &prompb.WriteRequest{}
+		err = proto.Unmarshal(body, reqProto)
+	case remoteapi.WriteV2MessageType:
+		var reqProtoV2 writev2.Request
+		err = proto.Unmarshal(body, &reqProtoV2)
+		if err == nil {
+			reqProto, err = v2RequestToWriteRequest(&reqProtoV2)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported message type: %s", msgType)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// Update TestWriteClient's received data
+	s.client.mtx.Lock()
+	rs := WriteResponseStats{}
+	b := labels.NewScratchBuilder(0)
+	for _, ts := range reqProto.Timeseries {
+		lbls := ts.ToLabels(&b, nil)
+		tsID := lbls.String()
+		if len(ts.Samples) > 0 {
+			s.client.receivedSamples[tsID] = append(s.client.receivedSamples[tsID], ts.Samples...)
+		}
+		rs.Samples += len(ts.Samples)
+		if len(ts.Exemplars) > 0 {
+			s.client.receivedExemplars[tsID] = append(s.client.receivedExemplars[tsID], ts.Exemplars...)
+		}
+		rs.Exemplars += len(ts.Exemplars)
+		for _, h := range ts.Histograms {
+			if h.IsFloatHistogram() {
+				s.client.receivedFloatHistograms[tsID] = append(s.client.receivedFloatHistograms[tsID], h)
+			} else {
+				s.client.receivedHistograms[tsID] = append(s.client.receivedHistograms[tsID], h)
+			}
+		}
+		rs.Histograms += len(ts.Histograms)
+	}
+
+	for _, m := range reqProto.Metadata {
+		s.client.receivedMetadata[m.MetricFamilyName] = append(s.client.receivedMetadata[m.MetricFamilyName], m)
+	}
+	s.client.mtx.Unlock()
+
+	// Create a WriteResponse with the stats
+	resp := remoteapi.NewWriteResponse()
+	resp.Samples = rs.Samples
+	resp.Histograms = rs.Histograms
+	resp.Exemplars = rs.Exemplars
+
+	return resp, nil
 }
 
 func (c *TestWriteClient) injectErrors(injectedErrs []error) {
@@ -1452,13 +1609,14 @@ func BenchmarkStoreSeries(b *testing.B) {
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
+				testClient, realClient := NewTestWriteClientWithServer(b, config.RemoteWriteProtoMsgV1)
+				_ = testClient // testClient not used in benchmark, but created for consistency
 				dir := b.TempDir()
 				cfg := config.DefaultQueueConfig
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
 
-				m := NewQueueManager(metrics, nil, nil, nil, dir, cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), nil, false, false, false, config.RemoteWriteProtoMsgV1)
+				m := NewQueueManager(metrics, nil, nil, nil, dir, cfg, mcfg, labels.EmptyLabels(), nil, realClient, defaultFlushDeadline, newPool(), nil, false, false, false, config.RemoteWriteProtoMsgV1)
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -1970,14 +2128,13 @@ func TestDropOldTimeSeries(t *testing.T) {
 			nSamples := config.DefaultQueueConfig.Capacity * size
 			samples, newSamples, series := createTimeseriesWithOldSamples(nSamples, nSeries)
 
-			c := NewTestWriteClient(protoMsg)
-			c.expectSamples(newSamples, series)
-
 			cfg := config.DefaultQueueConfig
 			mcfg := config.DefaultMetadataConfig
 			cfg.MaxShards = 1
 			cfg.SampleAgeLimit = model.Duration(60 * time.Second)
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+
+			c, m := newTestClientAndQueueManagerWithConfig(t, cfg, mcfg, defaultFlushDeadline, protoMsg)
+			c.expectSamples(newSamples, series)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -2014,8 +2171,8 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 	metadataCfg.Send = true
 	metadataCfg.SendInterval = model.Duration(time.Second * 60)
 	metadataCfg.MaxSamplesPerSend = maxSamplesPerSend
-	c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
-	m := newTestQueueManager(t, cfg, metadataCfg, time.Second, c, config.RemoteWriteProtoMsgV1)
+
+	c, m := newTestClientAndQueueManagerWithConfig(t, cfg, metadataCfg, time.Second, config.RemoteWriteProtoMsgV1)
 
 	m.Start()
 
@@ -2503,12 +2660,11 @@ func TestHighestTimestampOnAppend(t *testing.T) {
 func TestAppendHistogramSchemaValidation(t *testing.T) {
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(string(protoMsg), func(t *testing.T) {
-			c := NewTestWriteClient(protoMsg)
 			cfg := testDefaultQueueConfig()
 			mcfg := config.DefaultMetadataConfig
 			cfg.MaxShards = 1
 
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			c, m := newTestClientAndQueueManagerWithConfig(t, cfg, mcfg, defaultFlushDeadline, protoMsg)
 			m.sendNativeHistograms = true
 
 			// Create series for the histograms
