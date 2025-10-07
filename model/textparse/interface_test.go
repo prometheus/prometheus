@@ -177,6 +177,14 @@ func TestNewParser(t *testing.T) {
 			contentType:    "application/vnd.google.protobuf;q=0.9,text/plain;q=0.1",
 			validateParser: requireProtobufParser,
 		},
+		"comma-separated-content-types-highest-quality-not-first": {
+			contentType:    "text/plain;q=0.5,application/openmetrics-text;q=0.9",
+			validateParser: requireOpenMetricsParser,
+		},
+		"comma-separated-content-types-default-quality-wins": {
+			contentType:    "text/plain;q=0.5,application/openmetrics-text",
+			validateParser: requireOpenMetricsParser,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tt := tt // Copy to local variable before going parallel.
