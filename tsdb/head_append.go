@@ -173,7 +173,7 @@ func (h *Head) appender() *headAppender {
 		oooTimeWindow:         h.opts.OutOfOrderTimeWindow.Load(),
 		seriesRefs:            h.getRefSeriesBuffer(),
 		series:                h.getSeriesBuffer(),
-		typesInBatch:          map[chunks.HeadSeriesRef]sampleType{},
+		typesInBatch:          h.getTypeMap(),
 		appendID:              appendID,
 		cleanupAppendIDsBelow: cleanupAppendIDsBelow,
 	}
@@ -295,6 +295,19 @@ func (h *Head) putSeriesBuffer(b []*memSeries) {
 		b[i] = nil
 	}
 	h.seriesPool.Put(b[:0])
+}
+
+func (h *Head) getTypeMap() map[chunks.HeadSeriesRef]sampleType {
+	b := h.typeMapPool.Get()
+	if b == nil {
+		return make(map[chunks.HeadSeriesRef]sampleType)
+	}
+	return b
+}
+
+func (h *Head) putTypeMap(b map[chunks.HeadSeriesRef]sampleType) {
+	clear(b)
+	h.typeMapPool.Put(b)
 }
 
 func (h *Head) getBytesBuffer() []byte {
@@ -1687,8 +1700,13 @@ func (a *headAppender) Commit() (err error) {
 	h := a.head
 
 	defer func() {
+		if a.closed {
+			// Don't double-close in case Rollback() was called.
+			return
+		}
 		h.putRefSeriesBuffer(a.seriesRefs)
 		h.putSeriesBuffer(a.series)
+		h.putTypeMap(a.typesInBatch)
 		a.closed = true
 	}()
 
@@ -2216,6 +2234,7 @@ func (a *headAppender) Rollback() (err error) {
 		a.closed = true
 		h.putRefSeriesBuffer(a.seriesRefs)
 		h.putSeriesBuffer(a.series)
+		h.putTypeMap(a.typesInBatch)
 	}()
 
 	var series *memSeries
