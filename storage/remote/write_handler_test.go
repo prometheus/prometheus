@@ -1422,7 +1422,7 @@ func TestWriteHandler_LabelValueLengthLimit(t *testing.T) {
 			require.NoError(t, err)
 
 			// Create HTTP request
-			httpReq, err := http.NewRequest("POST", "", bytes.NewReader(payload))
+			httpReq, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
 			require.NoError(t, err)
 
 			if tc.protoMsg == config.RemoteWriteProtoMsgV1 {
