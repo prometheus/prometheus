@@ -51,9 +51,9 @@ type AlertState int
 
 const (
 	// StateUnknown is the state of an alert that has not yet been evaluated.
-	StateUnknown AlertState = -1
+	StateUnknown AlertState = iota
 	// StateInactive is the state of an alert that is neither firing nor pending.
-	StateInactive AlertState = iota
+	StateInactive
 	// StatePending is the state of an alert that has been active for less than
 	// the configured threshold duration.
 	StatePending
@@ -64,14 +64,14 @@ const (
 
 func (s AlertState) String() string {
 	switch s {
+	case StateUnknown:
+		return "unknown"
 	case StateInactive:
 		return "inactive"
 	case StatePending:
 		return "pending"
 	case StateFiring:
 		return "firing"
-	case StateUnknown:
-		return "unknown"
 	}
 	panic(fmt.Errorf("unknown alert state: %d", s))
 }
