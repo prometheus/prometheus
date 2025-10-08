@@ -1066,6 +1066,101 @@ func TestUnregisterMetrics(t *testing.T) {
 	}
 }
 
+// TestNHCBAndCTZeroIngestion verifies that both ConvertClassicHistogramsToNHCBEnabled
+// and EnableCreatedTimestampZeroIngestion can be used simultaneously without errors.
+// This test addresses issue #17216 by ensuring the previously blocking check has been removed.
+func TestNHCBAndCTZeroIngestion(t *testing.T) {
+	t.Parallel()
+
+	const mName = "test_histogram"
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Create a test histogram with created timestamp.
+	testHist := generateTestHistogram(0)
+	testHist.CreatedTimestamp = timestamppb.Now()
+
+	app := &collectResultAppender{}
+	discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
+		EnableCreatedTimestampZeroIngestion: true,
+		EnableNativeHistogramsIngestion:     true,
+		skipOffsetting:                      true,
+	}, &collectResultAppendable{app})
+	defer scrapeManager.Stop()
+
+	once := sync.Once{}
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			fail := true
+			once.Do(func() {
+				fail = false
+				w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
+
+				ctrType := dto.MetricType_HISTOGRAM
+				w.Write(protoMarshalDelimited(t, &dto.MetricFamily{
+					Name:   proto.String(mName),
+					Type:   &ctrType,
+					Metric: []*dto.Metric{{Histogram: testHist}},
+				}))
+			})
+
+			if fail {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		}),
+	)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	// Configuration with both convert_classic_histograms_to_nhcb enabled and CT zero ingestion enabled.
+	testConfig := fmt.Sprintf(`
+global:
+  scrape_interval: 9999m
+  scrape_timeout: 5s
+
+scrape_configs:
+- job_name: test
+  convert_classic_histograms_to_nhcb: true
+  static_configs:
+  - targets: ['%s']
+`, serverURL.Host)
+
+	applyConfig(t, testConfig, scrapeManager, discoveryManager)
+
+	// Wait for scrape to complete successfully.
+	ctx, cancel = context.WithTimeout(ctx, 1*time.Minute)
+	defer cancel()
+	require.NoError(t, runutil.Retry(100*time.Millisecond, ctx.Done(), func() error {
+		app.mtx.Lock()
+		defer app.mtx.Unlock()
+
+		if len(app.resultHistograms) > 0 {
+			return nil
+		}
+		return errors.New("expected histogram samples, got none")
+	}), "after 1 minute")
+
+	// Verify that samples were ingested (proving both features work together).
+	app.mtx.Lock()
+	defer app.mtx.Unlock()
+
+	var got []histogramSample
+	for _, h := range app.resultHistograms {
+		if h.metric.Get(model.MetricNameLabel) == mName {
+			got = append(got, h)
+		}
+	}
+
+	// With CT zero ingestion enabled and a created timestamp present, we expect 2 samples:
+	// one zero sample and one actual sample.
+	require.Len(t, got, 2, "expected 2 histogram samples (zero sample + actual sample)")
+	require.Equal(t, histogram.Histogram{}, *got[0].h, "first sample should be zero sample")
+	require.Equal(t, testHist.GetSampleSum(), got[1].h.Sum, "second sample should match input")
+}
+
 func applyConfig(
 	t *testing.T,
 	config string,
