@@ -53,6 +53,7 @@ import (
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	"go.uber.org/atomic"
 	"go.uber.org/automaxprocs/maxprocs"
+	"go.yaml.in/yaml/v2"
 	"k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
 
@@ -620,8 +621,7 @@ func main() {
 		localStoragePath = cfg.agentStoragePath
 	}
 
-	tlsEnabled := *webConfig != ""
-	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0], tlsEnabled)
+	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0], *webConfig)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("parse external URL %q: %w", cfg.prometheusURL, err))
 		os.Exit(2)
@@ -1573,7 +1573,7 @@ func compileCORSRegexString(s string) (*regexp.Regexp, error) {
 
 // computeExternalURL computes a sanitized external URL from a raw input. It infers unset
 // URL parts from the OS and the given listen address.
-func computeExternalURL(u, listenAddr string, tlsEnabled bool) (*url.URL, error) {
+func computeExternalURL(u, listenAddr, webConfig string) (*url.URL, error) {
 	if u == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -1583,11 +1583,7 @@ func computeExternalURL(u, listenAddr string, tlsEnabled bool) (*url.URL, error)
 		if err != nil {
 			return nil, err
 		}
-		scheme := "http"
-		if tlsEnabled {
-			scheme = "https"
-		}
-		u = fmt.Sprintf("%s://%s:%s/", scheme, hostname, port)
+		u = fmt.Sprintf("http://%s:%s/", hostname, port)
 	}
 
 	if startsOrEndsWithQuote(u) {
@@ -1599,6 +1595,11 @@ func computeExternalURL(u, listenAddr string, tlsEnabled bool) (*url.URL, error)
 		return nil, err
 	}
 
+	eu.Scheme = "http"
+	if isTLSEnabled(webConfig) {
+		eu.Scheme = "https"
+	}
+
 	ppref := strings.TrimRight(eu.Path, "/")
 	if ppref != "" && !strings.HasPrefix(ppref, "/") {
 		ppref = "/" + ppref
@@ -1606,6 +1607,25 @@ func computeExternalURL(u, listenAddr string, tlsEnabled bool) (*url.URL, error)
 	eu.Path = ppref
 
 	return eu, nil
+}
+
+func isTLSEnabled(configFile string) bool {
+	if configFile == "" {
+		return false
+	}
+
+	data, err := os.ReadFile(configFile)
+	if err != nil {
+		return false
+	}
+
+	var config map[string]interface{}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return false
+	}
+
+	_, ok := config["tls_server_config"]
+	return ok
 }
 
 // readyStorage implements the Storage interface while allowing to set the actual
