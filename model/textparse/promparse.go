@@ -68,6 +68,9 @@ const (
 	tEqual
 	tTimestamp
 	tValue
+	tColon
+	tBracketOpen
+	tBracketClose
 )
 
 func (t token) String() string {

@@ -111,5 +111,9 @@ require (
 	google.golang.org/grpc v1.73.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	modernc.org/fileutil v1.2.0 // indirect
+	modernc.org/golex v1.1.0 // indirect
+	modernc.org/lex v1.1.1 // indirect
+	modernc.org/lexer v1.0.5 // indirect
 	pluginrpc.com/pluginrpc v0.5.0 // indirect
 )
