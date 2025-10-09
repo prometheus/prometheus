@@ -1961,9 +1961,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			// Matrix evaluation always returns the evaluation time,
 			// so this function needs special handling when given
 			// a vector selector.
-			arg := unwrapStepInvariantExpr(e.Args[0])
-			vs, ok := arg.(*parser.VectorSelector)
-			if ok {
+			if vs, ok := e.Args[0].(*parser.VectorSelector); ok {
 				return ev.rangeEvalTimestampFunctionOverVectorSelector(ctx, vs, call, e)
 			}
 		}
@@ -4213,13 +4211,6 @@ func unwrapParenExpr(e *parser.Expr) {
 		}
 		*e = p.Expr
 	}
-}
-
-func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
-	if p, ok := e.(*parser.StepInvariantExpr); ok {
-		return p.Expr
-	}
-	return e
 }
 
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
