@@ -1242,11 +1242,11 @@ eval range from 0 to 12m step 6m metric{series="1"} or ignoring(series) metric{s
 
 # Test mismatched boundaries with arithmetic binary operators
 eval range from 0 to 12m step 6m metric{series="2"} + ignoring (series) metric{series="3"}
-  expect no_warn
+  expect info msg:PromQL info: vector contains histograms with mismatched custom buckets addition
   {} {{schema:-53 count:2 sum:2 custom_values:[10] buckets:[2]}} _ {{schema:-53 count:2 sum:2 custom_values:[5] buckets:[2]}}
 
 eval range from 0 to 12m step 6m metric{series="2"} - ignoring (series) metric{series="3"}
-  expect no_warn
+  expect info msg:PromQL info: vector contains histograms with mismatched custom buckets subtraction
   {} {{schema:-53 custom_values:[10] counter_reset_hint:gauge}} _ {{schema:-53 custom_values:[5] counter_reset_hint:gauge}}
 
 clear

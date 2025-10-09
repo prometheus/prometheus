@@ -343,10 +343,13 @@ func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
 // is returned as true. A counter reset conflict occurs iff one of two histograms indicate
 // a counter reset (CounterReset) while the other indicates no reset (NotCounterReset).
 //
+// In case of mismatched NHCB bounds, they will be reconciled to the intersection of
+// both histograms, and nhcbBoundsReconciled will be returned as true.
+//
 // This method returns a pointer to the receiving histogram for convenience.
-func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counterResetCollision bool, err error) {
+func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counterResetCollision, nhcbBoundsReconciled bool, err error) {
 	if err := h.checkSchemaAndBounds(other); err != nil {
-		return nil, false, err
+		return nil, false, false, err
 	}
 	counterResetCollision = h.adjustCounterReset(other)
 	if !h.UsesCustomBuckets() {
@@ -367,6 +370,7 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 		if CustomBucketBoundsMatch(h.CustomValues, other.CustomValues) {
 			h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
 		} else {
+			nhcbBoundsReconciled = true
 			intersectedBounds := intersectCustomBucketBounds(h.CustomValues, other.CustomValues)
 
 			// Add with mapping - maps both histograms to intersected layout.
@@ -377,7 +381,7 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 				intersectedBounds)
 			h.CustomValues = intersectedBounds
 		}
-		return h, counterResetCollision, nil
+		return h, counterResetCollision, nhcbBoundsReconciled, nil
 	}
 
 	var (
@@ -401,7 +405,7 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
 	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hNegativeSpans, hNegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
 
-	return h, counterResetCollision, nil
+	return h, counterResetCollision, nhcbBoundsReconciled, nil
 }
 
 // Sub works like Add but subtracts the other histogram. It uses the same logic
@@ -409,9 +413,9 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 // for incremental mean calculation. However, if it is used for the actual "-"
 // operator in PromQL, the counter reset needs to be set to GaugeType after
 // calling this method.
-func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counterResetCollision bool, err error) {
+func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counterResetCollision, nhcbBoundsReconciled bool, err error) {
 	if err := h.checkSchemaAndBounds(other); err != nil {
-		return nil, false, err
+		return nil, false, false, err
 	}
 	counterResetCollision = h.adjustCounterReset(other)
 	if !h.UsesCustomBuckets() {
@@ -432,6 +436,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 		if CustomBucketBoundsMatch(h.CustomValues, other.CustomValues) {
 			h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
 		} else {
+			nhcbBoundsReconciled = true
 			intersectedBounds := intersectCustomBucketBounds(h.CustomValues, other.CustomValues)
 
 			// Subtract with mapping - maps both histograms to intersected layout.
@@ -442,7 +447,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 				intersectedBounds)
 			h.CustomValues = intersectedBounds
 		}
-		return h, counterResetCollision, nil
+		return h, counterResetCollision, nhcbBoundsReconciled, nil
 	}
 
 	var (
@@ -465,7 +470,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
 	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hNegativeSpans, hNegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
 
-	return h, counterResetCollision, nil
+	return h, counterResetCollision, nhcbBoundsReconciled, nil
 }
 
 // Equals returns true if the given float histogram matches exactly.
@@ -1361,13 +1366,18 @@ func intersectCustomBucketBounds(boundsA, boundsB []float64) []float64 {
 		return nil
 	}
 
-	// Allocate a new slice because FloatHistogram.CustomValues has to be immutable.
-	result := make([]float64, 0, min(len(boundsA), len(boundsB)))
-	i, j := 0, 0
+	var (
+		result []float64
+		i, j   = 0, 0
+	)
 
 	for i < len(boundsA) && j < len(boundsB) {
 		switch {
 		case boundsA[i] == boundsB[j]:
+			if result == nil {
+				// Allocate a new slice because FloatHistogram.CustomValues has to be immutable.
+				result = make([]float64, 0, min(len(boundsA), len(boundsB)))
+			}
 			result = append(result, boundsA[i])
 			i++
 			j++

@@ -154,6 +154,7 @@ var (
 	NativeHistogramQuantileNaNSkewInfo      = fmt.Errorf("%w: input to histogram_quantile has NaN observations, result is skewed higher", PromQLInfo)
 	NativeHistogramFractionNaNsInfo         = fmt.Errorf("%w: input to histogram_fraction has NaN observations, which are excluded from all fractions", PromQLInfo)
 	HistogramCounterResetCollisionWarning   = fmt.Errorf("%w: conflicting counter resets during histogram", PromQLWarning)
+	MismatchedCustomBucketsHistogramsInfo   = fmt.Errorf("%w: vector contains histograms with mismatched custom buckets", PromQLInfo)
 )
 
 type annoErr struct {
@@ -355,16 +356,29 @@ const (
 	HistogramAgg HistogramOperation = "aggregation"
 )
 
+func (op HistogramOperation) String() string {
+	switch op {
+	case HistogramAdd, HistogramSub, HistogramAgg:
+		return string(op)
+	default:
+		return "unknown operation"
+	}
+}
+
 // NewHistogramCounterResetCollisionWarning is used when two counter histograms are added or subtracted where one has
 // a CounterReset hint and the other has NotCounterReset.
 func NewHistogramCounterResetCollisionWarning(pos posrange.PositionRange, operation HistogramOperation) error {
-	switch operation {
-	case HistogramAdd, HistogramSub, HistogramAgg:
-	default:
-		operation = "unknown operation"
-	}
 	return annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w %s", HistogramCounterResetCollisionWarning, operation),
+		Err:           fmt.Errorf("%w %s", HistogramCounterResetCollisionWarning, operation.String()),
+	}
+}
+
+// NewMismatchedCustomBucketsHistogramsInfo is used when the queried series includes
+// custom buckets histograms with mismatched custom bounds that cause reconciling.
+func NewMismatchedCustomBucketsHistogramsInfo(pos posrange.PositionRange, operation HistogramOperation) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %s", MismatchedCustomBucketsHistogramsInfo, operation.String()),
 	}
 }

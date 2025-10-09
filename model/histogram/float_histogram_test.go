@@ -1649,6 +1649,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 		in1, in2, expected       *FloatHistogram
 		expErrMsg                string
 		expCounterResetCollision bool
+		expNHCBBoundsReconciled  bool
 	}{
 		{
 			name: "same bucket layout",
@@ -2273,6 +2274,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				PositiveBuckets: []float64{3, 15},
 				CustomValues:    []float64{1},
 			},
+			expNHCBBoundsReconciled: true,
 		},
 		{
 			name: "different custom bucket layout - intersection and rollup",
@@ -2300,6 +2302,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				PositiveBuckets: []float64{1 + 10 + 20, 40, 5 + 50 + 100},
 				CustomValues:    []float64{2, 4},
 			},
+			expNHCBBoundsReconciled: true,
 		},
 		{
 			name: "custom buckets with no common boundaries except +Inf",
@@ -2325,8 +2328,9 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             90,
 				PositiveSpans:   []Span{{0, 1}},
 				PositiveBuckets: []float64{1 + 2 + 10 + 20},
-				CustomValues:    []float64{},
+				CustomValues:    nil,
 			},
+			expNHCBBoundsReconciled: true,
 		},
 		{
 			name: "mix exponential and custom buckets histograms",
@@ -2368,13 +2372,13 @@ func TestFloatHistogramAdd(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			testHistogramAdd(t, c.in1, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision)
-			testHistogramAdd(t, c.in2, c.in1, c.expected, c.expErrMsg, c.expCounterResetCollision)
+			testHistogramAdd(t, c.in1, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
+			testHistogramAdd(t, c.in2, c.in1, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 		})
 	}
 }
 
-func testHistogramAdd(t *testing.T, a, b, expected *FloatHistogram, expErrMsg string, expCounterResetCollision bool) {
+func testHistogramAdd(t *testing.T, a, b, expected *FloatHistogram, expErrMsg string, expCounterResetCollision, expNHCBBoundsReconciled bool) {
 	require.NoError(t, a.Validate(), "a")
 	require.NoError(t, b.Validate(), "b")
 
@@ -2388,7 +2392,7 @@ func testHistogramAdd(t *testing.T, a, b, expected *FloatHistogram, expErrMsg st
 		expectedCopy = expected.Copy()
 	}
 
-	res, warn, err := aCopy.Add(bCopy)
+	res, counterResetCollision, nhcbBoundsReconciled, err := aCopy.Add(bCopy)
 	if expErrMsg != "" {
 		require.EqualError(t, err, expErrMsg)
 	} else {
@@ -2396,7 +2400,8 @@ func testHistogramAdd(t *testing.T, a, b, expected *FloatHistogram, expErrMsg st
 	}
 
 	// Check that the warnings are correct.
-	require.Equal(t, expCounterResetCollision, warn)
+	require.Equal(t, expCounterResetCollision, counterResetCollision)
+	require.Equal(t, expNHCBBoundsReconciled, nhcbBoundsReconciled)
 
 	if expected != nil {
 		res.Compact(0)
@@ -2420,6 +2425,7 @@ func TestFloatHistogramSub(t *testing.T) {
 		in1, in2, expected       *FloatHistogram
 		expErrMsg                string
 		expCounterResetCollision bool
+		expNHCBBoundsReconciled  bool
 	}{
 		{
 			name: "same bucket layout",
@@ -2545,6 +2551,7 @@ func TestFloatHistogramSub(t *testing.T) {
 				CustomValues:     []float64{2, 4},
 				CounterResetHint: GaugeType,
 			},
+			expNHCBBoundsReconciled: true,
 		},
 		{
 			name: "mix exponential and custom buckets histograms",
@@ -2586,7 +2593,7 @@ func TestFloatHistogramSub(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			testFloatHistogramSub(t, c.in1, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision)
+			testFloatHistogramSub(t, c.in1, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 
 			var expectedNegative *FloatHistogram
 			if c.expected != nil {
@@ -2596,12 +2603,12 @@ func TestFloatHistogramSub(t *testing.T) {
 				// counter reset hint for this test.
 				expectedNegative.CounterResetHint = c.expected.CounterResetHint
 			}
-			testFloatHistogramSub(t, c.in2, c.in1, expectedNegative, c.expErrMsg, c.expCounterResetCollision)
+			testFloatHistogramSub(t, c.in2, c.in1, expectedNegative, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 		})
 	}
 }
 
-func testFloatHistogramSub(t *testing.T, a, b, expected *FloatHistogram, expErrMsg string, expCounterResetCollision bool) {
+func testFloatHistogramSub(t *testing.T, a, b, expected *FloatHistogram, expErrMsg string, expCounterResetCollision, expNHCBBoundsReconciled bool) {
 	require.NoError(t, a.Validate(), "a")
 	require.NoError(t, b.Validate(), "b")
 
@@ -2615,7 +2622,7 @@ func testFloatHistogramSub(t *testing.T, a, b, expected *FloatHistogram, expErrM
 		expectedCopy = expected.Copy()
 	}
 
-	res, warn, err := aCopy.Sub(bCopy)
+	res, counterResetCollision, nhcbBoundsReconciled, err := aCopy.Sub(bCopy)
 	if expErrMsg != "" {
 		require.EqualError(t, err, expErrMsg)
 	} else {
@@ -2635,7 +2642,8 @@ func testFloatHistogramSub(t *testing.T, a, b, expected *FloatHistogram, expErrM
 		require.Equal(t, b, bCopy)
 
 		// Check that the warnings are correct.
-		require.Equal(t, expCounterResetCollision, warn)
+		require.Equal(t, expCounterResetCollision, counterResetCollision)
+		require.Equal(t, expNHCBBoundsReconciled, nhcbBoundsReconciled)
 	}
 }
 
@@ -3517,8 +3525,9 @@ func TestFloatHistogramSize(t *testing.T) {
 				},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1}, // 24 bytes + 4 * 8 bytes.
 				NegativeSpans: []Span{ // 24 bytes.
-					{3, 2},  // 2 * 4 bytes.
-					{3, 2}}, //  2 * 4 bytes.
+					{3, 2}, // 2 * 4 bytes.
+					{3, 2}, //  2 * 4 bytes.
+				},
 				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000}, // 24 bytes + 4 * 8 bytes.
 				CustomValues:    nil,                              // 24 bytes.
 			},
