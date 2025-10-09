@@ -213,7 +213,6 @@ eval instant at 0s sum_over_time(timestamp(metric{job="1"} @ 10)[100s:10s] @ 300
 eval instant at 0s sum_over_time(timestamp(timestamp(metric{job="1"} @ 999))[10s:1s] @ 10)
   {job="1"} 55
 
-
 clear
 
 # Tests for @ modifier with empty data.
@@ -253,5 +252,26 @@ eval instant at 1111111s stddev_over_time({__name__="up"}[1h:1m] @ 1111111)
 eval instant at 1111111s stdvar_over_time({__name__="up"}[1h:1m] @ 1111111)
 
 eval instant at 1111111s mad_over_time({__name__="up"}[1h:1m] @ 1111111)
+
+clear
+
+# Additional tests specific to timestamp + @ modifier step invariant expression handling.
+load 10s
+  metric 0+1x10
+
+eval range from 0 to 60s step 10s metric @ 11
+  {__name__="metric"} 1 1 1 1 1 1 1
+
+eval range from 0 to 60s step 10s abs(metric @ 11)
+ {} 1 1 1 1 1 1 1
+
+# This expression will be entirely wrapped as a step invariant.
+eval range from 0 to 60s step 10s timestamp(metric @ 11)
+ {} 10 10 10 10 10 10 10
+
+# This expression will not be wrapped as a step invariant - the inner argument will be wrapped as a step invariant.
+# The timestamp() is evaluated at the time of each step.
+eval range from 0 to 60s step 10s timestamp(abs(metric @ 11))
+ {} 0 10 20 30 40 50 60
 
 clear
