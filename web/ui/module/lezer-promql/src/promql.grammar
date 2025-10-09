@@ -31,12 +31,22 @@ expr[@isGroup=Expr] {
   MatrixSelector |
   NumberDurationLiteral |
   OffsetExpr |
+  AnchoredExpr |
+  SmoothedExpr |
   ParenExpr |
   StringLiteral |
   SubqueryExpr |
   UnaryExpr |
   VectorSelector |
   StepInvariantExpr
+}
+
+AnchoredExpr {
+  expr Anchored
+}
+
+SmoothedExpr {
+  expr Smoothed
 }
 
 AggregateExpr {
@@ -354,7 +364,9 @@ NumberDurationLiteralInDurationContext {
   Or,
   Unless,
   Start,
-  End
+  End,
+  Smoothed,
+  Anchored
 }
 
 @external propSource promQLHighLight from "./highlight"
