@@ -37,7 +37,7 @@ user-specified expression.
 For [instant queries](api.md#instant-queries), any of the above data types are allowed as the root of the expression.
 [Range queries](api.md#range-queries) only support scalar-typed and instant-vector-typed expressions.
 
-_Notes about the experimental native histograms:_
+_Notes about the native histograms:_
 
 * Ingesting native histograms has to be enabled via a [feature
   flag](../feature_flags.md#native-histograms).
