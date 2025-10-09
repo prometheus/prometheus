@@ -1366,8 +1366,7 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	target := &Target{
 		labels: labels.FromStrings("pod_label_invalid_012\xff", "test"),
@@ -1398,8 +1397,7 @@ func TestScrapeLoopFailLegacyUnderUTF8(t *testing.T) {
 	// legacy.
 	s := teststorage.New(t)
 	defer s.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	sl := newBasicScrapeLoop(t, ctx, &testScraper{}, s.Appender, 0)
 	sl.validationScheme = model.LegacyValidation
@@ -1544,7 +1542,7 @@ func BenchmarkScrapeLoopAppend(b *testing.B) {
 
 					b.ReportAllocs()
 					b.ResetTimer()
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						ts = ts.Add(time.Second)
 						_, _, _, err := sl.append(slApp, bcase.parsable, bcase.contentType, ts)
 						if err != nil {
@@ -3277,8 +3275,8 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 					"Expected Accept header to prefer application/vnd.google.protobuf.")
 			}
 
-			contentTypes := strings.Split(accept, ",")
-			for _, ct := range contentTypes {
+			contentTypes := strings.SplitSeq(accept, ",")
+			for ct := range contentTypes {
 				match := qValuePattern.FindStringSubmatch(ct)
 				require.Len(t, match, 3)
 				qValue, err := strconv.ParseFloat(match[1], 64)
@@ -4100,8 +4098,7 @@ func TestScrapeReportLimit(t *testing.T) {
 		// scrape have been inserted in the database.
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
 	require.NoError(t, err)
 	defer q.Close()
@@ -4155,8 +4152,7 @@ func TestScrapeUTF8(t *testing.T) {
 		// scrape have been inserted in the database.
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
 	require.NoError(t, err)
 	defer q.Close()
@@ -4391,8 +4387,7 @@ test_summary_count 199
 	case <-scrapedTwice:
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	q, err := simpleStorage.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
 	require.NoError(t, err)
 	defer q.Close()
@@ -4865,8 +4860,7 @@ metric: <
 				sl.append(app, content, contentType, time.Now())
 				require.NoError(t, app.Commit())
 
-				ctx, cancel := context.WithCancel(context.Background())
-				defer cancel()
+				ctx := t.Context()
 				q, err := simpleStorage.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
 				require.NoError(t, err)
 				defer q.Close()
@@ -4978,8 +4972,7 @@ disk_usage_bytes 456
 	case <-scrapedTwice:
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	q, err := simpleStorage.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
 	require.NoError(t, err)
 	defer q.Close()
@@ -5244,7 +5237,7 @@ func BenchmarkTargetScraperGzip(b *testing.B) {
 				timeout: time.Second,
 			}
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				_, err = ts.scrape(context.Background())
 				require.NoError(b, err)
 			}
