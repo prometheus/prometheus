@@ -176,9 +176,6 @@ type Options struct {
 	// Disables isolation between reads and in-flight appends.
 	IsolationDisabled bool
 
-	// EnableNativeHistograms enables the ingestion of native histograms.
-	EnableNativeHistograms bool
-
 	// OutOfOrderTimeWindow specifies how much out of order is allowed, if any.
 	// This can change during run-time, so this value from here should only be used
 	// while initialising.
@@ -964,7 +961,6 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
-	headOpts.EnableNativeHistograms.Store(opts.EnableNativeHistograms)
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
@@ -1189,16 +1185,6 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 		db.oooWasEnabled.Store(oooTimeWindow > 0)
 	}
 	return nil
-}
-
-// EnableNativeHistograms enables the native histogram feature.
-func (db *DB) EnableNativeHistograms() {
-	db.head.EnableNativeHistograms()
-}
-
-// DisableNativeHistograms disables the native histogram feature.
-func (db *DB) DisableNativeHistograms() {
-	db.head.DisableNativeHistograms()
 }
 
 // dbAppender wraps the DB's head appender and triggers compactions on commit

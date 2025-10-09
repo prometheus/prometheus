@@ -2188,7 +2188,7 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 	app := &bucketLimitAppender{Appender: resApp, limit: 2}
 
 	sl := newBasicScrapeLoop(t, context.Background(), nil, func(context.Context) storage.Appender { return app }, 0)
-	sl.enableNativeHistogramIngestion = true
+	sl.enableNativeHistogramScraping = true
 	sl.sampleMutator = func(l labels.Labels) labels.Labels {
 		if l.Has("deleteme") {
 			return labels.EmptyLabels()
@@ -2929,6 +2929,11 @@ metric: <
 >
 
 `,
+			floats: []floatSample{
+				{metric: labels.FromStrings("__name__", "test_histogram_count"), t: 1234568, f: 175},
+				{metric: labels.FromStrings("__name__", "test_histogram_sum"), t: 1234568, f: 0.0008280461746287094},
+				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "+Inf"), t: 1234568, f: 175},
+			},
 		},
 	}
 
@@ -2941,7 +2946,7 @@ metric: <
 			}
 
 			sl := newBasicScrapeLoop(t, context.Background(), nil, func(context.Context) storage.Appender { return app }, 0)
-			sl.enableNativeHistogramIngestion = test.enableNativeHistogramsIngestion
+			sl.enableNativeHistogramScraping = test.enableNativeHistogramsIngestion
 			sl.sampleMutator = func(l labels.Labels) labels.Labels {
 				return mutateSampleLabels(l, discoveryLabels, false, nil)
 			}
@@ -4832,7 +4837,7 @@ metric: <
 				sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return simpleStorage.Appender(ctx) }, 0)
 				sl.alwaysScrapeClassicHist = tc.alwaysScrapeClassicHistograms
 				sl.convertClassicHistToNHCB = tc.convertClassicHistToNHCB
-				sl.enableNativeHistogramIngestion = true
+				sl.enableNativeHistogramScraping = true
 				app := simpleStorage.Appender(context.Background())
 
 				var content []byte
@@ -5349,6 +5354,7 @@ global:
   scrape_timeout: 25ms
 scrape_configs:
   - job_name: test
+    scrape_native_histograms: true
     %s
     static_configs:
       - targets: [%s]
@@ -5356,10 +5362,9 @@ scrape_configs:
 
 	s := teststorage.New(t)
 	defer s.Close()
-	s.EnableNativeHistograms()
 	reg := prometheus.NewRegistry()
 
-	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond), EnableNativeHistogramsIngestion: true}, nil, nil, s, reg)
+	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)}, nil, nil, s, reg)
 	require.NoError(t, err)
 	cfg, err := config.Load(configStr, promslog.NewNopLogger())
 	require.NoError(t, err)
