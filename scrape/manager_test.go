@@ -967,7 +967,6 @@ func TestManagerCTZeroIngestionHistogram(t *testing.T) {
 			app := &collectResultAppender{}
 			discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 				EnableCreatedTimestampZeroIngestion: tc.enableCTZeroIngestion,
-				EnableNativeHistogramsIngestion:     true,
 				skipOffsetting:                      true,
 			}, &collectResultAppendable{app})
 			defer scrapeManager.Stop()
@@ -1007,6 +1006,7 @@ global:
 
 scrape_configs:
 - job_name: test
+  scrape_native_histograms: true
   static_configs:
   - targets: ['%s']
 `, serverURL.Host)
@@ -1087,7 +1087,6 @@ func TestNHCBAndCTZeroIngestion(t *testing.T) {
 	app := &collectResultAppender{}
 	discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 		EnableCreatedTimestampZeroIngestion: true,
-		EnableNativeHistogramsIngestion:     true,
 		skipOffsetting:                      true,
 	}, &collectResultAppendable{app})
 	defer scrapeManager.Stop()
