@@ -60,6 +60,18 @@ type writeHandler struct {
 
 const maxAheadTime = 10 * time.Minute
 
+// DefaultMaxLabelValueLength is the maximum allowed length for a label value in bytes.
+// This prevents memory issues and potential crashes from oversized label values.
+//
+// TODO(#16525): Make this configurable via GlobalConfig.LabelValueLengthLimit.
+// Currently using a conservative 16MB to match the implicit limit mentioned in the issue.
+// Phase 2 should plumb the config value through NewWriteHandler and remove this hardcoded constant.
+const DefaultMaxLabelValueLength = 16 * 1024 * 1024 // 16MB
+
+// maxLabelValueLength is the actual limit used at runtime.
+// It defaults to DefaultMaxLabelValueLength but can be overridden for testing.
+var maxLabelValueLength = DefaultMaxLabelValueLength
+
 // NewWriteHandler creates a http.Handler that accepts remote write requests with
 // the given message in acceptedProtoMsgs and writes them to the provided appendable.
 //
@@ -90,6 +102,45 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable 
 		ingestCTZeroSample: ingestCTZeroSample,
 	}
 	return h
+}
+
+// validateV1LabelValueLength checks label values in v1 protobuf format before ToLabels() is called.
+// This prevents panics during deserialization of oversized labels.
+func validateV1LabelValueLength(labels []prompb.Label) (labelName string, valueLength int, exceeded bool) {
+	for _, l := range labels {
+		if len(l.Value) > maxLabelValueLength {
+			return l.Name, len(l.Value), true
+		}
+	}
+	return "", 0, false
+}
+
+// validateV2LabelValueLength checks label values in v2 protobuf format before ToLabels() is called.
+// This prevents panics during deserialization of oversized labels.
+func validateV2LabelValueLength(labelsRefs []uint32, symbols []string) (labelName string, valueLength int, exceeded bool) {
+	// labelsRefs are pairs: [nameRef, valueRef, nameRef, valueRef, ...]
+	for i := 0; i < len(labelsRefs); i += 2 {
+		if i+1 >= len(labelsRefs) {
+			break
+		}
+		nameRef := labelsRefs[i]
+		valueRef := labelsRefs[i+1]
+
+		// Check bounds
+		if int(valueRef) >= len(symbols) {
+			continue
+		}
+
+		value := symbols[valueRef]
+		if len(value) > maxLabelValueLength {
+			name := ""
+			if int(nameRef) < len(symbols) {
+				name = symbols[nameRef]
+			}
+			return name, len(value), true
+		}
+	}
+	return "", 0, false
 }
 
 func (*writeHandler) parseProtoMsg(contentType string) (config.RemoteWriteProtoMsg, error) {
@@ -270,6 +321,16 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 
 	b := labels.NewScratchBuilder(0)
 	for _, ts := range req.Timeseries {
+		// Validate label value length BEFORE calling ToLabels() to prevent panic during deserialization
+		if labelName, valueLength, exceeded := validateV1LabelValueLength(ts.Labels); exceeded {
+			h.logger.Warn("Label value exceeds maximum length",
+				"label", labelName,
+				"value_length", valueLength,
+				"limit", maxLabelValueLength)
+			samplesWithInvalidLabels++
+			continue
+		}
+
 		ls := ts.ToLabels(&b, nil)
 
 		// TODO(bwplotka): Even as per 1.0 spec, this should be a 400 error, while other samples are
@@ -411,12 +472,22 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		b = labels.NewScratchBuilder(0)
 	)
 	for _, ts := range req.Timeseries {
+		// Validate label value length BEFORE calling ToLabels() to prevent panic during deserialization
+		if labelName, valueLength, exceeded := validateV2LabelValueLength(ts.LabelsRefs, req.Symbols); exceeded {
+			badRequestErrs = append(badRequestErrs,
+				fmt.Errorf("label value exceeds maximum length: label %s has length %d, limit %d",
+					labelName, valueLength, maxLabelValueLength))
+			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
+		}
+
 		ls, err := ts.ToLabels(&b, req.Symbols)
 		if err != nil {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing labels for series %v: %w", ts.LabelsRefs, err))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
 		}
+
 		// Validate series labels early.
 		// NOTE(bwplotka): While spec allows UTF-8, Prometheus Receiver may impose
 		// specific limits and follow https://prometheus.io/docs/specs/remote_write_spec_2_0/#invalid-samples case.

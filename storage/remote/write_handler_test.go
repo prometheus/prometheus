@@ -1335,3 +1335,121 @@ func TestHistogramsReduction(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteHandler_LabelValueLengthLimit(t *testing.T) {
+	// Temporarily lower the limit for testing to avoid creating huge fixtures
+	oldLimit := maxLabelValueLength
+	maxLabelValueLength = 1024 // 1KB for testing
+	defer func() { maxLabelValueLength = oldLimit }()
+
+	testCases := []struct {
+		name                 string
+		protoMsg             config.RemoteWriteProtoMsg
+		labelValueLength     int
+		expectedStatus       int
+		expectedBodyContains string
+	}{
+		{
+			name:             "v1 normal label value",
+			protoMsg:         config.RemoteWriteProtoMsgV1,
+			labelValueLength: 100,
+			expectedStatus:   http.StatusNoContent,
+		},
+		{
+			name:             "v1 label value at limit",
+			protoMsg:         config.RemoteWriteProtoMsgV1,
+			labelValueLength: 1024,
+			expectedStatus:   http.StatusNoContent,
+		},
+		{
+			name:             "v1 label value exceeds limit",
+			protoMsg:         config.RemoteWriteProtoMsgV1,
+			labelValueLength: 1500,
+			expectedStatus:   http.StatusNoContent, // V1 continues processing (best-effort)
+		},
+		{
+			name:             "v2 normal label value",
+			protoMsg:         config.RemoteWriteProtoMsgV2,
+			labelValueLength: 100,
+			expectedStatus:   http.StatusNoContent,
+		},
+		{
+			name:             "v2 label value at limit",
+			protoMsg:         config.RemoteWriteProtoMsgV2,
+			labelValueLength: 1024,
+			expectedStatus:   http.StatusNoContent,
+		},
+		{
+			name:                 "v2 label value exceeds limit",
+			protoMsg:             config.RemoteWriteProtoMsgV2,
+			labelValueLength:     1500,
+			expectedStatus:       http.StatusBadRequest, // V2 returns 400
+			expectedBodyContains: "label value exceeds maximum length",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create request with label value of specified length
+			var payload []byte
+			var err error
+			labelValue := strings.Repeat("x", tc.labelValueLength)
+
+			if tc.protoMsg == config.RemoteWriteProtoMsgV1 {
+				protoReq := &prompb.WriteRequest{
+					Timeseries: []prompb.TimeSeries{
+						{
+							Labels: []prompb.Label{
+								{Name: "__name__", Value: "test_metric"},
+								{Name: "large_label", Value: labelValue},
+							},
+							Samples: []prompb.Sample{{Value: 1, Timestamp: 1}},
+						},
+					},
+				}
+				payload, _, _, err = buildWriteRequest(nil, protoReq.Timeseries, nil, nil, nil, nil, "snappy")
+			} else {
+				// V2 request construction
+				symbols := []string{"", "__name__", "test_metric", "large_label", labelValue}
+				timeseries := []writev2.TimeSeries{
+					{
+						LabelsRefs: []uint32{1, 2, 3, 4},
+						Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
+					},
+				}
+				payload, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), timeseries, symbols, nil, nil, nil, "snappy")
+			}
+			require.NoError(t, err)
+
+			// Create HTTP request
+			httpReq, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+			require.NoError(t, err)
+
+			if tc.protoMsg == config.RemoteWriteProtoMsgV1 {
+				httpReq.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV1])
+			} else {
+				httpReq.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
+				httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+			}
+			httpReq.Header.Set("Content-Encoding", "snappy")
+
+			// Create handler with appendable
+			appendable := &mockAppendable{}
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{tc.protoMsg}, false)
+
+			// Execute
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, httpReq)
+
+			// Verify response code
+			require.Equal(t, tc.expectedStatus, recorder.Code)
+
+			// Verify response body if expected
+			if tc.expectedBodyContains != "" {
+				body, err := io.ReadAll(recorder.Body)
+				require.NoError(t, err)
+				require.Contains(t, string(body), tc.expectedBodyContains)
+			}
+		})
+	}
+}
