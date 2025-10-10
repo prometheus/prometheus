@@ -819,7 +819,9 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 				}
 				i = len(n.Func.ArgTypes) - 1
 			}
-			p.expectType(arg, n.Func.ArgTypes[i], fmt.Sprintf("call to function %q", n.Func.Name))
+			if t := p.checkAST(arg); t != n.Func.ArgTypes[i] {
+				p.addParseErrf(arg.PositionRange(), "expected type %s in call to function %q, got %s", DocumentedType(n.Func.ArgTypes[i]), n.Func.Name, DocumentedType(t))
+			}
 		}
 
 	case *ParenExpr:
