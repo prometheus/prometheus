@@ -510,7 +510,7 @@ scrape_configs:
 			var tgets []*Target
 			lb := labels.NewBuilder(labels.EmptyLabels())
 			group := &targetgroup.Group{Targets: targets}
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				tgets, _ = TargetsFromGroup(group, config.ScrapeConfigs[0], tgets, lb)
 				if len(targets) != nTargets {
 					b.Fatalf("Expected %d targets, got %d", nTargets, len(targets))

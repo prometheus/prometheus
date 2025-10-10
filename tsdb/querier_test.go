@@ -3612,7 +3612,6 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 				require.NoError(t, db.Close())
 			}()
 
-			db.EnableNativeHistograms()
 			appender := db.Appender(context.Background())
 
 			var (
@@ -3671,7 +3670,6 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 		require.NoError(t, db.Close())
 	}()
 
-	db.EnableNativeHistograms()
 	appender := db.Appender(context.Background())
 
 	var (

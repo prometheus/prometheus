@@ -871,7 +871,6 @@ func TestHistogramValidationErrorHandling(t *testing.T) {
 			t.Run(testName, func(t *testing.T) {
 				dir := t.TempDir()
 				opts := tsdb.DefaultOptions()
-				opts.EnableNativeHistograms = true
 
 				db, err := tsdb.Open(dir, nil, nil, opts, nil)
 				require.NoError(t, err)

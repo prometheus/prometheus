@@ -400,7 +400,6 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 			opts := tsdb.DefaultOptions()
 			opts.EnableExemplarStorage = true
 			opts.MaxExemplars = 100
-			opts.EnableNativeHistograms = true
 			db, err := tsdb.Open(dir, promslog.NewNopLogger(), prometheus.NewRegistry(), opts, nil)
 			require.NoError(t, err)
 

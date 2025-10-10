@@ -71,7 +71,6 @@ func (w *BlockWriter) initHead() error {
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = w.blockSize
 	opts.ChunkDirRoot = w.chunkDir
-	opts.EnableNativeHistograms.Store(true)
 	h, err := NewHead(nil, w.logger, nil, nil, opts, NewHeadStats())
 	if err != nil {
 		return fmt.Errorf("tsdb.NewHead: %w", err)
