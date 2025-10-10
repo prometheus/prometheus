@@ -1,11 +1,11 @@
-// Copyright 2025 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this filset elabels.FromStrings("__name__", "test_metric", "le",)xcept in compliance with the License.
+// you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
 // http://www.apache.org/licenses/LICENSE-2.0
 //
-// Unlsetsslabels.FromStrings("__name__", "test_metric", "le",) required by applicablset llabels.FromStrings("__name__", "test_metric", "le",)aw or agreed to in writing, software
+// Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
@@ -39,17 +39,20 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 			nhcb: &Histogram{
 				CustomValues:    []float64{1, 2, 3},
 				PositiveBuckets: []int64{10, 20, 30},
-				Count:           60,
-				Sum:             100.0,
-				Schema:          -53,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 3},
+				},
+				Count:  100,
+				Sum:    100.0,
+				Schema: CustomBucketsSchema,
 			},
 			labels: labels.FromStrings("__name__", "test_metric"),
 			expected: []sample{
 				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "1.0"), val: 10},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "2.0"), val: 30},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "3.0"), val: 60},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "+Inf"), val: 60},
-				{lset: labels.FromStrings("__name__", "test_metric_count"), val: 60},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "2.0"), val: 40},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "3.0"), val: 100},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "+Inf"), val: 100},
+				{lset: labels.FromStrings("__name__", "test_metric_count"), val: 100},
 				{lset: labels.FromStrings("__name__", "test_metric_sum"), val: 100},
 			},
 		},
@@ -57,18 +60,21 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 			name: "valid floatHistogram",
 			nhcb: &FloatHistogram{
 				CustomValues:    []float64{1, 2, 3},
-				PositiveBuckets: []float64{20.0, 40.0, 60.0},
-				Count:           60.0,
-				Sum:             100.0,
-				Schema:          -53,
+				PositiveBuckets: []float64{20.0, 40.0, 60.0}, // 20 -> 60 ->120
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 3},
+				},
+				Count:  120.0,
+				Sum:    100.0,
+				Schema: CustomBucketsSchema,
 			},
 			labels: labels.FromStrings("__name__", "test_metric"),
 			expected: []sample{
 				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "1.0"), val: 20},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "2.0"), val: 40},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "3.0"), val: 60},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "+Inf"), val: 60},
-				{lset: labels.FromStrings("__name__", "test_metric_count"), val: 60},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "2.0"), val: 60},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "3.0"), val: 120},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "+Inf"), val: 120},
+				{lset: labels.FromStrings("__name__", "test_metric_count"), val: 120},
 				{lset: labels.FromStrings("__name__", "test_metric_sum"), val: 100},
 			},
 		},
@@ -77,9 +83,10 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 			nhcb: &Histogram{
 				CustomValues:    []float64{},
 				PositiveBuckets: []int64{},
+				PositiveSpans:   []Span{},
 				Count:           0,
 				Sum:             0.0,
-				Schema:          -53,
+				Schema:          CustomBucketsSchema,
 			},
 			labels: labels.FromStrings("__name__", "test_metric"),
 			expected: []sample{
@@ -93,9 +100,9 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 			nhcb: &Histogram{
 				CustomValues:    []float64{1, 2, 3},
 				PositiveBuckets: []int64{10, 20, 30},
-				Count:           60,
+				Count:           100,
 				Sum:             100.0,
-				Schema:          -53,
+				Schema:          CustomBucketsSchema,
 			},
 			labels:    labels.FromStrings("job", "test_job"),
 			expectErr: true,
@@ -111,28 +118,45 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 			nhcb: &Histogram{
 				CustomValues:    []float64{1, 2, 3},
 				PositiveBuckets: []int64{0, 10, 0},
-				Count:           10,
-				Sum:             50.0,
-				Schema:          -53,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 3},
+				},
+				Count:  20,
+				Sum:    50.0,
+				Schema: CustomBucketsSchema,
 			},
 			labels: labels.FromStrings("__name__", "test_metric"),
 			expected: []sample{
 				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "1.0"), val: 0},
 				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "2.0"), val: 10},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "3.0"), val: 10},
-				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "+Inf"), val: 10},
-				{lset: labels.FromStrings("__name__", "test_metric_count"), val: 10},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "3.0"), val: 20},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "+Inf"), val: 20},
+				{lset: labels.FromStrings("__name__", "test_metric_count"), val: 20},
 				{lset: labels.FromStrings("__name__", "test_metric_sum"), val: 50},
 			},
 		},
 		{
-			name: "mismatched bucket lengths",
+			name: "mismatched bucket lengths with more filled bucket count",
 			nhcb: &Histogram{
 				CustomValues:    []float64{1, 2},
 				PositiveBuckets: []int64{10, 20, 30},
-				Count:           60,
+				PositiveSpans:   []Span{{Offset: 0, Length: 3}},
+				Count:           100,
 				Sum:             100.0,
-				Schema:          -53,
+				Schema:          CustomBucketsSchema,
+			},
+			labels:    labels.FromStrings("__name__", "test_metric_bucket"),
+			expectErr: true,
+		},
+		{
+			name: "mismatched bucket lengths with less filled bucket count",
+			nhcb: &Histogram{
+				CustomValues:    []float64{1, 2},
+				PositiveBuckets: []int64{10},
+				PositiveSpans:   []Span{{Offset: 0, Length: 2}},
+				Count:           100,
+				Sum:             100.0,
+				Schema:          CustomBucketsSchema,
 			},
 			labels:    labels.FromStrings("__name__", "test_metric_bucket"),
 			expectErr: true,
@@ -142,9 +166,12 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 			nhcb: &Histogram{
 				CustomValues:    []float64{1},
 				PositiveBuckets: []int64{10},
-				Count:           10,
-				Sum:             20.0,
-				Schema:          -53,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 1},
+				},
+				Count:  10,
+				Sum:    20.0,
+				Schema: CustomBucketsSchema,
 			},
 			labels: labels.FromStrings("__name__", "test_metric"),
 			expected: []sample{
@@ -159,9 +186,12 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 			nhcb: &Histogram{
 				CustomValues:    []float64{1},
 				PositiveBuckets: []int64{10},
-				Count:           10,
-				Sum:             20.0,
-				Schema:          -53,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 1},
+				},
+				Count:  10,
+				Sum:    20.0,
+				Schema: CustomBucketsSchema,
 			},
 			labels: labels.FromStrings("__name__", "test_metric", "job", "test_job", "instance", "localhost:9090"),
 			expected: []sample{
@@ -192,6 +222,68 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 			},
 			labels:    labels.FromStrings("__name__", "test_metric_bucket"),
 			expectErr: true,
+		},
+		{
+			name: "sparse histogram",
+			nhcb: &Histogram{
+				Schema:       CustomBucketsSchema,
+				CustomValues: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+				PositiveSpans: []Span{
+					{0, 2},
+					{4, 1},
+					{1, 2},
+				},
+				PositiveBuckets: []int64{1, 2, 3, 4, 5}, // 1 -> 3 -> 3 -> 3 -> 3 -> 3 -> 6 ->6 ->10 -> 15
+				Count:           53,                     // 1 -> 4 -> 7 -> 10 -> 13 -> 16 -> 22 -> 28 -> 38 -> 53
+				Sum:             123,
+			},
+			labels: labels.FromStrings("__name__", "test_metric"),
+			expected: []sample{
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "1.0"), val: 1},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "2.0"), val: 4},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "3.0"), val: 7},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "4.0"), val: 10},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "5.0"), val: 13},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "6.0"), val: 16},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "7.0"), val: 22},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "8.0"), val: 28},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "9.0"), val: 38},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "10.0"), val: 53},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "+Inf"), val: 53},
+				{lset: labels.FromStrings("__name__", "test_metric_count"), val: 53},
+				{lset: labels.FromStrings("__name__", "test_metric_sum"), val: 123},
+			},
+		},
+		{
+			name: "sparse float histogram",
+			nhcb: &FloatHistogram{
+				Schema:       CustomBucketsSchema,
+				CustomValues: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+				PositiveSpans: []Span{
+					{0, 2},
+					{4, 1},
+					{1, 2},
+				},
+				PositiveBuckets: []float64{1, 2, 3, 4, 5}, // 1 -> 2 -> 0 -> 0 -> 0 -> 0 -> 3 -> 0 -> 4 -> 5
+				Count:           15,                       // 1 -> 3 -> 3 -> 3 -> 3 -> 3 -> 6 -> 6 -> 10 -> 15
+				Sum:             123,
+			},
+			labels: labels.FromStrings("__name__", "test_metric"),
+			expected: []sample{
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "1.0"), val: 1},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "2.0"), val: 3},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "3.0"), val: 3},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "4.0"), val: 3},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "5.0"), val: 3},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "6.0"), val: 3},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "7.0"), val: 6},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "8.0"), val: 6},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "9.0"), val: 10},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "10.0"), val: 15},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "+Inf"), val: 15},
+				{lset: labels.FromStrings("__name__", "test_metric_count"), val: 15},
+				{lset: labels.FromStrings("__name__", "test_metric_sum"), val: 123},
+			},
 		},
 	}
 
