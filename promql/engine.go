@@ -3125,6 +3125,8 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 				if err != nil {
 					return 0, nil, false, err
 				}
+				// The result must be marked as gauge.
+				res.CounterResetHint = histogram.GaugeType
 				if counterResetCollision {
 					err = annotations.NewHistogramCounterResetCollisionWarning(pos, annotations.HistogramSub)
 				}
@@ -3158,6 +3160,8 @@ type groupedAggregation struct {
 	incompatibleHistograms bool // If true, group has seen mixed exponential and custom buckets, or incompatible custom buckets.
 	groupAggrComplete      bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group.
 	incrementalMean        bool // True after reverting to incremental calculation of the mean value.
+	counterResetSeen       bool // Counter reset hint CounterReset seen. Currently only used for histogram samples.
+	notCounterResetSeen    bool // Counter reset hint NotCounterReset seen. Currently only used for histogram samples.
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.
@@ -3194,6 +3198,12 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				} else {
 					group.histogramValue = h.Copy()
 					group.hasHistogram = true
+					switch h.CounterResetHint {
+					case histogram.CounterReset:
+						group.counterResetSeen = true
+					case histogram.NotCounterReset:
+						group.notCounterResetSeen = true
+					}
 				}
 			case parser.STDVAR, parser.STDDEV:
 				switch {
@@ -3241,13 +3251,16 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if h != nil {
 				group.hasHistogram = true
 				if group.histogramValue != nil {
-					_, counterResetCollision, err := group.histogramValue.Add(h)
+					switch h.CounterResetHint {
+					case histogram.CounterReset:
+						group.counterResetSeen = true
+					case histogram.NotCounterReset:
+						group.notCounterResetSeen = true
+					}
+					_, _, err := group.histogramValue.Add(h)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
-					}
-					if counterResetCollision {
-						annos.Add(annotations.NewHistogramCounterResetCollisionWarning(e.Expr.PositionRange(), annotations.HistogramAgg))
 					}
 				}
 				// Otherwise the aggregation contained floats
@@ -3295,25 +3308,25 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if h != nil {
 				group.hasHistogram = true
 				if group.histogramValue != nil {
+					switch h.CounterResetHint {
+					case histogram.CounterReset:
+						group.counterResetSeen = true
+					case histogram.NotCounterReset:
+						group.notCounterResetSeen = true
+					}
 					left := h.Copy().Div(group.groupCount)
 					right := group.histogramValue.Copy().Div(group.groupCount)
-					toAdd, counterResetCollision, err := left.Sub(right)
+					toAdd, _, err := left.Sub(right)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
 						continue
 					}
-					if counterResetCollision {
-						annos.Add(annotations.NewHistogramCounterResetCollisionWarning(e.Expr.PositionRange(), annotations.HistogramAgg))
-					}
-					_, counterResetCollision, err = group.histogramValue.Add(toAdd)
+					_, _, err = group.histogramValue.Add(toAdd)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
 						continue
-					}
-					if counterResetCollision {
-						annos.Add(annotations.NewHistogramCounterResetCollisionWarning(e.Expr.PositionRange(), annotations.HistogramAgg))
 					}
 				}
 				// Otherwise the aggregation contained floats
@@ -3446,8 +3459,16 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			default:
 				aggr.floatValue += aggr.floatKahanC
 			}
+
 		default:
 			// For other aggregations, we already have the right value.
+		}
+
+		// This only is relevant for AVG and SUM with native histograms
+		// involved, but since those booleans aren't touched in other
+		// cases, we can just do it here in general.
+		if aggr.counterResetSeen && aggr.notCounterResetSeen {
+			annos.Add(annotations.NewHistogramCounterResetCollisionWarning(e.Expr.PositionRange(), annotations.HistogramAgg))
 		}
 
 		ss := &outputMatrix[ri]

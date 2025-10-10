@@ -2380,15 +2380,14 @@ func TestFloatHistogramSub(t *testing.T) {
 				NegativeBuckets: []float64{1, 1, 4, 4},
 			},
 			expected: &FloatHistogram{
-				ZeroThreshold:    0.01,
-				ZeroCount:        3,
-				Count:            9,
-				Sum:              11,
-				PositiveSpans:    []Span{{-2, 2}, {1, 3}},
-				PositiveBuckets:  []float64{1, 0, 1, 1, 1},
-				NegativeSpans:    []Span{{3, 2}, {3, 2}},
-				NegativeBuckets:  []float64{2, 0, 1, 2},
-				CounterResetHint: GaugeType,
+				ZeroThreshold:   0.01,
+				ZeroCount:       3,
+				Count:           9,
+				Sum:             11,
+				PositiveSpans:   []Span{{-2, 2}, {1, 3}},
+				PositiveBuckets: []float64{1, 0, 1, 1, 1},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{2, 0, 1, 2},
 			},
 		},
 		{
@@ -2416,15 +2415,14 @@ func TestFloatHistogramSub(t *testing.T) {
 				NegativeBuckets: []float64{3, 0.5, 0.5, 2, 3, 2, 4},
 			},
 			expected: &FloatHistogram{
-				ZeroThreshold:    0.01,
-				ZeroCount:        6,
-				Count:            40,
-				Sum:              0.889,
-				PositiveSpans:    []Span{{-2, 5}, {0, 3}},
-				PositiveBuckets:  []float64{1, 5, 4, 2, 2, 2, 0, 5},
-				NegativeSpans:    []Span{{3, 3}, {1, 3}},
-				NegativeBuckets:  []float64{1, 9, 1, 4, 9, 1},
-				CounterResetHint: GaugeType,
+				ZeroThreshold:   0.01,
+				ZeroCount:       6,
+				Count:           40,
+				Sum:             0.889,
+				PositiveSpans:   []Span{{-2, 5}, {0, 3}},
+				PositiveBuckets: []float64{1, 5, 4, 2, 2, 2, 0, 5},
+				NegativeSpans:   []Span{{3, 3}, {1, 3}},
+				NegativeBuckets: []float64{1, 9, 1, 4, 9, 1},
 			},
 		},
 		{
@@ -2446,13 +2444,12 @@ func TestFloatHistogramSub(t *testing.T) {
 				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			expected: &FloatHistogram{
-				Schema:           CustomBucketsSchema,
-				Count:            4,
-				Sum:              11,
-				PositiveSpans:    []Span{{0, 2}, {1, 3}},
-				PositiveBuckets:  []float64{1, 0, 1, 1, 1},
-				CustomValues:     []float64{1, 2, 3, 4},
-				CounterResetHint: GaugeType,
+				Schema:          CustomBucketsSchema,
+				Count:           4,
+				Sum:             11,
+				PositiveSpans:   []Span{{0, 2}, {1, 3}},
+				PositiveBuckets: []float64{1, 0, 1, 1, 1},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 		},
 		{
@@ -2520,6 +2517,10 @@ func TestFloatHistogramSub(t *testing.T) {
 			var expectedNegative *FloatHistogram
 			if c.expected != nil {
 				expectedNegative = c.expected.Copy().Mul(-1)
+				// Mul(-1) sets the counter reset hint to
+				// GaugeType, but we want to retain the original
+				// counter reset hint for this test.
+				expectedNegative.CounterResetHint = c.expected.CounterResetHint
 			}
 			testFloatHistogramSub(t, c.in2, c.in1, expectedNegative, c.expErrMsg, c.expCounterResetCollision)
 		})
