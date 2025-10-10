@@ -633,11 +633,24 @@ func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
 	if h.Count < previous.Count {
 		return true
 	}
-	if h.UsesCustomBuckets() != previous.UsesCustomBuckets() || (h.UsesCustomBuckets() && !CustomBucketBoundsMatch(h.CustomValues, previous.CustomValues)) {
-		// Mark that something has changed or that the application has been restarted. However, this does
-		// not matter so much since the change in schema will be handled directly in the chunks and PromQL
-		// functions.
-		return true
+	if h.UsesCustomBuckets() {
+		if !previous.UsesCustomBuckets() {
+			// Mark that something has changed or that the application has been restarted. However, this does
+			// not matter so much since the change in schema will be handled directly in the chunks and PromQL
+			// functions.
+			return true
+		}
+		if !CustomBucketBoundsMatch(h.CustomValues, previous.CustomValues) {
+			// Custom bounds don't match - reconcile by mapping both histograms to intersected bounds
+			// and check if any resulting bucket values have decreased.
+			intersectedBounds := intersectCustomBucketBounds(h.CustomValues, previous.CustomValues)
+
+			// Check if any reconciled bucket value has decreased.
+			return detectResetWithMismatchedBounds(
+				h.PositiveSpans, h.PositiveBuckets, h.CustomValues,
+				previous.PositiveSpans, previous.PositiveBuckets, previous.CustomValues,
+				intersectedBounds)
+		}
 	}
 	if h.Schema > previous.Schema {
 		return true
@@ -1358,6 +1371,72 @@ func floatBucketsMatch(b1, b2 []float64) bool {
 		}
 	}
 	return true
+}
+
+// detectResetWithMismatchedBounds checks if any bucket count has decreased when
+// comparing histograms with mismatched custom bounds. It maps both histograms
+// to the intersected bounds on-the-fly and compares values without allocating
+// arrays for all mapped buckets.
+func detectResetWithMismatchedBounds(
+	currSpans []Span, currBuckets, currBounds []float64,
+	prevSpans []Span, prevBuckets, prevBounds []float64,
+	intersectedBounds []float64,
+) bool {
+	// Helper function to calculate the sum of buckets that fall within (lowerBound, upperBound].
+	// Since intersectedBounds is a subset of the histogram bounds, each histogram bucket
+	// will fall entirely into exactly one intersected interval.
+	sumBucketsInInterval := func(spans []Span, buckets, bounds []float64, lowerBound, upperBound float64) float64 {
+		sum := 0.0
+		srcIdx := 0
+		bucketIdx := 0
+
+		for _, span := range spans {
+			srcIdx += int(span.Offset)
+			for range span.Length {
+				if bucketIdx < len(buckets) {
+					bucketBound := math.Inf(1) // Last bucket goes to +Inf.
+					if srcIdx < len(bounds) {
+						bucketBound = bounds[srcIdx]
+					}
+
+					if bucketBound > upperBound {
+						return sum
+					}
+
+					// A bucket falls into interval (lowerBound, upperBound] if its upper bound
+					// is in that interval. Since intersectedBounds is a subset, the bucket's
+					// upper bound either equals upperBound or is less than it.
+					if (math.IsInf(upperBound, -1) && math.IsInf(bucketBound, -1)) ||
+						(bucketBound > lowerBound && bucketBound <= upperBound) {
+						sum += buckets[bucketIdx]
+					}
+				}
+				srcIdx++
+				bucketIdx++
+			}
+		}
+		return sum
+	}
+
+	lowerBound := math.Inf(-1) // Start with -Inf for the first interval.
+	for i := range len(intersectedBounds) + 1 {
+		upperBound := math.Inf(1) // +Inf for the last interval
+
+		if i < len(intersectedBounds) {
+			upperBound = intersectedBounds[i]
+		}
+
+		currSum := sumBucketsInInterval(currSpans, currBuckets, currBounds, lowerBound, upperBound)
+		prevSum := sumBucketsInInterval(prevSpans, prevBuckets, prevBounds, lowerBound, upperBound)
+
+		if currSum < prevSum {
+			return true
+		}
+
+		lowerBound = upperBound
+	}
+
+	return false
 }
 
 // intersectCustomBucketBounds returns the intersection of two custom bucket boundary sets.

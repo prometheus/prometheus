@@ -1270,22 +1270,22 @@ eval range from 0 to 6m step 6m metric2 > metric2
 clear
 
 load 6m
-  nhcb_metric {{schema:-53 sum:1 count:1 custom_values:[5] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  nhcb_metric {{schema:-53 sum:1 count:1 custom_values:[5] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5] buckets:[1]}} {{schema:-53 sum:2 count:2 custom_values:[5 10] buckets:[2]}} {{schema:-53 sum:2 count:2 custom_values:[5 10] buckets:[2]}}
 
 # If evaluating at 12m, the first two NHCBs have the same custom values
 # while the 3rd one has different ones.
 
 eval instant at 12m sum_over_time(nhcb_metric[13m])
   expect no_warn
-  {} {{schema:-53 count:3 sum:3 custom_values:[5] buckets:[3]}}
+  {} {{schema:-53 count:4 sum:4 custom_values:[5] buckets:[4]}}
 
 eval instant at 12m avg_over_time(nhcb_metric[13m])
   expect no_warn
-  {} {{schema:-53 count:1 sum:1 custom_values:[5] counter_reset_hint:gauge buckets:[1]}}
+  {} {{schema:-53 count:1.3333333333333333 sum:1.3333333333333333 custom_values:[5] counter_reset_hint:gauge buckets:[1.3333333333333333]}}
 
 eval instant at 12m last_over_time(nhcb_metric[13m])
   expect no_warn
-  nhcb_metric{} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  nhcb_metric{} {{schema:-53 sum:2 count:2 custom_values:[5 10] buckets:[2]}}
 
 eval instant at 12m count_over_time(nhcb_metric[13m])
   expect no_warn
