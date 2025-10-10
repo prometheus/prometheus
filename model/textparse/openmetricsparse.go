@@ -773,7 +773,7 @@ func normalizeFloatsInLabelValues(t model.MetricType, l, v string) string {
 	if (t == model.MetricTypeSummary && l == model.QuantileLabel) || (t == model.MetricTypeHistogram && l == model.BucketLabel) {
 		f, err := strconv.ParseFloat(v, 64)
 		if err == nil {
-			return formatOpenMetricsFloat(f)
+			return labels.FormatOpenMetricsFloat(f)
 		}
 	}
 	return v
