@@ -47,7 +47,7 @@ type Pod struct {
 	withNamespaceMetadata bool
 	store                 cache.Store
 	logger                *slog.Logger
-	queue                 *workqueue.Type
+	queue                 *workqueue.Typed[string]
 }
 
 // NewPod creates a new pod discovery.
@@ -68,7 +68,9 @@ func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace cac
 		withNamespaceMetadata: namespace != nil,
 		store:                 pods.GetStore(),
 		logger:                l,
-		queue:                 workqueue.NewNamed(RolePod.String()),
+		queue: workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{
+			Name: RolePod.String(),
+		}),
 	}
 	_, err := p.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o any) {
@@ -166,12 +168,11 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 }
 
 func (p *Pod) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
-	keyObj, quit := p.queue.Get()
+	key, quit := p.queue.Get()
 	if quit {
 		return false
 	}
-	defer p.queue.Done(keyObj)
-	key := keyObj.(string)
+	defer p.queue.Done(key)
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {

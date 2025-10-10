@@ -42,6 +42,9 @@ var parserPool = sync.Pool{
 // ExperimentalDurationExpr is a flag to enable experimental duration expression parsing.
 var ExperimentalDurationExpr bool
 
+// EnableExtendedRangeSelectors is a flag to enable experimental extended range selectors.
+var EnableExtendedRangeSelectors bool
+
 type Parser interface {
 	ParseExpr() (Expr, error)
 	Close()
@@ -816,7 +819,9 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 				}
 				i = len(n.Func.ArgTypes) - 1
 			}
-			p.expectType(arg, n.Func.ArgTypes[i], fmt.Sprintf("call to function %q", n.Func.Name))
+			if t := p.checkAST(arg); t != n.Func.ArgTypes[i] {
+				p.addParseErrf(arg.PositionRange(), "expected type %s in call to function %q, got %s", DocumentedType(n.Func.ArgTypes[i]), n.Func.Name, DocumentedType(t))
+			}
 		}
 
 	case *ParenExpr:
@@ -1019,6 +1024,52 @@ func (p *parser) addOffsetExpr(e Node, expr *DurationExpr) {
 	}
 
 	*endPosp = p.lastClosing
+}
+
+func (p *parser) setAnchored(e Node) {
+	if !EnableExtendedRangeSelectors {
+		p.addParseErrf(e.PositionRange(), "anchored modifier is experimental and not enabled")
+		return
+	}
+	switch s := e.(type) {
+	case *VectorSelector:
+		s.Anchored = true
+		if s.Smoothed {
+			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
+		}
+	case *MatrixSelector:
+		s.VectorSelector.(*VectorSelector).Anchored = true
+		if s.VectorSelector.(*VectorSelector).Smoothed {
+			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
+		}
+	case *SubqueryExpr:
+		p.addParseErrf(e.PositionRange(), "anchored modifier is not supported for subqueries")
+	default:
+		p.addParseErrf(e.PositionRange(), "anchored modifier not implemented")
+	}
+}
+
+func (p *parser) setSmoothed(e Node) {
+	if !EnableExtendedRangeSelectors {
+		p.addParseErrf(e.PositionRange(), "smoothed modifier is experimental and not enabled")
+		return
+	}
+	switch s := e.(type) {
+	case *VectorSelector:
+		s.Smoothed = true
+		if s.Anchored {
+			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
+		}
+	case *MatrixSelector:
+		s.VectorSelector.(*VectorSelector).Smoothed = true
+		if s.VectorSelector.(*VectorSelector).Anchored {
+			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
+		}
+	case *SubqueryExpr:
+		p.addParseErrf(e.PositionRange(), "smoothed modifier is not supported for subqueries")
+	default:
+		p.addParseErrf(e.PositionRange(), "smoothed modifier not implemented")
+	}
 }
 
 // setTimestamp is used to set the timestamp from the @ modifier in the generated parser.

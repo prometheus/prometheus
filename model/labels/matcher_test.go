@@ -225,6 +225,13 @@ func BenchmarkNewMatcher(b *testing.B) {
 			NewMatcher(MatchRegexp, "foo", "bar")
 		}
 	})
+	b.Run("complex regex", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i <= b.N; i++ {
+			NewMatcher(MatchRegexp, "foo", "((.*)(bar|b|buzz)(.+)|foo){10}")
+		}
+	})
 }
 
 func BenchmarkMatcher_String(b *testing.B) {

@@ -23,7 +23,7 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -42,8 +42,8 @@ var (
 	configTypesMu sync.Mutex
 	configTypes   = make(map[reflect.Type]reflect.Type)
 
-	emptyStructType = reflect.TypeOf(struct{}{})
-	configsType     = reflect.TypeOf(Configs{})
+	emptyStructType = reflect.TypeFor[struct{}]()
+	configsType     = reflect.TypeFor[Configs]()
 )
 
 // RegisterConfig registers the given Config type for YAML marshaling and unmarshaling.
@@ -54,7 +54,7 @@ func RegisterConfig(config Config) {
 func init() {
 	// N.B.: static_configs is the only Config type implemented by default.
 	// All other types are registered at init by their implementing packages.
-	elemTyp := reflect.TypeOf(&targetgroup.Group{})
+	elemTyp := reflect.TypeFor[*targetgroup.Group]()
 	registerConfig(staticConfigsKey, elemTyp, StaticConfig{})
 }
 

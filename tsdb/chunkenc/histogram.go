@@ -294,7 +294,7 @@ func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 		return
 	}
 
-	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.FloatBucketsMatch(h.CustomValues, a.customValues) {
+	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.CustomBucketBoundsMatch(h.CustomValues, a.customValues) {
 		counterResetHint = CounterReset
 		return
 	}
@@ -532,7 +532,7 @@ func (a *HistogramAppender) appendableGauge(h *histogram.Histogram) (
 		return
 	}
 
-	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.FloatBucketsMatch(h.CustomValues, a.customValues) {
+	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.CustomBucketBoundsMatch(h.CustomValues, a.customValues) {
 		return
 	}
 
@@ -921,7 +921,7 @@ func (it *histogramIterator) AtHistogram(h *histogram.Histogram) (int64, *histog
 	}
 	if h == nil {
 		it.atHistogramCalled = true
-		return it.t, &histogram.Histogram{
+		h = &histogram.Histogram{
 			CounterResetHint: counterResetHint(it.counterResetHeader, it.numRead),
 			Count:            it.cnt,
 			ZeroCount:        it.zCnt,
@@ -934,6 +934,14 @@ func (it *histogramIterator) AtHistogram(h *histogram.Histogram) (int64, *histog
 			NegativeBuckets:  it.nBuckets,
 			CustomValues:     it.customValues,
 		}
+		if h.Schema > histogram.ExponentialSchemaMax && h.Schema <= histogram.ExponentialSchemaMaxReserved {
+			// This is a very slow path, but it should only happen if the
+			// chunk is from a newer Prometheus version that supports higher
+			// resolution.
+			h = h.Copy()
+			h.ReduceResolution(histogram.ExponentialSchemaMax)
+		}
+		return it.t, h
 	}
 
 	h.CounterResetHint = counterResetHint(it.counterResetHeader, it.numRead)
@@ -958,6 +966,13 @@ func (it *histogramIterator) AtHistogram(h *histogram.Histogram) (int64, *histog
 	// Custom values are interned. The single copy is here in the iterator.
 	h.CustomValues = it.customValues
 
+	if h.Schema > histogram.ExponentialSchemaMax && h.Schema <= histogram.ExponentialSchemaMaxReserved {
+		// This is a very slow path, but it should only happen if the
+		// chunk is from a newer Prometheus version that supports higher
+		// resolution.
+		h.ReduceResolution(histogram.ExponentialSchemaMax)
+	}
+
 	return it.t, h
 }
 
@@ -967,7 +982,7 @@ func (it *histogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int
 	}
 	if fh == nil {
 		it.atFloatHistogramCalled = true
-		return it.t, &histogram.FloatHistogram{
+		fh = &histogram.FloatHistogram{
 			CounterResetHint: counterResetHint(it.counterResetHeader, it.numRead),
 			Count:            float64(it.cnt),
 			ZeroCount:        float64(it.zCnt),
@@ -980,6 +995,14 @@ func (it *histogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int
 			NegativeBuckets:  it.nFloatBuckets,
 			CustomValues:     it.customValues,
 		}
+		if fh.Schema > histogram.ExponentialSchemaMax && fh.Schema <= histogram.ExponentialSchemaMaxReserved {
+			// This is a very slow path, but it should only happen if the
+			// chunk is from a newer Prometheus version that supports higher
+			// resolution.
+			fh = fh.Copy()
+			fh.ReduceResolution(histogram.ExponentialSchemaMax)
+		}
+		return it.t, fh
 	}
 
 	fh.CounterResetHint = counterResetHint(it.counterResetHeader, it.numRead)
@@ -1011,6 +1034,13 @@ func (it *histogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int
 
 	// Custom values are interned. The single copy is here in the iterator.
 	fh.CustomValues = it.customValues
+
+	if fh.Schema > histogram.ExponentialSchemaMax && fh.Schema <= histogram.ExponentialSchemaMaxReserved {
+		// This is a very slow path, but it should only happen if the
+		// chunk is from a newer Prometheus version that supports higher
+		// resolution.
+		fh.ReduceResolution(histogram.ExponentialSchemaMax)
+	}
 
 	return it.t, fh
 }
@@ -1077,6 +1107,12 @@ func (it *histogramIterator) Next() ValueType {
 			it.err = err
 			return ValNone
 		}
+
+		if !histogram.IsKnownSchema(schema) {
+			it.err = histogram.UnknownSchemaError(schema)
+			return ValNone
+		}
+
 		it.schema = schema
 		it.zThreshold = zeroThreshold
 		it.pSpans, it.nSpans = posSpans, negSpans

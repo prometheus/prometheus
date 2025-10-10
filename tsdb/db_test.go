@@ -300,19 +300,87 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 	}()
 
 	app := db.Appender(context.Background())
-	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, 0)
+	_, err := app.Append(0, labels.FromStrings("type", "float"), 0, 0)
+	require.NoError(t, err)
+
+	_, err = app.AppendHistogram(
+		0, labels.FromStrings("type", "histogram"), 0,
+		&histogram.Histogram{Count: 42, Sum: math.NaN()}, nil,
+	)
+	require.NoError(t, err)
+
+	_, err = app.AppendHistogram(
+		0, labels.FromStrings("type", "floathistogram"), 0,
+		nil, &histogram.FloatHistogram{Count: 42, Sum: math.NaN()},
+	)
 	require.NoError(t, err)
 
 	err = app.Rollback()
 	require.NoError(t, err)
 
-	querier, err := db.Querier(0, 1)
+	for _, typ := range []string{"float", "histogram", "floathistogram"} {
+		querier, err := db.Querier(0, 1)
+		require.NoError(t, err)
+		seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "type", typ))
+		require.Equal(t, map[string][]chunks.Sample{}, seriesSet)
+	}
+
+	sr, err := wlog.NewSegmentsReader(db.head.wal.Dir())
 	require.NoError(t, err)
-	defer querier.Close()
+	defer func() {
+		require.NoError(t, sr.Close())
+	}()
 
-	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	// Read records from WAL and check for expected count of series and samples.
+	var (
+		r   = wlog.NewReader(sr)
+		dec = record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
 
-	require.Equal(t, map[string][]chunks.Sample{}, seriesSet)
+		walSeriesCount, walSamplesCount, walHistogramCount, walFloatHistogramCount, walExemplarsCount int
+	)
+	for r.Next() {
+		rec := r.Record()
+		switch dec.Type(rec) {
+		case record.Series:
+			var series []record.RefSeries
+			series, err = dec.Series(rec, series)
+			require.NoError(t, err)
+			walSeriesCount += len(series)
+
+		case record.Samples:
+			var samples []record.RefSample
+			samples, err = dec.Samples(rec, samples)
+			require.NoError(t, err)
+			walSamplesCount += len(samples)
+
+		case record.Exemplars:
+			var exemplars []record.RefExemplar
+			exemplars, err = dec.Exemplars(rec, exemplars)
+			require.NoError(t, err)
+			walExemplarsCount += len(exemplars)
+
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
+			var histograms []record.RefHistogramSample
+			histograms, err = dec.HistogramSamples(rec, histograms)
+			require.NoError(t, err)
+			walHistogramCount += len(histograms)
+
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+			var floatHistograms []record.RefFloatHistogramSample
+			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
+			require.NoError(t, err)
+			walFloatHistogramCount += len(floatHistograms)
+
+		default:
+		}
+	}
+
+	// Check that only series get stored after calling Rollback.
+	require.Equal(t, 3, walSeriesCount, "series should have been written to WAL")
+	require.Equal(t, 0, walSamplesCount, "samples should not have been written to WAL")
+	require.Equal(t, 0, walExemplarsCount, "exemplars should not have been written to WAL")
+	require.Equal(t, 0, walHistogramCount, "histograms should not have been written to WAL")
+	require.Equal(t, 0, walFloatHistogramCount, "float histograms should not have been written to WAL")
 }
 
 func TestDBAppenderAddRef(t *testing.T) {
@@ -4504,7 +4572,7 @@ func testOOOWALWrite(t *testing.T,
 		}()
 
 		var records []any
-		dec := record.NewDecoder(nil)
+		dec := record.NewDecoder(nil, promslog.NewNopLogger())
 		for r.Next() {
 			rec := r.Record()
 			switch typ := dec.Type(rec); typ {
@@ -4856,10 +4924,7 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 }
 
 // TestMultipleEncodingsCommitOrder mainly serves to demonstrate when happens when committing a batch of samples for the
-// same series when there are multiple encodings. Commit() will process all float samples before histogram samples. This
-// means that if histograms are appended before floats, the histograms could be marked as OOO when they are committed.
-// While possible, this shouldn't happen very often - you need the same series to be ingested as both a float and a
-// histogram in a single write request.
+// same series when there are multiple encodings. With issue #15177 fixed, this now all works as expected.
 func TestMultipleEncodingsCommitOrder(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
@@ -4933,26 +4998,19 @@ func TestMultipleEncodingsCommitOrder(t *testing.T) {
 		s := addSample(app, int64(i), chunkenc.ValFloat)
 		expSamples = append(expSamples, s)
 	}
-	// These samples will be marked as OOO as their timestamps are less than the max timestamp for float samples in the
-	// same batch.
 	for i := 110; i < 120; i++ {
 		s := addSample(app, int64(i), chunkenc.ValHistogram)
 		expSamples = append(expSamples, s)
 	}
-	// These samples will be marked as OOO as their timestamps are less than the max timestamp for float samples in the
-	// same batch.
 	for i := 120; i < 130; i++ {
 		s := addSample(app, int64(i), chunkenc.ValFloatHistogram)
 		expSamples = append(expSamples, s)
 	}
-	// These samples will be marked as in-order as their timestamps are greater than the max timestamp for float
-	// samples in the same batch.
 	for i := 140; i < 150; i++ {
 		s := addSample(app, int64(i), chunkenc.ValFloatHistogram)
 		expSamples = append(expSamples, s)
 	}
-	// These samples will be marked as in-order, even though they're appended after the float histograms from ts 140-150
-	// because float samples are processed first and these samples are in-order wrt to the float samples in the batch.
+	// These samples will be marked as out-of-order.
 	for i := 130; i < 135; i++ {
 		s := addSample(app, int64(i), chunkenc.ValFloat)
 		expSamples = append(expSamples, s)
@@ -4964,8 +5022,8 @@ func TestMultipleEncodingsCommitOrder(t *testing.T) {
 		return expSamples[i].T() < expSamples[j].T()
 	})
 
-	// oooCount = 20 because the histograms from 120 - 130 and float histograms from 120 - 130 are detected as OOO.
-	verifySamples(100, 150, expSamples, 20)
+	// oooCount = 5 for the samples 130 to 134.
+	verifySamples(100, 150, expSamples, 5)
 
 	// Append and commit some in-order histograms by themselves.
 	app = db.Appender(context.Background())
@@ -4975,8 +5033,8 @@ func TestMultipleEncodingsCommitOrder(t *testing.T) {
 	}
 	require.NoError(t, app.Commit())
 
-	// oooCount remains at 20 as no new OOO samples have been added.
-	verifySamples(100, 160, expSamples, 20)
+	// oooCount remains at 5.
+	verifySamples(100, 160, expSamples, 5)
 
 	// Append and commit samples for all encoding types. This time all samples will be treated as OOO because samples
 	// with newer timestamps have already been committed.
@@ -5004,8 +5062,8 @@ func TestMultipleEncodingsCommitOrder(t *testing.T) {
 		return expSamples[i].T() < expSamples[j].T()
 	})
 
-	// oooCount = 50 as we've added 30 more OOO samples.
-	verifySamples(50, 160, expSamples, 50)
+	// oooCount = 35 as we've added 30 more OOO samples.
+	verifySamples(50, 160, expSamples, 35)
 }
 
 // TODO(codesome): test more samples incoming once compaction has started. To verify new samples after the start
@@ -7030,7 +7088,7 @@ func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 		require.NoError(t, err)
 		sr, err := wlog.NewSegmentsReader(originalWblDir)
 		require.NoError(t, err)
-		dec := record.NewDecoder(labels.NewSymbolTable())
+		dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
 		r, markers, addedRecs := wlog.NewReader(sr), 0, 0
 		for r.Next() {
 			rec := r.Record()

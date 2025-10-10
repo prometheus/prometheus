@@ -1,7 +1,7 @@
 go:
     # Whenever the Go version is updated here,
     # .github/workflows should also be updated.
-    version: 1.24
+    version: 1.25
 repository:
     path: github.com/prometheus/prometheus
 build:
