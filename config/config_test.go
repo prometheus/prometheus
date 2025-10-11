@@ -1034,6 +1034,7 @@ var expectedConf = &Config{
 					HTTPClientConfig: config.DefaultHTTPClientConfig,
 					URL:              "http://example.com/prometheus",
 					RefreshInterval:  model.Duration(60 * time.Second),
+					RetryConfig:      http.DefaultRetryConfig,
 				},
 			},
 		},
