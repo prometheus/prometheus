@@ -1139,7 +1139,7 @@ func compareNativeHistogram(exp, cur *histogram.FloatHistogram) bool {
 	}
 
 	if exp.UsesCustomBuckets() {
-		if !histogram.FloatBucketsMatch(exp.CustomValues, cur.CustomValues) {
+		if !histogram.CustomBucketBoundsMatch(exp.CustomValues, cur.CustomValues) {
 			return false
 		}
 	}

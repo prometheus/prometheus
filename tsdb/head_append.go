@@ -570,7 +570,10 @@ func (a *headAppender) getCurrentBatch(st sampleType, s chunks.HeadSeriesRef) *a
 			b.exemplars = h.getExemplarBuffer()
 		}
 		clear(a.typesInBatch)
-		if st != stNone {
+		switch st {
+		case stHistogram, stFloatHistogram, stCustomBucketHistogram, stCustomBucketFloatHistogram:
+			// We only record histogram sample types in the map.
+			// Floats are implicit.
 			a.typesInBatch[s] = st
 		}
 		a.batches = append(a.batches, &b)
@@ -597,14 +600,32 @@ func (a *headAppender) getCurrentBatch(st sampleType, s chunks.HeadSeriesRef) *a
 	}
 	prevST, ok := a.typesInBatch[s]
 	switch {
-	case !ok: // New series. Add it to map and return current batch.
+	case prevST == st:
+		// An old series of some histogram type with the same type being appended.
+		// Continue the batch.
+		return lastBatch
+	case !ok && st == stFloat:
+		// A new float series, or an old float series that gets floats appended.
+		// Note that we do not track stFloat in typesInBatch.
+		// Continue the batch.
+		return lastBatch
+	case st == stFloat:
+		// A float being appended to a histogram series.
+		// Start a new batch.
+		return newBatch()
+	case !ok:
+		// A new series of some histogram type, or some histogram type
+		// being appended to on old float series. Even in the latter
+		// case, we don't need to start a new batch because histograms
+		// after floats are fine.
+		// Add new sample type to the map and continue batch.
 		a.typesInBatch[s] = st
 		return lastBatch
-	case prevST == st: // Old series, same type. Just return batch.
-		return lastBatch
+	default:
+		// One histogram type changed to another.
+		// Start a new batch.
+		return newBatch()
 	}
-	// An old series got a new type. Start new batch.
-	return newBatch()
 }
 
 // appendable checks whether the given sample is valid for appending to the series.
@@ -1068,6 +1089,8 @@ func (a *headAppender) log() error {
 				return fmt.Errorf("log metadata: %w", err)
 			}
 		}
+		// It's important to do (float) Samples before histogram samples
+		// to end up with the correct order.
 		if len(b.floats) > 0 {
 			rec = enc.Samples(b.floats, buf)
 			buf = rec[:0]
@@ -1748,8 +1771,9 @@ func (a *headAppender) Commit() (err error) {
 	}()
 
 	for _, b := range a.batches {
-		// Do not change the order of these calls. The staleness marker
-		// handling depends on it.
+		// Do not change the order of these calls. We depend on it for
+		// correct commit order of samples and for the staleness marker
+		// handling.
 		a.commitFloats(b, acc)
 		a.commitHistograms(b, acc)
 		a.commitFloatHistograms(b, acc)
@@ -2238,7 +2262,6 @@ func (a *headAppender) Rollback() (err error) {
 	}()
 
 	var series *memSeries
-	fmt.Println("ROLLBACK")
 	for _, b := range a.batches {
 		for i := range b.floats {
 			series = b.floatSeries[i]

@@ -207,3 +207,71 @@ func TestReduceResolutionFloatHistogram(t *testing.T) {
 		require.Equal(t, buckets, tc.buckets[:len(buckets)])
 	}
 }
+
+func TestCustomBucketBoundsMatch(t *testing.T) {
+	tests := []struct {
+		name   string
+		c1, c2 []float64
+		want   bool
+	}{
+		{
+			name: "both nil",
+			c1:   nil,
+			c2:   nil,
+			want: true,
+		},
+		{
+			name: "both empty",
+			c1:   []float64{},
+			c2:   []float64{},
+			want: true,
+		},
+		{
+			name: "one empty one non-empty",
+			c1:   []float64{},
+			c2:   []float64{1.0},
+			want: false,
+		},
+		{
+			name: "different lengths",
+			c1:   []float64{1.0, 2.0},
+			c2:   []float64{1.0, 2.0, 3.0},
+			want: false,
+		},
+		{
+			name: "same single value",
+			c1:   []float64{1.5},
+			c2:   []float64{1.5},
+			want: true,
+		},
+		{
+			name: "different single value",
+			c1:   []float64{1.5},
+			c2:   []float64{2.5},
+			want: false,
+		},
+		{
+			name: "same multiple values",
+			c1:   []float64{1.0, 2.0, 3.0, 4.0, 5.0},
+			c2:   []float64{1.0, 2.0, 3.0, 4.0, 5.0},
+			want: true,
+		},
+		{
+			name: "different values",
+			c1:   []float64{1.0, 2.1, 3.0},
+			c2:   []float64{1.0, 2.0, 3.0},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CustomBucketBoundsMatch(tt.c1, tt.c2)
+			require.Equal(t, tt.want, got)
+
+			// Test commutativity (should be symmetric)
+			gotReverse := CustomBucketBoundsMatch(tt.c2, tt.c1)
+			require.Equal(t, got, gotReverse)
+		})
+	}
+}

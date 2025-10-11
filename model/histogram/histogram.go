@@ -255,7 +255,7 @@ func (h *Histogram) Equals(h2 *Histogram) bool {
 	}
 
 	if h.UsesCustomBuckets() {
-		if !FloatBucketsMatch(h.CustomValues, h2.CustomValues) {
+		if !CustomBucketBoundsMatch(h.CustomValues, h2.CustomValues) {
 			return false
 		}
 	}
