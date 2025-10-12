@@ -2650,10 +2650,9 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 		SampleCount int
 	}{
 		{
-			name:     "Valid Histogram NHCB to Classic Conversion V1",
+			name:     "valid histogram nhcb to classic conversion v1",
 			protoMsg: config.RemoteWriteProtoMsgV1,
 			histogram: []record.RefHistogramSample{{
-
 				Ref: chunks.HeadSeriesRef(0),
 				T:   1234567890,
 				H: &histogram.Histogram{
@@ -2670,10 +2669,9 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 			SampleCount: 5,
 		},
 		{
-			name:     "Valid Histogram NHCB to Classic Conversion V2",
+			name:     "valid histogram nhcb to classic conversion v2",
 			protoMsg: config.RemoteWriteProtoMsgV2,
 			histogram: []record.RefHistogramSample{{
-
 				Ref: chunks.HeadSeriesRef(0),
 				T:   1234567890,
 				H: &histogram.Histogram{
@@ -2690,7 +2688,7 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 			SampleCount: 5,
 		},
 		{
-			name:     "Empty Histogram NHCB to Classic Conversion",
+			name:     "empty histogram nhcb to classic conversion",
 			protoMsg: config.RemoteWriteProtoMsgV1,
 			histogram: []record.RefHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
@@ -2709,7 +2707,7 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 			SampleCount: 3,
 		},
 		{
-			name:     "Nil Histogram NHCB to Classic Conversion",
+			name:     "nil histogram nhcb to classic conversion",
 			protoMsg: config.RemoteWriteProtoMsgV1,
 			histogram: []record.RefHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
@@ -2719,7 +2717,7 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 			SampleCount: 0,
 		},
 		{
-			name:     "Multiple Valid Histogram NHCB to Classic Conversion V1",
+			name:     "multiple valid histogram nhcb to classic conversion v1",
 			protoMsg: config.RemoteWriteProtoMsgV1,
 			histogram: []record.RefHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
@@ -2751,7 +2749,7 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 			SampleCount: 11,
 		},
 		{
-			name:     "Multiple Valid Histogram NHCB to Classic Conversion V2",
+			name:     "multiple valid histogram nhcb to classic conversion v2",
 			protoMsg: config.RemoteWriteProtoMsgV2,
 			histogram: []record.RefHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
@@ -2791,7 +2789,7 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 		SampleCount int
 	}{
 		{
-			name:     "Valid Histogram NHCB to Classic Conversion V1",
+			name:     "valid histogram nhcb to classic conversion v1",
 			protoMsg: config.RemoteWriteProtoMsgV1,
 			histogram: []record.RefFloatHistogramSample{
 				{
@@ -2812,7 +2810,7 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 			SampleCount: 5,
 		},
 		{
-			name:     "Valid Histogram NHCB to Classic Conversion V2",
+			name:     "valid histogram nhcb to classic conversion v2",
 			protoMsg: config.RemoteWriteProtoMsgV2,
 			histogram: []record.RefFloatHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
@@ -2831,7 +2829,7 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 			SampleCount: 5,
 		},
 		{
-			name:     "Empty Histogram NHCB to Classic Conversion",
+			name:     "empty histogram nhcb to classic conversion",
 			protoMsg: config.RemoteWriteProtoMsgV1,
 			histogram: []record.RefFloatHistogramSample{
 				{
@@ -2862,7 +2860,7 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 			SampleCount: 0,
 		},
 		{
-			name:     "Multiple Valid Histogram NHCB to Classic Conversion V1",
+			name:     "Multiple valid histogram NHCB to Classic Conversion V1",
 			protoMsg: config.RemoteWriteProtoMsgV1,
 			histogram: []record.RefFloatHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
@@ -2894,7 +2892,7 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 			SampleCount: 11,
 		},
 		{
-			name:     "Valid Histogram NHCB to Classic Conversion V2",
+			name:     "valid histogram NHCB to Classic Conversion V2",
 			protoMsg: config.RemoteWriteProtoMsgV2,
 			histogram: []record.RefFloatHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
@@ -2922,8 +2920,23 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 					PositiveBuckets: []float64{1, 1, 1},
 					CustomValues:    []float64{1.0, 5.0, 7.0},
 				},
+			}, {
+				Ref: chunks.HeadSeriesRef(0),
+				T:   1234567890,
+				FH: &histogram.FloatHistogram{
+					Schema:       histogram.CustomBucketsSchema,
+					CustomValues: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 2},
+						{Offset: 4, Length: 1},
+						{Offset: 1, Length: 2},
+					},
+					PositiveBuckets: []float64{1, 2, 3, 4, 5}, // 1 -> 2 -> 0 -> 0 -> 0 -> 0 -> 3 -> 0 -> 4 -> 5
+					Count:           15,                       // 1 -> 3 -> 3 -> 3 -> 3 -> 3 -> 6 -> 6 -> 10 -> 15
+					Sum:             123,
+				},
 			}},
-			SampleCount: 11,
+			SampleCount: 24,
 		},
 	}
 
@@ -2934,7 +2947,7 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 			mcfg := config.DefaultMetadataConfig
 			cfg.MaxShards = 1
 
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, config.RemoteWriteProtoMsgV2, true)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, hc.protoMsg, true)
 			m.sendNativeHistograms = true
 
 			series := []record.RefSeries{
@@ -2973,7 +2986,7 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 			mcfg := config.DefaultMetadataConfig
 			cfg.MaxShards = 1
 
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, config.RemoteWriteProtoMsgV2, true)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, fhc.protoMsg, true)
 			m.sendNativeHistograms = true
 
 			series := []record.RefSeries{

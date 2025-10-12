@@ -845,7 +845,7 @@ outer:
 			meta := t.seriesMetadata[h.Ref]
 			t.seriesMtx.Unlock()
 
-			err := histogram.ConvertNHCBToClassicHistogram(h.H, lbls, t.builder, func(bucketLabels labels.Labels, value float64) error {
+			err := histogram.ConvertNHCBToClassic(h.H, lbls, t.builder, func(bucketLabels labels.Labels, value float64) error {
 				if !t.shards.enqueue(h.Ref, timeSeries{
 					seriesLabels: bucketLabels,
 					metadata:     meta,
@@ -942,7 +942,7 @@ outer:
 			meta := t.seriesMetadata[h.Ref]
 			t.seriesMtx.Unlock()
 
-			err := histogram.ConvertNHCBToClassicHistogram(h.FH, lbls, t.builder, func(bucketLabels labels.Labels, value float64) error {
+			err := histogram.ConvertNHCBToClassic(h.FH, lbls, t.builder, func(bucketLabels labels.Labels, value float64) error {
 				if !t.shards.enqueue(h.Ref, timeSeries{
 					seriesLabels: bucketLabels,
 					metadata:     meta,
