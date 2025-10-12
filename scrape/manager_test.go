@@ -1140,6 +1140,14 @@ scrape_configs:
 
 	applyConfig(t, testConfig, scrapeManager, discoveryManager)
 
+	// Verify that the scrape pool was created (proves the blocking check was removed).
+	require.Eventually(t, func() bool {
+		scrapeManager.mtxScrape.Lock()
+		defer scrapeManager.mtxScrape.Unlock()
+		_, exists := scrapeManager.scrapePools["test"]
+		return exists
+	}, 5*time.Second, 100*time.Millisecond, "scrape pool should be created for job 'test'")
+
 	// Helper function to get matching histograms to avoid race conditions.
 	getMatchingHistograms := func() []histogramSample {
 		app.mtx.Lock()
