@@ -323,10 +323,13 @@ func TestInitialUpdate(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
 	}
+	t.Parallel()
+
 	for _, tc := range []string{
 		"fixtures/valid.yml",
 		"fixtures/valid.json",
 	} {
+		tc := tc
 		t.Run(tc, func(t *testing.T) {
 			t.Parallel()
 
@@ -343,10 +346,13 @@ func TestInitialUpdate(t *testing.T) {
 }
 
 func TestInvalidFile(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []string{
 		"fixtures/invalid_nil.yml",
 		"fixtures/invalid_nil.json",
 	} {
+		tc := tc
 		t.Run(tc, func(t *testing.T) {
 			t.Parallel()
 
