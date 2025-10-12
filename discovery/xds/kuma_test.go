@@ -131,6 +131,8 @@ func newKumaTestHTTPDiscovery(c KumaSDConfig) (*fetchDiscovery, error) {
 }
 
 func TestKumaMadsV1ResourceParserInvalidTypeURL(t *testing.T) {
+	t.Parallel()
+
 	resources := make([]*anypb.Any, 0)
 	groups, err := kumaMadsV1ResourceParser(resources, "type.googleapis.com/some.api.v1.Monitoring")
 	require.Nil(t, groups)
@@ -138,6 +140,8 @@ func TestKumaMadsV1ResourceParserInvalidTypeURL(t *testing.T) {
 }
 
 func TestKumaMadsV1ResourceParserEmptySlice(t *testing.T) {
+	t.Parallel()
+
 	resources := make([]*anypb.Any, 0)
 	groups, err := kumaMadsV1ResourceParser(resources, KumaMadsV1ResourceTypeURL)
 	require.Empty(t, groups)
@@ -145,6 +149,8 @@ func TestKumaMadsV1ResourceParserEmptySlice(t *testing.T) {
 }
 
 func TestKumaMadsV1ResourceParserValidResources(t *testing.T) {
+	t.Parallel()
+
 	res, err := getKumaMadsV1DiscoveryResponse(testKumaMadsV1Resources...)
 	require.NoError(t, err)
 
@@ -192,6 +198,8 @@ func TestKumaMadsV1ResourceParserValidResources(t *testing.T) {
 }
 
 func TestKumaMadsV1ResourceParserInvalidResources(t *testing.T) {
+	t.Parallel()
+
 	data, err := protoJSONMarshalOptions.Marshal(&MonitoringAssignment_Target{})
 	require.NoError(t, err)
 
@@ -206,6 +214,8 @@ func TestKumaMadsV1ResourceParserInvalidResources(t *testing.T) {
 }
 
 func TestNewKumaHTTPDiscovery(t *testing.T) {
+	t.Parallel()
+
 	kd, err := newKumaTestHTTPDiscovery(kumaConf)
 	require.NoError(t, err)
 	require.NotNil(t, kd)
@@ -221,6 +231,8 @@ func TestNewKumaHTTPDiscovery(t *testing.T) {
 }
 
 func TestKumaHTTPDiscoveryRefresh(t *testing.T) {
+	t.Parallel()
+
 	s := createTestHTTPServer(t, func(request *v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
 		if request.VersionInfo == "1" {
 			return nil, nil
