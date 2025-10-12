@@ -1175,9 +1175,7 @@ scrape_configs:
 	require.Equal(t, histogram.Histogram{}, *got[0].h, "first sample should be zero sample")
 	require.InDelta(t, expectedHistogramSum, got[1].h.Sum, 1e-9, "second sample should retain the expected sum")
 
-	// Note: Exemplars from classic histogram buckets are not preserved when converting to NHCB
-	// because the bucket series are replaced with a single native histogram sample. This is expected
-	// behavior. The test verifies that the presence of exemplars in the input doesn't cause errors.
+	require.Len(t, app.resultExemplars, 2, "expected 2 exemplars from histogram buckets")
 
 	// The test successfully completes, proving that both ConvertClassicHistogramsToNHCBEnabled
 	// and EnableCreatedTimestampZeroIngestion can work together without the error that was
