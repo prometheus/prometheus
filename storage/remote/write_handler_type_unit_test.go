@@ -46,9 +46,9 @@ func TestRemoteWriteHandler_TypeAndUnitLabels(t *testing.T) {
 			unit:                    "bytes",
 			expectedLabels: labels.FromStrings(
 				"__name__", "test_metric",
+				"foo", "bar",
 				"__type__", "counter",
 				"__unit__", "bytes",
-				"foo", "bar",
 			),
 		},
 		{
@@ -58,9 +58,9 @@ func TestRemoteWriteHandler_TypeAndUnitLabels(t *testing.T) {
 			unit:                    "seconds",
 			expectedLabels: labels.FromStrings(
 				"__name__", "test_metric",
+				"foo", "bar",
 				"__type__", "gauge",
 				"__unit__", "seconds",
-				"foo", "bar",
 			),
 		},
 		{
@@ -90,8 +90,8 @@ func TestRemoteWriteHandler_TypeAndUnitLabels(t *testing.T) {
 			unit:                    "milliseconds",
 			expectedLabels: labels.FromStrings(
 				"__name__", "test_metric",
-				"__unit__", "milliseconds",
 				"foo", "bar",
+				"__unit__", "milliseconds",
 			),
 		},
 	}
@@ -152,7 +152,7 @@ func TestRemoteWriteHandler_TypeAndUnitLabels(t *testing.T) {
 			require.NoError(t, err)
 
 			// Create HTTP request
-			httpReq, err := http.NewRequest("POST", "/api/v1/write", bytes.NewReader(data))
+			httpReq, err := http.NewRequest(http.MethodPost, "/api/v1/write", bytes.NewReader(data))
 			require.NoError(t, err)
 			httpReq.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
 			httpReq.Header.Set("Content-Encoding", "snappy")
@@ -205,7 +205,7 @@ func TestRemoteWriteHandler_V1DoesNotAddTypeAndUnitLabels(t *testing.T) {
 	data, _, _, err := buildWriteRequest(nil, req.Timeseries, nil, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
-	httpReq, err := http.NewRequest("POST", "/api/v1/write", bytes.NewReader(data))
+	httpReq, err := http.NewRequest(http.MethodPost, "/api/v1/write", bytes.NewReader(data))
 	require.NoError(t, err)
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("Content-Encoding", "snappy")
