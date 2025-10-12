@@ -1104,8 +1104,8 @@ func TestNHCBAndCTZeroIngestion(t *testing.T) {
 				fmt.Fprint(w, `# HELP test_histogram A histogram with created timestamp and exemplars
 # TYPE test_histogram histogram
 test_histogram_bucket{le="0.0"} 1
-test_histogram_bucket{le="1.0"} 10 # {trace_id="trace-1"} 0.5
-test_histogram_bucket{le="2.0"} 20 # {trace_id="trace-2"} 1.5
+test_histogram_bucket{le="1.0"} 10 # {trace_id="trace-1"} 0.5 123456789
+test_histogram_bucket{le="2.0"} 20 # {trace_id="trace-2"} 1.5 123456780
 test_histogram_bucket{le="+Inf"} 30 # {trace_id="trace-3"} 2.5
 test_histogram_count 30
 test_histogram_sum 45.5
