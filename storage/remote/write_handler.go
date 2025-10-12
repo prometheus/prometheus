@@ -55,7 +55,8 @@ type writeHandler struct {
 
 	acceptedProtoMsgs map[config.RemoteWriteProtoMsg]struct{}
 
-	ingestCTZeroSample bool
+	ingestCTZeroSample      bool
+	enableTypeAndUnitLabels bool
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -65,7 +66,7 @@ const maxAheadTime = 10 * time.Minute
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedProtoMsgs []config.RemoteWriteProtoMsg, ingestCTZeroSample bool) http.Handler {
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedProtoMsgs []config.RemoteWriteProtoMsg, ingestCTZeroSample, enableTypeAndUnitLabels bool) http.Handler {
 	protoMsgs := map[config.RemoteWriteProtoMsg]struct{}{}
 	for _, acc := range acceptedProtoMsgs {
 		protoMsgs[acc] = struct{}{}
@@ -87,7 +88,8 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable 
 			Help:      "The total number of received remote write samples (and histogram samples) which were ingested without corresponding metadata.",
 		}),
 
-		ingestCTZeroSample: ingestCTZeroSample,
+		ingestCTZeroSample:      ingestCTZeroSample,
+		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 	}
 	return h
 }
@@ -417,6 +419,26 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
 		}
+
+		// Convert metadata once for both label addition and later UpdateMetadata call.
+		// ToMetadata() safely handles nil Metadata by returning default values (MetricTypeUnknown, empty strings).
+		// This avoids nil pointer dereference and redundant conversion work.
+		m := ts.ToMetadata(req.Symbols)
+		// Add type and unit labels from metadata if the feature is enabled.
+		// We check the converted model metadata (not the protobuf metadata) to avoid nil dereference.
+		if h.enableTypeAndUnitLabels && (m.Type != model.MetricTypeUnknown || m.Unit != "") {
+			lb := labels.NewBuilder(ls)
+			// Add __type__ label if metric type is known.
+			if m.Type != model.MetricTypeUnknown {
+				lb.Set("__type__", string(m.Type))
+			}
+			// Add __unit__ label if unit is specified.
+			if m.Unit != "" {
+				lb.Set("__unit__", m.Unit)
+			}
+			ls = lb.Labels()
+		}
+
 		// Validate series labels early.
 		// NOTE(bwplotka): While spec allows UTF-8, Prometheus Receiver may impose
 		// specific limits and follow https://prometheus.io/docs/specs/remote_write_spec_2_0/#invalid-samples case.
@@ -535,7 +557,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			h.logger.Error("failed to ingest exemplar, emitting error log, but no error for PRW caller", "err", err.Error(), "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e))
 		}
 
-		m := ts.ToMetadata(req.Symbols)
+		// Metadata is converted once above and reused here for both label addition and UpdateMetadata to avoid redundant work.
 		if _, err = app.UpdateMetadata(ref, ls, m); err != nil {
 			h.logger.Debug("error while updating metadata from remote write", "err", err)
 			// Metadata is attached to each series, so since Prometheus does not reject sample without metadata information,

@@ -130,7 +130,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 			}
 
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -237,7 +237,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			}
 
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -272,7 +272,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 		}
 
 		appendable := &mockAppendable{}
-		handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false)
+		handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false, false)
 
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, req)
@@ -301,7 +301,7 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	// in Prometheus, so keeping like this to not break existing 1.0 clients.
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -533,7 +533,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				appendExemplarErr:     tc.appendExemplarErr,
 				updateMetadataErr:     tc.updateMetadataErr,
 			}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, tc.ingestCTZeroSample)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, tc.ingestCTZeroSample, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -655,7 +655,7 @@ func TestOutOfOrderSample_V1Message(t *testing.T) {
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -697,7 +697,7 @@ func TestOutOfOrderExemplar_V1Message(t *testing.T) {
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -735,7 +735,7 @@ func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -785,7 +785,7 @@ func BenchmarkRemoteWriteHandler(b *testing.B) {
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{tc.protoFormat}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{tc.protoFormat}, false, false)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				b.StopTimer()
@@ -810,7 +810,7 @@ func TestCommitErr_V1Message(t *testing.T) {
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{commitErr: errors.New("commit error")}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -877,7 +877,7 @@ func TestHistogramValidationErrorHandling(t *testing.T) {
 				require.NoError(t, err)
 				t.Cleanup(func() { require.NoError(t, db.Close()) })
 
-				handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{protoMsg}, false)
+				handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{protoMsg}, false, false)
 				recorder := httptest.NewRecorder()
 
 				var buf []byte
@@ -922,7 +922,7 @@ func TestCommitErr_V2Message(t *testing.T) {
 	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 
 	appendable := &mockAppendable{commitErr: errors.New("commit error")}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -949,7 +949,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 		require.NoError(b, db.Close())
 	})
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false, false)
 
 	buf, _, _, err := buildWriteRequest(nil, genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil, nil, "snappy")
 	require.NoError(b, err)
@@ -1280,7 +1280,7 @@ func TestHistogramsReduction(t *testing.T) {
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(string(protoMsg), func(t *testing.T) {
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{protoMsg}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{protoMsg}, false, false)
 
 			var (
 				err     error
