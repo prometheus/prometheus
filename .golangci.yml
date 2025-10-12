@@ -74,6 +74,9 @@ linters:
       - linters:
           - godot
         source: "^// ==="
+      - linters:
+          - staticcheck
+        text: 'v1\.(Endpoints|EndpointSubset|EndpointPort|EndpointAddress) is deprecated: This API is deprecated in v1.33+'
     warn-unused: true
   settings:
     depguard:

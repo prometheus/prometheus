@@ -437,7 +437,7 @@ func (db *DB) resetWALReplayResources() {
 func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef) (err error) {
 	var (
 		syms    = labels.NewSymbolTable() // One table for the whole WAL.
-		dec     = record.NewDecoder(syms)
+		dec     = record.NewDecoder(syms, db.logger)
 		lastRef = chunks.HeadSeriesRef(db.nextRef.Load())
 
 		decoded = make(chan any, 10)

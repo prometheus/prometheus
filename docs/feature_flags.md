@@ -302,3 +302,42 @@ memory in response to misleading cache growth.
 This is currently implemented using direct I/O.
 
 For more details, see the [proposal](https://github.com/prometheus/proposals/pull/45).
+
+## Extended Range Selectors
+
+`--enable-feature=promql-extended-range-selectors`
+
+Enables experimental `anchored` and `smoothed` modifiers for PromQL range and instant selectors. These modifiers provide more control over how range boundaries are handled in functions like `rate` and `increase`, especially with missing or irregular data.
+
+Native Histograms are not yet supported by the extended range selectors.
+
+### `anchored`
+
+Uses the most recent sample (within the lookback delta) at the beginning of the range, or alternatively the first sample within the range if there is no sample within the lookback delta. The last sample within the range is also used at the end of the range. No extrapolation or interpolation is applied, so this is useful to get the direct difference between sample values.
+
+Anchored range selector work with: `resets`, `changes`, `rate`, `increase`, and `delta`.
+
+Example query:
+`increase(http_requests_total[5m] anchored)`
+
+**Note**: When using the anchored modifier with the increase function, the results returned are integers.
+
+### `smoothed`
+
+In range selectors, linearly interpolates values at the range boundaries, using the sample values before and after the boundaries for an improved estimation that is robust against irregular scrapes and missing samples. However, it requires a sample after the evaluation interval to work properly, see note below.
+
+For instant selectors, values are linearly interpolated at the evaluation timestamp using the samples immediately before and after that point.
+
+Smoothed range selectors work with: `rate`, `increase`, and `delta`.
+
+Example query:
+`rate(http_requests_total[step()] smoothed)`
+
+> **Note for alerting and recording rules:**
+> The `smoothed` modifier requires samples after the evaluation interval, so using it directly in alerting or recording rules will typically *under-estimate* the result, as future samples are not available at evaluation time.
+> To use `smoothed` safely in rules, you **must** apply a `query_offset` to the rule group (see [documentation](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#rule_group)) to ensure the calculation window is fully in the past and all needed samples are available.  
+> For critical alerting, set the offset to at least one scrape interval; for less critical or more resilient use cases, consider a larger offset (multiple scrape intervals) to tolerate missed scrapes.
+
+For more details, see the [design doc](https://github.com/prometheus/proposals/blob/main/proposals/2025-04-04_extended-range-selectors-semantics.md).
+
+**Note**: Extended Range Selectors are not supported for subqueries.

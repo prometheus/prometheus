@@ -298,7 +298,7 @@ func TestCheckConfigSyntax(t *testing.T) {
 			err: "error checking client cert file \"testdata/nonexistent_cert_file.yml\": " +
 				"stat testdata/nonexistent_cert_file.yml: no such file or directory",
 			errWindows: "error checking client cert file \"testdata\\\\nonexistent_cert_file.yml\": " +
-				"CreateFile testdata\\nonexistent_cert_file.yml: The system cannot find the file specified.",
+				"GetFileAttributesEx testdata\\nonexistent_cert_file.yml: The system cannot find the file specified.",
 		},
 		{
 			name:       "check with syntax only succeeds with nonexistent credentials file",
@@ -314,7 +314,7 @@ func TestCheckConfigSyntax(t *testing.T) {
 			err: "error checking authorization credentials or bearer token file \"/random/file/which/does/not/exist.yml\": " +
 				"stat /random/file/which/does/not/exist.yml: no such file or directory",
 			errWindows: "error checking authorization credentials or bearer token file \"testdata\\\\random\\\\file\\\\which\\\\does\\\\not\\\\exist.yml\": " +
-				"CreateFile testdata\\random\\file\\which\\does\\not\\exist.yml: The system cannot find the path specified.",
+				"GetFileAttributesEx testdata\\random\\file\\which\\does\\not\\exist.yml: The system cannot find the path specified.",
 		},
 	}
 	for _, test := range cases {

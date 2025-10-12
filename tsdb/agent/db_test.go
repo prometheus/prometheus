@@ -211,7 +211,7 @@ func TestCommit(t *testing.T) {
 	// Read records from WAL and check for expected count of series, samples, and exemplars.
 	var (
 		r   = wlog.NewReader(sr)
-		dec = record.NewDecoder(labels.NewSymbolTable())
+		dec = record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
 
 		walSeriesCount, walSamplesCount, walExemplarsCount, walHistogramCount, walFloatHistogramCount int
 	)
@@ -344,7 +344,7 @@ func TestRollback(t *testing.T) {
 	// Read records from WAL and check for expected count of series and samples.
 	var (
 		r   = wlog.NewReader(sr)
-		dec = record.NewDecoder(labels.NewSymbolTable())
+		dec = record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
 
 		walSeriesCount, walSamplesCount, walHistogramCount, walFloatHistogramCount, walExemplarsCount int
 	)
@@ -892,7 +892,7 @@ func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
 	defer sr.Close()
 	r := wlog.NewReader(sr)
 
-	dec := record.NewDecoder(labels.NewSymbolTable())
+	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
 	for r.Next() {
 		rec := r.Record()
 		if dec.Type(rec) == record.Exemplars {
@@ -1332,7 +1332,7 @@ func readWALSamples(t *testing.T, walDir string) []*walSample {
 	}(sr)
 
 	r := wlog.NewReader(sr)
-	dec := record.NewDecoder(labels.NewSymbolTable())
+	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
 
 	var (
 		samples    []record.RefSample

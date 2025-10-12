@@ -155,7 +155,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	go func() {
 		defer close(decoded)
 		var err error
-		dec := record.NewDecoder(syms)
+		dec := record.NewDecoder(syms, h.logger)
 		for r.Next() {
 			switch dec.Type(r.Record()) {
 			case record.Series:
@@ -767,7 +767,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 	go func() {
 		defer close(decodedCh)
-		dec := record.NewDecoder(syms)
+		dec := record.NewDecoder(syms, h.logger)
 		for r.Next() {
 			var err error
 			rec := r.Record()
@@ -1572,7 +1572,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 		refSeries        map[chunks.HeadSeriesRef]*memSeries
 		exemplarBuf      []record.RefExemplar
 		syms             = labels.NewSymbolTable() // New table for the whole snapshot.
-		dec              = record.NewDecoder(syms)
+		dec              = record.NewDecoder(syms, h.logger)
 	)
 
 	wg.Add(concurrency)

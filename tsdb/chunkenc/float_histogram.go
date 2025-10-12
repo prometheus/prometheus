@@ -258,7 +258,7 @@ func (a *FloatHistogramAppender) appendable(h *histogram.FloatHistogram) (
 		return
 	}
 
-	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.FloatBucketsMatch(h.CustomValues, a.customValues) {
+	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.CustomBucketBoundsMatch(h.CustomValues, a.customValues) {
 		counterReset = true
 		return
 	}
@@ -495,7 +495,7 @@ func (a *FloatHistogramAppender) appendableGauge(h *histogram.FloatHistogram) (
 		return
 	}
 
-	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.FloatBucketsMatch(h.CustomValues, a.customValues) {
+	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.CustomBucketBoundsMatch(h.CustomValues, a.customValues) {
 		return
 	}
 
@@ -866,7 +866,7 @@ func (it *floatHistogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 	}
 	if fh == nil {
 		it.atFloatHistogramCalled = true
-		return it.t, &histogram.FloatHistogram{
+		fh = &histogram.FloatHistogram{
 			CounterResetHint: counterResetHint(it.counterResetHeader, it.numRead),
 			Count:            it.cnt.value,
 			ZeroCount:        it.zCnt.value,
@@ -879,6 +879,14 @@ func (it *floatHistogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 			NegativeBuckets:  it.nBuckets,
 			CustomValues:     it.customValues,
 		}
+		if fh.Schema > histogram.ExponentialSchemaMax && fh.Schema <= histogram.ExponentialSchemaMaxReserved {
+			// This is a very slow path, but it should only happen if the
+			// chunk is from a newer Prometheus version that supports higher
+			// resolution.
+			fh = fh.Copy()
+			fh.ReduceResolution(histogram.ExponentialSchemaMax)
+		}
+		return it.t, fh
 	}
 
 	fh.CounterResetHint = counterResetHint(it.counterResetHeader, it.numRead)
@@ -902,6 +910,13 @@ func (it *floatHistogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 
 	// Custom values are interned. The single copy is in this iterator.
 	fh.CustomValues = it.customValues
+
+	if fh.Schema > histogram.ExponentialSchemaMax && fh.Schema <= histogram.ExponentialSchemaMaxReserved {
+		// This is a very slow path, but it should only happen if the
+		// chunk is from a newer Prometheus version that supports higher
+		// resolution.
+		fh.ReduceResolution(histogram.ExponentialSchemaMax)
+	}
 
 	return it.t, fh
 }
@@ -954,6 +969,12 @@ func (it *floatHistogramIterator) Next() ValueType {
 			it.err = err
 			return ValNone
 		}
+
+		if !histogram.IsKnownSchema(schema) {
+			it.err = histogram.UnknownSchemaError(schema)
+			return ValNone
+		}
+
 		it.schema = schema
 		it.zThreshold = zeroThreshold
 		it.pSpans, it.nSpans = posSpans, negSpans

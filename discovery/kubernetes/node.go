@@ -41,7 +41,7 @@ type Node struct {
 	logger   *slog.Logger
 	informer cache.SharedInformer
 	store    cache.Store
-	queue    *workqueue.Type
+	queue    *workqueue.Typed[string]
 }
 
 // NewNode returns a new node discovery.
@@ -58,7 +58,9 @@ func NewNode(l *slog.Logger, inf cache.SharedInformer, eventCount *prometheus.Co
 		logger:   l,
 		informer: inf,
 		store:    inf.GetStore(),
-		queue:    workqueue.NewNamed(RoleNode.String()),
+		queue: workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{
+			Name: RoleNode.String(),
+		}),
 	}
 
 	_, err := n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -111,12 +113,11 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 }
 
 func (n *Node) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
-	keyObj, quit := n.queue.Get()
+	key, quit := n.queue.Get()
 	if quit {
 		return false
 	}
-	defer n.queue.Done(keyObj)
-	key := keyObj.(string)
+	defer n.queue.Done(key)
 
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {

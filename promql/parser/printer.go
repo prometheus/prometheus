@@ -263,11 +263,18 @@ func (node *MatrixSelector) String() string {
 	vecSelector.Timestamp = nil
 	vecSelector.StartOrEnd = 0
 
+	extendedAttribute := ""
+	switch {
+	case vecSelector.Anchored:
+		extendedAttribute = " anchored"
+	case vecSelector.Smoothed:
+		extendedAttribute = " smoothed"
+	}
 	rangeStr := model.Duration(node.Range).String()
 	if node.RangeExpr != nil {
 		rangeStr = node.RangeExpr.String()
 	}
-	str := fmt.Sprintf("%s[%s]%s%s", vecSelector.String(), rangeStr, at, offset)
+	str := fmt.Sprintf("%s[%s]%s%s%s", vecSelector.String(), rangeStr, extendedAttribute, at, offset)
 
 	vecSelector.OriginalOffset, vecSelector.OriginalOffsetExpr, vecSelector.Timestamp, vecSelector.StartOrEnd = offsetVal, offsetExprVal, atVal, preproc
 
@@ -378,6 +385,12 @@ func (node *VectorSelector) String() string {
 		b.WriteString(" @ start()")
 	case node.StartOrEnd == END:
 		b.WriteString(" @ end()")
+	}
+	switch {
+	case node.Anchored:
+		b.WriteString(" anchored")
+	case node.Smoothed:
+		b.WriteString(" smoothed")
 	}
 	switch {
 	case node.OriginalOffsetExpr != nil:

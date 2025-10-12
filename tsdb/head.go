@@ -86,12 +86,14 @@ type Head struct {
 	exemplarMetrics     *ExemplarMetrics
 	exemplars           ExemplarStorage
 	logger              *slog.Logger
-	appendPool          zeropool.Pool[[]record.RefSample]
+	refSeriesPool       zeropool.Pool[[]record.RefSeries]
+	floatsPool          zeropool.Pool[[]record.RefSample]
 	exemplarsPool       zeropool.Pool[[]exemplarWithSeriesRef]
 	histogramsPool      zeropool.Pool[[]record.RefHistogramSample]
 	floatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
 	metadataPool        zeropool.Pool[[]record.RefMetadata]
 	seriesPool          zeropool.Pool[[]*memSeries]
+	typeMapPool         zeropool.Pool[map[chunks.HeadSeriesRef]sampleType]
 	bytesPool           zeropool.Pool[[]byte]
 	memChunkPool        sync.Pool
 

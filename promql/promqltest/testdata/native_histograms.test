@@ -1198,7 +1198,7 @@ eval range from 0 to 12m step 6m avg(metric)
 
 clear
 
-# Test incompatible custom bucket schemas.
+# Test incompatible custom bucket boundaries.
 load 6m
   metric{series="1"} _                                                             {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
   metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}    _                                                             {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}
@@ -1215,7 +1215,7 @@ eval range from 0 to 12m step 6m avg(metric)
   expect warn
   {} _ {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} _
 
-# Test incompatible schemas with additional aggregation operators
+# Test incompatible boundaries with additional aggregation operators
 eval range from 0 to 12m step 6m count(metric)
   {} 2 2 3
 
@@ -1235,7 +1235,7 @@ eval range from 0 to 12m step 6m limit_ratio(1, metric)
   metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}    _                                                             {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}
   metric{series="3"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
-# Test incompatible schemas with and/or
+# Test incompatible boundaries with and/or
 eval range from 0 to 12m step 6m metric{series="1"} and ignoring(series) metric{series="2"}
   metric{series="1"} _ _ {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
@@ -1243,7 +1243,7 @@ eval range from 0 to 12m step 6m metric{series="1"} or ignoring(series) metric{s
   metric{series="1"} _                                                          {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
   metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} _                                                             _
 
-# Test incompatible schemas with arithmetic binary operators
+# Test incompatible boundaries with arithmetic binary operators
 eval range from 0 to 12m step 6m metric{series="2"} + ignoring (series) metric{series="3"}
   expect warn
 
@@ -1252,7 +1252,7 @@ eval range from 0 to 12m step 6m metric{series="2"} - ignoring (series) metric{s
 
 clear
 
-# Test incompatible schemas with comparison binary operators
+# Test incompatible boundaries with comparison binary operators
 load 6m
   metric1 {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
   metric2 {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
@@ -1552,26 +1552,11 @@ eval instant at 54m30s histogram_count(increase(metric[54m45s]))
 
 clear
 
-# Test that `rate` adds warning when applied to an average of native histograms.
+# Test counter reset hint adjustment in subtraction and aggregation, including _over_time.
 load 5m
   metric{id="1"} {{schema:0 sum:4 count:4 buckets:[1 2 1]}}x10
   metric{id="2"} {{schema:0 sum:4 count:4 buckets:[1 2 1]}}x10
-
-# Don't warn if there is only a single histogram.
-eval instant at 5m rate(avg(metric{id="1"})[10m:])
-  expect no_warn
-  {} {{counter_reset_hint:gauge}}
-
-# Rate warns if histogram is not a counter and avg sets gauge hint.
-eval instant at 5m rate(avg(metric)[10m:])
-  expect warn regex: this native histogram metric is not a counter: ""
-  {} {{counter_reset_hint:gauge}}
-
-# Rate warns if histogram is not a counter and avg_over_time sets gauge hint.
-eval instant at 5m rate(avg_over_time(metric{id="1"}[10m])[5m:])
-  expect warn regex: this native histogram metric is not a counter: "metric"
-  {id="1"} {{counter_reset_hint:gauge}}
-
+  
 # Unary minus turns counters into gauges.
 eval instant at 5m -metric
   expect no_warn
@@ -1579,7 +1564,151 @@ eval instant at 5m -metric
   {id="1"} {{count:-4 sum:-4 counter_reset_hint:gauge buckets:[-1 -2 -1]}}
   {id="2"} {{count:-4 sum:-4 counter_reset_hint:gauge buckets:[-1 -2 -1]}}
 
+# Subtraction results in gauges, even if the result is not negative.
+eval instant at 5m metric - 0.5 * metric
+  expect no_warn
+  expect no_info
+  {id="1"} {{count:2 sum:2 counter_reset_hint:gauge buckets:[0.5 1 0.5]}}
+  {id="2"} {{count:2 sum:2 counter_reset_hint:gauge buckets:[0.5 1 0.5]}}
+
+# Subtraction results in gauges, now with actually negtive result.
+eval instant at 5m metric - 2 * metric
+  expect no_warn
+  expect no_info
+  {id="1"} {{count:-4 sum:-4 counter_reset_hint:gauge buckets:[-1 -2 -1]}}
+  {id="2"} {{count:-4 sum:-4 counter_reset_hint:gauge buckets:[-1 -2 -1]}}
+
+# sum and avg of counters yield a counter.
+eval instant at 5m sum(metric)
+  expect no_warn
+  expect no_info
+  {} {{count:8 sum:8 counter_reset_hint:not_reset buckets:[2 4 2]}}
+
+eval instant at 5m avg(metric)
+  expect no_warn
+  expect no_info
+  {} {{count:4 sum:4 counter_reset_hint:not_reset buckets:[1 2 1]}}
+
 clear
+
+# Note that with all the series below, we never get counter_reset_hint:reset
+# as a result because of of https://github.com/prometheus/prometheus/issues/15346 .
+# Therefore, all the tests only look at the hints gauge, not_reset, and unknown.
+load 1m
+  metric{type="gauge"} {{sum:4 count:4 counter_reset_hint:gauge buckets:[1 2 1]}}+{{sum:2 count:3 counter_reset_hint:gauge buckets:[1 1 1]}}x10
+  metric{type="counter"} {{sum:6 count:5 buckets:[2 2 1]}}+{{sum:2 count:3 buckets:[1 1 1]}}x10
+  metric{type="counter_with_reset"} {{sum:6 count:5 buckets:[2 2 1]}}+{{sum:2 count:3 buckets:[1 1 1]}}x5 {{sum:4 count:4 buckets:[1 2 1]}}+{{sum:2 count:3 buckets:[1 1 1]}}x5
+  mixed {{sum:6 count:5 buckets:[2 2 1]}}+{{sum:2 count:3 buckets:[1 1 1]}}x4 {{sum:4 count:4 counter_reset_hint:gauge buckets:[1 2 1]}} {{sum:6 count:5 buckets:[2 2 1]}}+{{sum:2 count:3 buckets:[1 1 1]}}x4 {{sum:4 count:4 buckets:[1 2 1]}}+{{sum:2 count:3 buckets:[1 1 1]}}x5
+
+# Mix of gauge and not_reset results in gauge.
+eval instant at 3m sum(metric)
+  expect no_warn
+  expect no_info
+  {} {{count:41 sum:34 counter_reset_hint:gauge buckets:[14 15 12]}}
+
+eval instant at 3m avg(metric)
+  expect no_warn
+  expect no_info
+  {} {{count:13.666666666666668 sum:11.333333333333334 counter_reset_hint:gauge buckets:[4.666666666666667 5 4]}}
+
+eval instant at 5m sum_over_time(mixed[3m])
+  expect no_warn
+  expect no_info
+  {} {{count:35 sum:30 counter_reset_hint:gauge buckets:[12 13 10]}}
+
+eval instant at 5m avg_over_time(mixed[3m])
+  expect no_warn
+  expect no_info
+  {} {{count:11.666666666666666 sum:10 counter_reset_hint:gauge buckets:[4 4.333333333333334 3.333333333333333]}}
+
+# Mix of gauge, not_reset, and unknown results in gauge.
+eval instant at 6m sum(metric)
+  expect no_warn
+  expect no_info
+  {} {{count:49 sum:38 counter_reset_hint:gauge buckets:[16 18 15]}}
+
+eval instant at 6m avg(metric)
+  expect no_warn
+  expect no_info
+  {} {{count:16.333333333333332 sum:12.666666666666666 counter_reset_hint:gauge buckets:[5.333333333333334 6 5]}}
+
+eval instant at 14m sum_over_time(mixed[10m])
+  expect no_warn
+  expect no_info
+  {} {{count:93 sum:82 counter_reset_hint:gauge buckets:[31 36 26]}}
+
+eval instant at 14m avg_over_time(mixed[10m])
+  expect no_warn
+  expect no_info
+  {} {{count:9.3 sum:8.2 counter_reset_hint:gauge buckets:[3.1 3.6 2.6]}}
+
+# Only not_reset results in not_reset.
+eval instant at 3m sum(metric{type=~"counter.*"})
+  expect no_warn
+  expect no_info
+  {} {{count:28 sum:24 counter_reset_hint:not_reset buckets:[10 10 8]}}
+
+eval instant at 3m avg(metric{type=~"counter.*"})
+  expect no_warn
+  expect no_info
+  {} {{count:14 sum:12 counter_reset_hint:not_reset buckets:[5 5 4]}}
+
+eval instant at 3m sum_over_time(mixed[3m])
+  expect no_warn
+  expect no_info
+  {} {{count:33 sum:30 counter_reset_hint:not_reset buckets:[12 12 9]}}
+
+eval instant at 3m avg_over_time(mixed[3m])
+  expect no_warn
+  expect no_info
+  {} {{count:11 sum:10 counter_reset_hint:not_reset buckets:[4 4 3]}}
+
+# Mix of not_reset and unknown results in unknown.
+eval instant at 6m sum(metric{type=~"counter.*"})
+  expect no_warn
+  expect no_info
+  {} {{count:27 sum:22 counter_reset_hint:unknown buckets:[9 10 8]}}
+
+eval instant at 6m avg(metric{type=~"counter.*"})
+  expect no_warn
+  expect no_info
+  {} {{count:13.5 sum:11 counter_reset_hint:unknown buckets:[4.5 5 4]}}
+
+eval instant at 15m sum_over_time(mixed[10m])
+  expect no_warn
+  expect no_info
+  {} {{count:105 sum:90 counter_reset_hint:unknown buckets:[35 40 30]}}
+
+eval instant at 15m avg_over_time(mixed[10m])
+  expect no_warn
+  expect no_info
+  {} {{count:10.5 sum:9 counter_reset_hint:unknown buckets:[3.5 4 3]}}
+
+# To finally test the warning about a direct counter reset collisions, we can
+# utilize the HistogramStatsIterator (by calling histogram_count()). This
+# special iterator does counter reset detection on the fly and therefore
+# is able to create the counter reset hint "reset", which we can then mix
+# with the "not_reset" hint in the test and provoke the warning.
+eval instant at 6m histogram_count(sum(metric))
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} 49
+
+eval instant at 6m histogram_count(avg(metric))
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} 16.333333333333332
+
+eval instant at 14m histogram_count(sum_over_time(mixed[10m]))
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} 93
+
+eval instant at 14m histogram_count(avg_over_time(mixed[10m]))
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} 9.3
+
 
 # Test histogram_quantile annotations.
 load 1m
@@ -1608,6 +1737,24 @@ eval instant at 1m histogram_quantile(0.5, myHistogram2)
 eval instant at 1m histogram_quantile(0.5, mixedHistogram)
 	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "mixedHistogram"
 
+clear
+
+# A counter reset only in a bucket. Sub-queries still need to detect
+# it via explicit counter reset detection. This test also runs it with
+# histogram_count in the expression to make sure that the
+# HistogramStatsIterator is not used. (The latter fails to correctly
+# do the counter resets because Seek is used with sub-queries. And the
+# explicit counter reset detection done with sub-queries cannot access
+# the buckets anymore, if HistogramStatsIterator is used.)
+load 1m
+     h{} {{schema:0 count:1 sum:10 buckets:[1]}}+{{}}x20 {{schema:0 count:1 sum:10 buckets:[0 1]}}+{{}}x20
+
+# Both evals below should yield the same value for the count.
+eval instant at 41m histogram_count(increase(h[40m:9m]))
+    {} 1.4814814814814814
+
+eval instant at 41m increase(h[40m:9m])
+    {} {{count:1.4814814814814814 sum:14.814814814814813 counter_reset_hint:gauge offset:1 buckets:[1.4814814814814814]}}
 
 clear
 
@@ -1617,31 +1764,60 @@ load 1m
 
 # Trigger an annotation about conflicting counter resets by going through the
 # HistogramStatsIterator, which creates counter reset hints on the fly.
-eval instant at 5m 1*histogram_count(sum_over_time(reset{timing="late"}[5m]))
-    expect warn msg: PromQL warning: conflicting counter resets during histogram addition
+eval instant at 5m histogram_count(sum_over_time(reset{timing="late"}[5m]))
+    expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation
     {timing="late"} 7
 
-eval instant at 5m 1*histogram_count(sum(reset))
+eval instant at 5m histogram_count(sum(reset))
     expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation
     {} 5
 
-eval instant at 5m 1*histogram_count(avg(reset))
+eval instant at 5m histogram_count(avg(reset))
     expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation
     {} 2.5
 
 # No annotation with the right timing.
-eval instant at 30s 1*histogram_count(sum(reset))
+eval instant at 30s histogram_count(sum(reset))
     expect no_warn
     {} 3
 
-eval instant at 30s 1*histogram_count(avg(reset))
+eval instant at 30s histogram_count(avg(reset))
     expect no_warn
     {} 1.5
 
 # Ensure that the annotation does not happen with rate.
-eval instant at 5m 1*histogram_count(rate(reset{timing="late"}[5m]))
+eval instant at 5m histogram_count(rate(reset{timing="late"}[5m]))
     expect no_warn
     {timing="late"} 0.0175
 
-# NOTE: The `1*` part in the expressions above should not be needed.
-# It can be removed once https://github.com/prometheus/prometheus/pull/17127 is merged.
+clear
+
+# Test edge cases of HistogramStatsIterator detection.
+# We access the same series multiple times within the same expression,
+# once with and once without HistogramStatsIterator. The results here
+# at least prove that we do not use HistogramStatsIterator where we
+# should not.
+load 1m
+     histogram {{schema:0 count:10 sum:50 counter_reset_hint:gauge buckets:[1 2 3 4]}}
+
+eval instant at 1m histogram_count(histogram unless histogram_quantile(0.5, histogram) < 3)
+     {} 10
+
+eval instant at 1m histogram_quantile(0.5, histogram unless histogram_count(histogram) == 0)
+     {} 3.1748021039363987
+
+clear
+
+# Regression test for:
+# https://github.com/prometheus/prometheus/issues/14172
+# https://github.com/prometheus/prometheus/issues/15177
+load 1m
+	mixed_metric1 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}} 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+    mixed_metric2 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}}
+
+# The order of the float vs native histograms is preserved.
+eval range from 0 to 8m step 1m mixed_metric1
+	mixed_metric1{} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+
+eval range from 0 to 5m step 1m mixed_metric2
+	mixed_metric2 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} {{count:6 sum:8 buckets:[1 4 1]}}
