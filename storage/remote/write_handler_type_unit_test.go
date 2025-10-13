@@ -27,49 +27,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
+	"github.com/prometheus/prometheus/util/testutil"
 )
-
-// buildExpectedLabels constructs labels the same way as the write handler implementation
-// to ensure consistency across different labels implementations (stringlabels, dedupelabels).
-func buildExpectedLabels(metricName, labelName, labelValue string, metricType writev2.Metadata_MetricType, unit string) labels.Labels {
-	// Start with base labels from the incoming request.
-	baseLabels := labels.FromStrings("__name__", metricName, labelName, labelValue)
-
-	// If no metadata, return base labels as-is.
-	if metricType == writev2.Metadata_METRIC_TYPE_UNSPECIFIED && unit == "" {
-		return baseLabels
-	}
-
-	// Add metadata labels using Builder (same as implementation).
-	lb := labels.NewBuilder(baseLabels)
-	if metricType != writev2.Metadata_METRIC_TYPE_UNSPECIFIED {
-		// Convert to model.MetricType string.
-		var typeStr string
-		switch metricType {
-		case writev2.Metadata_METRIC_TYPE_COUNTER:
-			typeStr = "counter"
-		case writev2.Metadata_METRIC_TYPE_GAUGE:
-			typeStr = "gauge"
-		case writev2.Metadata_METRIC_TYPE_HISTOGRAM:
-			typeStr = "histogram"
-		case writev2.Metadata_METRIC_TYPE_GAUGEHISTOGRAM:
-			typeStr = "gaugehistogram"
-		case writev2.Metadata_METRIC_TYPE_SUMMARY:
-			typeStr = "summary"
-		case writev2.Metadata_METRIC_TYPE_INFO:
-			typeStr = "info"
-		case writev2.Metadata_METRIC_TYPE_STATESET:
-			typeStr = "stateset"
-		}
-		if typeStr != "" {
-			lb.Set("__type__", typeStr)
-		}
-	}
-	if unit != "" {
-		lb.Set("__unit__", unit)
-	}
-	return lb.Labels()
-}
 
 func TestRemoteWriteHandler_TypeAndUnitLabels(t *testing.T) {
 	t.Parallel()
@@ -86,14 +45,24 @@ func TestRemoteWriteHandler_TypeAndUnitLabels(t *testing.T) {
 			enableTypeAndUnitLabels: true,
 			metricType:              writev2.Metadata_METRIC_TYPE_COUNTER,
 			unit:                    "bytes",
-			expectedLabels:          buildExpectedLabels("test_metric", "foo", "bar", writev2.Metadata_METRIC_TYPE_COUNTER, "bytes"),
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"__type__", "counter",
+				"__unit__", "bytes",
+				"foo", "bar",
+			),
 		},
 		{
 			name:                    "type and unit labels enabled with gauge and seconds unit",
 			enableTypeAndUnitLabels: true,
 			metricType:              writev2.Metadata_METRIC_TYPE_GAUGE,
 			unit:                    "seconds",
-			expectedLabels:          buildExpectedLabels("test_metric", "foo", "bar", writev2.Metadata_METRIC_TYPE_GAUGE, "seconds"),
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"__type__", "gauge",
+				"__unit__", "seconds",
+				"foo", "bar",
+			),
 		},
 		{
 			name:                    "type and unit labels disabled - no metadata labels",
@@ -120,7 +89,11 @@ func TestRemoteWriteHandler_TypeAndUnitLabels(t *testing.T) {
 			enableTypeAndUnitLabels: true,
 			metricType:              writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
 			unit:                    "milliseconds",
-			expectedLabels:          buildExpectedLabels("test_metric", "foo", "bar", writev2.Metadata_METRIC_TYPE_UNSPECIFIED, "milliseconds"),
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"__unit__", "milliseconds",
+				"foo", "bar",
+			),
 		},
 	}
 
@@ -194,9 +167,9 @@ func TestRemoteWriteHandler_TypeAndUnitLabels(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, http.StatusNoContent, resp.StatusCode, "response body: %s", string(body))
 
-			// Verify the labels
+			// Verify the labels using testutil.RequireEqual for proper label comparison
 			require.Len(t, appendable.samples, 1)
-			require.Equal(t, tc.expectedLabels, appendable.samples[0].l)
+			testutil.RequireEqual(t, tc.expectedLabels, appendable.samples[0].l)
 		})
 	}
 }
@@ -247,5 +220,5 @@ func TestRemoteWriteHandler_V1DoesNotAddTypeAndUnitLabels(t *testing.T) {
 	// Verify no type/unit labels were added
 	require.Len(t, appendable.samples, 1)
 	expectedLabels := labels.FromStrings("__name__", "test_metric", "foo", "bar")
-	require.Equal(t, expectedLabels, appendable.samples[0].l)
+	testutil.RequireEqual(t, expectedLabels, appendable.samples[0].l)
 }

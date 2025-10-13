@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 	"github.com/prometheus/prometheus/util/compression"
@@ -421,19 +422,14 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		}
 
 		m := ts.ToMetadata(req.Symbols)
-		// Add type and unit labels from metadata if the feature is enabled.
-		// We check the converted model metadata (not the protobuf metadata) to avoid nil dereference.
 		if h.enableTypeAndUnitLabels && (m.Type != model.MetricTypeUnknown || m.Unit != "") {
-			lb := labels.NewBuilder(ls)
-			// Add __type__ label if metric type is known.
-			if m.Type != model.MetricTypeUnknown {
-				lb.Set("__type__", string(m.Type))
-			}
-			// Add __unit__ label if unit is specified.
-			if m.Unit != "" {
-				lb.Set("__unit__", m.Unit)
-			}
-			ls = lb.Labels()
+			slb := labels.NewScratchBuilder(ls.Len() + 2) // +2 for __type__ and __unit__
+			ls.Range(func(l labels.Label) {
+				slb.Add(l.Name, l.Value)
+			})
+			schema.Metadata{Type: m.Type, Unit: m.Unit}.AddToLabels(&slb)
+			slb.Sort()
+			ls = slb.Labels()
 		}
 
 		// Validate series labels early.
