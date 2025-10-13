@@ -1174,9 +1174,7 @@ scrape_configs:
 	require.Len(t, got, 2, "expected 2 histogram samples (zero sample + actual sample)")
 	require.Equal(t, histogram.Histogram{}, *got[0].h, "first sample should be zero sample")
 	require.InDelta(t, expectedHistogramSum, got[1].h.Sum, 1e-9, "second sample should retain the expected sum")
-
 	require.Len(t, app.resultExemplars, 2, "expected 2 exemplars from histogram buckets")
-
 }
 
 func applyConfig(
