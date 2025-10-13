@@ -55,7 +55,7 @@ require (
 	github.com/ovh/go-ovh v1.9.0
 	github.com/prometheus/alertmanager v0.28.1
 	github.com/prometheus/client_golang v1.23.2
-	github.com/prometheus/client_golang/exp v0.0.0-20251007122733-3d13af1aacf2
+	github.com/prometheus/client_golang/exp v0.0.0-20251008080433-c5900a16e995
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.66.1
 	github.com/prometheus/common/assets v0.2.0

@@ -33,6 +33,7 @@ import (
 	"go.uber.org/atomic"
 
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
+	"github.com/prometheus/client_golang/exp/internal/github.com/efficientgo/core/backoff"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -548,13 +549,23 @@ func NewQueueManager(
 	}
 	t.shards = t.newShards()
 
-	// Initialize remoteAPI with retry callback now that QueueManager is fully created
+	// Initialize remoteAPI now that QueueManager is fully created
 	if realClient, ok := client.(*Client); ok {
 		// This is a real Client with an HTTP client, so we can use the remote API.
 		apiOpts := []remoteapi.APIOption{
 			remoteapi.WithAPILogger(logger),
 			remoteapi.WithAPIHTTPClient(realClient.Client),
 		}
+
+		// TODO(backoff-config): Configure backoff to match queue manager config.
+		// Currently using remoteapi defaults (Min: 1s, Max: 10s, MaxRetries: 10).
+		// Queue manager uses t.cfg.MinBackoff and t.cfg.MaxBackoff (often 100ms in tests).
+		// Cannot configure this because backoff.Config is in client_golang's internal package.
+		// This causes remoteAPI path to be slower than legacy path in some test scenarios.
+		// Consider:
+		// - Filing an issue with client_golang to export backoff.Config
+		// - Or using reflection/unsafe (not recommended)
+		// - Or accepting this as a known limitation
 
 		var err error
 		t.remoteAPI, err = remoteapi.NewAPI(client.Endpoint(), apiOpts...)
@@ -564,7 +575,7 @@ func NewQueueManager(
 				client.Endpoint(), err)
 			t.remoteAPI = nil
 		} else {
-			fmt.Printf("[INIT] ✅ Successfully initialized client_golang remote API (endpoint=%s, protoMsg=%v)\n",
+			fmt.Printf("[INIT] ✅ Successfully initialized client_golang remote API with retry callback (endpoint=%s, protoMsg=%v)\n",
 				client.Endpoint(), protoMsg)
 		}
 	} else {
@@ -1841,7 +1852,105 @@ func (s *shards) sendSamplesWithRemoteAPI(ctx context.Context, samples []prompb.
 	s.qm.metrics.metadataTotal.Add(float64(metadataCount))
 
 	// Use client_golang's Write function - it handles marshaling, compression, HTTP, and retries.
-	apiStats, err := s.qm.remoteAPI.Write(ctx, msgType, req)
+	// Implement refresh mechanism: if data becomes stale during retries, cancel the Write
+	// and restart with filtered data.
+	//
+	// The loop implements:
+	//   for attempt := 0; attempt < maxRefreshAttempts; attempt++ {
+	//       if isStale(message) {
+	//           message = refreshMessage() // filter out old data
+	//           attempt = 0 // reset counter for fresh message
+	//       }
+	//       writeCtx, cancel := context.WithCancel(ctx)
+	//       err := remoteapi.Write(writeCtx, message, WithRetryCallback(func() {
+	//           if isStale() { cancel() } // abort retries if data becomes stale
+	//       }))
+	//       if err == nil { return }
+	//   }
+
+	const maxRefreshAttempts = 3 // Limit refresh cycles to avoid infinite loops
+	var apiStats remoteapi.WriteResponseStats
+	var err error
+
+	for refreshAttempt := 0; refreshAttempt < maxRefreshAttempts; refreshAttempt++ {
+		// Always check if data is stale before sending (even on first attempt)
+		// This filters out samples that were queued long ago and have now exceeded the age limit
+		currentTime := time.Now()
+		if s.qm.cfg.SampleAgeLimit > 0 {
+			lowest := s.qm.buildRequestLimitTimestamp.Load()
+			if isSampleOld(currentTime, time.Duration(s.qm.cfg.SampleAgeLimit), lowest) {
+				// Data is stale - rebuild request with filter to exclude old samples
+				filter := isTimeSeriesOldFilter(s.qm.metrics, currentTime, time.Duration(s.qm.cfg.SampleAgeLimit))
+				req, highest, lowest = buildProtoWriteRequest(s.qm.logger, samples, nil, filter)
+				s.qm.buildRequestLimitTimestamp.Store(lowest)
+
+				s.qm.logger.Debug("filtered stale samples before sending",
+					"refresh_attempt", refreshAttempt,
+					"new_lowest_ts", lowest,
+				)
+			}
+		}
+
+		// Create a cancellable context for this Write attempt
+		// We'll cancel it in the retry callback if data becomes stale
+		writeCtx, cancelWrite := context.WithCancel(ctx)
+
+		// Call remoteapi.Write - it handles retries internally
+		apiStats, err = s.qm.remoteAPI.Write(writeCtx, msgType, req, remoteapi.WithWriteRetryCallback(func(retryErr error) {
+			// Check if data became stale during retries - if so, cancel to abort
+			if s.qm.cfg.SampleAgeLimit > 0 {
+				currentTime := time.Now()
+				lowest := s.qm.buildRequestLimitTimestamp.Load()
+				if isSampleOld(currentTime, time.Duration(s.qm.cfg.SampleAgeLimit), lowest) {
+					// Data became stale - cancel the Write to stop retrying stale data
+					s.qm.logger.Debug("data became stale during Write retries, canceling",
+						"refresh_attempt", refreshAttempt,
+					)
+					cancelWrite()
+					return
+				}
+			}
+
+			// Increment retry metrics
+			s.qm.metrics.retriedSamplesTotal.Add(float64(sampleCount))
+			s.qm.metrics.retriedExemplarsTotal.Add(float64(exemplarCount))
+			s.qm.metrics.retriedHistogramsTotal.Add(float64(histogramCount))
+			// Also increment total metrics for the retry attempt
+			s.qm.metrics.samplesTotal.Add(float64(sampleCount))
+			s.qm.metrics.exemplarsTotal.Add(float64(exemplarCount))
+			s.qm.metrics.histogramsTotal.Add(float64(histogramCount))
+		}))
+
+		// Clean up the write context
+		cancelWrite()
+
+		// If Write succeeded, we're done
+		if err == nil {
+			break
+		}
+
+		// If original context was canceled (not our writeCtx), don't retry
+		if ctx.Err() != nil {
+			break
+		}
+
+		// Check if Write was canceled due to staleness - if so, retry (next iteration will filter)
+		if writeCtx.Err() != nil {
+			currentTime := time.Now()
+			lowest := s.qm.buildRequestLimitTimestamp.Load()
+			if isSampleOld(currentTime, time.Duration(s.qm.cfg.SampleAgeLimit), lowest) {
+				// Data became stale during retries - loop will filter and retry
+				s.qm.logger.Debug("retrying with refreshed data after staleness cancellation",
+					"refresh_attempt", refreshAttempt,
+				)
+				continue
+			}
+		}
+
+		// Write failed for non-staleness reasons - don't refresh, just return error
+		break
+	}
+
 	s.qm.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
 
 	fmt.Printf("[REMOTE_API] client_golang remoteAPI.Write completed (msgType=%s, duration=%v, err=%v, samples=%d, histograms=%d, exemplars=%d)\n",
@@ -1855,19 +1964,6 @@ func (s *shards) sendSamplesWithRemoteAPI(ctx context.Context, samples []prompb.
 		// The client_golang API already handled retries, so this is a final error.
 		if errors.Is(err, context.Canceled) {
 			return rs, err
-		}
-		// Track failed samples.
-		sampleDiff := sampleCount - rs.Samples
-		if sampleDiff > 0 {
-			s.qm.metrics.failedSamplesTotal.Add(float64(sampleDiff))
-		}
-		histogramDiff := histogramCount - rs.Histograms
-		if histogramDiff > 0 {
-			s.qm.metrics.failedHistogramsTotal.Add(float64(histogramDiff))
-		}
-		exemplarDiff := exemplarCount - rs.Exemplars
-		if exemplarDiff > 0 {
-			s.qm.metrics.failedExemplarsTotal.Add(float64(exemplarDiff))
 		}
 		return rs, err
 	}

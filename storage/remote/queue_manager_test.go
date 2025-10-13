@@ -1047,22 +1047,46 @@ type testWriteStorage struct {
 func (s *testWriteStorage) Store(req *http.Request, msgType remoteapi.WriteMessageType) (*remoteapi.WriteResponse, error) {
 	fmt.Printf("[testWriteStorage.Store] Called with msgType=%s\n", msgType)
 
+	// Check for message type mismatch (before locking)
+	var expectedMsgType remoteapi.WriteMessageType
+	if s.protoMsg == config.RemoteWriteProtoMsgV1 {
+		expectedMsgType = remoteapi.WriteV1MessageType
+	} else {
+		expectedMsgType = remoteapi.WriteV2MessageType
+	}
+
+	if msgType != expectedMsgType {
+		fmt.Printf("[testWriteStorage.Store] Message type mismatch: got %s, expected %s - returning 415\n", msgType, expectedMsgType)
+		resp := remoteapi.NewWriteResponse()
+		resp.SetStatusCode(http.StatusUnsupportedMediaType) // 415
+		return resp, fmt.Errorf("%s protobuf message is not accepted by this server; only accepts %s", msgType, expectedMsgType)
+	}
+
 	// Check for returnError first (persistent error for all requests)
 	s.client.mtx.Lock()
 	if s.client.returnError != nil {
 		s.client.writesReceived++
 		returnErr := s.client.returnError
 		s.client.mtx.Unlock()
-		return nil, returnErr
+		// Create a WriteResponse with error status code
+		resp := remoteapi.NewWriteResponse()
+		resp.SetStatusCode(http.StatusInternalServerError) // 500
+		return resp, returnErr
 	}
 
 	// Check for injected errors - but still count the attempt
 	var injectedErr error
 	if len(s.client.injectedErrs) > 0 {
 		s.client.currErr++
-		// Access the error directly (currErr starts at -1 from injectErrors)
-		injectedErr = s.client.injectedErrs[s.client.currErr]
-		fmt.Printf("[testWriteStorage.Store] Injecting error for attempt %d: %v\n", s.client.currErr, injectedErr)
+		// Access the error with bounds checking (currErr starts at -1 from injectErrors)
+		if s.client.currErr < len(s.client.injectedErrs) {
+			injectedErr = s.client.injectedErrs[s.client.currErr]
+			fmt.Printf("[testWriteStorage.Store] Injecting error for attempt %d: %v\n", s.client.currErr, injectedErr)
+		} else {
+			// If we run out of injected errors, use the last one
+			injectedErr = s.client.injectedErrs[len(s.client.injectedErrs)-1]
+			fmt.Printf("[testWriteStorage.Store] Injecting last error for attempt %d: %v\n", s.client.currErr, injectedErr)
+		}
 	}
 	// Increment writesReceived even on error to match original behavior
 	s.client.writesReceived++
@@ -1070,9 +1094,17 @@ func (s *testWriteStorage) Store(req *http.Request, msgType remoteapi.WriteMessa
 
 	if injectedErr != nil {
 		fmt.Printf("[testWriteStorage.Store] Returning injected error: %v\n", injectedErr)
-		// Return the error - remoteapi handler should translate this to HTTP 500
-		// Note: RecoverableError might not be recognized by client_golang, but any error should work
-		return nil, injectedErr
+		// Create a WriteResponse with error status code
+		resp := remoteapi.NewWriteResponse()
+		// Check if this is a recoverable error
+		var recErr RecoverableError
+		if errors.As(injectedErr, &recErr) {
+			resp.SetStatusCode(http.StatusInternalServerError) // 500 - recoverable
+		} else {
+			// For unrecoverable errors, return 400 Bad Request
+			resp.SetStatusCode(http.StatusBadRequest) // 400 - unrecoverable
+		}
+		return resp, injectedErr
 	}
 
 	// Read the request body (already decompressed by the handler middleware)
