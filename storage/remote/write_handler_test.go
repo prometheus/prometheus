@@ -352,6 +352,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 	for _, tc := range []struct {
 		desc             string
 		input            []writev2.TimeSeries
+		symbols          []string // Custom symbol table for tests that need it
 		expectedCode     int
 		expectedRespBody string
 
@@ -362,7 +363,9 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		appendExemplarErr     error
 		updateMetadataErr     error
 
-		ingestCTZeroSample bool
+		ingestCTZeroSample      bool
+		enableTypeAndUnitLabels bool
+		expectedLabels          labels.Labels // For verifying type/unit labels
 	}{
 		{
 			desc:               "All timeseries accepted/ct_enabled",
@@ -513,9 +516,147 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedCode:     http.StatusInternalServerError,
 			expectedRespBody: "storage error\n",
 		},
+		// Type and unit labels tests
+		{
+			desc: "Type and unit labels enabled with counter and bytes unit",
+			input: func() []writev2.TimeSeries {
+				symbolTable := writev2.NewSymbolTable()
+				labelRefs := symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				unitRef := symbolTable.Symbolize("bytes")
+				return []writev2.TimeSeries{
+					{
+						LabelsRefs: labelRefs,
+						Metadata: writev2.Metadata{
+							Type:    writev2.Metadata_METRIC_TYPE_COUNTER,
+							UnitRef: unitRef,
+						},
+						Samples: []writev2.Sample{{Value: 1.0, Timestamp: 1000}},
+					},
+				}
+			}(),
+			symbols: func() []string {
+				symbolTable := writev2.NewSymbolTable()
+				symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				symbolTable.Symbolize("bytes")
+				return symbolTable.Symbols()
+			}(),
+			expectedCode:            http.StatusNoContent,
+			enableTypeAndUnitLabels: true,
+			expectedLabels:          labels.FromStrings("__name__", "test_metric", "__type__", "counter", "__unit__", "bytes", "foo", "bar"),
+		},
+		{
+			desc: "Type and unit labels enabled with gauge and seconds unit",
+			input: func() []writev2.TimeSeries {
+				symbolTable := writev2.NewSymbolTable()
+				labelRefs := symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				unitRef := symbolTable.Symbolize("seconds")
+				return []writev2.TimeSeries{
+					{
+						LabelsRefs: labelRefs,
+						Metadata: writev2.Metadata{
+							Type:    writev2.Metadata_METRIC_TYPE_GAUGE,
+							UnitRef: unitRef,
+						},
+						Samples: []writev2.Sample{{Value: 1.0, Timestamp: 1000}},
+					},
+				}
+			}(),
+			symbols: func() []string {
+				symbolTable := writev2.NewSymbolTable()
+				symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				symbolTable.Symbolize("seconds")
+				return symbolTable.Symbols()
+			}(),
+			expectedCode:            http.StatusNoContent,
+			enableTypeAndUnitLabels: true,
+			expectedLabels:          labels.FromStrings("__name__", "test_metric", "__type__", "gauge", "__unit__", "seconds", "foo", "bar"),
+		},
+		{
+			desc: "Type and unit labels disabled - no metadata labels",
+			input: func() []writev2.TimeSeries {
+				symbolTable := writev2.NewSymbolTable()
+				labelRefs := symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				unitRef := symbolTable.Symbolize("bytes")
+				return []writev2.TimeSeries{
+					{
+						LabelsRefs: labelRefs,
+						Metadata: writev2.Metadata{
+							Type:    writev2.Metadata_METRIC_TYPE_COUNTER,
+							UnitRef: unitRef,
+						},
+						Samples: []writev2.Sample{{Value: 1.0, Timestamp: 1000}},
+					},
+				}
+			}(),
+			symbols: func() []string {
+				symbolTable := writev2.NewSymbolTable()
+				symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				symbolTable.Symbolize("bytes")
+				return symbolTable.Symbols()
+			}(),
+			expectedCode:            http.StatusNoContent,
+			enableTypeAndUnitLabels: false,
+			expectedLabels:          labels.FromStrings("__name__", "test_metric", "foo", "bar"),
+		},
+		{
+			desc: "Type and unit labels enabled but no metadata",
+			input: func() []writev2.TimeSeries {
+				symbolTable := writev2.NewSymbolTable()
+				labelRefs := symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				return []writev2.TimeSeries{
+					{
+						LabelsRefs: labelRefs,
+						Metadata: writev2.Metadata{
+							Type:    writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+							UnitRef: 0,
+						},
+						Samples: []writev2.Sample{{Value: 1.0, Timestamp: 1000}},
+					},
+				}
+			}(),
+			symbols: func() []string {
+				symbolTable := writev2.NewSymbolTable()
+				symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				return symbolTable.Symbols()
+			}(),
+			expectedCode:            http.StatusNoContent,
+			enableTypeAndUnitLabels: true,
+			expectedLabels:          labels.FromStrings("__name__", "test_metric", "foo", "bar"),
+		},
+		{
+			desc: "Type and unit labels enabled with only unit (no type)",
+			input: func() []writev2.TimeSeries {
+				symbolTable := writev2.NewSymbolTable()
+				labelRefs := symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				unitRef := symbolTable.Symbolize("milliseconds")
+				return []writev2.TimeSeries{
+					{
+						LabelsRefs: labelRefs,
+						Metadata: writev2.Metadata{
+							Type:    writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+							UnitRef: unitRef,
+						},
+						Samples: []writev2.Sample{{Value: 1.0, Timestamp: 1000}},
+					},
+				}
+			}(),
+			symbols: func() []string {
+				symbolTable := writev2.NewSymbolTable()
+				symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				symbolTable.Symbolize("milliseconds")
+				return symbolTable.Symbols()
+			}(),
+			expectedCode:            http.StatusNoContent,
+			enableTypeAndUnitLabels: true,
+			expectedLabels:          labels.FromStrings("__name__", "test_metric", "__unit__", "milliseconds", "foo", "bar"),
+		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), tc.input, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+			symbols := writeV2RequestFixture.Symbols
+			if tc.symbols != nil {
+				symbols = tc.symbols
+			}
+			payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), tc.input, symbols, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
 			req, err := http.NewRequest("", "", bytes.NewReader(payload))
@@ -533,7 +674,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				appendExemplarErr:     tc.appendExemplarErr,
 				updateMetadataErr:     tc.updateMetadataErr,
 			}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, tc.ingestCTZeroSample, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, tc.ingestCTZeroSample, tc.enableTypeAndUnitLabels)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -554,6 +695,12 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				require.Empty(t, appendable.histograms)
 				require.Empty(t, appendable.exemplars)
 				require.Empty(t, appendable.metadata)
+				return
+			}
+
+			if !tc.expectedLabels.IsEmpty() {
+				require.Len(t, appendable.samples, 1)
+				testutil.RequireEqual(t, tc.expectedLabels, appendable.samples[0].l)
 				return
 			}
 
