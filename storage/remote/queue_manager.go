@@ -33,7 +33,6 @@ import (
 	"go.uber.org/atomic"
 
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
-	"github.com/prometheus/client_golang/exp/internal/github.com/efficientgo/core/backoff"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
