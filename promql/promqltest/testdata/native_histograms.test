@@ -1277,10 +1277,12 @@ load 6m
 
 eval instant at 12m sum_over_time(nhcb_metric[13m])
   expect no_warn
+  expect info msg: PromQL info: vector contains histograms with mismatched custom buckets aggregation
   {} {{schema:-53 count:3 sum:3 custom_values:[5] buckets:[3]}}
 
 eval instant at 12m avg_over_time(nhcb_metric[13m])
   expect no_warn
+  expect info msg: PromQL info: vector contains histograms with mismatched custom buckets aggregation
   {} {{schema:-53 count:1 sum:1 custom_values:[5] counter_reset_hint:gauge buckets:[1]}}
 
 eval instant at 12m last_over_time(nhcb_metric[13m])
@@ -1344,6 +1346,7 @@ eval instant at 18m changes(nhcb_metric[13m])
 
 eval instant at 18m delta(nhcb_metric[13m])
   expect warn msg: PromQL warning: this native histogram metric is not a gauge: "nhcb_metric"
+  expect info msg: PromQL info: vector contains histograms with mismatched custom buckets subtraction
   {} {{schema:-53 custom_values:[5]}}
 
 eval instant at 18m increase(nhcb_metric[13m])

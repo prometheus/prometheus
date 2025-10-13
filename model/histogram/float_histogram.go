@@ -1491,7 +1491,7 @@ func addCustomBucketsWithMismatches(
 ) ([]Span, []float64) {
 	targetBuckets := make([]float64, len(intersectedBounds)+1)
 
-	mapBuckets := func(spans []Span, buckets, bounds []float64, subtract bool) {
+	mapBuckets := func(spans []Span, buckets, bounds []float64, negative bool) {
 		srcIdx := 0
 		bucketIdx := 0
 		intersectIdx := 0
@@ -1516,7 +1516,7 @@ func addCustomBucketsWithMismatches(
 						}
 					}
 
-					if subtract {
+					if negative {
 						targetBuckets[targetIdx] -= value
 					} else {
 						targetBuckets[targetIdx] += value
@@ -1550,6 +1550,7 @@ func addCustomBucketsWithMismatches(
 			destSpans[len(destSpans)-1].Length++
 		} else {
 			// New span needed.
+			// TODO: optimize away small gaps.
 			offset := idx
 			if len(destSpans) > 0 {
 				// Convert to relative offset from the end of the last span.

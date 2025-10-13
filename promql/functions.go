@@ -823,7 +823,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		// The passed values only contain histograms.
 		var annos annotations.Annotations
 		vec, err := aggrHistOverTime(matrixVal, enh, func(s Series) (*histogram.FloatHistogram, error) {
-			var counterResetSeen, notCounterResetSeen bool
+			var counterResetSeen, notCounterResetSeen, nhcbBoundsReconciledSeen bool
 
 			trackCounterReset := func(h *histogram.FloatHistogram) {
 				switch h.CounterResetHint {
@@ -837,6 +837,9 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 			defer func() {
 				if counterResetSeen && notCounterResetSeen {
 					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAgg))
+				}
+				if nhcbBoundsReconciledSeen {
+					annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(args[0].PositionRange(), annotations.HistogramAgg))
 				}
 			}()
 
@@ -853,7 +856,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					return mean, err
 				}
 				if nhcbBoundsReconciled {
-					annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(args[0].PositionRange(), annotations.HistogramSub))
+					nhcbBoundsReconciledSeen = true
 				}
 
 				_, _, nhcbBoundsReconciled, err = mean.Add(toAdd)
@@ -861,7 +864,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					return mean, err
 				}
 				if nhcbBoundsReconciled {
-					annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(args[0].PositionRange(), annotations.HistogramAdd))
+					nhcbBoundsReconciledSeen = true
 				}
 			}
 			return mean, nil
@@ -1099,11 +1102,14 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		// The passed values only contain histograms.
 		var annos annotations.Annotations
 		vec, err := aggrHistOverTime(matrixVal, enh, func(s Series) (*histogram.FloatHistogram, error) {
-			var counterResetSeen, notCounterResetSeen bool
+			var counterResetSeen, notCounterResetSeen, nhcbBoundsReconciledSeen bool
 
 			defer func() {
 				if counterResetSeen && notCounterResetSeen {
 					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAgg))
+				}
+				if nhcbBoundsReconciledSeen {
+					annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(args[0].PositionRange(), annotations.HistogramAgg))
 				}
 			}()
 
@@ -1120,7 +1126,7 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					return sum, err
 				}
 				if nhcbBoundsReconciled {
-					annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(args[0].PositionRange(), annotations.HistogramAdd))
+					nhcbBoundsReconciledSeen = true
 				}
 			}
 			return sum, nil
