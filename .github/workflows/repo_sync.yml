@@ -3,6 +3,7 @@ name: Sync repo files
 on:
   schedule:
     - cron: '44 17 * * *'
+  workflow_dispatch: {}
 permissions:
   contents: read
 

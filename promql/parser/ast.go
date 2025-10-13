@@ -226,6 +226,11 @@ type VectorSelector struct {
 	// This is the case when VectorSelector is used to represent the info function's second argument.
 	BypassEmptyMatcherCheck bool
 
+	// Anchored is true when the VectorSelector is anchored.
+	Anchored bool
+	// Smoothed is true when the VectorSelector is smoothed.
+	Smoothed bool
+
 	PosRange posrange.PositionRange
 }
 
@@ -243,15 +248,15 @@ func (TestStmt) PositionRange() posrange.PositionRange {
 		End:   -1,
 	}
 }
-func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }
-func (e *Call) Type() ValueType           { return e.Func.ReturnType }
-func (e *MatrixSelector) Type() ValueType { return ValueTypeMatrix }
-func (e *SubqueryExpr) Type() ValueType   { return ValueTypeMatrix }
-func (e *NumberLiteral) Type() ValueType  { return ValueTypeScalar }
-func (e *ParenExpr) Type() ValueType      { return e.Expr.Type() }
-func (e *StringLiteral) Type() ValueType  { return ValueTypeString }
-func (e *UnaryExpr) Type() ValueType      { return e.Expr.Type() }
-func (e *VectorSelector) Type() ValueType { return ValueTypeVector }
+func (*AggregateExpr) Type() ValueType  { return ValueTypeVector }
+func (e *Call) Type() ValueType         { return e.Func.ReturnType }
+func (*MatrixSelector) Type() ValueType { return ValueTypeMatrix }
+func (*SubqueryExpr) Type() ValueType   { return ValueTypeMatrix }
+func (*NumberLiteral) Type() ValueType  { return ValueTypeScalar }
+func (e *ParenExpr) Type() ValueType    { return e.Expr.Type() }
+func (*StringLiteral) Type() ValueType  { return ValueTypeString }
+func (e *UnaryExpr) Type() ValueType    { return e.Expr.Type() }
+func (*VectorSelector) Type() ValueType { return ValueTypeVector }
 func (e *BinaryExpr) Type() ValueType {
 	if e.LHS.Type() == ValueTypeScalar && e.RHS.Type() == ValueTypeScalar {
 		return ValueTypeScalar
@@ -259,7 +264,7 @@ func (e *BinaryExpr) Type() ValueType {
 	return ValueTypeVector
 }
 func (e *StepInvariantExpr) Type() ValueType { return e.Expr.Type() }
-func (e *DurationExpr) Type() ValueType      { return ValueTypeScalar }
+func (*DurationExpr) Type() ValueType        { return ValueTypeScalar }
 
 func (*AggregateExpr) PromQLExpr()     {}
 func (*BinaryExpr) PromQLExpr()        {}
@@ -334,10 +339,13 @@ func Walk(v Visitor, node Node, path []Node) error {
 	if v, err = v.Visit(node, path); v == nil || err != nil {
 		return err
 	}
-	path = append(path, node)
+	var pathToHere []Node // Initialized only when needed.
 
-	for _, e := range Children(node) {
-		if err := Walk(v, e, path); err != nil {
+	for e := range ChildrenIter(node) {
+		if pathToHere == nil {
+			pathToHere = append(path, node)
+		}
+		if err := Walk(v, e, pathToHere); err != nil {
 			return err
 		}
 	}
@@ -371,61 +379,71 @@ func (f inspector) Visit(node Node, path []Node) (Visitor, error) {
 // Inspect traverses an AST in depth-first order: It starts by calling
 // f(node, path); node must not be nil. If f returns a nil error, Inspect invokes f
 // for all the non-nil children of node, recursively.
+// Note: path may be overwritten after f returns; copy path if you need to retain it.
 func Inspect(node Node, f inspector) {
-	Walk(f, node, nil) //nolint:errcheck
+	var pathBuf [4]Node        // To reduce allocations during recursion.
+	Walk(f, node, pathBuf[:0]) //nolint:errcheck
+}
+
+// ChildrenIter returns an iterator over all child nodes of a syntax tree node.
+func ChildrenIter(node Node) func(func(Node) bool) {
+	return func(yield func(Node) bool) {
+		// According to lore, these switches have significantly better performance than interfaces
+		switch n := node.(type) {
+		case *EvalStmt:
+			yield(n.Expr)
+		case Expressions:
+			for _, e := range n {
+				if !yield(e) {
+					return
+				}
+			}
+		case *AggregateExpr:
+			if n.Expr != nil {
+				if !yield(n.Expr) {
+					return
+				}
+			}
+			if n.Param != nil {
+				yield(n.Param)
+			}
+		case *BinaryExpr:
+			if !yield(n.LHS) {
+				return
+			}
+			yield(n.RHS)
+		case *Call:
+			for _, e := range n.Args {
+				if !yield(e) {
+					return
+				}
+			}
+		case *SubqueryExpr:
+			yield(n.Expr)
+		case *ParenExpr:
+			yield(n.Expr)
+		case *UnaryExpr:
+			yield(n.Expr)
+		case *MatrixSelector:
+			yield(n.VectorSelector)
+		case *StepInvariantExpr:
+			yield(n.Expr)
+		case *NumberLiteral, *StringLiteral, *VectorSelector:
+			// nothing to do
+		default:
+			panic(fmt.Errorf("promql.ChildrenIter: unhandled node type %T", node))
+		}
+	}
 }
 
 // Children returns a list of all child nodes of a syntax tree node.
+// Implemented for backwards-compatibility; prefer ChildrenIter().
 func Children(node Node) []Node {
-	// For some reasons these switches have significantly better performance than interfaces
-	switch n := node.(type) {
-	case *EvalStmt:
-		return []Node{n.Expr}
-	case Expressions:
-		// golang cannot convert slices of interfaces
-		ret := make([]Node, len(n))
-		for i, e := range n {
-			ret[i] = e
-		}
-		return ret
-	case *AggregateExpr:
-		// While this does not look nice, it should avoid unnecessary allocations
-		// caused by slice resizing
-		switch {
-		case n.Expr == nil && n.Param == nil:
-			return nil
-		case n.Expr == nil:
-			return []Node{n.Param}
-		case n.Param == nil:
-			return []Node{n.Expr}
-		default:
-			return []Node{n.Expr, n.Param}
-		}
-	case *BinaryExpr:
-		return []Node{n.LHS, n.RHS}
-	case *Call:
-		// golang cannot convert slices of interfaces
-		ret := make([]Node, len(n.Args))
-		for i, e := range n.Args {
-			ret[i] = e
-		}
-		return ret
-	case *SubqueryExpr:
-		return []Node{n.Expr}
-	case *ParenExpr:
-		return []Node{n.Expr}
-	case *UnaryExpr:
-		return []Node{n.Expr}
-	case *MatrixSelector:
-		return []Node{n.VectorSelector}
-	case *StepInvariantExpr:
-		return []Node{n.Expr}
-	case *NumberLiteral, *StringLiteral, *VectorSelector:
-		// nothing to do
-		return []Node{}
-	default:
-		panic(fmt.Errorf("promql.Children: unhandled node type %T", node))
+	ret := []Node{}
+	for e := range ChildrenIter(node) {
+		ret = append(ret, e)
 	}
+	return ret
 }
 
 // mergeRanges is a helper function to merge the PositionRanges of two Nodes.

@@ -25,7 +25,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -596,10 +596,7 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 		if alert.needsSending(ts, resendDelay) {
 			alert.LastSentAt = ts
 			// Allow for two Eval or Alertmanager send failures.
-			delta := resendDelay
-			if interval > resendDelay {
-				delta = interval
-			}
+			delta := max(interval, resendDelay)
 			alert.ValidUntil = ts.Add(4 * delta)
 			anew := *alert
 			// The notifier re-uses the labels slice, hence make a copy.

@@ -42,7 +42,7 @@ import (
 func ExponentialBlockRanges(minSize int64, steps, stepSize int) []int64 {
 	ranges := make([]int64, 0, steps)
 	curRange := minSize
-	for i := 0; i < steps; i++ {
+	for range steps {
 		ranges = append(ranges, curRange)
 		curRange *= int64(stepSize)
 	}
@@ -178,7 +178,7 @@ type LeveledCompactorOptions struct {
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
 
-func DefaultPostingsDecoderFactory(_ *BlockMeta) index.PostingsDecoder {
+func DefaultPostingsDecoderFactory(*BlockMeta) index.PostingsDecoder {
 	return index.DecodePostingsRaw
 }
 
@@ -562,6 +562,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 	start := time.Now()
 
 	uid := ulid.MustNew(ulid.Now(), rand.Reader)
+	c.logger.Info("write block started", "mint", mint, "maxt", maxt, "ulid", uid)
 
 	meta := &BlockMeta{
 		ULID:    uid,
@@ -596,7 +597,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 	}
 
 	c.logger.Info(
-		"write block",
+		"write block completed",
 		"mint", meta.MinTime,
 		"maxt", meta.MaxTime,
 		"ulid", meta.ULID,
@@ -761,7 +762,7 @@ type DefaultBlockPopulator struct{}
 // PopulateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
 // It expects sorted blocks input by mint.
-func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger *slog.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter, postingsFunc IndexReaderPostingsFunc) (err error) {
+func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger *slog.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter, postingsFunc IndexReaderPostingsFunc) (err error) {
 	if len(blocks) == 0 {
 		return errors.New("cannot populate block from no readers")
 	}

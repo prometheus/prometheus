@@ -141,6 +141,8 @@ GROUP_LEFT
 GROUP_RIGHT
 IGNORING
 OFFSET
+SMOOTHED
+ANCHORED
 ON
 WITHOUT
 %token keywordsEnd
@@ -187,7 +189,7 @@ START_METRIC_SELECTOR
 %type <int> int
 %type <uint> uint
 %type <float> number series_value signed_number signed_or_unsigned_number
-%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_duration_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector duration_expr paren_duration_expr positive_duration_expr offset_duration_expr
+%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_duration_literal offset_expr anchored_expr smoothed_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector duration_expr paren_duration_expr positive_duration_expr offset_duration_expr
 
 %start start
 
@@ -230,6 +232,8 @@ expr            :
                 | matrix_selector
                 | number_duration_literal
                 | offset_expr
+                | anchored_expr
+                | smoothed_expr
                 | paren_expr
                 | string_literal
                 | subquery_expr
@@ -244,29 +248,15 @@ expr            :
  */
 
 aggregate_expr  : aggregate_op aggregate_modifier function_call_body
-                        {
-                        // Need to consume the position of the first RIGHT_PAREN. It might not exist on garbage input
-                        // like 'sum (some_metric) by test'
-                        if len(yylex.(*parser).closingParens) > 1 {
-                                yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
-                        }
-                        $$ = yylex.(*parser).newAggregateExpr($1, $2, $3)
-                        }
+                        { $$ = yylex.(*parser).newAggregateExpr($1, $2, $3, false) }
                 | aggregate_op function_call_body aggregate_modifier
-                        {
-                        // Need to consume the position of the first RIGHT_PAREN. It might not exist on garbage input
-                        // like 'sum by test (some_metric)'
-                        if len(yylex.(*parser).closingParens) > 1 {
-                                yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
-                        }
-                        $$ = yylex.(*parser).newAggregateExpr($1, $3, $2)
-                        }
+                        { $$ = yylex.(*parser).newAggregateExpr($1, $3, $2, false) }
                 | aggregate_op function_call_body
-                        { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2) }
+                        { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2, true) }
                 | aggregate_op error
                         {
                         yylex.(*parser).unexpected("aggregation","");
-                        $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, Expressions{})
+                        $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, Expressions{}, false)
                         }
                 ;
 
@@ -378,14 +368,14 @@ grouping_label_list:
 
 grouping_label  : maybe_label
                         {
-                        if !model.LabelName($1.Val).IsValid() {
+                        if !model.UTF8Validation.IsValidLabelName($1.Val) {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"invalid label name for grouping: %q", $1.Val)
                         }
                         $$ = $1
                         }
                 | STRING {
                         unquoted := yylex.(*parser).unquoteString($1.Val)
-                        if !model.LabelName(unquoted).IsValid() {
+                        if !model.UTF8Validation.IsValidLabelName(unquoted) {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"invalid label name for grouping: %q", unquoted)
                         }
                         $$ = $1
@@ -414,10 +404,9 @@ function_call   : IDENTIFIER function_call_body
                                 Args: $2.(Expressions),
                                 PosRange: posrange.PositionRange{
                                         Start: $1.Pos,
-                                        End:   yylex.(*parser).closingParens[0],
+                                        End:   yylex.(*parser).lastClosing,
                                 },
                         }
-                        yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
                         }
                 ;
 
@@ -443,10 +432,7 @@ function_call_args: function_call_args COMMA expr
  */
 
 paren_expr      : LEFT_PAREN expr RIGHT_PAREN
-                        {
-                        $$ = &ParenExpr{Expr: $2.(Expr), PosRange: mergeRanges(&$1, &$3)}
-                        yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
-                        }
+                        { $$ = &ParenExpr{Expr: $2.(Expr), PosRange: mergeRanges(&$1, &$3)} }
                 ;
 
 /*
@@ -481,6 +467,20 @@ offset_expr: expr OFFSET offset_duration_expr
                 | expr OFFSET error
                         { yylex.(*parser).unexpected("offset", "number, duration, or step()"); $$ = $1 }
                 ;
+
+/*
+ * Anchored and smoothed modifiers
+ */
+
+anchored_expr: expr ANCHORED
+                {
+                        yylex.(*parser).setAnchored($1)
+                }
+
+smoothed_expr: expr SMOOTHED
+                {
+                        yylex.(*parser).setSmoothed($1)
+                }
 
 /*
  * @ modifiers.

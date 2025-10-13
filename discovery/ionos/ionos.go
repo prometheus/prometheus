@@ -96,7 +96,7 @@ func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.Ref
 }
 
 // Name returns the name of the IONOS Cloud service discovery.
-func (c SDConfig) Name() string {
+func (SDConfig) Name() string {
 	return "ionos"
 }
 
@@ -106,7 +106,7 @@ func (c SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))

@@ -37,8 +37,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -188,11 +188,12 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeTimeout:  model.Duration(time.Second),
 				RelabelConfigs: []*relabel.Config{
 					{
-						Action:       relabel.Replace,
-						Regex:        relabel.MustNewRegexp("(.*)"),
-						SourceLabels: model.LabelNames{"custom"},
-						Replacement:  "${1}",
-						TargetLabel:  string(model.AddressLabel),
+						Action:               relabel.Replace,
+						Regex:                relabel.MustNewRegexp("(.*)"),
+						SourceLabels:         model.LabelNames{"custom"},
+						Replacement:          "${1}",
+						TargetLabel:          string(model.AddressLabel),
+						NameValidationScheme: model.UTF8Validation,
 					},
 				},
 			},
@@ -226,11 +227,12 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeTimeout:  model.Duration(time.Second),
 				RelabelConfigs: []*relabel.Config{
 					{
-						Action:       relabel.Replace,
-						Regex:        relabel.MustNewRegexp("(.*)"),
-						SourceLabels: model.LabelNames{"custom"},
-						Replacement:  "${1}",
-						TargetLabel:  string(model.AddressLabel),
+						Action:               relabel.Replace,
+						Regex:                relabel.MustNewRegexp("(.*)"),
+						SourceLabels:         model.LabelNames{"custom"},
+						Replacement:          "${1}",
+						TargetLabel:          string(model.AddressLabel),
+						NameValidationScheme: model.UTF8Validation,
 					},
 				},
 			},
@@ -450,6 +452,10 @@ func TestPopulateLabels(t *testing.T) {
 	for _, c := range cases {
 		in := maps.Clone(c.in)
 		lb := labels.NewBuilder(labels.EmptyLabels())
+		c.cfg.MetricNameValidationScheme = model.UTF8Validation
+		for i := range c.cfg.RelabelConfigs {
+			c.cfg.RelabelConfigs[i].NameValidationScheme = model.UTF8Validation
+		}
 		res, err := PopulateLabels(lb, c.cfg, c.in, nil)
 		if c.err != "" {
 			require.EqualError(t, err, c.err)
@@ -588,7 +594,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	defer m.Stop()
 
 	tgSent := make(map[string][]*targetgroup.Group)
-	for x := 0; x < 10; x++ {
+	for x := range 10 {
 		tgSent[strconv.Itoa(x)] = []*targetgroup.Group{
 			{
 				Source: strconv.Itoa(x),
@@ -745,6 +751,7 @@ func setupTestServer(t *testing.T, typ string, toWrite []byte) *httptest.Server 
 
 // TestManagerCTZeroIngestion tests scrape manager for various CT cases.
 func TestManagerCTZeroIngestion(t *testing.T) {
+	t.Parallel()
 	const (
 		// _total suffix is required, otherwise expfmt with OMText will mark metric as "unknown"
 		expectedMetricName        = "expected_metric_total"
@@ -917,6 +924,7 @@ func generateTestHistogram(i int) *dto.Histogram {
 }
 
 func TestManagerCTZeroIngestionHistogram(t *testing.T) {
+	t.Parallel()
 	const mName = "expected_histogram"
 
 	for _, tc := range []struct {
@@ -952,6 +960,7 @@ func TestManagerCTZeroIngestionHistogram(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
@@ -1047,7 +1056,7 @@ scrape_configs:
 func TestUnregisterMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	// Check that all metrics can be unregistered, allowing a second manager to be created.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		opts := Options{}
 		manager, err := NewManager(&opts, nil, nil, nil, reg)
 		require.NotNil(t, manager)
@@ -1055,6 +1064,117 @@ func TestUnregisterMetrics(t *testing.T) {
 		// Unregister all metrics.
 		manager.UnregisterMetrics()
 	}
+}
+
+// TestNHCBAndCTZeroIngestion verifies that both ConvertClassicHistogramsToNHCBEnabled
+// and EnableCreatedTimestampZeroIngestion can be used simultaneously without errors.
+// This test addresses issue #17216 by ensuring the previously blocking check has been removed.
+// The test verifies that the presence of exemplars in the input does not cause errors,
+// although exemplars are not preserved during NHCB conversion (as documented below).
+func TestNHCBAndCTZeroIngestion(t *testing.T) {
+	t.Parallel()
+
+	const (
+		mName = "test_histogram"
+		// The expected sum of the histogram, as defined by the test's OpenMetrics exposition data.
+		// This value (45.5) is the sum reported in the test_histogram_sum metric below.
+		expectedHistogramSum = 45.5
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	app := &collectResultAppender{}
+	discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
+		EnableCreatedTimestampZeroIngestion: true,
+		EnableNativeHistogramsIngestion:     true,
+		skipOffsetting:                      true,
+	}, &collectResultAppendable{app})
+	defer scrapeManager.Stop()
+
+	once := sync.Once{}
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			fail := true
+			once.Do(func() {
+				fail = false
+				w.Header().Set("Content-Type", `application/openmetrics-text`)
+
+				// Expose a histogram with created timestamp and exemplars to verify no parsing errors occur.
+				fmt.Fprint(w, `# HELP test_histogram A histogram with created timestamp and exemplars
+# TYPE test_histogram histogram
+test_histogram_bucket{le="0.0"} 1
+test_histogram_bucket{le="1.0"} 10 # {trace_id="trace-1"} 0.5 123456789
+test_histogram_bucket{le="2.0"} 20 # {trace_id="trace-2"} 1.5 123456780
+test_histogram_bucket{le="+Inf"} 30 # {trace_id="trace-3"} 2.5
+test_histogram_count 30
+test_histogram_sum 45.5
+test_histogram_created 1520430001
+# EOF
+`)
+			})
+
+			if fail {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		}),
+	)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	// Configuration with both convert_classic_histograms_to_nhcb enabled and CT zero ingestion enabled.
+	testConfig := fmt.Sprintf(`
+global:
+  # Use a very long scrape_interval to prevent automatic scraping during the test.
+  scrape_interval: 9999m
+  scrape_timeout: 5s
+
+scrape_configs:
+- job_name: test
+  convert_classic_histograms_to_nhcb: true
+  static_configs:
+  - targets: ['%s']
+`, serverURL.Host)
+
+	applyConfig(t, testConfig, scrapeManager, discoveryManager)
+
+	// Verify that the scrape pool was created (proves the blocking check was removed).
+	require.Eventually(t, func() bool {
+		scrapeManager.mtxScrape.Lock()
+		defer scrapeManager.mtxScrape.Unlock()
+		_, exists := scrapeManager.scrapePools["test"]
+		return exists
+	}, 5*time.Second, 100*time.Millisecond, "scrape pool should be created for job 'test'")
+
+	// Helper function to get matching histograms to avoid race conditions.
+	getMatchingHistograms := func() []histogramSample {
+		app.mtx.Lock()
+		defer app.mtx.Unlock()
+
+		var got []histogramSample
+		for _, h := range app.resultHistograms {
+			if h.metric.Get(model.MetricNameLabel) == mName {
+				got = append(got, h)
+			}
+		}
+		return got
+	}
+
+	require.Eventually(t, func() bool {
+		return len(getMatchingHistograms()) > 0
+	}, 1*time.Minute, 100*time.Millisecond, "expected histogram samples, got none")
+
+	// Verify that samples were ingested (proving both features work together).
+	got := getMatchingHistograms()
+
+	// With CT zero ingestion enabled and a created timestamp present, we expect 2 samples:
+	// one zero sample and one actual sample.
+	require.Len(t, got, 2, "expected 2 histogram samples (zero sample + actual sample)")
+	require.Equal(t, histogram.Histogram{}, *got[0].h, "first sample should be zero sample")
+	require.InDelta(t, expectedHistogramSum, got[1].h.Sum, 1e-9, "second sample should retain the expected sum")
+	require.Len(t, app.resultExemplars, 2, "expected 2 exemplars from histogram buckets")
 }
 
 func applyConfig(
@@ -1156,6 +1276,7 @@ func requireTargets(
 
 // TestTargetDisappearsAfterProviderRemoved makes sure that when a provider is dropped, (only) its targets are dropped.
 func TestTargetDisappearsAfterProviderRemoved(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1256,6 +1377,7 @@ scrape_configs:
 // TestOnlyProviderStaleTargetsAreDropped makes sure that when a job has only one provider with multiple targets
 // and when the provider can no longer discover some of those targets, only those stale targets are dropped.
 func TestOnlyProviderStaleTargetsAreDropped(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

@@ -41,7 +41,7 @@ func tree(node Node, level string) string {
 
 	level += " · · ·"
 
-	for _, e := range Children(node) {
+	for e := range ChildrenIter(node) {
 		t += tree(e, level)
 	}
 
@@ -53,60 +53,79 @@ func (node *EvalStmt) String() string {
 }
 
 func (es Expressions) String() (s string) {
-	if len(es) == 0 {
+	switch len(es) {
+	case 0:
 		return ""
+	case 1:
+		return es[0].String()
 	}
-	for _, e := range es {
-		s += e.String()
-		s += ", "
+	b := bytes.NewBuffer(make([]byte, 0, 1024))
+	b.WriteString(es[0].String())
+	for _, e := range es[1:] {
+		b.WriteString(", ")
+		b.WriteString(e.String())
 	}
-	return s[:len(s)-2]
+	return b.String()
 }
 
 func (node *AggregateExpr) String() string {
-	aggrString := node.getAggOpStr()
-	aggrString += "("
+	b := bytes.NewBuffer(make([]byte, 0, 1024))
+	node.writeAggOpStr(b)
+	b.WriteString("(")
 	if node.Op.IsAggregatorWithParam() {
-		aggrString += fmt.Sprintf("%s, ", node.Param)
+		b.WriteString(node.Param.String())
+		b.WriteString(", ")
 	}
-	aggrString += fmt.Sprintf("%s)", node.Expr)
+	b.WriteString(node.Expr.String())
+	b.WriteString(")")
 
-	return aggrString
+	return b.String()
 }
 
 func (node *AggregateExpr) ShortString() string {
-	aggrString := node.getAggOpStr()
-	return aggrString
+	b := bytes.NewBuffer(make([]byte, 0, 1024))
+	node.writeAggOpStr(b)
+	return b.String()
 }
 
-func (node *AggregateExpr) getAggOpStr() string {
-	aggrString := node.Op.String()
+func (node *AggregateExpr) writeAggOpStr(b *bytes.Buffer) {
+	b.WriteString(node.Op.String())
 
 	switch {
 	case node.Without:
-		aggrString += fmt.Sprintf(" without (%s) ", joinLabels(node.Grouping))
+		b.WriteString(" without (")
+		writeLabels(b, node.Grouping)
+		b.WriteString(") ")
 	case len(node.Grouping) > 0:
-		aggrString += fmt.Sprintf(" by (%s) ", joinLabels(node.Grouping))
+		b.WriteString(" by (")
+		writeLabels(b, node.Grouping)
+		b.WriteString(") ")
 	}
-
-	return aggrString
 }
 
-func joinLabels(ss []string) string {
-	var bytea [1024]byte // On stack to avoid memory allocation while building the output.
-	b := bytes.NewBuffer(bytea[:0])
-
+func writeLabels(b *bytes.Buffer, ss []string) {
 	for i, s := range ss {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		if !model.IsValidLegacyMetricName(string(model.LabelValue(s))) {
+		if !model.LegacyValidation.IsValidMetricName(s) {
 			b.Write(strconv.AppendQuote(b.AvailableBuffer(), s))
 		} else {
 			b.WriteString(s)
 		}
 	}
-	return b.String()
+}
+
+// writeStringsJoin is like strings.Join but appending to a bytes.Buffer.
+func writeStringsJoin(b *bytes.Buffer, elems []string, sep string) {
+	if len(elems) == 0 {
+		return
+	}
+	b.WriteString(elems[0])
+	for _, s := range elems[1:] {
+		b.WriteString(sep)
+		b.WriteString(s)
+	}
 }
 
 func (node *BinaryExpr) returnBool() string {
@@ -118,11 +137,11 @@ func (node *BinaryExpr) returnBool() string {
 
 func (node *BinaryExpr) String() string {
 	matching := node.getMatchingStr()
-	return fmt.Sprintf("%s %s%s%s %s", node.LHS, node.Op, node.returnBool(), matching, node.RHS)
+	return node.LHS.String() + " " + node.Op.String() + node.returnBool() + matching + " " + node.RHS.String()
 }
 
 func (node *BinaryExpr) ShortString() string {
-	return fmt.Sprintf("%s%s%s", node.Op, node.returnBool(), node.getMatchingStr())
+	return node.Op.String() + node.returnBool() + node.getMatchingStr()
 }
 
 func (node *BinaryExpr) getMatchingStr() string {
@@ -147,32 +166,54 @@ func (node *BinaryExpr) getMatchingStr() string {
 }
 
 func (node *DurationExpr) String() string {
-	var expr string
+	b := bytes.NewBuffer(make([]byte, 0, 1024))
+	node.writeTo(b)
+	return b.String()
+}
+
+func (node *DurationExpr) writeTo(b *bytes.Buffer) {
+	if node.Wrapped {
+		b.WriteByte('(')
+	}
+
 	switch {
 	case node.Op == STEP:
-		expr = "step()"
+		b.WriteString("step()")
 	case node.Op == MIN:
-		expr = fmt.Sprintf("min(%s, %s)", node.LHS, node.RHS)
+		b.WriteString("min(")
+		b.WriteString(node.LHS.String())
+		b.WriteString(", ")
+		b.WriteString(node.RHS.String())
+		b.WriteByte(')')
 	case node.Op == MAX:
-		expr = fmt.Sprintf("max(%s, %s)", node.LHS, node.RHS)
+		b.WriteString("max(")
+		b.WriteString(node.LHS.String())
+		b.WriteString(", ")
+		b.WriteString(node.RHS.String())
+		b.WriteByte(')')
 	case node.LHS == nil:
 		// This is a unary duration expression.
 		switch node.Op {
 		case SUB:
-			expr = fmt.Sprintf("%s%s", node.Op, node.RHS)
+			b.WriteString(node.Op.String())
+			b.WriteString(node.RHS.String())
 		case ADD:
-			expr = node.RHS.String()
+			b.WriteString(node.RHS.String())
 		default:
 			// This should never happen.
 			panic(fmt.Sprintf("unexpected unary duration expression: %s", node.Op))
 		}
 	default:
-		expr = fmt.Sprintf("%s %s %s", node.LHS, node.Op, node.RHS)
+		b.WriteString(node.LHS.String())
+		b.WriteByte(' ')
+		b.WriteString(node.Op.String())
+		b.WriteByte(' ')
+		b.WriteString(node.RHS.String())
 	}
+
 	if node.Wrapped {
-		return fmt.Sprintf("(%s)", expr)
+		b.WriteByte(')')
 	}
-	return expr
 }
 
 func (node *DurationExpr) ShortString() string {
@@ -180,7 +221,7 @@ func (node *DurationExpr) ShortString() string {
 }
 
 func (node *Call) String() string {
-	return fmt.Sprintf("%s(%s)", node.Func.Name, node.Args)
+	return node.Func.Name + "(" + node.Args.String() + ")"
 }
 
 func (node *Call) ShortString() string {
@@ -222,11 +263,18 @@ func (node *MatrixSelector) String() string {
 	vecSelector.Timestamp = nil
 	vecSelector.StartOrEnd = 0
 
+	extendedAttribute := ""
+	switch {
+	case vecSelector.Anchored:
+		extendedAttribute = " anchored"
+	case vecSelector.Smoothed:
+		extendedAttribute = " smoothed"
+	}
 	rangeStr := model.Duration(node.Range).String()
 	if node.RangeExpr != nil {
 		rangeStr = node.RangeExpr.String()
 	}
-	str := fmt.Sprintf("%s[%s]%s%s", vecSelector.String(), rangeStr, at, offset)
+	str := fmt.Sprintf("%s[%s]%s%s%s", vecSelector.String(), rangeStr, extendedAttribute, at, offset)
 
 	vecSelector.OriginalOffset, vecSelector.OriginalOffsetExpr, vecSelector.Timestamp, vecSelector.StartOrEnd = offsetVal, offsetExprVal, atVal, preproc
 
@@ -294,15 +342,15 @@ func (node *NumberLiteral) String() string {
 }
 
 func (node *ParenExpr) String() string {
-	return fmt.Sprintf("(%s)", node.Expr)
+	return "(" + node.Expr.String() + ")"
 }
 
 func (node *StringLiteral) String() string {
-	return fmt.Sprintf("%q", node.Val)
+	return strconv.Quote(node.Val)
 }
 
 func (node *UnaryExpr) String() string {
-	return fmt.Sprintf("%s%s", node.Op, node.Expr)
+	return node.Op.String() + node.Expr.String()
 }
 
 func (node *UnaryExpr) ShortString() string {
@@ -321,28 +369,39 @@ func (node *VectorSelector) String() string {
 		}
 		labelStrings = append(labelStrings, matcher.String())
 	}
-	offset := ""
-	switch {
-	case node.OriginalOffsetExpr != nil:
-		offset = fmt.Sprintf(" offset %s", node.OriginalOffsetExpr)
-	case node.OriginalOffset > time.Duration(0):
-		offset = fmt.Sprintf(" offset %s", model.Duration(node.OriginalOffset))
-	case node.OriginalOffset < time.Duration(0):
-		offset = fmt.Sprintf(" offset -%s", model.Duration(-node.OriginalOffset))
+	b := bytes.NewBuffer(make([]byte, 0, 1024))
+	b.WriteString(node.Name)
+	if len(labelStrings) != 0 {
+		b.WriteByte('{')
+		sort.Strings(labelStrings)
+		writeStringsJoin(b, labelStrings, ",")
+		b.WriteByte('}')
 	}
-	at := ""
 	switch {
 	case node.Timestamp != nil:
-		at = fmt.Sprintf(" @ %.3f", float64(*node.Timestamp)/1000.0)
+		b.WriteString(" @ ")
+		b.Write(strconv.AppendFloat(b.AvailableBuffer(), float64(*node.Timestamp)/1000.0, 'f', 3, 64))
 	case node.StartOrEnd == START:
-		at = " @ start()"
+		b.WriteString(" @ start()")
 	case node.StartOrEnd == END:
-		at = " @ end()"
+		b.WriteString(" @ end()")
 	}
-
-	if len(labelStrings) == 0 {
-		return fmt.Sprintf("%s%s%s", node.Name, at, offset)
+	switch {
+	case node.Anchored:
+		b.WriteString(" anchored")
+	case node.Smoothed:
+		b.WriteString(" smoothed")
 	}
-	sort.Strings(labelStrings)
-	return fmt.Sprintf("%s{%s}%s%s", node.Name, strings.Join(labelStrings, ","), at, offset)
+	switch {
+	case node.OriginalOffsetExpr != nil:
+		b.WriteString(" offset ")
+		node.OriginalOffsetExpr.writeTo(b)
+	case node.OriginalOffset > time.Duration(0):
+		b.WriteString(" offset ")
+		b.WriteString(model.Duration(node.OriginalOffset).String())
+	case node.OriginalOffset < time.Duration(0):
+		b.WriteString(" offset -")
+		b.WriteString(model.Duration(-node.OriginalOffset).String())
+	}
+	return b.String()
 }

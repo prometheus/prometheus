@@ -106,7 +106,7 @@ func createTestHTTPResourceClient(t *testing.T, conf *HTTPResourceClientConfig, 
 }
 
 func TestHTTPResourceClientFetchEmptyResponse(t *testing.T) {
-	client, cleanup := createTestHTTPResourceClient(t, testHTTPResourceConfig(), ProtocolV3, func(_ *v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
+	client, cleanup := createTestHTTPResourceClient(t, testHTTPResourceConfig(), ProtocolV3, func(*v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
 		return nil, nil
 	})
 	defer cleanup()
@@ -146,7 +146,7 @@ func TestHTTPResourceClientFetchFullResponse(t *testing.T) {
 }
 
 func TestHTTPResourceClientServerError(t *testing.T) {
-	client, cleanup := createTestHTTPResourceClient(t, testHTTPResourceConfig(), ProtocolV3, func(_ *v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
+	client, cleanup := createTestHTTPResourceClient(t, testHTTPResourceConfig(), ProtocolV3, func(*v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
 		return nil, errors.New("server error")
 	})
 	defer cleanup()

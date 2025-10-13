@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -52,7 +52,7 @@ func TestDNS(t *testing.T) {
 				Port:            80,
 				Type:            "A",
 			},
-			lookup: func(_ string, _ uint16, _ *slog.Logger) (*dns.Msg, error) {
+			lookup: func(string, uint16, *slog.Logger) (*dns.Msg, error) {
 				return nil, errors.New("some error")
 			},
 			expected: []*targetgroup.Group{},
@@ -65,7 +65,7 @@ func TestDNS(t *testing.T) {
 				Port:            80,
 				Type:            "A",
 			},
-			lookup: func(_ string, _ uint16, _ *slog.Logger) (*dns.Msg, error) {
+			lookup: func(string, uint16, *slog.Logger) (*dns.Msg, error) {
 				return &dns.Msg{
 						Answer: []dns.RR{
 							&dns.A{A: net.IPv4(192, 0, 2, 2)},
@@ -97,7 +97,7 @@ func TestDNS(t *testing.T) {
 				Port:            80,
 				Type:            "AAAA",
 			},
-			lookup: func(_ string, _ uint16, _ *slog.Logger) (*dns.Msg, error) {
+			lookup: func(string, uint16, *slog.Logger) (*dns.Msg, error) {
 				return &dns.Msg{
 						Answer: []dns.RR{
 							&dns.AAAA{AAAA: net.IPv6loopback},
@@ -128,7 +128,7 @@ func TestDNS(t *testing.T) {
 				Type:            "SRV",
 				RefreshInterval: model.Duration(time.Minute),
 			},
-			lookup: func(_ string, _ uint16, _ *slog.Logger) (*dns.Msg, error) {
+			lookup: func(string, uint16, *slog.Logger) (*dns.Msg, error) {
 				return &dns.Msg{
 						Answer: []dns.RR{
 							&dns.SRV{Port: 3306, Target: "db1.example.com."},
@@ -167,7 +167,7 @@ func TestDNS(t *testing.T) {
 				Names:           []string{"_mysql._tcp.db.example.com."},
 				RefreshInterval: model.Duration(time.Minute),
 			},
-			lookup: func(_ string, _ uint16, _ *slog.Logger) (*dns.Msg, error) {
+			lookup: func(string, uint16, *slog.Logger) (*dns.Msg, error) {
 				return &dns.Msg{
 						Answer: []dns.RR{
 							&dns.SRV{Port: 3306, Target: "db1.example.com."},
@@ -198,7 +198,7 @@ func TestDNS(t *testing.T) {
 				Names:           []string{"_mysql._tcp.db.example.com."},
 				RefreshInterval: model.Duration(time.Minute),
 			},
-			lookup: func(_ string, _ uint16, _ *slog.Logger) (*dns.Msg, error) {
+			lookup: func(string, uint16, *slog.Logger) (*dns.Msg, error) {
 				return &dns.Msg{}, nil
 			},
 			expected: []*targetgroup.Group{
@@ -215,7 +215,7 @@ func TestDNS(t *testing.T) {
 				Port:            25,
 				RefreshInterval: model.Duration(time.Minute),
 			},
-			lookup: func(_ string, _ uint16, _ *slog.Logger) (*dns.Msg, error) {
+			lookup: func(string, uint16, *slog.Logger) (*dns.Msg, error) {
 				return &dns.Msg{
 						Answer: []dns.RR{
 							&dns.MX{Preference: 0, Mx: "smtp1.example.com."},
@@ -251,7 +251,6 @@ func TestDNS(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -282,8 +281,8 @@ func TestSDConfigUnmarshalYAML(t *testing.T) {
 		return d
 	}
 
-	unmarshal := func(d []byte) func(interface{}) error {
-		return func(o interface{}) error {
+	unmarshal := func(d []byte) func(any) error {
+		return func(o any) error {
 			return yaml.Unmarshal(d, o)
 		}
 	}

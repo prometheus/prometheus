@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"sort"
 	"time"
 
 	"github.com/prometheus/otlptranslator"
@@ -30,7 +29,8 @@ import (
 	"go.uber.org/multierr"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -43,7 +43,6 @@ type Settings struct {
 	Namespace                         string
 	ExternalLabels                    map[string]string
 	DisableTargetInfo                 bool
-	ExportCreatedMetric               bool
 	AddMetricSuffixes                 bool
 	AllowUTF8                         bool
 	PromoteResourceAttributes         *PromoteResourceAttributes
@@ -53,21 +52,23 @@ type Settings struct {
 	// LookbackDelta is the PromQL engine lookback delta.
 	LookbackDelta time.Duration
 	// PromoteScopeMetadata controls whether to promote OTel scope metadata to metric labels.
-	PromoteScopeMetadata bool
+	PromoteScopeMetadata    bool
+	EnableTypeAndUnitLabels bool
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
 type PrometheusConverter struct {
-	unique    map[uint64]*prompb.TimeSeries
-	conflicts map[uint64][]*prompb.TimeSeries
-	everyN    everyNTimes
-	metadata  []prompb.MetricMetadata
+	everyN         everyNTimes
+	scratchBuilder labels.ScratchBuilder
+	builder        *labels.Builder
+	appender       CombinedAppender
 }
 
-func NewPrometheusConverter() *PrometheusConverter {
+func NewPrometheusConverter(appender CombinedAppender) *PrometheusConverter {
 	return &PrometheusConverter{
-		unique:    map[uint64]*prompb.TimeSeries{},
-		conflicts: map[uint64][]*prompb.TimeSeries{},
+		scratchBuilder: labels.NewScratchBuilder(0),
+		builder:        labels.NewBuilder(labels.EmptyLabels()),
+		appender:       appender,
 	}
 }
 
@@ -120,6 +121,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		WithMetricSuffixes: settings.AddMetricSuffixes,
 		UTF8Allowed:        settings.AllowUTF8,
 	}
+	unitNamer := otlptranslator.UnitNamer{}
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
 
@@ -130,7 +132,6 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 			numMetrics += scopeMetricsSlice.At(j).Metrics().Len()
 		}
 	}
-	c.metadata = make([]prompb.MetricMetadata, 0, numMetrics)
 
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
@@ -170,13 +171,19 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					continue
 				}
 
-				promName := namer.Build(TranslatorMetricFromOtelMetric(metric))
-				c.metadata = append(c.metadata, prompb.MetricMetadata{
-					Type:             otelMetricTypeToPromMetricType(metric),
+				promName, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
+				if err != nil {
+					errs = multierr.Append(errs, err)
+					continue
+				}
+				meta := Metadata{
+					Metadata: metadata.Metadata{
+						Type: otelMetricTypeToPromMetricType(metric),
+						Unit: unitNamer.Build(metric.Unit()),
+						Help: metric.Description(),
+					},
 					MetricFamilyName: promName,
-					Help:             metric.Description(),
-					Unit:             metric.Unit(),
-				})
+				}
 
 				// handle individual metrics based on type
 				//exhaustive:enforce
@@ -187,7 +194,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, promName, scope); err != nil {
+					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -199,7 +206,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, promName, scope); err != nil {
+					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -213,7 +220,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					}
 					if settings.ConvertHistogramsToNHCB {
 						ws, err := c.addCustomBucketsHistogramDataPoints(
-							ctx, dataPoints, resource, settings, promName, temporality, scope,
+							ctx, dataPoints, resource, settings, temporality, scope, meta,
 						)
 						annots.Merge(ws)
 						if err != nil {
@@ -223,7 +230,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 							}
 						}
 					} else {
-						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName, scope); err != nil {
+						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 							errs = multierr.Append(errs, err)
 							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 								return
@@ -241,9 +248,9 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						dataPoints,
 						resource,
 						settings,
-						promName,
 						temporality,
 						scope,
+						meta,
 					)
 					annots.Merge(ws)
 					if err != nil {
@@ -258,7 +265,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, promName, scope); err != nil {
+					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -272,69 +279,13 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		if earliestTimestamp < pcommon.Timestamp(math.MaxUint64) {
 			// We have at least one metric sample for this resource.
 			// Generate a corresponding target_info series.
-			addResourceTargetInfo(resource, settings, earliestTimestamp.AsTime(), latestTimestamp.AsTime(), c)
-		}
-	}
-
-	return annots, errs
-}
-
-func isSameMetric(ts *prompb.TimeSeries, lbls []prompb.Label) bool {
-	if len(ts.Labels) != len(lbls) {
-		return false
-	}
-	for i, l := range ts.Labels {
-		if l.Name != ts.Labels[i].Name || l.Value != ts.Labels[i].Value {
-			return false
-		}
-	}
-	return true
-}
-
-// addExemplars adds exemplars for the dataPoint. For each exemplar, if it can find a bucket bound corresponding to its value,
-// the exemplar is added to the bucket bound's time series, provided that the time series' has samples.
-func (c *PrometheusConverter) addExemplars(ctx context.Context, dataPoint pmetric.HistogramDataPoint, bucketBounds []bucketBoundsData) error {
-	if len(bucketBounds) == 0 {
-		return nil
-	}
-
-	exemplars, err := getPromExemplars(ctx, &c.everyN, dataPoint)
-	if err != nil {
-		return err
-	}
-	if len(exemplars) == 0 {
-		return nil
-	}
-
-	sort.Sort(byBucketBoundsData(bucketBounds))
-	for _, exemplar := range exemplars {
-		for _, bound := range bucketBounds {
-			if err := c.everyN.checkContext(ctx); err != nil {
-				return err
-			}
-			if len(bound.ts.Samples) > 0 && exemplar.Value <= bound.bound {
-				bound.ts.Exemplars = append(bound.ts.Exemplars, exemplar)
-				break
+			if err := c.addResourceTargetInfo(resource, settings, earliestTimestamp.AsTime(), latestTimestamp.AsTime()); err != nil {
+				errs = multierr.Append(errs, err)
 			}
 		}
 	}
 
-	return nil
-}
-
-// addSample finds a TimeSeries that corresponds to lbls, and adds sample to it.
-// If there is no corresponding TimeSeries already, it's created.
-// The corresponding TimeSeries is returned.
-// If either lbls is nil/empty or sample is nil, nothing is done.
-func (c *PrometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Label) *prompb.TimeSeries {
-	if sample == nil || len(lbls) == 0 {
-		// This shouldn't happen
-		return nil
-	}
-
-	ts, _ := c.getOrCreateTimeSeries(lbls)
-	ts.Samples = append(ts.Samples, *sample)
-	return ts
+	return
 }
 
 func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAttributes {
@@ -352,30 +303,43 @@ func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAtt
 	}
 }
 
-// promotedAttributes returns labels for promoted resourceAttributes.
-func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommon.Map) []prompb.Label {
+// addPromotedAttributes adds labels for promoted resourceAttributes to the builder.
+func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builder, resourceAttributes pcommon.Map, allowUTF8 bool) error {
 	if s == nil {
 		return nil
 	}
 
-	var promotedAttrs []prompb.Label
+	labelNamer := otlptranslator.LabelNamer{UTF8Allowed: allowUTF8}
 	if s.promoteAll {
-		promotedAttrs = make([]prompb.Label, 0, resourceAttributes.Len())
+		var err error
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 			if _, exists := s.attrs[name]; !exists {
-				promotedAttrs = append(promotedAttrs, prompb.Label{Name: name, Value: value.AsString()})
+				var normalized string
+				normalized, err = labelNamer.Build(name)
+				if err != nil {
+					return false
+				}
+				if builder.Get(normalized) == "" {
+					builder.Set(normalized, value.AsString())
+				}
 			}
 			return true
 		})
-	} else {
-		promotedAttrs = make([]prompb.Label, 0, len(s.attrs))
-		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
-			if _, exists := s.attrs[name]; exists {
-				promotedAttrs = append(promotedAttrs, prompb.Label{Name: name, Value: value.AsString()})
-			}
-			return true
-		})
+		return err
 	}
-	sort.Stable(ByLabelName(promotedAttrs))
-	return promotedAttrs
+	var err error
+	resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+		if _, exists := s.attrs[name]; exists {
+			var normalized string
+			normalized, err = labelNamer.Build(name)
+			if err != nil {
+				return false
+			}
+			if builder.Get(normalized) == "" {
+				builder.Set(normalized, value.AsString())
+			}
+		}
+		return true
+	})
+	return err
 }

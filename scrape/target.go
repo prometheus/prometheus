@@ -190,9 +190,9 @@ func (t *Target) LabelsRange(f func(l labels.Label)) {
 
 // DiscoveredLabels returns a copy of the target's labels before any processing.
 func (t *Target) DiscoveredLabels(lb *labels.Builder) labels.Labels {
-	t.mtx.Lock()
+	t.mtx.RLock()
 	cfg, tLabels, tgLabels := t.scrapeConfig, t.tLabels, t.tgLabels
-	t.mtx.Unlock()
+	t.mtx.RUnlock()
 	PopulateDiscoveredLabels(lb, cfg, tLabels, tgLabels)
 	return lb.Labels()
 }
@@ -208,9 +208,9 @@ func (t *Target) SetScrapeConfig(scrapeConfig *config.ScrapeConfig, tLabels, tgL
 
 // URL returns a copy of the target's URL.
 func (t *Target) URL() *url.URL {
-	t.mtx.Lock()
+	t.mtx.RLock()
 	configParams := t.scrapeConfig.Params
-	t.mtx.Unlock()
+	t.mtx.RUnlock()
 	params := url.Values{}
 
 	for k, v := range configParams {
@@ -332,7 +332,9 @@ type limitAppender struct {
 }
 
 func (app *limitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	if !value.IsStaleNaN(v) {
+	// Bypass sample_limit checks only if we have a staleness marker for a known series (ref value is non-zero).
+	// This ensures that if a series is already in TSDB then we always write the marker.
+	if ref == 0 || !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
 			return 0, errSampleLimit
@@ -412,12 +414,12 @@ type maxSchemaAppender struct {
 
 func (app *maxSchemaAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if h != nil {
-		if histogram.IsExponentialSchema(h.Schema) && h.Schema > app.maxSchema {
+		if histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > app.maxSchema {
 			h = h.ReduceResolution(app.maxSchema)
 		}
 	}
 	if fh != nil {
-		if histogram.IsExponentialSchema(fh.Schema) && fh.Schema > app.maxSchema {
+		if histogram.IsExponentialSchemaReserved(fh.Schema) && fh.Schema > app.maxSchema {
 			fh = fh.ReduceResolution(app.maxSchema)
 		}
 	}

@@ -224,9 +224,9 @@ type errChunkQuerier struct{ errQuerier }
 func (errStorage) ChunkQuerier(_, _ int64) (storage.ChunkQuerier, error) {
 	return errChunkQuerier{}, nil
 }
-func (errStorage) Appender(_ context.Context) storage.Appender { return nil }
-func (errStorage) StartTime() (int64, error)                   { return 0, nil }
-func (errStorage) Close() error                                { return nil }
+func (errStorage) Appender(context.Context) storage.Appender { return nil }
+func (errStorage) StartTime() (int64, error)                 { return 0, nil }
+func (errStorage) Close() error                              { return nil }
 
 func (errQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 	return storage.ErrSeriesSet(errSelect)

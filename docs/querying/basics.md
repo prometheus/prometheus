@@ -10,7 +10,7 @@ time.
 
 When you send a query request to Prometheus, it can be an _instant query_, evaluated at one point in time,
 or a _range query_ at equally-spaced steps between a start and an end time. PromQL works exactly the same
-in each cases; the range query is just like an instant query run multiple times at different timestamps.
+in each case; the range query is just like an instant query run multiple times at different timestamps.
 
 In the Prometheus UI, the "Table" tab is for instant queries and the "Graph" tab is for range queries.
 
@@ -31,7 +31,7 @@ evaluate to one of four types:
 * **Scalar** - a simple numeric floating point value
 * **String** - a simple string value; currently unused
 
-Depending on the use-case (e.g. when graphing vs. displaying the output of an
+Depending on the use case (e.g. when graphing vs. displaying the output of an
 expression), only some of these types are legal as the result of a
 user-specified expression.
 For [instant queries](api.md#instant-queries), any of the above data types are allowed as the root of the expression.
@@ -49,15 +49,18 @@ _Notes about the experimental native histograms:_
   the PromQL documentation always refers to a native histogram. Classic
   histograms are broken up into a number of series of float samples. From the
   perspective of PromQL, there are no “classic histogram samples”.
-* Like float samples, histogram samples can be counters or gauges, also called
-  counter histograms or gauge histograms, respectively.
+* Like float samples, histogram samples can have a counter or a gauge “flavor”,
+  marking them as counter histograms or gauge histograms, respectively. In
+  contrast to float samples, histogram samples “know” their flavor, allowing
+  reliable warnings about mismatched operations (e.g. applying the `rate`
+  function to a range vector of gauge histograms).
 * Native histograms can have different bucket layouts, but they are generally
   convertible to compatible versions to apply binary and aggregation operations
   to them. This is not true for all bucketing schemas. If incompatible
   histograms are encountered in an operation, the corresponding output vector
   element is removed from the result, flagged with a warn-level annotation.
-  More details can be found in the
-  [native histogram specification](https://prometheus.io/docs/specs/native_histograms/#compatibility-between-histograms).
+  More details can be found in the [native histogram
+  specification](https://prometheus.io/docs/specs/native_histograms/#compatibility-between-histograms).
 
 ## Literals
 
@@ -305,7 +308,7 @@ Note that this allows a query to look ahead of its evaluation time.
 
 The `@` modifier allows changing the evaluation time for individual instant
 and range vectors in a query. The time supplied to the `@` modifier
-is a unix timestamp and described with a float literal.
+is a Unix timestamp and described with a float literal.
 
 For example, the following expression returns the value of
 `http_requests_total` at `2021-01-04T07:40:00+00:00`:
@@ -390,6 +393,7 @@ Prometheus needs to assign a value at those timestamps for each relevant time
 series. It does so by taking the newest sample that is less than the lookback period ago.
 The lookback period is 5 minutes by default, but can be
 [set with the `--query.lookback-delta` flag](../command-line/prometheus.md)
+or overridden on an individual query via the `lookback_delta` parameter.
 
 If a target scrape or rule evaluation no longer returns a sample for a time
 series that was previously present, this time series will be marked as stale.

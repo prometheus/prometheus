@@ -24,9 +24,9 @@ type ovhcloudMetrics struct {
 }
 
 // Register implements discovery.DiscovererMetrics.
-func (m *ovhcloudMetrics) Register() error {
+func (*ovhcloudMetrics) Register() error {
 	return nil
 }
 
 // Unregister implements discovery.DiscovererMetrics.
-func (m *ovhcloudMetrics) Unregister() {}
+func (*ovhcloudMetrics) Unregister() {}

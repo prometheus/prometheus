@@ -76,7 +76,7 @@ func TestQueuePushPopSingleGoroutine(t *testing.T) {
 		lastWriteID := 0
 		lastReadID := 0
 
-		for iter := 0; iter < maxIters; iter++ {
+		for range maxIters {
 			if elements < maxCount {
 				toWrite := r.Int() % (maxCount - elements)
 				if toWrite == 0 {
@@ -235,7 +235,7 @@ func TestQueuePopAfterCloseReturnsAllElements(t *testing.T) {
 
 	queue := newWriteJobQueue(count, count)
 
-	for i := 0; i < count; i++ {
+	for i := range count {
 		require.True(t, queue.push(chunkWriteJob{seriesRef: HeadSeriesRef(i)}))
 	}
 
@@ -246,7 +246,7 @@ func TestQueuePopAfterCloseReturnsAllElements(t *testing.T) {
 	require.False(t, queue.push(chunkWriteJob{seriesRef: HeadSeriesRef(11111)}))
 
 	// Verify that we can still read all pushed elements.
-	for i := 0; i < count; i++ {
+	for i := range count {
 		j, b := queue.pop()
 		require.True(t, b)
 		require.Equal(t, HeadSeriesRef(i), j.seriesRef)
@@ -268,7 +268,7 @@ func TestQueuePushPopManyGoroutines(t *testing.T) {
 	refs := map[HeadSeriesRef]bool{}
 
 	readersWG := sync.WaitGroup{}
-	for i := 0; i < readGoroutines; i++ {
+	for range readGoroutines {
 		readersWG.Add(1)
 
 		go func() {
@@ -285,13 +285,13 @@ func TestQueuePushPopManyGoroutines(t *testing.T) {
 	id := atomic.Uint64{}
 
 	writersWG := sync.WaitGroup{}
-	for i := 0; i < writeGoroutines; i++ {
+	for range writeGoroutines {
 		writersWG.Add(1)
 
 		go func() {
 			defer writersWG.Done()
 
-			for i := 0; i < writes; i++ {
+			for range writes {
 				ref := id.Inc()
 
 				require.True(t, queue.push(chunkWriteJob{seriesRef: HeadSeriesRef(ref)}))

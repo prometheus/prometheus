@@ -27,7 +27,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -36,8 +35,8 @@ const defaultZeroThreshold = 1e-128
 // addExponentialHistogramDataPoints adds OTel exponential histogram data points to the corresponding time series
 // as native histogram samples.
 func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Context, dataPoints pmetric.ExponentialHistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string, temporality pmetric.AggregationTemporality,
-	scope scope,
+	resource pcommon.Resource, settings Settings, temporality pmetric.AggregationTemporality,
+	scope scope, meta Metadata,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 	for x := 0; x < dataPoints.Len(); x++ {
@@ -47,30 +46,36 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 
 		pt := dataPoints.At(x)
 
-		histogram, ws, err := exponentialToNativeHistogram(pt, temporality)
+		hp, ws, err := exponentialToNativeHistogram(pt, temporality)
 		annots.Merge(ws)
 		if err != nil {
 			return annots, err
 		}
 
-		lbls := createAttributes(
+		lbls, err := c.createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
 			settings,
 			nil,
 			true,
+			meta,
 			model.MetricNameLabel,
-			promName,
+			meta.MetricFamilyName,
 		)
-		ts, _ := c.getOrCreateTimeSeries(lbls)
-		ts.Histograms = append(ts.Histograms, histogram)
-
-		exemplars, err := getPromExemplars[pmetric.ExponentialHistogramDataPoint](ctx, &c.everyN, pt)
 		if err != nil {
 			return annots, err
 		}
-		ts.Exemplars = append(ts.Exemplars, exemplars...)
+		ts := convertTimeStamp(pt.Timestamp())
+		ct := convertTimeStamp(pt.StartTimestamp())
+		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
+		if err != nil {
+			return annots, err
+		}
+		// OTel exponential histograms are always Int Histograms.
+		if err = c.appender.AppendHistogram(lbls, meta, ct, ts, hp, exemplars); err != nil {
+			return annots, err
+		}
 	}
 
 	return annots, nil
@@ -78,19 +83,19 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 
 // exponentialToNativeHistogram translates an OTel Exponential Histogram data point
 // to a Prometheus Native Histogram.
-func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, temporality pmetric.AggregationTemporality) (prompb.Histogram, annotations.Annotations, error) {
+func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, temporality pmetric.AggregationTemporality) (*histogram.Histogram, annotations.Annotations, error) {
 	var annots annotations.Annotations
 	scale := p.Scale()
-	if scale < -4 {
-		return prompb.Histogram{}, annots,
+	if scale < histogram.ExponentialSchemaMin {
+		return nil, annots,
 			fmt.Errorf("cannot convert exponential to native histogram."+
-				" Scale must be >= -4, was %d", scale)
+				" Scale must be >= %d, was %d", histogram.ExponentialSchemaMin, scale)
 	}
 
 	var scaleDown int32
-	if scale > 8 {
-		scaleDown = scale - 8
-		scale = 8
+	if scale > histogram.ExponentialSchemaMax {
+		scaleDown = scale - histogram.ExponentialSchemaMax
+		scale = histogram.ExponentialSchemaMax
 	}
 
 	pSpans, pDeltas := convertBucketsLayout(p.Positive().BucketCounts().AsRaw(), p.Positive().Offset(), scaleDown, true)
@@ -105,41 +110,36 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, tempo
 	// need to know here if it was used for the detection.
 	// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
 	// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
-	resetHint := prompb.Histogram_UNKNOWN
+	resetHint := histogram.UnknownCounterReset
 
 	if temporality == pmetric.AggregationTemporalityDelta {
 		// If the histogram has delta temporality, set the reset hint to gauge to avoid unnecessary chunk cutting.
 		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/).
 		// This might be changed to a different hint name as gauge type might be misleading for samples that should be
 		// summed over time.
-		resetHint = prompb.Histogram_GAUGE
+		resetHint = histogram.GaugeType
 	}
-
-	h := prompb.Histogram{
-		ResetHint: resetHint,
-		Schema:    scale,
-
-		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: p.ZeroCount()},
+	h := &histogram.Histogram{
+		CounterResetHint: resetHint,
+		Schema:           scale,
 		// TODO use zero_threshold, if set, see
 		// https://github.com/open-telemetry/opentelemetry-proto/pull/441
-		ZeroThreshold: defaultZeroThreshold,
-
-		PositiveSpans:  pSpans,
-		PositiveDeltas: pDeltas,
-		NegativeSpans:  nSpans,
-		NegativeDeltas: nDeltas,
-
-		Timestamp: convertTimeStamp(p.Timestamp()),
+		ZeroThreshold:   defaultZeroThreshold,
+		ZeroCount:       p.ZeroCount(),
+		PositiveSpans:   pSpans,
+		PositiveBuckets: pDeltas,
+		NegativeSpans:   nSpans,
+		NegativeBuckets: nDeltas,
 	}
 
 	if p.Flags().NoRecordedValue() {
 		h.Sum = math.Float64frombits(value.StaleNaN)
-		h.Count = &prompb.Histogram_CountInt{CountInt: value.StaleNaN}
+		h.Count = value.StaleNaN
 	} else {
 		if p.HasSum() {
 			h.Sum = p.Sum()
 		}
-		h.Count = &prompb.Histogram_CountInt{CountInt: p.Count()}
+		h.Count = p.Count()
 		if p.Count() == 0 && h.Sum != 0 {
 			annots.Add(fmt.Errorf("exponential histogram data point has zero count, but non-zero sum: %f", h.Sum))
 		}
@@ -164,13 +164,13 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, tempo
 //
 // When converting from OTel Explicit Histograms to Native Histograms with Custom Buckets,
 // the bucket indexes are not scaled, and the indices are not adjusted by 1.
-func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjustOffset bool) ([]prompb.BucketSpan, []int64) {
+func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjustOffset bool) ([]histogram.Span, []int64) {
 	if len(bucketCounts) == 0 {
 		return nil, nil
 	}
 
 	var (
-		spans     []prompb.BucketSpan
+		spans     []histogram.Span
 		deltas    []int64
 		count     int64
 		prevCount int64
@@ -193,12 +193,12 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 		initialOffset = initialOffset>>scaleDown + 1
 	}
 
-	spans = append(spans, prompb.BucketSpan{
+	spans = append(spans, histogram.Span{
 		Offset: initialOffset,
 		Length: 0,
 	})
 
-	for i := 0; i < numBuckets; i++ {
+	for i := range numBuckets {
 		nextBucketIdx := (int32(i)+offset)>>scaleDown + 1
 		if bucketIdx == nextBucketIdx { // We have not collected enough buckets to merge yet.
 			count += int64(bucketCounts[i])
@@ -214,14 +214,14 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 			// We have to create a new span, because we have found a gap
 			// of more than two buckets. The constant 2 is copied from the logic in
 			// https://github.com/prometheus/client_golang/blob/27f0506d6ebbb117b6b697d0552ee5be2502c5f2/prometheus/histogram.go#L1296
-			spans = append(spans, prompb.BucketSpan{
+			spans = append(spans, histogram.Span{
 				Offset: gap,
 				Length: 0,
 			})
 		} else {
 			// We have found a small gap (or no gap at all).
 			// Insert empty buckets as needed.
-			for j := int32(0); j < gap; j++ {
+			for range gap {
 				appendDelta(0)
 			}
 		}
@@ -236,14 +236,14 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 		// We have to create a new span, because we have found a gap
 		// of more than two buckets. The constant 2 is copied from the logic in
 		// https://github.com/prometheus/client_golang/blob/27f0506d6ebbb117b6b697d0552ee5be2502c5f2/prometheus/histogram.go#L1296
-		spans = append(spans, prompb.BucketSpan{
+		spans = append(spans, histogram.Span{
 			Offset: gap,
 			Length: 0,
 		})
 	} else {
 		// We have found a small gap (or no gap at all).
 		// Insert empty buckets as needed.
-		for j := int32(0); j < gap; j++ {
+		for range gap {
 			appendDelta(0)
 		}
 	}
@@ -253,8 +253,8 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 }
 
 func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string, temporality pmetric.AggregationTemporality,
-	scope scope,
+	resource pcommon.Resource, settings Settings, temporality pmetric.AggregationTemporality,
+	scope scope, meta Metadata,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 
@@ -265,37 +265,41 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 
 		pt := dataPoints.At(x)
 
-		histogram, ws, err := explicitHistogramToCustomBucketsHistogram(pt, temporality)
+		hp, ws, err := explicitHistogramToCustomBucketsHistogram(pt, temporality)
 		annots.Merge(ws)
 		if err != nil {
 			return annots, err
 		}
 
-		lbls := createAttributes(
+		lbls, err := c.createAttributes(
 			resource,
 			pt.Attributes(),
 			scope,
 			settings,
 			nil,
 			true,
+			meta,
 			model.MetricNameLabel,
-			promName,
+			meta.MetricFamilyName,
 		)
-
-		ts, _ := c.getOrCreateTimeSeries(lbls)
-		ts.Histograms = append(ts.Histograms, histogram)
-
-		exemplars, err := getPromExemplars[pmetric.HistogramDataPoint](ctx, &c.everyN, pt)
 		if err != nil {
 			return annots, err
 		}
-		ts.Exemplars = append(ts.Exemplars, exemplars...)
+		ts := convertTimeStamp(pt.Timestamp())
+		ct := convertTimeStamp(pt.StartTimestamp())
+		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
+		if err != nil {
+			return annots, err
+		}
+		if err = c.appender.AppendHistogram(lbls, meta, ct, ts, hp, exemplars); err != nil {
+			return annots, err
+		}
 	}
 
 	return annots, nil
 }
 
-func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint, temporality pmetric.AggregationTemporality) (prompb.Histogram, annotations.Annotations, error) {
+func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint, temporality pmetric.AggregationTemporality) (*histogram.Histogram, annotations.Annotations, error) {
 	var annots annotations.Annotations
 
 	buckets := p.BucketCounts().AsRaw()
@@ -312,23 +316,22 @@ func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint, tem
 	// need to know here if it was used for the detection.
 	// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
 	// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
-	resetHint := prompb.Histogram_UNKNOWN
+	resetHint := histogram.UnknownCounterReset
 
 	if temporality == pmetric.AggregationTemporalityDelta {
 		// If the histogram has delta temporality, set the reset hint to gauge to avoid unnecessary chunk cutting.
 		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/).
 		// This might be changed to a different hint name as gauge type might be misleading for samples that should be
 		// summed over time.
-		resetHint = prompb.Histogram_GAUGE
+		resetHint = histogram.GaugeType
 	}
 
 	// TODO(carrieedwards): Add setting to limit maximum bucket count
-	h := prompb.Histogram{
-		ResetHint: resetHint,
-		Schema:    histogram.CustomBucketsSchema,
-
-		PositiveSpans:  positiveSpans,
-		PositiveDeltas: positiveDeltas,
+	h := &histogram.Histogram{
+		CounterResetHint: resetHint,
+		Schema:           histogram.CustomBucketsSchema,
+		PositiveSpans:    positiveSpans,
+		PositiveBuckets:  positiveDeltas,
 		// Note: OTel explicit histograms have an implicit +Inf bucket, which has a lower bound
 		// of the last element in the explicit_bounds array.
 		// This is similar to the custom_values array in native histograms with custom buckets.
@@ -336,18 +339,16 @@ func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint, tem
 		// can be mapped directly to the custom_values array.
 		// See: https://github.com/open-telemetry/opentelemetry-proto/blob/d7770822d70c7bd47a6891fc9faacc66fc4af3d3/opentelemetry/proto/metrics/v1/metrics.proto#L469
 		CustomValues: p.ExplicitBounds().AsRaw(),
-
-		Timestamp: convertTimeStamp(p.Timestamp()),
 	}
 
 	if p.Flags().NoRecordedValue() {
 		h.Sum = math.Float64frombits(value.StaleNaN)
-		h.Count = &prompb.Histogram_CountInt{CountInt: value.StaleNaN}
+		h.Count = value.StaleNaN
 	} else {
 		if p.HasSum() {
 			h.Sum = p.Sum()
 		}
-		h.Count = &prompb.Histogram_CountInt{CountInt: p.Count()}
+		h.Count = p.Count()
 		if p.Count() == 0 && h.Sum != 0 {
 			annots.Add(fmt.Errorf("histogram data point has zero count, but non-zero sum: %f", h.Sum))
 		}

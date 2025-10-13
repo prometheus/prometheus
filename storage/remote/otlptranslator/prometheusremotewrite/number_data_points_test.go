@@ -26,7 +26,9 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
-	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 )
 
 func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
@@ -47,7 +49,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		want         func() map[uint64]*prompb.TimeSeries
+		want         func() []combinedSample
 	}{
 		{
 			name: "gauge without scope promotion",
@@ -60,19 +62,17 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test"},
-				}
-				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
-						Samples: []prompb.Sample{
-							{
-								Value:     1,
-								Timestamp: convertTimeStamp(pcommon.Timestamp(ts)),
-							},
-						},
+			want: func() []combinedSample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test",
+				)
+				return []combinedSample{
+					{
+						metricFamilyName: "test",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(pcommon.Timestamp(ts)),
+						v:                1,
 					},
 				}
 			},
@@ -88,24 +88,22 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test"},
-					{Name: "otel_scope_name", Value: defaultScope.name},
-					{Name: "otel_scope_schema_url", Value: defaultScope.schemaURL},
-					{Name: "otel_scope_version", Value: defaultScope.version},
-					{Name: "otel_scope_attr1", Value: "value1"},
-					{Name: "otel_scope_attr2", Value: "value2"},
-				}
-				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
-						Samples: []prompb.Sample{
-							{
-								Value:     1,
-								Timestamp: convertTimeStamp(pcommon.Timestamp(ts)),
-							},
-						},
+			want: func() []combinedSample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test",
+					"otel_scope_name", defaultScope.name,
+					"otel_scope_schema_url", defaultScope.schemaURL,
+					"otel_scope_version", defaultScope.version,
+					"otel_scope_attr1", "value1",
+					"otel_scope_attr2", "value2",
+				)
+				return []combinedSample{
+					{
+						metricFamilyName: "test",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(pcommon.Timestamp(ts)),
+						v:                1,
 					},
 				}
 			},
@@ -114,22 +112,24 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := tt.metric()
-			converter := NewPrometheusConverter()
+			mockAppender := &mockCombinedAppender{}
+			converter := NewPrometheusConverter(mockAppender)
 
 			converter.addGaugeNumberDataPoints(
 				context.Background(),
 				metric.Gauge().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					ExportCreatedMetric:  true,
 					PromoteScopeMetadata: tt.promoteScope,
 				},
-				metric.Name(),
 				tt.scope,
+				Metadata{
+					MetricFamilyName: metric.Name(),
+				},
 			)
+			require.NoError(t, mockAppender.Commit())
 
-			require.Equal(t, tt.want(), converter.unique)
-			require.Empty(t, converter.conflicts)
+			requireEqual(t, tt.want(), mockAppender.samples)
 		})
 	}
 }
@@ -152,7 +152,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		want         func() map[uint64]*prompb.TimeSeries
+		want         func() []combinedSample
 	}{
 		{
 			name: "sum without scope promotion",
@@ -166,19 +166,17 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test"},
-				}
-				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
-						Samples: []prompb.Sample{
-							{
-								Value:     1,
-								Timestamp: convertTimeStamp(ts),
-							},
-						},
+			want: func() []combinedSample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test",
+				)
+				return []combinedSample{
+					{
+						metricFamilyName: "test",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(ts),
+						v:                1,
 					},
 				}
 			},
@@ -195,24 +193,22 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test"},
-					{Name: "otel_scope_name", Value: defaultScope.name},
-					{Name: "otel_scope_schema_url", Value: defaultScope.schemaURL},
-					{Name: "otel_scope_version", Value: defaultScope.version},
-					{Name: "otel_scope_attr1", Value: "value1"},
-					{Name: "otel_scope_attr2", Value: "value2"},
-				}
-				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
-						Samples: []prompb.Sample{
-							{
-								Value:     1,
-								Timestamp: convertTimeStamp(ts),
-							},
-						},
+			want: func() []combinedSample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test",
+					"otel_scope_name", defaultScope.name,
+					"otel_scope_schema_url", defaultScope.schemaURL,
+					"otel_scope_version", defaultScope.version,
+					"otel_scope_attr1", "value1",
+					"otel_scope_attr2", "value2",
+				)
+				return []combinedSample{
+					{
+						metricFamilyName: "test",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(ts),
+						v:                1,
 					},
 				}
 			},
@@ -231,18 +227,18 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test"},
-				}
-				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
-						Samples: []prompb.Sample{{
-							Value:     1,
-							Timestamp: convertTimeStamp(ts),
-						}},
-						Exemplars: []prompb.Exemplar{
+			want: func() []combinedSample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test",
+				)
+				return []combinedSample{
+					{
+						metricFamilyName: "test",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(ts),
+						v:                1,
+						es: []exemplar.Exemplar{
 							{Value: 2},
 						},
 					},
@@ -266,25 +262,18 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_sum"},
-				}
-				createdLabels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_sum" + createdSuffix},
-				}
-				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
-						Samples: []prompb.Sample{
-							{Value: 1, Timestamp: convertTimeStamp(ts)},
-						},
-					},
-					timeSeriesSignature(createdLabels): {
-						Labels: createdLabels,
-						Samples: []prompb.Sample{
-							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
-						},
+			want: func() []combinedSample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_sum",
+				)
+				return []combinedSample{
+					{
+						metricFamilyName: "test_sum",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(ts),
+						ct:               convertTimeStamp(ts),
+						v:                1,
 					},
 				}
 			},
@@ -304,16 +293,17 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_sum"},
-				}
-				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
-						Samples: []prompb.Sample{
-							{Value: 0, Timestamp: convertTimeStamp(ts)},
-						},
+			want: func() []combinedSample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_sum",
+				)
+				return []combinedSample{
+					{
+						metricFamilyName: "test_sum",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(ts),
+						v:                0,
 					},
 				}
 			},
@@ -333,16 +323,17 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_sum"},
-				}
-				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
-						Samples: []prompb.Sample{
-							{Value: 0, Timestamp: convertTimeStamp(ts)},
-						},
+			want: func() []combinedSample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_sum",
+				)
+				return []combinedSample{
+					{
+						metricFamilyName: "test_sum",
+						ls:               lbls,
+						meta:             metadata.Metadata{},
+						t:                convertTimeStamp(ts),
+						v:                0,
 					},
 				}
 			},
@@ -351,23 +342,24 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := tt.metric()
-			converter := NewPrometheusConverter()
+			mockAppender := &mockCombinedAppender{}
+			converter := NewPrometheusConverter(mockAppender)
 
 			converter.addSumNumberDataPoints(
 				context.Background(),
 				metric.Sum().DataPoints(),
 				pcommon.NewResource(),
-				metric,
 				Settings{
-					ExportCreatedMetric:  true,
 					PromoteScopeMetadata: tt.promoteScope,
 				},
-				metric.Name(),
 				tt.scope,
+				Metadata{
+					MetricFamilyName: metric.Name(),
+				},
 			)
+			require.NoError(t, mockAppender.Commit())
 
-			require.Equal(t, tt.want(), converter.unique)
-			require.Empty(t, converter.conflicts)
+			requireEqual(t, tt.want(), mockAppender.samples)
 		})
 	}
 }

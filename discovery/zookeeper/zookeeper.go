@@ -59,7 +59,7 @@ type ServersetSDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*ServersetSDConfig) NewDiscovererMetrics(_ prometheus.Registerer, _ discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*ServersetSDConfig) NewDiscovererMetrics(prometheus.Registerer, discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &discovery.NoopDiscovererMetrics{}
 }
 
@@ -72,7 +72,7 @@ func (c *ServersetSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (dis
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultServersetSDConfig
 	type plain ServersetSDConfig
 	err := unmarshal((*plain)(c))
@@ -101,7 +101,7 @@ type NerveSDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*NerveSDConfig) NewDiscovererMetrics(_ prometheus.Registerer, _ discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*NerveSDConfig) NewDiscovererMetrics(prometheus.Registerer, discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &discovery.NoopDiscovererMetrics{}
 }
 
@@ -114,7 +114,7 @@ func (c *NerveSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discove
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultNerveSDConfig
 	type plain NerveSDConfig
 	err := unmarshal((*plain)(c))

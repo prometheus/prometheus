@@ -723,11 +723,11 @@ func createMockAzureClient(t *testing.T, vmResp []armcompute.VirtualMachinesClie
 
 func defaultMockInterfaceServer(interfaceResp armnetwork.Interface) fakenetwork.InterfacesServer {
 	return fakenetwork.InterfacesServer{
-		Get: func(_ context.Context, _, _ string, _ *armnetwork.InterfacesClientGetOptions) (resp azfake.Responder[armnetwork.InterfacesClientGetResponse], errResp azfake.ErrorResponder) {
+		Get: func(context.Context, string, string, *armnetwork.InterfacesClientGetOptions) (resp azfake.Responder[armnetwork.InterfacesClientGetResponse], errResp azfake.ErrorResponder) {
 			resp.SetResponse(http.StatusOK, armnetwork.InterfacesClientGetResponse{Interface: interfaceResp}, nil)
 			return
 		},
-		GetVirtualMachineScaleSetNetworkInterface: func(_ context.Context, _, _, _, _ string, _ *armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceOptions) (resp azfake.Responder[armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceResponse], errResp azfake.ErrorResponder) {
+		GetVirtualMachineScaleSetNetworkInterface: func(context.Context, string, string, string, string, *armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceOptions) (resp azfake.Responder[armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceResponse], errResp azfake.ErrorResponder) {
 			resp.SetResponse(http.StatusOK, armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceResponse{Interface: interfaceResp}, nil)
 			return
 		},
@@ -736,7 +736,7 @@ func defaultMockInterfaceServer(interfaceResp armnetwork.Interface) fakenetwork.
 
 func defaultMockVMServer(vmResp []armcompute.VirtualMachinesClientListAllResponse) fake.VirtualMachinesServer {
 	return fake.VirtualMachinesServer{
-		NewListAllPager: func(_ *armcompute.VirtualMachinesClientListAllOptions) (resp azfake.PagerResponder[armcompute.VirtualMachinesClientListAllResponse]) {
+		NewListAllPager: func(*armcompute.VirtualMachinesClientListAllOptions) (resp azfake.PagerResponder[armcompute.VirtualMachinesClientListAllResponse]) {
 			for _, page := range vmResp {
 				resp.AddPage(http.StatusOK, page, nil)
 			}
@@ -747,7 +747,7 @@ func defaultMockVMServer(vmResp []armcompute.VirtualMachinesClientListAllRespons
 
 func defaultMockVMSSServer(vmssResp []armcompute.VirtualMachineScaleSetsClientListAllResponse) fake.VirtualMachineScaleSetsServer {
 	return fake.VirtualMachineScaleSetsServer{
-		NewListAllPager: func(_ *armcompute.VirtualMachineScaleSetsClientListAllOptions) (resp azfake.PagerResponder[armcompute.VirtualMachineScaleSetsClientListAllResponse]) {
+		NewListAllPager: func(*armcompute.VirtualMachineScaleSetsClientListAllOptions) (resp azfake.PagerResponder[armcompute.VirtualMachineScaleSetsClientListAllResponse]) {
 			for _, page := range vmssResp {
 				resp.AddPage(http.StatusOK, page, nil)
 			}

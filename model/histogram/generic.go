@@ -21,23 +21,42 @@ import (
 )
 
 const (
-	ExponentialSchemaMax int32 = 8
-	ExponentialSchemaMin int32 = -4
-	CustomBucketsSchema  int32 = -53
+	ExponentialSchemaMax         int32 = 8
+	ExponentialSchemaMaxReserved int32 = 52
+	ExponentialSchemaMin         int32 = -4
+	ExponentialSchemaMinReserved int32 = -9
+	CustomBucketsSchema          int32 = -53
 )
 
 var (
-	ErrHistogramCountNotBigEnough     = errors.New("histogram's observation count should be at least the number of observations found in the buckets")
-	ErrHistogramCountMismatch         = errors.New("histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)")
-	ErrHistogramNegativeBucketCount   = errors.New("histogram has a bucket whose observation count is negative")
-	ErrHistogramSpanNegativeOffset    = errors.New("histogram has a span whose offset is negative")
-	ErrHistogramSpansBucketsMismatch  = errors.New("histogram spans specify different number of buckets than provided")
-	ErrHistogramCustomBucketsMismatch = errors.New("histogram custom bounds are too few")
-	ErrHistogramCustomBucketsInvalid  = errors.New("histogram custom bounds must be in strictly increasing order")
-	ErrHistogramCustomBucketsInfinite = errors.New("histogram custom bounds must be finite")
-	ErrHistogramsIncompatibleSchema   = errors.New("cannot apply this operation on histograms with a mix of exponential and custom bucket schemas")
-	ErrHistogramsIncompatibleBounds   = errors.New("cannot apply this operation on custom buckets histograms with different custom bounds")
+	ErrHistogramCountNotBigEnough       = errors.New("histogram's observation count should be at least the number of observations found in the buckets")
+	ErrHistogramCountMismatch           = errors.New("histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)")
+	ErrHistogramNegativeCount           = errors.New("histogram's observation count is negative")
+	ErrHistogramNegativeBucketCount     = errors.New("histogram has a bucket whose observation count is negative")
+	ErrHistogramSpanNegativeOffset      = errors.New("histogram has a span whose offset is negative")
+	ErrHistogramSpansBucketsMismatch    = errors.New("histogram spans specify different number of buckets than provided")
+	ErrHistogramCustomBucketsMismatch   = errors.New("histogram custom bounds are too few")
+	ErrHistogramCustomBucketsInvalid    = errors.New("histogram custom bounds must be in strictly increasing order")
+	ErrHistogramCustomBucketsInfinite   = errors.New("histogram custom bounds must be finite")
+	ErrHistogramCustomBucketsNaN        = errors.New("histogram custom bounds must not be NaN")
+	ErrHistogramsIncompatibleSchema     = errors.New("cannot apply this operation on histograms with a mix of exponential and custom bucket schemas")
+	ErrHistogramsIncompatibleBounds     = errors.New("cannot apply this operation on custom buckets histograms with different custom bounds")
+	ErrHistogramCustomBucketsZeroCount  = errors.New("custom buckets: must have zero count of 0")
+	ErrHistogramCustomBucketsZeroThresh = errors.New("custom buckets: must have zero threshold of 0")
+	ErrHistogramCustomBucketsNegSpans   = errors.New("custom buckets: must not have negative spans")
+	ErrHistogramCustomBucketsNegBuckets = errors.New("custom buckets: must not have negative buckets")
+	ErrHistogramExpSchemaCustomBounds   = errors.New("histogram with exponential schema must not have custom bounds")
+	ErrHistogramsInvalidSchema          = fmt.Errorf("histogram has an invalid schema, which must be between %d and %d for exponential buckets, or %d for custom buckets", ExponentialSchemaMin, ExponentialSchemaMax, CustomBucketsSchema)
+	ErrHistogramsUnknownSchema          = fmt.Errorf("histogram has an unknown schema, which must be between %d and %d for exponential buckets, or %d for custom buckets", ExponentialSchemaMinReserved, ExponentialSchemaMaxReserved, CustomBucketsSchema)
 )
+
+func InvalidSchemaError(s int32) error {
+	return fmt.Errorf("%w, got schema %d", ErrHistogramsInvalidSchema, s)
+}
+
+func UnknownSchemaError(s int32) error {
+	return fmt.Errorf("%w, got schema %d", ErrHistogramsUnknownSchema, s)
+}
 
 func IsCustomBucketsSchema(s int32) bool {
 	return s == CustomBucketsSchema
@@ -45,6 +64,34 @@ func IsCustomBucketsSchema(s int32) bool {
 
 func IsExponentialSchema(s int32) bool {
 	return s >= ExponentialSchemaMin && s <= ExponentialSchemaMax
+}
+
+func IsExponentialSchemaReserved(s int32) bool {
+	return s >= ExponentialSchemaMinReserved && s <= ExponentialSchemaMaxReserved
+}
+
+func IsValidSchema(s int32) bool {
+	return IsCustomBucketsSchema(s) || IsExponentialSchema(s)
+}
+
+// IsKnownSchema returns bool if we known and accept the schema, but need to
+// reduce resolution to the nearest supported schema.
+func IsKnownSchema(s int32) bool {
+	return IsCustomBucketsSchema(s) || IsExponentialSchemaReserved(s)
+}
+
+// CustomBucketBoundsMatch compares histogram custom bucket bounds (CustomValues)
+// and returns true if all values match.
+func CustomBucketBoundsMatch(c1, c2 []float64) bool {
+	if len(c1) != len(c2) {
+		return false
+	}
+	for i, c := range c1 {
+		if c != c2[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // BucketCount is a type constraint for the count in a bucket, which can be
@@ -402,7 +449,7 @@ func checkHistogramBuckets[BC BucketCount, IBC InternalBucketCount](buckets []IB
 	}
 
 	var last IBC
-	for i := 0; i < len(buckets); i++ {
+	for i := range buckets {
 		var c IBC
 		if deltas {
 			c = last + buckets[i]
@@ -421,8 +468,11 @@ func checkHistogramBuckets[BC BucketCount, IBC InternalBucketCount](buckets []IB
 
 func checkHistogramCustomBounds(bounds []float64, spans []Span, numBuckets int) error {
 	prev := math.Inf(-1)
-	for _, curr := range bounds {
-		if curr <= prev {
+	for i, curr := range bounds {
+		if math.IsNaN(curr) {
+			return ErrHistogramCustomBucketsNaN
+		}
+		if i > 0 && curr <= prev {
 			return fmt.Errorf("previous bound is %f and current is %f: %w", prev, curr, ErrHistogramCustomBucketsInvalid)
 		}
 		prev = curr

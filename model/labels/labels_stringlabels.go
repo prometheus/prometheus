@@ -449,11 +449,11 @@ func (ls Labels) DropReserved(shouldDropFn func(name string) bool) Labels {
 }
 
 // InternStrings is a no-op because it would only save when the whole set of labels is identical.
-func (ls *Labels) InternStrings(_ func(string) string) {
+func (*Labels) InternStrings(func(string) string) {
 }
 
 // ReleaseStrings is a no-op for the same reason as InternStrings.
-func (ls Labels) ReleaseStrings(_ func(string)) {
+func (Labels) ReleaseStrings(func(string)) {
 }
 
 // Builder allows modifying Labels.
@@ -614,14 +614,9 @@ func (b *ScratchBuilder) Reset() {
 
 // Add a name/value pair.
 // Note if you Add the same name twice you will get a duplicate label, which is invalid.
+// The values must remain live until Labels() is called.
 func (b *ScratchBuilder) Add(name, value string) {
 	b.add = append(b.add, Label{Name: name, Value: value})
-}
-
-// UnsafeAddBytes adds a name/value pair using []byte instead of string to reduce memory allocations.
-// The values must remain live until Labels() is called.
-func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
-	b.add = append(b.add, Label{Name: yoloString(name), Value: yoloString(value)})
 }
 
 // Sort the labels added so far by name.
@@ -664,10 +659,10 @@ type SymbolTable struct{}
 
 func NewSymbolTable() *SymbolTable { return nil }
 
-func (t *SymbolTable) Len() int { return 0 }
+func (*SymbolTable) Len() int { return 0 }
 
 // NewBuilderWithSymbolTable creates a Builder, for api parity with dedupelabels.
-func NewBuilderWithSymbolTable(_ *SymbolTable) *Builder {
+func NewBuilderWithSymbolTable(*SymbolTable) *Builder {
 	return NewBuilder(EmptyLabels())
 }
 
@@ -676,9 +671,16 @@ func NewScratchBuilderWithSymbolTable(_ *SymbolTable, n int) ScratchBuilder {
 	return NewScratchBuilder(n)
 }
 
-func (b *ScratchBuilder) SetSymbolTable(_ *SymbolTable) {
+func (*ScratchBuilder) SetSymbolTable(*SymbolTable) {
 	// no-op
 }
+
+// SetUnsafeAdd allows turning on/off the assumptions that added strings are unsafe
+// for reuse. ScratchBuilder implementations that do reuse strings, must clone
+// the strings.
+//
+// StringLabels implementation copies all strings when Labels() is called, so this operation is noop.
+func (ScratchBuilder) SetUnsafeAdd(bool) {}
 
 // SizeOfLabels returns the approximate space required for n copies of a label.
 func SizeOfLabels(name, value string, n uint64) uint64 {

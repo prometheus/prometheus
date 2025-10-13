@@ -65,7 +65,7 @@ func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]chunks.Sampl
 		if err != nil {
 			return &ChunkSeriesEntry{
 				Lset: lset,
-				ChunkIteratorFn: func(_ chunks.Iterator) chunks.Iterator {
+				ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
 					return errChunksIterator{err: err}
 				},
 			}
@@ -169,7 +169,7 @@ func (it *listSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	return it.samples.Get(it.idx).Type()
 }
 
-func (it *listSeriesIterator) Err() error { return nil }
+func (*listSeriesIterator) Err() error { return nil }
 
 type listSeriesIteratorWithCopy struct {
 	*listSeriesIterator
@@ -223,7 +223,7 @@ func (it *listChunkSeriesIterator) Next() bool {
 	return it.idx < len(it.chks)
 }
 
-func (it *listChunkSeriesIterator) Err() error { return nil }
+func (*listChunkSeriesIterator) Err() error { return nil }
 
 type chunkSetToSeriesSet struct {
 	ChunkSeriesSet
@@ -432,9 +432,9 @@ type errChunksIterator struct {
 	err error
 }
 
-func (e errChunksIterator) At() chunks.Meta { return chunks.Meta{} }
-func (e errChunksIterator) Next() bool      { return false }
-func (e errChunksIterator) Err() error      { return e.err }
+func (errChunksIterator) At() chunks.Meta { return chunks.Meta{} }
+func (errChunksIterator) Next() bool      { return false }
+func (e errChunksIterator) Err() error    { return e.err }
 
 // ExpandSamples iterates over all samples in the iterator, buffering all in slice.
 // Optionally it takes samples constructor, useful when you want to compare sample slices with different

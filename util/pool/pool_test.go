@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func makeFunc(size int) interface{} {
+func makeFunc(size int) any {
 	return make([]int, 0, size)
 }
 

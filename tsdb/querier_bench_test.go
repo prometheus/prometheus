@@ -46,8 +46,9 @@ func BenchmarkQuerier(b *testing.B) {
 		app.Append(0, l, 0, 0)
 	}
 
-	for n := 0; n < 10; n++ {
-		for i := 0; i < 100000; i++ {
+	for n := range 10 {
+		addSeries(labels.FromStrings("a", strconv.Itoa(n)+postingsBenchSuffix))
+		for i := range 100000 {
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", strconv.Itoa(n)+postingsBenchSuffix, "j", "foo"))
 			// Have some series that won't be matched, to properly test inverted matches.
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", strconv.Itoa(n)+postingsBenchSuffix, "j", "bar"))
@@ -101,7 +102,9 @@ func BenchmarkQuerier(b *testing.B) {
 func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	ctx := context.Background()
 
+	a1 := labels.MustNewMatcher(labels.MatchEqual, "a", "1"+postingsBenchSuffix)
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+postingsBenchSuffix)
+	n0_1 := labels.MustNewMatcher(labels.MatchEqual, "n", "0_1"+postingsBenchSuffix)
 	nX := labels.MustNewMatcher(labels.MatchEqual, "n", "X"+postingsBenchSuffix)
 
 	jFoo := labels.MustNewMatcher(labels.MatchEqual, "j", "foo")
@@ -137,6 +140,7 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`j="foo",n="1"`, []*labels.Matcher{jFoo, n1}},
 		{`n="1",j!="foo"`, []*labels.Matcher{n1, jNotFoo}},
 		{`n="1",i!="2"`, []*labels.Matcher{n1, iNot2}},
+		{`n="0_1",j="foo,a="1"`, []*labels.Matcher{n0_1, jFoo, a1}},
 		{`n="X",j!="foo"`, []*labels.Matcher{nX, jNotFoo}},
 		{`i=~"1[0-9]",j=~"foo|bar"`, []*labels.Matcher{iCharSet, jFooBar}},
 		{`j=~"foo|bar"`, []*labels.Matcher{jFooBar}},
@@ -176,8 +180,12 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_, err := PostingsForMatchers(ctx, ir, c.matchers...)
+				p, err := PostingsForMatchers(ctx, ir, c.matchers...)
 				require.NoError(b, err)
+				// Iterate over the postings
+				for p.Next() {
+					// Do nothing
+				}
 			}
 		})
 	}
@@ -238,13 +246,13 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 func BenchmarkMergedStringIter(b *testing.B) {
 	numSymbols := 100000
 	s := make([]string, numSymbols)
-	for i := 0; i < numSymbols; i++ {
+	for i := range numSymbols {
 		s[i] = fmt.Sprintf("symbol%v", i)
 	}
 
 	for i := 0; i < b.N; i++ {
 		it := NewMergedStringIter(index.NewStringListIter(s), index.NewStringListIter(s))
-		for j := 0; j < 100; j++ {
+		for range 100 {
 			it = NewMergedStringIter(it, index.NewStringListIter(s))
 		}
 
@@ -270,7 +278,7 @@ func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(ap
 	h := db.Head()
 
 	app := h.Appender(context.Background())
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		addSeries(app, i)
 		if i%1000 == 999 { // Commit every so often, so the appender doesn't get too big.
 			require.NoError(b, app.Commit())

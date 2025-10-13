@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -64,7 +64,7 @@ type Storage struct {
 }
 
 // NewStorage returns a remote.Storage.
-func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager) *Storage {
+func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels bool) *Storage {
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
@@ -76,7 +76,7 @@ func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeC
 		deduper:                deduper,
 		localStartTimeCallback: stCallback,
 	}
-	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm)
+	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm, enableTypeAndUnitLabels)
 	return s
 }
 
@@ -145,7 +145,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 }
 
 // StartTime implements the Storage interface.
-func (s *Storage) StartTime() (int64, error) {
+func (*Storage) StartTime() (int64, error) {
 	return int64(model.Latest), nil
 }
 
@@ -219,7 +219,7 @@ func labelsToEqualityMatchers(ls model.LabelSet) []*labels.Matcher {
 }
 
 // Used for hashing configs and diff'ing hashes in ApplyConfig.
-func toHash(data interface{}) (string, error) {
+func toHash(data any) (string, error) {
 	bytes, err := yaml.Marshal(data)
 	if err != nil {
 		return "", err

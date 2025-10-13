@@ -149,9 +149,10 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
-		name         string
-		reqHeaders   map[string]string
-		expectedCode int
+		name          string
+		reqHeaders    map[string]string
+		expectedCode  int
+		expectedError string
 	}{
 		{
 			name: "correct PRW 2.0 headers",
@@ -171,9 +172,10 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			expectedCode: http.StatusNoContent, // We don't check for now.
 		},
 		{
-			name:         "no headers",
-			reqHeaders:   map[string]string{},
-			expectedCode: http.StatusUnsupportedMediaType,
+			name:          "no headers",
+			reqHeaders:    map[string]string{},
+			expectedCode:  http.StatusUnsupportedMediaType,
+			expectedError: "prometheus.WriteRequest protobuf message is not accepted by this server; accepted [io.prometheus.write.v2.Request]",
 		},
 		{
 			name: "missing content-type",
@@ -185,7 +187,8 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			// (default) it would be empty message parsed and ok response.
 			// This is perhaps better, than 415 for previously working 1.0 flow with
 			// no content-type.
-			expectedCode: http.StatusUnsupportedMediaType,
+			expectedCode:  http.StatusUnsupportedMediaType,
+			expectedError: "prometheus.WriteRequest protobuf message is not accepted by this server; accepted [io.prometheus.write.v2.Request]",
 		},
 		{
 			name: "missing content-encoding",
@@ -202,7 +205,8 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
-			expectedCode: http.StatusUnsupportedMediaType,
+			expectedCode:  http.StatusUnsupportedMediaType,
+			expectedError: "expected application/x-protobuf as the first (media) part, got yolo content-type",
 		},
 		{
 			name: "wrong content-type2",
@@ -211,7 +215,8 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
-			expectedCode: http.StatusUnsupportedMediaType,
+			expectedCode:  http.StatusUnsupportedMediaType,
+			expectedError: "got application/x-protobuf;proto=yolo content type; unknown remote write protobuf message yolo, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request",
 		},
 		{
 			name: "not supported content-encoding",
@@ -220,7 +225,8 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 				"Content-Encoding":       "zstd",
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
-			expectedCode: http.StatusUnsupportedMediaType,
+			expectedCode:  http.StatusUnsupportedMediaType,
+			expectedError: "zstd encoding (compression) is not accepted by this server; only snappy is acceptable",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -241,8 +247,47 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			require.NoError(t, err)
 			_ = resp.Body.Close()
 			require.Equal(t, tc.expectedCode, resp.StatusCode, string(out))
+			if tc.expectedCode/100 == 2 {
+				return
+			}
+
+			// Invalid request case - no samples should be written.
+			require.Equal(t, tc.expectedError, strings.TrimSpace(string(out)))
+			require.Empty(t, appendable.samples)
+			require.Empty(t, appendable.histograms)
+			require.Empty(t, appendable.exemplars)
 		})
 	}
+
+	t.Run("unsupported v1 request", func(t *testing.T) {
+		payload, _, _, err := buildWriteRequest(promslog.NewNopLogger(), writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
+		require.NoError(t, err)
+		req, err := http.NewRequest("", "", bytes.NewReader(payload))
+		require.NoError(t, err)
+		for k, v := range map[string]string{
+			"Content-Type":     remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV1],
+			"Content-Encoding": compression.Snappy,
+		} {
+			req.Header.Set(k, v)
+		}
+
+		appendable := &mockAppendable{}
+		handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false)
+
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+
+		resp := recorder.Result()
+		out, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		require.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode, string(out))
+
+		require.Equal(t, "prometheus.WriteRequest protobuf message is not accepted by this server; accepted [io.prometheus.write.v2.Request]", strings.TrimSpace(string(out)))
+		require.Empty(t, appendable.samples)
+		require.Empty(t, appendable.histograms)
+		require.Empty(t, appendable.exemplars)
+	})
 }
 
 func TestRemoteWriteHandler_V1Message(t *testing.T) {
@@ -356,6 +401,38 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				writeV2RequestFixture.Timeseries...),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "invalid labels for series, labels {__name__=\"test_metric1\", test_metric1=\"test_metric1\", test_metric1=\"test_metric1\"}, duplicated label test_metric1\n",
+		},
+		{
+			desc: "Partial write; first series with odd number of label refs",
+			input: append(
+				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 3}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				writeV2RequestFixture.Timeseries...),
+			expectedCode:     http.StatusBadRequest,
+			expectedRespBody: "parsing labels for series [1 2 3]: invalid labelRefs length 3\n",
+		},
+		{
+			desc: "Partial write; first series with out-of-bounds symbol references",
+			input: append(
+				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 999}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				writeV2RequestFixture.Timeseries...),
+			expectedCode:     http.StatusBadRequest,
+			expectedRespBody: "parsing labels for series [1 999]: labelRefs 1 (name) = 999 (value) outside of symbols table (size 18)\n",
+		},
+		{
+			desc: "Partial write; TimeSeries with only exemplars (no samples or histograms)",
+			input: append(
+				// Series with only exemplars, no samples or histograms.
+				[]writev2.TimeSeries{{
+					LabelsRefs: []uint32{1, 2},
+					Exemplars: []writev2.Exemplar{{
+						LabelsRefs: []uint32{},
+						Value:      1.0,
+						Timestamp:  1,
+					}},
+				}},
+				writeV2RequestFixture.Timeseries...),
+			expectedCode:     http.StatusBadRequest,
+			expectedRespBody: "TimeSeries must contain at least one sample or histogram for series {__name__=\"test_metric1\"}\n",
 		},
 		{
 			desc: "Partial write; first series with one OOO sample",
@@ -498,7 +575,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			for _, ts := range writeV2RequestFixture.Timeseries {
 				zeroHistogramIngested := false
 				zeroFloatHistogramIngested := false
-				ls := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
+				ls, err := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
+				require.NoError(t, err)
 
 				for _, s := range ts.Samples {
 					if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
@@ -534,7 +612,9 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				}
 				if tc.appendExemplarErr == nil {
 					for _, e := range ts.Exemplars {
-						exemplarLabels := e.ToExemplar(&b, writeV2RequestFixture.Symbols).Labels
+						ex, err := e.ToExemplar(&b, writeV2RequestFixture.Symbols)
+						require.NoError(t, err)
+						exemplarLabels := ex.Labels
 						requireEqual(t, mockExemplar{ls, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
 						j++
 					}
@@ -667,31 +747,58 @@ func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 }
 
 func BenchmarkRemoteWriteHandler(b *testing.B) {
-	const labelValue = "abcdefg'hijlmn234!@#$%^&*()_+~`\"{}[],./<>?hello0123hiOlá你好Dzieńdobry9Zd8ra765v4stvuyte"
-	var reqs []*http.Request
-	for i := 0; i < b.N; i++ {
-		num := strings.Repeat(strconv.Itoa(i), 16)
-		buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
-			Labels: []prompb.Label{
-				{Name: "__name__", Value: "test_metric"},
-				{Name: "test_label_name_" + num, Value: labelValue + num},
-			},
-			Histograms: []prompb.Histogram{prompb.FromIntHistogram(0, &testHistogram)},
-		}}, nil, nil, nil, nil, "snappy")
-		require.NoError(b, err)
-		req, err := http.NewRequest("", "", bytes.NewReader(buf))
-		require.NoError(b, err)
-		reqs = append(reqs, req)
+	labelStrings := []string{
+		"__name__", "test_metric",
+		"test_label_name", "abcdefg'hijlmn234!@#$%^&*()_+~`\"{}[],./<>?hello0123hiOlá你好Dzieńdobry9Zd8ra765v4stvuyte",
 	}
+	v1Labels := prompb.FromLabels(labels.FromStrings(labelStrings...), nil)
 
-	appendable := &mockAppendable{}
-	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
-	recorder := httptest.NewRecorder()
+	testCases := []struct {
+		name        string
+		payloadFunc func() ([]byte, error)
+		protoFormat config.RemoteWriteProtoMsg
+	}{
+		{
+			name: "V1 Write",
+			payloadFunc: func() ([]byte, error) {
+				buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
+					Labels:     v1Labels,
+					Histograms: []prompb.Histogram{prompb.FromIntHistogram(0, &testHistogram)},
+				}}, nil, nil, nil, nil, "snappy")
+				return buf, err
+			},
+			protoFormat: config.RemoteWriteProtoMsgV1,
+		},
+		{
+			name: "V2 Write",
+			payloadFunc: func() ([]byte, error) {
+				buf, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{{
+					LabelsRefs: []uint32{0, 1, 2, 3},
+					Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, &testHistogram)},
+				}}, labelStrings,
+					nil, nil, nil, "snappy")
+				return buf, err
+			},
+			protoFormat: config.RemoteWriteProtoMsgV2,
+		},
+	}
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			appendable := &mockAppendable{}
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{tc.protoFormat}, false)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				buf, err := tc.payloadFunc()
+				require.NoError(b, err)
+				req, err := http.NewRequest("", "", bytes.NewReader(buf))
+				require.NoError(b, err)
+				b.StartTimer()
 
-	b.ResetTimer()
-	for _, req := range reqs {
-		handler.ServeHTTP(recorder, req)
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, req)
+			}
+		})
 	}
 }
 
@@ -713,6 +820,94 @@ func TestCommitErr_V1Message(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	require.Equal(t, "commit error\n", string(body))
+}
+
+// Regression test for https://github.com/prometheus/prometheus/issues/17206
+func TestHistogramValidationErrorHandling(t *testing.T) {
+	testCases := []struct {
+		desc     string
+		hist     histogram.Histogram
+		expected string
+	}{
+		{
+			desc: "count mismatch",
+			hist: histogram.Histogram{
+				Schema:          2,
+				ZeroThreshold:   1e-128,
+				ZeroCount:       1,
+				Count:           10,
+				Sum:             20,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{2},
+				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				NegativeBuckets: []int64{3},
+				// Total: 1 (zero) + 2 (positive) + 3 (negative) = 6, but Count = 10
+			},
+			expected: "histogram's observation count should equal",
+		},
+		{
+			desc: "custom buckets zero count",
+			hist: histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           10,
+				Sum:             20,
+				ZeroCount:       1, // Invalid: custom buckets must have zero count of 0
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{10},
+				CustomValues:    []float64{1.0},
+			},
+			expected: "custom buckets: must have zero count of 0",
+		},
+	}
+
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		protoName := "V1"
+		if protoMsg == config.RemoteWriteProtoMsgV2 {
+			protoName = "V2"
+		}
+
+		for _, tc := range testCases {
+			testName := fmt.Sprintf("%s %s", protoName, tc.desc)
+			t.Run(testName, func(t *testing.T) {
+				dir := t.TempDir()
+				opts := tsdb.DefaultOptions()
+				opts.EnableNativeHistograms = true
+
+				db, err := tsdb.Open(dir, nil, nil, opts, nil)
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+				handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{protoMsg}, false)
+				recorder := httptest.NewRecorder()
+
+				var buf []byte
+				if protoMsg == config.RemoteWriteProtoMsgV1 {
+					ts := []prompb.TimeSeries{{
+						Labels:     []prompb.Label{{Name: "__name__", Value: "test"}},
+						Histograms: []prompb.Histogram{prompb.FromIntHistogram(1, &tc.hist)},
+					}}
+					buf, _, _, err = buildWriteRequest(nil, ts, nil, nil, nil, nil, "snappy")
+				} else {
+					st := writev2.NewSymbolTable()
+					ts := []writev2.TimeSeries{{
+						LabelsRefs: st.SymbolizeLabels(labels.FromStrings("__name__", "test"), nil),
+						Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, &tc.hist)},
+					}}
+					buf, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), ts, st.Symbols(), nil, nil, nil, "snappy")
+				}
+				require.NoError(t, err)
+
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/write", bytes.NewReader(buf))
+				req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[protoMsg])
+				req.Header.Set("Content-Encoding", "snappy")
+
+				handler.ServeHTTP(recorder, req)
+
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+				require.Contains(t, recorder.Body.String(), tc.expected)
+			})
+		}
+	}
 }
 
 func TestCommitErr_V2Message(t *testing.T) {
@@ -768,14 +963,14 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 	require.Equal(b, uint64(1000), db.Head().NumSeries())
 
 	var bufRequests [][]byte
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		buf, _, _, err = buildWriteRequest(nil, genSeriesWithSample(1000, int64(80+i)*time.Minute.Milliseconds()), nil, nil, nil, nil, "snappy")
 		require.NoError(b, err)
 		bufRequests = append(bufRequests, buf)
 	}
 
 	b.ResetTimer()
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		req, err = http.NewRequest("", "", bytes.NewReader(bufRequests[i]))
 		require.NoError(b, err)
 
@@ -788,7 +983,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 
 func genSeriesWithSample(numSeries int, ts int64) []prompb.TimeSeries {
 	var series []prompb.TimeSeries
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		s := prompb.TimeSeries{
 			Labels:  []prompb.Label{{Name: "__name__", Value: fmt.Sprintf("test_metric_%d", i)}},
 			Samples: []prompb.Sample{{Value: float64(i), Timestamp: ts}},
@@ -844,7 +1039,7 @@ type mockMetadata struct {
 }
 
 // Wrapper to instruct go-cmp package to compare a list of structs with unexported fields.
-func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...interface{}) {
+func requireEqual(t *testing.T, expected, actual any, msgAndArgs ...any) {
 	t.Helper()
 
 	testutil.RequireEqualWithOptions(t, expected, actual,
@@ -852,7 +1047,7 @@ func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...inte
 		msgAndArgs...)
 }
 
-func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
+func (m *mockAppendable) Appender(context.Context) storage.Appender {
 	if m.latestSample == nil {
 		m.latestSample = map[uint64]int64{}
 	}
@@ -868,7 +1063,7 @@ func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	return m
 }
 
-func (m *mockAppendable) SetOptions(_ *storage.AppendOptions) {
+func (*mockAppendable) SetOptions(*storage.AppendOptions) {
 	panic("unimplemented")
 }
 
@@ -876,8 +1071,8 @@ func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v
 	if m.appendSampleErr != nil {
 		return 0, m.appendSampleErr
 	}
-
-	latestTs := m.latestSample[l.Hash()]
+	hash := l.Hash()
+	latestTs := m.latestSample[hash]
 	if t < latestTs {
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -892,9 +1087,9 @@ func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v
 		return 0, tsdb.ErrInvalidSample
 	}
 
-	m.latestSample[l.Hash()] = t
+	m.latestSample[hash] = t
 	m.samples = append(m.samples, mockSample{l, t, v})
-	return 0, nil
+	return storage.SeriesRef(hash), nil
 }
 
 func (m *mockAppendable) Commit() error {
@@ -912,12 +1107,12 @@ func (m *mockAppendable) Rollback() error {
 	return nil
 }
 
-func (m *mockAppendable) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+func (m *mockAppendable) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	if m.appendExemplarErr != nil {
 		return 0, m.appendExemplarErr
 	}
 
-	latestTs := m.latestExemplar[l.Hash()]
+	latestTs := m.latestExemplar[uint64(ref)]
 	if e.Ts < latestTs {
 		return 0, storage.ErrOutOfOrderExemplar
 	}
@@ -925,21 +1120,21 @@ func (m *mockAppendable) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e 
 		return 0, storage.ErrDuplicateExemplar
 	}
 
-	m.latestExemplar[l.Hash()] = e.Ts
+	m.latestExemplar[uint64(ref)] = e.Ts
 	m.exemplars = append(m.exemplars, mockExemplar{l, e.Labels, e.Ts, e.Value})
-	return 0, nil
+	return ref, nil
 }
 
 func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if m.appendHistogramErr != nil {
 		return 0, m.appendHistogramErr
 	}
-
+	hash := l.Hash()
 	var latestTs int64
 	if h != nil {
-		latestTs = m.latestHistogram[l.Hash()]
+		latestTs = m.latestHistogram[hash]
 	} else {
-		latestTs = m.latestFloatHist[l.Hash()]
+		latestTs = m.latestFloatHist[hash]
 	}
 	if t < latestTs {
 		return 0, storage.ErrOutOfOrderSample
@@ -956,12 +1151,12 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	}
 
 	if h != nil {
-		m.latestHistogram[l.Hash()] = t
+		m.latestHistogram[hash] = t
 	} else {
-		m.latestFloatHist[l.Hash()] = t
+		m.latestFloatHist[hash] = t
 	}
 	m.histograms = append(m.histograms, mockHistogram{l, t, h, fh})
-	return 0, nil
+	return storage.SeriesRef(hash), nil
 }
 
 func (m *mockAppendable) AppendHistogramCTZeroSample(_ storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
@@ -973,12 +1168,12 @@ func (m *mockAppendable) AppendHistogramCTZeroSample(_ storage.SeriesRef, l labe
 	if ct > t {
 		return 0, storage.ErrOutOfOrderSample
 	}
-
+	hash := l.Hash()
 	var latestTs int64
 	if h != nil {
-		latestTs = m.latestHistogram[l.Hash()]
+		latestTs = m.latestHistogram[hash]
 	} else {
-		latestTs = m.latestFloatHist[l.Hash()]
+		latestTs = m.latestFloatHist[hash]
 	}
 	if ct < latestTs {
 		return 0, storage.ErrOutOfOrderSample
@@ -996,22 +1191,22 @@ func (m *mockAppendable) AppendHistogramCTZeroSample(_ storage.SeriesRef, l labe
 	}
 
 	if h != nil {
-		m.latestHistogram[l.Hash()] = ct
+		m.latestHistogram[hash] = ct
 		m.histograms = append(m.histograms, mockHistogram{l, ct, &histogram.Histogram{}, nil})
 	} else {
-		m.latestFloatHist[l.Hash()] = ct
+		m.latestFloatHist[hash] = ct
 		m.histograms = append(m.histograms, mockHistogram{l, ct, nil, &histogram.FloatHistogram{}})
 	}
-	return 0, nil
+	return storage.SeriesRef(hash), nil
 }
 
-func (m *mockAppendable) UpdateMetadata(_ storage.SeriesRef, l labels.Labels, mp metadata.Metadata) (storage.SeriesRef, error) {
+func (m *mockAppendable) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, mp metadata.Metadata) (storage.SeriesRef, error) {
 	if m.updateMetadataErr != nil {
 		return 0, m.updateMetadataErr
 	}
 
 	m.metadata = append(m.metadata, mockMetadata{l: l, m: mp})
-	return 0, nil
+	return ref, nil
 }
 
 func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
@@ -1023,8 +1218,8 @@ func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, l labels.Labels
 	if ct > t {
 		return 0, storage.ErrOutOfOrderSample
 	}
-
-	latestTs := m.latestSample[l.Hash()]
+	hash := l.Hash()
+	latestTs := m.latestSample[hash]
 	if ct < latestTs {
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -1039,7 +1234,104 @@ func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, l labels.Labels
 		return 0, tsdb.ErrInvalidSample
 	}
 
-	m.latestSample[l.Hash()] = ct
+	m.latestSample[hash] = ct
 	m.samples = append(m.samples, mockSample{l, ct, 0})
-	return 0, nil
+	return storage.SeriesRef(hash), nil
+}
+
+var (
+	highSchemaHistogram = &histogram.Histogram{
+		Schema: 10,
+		PositiveSpans: []histogram.Span{
+			{
+				Offset: -1,
+				Length: 2,
+			},
+		},
+		PositiveBuckets: []int64{1, 2},
+		NegativeSpans: []histogram.Span{
+			{
+				Offset: 0,
+				Length: 1,
+			},
+		},
+		NegativeBuckets: []int64{1},
+	}
+	reducedSchemaHistogram = &histogram.Histogram{
+		Schema: 8,
+		PositiveSpans: []histogram.Span{
+			{
+				Offset: 0,
+				Length: 1,
+			},
+		},
+		PositiveBuckets: []int64{4},
+		NegativeSpans: []histogram.Span{
+			{
+				Offset: 0,
+				Length: 1,
+			},
+		},
+		NegativeBuckets: []int64{1},
+	}
+)
+
+func TestHistogramsReduction(t *testing.T) {
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(string(protoMsg), func(t *testing.T) {
+			appendable := &mockAppendable{}
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{protoMsg}, false)
+
+			var (
+				err     error
+				payload []byte
+			)
+
+			if protoMsg == config.RemoteWriteProtoMsgV1 {
+				payload, _, _, err = buildWriteRequest(nil, []prompb.TimeSeries{
+					{
+						Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric1"}},
+						Histograms: []prompb.Histogram{prompb.FromIntHistogram(1, highSchemaHistogram)},
+					},
+					{
+						Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric2"}},
+						Histograms: []prompb.Histogram{prompb.FromFloatHistogram(2, highSchemaHistogram.ToFloat(nil))},
+					},
+				}, nil, nil, nil, nil, "snappy")
+			} else {
+				payload, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+					{
+						LabelsRefs: []uint32{0, 1},
+						Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, highSchemaHistogram)},
+					},
+					{
+						LabelsRefs: []uint32{0, 2},
+						Histograms: []writev2.Histogram{writev2.FromFloatHistogram(2, highSchemaHistogram.ToFloat(nil))},
+					},
+				}, []string{"__name__", "test_metric1", "test_metric2"},
+					nil, nil, nil, "snappy")
+			}
+			require.NoError(t, err)
+
+			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			require.NoError(t, err)
+
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[protoMsg])
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			resp := recorder.Result()
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNoContent, resp.StatusCode)
+			require.Empty(t, body)
+
+			require.Len(t, appendable.histograms, 2)
+			require.Equal(t, int64(1), appendable.histograms[0].t)
+			require.Equal(t, reducedSchemaHistogram, appendable.histograms[0].h)
+			require.Equal(t, int64(2), appendable.histograms[1].t)
+			require.Equal(t, reducedSchemaHistogram.ToFloat(nil), appendable.histograms[1].fh)
+		})
+	}
 }

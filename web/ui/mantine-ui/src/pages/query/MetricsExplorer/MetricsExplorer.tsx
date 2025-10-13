@@ -1,11 +1,23 @@
 import { FC, useMemo, useState } from "react";
 import { useSuspenseAPIQuery } from "../../../api/api";
 import { MetadataResult } from "../../../api/responseTypes/metadata";
-import { ActionIcon, CopyButton, Group, Stack, Table, TextInput } from "@mantine/core";
+import {
+  ActionIcon,
+  CopyButton,
+  Group,
+  Stack,
+  Table,
+  TextInput,
+} from "@mantine/core";
 import React from "react";
 import { Fuzzy } from "@nexucis/fuzzy";
 import sanitizeHTML from "sanitize-html";
-import { IconCheck, IconCodePlus, IconCopy, IconZoomCode } from "@tabler/icons-react";
+import {
+  IconCheck,
+  IconCodePlus,
+  IconCopy,
+  IconZoomCode,
+} from "@tabler/icons-react";
 import LabelsExplorer from "./LabelsExplorer";
 import { useDebouncedValue } from "@mantine/hooks";
 import classes from "./MetricsExplorer.module.css";
@@ -55,10 +67,17 @@ const MetricsExplorer: FC<MetricsExplorerProps> = ({
     return getSearchMatches(debouncedFilterText, metricNames);
   }, [debouncedFilterText, metricNames]);
 
-  const getMeta = (m: string) =>
-    data.data[m.replace(/(_count|_sum|_bucket)$/, "")] || [
-      { help: "unknown", type: "unknown", unit: "unknown" },
-    ];
+  const getMeta = (m: string) => {
+    return (
+      // First check if the full metric name has metadata (even if it has one of the
+      // histogram/summary suffixes, it may be a metric that is not following naming
+      // conventions, see https://github.com/prometheus/prometheus/issues/16907).
+      data.data[m] ??
+      data.data[m.replace(/(_count|_sum|_bucket)$/, "")] ?? [
+        { help: "unknown", type: "unknown", unit: "unknown" },
+      ]
+    );
+  };
 
   if (selectedMetric !== null) {
     return (

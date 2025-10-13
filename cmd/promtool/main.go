@@ -43,7 +43,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -359,7 +359,7 @@ func main() {
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, prometheus.DefaultRegisterer))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newConfigLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkConfigIgnoreUnknownFields, model.Duration(*checkLookbackDelta)), *configFiles...))
+		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newConfigLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkConfigIgnoreUnknownFields, model.UTF8Validation, model.Duration(*checkLookbackDelta)), *configFiles...))
 
 	case checkServerHealthCmd.FullCommand():
 		os.Exit(checkErr(CheckServerStatus(serverURL, checkHealth, httpRoundTripper)))
@@ -371,7 +371,7 @@ func main() {
 		os.Exit(CheckWebConfig(*webConfigFiles...))
 
 	case checkRulesCmd.FullCommand():
-		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesIgnoreUnknownFields), *ruleFiles...))
+		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesIgnoreUnknownFields, model.UTF8Validation), *ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
@@ -436,7 +436,7 @@ func main() {
 		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration, *openMetricsLabels))
 
 	case importRulesCmd.FullCommand():
-		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, *importRulesFiles...)))
+		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, model.UTF8Validation, *importRulesFiles...)))
 
 	case queryAnalyzeCmd.FullCommand():
 		os.Exit(checkErr(queryAnalyzeCfg.run(serverURL, httpRoundTripper)))
@@ -468,17 +468,19 @@ func checkExperimental(f bool) {
 var errLint = errors.New("lint error")
 
 type rulesLintConfig struct {
-	all                 bool
-	duplicateRules      bool
-	fatal               bool
-	ignoreUnknownFields bool
+	all                  bool
+	duplicateRules       bool
+	fatal                bool
+	ignoreUnknownFields  bool
+	nameValidationScheme model.ValidationScheme
 }
 
-func newRulesLintConfig(stringVal string, fatal, ignoreUnknownFields bool) rulesLintConfig {
+func newRulesLintConfig(stringVal string, fatal, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) rulesLintConfig {
 	items := strings.Split(stringVal, ",")
 	ls := rulesLintConfig{
-		fatal:               fatal,
-		ignoreUnknownFields: ignoreUnknownFields,
+		fatal:                fatal,
+		ignoreUnknownFields:  ignoreUnknownFields,
+		nameValidationScheme: nameValidationScheme,
 	}
 	for _, setting := range items {
 		switch setting {
@@ -504,7 +506,7 @@ type configLintConfig struct {
 	lookbackDelta model.Duration
 }
 
-func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, lookbackDelta model.Duration) configLintConfig {
+func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme, lookbackDelta model.Duration) configLintConfig {
 	c := configLintConfig{
 		rulesLintConfig: rulesLintConfig{
 			fatal: fatal,
@@ -533,7 +535,7 @@ func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, loo
 	}
 
 	if len(rulesOptions) > 0 {
-		c.rulesLintConfig = newRulesLintConfig(strings.Join(rulesOptions, ","), fatal, ignoreUnknownFields)
+		c.rulesLintConfig = newRulesLintConfig(strings.Join(rulesOptions, ","), fatal, ignoreUnknownFields, nameValidationScheme)
 	}
 
 	return c
@@ -854,7 +856,7 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return true, true
 	}
-	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields)
+	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme)
 	if errs != nil {
 		failed = true
 		fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -888,7 +890,7 @@ func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 	hasErrors := false
 	for _, f := range files {
 		fmt.Println("Checking", f)
-		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields)
+		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme)
 		if errs != nil {
 			failed = true
 			fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -1062,7 +1064,10 @@ type metricStat struct {
 }
 
 func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
-	p := expfmt.TextParser{}
+	// Lacking information about what the intended validation scheme is, use the
+	// deprecated library bool.
+	//nolint:staticcheck
+	p := expfmt.NewTextParser(model.NameValidationScheme)
 	metricFamilies, err := p.TextToMetricFamilies(r)
 	if err != nil {
 		return nil, 0, fmt.Errorf("error while parsing text to metric families: %w", err)
@@ -1190,17 +1195,17 @@ type printer interface {
 
 type promqlPrinter struct{}
 
-func (p *promqlPrinter) printValue(v model.Value) {
+func (*promqlPrinter) printValue(v model.Value) {
 	fmt.Println(v)
 }
 
-func (p *promqlPrinter) printSeries(val []model.LabelSet) {
+func (*promqlPrinter) printSeries(val []model.LabelSet) {
 	for _, v := range val {
 		fmt.Println(v)
 	}
 }
 
-func (p *promqlPrinter) printLabelValues(val model.LabelValues) {
+func (*promqlPrinter) printLabelValues(val model.LabelValues) {
 	for _, v := range val {
 		fmt.Println(v)
 	}
@@ -1208,24 +1213,24 @@ func (p *promqlPrinter) printLabelValues(val model.LabelValues) {
 
 type jsonPrinter struct{}
 
-func (j *jsonPrinter) printValue(v model.Value) {
+func (*jsonPrinter) printValue(v model.Value) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
 
-func (j *jsonPrinter) printSeries(v []model.LabelSet) {
+func (*jsonPrinter) printSeries(v []model.LabelSet) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
 
-func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
+func (*jsonPrinter) printLabelValues(v model.LabelValues) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
 
 // importRules backfills recording rules from the files provided. The output are blocks of data
 // at the outputDir location.
-func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outputDir string, evalInterval, maxBlockDuration time.Duration, files ...string) error {
+func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outputDir string, evalInterval, maxBlockDuration time.Duration, nameValidationScheme model.ValidationScheme, files ...string) error {
 	ctx := context.Background()
 	var stime, etime time.Time
 	var err error
@@ -1248,11 +1253,12 @@ func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outpu
 	}
 
 	cfg := ruleImporterConfig{
-		outputDir:        outputDir,
-		start:            stime,
-		end:              etime,
-		evalInterval:     evalInterval,
-		maxBlockDuration: maxBlockDuration,
+		outputDir:            outputDir,
+		start:                stime,
+		end:                  etime,
+		evalInterval:         evalInterval,
+		maxBlockDuration:     maxBlockDuration,
+		nameValidationScheme: nameValidationScheme,
 	}
 	api, err := newAPI(url, roundTripper, nil)
 	if err != nil {

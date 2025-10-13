@@ -129,6 +129,8 @@ var key = map[string]ItemType{
 
 	// Keywords.
 	"offset":      OFFSET,
+	"smoothed":    SMOOTHED,
+	"anchored":    ANCHORED,
 	"by":          BY,
 	"without":     WITHOUT,
 	"on":          ON,
@@ -347,7 +349,7 @@ func (l *Lexer) acceptRun(valid string) {
 
 // errorf returns an error token and terminates the scan by passing
 // back a nil pointer that will be the next state, terminating l.NextItem.
-func (l *Lexer) errorf(format string, args ...interface{}) stateFn {
+func (l *Lexer) errorf(format string, args ...any) stateFn {
 	*l.itemp = Item{ERROR, l.start, fmt.Sprintf(format, args...)}
 	l.scannedItem = true
 
@@ -1184,4 +1186,35 @@ func lexDurationExpr(l *Lexer) stateFn {
 	default:
 		return l.errorf("unexpected character in duration expression: %q", r)
 	}
+}
+
+// findPrevRightParen finds the previous right parenthesis.
+// Use in case when the parser had to read ahead to the find the next right
+// parenthesis to decide whether to continue and lost track of the previous right
+// parenthesis position.
+// Only use when outside string literals as those can have runes made up of
+// multiple bytes, which would break the position calculation.
+// Falls back to the input start position on any problem.
+// https://github.com/prometheus/prometheus/issues/16053
+func (l *Lexer) findPrevRightParen(fallbackPos posrange.Pos) posrange.Pos {
+	// Early return on:
+	// - invalid fallback position,
+	// - not enough space for second right parenthesis,
+	// - last read position is after the end, since then we stopped due to the
+	//   end of the input, not a parenthesis, or if last position doesn't hold
+	//   right parenthesis,
+	// - last position doesn't hold right parenthesis.
+	if fallbackPos <= 0 || fallbackPos > posrange.Pos(len(l.input)) || l.lastPos <= 0 || l.lastPos >= posrange.Pos(len(l.input)) || l.input[l.lastPos] != ')' {
+		return fallbackPos
+	}
+	for i := l.lastPos - 1; i > 0; i-- {
+		switch {
+		case l.input[i] == ')':
+			return i + 1
+		case isSpace(rune(l.input[i])):
+		default:
+			return fallbackPos
+		}
+	}
+	return fallbackPos
 }

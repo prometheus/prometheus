@@ -24,9 +24,9 @@ type vultrMetrics struct {
 }
 
 // Register implements discovery.DiscovererMetrics.
-func (m *vultrMetrics) Register() error {
+func (*vultrMetrics) Register() error {
 	return nil
 }
 
 // Unregister implements discovery.DiscovererMetrics.
-func (m *vultrMetrics) Unregister() {}
+func (*vultrMetrics) Unregister() {}

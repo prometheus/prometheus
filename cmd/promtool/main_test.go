@@ -186,7 +186,7 @@ func TestCheckDuplicates(t *testing.T) {
 		c := test
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			rgs, err := rulefmt.ParseFile(c.ruleFile, false)
+			rgs, err := rulefmt.ParseFile(c.ruleFile, false, model.UTF8Validation)
 			require.Empty(t, err)
 			dups := checkDuplicates(rgs.Groups)
 			require.Equal(t, c.expectedDups, dups)
@@ -195,7 +195,7 @@ func TestCheckDuplicates(t *testing.T) {
 }
 
 func BenchmarkCheckDuplicates(b *testing.B) {
-	rgs, err := rulefmt.ParseFile("./testdata/rules_large.yml", false)
+	rgs, err := rulefmt.ParseFile("./testdata/rules_large.yml", false, model.UTF8Validation)
 	require.Empty(b, err)
 	b.ResetTimer()
 
@@ -298,7 +298,7 @@ func TestCheckConfigSyntax(t *testing.T) {
 			err: "error checking client cert file \"testdata/nonexistent_cert_file.yml\": " +
 				"stat testdata/nonexistent_cert_file.yml: no such file or directory",
 			errWindows: "error checking client cert file \"testdata\\\\nonexistent_cert_file.yml\": " +
-				"CreateFile testdata\\nonexistent_cert_file.yml: The system cannot find the file specified.",
+				"GetFileAttributesEx testdata\\nonexistent_cert_file.yml: The system cannot find the file specified.",
 		},
 		{
 			name:       "check with syntax only succeeds with nonexistent credentials file",
@@ -314,7 +314,7 @@ func TestCheckConfigSyntax(t *testing.T) {
 			err: "error checking authorization credentials or bearer token file \"/random/file/which/does/not/exist.yml\": " +
 				"stat /random/file/which/does/not/exist.yml: no such file or directory",
 			errWindows: "error checking authorization credentials or bearer token file \"testdata\\\\random\\\\file\\\\which\\\\does\\\\not\\\\exist.yml\": " +
-				"CreateFile testdata\\random\\file\\which\\does\\not\\exist.yml: The system cannot find the path specified.",
+				"GetFileAttributesEx testdata\\random\\file\\which\\does\\not\\exist.yml: The system cannot find the path specified.",
 		},
 	}
 	for _, test := range cases {
@@ -509,7 +509,7 @@ func TestCheckRules(t *testing.T) {
 		defer func(v *os.File) { os.Stdin = v }(os.Stdin)
 		os.Stdin = r
 
-		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false))
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false, model.UTF8Validation))
 		require.Equal(t, successExitCode, exitCode)
 	})
 
@@ -531,7 +531,7 @@ func TestCheckRules(t *testing.T) {
 		defer func(v *os.File) { os.Stdin = v }(os.Stdin)
 		os.Stdin = r
 
-		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false))
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false, model.UTF8Validation))
 		require.Equal(t, failureExitCode, exitCode)
 	})
 
@@ -553,7 +553,7 @@ func TestCheckRules(t *testing.T) {
 		defer func(v *os.File) { os.Stdin = v }(os.Stdin)
 		os.Stdin = r
 
-		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, true, false))
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, true, false, model.UTF8Validation))
 		require.Equal(t, lintErrExitCode, exitCode)
 	})
 }
@@ -571,19 +571,19 @@ func TestCheckRulesWithFeatureFlag(t *testing.T) {
 func TestCheckRulesWithRuleFiles(t *testing.T) {
 	t.Run("rules-good", func(t *testing.T) {
 		t.Parallel()
-		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false), "./testdata/rules.yml")
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false, model.UTF8Validation), "./testdata/rules.yml")
 		require.Equal(t, successExitCode, exitCode)
 	})
 
 	t.Run("rules-bad", func(t *testing.T) {
 		t.Parallel()
-		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false), "./testdata/rules-bad.yml")
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false, model.UTF8Validation), "./testdata/rules-bad.yml")
 		require.Equal(t, failureExitCode, exitCode)
 	})
 
 	t.Run("rules-lint-fatal", func(t *testing.T) {
 		t.Parallel()
-		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, true, false), "./testdata/prometheus-rules.lint.yml")
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, true, false, model.UTF8Validation), "./testdata/prometheus-rules.lint.yml")
 		require.Equal(t, lintErrExitCode, exitCode)
 	})
 }
@@ -612,20 +612,20 @@ func TestCheckScrapeConfigs(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Non-fatal linting.
-			code := CheckConfig(false, false, newConfigLintConfig(lintOptionTooLongScrapeInterval, false, false, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
+			code := CheckConfig(false, false, newConfigLintConfig(lintOptionTooLongScrapeInterval, false, false, model.UTF8Validation, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
 			require.Equal(t, successExitCode, code, "Non-fatal linting should return success")
 			// Fatal linting.
-			code = CheckConfig(false, false, newConfigLintConfig(lintOptionTooLongScrapeInterval, true, false, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
+			code = CheckConfig(false, false, newConfigLintConfig(lintOptionTooLongScrapeInterval, true, false, model.UTF8Validation, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
 			if tc.expectError {
 				require.Equal(t, lintErrExitCode, code, "Fatal linting should return error")
 			} else {
 				require.Equal(t, successExitCode, code, "Fatal linting should return success when there are no problems")
 			}
 			// Check syntax only, no linting.
-			code = CheckConfig(false, true, newConfigLintConfig(lintOptionTooLongScrapeInterval, true, false, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
+			code = CheckConfig(false, true, newConfigLintConfig(lintOptionTooLongScrapeInterval, true, false, model.UTF8Validation, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
 			require.Equal(t, successExitCode, code, "Fatal linting should return success when checking syntax only")
 			// Lint option "none" should disable linting.
-			code = CheckConfig(false, false, newConfigLintConfig(lintOptionNone+","+lintOptionTooLongScrapeInterval, true, false, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
+			code = CheckConfig(false, false, newConfigLintConfig(lintOptionNone+","+lintOptionTooLongScrapeInterval, true, false, model.UTF8Validation, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
 			require.Equal(t, successExitCode, code, `Fatal linting should return success when lint option "none" is specified`)
 		})
 	}

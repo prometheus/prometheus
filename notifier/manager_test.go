@@ -32,7 +32,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -45,7 +45,7 @@ import (
 const maxBatchSize = 256
 
 func TestHandlerNextBatch(t *testing.T) {
-	h := NewManager(&Options{}, nil)
+	h := NewManager(&Options{}, model.UTF8Validation, nil)
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
 		h.queue = append(h.queue, &Alert{
@@ -125,7 +125,7 @@ func TestHandlerSendAll(t *testing.T) {
 	defer server2.Close()
 	defer server3.Close()
 
-	h := NewManager(&Options{}, nil)
+	h := NewManager(&Options{}, model.UTF8Validation, nil)
 
 	authClient, _ := config_util.NewClientFromConfig(
 		config_util.HTTPClientConfig{
@@ -235,7 +235,7 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 	defer server2.Close()
 	defer server3.Close()
 
-	h := NewManager(&Options{}, nil)
+	h := NewManager(&Options{}, model.UTF8Validation, nil)
 	h.alertmanagers = make(map[string]*alertmanagerSet)
 
 	am1Cfg := config.DefaultAlertmanagerConfig
@@ -245,9 +245,10 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 	am2Cfg.Timeout = model.Duration(time.Second)
 	am2Cfg.AlertRelabelConfigs = []*relabel.Config{
 		{
-			SourceLabels: model.LabelNames{"alertnamedrop"},
-			Action:       "drop",
-			Regex:        relabel.MustNewRegexp(".+"),
+			SourceLabels:         model.LabelNames{"alertnamedrop"},
+			Action:               "drop",
+			Regex:                relabel.MustNewRegexp(".+"),
+			NameValidationScheme: model.UTF8Validation,
 		},
 	}
 
@@ -255,9 +256,10 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 	am3Cfg.Timeout = model.Duration(time.Second)
 	am3Cfg.AlertRelabelConfigs = []*relabel.Config{
 		{
-			SourceLabels: model.LabelNames{"alertname"},
-			Action:       "drop",
-			Regex:        relabel.MustNewRegexp(".+"),
+			SourceLabels:         model.LabelNames{"alertname"},
+			Action:               "drop",
+			Regex:                relabel.MustNewRegexp(".+"),
+			NameValidationScheme: model.UTF8Validation,
 		},
 	}
 
@@ -374,7 +376,7 @@ func TestCustomDo(t *testing.T) {
 				Body: io.NopCloser(bytes.NewBuffer(nil)),
 			}, nil
 		},
-	}, nil)
+	}, model.UTF8Validation, nil)
 
 	h.sendOne(context.Background(), nil, testURL, []byte(testBody))
 
@@ -388,14 +390,15 @@ func TestExternalLabels(t *testing.T) {
 		ExternalLabels: labels.FromStrings("a", "b"),
 		RelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{"alertname"},
-				TargetLabel:  "a",
-				Action:       "replace",
-				Regex:        relabel.MustNewRegexp("externalrelabelthis"),
-				Replacement:  "c",
+				SourceLabels:         model.LabelNames{"alertname"},
+				TargetLabel:          "a",
+				Action:               "replace",
+				Regex:                relabel.MustNewRegexp("externalrelabelthis"),
+				Replacement:          "c",
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
-	}, nil)
+	}, model.UTF8Validation, nil)
 
 	// This alert should get the external label attached.
 	h.Send(&Alert{
@@ -422,19 +425,21 @@ func TestHandlerRelabel(t *testing.T) {
 		MaxBatchSize:  maxBatchSize,
 		RelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{"alertname"},
-				Action:       "drop",
-				Regex:        relabel.MustNewRegexp("drop"),
+				SourceLabels:         model.LabelNames{"alertname"},
+				Action:               "drop",
+				Regex:                relabel.MustNewRegexp("drop"),
+				NameValidationScheme: model.UTF8Validation,
 			},
 			{
-				SourceLabels: model.LabelNames{"alertname"},
-				TargetLabel:  "alertname",
-				Action:       "replace",
-				Regex:        relabel.MustNewRegexp("rename"),
-				Replacement:  "renamed",
+				SourceLabels:         model.LabelNames{"alertname"},
+				TargetLabel:          "alertname",
+				Action:               "replace",
+				Regex:                relabel.MustNewRegexp("rename"),
+				Replacement:          "renamed",
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
-	}, nil)
+	}, model.UTF8Validation, nil)
 
 	// This alert should be dropped due to the configuration
 	h.Send(&Alert{
@@ -500,6 +505,7 @@ func TestHandlerQueuing(t *testing.T) {
 			QueueCapacity: 3 * maxBatchSize,
 			MaxBatchSize:  maxBatchSize,
 		},
+		model.UTF8Validation,
 		nil,
 	)
 
@@ -606,7 +612,7 @@ func TestReload(t *testing.T) {
 		},
 	}
 
-	n := NewManager(&Options{}, nil)
+	n := NewManager(&Options{}, model.UTF8Validation, nil)
 
 	cfg := &config.Config{}
 	s := `
@@ -653,7 +659,7 @@ func TestDroppedAlertmanagers(t *testing.T) {
 		},
 	}
 
-	n := NewManager(&Options{}, nil)
+	n := NewManager(&Options{}, model.UTF8Validation, nil)
 
 	cfg := &config.Config{}
 	s := `
@@ -725,7 +731,7 @@ func TestHangingNotifier(t *testing.T) {
 
 	// Set up a faulty Alertmanager.
 	var faultyCalled atomic.Bool
-	faultyServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+	faultyServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		faultyCalled.Store(true)
 		select {
 		case <-done:
@@ -737,7 +743,7 @@ func TestHangingNotifier(t *testing.T) {
 
 	// Set up a functional Alertmanager.
 	var functionalCalled atomic.Bool
-	functionalServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+	functionalServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		functionalCalled.Store(true)
 	}))
 	functionalURL, err := url.Parse(functionalServer.URL)
@@ -766,6 +772,7 @@ func TestHangingNotifier(t *testing.T) {
 		&Options{
 			QueueCapacity: alertsCount,
 		},
+		model.UTF8Validation,
 		nil,
 	)
 	notifier.alertmanagers = make(map[string]*alertmanagerSet)
@@ -883,6 +890,7 @@ func TestStop_DrainingDisabled(t *testing.T) {
 			QueueCapacity:   10,
 			DrainOnShutdown: false,
 		},
+		model.UTF8Validation,
 		nil,
 	)
 
@@ -969,6 +977,7 @@ func TestStop_DrainingEnabled(t *testing.T) {
 			QueueCapacity:   10,
 			DrainOnShutdown: true,
 		},
+		model.UTF8Validation,
 		nil,
 	)
 
@@ -1031,7 +1040,7 @@ func TestApplyConfig(t *testing.T) {
 	}
 	alertmanagerURL := fmt.Sprintf("http://%s/api/v2/alerts", targetURL)
 
-	n := NewManager(&Options{}, nil)
+	n := NewManager(&Options{}, model.UTF8Validation, nil)
 	cfg := &config.Config{}
 	s := `
 alerting:
@@ -1122,4 +1131,89 @@ alerting:
 
 	require.NoError(t, n.ApplyConfig(cfg))
 	require.Empty(t, n.Alertmanagers())
+}
+
+// TestAlerstRelabelingIsIsolated ensures that a mutation alerts relabeling in an
+// alertmanagerSet doesn't affect others.
+// See https://github.com/prometheus/prometheus/pull/17063.
+func TestAlerstRelabelingIsIsolated(t *testing.T) {
+	var (
+		errc      = make(chan error, 1)
+		expected1 = make([]*Alert, 0)
+		expected2 = make([]*Alert, 0)
+
+		status1, status2 atomic.Int32
+	)
+	status1.Store(int32(http.StatusOK))
+	status2.Store(int32(http.StatusOK))
+
+	server1 := newTestHTTPServerBuilder(&expected1, errc, "", "", &status1)
+	server2 := newTestHTTPServerBuilder(&expected2, errc, "", "", &status2)
+
+	defer server1.Close()
+	defer server2.Close()
+
+	h := NewManager(&Options{}, model.UTF8Validation, nil)
+	h.alertmanagers = make(map[string]*alertmanagerSet)
+
+	am1Cfg := config.DefaultAlertmanagerConfig
+	am1Cfg.Timeout = model.Duration(time.Second)
+	am1Cfg.AlertRelabelConfigs = []*relabel.Config{
+		{
+			SourceLabels:         model.LabelNames{"alertname"},
+			Regex:                relabel.MustNewRegexp("(.*)"),
+			TargetLabel:          "parasite",
+			Action:               relabel.Replace,
+			Replacement:          "yes",
+			NameValidationScheme: model.UTF8Validation,
+		},
+	}
+
+	am2Cfg := config.DefaultAlertmanagerConfig
+	am2Cfg.Timeout = model.Duration(time.Second)
+
+	h.alertmanagers = map[string]*alertmanagerSet{
+		"am1": {
+			ams: []alertmanager{
+				alertmanagerMock{
+					urlf: func() string { return server1.URL },
+				},
+			},
+			cfg: &am1Cfg,
+		},
+		"am2": {
+			ams: []alertmanager{
+				alertmanagerMock{
+					urlf: func() string { return server2.URL },
+				},
+			},
+			cfg: &am2Cfg,
+		},
+	}
+
+	testAlert := &Alert{
+		Labels: labels.FromStrings("alertname", "test"),
+	}
+	h.queue = []*Alert{testAlert}
+
+	expected1 = append(expected1, &Alert{
+		Labels: labels.FromStrings("alertname", "test", "parasite", "yes"),
+	})
+
+	// am2 shouldn't get the parasite label.
+	expected2 = append(expected2, &Alert{
+		Labels: labels.FromStrings("alertname", "test"),
+	})
+
+	checkNoErr := func() {
+		t.Helper()
+		select {
+		case err := <-errc:
+			require.NoError(t, err)
+		default:
+		}
+	}
+
+	require.True(t, h.sendAll(h.queue...))
+	checkNoErr()
 }

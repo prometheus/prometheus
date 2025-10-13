@@ -297,11 +297,11 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 		metrics: newDBMetrics(reg),
 	}
 
-	db.bufPool.New = func() interface{} {
+	db.bufPool.New = func() any {
 		return make([]byte, 0, 1024)
 	}
 
-	db.appenderPool.New = func() interface{} {
+	db.appenderPool.New = func() any {
 		return &appender{
 			DB:                     db,
 			pendingSeries:          make([]record.RefSeries, 0, 100),
@@ -437,10 +437,10 @@ func (db *DB) resetWALReplayResources() {
 func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef) (err error) {
 	var (
 		syms    = labels.NewSymbolTable() // One table for the whole WAL.
-		dec     = record.NewDecoder(syms)
+		dec     = record.NewDecoder(syms, db.logger)
 		lastRef = chunks.HeadSeriesRef(db.nextRef.Load())
 
-		decoded = make(chan interface{}, 10)
+		decoded = make(chan any, 10)
 		errCh   = make(chan error, 1)
 	)
 
@@ -631,20 +631,24 @@ Loop:
 	}
 }
 
-// keepSeriesInWALCheckpoint is used to determine whether a series record should be kept in the checkpoint
+// keepSeriesInWALCheckpointFn returns a function that is used to determine whether a series record should be kept in the checkpoint.
 // last is the last WAL segment that was considered for checkpointing.
-func (db *DB) keepSeriesInWALCheckpoint(id chunks.HeadSeriesRef, last int) bool {
-	// Keep the record if the series exists in the db.
-	if db.series.GetByID(id) != nil {
-		return true
-	}
+// NOTE: the agent implementation here is different from the Prometheus implementation, in that it uses WAL segment numbers instead of timestamps.
+func (db *DB) keepSeriesInWALCheckpointFn(last int) func(id chunks.HeadSeriesRef) bool {
+	return func(id chunks.HeadSeriesRef) bool {
+		// Keep the record if the series exists in the db.
+		if db.series.GetByID(id) != nil {
+			return true
+		}
 
-	// Keep the record if the series was recently deleted.
-	seg, ok := db.deleted[id]
-	return ok && seg > last
+		// Keep the record if the series was recently deleted.
+		seg, ok := db.deleted[id]
+		return ok && seg > last
+	}
 }
 
 func (db *DB) truncate(mint int64) error {
+	db.logger.Info("series GC started")
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
 
@@ -678,7 +682,7 @@ func (db *DB) truncate(mint int64) error {
 
 	db.metrics.checkpointCreationTotal.Inc()
 
-	if _, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpoint, mint); err != nil {
+	if _, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint); err != nil {
 		db.metrics.checkpointCreationFail.Inc()
 		var cerr *wlog.CorruptionErr
 		if errors.As(err, &cerr) {
@@ -736,22 +740,22 @@ func (db *DB) gc(mint int64) {
 }
 
 // StartTime implements the Storage interface.
-func (db *DB) StartTime() (int64, error) {
+func (*DB) StartTime() (int64, error) {
 	return int64(model.Latest), nil
 }
 
 // Querier implements the Storage interface.
-func (db *DB) Querier(int64, int64) (storage.Querier, error) {
+func (*DB) Querier(int64, int64) (storage.Querier, error) {
 	return nil, ErrUnsupported
 }
 
 // ChunkQuerier implements the Storage interface.
-func (db *DB) ChunkQuerier(int64, int64) (storage.ChunkQuerier, error) {
+func (*DB) ChunkQuerier(int64, int64) (storage.ChunkQuerier, error) {
 	return nil, ErrUnsupported
 }
 
 // ExemplarQuerier implements the Storage interface.
-func (db *DB) ExemplarQuerier(context.Context) (storage.ExemplarQuerier, error) {
+func (*DB) ExemplarQuerier(context.Context) (storage.ExemplarQuerier, error) {
 	return nil, ErrUnsupported
 }
 
@@ -988,7 +992,7 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 	return storage.SeriesRef(series.ref), nil
 }
 
-func (a *appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
+func (*appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
 	// TODO: Wire metadata in the Agent's appender.
 	return 0, nil
 }
