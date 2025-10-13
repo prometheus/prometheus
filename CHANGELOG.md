@@ -2,7 +2,7 @@
 
 ## 3.7.0-rc.0 / 2025-10-02
 
-* [CHANGE] Remote-write: Deprecate `prometheus_remote_storage_{samples,exemplars,histograms}_in_total` and `prometheus_remote_storage_highest_timestamp_in_seconds` metrics, see their respective descriptions for alternatives. #17065
+* [CHANGE] Remote-write: Deprecate `prometheus_remote_storage_{samples,exemplars,histograms}_in_total` and `prometheus_remote_storage_highest_timestamp_in_seconds` metrics, see their respective descriptions for alternatives. Add `prometheus_remote_storage_queue_highest_timestamp_seconds` metric, tracking the highest timestamp actually enqueued, taking `write_relabel_configs` into account. Replace `prometheus_remote_storage_highest_timestamp_in_seconds` metric with the new `prometheus_remote_storage_queue_highest_timestamp_seconds` metric in dashboards and alerts to properly account for relabeling, for better accuracy. #17065
 * [FEATURE] PromQL: Add support for experimental anchored and smoothed rate behind feature flag `promql-extended-range-selectors`. #16457
 * [FEATURE] Federation: Add support for native histograms with custom buckets (NHCB). #17215
 * [FEATURE] PromQL: Add `first_over_time(...)` and `ts_of_first_over_time(...)` behind feature flag `experimental-promql-functions`. #16963 #17021
@@ -13,8 +13,6 @@
 * [ENHANCEMENT] UI: Add scrape interval and scrape timeout to targets page. #17158
 * [ENHANCEMENT] TSDB: Reduce the resolution of native histograms read from chunks or remote read if the schema is exponential. #17213
 * [ENHANCEMENT] Remote write: Add logging for unexpected metadata in sample batches, when metadata entries are found in samples-only batches. #17034 #17082
-* [ENHANCEMENT] Remote-write: Add `prometheus_remote_storage_queue_highest_timestamp_seconds` metric, tracking the highest timestamp actually enqueued, taking `write_relabel_configs` into account. #17065
-* [ENHANCEMENT] Mixin: Replace `prometheus_remote_storage_highest_timestamp_in_seconds` metric with the new `prometheus_remote_storage_queue_highest_timestamp_seconds` metric in dashboards and alerts to properly account for relabeling, for better accuracy. #17065
 * [ENHANCEMENT] Rules: Support concurrent evaluation for rules querying `ALERTS` and `ALERTS_FOR_STATE`. #17064
 * [ENHANCEMENT] TSDB: Add logs to improve visibility into internal operations. #17074
 * [PERF] OTLP: Write directly to TSDB instead of passing through a Remote-Write adapter when receiving OTLP metrics. #16951
@@ -22,15 +20,15 @@
 * [PERF] PromQL: Move more work to preprocessing step. #16896
 * [PERF] PromQL: Reduce allocations when walking the syntax tree. #16593
 * [PERF] TSDB: Optimize appender creation, slightly speeding up startup. #16922
-* [PERF] TSDB: Improve reverse index lookup performance. #13971
+* [PERF] TSDB: Improve speed of querying a series with multiple matchers. #13971
 * [BUGFIX] Alerting: Mutating alerts relabeling (using `replace` actions, etc.) within a `alertmanager_config.alert_relabel_configs` block is now scoped correctly and no longer yields altered alerts to subsequent blocks. #17063
 * [BUGFIX] Config: Infer valid escaping scheme when scrape config validation scheme is set. #16923
 * [BUGFIX] TSDB: Correctly handle appending mixed-typed samples to the same series. #17071 #17241 #17290 #17295 #17296
 * [BUGFIX] Remote-write: Prevent sending unsupported native histograms with custom buckets (NHCB) over Remote-write 1.0, log warning. #17146
-* [BUGFIX] TSDB: Fix metadata entries handling on `metadata-wal-records` feature for Native Histograms with custom buckets in protobuf scraping. #17156
+* [BUGFIX] TSDB: Fix metadata entries handling on `metadata-wal-records` experimental feature for native histograms with custom buckets (NHCB) in protobuf scraping. #17156
 * [BUGFIX] TSDB: Ignore Native Histograms with invalid schemas during WAL/WBL replay. #17214
 * [BUGFIX] PromQL: Avoid empty metric names in annotations for `histogram_quantile()`. #16794
-* [BUGFIX] PromQL: Fix the character position of errors in some aggregate expressions. #16996 #17031
+* [BUGFIX] PromQL: Correct inaccurate character positions in errors for some aggregate expressions. #16996 #17031
 * [BUGFIX] PromQL: Fix `info()` function on churning series. #17135
 * [BUGFIX] PromQL: Set native histogram to gauge type when subtracting or multiplying/dividing with negative factors. #17004
 * [BUGFIX] TSDB: Reject unsupported native histogram schemas when attempting to append to TSDB. For scrape and remote-write implement reducing the resolution to fit the maximum if the schema is within the -9 to 52. #17189
