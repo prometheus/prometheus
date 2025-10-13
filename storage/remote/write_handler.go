@@ -420,9 +420,6 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			continue
 		}
 
-		// Convert metadata once for both label addition and later UpdateMetadata call.
-		// ToMetadata() safely handles nil Metadata by returning default values (MetricTypeUnknown, empty strings).
-		// This avoids nil pointer dereference and redundant conversion work.
 		m := ts.ToMetadata(req.Symbols)
 		// Add type and unit labels from metadata if the feature is enabled.
 		// We check the converted model metadata (not the protobuf metadata) to avoid nil dereference.
