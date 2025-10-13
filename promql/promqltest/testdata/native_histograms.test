@@ -1305,15 +1305,15 @@ eval instant at 12m delta(nhcb_metric[13m])
 
 eval instant at 12m increase(nhcb_metric[13m])
   expect no_warn
-  {} {{schema:-53 count:1.0833333333333333 sum:1.0833333333333333 custom_values:[5] buckets:[1.0833333333333333]}}
+  {} {{schema:-53 custom_values:[5]}}
 
 eval instant at 12m rate(nhcb_metric[13m])
   expect no_warn
-  {} {{schema:-53 count:0.0013888888888888887 sum:0.0013888888888888887 custom_values:[5] buckets:[0.0013888888888888887]}}
+  {} {{schema:-53 custom_values:[5] }}
 
 eval instant at 12m resets(nhcb_metric[13m])
   expect no_warn
-  {} 1
+  {} 0
 
 # Now doing the same again, but at 18m, where the first NHCB has
 # different custom_values compared to the other two.
@@ -1348,15 +1348,15 @@ eval instant at 18m delta(nhcb_metric[13m])
 
 eval instant at 18m increase(nhcb_metric[13m])
   expect no_warn
-  {} {{schema:-53 count:1.0833333333333333 sum:1.0833333333333333 custom_values:[5 10] buckets:[1.0833333333333333]}}
+  {} {{schema:-53 custom_values:[5]}}
 
 eval instant at 18m rate(nhcb_metric[13m])
   expect no_warn
-  {} {{schema:-53 count:0.0013888888888888887 sum:0.0013888888888888887 custom_values:[5 10] buckets:[0.0013888888888888887]}}
+  {} {{schema:-53 custom_values:[5]}}
 
 eval instant at 18m resets(nhcb_metric[13m])
   expect no_warn
-  {} 1
+  {} 0
 
 clear
 

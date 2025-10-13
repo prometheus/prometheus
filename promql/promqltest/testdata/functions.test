@@ -270,7 +270,7 @@ eval instant at 20m irate(http_requests_histogram{path="/f"}[20m])
 
 eval instant at 20m irate(http_requests_histogram{path="/g"}[20m])
   	expect no_warn
-	{path="/g"} {{schema:-53 sum:0.01 count:0.01 custom_values:[5 10] buckets:[0.01]}}
+	{path="/g"} {{schema:-53 counter_reset_hint:gauge}}
 
 clear
 

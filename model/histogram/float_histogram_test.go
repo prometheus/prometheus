@@ -1275,6 +1275,146 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 			},
 			true,
 		},
+		{
+			"mismatched custom bounds - no reset when all buckets increase",
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           200,
+				Sum:             1000,
+				PositiveSpans:   []Span{{0, 4}},
+				PositiveBuckets: []float64{20, 35, 40, 50}, // Previous: buckets for: (-Inf,0], (0,1], (1,2], (2,3], then (3,+Inf]
+				CustomValues:    []float64{0, 1, 2, 3},
+			},
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           200,
+				Sum:             1000,
+				PositiveSpans:   []Span{{0, 5}},
+				PositiveBuckets: []float64{25, 15, 40, 50, 70}, // Current: buckets for: (-Inf,0], (0,0.5], (0.5,1], (1,2], (2,3], then (3,+Inf]
+				CustomValues:    []float64{0, 0.5, 1, 2, 3},
+			},
+			false, // No reset: (-Inf,0] increases from 20 to 25, (0,1] increases from 35 to 55, (1,2] increases from 40 to 50, (2,3] increases from 50 to 70
+		},
+		{
+			"mismatched custom bounds - reset in middle bucket",
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           100,
+				Sum:             500,
+				PositiveSpans:   []Span{{1, 4}},
+				PositiveBuckets: []float64{10, 15, 20, 25}, // Buckets for: [0,1], [1,3], [3,5], [5,+Inf]
+				CustomValues:    []float64{0, 1, 3, 5},
+			},
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           100,
+				Sum:             500,
+				PositiveSpans:   []Span{{1, 5}},
+				PositiveBuckets: []float64{10, 16, 10, 5, 25}, // Buckets for: [0,1], [1,2], [2,3], [3,5], [5,+Inf]
+				CustomValues:    []float64{0, 1, 2, 3, 5},
+			},
+			true, // Reset detected: [1,3] bucket decreased from 20 to 15
+		},
+		{
+			"mismatched custom bounds - reset in last bucket",
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           100,
+				Sum:             500,
+				PositiveSpans:   []Span{{1, 3}},
+				PositiveBuckets: []float64{10, 20, 20}, // Buckets for: [0,1], [1,2], [2,+Inf]
+				CustomValues:    []float64{0, 1, 2},
+			},
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           100,
+				Sum:             500,
+				PositiveSpans:   []Span{{1, 4}},
+				PositiveBuckets: []float64{100, 200, 8, 7}, // Buckets for: [0,1], [1,2], [2,3], [3,+Inf]
+				CustomValues:    []float64{0, 1, 2, 3},
+			},
+			true, // Reset detected: [2,+Inf] bucket decreased from 20 to 15
+		},
+		{
+			"mismatched custom bounds - no common bounds",
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           100,
+				Sum:             500,
+				PositiveSpans:   []Span{{1, 3}},
+				PositiveBuckets: []float64{10, 20, 30}, // Buckets for: [1,2], [2,3], [3,+Inf]
+				CustomValues:    []float64{4, 5, 6},
+			},
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           100,
+				Sum:             500,
+				PositiveSpans:   []Span{{1, 3}},
+				PositiveBuckets: []float64{15, 25, 35}, // Buckets for: [4,5], [5,6], [6,+Inf]
+				CustomValues:    []float64{1, 2, 3},
+			},
+			false, // no decrease in aggregated single +Inf bounded bucket
+		},
+		{
+			"mismatched custom bounds - sparse common bounds",
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           200,
+				Sum:             1000,
+				PositiveSpans:   []Span{{0, 4}},
+				PositiveBuckets: []float64{10, 20, 30, 40}, // Previous: buckets for: (-Inf,0], (0,1], (1,3], (3,5], then (5,+Inf]
+				CustomValues:    []float64{0, 1, 3, 5},
+			},
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           200,
+				Sum:             1000,
+				PositiveSpans:   []Span{{0, 5}},
+				PositiveBuckets: []float64{15, 25, 70, 50, 100}, // Current: buckets for: (-Inf,0], (0,2], (2,3], (3,4], (4,5], then (5,+Inf]
+				CustomValues:    []float64{0, 2, 3, 4, 5},
+			},
+			false, // No reset: common bounds [0,3,5] all increase when mapped
+		},
+		{
+			"reset detected with mismatched custom bounds and split bucket spans",
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           200,
+				Sum:             1000,
+				PositiveSpans:   []Span{{0, 2}, {1, 3}},        // Split spans: buckets at indices 0,1 and 3,4,5
+				PositiveBuckets: []float64{10, 20, 30, 40, 50}, // Buckets for: (-Inf,0], (0,1], skip (1,2], then (2,3], (3,4], (4,5]
+				CustomValues:    []float64{0, 1, 2, 3, 4, 5},
+			},
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           200,
+				Sum:             1000,
+				PositiveSpans:   []Span{{0, 3}, {1, 2}},        // Split spans: buckets at indices 0,1,2 and 4,5
+				PositiveBuckets: []float64{15, 25, 35, 25, 60}, // Buckets for: (-Inf,0], (0,1], (1,3], skip (3,4], then (4,5], (5,7]
+				CustomValues:    []float64{0, 1, 3, 4, 5, 7},
+			},
+			true, // Reset detected: bucket (3,4] goes from 40 to 0 (missing in current histogram)
+		},
+		{
+			"no reset with mismatched custom bounds and split bucket spans",
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           300,
+				Sum:             1500,
+				PositiveSpans:   []Span{{0, 2}, {2, 3}},        // Split spans: buckets at indices 0,1 and 4,5,6
+				PositiveBuckets: []float64{10, 20, 30, 40, 50}, // Buckets for: (-Inf,0], (0,1], skip (1,2], (2,3], then (3,4], (4,5], (5,6]
+				CustomValues:    []float64{0, 1, 2, 3, 4, 5, 6},
+			},
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           300,
+				Sum:             1500,
+				PositiveSpans:   []Span{{0, 3}, {1, 2}},        // Split spans: buckets at indices 0,1,2 and 4,5
+				PositiveBuckets: []float64{12, 25, 45, 75, 95}, // Buckets for: (-Inf,0], (0,0.5], (0.5,1], skip (1,3], then (3,5], (5,7]
+				CustomValues:    []float64{0, 0.5, 1, 3, 5, 7},
+			},
+			false, // No reset: all mapped buckets increase
+		},
 	}
 
 	for _, c := range cases {

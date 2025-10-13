@@ -633,11 +633,17 @@ func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
 	if h.Count < previous.Count {
 		return true
 	}
-	if h.UsesCustomBuckets() != previous.UsesCustomBuckets() || (h.UsesCustomBuckets() && !CustomBucketBoundsMatch(h.CustomValues, previous.CustomValues)) {
-		// Mark that something has changed or that the application has been restarted. However, this does
-		// not matter so much since the change in schema will be handled directly in the chunks and PromQL
-		// functions.
-		return true
+	if h.UsesCustomBuckets() {
+		if !previous.UsesCustomBuckets() {
+			// Mark that something has changed or that the application has been restarted. However, this does
+			// not matter so much since the change in schema will be handled directly in the chunks and PromQL
+			// functions.
+			return true
+		}
+		if !CustomBucketBoundsMatch(h.CustomValues, previous.CustomValues) {
+			// Custom bounds don't match - check if any reconciled bucket value has decreased.
+			return h.detectResetWithMismatchedBounds(previous, h.CustomValues, previous.CustomValues)
+		}
 	}
 	if h.Schema > previous.Schema {
 		return true
@@ -1358,6 +1364,90 @@ func floatBucketsMatch(b1, b2 []float64) bool {
 		}
 	}
 	return true
+}
+
+// detectResetWithMismatchedBounds checks if any bucket count has decreased when
+// comparing histograms with mismatched custom bounds. It maps both histograms
+// to the intersected bounds on-the-fly and compares values without allocating
+// arrays for all mapped buckets.
+func (h *FloatHistogram) detectResetWithMismatchedBounds(
+	previous *FloatHistogram, currBounds, prevBounds []float64,
+) bool {
+	currIt := h.floatBucketIterator(true, h.ZeroThreshold, h.Schema)
+	prevIt := previous.floatBucketIterator(true, h.ZeroThreshold, h.Schema)
+
+	rollupSumForBound := func(iter *floatBucketIterator, iterStarted bool, iterBucket Bucket[float64], bound float64) (float64, Bucket[float64], bool) {
+		if !iterStarted {
+			if !iter.Next() {
+				return 0, Bucket[float64]{}, false
+			}
+			iterBucket = iter.At()
+		}
+		var sum float64
+		for iterBucket.Upper <= bound {
+			sum += iterBucket.Count
+			if !iter.Next() {
+				return sum, Bucket[float64]{}, false
+			}
+			iterBucket = iter.At()
+		}
+		return sum, iterBucket, true
+	}
+
+	var (
+		currBoundIdx, prevBoundIdx   = 0, 0
+		currBucket, prevBucket       Bucket[float64]
+		currIterStarted, currHasMore bool
+		prevIterStarted, prevHasMore bool
+	)
+
+	for currBoundIdx < len(currBounds) && prevBoundIdx < len(prevBounds) {
+		switch {
+		case currBounds[currBoundIdx] == prevBounds[prevBoundIdx]:
+			matchingBound := currBounds[currBoundIdx]
+
+			// Check matching bound, rolling up lesser buckets that have not been accounter for yet.
+			currRollupSum := 0.0
+			if !currIterStarted || currHasMore {
+				currRollupSum, currBucket, currHasMore = rollupSumForBound(&currIt, currIterStarted, currBucket, matchingBound)
+				currIterStarted = true
+			}
+
+			prevRollupSum := 0.0
+			if !prevIterStarted || prevHasMore {
+				prevRollupSum, prevBucket, prevHasMore = rollupSumForBound(&prevIt, prevIterStarted, prevBucket, matchingBound)
+				prevIterStarted = true
+			}
+
+			if currRollupSum < prevRollupSum {
+				return true
+			}
+
+			currBoundIdx++
+			prevBoundIdx++
+		case currBounds[currBoundIdx] < prevBounds[prevBoundIdx]:
+			currBoundIdx++
+		default:
+			prevBoundIdx++
+		}
+	}
+
+	// Now check the last (implicit +Inf) bound.
+	currRollupSum := 0.0
+	if !currIterStarted || currHasMore {
+		currRollupSum, _, _ = rollupSumForBound(&currIt, currIterStarted, currBucket, math.Inf(1))
+	}
+
+	prevRollupSum := 0.0
+	if !prevIterStarted || prevHasMore {
+		prevRollupSum, _, _ = rollupSumForBound(&prevIt, prevIterStarted, prevBucket, math.Inf(1))
+	}
+
+	if currRollupSum < prevRollupSum {
+		return true
+	}
+
+	return false
 }
 
 // intersectCustomBucketBounds returns the intersection of two custom bucket boundary sets.
