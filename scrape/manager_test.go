@@ -1177,10 +1177,6 @@ scrape_configs:
 
 	require.Len(t, app.resultExemplars, 2, "expected 2 exemplars from histogram buckets")
 
-	// The test successfully completes, proving that both ConvertClassicHistogramsToNHCBEnabled
-	// and EnableCreatedTimestampZeroIngestion can work together without the error that was
-	// previously thrown. The original issue #15137 about losing exemplars during CT parsing
-	// in OpenMetrics format has been fixed independently in the parser layer.
 }
 
 func applyConfig(
