@@ -1,7 +1,7 @@
 # Changelog
 
 ## main / unreleased
-
+* [FEATURE] Remote Write: Add experimental flag `convert_nhcb_to_classic` to convert NHCB to classic histograms for external system that dont support NHCBs. 
 * [BUGFIX] Config: Infer valid escaping scheme when scrape config validation scheme is set. #16923
 * [BUGFIX] PromQL: Fix info function on churning series. #17135
 
