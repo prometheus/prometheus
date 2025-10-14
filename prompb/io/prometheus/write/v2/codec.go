@@ -25,7 +25,7 @@ import (
 // NOTE(bwplotka): This file's code is tested in /prompb/rwcommon.
 
 // ToLabels return model labels.Labels from timeseries' remote labels.
-func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, symbols []string) labels.Labels {
+func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, symbols []string) (labels.Labels, error) {
 	return desymbolizeLabels(b, m.GetLabelsRefs(), symbols)
 }
 
@@ -207,13 +207,18 @@ func spansToSpansProto(s []histogram.Span) []BucketSpan {
 	return spans
 }
 
-func (m Exemplar) ToExemplar(b *labels.ScratchBuilder, symbols []string) exemplar.Exemplar {
+func (m Exemplar) ToExemplar(b *labels.ScratchBuilder, symbols []string) (exemplar.Exemplar, error) {
 	timestamp := m.Timestamp
 
+	lbls, err := desymbolizeLabels(b, m.LabelsRefs, symbols)
+	if err != nil {
+		return exemplar.Exemplar{}, err
+	}
+
 	return exemplar.Exemplar{
-		Labels: desymbolizeLabels(b, m.LabelsRefs, symbols),
+		Labels: lbls,
 		Value:  m.Value,
 		Ts:     timestamp,
 		HasTs:  timestamp != 0,
-	}
+	}, nil
 }

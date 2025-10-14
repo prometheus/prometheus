@@ -1565,6 +1565,39 @@ func TestHistogramValidation(t *testing.T) {
 				CustomValues:    []float64{1, 2, 3, 4, 5, 6, 7, 8},
 			},
 		},
+		"reject custom buckets histogram with non-increasing bound": {
+			h: &Histogram{
+				Schema:       CustomBucketsSchema,
+				CustomValues: []float64{0, 0},
+			},
+			errMsg: "custom buckets: previous bound is 0.000000 and current is 0.000000: histogram custom bounds must be in strictly increasing order",
+		},
+		"reject custom buckets histogram with explicit +Inf bound": {
+			h: &Histogram{
+				Schema:       CustomBucketsSchema,
+				CustomValues: []float64{1, math.Inf(1)},
+			},
+			errMsg: "custom buckets: last +Inf bound must not be explicitly defined: histogram custom bounds must be finite",
+		},
+		"reject custom buckets histogram with NaN bound": {
+			h: &Histogram{
+				Schema:       CustomBucketsSchema,
+				CustomValues: []float64{1, math.NaN(), 3},
+			},
+			errMsg: "custom buckets: histogram custom bounds must not be NaN",
+		},
+		"schema too high": {
+			h: &Histogram{
+				Schema: 10,
+			},
+			errMsg: `histogram has an invalid schema, which must be between -4 and 8 for exponential buckets, or -53 for custom buckets, got schema 10`,
+		},
+		"schema too low": {
+			h: &Histogram{
+				Schema: -10,
+			},
+			errMsg: `histogram has an invalid schema, which must be between -4 and 8 for exponential buckets, or -53 for custom buckets, got schema -10`,
+		},
 	}
 
 	for testName, tc := range tests {

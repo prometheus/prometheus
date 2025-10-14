@@ -19,6 +19,8 @@ printf "Current minimum supported version: ${CURRENT_VERSION}\nNew minimum suppo
 # Update go.mod files
 go mod edit -go=${NEW_VERSION}.0
 go mod edit -go=${NEW_VERSION}.0 documentation/examples/remote_storage/go.mod
+go mod edit -go=${NEW_VERSION}.0 web/ui/mantine-ui/src/promql/tools/go.mod
+go mod edit -go=${NEW_VERSION}.0 internal/tools/go.mod
 
 # Update .promu.yml
 sed -i "s/version: ${NEW_VERSION}/version: ${LATEST_VERSION}/g" .promu.yml

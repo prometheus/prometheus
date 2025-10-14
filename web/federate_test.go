@@ -340,8 +340,19 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		},
 		NegativeBuckets: []int64{2, 2, -2, 0},
 	}
+	nhcb := &histogram.Histogram{
+		Count:  6,
+		Sum:    1.234,
+		Schema: -53,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 2, Length: 1},
+		},
+		PositiveBuckets: []int64{3, -1, -1},
+		CustomValues:    []float64{0.1, 0.2, 0.5, 1, 2},
+	}
 	app := db.Appender(context.Background())
-	for i := range 6 {
+	for i := range 7 {
 		l := labels.FromStrings("__name__", "test_metric", "foo", strconv.Itoa(i))
 		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", strconv.Itoa(i))
 		var err error
@@ -358,6 +369,56 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				H:      histWithoutZeroBucket.ToFloat(nil),
+				Metric: expL,
+			})
+		case 6:
+			_, err = app.AppendHistogram(0, l, 100*60*1000, nhcb.Copy(), nil)
+			expL = labels.FromStrings("__name__", "test_metric_count", "instance", "", "foo", strconv.Itoa(i))
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				F:      6,
+				Metric: expL,
+			})
+			expL = labels.FromStrings("__name__", "test_metric_sum", "instance", "", "foo", strconv.Itoa(i))
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				F:      1.234,
+				Metric: expL,
+			})
+			expL = labels.FromStrings("__name__", "test_metric_bucket", "instance", "", "foo", strconv.Itoa(i), "le", "0.1")
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				F:      3,
+				Metric: expL,
+			})
+			expL = labels.FromStrings("__name__", "test_metric_bucket", "instance", "", "foo", strconv.Itoa(i), "le", "0.2")
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				F:      5,
+				Metric: expL,
+			})
+			expL = labels.FromStrings("__name__", "test_metric_bucket", "instance", "", "foo", strconv.Itoa(i), "le", "0.5")
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				F:      5,
+				Metric: expL,
+			})
+			expL = labels.FromStrings("__name__", "test_metric_bucket", "instance", "", "foo", strconv.Itoa(i), "le", "1.0")
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				F:      5,
+				Metric: expL,
+			})
+			expL = labels.FromStrings("__name__", "test_metric_bucket", "instance", "", "foo", strconv.Itoa(i), "le", "2.0")
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				F:      6,
+				Metric: expL,
+			})
+			expL = labels.FromStrings("__name__", "test_metric_bucket", "instance", "", "foo", strconv.Itoa(i), "le", "+Inf")
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				F:      6,
 				Metric: expL,
 			})
 		default:
@@ -392,7 +453,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	require.Equal(t, http.StatusOK, res.Code)
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
-	p := textparse.NewProtobufParser(body, false, false, labels.NewSymbolTable())
+	p := textparse.NewProtobufParser(body, false, false, false, labels.NewSymbolTable())
 	var actVec promql.Vector
 	metricFamilies := 0
 	l := labels.Labels{}

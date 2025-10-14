@@ -51,7 +51,7 @@ func (JSONCodec) Encode(resp *Response) ([]byte, error) {
 	return json.Marshal(resp)
 }
 
-// marshalSeriesJSON writes something like the following:
+// unsafeMarshalSeriesJSON writes something like the following:
 //
 //	{
 //	   "metric" : {
@@ -108,7 +108,7 @@ func neverEmpty(unsafe.Pointer) bool {
 	return false
 }
 
-// marshalSampleJSON writes something like the following for normal value samples:
+// unsafeMarshalSampleJSON writes something like the following for normal value samples:
 //
 //	{
 //	   "metric" : {

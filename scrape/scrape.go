@@ -930,16 +930,17 @@ type scrapeLoop struct {
 	labelLimits              *labelLimits
 	interval                 time.Duration
 	timeout                  time.Duration
-	alwaysScrapeClassicHist  bool
-	convertClassicHistToNHCB bool
 	validationScheme         model.ValidationScheme
 	escapingScheme           model.EscapingScheme
+
+	alwaysScrapeClassicHist  bool
+	convertClassicHistToNHCB bool
+	enableCTZeroIngestion    bool
+	enableTypeAndUnitLabels  bool
 	fallbackScrapeProtocol   string
 
 	// Feature flagged options.
 	enableNativeHistogramIngestion bool
-	enableCTZeroIngestion          bool
-	enableTypeAndUnitLabels        bool
 
 	appender            func(ctx context.Context) storage.Appender
 	symbolTable         *labels.SymbolTable
@@ -1305,16 +1306,16 @@ func newScrapeLoop(ctx context.Context,
 		timeout:                        timeout,
 		alwaysScrapeClassicHist:        alwaysScrapeClassicHist,
 		convertClassicHistToNHCB:       convertClassicHistToNHCB,
-		enableNativeHistogramIngestion: enableNativeHistogramIngestion,
 		enableCTZeroIngestion:          enableCTZeroIngestion,
 		enableTypeAndUnitLabels:        enableTypeAndUnitLabels,
+		fallbackScrapeProtocol:         fallbackScrapeProtocol,
+		enableNativeHistogramIngestion: enableNativeHistogramIngestion,
 		reportExtraMetrics:             reportExtraMetrics,
 		appendMetadataToWAL:            appendMetadataToWAL,
 		metrics:                        metrics,
 		skipOffsetting:                 skipOffsetting,
 		validationScheme:               validationScheme,
 		escapingScheme:                 escapingScheme,
-		fallbackScrapeProtocol:         fallbackScrapeProtocol,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1634,7 +1635,13 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		return
 	}
 
-	p, err := textparse.New(b, contentType, sl.fallbackScrapeProtocol, sl.alwaysScrapeClassicHist, sl.convertClassicHistToNHCB, sl.enableCTZeroIngestion, sl.enableTypeAndUnitLabels, sl.symbolTable)
+	p, err := textparse.New(b, contentType, sl.symbolTable, textparse.ParserOptions{
+		EnableTypeAndUnitLabels:                 sl.enableTypeAndUnitLabels,
+		ConvertClassicHistogramsToNHCB:          sl.convertClassicHistToNHCB,
+		KeepClassicOnClassicAndNativeHistograms: sl.alwaysScrapeClassicHist,
+		OpenMetricsSkipCTSeries:                 sl.enableCTZeroIngestion,
+		FallbackContentType:                     sl.fallbackScrapeProtocol,
+	})
 	if p == nil {
 		sl.l.Error(
 			"Failed to determine correct type of scrape target.",

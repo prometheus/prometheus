@@ -36,7 +36,7 @@ type Service struct {
 	logger                *slog.Logger
 	informer              cache.SharedIndexInformer
 	store                 cache.Store
-	queue                 *workqueue.Type
+	queue                 *workqueue.Typed[string]
 	namespaceInf          cache.SharedInformer
 	withNamespaceMetadata bool
 }
@@ -52,10 +52,12 @@ func NewService(l *slog.Logger, inf cache.SharedIndexInformer, namespace cache.S
 	svcDeleteCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleDelete)
 
 	s := &Service{
-		logger:                l,
-		informer:              inf,
-		store:                 inf.GetStore(),
-		queue:                 workqueue.NewNamed(RoleService.String()),
+		logger:   l,
+		informer: inf,
+		store:    inf.GetStore(),
+		queue: workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{
+			Name: RoleService.String(),
+		}),
 		namespaceInf:          namespace,
 		withNamespaceMetadata: namespace != nil,
 	}
@@ -142,12 +144,11 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 }
 
 func (s *Service) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
-	keyObj, quit := s.queue.Get()
+	key, quit := s.queue.Get()
 	if quit {
 		return false
 	}
-	defer s.queue.Done(keyObj)
-	key := keyObj.(string)
+	defer s.queue.Done(key)
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {

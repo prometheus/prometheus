@@ -49,6 +49,7 @@ import (
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 const defaultFlushDeadline = 1 * time.Minute
@@ -456,38 +457,34 @@ func TestSampleDeliveryOrder(t *testing.T) {
 }
 
 func TestShutdown(t *testing.T) {
-	// Not t.Parallel() because the test became flaky; see https://github.com/prometheus/prometheus/issues/17045
-	deadline := 1 * time.Second
-	c := NewTestBlockedWriteClient()
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		deadline := 15 * time.Second
+		c := NewTestBlockedWriteClient()
 
-	cfg := config.DefaultQueueConfig
-	mcfg := config.DefaultMetadataConfig
+		cfg := config.DefaultQueueConfig
+		mcfg := config.DefaultMetadataConfig
 
-	m := newTestQueueManager(t, cfg, mcfg, deadline, c, config.RemoteWriteProtoMsgV1, false)
-	n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
-	samples, series := createTimeseries(n, n)
-	m.StoreSeries(series, 0)
-	m.Start()
+		m := newTestQueueManager(t, cfg, mcfg, deadline, c, config.RemoteWriteProtoMsgV1, false)
+		n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
+		samples, series := createTimeseries(n, n)
+		m.StoreSeries(series, 0)
+		m.Start()
 
-	// Append blocks to guarantee delivery, so we do it in the background.
-	go func() {
-		m.Append(samples)
-	}()
-	time.Sleep(100 * time.Millisecond)
+		// Append blocks to guarantee delivery, so we do it in the background.
+		go func() {
+			m.Append(samples)
+		}()
+		synctest.Wait()
 
-	// Test to ensure that Stop doesn't block.
-	start := time.Now()
-	m.Stop()
-	// The samples will never be delivered, so duration should
-	// be at least equal to deadline, otherwise the flush deadline
-	// was not respected.
-	duration := time.Since(start)
-	if duration > deadline+(deadline/10) {
-		t.Errorf("Took too long to shutdown: %s > %s", duration, deadline)
-	}
-	if duration < deadline {
-		t.Errorf("Shutdown occurred before flush deadline: %s < %s", duration, deadline)
-	}
+		// Test to ensure that Stop doesn't block.
+		start := time.Now()
+		m.Stop()
+		// The samples will never be delivered, so duration should
+		// be at least equal to deadline, otherwise the flush deadline
+		// was not respected.
+		require.Equal(t, time.Since(start), deadline)
+	})
 }
 
 func TestSeriesReset(t *testing.T) {
@@ -1245,7 +1242,11 @@ func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, erro
 	}
 	b := labels.NewScratchBuilder(0)
 	for i, rts := range v2Req.Timeseries {
-		rts.ToLabels(&b, v2Req.Symbols).Range(func(l labels.Label) {
+		lbls, err := rts.ToLabels(&b, v2Req.Symbols)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert labels: %w", err)
+		}
+		lbls.Range(func(l labels.Label) {
 			req.Timeseries[i].Labels = append(req.Timeseries[i].Labels, prompb.Label{
 				Name:  l.Name,
 				Value: l.Value,
@@ -1256,7 +1257,11 @@ func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, erro
 		for j, e := range rts.Exemplars {
 			exemplars[j].Value = e.Value
 			exemplars[j].Timestamp = e.Timestamp
-			e.ToExemplar(&b, v2Req.Symbols).Labels.Range(func(l labels.Label) {
+			ex, err := e.ToExemplar(&b, v2Req.Symbols)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert exemplar: %w", err)
+			}
+			ex.Labels.Range(func(l labels.Label) {
 				exemplars[j].Labels = append(exemplars[j].Labels, prompb.Label{
 					Name:  l.Name,
 					Value: l.Value,
@@ -1282,7 +1287,10 @@ func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, erro
 
 		// Convert v2 metadata to v1 format.
 		if rts.Metadata.Type != writev2.Metadata_METRIC_TYPE_UNSPECIFIED {
-			labels := rts.ToLabels(&b, v2Req.Symbols)
+			labels, err := rts.ToLabels(&b, v2Req.Symbols)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert metadata labels: %w", err)
+			}
 			metadata := rts.ToMetadata(v2Req.Symbols)
 
 			metricFamilyName := labels.String()
