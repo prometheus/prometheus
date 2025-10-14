@@ -329,7 +329,6 @@ func TestInitialUpdate(t *testing.T) {
 		"fixtures/valid.yml",
 		"fixtures/valid.json",
 	} {
-		tc := tc
 		t.Run(tc, func(t *testing.T) {
 			t.Parallel()
 
@@ -352,7 +351,6 @@ func TestInvalidFile(t *testing.T) {
 		"fixtures/invalid_nil.yml",
 		"fixtures/invalid_nil.json",
 	} {
-		tc := tc
 		t.Run(tc, func(t *testing.T) {
 			t.Parallel()
 
