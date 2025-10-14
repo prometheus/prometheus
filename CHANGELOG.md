@@ -2,7 +2,11 @@
 
 ## 3.7.0-rc.0 / 2025-10-02
 
-* [CHANGE] Remote-write: Deprecate `prometheus_remote_storage_{samples,exemplars,histograms}_in_total` and `prometheus_remote_storage_highest_timestamp_in_seconds` metrics, see their respective descriptions for alternatives. Add `prometheus_remote_storage_queue_highest_timestamp_seconds` metric, tracking the highest timestamp actually enqueued, taking `write_relabel_configs` into account. Replace `prometheus_remote_storage_highest_timestamp_in_seconds` metric with the new `prometheus_remote_storage_queue_highest_timestamp_seconds` metric in dashboards and alerts to properly account for relabeling, for better accuracy. #17065
+* [CHANGE] Remote-write: the following metrics are deprecated:
+   - `prometheus_remote_storage_samples_in_total`, use `prometheus_wal_watcher_records_read_total{type="samples"}` instead,
+   - `prometheus_remote_storage_histograms_in_total`, use `prometheus_wal_watcher_records_read_total{type=~".*histogram_samples"}` instead,
+   - `prometheus_remote_storage_exemplars_in_total`, use `prometheus_wal_watcher_records_read_total{type="exemplars"}` instead,
+   - `prometheus_remote_storage_highest_timestamp_in_seconds`, use the more accurate `prometheus_remote_storage_queue_highest_timestamp_seconds` instead in dashboars and alerts to properly account for relabeling and better accuracy. #17065
 * [FEATURE] PromQL: Add support for experimental anchored and smoothed rate behind feature flag `promql-extended-range-selectors`. #16457
 * [FEATURE] Federation: Add support for native histograms with custom buckets (NHCB). #17215
 * [FEATURE] PromQL: Add `first_over_time(...)` and `ts_of_first_over_time(...)` behind feature flag `experimental-promql-functions`. #16963 #17021
