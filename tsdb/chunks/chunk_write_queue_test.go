@@ -27,7 +27,7 @@ import (
 )
 
 func TestChunkWriteQueue_GettingChunkFromQueue(t *testing.T) {
-	 t.Parallel()
+	t.Parallel()
 	var blockWriterWg sync.WaitGroup
 	blockWriterWg.Add(1)
 
@@ -56,7 +56,7 @@ func TestChunkWriteQueue_GettingChunkFromQueue(t *testing.T) {
 }
 
 func TestChunkWriteQueue_WritingThroughQueue(t *testing.T) {
-	 t.Parallel()
+	t.Parallel()
 	var (
 		gotSeriesRef     HeadSeriesRef
 		gotMint, gotMaxt int64
@@ -99,7 +99,7 @@ func TestChunkWriteQueue_WritingThroughQueue(t *testing.T) {
 }
 
 func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
-	 t.Parallel()
+	t.Parallel()
 	sizeLimit := 100
 	unblockChunkWriterCh := make(chan struct{}, sizeLimit)
 
@@ -186,7 +186,7 @@ func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
 }
 
 func TestChunkWriteQueue_HandlerErrorViaCallback(t *testing.T) {
-	 t.Parallel()
+	t.Parallel()
 	testError := errors.New("test error")
 	chunkWriter := func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool, bool) error {
 		return testError
