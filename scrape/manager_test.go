@@ -967,7 +967,6 @@ func TestManagerCTZeroIngestionHistogram(t *testing.T) {
 			app := &collectResultAppender{}
 			discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 				EnableCreatedTimestampZeroIngestion: tc.enableCTZeroIngestion,
-				EnableNativeHistogramsIngestion:     true,
 				skipOffsetting:                      true,
 			}, &collectResultAppendable{app})
 			defer scrapeManager.Stop()
@@ -1007,6 +1006,7 @@ global:
 
 scrape_configs:
 - job_name: test
+  scrape_native_histograms: true
   static_configs:
   - targets: ['%s']
 `, serverURL.Host)
@@ -1087,7 +1087,6 @@ func TestNHCBAndCTZeroIngestion(t *testing.T) {
 	app := &collectResultAppender{}
 	discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 		EnableCreatedTimestampZeroIngestion: true,
-		EnableNativeHistogramsIngestion:     true,
 		skipOffsetting:                      true,
 	}, &collectResultAppendable{app})
 	defer scrapeManager.Stop()
@@ -1277,8 +1276,7 @@ func requireTargets(
 // TestTargetDisappearsAfterProviderRemoved makes sure that when a provider is dropped, (only) its targets are dropped.
 func TestTargetDisappearsAfterProviderRemoved(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	myJob := "my-job"
 	myJobSDTargetURL := "my:9876"
@@ -1378,8 +1376,7 @@ scrape_configs:
 // and when the provider can no longer discover some of those targets, only those stale targets are dropped.
 func TestOnlyProviderStaleTargetsAreDropped(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	jobName := "my-job"
 	jobTarget1URL := "foo:9876"
@@ -1441,8 +1438,7 @@ scrape_configs:
 // should no longer discover targets, the targets of that provider are dropped.
 // See: https://github.com/prometheus/prometheus/issues/12858
 func TestProviderStaleTargetsAreDropped(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	jobName := "my-job"
 	jobTargetURL := "foo:9876"
@@ -1499,8 +1495,7 @@ scrape_configs:
 // TestOnlyStaleTargetsAreDropped makes sure that when a job has multiple providers, when one of them should no
 // longer discover targets, only the stale targets of that provider are dropped.
 func TestOnlyStaleTargetsAreDropped(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	myJob := "my-job"
 	myJobSDTargetURL := "my:9876"

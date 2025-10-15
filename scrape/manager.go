@@ -86,8 +86,6 @@ type Options struct {
 	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
 	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
 	EnableCreatedTimestampZeroIngestion bool
-	// Option to enable the ingestion of native histograms.
-	EnableNativeHistogramsIngestion bool
 
 	// EnableTypeAndUnitLabels
 	EnableTypeAndUnitLabels bool

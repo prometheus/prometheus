@@ -797,10 +797,6 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 }
 
 func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	if !a.head.opts.EnableNativeHistograms.Load() {
-		return 0, storage.ErrNativeHistogramsDisabled
-	}
-
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.
 	if a.oooTimeWindow == 0 && t < a.minValidTime {
@@ -907,10 +903,6 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 }
 
 func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	if !a.head.opts.EnableNativeHistograms.Load() {
-		return 0, storage.ErrNativeHistogramsDisabled
-	}
-
 	if ct >= t {
 		return 0, storage.ErrCTNewerThanSample
 	}
