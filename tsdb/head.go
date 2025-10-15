@@ -190,6 +190,9 @@ type HeadOptions struct {
 
 	// EnableSharding enables ShardedPostings() support in the Head.
 	EnableSharding bool
+
+	// IndexLookupPlanner can be optionally used when querying the index of the Head.
+	IndexLookupPlanner index.LookupPlanner
 }
 
 const (
@@ -211,6 +214,7 @@ func DefaultHeadOptions() *HeadOptions {
 		SeriesCallback:       &noopSeriesLifecycleCallback{},
 		IsolationDisabled:    defaultIsolationDisabled,
 		WALReplayConcurrency: defaultWALReplayConcurrency,
+		IndexLookupPlanner:   &index.ScanEmptyMatchersLookupPlanner{},
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
 	return ho
