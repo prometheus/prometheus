@@ -35,6 +35,7 @@ ifdef PREBUILT_ASSETS_STATIC_DIR
   SKIP_UI_BUILD = true
 endif
 
+.PHONY: help
 help: ## Displays commands and their descriptions.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[38;2;230;82;44m<target>\033[0m\n\nMain Targets:\n"} /^[a-z0-9A-Z_-]+:.*?##/ { printf "  \033[38;2;230;82;44m%-20s\033[0m %s\n", $$1, $$2 }' Makefile
 	@echo ""
@@ -212,7 +213,8 @@ update-all-go-deps: ## Update all Prometheus Go dependencies including examples.
 check-node-version: ## Check Node Version
 	@./scripts/check-node-version.sh
 
-.PHONY: bump-go-version
+.PHONY: bump-go-version ## Update Go version to minor version
 bump-go-version:
 	@echo ">> bumping Go minor version"
 	@./scripts/bump_go_version.sh
+

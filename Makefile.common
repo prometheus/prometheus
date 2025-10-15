@@ -106,10 +106,6 @@ endif
 # one and override "common-build" without override warnings.
 %: common-% ;
 
-.PHONY: common-help
-common-help: ## Display available commands and their descriptions.
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[38;2;230;82;44m<target>\033[0m\n\nTargets:\n"} /^[a-z0-9A-Z_-]+:.*?##/ { printf "  \033[38;2;230;82;44m%-20s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
-
 .PHONY: common-all
 common-all: ## Run all Prometheus quality checks and build.
 common-all: precheck style check_license lint yamllint unused build test
