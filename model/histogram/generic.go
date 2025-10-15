@@ -467,11 +467,11 @@ func checkHistogramBuckets[BC BucketCount, IBC InternalBucketCount](buckets []IB
 
 func checkHistogramCustomBounds(bounds []float64, spans []Span, numBuckets int) error {
 	prev := math.Inf(-1)
-	for _, curr := range bounds {
+	for i, curr := range bounds {
 		if math.IsNaN(curr) {
 			return ErrHistogramCustomBucketsNaN
 		}
-		if curr <= prev {
+		if i > 0 && curr <= prev {
 			return fmt.Errorf("previous bound is %f and current is %f: %w", prev, curr, ErrHistogramCustomBucketsInvalid)
 		}
 		prev = curr

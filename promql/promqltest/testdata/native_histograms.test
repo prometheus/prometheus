@@ -1718,6 +1718,18 @@ eval instant at 14m histogram_count(avg_over_time(mixed[10m]))
   expect no_info
   {} 9.3
 
+# In the following two tests, the first sample has hint "not_reset"
+# and the second has "reset". This tests if the conflict is detected
+# between the first two samples, too.
+eval instant at 11m histogram_count(sum_over_time(mixed[2m]))
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} 21
+
+eval instant at 11m histogram_count(avg_over_time(mixed[2m]))
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} 10.5
 
 # Test histogram_quantile annotations.
 load 1m

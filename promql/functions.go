@@ -1104,6 +1104,15 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		vec, err := aggrHistOverTime(matrixVal, enh, func(s Series) (*histogram.FloatHistogram, error) {
 			var counterResetSeen, notCounterResetSeen, nhcbBoundsReconciledSeen bool
 
+			trackCounterReset := func(h *histogram.FloatHistogram) {
+				switch h.CounterResetHint {
+				case histogram.CounterReset:
+					counterResetSeen = true
+				case histogram.NotCounterReset:
+					notCounterResetSeen = true
+				}
+			}
+
 			defer func() {
 				if counterResetSeen && notCounterResetSeen {
 					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAgg))
@@ -1114,13 +1123,9 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 			}()
 
 			sum := s.Histograms[0].H.Copy()
+			trackCounterReset(sum)
 			for _, h := range s.Histograms[1:] {
-				switch h.H.CounterResetHint {
-				case histogram.CounterReset:
-					counterResetSeen = true
-				case histogram.NotCounterReset:
-					notCounterResetSeen = true
-				}
+				trackCounterReset(h.H)
 				_, _, nhcbBoundsReconciled, err := sum.Add(h.H)
 				if err != nil {
 					return sum, err
