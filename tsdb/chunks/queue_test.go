@@ -62,6 +62,7 @@ func (q *writeJobQueue) assertInvariants(t *testing.T) {
 }
 
 func TestQueuePushPopSingleGoroutine(t *testing.T) {
+	 t.Parallel()
 	seed := time.Now().UnixNano()
 	t.Log("seed:", seed)
 	r := rand.New(rand.NewSource(seed))
@@ -115,6 +116,7 @@ func TestQueuePushPopSingleGoroutine(t *testing.T) {
 }
 
 func TestQueuePushBlocksOnFullQueue(t *testing.T) {
+	 t.Parallel()
 	queue := newWriteJobQueue(5, 5)
 
 	pushTime := make(chan time.Time)
@@ -152,6 +154,7 @@ func TestQueuePushBlocksOnFullQueue(t *testing.T) {
 }
 
 func TestQueuePopBlocksOnEmptyQueue(t *testing.T) {
+	 t.Parallel()
 	queue := newWriteJobQueue(5, 5)
 
 	popTime := make(chan time.Time)
@@ -192,6 +195,7 @@ func TestQueuePopBlocksOnEmptyQueue(t *testing.T) {
 }
 
 func TestQueuePopUnblocksOnClose(t *testing.T) {
+	 t.Parallel()
 	queue := newWriteJobQueue(5, 5)
 
 	popTime := make(chan time.Time)
@@ -231,6 +235,7 @@ func TestQueuePopUnblocksOnClose(t *testing.T) {
 }
 
 func TestQueuePopAfterCloseReturnsAllElements(t *testing.T) {
+	 t.Parallel()
 	const count = 10
 
 	queue := newWriteJobQueue(count, count)
@@ -257,6 +262,7 @@ func TestQueuePopAfterCloseReturnsAllElements(t *testing.T) {
 }
 
 func TestQueuePushPopManyGoroutines(t *testing.T) {
+	 t.Parallel()
 	const readGoroutines = 5
 	const writeGoroutines = 10
 	const writes = 500
@@ -311,6 +317,7 @@ func TestQueuePushPopManyGoroutines(t *testing.T) {
 }
 
 func TestQueueSegmentIsKeptEvenIfEmpty(t *testing.T) {
+	 t.Parallel()
 	queue := newWriteJobQueue(1024, 64)
 
 	require.True(t, queue.push(chunkWriteJob{seriesRef: 1}))
