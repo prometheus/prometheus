@@ -399,3 +399,15 @@ func (m *Manager) TargetsDroppedCounts() map[string]int {
 	}
 	return counts
 }
+
+func (m *Manager) ScrapePoolConfig(scrapePool string) (*config.ScrapeConfig, error) {
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+
+	sp, ok := m.scrapePools[scrapePool]
+	if !ok {
+		return nil, fmt.Errorf("scrape pool %q not found", scrapePool)
+	}
+
+	return sp.config, nil
+}

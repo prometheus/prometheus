@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -129,6 +130,7 @@ type TargetRetriever interface {
 	TargetsActive() map[string][]*scrape.Target
 	TargetsDropped() map[string][]*scrape.Target
 	TargetsDroppedCounts() map[string]int
+	ScrapePoolConfig(string) (*config.ScrapeConfig, error)
 }
 
 // AlertmanagerRetriever provides a list of all/dropped AlertManager URLs.
@@ -429,6 +431,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/scrape_pools", wrap(api.scrapePools))
 	r.Get("/targets", wrap(api.targets))
 	r.Get("/targets/metadata", wrap(api.targetMetadata))
+	r.Get("/targets/relabel_steps", wrap(api.targetRelabelSteps))
 	r.Get("/alertmanagers", wrapAgent(api.alertmanagers))
 
 	r.Get("/metadata", wrap(api.metricMetadata))
@@ -1301,6 +1304,49 @@ type metricMetadata struct {
 	Type         model.MetricType `json:"type"`
 	Help         string           `json:"help"`
 	Unit         string           `json:"unit"`
+}
+
+type RelabelStep struct {
+	Rule   *relabel.Config `json:"rule"`
+	Output labels.Labels   `json:"output"`
+	Keep   bool            `json:"keep"`
+}
+
+type RelabelStepsResponse struct {
+	Steps []RelabelStep `json:"steps"`
+}
+
+func (api *API) targetRelabelSteps(r *http.Request) apiFuncResult {
+	scrapePool := r.FormValue("scrapePool")
+	if scrapePool == "" {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no scrapePool parameter provided")}, nil, nil}
+	}
+	labelsJSON := r.FormValue("labels")
+	if labelsJSON == "" {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no labels parameter provided")}, nil, nil}
+	}
+	var lbls labels.Labels
+	if err := json.Unmarshal([]byte(labelsJSON), &lbls); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing labels: %w", err)}, nil, nil}
+	}
+
+	scrapeConfig, err := api.targetRetriever(r.Context()).ScrapePoolConfig(scrapePool)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error retrieving scrape config: %w", err)}, nil, nil}
+	}
+
+	rules := scrapeConfig.RelabelConfigs
+	steps := make([]RelabelStep, len(rules))
+	for i, rule := range rules {
+		outLabels, keep := relabel.Process(lbls, rules[:i+1]...)
+		steps[i] = RelabelStep{
+			Rule:   rule,
+			Output: outLabels,
+			Keep:   keep,
+		}
+	}
+
+	return apiFuncResult{&RelabelStepsResponse{Steps: steps}, nil, nil, nil}
 }
 
 // AlertmanagerDiscovery has all the active Alertmanagers.
