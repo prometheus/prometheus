@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.7.0-rc.0 / 2025-10-02
+## 3.7.0 / 2025-10-15
 
 * [CHANGE] Remote-write: the following metrics are deprecated:
    - `prometheus_remote_storage_samples_in_total`, use `prometheus_wal_watcher_records_read_total{type="samples"}` and `prometheus_remote_storage_samples_dropped_total` instead,
