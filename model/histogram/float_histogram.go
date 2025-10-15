@@ -1401,21 +1401,28 @@ func (h *FloatHistogram) detectResetWithMismatchedBounds(
 		prevIterStarted, prevHasMore bool
 	)
 
-	for currBoundIdx < len(currBounds) && prevBoundIdx < len(prevBounds) {
-		switch {
-		case currBounds[currBoundIdx] == prevBounds[prevBoundIdx]:
-			matchingBound := currBounds[currBoundIdx]
+	for currBoundIdx <= len(currBounds) && prevBoundIdx <= len(prevBounds) {
+		currBound := math.Inf(1)
+		if currBoundIdx < len(currBounds) {
+			currBound = currBounds[currBoundIdx]
+		}
+		prevBound := math.Inf(1)
+		if prevBoundIdx < len(prevBounds) {
+			prevBound = prevBounds[prevBoundIdx]
+		}
 
+		switch {
+		case currBound == prevBound:
 			// Check matching bound, rolling up lesser buckets that have not been accounter for yet.
 			currRollupSum := 0.0
 			if !currIterStarted || currHasMore {
-				currRollupSum, currBucket, currHasMore = rollupSumForBound(&currIt, currIterStarted, currBucket, matchingBound)
+				currRollupSum, currBucket, currHasMore = rollupSumForBound(&currIt, currIterStarted, currBucket, currBound)
 				currIterStarted = true
 			}
 
 			prevRollupSum := 0.0
 			if !prevIterStarted || prevHasMore {
-				prevRollupSum, prevBucket, prevHasMore = rollupSumForBound(&prevIt, prevIterStarted, prevBucket, matchingBound)
+				prevRollupSum, prevBucket, prevHasMore = rollupSumForBound(&prevIt, prevIterStarted, prevBucket, currBound)
 				prevIterStarted = true
 			}
 
@@ -1425,26 +1432,11 @@ func (h *FloatHistogram) detectResetWithMismatchedBounds(
 
 			currBoundIdx++
 			prevBoundIdx++
-		case currBounds[currBoundIdx] < prevBounds[prevBoundIdx]:
+		case currBound < prevBound:
 			currBoundIdx++
 		default:
 			prevBoundIdx++
 		}
-	}
-
-	// Now check the last (implicit +Inf) bound.
-	currRollupSum := 0.0
-	if !currIterStarted || currHasMore {
-		currRollupSum, _, _ = rollupSumForBound(&currIt, currIterStarted, currBucket, math.Inf(1))
-	}
-
-	prevRollupSum := 0.0
-	if !prevIterStarted || prevHasMore {
-		prevRollupSum, _, _ = rollupSumForBound(&prevIt, prevIterStarted, prevBucket, math.Inf(1))
-	}
-
-	if currRollupSum < prevRollupSum {
-		return true
 	}
 
 	return false
