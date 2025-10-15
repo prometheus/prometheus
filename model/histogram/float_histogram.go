@@ -1373,8 +1373,8 @@ func floatBucketsMatch(b1, b2 []float64) bool {
 func (h *FloatHistogram) detectResetWithMismatchedBounds(
 	previous *FloatHistogram, currBounds, prevBounds []float64,
 ) bool {
-	currIt := h.floatBucketIterator(true, h.ZeroThreshold, h.Schema)
-	prevIt := previous.floatBucketIterator(true, h.ZeroThreshold, h.Schema)
+	currIt := h.floatBucketIterator(true, 0, CustomBucketsSchema)
+	prevIt := previous.floatBucketIterator(true, 0, CustomBucketsSchema)
 
 	rollupSumForBound := func(iter *floatBucketIterator, iterStarted bool, iterBucket Bucket[float64], bound float64) (float64, Bucket[float64], bool) {
 		if !iterStarted {
