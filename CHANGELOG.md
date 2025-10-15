@@ -4,6 +4,7 @@
 
 * [BUGFIX] Config: Infer valid escaping scheme when scrape config validation scheme is set. #16923
 * [BUGFIX] PromQL: Fix info function on churning series. #17135
+* [ENHANCEMENT] PromQL: Mark timestamp() calls as step-invariant expressions when additional argument conditions are met. #17313
 
 ## 3.6.0 / 2025-09-17
 
