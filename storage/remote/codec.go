@@ -26,6 +26,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
@@ -944,27 +945,47 @@ func DecodeOTLPWriteRequest(r *http.Request) (pmetricotlp.ExportRequest, error) 
 		return pmetricotlp.NewExportRequest(), fmt.Errorf("unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
 	}
 
-	reader := r.Body
+	var reader io.Reader = r.Body
+	var gzipReader *gzip.Reader
+	var zstdDecoder *zstd.Decoder
 	// Handle compression.
 	switch r.Header.Get("Content-Encoding") {
 	case "gzip":
-		gr, err := gzip.NewReader(reader)
+		gr, err := gzip.NewReader(r.Body)
 		if err != nil {
 			return pmetricotlp.NewExportRequest(), err
 		}
 		reader = gr
-
+		gzipReader = gr
+	case "zstd":
+		zd, err := zstd.NewReader(r.Body)
+		if err != nil {
+			return pmetricotlp.NewExportRequest(), err
+		}
+		reader = zd
+		zstdDecoder = zd
 	case "":
 		// No compression.
-
 	default:
-		return pmetricotlp.NewExportRequest(), fmt.Errorf("unsupported compression: %s. Only \"gzip\" or no compression supported", r.Header.Get("Content-Encoding"))
+		return pmetricotlp.NewExportRequest(), fmt.Errorf("unsupported compression: %s. Only \"gzip\", \"zstd\" or no compression supported", r.Header.Get("Content-Encoding"))
 	}
 
 	body, err := io.ReadAll(reader)
 	if err != nil {
-		r.Body.Close()
+		_ = r.Body.Close()
+		if gzipReader != nil {
+			_ = gzipReader.Close()
+		}
+		if zstdDecoder != nil {
+			zstdDecoder.Close()
+		}
 		return pmetricotlp.NewExportRequest(), err
+	}
+	if gzipReader != nil {
+		_ = gzipReader.Close()
+	}
+	if zstdDecoder != nil {
+		zstdDecoder.Close()
 	}
 	if err = r.Body.Close(); err != nil {
 		return pmetricotlp.NewExportRequest(), err
