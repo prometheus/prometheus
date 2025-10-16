@@ -35,7 +35,7 @@ type Ingress struct {
 	logger                *slog.Logger
 	informer              cache.SharedIndexInformer
 	store                 cache.Store
-	queue                 *workqueue.Type
+	queue                 *workqueue.Typed[string]
 	namespaceInf          cache.SharedInformer
 	withNamespaceMetadata bool
 }
@@ -47,10 +47,12 @@ func NewIngress(l *slog.Logger, inf cache.SharedIndexInformer, namespace cache.S
 	ingressDeleteCount := eventCount.WithLabelValues(RoleIngress.String(), MetricLabelRoleDelete)
 
 	s := &Ingress{
-		logger:                l,
-		informer:              inf,
-		store:                 inf.GetStore(),
-		queue:                 workqueue.NewNamed(RoleIngress.String()),
+		logger:   l,
+		informer: inf,
+		store:    inf.GetStore(),
+		queue: workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{
+			Name: RoleIngress.String(),
+		}),
 		namespaceInf:          namespace,
 		withNamespaceMetadata: namespace != nil,
 	}
@@ -137,12 +139,11 @@ func (i *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 }
 
 func (i *Ingress) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
-	keyObj, quit := i.queue.Get()
+	key, quit := i.queue.Get()
 	if quit {
 		return false
 	}
-	defer i.queue.Done(keyObj)
-	key := keyObj.(string)
+	defer i.queue.Done(key)
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {

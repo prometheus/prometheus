@@ -131,6 +131,7 @@ type scrapeLoopOptions struct {
 	trackTimestampsStaleness bool
 	interval                 time.Duration
 	timeout                  time.Duration
+	scrapeNativeHist         bool
 	alwaysScrapeClassicHist  bool
 	convertClassicHistToNHCB bool
 	fallbackScrapeProtocol   string
@@ -212,7 +213,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			opts.timeout,
 			opts.alwaysScrapeClassicHist,
 			opts.convertClassicHistToNHCB,
-			options.EnableNativeHistogramsIngestion,
+			cfg.ScrapeNativeHistogramsEnabled(),
 			options.EnableCreatedTimestampZeroIngestion,
 			options.EnableTypeAndUnitLabels,
 			options.ExtraMetrics,
@@ -371,6 +372,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 		trackTimestampsStaleness = sp.config.TrackTimestampsStaleness
 		mrc                      = sp.config.MetricRelabelConfigs
 		fallbackScrapeProtocol   = sp.config.ScrapeFallbackProtocol.HeaderMediaType()
+		scrapeNativeHist         = sp.config.ScrapeNativeHistogramsEnabled()
 		alwaysScrapeClassicHist  = sp.config.AlwaysScrapeClassicHistogramsEnabled()
 		convertClassicHistToNHCB = sp.config.ConvertClassicHistogramsToNHCBEnabled()
 	)
@@ -415,6 +417,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 				interval:                 targetInterval,
 				timeout:                  targetTimeout,
 				fallbackScrapeProtocol:   fallbackScrapeProtocol,
+				scrapeNativeHist:         scrapeNativeHist,
 				alwaysScrapeClassicHist:  alwaysScrapeClassicHist,
 				convertClassicHistToNHCB: convertClassicHistToNHCB,
 			})
@@ -527,6 +530,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 		trackTimestampsStaleness = sp.config.TrackTimestampsStaleness
 		mrc                      = sp.config.MetricRelabelConfigs
 		fallbackScrapeProtocol   = sp.config.ScrapeFallbackProtocol.HeaderMediaType()
+		scrapeNativeHist         = sp.config.ScrapeNativeHistogramsEnabled()
 		alwaysScrapeClassicHist  = sp.config.AlwaysScrapeClassicHistogramsEnabled()
 		convertClassicHistToNHCB = sp.config.ConvertClassicHistogramsToNHCBEnabled()
 	)
@@ -564,6 +568,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				mrc:                      mrc,
 				interval:                 interval,
 				timeout:                  timeout,
+				scrapeNativeHist:         scrapeNativeHist,
 				alwaysScrapeClassicHist:  alwaysScrapeClassicHist,
 				convertClassicHistToNHCB: convertClassicHistToNHCB,
 				fallbackScrapeProtocol:   fallbackScrapeProtocol,
@@ -930,16 +935,16 @@ type scrapeLoop struct {
 	labelLimits              *labelLimits
 	interval                 time.Duration
 	timeout                  time.Duration
-	alwaysScrapeClassicHist  bool
-	convertClassicHistToNHCB bool
 	validationScheme         model.ValidationScheme
 	escapingScheme           model.EscapingScheme
+
+	alwaysScrapeClassicHist  bool
+	convertClassicHistToNHCB bool
+	enableCTZeroIngestion    bool
+	enableTypeAndUnitLabels  bool
 	fallbackScrapeProtocol   string
 
-	// Feature flagged options.
-	enableNativeHistogramIngestion bool
-	enableCTZeroIngestion          bool
-	enableTypeAndUnitLabels        bool
+	enableNativeHistogramScraping bool
 
 	appender            func(ctx context.Context) storage.Appender
 	symbolTable         *labels.SymbolTable
@@ -1247,7 +1252,7 @@ func newScrapeLoop(ctx context.Context,
 	timeout time.Duration,
 	alwaysScrapeClassicHist bool,
 	convertClassicHistToNHCB bool,
-	enableNativeHistogramIngestion bool,
+	enableNativeHistogramScraping bool,
 	enableCTZeroIngestion bool,
 	enableTypeAndUnitLabels bool,
 	reportExtraMetrics bool,
@@ -1282,39 +1287,39 @@ func newScrapeLoop(ctx context.Context,
 	}
 
 	sl := &scrapeLoop{
-		scraper:                        sc,
-		buffers:                        buffers,
-		cache:                          cache,
-		appender:                       appender,
-		symbolTable:                    symbolTable,
-		sampleMutator:                  sampleMutator,
-		reportSampleMutator:            reportSampleMutator,
-		stopped:                        make(chan struct{}),
-		offsetSeed:                     offsetSeed,
-		l:                              l,
-		parentCtx:                      ctx,
-		appenderCtx:                    appenderCtx,
-		honorTimestamps:                honorTimestamps,
-		trackTimestampsStaleness:       trackTimestampsStaleness,
-		enableCompression:              enableCompression,
-		sampleLimit:                    sampleLimit,
-		bucketLimit:                    bucketLimit,
-		maxSchema:                      maxSchema,
-		labelLimits:                    labelLimits,
-		interval:                       interval,
-		timeout:                        timeout,
-		alwaysScrapeClassicHist:        alwaysScrapeClassicHist,
-		convertClassicHistToNHCB:       convertClassicHistToNHCB,
-		enableNativeHistogramIngestion: enableNativeHistogramIngestion,
-		enableCTZeroIngestion:          enableCTZeroIngestion,
-		enableTypeAndUnitLabels:        enableTypeAndUnitLabels,
-		reportExtraMetrics:             reportExtraMetrics,
-		appendMetadataToWAL:            appendMetadataToWAL,
-		metrics:                        metrics,
-		skipOffsetting:                 skipOffsetting,
-		validationScheme:               validationScheme,
-		escapingScheme:                 escapingScheme,
-		fallbackScrapeProtocol:         fallbackScrapeProtocol,
+		scraper:                       sc,
+		buffers:                       buffers,
+		cache:                         cache,
+		appender:                      appender,
+		symbolTable:                   symbolTable,
+		sampleMutator:                 sampleMutator,
+		reportSampleMutator:           reportSampleMutator,
+		stopped:                       make(chan struct{}),
+		offsetSeed:                    offsetSeed,
+		l:                             l,
+		parentCtx:                     ctx,
+		appenderCtx:                   appenderCtx,
+		honorTimestamps:               honorTimestamps,
+		trackTimestampsStaleness:      trackTimestampsStaleness,
+		enableCompression:             enableCompression,
+		sampleLimit:                   sampleLimit,
+		bucketLimit:                   bucketLimit,
+		maxSchema:                     maxSchema,
+		labelLimits:                   labelLimits,
+		interval:                      interval,
+		timeout:                       timeout,
+		alwaysScrapeClassicHist:       alwaysScrapeClassicHist,
+		convertClassicHistToNHCB:      convertClassicHistToNHCB,
+		enableCTZeroIngestion:         enableCTZeroIngestion,
+		enableTypeAndUnitLabels:       enableTypeAndUnitLabels,
+		fallbackScrapeProtocol:        fallbackScrapeProtocol,
+		enableNativeHistogramScraping: enableNativeHistogramScraping,
+		reportExtraMetrics:            reportExtraMetrics,
+		appendMetadataToWAL:           appendMetadataToWAL,
+		metrics:                       metrics,
+		skipOffsetting:                skipOffsetting,
+		validationScheme:              validationScheme,
+		escapingScheme:                escapingScheme,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1634,7 +1639,14 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		return
 	}
 
-	p, err := textparse.New(b, contentType, sl.fallbackScrapeProtocol, sl.alwaysScrapeClassicHist, sl.convertClassicHistToNHCB, sl.enableCTZeroIngestion, sl.enableTypeAndUnitLabels, sl.symbolTable)
+	p, err := textparse.New(b, contentType, sl.symbolTable, textparse.ParserOptions{
+		EnableTypeAndUnitLabels:                 sl.enableTypeAndUnitLabels,
+		IgnoreNativeHistograms:                  !sl.enableNativeHistogramScraping,
+		ConvertClassicHistogramsToNHCB:          sl.convertClassicHistToNHCB,
+		KeepClassicOnClassicAndNativeHistograms: sl.alwaysScrapeClassicHist,
+		OpenMetricsSkipCTSeries:                 sl.enableCTZeroIngestion,
+		FallbackContentType:                     sl.fallbackScrapeProtocol,
+	})
 	if p == nil {
 		sl.l.Error(
 			"Failed to determine correct type of scrape target.",
@@ -1656,8 +1668,8 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		appErrs        = appendErrors{}
 		sampleLimitErr error
 		bucketLimitErr error
-		lset           labels.Labels     // escapes to heap so hoisted out of loop
-		e              exemplar.Exemplar // escapes to heap so hoisted out of loop
+		lset           labels.Labels     // Escapes to heap so hoisted out of loop.
+		e              exemplar.Exemplar // Escapes to heap so hoisted out of loop.
 		lastMeta       *metaEntry
 		lastMFName     []byte
 	)
@@ -1727,7 +1739,7 @@ loop:
 			t = *parsedTimestamp
 		}
 
-		if sl.cache.getDropped(met) || isHistogram && !sl.enableNativeHistogramIngestion {
+		if sl.cache.getDropped(met) {
 			continue
 		}
 		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)

@@ -130,7 +130,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 			}
 
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -237,7 +237,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			}
 
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -272,7 +272,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 		}
 
 		appendable := &mockAppendable{}
-		handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false)
+		handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false, false)
 
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, req)
@@ -301,7 +301,7 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	// in Prometheus, so keeping like this to not break existing 1.0 clients.
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -352,6 +352,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 	for _, tc := range []struct {
 		desc             string
 		input            []writev2.TimeSeries
+		symbols          []string // Custom symbol table for tests that need it
 		expectedCode     int
 		expectedRespBody string
 
@@ -362,7 +363,9 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		appendExemplarErr     error
 		updateMetadataErr     error
 
-		ingestCTZeroSample bool
+		ingestCTZeroSample      bool
+		enableTypeAndUnitLabels bool
+		expectedLabels          labels.Labels // For verifying type/unit labels
 	}{
 		{
 			desc:               "All timeseries accepted/ct_enabled",
@@ -417,6 +420,22 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				writeV2RequestFixture.Timeseries...),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "parsing labels for series [1 999]: labelRefs 1 (name) = 999 (value) outside of symbols table (size 18)\n",
+		},
+		{
+			desc: "Partial write; TimeSeries with only exemplars (no samples or histograms)",
+			input: append(
+				// Series with only exemplars, no samples or histograms.
+				[]writev2.TimeSeries{{
+					LabelsRefs: []uint32{1, 2},
+					Exemplars: []writev2.Exemplar{{
+						LabelsRefs: []uint32{},
+						Value:      1.0,
+						Timestamp:  1,
+					}},
+				}},
+				writeV2RequestFixture.Timeseries...),
+			expectedCode:     http.StatusBadRequest,
+			expectedRespBody: "TimeSeries must contain at least one sample or histogram for series {__name__=\"test_metric1\"}\n",
 		},
 		{
 			desc: "Partial write; first series with one OOO sample",
@@ -497,9 +516,147 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedCode:     http.StatusInternalServerError,
 			expectedRespBody: "storage error\n",
 		},
+		// Type and unit labels tests
+		{
+			desc: "Type and unit labels enabled with counter and bytes unit",
+			input: func() []writev2.TimeSeries {
+				symbolTable := writev2.NewSymbolTable()
+				labelRefs := symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				unitRef := symbolTable.Symbolize("bytes")
+				return []writev2.TimeSeries{
+					{
+						LabelsRefs: labelRefs,
+						Metadata: writev2.Metadata{
+							Type:    writev2.Metadata_METRIC_TYPE_COUNTER,
+							UnitRef: unitRef,
+						},
+						Samples: []writev2.Sample{{Value: 1.0, Timestamp: 1000}},
+					},
+				}
+			}(),
+			symbols: func() []string {
+				symbolTable := writev2.NewSymbolTable()
+				symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				symbolTable.Symbolize("bytes")
+				return symbolTable.Symbols()
+			}(),
+			expectedCode:            http.StatusNoContent,
+			enableTypeAndUnitLabels: true,
+			expectedLabels:          labels.FromStrings("__name__", "test_metric", "__type__", "counter", "__unit__", "bytes", "foo", "bar"),
+		},
+		{
+			desc: "Type and unit labels enabled with gauge and seconds unit",
+			input: func() []writev2.TimeSeries {
+				symbolTable := writev2.NewSymbolTable()
+				labelRefs := symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				unitRef := symbolTable.Symbolize("seconds")
+				return []writev2.TimeSeries{
+					{
+						LabelsRefs: labelRefs,
+						Metadata: writev2.Metadata{
+							Type:    writev2.Metadata_METRIC_TYPE_GAUGE,
+							UnitRef: unitRef,
+						},
+						Samples: []writev2.Sample{{Value: 1.0, Timestamp: 1000}},
+					},
+				}
+			}(),
+			symbols: func() []string {
+				symbolTable := writev2.NewSymbolTable()
+				symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				symbolTable.Symbolize("seconds")
+				return symbolTable.Symbols()
+			}(),
+			expectedCode:            http.StatusNoContent,
+			enableTypeAndUnitLabels: true,
+			expectedLabels:          labels.FromStrings("__name__", "test_metric", "__type__", "gauge", "__unit__", "seconds", "foo", "bar"),
+		},
+		{
+			desc: "Type and unit labels disabled - no metadata labels",
+			input: func() []writev2.TimeSeries {
+				symbolTable := writev2.NewSymbolTable()
+				labelRefs := symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				unitRef := symbolTable.Symbolize("bytes")
+				return []writev2.TimeSeries{
+					{
+						LabelsRefs: labelRefs,
+						Metadata: writev2.Metadata{
+							Type:    writev2.Metadata_METRIC_TYPE_COUNTER,
+							UnitRef: unitRef,
+						},
+						Samples: []writev2.Sample{{Value: 1.0, Timestamp: 1000}},
+					},
+				}
+			}(),
+			symbols: func() []string {
+				symbolTable := writev2.NewSymbolTable()
+				symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				symbolTable.Symbolize("bytes")
+				return symbolTable.Symbols()
+			}(),
+			expectedCode:            http.StatusNoContent,
+			enableTypeAndUnitLabels: false,
+			expectedLabels:          labels.FromStrings("__name__", "test_metric", "foo", "bar"),
+		},
+		{
+			desc: "Type and unit labels enabled but no metadata",
+			input: func() []writev2.TimeSeries {
+				symbolTable := writev2.NewSymbolTable()
+				labelRefs := symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				return []writev2.TimeSeries{
+					{
+						LabelsRefs: labelRefs,
+						Metadata: writev2.Metadata{
+							Type:    writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+							UnitRef: 0,
+						},
+						Samples: []writev2.Sample{{Value: 1.0, Timestamp: 1000}},
+					},
+				}
+			}(),
+			symbols: func() []string {
+				symbolTable := writev2.NewSymbolTable()
+				symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				return symbolTable.Symbols()
+			}(),
+			expectedCode:            http.StatusNoContent,
+			enableTypeAndUnitLabels: true,
+			expectedLabels:          labels.FromStrings("__name__", "test_metric", "foo", "bar"),
+		},
+		{
+			desc: "Type and unit labels enabled with only unit (no type)",
+			input: func() []writev2.TimeSeries {
+				symbolTable := writev2.NewSymbolTable()
+				labelRefs := symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				unitRef := symbolTable.Symbolize("milliseconds")
+				return []writev2.TimeSeries{
+					{
+						LabelsRefs: labelRefs,
+						Metadata: writev2.Metadata{
+							Type:    writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+							UnitRef: unitRef,
+						},
+						Samples: []writev2.Sample{{Value: 1.0, Timestamp: 1000}},
+					},
+				}
+			}(),
+			symbols: func() []string {
+				symbolTable := writev2.NewSymbolTable()
+				symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "bar"), nil)
+				symbolTable.Symbolize("milliseconds")
+				return symbolTable.Symbols()
+			}(),
+			expectedCode:            http.StatusNoContent,
+			enableTypeAndUnitLabels: true,
+			expectedLabels:          labels.FromStrings("__name__", "test_metric", "__unit__", "milliseconds", "foo", "bar"),
+		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), tc.input, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+			symbols := writeV2RequestFixture.Symbols
+			if tc.symbols != nil {
+				symbols = tc.symbols
+			}
+			payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), tc.input, symbols, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
 			req, err := http.NewRequest("", "", bytes.NewReader(payload))
@@ -517,7 +674,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				appendExemplarErr:     tc.appendExemplarErr,
 				updateMetadataErr:     tc.updateMetadataErr,
 			}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, tc.ingestCTZeroSample)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, tc.ingestCTZeroSample, tc.enableTypeAndUnitLabels)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -538,6 +695,12 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				require.Empty(t, appendable.histograms)
 				require.Empty(t, appendable.exemplars)
 				require.Empty(t, appendable.metadata)
+				return
+			}
+
+			if !tc.expectedLabels.IsEmpty() {
+				require.Len(t, appendable.samples, 1)
+				testutil.RequireEqual(t, tc.expectedLabels, appendable.samples[0].l)
 				return
 			}
 
@@ -639,7 +802,7 @@ func TestOutOfOrderSample_V1Message(t *testing.T) {
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -681,7 +844,7 @@ func TestOutOfOrderExemplar_V1Message(t *testing.T) {
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -719,7 +882,7 @@ func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -769,7 +932,7 @@ func BenchmarkRemoteWriteHandler(b *testing.B) {
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{tc.protoFormat}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{tc.protoFormat}, false, false)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				b.StopTimer()
@@ -794,7 +957,7 @@ func TestCommitErr_V1Message(t *testing.T) {
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{commitErr: errors.New("commit error")}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -804,6 +967,93 @@ func TestCommitErr_V1Message(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	require.Equal(t, "commit error\n", string(body))
+}
+
+// Regression test for https://github.com/prometheus/prometheus/issues/17206
+func TestHistogramValidationErrorHandling(t *testing.T) {
+	testCases := []struct {
+		desc     string
+		hist     histogram.Histogram
+		expected string
+	}{
+		{
+			desc: "count mismatch",
+			hist: histogram.Histogram{
+				Schema:          2,
+				ZeroThreshold:   1e-128,
+				ZeroCount:       1,
+				Count:           10,
+				Sum:             20,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{2},
+				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				NegativeBuckets: []int64{3},
+				// Total: 1 (zero) + 2 (positive) + 3 (negative) = 6, but Count = 10
+			},
+			expected: "histogram's observation count should equal",
+		},
+		{
+			desc: "custom buckets zero count",
+			hist: histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           10,
+				Sum:             20,
+				ZeroCount:       1, // Invalid: custom buckets must have zero count of 0
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{10},
+				CustomValues:    []float64{1.0},
+			},
+			expected: "custom buckets: must have zero count of 0",
+		},
+	}
+
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		protoName := "V1"
+		if protoMsg == config.RemoteWriteProtoMsgV2 {
+			protoName = "V2"
+		}
+
+		for _, tc := range testCases {
+			testName := fmt.Sprintf("%s %s", protoName, tc.desc)
+			t.Run(testName, func(t *testing.T) {
+				dir := t.TempDir()
+				opts := tsdb.DefaultOptions()
+
+				db, err := tsdb.Open(dir, nil, nil, opts, nil)
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+				handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{protoMsg}, false, false)
+				recorder := httptest.NewRecorder()
+
+				var buf []byte
+				if protoMsg == config.RemoteWriteProtoMsgV1 {
+					ts := []prompb.TimeSeries{{
+						Labels:     []prompb.Label{{Name: "__name__", Value: "test"}},
+						Histograms: []prompb.Histogram{prompb.FromIntHistogram(1, &tc.hist)},
+					}}
+					buf, _, _, err = buildWriteRequest(nil, ts, nil, nil, nil, nil, "snappy")
+				} else {
+					st := writev2.NewSymbolTable()
+					ts := []writev2.TimeSeries{{
+						LabelsRefs: st.SymbolizeLabels(labels.FromStrings("__name__", "test"), nil),
+						Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, &tc.hist)},
+					}}
+					buf, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), ts, st.Symbols(), nil, nil, nil, "snappy")
+				}
+				require.NoError(t, err)
+
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/write", bytes.NewReader(buf))
+				req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[protoMsg])
+				req.Header.Set("Content-Encoding", "snappy")
+
+				handler.ServeHTTP(recorder, req)
+
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+				require.Contains(t, recorder.Body.String(), tc.expected)
+			})
+		}
+	}
 }
 
 func TestCommitErr_V2Message(t *testing.T) {
@@ -818,7 +1068,7 @@ func TestCommitErr_V2Message(t *testing.T) {
 	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 
 	appendable := &mockAppendable{commitErr: errors.New("commit error")}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -845,7 +1095,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 		require.NoError(b, db.Close())
 	})
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false, false)
 
 	buf, _, _, err := buildWriteRequest(nil, genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil, nil, "snappy")
 	require.NoError(b, err)
@@ -1133,4 +1383,101 @@ func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, l labels.Labels
 	m.latestSample[hash] = ct
 	m.samples = append(m.samples, mockSample{l, ct, 0})
 	return storage.SeriesRef(hash), nil
+}
+
+var (
+	highSchemaHistogram = &histogram.Histogram{
+		Schema: 10,
+		PositiveSpans: []histogram.Span{
+			{
+				Offset: -1,
+				Length: 2,
+			},
+		},
+		PositiveBuckets: []int64{1, 2},
+		NegativeSpans: []histogram.Span{
+			{
+				Offset: 0,
+				Length: 1,
+			},
+		},
+		NegativeBuckets: []int64{1},
+	}
+	reducedSchemaHistogram = &histogram.Histogram{
+		Schema: 8,
+		PositiveSpans: []histogram.Span{
+			{
+				Offset: 0,
+				Length: 1,
+			},
+		},
+		PositiveBuckets: []int64{4},
+		NegativeSpans: []histogram.Span{
+			{
+				Offset: 0,
+				Length: 1,
+			},
+		},
+		NegativeBuckets: []int64{1},
+	}
+)
+
+func TestHistogramsReduction(t *testing.T) {
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(string(protoMsg), func(t *testing.T) {
+			appendable := &mockAppendable{}
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{protoMsg}, false, false)
+
+			var (
+				err     error
+				payload []byte
+			)
+
+			if protoMsg == config.RemoteWriteProtoMsgV1 {
+				payload, _, _, err = buildWriteRequest(nil, []prompb.TimeSeries{
+					{
+						Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric1"}},
+						Histograms: []prompb.Histogram{prompb.FromIntHistogram(1, highSchemaHistogram)},
+					},
+					{
+						Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric2"}},
+						Histograms: []prompb.Histogram{prompb.FromFloatHistogram(2, highSchemaHistogram.ToFloat(nil))},
+					},
+				}, nil, nil, nil, nil, "snappy")
+			} else {
+				payload, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+					{
+						LabelsRefs: []uint32{0, 1},
+						Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, highSchemaHistogram)},
+					},
+					{
+						LabelsRefs: []uint32{0, 2},
+						Histograms: []writev2.Histogram{writev2.FromFloatHistogram(2, highSchemaHistogram.ToFloat(nil))},
+					},
+				}, []string{"__name__", "test_metric1", "test_metric2"},
+					nil, nil, nil, "snappy")
+			}
+			require.NoError(t, err)
+
+			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			require.NoError(t, err)
+
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[protoMsg])
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			resp := recorder.Result()
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNoContent, resp.StatusCode)
+			require.Empty(t, body)
+
+			require.Len(t, appendable.histograms, 2)
+			require.Equal(t, int64(1), appendable.histograms[0].t)
+			require.Equal(t, reducedSchemaHistogram, appendable.histograms[0].h)
+			require.Equal(t, int64(2), appendable.histograms[1].t)
+			require.Equal(t, reducedSchemaHistogram.ToFloat(nil), appendable.histograms[1].fh)
+		})
+	}
 }

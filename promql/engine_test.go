@@ -1513,6 +1513,160 @@ load 10s
 	}
 }
 
+func TestExtendedRangeSelectors(t *testing.T) {
+	parser.EnableExtendedRangeSelectors = true
+	t.Cleanup(func() {
+		parser.EnableExtendedRangeSelectors = false
+	})
+
+	engine := newTestEngine(t)
+	storage := promqltest.LoadedStorage(t, `
+	load 10s
+		metric 1+1x10
+		withreset 1+1x4 1+1x5
+		notregular 0 5 100 2 8
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	tc := []struct {
+		query    string
+		t        time.Time
+		expected promql.Matrix
+	}{
+		{
+			query: "metric[10s] smoothed",
+			t:     time.Unix(10, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 2, T: 10000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] smoothed",
+			t:     time.Unix(15, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1.5, T: 5000}, {F: 2, T: 10000}, {F: 2.5, T: 15000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] smoothed",
+			t:     time.Unix(5, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: -5000}, {F: 1, T: 0}, {F: 1.5, T: 5000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] smoothed",
+			t:     time.Unix(105, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 10.5, T: 95000}, {F: 11, T: 100000}, {F: 11, T: 105000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "withreset[10s] smoothed",
+			t:     time.Unix(45, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 4.5, T: 35000}, {F: 5, T: 40000}, {F: 3, T: 45000}},
+					Metric: labels.FromStrings("__name__", "withreset"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] anchored",
+			t:     time.Unix(10, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 2, T: 10000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] anchored",
+			t:     time.Unix(15, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 5000}, {F: 2, T: 10000}, {F: 2, T: 15000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] anchored",
+			t:     time.Unix(5, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: -5000}, {F: 1, T: 0}, {F: 1, T: 5000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] anchored",
+			t:     time.Unix(105, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 10, T: 95000}, {F: 11, T: 100000}, {F: 11, T: 105000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "withreset[10s] anchored",
+			t:     time.Unix(45, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 4, T: 35000}, {F: 5, T: 40000}, {F: 5, T: 45000}},
+					Metric: labels.FromStrings("__name__", "withreset"),
+				},
+			},
+		},
+		{
+			query: "notregular[20s] smoothed",
+			t:     time.Unix(30, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 5, T: 10000}, {F: 100, T: 20000}, {F: 2, T: 30000}},
+					Metric: labels.FromStrings("__name__", "notregular"),
+				},
+			},
+		},
+		{
+			query: "notregular[20s] anchored",
+			t:     time.Unix(30, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 5, T: 10000}, {F: 100, T: 20000}, {F: 2, T: 30000}},
+					Metric: labels.FromStrings("__name__", "notregular"),
+				},
+			},
+		},
+	}
+
+	for _, tc := range tc {
+		t.Run(tc.query, func(t *testing.T) {
+			engine = promqltest.NewTestEngine(t, false, 0, 100)
+			qry, err := engine.NewInstantQuery(context.Background(), storage, nil, tc.query, tc.t)
+			require.NoError(t, err)
+			res := qry.Exec(context.Background())
+			require.NoError(t, res.Err)
+			require.Equal(t, tc.expected, res.Value)
+		})
+	}
+}
+
 func TestAtModifier(t *testing.T) {
 	engine := newTestEngine(t)
 	storage := promqltest.LoadedStorage(t, `
@@ -3195,89 +3349,6 @@ func TestEngine_Close(t *testing.T) {
 	})
 }
 
-func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
-	engine := newTestEngine(t)
-
-	baseT := timestamp.Time(0)
-	storage := promqltest.LoadedStorage(t, `
-		load 1m
-			some_metric{env="1"} 0+1x4
-			some_metric{env="2"} 0+2x4
-			some_metric{env="3"} {{count:0}}+{{count:1}}x4
-			some_metric_with_stale_marker 0 1 stale 3
-	`)
-	t.Cleanup(func() { require.NoError(t, storage.Close()) })
-
-	testCases := map[string]struct {
-		expr     string
-		expected promql.Matrix
-		ts       time.Time
-	}{
-		"matches series with points in range": {
-			expr: "some_metric[2m]",
-			ts:   baseT.Add(2 * time.Minute),
-			expected: promql.Matrix{
-				{
-					Metric: labels.FromStrings("__name__", "some_metric", "env", "1"),
-					Floats: []promql.FPoint{
-						{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
-						{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 2},
-					},
-				},
-				{
-					Metric: labels.FromStrings("__name__", "some_metric", "env", "2"),
-					Floats: []promql.FPoint{
-						{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 2},
-						{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 4},
-					},
-				},
-				{
-					Metric: labels.FromStrings("__name__", "some_metric", "env", "3"),
-					Histograms: []promql.HPoint{
-						{T: timestamp.FromTime(baseT.Add(time.Minute)), H: &histogram.FloatHistogram{Count: 1, CounterResetHint: histogram.NotCounterReset}},
-						{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), H: &histogram.FloatHistogram{Count: 2, CounterResetHint: histogram.NotCounterReset}},
-					},
-				},
-			},
-		},
-		"matches no series": {
-			expr:     "some_nonexistent_metric[1m]",
-			ts:       baseT,
-			expected: promql.Matrix{},
-		},
-		"no samples in range": {
-			expr:     "some_metric[1m]",
-			ts:       baseT.Add(20 * time.Minute),
-			expected: promql.Matrix{},
-		},
-		"metric with stale marker": {
-			expr: "some_metric_with_stale_marker[3m]",
-			ts:   baseT.Add(3 * time.Minute),
-			expected: promql.Matrix{
-				{
-					Metric: labels.FromStrings("__name__", "some_metric_with_stale_marker"),
-					Floats: []promql.FPoint{
-						{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
-						{T: timestamp.FromTime(baseT.Add(3 * time.Minute)), F: 3},
-					},
-				},
-			},
-		},
-	}
-
-	for name, testCase := range testCases {
-		t.Run(name, func(t *testing.T) {
-			q, err := engine.NewInstantQuery(context.Background(), storage, nil, testCase.expr, testCase.ts)
-			require.NoError(t, err)
-			defer q.Close()
-
-			res := q.Exec(context.Background())
-			require.NoError(t, res.Err)
-			testutil.RequireEqual(t, testCase.expected, res.Value)
-		})
-	}
-}
-
 func TestQueryLookbackDelta(t *testing.T) {
 	var (
 		load = `load 5m
@@ -3889,7 +3960,6 @@ func TestInconsistentHistogramCount(t *testing.T) {
 	dir := t.TempDir()
 
 	opts := tsdb.DefaultHeadOptions()
-	opts.EnableNativeHistograms.Store(true)
 	opts.ChunkDirRoot = dir
 	// We use TSDB head only. By using full TSDB DB, and appending samples to it, closing it would cause unnecessary HEAD compaction, which slows down the test.
 	head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)

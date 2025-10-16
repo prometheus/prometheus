@@ -387,12 +387,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			var informer cache.SharedIndexInformer
 			e := d.client.DiscoveryV1().EndpointSlices(namespace)
 			elw := &cache.ListWatch{
-				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.endpointslice.field
 					options.LabelSelector = d.selectors.endpointslice.label
 					return e.List(ctx, options)
 				},
-				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.endpointslice.field
 					options.LabelSelector = d.selectors.endpointslice.label
 					return e.Watch(ctx, options)
@@ -402,12 +402,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
-				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.service.field
 					options.LabelSelector = d.selectors.service.label
 					return s.List(ctx, options)
 				},
-				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.service.field
 					options.LabelSelector = d.selectors.service.label
 					return s.Watch(ctx, options)
@@ -415,12 +415,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
-				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.pod.field
 					options.LabelSelector = d.selectors.pod.label
 					return p.List(ctx, options)
 				},
-				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.pod.field
 					options.LabelSelector = d.selectors.pod.label
 					return p.Watch(ctx, options)
@@ -454,12 +454,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		for _, namespace := range namespaces {
 			e := d.client.CoreV1().Endpoints(namespace)
 			elw := &cache.ListWatch{
-				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.endpoints.field
 					options.LabelSelector = d.selectors.endpoints.label
 					return e.List(ctx, options)
 				},
-				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.endpoints.field
 					options.LabelSelector = d.selectors.endpoints.label
 					return e.Watch(ctx, options)
@@ -467,12 +467,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
-				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.service.field
 					options.LabelSelector = d.selectors.service.label
 					return s.List(ctx, options)
 				},
-				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.service.field
 					options.LabelSelector = d.selectors.service.label
 					return s.Watch(ctx, options)
@@ -480,12 +480,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
-				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.pod.field
 					options.LabelSelector = d.selectors.pod.label
 					return p.List(ctx, options)
 				},
-				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.pod.field
 					options.LabelSelector = d.selectors.pod.label
 					return p.Watch(ctx, options)
@@ -531,12 +531,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		for _, namespace := range namespaces {
 			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
-				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.pod.field
 					options.LabelSelector = d.selectors.pod.label
 					return p.List(ctx, options)
 				},
-				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.pod.field
 					options.LabelSelector = d.selectors.pod.label
 					return p.Watch(ctx, options)
@@ -562,12 +562,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		for _, namespace := range namespaces {
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
-				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.service.field
 					options.LabelSelector = d.selectors.service.label
 					return s.List(ctx, options)
 				},
-				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.service.field
 					options.LabelSelector = d.selectors.service.label
 					return s.Watch(ctx, options)
@@ -592,12 +592,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		for _, namespace := range namespaces {
 			i := d.client.NetworkingV1().Ingresses(namespace)
 			ilw := &cache.ListWatch{
-				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
 					options.FieldSelector = d.selectors.ingress.field
 					options.LabelSelector = d.selectors.ingress.label
 					return i.List(ctx, options)
 				},
-				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
 					options.FieldSelector = d.selectors.ingress.field
 					options.LabelSelector = d.selectors.ingress.label
 					return i.Watch(ctx, options)
@@ -666,14 +666,14 @@ func retryOnError(ctx context.Context, interval time.Duration, f func() error) (
 	}
 }
 
-func (d *Discovery) newNodeInformer(ctx context.Context) cache.SharedInformer {
+func (d *Discovery) newNodeInformer(_ context.Context) cache.SharedInformer {
 	nlw := &cache.ListWatch{
-		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+		ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
 			options.FieldSelector = d.selectors.node.field
 			options.LabelSelector = d.selectors.node.label
 			return d.client.CoreV1().Nodes().List(ctx, options)
 		},
-		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+		WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
 			options.FieldSelector = d.selectors.node.field
 			options.LabelSelector = d.selectors.node.label
 			return d.client.CoreV1().Nodes().Watch(ctx, options)
@@ -682,13 +682,13 @@ func (d *Discovery) newNodeInformer(ctx context.Context) cache.SharedInformer {
 	return d.mustNewSharedInformer(nlw, &apiv1.Node{}, resyncDisabled)
 }
 
-func (d *Discovery) newNamespaceInformer(ctx context.Context) cache.SharedInformer {
+func (d *Discovery) newNamespaceInformer(_ context.Context) cache.SharedInformer {
 	// We don't filter on NamespaceDiscovery.
 	nlw := &cache.ListWatch{
-		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+		ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
 			return d.client.CoreV1().Namespaces().List(ctx, options)
 		},
-		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+		WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
 			return d.client.CoreV1().Namespaces().Watch(ctx, options)
 		},
 	}
@@ -832,16 +832,16 @@ func (d *Discovery) newIndexedIngressesInformer(ilw *cache.ListWatch) cache.Shar
 	return d.mustNewSharedIndexInformer(ilw, &networkv1.Ingress{}, resyncDisabled, indexers)
 }
 
-func (d *Discovery) informerWatchErrorHandler(r *cache.Reflector, err error) {
+func (d *Discovery) informerWatchErrorHandler(ctx context.Context, r *cache.Reflector, err error) {
 	d.metrics.failuresCount.Inc()
-	cache.DefaultWatchErrorHandler(r, err)
+	cache.DefaultWatchErrorHandler(ctx, r, err)
 }
 
 func (d *Discovery) mustNewSharedInformer(lw cache.ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration) cache.SharedInformer {
 	informer := cache.NewSharedInformer(lw, exampleObject, defaultEventHandlerResyncPeriod)
 	// Invoking SetWatchErrorHandler should fail only if the informer has been started beforehand.
 	// Such a scenario would suggest an incorrect use of the API, thus the panic.
-	if err := informer.SetWatchErrorHandler(d.informerWatchErrorHandler); err != nil {
+	if err := informer.SetWatchErrorHandlerWithContext(d.informerWatchErrorHandler); err != nil {
 		panic(err)
 	}
 	return informer
@@ -851,7 +851,7 @@ func (d *Discovery) mustNewSharedIndexInformer(lw cache.ListerWatcher, exampleOb
 	informer := cache.NewSharedIndexInformer(lw, exampleObject, defaultEventHandlerResyncPeriod, indexers)
 	// Invoking SetWatchErrorHandler should fail only if the informer has been started beforehand.
 	// Such a scenario would suggest an incorrect use of the API, thus the panic.
-	if err := informer.SetWatchErrorHandler(d.informerWatchErrorHandler); err != nil {
+	if err := informer.SetWatchErrorHandlerWithContext(d.informerWatchErrorHandler); err != nil {
 		panic(err)
 	}
 	return informer

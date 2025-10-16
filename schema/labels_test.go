@@ -142,7 +142,7 @@ func TestIgnoreOverriddenMetadataLabelsScratchBuilder(t *testing.T) {
 		t.Run(fmt.Sprintf("meta=%#v", tcase.highPrioMeta), func(t *testing.T) {
 			lb := labels.NewScratchBuilder(0)
 			tcase.highPrioMeta.AddToLabels(&lb)
-			wrapped := &IgnoreOverriddenMetadataLabelsScratchBuilder{ScratchBuilder: &lb, Overwrite: tcase.highPrioMeta}
+			wrapped := tcase.highPrioMeta.NewIgnoreOverriddenMetadataLabelScratchBuilder(&lb)
 			incomingLabels.Range(func(l labels.Label) {
 				wrapped.Add(l.Name, l.Value)
 			})

@@ -417,12 +417,12 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	readyf := h.testReady
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, path.Join(o.ExternalURL.Path, homePage), http.StatusFound)
+		http.Redirect(w, r, path.Join(o.RoutePrefix, homePage), http.StatusFound)
 	})
 
 	if !o.UseOldUI {
 		router.Get("/graph", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/query?"+r.URL.RawQuery), http.StatusFound)
+			http.Redirect(w, r, path.Join(o.RoutePrefix, "/query?"+r.URL.RawQuery), http.StatusFound)
 		})
 	}
 

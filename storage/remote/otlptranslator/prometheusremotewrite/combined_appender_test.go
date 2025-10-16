@@ -14,6 +14,7 @@
 package prometheusremotewrite
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"math"
@@ -160,8 +161,10 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 
 	testCases := map[string]struct {
 		appendFunc        func(*testing.T, CombinedAppender)
+		extraAppendFunc   func(*testing.T, CombinedAppender)
 		expectedSamples   []sample
 		expectedExemplars []exemplar.QueryResult
+		expectedLogsForCT []string
 	}{
 		"single float sample, zero CT": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
@@ -184,6 +187,10 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					t: now.UnixMilli(),
 					f: 42.0,
 				},
+			},
+			expectedLogsForCT: []string{
+				"Error when appending CT from OTLP",
+				"out of bound",
 			},
 		},
 		"single float sample, normal CT": {
@@ -209,6 +216,24 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 				{
 					t: now.UnixMilli(),
 					f: 42.0,
+				},
+			},
+		},
+		"two float samples in different messages, CT same time as first sample": {
+			appendFunc: func(t *testing.T, app CombinedAppender) {
+				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, now.UnixMilli(), now.UnixMilli(), 42.0, nil))
+			},
+			extraAppendFunc: func(t *testing.T, app CombinedAppender) {
+				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, now.UnixMilli(), now.Add(time.Second).UnixMilli(), 43.0, nil))
+			},
+			expectedSamples: []sample{
+				{
+					t: now.UnixMilli(),
+					f: 42.0,
+				},
+				{
+					t: now.Add(time.Second).UnixMilli(),
+					f: 43.0,
 				},
 			},
 		},
@@ -245,6 +270,10 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					h: tsdbutil.GenerateTestHistogram(42),
 				},
 			},
+			expectedLogsForCT: []string{
+				"Error when appending CT from OTLP",
+				"out of bound",
+			},
 		},
 		"single histogram sample, normal CT": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
@@ -270,6 +299,24 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 				{
 					t: now.UnixMilli(),
 					h: tsdbutil.GenerateTestHistogram(42),
+				},
+			},
+		},
+		"two histogram samples in different messages, CT same time as first sample": {
+			appendFunc: func(t *testing.T, app CombinedAppender) {
+				require.NoError(t, app.AppendHistogram(seriesLabels.Copy(), floatMetadata, now.UnixMilli(), now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
+			},
+			extraAppendFunc: func(t *testing.T, app CombinedAppender) {
+				require.NoError(t, app.AppendHistogram(seriesLabels.Copy(), floatMetadata, now.UnixMilli(), now.Add(time.Second).UnixMilli(), tsdbutil.GenerateTestHistogram(43), nil))
+			},
+			expectedSamples: []sample{
+				{
+					t: now.UnixMilli(),
+					h: tsdbutil.GenerateTestHistogram(42),
+				},
+				{
+					t: now.Add(time.Second).UnixMilli(),
+					h: tsdbutil.GenerateTestHistogram(43),
 				},
 			},
 		},
@@ -344,24 +391,45 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
+			var expectedLogs []string
+			if ingestCTZeroSample {
+				expectedLogs = append(expectedLogs, tc.expectedLogsForCT...)
+			}
+
 			dir := t.TempDir()
 			opts := tsdb.DefaultOptions()
 			opts.EnableExemplarStorage = true
 			opts.MaxExemplars = 100
-			opts.EnableNativeHistograms = true
 			db, err := tsdb.Open(dir, promslog.NewNopLogger(), prometheus.NewRegistry(), opts, nil)
 			require.NoError(t, err)
 
 			t.Cleanup(func() { db.Close() })
 
+			var output bytes.Buffer
+			logger := promslog.New(&promslog.Config{Writer: &output})
+
 			ctx := context.Background()
 			reg := prometheus.NewRegistry()
+			cappMetrics := NewCombinedAppenderMetrics(reg)
 			app := db.Appender(ctx)
-			capp := NewCombinedAppender(app, promslog.NewNopLogger(), ingestCTZeroSample, NewCombinedAppenderMetrics(reg))
-
+			capp := NewCombinedAppender(app, logger, ingestCTZeroSample, cappMetrics)
 			tc.appendFunc(t, capp)
-
 			require.NoError(t, app.Commit())
+
+			if tc.extraAppendFunc != nil {
+				app = db.Appender(ctx)
+				capp = NewCombinedAppender(app, logger, ingestCTZeroSample, cappMetrics)
+				tc.extraAppendFunc(t, capp)
+				require.NoError(t, app.Commit())
+			}
+
+			if len(expectedLogs) > 0 {
+				for _, expectedLog := range expectedLogs {
+					require.Contains(t, output.String(), expectedLog)
+				}
+			} else {
+				require.Empty(t, output.String(), "unexpected log output")
+			}
 
 			q, err := db.Querier(int64(math.MinInt64), int64(math.MaxInt64))
 			require.NoError(t, err)

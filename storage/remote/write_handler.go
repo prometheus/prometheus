@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 	"github.com/prometheus/prometheus/util/compression"
@@ -55,7 +56,8 @@ type writeHandler struct {
 
 	acceptedProtoMsgs map[config.RemoteWriteProtoMsg]struct{}
 
-	ingestCTZeroSample bool
+	ingestCTZeroSample      bool
+	enableTypeAndUnitLabels bool
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -65,7 +67,7 @@ const maxAheadTime = 10 * time.Minute
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedProtoMsgs []config.RemoteWriteProtoMsg, ingestCTZeroSample bool) http.Handler {
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedProtoMsgs []config.RemoteWriteProtoMsg, ingestCTZeroSample, enableTypeAndUnitLabels bool) http.Handler {
 	protoMsgs := map[config.RemoteWriteProtoMsg]struct{}{}
 	for _, acc := range acceptedProtoMsgs {
 		protoMsgs[acc] = struct{}{}
@@ -87,7 +89,8 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable 
 			Help:      "The total number of received remote write samples (and histogram samples) which were ingested without corresponding metadata.",
 		}),
 
-		ingestCTZeroSample: ingestCTZeroSample,
+		ingestCTZeroSample:      ingestCTZeroSample,
+		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 	}
 	return h
 }
@@ -115,6 +118,26 @@ func (*writeHandler) parseProtoMsg(contentType string) (config.RemoteWriteProtoM
 	}
 	// No "proto=" parameter, assuming v1.
 	return config.RemoteWriteProtoMsgV1, nil
+}
+
+// isHistogramValidationError checks if the error is a native histogram validation error.
+func isHistogramValidationError(err error) bool {
+	// TODO: Consider adding single histogram error type instead of individual sentinel errors.
+	return errors.Is(err, histogram.ErrHistogramCountMismatch) ||
+		errors.Is(err, histogram.ErrHistogramCountNotBigEnough) ||
+		errors.Is(err, histogram.ErrHistogramNegativeCount) ||
+		errors.Is(err, histogram.ErrHistogramNegativeBucketCount) ||
+		errors.Is(err, histogram.ErrHistogramSpanNegativeOffset) ||
+		errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsMismatch) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsInvalid) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsInfinite) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsNaN) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsZeroCount) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsZeroThresh) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsNegSpans) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsNegBuckets) ||
+		errors.Is(err, histogram.ErrHistogramExpSchemaCustomBounds)
 }
 
 func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -190,6 +213,9 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				// Indicated an out-of-order sample is a bad request to prevent retries.
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
+			case isHistogramValidationError(err):
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
 			default:
 				h.logger.Error("Error while remote writing the v1 request", "err", err.Error())
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -229,7 +255,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	samplesWithInvalidLabels := 0
 	samplesAppended := 0
 
-	app := &timeLimitAppender{
+	app := &remoteWriteAppender{
 		Appender: h.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
@@ -344,7 +370,7 @@ func (h *writeHandler) appendV1Histograms(app storage.Appender, hh []prompb.Hist
 // NOTE(bwplotka): TSDB storage is NOT idempotent, so we don't allow "partial retry-able" errors.
 // Once we have 5xx type of error, we immediately stop and rollback all appends.
 func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ WriteResponseStats, errHTTPCode int, _ error) {
-	app := &timeLimitAppender{
+	app := &remoteWriteAppender{
 		Appender: h.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
@@ -394,6 +420,18 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
 		}
+
+		m := ts.ToMetadata(req.Symbols)
+		if h.enableTypeAndUnitLabels && (m.Type != model.MetricTypeUnknown || m.Unit != "") {
+			slb := labels.NewScratchBuilder(ls.Len() + 2) // +2 for __type__ and __unit__
+			ls.Range(func(l labels.Label) {
+				slb.Add(l.Name, l.Value)
+			})
+			schema.Metadata{Type: m.Type, Unit: m.Unit}.AddToLabels(&slb)
+			slb.Sort()
+			ls = slb.Labels()
+		}
+
 		// Validate series labels early.
 		// NOTE(bwplotka): While spec allows UTF-8, Prometheus Receiver may impose
 		// specific limits and follow https://prometheus.io/docs/specs/remote_write_spec_2_0/#invalid-samples case.
@@ -404,6 +442,12 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v, duplicated label %s", ls.String(), duplicateLabel))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
+		}
+
+		// Validate that the TimeSeries has at least one sample or histogram.
+		if len(ts.Samples) == 0 && len(ts.Histograms) == 0 {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("TimeSeries must contain at least one sample or histogram for series %v", ls.String()))
 			continue
 		}
 
@@ -474,6 +518,11 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
 				continue
 			}
+			if isHistogramValidationError(err) {
+				h.logger.Error("Invalid histogram received", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
+				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
+				continue
+			}
 			return 0, http.StatusInternalServerError, err
 		}
 
@@ -501,7 +550,6 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			h.logger.Error("failed to ingest exemplar, emitting error log, but no error for PRW caller", "err", err.Error(), "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e))
 		}
 
-		m := ts.ToMetadata(req.Symbols)
 		if _, err = app.UpdateMetadata(ref, ls, m); err != nil {
 			h.logger.Debug("error while updating metadata from remote write", "err", err)
 			// Metadata is attached to each series, so since Prometheus does not reject sample without metadata information,
@@ -616,7 +664,7 @@ type rwExporter struct {
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
 	otlpCfg := rw.config().OTLPConfig
-	app := &timeLimitAppender{
+	app := &remoteWriteAppender{
 		Appender: rw.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
@@ -719,13 +767,13 @@ func hasDelta(md pmetric.Metrics) bool {
 	return false
 }
 
-type timeLimitAppender struct {
+type remoteWriteAppender struct {
 	storage.Appender
 
 	maxTime int64
 }
 
-func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (app *remoteWriteAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}
@@ -737,9 +785,16 @@ func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, 
 	return ref, nil
 }
 
-func (app *timeLimitAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (app *remoteWriteAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
+	}
+
+	if h != nil && histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > histogram.ExponentialSchemaMax {
+		h = h.ReduceResolution(histogram.ExponentialSchemaMax)
+	}
+	if fh != nil && histogram.IsExponentialSchemaReserved(fh.Schema) && fh.Schema > histogram.ExponentialSchemaMax {
+		fh = fh.ReduceResolution(histogram.ExponentialSchemaMax)
 	}
 
 	ref, err := app.Appender.AppendHistogram(ref, l, t, h, fh)
@@ -749,7 +804,7 @@ func (app *timeLimitAppender) AppendHistogram(ref storage.SeriesRef, l labels.La
 	return ref, nil
 }
 
-func (app *timeLimitAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+func (app *remoteWriteAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	if e.Ts > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}

@@ -50,7 +50,7 @@ type EndpointSlice struct {
 	endpointSliceStore cache.Store
 	serviceStore       cache.Store
 
-	queue *workqueue.Type
+	queue *workqueue.Typed[string]
 }
 
 // NewEndpointSlice returns a new endpointslice discovery.
@@ -79,7 +79,9 @@ func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, n
 		withNodeMetadata:      node != nil,
 		namespaceInf:          namespace,
 		withNamespaceMetadata: namespace != nil,
-		queue:                 workqueue.NewNamed(RoleEndpointSlice.String()),
+		queue: workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{
+			Name: RoleEndpointSlice.String(),
+		}),
 	}
 
 	_, err := e.endpointSliceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -236,12 +238,11 @@ func (e *EndpointSlice) Run(ctx context.Context, ch chan<- []*targetgroup.Group)
 }
 
 func (e *EndpointSlice) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
-	keyObj, quit := e.queue.Get()
+	key, quit := e.queue.Get()
 	if quit {
 		return false
 	}
-	defer e.queue.Done(keyObj)
-	key := keyObj.(string)
+	defer e.queue.Done(key)
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {

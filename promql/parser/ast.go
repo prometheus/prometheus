@@ -226,6 +226,11 @@ type VectorSelector struct {
 	// This is the case when VectorSelector is used to represent the info function's second argument.
 	BypassEmptyMatcherCheck bool
 
+	// Anchored is true when the VectorSelector is anchored.
+	Anchored bool
+	// Smoothed is true when the VectorSelector is smoothed.
+	Smoothed bool
+
 	PosRange posrange.PositionRange
 }
 

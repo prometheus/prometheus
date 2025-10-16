@@ -85,6 +85,7 @@ URL query parameters:
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Doesn’t affect scalars or strings but truncates the number of series for matrices and vectors. Optional. 0 means disabled.
+- `lookback_delta=<number>`: Override the the [lookback period](#staleness) just for this query. Optional.
 
 The current server time is used if the `time` parameter is omitted.
 
@@ -157,6 +158,7 @@ URL query parameters:
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
+- `lookback_delta=<number>`: Override the the [lookback period](#staleness) just for this query. Optional.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -348,7 +350,9 @@ You can URL-encode these parameters directly in the request body by using the `P
 or dynamic number of series selectors that may breach server-side URL character limits.
 
 The `data` section of the query result consists of a list of objects that
-contain the label name/value pairs which identify each series.
+contain the label name/value pairs which identify each series. Note that the
+`start` and `end` times are approximate and the result may contain label values
+for series which have no samples in the given interval.
 
 The following example returns all series that match either of the selectors
 `up` or `process_start_time_seconds{job="prometheus"}`:
@@ -397,8 +401,9 @@ URL query parameters:
   series from which to read the label names. Optional.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
-
-The `data` section of the JSON response is a list of string label names.
+The `data` section of the JSON response is a list of string label names. Note
+that the `start` and `end` times are approximate and the result may contain
+label names for series which have no samples in the given interval.
 
 Here is an example.
 
@@ -451,7 +456,10 @@ URL query parameters:
   series from which to read the label values. Optional.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
-The `data` section of the JSON response is a list of string label values.
+The `data` section of the JSON response is a list of string label values. Note
+that the `start` and `end` times are approximate and the result may contain
+label values for series which have no samples in the given interval.
+
 
 This example queries for all label values for the `http_status_code` label:
 
