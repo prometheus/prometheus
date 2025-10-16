@@ -1049,6 +1049,10 @@ func (it *histogramIterator) AtT() int64 {
 	return it.t
 }
 
+func (*histogramIterator) AtCT() int64 {
+	return 0 // CT is not supported at the moment.
+}
+
 func (it *histogramIterator) Err() error {
 	return it.err
 }
