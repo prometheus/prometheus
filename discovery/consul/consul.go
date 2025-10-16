@@ -499,6 +499,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 		WaitTime:   watchTimeout,
 		AllowStale: srv.discovery.allowStale,
 		NodeMeta:   srv.discovery.watchedNodeMeta,
+		Filter:     srv.discovery.watchedFilter,
 	}
 
 	t0 := time.Now()
