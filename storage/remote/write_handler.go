@@ -41,7 +41,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
-	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 )
@@ -177,7 +176,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 
 	b := labels.NewScratchBuilder(0)
 	for _, ts := range req.Timeseries {
-		ls := ts.ToLabels(&b, nil)
+		ls := ts.ToLabels(&b, nil, false)
 
 		// TODO(bwplotka): Even as per 1.0 spec, this should be a 400 error, while other samples are
 		// potentially written. Perhaps unify with fixed writeV2 implementation a bit.
@@ -318,7 +317,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		b = labels.NewScratchBuilder(0)
 	)
 	for _, ts := range req.Timeseries {
-		ls, err := ts.ToLabels(&b, req.Symbols)
+		ls, err := ts.ToLabels(&b, req.Symbols, h.enableTypeAndUnitLabels)
 		if err != nil {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing labels for series %v: %w", ts.LabelsRefs, err))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
@@ -326,19 +325,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		}
 
 		m := ts.ToMetadata(req.Symbols)
-		if h.enableTypeAndUnitLabels && (m.Type != model.MetricTypeUnknown || m.Unit != "") {
-			slb := labels.NewScratchBuilder(ls.Len() + 2) // +2 for __type__ and __unit__
-			ls.Range(func(l labels.Label) {
-				// Skip __type__ and __unit__ labels if they exist in the incoming labels.
-				// They will be added from metadata to avoid duplicates.
-				if l.Name != model.MetricTypeLabel && l.Name != model.MetricUnitLabel {
-					slb.Add(l.Name, l.Value)
-				}
-			})
-			schema.Metadata{Type: m.Type, Unit: m.Unit}.AddToLabels(&slb)
-			slb.Sort()
-			ls = slb.Labels()
-		}
+
 
 		// Validate series labels early.
 		// NOTE(bwplotka): While spec allows UTF-8, Prometheus Receiver may impose

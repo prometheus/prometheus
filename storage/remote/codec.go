@@ -181,7 +181,7 @@ func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet
 		if err := validateLabelsAndMetricName(ts.Labels); err != nil {
 			return errSeriesSet{err: err}
 		}
-		lbls := ts.ToLabels(&b, nil)
+		lbls := ts.ToLabels(&b, nil, false)
 		series = append(series, &concreteSeries{labels: lbls, floats: ts.Samples, histograms: ts.Histograms})
 	}
 
@@ -694,7 +694,7 @@ var _ storage.Series = &chunkedSeries{}
 
 func (s *chunkedSeries) Labels() labels.Labels {
 	b := labels.NewScratchBuilder(0)
-	return s.ToLabels(&b, nil)
+	return s.ToLabels(&b, nil, false)
 }
 
 func (s *chunkedSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {

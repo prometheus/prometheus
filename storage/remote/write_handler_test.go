@@ -314,7 +314,7 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	j := 0
 	k := 0
 	for _, ts := range writeRequestFixture.Timeseries {
-		labels := ts.ToLabels(&b, nil)
+		labels := ts.ToLabels(&b, nil, false)
 		for _, s := range ts.Samples {
 			requireEqual(t, mockSample{labels, s.Timestamp, s.Value}, appendable.samples[i])
 			i++
@@ -752,7 +752,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				i, j, k, m int
 			)
 			for _, ts := range writeV2RequestFixture.Timeseries {
-				ls, err := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
+				ls, err := ts.ToLabels(&b, writeV2RequestFixture.Symbols, false)
 				require.NoError(t, err)
 
 				for _, s := range ts.Samples {
