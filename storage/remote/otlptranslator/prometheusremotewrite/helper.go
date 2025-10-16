@@ -90,7 +90,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 
 	labelNamer := otlptranslator.LabelNamer{
 		UTF8Allowed:                 settings.AllowUTF8,
-		UnderscoreLabelSanitization: settings.LabelNameUnderscoreLabelSanitization,
+		UnderscoreLabelSanitization: settings.LabelNameUnderscoreSanitization,
 		PreserveMultipleUnderscores: settings.LabelNamePreserveMultipleUnderscores,
 	}
 
@@ -122,7 +122,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		}
 	}
 
-	err := settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, settings.AllowUTF8)
+	err := settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, settings.AllowUTF8, settings.LabelNameUnderscoreSanitization, settings.LabelNamePreserveMultipleUnderscores)
 	if err != nil {
 		return labels.EmptyLabels(), err
 	}

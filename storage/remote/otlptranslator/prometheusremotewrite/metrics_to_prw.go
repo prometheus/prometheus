@@ -54,9 +54,9 @@ type Settings struct {
 	// PromoteScopeMetadata controls whether to promote OTel scope metadata to metric labels.
 	PromoteScopeMetadata    bool
 	EnableTypeAndUnitLabels bool
-	// LabelNameUnderscoreLabelSanitization controls whether to enable prepending of 'key' to labels
+	// LabelNameUnderscoreSanitization controls whether to enable prepending of 'key' to labels
 	// starting with '_'. Reserved labels starting with `__` are not modified.
-	LabelNameUnderscoreLabelSanitization bool
+	LabelNameUnderscoreSanitization bool
 	// LabelNamePreserveMultipleUnderscores enables preserving of multiple
 	// consecutive underscores in label names when AllowUTF8 is false.
 	LabelNamePreserveMultipleUnderscores bool
@@ -310,12 +310,16 @@ func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAtt
 }
 
 // addPromotedAttributes adds labels for promoted resourceAttributes to the builder.
-func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builder, resourceAttributes pcommon.Map, allowUTF8 bool) error {
+func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builder, resourceAttributes pcommon.Map, allowUTF8, underscoreSanitization, preserveMultipleUnderscores bool) error {
 	if s == nil {
 		return nil
 	}
 
-	labelNamer := otlptranslator.LabelNamer{UTF8Allowed: allowUTF8}
+	labelNamer := otlptranslator.LabelNamer{
+		UTF8Allowed:                 allowUTF8,
+		UnderscoreLabelSanitization: underscoreSanitization,
+		PreserveMultipleUnderscores: preserveMultipleUnderscores,
+	}
 	if s.promoteAll {
 		var err error
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
