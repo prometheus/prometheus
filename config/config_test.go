@@ -175,9 +175,7 @@ var expectedConf = &Config{
 		PromoteResourceAttributes: []string{
 			"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name",
 		},
-		TranslationStrategy:                  otlptranslator.UnderscoreEscapingWithSuffixes,
-		LabelNameUnderscoreSanitization:      true,
-		LabelNamePreserveMultipleUnderscores: true,
+		TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
 	},
 
 	RemoteReadConfigs: []*RemoteReadConfig{
@@ -1841,48 +1839,6 @@ func TestOTLPPromoteScopeMetadata(t *testing.T) {
 		require.NoError(t, yaml.UnmarshalStrict(out, &got))
 
 		require.True(t, got.OTLPConfig.PromoteScopeMetadata)
-	})
-}
-
-func TestOTLPLabelUnderscoreSanitization(t *testing.T) {
-	t.Run("defaults to true", func(t *testing.T) {
-		conf, err := LoadFile(filepath.Join("testdata", "otlp_label_underscore_sanitization_defaults.good.yml"), false, promslog.NewNopLogger())
-		require.NoError(t, err)
-
-		// Test that default values are true
-		require.True(t, conf.OTLPConfig.LabelNameUnderscoreSanitization)
-		require.True(t, conf.OTLPConfig.LabelNamePreserveMultipleUnderscores)
-	})
-
-	t.Run("explicit enabled", func(t *testing.T) {
-		conf, err := LoadFile(filepath.Join("testdata", "otlp_label_underscore_sanitization_enabled.good.yml"), false, promslog.NewNopLogger())
-		require.NoError(t, err)
-
-		out, err := yaml.Marshal(conf)
-		require.NoError(t, err)
-		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
-
-		require.True(t, got.OTLPConfig.LabelNameUnderscoreSanitization)
-		require.True(t, got.OTLPConfig.LabelNamePreserveMultipleUnderscores)
-	})
-
-	t.Run("explicit disabled", func(t *testing.T) {
-		conf, err := LoadFile(filepath.Join("testdata", "otlp_label_underscore_sanitization_disabled.good.yml"), false, promslog.NewNopLogger())
-		require.NoError(t, err)
-
-		// When explicitly set to false, they should be false
-		require.False(t, conf.OTLPConfig.LabelNameUnderscoreSanitization)
-		require.False(t, conf.OTLPConfig.LabelNamePreserveMultipleUnderscores)
-	})
-
-	t.Run("empty config uses defaults", func(t *testing.T) {
-		conf, err := LoadFile(filepath.Join("testdata", "otlp_empty.yml"), false, promslog.NewNopLogger())
-		require.NoError(t, err)
-
-		// Empty config should use default values (true)
-		require.True(t, conf.OTLPConfig.LabelNameUnderscoreSanitization)
-		require.True(t, conf.OTLPConfig.LabelNamePreserveMultipleUnderscores)
 	})
 }
 

@@ -658,8 +658,10 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		AllowDeltaTemporality:                rw.allowDeltaTemporality,
 		LookbackDelta:                        rw.lookbackDelta,
 		EnableTypeAndUnitLabels:              rw.enableTypeAndUnitLabels,
-		LabelNameUnderscoreSanitization:      otlpCfg.LabelNameUnderscoreSanitization,
-		LabelNamePreserveMultipleUnderscores: otlpCfg.LabelNamePreserveMultipleUnderscores,
+		// For backwards compatibility.
+		LabelNameUnderscoreSanitization:      true,
+		// For backwards compatibility.
+		LabelNamePreserveMultipleUnderscores: true,
 	})
 
 	defer func() {

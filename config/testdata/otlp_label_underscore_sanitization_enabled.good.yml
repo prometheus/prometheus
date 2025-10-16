@@ -1,3 +1,0 @@
-otlp:
-  label_name_underscore_sanitization: true
-  label_name_preserve_multiple_underscores: true
