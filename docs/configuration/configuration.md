@@ -270,6 +270,15 @@ otlp:
   # Enables promotion of OTel scope metadata (i.e. name, version, schema URL, and attributes) to metric labels.
   # This is disabled by default for backwards compatibility, but according to OTel spec, scope metadata _should_ be identifying, i.e. translated to metric labels.
   [ promote_scope_metadata: <boolean> | default = false ]
+  # Controls whether to enable prepending of 'key_' to labels starting with '_'.
+  # Reserved labels starting with '__' are not modified.
+  # This is only relevant when translation_strategy uses underscore escaping
+  # (e.g., "UnderscoreEscapingWithSuffixes" or "UnderscoreEscapingWithoutSuffixes").
+  [ label_name_underscore_label_sanitization: <boolean> | default = true ]
+  # Enables preserving of multiple consecutive underscores in label names when
+  # translation_strategy uses underscore escaping. When true (default), multiple
+  # consecutive underscores are preserved during label name sanitization.
+  [ label_name_preserve_multiple_underscores: <boolean> | default = true ]
 
 # Settings related to the remote read feature.
 remote_read:

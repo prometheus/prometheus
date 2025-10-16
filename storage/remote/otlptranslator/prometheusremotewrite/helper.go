@@ -122,7 +122,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		}
 	}
 
-	err := settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, settings.AllowUTF8)
+	err := settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, settings.AllowUTF8, settings.LabelNameUnderscoreLabelSanitization, settings.LabelNamePreserveMultipleUnderscores)
 	if err != nil {
 		return labels.EmptyLabels(), err
 	}
