@@ -669,6 +669,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 
 	for i, tc := range testCases {
 		t.Run(tc.title, func(t *testing.T) {
+			t.Parallel()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
@@ -1350,6 +1351,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.title, func(t *testing.T) {
+			t.Parallel()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
