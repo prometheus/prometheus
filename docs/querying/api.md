@@ -580,9 +580,9 @@ sample values. JSON does not support special float values such as `NaN`, `Inf`,
 and `-Inf`, so sample values are transferred as quoted JSON strings rather than
 raw numbers.
 
-The keys `"histogram"` and `"histograms"` only show up if the experimental
-native histograms are present in the response. Their placeholder `<histogram>`
-is explained in detail in its own section below.
+The keys `"histogram"` and `"histograms"` only show up if native histograms
+are present in the response. Their placeholder `<histogram>` is explained
+in detail in its own section below.
 
 ### Range vectors
 
@@ -649,9 +649,6 @@ String results are returned as result type `string`. The corresponding
 ### Native histograms
 
 The `<histogram>` placeholder used above is formatted as follows.
-
-_Note that native histograms are an experimental feature, and the format below
-might still change._
 
 ```json
 {
