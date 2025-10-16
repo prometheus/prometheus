@@ -310,16 +310,11 @@ func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAtt
 }
 
 // addPromotedAttributes adds labels for promoted resourceAttributes to the builder.
-func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builder, resourceAttributes pcommon.Map, allowUTF8, underscoreSanitization, preserveMultipleUnderscores bool) error {
+func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builder, resourceAttributes pcommon.Map, labelNamer otlptranslator.LabelNamer) error {
 	if s == nil {
 		return nil
 	}
 
-	labelNamer := otlptranslator.LabelNamer{
-		UTF8Allowed:                 allowUTF8,
-		UnderscoreLabelSanitization: underscoreSanitization,
-		PreserveMultipleUnderscores: preserveMultipleUnderscores,
-	}
 	if s.promoteAll {
 		var err error
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
