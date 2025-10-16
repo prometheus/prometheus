@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+* [CHANGE] OTLP: Introduce `label_name_underscore_label_sanitization` and `label_name_preserve_multiple_underscores` configuration parameters, enabled by default. Fixes a breaking change in 3.7.0. #17208
+
 ## 3.7.0 / 2025-10-15
 
 * [CHANGE] Remote-write: the following metrics are deprecated:
