@@ -21,6 +21,37 @@ Other programs can fetch the result of a PromQL expression via the [HTTP API](ap
 This document is a Prometheus basic language reference. For learning, it may be easier to
 start with a couple of [examples](examples.md).
 
+## Samples
+
+The value of a sample at a given timestamp returned by PromQL may be a float or
+a [native histogram](https://prometheus.io/docs/specs/native_histograms).
+
+Native histograms can be optionally scraped by Prometheus or received by
+Prometheus over remote-write or OTLP.
+
+Once native histograms have been ingested into the TSDB, both instant vectors
+and range vectors may now contain samples that aren't simple floating point
+numbers (float samples), but complete histograms (histogram samples). A vector
+may contain a mix of float samples and histogram samples. Note that the term
+“histogram sample” in the PromQL documentation always refers to a native
+histogram. Classic histograms are broken up into a number of series of float
+samples. From the perspective of PromQL, there are no “classic histogram
+samples”.
+
+Like float samples, histogram samples can have a counter or a gauge “flavor”,
+marking them as counter histograms or gauge histograms, respectively. In
+contrast to float samples, histogram samples “know” their flavor, allowing
+reliable warnings about mismatched operations (e.g. applying the `rate`
+function to a range vector of gauge histograms).
+
+Native histograms can have different bucket layouts, but they are generally
+convertible to compatible versions to apply binary and aggregation operations
+to them. This is not true for all bucketing schemas. If incompatible
+histograms are encountered in an operation, the corresponding output vector
+element is removed from the result, flagged with a warn-level annotation.
+More details can be found in the
+[native histogram specification](https://prometheus.io/docs/specs/native_histograms/#compatibility-between-histograms).
+
 ## Expression language data types
 
 In Prometheus's expression language, an expression or sub-expression can
@@ -37,32 +68,10 @@ user-specified expression.
 For [instant queries](api.md#instant-queries), any of the above data types are allowed as the root of the expression.
 [Range queries](api.md#range-queries) only support scalar-typed and instant-vector-typed expressions.
 
-_Notes about the experimental native histograms:_
-
-* Ingesting native histograms has to be enabled via a [feature
-  flag](../feature_flags.md#native-histograms).
-* Once native histograms have been ingested into the TSDB (and even after
-  disabling the feature flag again), both instant vectors and range vectors may
-  now contain samples that aren't simple floating point numbers (float samples)
-  but complete histograms (histogram samples). A vector may contain a mix of
-  float samples and histogram samples. Note that the term “histogram sample” in
-  the PromQL documentation always refers to a native histogram. Classic
-  histograms are broken up into a number of series of float samples. From the
-  perspective of PromQL, there are no “classic histogram samples”.
-* Like float samples, histogram samples can have a counter or a gauge “flavor”,
-  marking them as counter histograms or gauge histograms, respectively. In
-  contrast to float samples, histogram samples “know” their flavor, allowing
-  reliable warnings about mismatched operations (e.g. applying the `rate`
-  function to a range vector of gauge histograms).
-* Native histograms can have different bucket layouts, but they are generally
-  convertible to compatible versions to apply binary and aggregation operations
-  to them. This is not true for all bucketing schemas. If incompatible
-  histograms are encountered in an operation, the corresponding output vector
-  element is removed from the result, flagged with a warn-level annotation.
-  More details can be found in the [native histogram
-  specification](https://prometheus.io/docs/specs/native_histograms/#compatibility-between-histograms).
-
 ## Literals
+
+The following section describes literal values, except for native histograms
+which do not have a literal representation.
 
 ### String literals
 
