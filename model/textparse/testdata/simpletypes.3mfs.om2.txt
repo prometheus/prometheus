@@ -1,0 +1,13 @@
+# HELP go_build_info Build information about the main Go module.
+# TYPE go_build_info gauge
+go_build_info{checksum="",path="",version=""} 1.0
+# HELP promhttp_metric_handler_errors Total number of internal errors encountered by the promhttp metric handler.
+# TYPE promhttp_metric_handler_errors counter
+promhttp_metric_handler_errors_total{cause="encoding"} 0.0 st@1.726839813016397e+09
+promhttp_metric_handler_errors_total{cause="gathering"} 0.0 st@1.726839813016395e+09
+# HELP rpc_requests Total number of RPC requests received.
+# TYPE rpc_requests counter
+rpc_requests_total{service="exponential"} 22.0 st@1.726839813016893e+09
+rpc_requests_total{service="normal"} 15.0 st@1.726839813016717e+09
+rpc_requests_total{service="uniform"} 11.0 st@1.7268398130168471e+09
+# EOF

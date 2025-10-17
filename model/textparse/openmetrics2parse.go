@@ -88,9 +88,9 @@ type OpenMetrics2Parser struct {
 	fh       *histogram.FloatHistogram
 	// TODO: Implement summary compelx type.
 
-	ts    int64
-	hasTS bool
-	start int
+	ts, sts int64
+	hasTS   bool
+	start   int
 	// offsets is a list of offsets into series that describe the positions
 	// of the metric name and label names and values for this series.
 	// p.offsets[0] is the start character of the metric name.
@@ -108,6 +108,7 @@ type OpenMetrics2Parser struct {
 	// ignoreExemplar instructs the parser to not overwrite exemplars (to keep them while peeking ahead).
 	ignoreExemplar          bool
 	enableTypeAndUnitLabels bool
+	unrollComplexTypes      bool
 }
 
 type openMetrics2ParserOptions struct {
@@ -134,15 +135,11 @@ func NewOpenMetrics2Parser(b []byte, st *labels.SymbolTable, opts ...OpenMetrics
 		opt(options)
 	}
 
-	if options.unrollComplexTypes {
-		// TODO: Implement this.
-		panic("not implemented")
-	}
-
 	parser := &OpenMetrics2Parser{
 		l:                       &openMetrics2Lexer{b: b},
 		builder:                 labels.NewScratchBuilderWithSymbolTable(st, 16),
 		enableTypeAndUnitLabels: options.enableTypeAndUnitLabels,
+		unrollComplexTypes:      options.unrollComplexTypes,
 		tempHist:                convertnhcb.NewTempHistogram(),
 	}
 	return parser
@@ -278,9 +275,9 @@ func (p *OpenMetrics2Parser) Exemplar(e *exemplar.Exemplar) bool {
 }
 
 // CreatedTimestamp returns the created timestamp for a current Metric if exists or nil.
-func (*OpenMetrics2Parser) CreatedTimestamp() int64 {
+func (p *OpenMetrics2Parser) CreatedTimestamp() int64 {
 	// TODO: Implement.
-	return 0
+	return p.sts
 }
 
 // nextToken returns the next token from the openMetricsLexer.
@@ -549,7 +546,7 @@ func (p *OpenMetrics2Parser) parseSeriesEndOfLine(t token) (e Entry, err error) 
 			return EntryInvalid, err
 		}
 		e = EntrySeries
-	case sCValue:
+	case sComplexValue:
 		e, err = p.parseComplexValue(t, "metric")
 		if err != nil {
 			return EntryInvalid, err
@@ -559,6 +556,7 @@ func (p *OpenMetrics2Parser) parseSeriesEndOfLine(t token) (e Entry, err error) 
 	}
 
 	p.hasTS = false
+	p.sts = 0
 	switch t2 := p.nextToken(); t2 {
 	case tEOF:
 		return EntryInvalid, errors.New("data does not end with # EOF")
@@ -567,6 +565,26 @@ func (p *OpenMetrics2Parser) parseSeriesEndOfLine(t token) (e Entry, err error) 
 	case tComment:
 		if err := p.parseComment(); err != nil {
 			return EntryInvalid, err
+		}
+	case tStartTimestamp: // TODO: DRY with above, also support st + ts(!!!)
+		var sts float64
+		// A float is enough to hold what we need for millisecond resolution.
+		// Add 4 chars for " st@" prefix.
+		if sts, err = parseFloat(yoloString(p.l.buf()[4:])); err != nil {
+			return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
+		}
+		if math.IsNaN(sts) || math.IsInf(sts, 0) {
+			return EntryInvalid, fmt.Errorf("invalid start timestamp %f", sts)
+		}
+		p.sts = int64(sts * 1000)
+		switch t3 := p.nextToken(); t3 {
+		case tLinebreak:
+		case tComment:
+			if err := p.parseComment(); err != nil {
+				return EntryInvalid, err
+			}
+		default:
+			return EntryInvalid, p.parseError("expected next entry after start timestamp", t3)
 		}
 	case tTimestamp:
 		p.hasTS = true
@@ -618,6 +636,11 @@ func (p *OpenMetrics2Parser) parseComplexValue(t token, after string) (_ Entry, 
 	case model.MetricTypeSummary:
 		return EntryInvalid, p.parseError("summary complex value parsing not yet implemented", t)
 	case model.MetricTypeHistogram:
+		if p.unrollComplexTypes {
+			// TODO: Implement this.
+			panic("not implemented")
+		}
+
 		defer p.tempHist.Reset()
 
 		if err := p.parseComplexValueHistogram(); err != nil {

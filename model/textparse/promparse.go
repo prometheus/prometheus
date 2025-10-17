@@ -71,6 +71,7 @@ const (
 	tColon
 	tBracketOpen
 	tBracketClose
+	tStartTimestamp // Previously known as created timestamp.
 )
 
 func (t token) String() string {
@@ -117,6 +118,14 @@ func (t token) String() string {
 		return "TIMESTAMP"
 	case tValue:
 		return "VALUE"
+	case tColon:
+		return "COLON"
+	case tBracketOpen:
+		return "BRACKET_OPEN"
+	case tBracketClose:
+		return "BRACKET_CLOSE"
+	case tStartTimestamp:
+		return "START_TIMESTAMP"
 	}
 	return fmt.Sprintf("<invalid: %d>", t)
 }

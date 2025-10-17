@@ -36,7 +36,7 @@ M     [a-zA-Z_:]
 C     [^\n]
 S     [ ]
 
-%x sComment sMeta1 sMeta2 sLabels sLValue sValue sTimestamp sExemplar sEValue sETimestamp sCValue
+%x sComment sMeta1 sMeta2 sLabels sLValue sValue sTimestamp sExemplar sEValue sETimestamp sComplexValue
 
 %yyc c
 %yyn c = l.next()
@@ -64,17 +64,18 @@ S     [ ]
 <sLabels>,                            return tComma
 <sLValue>\"(\\.|[^\\"\n])*\"          l.state = sLabels; return tLValue
 
-<sValue>{S}\{                         l.state = sCValue; return tBraceOpen
-<sCValue>{L}({L}|{D})*                return tLName
-<sCValue>:                            return tColon
-<sCValue>\[                           return tBracketOpen
-<sCValue>\]                           return tBracketClose
-<sCValue>,                            return tComma
-<sCValue>[ \t]+                       // Skip whitespace inside the block
-<sCValue>[^ \n\t,\[\]{}:]+            return tValue
-<sCValue>\}                           l.state = sTimestamp; return tBraceClose
+<sValue>{S}\{                         l.state = sComplexValue; return tBraceOpen
+<sComplexValue>{L}({L}|{D})*          return tLName
+<sComplexValue>:                      return tColon
+<sComplexValue>\[                     return tBracketOpen
+<sComplexValue>\]                     return tBracketClose
+<sComplexValue>,                      return tComma
+<sComplexValue>[ \t]+                 // Skip whitespace inside the block
+<sComplexValue>[^ \n\t,\[\]{}:]+      return tValue
+<sComplexValue>\}                     l.state = sTimestamp; return tBraceClose
 
 <sValue>{S}[^{ \n]+                   l.state = sTimestamp; return tValue
+<sTimestamp>{S}st@[^ \n]+             return tStartTimestamp
 <sTimestamp>{S}[^ \n]+                return tTimestamp
 <sTimestamp>\n                        l.state = sInit; return tLinebreak
 <sTimestamp>{S}#{S}\{                 l.state = sExemplar; return tComment

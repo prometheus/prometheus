@@ -179,6 +179,40 @@ func BenchmarkParseOpenMetricsNHCB_OM1vs2(b *testing.B) {
 	}
 }
 
+// BenchmarkParseOpenMetricsST_OM1vs2 is for demo of the benefit for the OM2 with
+// the new start time / created timestamp stateless model.
+/*
+	export bench=out && go test ./model/textparse/... \
+		 -run '^$' -bench '^BenchmarkParseOpenMetricsST_OM1vs2' \
+		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+	 | tee ${bench}.txt
+*/
+func BenchmarkParseOpenMetricsST_OM1vs2(b *testing.B) {
+	parseCases := []struct {
+		parser string
+		data   []byte
+	}{
+		{
+			parser: "omtext",
+			data:   readTestdataFile(b, "simpletypes.3mfs.om.txt"),
+		},
+		{
+			parser: "om2text",
+			data:   readTestdataFile(b, "simpletypes.3mfs.om2.txt"),
+		},
+	}
+
+	gotA := testParse(b, newParser(b, parseCases[0].parser)(parseCases[0].data, labels.NewSymbolTable()))
+	gotB := testParse(b, newParser(b, parseCases[1].parser)(parseCases[1].data, labels.NewSymbolTable()))
+	testutil.RequireEqualWithOptions(b, gotA, gotB, []cmp.Option{cmp.AllowUnexported(parsedEntry{})})
+
+	for _, c := range parseCases {
+		b.Run(fmt.Sprintf("parser=%v", c.parser), func(b *testing.B) {
+			benchParse(b, c.data, c.parser)
+		})
+	}
+}
+
 func newParser(t testing.TB, parser string) func([]byte, *labels.SymbolTable) Parser {
 	t.Helper()
 
@@ -200,6 +234,12 @@ func newParser(t testing.TB, parser string) func([]byte, *labels.SymbolTable) Pa
 			p, err := New(buf, "application/openmetrics-text", st, ParserOptions{ConvertClassicHistogramsToNHCB: true})
 			require.NoError(t, err)
 			return p
+		}
+	case "om2text":
+		return func(b []byte, st *labels.SymbolTable) Parser {
+			return NewOpenMetrics2Parser(b, st, func(options *openMetrics2ParserOptions) {
+				options.unrollComplexTypes = true // Not implemented, but ok (:
+			})
 		}
 	case "om2text_with_nhcb":
 		return func(b []byte, st *labels.SymbolTable) Parser {
