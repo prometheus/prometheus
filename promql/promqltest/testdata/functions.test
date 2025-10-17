@@ -352,7 +352,7 @@ eval instant at 20m idelta(http_requests_histogram{path="/f"}[20m])
 
 eval instant at 20m idelta(http_requests_histogram{path="/g"}[20m])
 	expect no_warn
-	expect info msg: PromQL info: vector contains histograms with mismatched custom buckets subtraction
+	expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction
 	{path="/g"} {{schema:-53 custom_values:[1] counter_reset_hint:gauge buckets:[-1]}}
 
 clear

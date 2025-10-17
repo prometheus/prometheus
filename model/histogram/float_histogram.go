@@ -642,7 +642,7 @@ func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
 		}
 		if !CustomBucketBoundsMatch(h.CustomValues, previous.CustomValues) {
 			// Custom bounds don't match - check if any reconciled bucket value has decreased.
-			return h.detectResetWithMismatchedBounds(previous, h.CustomValues, previous.CustomValues)
+			return h.detectResetWithMismatchedCustomBounds(previous, h.CustomValues, previous.CustomValues)
 		}
 	}
 	if h.Schema > previous.Schema {
@@ -1366,13 +1366,17 @@ func floatBucketsMatch(b1, b2 []float64) bool {
 	return true
 }
 
-// detectResetWithMismatchedBounds checks if any bucket count has decreased when
-// comparing histograms with mismatched custom bounds. It maps both histograms
+// detectResetWithMismatchedCustomBounds checks if any bucket count has decreased when
+// comparing NHCBs with mismatched custom bounds. It maps both histograms
 // to the intersected bounds on-the-fly and compares values without allocating
 // arrays for all mapped buckets.
-func (h *FloatHistogram) detectResetWithMismatchedBounds(
+// Will panic if called with histograms that are not NHCB.
+func (h *FloatHistogram) detectResetWithMismatchedCustomBounds(
 	previous *FloatHistogram, currBounds, prevBounds []float64,
 ) bool {
+	if h.Schema != CustomBucketsSchema || previous.Schema != CustomBucketsSchema {
+		panic("detectResetWithMismatchedCustomBounds called with non-NHCB schema")
+	}
 	currIt := h.floatBucketIterator(true, 0, CustomBucketsSchema)
 	prevIt := previous.floatBucketIterator(true, 0, CustomBucketsSchema)
 
