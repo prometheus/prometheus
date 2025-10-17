@@ -33,9 +33,10 @@ type BlockWriter struct {
 	logger         *slog.Logger
 	destinationDir string
 
-	head      *Head
-	blockSize int64 // in ms
-	chunkDir  string
+	head                   *Head
+	blockSize              int64 // in ms
+	chunkDir               string
+	CacheOnlySeriesSymbols bool
 }
 
 // ErrNoSeriesAppended is returned if the series count is zero while flushing blocks.
@@ -49,11 +50,12 @@ var ErrNoSeriesAppended = errors.New("no series appended, aborting")
 // contains anything at all. It is the caller's responsibility to
 // ensure that the resulting blocks do not overlap etc.
 // Writer ensures the block flush is atomic (via rename).
-func NewBlockWriter(logger *slog.Logger, dir string, blockSize int64) (*BlockWriter, error) {
+func NewBlockWriter(logger *slog.Logger, dir string, blockSize int64, cacheOnlySeriesSymbols bool) (*BlockWriter, error) {
 	w := &BlockWriter{
-		logger:         logger,
-		destinationDir: dir,
-		blockSize:      blockSize,
+		logger:                 logger,
+		destinationDir:         dir,
+		blockSize:              blockSize,
+		CacheOnlySeriesSymbols: cacheOnlySeriesSymbols,
 	}
 	if err := w.initHead(); err != nil {
 		return nil, err
@@ -95,11 +97,15 @@ func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 	maxt := w.head.MaxTime() + 1
 	w.logger.Info("flushing", "series_count", w.head.NumSeries(), "mint", timestamp.Time(mint), "maxt", timestamp.Time(maxt))
 
-	compactor, err := NewLeveledCompactor(ctx,
+	compactor, err := NewLeveledCompactorWithOptions(ctx,
 		nil,
 		w.logger,
 		[]int64{w.blockSize},
-		chunkenc.NewPool(), nil)
+		chunkenc.NewPool(),
+		LeveledCompactorOptions{
+			EnableOverlappingCompaction: true,
+			CacheOnlySeriesSymbols:      w.CacheOnlySeriesSymbols,
+		})
 	if err != nil {
 		return ulid.ULID{}, fmt.Errorf("create leveled compactor: %w", err)
 	}
