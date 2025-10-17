@@ -416,7 +416,7 @@ func TestCreateAttributes(t *testing.T) {
 			lbls, err := c.createAttributes(testResource, testAttrs, tc.scope, settings, tc.ignoreAttrs, false, Metadata{}, model.MetricNameLabel, "test_metric")
 			require.NoError(t, err)
 
-			testutil.RequireEqual(t, lbls, tc.expectedLabels)
+			testutil.RequireEqual(t, tc.expectedLabels, lbls)
 		})
 	}
 }
