@@ -78,21 +78,21 @@ type TestStorage struct {
 	dir             string
 }
 
-func (s TestStorage) Close() error {
+func (s *TestStorage) Close() error {
 	if err := s.DB.Close(); err != nil {
 		return err
 	}
 	return os.RemoveAll(s.dir)
 }
 
-func (s TestStorage) ExemplarAppender() storage.ExemplarAppender {
+func (s *TestStorage) ExemplarAppender() storage.ExemplarAppender {
 	return s
 }
 
-func (s TestStorage) ExemplarQueryable() storage.ExemplarQueryable {
+func (s *TestStorage) ExemplarQueryable() storage.ExemplarQueryable {
 	return s.exemplarStorage
 }
 
-func (s TestStorage) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+func (s *TestStorage) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	return ref, s.exemplarStorage.AddExemplar(l, e)
 }
