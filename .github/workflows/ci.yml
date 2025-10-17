@@ -42,7 +42,8 @@ jobs:
       - run: go test --tags=dedupelabels ./...
       - run: go test --tags=slicelabels -race ./cmd/prometheus ./model/textparse ./prompb/...
       - run: go test --tags=forcedirectio -race ./tsdb/
-      - run: GOARCH=386 go test ./...
+      # Debug
+      - run: GOARCH=386 go test --timeout 4444444s --count=1000 --run=TestRemoteWrite_PerQueueMetricsAfterRelabeling ./cmd/prometheus/
       - uses: ./.github/promci/actions/check_proto
         with:
           version: "3.15.8"
