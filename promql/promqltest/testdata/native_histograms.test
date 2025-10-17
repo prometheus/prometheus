@@ -1198,24 +1198,21 @@ eval range from 0 to 12m step 6m avg(metric)
 
 clear
 
-# Test incompatible custom bucket boundaries.
+# Test mismatched custom bucket boundaries.
 load 6m
   metric{series="1"} _                                                             {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
-  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}    _                                                             {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}
-  metric{series="3"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[10] buckets:[1]}}   _                                                             {{schema:-53 sum:1 count:1 custom_values:[5] buckets:[1]}}
+  metric{series="3"} {{schema:-53 sum:1 count:1 custom_values:[2 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
-# T=0: incompatible, should be ignored and emit a warning
-# T=6: compatible
-# T=12: incompatible followed by compatible, should be ignored and emit a warning
 eval range from 0 to 12m step 6m sum(metric)
-  expect warn
-  {} _ {{schema:-53 sum:2 count:2 custom_values:[5 10] buckets:[2]}} _
+  expect no_warn
+  {} {{schema:-53 count:2 sum:2 custom_values:[10] buckets:[2]}} {{schema:-53 sum:2 count:2 custom_values:[5 10] buckets:[2]}} {{schema:-53 count:3 sum:3 custom_values:[5] buckets:[3]}}
 
 eval range from 0 to 12m step 6m avg(metric)
-  expect warn
-  {} _ {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} _
+  expect no_warn
+  {} {{schema:-53 count:1 sum:1 custom_values:[10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 count:1 sum:1 custom_values:[5] buckets:[1]}}
 
-# Test incompatible boundaries with additional aggregation operators
+# Test mismatched boundaries with additional aggregation operators
 eval range from 0 to 12m step 6m count(metric)
   {} 2 2 3
 
@@ -1227,32 +1224,34 @@ eval range from 0 to 12m step 6m count(limitk(1, metric))
 
 eval range from 0 to 12m step 6m limitk(3, metric)
   metric{series="1"} _                                                             {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
-  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}    _                                                             {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}
-  metric{series="3"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[10] buckets:[1]}}   _                                                             {{schema:-53 sum:1 count:1 custom_values:[5] buckets:[1]}}
+  metric{series="3"} {{schema:-53 sum:1 count:1 custom_values:[2 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
 eval range from 0 to 12m step 6m limit_ratio(1, metric)
   metric{series="1"} _                                                             {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
-  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}    _                                                             {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}
-  metric{series="3"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[10] buckets:[1]}}   _                                                             {{schema:-53 sum:1 count:1 custom_values:[5] buckets:[1]}}
+  metric{series="3"} {{schema:-53 sum:1 count:1 custom_values:[2 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
-# Test incompatible boundaries with and/or
+# Test mismatched schemas with and/or
 eval range from 0 to 12m step 6m metric{series="1"} and ignoring(series) metric{series="2"}
   metric{series="1"} _ _ {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
 eval range from 0 to 12m step 6m metric{series="1"} or ignoring(series) metric{series="2"}
   metric{series="1"} _                                                          {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
-  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} _                                                             _
+  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[10] buckets:[1]}} _                                                             _
 
-# Test incompatible boundaries with arithmetic binary operators
+# Test mismatched boundaries with arithmetic binary operators
 eval range from 0 to 12m step 6m metric{series="2"} + ignoring (series) metric{series="3"}
-  expect warn
+  expect info msg:PromQL info: mismatched custom buckets were reconciled during addition
+  {} {{schema:-53 count:2 sum:2 custom_values:[10] buckets:[2]}} _ {{schema:-53 count:2 sum:2 custom_values:[5] buckets:[2]}}
 
 eval range from 0 to 12m step 6m metric{series="2"} - ignoring (series) metric{series="3"}
-  expect warn
+  expect info msg:PromQL info: mismatched custom buckets were reconciled during subtraction
+  {} {{schema:-53 custom_values:[10] counter_reset_hint:gauge}} _ {{schema:-53 custom_values:[5] counter_reset_hint:gauge}}
 
 clear
 
-# Test incompatible boundaries with comparison binary operators
+# Test mismatched boundaries with comparison binary operators
 load 6m
   metric1 {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
   metric2 {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
@@ -1271,16 +1270,20 @@ eval range from 0 to 6m step 6m metric2 > metric2
 clear
 
 load 6m
-  nhcb_metric {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  nhcb_metric {{schema:-53 sum:1 count:1 custom_values:[5] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
 # If evaluating at 12m, the first two NHCBs have the same custom values
 # while the 3rd one has different ones.
 
 eval instant at 12m sum_over_time(nhcb_metric[13m])
-  expect warn msg: PromQL warning: vector contains histograms with incompatible custom buckets for metric name "nhcb_metric"
+  expect no_warn
+  expect info msg: PromQL info: mismatched custom buckets were reconciled during aggregation
+  {} {{schema:-53 count:3 sum:3 custom_values:[5] buckets:[3]}}
 
 eval instant at 12m avg_over_time(nhcb_metric[13m])
-  expect warn msg: PromQL warning: vector contains histograms with incompatible custom buckets for metric name "nhcb_metric"
+  expect no_warn
+  expect info msg: PromQL info: mismatched custom buckets were reconciled during aggregation
+  {} {{schema:-53 count:1 sum:1 custom_values:[5] counter_reset_hint:gauge buckets:[1]}}
 
 eval instant at 12m last_over_time(nhcb_metric[13m])
   expect no_warn
@@ -1299,28 +1302,31 @@ eval instant at 12m changes(nhcb_metric[13m])
   {} 1
 
 eval instant at 12m delta(nhcb_metric[13m])
-  expect warn msg: PromQL warning: vector contains histograms with incompatible custom buckets for metric name "nhcb_metric"
+  expect warn msg: PromQL warning: this native histogram metric is not a gauge: "nhcb_metric"
+  {} {{schema:-53 custom_values:[5]}}
 
 eval instant at 12m increase(nhcb_metric[13m])
-  expect warn msg: PromQL warning: vector contains histograms with incompatible custom buckets for metric name "nhcb_metric"
+  expect no_warn
+  {} {{schema:-53 custom_values:[5]}}
 
 eval instant at 12m rate(nhcb_metric[13m])
-  expect warn msg: PromQL warning: vector contains histograms with incompatible custom buckets for metric name "nhcb_metric"
+  expect no_warn
+  {} {{schema:-53 custom_values:[5] }}
 
 eval instant at 12m resets(nhcb_metric[13m])
   expect no_warn
-  {} 1
+  {} 0
 
 # Now doing the same again, but at 18m, where the first NHCB has
-# different custom_values compared to the other two. This now
-# works with no warning for increase() and rate(). No change
-# otherwise.
+# different custom_values compared to the other two.
 
 eval instant at 18m sum_over_time(nhcb_metric[13m])
-  expect warn msg: PromQL warning: vector contains histograms with incompatible custom buckets for metric name "nhcb_metric"
+  expect no_warn
+  {} {{schema:-53 count:3 sum:3 custom_values:[5] buckets:[3]}}
 
 eval instant at 18m avg_over_time(nhcb_metric[13m])
-  expect warn msg: PromQL warning: vector contains histograms with incompatible custom buckets for metric name "nhcb_metric"
+  expect no_warn
+  {} {{schema:-53 count:1 sum:1 custom_values:[5] buckets:[1]}}
 
 eval instant at 18m last_over_time(nhcb_metric[13m])
   expect no_warn
@@ -1339,19 +1345,21 @@ eval instant at 18m changes(nhcb_metric[13m])
   {} 1
 
 eval instant at 18m delta(nhcb_metric[13m])
-  expect warn msg: PromQL warning: vector contains histograms with incompatible custom buckets for metric name "nhcb_metric"
+  expect warn msg: PromQL warning: this native histogram metric is not a gauge: "nhcb_metric"
+  expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction
+  {} {{schema:-53 custom_values:[5]}}
 
 eval instant at 18m increase(nhcb_metric[13m])
   expect no_warn
-  {} {{schema:-53 count:1.0833333333333333 sum:1.0833333333333333 custom_values:[5 10] buckets:[1.0833333333333333]}}
+  {} {{schema:-53 custom_values:[5]}}
 
 eval instant at 18m rate(nhcb_metric[13m])
   expect no_warn
-  {} {{schema:-53 count:0.0013888888888888887 sum:0.0013888888888888887 custom_values:[5 10] buckets:[0.0013888888888888887]}}
+  {} {{schema:-53 custom_values:[5]}}
 
 eval instant at 18m resets(nhcb_metric[13m])
   expect no_warn
-  {} 1
+  {} 0
 
 clear
 
@@ -1366,14 +1374,15 @@ load 1m
   metric{group="floats-and-histograms", series="2"} {{sum:2 count:3 buckets:[1 1 1]}}
   metric{group="exponential-and-custom-histograms", series="1"} {{sum:2 count:3 buckets:[1 1 1]}}
   metric{group="exponential-and-custom-histograms", series="2"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
-  metric{group="incompatible-custom-histograms", series="1"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
-  metric{group="incompatible-custom-histograms", series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}
+  metric{group="mismatched-custom-histograms", series="1"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  metric{group="mismatched-custom-histograms", series="2"} {{schema:-53 sum:1 count:1 custom_values:[10] buckets:[1]}}
 
 eval instant at 0 sum by (group) (metric)
   expect warn
   {group="just-floats"} 5
   {group="just-exponential-histograms"} {{sum:5 count:7 buckets:[2 3 2]}}
   {group="just-custom-histograms"} {{schema:-53 sum:4 count:5 custom_values:[2] buckets:[8]}}
+  {group="mismatched-custom-histograms"} {{schema:-53 count:2 sum:2 custom_values:[10] buckets:[2]}}
 
 clear
 
@@ -1833,3 +1842,33 @@ eval range from 0 to 8m step 1m mixed_metric1
 
 eval range from 0 to 5m step 1m mixed_metric2
 	mixed_metric2 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} {{count:6 sum:8 buckets:[1 4 1]}}
+
+clear
+
+# Test native histograms with custom buckets, reconciling mismatched bounds.
+load 1m
+	nhcb_add_buckets {{schema:-53 sum:55 count:15 custom_values:[2 4 6] buckets:[1 2 5 7]}} {{schema:-53 sum:555 count:450 custom_values:[1 2 3 4 5 6 7 8] buckets:[10 20 30 40 50 60 70 80 90]}}
+
+eval instant at 1m irate(nhcb_add_buckets[2m]) * 60
+    expect no_warn
+    expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction
+    {} {{schema:-53 sum:500 count:435 custom_values:[2 4 6] buckets:[29 68 105 233]}}
+
+load 1m
+	nhcb_remove_buckets {{schema:-53 sum:55 count:45 custom_values:[1 2 3 4 5 6 7 8] buckets:[1 2 3 4 5 6 7 8 9]}} {{schema:-53 sum:5560 count:1000 custom_values:[3 5 7] buckets:[100 200 300 400]}}
+
+eval instant at 1m irate(nhcb_remove_buckets[2m]) * 60
+    expect no_warn
+    expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction
+    {} {{schema:-53 sum:5505 count:955 custom_values:[3 5 7] buckets:[94 191 287 383]}}
+
+clear
+
+# Test native histograms with custom buckets, reconciling mismatched bounds, with counter reset in one bucket.
+load 1m
+	nhcb_add_bucket {{schema:-53 sum:55 count:15 custom_values:[2 4 6] buckets:[1 2 5 7]}} {{schema:-53 sum:56 count:15 custom_values:[2 3 4 6] buckets:[1 0 1 5 8]}}
+
+eval instant at 1m irate(nhcb_add_bucket[2m]) * 60
+    expect no_warn
+    expect no_info
+    {} {{schema:-53 sum:56 count:15 custom_values:[2 3 4 6] buckets:[1 0 1 5 8] counter_reset_hint:gauge}}

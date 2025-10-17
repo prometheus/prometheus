@@ -368,13 +368,14 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 	// This subtraction may deliberately include conflicting counter resets.
 	// Counter resets are treated explicitly in this function, so the
 	// information about conflicting counter resets is ignored here.
-	_, _, err := h.Sub(prev)
+	_, _, nhcbBoundsReconciled, err := h.Sub(prev)
 	if err != nil {
 		if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 			return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
-		} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-			return nil, annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, pos))
 		}
+	}
+	if nhcbBoundsReconciled {
+		annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(pos, annotations.HistogramSub))
 	}
 
 	if isCounter {
@@ -383,13 +384,14 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 			curr := currPoint.H
 			if curr.DetectReset(prev) {
 				// Counter reset conflict ignored here for the same reason as above.
-				_, _, err := h.Add(prev)
+				_, _, nhcbBoundsReconciled, err := h.Add(prev)
 				if err != nil {
 					if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 						return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
-					} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-						return nil, annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, pos))
 					}
+				}
+				if nhcbBoundsReconciled {
+					annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(pos, annotations.HistogramAdd))
 				}
 			}
 			prev = curr
@@ -508,11 +510,12 @@ func instantValue(vals Matrix, args parser.Expressions, out Vector, isRate bool)
 			// counter resets. Counter resets are treated explicitly
 			// in this function, so the information about
 			// conflicting counter resets is ignored here.
-			_, _, err := resultSample.H.Sub(ss[0].H)
+			_, _, nhcbBoundsReconciled, err := resultSample.H.Sub(ss[0].H)
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				return out, annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, args.PositionRange()))
-			} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-				return out, annos.Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, args.PositionRange()))
+			}
+			if nhcbBoundsReconciled {
+				annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(args.PositionRange(), annotations.HistogramSub))
 			}
 		}
 		resultSample.H.CounterResetHint = histogram.GaugeType
@@ -820,7 +823,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		// The passed values only contain histograms.
 		var annos annotations.Annotations
 		vec, err := aggrHistOverTime(matrixVal, enh, func(s Series) (*histogram.FloatHistogram, error) {
-			var counterResetSeen, notCounterResetSeen bool
+			var counterResetSeen, notCounterResetSeen, nhcbBoundsReconciledSeen bool
 
 			trackCounterReset := func(h *histogram.FloatHistogram) {
 				switch h.CounterResetHint {
@@ -835,6 +838,9 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				if counterResetSeen && notCounterResetSeen {
 					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAgg))
 				}
+				if nhcbBoundsReconciledSeen {
+					annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(args[0].PositionRange(), annotations.HistogramAgg))
+				}
 			}()
 
 			mean := s.Histograms[0].H.Copy()
@@ -844,13 +850,21 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				count := float64(i + 2)
 				left := h.H.Copy().Div(count)
 				right := mean.Copy().Div(count)
-				toAdd, _, err := left.Sub(right)
+
+				toAdd, _, nhcbBoundsReconciled, err := left.Sub(right)
 				if err != nil {
 					return mean, err
 				}
-				_, _, err = mean.Add(toAdd)
+				if nhcbBoundsReconciled {
+					nhcbBoundsReconciledSeen = true
+				}
+
+				_, _, nhcbBoundsReconciled, err = mean.Add(toAdd)
 				if err != nil {
 					return mean, err
+				}
+				if nhcbBoundsReconciled {
+					nhcbBoundsReconciledSeen = true
 				}
 			}
 			return mean, nil
@@ -859,8 +873,6 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 			metricName := firstSeries.Metric.Get(labels.MetricName)
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				return enh.Out, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, args[0].PositionRange()))
-			} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-				return enh.Out, annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, args[0].PositionRange()))
 			}
 		}
 		return vec, annos
@@ -1090,7 +1102,7 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		// The passed values only contain histograms.
 		var annos annotations.Annotations
 		vec, err := aggrHistOverTime(matrixVal, enh, func(s Series) (*histogram.FloatHistogram, error) {
-			var counterResetSeen, notCounterResetSeen bool
+			var counterResetSeen, notCounterResetSeen, nhcbBoundsReconciledSeen bool
 
 			trackCounterReset := func(h *histogram.FloatHistogram) {
 				switch h.CounterResetHint {
@@ -1105,15 +1117,21 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				if counterResetSeen && notCounterResetSeen {
 					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAgg))
 				}
+				if nhcbBoundsReconciledSeen {
+					annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(args[0].PositionRange(), annotations.HistogramAgg))
+				}
 			}()
 
 			sum := s.Histograms[0].H.Copy()
 			trackCounterReset(sum)
 			for _, h := range s.Histograms[1:] {
 				trackCounterReset(h.H)
-				_, _, err := sum.Add(h.H)
+				_, _, nhcbBoundsReconciled, err := sum.Add(h.H)
 				if err != nil {
 					return sum, err
+				}
+				if nhcbBoundsReconciled {
+					nhcbBoundsReconciledSeen = true
 				}
 			}
 			return sum, nil
@@ -1122,8 +1140,6 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 			metricName := firstSeries.Metric.Get(labels.MetricName)
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				return enh.Out, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, args[0].PositionRange()))
-			} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-				return enh.Out, annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, args[0].PositionRange()))
 			}
 		}
 		return vec, annos
