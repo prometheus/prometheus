@@ -440,12 +440,6 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	// be generated independently before adding them to postings.
 	// We repair order violations on insert. The invariant is that the first n-1
 	// items in the list are already sorted.
-	for i := len(list) - 1; i >= 1; i-- {
-		if list[i] >= list[i-1] {
-			break
-		}
-		list[i], list[i-1] = list[i-1], list[i]
-	}
 }
 
 func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
@@ -497,8 +491,6 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 
 	return Merge(ctx, its...)
 }
-
-// Postings returns a postings iterator for the given label values.
 func (p *MemPostings) Postings(ctx context.Context, name string, values ...string) Postings {
 	res := make([]*ListPostings, 0, len(values))
 	lps := make([]ListPostings, len(values))
@@ -511,6 +503,27 @@ func (p *MemPostings) Postings(ctx context.Context, name string, values ...strin
 		}
 	}
 	p.mtx.RUnlock()
+
+	p.mtx.Lock()
+	for i, value := range values {
+		old := lps[i].list
+		lps[i].list = make([]storage.SeriesRef, len(old), cap(old))
+		copy(lps[i].list, old)
+		postingsMapForName[value] = lps[i].list
+		if len(lps[i].list) < 2 {
+			continue
+		}
+
+		for j := 0; j < len(lps[i].list)-1; j++ {
+			for k := 0; k < len(lps[i].list)-j-1; k++ {
+				if lps[i].list[k] > lps[i].list[k+1] {
+					lps[i].list[k], lps[i].list[k+1] = lps[i].list[k+1], lps[i].list[k]
+				}
+			}
+		}
+	}
+	//fmt.Println(res, "hi from res2")
+	p.mtx.Unlock()
 	return Merge(ctx, res...)
 }
 
