@@ -664,6 +664,7 @@ func BenchmarkParser(b *testing.B) {
 		`foo{a="b", foo!="bar", test=~"test", bar!~"baz"}`,
 		`min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
 		"sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
+		`sort_by_label(metric, "foo", "bar")`,
 	}
 	errCases := []string{
 		"(",

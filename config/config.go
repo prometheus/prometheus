@@ -158,15 +158,22 @@ var (
 		OTLPConfig:   DefaultOTLPConfig,
 	}
 
+	f bool
 	// DefaultGlobalConfig is the default global configuration.
 	DefaultGlobalConfig = GlobalConfig{
 		ScrapeInterval:     model.Duration(1 * time.Minute),
 		ScrapeTimeout:      model.Duration(10 * time.Second),
 		EvaluationInterval: model.Duration(1 * time.Minute),
 		RuleQueryOffset:    model.Duration(0 * time.Minute),
-		// When native histogram feature flag is enabled, ScrapeProtocols default
-		// changes to DefaultNativeHistogramScrapeProtocols.
-		ScrapeProtocols:                DefaultScrapeProtocols,
+		// This is nil to be able to distinguish between the case when
+		// the normal default should be used and the case when a
+		// new default is needed due to an enabled feature flag.
+		// E.g. set to `DefaultProtoFirstScrapeProtocols` when
+		// the feature flag `created-timestamp-zero-ingestion` is set.
+		ScrapeProtocols: nil,
+		// When the native histogram feature flag is enabled,
+		// ScrapeNativeHistograms default changes to true.
+		ScrapeNativeHistograms:         &f,
 		ConvertClassicHistogramsToNHCB: false,
 		AlwaysScrapeClassicHistograms:  false,
 		MetricNameValidationScheme:     model.UTF8Validation,
@@ -456,7 +463,7 @@ type GlobalConfig struct {
 	// The protocols to negotiate during a scrape. It tells clients what
 	// protocol are accepted by Prometheus and with what weight (most wanted is first).
 	// Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
-	// OpenMetricsText1.0.0, PrometheusText0.0.4.
+	// OpenMetricsText1.0.0, PrometheusText1.0.0, PrometheusText0.0.4
 	ScrapeProtocols []ScrapeProtocol `yaml:"scrape_protocols,omitempty"`
 	// How frequently to evaluate rules by default.
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
@@ -496,6 +503,8 @@ type GlobalConfig struct {
 	// blank in config files but must have a value if a ScrapeConfig is created
 	// programmatically.
 	MetricNameEscapingScheme string `yaml:"metric_name_escaping_scheme,omitempty"`
+	// Whether to scrape native histograms.
+	ScrapeNativeHistograms *bool `yaml:"scrape_native_histograms,omitempty"`
 	// Whether to convert all scraped classic histograms into native histograms with custom buckets.
 	ConvertClassicHistogramsToNHCB bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
 	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
@@ -636,12 +645,26 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if gc.EvaluationInterval == 0 {
 		gc.EvaluationInterval = DefaultGlobalConfig.EvaluationInterval
 	}
-
-	if gc.ScrapeProtocols == nil {
-		gc.ScrapeProtocols = DefaultGlobalConfig.ScrapeProtocols
+	if gc.ScrapeNativeHistograms == nil {
+		gc.ScrapeNativeHistograms = DefaultGlobalConfig.ScrapeNativeHistograms
 	}
-	if err := validateAcceptScrapeProtocols(gc.ScrapeProtocols); err != nil {
-		return fmt.Errorf("%w for global config", err)
+	if gc.ScrapeProtocols == nil {
+		if DefaultGlobalConfig.ScrapeProtocols != nil {
+			// This is the case where the defaults are set due to a feature flag.
+			// E.g. if the created-timestamp-zero-ingestion feature flag is
+			// used.
+			gc.ScrapeProtocols = DefaultGlobalConfig.ScrapeProtocols
+		}
+		// Otherwise, we leave ScrapeProtocols at nil for now. In the
+		// per-job scrape config, we have to recognize the unset case to
+		// correctly set the default depending on the local value of
+		// ScrapeNativeHistograms.
+	}
+	if gc.ScrapeProtocols != nil {
+		// Only validate if not-nil at this point.
+		if err := validateAcceptScrapeProtocols(gc.ScrapeProtocols); err != nil {
+			return fmt.Errorf("%w for global config", err)
+		}
 	}
 
 	*c = *gc
@@ -658,6 +681,7 @@ func (c *GlobalConfig) isZero() bool {
 		c.QueryLogFile == "" &&
 		c.ScrapeFailureLogFile == "" &&
 		c.ScrapeProtocols == nil &&
+		c.ScrapeNativeHistograms == nil &&
 		!c.ConvertClassicHistogramsToNHCB &&
 		!c.AlwaysScrapeClassicHistograms
 }
@@ -720,6 +744,8 @@ type ScrapeConfig struct {
 	// Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
 	// OpenMetricsText1.0.0, PrometheusText1.0.0, PrometheusText0.0.4.
 	ScrapeFallbackProtocol ScrapeProtocol `yaml:"fallback_scrape_protocol,omitempty"`
+	// Whether to scrape native histograms.
+	ScrapeNativeHistograms *bool `yaml:"scrape_native_histograms,omitempty"`
 	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
 	AlwaysScrapeClassicHistograms *bool `yaml:"always_scrape_classic_histograms,omitempty"`
 	// Whether to convert all scraped classic histograms into a native histogram with custom buckets.
@@ -864,9 +890,23 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	if c.ScrapeFailureLogFile == "" {
 		c.ScrapeFailureLogFile = globalConfig.ScrapeFailureLogFile
 	}
+	if c.ScrapeNativeHistograms == nil {
+		c.ScrapeNativeHistograms = globalConfig.ScrapeNativeHistograms
+	}
 
 	if c.ScrapeProtocols == nil {
-		c.ScrapeProtocols = globalConfig.ScrapeProtocols
+		switch {
+		case globalConfig.ScrapeProtocols != nil:
+			// global ScrapeProtocols either set explicitly or via a
+			// default triggered by a feature flag. This overrides
+			// the selection based on locally active scraping of
+			// native histograms.
+			c.ScrapeProtocols = globalConfig.ScrapeProtocols
+		case c.ScrapeNativeHistogramsEnabled():
+			c.ScrapeProtocols = DefaultProtoFirstScrapeProtocols
+		default:
+			c.ScrapeProtocols = DefaultScrapeProtocols
+		}
 	}
 	if err := validateAcceptScrapeProtocols(c.ScrapeProtocols); err != nil {
 		return fmt.Errorf("%w for scrape config with job name %q", err, c.JobName)
@@ -984,6 +1024,11 @@ func ToEscapingScheme(s string, v model.ValidationScheme) (model.EscapingScheme,
 		}
 	}
 	return model.ToEscapingScheme(s)
+}
+
+// ScrapeNativeHistogramsEnabled returns whether to scrape native histograms.
+func (c *ScrapeConfig) ScrapeNativeHistogramsEnabled() bool {
+	return c.ScrapeNativeHistograms != nil && *c.ScrapeNativeHistograms
 }
 
 // ConvertClassicHistogramsToNHCBEnabled returns whether to convert classic histograms to NHCB.

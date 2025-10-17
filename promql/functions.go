@@ -820,24 +820,37 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		// The passed values only contain histograms.
 		var annos annotations.Annotations
 		vec, err := aggrHistOverTime(matrixVal, enh, func(s Series) (*histogram.FloatHistogram, error) {
+			var counterResetSeen, notCounterResetSeen bool
+
+			trackCounterReset := func(h *histogram.FloatHistogram) {
+				switch h.CounterResetHint {
+				case histogram.CounterReset:
+					counterResetSeen = true
+				case histogram.NotCounterReset:
+					notCounterResetSeen = true
+				}
+			}
+
+			defer func() {
+				if counterResetSeen && notCounterResetSeen {
+					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAgg))
+				}
+			}()
+
 			mean := s.Histograms[0].H.Copy()
+			trackCounterReset(mean)
 			for i, h := range s.Histograms[1:] {
+				trackCounterReset(h.H)
 				count := float64(i + 2)
 				left := h.H.Copy().Div(count)
 				right := mean.Copy().Div(count)
-				toAdd, counterResetCollision, err := left.Sub(right)
+				toAdd, _, err := left.Sub(right)
 				if err != nil {
 					return mean, err
 				}
-				if counterResetCollision {
-					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramSub))
-				}
-				_, counterResetCollision, err = mean.Add(toAdd)
+				_, _, err = mean.Add(toAdd)
 				if err != nil {
 					return mean, err
-				}
-				if counterResetCollision {
-					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
 				}
 			}
 			return mean, nil
@@ -1077,14 +1090,30 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		// The passed values only contain histograms.
 		var annos annotations.Annotations
 		vec, err := aggrHistOverTime(matrixVal, enh, func(s Series) (*histogram.FloatHistogram, error) {
+			var counterResetSeen, notCounterResetSeen bool
+
+			trackCounterReset := func(h *histogram.FloatHistogram) {
+				switch h.CounterResetHint {
+				case histogram.CounterReset:
+					counterResetSeen = true
+				case histogram.NotCounterReset:
+					notCounterResetSeen = true
+				}
+			}
+
+			defer func() {
+				if counterResetSeen && notCounterResetSeen {
+					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAgg))
+				}
+			}()
+
 			sum := s.Histograms[0].H.Copy()
+			trackCounterReset(sum)
 			for _, h := range s.Histograms[1:] {
-				_, counterResetCollision, err := sum.Add(h.H)
+				trackCounterReset(h.H)
+				_, _, err := sum.Add(h.H)
 				if err != nil {
 					return sum, err
-				}
-				if counterResetCollision {
-					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
 				}
 			}
 			return sum, nil

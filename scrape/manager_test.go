@@ -967,7 +967,6 @@ func TestManagerCTZeroIngestionHistogram(t *testing.T) {
 			app := &collectResultAppender{}
 			discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 				EnableCreatedTimestampZeroIngestion: tc.enableCTZeroIngestion,
-				EnableNativeHistogramsIngestion:     true,
 				skipOffsetting:                      true,
 			}, &collectResultAppendable{app})
 			defer scrapeManager.Stop()
@@ -1007,6 +1006,7 @@ global:
 
 scrape_configs:
 - job_name: test
+  scrape_native_histograms: true
   static_configs:
   - targets: ['%s']
 `, serverURL.Host)
@@ -1064,6 +1064,116 @@ func TestUnregisterMetrics(t *testing.T) {
 		// Unregister all metrics.
 		manager.UnregisterMetrics()
 	}
+}
+
+// TestNHCBAndCTZeroIngestion verifies that both ConvertClassicHistogramsToNHCBEnabled
+// and EnableCreatedTimestampZeroIngestion can be used simultaneously without errors.
+// This test addresses issue #17216 by ensuring the previously blocking check has been removed.
+// The test verifies that the presence of exemplars in the input does not cause errors,
+// although exemplars are not preserved during NHCB conversion (as documented below).
+func TestNHCBAndCTZeroIngestion(t *testing.T) {
+	t.Parallel()
+
+	const (
+		mName = "test_histogram"
+		// The expected sum of the histogram, as defined by the test's OpenMetrics exposition data.
+		// This value (45.5) is the sum reported in the test_histogram_sum metric below.
+		expectedHistogramSum = 45.5
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	app := &collectResultAppender{}
+	discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
+		EnableCreatedTimestampZeroIngestion: true,
+		skipOffsetting:                      true,
+	}, &collectResultAppendable{app})
+	defer scrapeManager.Stop()
+
+	once := sync.Once{}
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			fail := true
+			once.Do(func() {
+				fail = false
+				w.Header().Set("Content-Type", `application/openmetrics-text`)
+
+				// Expose a histogram with created timestamp and exemplars to verify no parsing errors occur.
+				fmt.Fprint(w, `# HELP test_histogram A histogram with created timestamp and exemplars
+# TYPE test_histogram histogram
+test_histogram_bucket{le="0.0"} 1
+test_histogram_bucket{le="1.0"} 10 # {trace_id="trace-1"} 0.5 123456789
+test_histogram_bucket{le="2.0"} 20 # {trace_id="trace-2"} 1.5 123456780
+test_histogram_bucket{le="+Inf"} 30 # {trace_id="trace-3"} 2.5
+test_histogram_count 30
+test_histogram_sum 45.5
+test_histogram_created 1520430001
+# EOF
+`)
+			})
+
+			if fail {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		}),
+	)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	// Configuration with both convert_classic_histograms_to_nhcb enabled and CT zero ingestion enabled.
+	testConfig := fmt.Sprintf(`
+global:
+  # Use a very long scrape_interval to prevent automatic scraping during the test.
+  scrape_interval: 9999m
+  scrape_timeout: 5s
+
+scrape_configs:
+- job_name: test
+  convert_classic_histograms_to_nhcb: true
+  static_configs:
+  - targets: ['%s']
+`, serverURL.Host)
+
+	applyConfig(t, testConfig, scrapeManager, discoveryManager)
+
+	// Verify that the scrape pool was created (proves the blocking check was removed).
+	require.Eventually(t, func() bool {
+		scrapeManager.mtxScrape.Lock()
+		defer scrapeManager.mtxScrape.Unlock()
+		_, exists := scrapeManager.scrapePools["test"]
+		return exists
+	}, 5*time.Second, 100*time.Millisecond, "scrape pool should be created for job 'test'")
+
+	// Helper function to get matching histograms to avoid race conditions.
+	getMatchingHistograms := func() []histogramSample {
+		app.mtx.Lock()
+		defer app.mtx.Unlock()
+
+		var got []histogramSample
+		for _, h := range app.resultHistograms {
+			if h.metric.Get(model.MetricNameLabel) == mName {
+				got = append(got, h)
+			}
+		}
+		return got
+	}
+
+	require.Eventually(t, func() bool {
+		return len(getMatchingHistograms()) > 0
+	}, 1*time.Minute, 100*time.Millisecond, "expected histogram samples, got none")
+
+	// Verify that samples were ingested (proving both features work together).
+	got := getMatchingHistograms()
+
+	// With CT zero ingestion enabled and a created timestamp present, we expect 2 samples:
+	// one zero sample and one actual sample.
+	require.Len(t, got, 2, "expected 2 histogram samples (zero sample + actual sample)")
+	require.Equal(t, histogram.Histogram{}, *got[0].h, "first sample should be zero sample")
+	require.InDelta(t, expectedHistogramSum, got[1].h.Sum, 1e-9, "second sample should retain the expected sum")
+	require.Len(t, app.resultExemplars, 2, "expected 2 exemplars from histogram buckets")
 }
 
 func applyConfig(
@@ -1166,8 +1276,7 @@ func requireTargets(
 // TestTargetDisappearsAfterProviderRemoved makes sure that when a provider is dropped, (only) its targets are dropped.
 func TestTargetDisappearsAfterProviderRemoved(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	myJob := "my-job"
 	myJobSDTargetURL := "my:9876"
@@ -1267,8 +1376,7 @@ scrape_configs:
 // and when the provider can no longer discover some of those targets, only those stale targets are dropped.
 func TestOnlyProviderStaleTargetsAreDropped(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	jobName := "my-job"
 	jobTarget1URL := "foo:9876"
@@ -1330,8 +1438,7 @@ scrape_configs:
 // should no longer discover targets, the targets of that provider are dropped.
 // See: https://github.com/prometheus/prometheus/issues/12858
 func TestProviderStaleTargetsAreDropped(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	jobName := "my-job"
 	jobTargetURL := "foo:9876"
@@ -1388,8 +1495,7 @@ scrape_configs:
 // TestOnlyStaleTargetsAreDropped makes sure that when a job has multiple providers, when one of them should no
 // longer discover targets, only the stale targets of that provider are dropped.
 func TestOnlyStaleTargetsAreDropped(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	myJob := "my-job"
 	myJobSDTargetURL := "my:9876"

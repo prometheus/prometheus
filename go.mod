@@ -57,7 +57,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_golang/exp v0.0.0-20250914183048-a974e0d45e0a
 	github.com/prometheus/client_model v0.6.2
-	github.com/prometheus/common v0.66.1
+	github.com/prometheus/common v0.67.1
 	github.com/prometheus/common/assets v0.2.0
 	github.com/prometheus/exporter-toolkit v0.14.1
 	github.com/prometheus/sigv4 v0.2.1
@@ -92,7 +92,7 @@ require (
 	google.golang.org/api v0.250.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20250929231259-57b25ae835d4
 	google.golang.org/grpc v1.75.1
-	google.golang.org/protobuf v1.36.9
+	google.golang.org/protobuf v1.36.10
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.34.1
 	k8s.io/apimachinery v0.34.1

@@ -173,7 +173,7 @@ func (h *Head) appender() *headAppender {
 		oooTimeWindow:         h.opts.OutOfOrderTimeWindow.Load(),
 		seriesRefs:            h.getRefSeriesBuffer(),
 		series:                h.getSeriesBuffer(),
-		typesInBatch:          map[chunks.HeadSeriesRef]sampleType{},
+		typesInBatch:          h.getTypeMap(),
 		appendID:              appendID,
 		cleanupAppendIDsBelow: cleanupAppendIDsBelow,
 	}
@@ -295,6 +295,19 @@ func (h *Head) putSeriesBuffer(b []*memSeries) {
 		b[i] = nil
 	}
 	h.seriesPool.Put(b[:0])
+}
+
+func (h *Head) getTypeMap() map[chunks.HeadSeriesRef]sampleType {
+	b := h.typeMapPool.Get()
+	if b == nil {
+		return make(map[chunks.HeadSeriesRef]sampleType)
+	}
+	return b
+}
+
+func (h *Head) putTypeMap(b map[chunks.HeadSeriesRef]sampleType) {
+	clear(b)
+	h.typeMapPool.Put(b)
 }
 
 func (h *Head) getBytesBuffer() []byte {
@@ -557,7 +570,10 @@ func (a *headAppender) getCurrentBatch(st sampleType, s chunks.HeadSeriesRef) *a
 			b.exemplars = h.getExemplarBuffer()
 		}
 		clear(a.typesInBatch)
-		if st != stNone {
+		switch st {
+		case stHistogram, stFloatHistogram, stCustomBucketHistogram, stCustomBucketFloatHistogram:
+			// We only record histogram sample types in the map.
+			// Floats are implicit.
 			a.typesInBatch[s] = st
 		}
 		a.batches = append(a.batches, &b)
@@ -584,14 +600,32 @@ func (a *headAppender) getCurrentBatch(st sampleType, s chunks.HeadSeriesRef) *a
 	}
 	prevST, ok := a.typesInBatch[s]
 	switch {
-	case !ok: // New series. Add it to map and return current batch.
+	case prevST == st:
+		// An old series of some histogram type with the same type being appended.
+		// Continue the batch.
+		return lastBatch
+	case !ok && st == stFloat:
+		// A new float series, or an old float series that gets floats appended.
+		// Note that we do not track stFloat in typesInBatch.
+		// Continue the batch.
+		return lastBatch
+	case st == stFloat:
+		// A float being appended to a histogram series.
+		// Start a new batch.
+		return newBatch()
+	case !ok:
+		// A new series of some histogram type, or some histogram type
+		// being appended to on old float series. Even in the latter
+		// case, we don't need to start a new batch because histograms
+		// after floats are fine.
+		// Add new sample type to the map and continue batch.
 		a.typesInBatch[s] = st
 		return lastBatch
-	case prevST == st: // Old series, same type. Just return batch.
-		return lastBatch
+	default:
+		// One histogram type changed to another.
+		// Start a new batch.
+		return newBatch()
 	}
-	// An old series got a new type. Start new batch.
-	return newBatch()
 }
 
 // appendable checks whether the given sample is valid for appending to the series.
@@ -763,10 +797,6 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 }
 
 func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	if !a.head.opts.EnableNativeHistograms.Load() {
-		return 0, storage.ErrNativeHistogramsDisabled
-	}
-
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.
 	if a.oooTimeWindow == 0 && t < a.minValidTime {
@@ -873,10 +903,6 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 }
 
 func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	if !a.head.opts.EnableNativeHistograms.Load() {
-		return 0, storage.ErrNativeHistogramsDisabled
-	}
-
 	if ct >= t {
 		return 0, storage.ErrCTNewerThanSample
 	}
@@ -1055,6 +1081,8 @@ func (a *headAppender) log() error {
 				return fmt.Errorf("log metadata: %w", err)
 			}
 		}
+		// It's important to do (float) Samples before histogram samples
+		// to end up with the correct order.
 		if len(b.floats) > 0 {
 			rec = enc.Samples(b.floats, buf)
 			buf = rec[:0]
@@ -1687,8 +1715,13 @@ func (a *headAppender) Commit() (err error) {
 	h := a.head
 
 	defer func() {
+		if a.closed {
+			// Don't double-close in case Rollback() was called.
+			return
+		}
 		h.putRefSeriesBuffer(a.seriesRefs)
 		h.putSeriesBuffer(a.series)
+		h.putTypeMap(a.typesInBatch)
 		a.closed = true
 	}()
 
@@ -1730,8 +1763,9 @@ func (a *headAppender) Commit() (err error) {
 	}()
 
 	for _, b := range a.batches {
-		// Do not change the order of these calls. The staleness marker
-		// handling depends on it.
+		// Do not change the order of these calls. We depend on it for
+		// correct commit order of samples and for the staleness marker
+		// handling.
 		a.commitFloats(b, acc)
 		a.commitHistograms(b, acc)
 		a.commitFloatHistograms(b, acc)
@@ -2216,10 +2250,10 @@ func (a *headAppender) Rollback() (err error) {
 		a.closed = true
 		h.putRefSeriesBuffer(a.seriesRefs)
 		h.putSeriesBuffer(a.series)
+		h.putTypeMap(a.typesInBatch)
 	}()
 
 	var series *memSeries
-	fmt.Println("ROLLBACK")
 	for _, b := range a.batches {
 		for i := range b.floats {
 			series = b.floatSeries[i]

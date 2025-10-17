@@ -255,12 +255,11 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				parser.ExperimentalDurationExpr = true
 				logger.Info("Experimental duration expression parsing enabled.")
 			case "native-histograms":
-				c.tsdb.EnableNativeHistograms = true
-				c.scrape.EnableNativeHistogramsIngestion = true
 				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
-				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
-				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
-				logger.Info("Experimental native histogram support enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
+				t := true
+				config.DefaultConfig.GlobalConfig.ScrapeNativeHistograms = &t
+				config.DefaultGlobalConfig.ScrapeNativeHistograms = &t
+				logger.Warn("This option for --enable-feature is being phased out. It currently changes the default for the scrape_native_histograms scrape config setting to true, but will become a no-op in v3.9+. Stop using this option and set scrape_native_histograms in the scrape config instead.", "option", o)
 			case "ooo-native-histograms":
 				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			case "created-timestamp-zero-ingestion":
@@ -1876,7 +1875,6 @@ type tsdbOptions struct {
 	EnableExemplarStorage          bool
 	MaxExemplars                   int64
 	EnableMemorySnapshotOnShutdown bool
-	EnableNativeHistograms         bool
 	EnableDelayedCompaction        bool
 	CompactionDelayMaxPercent      int
 	EnableOverlappingCompaction    bool
@@ -1899,7 +1897,6 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableExemplarStorage:          opts.EnableExemplarStorage,
 		MaxExemplars:                   opts.MaxExemplars,
 		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
-		EnableNativeHistograms:         opts.EnableNativeHistograms,
 		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
 		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,

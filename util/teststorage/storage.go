@@ -50,7 +50,6 @@ func NewWithError(outOfOrderTimeWindow ...int64) (*TestStorage, error) {
 	opts.MinBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.MaxBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.RetentionDuration = 0
-	opts.EnableNativeHistograms = true
 
 	// Set OutOfOrderTimeWindow if provided, otherwise use default (0)
 	if len(outOfOrderTimeWindow) > 0 {
