@@ -798,6 +798,28 @@ var testExpr = []struct {
 			EndPos: 21,
 		},
 	},
+	{
+		input: `anchored{job="test"}`,
+		expected: &VectorSelector{
+			Name: "anchored",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, "job", "test"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "anchored"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 20},
+		},
+	},
+	{
+		input: `smoothed{job="test"}`,
+		expected: &VectorSelector{
+			Name: "smoothed",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, "job", "test"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "smoothed"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 20},
+		},
+	},
 	// Vector binary operations.
 	{
 		input: "foo * bar",
@@ -2771,6 +2793,36 @@ var testExpr = []struct {
 			},
 			Grouping: []string{"foo"},
 			PosRange: posrange.PositionRange{Start: 0, End: 25},
+		},
+	},
+	{
+		input: "sum by (anchored)(some_metric)",
+		expected: &AggregateExpr{
+			Op: SUM,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+				},
+				PosRange: posrange.PositionRange{Start: 18, End: 29},
+			},
+			Grouping: []string{"anchored"},
+			PosRange: posrange.PositionRange{Start: 0, End: 30},
+		},
+	},
+	{
+		input: "sum by (smoothed)(some_metric)",
+		expected: &AggregateExpr{
+			Op: SUM,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+				},
+				PosRange: posrange.PositionRange{Start: 18, End: 29},
+			},
+			Grouping: []string{"smoothed"},
+			PosRange: posrange.PositionRange{Start: 0, End: 30},
 		},
 	},
 	{

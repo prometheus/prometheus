@@ -116,6 +116,36 @@ func TestExprString(t *testing.T) {
 			in: `a[1h:5m] offset 1m`,
 		},
 		{
+			in: `a anchored`,
+		},
+		{
+			in: `a[5m] anchored`,
+		},
+		{
+			in: `a{b="c"}[5m] anchored`,
+		},
+		{
+			in: `a{b="c"}[5m] anchored offset 1m`,
+		},
+		{
+			in: `a{b="c"}[5m] anchored @ start() offset 1m`,
+		},
+		{
+			in: `a smoothed`,
+		},
+		{
+			in: `a[5m] smoothed`,
+		},
+		{
+			in: `a{b="c"}[5m] smoothed`,
+		},
+		{
+			in: `a{b="c"}[5m] smoothed offset 1m`,
+		},
+		{
+			in: `a{b="c"}[5m] smoothed @ start() offset 1m`,
+		},
+		{
 			in: `{__name__="a"}`,
 		},
 		{
@@ -221,6 +251,11 @@ func TestExprString(t *testing.T) {
 			in: `predict_linear(foo[1h], 3000)`,
 		},
 	}
+
+	EnableExtendedRangeSelectors = true
+	t.Cleanup(func() {
+		EnableExtendedRangeSelectors = false
+	})
 
 	for _, test := range inputs {
 		t.Run(test.in, func(t *testing.T) {
