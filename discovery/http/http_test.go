@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -206,6 +207,418 @@ func TestContentTypeRegex(t *testing.T) {
 	for _, test := range cases {
 		t.Run(test.header, func(t *testing.T) {
 			require.Equal(t, test.match, matchContentType.MatchString(test.header))
+		})
+	}
+}
+
+func TestRetryOnRetryableErrors(t *testing.T) {
+	var attemptCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attemptCount++
+		if attemptCount < 3 {
+			// Return retryable error for first 2 attempts
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		// Succeed on 3rd attempt
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, `[{"labels": {"k": "v"}, "targets": ["127.0.0.1"]}]`)
+	}))
+	t.Cleanup(ts.Close)
+
+	cfg := SDConfig{
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		URL:              ts.URL,
+		RefreshInterval:  model.Duration(30 * time.Second),
+		MinBackoff:       model.Duration(10 * time.Millisecond),
+	}
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	tgs, err := d.Refresh(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 3, attemptCount)
+	require.Len(t, tgs, 1)
+
+	// Verify retry metrics were incremented
+	httpMetrics := metrics.(*httpMetrics)
+	retryMetric, err := httpMetrics.retriesCount.GetMetricWithLabelValues("1")
+	require.NoError(t, err)
+	var m dto.Metric
+	require.NoError(t, retryMetric.Write(&m))
+	require.Equal(t, 1.0, *m.Counter.Value)
+
+	retryMetric2, err := httpMetrics.retriesCount.GetMetricWithLabelValues("2")
+	require.NoError(t, err)
+	require.NoError(t, retryMetric2.Write(&m))
+	require.Equal(t, 1.0, *m.Counter.Value)
+}
+
+func TestRetryExhaustion(t *testing.T) {
+	var attemptCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attemptCount++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(ts.Close)
+
+	cfg := SDConfig{
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		URL:              ts.URL,
+		RefreshInterval:  model.Duration(200 * time.Millisecond),
+		MinBackoff:       model.Duration(10 * time.Millisecond),
+	}
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	_, err = d.Refresh(ctx)
+	require.Error(t, err)
+	// Should timeout after refresh_interval (200ms)
+	require.Contains(t, err.Error(), "timeout")
+	// Should have made multiple attempts within the timeout
+	require.Greater(t, attemptCount, 1)
+	require.Equal(t, 1.0, getFailureCount(d.metrics.failuresCount))
+}
+
+func TestNoRetryOnNonRetryableErrors(t *testing.T) {
+	var attemptCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attemptCount++
+		w.WriteHeader(http.StatusBadRequest) // 4xx is not retryable
+	}))
+	t.Cleanup(ts.Close)
+
+	cfg := SDConfig{
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		URL:              ts.URL,
+		RefreshInterval:  model.Duration(30 * time.Second),
+		MinBackoff:       model.Duration(10 * time.Millisecond),
+	}
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	_, err = d.Refresh(ctx)
+	require.Error(t, err)
+	require.EqualError(t, err, "server returned HTTP status 400 Bad Request")
+	require.Equal(t, 1, attemptCount) // Should only attempt once
+	require.Equal(t, 1.0, getFailureCount(d.metrics.failuresCount))
+}
+
+func TestRetryOn429RateLimit(t *testing.T) {
+	var attemptCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attemptCount++
+		if attemptCount < 2 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, `[{"labels": {"k": "v"}, "targets": ["127.0.0.1"]}]`)
+	}))
+	t.Cleanup(ts.Close)
+
+	cfg := SDConfig{
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		URL:              ts.URL,
+		RefreshInterval:  model.Duration(30 * time.Second),
+		MinBackoff:       model.Duration(10 * time.Millisecond),
+	}
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	tgs, err := d.Refresh(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, attemptCount)
+	require.Len(t, tgs, 1)
+}
+
+func TestRetryContextCancellation(t *testing.T) {
+	var attemptCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attemptCount++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(ts.Close)
+
+	cfg := SDConfig{
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		URL:              ts.URL,
+		RefreshInterval:  model.Duration(30 * time.Second),
+		MinBackoff:       model.Duration(100 * time.Millisecond),
+	}
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel context after a short delay
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err = d.Refresh(ctx)
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.Canceled)
+	// Should have attempted at least once
+	require.Positive(t, attemptCount)
+}
+
+func TestSlowHTTPRequestTimeout(t *testing.T) {
+	requestStarted := make(chan struct{})
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		close(requestStarted)
+		// Simulate a slow/hanging request by waiting for context cancellation
+		<-r.Context().Done()
+		// Request was cancelled by timeout
+	}))
+	t.Cleanup(ts.Close)
+
+	cfg := SDConfig{
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		URL:              ts.URL,
+		RefreshInterval:  model.Duration(300 * time.Millisecond),
+		MinBackoff:       model.Duration(50 * time.Millisecond),
+	}
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	start := time.Now()
+	_, err = d.Refresh(ctx)
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	// Should timeout after refresh_interval (300ms)
+	require.Greater(t, elapsed, 250*time.Millisecond, "should wait at least close to refresh_interval")
+	require.Less(t, elapsed, 500*time.Millisecond, "should not wait much longer than refresh_interval")
+	require.Contains(t, err.Error(), "timeout")
+	// Verify request was started
+	select {
+	case <-requestStarted:
+	default:
+		t.Fatal("HTTP request was never started")
+	}
+	require.Equal(t, 1.0, getFailureCount(d.metrics.failuresCount))
+}
+
+func TestDefaultMinBackoff(t *testing.T) {
+	// Test that default min_backoff is 0 (retries disabled)
+	require.Equal(t, model.Duration(0), DefaultSDConfig.MinBackoff)
+}
+
+func TestMinBackoffValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		yaml        string
+		expectedErr string
+	}{
+		{
+			name: "valid config with min_backoff",
+			yaml: `
+url: http://example.com
+refresh_interval: 60s
+min_backoff: 1s
+`,
+			expectedErr: "",
+		},
+		{
+			name: "min_backoff zero disables retries",
+			yaml: `
+url: http://example.com
+refresh_interval: 60s
+min_backoff: 0
+`,
+			expectedErr: "",
+		},
+		{
+			name: "negative min_backoff is invalid",
+			yaml: `
+url: http://example.com
+refresh_interval: 60s
+min_backoff: -1s
+`,
+			expectedErr: "not a valid duration string",
+		},
+		{
+			name: "min_backoff greater than refresh_interval",
+			yaml: `
+url: http://example.com
+refresh_interval: 30s
+min_backoff: 60s
+`,
+			expectedErr: "min_backoff must not be greater than refresh_interval",
+		},
+		{
+			name: "missing URL",
+			yaml: `
+refresh_interval: 60s
+`,
+			expectedErr: "URL is missing",
+		},
+		{
+			name: "invalid URL scheme",
+			yaml: `
+url: ftp://example.com
+refresh_interval: 60s
+`,
+			expectedErr: "URL scheme must be 'http' or 'https'",
+		},
+		{
+			name: "missing host in URL",
+			yaml: `
+url: http://
+refresh_interval: 60s
+`,
+			expectedErr: "host is missing in URL",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cfg SDConfig
+			err := yaml.Unmarshal([]byte(tt.yaml), &cfg)
+
+			if tt.expectedErr != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.expectedErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestNoRetryWhenMinBackoffIsZero(t *testing.T) {
+	var attemptCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attemptCount++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(ts.Close)
+
+	cfg := SDConfig{
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		URL:              ts.URL,
+		RefreshInterval:  model.Duration(30 * time.Second),
+		MinBackoff:       model.Duration(0), // Retries disabled
+	}
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	_, err = d.Refresh(ctx)
+	require.Error(t, err)
+	require.Equal(t, 1, attemptCount) // Should only attempt once
+	require.Equal(t, 1.0, getFailureCount(d.metrics.failuresCount))
+}
+
+func TestUnmarshalYAML(t *testing.T) {
+	tests := []struct {
+		name     string
+		yaml     string
+		validate func(*testing.T, SDConfig, error)
+	}{
+		{
+			name: "apply defaults when min_backoff not specified",
+			yaml: `
+url: http://example.com
+refresh_interval: 60s
+`,
+			validate: func(t *testing.T, cfg SDConfig, err error) {
+				require.NoError(t, err)
+				require.Equal(t, model.Duration(0), cfg.MinBackoff)
+			},
+		},
+		{
+			name: "preserve user-specified min_backoff",
+			yaml: `
+url: http://example.com
+refresh_interval: 60s
+min_backoff: 5s
+`,
+			validate: func(t *testing.T, cfg SDConfig, err error) {
+				require.NoError(t, err)
+				require.Equal(t, model.Duration(5*time.Second), cfg.MinBackoff)
+			},
+		},
+		{
+			name: "https URL is valid",
+			yaml: `
+url: https://example.com
+refresh_interval: 60s
+`,
+			validate: func(t *testing.T, cfg SDConfig, err error) {
+				require.NoError(t, err)
+				require.Equal(t, "https://example.com", cfg.URL)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cfg SDConfig
+			err := yaml.Unmarshal([]byte(tt.yaml), &cfg)
+			tt.validate(t, cfg, err)
 		})
 	}
 }
