@@ -49,25 +49,15 @@ computed at all.
 
 `--enable-feature=native-histograms`
 
-When enabled, Prometheus will ingest native histograms (formerly also known as
-sparse histograms or high-res histograms). Native histograms are still highly
-experimental. Expect breaking changes to happen (including those rendering the
-TSDB unreadable).
+_This feature flag is being phased out. You should not use it anymore._
 
-Native histograms are currently only supported in the traditional Prometheus
-protobuf exposition format. This feature flag therefore also enables a new (and
-also experimental) protobuf parser, through which _all_ metrics are ingested
-(i.e. not only native histograms). Prometheus will try to negotiate the
-protobuf format first. The instrumented target needs to support the protobuf
-format, too, _and_ it needs to expose native histograms. The protobuf format
-allows to expose classic and native histograms side by side. With this feature
-flag disabled, Prometheus will continue to parse the classic histogram (albeit
-via the text format). With this flag enabled, Prometheus will still ingest
-those classic histograms that do not come with a corresponding native
-histogram. However, if a native histogram is present, Prometheus will ignore
-the corresponding classic histogram, with the notable exception of exemplars,
-which are always ingested. To keep the classic histograms as well, enable
-`always_scrape_classic_histograms` in the scrape job.
+Native histograms are a stable feature by now. However, to scrape native
+histograms, a scrape config setting `scrape_native_histograms` is required. To
+ease the transition, this feature flag sets the default value of
+`scrape_native_histograms` to `true`. From v3.9 on, this feature flag will be a
+true no-op, and the default value of `scrape_native_histograms` will be always
+`false`. If you are still using this feature flag while running v3.8, update
+your scrape configs and stop using the feature flag before upgrading to v3.9.
 
 ## Experimental PromQL functions
 
@@ -83,7 +73,12 @@ entirely.
 
 Enables ingestion of created timestamp. Created timestamps are injected as 0 valued samples when appropriate. See [PromCon talk](https://youtu.be/nWf0BfQ5EEA) for details.
 
-Currently Prometheus supports created timestamps only on the traditional Prometheus Protobuf protocol (WIP for other protocols). As a result, when enabling this feature, the Prometheus protobuf scrape protocol will be prioritized (See `scrape_config.scrape_protocols` settings for more details).
+Currently Prometheus supports created timestamps only on the traditional
+Prometheus Protobuf protocol (WIP for other protocols). Therefore, enabling
+this feature pre-sets the global `scrape_protocols` configuration option to 
+`[ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ]`,
+resulting in negotiating the Prometheus Protobuf protocol with first priority
+(unless the `scrape_protocols` option is set to a different value explicitly).
 
 Besides enabling this feature in Prometheus, created timestamps need to be exposed by the application being scraped.
 
@@ -302,3 +297,42 @@ memory in response to misleading cache growth.
 This is currently implemented using direct I/O.
 
 For more details, see the [proposal](https://github.com/prometheus/proposals/pull/45).
+
+## Extended Range Selectors
+
+`--enable-feature=promql-extended-range-selectors`
+
+Enables experimental `anchored` and `smoothed` modifiers for PromQL range and instant selectors. These modifiers provide more control over how range boundaries are handled in functions like `rate` and `increase`, especially with missing or irregular data.
+
+Native Histograms are not yet supported by the extended range selectors.
+
+### `anchored`
+
+Uses the most recent sample (within the lookback delta) at the beginning of the range, or alternatively the first sample within the range if there is no sample within the lookback delta. The last sample within the range is also used at the end of the range. No extrapolation or interpolation is applied, so this is useful to get the direct difference between sample values.
+
+Anchored range selector work with: `resets`, `changes`, `rate`, `increase`, and `delta`.
+
+Example query:
+`increase(http_requests_total[5m] anchored)`
+
+**Note**: When using the anchored modifier with the increase function, the results returned are integers.
+
+### `smoothed`
+
+In range selectors, linearly interpolates values at the range boundaries, using the sample values before and after the boundaries for an improved estimation that is robust against irregular scrapes and missing samples. However, it requires a sample after the evaluation interval to work properly, see note below.
+
+For instant selectors, values are linearly interpolated at the evaluation timestamp using the samples immediately before and after that point.
+
+Smoothed range selectors work with: `rate`, `increase`, and `delta`.
+
+Example query:
+`rate(http_requests_total[step()] smoothed)`
+
+> **Note for alerting and recording rules:**
+> The `smoothed` modifier requires samples after the evaluation interval, so using it directly in alerting or recording rules will typically *under-estimate* the result, as future samples are not available at evaluation time.
+> To use `smoothed` safely in rules, you **must** apply a `query_offset` to the rule group (see [documentation](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#rule_group)) to ensure the calculation window is fully in the past and all needed samples are available.  
+> For critical alerting, set the offset to at least one scrape interval; for less critical or more resilient use cases, consider a larger offset (multiple scrape intervals) to tolerate missed scrapes.
+
+For more details, see the [design doc](https://github.com/prometheus/proposals/blob/main/proposals/2025-04-04_extended-range-selectors-semantics.md).
+
+**Note**: Extended Range Selectors are not supported for subqueries.

@@ -46,9 +46,9 @@ func BenchmarkQuerier(b *testing.B) {
 		app.Append(0, l, 0, 0)
 	}
 
-	for n := 0; n < 10; n++ {
+	for n := range 10 {
 		addSeries(labels.FromStrings("a", strconv.Itoa(n)+postingsBenchSuffix))
-		for i := 0; i < 100000; i++ {
+		for i := range 100000 {
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", strconv.Itoa(n)+postingsBenchSuffix, "j", "foo"))
 			// Have some series that won't be matched, to properly test inverted matches.
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", strconv.Itoa(n)+postingsBenchSuffix, "j", "bar"))
@@ -246,13 +246,13 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 func BenchmarkMergedStringIter(b *testing.B) {
 	numSymbols := 100000
 	s := make([]string, numSymbols)
-	for i := 0; i < numSymbols; i++ {
+	for i := range numSymbols {
 		s[i] = fmt.Sprintf("symbol%v", i)
 	}
 
 	for i := 0; i < b.N; i++ {
 		it := NewMergedStringIter(index.NewStringListIter(s), index.NewStringListIter(s))
-		for j := 0; j < 100; j++ {
+		for range 100 {
 			it = NewMergedStringIter(it, index.NewStringListIter(s))
 		}
 
@@ -278,7 +278,7 @@ func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(ap
 	h := db.Head()
 
 	app := h.Appender(context.Background())
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		addSeries(app, i)
 		if i%1000 == 999 { // Commit every so often, so the appender doesn't get too big.
 			require.NoError(b, app.Commit())

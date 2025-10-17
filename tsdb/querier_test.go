@@ -2092,7 +2092,7 @@ func TestDeletedIterator(t *testing.T) {
 	require.NoError(t, err)
 	// Insert random stuff from (0, 1000).
 	act := make([]sample, 1000)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		act[i].t = int64(i)
 		act[i].f = rand.Float64()
 		app.Append(act[i].t, act[i].f)
@@ -2152,7 +2152,7 @@ func TestDeletedIterator_WithSeek(t *testing.T) {
 	require.NoError(t, err)
 	// Insert random stuff from (0, 1000).
 	act := make([]sample, 1000)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		act[i].t = int64(i)
 		act[i].f = float64(i)
 		app.Append(act[i].t, act[i].f)
@@ -3092,7 +3092,6 @@ func TestQuerierIndexQueriesRace(t *testing.T) {
 	}
 
 	for _, c := range testCases {
-		c := c
 		t.Run(fmt.Sprintf("%v", c.matchers), func(t *testing.T) {
 			t.Parallel()
 			db := openTestDB(t, DefaultOptions(), nil)
@@ -3107,7 +3106,7 @@ func TestQuerierIndexQueriesRace(t *testing.T) {
 			t.Cleanup(wg.Wait)
 			t.Cleanup(cancel)
 
-			for i := 0; i < testRepeats; i++ {
+			for range testRepeats {
 				q, err := db.Querier(math.MinInt64, math.MaxInt64)
 				require.NoError(t, err)
 
@@ -3506,8 +3505,8 @@ func BenchmarkHeadChunkQuerier(b *testing.B) {
 	// 3h of data.
 	numTimeseries := 100
 	app := db.Appender(context.Background())
-	for i := 0; i < 120*6; i++ {
-		for j := 0; j < numTimeseries; j++ {
+	for i := range 120 * 6 {
+		for j := range numTimeseries {
 			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
 			if i%10 == 0 {
 				require.NoError(b, app.Commit())
@@ -3551,8 +3550,8 @@ func BenchmarkHeadQuerier(b *testing.B) {
 	// 3h of data.
 	numTimeseries := 100
 	app := db.Appender(context.Background())
-	for i := 0; i < 120*6; i++ {
-		for j := 0; j < numTimeseries; j++ {
+	for i := range 120 * 6 {
+		for j := range numTimeseries {
 			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
 			if i%10 == 0 {
 				require.NoError(b, app.Commit())
@@ -3613,7 +3612,6 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 				require.NoError(t, db.Close())
 			}()
 
-			db.EnableNativeHistograms()
 			appender := db.Appender(context.Background())
 
 			var (
@@ -3622,7 +3620,7 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 			)
 			lbs := labels.FromStrings("__name__", "test", "type", name)
 
-			for i := 0; i < 100; i++ {
+			for i := range 100 {
 				h, fh := tc(i)
 				seriesRef, err = appender.AppendHistogram(seriesRef, lbs, int64(i), h, fh)
 				require.NoError(t, err)
@@ -3672,7 +3670,6 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 		require.NoError(t, db.Close())
 	}()
 
-	db.EnableNativeHistograms()
 	appender := db.Appender(context.Background())
 
 	var (
@@ -3682,7 +3679,7 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 	lbs := labels.FromStrings("__name__", "test")
 
 	// Create an int histogram chunk with samples between 0 - 20 and 30 - 40.
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		h := tsdbutil.GenerateTestHistogram(1)
 		seriesRef, err = appender.AppendHistogram(seriesRef, lbs, int64(i), h, nil)
 		require.NoError(t, err)

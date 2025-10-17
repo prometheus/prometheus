@@ -28,7 +28,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 )
 
 const (
@@ -85,6 +85,17 @@ func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
 					ClientID:     dummyClientID,
 					ClientSecret: dummyClientSecret,
 					TenantID:     dummyTenantID,
+				},
+			},
+		},
+		// AzureAd roundtripper with Workload Identity.
+		{
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				WorkloadIdentity: &WorkloadIdentityConfig{
+					ClientID:      dummyClientID,
+					TenantID:      dummyTenantID,
+					TokenFilePath: DefaultWorkloadIdentityTokenPath,
 				},
 			},
 		},
@@ -145,7 +156,7 @@ func TestAzureAdConfig(t *testing.T) {
 		// Missing managedidentity or oauth field.
 		{
 			filename: "testdata/azuread_bad_configmissing.yaml",
-			err:      "must provide an Azure Managed Identity, Azure OAuth or Azure SDK in the Azure AD config",
+			err:      "must provide an Azure Managed Identity, Azure Workload Identity, Azure OAuth or Azure SDK in the Azure AD config",
 		},
 		// Invalid managedidentity client id.
 		{
@@ -160,12 +171,32 @@ func TestAzureAdConfig(t *testing.T) {
 		// Invalid config when both managedidentity and oauth is provided.
 		{
 			filename: "testdata/azuread_bad_twoconfig.yaml",
-			err:      "cannot provide both Azure Managed Identity and Azure OAuth in the Azure AD config",
+			err:      "cannot provide multiple authentication methods in the Azure AD config",
 		},
 		// Invalid config when both sdk and oauth is provided.
 		{
 			filename: "testdata/azuread_bad_oauthsdkconfig.yaml",
-			err:      "cannot provide both Azure OAuth and Azure SDK in the Azure AD config",
+			err:      "cannot provide multiple authentication methods in the Azure AD config",
+		},
+		// Invalid workload identity client id.
+		{
+			filename: "testdata/azuread_bad_workloadidentity_invalidclientid.yaml",
+			err:      "the provided Azure Workload Identity client_id is invalid",
+		},
+		// Invalid workload identity tenant id.
+		{
+			filename: "testdata/azuread_bad_workloadidentity_invalidtenantid.yaml",
+			err:      "the provided Azure Workload Identity tenant_id is invalid",
+		},
+		// Missing workload identity client id.
+		{
+			filename: "testdata/azuread_bad_workloadidentity_missingclientid.yaml",
+			err:      "must provide an Azure Workload Identity client_id in the Azure AD config",
+		},
+		// Missing workload identity tenant id.
+		{
+			filename: "testdata/azuread_bad_workloadidentity_missingtenantid.yaml",
+			err:      "must provide an Azure Workload Identity tenant_id in the Azure AD config",
 		},
 		// Valid config with missing  optionally cloud field.
 		{
@@ -186,6 +217,10 @@ func TestAzureAdConfig(t *testing.T) {
 		// Valid SDK config.
 		{
 			filename: "testdata/azuread_good_sdk.yaml",
+		},
+		// Valid workload identity config.
+		{
+			filename: "testdata/azuread_good_workloadidentity.yaml",
 		},
 	}
 	for _, c := range cases {
@@ -255,6 +290,18 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 			},
 			err: "Cloud is not specified or is incorrect: ",
 		},
+		// Invalid tokenProvider for workload identity.
+		{
+			cfg: &AzureADConfig{
+				Cloud: "PublicAzure",
+				WorkloadIdentity: &WorkloadIdentityConfig{
+					ClientID:      dummyClientID,
+					TenantID:      dummyTenantID,
+					TokenFilePath: DefaultWorkloadIdentityTokenPath,
+				},
+			},
+			err: "Cloud is not specified or is incorrect: ",
+		},
 		// Valid tokenProvider for managedidentity.
 		{
 			cfg: &AzureADConfig{
@@ -281,6 +328,17 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 				Cloud: "AzurePublic",
 				SDK: &SDKConfig{
 					TenantID: dummyTenantID,
+				},
+			},
+		},
+		// Valid tokenProvider for workload identity.
+		{
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				WorkloadIdentity: &WorkloadIdentityConfig{
+					ClientID:      dummyClientID,
+					TenantID:      dummyTenantID,
+					TokenFilePath: DefaultWorkloadIdentityTokenPath,
 				},
 			},
 		},

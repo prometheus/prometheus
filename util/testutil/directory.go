@@ -72,7 +72,7 @@ type (
 	// the test flags, which we do not want in non-test binaries even if
 	// they make use of these utilities for some reason).
 	T interface {
-		Errorf(format string, args ...interface{})
+		Errorf(format string, args ...any)
 		FailNow()
 	}
 )

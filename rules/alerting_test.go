@@ -85,6 +85,8 @@ func TestAlertingRuleState(t *testing.T) {
 	for i, test := range tests {
 		rule := NewAlertingRule(test.name, nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
 		rule.active = test.active
+		// Set evaluation timestamp to simulate that the rule has been evaluated
+		rule.SetEvaluationTimestamp(time.Now())
 		got := rule.State()
 		require.Equal(t, test.want, got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
 	}
@@ -771,15 +773,16 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 		QueueCapacity: 1,
 		RelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{"a1"},
-				Regex:        relabel.MustNewRegexp("(.+)"),
-				TargetLabel:  "a1",
-				Replacement:  "bug",
-				Action:       "replace",
+				SourceLabels:         model.LabelNames{"a1"},
+				Regex:                relabel.MustNewRegexp("(.+)"),
+				TargetLabel:          "a1",
+				Replacement:          "bug",
+				Action:               "replace",
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 	}
-	nm := notifier.NewManager(&opts, promslog.NewNopLogger())
+	nm := notifier.NewManager(&opts, model.UTF8Validation, promslog.NewNopLogger())
 
 	f := SendAlerts(nm, "")
 	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {

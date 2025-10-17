@@ -23,8 +23,8 @@ type Pos int
 
 // PositionRange describes a position in the input string of the parser.
 type PositionRange struct {
-	Start Pos
-	End   Pos
+	Start Pos // Start of the range, zero-indexed.
+	End   Pos // End of the range, zero-indexed.
 }
 
 // StartPosInput uses the query string to convert the PositionRange into a

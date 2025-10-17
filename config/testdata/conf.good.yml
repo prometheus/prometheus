@@ -369,6 +369,7 @@ scrape_configs:
           key_file: valid_key_file
 
   - job_name: hetzner
+    scrape_native_histograms: true
     relabel_configs:
       - action: uppercase
         source_labels: [instance]

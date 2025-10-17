@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -59,6 +60,7 @@ const (
 	reasonTooOld                     = "too_old"
 	reasonDroppedSeries              = "dropped_series"
 	reasonUnintentionalDroppedSeries = "unintentionally_dropped_series"
+	reasonNHCBNotSupported           = "nhcb_in_rw1_not_supported"
 )
 
 type queueManagerMetrics struct {
@@ -81,6 +83,7 @@ type queueManagerMetrics struct {
 	droppedHistogramsTotal *prometheus.CounterVec
 	enqueueRetriesTotal    prometheus.Counter
 	sentBatchDuration      prometheus.Histogram
+	highestTimestamp       *maxTimestamp
 	highestSentTimestamp   *maxTimestamp
 	pendingSamples         prometheus.Gauge
 	pendingExemplars       prometheus.Gauge
@@ -227,12 +230,21 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
+	m.highestTimestamp = &maxTimestamp{
+		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "queue_highest_timestamp_seconds",
+			Help:        "Highest timestamp that was enqueued, in seconds since epoch. Initialized to 0 when no data has been received yet.",
+			ConstLabels: constLabels,
+		}),
+	}
 	m.highestSentTimestamp = &maxTimestamp{
 		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace:   namespace,
 			Subsystem:   subsystem,
 			Name:        "queue_highest_sent_timestamp_seconds",
-			Help:        "Timestamp from a WAL sample, the highest timestamp successfully sent by this queue, in seconds since epoch. Initialized to 0 when no data has been sent yet.",
+			Help:        "Highest timestamp successfully sent by this queue, in seconds since epoch. Initialized to 0 when no data has been sent yet.",
 			ConstLabels: constLabels,
 		}),
 	}
@@ -337,6 +349,7 @@ func (m *queueManagerMetrics) register() {
 			m.droppedHistogramsTotal,
 			m.enqueueRetriesTotal,
 			m.sentBatchDuration,
+			m.highestTimestamp,
 			m.highestSentTimestamp,
 			m.pendingSamples,
 			m.pendingExemplars,
@@ -372,6 +385,7 @@ func (m *queueManagerMetrics) unregister() {
 		m.reg.Unregister(m.droppedHistogramsTotal)
 		m.reg.Unregister(m.enqueueRetriesTotal)
 		m.reg.Unregister(m.sentBatchDuration)
+		m.reg.Unregister(m.highestTimestamp)
 		m.reg.Unregister(m.highestSentTimestamp)
 		m.reg.Unregister(m.pendingSamples)
 		m.reg.Unregister(m.pendingExemplars)
@@ -407,16 +421,17 @@ type QueueManager struct {
 	reshardDisableStartTimestamp atomic.Int64 // Time that reshard was disabled.
 	reshardDisableEndTimestamp   atomic.Int64 // Time that reshard is disabled until.
 
-	logger               *slog.Logger
-	flushDeadline        time.Duration
-	cfg                  config.QueueConfig
-	mcfg                 config.MetadataConfig
-	externalLabels       []labels.Label
-	relabelConfigs       []*relabel.Config
-	sendExemplars        bool
-	sendNativeHistograms bool
-	watcher              *wlog.Watcher
-	metadataWatcher      *MetadataWatcher
+	logger                  *slog.Logger
+	flushDeadline           time.Duration
+	cfg                     config.QueueConfig
+	mcfg                    config.MetadataConfig
+	externalLabels          []labels.Label
+	relabelConfigs          []*relabel.Config
+	sendExemplars           bool
+	sendNativeHistograms    bool
+	enableTypeAndUnitLabels bool
+	watcher                 *wlog.Watcher
+	metadataWatcher         *MetadataWatcher
 
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
@@ -438,11 +453,10 @@ type QueueManager struct {
 	quit        chan struct{}
 	wg          sync.WaitGroup
 
-	dataIn, dataDropped, dataOut, dataOutDuration *ewmaRate
+	dataIn, dataOut, dataOutDuration *ewmaRate
 
-	metrics              *queueManagerMetrics
-	interner             *pool
-	highestRecvTimestamp *maxTimestamp
+	metrics  *queueManagerMetrics
+	interner *pool
 }
 
 // NewQueueManager builds a new QueueManager and starts a new
@@ -456,7 +470,6 @@ func NewQueueManager(
 	readerMetrics *wlog.LiveReaderMetrics,
 	logger *slog.Logger,
 	dir string,
-	samplesIn *ewmaRate,
 	cfg config.QueueConfig,
 	mCfg config.MetadataConfig,
 	externalLabels labels.Labels,
@@ -464,10 +477,10 @@ func NewQueueManager(
 	client WriteClient,
 	flushDeadline time.Duration,
 	interner *pool,
-	highestRecvTimestamp *maxTimestamp,
 	sm ReadyScrapeManager,
 	enableExemplarRemoteWrite bool,
 	enableNativeHistogramRemoteWrite bool,
+	enableTypeAndUnitLabels bool,
 	protoMsg config.RemoteWriteProtoMsg,
 ) *QueueManager {
 	if logger == nil {
@@ -482,15 +495,16 @@ func NewQueueManager(
 
 	logger = logger.With(remoteName, client.Name(), endpoint, client.Endpoint())
 	t := &QueueManager{
-		logger:               logger,
-		flushDeadline:        flushDeadline,
-		cfg:                  cfg,
-		mcfg:                 mCfg,
-		externalLabels:       extLabelsSlice,
-		relabelConfigs:       relabelConfigs,
-		storeClient:          client,
-		sendExemplars:        enableExemplarRemoteWrite,
-		sendNativeHistograms: enableNativeHistogramRemoteWrite,
+		logger:                  logger,
+		flushDeadline:           flushDeadline,
+		cfg:                     cfg,
+		mcfg:                    mCfg,
+		externalLabels:          extLabelsSlice,
+		relabelConfigs:          relabelConfigs,
+		storeClient:             client,
+		sendExemplars:           enableExemplarRemoteWrite,
+		sendNativeHistograms:    enableNativeHistogramRemoteWrite,
+		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
 		seriesMetadata:       make(map[chunks.HeadSeriesRef]*metadata.Metadata),
@@ -502,14 +516,12 @@ func NewQueueManager(
 		reshardChan: make(chan int),
 		quit:        make(chan struct{}),
 
-		dataIn:          samplesIn,
-		dataDropped:     newEWMARate(ewmaWeight, shardUpdateDuration),
+		dataIn:          newEWMARate(ewmaWeight, shardUpdateDuration),
 		dataOut:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		dataOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
 
-		metrics:              metrics,
-		interner:             interner,
-		highestRecvTimestamp: highestRecvTimestamp,
+		metrics:  metrics,
+		interner: interner,
 
 		protoMsg: protoMsg,
 		compr:    compression.Snappy, // Hardcoded for now, but scaffolding exists for likely future use.
@@ -557,11 +569,8 @@ func (t *QueueManager) AppendWatcherMetadata(ctx context.Context, metadata []scr
 
 	pBuf := proto.NewBuffer(nil)
 	numSends := int(math.Ceil(float64(len(metadata)) / float64(t.mcfg.MaxSamplesPerSend)))
-	for i := 0; i < numSends; i++ {
-		last := (i + 1) * t.mcfg.MaxSamplesPerSend
-		if last > len(metadata) {
-			last = len(metadata)
-		}
+	for i := range numSends {
+		last := min((i+1)*t.mcfg.MaxSamplesPerSend, len(metadata))
 		err := t.sendMetadataWithBackoff(ctx, mm[i*t.mcfg.MaxSamplesPerSend:last], pBuf)
 		if err != nil {
 			t.metrics.failedMetadataTotal.Add(float64(last - (i * t.mcfg.MaxSamplesPerSend)))
@@ -702,7 +711,6 @@ outer:
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[s.Ref]
 		if !ok {
-			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[s.Ref]; !ok {
 				t.logger.Info("Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
 				t.metrics.droppedSamplesTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
@@ -764,8 +772,6 @@ outer:
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[e.Ref]
 		if !ok {
-			// Track dropped exemplars in the same EWMA for sharding calc.
-			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[e.Ref]; !ok {
 				t.logger.Info("Dropped exemplar for series that was not explicitly dropped via relabelling", "ref", e.Ref)
 				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
@@ -818,10 +824,15 @@ outer:
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
+		if t.protoMsg == config.RemoteWriteProtoMsgV1 && h.H != nil && h.H.Schema == histogram.CustomBucketsSchema {
+			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
+			t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
+			continue
+		}
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[h.Ref]
 		if !ok {
-			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[h.Ref]; !ok {
 				t.logger.Info("Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
 				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
@@ -873,10 +884,15 @@ outer:
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
+		if t.protoMsg == config.RemoteWriteProtoMsgV1 && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
+			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
+			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
+			continue
+		}
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[h.Ref]
 		if !ok {
-			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[h.Ref]; !ok {
 				t.logger.Info("Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
 				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
@@ -946,10 +962,10 @@ func (t *QueueManager) Stop() {
 	defer t.logger.Info("Remote storage stopped.")
 
 	close(t.quit)
-	t.wg.Wait()
 	// Wait for all QueueManager routines to end before stopping shards, metadata watcher, and WAL watcher. This
 	// is to ensure we don't end up executing a reshard and shards.stop() at the same time, which
 	// causes a closed channel panic.
+	t.wg.Wait()
 	t.shards.stop()
 	t.watcher.Stop()
 	if t.mcfg.Send {
@@ -1106,8 +1122,8 @@ func (t *QueueManager) shouldReshard(desiredShards int) bool {
 // outlined in this functions implementation. It is up to the caller to reshard, or not,
 // based on the return value.
 func (t *QueueManager) calculateDesiredShards() int {
+	t.dataIn.tick()
 	t.dataOut.tick()
-	t.dataDropped.tick()
 	t.dataOutDuration.tick()
 
 	// We use the number of incoming samples as a prediction of how much work we
@@ -1117,13 +1133,12 @@ func (t *QueueManager) calculateDesiredShards() int {
 	var (
 		dataInRate      = t.dataIn.rate()
 		dataOutRate     = t.dataOut.rate()
-		dataKeptRatio   = dataOutRate / (t.dataDropped.rate() + dataOutRate)
 		dataOutDuration = t.dataOutDuration.rate() / float64(time.Second)
-		dataPendingRate = dataInRate*dataKeptRatio - dataOutRate
+		dataPendingRate = dataInRate - dataOutRate
 		highestSent     = t.metrics.highestSentTimestamp.Get()
-		highestRecv     = t.highestRecvTimestamp.Get()
+		highestRecv     = t.metrics.highestTimestamp.Get()
 		delay           = highestRecv - highestSent
-		dataPending     = delay * dataInRate * dataKeptRatio
+		dataPending     = delay * dataInRate
 	)
 
 	if dataOutRate <= 0 {
@@ -1135,13 +1150,12 @@ func (t *QueueManager) calculateDesiredShards() int {
 		backlogCatchup = 0.05 * dataPending
 		// Calculate Time to send one sample, averaged across all sends done this tick.
 		timePerSample = dataOutDuration / dataOutRate
-		desiredShards = timePerSample * (dataInRate*dataKeptRatio + backlogCatchup)
+		desiredShards = timePerSample * (dataInRate + backlogCatchup)
 	)
 	t.metrics.desiredNumShards.Set(desiredShards)
 	t.logger.Debug("QueueManager.calculateDesiredShards",
 		"dataInRate", dataInRate,
 		"dataOutRate", dataOutRate,
-		"dataKeptRatio", dataKeptRatio,
 		"dataPendingRate", dataPendingRate,
 		"dataPending", dataPending,
 		"dataOutDuration", dataOutDuration,
@@ -1241,7 +1255,7 @@ func (s *shards) start(n int) {
 	s.qm.metrics.numShards.Set(float64(n))
 
 	newQueues := make([]*queue, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		newQueues[i] = newQueue(s.qm.cfg.MaxSamplesPerSend, s.qm.cfg.Capacity)
 	}
 
@@ -1259,7 +1273,7 @@ func (s *shards) start(n int) {
 	s.exemplarsDroppedOnHardShutdown.Store(0)
 	s.histogramsDroppedOnHardShutdown.Store(0)
 	s.metadataDroppedOnHardShutdown.Store(0)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		go s.runShard(hardShutdownCtx, i, newQueues[i])
 	}
 }
@@ -1330,7 +1344,11 @@ func (s *shards) enqueue(ref chunks.HeadSeriesRef, data timeSeries) bool {
 		case tHistogram, tFloatHistogram:
 			s.qm.metrics.pendingHistograms.Inc()
 			s.enqueuedHistograms.Inc()
+		default:
+			return true
 		}
+		s.qm.metrics.highestTimestamp.Set(float64(data.timestamp / 1000))
+		s.qm.dataIn.incr(1)
 		return true
 	}
 }
@@ -1440,9 +1458,15 @@ func (q *queue) ReturnForReuse(batch []timeSeries) {
 // FlushAndShutdown stops the queue and flushes any samples. No appends can be
 // made after this is called.
 func (q *queue) FlushAndShutdown(done <-chan struct{}) {
+loop:
 	for q.tryEnqueueingBatch(done) {
-		time.Sleep(time.Second)
+		select {
+		case <-done:
+			break loop
+		case <-time.After(time.Second):
+		}
 	}
+
 	q.batchMtx.Lock()
 	defer q.batchMtx.Unlock()
 	q.batch = nil
@@ -1543,8 +1567,11 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			}
 			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, encBuf, compr)
 		case config.RemoteWriteProtoMsgV2:
-			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms)
+			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
+			if nUnexpectedMetadata > 0 {
+				s.qm.logger.Warn("unexpected metadata sType in populateV2TimeSeries", "count", nUnexpectedMetadata)
+			}
 			_ = s.sendV2Samples(ctx, pendingDataV2[:n], symbolTable.Symbols(), nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, &pBufRaw, encBuf, compr)
 			symbolTable.Reset()
 		}
@@ -1911,8 +1938,8 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	return accumulatedStats, err
 }
 
-func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms bool) (int, int, int, int) {
-	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata int
+func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool) (int, int, int, int, int) {
+	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
 		if d.metadata != nil {
@@ -1921,11 +1948,15 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(d.metadata.Unit)
 			nPendingMetadata++
 		} else {
+			var m schema.Metadata
+			if enableTypeAndUnitLabels {
+				m = schema.NewMetadataFromLabels(d.seriesLabels)
+			}
 			// Safeguard against sending garbage in case of not having metadata
 			// for whatever reason.
-			pendingData[nPending].Metadata.Type = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
+			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(m.Type)
+			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(m.Unit)
 			pendingData[nPending].Metadata.HelpRef = 0
-			pendingData[nPending].Metadata.UnitRef = 0
 		}
 
 		if sendExemplars {
@@ -1960,11 +1991,10 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromFloatHistogram(d.timestamp, d.floatHistogram))
 			nPendingHistograms++
 		case tMetadata:
-			// TODO: log or return an error?
-			// we shouldn't receive metadata type data here, it should already be inserted into the timeSeries
+			nUnexpectedMetadata++
 		}
 	}
-	return nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata
+	return nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata
 }
 
 func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt func(int) error, onRetry func()) error {
@@ -2026,11 +2056,7 @@ func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt 
 		onRetry()
 		t.logger.Warn("Failed to send batch, retrying", "err", err)
 
-		backoff = sleepDuration * 2
-
-		if backoff > t.cfg.MaxBackoff {
-			backoff = t.cfg.MaxBackoff
-		}
+		backoff = min(sleepDuration*2, t.cfg.MaxBackoff)
 
 		try++
 	}

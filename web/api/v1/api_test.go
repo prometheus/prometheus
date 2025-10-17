@@ -496,7 +496,7 @@ func TestEndpoints(t *testing.T) {
 
 		remote := remote.NewStorage(promslog.New(&promslogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
-		}, dbDir, 1*time.Second, nil)
+		}, dbDir, 1*time.Second, nil, false)
 
 		err = remote.ApplyConfig(&config.Config{
 			RemoteReadConfigs: []*config.RemoteReadConfig{
@@ -909,12 +909,12 @@ func TestStats(t *testing.T) {
 		name     string
 		renderer StatsRenderer
 		param    string
-		expected func(*testing.T, interface{})
+		expected func(*testing.T, any)
 	}{
 		{
 			name:  "stats is blank",
 			param: "",
-			expected: func(t *testing.T, i interface{}) {
+			expected: func(t *testing.T, i any) {
 				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.Nil(t, qd.Stats)
@@ -923,7 +923,7 @@ func TestStats(t *testing.T) {
 		{
 			name:  "stats is true",
 			param: "true",
-			expected: func(t *testing.T, i interface{}) {
+			expected: func(t *testing.T, i any) {
 				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
@@ -938,7 +938,7 @@ func TestStats(t *testing.T) {
 		{
 			name:  "stats is all",
 			param: "all",
-			expected: func(t *testing.T, i interface{}) {
+			expected: func(t *testing.T, i any) {
 				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
@@ -959,7 +959,7 @@ func TestStats(t *testing.T) {
 				return nil
 			},
 			param: "known",
-			expected: func(t *testing.T, i interface{}) {
+			expected: func(t *testing.T, i any) {
 				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
@@ -980,11 +980,11 @@ func TestStats(t *testing.T) {
 				req, err := request(method, tc.param)
 				require.NoError(t, err)
 				res := api.query(req.WithContext(ctx))
-				assertAPIError(t, res.err, "")
+				assertAPIError(t, res.err, errorNone)
 				tc.expected(t, res.data)
 
 				res = api.queryRange(req.WithContext(ctx))
-				assertAPIError(t, res.err, "")
+				assertAPIError(t, res.err, errorNone)
 				tc.expected(t, res.data)
 			}
 		})
@@ -1108,19 +1108,19 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		endpoint              apiFunc
 		params                map[string]string
 		query                 url.Values
-		response              interface{}
+		response              any
 		responseLen           int // If nonzero, check only the length; `response` is ignored.
 		responseMetadataTotal int
 		responseAsJSON        string
 		warningsCount         int
 		errType               errorType
-		sorter                func(interface{})
+		sorter                func(any)
 		metadata              []targetMetadata
 		exemplars             []exemplar.QueryResult
-		zeroFunc              func(interface{})
+		zeroFunc              func(any)
 	}
 
-	rulesZeroFunc := func(i interface{}) {
+	rulesZeroFunc := func(i any) {
 		if i != nil {
 			v := i.(*RuleDiscovery)
 			for _, ruleGroup := range v.RuleGroups {
@@ -1991,7 +1991,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					Unit:         "",
 				},
 			},
-			sorter: func(m interface{}) {
+			sorter: func(m any) {
 				sort.Slice(m.([]metricMetadata), func(i, j int) bool {
 					s := m.([]metricMetadata)
 					return s[i].MetricFamily < s[j].MetricFamily
@@ -2120,7 +2120,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			responseAsJSON: `{"go_threads": [{"type":"gauge","unit":"",
 "help":"Number of OS threads created"},{"type":"gauge","unit":"",
 "help":"Number of OS threads that were created."}]}`,
-			sorter: func(m interface{}) {
+			sorter: func(m any) {
 				v := m.(map[string][]metadata.Metadata)["go_threads"]
 
 				sort.Slice(v, func(i, j int) bool {
@@ -2328,7 +2328,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 			responseAsJSON: `{"go_threads": [{"type":"gauge","unit":"","help":"Number of OS threads created"},{"type":"gauge","unit":"","help":"Number of OS threads that were created."}]}`,
-			sorter: func(m interface{}) {
+			sorter: func(m any) {
 				v := m.(map[string][]metadata.Metadata)["go_threads"]
 
 				sort.Slice(v, func(i, j int) bool {
@@ -2382,7 +2382,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					},
 				},
 			},
-			zeroFunc: func(i interface{}) {
+			zeroFunc: func(i any) {
 				if i != nil {
 					v := i.(*AlertDiscovery)
 					for _, alert := range v.Alerts {
@@ -3761,7 +3761,7 @@ func describeAPIFunc(f apiFunc) string {
 func assertAPIError(t *testing.T, got *apiError, exp errorType) {
 	t.Helper()
 
-	if exp == errorNone {
+	if exp.num == ErrorNone {
 		require.Nil(t, got)
 	} else {
 		require.NotNil(t, got)
@@ -3769,20 +3769,20 @@ func assertAPIError(t *testing.T, got *apiError, exp errorType) {
 	}
 }
 
-func assertAPIResponse(t *testing.T, got, exp interface{}) {
+func assertAPIResponse(t *testing.T, got, exp any) {
 	t.Helper()
 
 	testutil.RequireEqual(t, exp, got)
 }
 
-func assertAPIResponseLength(t *testing.T, got interface{}, expLen int) {
+func assertAPIResponseLength(t *testing.T, got any, expLen int) {
 	t.Helper()
 
 	gotLen := reflect.ValueOf(got).Len()
 	require.Equal(t, expLen, gotLen, "Response length does not match")
 }
 
-func assertAPIResponseMetadataLen(t *testing.T, got interface{}, expLen int) {
+func assertAPIResponseMetadataLen(t *testing.T, got any, expLen int) {
 	t.Helper()
 
 	var gotLen int
@@ -3988,7 +3988,6 @@ func TestAdminEndpoints(t *testing.T) {
 			errType: errorUnavailable,
 		},
 	} {
-		tc := tc
 		t.Run("", func(t *testing.T) {
 			dir := t.TempDir()
 
@@ -4411,7 +4410,6 @@ func TestTSDBStatus(t *testing.T) {
 			errType:  errorBadData,
 		},
 	} {
-		tc := tc
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			api := &API{db: tc.db, gatherer: prometheus.DefaultGatherer}
 			endpoint := tc.endpoint(api)
@@ -4467,11 +4465,11 @@ var testResponseWriter = httptest.ResponseRecorder{}
 
 func BenchmarkRespond(b *testing.B) {
 	points := []promql.FPoint{}
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		points = append(points, promql.FPoint{F: float64(i * 1000000), T: int64(i)})
 	}
 	matrix := promql.Matrix{}
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		matrix = append(matrix, promql.Series{
 			Metric: labels.FromStrings("__name__", fmt.Sprintf("series%v", i),
 				"label", fmt.Sprintf("series%v", i),
@@ -4480,7 +4478,7 @@ func BenchmarkRespond(b *testing.B) {
 		})
 	}
 	series := []labels.Labels{}
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		series = append(series, labels.FromStrings("__name__", fmt.Sprintf("series%v", i),
 			"label", fmt.Sprintf("series%v", i),
 			"label2", fmt.Sprintf("series%v", i)))
@@ -4488,7 +4486,7 @@ func BenchmarkRespond(b *testing.B) {
 
 	cases := []struct {
 		name     string
-		response interface{}
+		response any
 	}{
 		{name: "10000 points no labels", response: &QueryData{
 			ResultType: parser.ValueTypeMatrix,
@@ -4642,7 +4640,7 @@ func (t *testCodec) CanEncode(*Response) bool {
 }
 
 func (t *testCodec) Encode(*Response) ([]byte, error) {
-	return []byte(fmt.Sprintf("response from %v codec", t.contentType)), nil
+	return fmt.Appendf(nil, "response from %v codec", t.contentType), nil
 }
 
 func TestExtractQueryOpts(t *testing.T) {

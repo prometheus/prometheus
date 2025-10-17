@@ -16,6 +16,7 @@ package annotations
 import (
 	"errors"
 	"fmt"
+	"maps"
 
 	"github.com/prometheus/common/model"
 
@@ -55,9 +56,7 @@ func (a *Annotations) Merge(aa Annotations) Annotations {
 		}
 		*a = Annotations{}
 	}
-	for key, val := range aa {
-		(*a)[key] = val
-	}
+	maps.Copy((*a), aa)
 	return *a
 }
 
@@ -139,7 +138,7 @@ var (
 	InvalidQuantileWarning                     = fmt.Errorf("%w: quantile value should be between 0 and 1", PromQLWarning)
 	BadBucketLabelWarning                      = fmt.Errorf("%w: bucket label %q is missing or has a malformed value", PromQLWarning, model.BucketLabel)
 	MixedFloatsHistogramsWarning               = fmt.Errorf("%w: encountered a mix of histograms and floats for", PromQLWarning)
-	MixedClassicNativeHistogramsWarning        = fmt.Errorf("%w: vector contains a mix of classic and native histograms for metric name", PromQLWarning)
+	MixedClassicNativeHistogramsWarning        = fmt.Errorf("%w: vector contains a mix of classic and native histograms", PromQLWarning)
 	NativeHistogramNotCounterWarning           = fmt.Errorf("%w: this native histogram metric is not a counter:", PromQLWarning)
 	NativeHistogramNotGaugeWarning             = fmt.Errorf("%w: this native histogram metric is not a gauge:", PromQLWarning)
 	MixedExponentialCustomHistogramsWarning    = fmt.Errorf("%w: vector contains a mix of histograms with exponential and custom buckets schemas for metric name", PromQLWarning)
@@ -148,13 +147,14 @@ var (
 
 	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
 	PossibleNonCounterLabelInfo             = fmt.Errorf("%w: metric might not be a counter, __type__ label is not set to %q or %q", PromQLInfo, model.MetricTypeCounter, model.MetricTypeHistogram)
-	HistogramQuantileForcedMonotonicityInfo = fmt.Errorf("%w: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name", PromQLInfo)
+	HistogramQuantileForcedMonotonicityInfo = fmt.Errorf("%w: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile)", PromQLInfo)
 	IncompatibleTypesInBinOpInfo            = fmt.Errorf("%w: incompatible sample types encountered for binary operator", PromQLInfo)
 	HistogramIgnoredInAggregationInfo       = fmt.Errorf("%w: ignored histogram in", PromQLInfo)
 	HistogramIgnoredInMixedRangeInfo        = fmt.Errorf("%w: ignored histograms in a range containing both floats and histograms for metric name", PromQLInfo)
-	NativeHistogramQuantileNaNResultInfo    = fmt.Errorf("%w: input to histogram_quantile has NaN observations, result is NaN for metric name", PromQLInfo)
-	NativeHistogramQuantileNaNSkewInfo      = fmt.Errorf("%w: input to histogram_quantile has NaN observations, result is skewed higher for metric name", PromQLInfo)
-	NativeHistogramFractionNaNsInfo         = fmt.Errorf("%w: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name", PromQLInfo)
+	NativeHistogramQuantileNaNResultInfo    = fmt.Errorf("%w: input to histogram_quantile has NaN observations, result is NaN", PromQLInfo)
+	NativeHistogramQuantileNaNSkewInfo      = fmt.Errorf("%w: input to histogram_quantile has NaN observations, result is skewed higher", PromQLInfo)
+	NativeHistogramFractionNaNsInfo         = fmt.Errorf("%w: input to histogram_fraction has NaN observations, which are excluded from all fractions", PromQLInfo)
+	HistogramCounterResetCollisionWarning   = fmt.Errorf("%w: conflicting counter resets during histogram", PromQLWarning)
 )
 
 type annoErr struct {
@@ -172,6 +172,13 @@ func (e annoErr) Error() string {
 
 func (e annoErr) Unwrap() error {
 	return e.Err
+}
+
+func maybeAddMetricName(anno error, metricName string) error {
+	if metricName == "" {
+		return anno
+	}
+	return fmt.Errorf("%w for metric name %q", anno, metricName)
 }
 
 // NewInvalidQuantileWarning is used when the user specifies an invalid quantile
@@ -195,9 +202,10 @@ func NewInvalidRatioWarning(q, to float64, pos posrange.PositionRange) error {
 // NewBadBucketLabelWarning is used when there is an error parsing the bucket label
 // of a classic histogram.
 func NewBadBucketLabelWarning(metricName, label string, pos posrange.PositionRange) error {
+	anno := maybeAddMetricName(fmt.Errorf("%w of %q", BadBucketLabelWarning, label), metricName)
 	return annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w of %q for metric name %q", BadBucketLabelWarning, label, metricName),
+		Err:           anno,
 	}
 }
 
@@ -225,7 +233,7 @@ func NewMixedFloatsHistogramsAggWarning(pos posrange.PositionRange) error {
 func NewMixedClassicNativeHistogramsWarning(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w %q", MixedClassicNativeHistogramsWarning, metricName),
+		Err:           maybeAddMetricName(MixedClassicNativeHistogramsWarning, metricName),
 	}
 }
 
@@ -288,7 +296,7 @@ func NewPossibleNonCounterLabelInfo(metricName, typeLabel string, pos posrange.P
 func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w %q", HistogramQuantileForcedMonotonicityInfo, metricName),
+		Err:           maybeAddMetricName(HistogramQuantileForcedMonotonicityInfo, metricName),
 	}
 }
 
@@ -331,20 +339,42 @@ func NewIncompatibleBucketLayoutInBinOpWarning(operator string, pos posrange.Pos
 func NewNativeHistogramQuantileNaNResultInfo(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w %q", NativeHistogramQuantileNaNResultInfo, metricName),
+		Err:           maybeAddMetricName(NativeHistogramQuantileNaNResultInfo, metricName),
 	}
 }
 
 func NewNativeHistogramQuantileNaNSkewInfo(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w %q", NativeHistogramQuantileNaNSkewInfo, metricName),
+		Err:           maybeAddMetricName(NativeHistogramQuantileNaNSkewInfo, metricName),
 	}
 }
 
 func NewNativeHistogramFractionNaNsInfo(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w %q", NativeHistogramFractionNaNsInfo, metricName),
+		Err:           maybeAddMetricName(NativeHistogramFractionNaNsInfo, metricName),
+	}
+}
+
+type HistogramOperation string
+
+const (
+	HistogramAdd HistogramOperation = "addition"
+	HistogramSub HistogramOperation = "subtraction"
+	HistogramAgg HistogramOperation = "aggregation"
+)
+
+// NewHistogramCounterResetCollisionWarning is used when two counter histograms are added or subtracted where one has
+// a CounterReset hint and the other has NotCounterReset.
+func NewHistogramCounterResetCollisionWarning(pos posrange.PositionRange, operation HistogramOperation) error {
+	switch operation {
+	case HistogramAdd, HistogramSub, HistogramAgg:
+	default:
+		operation = "unknown operation"
+	}
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %s", HistogramCounterResetCollisionWarning, operation),
 	}
 }

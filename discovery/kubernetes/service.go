@@ -36,7 +36,7 @@ type Service struct {
 	logger                *slog.Logger
 	informer              cache.SharedIndexInformer
 	store                 cache.Store
-	queue                 *workqueue.Type
+	queue                 *workqueue.Typed[string]
 	namespaceInf          cache.SharedInformer
 	withNamespaceMetadata bool
 }
@@ -52,24 +52,26 @@ func NewService(l *slog.Logger, inf cache.SharedIndexInformer, namespace cache.S
 	svcDeleteCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleDelete)
 
 	s := &Service{
-		logger:                l,
-		informer:              inf,
-		store:                 inf.GetStore(),
-		queue:                 workqueue.NewNamed(RoleService.String()),
+		logger:   l,
+		informer: inf,
+		store:    inf.GetStore(),
+		queue: workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{
+			Name: RoleService.String(),
+		}),
 		namespaceInf:          namespace,
 		withNamespaceMetadata: namespace != nil,
 	}
 
 	_, err := s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(o interface{}) {
+		AddFunc: func(o any) {
 			svcAddCount.Inc()
 			s.enqueue(o)
 		},
-		DeleteFunc: func(o interface{}) {
+		DeleteFunc: func(o any) {
 			svcDeleteCount.Inc()
 			s.enqueue(o)
 		},
-		UpdateFunc: func(_, o interface{}) {
+		UpdateFunc: func(_, o any) {
 			svcUpdateCount.Inc()
 			s.enqueue(o)
 		},
@@ -80,7 +82,7 @@ func NewService(l *slog.Logger, inf cache.SharedIndexInformer, namespace cache.S
 
 	if s.withNamespaceMetadata {
 		_, err = s.namespaceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			UpdateFunc: func(_, o interface{}) {
+			UpdateFunc: func(_, o any) {
 				namespace := o.(*apiv1.Namespace)
 				s.enqueueNamespace(namespace.Name)
 			},
@@ -95,7 +97,7 @@ func NewService(l *slog.Logger, inf cache.SharedIndexInformer, namespace cache.S
 	return s
 }
 
-func (s *Service) enqueue(obj interface{}) {
+func (s *Service) enqueue(obj any) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		return
@@ -142,12 +144,11 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 }
 
 func (s *Service) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
-	keyObj, quit := s.queue.Get()
+	key, quit := s.queue.Get()
 	if quit {
 		return false
 	}
-	defer s.queue.Done(keyObj)
-	key := keyObj.(string)
+	defer s.queue.Done(key)
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -171,7 +172,7 @@ func (s *Service) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 	return true
 }
 
-func convertToService(o interface{}) (*apiv1.Service, error) {
+func convertToService(o any) (*apiv1.Service, error) {
 	service, ok := o.(*apiv1.Service)
 	if ok {
 		return service, nil

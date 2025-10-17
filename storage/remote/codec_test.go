@@ -537,7 +537,7 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 	require.Equal(t, expected, fh)
 
 	// Keep calling Next() until the end.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		require.Equal(t, chunkenc.ValHistogram, it.Next())
 	}
 
@@ -546,6 +546,79 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 	require.Equal(t, chunkenc.ValNone, it.Next())
 	// Should also not be able to seek backwards again.
 	require.Equal(t, chunkenc.ValNone, it.Seek(1))
+}
+
+func TestConcreteSeriesIterator_InvalidHistogramSamples(t *testing.T) {
+	for _, schema := range []int32{-100, 100} {
+		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
+			h := prompb.FromIntHistogram(2, &testHistogram)
+			h.Schema = schema
+			fh := prompb.FromFloatHistogram(4, testHistogram.ToFloat(nil))
+			fh.Schema = schema
+			series := &concreteSeries{
+				labels: labels.FromStrings("foo", "bar"),
+				floats: []prompb.Sample{
+					{Value: 1, Timestamp: 0},
+					{Value: 2, Timestamp: 3},
+				},
+				histograms: []prompb.Histogram{
+					h,
+					fh,
+				},
+			}
+			it := series.Iterator(nil)
+			require.Equal(t, chunkenc.ValFloat, it.Next())
+			require.Equal(t, chunkenc.ValNone, it.Next())
+			require.Error(t, it.Err())
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
+
+			it = series.Iterator(it)
+			require.Equal(t, chunkenc.ValFloat, it.Next())
+			require.Equal(t, chunkenc.ValNone, it.Next())
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
+
+			it = series.Iterator(it)
+			require.Equal(t, chunkenc.ValNone, it.Seek(1))
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
+
+			it = series.Iterator(it)
+			require.Equal(t, chunkenc.ValFloat, it.Seek(3))
+			require.Equal(t, chunkenc.ValNone, it.Next())
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
+
+			it = series.Iterator(it)
+			require.Equal(t, chunkenc.ValNone, it.Seek(4))
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
+		})
+	}
+}
+
+func TestConcreteSeriesIterator_ReducesHighResolutionHistograms(t *testing.T) {
+	for _, schema := range []int32{9, 52} {
+		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
+			h := testHistogram.Copy()
+			h.Schema = schema
+			fh := h.ToFloat(nil)
+			series := &concreteSeries{
+				labels: labels.FromStrings("foo", "bar"),
+				histograms: []prompb.Histogram{
+					prompb.FromIntHistogram(1, h),
+					prompb.FromFloatHistogram(2, fh),
+				},
+			}
+			it := series.Iterator(nil)
+			require.Equal(t, chunkenc.ValHistogram, it.Next())
+			_, gotH := it.AtHistogram(nil)
+			require.Equal(t, histogram.ExponentialSchemaMax, gotH.Schema)
+			_, gotFH := it.AtFloatHistogram(nil)
+			require.Equal(t, histogram.ExponentialSchemaMax, gotFH.Schema)
+			require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
+			_, gotFH = it.AtFloatHistogram(nil)
+			require.Equal(t, histogram.ExponentialSchemaMax, gotFH.Schema)
+			require.Equal(t, chunkenc.ValNone, it.Next())
+			require.NoError(t, it.Err())
+		})
+	}
 }
 
 func TestFromQueryResultWithDuplicates(t *testing.T) {
@@ -1025,7 +1098,7 @@ func buildTestChunks(t *testing.T) []prompb.Chunk {
 
 	time := startTime
 
-	for i := 0; i < numTestChunks; i++ {
+	for i := range numTestChunks {
 		c := chunkenc.NewXORChunk()
 
 		a, err := c.Appender()
@@ -1033,7 +1106,7 @@ func buildTestChunks(t *testing.T) []prompb.Chunk {
 
 		minTimeMs := time
 
-		for j := 0; j < numSamplesPerTestChunk; j++ {
+		for j := range numSamplesPerTestChunk {
 			a.Append(time, float64(i+j))
 			time += int64(1000)
 		}

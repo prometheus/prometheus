@@ -103,7 +103,7 @@ func (c *DockerSDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *DockerSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *DockerSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultDockerSDConfig
 	type plain DockerSDConfig
 	err := unmarshal((*plain)(c))

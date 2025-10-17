@@ -41,7 +41,7 @@ type FloatHistogramChunk struct {
 
 // NewFloatHistogramChunk returns a new chunk with float histogram encoding.
 func NewFloatHistogramChunk() *FloatHistogramChunk {
-	b := make([]byte, 3, 128)
+	b := make([]byte, histogramHeaderSize, chunkAllocationSize)
 	return &FloatHistogramChunk{b: bstream{stream: b, count: 0}}
 }
 
@@ -72,25 +72,10 @@ func (c *FloatHistogramChunk) NumSamples() int {
 	return int(binary.BigEndian.Uint16(c.Bytes()))
 }
 
-// Layout returns the histogram layout. Only call this on chunks that have at
-// least one sample.
-func (c *FloatHistogramChunk) Layout() (
-	schema int32, zeroThreshold float64,
-	negativeSpans, positiveSpans []histogram.Span,
-	customValues []float64,
-	err error,
-) {
-	if c.NumSamples() == 0 {
-		panic("FloatHistogramChunk.Layout() called on an empty chunk")
-	}
-	b := newBReader(c.Bytes()[2:])
-	return readHistogramChunkLayout(&b)
-}
-
 // GetCounterResetHeader returns the info about the first 2 bits of the chunk
 // header.
 func (c *FloatHistogramChunk) GetCounterResetHeader() CounterResetHeader {
-	return CounterResetHeader(c.Bytes()[2] & CounterResetHeaderMask)
+	return CounterResetHeader(c.Bytes()[histogramFlagPos] & CounterResetHeaderMask)
 }
 
 // Compact implements the Chunk interface.
@@ -104,6 +89,9 @@ func (c *FloatHistogramChunk) Compact() {
 
 // Appender implements the Chunk interface.
 func (c *FloatHistogramChunk) Appender() (Appender, error) {
+	if len(c.b.stream) == histogramHeaderSize { // Avoid allocating an Iterator when chunk is empty.
+		return &FloatHistogramAppender{b: &c.b, t: math.MinInt64, sum: xorValue{leading: 0xff}, cnt: xorValue{leading: 0xff}, zCnt: xorValue{leading: 0xff}}, nil
+	}
 	it := c.iterator(nil)
 
 	// To get an appender, we must know the state it would have if we had
@@ -148,11 +136,6 @@ func (c *FloatHistogramChunk) Appender() (Appender, error) {
 		nBuckets:     nBuckets,
 		sum:          it.sum,
 	}
-	if it.numTotal == 0 {
-		a.sum.leading = 0xff
-		a.cnt.leading = 0xff
-		a.zCnt.leading = 0xff
-	}
 	return a, nil
 }
 
@@ -170,14 +153,11 @@ func (c *FloatHistogramChunk) iterator(it Iterator) *floatHistogramIterator {
 
 func newFloatHistogramIterator(b []byte) *floatHistogramIterator {
 	it := &floatHistogramIterator{
-		br:       newBReader(b),
+		br:       newBReader(b[histogramHeaderSize:]),
 		numTotal: binary.BigEndian.Uint16(b),
 		t:        math.MinInt64,
 	}
-	// The first 3 bytes contain chunk headers.
-	// We skip that for actual samples.
-	_, _ = it.br.readBits(24)
-	it.counterResetHeader = CounterResetHeader(b[2] & CounterResetHeaderMask)
+	it.counterResetHeader = CounterResetHeader(b[histogramFlagPos] & CounterResetHeaderMask)
 	return it
 }
 
@@ -202,11 +182,11 @@ type FloatHistogramAppender struct {
 }
 
 func (a *FloatHistogramAppender) GetCounterResetHeader() CounterResetHeader {
-	return CounterResetHeader(a.b.bytes()[2] & CounterResetHeaderMask)
+	return CounterResetHeader(a.b.bytes()[histogramFlagPos] & CounterResetHeaderMask)
 }
 
 func (a *FloatHistogramAppender) setCounterResetHeader(cr CounterResetHeader) {
-	a.b.bytes()[2] = (a.b.bytes()[2] & (^CounterResetHeaderMask)) | (byte(cr) & CounterResetHeaderMask)
+	a.b.bytes()[histogramFlagPos] = (a.b.bytes()[histogramFlagPos] & (^CounterResetHeaderMask)) | (byte(cr) & CounterResetHeaderMask)
 }
 
 func (a *FloatHistogramAppender) NumSamples() int {
@@ -278,7 +258,7 @@ func (a *FloatHistogramAppender) appendable(h *histogram.FloatHistogram) (
 		return
 	}
 
-	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.FloatBucketsMatch(h.CustomValues, a.customValues) {
+	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.CustomBucketBoundsMatch(h.CustomValues, a.customValues) {
 		counterReset = true
 		return
 	}
@@ -515,7 +495,7 @@ func (a *FloatHistogramAppender) appendableGauge(h *histogram.FloatHistogram) (
 		return
 	}
 
-	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.FloatBucketsMatch(h.CustomValues, a.customValues) {
+	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.CustomBucketBoundsMatch(h.CustomValues, a.customValues) {
 		return
 	}
 
@@ -568,7 +548,7 @@ func (a *FloatHistogramAppender) appendFloatHistogram(t int64, h *histogram.Floa
 		numPBuckets, numNBuckets := countSpans(h.PositiveSpans), countSpans(h.NegativeSpans)
 		if numPBuckets > 0 {
 			a.pBuckets = make([]xorValue, numPBuckets)
-			for i := 0; i < numPBuckets; i++ {
+			for i := range numPBuckets {
 				a.pBuckets[i] = xorValue{
 					value:   h.PositiveBuckets[i],
 					leading: 0xff,
@@ -579,7 +559,7 @@ func (a *FloatHistogramAppender) appendFloatHistogram(t int64, h *histogram.Floa
 		}
 		if numNBuckets > 0 {
 			a.nBuckets = make([]xorValue, numNBuckets)
-			for i := 0; i < numNBuckets; i++ {
+			for i := range numNBuckets {
 				a.nBuckets[i] = xorValue{
 					value:   h.NegativeBuckets[i],
 					leading: 0xff,
@@ -682,7 +662,7 @@ func (a *FloatHistogramAppender) recode(
 		happ.appendFloatHistogram(tOld, hOld)
 	}
 
-	happ.setCounterResetHeader(CounterResetHeader(byts[2] & CounterResetHeaderMask))
+	happ.setCounterResetHeader(CounterResetHeader(byts[histogramFlagPos] & CounterResetHeaderMask))
 	return hc, app
 }
 
@@ -886,7 +866,7 @@ func (it *floatHistogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 	}
 	if fh == nil {
 		it.atFloatHistogramCalled = true
-		return it.t, &histogram.FloatHistogram{
+		fh = &histogram.FloatHistogram{
 			CounterResetHint: counterResetHint(it.counterResetHeader, it.numRead),
 			Count:            it.cnt.value,
 			ZeroCount:        it.zCnt.value,
@@ -899,6 +879,14 @@ func (it *floatHistogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 			NegativeBuckets:  it.nBuckets,
 			CustomValues:     it.customValues,
 		}
+		if fh.Schema > histogram.ExponentialSchemaMax && fh.Schema <= histogram.ExponentialSchemaMaxReserved {
+			// This is a very slow path, but it should only happen if the
+			// chunk is from a newer Prometheus version that supports higher
+			// resolution.
+			fh = fh.Copy()
+			fh.ReduceResolution(histogram.ExponentialSchemaMax)
+		}
+		return it.t, fh
 	}
 
 	fh.CounterResetHint = counterResetHint(it.counterResetHeader, it.numRead)
@@ -923,6 +911,13 @@ func (it *floatHistogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 	// Custom values are interned. The single copy is in this iterator.
 	fh.CustomValues = it.customValues
 
+	if fh.Schema > histogram.ExponentialSchemaMax && fh.Schema <= histogram.ExponentialSchemaMaxReserved {
+		// This is a very slow path, but it should only happen if the
+		// chunk is from a newer Prometheus version that supports higher
+		// resolution.
+		fh.ReduceResolution(histogram.ExponentialSchemaMax)
+	}
+
 	return it.t, fh
 }
 
@@ -937,11 +932,11 @@ func (it *floatHistogramIterator) Err() error {
 func (it *floatHistogramIterator) Reset(b []byte) {
 	// The first 3 bytes contain chunk headers.
 	// We skip that for actual samples.
-	it.br = newBReader(b[3:])
+	it.br = newBReader(b[histogramHeaderSize:])
 	it.numTotal = binary.BigEndian.Uint16(b)
 	it.numRead = 0
 
-	it.counterResetHeader = CounterResetHeader(b[2] & CounterResetHeaderMask)
+	it.counterResetHeader = CounterResetHeader(b[histogramFlagPos] & CounterResetHeaderMask)
 
 	it.t, it.tDelta = 0, 0
 	it.cnt, it.zCnt, it.sum = xorValue{}, xorValue{}, xorValue{}
@@ -974,6 +969,12 @@ func (it *floatHistogramIterator) Next() ValueType {
 			it.err = err
 			return ValNone
 		}
+
+		if !histogram.IsKnownSchema(schema) {
+			it.err = histogram.UnknownSchemaError(schema)
+			return ValNone
+		}
+
 		it.schema = schema
 		it.zThreshold = zeroThreshold
 		it.pSpans, it.nSpans = posSpans, negSpans

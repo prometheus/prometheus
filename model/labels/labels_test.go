@@ -23,7 +23,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 )
 
 var (
@@ -579,7 +579,7 @@ func TestLabels_DropReserved(t *testing.T) {
 func ScratchBuilderForBenchmark() ScratchBuilder {
 	// (Only relevant to -tags dedupelabels: stuff the symbol table before adding the real labels, to avoid having everything fitting into 1 byte.)
 	b := NewScratchBuilder(256)
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		b.Add(fmt.Sprintf("name%d", i), fmt.Sprintf("value%d", i))
 	}
 	b.Labels()
@@ -625,7 +625,7 @@ func FromStringsForBenchmark(ss ...string) Labels {
 func BenchmarkLabels_Get(b *testing.B) {
 	maxLabels := 30
 	allLabels := make([]Label, maxLabels)
-	for i := 0; i < maxLabels; i++ {
+	for i := range maxLabels {
 		allLabels[i] = Label{Name: strings.Repeat(string('a'+byte(i)), 5+(i%5))}
 	}
 	for _, size := range []int{5, 10, maxLabels} {
@@ -906,7 +906,7 @@ func BenchmarkLabels_Hash(b *testing.B) {
 			name: "typical labels under 1KB",
 			lbls: func() Labels {
 				b := NewBuilder(EmptyLabels())
-				for i := 0; i < 10; i++ {
+				for i := range 10 {
 					// Label ~20B name, 50B value.
 					b.Set(fmt.Sprintf("abcdefghijabcdefghijabcdefghij%d", i), fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i))
 				}
@@ -917,7 +917,7 @@ func BenchmarkLabels_Hash(b *testing.B) {
 			name: "bigger labels over 1KB",
 			lbls: func() Labels {
 				b := NewBuilder(EmptyLabels())
-				for i := 0; i < 10; i++ {
+				for i := range 10 {
 					// Label ~50B name, 50B value.
 					b.Set(fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i), fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i))
 				}

@@ -165,6 +165,8 @@ func TestMetricStreamingDecoder(t *testing.T) {
 
 		require.Equal(t, 1.546544e+06, d.Metric.GetCounter().GetValue())
 		b := labels.NewScratchBuilder(0)
+		b.SetUnsafeAdd(true)
+
 		require.NoError(t, d.Label(&b))
 		require.Equal(t, `{}`, b.Labels().String())
 	}
@@ -174,11 +176,14 @@ func TestMetricStreamingDecoder(t *testing.T) {
 	require.Equal(t, `{checksum="", path="github.com/prometheus/client_golang", version="(devel)"}`, firstMetricLset.String())
 }
 
+// Regression test against https://github.com/prometheus/prometheus/pull/16946
 func TestMetricStreamingDecoder_LabelsCorruption(t *testing.T) {
 	lastScrapeSize := 0
 	var allPreviousLabels []labels.Labels
-	buffers := pool.New(128, 1024, 2, func(sz int) interface{} { return make([]byte, 0, sz) })
+	buffers := pool.New(128, 1024, 2, func(sz int) any { return make([]byte, 0, sz) })
 	builder := labels.NewScratchBuilder(0)
+	builder.SetUnsafeAdd(true)
+
 	for _, labelsCount := range []int{1, 2, 3, 5, 8, 5, 3, 2, 1} {
 		// Get buffer from pool like in scrape.go
 		b := buffers.Get(lastScrapeSize).([]byte)
@@ -201,9 +206,10 @@ func TestMetricStreamingDecoder_LabelsCorruption(t *testing.T) {
 		require.NoError(t, d.NextMetricFamily())
 		require.NoError(t, d.NextMetric())
 
-		// Get the labels
+		// Get the labels. Decode is reusing strings when adding labels. We
+		// test if scratchBuilder with unsafeAdd set to true handles that.
 		builder.Reset()
-		require.NoError(t, d.Label(&builder)) // <- this uses unsafe strings to create labels
+		require.NoError(t, d.Label(&builder))
 		lbs := builder.Labels()
 		allPreviousLabels = append(allPreviousLabels, lbs)
 
@@ -230,7 +236,7 @@ func generateMetricFamilyText(labelsCount int) string {
 	randomName := fmt.Sprintf("metric_%d", rand.Intn(1000))
 	randomHelp := fmt.Sprintf("Test metric to demonstrate forced corruption %d.", rand.Intn(1000))
 	labels10 := ""
-	for i := 0; i < labelsCount; i++ {
+	for range labelsCount {
 		labels10 += generateLabels()
 	}
 	return fmt.Sprintf(`name: "%s"

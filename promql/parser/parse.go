@@ -34,13 +34,16 @@ import (
 )
 
 var parserPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &parser{}
 	},
 }
 
 // ExperimentalDurationExpr is a flag to enable experimental duration expression parsing.
 var ExperimentalDurationExpr bool
+
+// EnableExtendedRangeSelectors is a flag to enable experimental extended range selectors.
+var EnableExtendedRangeSelectors bool
 
 type Parser interface {
 	ParseExpr() (Expr, error)
@@ -62,7 +65,7 @@ type parser struct {
 
 	yyParser yyParserImpl
 
-	generatedParserResult interface{}
+	generatedParserResult any
 	parseErrors           ParseErrors
 }
 
@@ -273,7 +276,7 @@ func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue
 }
 
 // addParseErrf formats the error and appends it to the list of parsing errors.
-func (p *parser) addParseErrf(positionRange posrange.PositionRange, format string, args ...interface{}) {
+func (p *parser) addParseErrf(positionRange posrange.PositionRange, format string, args ...any) {
 	p.addParseErr(positionRange, fmt.Errorf(format, args...))
 }
 
@@ -432,13 +435,16 @@ func (*parser) assembleVectorSelector(vs *VectorSelector) {
 	}
 }
 
-func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateExpr) {
+func (p *parser) newAggregateExpr(op Item, modifier, args Node, overread bool) (ret *AggregateExpr) {
 	ret = modifier.(*AggregateExpr)
 	arguments := args.(Expressions)
 
 	ret.PosRange = posrange.PositionRange{
 		Start: op.Pos,
 		End:   p.lastClosing,
+	}
+	if overread {
+		ret.PosRange.End = p.lex.findPrevRightParen(p.lastClosing)
 	}
 
 	ret.Op = op.Typ
@@ -472,13 +478,13 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateE
 }
 
 // newMap is used when building the FloatHistogram from a map.
-func (*parser) newMap() (ret map[string]interface{}) {
-	return map[string]interface{}{}
+func (*parser) newMap() (ret map[string]any) {
+	return map[string]any{}
 }
 
 // mergeMaps is used to combine maps as they're used to later build the Float histogram.
 // This will merge the right map into the left map.
-func (p *parser) mergeMaps(left, right *map[string]interface{}) (ret *map[string]interface{}) {
+func (p *parser) mergeMaps(left, right *map[string]any) (ret *map[string]any) {
 	for key, value := range *right {
 		if _, ok := (*left)[key]; ok {
 			p.addParseErrf(posrange.PositionRange{}, "duplicate key \"%s\" in histogram", key)
@@ -491,13 +497,15 @@ func (p *parser) mergeMaps(left, right *map[string]interface{}) (ret *map[string
 
 func (p *parser) histogramsIncreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
 	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
-		return a.Add(b)
+		res, _, err := a.Add(b)
+		return res, err
 	})
 }
 
 func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
 	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
-		return a.Sub(b)
+		res, _, err := a.Sub(b)
+		return res, err
 	})
 }
 
@@ -525,7 +533,7 @@ func (*parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint6
 }
 
 // buildHistogramFromMap is used in the grammar to take then individual parts of the histogram and complete it.
-func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) *histogram.FloatHistogram {
+func (p *parser) buildHistogramFromMap(desc *map[string]any) *histogram.FloatHistogram {
 	output := &histogram.FloatHistogram{}
 
 	val, ok := (*desc)["schema"]
@@ -618,7 +626,7 @@ func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) *histogram.
 	return output
 }
 
-func (p *parser) buildHistogramBucketsAndSpans(desc *map[string]interface{}, bucketsKey, offsetKey string,
+func (p *parser) buildHistogramBucketsAndSpans(desc *map[string]any, bucketsKey, offsetKey string,
 ) (buckets []float64, spans []histogram.Span) {
 	bucketCount := 0
 	val, ok := (*desc)[bucketsKey]
@@ -811,7 +819,9 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 				}
 				i = len(n.Func.ArgTypes) - 1
 			}
-			p.expectType(arg, n.Func.ArgTypes[i], fmt.Sprintf("call to function %q", n.Func.Name))
+			if t := p.checkAST(arg); t != n.Func.ArgTypes[i] {
+				p.addParseErrf(arg.PositionRange(), "expected type %s in call to function %q, got %s", DocumentedType(n.Func.ArgTypes[i]), n.Func.Name, DocumentedType(t))
+			}
 		}
 
 	case *ParenExpr:
@@ -891,7 +901,7 @@ func parseDuration(ds string) (time.Duration, error) {
 // parseGenerated invokes the yacc generated parser.
 // The generated parser gets the provided startSymbol injected into
 // the lexer stream, based on which grammar will be used.
-func (p *parser) parseGenerated(startSymbol ItemType) interface{} {
+func (p *parser) parseGenerated(startSymbol ItemType) any {
 	p.InjectItem(startSymbol)
 
 	p.yyParser.Parse(p)
@@ -1014,6 +1024,52 @@ func (p *parser) addOffsetExpr(e Node, expr *DurationExpr) {
 	}
 
 	*endPosp = p.lastClosing
+}
+
+func (p *parser) setAnchored(e Node) {
+	if !EnableExtendedRangeSelectors {
+		p.addParseErrf(e.PositionRange(), "anchored modifier is experimental and not enabled")
+		return
+	}
+	switch s := e.(type) {
+	case *VectorSelector:
+		s.Anchored = true
+		if s.Smoothed {
+			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
+		}
+	case *MatrixSelector:
+		s.VectorSelector.(*VectorSelector).Anchored = true
+		if s.VectorSelector.(*VectorSelector).Smoothed {
+			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
+		}
+	case *SubqueryExpr:
+		p.addParseErrf(e.PositionRange(), "anchored modifier is not supported for subqueries")
+	default:
+		p.addParseErrf(e.PositionRange(), "anchored modifier not implemented")
+	}
+}
+
+func (p *parser) setSmoothed(e Node) {
+	if !EnableExtendedRangeSelectors {
+		p.addParseErrf(e.PositionRange(), "smoothed modifier is experimental and not enabled")
+		return
+	}
+	switch s := e.(type) {
+	case *VectorSelector:
+		s.Smoothed = true
+		if s.Anchored {
+			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
+		}
+	case *MatrixSelector:
+		s.VectorSelector.(*VectorSelector).Smoothed = true
+		if s.VectorSelector.(*VectorSelector).Anchored {
+			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
+		}
+	case *SubqueryExpr:
+		p.addParseErrf(e.PositionRange(), "smoothed modifier is not supported for subqueries")
+	default:
+		p.addParseErrf(e.PositionRange(), "smoothed modifier not implemented")
+	}
 }
 
 // setTimestamp is used to set the timestamp from the @ modifier in the generated parser.

@@ -153,7 +153,7 @@ func TestMultipleSubscribers(t *testing.T) {
 	require.Len(t, receivedSub2, 2, "Expected 2 notifications for subscriber 2.")
 
 	// Verify that both subscribers received the same notifications.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		require.Equal(t, receivedSub1[i], receivedSub2[i], "Subscriber notification mismatch at index %d.", i)
 	}
 }

@@ -288,17 +288,17 @@ type pool struct {
 func NewPool() Pool {
 	return &pool{
 		xor: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				return &XORChunk{b: bstream{}}
 			},
 		},
 		histogram: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				return &HistogramChunk{b: bstream{}}
 			},
 		},
 		floatHistogram: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				return &FloatHistogramChunk{b: bstream{}}
 			},
 		},

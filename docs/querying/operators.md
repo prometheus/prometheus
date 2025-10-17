@@ -3,15 +3,33 @@ title: Operators
 sort_rank: 2
 ---
 
+PromQL supports unary, binary, and aggregation operators.
+
+## Unary operator
+
+The only unary operator in PromQL is `-` (unary minus). It can be applied to a
+scalar or an instant vector. In the former case, it returns a scalar with
+inverted sign. In the latter case, it returns an instant vector with inverted
+sign for each element. The sign of a histogram sample is inverted by inverting
+the sign of all bucket populations and the count and the sum of observations.
+The resulting histogram sample is always considered a gauge histogram.
+
+NOTE: A histogram with any negative bucket population or a negative count of
+observations should only be used as an intermediate result. If such a negative
+histogram is the final outcome of a recording rule, the rule evaluation will
+fail. Negative histograms cannot be represented by any of the exchange formats
+(exposition, remote-write, OTLP), so they cannot ingested into Prometheus in
+any way and are only created by PromQL expressions.
+
 ## Binary operators
 
-Prometheus's query language supports basic logical and arithmetic operators.
-For operations between two instant vectors, the [matching behavior](#vector-matching)
-can be modified.
+Binary operators cover basic logical and arithmetic operations. For operations
+between two instant vectors, the [matching behavior](#vector-matching) can be
+modified.
 
 ### Arithmetic binary operators
 
-The following binary arithmetic operators exist in Prometheus:
+The following binary arithmetic operators exist in PromQL:
 
 * `+` (addition)
 * `-` (subtraction)
@@ -39,21 +57,26 @@ the original vector is multiplied by 2.
 For vector elements that are histogram samples, the behavior is the
 following:
 
-* For `*`, all bucket populations and the count and the sum of observations 
-  are multiplied by the scalar.
+* For `*`, all bucket populations and the count and the sum of observations are
+  multiplied by the scalar. If the scalar is negative, the resulting histogram
+  is considered a gauge histogram. Otherwise, the counter vs. gauge flavor of
+  the input histogram sample is retained.
 
-* For `/`, the histogram sample has to be on the left hand side (LHS), followed 
-  by the scalar on the right hand side (RHS). All bucket populations and the count 
-  and the sum of observations are then divided by the scalar. A division by zero
-  results in a histogram with no regular buckets and the zero bucket population 
-  and the count and sum of observations all set to `+Inf`, `-Inf`, or `NaN`, depending 
-  on their values in the input histogram (positive, negative, or zero/`NaN`, respectively). 
+* For `/`, the histogram sample has to be on the left hand side (LHS), followed
+  by the scalar on the right hand side (RHS). All bucket populations and the
+  count and the sum of observations are then divided by the scalar. A division
+  by zero results in a histogram with no regular buckets and the zero bucket
+  population and the count and sum of observations all set to `+Inf`, `-Inf`,
+  or `NaN`, depending on their values in the input histogram (positive,
+  negative, or zero/`NaN`, respectively). If the scalar is negative, the
+  resulting histogram is considered a gauge histogram. Otherwise, the counter
+  vs. gauge flavor of the input histogram sample is retained.
 
-* For `/` with a scalar on the LHS and a histogram sample on the RHS, and similarly for all
-  other arithmetic binary operators in any combination of a scalar and a
-  histogram sample, there is no result and the corresponding element is removed
-  from the resulting vector. Such a removal is flagged by an info-level
-  annotation.
+* For `/` with a scalar on the LHS and a histogram sample on the RHS, and
+  similarly for all other arithmetic binary operators in any combination of a
+  scalar and a histogram sample, there is no result and the corresponding
+  element is removed from the resulting vector. Such a removal is flagged by an
+  info-level annotation.
 
 **Between two instant vectors**, a binary arithmetic operator is applied to
 each entry in the LHS vector and its [matching element](#vector-matching) in
@@ -61,22 +84,33 @@ the RHS vector. The result is propagated into the result vector with the
 grouping labels becoming the output label set. Entries for which no matching
 entry in the right-hand vector can be found are not part of the result.
 
-If two float samples are matched, the arithmetic operator is applied to the two input values.
+If two float samples are matched, the arithmetic operator is applied to the two
+input values.
 
-If a float sample is matched with a histogram sample, the behavior follows the same
-logic as between a scalar and a histogram sample (see above), i.e. `*` and `/` 
-(the latter with the histogram sample on the LHS) are valid operations, while all 
-others lead to the removal of the corresponding element from the resulting vector. 
+If a float sample is matched with a histogram sample, the behavior follows the
+same logic as between a scalar and a histogram sample (see above), i.e. `*` and
+`/` (the latter with the histogram sample on the LHS) are valid operations,
+while all others lead to the removal of the corresponding element from the
+resulting vector.
 
-If two histogram samples are matched, only `+` and `-` are valid operations, each
-adding or subtracting all matching bucket populations and the count and the
-sum of observations. All other operations result in the removal of the
+If two histogram samples are matched, only `+` and `-` are valid operations,
+each adding or subtracting all matching bucket populations and the count and
+the sum of observations. All other operations result in the removal of the
 corresponding element from the output vector, flagged by an info-level
-annotation.
+annotation. The `+` and -` operations should generally only be applied to gauge
+histograms, but PromQL allows them for counter histograms, too, to cover
+specific use cases, for which special attention is required to avoid problems
+with unaligned counter resets. (Certain incompatibilities of counter resets can
+be detected by PromQL and are flagged with a warn-level annotations.) Adding
+two counter histograms results in a counter histogram. All other combination of
+operands and all subtractions result in a gauge histogram.
 
 **In any arithmetic binary operation involving vectors**, the metric name is
 dropped. This occurs even if `__name__` is explicitly mentioned in `on` 
 (see https://github.com/prometheus/prometheus/issues/16631 for further discussion).
+
+**For any arithmetic binary operation that may result in a negative
+histogram**, take into account the [respective note above](#unary-operator).
 
 ### Trigonometric binary operators
 

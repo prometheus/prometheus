@@ -668,7 +668,6 @@ func TestTargetUpdatesOrder(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		tc := tc
 		t.Run(tc.title, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -1350,7 +1349,6 @@ func TestCoordinationWithReceiver(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.title, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -1471,7 +1469,7 @@ func TestTargetSetTargetGroupsUpdateDuringApplyConfig(t *testing.T) {
 	wg.Add(2000)
 
 	start := make(chan struct{})
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		go func() {
 			<-start
 			td.update([]*targetgroup.Group{
@@ -1485,7 +1483,7 @@ func TestTargetSetTargetGroupsUpdateDuringApplyConfig(t *testing.T) {
 		}()
 	}
 
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		go func(i int) {
 			<-start
 			c := map[string]Configs{
@@ -1545,7 +1543,7 @@ func (t *testDiscoverer) update(tgs []*targetgroup.Group) {
 func TestUnregisterMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	// Check that all metrics can be unregistered, allowing a second manager to be created.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		ctx, cancel := context.WithCancel(context.Background())
 
 		refreshMetrics, sdMetrics := NewTestMetrics(t, reg)

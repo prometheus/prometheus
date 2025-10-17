@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,9 +42,10 @@ import (
 
 func TestApiStatusCodes(t *testing.T) {
 	for name, tc := range map[string]struct {
-		err            error
-		expectedString string
-		expectedCode   int
+		err               error
+		expectedString    string
+		expectedCode      int
+		overrideErrorCode OverrideErrorCode
 	}{
 		"random error": {
 			err:            errors.New("some random error"),
@@ -55,6 +57,22 @@ func TestApiStatusCodes(t *testing.T) {
 			err:            promql.ErrTooManySamples("some error"),
 			expectedString: "too many samples",
 			expectedCode:   http.StatusUnprocessableEntity,
+		},
+
+		"overridden error code for engine error": {
+			err:            promql.ErrTooManySamples("some error"),
+			expectedString: "too many samples",
+			overrideErrorCode: func(errNum errorNum, err error) (code int, override bool) {
+				if errNum == ErrorExec {
+					if strings.Contains(err.Error(), "some error") {
+						return 999, true
+					}
+					return 998, true
+				}
+
+				return 0, false
+			},
+			expectedCode: 999,
 		},
 
 		"promql.ErrQueryCanceled": {
@@ -87,7 +105,7 @@ func TestApiStatusCodes(t *testing.T) {
 			"error from seriesset": errorTestQueryable{q: errorTestQuerier{s: errorTestSeriesSet{err: tc.err}}},
 		} {
 			t.Run(fmt.Sprintf("%s/%s", name, k), func(t *testing.T) {
-				r := createPrometheusAPI(t, q)
+				r := createPrometheusAPI(t, q, tc.overrideErrorCode)
 				rec := httptest.NewRecorder()
 
 				req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
@@ -101,7 +119,7 @@ func TestApiStatusCodes(t *testing.T) {
 	}
 }
 
-func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable) *route.Router {
+func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overrideErrorCode OverrideErrorCode) *route.Router {
 	t.Helper()
 
 	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
@@ -147,6 +165,7 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable) *route
 		false,
 		5*time.Minute,
 		false,
+		overrideErrorCode,
 	)
 
 	promRouter := route.New().WithPrefix("/api/v1")
