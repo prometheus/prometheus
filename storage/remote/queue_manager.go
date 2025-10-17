@@ -551,20 +551,18 @@ func NewQueueManager(
 	// Initialize remoteAPI now that QueueManager is fully created
 	if realClient, ok := client.(*Client); ok {
 		// This is a real Client with an HTTP client, so we can use the remote API.
+		// Configure backoff to match queue manager config
+		backoffCfg := remoteapi.BackoffConfig{
+			Min:        time.Duration(t.cfg.MinBackoff),
+			Max:        time.Duration(t.cfg.MaxBackoff),
+			MaxRetries: 0, // Infinite retries, matching queue manager behavior
+		}
+
 		apiOpts := []remoteapi.APIOption{
 			remoteapi.WithAPILogger(logger),
 			remoteapi.WithAPIHTTPClient(realClient.Client),
+			remoteapi.WithAPIBackoff(backoffCfg),
 		}
-
-		// TODO(backoff-config): Configure backoff to match queue manager config.
-		// Currently using remoteapi defaults (Min: 1s, Max: 10s, MaxRetries: 10).
-		// Queue manager uses t.cfg.MinBackoff and t.cfg.MaxBackoff (often 100ms in tests).
-		// Cannot configure this because backoff.Config is in client_golang's internal package.
-		// This causes remoteAPI path to be slower than legacy path in some test scenarios.
-		// Consider:
-		// - Filing an issue with client_golang to export backoff.Config
-		// - Or using reflection/unsafe (not recommended)
-		// - Or accepting this as a known limitation
 
 		var err error
 		t.remoteAPI, err = remoteapi.NewAPI(client.Endpoint(), apiOpts...)
@@ -1091,9 +1089,17 @@ func (t *QueueManager) SetClient(c WriteClient) {
 	// If setting a real Client, reinitialize the remote API to point to the new endpoint.
 	// If setting a mock/test client, disable remote API to use legacy path.
 	if realClient, ok := c.(*Client); ok {
+		// Configure backoff to match queue manager config
+		backoffCfg := remoteapi.BackoffConfig{
+			Min:        time.Duration(t.cfg.MinBackoff),
+			Max:        time.Duration(t.cfg.MaxBackoff),
+			MaxRetries: 0, // Infinite retries, matching queue manager behavior
+		}
+
 		apiOpts := []remoteapi.APIOption{
 			remoteapi.WithAPILogger(t.logger),
 			remoteapi.WithAPIHTTPClient(realClient.Client),
+			remoteapi.WithAPIBackoff(backoffCfg),
 		}
 		remoteAPIClient, err := remoteapi.NewAPI(c.Endpoint(), apiOpts...)
 		if err != nil {
