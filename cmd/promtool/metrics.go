@@ -26,6 +26,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/cmd/promtool/config"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/fmtutil"
@@ -36,7 +37,7 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 	addressURL, err := url.Parse(url.String())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		return failureExitCode
+		return config.FailureExitCode
 	}
 
 	// build remote write client
@@ -46,7 +47,7 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		return failureExitCode
+		return config.FailureExitCode
 	}
 
 	// set custom tls config from httpConfigFilePath
@@ -54,7 +55,7 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 	client, ok := writeClient.(*remote.Client)
 	if !ok {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("unexpected type %T", writeClient))
-		return failureExitCode
+		return config.FailureExitCode
 	}
 	client.Client.Transport = &setHeadersTransport{
 		RoundTripper: roundTripper,
@@ -68,14 +69,14 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 		data, err = io.ReadAll(os.Stdin)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
-			return failureExitCode
+			return config.FailureExitCode
 		}
 		fmt.Printf("Parsing standard input\n")
 		if parseAndPushMetrics(client, data, labels) {
 			fmt.Printf("  SUCCESS: metrics pushed to remote write.\n")
-			return successExitCode
+			return config.SuccessExitCode
 		}
-		return failureExitCode
+		return config.FailureExitCode
 	}
 
 	for _, file := range files {
@@ -95,10 +96,10 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 	}
 
 	if failed {
-		return failureExitCode
+		return config.FailureExitCode
 	}
 
-	return successExitCode
+	return config.SuccessExitCode
 }
 
 // TODO(bwplotka): Add PRW 2.0 support.
