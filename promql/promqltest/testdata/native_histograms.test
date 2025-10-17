@@ -1842,3 +1842,33 @@ eval range from 0 to 8m step 1m mixed_metric1
 
 eval range from 0 to 5m step 1m mixed_metric2
 	mixed_metric2 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} {{count:6 sum:8 buckets:[1 4 1]}}
+
+clear
+
+# Test native histograms with custom buckets, reconciling mismatched bounds.
+load 1m
+	nhcb_add_buckets {{schema:-53 sum:55 count:15 custom_values:[2 4 6] buckets:[1 2 5 7]}} {{schema:-53 sum:555 count:450 custom_values:[1 2 3 4 5 6 7 8] buckets:[10 20 30 40 50 60 70 80 90]}}
+
+eval instant at 1m irate(nhcb_add_buckets[2m]) * 60
+    expect no_warn
+    expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction
+    {} {{schema:-53 sum:500 count:435 custom_values:[2 4 6] buckets:[29 68 105 233]}}
+
+load 1m
+	nhcb_remove_buckets {{schema:-53 sum:55 count:45 custom_values:[1 2 3 4 5 6 7 8] buckets:[1 2 3 4 5 6 7 8 9]}} {{schema:-53 sum:5560 count:1000 custom_values:[3 5 7] buckets:[100 200 300 400]}}
+
+eval instant at 1m irate(nhcb_remove_buckets[2m]) * 60
+    expect no_warn
+    expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction
+    {} {{schema:-53 sum:5505 count:955 custom_values:[3 5 7] buckets:[94 191 287 383]}}
+
+clear
+
+# Test native histograms with custom buckets, reconciling mismatched bounds, with counter reset in one bucket.
+load 1m
+	nhcb_add_bucket {{schema:-53 sum:55 count:15 custom_values:[2 4 6] buckets:[1 2 5 7]}} {{schema:-53 sum:56 count:15 custom_values:[2 3 4 6] buckets:[1 0 1 5 8]}}
+
+eval instant at 1m irate(nhcb_add_bucket[2m]) * 60
+    expect no_warn
+    expect no_info
+    {} {{schema:-53 sum:56 count:15 custom_values:[2 3 4 6] buckets:[1 0 1 5 8] counter_reset_hint:gauge}}
