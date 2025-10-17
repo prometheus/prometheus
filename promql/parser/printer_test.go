@@ -253,6 +253,9 @@ func TestExprString(t *testing.T) {
 	}
 
 	EnableExtendedRangeSelectors = true
+	t.Cleanup(func() {
+		EnableExtendedRangeSelectors = false
+	})
 
 	for _, test := range inputs {
 		t.Run(test.in, func(t *testing.T) {
