@@ -84,6 +84,8 @@ func translateAST(node parser.Expr) any {
 			"matchers":   translateMatchers(vs.LabelMatchers),
 			"timestamp":  vs.Timestamp,
 			"startOrEnd": getStartOrEnd(vs.StartOrEnd),
+			"anchored":   vs.Anchored,
+			"smoothed":   vs.Smoothed,
 		}
 	case *parser.SubqueryExpr:
 		return map[string]any{
@@ -124,6 +126,8 @@ func translateAST(node parser.Expr) any {
 			"matchers":   translateMatchers(n.LabelMatchers),
 			"timestamp":  n.Timestamp,
 			"startOrEnd": getStartOrEnd(n.StartOrEnd),
+			"anchored":   n.Anchored,
+			"smoothed":   n.Smoothed,
 		}
 	}
 	panic("unsupported node type")
