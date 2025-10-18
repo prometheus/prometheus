@@ -19,9 +19,7 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"strconv"
 	"strings"
-	"sync"
 	"unicode/utf8"
 
 	"github.com/gogo/protobuf/types"
@@ -34,15 +32,6 @@ import (
 	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/util/convertnhcb"
 )
-
-// floatFormatBufPool is exclusively used in formatOpenMetricsFloat.
-var floatFormatBufPool = sync.Pool{
-	New: func() any {
-		// To contain at most 17 digits and additional syntax for a float64.
-		b := make([]byte, 0, 24)
-		return &b
-	},
-}
 
 // ProtobufParser parses the old Prometheus protobuf format and present it
 // as the text-style textparse.Parser interface.
@@ -698,7 +687,7 @@ func (p *ProtobufParser) getMagicLabel() (bool, string, string) {
 		qq := p.dec.GetSummary().GetQuantile()
 		q := qq[p.fieldPos]
 		p.fieldsDone = p.fieldPos == len(qq)-1
-		return true, model.QuantileLabel, formatOpenMetricsFloat(q.GetQuantile())
+		return true, model.QuantileLabel, labels.FormatOpenMetricsFloat(q.GetQuantile())
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
 		bb := p.dec.GetHistogram().GetBucket()
 		if p.fieldPos >= len(bb) {
@@ -707,39 +696,9 @@ func (p *ProtobufParser) getMagicLabel() (bool, string, string) {
 		}
 		b := bb[p.fieldPos]
 		p.fieldsDone = math.IsInf(b.GetUpperBound(), +1)
-		return true, model.BucketLabel, formatOpenMetricsFloat(b.GetUpperBound())
+		return true, model.BucketLabel, labels.FormatOpenMetricsFloat(b.GetUpperBound())
 	}
 	return false, "", ""
-}
-
-// formatOpenMetricsFloat works like the usual Go string formatting of a float
-// but appends ".0" if the resulting number would otherwise contain neither a
-// "." nor an "e".
-func formatOpenMetricsFloat(f float64) string {
-	// A few common cases hardcoded.
-	switch {
-	case f == 1:
-		return "1.0"
-	case f == 0:
-		return "0.0"
-	case f == -1:
-		return "-1.0"
-	case math.IsNaN(f):
-		return "NaN"
-	case math.IsInf(f, +1):
-		return "+Inf"
-	case math.IsInf(f, -1):
-		return "-Inf"
-	}
-	bp := floatFormatBufPool.Get().(*[]byte)
-	defer floatFormatBufPool.Put(bp)
-
-	*bp = strconv.AppendFloat((*bp)[:0], f, 'g', -1, 64)
-	if bytes.ContainsAny(*bp, "e.") {
-		return string(*bp)
-	}
-	*bp = append(*bp, '.', '0')
-	return string(*bp)
 }
 
 // isNativeHistogram returns false iff the provided histograms has no spans at
