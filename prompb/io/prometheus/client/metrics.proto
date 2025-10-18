@@ -81,8 +81,7 @@ message Histogram {
 
   google.protobuf.Timestamp created_timestamp = 15;
 
-  // Everything below here is for native histograms (also known as sparse histograms).
-  // Native histograms are an experimental feature without stability guarantees.
+  // Everything below here is for native histograms (formerly known as sparse histograms).
 
   // schema defines the bucket schema. Currently, valid numbers are -4 <= n <= 8.
   // They are all for base-2 bucket schemas, where 1 is a bucket boundary in each case, and
