@@ -449,6 +449,8 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alerts", wrapAgent(api.alerts))
 	r.Get("/rules", wrapAgent(api.rules))
 
+	r.Get("/query_log", wrapAgent(api.queryLog))
+
 	// Admin APIs
 	r.Post("/admin/tsdb/delete_series", wrapAgent(api.deleteSeries))
 	r.Post("/admin/tsdb/clean_tombstones", wrapAgent(api.cleanTombstones))
@@ -544,7 +546,29 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}, nil, warnings, qry.Close}
 }
 
-func (*API) formatQuery(r *http.Request) (result apiFuncResult) {
+func (api *API) queryLog(r *http.Request) (result apiFuncResult) {
+	ctx := r.Context()
+	logger, err := api.QueryEngine.GetEngineQueryLogger(ctx)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
+	}
+
+	// Check if the logger implements the QueryLogReader interface
+	reader, ok := logger.(promql.QueryLogReader)
+	if !ok {
+		return apiFuncResult{nil, &apiError{errorExec, errors.New("query logger does not support reading logs")}, nil, nil}
+	}
+
+	// Read and parse query logs
+	logs, err := reader.ReadQueryLogs(ctx)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
+	}
+
+	return apiFuncResult{logs, nil, nil, nil}
+}
+
+func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
 	expr, err := parser.ParseExpr(r.FormValue("query"))
 	if err != nil {
 		return invalidParamError(err, "query")
