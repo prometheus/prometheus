@@ -4827,7 +4827,7 @@ func TestQueryLogEndpoint(t *testing.T) {
 	req, err = http.NewRequest(http.MethodGet, "", nil)
 	require.NoError(t, err)
 	res := api.queryLog(req.WithContext(ctx))
-	assertAPIError(t, res.err, "")
+	assertAPIError(t, res.err, errorNone)
 
 	testutil.RequireEqual(t, []querylog.QueryLog{queryLog}, res.data)
 }
@@ -4894,8 +4894,19 @@ func (l *fakeQueryLogger) Log(...interface{}) error {
 	return nil
 }
 
-func (l *fakeQueryLogger) Read(...interface{}) (io.Reader, error) {
-	return l.reader, nil
+func (l *fakeQueryLogger) ReadQueryLogs(ctx context.Context) ([]querylog.QueryLog, error) {
+	var logs []querylog.QueryLog
+	decoder := json.NewDecoder(l.reader)
+	for {
+		var q querylog.QueryLog
+		if err := decoder.Decode(&q); err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, err
+		}
+		logs = append(logs, q)
+	}
+	return logs, nil
 }
 
 func (l *fakeQueryLogger) Enabled(ctx context.Context, level slog.Level) bool {

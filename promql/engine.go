@@ -41,6 +41,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/querylog"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -131,7 +132,13 @@ var _ QueryLogger = (*logging.JSONFileLogger)(nil)
 type QueryLogger interface {
 	slog.Handler
 	io.Closer
-	Read(...interface{}) (io.Reader, error)
+}
+
+// QueryLogReader is an interface for reading query logs.
+// Implementations can provide access to stored query logs for API endpoints.
+// The returned slice contains parsed query log entries.
+type QueryLogReader interface {
+	ReadQueryLogs(ctx context.Context) ([]querylog.QueryLog, error)
 }
 
 // A Query is derived from a raw query string and can be run against an engine
