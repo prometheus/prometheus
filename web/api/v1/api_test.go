@@ -4846,7 +4846,7 @@ func (e *fakeEngine) NewRangeQuery(context.Context, storage.Queryable, promql.Qu
 	return &e.query, nil
 }
 
-func (e *fakeEngine) GetEngineQueryLogger(ctx context.Context) (promql.QueryLogger, error) {
+func (e *fakeEngine) GetEngineQueryLogger(_ context.Context) (promql.QueryLogger, error) {
 	return e.queryLogger, nil
 }
 
@@ -4886,15 +4886,15 @@ type fakeQueryLogger struct {
 	reader io.Reader
 }
 
-func (l *fakeQueryLogger) Close() error {
+func (*fakeQueryLogger) Close() error {
 	return nil
 }
 
-func (l *fakeQueryLogger) Log(...interface{}) error {
+func (*fakeQueryLogger) Log(...interface{}) error {
 	return nil
 }
 
-func (l *fakeQueryLogger) ReadQueryLogs(ctx context.Context) ([]querylog.QueryLog, error) {
+func (l *fakeQueryLogger) ReadQueryLogs(_ context.Context) ([]querylog.QueryLog, error) {
 	var logs []querylog.QueryLog
 	decoder := json.NewDecoder(l.reader)
 	for {
@@ -4909,18 +4909,18 @@ func (l *fakeQueryLogger) ReadQueryLogs(ctx context.Context) ([]querylog.QueryLo
 	return logs, nil
 }
 
-func (l *fakeQueryLogger) Enabled(ctx context.Context, level slog.Level) bool {
+func (*fakeQueryLogger) Enabled(_ context.Context, _ slog.Level) bool {
 	return true
 }
 
-func (l *fakeQueryLogger) Handle(ctx context.Context, r slog.Record) error {
+func (*fakeQueryLogger) Handle(_ context.Context, _ slog.Record) error {
 	return nil
 }
 
-func (l *fakeQueryLogger) WithAttrs(attrs []slog.Attr) slog.Handler {
+func (*fakeQueryLogger) WithAttrs(_ []slog.Attr) slog.Handler {
 	return nil
 }
 
-func (l *fakeQueryLogger) WithGroup(name string) slog.Handler {
+func (*fakeQueryLogger) WithGroup(_ string) slog.Handler {
 	return nil
 }

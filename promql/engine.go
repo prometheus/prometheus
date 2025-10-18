@@ -356,8 +356,8 @@ type Engine struct {
 	enableTypeAndUnitLabels  bool
 }
 
-// GetEngineLogger returns the query logger for the engine.
-func (ng *Engine) GetEngineQueryLogger(ctx context.Context) (QueryLogger, error) {
+// GetEngineQueryLogger returns the query logger for the engine.
+func (ng *Engine) GetEngineQueryLogger(_ context.Context) (QueryLogger, error) {
 	return ng.queryLogger, nil
 }
 

@@ -23,6 +23,7 @@ import (
 	"os"
 
 	"github.com/prometheus/common/promslog"
+
 	"github.com/prometheus/prometheus/model/querylog"
 )
 
@@ -98,7 +99,7 @@ func (l *JSONFileLogger) WithGroup(name string) slog.Handler {
 
 // ReadQueryLogs reads and parses all query logs from the log file.
 // It implements a query log reader interface for API access.
-func (l *JSONFileLogger) ReadQueryLogs(ctx context.Context) ([]querylog.QueryLog, error) {
+func (l *JSONFileLogger) ReadQueryLogs(_ context.Context) ([]querylog.QueryLog, error) {
 	// Open a separate file handle for reading to avoid interfering with the logger's write handle
 	f, err := os.Open(l.file.Name())
 	if err != nil {

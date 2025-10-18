@@ -568,7 +568,7 @@ func (api *API) queryLog(r *http.Request) (result apiFuncResult) {
 	return apiFuncResult{logs, nil, nil, nil}
 }
 
-func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
+func (*API) formatQuery(r *http.Request) (result apiFuncResult) {
 	expr, err := parser.ParseExpr(r.FormValue("query"))
 	if err != nil {
 		return invalidParamError(err, "query")
