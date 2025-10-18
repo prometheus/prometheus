@@ -284,6 +284,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 				m.IterationsMissed.DeleteLabelValues(n)
 				m.IterationsScheduled.DeleteLabelValues(n)
 				m.EvalTotal.DeleteLabelValues(n)
+				m.EvalMissed.DeleteLabelValues(n)
 				m.EvalFailures.DeleteLabelValues(n)
 				m.GroupInterval.DeleteLabelValues(n)
 				m.GroupLastEvalTime.DeleteLabelValues(n)
