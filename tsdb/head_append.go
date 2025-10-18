@@ -1443,10 +1443,10 @@ func (a *headAppender) commitFloats(b *appendBatch, acc *appenderCommitContext) 
 					acc.inOrderMaxt = s.T
 				}
 				if newlyStale {
-					a.head.numStaleSeries.Inc()
+					a.head.numStaleSeries.Add(1)
 				}
 				if staleToNonStale {
-					a.head.numStaleSeries.Dec()
+					a.head.numStaleSeries.Add(^uint64(0)) 
 				}
 			} else {
 				// The sample is an exact duplicate, and should be silently dropped.
@@ -1552,10 +1552,10 @@ func (a *headAppender) commitHistograms(b *appendBatch, acc *appenderCommitConte
 					acc.inOrderMaxt = s.T
 				}
 				if newlyStale {
-					a.head.numStaleSeries.Inc()
+					a.head.numStaleSeries.Add(1)
 				}
 				if staleToNonStale {
-					a.head.numStaleSeries.Dec()
+					a.head.numStaleSeries.Add(^uint64(0)) 
 				}
 			} else {
 				acc.histogramsAppended--
@@ -1661,10 +1661,10 @@ func (a *headAppender) commitFloatHistograms(b *appendBatch, acc *appenderCommit
 					acc.inOrderMaxt = s.T
 				}
 				if newlyStale {
-					a.head.numStaleSeries.Inc()
+					a.head.numStaleSeries.Add(1)
 				}
 				if staleToNonStale {
-					a.head.numStaleSeries.Dec()
+					a.head.numStaleSeries.Add(^uint64(0)) 
 				}
 			} else {
 				acc.histogramsAppended--

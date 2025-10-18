@@ -579,8 +579,6 @@ go.opentelemetry.io/proto/slim/otlp/collector/profiles/v1development v0.1.0 h1:U
 go.opentelemetry.io/proto/slim/otlp/collector/profiles/v1development v0.1.0/go.mod h1:VyU6dTWBWv6h9w/+DYgSZAPMabWbPTFTuxp25sM8+s0=
 go.opentelemetry.io/proto/slim/otlp/profiles/v1development v0.1.0 h1:i8YpvWGm/Uq1koL//bnbJ/26eV3OrKWm09+rDYo7keU=
 go.opentelemetry.io/proto/slim/otlp/profiles/v1development v0.1.0/go.mod h1:pQ70xHY/ZVxNUBPn+qUWPl8nwai87eWdqL3M37lNi9A=
-go.uber.org/atomic v1.11.0 h1:ZvwS0R+56ePWxUNi+Atn9dWONBPp/AUETXlHW0DxSjE=
-go.uber.org/atomic v1.11.0/go.mod h1:LUxbIzbOniOlMKjJjyPfpl4v+PKK2cNJn91OQbhoJI0=
 go.uber.org/automaxprocs v1.6.0 h1:O3y2/QNTOdbF+e/dpXNNW7Rx2hZ4sTIPyybbxyNqTUs=
 go.uber.org/automaxprocs v1.6.0/go.mod h1:ifeIMSnPZuznNm6jmdzmU3/bfk01Fe2fotchwEFJ8r8=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=

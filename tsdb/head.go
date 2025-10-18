@@ -29,7 +29,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
-	"go.uber.org/atomic"
+	"sync/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -1614,7 +1614,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
-	h.numSeries.Sub(uint64(seriesRemoved))
+	h.numSeries.Add(-uint64(seriesRemoved))
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
@@ -1747,7 +1747,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels, pendingCommit bool) 
 	}
 
 	// Optimistically assume that we are the first one to create the series.
-	id := chunks.HeadSeriesRef(h.lastSeriesID.Inc())
+	id := chunks.HeadSeriesRef(h.lastSeriesID.Add(1))
 
 	return h.getOrCreateWithID(id, hash, lset, pendingCommit)
 }
@@ -1769,7 +1769,7 @@ func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labe
 	}
 
 	h.metrics.seriesCreated.Inc()
-	h.numSeries.Inc()
+	h.numSeries.Add(1)
 
 	h.postings.Add(storage.SeriesRef(id), lset)
 
@@ -1993,7 +1993,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef, n
 		if value.IsStaleNaN(series.lastValue) ||
 			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
 			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
-			numStaleSeries.Dec()
+			numStaleSeries.Add(^uint64(0))  // Equivalent to -1 for unsigned overflow
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}

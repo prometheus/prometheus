@@ -33,7 +33,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
+	"sync/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -1319,7 +1319,7 @@ func NewTestBlockedWriteClient() *TestBlockingWriteClient {
 }
 
 func (c *TestBlockingWriteClient) Store(ctx context.Context, _ []byte, _ int) (WriteResponseStats, error) {
-	c.numCalls.Inc()
+	c.numCalls.Add(1)
 	<-ctx.Done()
 	return WriteResponseStats{}, nil
 }
