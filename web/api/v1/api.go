@@ -553,6 +553,16 @@ func (api *API) queryLog(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
 
+	// Parse limit parameter
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+	// Default limit to prevent overwhelming responses with large log files
+	if limit == 0 {
+		limit = 1000
+	}
+
 	// Check if the logger implements the QueryLogReader interface
 	reader, ok := logger.(promql.QueryLogReader)
 	if !ok {
@@ -563,6 +573,11 @@ func (api *API) queryLog(r *http.Request) (result apiFuncResult) {
 	logs, err := reader.ReadQueryLogs(ctx)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
+	}
+
+	// Apply limit (return last N entries)
+	if len(logs) > limit {
+		logs = logs[len(logs)-limit:]
 	}
 
 	return apiFuncResult{logs, nil, nil, nil}

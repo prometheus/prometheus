@@ -4832,6 +4832,78 @@ func TestQueryLogEndpoint(t *testing.T) {
 	testutil.RequireEqual(t, []querylog.QueryLog{queryLog}, res.data)
 }
 
+func TestQueryLogEndpointWithLimit(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+        load 1m
+            test_metric1{foo="bar"} 0+100x100
+    `)
+	t.Cleanup(func() { storage.Close() })
+
+	now := time.Now()
+
+	// Create multiple query log entries
+	logs := make([]querylog.QueryLog, 5)
+	for i := 0; i < 5; i++ {
+		logs[i] = querylog.QueryLog{
+			Params: querylog.Params{
+				Query: fmt.Sprintf("query_%d", i),
+				Start: "1234567890",
+				End:   "1234567891",
+			},
+			Stats: querylog.Stats{
+				Timings: querylog.Timings{
+					EvalTotalTime: 1.0,
+				},
+				Samples: querylog.Samples{
+					TotalQueryableSamples: 100,
+					PeakSamples:           50,
+				},
+			},
+			Timestamp: "2025-02-11T00:00:00Z",
+		}
+	}
+
+	// Marshal all logs as newline-delimited JSON
+	var logBytes bytes.Buffer
+	for _, log := range logs {
+		b, err := json.Marshal(log)
+		require.NoError(t, err)
+		logBytes.Write(b)
+		logBytes.WriteByte('\n')
+	}
+
+	engine := &fakeEngine{
+		queryLogger: &fakeQueryLogger{
+			reader: &logBytes,
+		},
+	}
+	api := &API{
+		Queryable:             storage,
+		QueryEngine:           engine,
+		ExemplarQueryable:     storage.ExemplarQueryable(),
+		alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
+		flagsMap:              sampleFlagMap,
+		now:                   func() time.Time { return now },
+		config:                func() config.Config { return samplePrometheusCfg },
+		ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+	}
+
+	ctx := context.Background()
+
+	// Test with limit=3 (should return last 3 entries)
+	req, err := http.NewRequest(http.MethodGet, "?limit=3", nil)
+	require.NoError(t, err)
+	res := api.queryLog(req.WithContext(ctx))
+	assertAPIError(t, res.err, errorNone)
+
+	resultLogs := res.data.([]querylog.QueryLog)
+	require.Len(t, resultLogs, 3)
+	// Should return the last 3 entries (indexes 2, 3, 4)
+	testutil.RequireEqual(t, "query_2", resultLogs[0].Params.Query)
+	testutil.RequireEqual(t, "query_3", resultLogs[1].Params.Query)
+	testutil.RequireEqual(t, "query_4", resultLogs[2].Params.Query)
+}
+
 // fakeEngine is a fake QueryEngine implementation.
 type fakeEngine struct {
 	query       fakeQuery
