@@ -14,7 +14,6 @@
 package v1
 
 import (
-	"bufio"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
@@ -45,7 +44,6 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
-	"github.com/prometheus/prometheus/model/querylog"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -550,31 +548,24 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 
 func (api *API) queryLog(r *http.Request) (result apiFuncResult) {
 	ctx := r.Context()
-	l, err := api.QueryEngine.GetEngineQueryLogger(ctx)
+	logger, err := api.QueryEngine.GetEngineQueryLogger(ctx)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
 
-	// read query log
-	file, err := l.Read()
-	defer l.Close()
+	// Check if the logger implements the QueryLogReader interface
+	reader, ok := logger.(promql.QueryLogReader)
+	if !ok {
+		return apiFuncResult{nil, &apiError{errorExec, errors.New("query logger does not support reading logs")}, nil, nil}
+	}
+
+	// Read and parse query logs
+	logs, err := reader.ReadQueryLogs(ctx)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
 
-	// Unmarshal json query log
-	var ql []querylog.QueryLog
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		var q querylog.QueryLog
-		err = json.Unmarshal(scanner.Bytes(), &q)
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
-		}
-		ql = append(ql, q)
-	}
-
-	return apiFuncResult{ql, nil, nil, nil}
+	return apiFuncResult{logs, nil, nil, nil}
 }
 
 func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
