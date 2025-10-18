@@ -14,6 +14,7 @@
 package logging
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"strings"
@@ -21,6 +22,8 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/querylog"
 )
 
 func getLogLines(t *testing.T, name string) []string {
@@ -100,4 +103,34 @@ func TestJSONFileLogger_parallel(t *testing.T) {
 	err = logHandler2.file.Close()
 	require.Error(t, err)
 	require.True(t, strings.HasSuffix(err.Error(), os.ErrClosed.Error()), "file not closed")
+}
+
+func TestJSONFileLogger_ReadQueryLogs(t *testing.T) {
+	f, err := os.CreateTemp("", "querylog")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, f.Close())
+		require.NoError(t, os.Remove(f.Name()))
+	}()
+
+	// Write valid query log entries
+	validLog := `{"params":{"query":"up","start":"123","end":"456","step":1},"stats":{"timings":{"evalTotalTime":0.1,"execQueueTime":0.01,"execTotalTime":0.11,"innerEvalTime":0.05,"queryPreparationTime":0.02,"resultSortTime":0.03},"samples":{"totalQueryableSamples":100,"peakSamples":50}},"ts":"2025-01-01T00:00:00Z"}
+`
+	_, err = f.WriteString(validLog)
+	require.NoError(t, err)
+	require.NoError(t, f.Sync())
+
+	logger, err := NewJSONFileLogger(f.Name())
+	require.NoError(t, err)
+	defer logger.Close()
+
+	// Test successful read
+	ctx := context.Background()
+	var logs []querylog.QueryLog
+	logs, err = logger.ReadQueryLogs(ctx)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	require.Equal(t, "up", logs[0].Params.Query)
+	require.Equal(t, "123", logs[0].Params.Start)
+	require.Equal(t, uint64(100), logs[0].Stats.Samples.TotalQueryableSamples)
 }
