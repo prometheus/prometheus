@@ -11,10 +11,7 @@ if ! [[ "$0" =~ "scripts/genproto.sh" ]]; then
 fi
 
 pushd "internal/tools"
-INSTALL_PKGS="github.com/bufbuild/buf/cmd/buf github.com/daixiang0/gci github.com/gogo/protobuf/protoc-gen-gogofast github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2"
-for pkg in ${INSTALL_PKGS}; do
-    GO111MODULE=on go install "$pkg"
-done
+GO111MODULE=on go install tool
 popd
 
 DIRS="prompb"
@@ -32,4 +29,3 @@ for dir in ${DIRS}; do
 		gci write -s standard -s default -s "prefix(github.com/prometheus/prometheus)" .
 	popd
 done
-
