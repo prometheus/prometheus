@@ -16,6 +16,7 @@ package v1
 import (
 	"strconv"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
@@ -74,24 +75,29 @@ func translateAST(node parser.Expr) any {
 			},
 			"args": args,
 		}
-	case *parser.MatrixSelector:
+case *parser.MatrixSelector:
 		vs := n.VectorSelector.(*parser.VectorSelector)
 		return map[string]any{
 			"type":       "matrixSelector",
 			"name":       vs.Name,
 			"range":      n.Range.Milliseconds(),
+			"rangeText":  model.Duration(n.Range).String(),
 			"offset":     vs.OriginalOffset.Milliseconds(),
+			"offsetText": model.Duration(vs.OriginalOffset).String(),
 			"matchers":   translateMatchers(vs.LabelMatchers),
 			"timestamp":  vs.Timestamp,
 			"startOrEnd": getStartOrEnd(vs.StartOrEnd),
 		}
-	case *parser.SubqueryExpr:
+case *parser.SubqueryExpr:
 		return map[string]any{
 			"type":       "subquery",
 			"expr":       translateAST(n.Expr),
 			"range":      n.Range.Milliseconds(),
+			"rangeText":  model.Duration(n.Range).String(),
 			"offset":     n.OriginalOffset.Milliseconds(),
+			"offsetText": model.Duration(n.OriginalOffset).String(),
 			"step":       n.Step.Milliseconds(),
+			"stepText":   model.Duration(n.Step).String(),
 			"timestamp":  n.Timestamp,
 			"startOrEnd": getStartOrEnd(n.StartOrEnd),
 		}
@@ -116,11 +122,12 @@ func translateAST(node parser.Expr) any {
 			"op":   n.Op.String(),
 			"expr": translateAST(n.Expr),
 		}
-	case *parser.VectorSelector:
+case *parser.VectorSelector:
 		return map[string]any{
 			"type":       "vectorSelector",
 			"name":       n.Name,
 			"offset":     n.OriginalOffset.Milliseconds(),
+			"offsetText": model.Duration(n.OriginalOffset).String(),
 			"matchers":   translateMatchers(n.LabelMatchers),
 			"timestamp":  n.Timestamp,
 			"startOrEnd": getStartOrEnd(n.StartOrEnd),
