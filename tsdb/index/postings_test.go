@@ -46,7 +46,7 @@ func TestMemPostings_addFor(t *testing.T) {
 
 func TestMemPostings_ensureOrder(t *testing.T) {
 	p := NewUnorderedMemPostings()
-	p.commited["a"] = map[string][]storage.SeriesRef{}
+	p.committed["a"] = map[string][]storage.SeriesRef{}
 
 	for i := range 100 {
 		l := make([]storage.SeriesRef, 100)
@@ -55,12 +55,12 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 		}
 		v := strconv.Itoa(i)
 
-		p.commited["a"][v] = l
+		p.committed["a"][v] = l
 	}
 
 	p.EnsureOrder(0)
 
-	for _, e := range p.commited {
+	for _, e := range p.committed {
 		for _, l := range e {
 			ok := sort.SliceIsSorted(l, func(i, j int) bool {
 				return l[i] < l[j]
@@ -100,7 +100,7 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 			// Generate postings.
 			for l := 0; l < testData.numLabels; l++ {
 				labelName := strconv.Itoa(l)
-				p.commited[labelName] = map[string][]storage.SeriesRef{}
+				p.committed[labelName] = map[string][]storage.SeriesRef{}
 
 				for v := 0; v < testData.numValuesPerLabel; v++ {
 					refs := make([]storage.SeriesRef, testData.numRefsPerValue)
@@ -109,7 +109,7 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 					}
 
 					labelValue := strconv.Itoa(v)
-					p.commited[labelName][labelValue] = refs
+					p.committed[labelName][labelValue] = refs
 				}
 			}
 
@@ -977,7 +977,6 @@ func TestMemPostings_Delete(t *testing.T) {
 	p.Add(1, labels.FromStrings("lbl1", "a"))
 	p.Add(2, labels.FromStrings("lbl1", "b"))
 	p.Add(3, labels.FromStrings("lbl2", "a"))
-	fmt.Println(allPostingsKey, "Hi from allpostingskey")
 	before := p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 	deletedRefs := map[storage.SeriesRef]struct{}{
 		2: {},

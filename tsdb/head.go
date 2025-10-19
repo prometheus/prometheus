@@ -1772,6 +1772,11 @@ func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labe
 	h.numSeries.Inc()
 
 	h.postings.Add(storage.SeriesRef(id), lset)
+	// Flush the label set to make it immediately visible in queries
+	h.postings.Flush(lset)
+	// Also flush the "all postings" key (empty label)
+	allName, allValue := index.AllPostingsKey()
+	h.postings.Flush(labels.FromStrings(allName, allValue))
 
 	// Adding the series in the postings marks the creation of series
 	// as any further calls to this and the read methods would return that series.
