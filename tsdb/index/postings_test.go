@@ -126,7 +126,6 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 func TestIntersect(t *testing.T) {
 	a := newListPostings(1, 2, 3)
 	b := newListPostings(2, 3, 4)
-
 	cases := []struct {
 		in []Postings
 
@@ -948,9 +947,19 @@ func TestMemPostingsStats(t *testing.T) {
 
 	// add some postings to the MemPostings
 	p.Add(1, labels.FromStrings("label", "value1"))
+	p.Flush(labels.FromStrings("label", "value1"))
+
 	p.Add(1, labels.FromStrings("label", "value2"))
+	p.Flush(labels.FromStrings("label", "value2"))
+
 	p.Add(1, labels.FromStrings("label", "value3"))
+	p.Flush(labels.FromStrings("label", "value3"))
+
 	p.Add(2, labels.FromStrings("label", "value1"))
+	p.Flush(labels.FromStrings("label", "value1"))
+
+	allName, allValue := AllPostingsKey()
+	p.Flush(labels.FromStrings(allName, allValue))
 
 	// call the Stats method to calculate the cardinality statistics
 	// passing a fake calculation so we get the same result regardless of compilation -tags.
@@ -975,8 +984,18 @@ func TestMemPostingsStats(t *testing.T) {
 func TestMemPostings_Delete(t *testing.T) {
 	p := NewMemPostings()
 	p.Add(1, labels.FromStrings("lbl1", "a"))
+	p.Flush(labels.FromStrings("lbl1", "a"))
+
 	p.Add(2, labels.FromStrings("lbl1", "b"))
+	p.Flush(labels.FromStrings("lbl1", "b"))
+
 	p.Add(3, labels.FromStrings("lbl2", "a"))
+	p.Flush(labels.FromStrings("lbl2", "a"))
+
+	// Flush allPostingsKey
+	allName, allValue := AllPostingsKey()
+	p.Flush(labels.FromStrings(allName, allValue))
+
 	before := p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 	deletedRefs := map[storage.SeriesRef]struct{}{
 		2: {},
@@ -1477,9 +1496,19 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
 	mp := NewMemPostings()
 	mp.Add(1, labels.FromStrings("foo", "1"))
+	mp.Flush(labels.FromStrings("foo", "1"))
+
 	mp.Add(2, labels.FromStrings("foo", "2"))
+	mp.Flush(labels.FromStrings("foo", "2"))
+
 	mp.Add(3, labels.FromStrings("foo", "3"))
+	mp.Flush(labels.FromStrings("foo", "3"))
+
 	mp.Add(4, labels.FromStrings("foo", "4"))
+	mp.Flush(labels.FromStrings("foo", "4"))
+
+	allName, allValue := AllPostingsKey()
+	mp.Flush(labels.FromStrings(allName, allValue))
 
 	isEven := func(v string) bool {
 		iv, err := strconv.Atoi(v)
@@ -1499,9 +1528,19 @@ func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
 func TestMemPostings_PostingsForAllLabelValues(t *testing.T) {
 	mp := NewMemPostings()
 	mp.Add(1, labels.FromStrings("foo", "1"))
+	mp.Flush(labels.FromStrings("foo", "1"))
+
 	mp.Add(2, labels.FromStrings("foo", "2"))
+	mp.Flush(labels.FromStrings("foo", "2"))
+
 	mp.Add(3, labels.FromStrings("foo", "3"))
+	mp.Flush(labels.FromStrings("foo", "3"))
+
 	mp.Add(4, labels.FromStrings("foo", "4"))
+	mp.Flush(labels.FromStrings("foo", "4"))
+
+	allName, allValue := AllPostingsKey()
+	mp.Flush(labels.FromStrings(allName, allValue))
 
 	p := mp.PostingsForAllLabelValues(context.Background(), "foo")
 	require.NoError(t, p.Err())
@@ -1516,7 +1555,11 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	seriesCount := 10 * checkContextEveryNIterations
 	for i := 1; i <= seriesCount; i++ {
 		memP.Add(storage.SeriesRef(i), labels.FromStrings("__name__", fmt.Sprintf("%4d", i)))
+		memP.Flush(labels.FromStrings("__name__", fmt.Sprintf("%4d", i)))
 	}
+	// Flush allPostingsKey
+	allName, allValue := AllPostingsKey()
+	memP.Flush(labels.FromStrings(allName, allValue))
 
 	failAfter := uint64(seriesCount / 2 / checkContextEveryNIterations)
 	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}

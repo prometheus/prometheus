@@ -62,13 +62,18 @@ type MemPostings struct {
 
 	// m holds the postings lists for each label-value pair, indexed first by label name, and then by label value.
 	//
-	// mtx must be held when interacting with m (the appropriate one for reading or writing).
+	// committed holds the postings that are visible to readers.
+	// All read operations (Postings, Stats, Iter, etc.) query this map.
+	// Data is moved here from tail via Flush().
+	// mtx must be held when interacting with committed.
 	// It is safe to retain a reference to a postings list after releasing the lock.
-	//
-	// BUG: There's currently a data race in addFor, which might modify the tail of the postings list:
-	// https://github.com/prometheus/prometheus/issues/15317
 	committed map[string]map[string][]storage.SeriesRef
 
+	// tail holds newly added postings that are not yet visible to readers.
+	// Add() writes to tail by appending, keeping it unsorted for fast writes.
+	// Flush() sorts tail data and merges it into committed.
+	// This separation prevents data races where readers might access partially sorted slices.
+	// mtx must be held when interacting with tail.
 	tail map[string]map[string][]storage.SeriesRef
 	// lvs holds the label values for each label name.
 	// lvs[name] is essentially an unsorted append-only list of all keys in m[name]
@@ -86,7 +91,7 @@ func NewMemPostings() *MemPostings {
 	return &MemPostings{
 		committed: make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
 		tail:      make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
-		lvs:       make(map[string][]string),
+		lvs:       make(map[string][]string, defaultLabelNamesMapSize),
 		ordered:   true,
 	}
 }
@@ -413,6 +418,11 @@ func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	p.mtx.Unlock()
 }
 
+// Flush moves postings for the given label set from tail to committed storage.
+// This makes the postings visible to readers via Postings(), Stats(), and other query methods.
+// Flush must be called after Add() to make the data visible, as Add() only writes to tail.
+// Note: Flush does not automatically flush the "all postings" key (empty label "").
+// Callers should explicitly flush AllPostingsKey() if needed.
 func (p *MemPostings) Flush(lset labels.Labels) {
 	lset.Range(func(l labels.Label) {
 		p.flushNameValue(l.Name, l.Value)
@@ -434,10 +444,9 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 		nm = map[string][]storage.SeriesRef{}
 		p.tail[l.Name] = nm
 	}
-	vm, ok := nm[l.Value]
-	if !ok {
-		p.lvs[l.Name] = appendWithExponentialGrowth(p.lvs[l.Name], l.Value)
-	}
+	vm := nm[l.Value]
+	// Note: We don't add to lvs here anymore. Label values are only added to lvs
+	// during Flush() when they become visible in committed postings.
 	list := appendWithExponentialGrowth(vm, id)
 	nm[l.Value] = list
 
@@ -451,7 +460,6 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 }
 
 func (p *MemPostings) flushNameValue(name, value string) {
-	// Steal tail & snapshot old committed under lock.
 	p.mtx.Lock()
 	tail := p.tail[name][value]
 	if len(tail) == 0 {
@@ -459,26 +467,28 @@ func (p *MemPostings) flushNameValue(name, value string) {
 		return
 	}
 	tailCopy := append([]storage.SeriesRef(nil), tail...)
-	// ensure maps exist to avoid nil-map writes later
 	if p.committed[name] == nil {
 		p.committed[name] = make(map[string][]storage.SeriesRef)
 	}
-	// clear tail quickly and capture old committed slice
 	p.tail[name][value] = nil
 	old := p.committed[name][value]
+	// Add to lvs only when first flushing this label value (when old is empty).
+	// This ensures lvs only contains values that are visible in committed postings.
+	isNewValue := len(old) == 0
 	p.mtx.Unlock()
 
-	// expensive work outside lock
 	sort.Slice(tailCopy, func(i, j int) bool { return tailCopy[i] < tailCopy[j] })
 	newCommitted := mergeSorted(old, tailCopy)
 
-	// publish under lock
 	p.mtx.Lock()
-	// double-check map exists (in case concurrent init logic exists elsewhere)
 	if p.committed[name] == nil {
 		p.committed[name] = make(map[string][]storage.SeriesRef)
 	}
 	p.committed[name][value] = newCommitted
+	// Now that the value is in committed, add it to lvs if it's new.
+	if isNewValue {
+		p.lvs[name] = appendWithExponentialGrowth(p.lvs[name], value)
+	}
 	p.mtx.Unlock()
 }
 
