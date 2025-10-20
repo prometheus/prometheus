@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -33,7 +34,6 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"go.uber.org/atomic"
 
-	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
