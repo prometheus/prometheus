@@ -781,10 +781,12 @@ func TestShouldReshard(t *testing.T) {
 // TestDisableReshardOnRetry asserts that resharding should be disabled when a
 // recoverable error is returned from remote_write.
 func TestDisableReshardOnRetry(t *testing.T) {
-	t.Skip("This test is incompatible with remoteapi setup. The remoteAPI client handles retries internally " +
-		"(with MaxRetries=0 for infinite retries), so the queue manager never sees individual retry-after errors. " +
-		"The reshard-disabling logic this test validates is now bypassed since errors only reach the queue manager " +
-		"after all retries are exhausted by the remoteAPI client.")
+	t.Skip("Still figuring out a way to make this test passed. Some look around: This test is incompatible with remoteapi HTTP server setup. While Client.Store() correctly returns " +
+		"RecoverableError to the queue manager, the queue manager's send loop (queue_manager.go:2110-2159) retries " +
+		"forever on recoverable errors. The test server returns 429 errors indefinitely, causing the queue manager to " +
+		"retry forever. The test cannot observe the resharding behavior because m.Stop() is racing with the infinite " +
+		"retry loop. To fix this test, we would need either: (1) a way to limit retries in the queue manager's send loop, " +
+		"or (2) a test server that succeeds after N attempts.")
 
 	t.Parallel()
 	onStoredContext, onStoreCalled := context.WithCancel(context.Background())
@@ -1172,7 +1174,7 @@ func NewTestWriteClientWithErrorServer(t testing.TB, protoMsg config.RemoteWrite
 }
 
 // errorWriteStorage returns recoverable errors with Retry-After for all Store requests.
-type errorWriteStorage struct{
+type errorWriteStorage struct {
 	retryAfter    time.Duration
 	onStoreCalled func()
 }
@@ -1801,8 +1803,7 @@ func BenchmarkStoreSeries(b *testing.B) {
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				testClient, realClient := NewTestWriteClientWithServer(b, config.RemoteWriteProtoMsgV1)
-				_ = testClient // testClient not used in benchmark, but created for consistency.
+				_, realClient := NewTestWriteClientWithServer(b, config.RemoteWriteProtoMsgV1)
 				dir := b.TempDir()
 				cfg := config.DefaultQueueConfig
 				mcfg := config.DefaultMetadataConfig
