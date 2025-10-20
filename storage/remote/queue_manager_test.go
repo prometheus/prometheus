@@ -151,7 +151,7 @@ func TestBasicContentNegotiation(t *testing.T) {
 			require.NoError(t, err)
 			qm := s.rws.queues[hash]
 
-			// Use remoteapi setup with error injection
+			// Use remoteapi setup with error injection.
 			c, realClient := NewTestWriteClientWithServer(t, tc.receiverProtoMsg)
 			c.injectErrors(tc.injectErrs)
 			qm.SetClient(realClient)
@@ -265,7 +265,7 @@ func TestSampleDelivery(t *testing.T) {
 			}
 			metadata = createSeriesMetadata(series)
 
-			// Set up remote write server using the remoteapi path
+			// Set up remote write server using the remoteapi path.
 			c, serverURL := setupRemoteWriteServer(t, tc.protoMsg)
 			writeConfig.URL = serverURL
 
@@ -416,7 +416,7 @@ func TestWALMetadataDelivery(t *testing.T) {
 	_, series := createTimeseries(0, num)
 	metadata := createSeriesMetadata(series)
 
-	// Set up remote write server using the remoteapi path
+	// Set up remote write server using the remoteapi path.
 	c, serverURL := setupRemoteWriteServer(t, config.RemoteWriteProtoMsgV2)
 	writeConfig.URL = serverURL
 
@@ -495,7 +495,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 
 func TestShutdown(t *testing.T) {
 	t.Parallel()
-	deadline := 1 * time.Second // Use a shorter deadline for real-time testing
+	deadline := 1 * time.Second // Use a shorter deadline for real-time testing.
 	c := NewTestWriteClientWithBlockingServer(t, config.RemoteWriteProtoMsgV1)
 
 	cfg := config.DefaultQueueConfig
@@ -514,7 +514,7 @@ func TestShutdown(t *testing.T) {
 		close(appendDone)
 	}()
 
-	// Give it a moment to start appending
+	// Give it a moment to start appending.
 	time.Sleep(100 * time.Millisecond)
 
 	// Test to ensure that Stop doesn't block.
@@ -589,7 +589,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 	t.Parallel()
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
-			// Create HTTP server and real client once, reuse in loop
+			// Create HTTP server and real client once, reuse in loop.
 			_, realClient := NewTestWriteClientWithServer(t, protoMsg)
 			var m *QueueManager
 			h := sync.Mutex{}
@@ -1019,10 +1019,10 @@ func NewTestWriteClient(protoMsg config.RemoteWriteProtoMsg) *TestWriteClient {
 // remoteapi.NewWriteHandler, and returns a real Client that connects to it.
 // This allows testing with the remote API path.
 func NewTestWriteClientWithServer(t testing.TB, protoMsg config.RemoteWriteProtoMsg) (*TestWriteClient, WriteClient) {
-	// Use setupRemoteWriteServer to create the HTTP server
+	// Use setupRemoteWriteServer to create the HTTP server.
 	testClient, serverURL := setupRemoteWriteServer(t, protoMsg)
 
-	// Create a real WriteClient that connects to the test server
+	// Create a real WriteClient that connects to the test server.
 	clientConfig := &ClientConfig{
 		URL:              serverURL,
 		Timeout:          model.Duration(30 * time.Second),
@@ -1040,7 +1040,7 @@ func NewTestWriteClientWithServer(t testing.TB, protoMsg config.RemoteWriteProto
 // that blocks on all Store requests until the context is cancelled. This is useful for
 // testing shutdown and timeout behavior.
 func NewTestWriteClientWithBlockingServer(t testing.TB, protoMsg config.RemoteWriteProtoMsg) WriteClient {
-	// Create a blocking storage implementation
+	// Create a blocking storage implementation.
 	blockingStorage := &blockingWriteStorage{}
 
 	var acceptedTypes remoteapi.MessageTypes
@@ -1061,7 +1061,7 @@ func NewTestWriteClientWithBlockingServer(t testing.TB, protoMsg config.RemoteWr
 		server.Close()
 	})
 
-	// Create a real WriteClient that connects to the test server
+	// Create a real WriteClient that connects to the test server.
 	clientConfig := &ClientConfig{
 		URL:              serverURL,
 		Timeout:          model.Duration(30 * time.Second),
@@ -1079,7 +1079,7 @@ func NewTestWriteClientWithBlockingServer(t testing.TB, protoMsg config.RemoteWr
 type blockingWriteStorage struct{}
 
 func (s *blockingWriteStorage) Store(req *http.Request, msgType remoteapi.WriteMessageType) (*remoteapi.WriteResponse, error) {
-	// Block until the request context is cancelled
+	// Block until the request context is cancelled.
 	<-req.Context().Done()
 	return nil, req.Context().Err()
 }
@@ -1088,7 +1088,7 @@ func (s *blockingWriteStorage) Store(req *http.Request, msgType remoteapi.WriteM
 // that immediately returns success for all Store requests. This is useful for
 // testing non-blocking behavior and deadlock scenarios.
 func NewTestWriteClientWithNopServer(t testing.TB, protoMsg config.RemoteWriteProtoMsg) WriteClient {
-	// Create a nop storage implementation
+	// Create a nop storage implementation.
 	nopStorage := &nopWriteStorage{}
 
 	var acceptedTypes remoteapi.MessageTypes
@@ -1109,7 +1109,7 @@ func NewTestWriteClientWithNopServer(t testing.TB, protoMsg config.RemoteWritePr
 		server.Close()
 	})
 
-	// Create a real WriteClient that connects to the test server
+	// Create a real WriteClient that connects to the test server.
 	clientConfig := &ClientConfig{
 		URL:              serverURL,
 		Timeout:          model.Duration(30 * time.Second),
@@ -1133,7 +1133,7 @@ func (s *nopWriteStorage) Store(req *http.Request, msgType remoteapi.WriteMessag
 // NewTestWriteClientWithErrorServer creates a WriteClient backed by an HTTP server
 // that returns errors with Retry-After headers. Useful for testing error handling and retry logic.
 func NewTestWriteClientWithErrorServer(t testing.TB, protoMsg config.RemoteWriteProtoMsg, retryAfter time.Duration, onStoreCalled func()) WriteClient {
-	// Create an error storage implementation
+	// Create an error storage implementation.
 	errorStorage := &errorWriteStorage{
 		retryAfter:    retryAfter,
 		onStoreCalled: onStoreCalled,
@@ -1157,7 +1157,7 @@ func NewTestWriteClientWithErrorServer(t testing.TB, protoMsg config.RemoteWrite
 		server.Close()
 	})
 
-	// Create a real WriteClient that connects to the test server
+	// Create a real WriteClient that connects to the test server.
 	clientConfig := &ClientConfig{
 		URL:              serverURL,
 		Timeout:          model.Duration(30 * time.Second),
@@ -1198,7 +1198,7 @@ type testWriteStorage struct {
 func (s *testWriteStorage) Store(req *http.Request, msgType remoteapi.WriteMessageType) (*remoteapi.WriteResponse, error) {
 	fmt.Printf("[testWriteStorage.Store] Called with msgType=%s\n", msgType)
 
-	// Check for message type mismatch (before locking)
+	// Check for message type mismatch (before locking).
 	var expectedMsgType remoteapi.WriteMessageType
 	if s.protoMsg == config.RemoteWriteProtoMsgV1 {
 		expectedMsgType = remoteapi.WriteV1MessageType
@@ -1209,62 +1209,62 @@ func (s *testWriteStorage) Store(req *http.Request, msgType remoteapi.WriteMessa
 	if msgType != expectedMsgType {
 		fmt.Printf("[testWriteStorage.Store] Message type mismatch: got %s, expected %s - returning 415\n", msgType, expectedMsgType)
 		resp := remoteapi.NewWriteResponse()
-		resp.SetStatusCode(http.StatusUnsupportedMediaType) // 415
+		resp.SetStatusCode(http.StatusUnsupportedMediaType) // 415.
 		return resp, fmt.Errorf("%s protobuf message is not accepted by this server; only accepts %s", msgType, expectedMsgType)
 	}
 
-	// Check for returnError first (persistent error for all requests)
+	// Check for returnError first (persistent error for all requests).
 	s.client.mtx.Lock()
 	if s.client.returnError != nil {
 		s.client.writesReceived++
 		returnErr := s.client.returnError
 		s.client.mtx.Unlock()
-		// Create a WriteResponse with error status code
+		// Create a WriteResponse with error status code.
 		resp := remoteapi.NewWriteResponse()
-		resp.SetStatusCode(http.StatusInternalServerError) // 500
+		resp.SetStatusCode(http.StatusInternalServerError) // 500.
 		return resp, returnErr
 	}
 
-	// Check for injected errors - but still count the attempt
+	// Check for injected errors - but still count the attempt.
 	var injectedErr error
 	if len(s.client.injectedErrs) > 0 {
 		s.client.currErr++
-		// Access the error with bounds checking (currErr starts at -1 from injectErrors)
+		// Access the error with bounds checking (currErr starts at -1 from injectErrors).
 		if s.client.currErr < len(s.client.injectedErrs) {
 			injectedErr = s.client.injectedErrs[s.client.currErr]
 			fmt.Printf("[testWriteStorage.Store] Injecting error for attempt %d: %v\n", s.client.currErr, injectedErr)
 		} else {
-			// If we run out of injected errors, use the last one
+			// If we run out of injected errors, use the last one.
 			injectedErr = s.client.injectedErrs[len(s.client.injectedErrs)-1]
 			fmt.Printf("[testWriteStorage.Store] Injecting last error for attempt %d: %v\n", s.client.currErr, injectedErr)
 		}
 	}
-	// Increment writesReceived even on error to match original behavior
+	// Increment writesReceived even on error to match original behavior.
 	s.client.writesReceived++
 	s.client.mtx.Unlock()
 
 	if injectedErr != nil {
 		fmt.Printf("[testWriteStorage.Store] Returning injected error: %v\n", injectedErr)
-		// Create a WriteResponse with error status code
+		// Create a WriteResponse with error status code.
 		resp := remoteapi.NewWriteResponse()
-		// Check if this is a recoverable error
+		// Check if this is a recoverable error.
 		var recErr RecoverableError
 		if errors.As(injectedErr, &recErr) {
-			resp.SetStatusCode(http.StatusInternalServerError) // 500 - recoverable
+			resp.SetStatusCode(http.StatusInternalServerError) // 500 - recoverable.
 		} else {
-			// For unrecoverable errors, return 400 Bad Request
-			resp.SetStatusCode(http.StatusBadRequest) // 400 - unrecoverable
+			// For unrecoverable errors, return 400 Bad Request.
+			resp.SetStatusCode(http.StatusBadRequest) // 400 - unrecoverable.
 		}
 		return resp, injectedErr
 	}
 
-	// Read the request body (already decompressed by the handler middleware)
+	// Read the request body (already decompressed by the handler middleware).
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	// Parse the protobuf message directly (body is already decompressed)
+	// Parse the protobuf message directly (body is already decompressed).
 	var reqProto *prompb.WriteRequest
 	switch msgType {
 	case remoteapi.WriteV1MessageType:
@@ -1283,7 +1283,7 @@ func (s *testWriteStorage) Store(req *http.Request, msgType remoteapi.WriteMessa
 		return nil, err
 	}
 
-	// Update TestWriteClient's received data
+	// Update TestWriteClient's received data.
 	s.client.mtx.Lock()
 	rs := WriteResponseStats{}
 	b := labels.NewScratchBuilder(0)
@@ -1313,7 +1313,7 @@ func (s *testWriteStorage) Store(req *http.Request, msgType remoteapi.WriteMessa
 	}
 	s.client.mtx.Unlock()
 
-	// Create a WriteResponse with the stats
+	// Create a WriteResponse with the stats.
 	resp := remoteapi.NewWriteResponse()
 	resp.Samples = rs.Samples
 	resp.Histograms = rs.Histograms
@@ -1677,7 +1677,7 @@ func (*TestBlockingWriteClient) Endpoint() string {
 }
 
 func (*TestBlockingWriteClient) HTTPClient() *http.Client {
-	return nil // Mock client doesn't have an HTTP client
+	return nil // Mock client doesn't have an HTTP client.
 }
 
 // For benchmarking the send and not the receive side.
@@ -1690,7 +1690,7 @@ func (*NopWriteClient) Store(context.Context, []byte, int) (WriteResponseStats, 
 func (*NopWriteClient) Name() string     { return "nopwriteclient" }
 func (*NopWriteClient) Endpoint() string { return "http://test-remote.com/1234" }
 func (*NopWriteClient) HTTPClient() *http.Client {
-	return nil // Mock client doesn't have an HTTP client
+	return nil // Mock client doesn't have an HTTP client.
 }
 
 type MockWriteClient struct {
@@ -1705,7 +1705,7 @@ func (c *MockWriteClient) Store(ctx context.Context, bb []byte, n int) (WriteRes
 func (c *MockWriteClient) Name() string     { return c.NameFunc() }
 func (c *MockWriteClient) Endpoint() string { return c.EndpointFunc() }
 func (*MockWriteClient) HTTPClient() *http.Client {
-	return nil // Mock client doesn't have an HTTP client
+	return nil // Mock client doesn't have an HTTP client.
 }
 
 // Extra labels to make a more realistic workload - taken from Kubernetes' embedded cAdvisor metrics.
@@ -1802,7 +1802,7 @@ func BenchmarkStoreSeries(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				testClient, realClient := NewTestWriteClientWithServer(b, config.RemoteWriteProtoMsgV1)
-				_ = testClient // testClient not used in benchmark, but created for consistency
+				_ = testClient // testClient not used in benchmark, but created for consistency.
 				dir := b.TempDir()
 				cfg := config.DefaultQueueConfig
 				mcfg := config.DefaultMetadataConfig

@@ -556,7 +556,7 @@ func NewQueueManager(
 	backoffCfg := remoteapi.BackoffConfig{
 		Min:        time.Duration(t.cfg.MinBackoff),
 		Max:        time.Duration(t.cfg.MaxBackoff),
-		MaxRetries: 0, // Infinite retries, matching queue manager behavior
+		MaxRetries: 0,
 	}
 
 	apiOpts := []remoteapi.APIOption{
@@ -1078,7 +1078,6 @@ func (t *QueueManager) SetClient(c WriteClient) {
 	t.storeClient = c
 
 	// Reinitialize the remote API to point to the new endpoint.
-	// Configure backoff to match queue manager config
 	backoffCfg := remoteapi.BackoffConfig{
 		Min:        time.Duration(t.cfg.MinBackoff),
 		Max:        time.Duration(t.cfg.MaxBackoff),
@@ -1803,19 +1802,6 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	// Use client_golang's Write function - it handles marshaling, compression, HTTP, and retries.
 	// Implement refresh mechanism: if data becomes stale during retries, cancel the Write
 	// and restart with filtered data.
-	//
-	// The loop implements:
-	//   for attempt := 0; attempt < maxRefreshAttempts; attempt++ {
-	//       if isStale(message) {
-	//           message = refreshMessage() // filter out old data
-	//           attempt = 0 // reset counter for fresh message
-	//       }
-	//       writeCtx, cancel := context.WithCancel(ctx)
-	//       err := remoteapi.Write(writeCtx, message, WithRetryCallback(func() {
-	//           if isStale() { cancel() } // abort retries if data becomes stale
-	//       }))
-	//       if err == nil { return }
-	//   }
 
 	const maxRefreshAttempts = 3 // Limit refresh cycles to avoid infinite loops
 	var apiStats remoteapi.WriteResponseStats
