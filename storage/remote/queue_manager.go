@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
 	"strconv"
 	"sync"
 	"time"
@@ -411,6 +412,8 @@ type WriteClient interface {
 	Name() string
 	// Endpoint is the remote read or write endpoint for the storage client.
 	Endpoint() string
+
+	HTTPClient() *http.Client
 }
 
 // QueueManager manages a queue of samples to be sent to the Storage
@@ -549,35 +552,23 @@ func NewQueueManager(
 	t.shards = t.newShards()
 
 	// Initialize remoteAPI now that QueueManager is fully created
-	if realClient, ok := client.(*Client); ok {
-		// This is a real Client with an HTTP client, so we can use the remote API.
-		// Configure backoff to match queue manager config
-		backoffCfg := remoteapi.BackoffConfig{
-			Min:        time.Duration(t.cfg.MinBackoff),
-			Max:        time.Duration(t.cfg.MaxBackoff),
-			MaxRetries: 0, // Infinite retries, matching queue manager behavior
-		}
+	// Configure backoff to match queue manager config
+	backoffCfg := remoteapi.BackoffConfig{
+		Min:        time.Duration(t.cfg.MinBackoff),
+		Max:        time.Duration(t.cfg.MaxBackoff),
+		MaxRetries: 0, // Infinite retries, matching queue manager behavior
+	}
 
-		apiOpts := []remoteapi.APIOption{
-			remoteapi.WithAPILogger(logger),
-			remoteapi.WithAPIHTTPClient(realClient.Client),
-			remoteapi.WithAPIBackoff(backoffCfg),
-		}
+	apiOpts := []remoteapi.APIOption{
+		remoteapi.WithAPILogger(logger),
+		remoteapi.WithAPIHTTPClient(client.HTTPClient()),
+		remoteapi.WithAPIBackoff(backoffCfg),
+	}
 
-		var err error
-		t.remoteAPI, err = remoteapi.NewAPI(client.Endpoint(), apiOpts...)
-		if err != nil {
-			// This should rarely happen with a real client, but handle it gracefully.
-			fmt.Printf("[INIT] ⚠️  Failed to create remote API client, falling back to legacy path (endpoint=%s, err=%v)\n",
-				client.Endpoint(), err)
-			t.remoteAPI = nil
-		} else {
-			fmt.Printf("[INIT] ✅ Successfully initialized client_golang remote API with retry callback (endpoint=%s, protoMsg=%v)\n",
-				client.Endpoint(), protoMsg)
-		}
-	} else {
-		// This is a test mock or other non-HTTP client, use legacy path.
-		fmt.Printf("[INIT] 🧪 Test/mock client detected (%T), using legacy path for compatibility\n", client)
+	var err error
+	t.remoteAPI, err = remoteapi.NewAPI(client.Endpoint(), apiOpts...)
+	if err != nil {
+		logger.Error("Failed to create remote API client", "endpoint", client.Endpoint(), "err", err)
 	}
 
 	return t
@@ -1086,35 +1077,26 @@ func (t *QueueManager) SetClient(c WriteClient) {
 
 	t.storeClient = c
 
-	// If setting a real Client, reinitialize the remote API to point to the new endpoint.
-	// If setting a mock/test client, disable remote API to use legacy path.
-	if realClient, ok := c.(*Client); ok {
-		// Configure backoff to match queue manager config
-		backoffCfg := remoteapi.BackoffConfig{
-			Min:        time.Duration(t.cfg.MinBackoff),
-			Max:        time.Duration(t.cfg.MaxBackoff),
-			MaxRetries: 0, // Infinite retries, matching queue manager behavior
-		}
-
-		apiOpts := []remoteapi.APIOption{
-			remoteapi.WithAPILogger(t.logger),
-			remoteapi.WithAPIHTTPClient(realClient.Client),
-			remoteapi.WithAPIBackoff(backoffCfg),
-		}
-		remoteAPIClient, err := remoteapi.NewAPI(c.Endpoint(), apiOpts...)
-		if err != nil {
-			fmt.Printf("[SetClient] ⚠️  Failed to create remote API client for new client (endpoint=%s, err=%v)\n",
-				c.Endpoint(), err)
-			t.remoteAPI = nil
-		} else {
-			fmt.Printf("[SetClient] ✅ Reinitialized client_golang remote API (endpoint=%s)\n", c.Endpoint())
-			t.remoteAPI = remoteAPIClient
-		}
-	} else {
-		// Mock/test client - disable remote API to use legacy path
-		fmt.Printf("[SetClient] 🧪 Mock/test client set (%T), disabling remote API\n", c)
-		t.remoteAPI = nil
+	// Reinitialize the remote API to point to the new endpoint.
+	// Configure backoff to match queue manager config
+	backoffCfg := remoteapi.BackoffConfig{
+		Min:        time.Duration(t.cfg.MinBackoff),
+		Max:        time.Duration(t.cfg.MaxBackoff),
+		MaxRetries: 0,
 	}
+
+	apiOpts := []remoteapi.APIOption{
+		remoteapi.WithAPILogger(t.logger),
+		remoteapi.WithAPIHTTPClient(c.HTTPClient()),
+		remoteapi.WithAPIBackoff(backoffCfg),
+	}
+
+	remoteAPIClient, err := remoteapi.NewAPI(c.Endpoint(), apiOpts...)
+	if err != nil {
+		t.logger.Error("Failed to create remote API client", "endpoint", c.Endpoint(), "err", err)
+	}
+
+	t.remoteAPI = remoteAPIClient
 }
 
 func (t *QueueManager) client() WriteClient {
@@ -1588,7 +1570,6 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	var (
 		maxCount = s.qm.cfg.MaxSamplesPerSend
 
-		pBuf    = proto.NewBuffer(nil)
 		pBufRaw []byte
 		encBuf  = compression.NewSyncEncodeBuffer()
 	)
@@ -1631,7 +1612,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 				s.qm.logger.Debug("runShard timer ticked, sending buffered data", "samples", nPendingSamples,
 					"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
 			}
-			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, encBuf, compr)
+			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms)
 		case config.RemoteWriteProtoMsgV2:
 			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
@@ -1727,9 +1708,9 @@ func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sen
 	return nPendingSamples, nPendingExemplars, nPendingHistograms
 }
 
-func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf compression.EncodeBuffer, compr compression.Type) error {
+func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int) error {
 	begin := time.Now()
-	rs, err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, 0, pBuf, buf, compr)
+	rs, err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, 0)
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, 0, rs, time.Since(begin))
 	return err
 }
@@ -1779,42 +1760,8 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 	s.enqueuedHistograms.Sub(int64(histogramCount))
 }
 
-// sendSamplesWithBackoff to the remote storage with backoff for recoverable errors.
-// This function routes to either the new client_golang remote API path or the legacy path.
-//
-// NOTE: Tests using newTestQueueManager/newTestClientAndQueueManager will use the REMOTE_API path.
-// Tests using NewStorage may fall back to LEGACY_PATH due to URL encoding issues (this is expected for now).
-func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf compression.EncodeBuffer, compr compression.Type) (WriteResponseStats, error) {
-	// Check if we should use the new client_golang remote API path
-	if s.qm.remoteAPI != nil {
-		fmt.Printf("[REMOTE_API] ✅ Using client_golang remote API for sending samples (samples=%d, exemplars=%d, histograms=%d, metadata=%d)\n",
-			sampleCount, exemplarCount, histogramCount, metadataCount)
-		return s.sendSamplesWithRemoteAPI(ctx, samples, sampleCount, exemplarCount, histogramCount, metadataCount)
-	}
-
-	// Fallback to old path if remoteAPI is not available
-	fmt.Printf("[LEGACY_PATH] ⚠️  Using legacy send path - remoteAPI not available (samples=%d, exemplars=%d, histograms=%d, metadata=%d)\n",
-		sampleCount, exemplarCount, histogramCount, metadataCount)
-	return s.sendSamplesWithBackoffLegacy(ctx, samples, sampleCount, exemplarCount, histogramCount, metadataCount, pBuf, buf, compr)
-}
-
-// convertRemoteAPIStats converts client_golang WriteResponseStats to Prometheus WriteResponseStats.
-func convertRemoteAPIStats(apiStats remoteapi.WriteResponseStats, msgType remoteapi.WriteMessageType) WriteResponseStats {
-	// The client_golang stats has a private 'confirmed' field, but we can infer it:
-	// For V2, if we got any non-zero stats or the response was successful, it's confirmed.
-	// For V1, we never have confirmed stats.
-	confirmed := msgType == remoteapi.WriteV2MessageType && !apiStats.NoDataWritten()
-
-	return WriteResponseStats{
-		Samples:    apiStats.Samples,
-		Histograms: apiStats.Histograms,
-		Exemplars:  apiStats.Exemplars,
-		Confirmed:  confirmed,
-	}
-}
-
-// sendSamplesWithRemoteAPI uses client_golang's remote API to send samples.
-func (s *shards) sendSamplesWithRemoteAPI(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int) (WriteResponseStats, error) {
+// sendSamplesWithBackoff sends samples to the remote storage with backoff for recoverable errors.
+func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int) (WriteResponseStats, error) {
 	// Build the proto message (without marshaling/compressing).
 	req, highest, lowest := buildProtoWriteRequest(s.qm.logger, samples, nil, nil)
 	s.qm.buildRequestLimitTimestamp.Store(lowest)
@@ -1826,9 +1773,6 @@ func (s *shards) sendSamplesWithRemoteAPI(ctx context.Context, samples []prompb.
 	} else {
 		msgType = remoteapi.WriteV2MessageType
 	}
-
-	fmt.Printf("[REMOTE_API] Calling client_golang remoteAPI.Write (msgType=%s, endpoint=%s)\n",
-		msgType, s.qm.storeClient.Endpoint())
 
 	// Track the start time for metrics.
 	begin := time.Now()
@@ -1929,7 +1873,6 @@ func (s *shards) sendSamplesWithRemoteAPI(ctx context.Context, samples []prompb.
 		// Clean up the write context
 		cancelWrite()
 
-		// If Write succeeded, we're done
 		if err == nil {
 			break
 		}
@@ -1957,9 +1900,6 @@ func (s *shards) sendSamplesWithRemoteAPI(ctx context.Context, samples []prompb.
 	}
 
 	s.qm.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
-
-	fmt.Printf("[REMOTE_API] client_golang remoteAPI.Write completed (msgType=%s, duration=%v, err=%v, samples=%d, histograms=%d, exemplars=%d)\n",
-		msgType, time.Since(begin), err, apiStats.Samples, apiStats.Histograms, apiStats.Exemplars)
 
 	// Convert client_golang stats to Prometheus stats.
 	rs := convertRemoteAPIStats(apiStats, msgType)
@@ -1990,117 +1930,19 @@ func (s *shards) sendSamplesWithRemoteAPI(ctx context.Context, samples []prompb.
 	return rs, nil
 }
 
-// sendSamplesWithBackoffLegacy is the original implementation using manual marshaling/compression.
-func (s *shards) sendSamplesWithBackoffLegacy(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf compression.EncodeBuffer, compr compression.Type) (WriteResponseStats, error) {
-	// Build the WriteRequest with no metadata.
-	req, highest, lowest, err := buildWriteRequest(s.qm.logger, samples, nil, pBuf, nil, buf, compr)
-	s.qm.buildRequestLimitTimestamp.Store(lowest)
-	if err != nil {
-		// Failing to build the write request is non-recoverable, since it will
-		// only error if marshaling the proto to bytes fails.
-		return WriteResponseStats{}, err
+// convertRemoteAPIStats converts client_golang WriteResponseStats to Prometheus WriteResponseStats.
+func convertRemoteAPIStats(apiStats remoteapi.WriteResponseStats, msgType remoteapi.WriteMessageType) WriteResponseStats {
+	// The client_golang stats has a private 'confirmed' field, but we can infer it:
+	// For V2, if we got any non-zero stats or the response was successful, it's confirmed.
+	// For V1, we never have confirmed stats.
+	confirmed := msgType == remoteapi.WriteV2MessageType && !apiStats.NoDataWritten()
+
+	return WriteResponseStats{
+		Samples:    apiStats.Samples,
+		Histograms: apiStats.Histograms,
+		Exemplars:  apiStats.Exemplars,
+		Confirmed:  confirmed,
 	}
-
-	reqSize := len(req)
-
-	// Since we retry writes via attemptStore and sendWriteRequestWithBackoff we need
-	// to track the total amount of accepted data across the various attempts.
-	accumulatedStats := WriteResponseStats{}
-	var accumulatedStatsMu sync.Mutex
-	addStats := func(rs WriteResponseStats) {
-		accumulatedStatsMu.Lock()
-		accumulatedStats = accumulatedStats.Add(rs)
-		accumulatedStatsMu.Unlock()
-	}
-
-	// An anonymous function allows us to defer the completion of our per-try spans
-	// without causing a memory leak, and it has the nice effect of not propagating any
-	// parameters for sendSamplesWithBackoff/3.
-	attemptStore := func(try int) error {
-		currentTime := time.Now()
-		lowest := s.qm.buildRequestLimitTimestamp.Load()
-		if isSampleOld(currentTime, time.Duration(s.qm.cfg.SampleAgeLimit), lowest) {
-			// This will filter out old samples during retries.
-			req2, _, lowest, err := buildWriteRequest(
-				s.qm.logger,
-				samples,
-				nil,
-				pBuf,
-				isTimeSeriesOldFilter(s.qm.metrics, currentTime, time.Duration(s.qm.cfg.SampleAgeLimit)),
-				buf,
-				compr,
-			)
-			s.qm.buildRequestLimitTimestamp.Store(lowest)
-			if err != nil {
-				return err
-			}
-			req = req2
-		}
-
-		ctx, span := otel.Tracer("").Start(ctx, "Remote Send Batch")
-		defer span.End()
-
-		span.SetAttributes(
-			attribute.Int("request_size", reqSize),
-			attribute.Int("samples", sampleCount),
-			attribute.Int("try", try),
-			attribute.String("remote_name", s.qm.storeClient.Name()),
-			attribute.String("remote_url", s.qm.storeClient.Endpoint()),
-		)
-
-		if exemplarCount > 0 {
-			span.SetAttributes(attribute.Int("exemplars", exemplarCount))
-		}
-		if histogramCount > 0 {
-			span.SetAttributes(attribute.Int("histograms", histogramCount))
-		}
-
-		begin := time.Now()
-		s.qm.metrics.samplesTotal.Add(float64(sampleCount))
-		s.qm.metrics.exemplarsTotal.Add(float64(exemplarCount))
-		s.qm.metrics.histogramsTotal.Add(float64(histogramCount))
-		s.qm.metrics.metadataTotal.Add(float64(metadataCount))
-		// Technically for v1, we will likely have empty response stats, but for
-		// newer Receivers this might be not, so used it in a best effort.
-		rs, err := s.qm.client().Store(ctx, req, try)
-		s.qm.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
-		// TODO(bwplotka): Revisit this once we have Receivers doing retriable partial error
-		// so far we don't have those, so it's ok to potentially skew statistics.
-		addStats(rs)
-
-		if err == nil {
-			return nil
-		}
-		span.RecordError(err)
-		return err
-	}
-
-	onRetry := func() {
-		s.qm.metrics.retriedSamplesTotal.Add(float64(sampleCount))
-		s.qm.metrics.retriedExemplarsTotal.Add(float64(exemplarCount))
-		s.qm.metrics.retriedHistogramsTotal.Add(float64(histogramCount))
-	}
-
-	err = s.qm.sendWriteRequestWithBackoff(ctx, attemptStore, onRetry)
-	if errors.Is(err, context.Canceled) {
-		// When there is resharding, we cancel the context for this queue, which means the data is not sent.
-		// So we exit early to not update the metrics.
-		return accumulatedStats, err
-	}
-
-	s.qm.metrics.sentBytesTotal.Add(float64(reqSize))
-	s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
-
-	if err == nil && !accumulatedStats.Confirmed {
-		// No 2.0 response headers, and we sent v1 message, so likely it's 1.0 Receiver.
-		// Assume success, don't rely on headers.
-		return WriteResponseStats{
-			Samples:    sampleCount,
-			Histograms: histogramCount,
-			Exemplars:  exemplarCount,
-		}, nil
-	}
-	return accumulatedStats, err
 }
 
 // sendV2SamplesWithBackoff to the remote storage with backoff for recoverable errors.

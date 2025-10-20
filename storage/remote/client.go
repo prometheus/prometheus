@@ -354,6 +354,11 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 	return c.ReadMultiple(ctx, []*prompb.Query{query}, sortSeries)
 }
 
+// HTTPClient returns the underlying HTTP client.
+func (c *Client) HTTPClient() *http.Client {
+	return c.Client
+}
+
 // ReadMultiple reads from a remote endpoint using multiple queries in a single request.
 // The sortSeries parameter is only respected in the case of a samples response;
 // chunked responses arrive already sorted by the server.

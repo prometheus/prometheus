@@ -311,7 +311,8 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 	for i := range conf.RemoteWriteConfigs {
 		conf.RemoteWriteConfigs[i].URL = &common_config.URL{
 			URL: &url.URL{
-				Host: "http://test-storage.com",
+				Scheme: "http",
+				Host:   "test-storage.com",
 			},
 		}
 	}
