@@ -1803,18 +1803,18 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	// Implement refresh mechanism: if data becomes stale during retries, cancel the Write
 	// and restart with filtered data.
 
-	const maxRefreshAttempts = 3 // Limit refresh cycles to avoid infinite loops
+	const maxRefreshAttempts = 3 // Limit refresh cycles to avoid infinite loops.
 	var apiStats remoteapi.WriteResponseStats
 	var err error
 
 	for refreshAttempt := 0; refreshAttempt < maxRefreshAttempts; refreshAttempt++ {
-		// Always check if data is stale before sending (even on first attempt)
-		// This filters out samples that were queued long ago and have now exceeded the age limit
+		// Always check if data is stale before sending (even on first attempt).
+		// This filters out samples that were queued long ago and have now exceeded the age limit.
 		currentTime := time.Now()
 		if s.qm.cfg.SampleAgeLimit > 0 {
 			lowest := s.qm.buildRequestLimitTimestamp.Load()
 			if isSampleOld(currentTime, time.Duration(s.qm.cfg.SampleAgeLimit), lowest) {
-				// Data is stale - rebuild request with filter to exclude old samples
+				// Data is stale - rebuild request with filter to exclude old samples.
 				filter := isTimeSeriesOldFilter(s.qm.metrics, currentTime, time.Duration(s.qm.cfg.SampleAgeLimit))
 				req, highest, lowest = buildProtoWriteRequest(s.qm.logger, samples, nil, filter)
 				s.qm.buildRequestLimitTimestamp.Store(lowest)
@@ -1826,18 +1826,18 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			}
 		}
 
-		// Create a cancellable context for this Write attempt
-		// We'll cancel it in the retry callback if data becomes stale
+		// Create a cancellable context for this Write attempt.
+		// We'll cancel it in the retry callback if data becomes stale.
 		writeCtx, cancelWrite := context.WithCancel(ctx)
 
-		// Call remoteapi.Write - it handles retries internally
+		// Call remoteapi.Write - it handles retries internally.
 		apiStats, err = s.qm.remoteAPI.Write(writeCtx, msgType, req, remoteapi.WithWriteRetryCallback(func(retryErr error) {
-			// Check if data became stale during retries - if so, cancel to abort
+			// Check if data became stale during retries - if so, cancel to abort.
 			if s.qm.cfg.SampleAgeLimit > 0 {
 				currentTime := time.Now()
 				lowest := s.qm.buildRequestLimitTimestamp.Load()
 				if isSampleOld(currentTime, time.Duration(s.qm.cfg.SampleAgeLimit), lowest) {
-					// Data became stale - cancel the Write to stop retrying stale data
+					// Data became stale - cancel the Write to stop retrying stale data.
 					s.qm.logger.Debug("data became stale during Write retries, canceling",
 						"refresh_attempt", refreshAttempt,
 					)
@@ -1846,34 +1846,34 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 				}
 			}
 
-			// Increment retry metrics
+			// Increment retry metrics.
 			s.qm.metrics.retriedSamplesTotal.Add(float64(sampleCount))
 			s.qm.metrics.retriedExemplarsTotal.Add(float64(exemplarCount))
 			s.qm.metrics.retriedHistogramsTotal.Add(float64(histogramCount))
-			// Also increment total metrics for the retry attempt
+			// Also increment total metrics for the retry attempt.
 			s.qm.metrics.samplesTotal.Add(float64(sampleCount))
 			s.qm.metrics.exemplarsTotal.Add(float64(exemplarCount))
 			s.qm.metrics.histogramsTotal.Add(float64(histogramCount))
 		}))
 
-		// Clean up the write context
+		// Clean up the write context.
 		cancelWrite()
 
 		if err == nil {
 			break
 		}
 
-		// If original context was canceled (not our writeCtx), don't retry
+		// If original context was canceled (not our writeCtx), don't retry.
 		if ctx.Err() != nil {
 			break
 		}
 
-		// Check if Write was canceled due to staleness - if so, retry (next iteration will filter)
+		// Check if Write was canceled due to staleness - if so, retry (next iteration will filter).
 		if writeCtx.Err() != nil {
 			currentTime := time.Now()
 			lowest := s.qm.buildRequestLimitTimestamp.Load()
 			if isSampleOld(currentTime, time.Duration(s.qm.cfg.SampleAgeLimit), lowest) {
-				// Data became stale during retries - loop will filter and retry
+				// Data became stale during retries - loop will filter and retry.
 				s.qm.logger.Debug("retrying with refreshed data after staleness cancellation",
 					"refresh_attempt", refreshAttempt,
 				)
@@ -1881,7 +1881,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			}
 		}
 
-		// Write failed for non-staleness reasons - don't refresh, just return error
+		// Write failed for non-staleness reasons - don't refresh, just return error.
 		break
 	}
 
