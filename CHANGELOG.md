@@ -46,7 +46,7 @@
 * [BUGFIX] TSDB: Avoid misleading `Failed to calculate size of \"wal\" dir` error logs during WAL clean-up. #17006
 * [BUGFIX] TSDB: Prevent erroneously dropping series records during WAL checkpoints. #17029
 * [BUGFIX] UI: Fix redirect to path of `-web.external-url` if `-web.route-prefix` is configured. #17240
-* [BUGIFX] Remote-write: Do not panic on invalid symbol table in remote-write 2.0. #17160
+* [BUGFIX] Remote-write: Do not panic on invalid symbol table in remote-write 2.0. #17160
 
 ## 3.6.0 / 2025-09-17
 
