@@ -831,6 +831,22 @@ func TestRelabelValidate(t *testing.T) {
 				NameValidationScheme: model.UTF8Validation,
 			},
 		},
+		{
+			config: Config{
+				Regex:                MustNewRegexp("__meta_kubernetes_pod_label_(strimzi_io_.+)"),
+				Action:               LabelMap,
+				Replacement:          "$1",
+				NameValidationScheme: model.LegacyValidation,
+			},
+		},
+		{
+			config: Config{
+				Regex:                MustNewRegexp("__meta_(.+)"),
+				Action:               LabelMap,
+				Replacement:          "${1}",
+				NameValidationScheme: model.LegacyValidation,
+			},
+		},
 	}
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
