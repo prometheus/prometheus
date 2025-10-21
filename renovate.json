@@ -3,6 +3,7 @@
     "extends": [
       "config:recommended"
     ],
+    "separateMultipleMajor": true,
     "baseBranches": ["main"],
     "postUpdateOptions": [
       "gomodTidy",
@@ -24,6 +25,7 @@
           "web/ui/mantine-ui/**"
         ],
         "groupName": "Mantine UI",
+        "matchUpdateTypes": ["minor", "patch"],
         "enabled": true
       },
       {
@@ -32,6 +34,7 @@
           "web/ui/react-app/**"
         ],
         "groupName": "React App",
+        "matchUpdateTypes": ["minor", "patch"],
         "enabled": true
       }
     ],
