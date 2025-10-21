@@ -26,7 +26,7 @@
       },
       {
         "description": "Group Mantine UI dependencies",
-        "matchFilenames": [
+        "matchFileNames": [
           "web/ui/mantine-ui/package.json"
         ],
         "groupName": "Mantine UI",
@@ -35,10 +35,19 @@
       },
       {
         "description": "Group React App dependencies",
-        "matchFilenames": [
+        "matchFileNames": [
           "web/ui/react-app/package.json"
         ],
         "groupName": "React App",
+        "matchUpdateTypes": ["minor", "patch"],
+        "enabled": true
+      },
+      {
+        "description": "Group module dependencies",
+        "matchFileNames": [
+          "web/ui/module/**/package.json"
+        ],
+        "groupName": "Modules",
         "matchUpdateTypes": ["minor", "patch"],
         "enabled": true
       }
