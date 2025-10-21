@@ -20,6 +20,11 @@
         "enabled": false
       },
       {
+        "description": "Don't update prometheus-io namespace packages",
+        "matchPackageNames": ["@prometheus-io/**"],
+        "enabled": false
+      },
+      {
         "description": "Group Mantine UI dependencies",
         "matchPaths": [
           "web/ui/mantine-ui/**"
