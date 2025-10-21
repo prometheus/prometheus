@@ -1080,7 +1080,7 @@ func NewTestWriteClientWithBlockingServer(t testing.TB, protoMsg config.RemoteWr
 // blockingWriteStorage blocks on all Store requests until the context is cancelled.
 type blockingWriteStorage struct{}
 
-func (s *blockingWriteStorage) Store(req *http.Request, msgType remoteapi.WriteMessageType) (*remoteapi.WriteResponse, error) {
+func (*blockingWriteStorage) Store(req *http.Request, _ remoteapi.WriteMessageType) (*remoteapi.WriteResponse, error) {
 	// Block until the request context is cancelled.
 	<-req.Context().Done()
 	return nil, req.Context().Err()
@@ -1128,7 +1128,7 @@ func NewTestWriteClientWithNopServer(t testing.TB, protoMsg config.RemoteWritePr
 // nopWriteStorage immediately returns success for all Store requests.
 type nopWriteStorage struct{}
 
-func (s *nopWriteStorage) Store(req *http.Request, msgType remoteapi.WriteMessageType) (*remoteapi.WriteResponse, error) {
+func (*nopWriteStorage) Store(_ *http.Request, _ remoteapi.WriteMessageType) (*remoteapi.WriteResponse, error) {
 	return remoteapi.NewWriteResponse(), nil
 }
 
@@ -1179,7 +1179,7 @@ type errorWriteStorage struct {
 	onStoreCalled func()
 }
 
-func (s *errorWriteStorage) Store(req *http.Request, msgType remoteapi.WriteMessageType) (*remoteapi.WriteResponse, error) {
+func (s *errorWriteStorage) Store(_ *http.Request, _ remoteapi.WriteMessageType) (*remoteapi.WriteResponse, error) {
 	if s.onStoreCalled != nil {
 		s.onStoreCalled()
 	}

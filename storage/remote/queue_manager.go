@@ -1831,7 +1831,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		writeCtx, cancelWrite := context.WithCancel(ctx)
 
 		// Call remoteapi.Write - it handles retries internally.
-		apiStats, err = s.qm.remoteAPI.Write(writeCtx, msgType, req, remoteapi.WithWriteRetryCallback(func(retryErr error) {
+		apiStats, err = s.qm.remoteAPI.Write(writeCtx, msgType, req, remoteapi.WithWriteRetryCallback(func(_ error) {
 			// Check if data became stale during retries - if so, cancel to abort.
 			if s.qm.cfg.SampleAgeLimit > 0 {
 				currentTime := time.Now()
