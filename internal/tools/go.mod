@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/bufbuild/buf v1.57.2
-	github.com/daixiang0/gci v0.13.6
+	github.com/daixiang0/gci v0.13.7
 	github.com/gogo/protobuf v1.3.2
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1
 )
