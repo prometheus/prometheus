@@ -232,18 +232,19 @@ type API struct {
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 	globalURLOptions      GlobalURLOptions
 
-	db                  TSDBAdminStats
-	dbDir               string
-	enableAdmin         bool
-	logger              *slog.Logger
-	CORSOrigin          *regexp.Regexp
-	buildInfo           *PrometheusVersion
-	runtimeInfo         func() (RuntimeInfo, error)
-	gatherer            prometheus.Gatherer
-	isAgent             bool
-	statsRenderer       StatsRenderer
-	notificationsGetter func() []notifications.Notification
-	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
+	db                    TSDBAdminStats
+	dbDir                 string
+	enableAdmin           bool
+	enableQueryLoggingAPI bool
+	logger                *slog.Logger
+	CORSOrigin            *regexp.Regexp
+	buildInfo             *PrometheusVersion
+	runtimeInfo           func() (RuntimeInfo, error)
+	gatherer              prometheus.Gatherer
+	isAgent               bool
+	statsRenderer         StatsRenderer
+	notificationsGetter   func() []notifications.Notification
+	notificationsSub      func() (<-chan notifications.Notification, func(), bool)
 	// Allows customizing the default mapping
 	overrideErrorCode OverrideErrorCode
 
@@ -290,6 +291,7 @@ func NewAPI(
 	ctZeroIngestionEnabled bool,
 	lookbackDelta time.Duration,
 	enableTypeAndUnitLabels bool,
+	enableQueryLoggingAPI bool,
 	overrideErrorCode OverrideErrorCode,
 ) *API {
 	a := &API{
@@ -301,25 +303,26 @@ func NewAPI(
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
-		now:                 time.Now,
-		config:              configFunc,
-		flagsMap:            flagsMap,
-		ready:               readyFunc,
-		globalURLOptions:    globalURLOptions,
-		db:                  db,
-		dbDir:               dbDir,
-		enableAdmin:         enableAdmin,
-		rulesRetriever:      rr,
-		logger:              logger,
-		CORSOrigin:          corsOrigin,
-		runtimeInfo:         runtimeInfo,
-		buildInfo:           buildInfo,
-		gatherer:            gatherer,
-		isAgent:             isAgent,
-		statsRenderer:       DefaultStatsRenderer,
-		notificationsGetter: notificationsGetter,
-		notificationsSub:    notificationsSub,
-		overrideErrorCode:   overrideErrorCode,
+		now:                   time.Now,
+		config:                configFunc,
+		flagsMap:              flagsMap,
+		ready:                 readyFunc,
+		globalURLOptions:      globalURLOptions,
+		db:                    db,
+		dbDir:                 dbDir,
+		enableAdmin:           enableAdmin,
+		enableQueryLoggingAPI: enableQueryLoggingAPI,
+		rulesRetriever:        rr,
+		logger:                logger,
+		CORSOrigin:            corsOrigin,
+		runtimeInfo:           runtimeInfo,
+		buildInfo:             buildInfo,
+		gatherer:              gatherer,
+		isAgent:               isAgent,
+		statsRenderer:         DefaultStatsRenderer,
+		notificationsGetter:   notificationsGetter,
+		notificationsSub:      notificationsSub,
+		overrideErrorCode:     overrideErrorCode,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -547,6 +550,10 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 }
 
 func (api *API) queryLog(r *http.Request) (result apiFuncResult) {
+	if !api.enableQueryLoggingAPI {
+		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("query logging API is disabled. Enable it with --enable-feature=query-logging-api")}, nil, nil}
+	}
+
 	ctx := r.Context()
 	logger, err := api.QueryEngine.GetEngineQueryLogger(ctx)
 	if err != nil {

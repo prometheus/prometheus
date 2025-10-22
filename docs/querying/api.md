@@ -264,7 +264,11 @@ URL query parameters:
 
 Query logs contain information about executed queries including the query expression, execution time, and performance statistics.
 
-**Note:** This endpoint requires query logging to be enabled in the Prometheus configuration. If query logging is not configured, the endpoint will return an error.
+**Note:** This endpoint requires:
+1. The `query-logging-api` [feature flag](../feature_flags.md#query-logging-api) to be enabled (`--enable-feature=query-logging-api`)
+2. Query logging to be configured in the Prometheus configuration via `query_log_file`
+
+If either requirement is not met, the endpoint will return an error. See the [feature flags documentation](../feature_flags.md#query-logging-api) for security considerations.
 
 The `data` section of the query result is an array of query log entries, each containing:
 

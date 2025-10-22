@@ -165,6 +165,7 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overri
 		false,
 		5*time.Minute,
 		false,
+		false, // Disable query logging API for error tests
 		overrideErrorCode,
 	)
 

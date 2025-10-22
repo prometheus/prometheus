@@ -298,6 +298,31 @@ This is currently implemented using direct I/O.
 
 For more details, see the [proposal](https://github.com/prometheus/proposals/pull/45).
 
+## Query Logging API
+
+`--enable-feature=query-logging-api`
+
+When enabled, Prometheus exposes a `/api/v1/query_log` HTTP endpoint that returns query logs.
+This endpoint provides access to historical query execution information when query logging is configured via `global.query_log_file` in the Prometheus configuration file.
+
+**Security Warning:** This endpoint exposes query logs which may contain sensitive information, including:
+- Query expressions that may reveal system architecture or business logic
+- Time ranges and parameters that may expose usage patterns
+- Performance metrics for queries
+
+Only enable this feature in secure, controlled environments. The endpoint is protected by the same authentication and authorization mechanisms as other Prometheus API endpoints.
+
+Example usage:
+```bash
+# Enable the feature
+prometheus --enable-feature=query-logging-api
+
+# Query the endpoint
+curl http://localhost:9090/api/v1/query_log?limit=100
+```
+
+The endpoint returns query logs in JSON format, including query parameters, execution statistics, and timestamps.
+
 ## Extended Range Selectors
 
 `--enable-feature=promql-extended-range-selectors`

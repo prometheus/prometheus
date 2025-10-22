@@ -208,6 +208,7 @@ type flagConfig struct {
 	// for ease of use.
 	enablePerStepStats       bool
 	enableConcurrentRuleEval bool
+	enableQueryLoggingAPI    bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -299,6 +300,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "use-uncached-io":
 				c.tsdb.UseUncachedIO = true
 				logger.Info("Experimental Uncached IO is enabled.")
+			case "query-logging-api":
+				c.enableQueryLoggingAPI = true
+				logger.Info("Experimental query logging API enabled")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -926,6 +930,8 @@ func main() {
 
 		cfg.web.Flags[f.Name] = f.Value.String()
 	}
+
+	cfg.web.EnableQueryLoggingAPI = cfg.enableQueryLoggingAPI
 
 	// Depends on cfg.web.ScrapeManager so needs to be after cfg.web.ScrapeManager = scrapeManager.
 	webHandler := web.New(logger.With("component", "web"), &cfg.web)

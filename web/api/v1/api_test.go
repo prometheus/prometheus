@@ -4811,6 +4811,7 @@ func TestQueryLogEndpoint(t *testing.T) {
 		now:                   func() time.Time { return now },
 		config:                func() config.Config { return samplePrometheusCfg },
 		ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+		enableQueryLoggingAPI: true,
 	}
 
 	// Send a query
@@ -4886,6 +4887,7 @@ func TestQueryLogEndpointWithLimit(t *testing.T) {
 		now:                   func() time.Time { return now },
 		config:                func() config.Config { return samplePrometheusCfg },
 		ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+		enableQueryLoggingAPI: true,
 	}
 
 	ctx := context.Background()
@@ -4902,6 +4904,43 @@ func TestQueryLogEndpointWithLimit(t *testing.T) {
 	testutil.RequireEqual(t, "query_2", resultLogs[0].Params.Query)
 	testutil.RequireEqual(t, "query_3", resultLogs[1].Params.Query)
 	testutil.RequireEqual(t, "query_4", resultLogs[2].Params.Query)
+}
+
+func TestQueryLogEndpointDisabled(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+        load 1m
+            test_metric1{foo="bar"} 0+100x100
+    `)
+	t.Cleanup(func() { storage.Close() })
+
+	now := time.Now()
+
+	engine := &fakeEngine{
+		queryLogger: &fakeQueryLogger{
+			reader: bytes.NewReader([]byte{}),
+		},
+	}
+	api := &API{
+		Queryable:             storage,
+		QueryEngine:           engine,
+		ExemplarQueryable:     storage.ExemplarQueryable(),
+		alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
+		flagsMap:              sampleFlagMap,
+		now:                   func() time.Time { return now },
+		config:                func() config.Config { return samplePrometheusCfg },
+		ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+		enableQueryLoggingAPI: false, // Feature flag disabled
+	}
+
+	ctx := context.Background()
+	req, err := http.NewRequest(http.MethodGet, "", nil)
+	require.NoError(t, err)
+	res := api.queryLog(req.WithContext(ctx))
+
+	// Should return errorUnavailable when feature is disabled
+	assertAPIError(t, res.err, errorUnavailable)
+	require.Contains(t, res.err.err.Error(), "query logging API is disabled")
+	require.Contains(t, res.err.err.Error(), "--enable-feature=query-logging-api")
 }
 
 // fakeEngine is a fake QueryEngine implementation.

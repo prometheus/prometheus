@@ -294,6 +294,7 @@ type Options struct {
 	IsAgent                    bool
 	CTZeroIngestionEnabled     bool
 	EnableTypeAndUnitLabels    bool
+	EnableQueryLoggingAPI      bool
 	AppName                    string
 
 	AcceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg
@@ -395,6 +396,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.CTZeroIngestionEnabled,
 		o.LookbackDelta,
 		o.EnableTypeAndUnitLabels,
+		o.EnableQueryLoggingAPI,
 		nil,
 	)
 
