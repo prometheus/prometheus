@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
@@ -2472,6 +2473,135 @@ func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
 
 			symbols := symbolTable.Symbols()
 			require.Equal(t, tc.unitLabel, symbols[unitRef], "Unit should match")
+		})
+	}
+}
+
+// TestPopulateV2TimeSeries_AgentMode verifies that type and unit labels are properly
+// extracted from labels even when d.metadata is nil (agent mode scenario).
+func TestPopulateV2TimeSeries_AgentMode(t *testing.T) {
+	symbolTable := writev2.NewSymbolTable()
+
+	testCases := []struct {
+		name              string
+		typeLabel         string
+		unitLabel         string
+		metadata          *metadata.Metadata // nil simulates agent mode.
+		expectedType      writev2.Metadata_MetricType
+		expectedUnit      string
+		enableTypeAndUnit bool
+	}{
+		{
+			name:              "agent_mode_with_type_and_unit_labels_enabled",
+			typeLabel:         "gauge",
+			unitLabel:         "bytes",
+			metadata:          nil, // Agent mode - no metadata records.
+			expectedType:      writev2.Metadata_METRIC_TYPE_GAUGE,
+			expectedUnit:      "bytes",
+			enableTypeAndUnit: true,
+		},
+		{
+			name:              "agent_mode_with_type_no_unit",
+			typeLabel:         "counter",
+			unitLabel:         "",
+			metadata:          nil,
+			expectedType:      writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit:      "",
+			enableTypeAndUnit: true,
+		},
+		{
+			name:              "agent_mode_disabled_feature",
+			typeLabel:         "gauge",
+			unitLabel:         "bytes",
+			metadata:          nil,
+			expectedType:      writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			expectedUnit:      "",
+			enableTypeAndUnit: false,
+		},
+		{
+			name:      "agent_mode_with_explicit_metadata",
+			typeLabel: "gauge",
+			unitLabel: "bytes",
+			metadata: &metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "bytes",
+				Help: "Test metric",
+			},
+			expectedType:      writev2.Metadata_METRIC_TYPE_GAUGE,
+			expectedUnit:      "bytes",
+			enableTypeAndUnit: true,
+		},
+		{
+			name:      "labels_override_metadata_when_feature_enabled",
+			typeLabel: "counter",
+			unitLabel: "requests",
+			metadata: &metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "bytes",
+				Help: "Test metric",
+			},
+			expectedType:      writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit:      "requests",
+			enableTypeAndUnit: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			batch := make([]timeSeries, 1)
+			builder := labels.NewScratchBuilder(3)
+
+			// Simulate labels with __type__ and __unit__ as scraped with type-and-unit-labels feature.
+			builder.Add(labels.MetricName, "test_metric")
+			if tc.typeLabel != "" {
+				builder.Add("__type__", tc.typeLabel)
+			}
+			if tc.unitLabel != "" {
+				builder.Add("__unit__", tc.unitLabel)
+			}
+			builder.Sort()
+
+			batch[0] = timeSeries{
+				seriesLabels: builder.Labels(),
+				value:        123.45,
+				timestamp:    time.Now().UnixMilli(),
+				sType:        tSample,
+				metadata:     tc.metadata, // nil for agent mode.
+			}
+
+			pendingData := make([]writev2.TimeSeries, 1)
+
+			symbolTable.Reset()
+			nSamples, nExemplars, nHistograms, nMetadata, _ := populateV2TimeSeries(
+				&symbolTable,
+				batch,
+				pendingData,
+				false,
+				false,
+				tc.enableTypeAndUnit,
+			)
+
+			require.Equal(t, 1, nSamples, "Should have 1 sample")
+			require.Equal(t, 0, nExemplars, "Should have 0 exemplars")
+			require.Equal(t, 0, nHistograms, "Should have 0 histograms")
+
+			// Verify type is correctly extracted.
+			require.Equal(t, tc.expectedType, pendingData[0].Metadata.Type,
+				"Type should match expected for %s", tc.name)
+
+			// Verify unit is correctly extracted.
+			unitRef := pendingData[0].Metadata.UnitRef
+			symbols := symbolTable.Symbols()
+			var actualUnit string
+			if unitRef > 0 && unitRef < uint32(len(symbols)) {
+				actualUnit = symbols[unitRef]
+			}
+			require.Equal(t, tc.expectedUnit, actualUnit, "Unit should match for %s", tc.name)
+
+			// Verify metadata count.
+			if tc.metadata != nil && tc.enableTypeAndUnit {
+				require.Equal(t, 1, nMetadata, "Should count metadata when d.metadata is provided")
+			}
 		})
 	}
 }
