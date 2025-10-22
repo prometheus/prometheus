@@ -671,19 +671,17 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 	combinedAppender := otlptranslator.NewCombinedAppender(app, rw.logger, rw.ingestCTZeroSample, rw.metrics)
 	converter := otlptranslator.NewPrometheusConverter(combinedAppender)
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
-		AddMetricSuffixes:                 otlpCfg.TranslationStrategy.ShouldAddSuffixes(),
-		AllowUTF8:                         !otlpCfg.TranslationStrategy.ShouldEscape(),
-		PromoteResourceAttributes:         otlptranslator.NewPromoteResourceAttributes(otlpCfg),
-		KeepIdentifyingResourceAttributes: otlpCfg.KeepIdentifyingResourceAttributes,
-		ConvertHistogramsToNHCB:           otlpCfg.ConvertHistogramsToNHCB,
-		PromoteScopeMetadata:              otlpCfg.PromoteScopeMetadata,
-		AllowDeltaTemporality:             rw.allowDeltaTemporality,
-		LookbackDelta:                     rw.lookbackDelta,
-		EnableTypeAndUnitLabels:           rw.enableTypeAndUnitLabels,
-		// For backwards compatibility.
-		LabelNameUnderscoreSanitization: true,
-		// For backwards compatibility.
-		LabelNamePreserveMultipleUnderscores: true,
+		AddMetricSuffixes:                    otlpCfg.TranslationStrategy.ShouldAddSuffixes(),
+		AllowUTF8:                            !otlpCfg.TranslationStrategy.ShouldEscape(),
+		PromoteResourceAttributes:            otlptranslator.NewPromoteResourceAttributes(otlpCfg),
+		KeepIdentifyingResourceAttributes:    otlpCfg.KeepIdentifyingResourceAttributes,
+		ConvertHistogramsToNHCB:              otlpCfg.ConvertHistogramsToNHCB,
+		PromoteScopeMetadata:                 otlpCfg.PromoteScopeMetadata,
+		AllowDeltaTemporality:                rw.allowDeltaTemporality,
+		LookbackDelta:                        rw.lookbackDelta,
+		EnableTypeAndUnitLabels:              rw.enableTypeAndUnitLabels,
+		LabelNameUnderscoreSanitization:      otlpCfg.LabelNameUnderscoreSanitization,
+		LabelNamePreserveMultipleUnderscores: otlpCfg.LabelNamePreserveMultipleUnderscores,
 	})
 
 	defer func() {
