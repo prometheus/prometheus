@@ -745,7 +745,7 @@ curl 'http://localhost:9090/api/v1/targets?state=active'
 ```
 
 ```json
-
+{
   "status": "success",
   "data": {
     "activeTargets": [
@@ -781,7 +781,7 @@ curl 'http://localhost:9090/api/v1/targets?scrapePool=node_exporter'
 ```
 
 ```json
-
+{
   "status": "success",
   "data": {
     "activeTargets": [
@@ -945,7 +945,7 @@ contain metric metadata and the target label set.
 The following example returns all metadata entries for the `go_goroutines` metric
 from the first two targets with label `job="prometheus"`.
 
-```json
+```bash
 curl -G http://localhost:9091/api/v1/targets/metadata \
     --data-urlencode 'metric=go_goroutines' \
     --data-urlencode 'match_target={job="prometheus"}' \
