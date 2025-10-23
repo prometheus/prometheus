@@ -3349,6 +3349,11 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			group.dropName = true
 		}
 
+		var (
+			nhcbBoundsReconciled bool
+			err                  error
+		)
+
 		switch op {
 		case parser.SUM:
 			if h != nil {
@@ -3360,9 +3365,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					case histogram.NotCounterReset:
 						group.notCounterResetSeen = true
 					}
-					var err error
-					var counterResetCollision bool // // TODO(crush-on-anechka): Bring counterResetCollision logic into KahanAdd after rebase
-					_, group.histogramKahanC, err = group.histogramValue.KahanAdd(h, group.histogramKahanC)
+					group.histogramKahanC, _, nhcbBoundsReconciled, err = group.histogramValue.KahanAdd(h, group.histogramKahanC)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
@@ -3417,21 +3420,20 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					case histogram.NotCounterReset:
 						group.notCounterResetSeen = true
 					}
-					var err error
 					if !group.histIncrementalMean {
 						v := group.histogramValue.Copy()
 						var c *histogram.FloatHistogram
 						if group.histogramKahanC != nil {
 							c = group.histogramKahanC.Copy()
 						}
-						_, counterResetCollision, err := v.KahanAdd(h, c)
+						c, _, nhcbBoundsReconciled, err = v.KahanAdd(h, c)
 						if err != nil {
 							handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 							group.incompatibleHistograms = true
 							continue
 						}
-						if counterResetCollision {
-							annos.Add(annotations.NewHistogramCounterResetCollisionWarning(e.Expr.PositionRange(), annotations.HistogramAgg))
+						if nhcbBoundsReconciled {
+							annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(e.Expr.PositionRange(), annotations.HistogramAgg))
 						}
 						if !v.HasOverflow() {
 							group.histogramValue, group.histogramKahanC = v, c
@@ -3448,16 +3450,15 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 						group.histogramKahanC.Mul(q)
 					}
 					toAdd := h.Copy().Div(group.groupCount)
-					_, counterResetCollision, err := group.histogramMean.Mul(q).KahanAdd(toAdd, group.histogramKahanC)
+					group.histogramKahanC, _, nhcbBoundsReconciled, err = group.histogramMean.Mul(q).KahanAdd(toAdd, group.histogramKahanC)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
 						continue
 					}
-					// TODO(crush-on-anechka): Uncomment once nhcbBoundsReconciled is brought in
-					// if nhcbBoundsReconciled {
-					// 	annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(e.Expr.PositionRange(), annotations.HistogramAgg))
-					// }
+					if nhcbBoundsReconciled {
+						annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(e.Expr.PositionRange(), annotations.HistogramAgg))
+					}
 				}
 				// Otherwise the aggregation contained floats
 				// previously and will be invalid anyway. No
@@ -3558,7 +3559,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			case aggr.hasHistogram:
 				if aggr.histIncrementalMean {
 					if aggr.histogramKahanC != nil {
-						aggr.histogramValue, _, _ = aggr.histogramMean.Add(aggr.histogramKahanC)
+						aggr.histogramValue, _, _, _ = aggr.histogramMean.Add(aggr.histogramKahanC)
 						// TODO(crush-on-anechka): handle error returned by Add
 					} else {
 						aggr.histogramValue = aggr.histogramMean
@@ -3566,7 +3567,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				} else {
 					aggr.histogramValue.Div(aggr.groupCount)
 					if aggr.histogramKahanC != nil {
-						aggr.histogramValue, _, _ = aggr.histogramValue.Add(aggr.histogramKahanC.Div(aggr.groupCount))
+						aggr.histogramValue, _, _, _ = aggr.histogramValue.Add(aggr.histogramKahanC.Div(aggr.groupCount))
 						// TODO(crush-on-anechka): handle error returned by Add
 					}
 				}
@@ -3600,7 +3601,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				continue
 			case aggr.hasHistogram:
 				if aggr.histogramKahanC != nil {
-					aggr.histogramValue, _, _ = aggr.histogramValue.Add(aggr.histogramKahanC)
+					aggr.histogramValue, _, _, _ = aggr.histogramValue.Add(aggr.histogramKahanC)
 					// TODO(crush-on-anechka): handle error returned by Add
 				}
 				aggr.histogramValue.Compact(0)

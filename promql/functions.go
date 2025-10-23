@@ -834,10 +834,12 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 			}()
 
 			var (
-				sum             = s.Histograms[0].H.Copy()
-				mean, kahanC    *histogram.FloatHistogram
-				count           float64
-				incrementalMean bool
+				sum                  = s.Histograms[0].H.Copy()
+				mean, kahanC         *histogram.FloatHistogram
+				count                float64
+				incrementalMean      bool
+				nhcbBoundsReconciled bool
+				err                  error
 			)
 			trackCounterReset(sum)
 			for i, h := range s.Histograms[1:] {
@@ -849,14 +851,13 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					if kahanC != nil {
 						cCopy = kahanC.Copy()
 					}
-					_, counterResetCollision, err := sumCopy.KahanAdd(h.H, cCopy)
+					cCopy, _, nhcbBoundsReconciled, err = sumCopy.KahanAdd(h.H, cCopy)
 					if err != nil {
 						return sumCopy.Div(count), err
 					}
-					// TODO(crush-on-anechka): Uncomment once nhcbBoundsReconciled is brought in
-					// if nhcbBoundsReconciled {
-					// 	nhcbBoundsReconciledSeen = true
-					// }
+					if nhcbBoundsReconciled {
+						nhcbBoundsReconciledSeen = true
+					}
 					if !sumCopy.HasOverflow() {
 						sum, kahanC = sumCopy, cCopy
 						continue
@@ -872,14 +873,13 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					kahanC.Mul(q)
 				}
 				toAdd := h.H.Copy().Div(count)
-				_, counterResetCollision, err := mean.Mul(q).KahanAdd(toAdd, kahanC)
+				kahanC, _, nhcbBoundsReconciled, err = mean.Mul(q).KahanAdd(toAdd, kahanC)
 				if err != nil {
 					return mean, err
 				}
-				// TODO(crush-on-anechka): Uncomment once nhcbBoundsReconciled is brought in
-				// if nhcbBoundsReconciled {
-				// 	nhcbBoundsReconciledSeen = true
-				// }
+				if nhcbBoundsReconciled {
+					nhcbBoundsReconciledSeen = true
+				}
 			}
 			if incrementalMean {
 				if kahanC != nil {
@@ -1146,26 +1146,27 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 			sum := s.Histograms[0].H.Copy()
 			trackCounterReset(sum)
 			var (
-				comp                  *histogram.FloatHistogram
-				counterResetCollision bool
-				err                   error
+				comp                 *histogram.FloatHistogram
+				nhcbBoundsReconciled bool
+				err                  error
 			)
 			for _, h := range s.Histograms[1:] {
 				trackCounterReset(h.H)
-				var nhcbBoundsReconciled bool // TODO(crush-on-anechka): Bring nhcbBoundsReconciled logic into KahanAdd after rebase
-				comp, counterResetCollision, err = sum.KahanAdd(h.H, comp)
+				comp, _, nhcbBoundsReconciled, err = sum.KahanAdd(h.H, comp)
 				if err != nil {
 					return sum, err
 				}
-
 				if nhcbBoundsReconciled {
 					nhcbBoundsReconciledSeen = true
 				}
 			}
 			if comp != nil {
-				sum, _, _, err = sum.Add(comp) // TODO(crush-on-anechka): Handle nhcbBoundsReconciled after rebase
+				sum, _, nhcbBoundsReconciled, err = sum.Add(comp)
 				if err != nil {
 					return sum, err
+				}
+				if nhcbBoundsReconciled {
+					nhcbBoundsReconciledSeen = true
 				}
 			}
 			return sum, err
