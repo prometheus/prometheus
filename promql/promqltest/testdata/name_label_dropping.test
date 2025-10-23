@@ -118,3 +118,11 @@ eval instant at 10m sum by (__name__) (metric_total{env="1"} or rate(metric_tota
 # Changing the order of the OR expression should change the result.
 eval instant at 10m sum by (__name__) (rate(metric_total{env="2"}[5m]) or metric_total{env="1"})
   {} 10.05
+
+# With non-matching first selector, we use the second to determine if __name__ is dropped.
+eval instant at 10m sum by (__name__) (metric_total{env="3"} or rate(metric_total{env="2"}[5m]))
+  {} 0.05
+
+# Same as above, but with reversed order.
+eval instant at 10m sum by (__name__) (rate(metric_total{env="3"}[5m]) or metric_total{env="1"})
+  metric_total 10
