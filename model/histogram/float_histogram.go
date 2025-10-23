@@ -376,11 +376,11 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 			intersectedBounds := intersectCustomBucketBounds(h.CustomValues, other.CustomValues)
 
 			// Add with mapping - maps both histograms to intersected layout.
-			h.PositiveSpans, h.PositiveBuckets = addCustomBucketsWithMismatches(
+			h.PositiveSpans, h.PositiveBuckets, _ = addCustomBucketsWithMismatches(
 				false,
 				hPositiveSpans, hPositiveBuckets, h.CustomValues,
 				otherPositiveSpans, otherPositiveBuckets, other.CustomValues,
-				intersectedBounds)
+				nil, intersectedBounds)
 			h.CustomValues = intersectedBounds
 		}
 		return h, counterResetCollision, nhcbBoundsReconciled, nil
@@ -411,15 +411,15 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 }
 
 // KahanAdd works like Add but using the Kahan summation algorithm to minimize numerical errors.
-// c is a histogram holding the Kahan compensation term. It is modified in-place.
-// If c is nil, a suitable histogram is created. In any case, a pointer to the newly created
-// or updated c is returned as updatedC.
-func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (updatedC *FloatHistogram, counterResetCollision bool, err error) {
+// c is a histogram holding the Kahan compensation term. It is modified in-place if non-nil.
+// If c is nil, a new compensation histogram is created inside the function. In this case,
+// the caller must use the returned updatedC, because the original c variable is not modified.
+func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (updatedC *FloatHistogram, counterResetCollision, nhcbBoundsReconciled bool, err error) {
 	if err := h.checkSchemaAndBounds(other); err != nil {
-		return nil, false, err
+		return nil, false, false, err
 	}
 
-	h.adjustCounterReset(other)
+	counterResetCollision = h.adjustCounterReset(other)
 
 	if c == nil {
 		c = h.newCompensationHistogram()
@@ -441,13 +441,28 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (updatedC *FloatHist
 	)
 
 	if h.UsesCustomBuckets() {
-		h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
-			h.Schema, h.ZeroThreshold, false,
-			hPositiveSpans, hPositiveBuckets,
-			otherPositiveSpans, otherPositiveBuckets,
-			cPositiveBuckets,
-		)
-		return c, counterResetCollision, nil
+		if CustomBucketBoundsMatch(h.CustomValues, other.CustomValues) {
+			h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
+				h.Schema, h.ZeroThreshold, false,
+				hPositiveSpans, hPositiveBuckets,
+				otherPositiveSpans, otherPositiveBuckets,
+				cPositiveBuckets,
+			)
+		} else {
+			nhcbBoundsReconciled = true
+			intersectedBounds := intersectCustomBucketBounds(h.CustomValues, other.CustomValues)
+
+			// Add with mapping - maps both histograms to intersected layout.
+			h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = addCustomBucketsWithMismatches(
+				false,
+				hPositiveSpans, hPositiveBuckets, h.CustomValues,
+				otherPositiveSpans, otherPositiveBuckets, other.CustomValues,
+				cPositiveBuckets, intersectedBounds)
+			h.CustomValues = intersectedBounds
+			c.CustomValues = intersectedBounds
+		}
+		c.PositiveSpans = h.PositiveSpans
+		return c, counterResetCollision, nhcbBoundsReconciled, nil
 	}
 
 	var (
@@ -498,12 +513,12 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (updatedC *FloatHist
 		cNegativeBuckets,
 	)
 
-	c.Schema = other.Schema
+	c.Schema = h.Schema
 	c.ZeroThreshold = h.ZeroThreshold
 	c.PositiveSpans = h.PositiveSpans
 	c.NegativeSpans = h.NegativeSpans
 
-	return c, counterResetCollision, nil
+	return c, counterResetCollision, nhcbBoundsReconciled, nil
 }
 
 // Sub works like Add but subtracts the other histogram. It uses the same logic
@@ -538,11 +553,11 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 			intersectedBounds := intersectCustomBucketBounds(h.CustomValues, other.CustomValues)
 
 			// Subtract with mapping - maps both histograms to intersected layout.
-			h.PositiveSpans, h.PositiveBuckets = addCustomBucketsWithMismatches(
+			h.PositiveSpans, h.PositiveBuckets, _ = addCustomBucketsWithMismatches(
 				true,
 				hPositiveSpans, hPositiveBuckets, h.CustomValues,
 				otherPositiveSpans, otherPositiveBuckets, other.CustomValues,
-				intersectedBounds)
+				nil, intersectedBounds)
 			h.CustomValues = intersectedBounds
 		}
 		return h, counterResetCollision, nhcbBoundsReconciled, nil
@@ -572,17 +587,15 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 }
 
 // KahanSub works like Sub but using the Kahan summation algorithm to minimize numerical errors.
-// c is a histogram holding the Kahan compensation term. It is modified in-place.
-// If c is nil, a suitable histogram is created. In any case, a pointer to the newly created
-// or updated c is returned as updatedC.
-func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (updatedC *FloatHistogram, counterResetCollision bool, err error) {
+// c is a histogram holding the Kahan compensation term. It is modified in-place if non-nil.
+// If c is nil, a new compensation histogram is created inside the function. In this case,
+// the caller must use the returned updatedC, because the original c variable is not modified.
+func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (updatedC *FloatHistogram, counterResetCollision, nhcbBoundsReconciled bool, err error) {
 	if err := h.checkSchemaAndBounds(other); err != nil {
-		return nil, false, err
+		return nil, false, false, err
 	}
 
-	counterResetCollision = hasCounterResetCollision(h, other)
-
-	h.CounterResetHint = GaugeType
+	counterResetCollision = h.adjustCounterReset(other)
 
 	if c == nil {
 		c = h.newCompensationHistogram()
@@ -594,6 +607,7 @@ func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (updatedC *FloatHist
 	}
 	h.Count, c.Count = kahansum.Dec(other.Count, h.Count, c.Count)
 	h.Sum, c.Sum = kahansum.Dec(other.Sum, h.Sum, c.Sum)
+
 	var (
 		hPositiveSpans       = h.PositiveSpans
 		hPositiveBuckets     = h.PositiveBuckets
@@ -603,13 +617,28 @@ func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (updatedC *FloatHist
 	)
 
 	if h.UsesCustomBuckets() {
-		h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
-			h.Schema, h.ZeroThreshold, true,
-			hPositiveSpans, hPositiveBuckets,
-			otherPositiveSpans, otherPositiveBuckets,
-			cPositiveBuckets,
-		)
-		return c, counterResetCollision, nil
+		if CustomBucketBoundsMatch(h.CustomValues, other.CustomValues) {
+			h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
+				h.Schema, h.ZeroThreshold, true,
+				hPositiveSpans, hPositiveBuckets,
+				otherPositiveSpans, otherPositiveBuckets,
+				cPositiveBuckets,
+			)
+		} else {
+			nhcbBoundsReconciled = true
+			intersectedBounds := intersectCustomBucketBounds(h.CustomValues, other.CustomValues)
+
+			// Subtract with mapping - maps both histograms to intersected layout.
+			h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = addCustomBucketsWithMismatches(
+				true,
+				hPositiveSpans, hPositiveBuckets, h.CustomValues,
+				otherPositiveSpans, otherPositiveBuckets, other.CustomValues,
+				cPositiveBuckets, intersectedBounds)
+			h.CustomValues = intersectedBounds
+			c.CustomValues = intersectedBounds
+		}
+		c.PositiveSpans = h.PositiveSpans
+		return c, counterResetCollision, nhcbBoundsReconciled, nil
 	}
 
 	var (
@@ -660,12 +689,12 @@ func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (updatedC *FloatHist
 		cNegativeBuckets,
 	)
 
-	c.Schema = other.Schema
+	c.Schema = h.Schema
 	c.ZeroThreshold = h.ZeroThreshold
 	c.PositiveSpans = h.PositiveSpans
 	c.NegativeSpans = h.NegativeSpans
 
-	return c, counterResetCollision, nil
+	return c, counterResetCollision, nhcbBoundsReconciled, nil
 }
 
 // Equals returns true if the given float histogram matches exactly.
@@ -1865,15 +1894,18 @@ func intersectCustomBucketBounds(boundsA, boundsB []float64) []float64 {
 
 // addCustomBucketsWithMismatches handles adding/subtracting custom bucket histograms
 // with mismatched bucket layouts by mapping both to an intersected layout.
+// It also processes the Kahan compensation term if provided.
 func addCustomBucketsWithMismatches(
 	negative bool,
 	spansA []Span, bucketsA, boundsA []float64,
 	spansB []Span, bucketsB, boundsB []float64,
+	bucketsC []float64,
 	intersectedBounds []float64,
-) ([]Span, []float64) {
+) ([]Span, []float64, []float64) {
 	targetBuckets := make([]float64, len(intersectedBounds)+1)
+	cTargetBuckets := make([]float64, len(intersectedBounds)+1)
 
-	mapBuckets := func(spans []Span, buckets, bounds []float64, negative bool) {
+	mapBuckets := func(spans []Span, buckets, bounds []float64, negative, withCompensation bool) {
 		srcIdx := 0
 		bucketIdx := 0
 		intersectIdx := 0
@@ -1899,9 +1931,12 @@ func addCustomBucketsWithMismatches(
 					}
 
 					if negative {
-						targetBuckets[targetIdx] -= value
+						targetBuckets[targetIdx], cTargetBuckets[targetIdx] = kahansum.Dec(value, targetBuckets[targetIdx], cTargetBuckets[targetIdx])
 					} else {
-						targetBuckets[targetIdx] += value
+						targetBuckets[targetIdx], cTargetBuckets[targetIdx] = kahansum.Inc(value, targetBuckets[targetIdx], cTargetBuckets[targetIdx])
+						if withCompensation && bucketsC != nil {
+							targetBuckets[targetIdx], cTargetBuckets[targetIdx] = kahansum.Inc(bucketsC[bucketIdx], targetBuckets[targetIdx], cTargetBuckets[targetIdx])
+						}
 					}
 				}
 				srcIdx++
@@ -1910,21 +1945,23 @@ func addCustomBucketsWithMismatches(
 		}
 	}
 
-	// Map both histograms to the intersected layout.
-	mapBuckets(spansA, bucketsA, boundsA, false)
-	mapBuckets(spansB, bucketsB, boundsB, negative)
+	// Map histograms to the intersected layout.
+	mapBuckets(spansA, bucketsA, boundsA, false, true)
+	mapBuckets(spansB, bucketsB, boundsB, negative, false)
 
 	// Build spans and buckets, excluding zero-valued buckets from the final result.
-	destSpans := spansA[:0]          // Reuse spansA capacity for destSpans since we don't need it anymore.
-	destBuckets := targetBuckets[:0] // Reuse targetBuckets capacity for destBuckets since it's guaranteed to be large enough.
+	destSpans := spansA[:0]            // Reuse spansA capacity for destSpans since we don't need it anymore.
+	destBuckets := targetBuckets[:0]   // Reuse targetBuckets capacity for destBuckets since it's guaranteed to be large enough.
+	cDestBuckets := cTargetBuckets[:0] // Reuse cTargetBuckets capacity for cDestBuckets since it's guaranteed to be large enough.
 	lastIdx := int32(-1)
 
-	for i, count := range targetBuckets {
-		if count == 0 {
+	for i := range targetBuckets {
+		if targetBuckets[i] == 0 && cTargetBuckets[i] == 0 {
 			continue
 		}
 
-		destBuckets = append(destBuckets, count)
+		destBuckets = append(destBuckets, targetBuckets[i])
+		cDestBuckets = append(cDestBuckets, cTargetBuckets[i])
 		idx := int32(i)
 
 		if len(destSpans) > 0 && idx == lastIdx+1 {
@@ -1947,7 +1984,7 @@ func addCustomBucketsWithMismatches(
 		lastIdx = idx
 	}
 
-	return destSpans, destBuckets
+	return destSpans, destBuckets, cDestBuckets
 }
 
 // ReduceResolution reduces the float histogram's spans, buckets into target schema.

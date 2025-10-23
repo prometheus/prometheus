@@ -2514,8 +2514,8 @@ func TestFloatHistogramAdd(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			testHistogramAdd(t, c.in1, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 			testHistogramAdd(t, c.in2, c.in1, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
-			testHistogramKahanAdd(t, c.in1, nil, c.in2, c.expected, nil, c.expErrMsg, c.expCounterResetCollision)
-			testHistogramKahanAdd(t, c.in2, nil, c.in1, c.expected, nil, c.expErrMsg, c.expCounterResetCollision)
+			testHistogramKahanAdd(t, c.in1, nil, c.in2, c.expected, nil, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
+			testHistogramKahanAdd(t, c.in2, nil, c.in1, c.expected, nil, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 		})
 	}
 }
@@ -2528,6 +2528,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 		in1, comp, in2, expectedSum, expectedC *FloatHistogram
 		expErrMsg                              string
 		expCounterResetCollision               bool
+		expNHCBBoundsReconciled                bool
 	}{
 		{
 			"larger zero bucket in first histogram",
@@ -2576,6 +2577,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				NegativeBuckets: []float64{0, 0.01, 0.01, 0.04, 0.04, 0},
 			},
 			"",
+			false,
 			false,
 		},
 		{
@@ -2628,6 +2630,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 			},
 			"",
 			false,
+			false,
 		},
 		{
 			"first histogram contains zero buckets and Compact is called",
@@ -2667,6 +2670,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				PositiveBuckets: []float64{0.03, 0, 0.05, 0.06},
 			},
 			"",
+			false,
 			false,
 		},
 		{
@@ -2714,6 +2718,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 			},
 			"",
 			false,
+			false,
 		},
 		{
 			name: "warn on counter reset hint collision",
@@ -2727,12 +2732,13 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 			},
 			expErrMsg:                "",
 			expCounterResetCollision: true,
+			expNHCBBoundsReconciled:  false,
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			testHistogramKahanAdd(t, c.in1, c.comp, c.in2, c.expectedSum, c.expectedC, c.expErrMsg, c.expCounterResetCollision)
+			testHistogramKahanAdd(t, c.in1, c.comp, c.in2, c.expectedSum, c.expectedC, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 		})
 	}
 }
@@ -2777,7 +2783,7 @@ func testHistogramAdd(t *testing.T, a, b, expected *FloatHistogram, expErrMsg st
 }
 
 func testHistogramKahanAdd(
-	t *testing.T, a, c, b, expectedSum, expectedC *FloatHistogram, expErrMsg string, expCounterResetCollision bool,
+	t *testing.T, a, c, b, expectedSum, expectedC *FloatHistogram, expErrMsg string, expCounterResetCollision, expNHCBBoundsReconciled bool,
 ) {
 	var (
 		aCopy           = a.Copy()
@@ -2799,7 +2805,7 @@ func testHistogramKahanAdd(
 		expectedSumCopy = expectedSum.Copy()
 	}
 
-	comp, warn, err := aCopy.KahanAdd(bCopy, cCopy)
+	comp, counterResetCollision, nhcbBoundsReconciled, err := aCopy.KahanAdd(bCopy, cCopy)
 	if expErrMsg != "" {
 		require.EqualError(t, err, expErrMsg)
 	} else {
@@ -2808,7 +2814,7 @@ func testHistogramKahanAdd(
 
 	var res *FloatHistogram
 	if comp != nil {
-		res, _, err = aCopy.Add(comp)
+		res, _, _, err = aCopy.Add(comp)
 		if expErrMsg != "" {
 			require.EqualError(t, err, expErrMsg)
 		} else {
@@ -2820,7 +2826,9 @@ func testHistogramKahanAdd(
 		require.Equal(t, expectedCCopy, comp)
 	}
 
-	require.Equal(t, expCounterResetCollision, warn)
+	// Check that the warnings are correct.
+	require.Equal(t, expCounterResetCollision, counterResetCollision)
+	require.Equal(t, expNHCBBoundsReconciled, nhcbBoundsReconciled)
 
 	if expectedSum != nil {
 		res.Compact(0)
@@ -3061,7 +3069,8 @@ func testFloatHistogramSub(t *testing.T, a, b, expected *FloatHistogram, expErrM
 		require.Equal(t, b, bCopy)
 
 		// Check that the warnings are correct.
-		require.Equal(t, expCounterResetCollision, warn)
+		require.Equal(t, expCounterResetCollision, counterResetCollision)
+		require.Equal(t, expNHCBBoundsReconciled, nhcbBoundsReconciled)
 	}
 }
 
