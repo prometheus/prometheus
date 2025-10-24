@@ -68,6 +68,14 @@ type PrometheusConverter struct {
 	scratchBuilder labels.ScratchBuilder
 	builder        *labels.Builder
 	appender       CombinedAppender
+	// seenTargetInfo tracks target_info samples within a batch to prevent duplicates.
+	seenTargetInfo map[targetInfoKey]struct{}
+}
+
+// targetInfoKey uniquely identifies a target_info sample by its labelset and timestamp.
+type targetInfoKey struct {
+	labelsHash uint64
+	timestamp  int64
 }
 
 func NewPrometheusConverter(appender CombinedAppender) *PrometheusConverter {
@@ -129,6 +137,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	}
 	unitNamer := otlptranslator.UnitNamer{}
 	c.everyN = everyNTimes{n: 128}
+	c.seenTargetInfo = make(map[targetInfoKey]struct{})
 	resourceMetricsSlice := md.ResourceMetrics()
 
 	numMetrics := 0

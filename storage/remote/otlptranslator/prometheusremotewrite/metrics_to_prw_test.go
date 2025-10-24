@@ -363,6 +363,99 @@ func TestFromMetrics(t *testing.T) {
 			},
 		}, mockAppender.samples[len(mockAppender.samples)-4:])
 	})
+
+	t.Run("target_info deduplication across multiple resources with same labels", func(t *testing.T) {
+		request := pmetricotlp.NewExportRequest()
+		ts := pcommon.NewTimestampFromTime(time.Now())
+
+		// Create two ResourceMetrics with identical resource attributes.
+		// Without deduplication, each would generate its own target_info samples,
+		// resulting in duplicates.
+		for range 2 {
+			rm := request.Metrics().ResourceMetrics().AppendEmpty()
+			generateAttributes(rm.Resource().Attributes(), "resource", 3)
+
+			// Fake some resource attributes.
+			for k, v := range map[string]string{
+				"service.name":        "test-service",
+				"service.namespace":   "test-namespace",
+				"service.instance.id": "id1234",
+			} {
+				rm.Resource().Attributes().PutStr(k, v)
+			}
+			metrics := rm.ScopeMetrics().AppendEmpty().Metrics()
+
+			// Add metrics.
+			m := metrics.AppendEmpty()
+			m.SetEmptyGauge()
+			m.SetName("gauge-1")
+			m.SetDescription("gauge")
+			m.SetUnit("unit")
+
+			point1 := m.Gauge().DataPoints().AppendEmpty()
+			point1.SetTimestamp(ts)
+			point1.SetDoubleValue(1.23)
+			generateAttributes(point1.Attributes(), "series", 1)
+
+			point2 := m.Gauge().DataPoints().AppendEmpty()
+			point2.SetTimestamp(pcommon.NewTimestampFromTime(ts.AsTime().Add(defaultLookbackDelta / 2)))
+			point2.SetDoubleValue(2.34)
+			generateAttributes(point2.Attributes(), "series", 1)
+		}
+
+		mockAppender := &mockCombinedAppender{}
+		converter := NewPrometheusConverter(mockAppender)
+		annots, err := converter.FromMetrics(
+			context.Background(),
+			request.Metrics(),
+			Settings{
+				LookbackDelta: defaultLookbackDelta,
+			},
+		)
+		require.NoError(t, err)
+		require.Empty(t, annots)
+		require.NoError(t, mockAppender.Commit())
+
+		var targetInfoSamples []combinedSample
+		for _, s := range mockAppender.samples {
+			if s.ls.Get(labels.MetricName) == "target_info" {
+				targetInfoSamples = append(targetInfoSamples, s)
+			}
+		}
+
+		// Should have exactly 2 target_info samples (at ts and ts + lookbackDelta/2),
+		// not 4 (which would happen if both resources generated their own target_info samples).
+		require.Len(t, targetInfoSamples, 2)
+
+		targetInfoLabels := labels.FromStrings(
+			"__name__", "target_info",
+			"instance", "id1234",
+			"job", "test-namespace/test-service",
+			"resource_name_1", "value-1",
+			"resource_name_2", "value-2",
+			"resource_name_3", "value-3",
+		)
+		targetInfoMeta := metadata.Metadata{
+			Type: model.MetricTypeGauge,
+			Help: "Target metadata",
+		}
+		requireEqual(t, []combinedSample{
+			{
+				metricFamilyName: "target_info",
+				v:                1,
+				t:                ts.AsTime().UnixMilli(),
+				ls:               targetInfoLabels,
+				meta:             targetInfoMeta,
+			},
+			{
+				metricFamilyName: "target_info",
+				v:                1,
+				t:                ts.AsTime().Add(defaultLookbackDelta / 2).UnixMilli(),
+				ls:               targetInfoLabels,
+				meta:             targetInfoMeta,
+			},
+		}, targetInfoSamples)
+	})
 }
 
 func TestTemporality(t *testing.T) {
