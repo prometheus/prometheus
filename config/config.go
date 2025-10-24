@@ -572,8 +572,8 @@ var (
 
 	// DefaultProtoFirstScrapeProtocols is like DefaultScrapeProtocols, but it
 	// favors protobuf Prometheus exposition format.
-	// Used by default for certain feature-flags like
-	// "native-histograms" and "created-timestamp-zero-ingestion".
+	// Used by default by the "scrape_native_histograms" option and for certain
+	// feature-flags like "created-timestamp-zero-ingestion".
 	DefaultProtoFirstScrapeProtocols = []ScrapeProtocol{
 		PrometheusProto,
 		OpenMetricsText1_0_0,
