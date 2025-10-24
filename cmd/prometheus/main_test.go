@@ -34,13 +34,13 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
@@ -589,13 +589,13 @@ func TestDocumentation(t *testing.T) {
 func TestRwProtoMsgFlagParser(t *testing.T) {
 	t.Parallel()
 
-	defaultOpts := config.RemoteWriteProtoMsgs{
-		config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2,
+	defaultOpts := remoteapi.MessageTypes{
+		remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType,
 	}
 
 	for _, tcase := range []struct {
 		args        []string
-		expected    []config.RemoteWriteProtoMsg
+		expected    remoteapi.MessageTypes
 		expectedErr error
 	}{
 		{
@@ -604,38 +604,38 @@ func TestRwProtoMsgFlagParser(t *testing.T) {
 		},
 		{
 			args:        []string{"--test-proto-msgs", "test"},
-			expectedErr: errors.New("unknown remote write protobuf message test, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request"),
+			expectedErr: errors.New("unknown type for remote write protobuf message test, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request"),
 		},
 		{
 			args:     []string{"--test-proto-msgs", "io.prometheus.write.v2.Request"},
-			expected: config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV2},
+			expected: remoteapi.MessageTypes{remoteapi.WriteV2MessageType},
 		},
 		{
 			args: []string{
 				"--test-proto-msgs", "io.prometheus.write.v2.Request",
 				"--test-proto-msgs", "io.prometheus.write.v2.Request",
 			},
-			expectedErr: errors.New("duplicated io.prometheus.write.v2.Request flag value, got [io.prometheus.write.v2.Request] already"),
-		},
-		{
-			args: []string{
-				"--test-proto-msgs", "io.prometheus.write.v2.Request",
-				"--test-proto-msgs", "prometheus.WriteRequest",
-			},
-			expected: config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV2, config.RemoteWriteProtoMsgV1},
+			expectedErr: errors.New("duplicated io.prometheus.write.v2.Request flag value, got io.prometheus.write.v2.Request already"),
 		},
 		{
 			args: []string{
 				"--test-proto-msgs", "io.prometheus.write.v2.Request",
 				"--test-proto-msgs", "prometheus.WriteRequest",
+			},
+			expected: remoteapi.MessageTypes{remoteapi.WriteV2MessageType, remoteapi.WriteV1MessageType},
+		},
+		{
+			args: []string{
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+				"--test-proto-msgs", "prometheus.WriteRequest",
 				"--test-proto-msgs", "io.prometheus.write.v2.Request",
 			},
-			expectedErr: errors.New("duplicated io.prometheus.write.v2.Request flag value, got [io.prometheus.write.v2.Request prometheus.WriteRequest] already"),
+			expectedErr: errors.New("duplicated io.prometheus.write.v2.Request flag value, got io.prometheus.write.v2.Request, prometheus.WriteRequest already"),
 		},
 	} {
 		t.Run(strings.Join(tcase.args, ","), func(t *testing.T) {
 			a := kingpin.New("test", "")
-			var opt []config.RemoteWriteProtoMsg
+			var opt remoteapi.MessageTypes
 			a.Flag("test-proto-msgs", "").Default(defaultOpts.Strings()...).SetValue(rwProtoMsgFlagValue(&opt))
 
 			_, err := a.Parse(tcase.args)

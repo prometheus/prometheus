@@ -1579,6 +1579,12 @@ func TestHistogramValidation(t *testing.T) {
 			},
 			errMsg: "custom buckets: last +Inf bound must not be explicitly defined: histogram custom bounds must be finite",
 		},
+		"valid custom buckets histogram with explicit -Inf bound": {
+			h: &Histogram{
+				Schema:       CustomBucketsSchema,
+				CustomValues: []float64{math.Inf(-1), 1},
+			},
+		},
 		"reject custom buckets histogram with NaN bound": {
 			h: &Histogram{
 				Schema:       CustomBucketsSchema,

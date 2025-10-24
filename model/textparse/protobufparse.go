@@ -77,6 +77,8 @@ type ProtobufParser struct {
 	// that we have to decode the next MetricDescriptor.
 	state Entry
 
+	// Whether to completely ignore any native parts of histograms.
+	ignoreNativeHistograms bool
 	// Whether to also parse a classic histogram that is also present as a
 	// native histogram.
 	parseClassicHistograms bool
@@ -93,13 +95,20 @@ type ProtobufParser struct {
 }
 
 // NewProtobufParser returns a parser for the payload in the byte slice.
-func NewProtobufParser(b []byte, parseClassicHistograms, convertClassicHistogramsToNHCB, enableTypeAndUnitLabels bool, st *labels.SymbolTable) Parser {
+func NewProtobufParser(
+	b []byte,
+	ignoreNativeHistograms, parseClassicHistograms, convertClassicHistogramsToNHCB, enableTypeAndUnitLabels bool,
+	st *labels.SymbolTable,
+) Parser {
+	builder := labels.NewScratchBuilderWithSymbolTable(st, 16)
+	builder.SetUnsafeAdd(true)
 	return &ProtobufParser{
 		dec:        dto.NewMetricStreamingDecoder(b),
 		entryBytes: &bytes.Buffer{},
-		builder:    labels.NewScratchBuilderWithSymbolTable(st, 16), // TODO(bwplotka): Try base builder.
+		builder:    builder,
 
 		state:                          EntryInvalid,
+		ignoreNativeHistograms:         ignoreNativeHistograms,
 		parseClassicHistograms:         parseClassicHistograms,
 		enableTypeAndUnitLabels:        enableTypeAndUnitLabels,
 		convertClassicHistogramsToNHCB: convertClassicHistogramsToNHCB,
@@ -194,7 +203,7 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 		h  = p.dec.GetHistogram()
 	)
 
-	if !isNativeHistogram(h) {
+	if p.ignoreNativeHistograms || !isNativeHistogram(h) {
 		// This only happens if we have a classic histogram and
 		// we converted it to NHCB already in Next.
 		if *ts != 0 {
@@ -492,7 +501,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 	case EntryType:
 		t := p.dec.GetType()
 		if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
-			if !isNativeHistogram(p.dec.GetHistogram()) {
+			if p.ignoreNativeHistograms || !isNativeHistogram(p.dec.GetHistogram()) {
 				p.state = EntrySeries
 				p.fieldPos = -3 // We have not returned anything, let p.Next() increment it to -2.
 				return p.Next()
@@ -513,7 +522,8 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			t == dto.MetricType_GAUGE_HISTOGRAM {
 			// Non-trivial series (complex metrics, with magic suffixes).
 
-			isClassicHistogram := (t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM) && !isNativeHistogram(p.dec.GetHistogram())
+			isClassicHistogram := (t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM) &&
+				(p.ignoreNativeHistograms || !isNativeHistogram(p.dec.GetHistogram()))
 			skipSeries := p.convertClassicHistogramsToNHCB && isClassicHistogram && !p.parseClassicHistograms
 
 			// Did we iterate over all the classic representations fields?
@@ -589,10 +599,11 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			return EntryInvalid, err
 		}
 
-		// If this is a metric family does not contain native
-		// histograms, it means we are here thanks to NHCB conversion.
-		// Return to classic histograms for the consistent flow.
-		if !isNativeHistogram(p.dec.GetHistogram()) {
+		// If this metric is not a native histograms or we are ignoring
+		// native histograms, it means we are here thanks to NHCB
+		// conversion. Return to classic histograms for the consistent
+		// flow.
+		if p.ignoreNativeHistograms || !isNativeHistogram(p.dec.GetHistogram()) {
 			return switchToClassic()
 		}
 
@@ -622,10 +633,7 @@ func (p *ProtobufParser) onSeriesOrHistogramUpdate() error {
 			Unit: p.dec.GetUnit(),
 		}
 		m.AddToLabels(&p.builder)
-		if err := p.dec.Label(schema.IgnoreOverriddenMetadataLabelsScratchBuilder{
-			Overwrite:      m,
-			ScratchBuilder: &p.builder,
-		}); err != nil {
+		if err := p.dec.Label(m.NewIgnoreOverriddenMetadataLabelScratchBuilder(&p.builder)); err != nil {
 			return err
 		}
 	} else {

@@ -50,8 +50,10 @@ const (
 type AlertState int
 
 const (
+	// StateUnknown is the state of an alert that has not yet been evaluated.
+	StateUnknown AlertState = iota
 	// StateInactive is the state of an alert that is neither firing nor pending.
-	StateInactive AlertState = iota
+	StateInactive
 	// StatePending is the state of an alert that has been active for less than
 	// the configured threshold duration.
 	StatePending
@@ -62,6 +64,8 @@ const (
 
 func (s AlertState) String() string {
 	switch s {
+	case StateUnknown:
+		return "unknown"
 	case StateInactive:
 		return "inactive"
 	case StatePending:
@@ -530,10 +534,14 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 }
 
 // State returns the maximum state of alert instances for this rule.
-// StateFiring > StatePending > StateInactive.
+// StateFiring > StatePending > StateInactive > StateUnknown.
 func (r *AlertingRule) State() AlertState {
 	r.activeMtx.Lock()
 	defer r.activeMtx.Unlock()
+	// Check if the rule has been evaluated
+	if r.evaluationTimestamp.Load().IsZero() {
+		return StateUnknown
+	}
 
 	maxState := StateInactive
 	for _, a := range r.active {

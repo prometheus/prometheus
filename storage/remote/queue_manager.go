@@ -440,7 +440,7 @@ type QueueManager struct {
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
 	remoteAPI   *remoteapi.API // client_golang remote write API client
-	protoMsg    config.RemoteWriteProtoMsg
+	protoMsg    remoteapi.WriteMessageType
 	compr       compression.Type
 
 	seriesMtx      sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries and builder.
@@ -486,7 +486,7 @@ func NewQueueManager(
 	enableExemplarRemoteWrite bool,
 	enableNativeHistogramRemoteWrite bool,
 	enableTypeAndUnitLabels bool,
-	protoMsg config.RemoteWriteProtoMsg,
+	protoMsg remoteapi.WriteMessageType,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -533,7 +533,7 @@ func NewQueueManager(
 		compr:    compression.Snappy, // Hardcoded for now, but scaffolding exists for likely future use.
 	}
 
-	walMetadata := t.protoMsg != config.RemoteWriteProtoMsgV1
+	walMetadata := t.protoMsg != remoteapi.WriteV1MessageType
 
 	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata)
 
@@ -541,7 +541,7 @@ func NewQueueManager(
 	// with the new approach, which stores metadata as WAL records and
 	// ships them alongside series. If both mechanisms are set, the new one
 	// takes precedence by implicitly disabling the older one.
-	if t.mcfg.Send && t.protoMsg != config.RemoteWriteProtoMsgV1 {
+	if t.mcfg.Send && t.protoMsg != remoteapi.WriteV1MessageType {
 		logger.Warn("usage of 'metadata_config.send' is redundant when using remote write v2 (or higher) as metadata will always be gathered from the WAL and included for every series within each write request")
 		t.mcfg.Send = false
 	}
@@ -578,7 +578,7 @@ func NewQueueManager(
 // This is only used for the metadata_config.send setting and 1.x Remote Write.
 func (t *QueueManager) AppendWatcherMetadata(ctx context.Context, metadata []scrape.MetricMetadata) {
 	// no op for any newer proto format, which will cache metadata sent to it from the WAL watcher.
-	if t.protoMsg != config.RemoteWriteProtoMsgV1 {
+	if t.protoMsg != remoteapi.WriteV1MessageType {
 		return
 	}
 
@@ -850,7 +850,7 @@ outer:
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
-		if t.protoMsg == config.RemoteWriteProtoMsgV1 && h.H != nil && h.H.Schema == histogram.CustomBucketsSchema {
+		if t.protoMsg == remoteapi.WriteV1MessageType && h.H != nil && h.H.Schema == histogram.CustomBucketsSchema {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
 			t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
@@ -910,7 +910,7 @@ outer:
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
-		if t.protoMsg == config.RemoteWriteProtoMsgV1 && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
+		if t.protoMsg == remoteapi.WriteV1MessageType && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
 			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
@@ -1024,7 +1024,7 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 
 // StoreMetadata keeps track of known series' metadata for lookups when sending samples to remote.
 func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
-	if t.protoMsg == config.RemoteWriteProtoMsgV1 {
+	if t.protoMsg == remoteapi.WriteV1MessageType {
 		return
 	}
 
@@ -1602,9 +1602,9 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	}
 	defer stop()
 
-	sendBatch := func(batch []timeSeries, protoMsg config.RemoteWriteProtoMsg, compr compression.Type, timer bool) {
+	sendBatch := func(batch []timeSeries, protoMsg remoteapi.WriteMessageType, compr compression.Type, timer bool) {
 		switch protoMsg {
-		case config.RemoteWriteProtoMsgV1:
+		case remoteapi.WriteV1MessageType:
 			nPendingSamples, nPendingExemplars, nPendingHistograms := populateTimeSeries(batch, pendingData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
 			if timer {
@@ -1612,7 +1612,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 					"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
 			}
 			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms)
-		case config.RemoteWriteProtoMsgV2:
+		case remoteapi.WriteV2MessageType:
 			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
 			if nUnexpectedMetadata > 0 {
@@ -1765,14 +1765,6 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	req, highest, lowest := buildProtoWriteRequest(s.qm.logger, samples, nil, nil)
 	s.qm.buildRequestLimitTimestamp.Store(lowest)
 
-	// Determine the message type based on protoMsg config.
-	var msgType remoteapi.WriteMessageType
-	if s.qm.protoMsg == config.RemoteWriteProtoMsgV1 {
-		msgType = remoteapi.WriteV1MessageType
-	} else {
-		msgType = remoteapi.WriteV2MessageType
-	}
-
 	// Track the start time for metrics.
 	begin := time.Now()
 
@@ -1831,7 +1823,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		writeCtx, cancelWrite := context.WithCancel(ctx)
 
 		// Call remoteapi.Write - it handles retries internally.
-		apiStats, err = s.qm.remoteAPI.Write(writeCtx, msgType, req, remoteapi.WithWriteRetryCallback(func(_ error) {
+		apiStats, err = s.qm.remoteAPI.Write(writeCtx, s.qm.protoMsg, req, remoteapi.WithWriteRetryCallback(func(_ error) {
 			// Check if data became stale during retries - if so, cancel to abort.
 			if s.qm.cfg.SampleAgeLimit > 0 {
 				currentTime := time.Now()
@@ -1888,7 +1880,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	s.qm.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
 
 	// Convert client_golang stats to Prometheus stats.
-	rs := convertRemoteAPIStats(apiStats, msgType)
+	rs := convertRemoteAPIStats(apiStats, s.qm.protoMsg)
 
 	if err != nil {
 		span.RecordError(err)
@@ -1903,7 +1895,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	// We could estimate it or add a callback to the client_golang API.
 	s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
 
-	if !rs.Confirmed && msgType == remoteapi.WriteV1MessageType {
+	if !rs.Confirmed && s.qm.protoMsg == remoteapi.WriteV1MessageType {
 		// No 2.0 response headers, and we sent v1 message, so likely it's 1.0 Receiver.
 		// Assume success, don't rely on headers.
 		return WriteResponseStats{

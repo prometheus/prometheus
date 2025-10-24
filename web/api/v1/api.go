@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/regexp"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/munnerz/goautoneg"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
@@ -285,7 +286,7 @@ func NewAPI(
 	registerer prometheus.Registerer,
 	statsRenderer StatsRenderer,
 	rwEnabled bool,
-	acceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg,
+	acceptRemoteWriteProtoMsgs remoteapi.MessageTypes,
 	otlpEnabled, otlpDeltaToCumulative, otlpNativeDeltaIngestion bool,
 	ctZeroIngestionEnabled bool,
 	lookbackDelta time.Duration,
@@ -335,7 +336,7 @@ func NewAPI(
 	}
 
 	if rwEnabled {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs, ctZeroIngestionEnabled)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs, ctZeroIngestionEnabled, enableTypeAndUnitLabels)
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, ap, configFunc, remote.OTLPOptions{

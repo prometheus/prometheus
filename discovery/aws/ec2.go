@@ -27,6 +27,7 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -123,6 +124,7 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if err != nil {
 		return err
 	}
+
 	if c.Region == "" {
 		cfg, err := awsConfig.LoadDefaultConfig(context.Background())
 		if err != nil {
@@ -133,6 +135,16 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 			// If the region is already set in the config, use it.
 			// This can happen if the user has set the region in the AWS config file or environment variables.
 			c.Region = cfg.Region
+		}
+
+		if c.Region == "" {
+			// Try to get the region from the instance metadata service (IMDS).
+			imdsClient := imds.NewFromConfig(cfg)
+			region, err := imdsClient.GetRegion(context.Background(), &imds.GetRegionInput{})
+			if err != nil {
+				return err
+			}
+			c.Region = region.Region
 		}
 	}
 
@@ -197,7 +209,6 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (ec2Client, error) {
 	if d.ec2 != nil {
 		return d.ec2, nil
 	}
-	credProvider := credentials.NewStaticCredentialsProvider(d.cfg.AccessKey, string(d.cfg.SecretKey), "")
 
 	// Build the HTTP client from the provided HTTPClientConfig.
 	httpClient, err := config.NewClientFromConfig(d.cfg.HTTPClientConfig, "ec2_sd")
@@ -205,14 +216,25 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (ec2Client, error) {
 		return nil, err
 	}
 
-	// Build the AWS config with the provided region and credentials.
-	cfg, err := awsConfig.LoadDefaultConfig(
-		ctx,
+	// Build the AWS config with the provided region.
+	configOptions := []func(*awsConfig.LoadOptions) error{
 		awsConfig.WithRegion(d.cfg.Region),
-		awsConfig.WithCredentialsProvider(credProvider),
-		awsConfig.WithSharedConfigProfile(d.cfg.Profile),
 		awsConfig.WithHTTPClient(httpClient),
-	)
+	}
+
+	// Only set static credentials if both access key and secret key are provided.
+	// Otherwise, let the AWS SDK use its default credential chain (environment variables, IAM role, etc.).
+	if d.cfg.AccessKey != "" && d.cfg.SecretKey != "" {
+		credProvider := credentials.NewStaticCredentialsProvider(d.cfg.AccessKey, string(d.cfg.SecretKey), "")
+		configOptions = append(configOptions, awsConfig.WithCredentialsProvider(credProvider))
+	}
+
+	// Set the profile if provided.
+	if d.cfg.Profile != "" {
+		configOptions = append(configOptions, awsConfig.WithSharedConfigProfile(d.cfg.Profile))
+	}
+
+	cfg, err := awsConfig.LoadDefaultConfig(ctx, configOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("could not create aws config: %w", err)
 	}

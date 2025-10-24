@@ -270,7 +270,7 @@ eval instant at 20m irate(http_requests_histogram{path="/f"}[20m])
 
 eval instant at 20m irate(http_requests_histogram{path="/g"}[20m])
   	expect no_warn
-	{path="/g"} {{schema:-53 sum:0.01 count:0.01 custom_values:[5 10] buckets:[0.01]}}
+	{path="/g"} {{schema:-53 counter_reset_hint:gauge}}
 
 clear
 
@@ -314,7 +314,7 @@ load 5m
 	http_requests_histogram{path="/d"} 0 0 {{sum:1 count:1 counter_reset_hint:gauge}} {{sum:2 count:2}}
 	http_requests_histogram{path="/e"} 0 1 2 {{sum:1 count:2 counter_reset_hint:gauge}}
 	http_requests_histogram{path="/f"} 0 0 {{sum:1 count:1 counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}}
-	http_requests_histogram{path="/g"} 0 0 {{schema:-53 sum:1 count:1 custom_values:[1] buckets:[2] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}}
+	http_requests_histogram{path="/g"} 0 0 {{schema:-53 sum:1 count:1 custom_values:[1] buckets:[2] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[1 10] buckets:[1] counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests[20m])
 	expect no_warn
@@ -351,7 +351,9 @@ eval instant at 20m idelta(http_requests_histogram{path="/f"}[20m])
   expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "http_requests_histogram"
 
 eval instant at 20m idelta(http_requests_histogram{path="/g"}[20m])
-	expect warn msg: PromQL warning: vector contains histograms with incompatible custom buckets for metric name "http_requests_histogram"
+	expect no_warn
+	expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction
+	{path="/g"} {{schema:-53 custom_values:[1] counter_reset_hint:gauge buckets:[-1]}}
 
 clear
 
