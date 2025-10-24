@@ -215,7 +215,7 @@ var (
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
 		RemoteTimeout:        model.Duration(30 * time.Second),
-		ProtobufMessage:      RemoteWriteProtoMsgV1,
+		ProtobufMessage:      remoteapi.WriteV1MessageType,
 		QueueConfig:          DefaultQueueConfig,
 		MetadataConfig:       DefaultMetadataConfig,
 		HTTPClientConfig:     DefaultRemoteWriteHTTPClientConfig,
