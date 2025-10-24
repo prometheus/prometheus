@@ -166,7 +166,7 @@ func TestCorruptedChunk(t *testing.T) {
 				// Seek to the last byte of chunk data and modify it.
 				_, err = f.Seek(int64(chkEndOffset-1), 0)
 				require.NoError(t, err)
-				n, err := f.Write([]byte("x"))
+				n, err := f.WriteString("x")
 				require.NoError(t, err)
 				require.Equal(t, 1, n)
 			},

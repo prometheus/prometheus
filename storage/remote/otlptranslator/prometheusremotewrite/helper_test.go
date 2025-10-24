@@ -924,8 +924,11 @@ func addTypeAndUnitLabels(labels []prompb.Label, metadata prompb.MetricMetadata,
 		return l.Name == "__type__" || l.Name == "__unit__"
 	})
 
-	labels = append(labels, prompb.Label{Name: "__type__", Value: strings.ToLower(metadata.Type.String())})
-	labels = append(labels, prompb.Label{Name: "__unit__", Value: unitNamer.Build(metadata.Unit)})
+	labels = append(
+		labels,
+		prompb.Label{Name: "__type__", Value: strings.ToLower(metadata.Type.String())},
+		prompb.Label{Name: "__unit__", Value: unitNamer.Build(metadata.Unit)},
+	)
 
 	return labels
 }

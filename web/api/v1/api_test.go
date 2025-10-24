@@ -289,11 +289,13 @@ func (m *rulesRetrieverMock) CreateAlertingRules() {
 		promslog.NewNopLogger(),
 	)
 	var r []*rules.AlertingRule
-	r = append(r, rule1)
-	r = append(r, rule2)
-	r = append(r, rule3)
-	r = append(r, rule4)
-	r = append(r, rule5)
+	r = append(r,
+		rule1,
+		rule2,
+		rule3,
+		rule4,
+		rule5,
+	)
 	m.alertingRules = r
 }
 
@@ -328,8 +330,10 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 	require.NoError(m.testing, err, "unable to parse alert expression")
 	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
 	recordingRule2 := rules.NewRecordingRule("recording-rule-2", recordingExpr, labels.FromStrings("testlabel", "rule"))
-	r = append(r, recordingRule)
-	r = append(r, recordingRule2)
+	r = append(r,
+		recordingRule,
+		recordingRule2,
+	)
 
 	group := rules.NewGroup(rules.GroupOptions{
 		Name:          "grp",
@@ -565,7 +569,7 @@ func TestGetSeries(t *testing.T) {
 		}
 		u.RawQuery = q.Encode()
 
-		r, err := http.NewRequest(method, u.String(), nil)
+		r, err := http.NewRequest(method, u.String(), http.NoBody)
 		if method == http.MethodPost {
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
@@ -671,7 +675,7 @@ func TestQueryExemplars(t *testing.T) {
 		u, err := url.Parse("http://example.com")
 		require.NoError(t, err)
 		u.RawQuery = qs.Encode()
-		r, err := http.NewRequest(method, u.String(), nil)
+		r, err := http.NewRequest(method, u.String(), http.NoBody)
 		if method == http.MethodPost {
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
@@ -791,7 +795,7 @@ func TestLabelNames(t *testing.T) {
 		}
 		u.RawQuery = q.Encode()
 
-		r, err := http.NewRequest(method, u.String(), nil)
+		r, err := http.NewRequest(method, u.String(), http.NoBody)
 		if method == http.MethodPost {
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
@@ -898,7 +902,7 @@ func TestStats(t *testing.T) {
 		q.Add("step", "10")
 		u.RawQuery = q.Encode()
 
-		r, err := http.NewRequest(method, u.String(), nil)
+		r, err := http.NewRequest(method, u.String(), http.NoBody)
 		if method == http.MethodPost {
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
@@ -3688,7 +3692,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			r.RemoteAddr = "127.0.0.1:20201"
 			return r, err
 		}
-		r, err := http.NewRequest(m, fmt.Sprintf("http://example.com?%s", q.Encode()), nil)
+		r, err := http.NewRequest(m, fmt.Sprintf("http://example.com?%s", q.Encode()), http.NoBody)
 		r.RemoteAddr = "127.0.0.1:20201"
 		return r, err
 	}
@@ -3999,7 +4003,7 @@ func TestAdminEndpoints(t *testing.T) {
 			}
 
 			endpoint := tc.endpoint(api)
-			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
+			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), http.NoBody)
 			require.NoError(t, err)
 
 			res := setUnavailStatusOnTSDBNotReady(endpoint(req))
@@ -4079,7 +4083,7 @@ func TestRespondSuccess(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req, err := http.NewRequest(http.MethodGet, s.URL, nil)
+			req, err := http.NewRequest(http.MethodGet, s.URL, http.NoBody)
 			require.NoError(t, err)
 
 			if tc.acceptHeader != "" {
@@ -4113,7 +4117,7 @@ func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
 	}))
 	defer s.Close()
 
-	req, err := http.NewRequest(http.MethodGet, s.URL, nil)
+	req, err := http.NewRequest(http.MethodGet, s.URL, http.NoBody)
 	require.NoError(t, err)
 
 	resp, err := http.DefaultClient.Do(req)
@@ -4146,7 +4150,7 @@ func TestServeTSDBBlocks(t *testing.T) {
 		db: db,
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/status/tsdb/blocks", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status/tsdb/blocks", http.NoBody)
 	w := httptest.NewRecorder()
 
 	result := api.serveTSDBBlocks(req)
@@ -4234,7 +4238,7 @@ func TestParseTimeParam(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		req, err := http.NewRequest(http.MethodGet, "localhost:42/foo?"+test.paramName+"="+test.paramValue, nil)
+		req, err := http.NewRequest(http.MethodGet, "localhost:42/foo?"+test.paramName+"="+test.paramValue, http.NoBody)
 		require.NoError(t, err)
 
 		result := test.result
@@ -4371,7 +4375,7 @@ func TestOptionsMethod(t *testing.T) {
 	s := httptest.NewServer(r)
 	defer s.Close()
 
-	req, err := http.NewRequest(http.MethodOptions, s.URL+"/any_path", nil)
+	req, err := http.NewRequest(http.MethodOptions, s.URL+"/any_path", http.NoBody)
 	require.NoError(t, err, "Error creating OPTIONS request")
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -4413,7 +4417,7 @@ func TestTSDBStatus(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			api := &API{db: tc.db, gatherer: prometheus.DefaultGatherer}
 			endpoint := tc.endpoint(api)
-			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
+			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), http.NoBody)
 			require.NoError(t, err, "Error when creating test request")
 			res := endpoint(req)
 			assertAPIError(t, res.err, tc.errType)
@@ -4506,7 +4510,7 @@ func BenchmarkRespond(b *testing.B) {
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
-			request, err := http.NewRequest(http.MethodGet, "/does-not-matter", nil)
+			request, err := http.NewRequest(http.MethodGet, "/does-not-matter", http.NoBody)
 			require.NoError(b, err)
 			b.ResetTimer()
 			api := API{}
@@ -4743,7 +4747,7 @@ func TestQueryTimeout(t *testing.T) {
 				"timeout": []string{"1s"},
 			}
 			ctx := context.Background()
-			req, err := http.NewRequest(tc.method, fmt.Sprintf("http://example.com?%s", query.Encode()), nil)
+			req, err := http.NewRequest(tc.method, fmt.Sprintf("http://example.com?%s", query.Encode()), http.NoBody)
 			require.NoError(t, err)
 			req.RemoteAddr = "127.0.0.1:20201"
 

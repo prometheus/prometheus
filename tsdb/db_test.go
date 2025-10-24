@@ -1887,16 +1887,18 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 
 	// Additional case.
 	var nc1 []BlockMeta
-	nc1 = append(nc1, BlockMeta{MinTime: 1, MaxTime: 5})
-	nc1 = append(nc1, BlockMeta{MinTime: 2, MaxTime: 3})
-	nc1 = append(nc1, BlockMeta{MinTime: 2, MaxTime: 3})
-	nc1 = append(nc1, BlockMeta{MinTime: 2, MaxTime: 3})
-	nc1 = append(nc1, BlockMeta{MinTime: 2, MaxTime: 3})
-	nc1 = append(nc1, BlockMeta{MinTime: 2, MaxTime: 6})
-	nc1 = append(nc1, BlockMeta{MinTime: 3, MaxTime: 5})
-	nc1 = append(nc1, BlockMeta{MinTime: 5, MaxTime: 7})
-	nc1 = append(nc1, BlockMeta{MinTime: 7, MaxTime: 10})
-	nc1 = append(nc1, BlockMeta{MinTime: 8, MaxTime: 9})
+	nc1 = append(nc1,
+		BlockMeta{MinTime: 1, MaxTime: 5},
+		BlockMeta{MinTime: 2, MaxTime: 3},
+		BlockMeta{MinTime: 2, MaxTime: 3},
+		BlockMeta{MinTime: 2, MaxTime: 3},
+		BlockMeta{MinTime: 2, MaxTime: 3},
+		BlockMeta{MinTime: 2, MaxTime: 6},
+		BlockMeta{MinTime: 3, MaxTime: 5},
+		BlockMeta{MinTime: 5, MaxTime: 7},
+		BlockMeta{MinTime: 7, MaxTime: 10},
+		BlockMeta{MinTime: 8, MaxTime: 9},
+	)
 	require.Equal(t, Overlaps{
 		{Min: 2, Max: 3}: {nc1[0], nc1[1], nc1[2], nc1[3], nc1[4], nc1[5]}, // 1-5, 2-3, 2-3, 2-3, 2-3, 2,6
 		{Min: 3, Max: 5}: {nc1[0], nc1[5], nc1[6]},                         // 1-5, 2-6, 3-5
@@ -3299,11 +3301,10 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 			BlockDesc{ULID: ulid.MustParse(filepath.Base(compacted))},
 			BlockDesc{ULID: ulid.MustNew(1, nil)},
 			BlockDesc{ULID: ulid.MustNew(123, nil)},
+			// Regression test: Already removed parent can be still in list, which was causing Open errors.
+			BlockDesc{ULID: ulid.MustParse(filepath.Base(compacted))},
+			BlockDesc{ULID: ulid.MustParse(filepath.Base(compacted))},
 		)
-
-		// Regression test: Already removed parent can be still in list, which was causing Open errors.
-		m.Compaction.Parents = append(m.Compaction.Parents, BlockDesc{ULID: ulid.MustParse(filepath.Base(compacted))})
-		m.Compaction.Parents = append(m.Compaction.Parents, BlockDesc{ULID: ulid.MustParse(filepath.Base(compacted))})
 		_, err = writeMetaFile(promslog.New(&promslog.Config{}), dir, m)
 		require.NoError(t, err)
 	}

@@ -2949,7 +2949,7 @@ func TestGetScrapeConfigs(t *testing.T) {
 			require.NoError(t, err)
 
 			scfgs, err := c.GetScrapeConfigs()
-			if len(tc.expectedError) > 0 {
+			if tc.expectedError != "" {
 				require.ErrorContains(t, err, tc.expectedError)
 			}
 			require.Equal(t, tc.expectedResult, scfgs)

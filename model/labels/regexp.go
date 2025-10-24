@@ -316,7 +316,7 @@ func (m *FastRegexMatcher) GetRegexString() string {
 // this function returns an optimized StringMatcher or nil if the regex
 // cannot be optimized in this way, and a list of setMatches up to maxSetMatches.
 func optimizeAlternatingLiterals(s string) (StringMatcher, []string) {
-	if len(s) == 0 {
+	if s == "" {
 		return emptyStringMatcher{}, nil
 	}
 
@@ -694,7 +694,7 @@ func (m *literalSuffixStringMatcher) Matches(s string) bool {
 type emptyStringMatcher struct{}
 
 func (emptyStringMatcher) Matches(s string) bool {
-	return len(s) == 0
+	return s == ""
 }
 
 // orStringMatcher matches any of the sub-matchers.
@@ -910,12 +910,12 @@ func (m *anyNonEmptyStringMatcher) Matches(s string) bool {
 	if m.matchNL {
 		// It's OK if the string contains a newline so we just need to make
 		// sure it's non-empty.
-		return len(s) > 0
+		return s != ""
 	}
 
 	// We need to make sure it non-empty and doesn't contain a newline.
 	// Since the newline is an ASCII character, we can use strings.IndexByte().
-	return len(s) > 0 && strings.IndexByte(s, '\n') == -1
+	return s != "" && strings.IndexByte(s, '\n') == -1
 }
 
 // zeroOrOneCharacterStringMatcher is a StringMatcher which matches zero or one occurrence
@@ -935,7 +935,7 @@ func (m *zeroOrOneCharacterStringMatcher) Matches(s string) bool {
 	}
 
 	// No need to check for the newline if the string is empty or matching a newline is OK.
-	if m.matchNL || len(s) == 0 {
+	if m.matchNL || s == "" {
 		return true
 	}
 

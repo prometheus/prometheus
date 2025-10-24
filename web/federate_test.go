@@ -226,7 +226,7 @@ func TestFederation(t *testing.T) {
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
 			h.config.GlobalConfig.ExternalLabels = scenario.externalLabels
-			req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?"+scenario.params, nil)
+			req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?"+scenario.params, http.NoBody)
 			res := httptest.NewRecorder()
 
 			h.federation(res, req)
@@ -267,7 +267,7 @@ func TestFederation_NotReady(t *testing.T) {
 				},
 			}
 
-			req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?"+scenario.params, nil)
+			req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?"+scenario.params, http.NoBody)
 			res := httptest.NewRecorder()
 
 			h.federation(res, req)
@@ -444,7 +444,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?match[]=test_metric", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?match[]=test_metric", http.NoBody)
 	req.Header.Add("Accept", `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited,application/openmetrics-text;version=1.0.0;q=0.8,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`)
 	res := httptest.NewRecorder()
 

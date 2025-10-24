@@ -173,7 +173,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Don't break yolo 1.0 clients if not needed. This is similar to what we did
 		// before 2.0: https://github.com/prometheus/prometheus/blob/d78253319daa62c8f28ed47e40bafcad2dd8b586/storage/remote/write_handler.go#L62
 		// We could give http.StatusUnsupportedMediaType, but let's assume snappy by default.
-	} else if strings.ToLower(enc) != compression.Snappy {
+	} else if !strings.EqualFold(enc, compression.Snappy) {
 		err := fmt.Errorf("%v encoding (compression) is not accepted by this server; only %v is acceptable", enc, compression.Snappy)
 		h.logger.Error("Error decoding remote write request", "err", err)
 		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)

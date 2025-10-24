@@ -111,15 +111,15 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if len(c.Servers) == 0 {
 		return errors.New("marathon_sd: must contain at least one Marathon server")
 	}
-	if len(c.AuthToken) > 0 && len(c.AuthTokenFile) > 0 {
+	if len(c.AuthToken) > 0 && c.AuthTokenFile != "" {
 		return errors.New("marathon_sd: at most one of auth_token & auth_token_file must be configured")
 	}
 
-	if len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0 {
+	if len(c.AuthToken) > 0 || c.AuthTokenFile != "" {
 		switch {
 		case c.HTTPClientConfig.BasicAuth != nil:
 			return errors.New("marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured")
-		case len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0:
+		case len(c.HTTPClientConfig.BearerToken) > 0 || c.HTTPClientConfig.BearerTokenFile != "":
 			return errors.New("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
 		case c.HTTPClientConfig.Authorization != nil:
 			return errors.New("marathon_sd: at most one of auth_token, auth_token_file & authorization must be configured")
@@ -154,7 +154,7 @@ func NewDiscovery(conf SDConfig, logger *slog.Logger, metrics discovery.Discover
 	switch {
 	case len(conf.AuthToken) > 0:
 		rt, err = newAuthTokenRoundTripper(conf.AuthToken, rt)
-	case len(conf.AuthTokenFile) > 0:
+	case conf.AuthTokenFile != "":
 		rt, err = newAuthTokenFileRoundTripper(conf.AuthTokenFile, rt)
 	}
 	if err != nil {
@@ -339,7 +339,7 @@ type appListClient func(ctx context.Context, client *http.Client, url string) (*
 
 // fetchApps requests a list of applications from a marathon server.
 func fetchApps(ctx context.Context, client *http.Client, url string) (*appList, error) {
-	request, err := http.NewRequest(http.MethodGet, url, nil)
+	request, err := http.NewRequest(http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

@@ -131,7 +131,7 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 }
 
 func validateAuthParam(param, name string) error {
-	if len(param) == 0 {
+	if param == "" {
 		return fmt.Errorf("azure SD configuration requires a %s", name)
 	}
 	return nil
@@ -304,7 +304,7 @@ func newCredential(cfg SDConfig, policyClientOptions policy.ClientOptions) (azco
 		credential = azcore.TokenCredential(secretCredential)
 	case authMethodSDK:
 		options := &azidentity.DefaultAzureCredentialOptions{ClientOptions: policyClientOptions}
-		if len(cfg.TenantID) != 0 {
+		if cfg.TenantID != "" {
 			options.TenantID = cfg.TenantID
 		}
 		sdkCredential, err := azidentity.NewDefaultAzureCredential(options)
@@ -507,7 +507,7 @@ func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualM
 
 func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]virtualMachine, error) {
 	var vms []virtualMachine
-	if len(resourceGroup) == 0 {
+	if resourceGroup == "" {
 		pager := client.vm.NewListAllPager(nil)
 		for pager.More() {
 			nextResult, err := pager.NextPage(ctx)
@@ -535,7 +535,7 @@ func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]
 
 func (client *azureClient) getScaleSets(ctx context.Context, resourceGroup string) ([]armcompute.VirtualMachineScaleSet, error) {
 	var scaleSets []armcompute.VirtualMachineScaleSet
-	if len(resourceGroup) == 0 {
+	if resourceGroup == "" {
 		pager := client.vmss.NewListAllPager(nil)
 		for pager.More() {
 			nextResult, err := pager.NextPage(ctx)

@@ -2887,7 +2887,7 @@ func TestAddDuplicateLabelName(t *testing.T) {
 	add := func(labels labels.Labels, labelName string) {
 		app := h.Appender(context.Background())
 		_, err := app.Append(0, labels, 0, 0)
-		require.EqualError(t, err, fmt.Sprintf(`label name "%s" is not unique: invalid sample`, labelName))
+		require.EqualError(t, err, fmt.Sprintf(`label name %q is not unique: invalid sample`, labelName))
 	}
 
 	add(labels.FromStrings("a", "c", "a", "b"), "a")

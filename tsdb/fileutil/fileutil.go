@@ -78,7 +78,7 @@ func readDirs(src string) ([]string, error) {
 
 	err := filepath.Walk(src, func(path string, _ os.FileInfo, _ error) error {
 		relativePath := strings.TrimPrefix(path, src)
-		if len(relativePath) > 0 {
+		if relativePath != "" {
 			files = append(files, relativePath)
 		}
 		return nil

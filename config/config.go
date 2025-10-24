@@ -821,7 +821,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if err := discovery.UnmarshalYAMLWithInlineConfigs(c, unmarshal); err != nil {
 		return err
 	}
-	if len(c.JobName) == 0 {
+	if c.JobName == "" {
 		return errors.New("job_name is empty")
 	}
 
@@ -1507,7 +1507,7 @@ func validateAuthConfigs(c *RemoteWriteConfig) error {
 
 func validateHeadersForTracing(headers map[string]string) error {
 	for header := range headers {
-		if strings.ToLower(header) == "authorization" {
+		if strings.EqualFold(header, "authorization") {
 			return errors.New("custom authorization header configuration is not yet supported")
 		}
 		if _, ok := reservedHeaders[strings.ToLower(header)]; ok {
@@ -1519,7 +1519,7 @@ func validateHeadersForTracing(headers map[string]string) error {
 
 func validateHeaders(headers map[string]string) error {
 	for header := range headers {
-		if strings.ToLower(header) == "authorization" {
+		if strings.EqualFold(header, "authorization") {
 			return errors.New("authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, azuread or google_iam parameter")
 		}
 		if _, ok := reservedHeaders[strings.ToLower(header)]; ok {
@@ -1636,7 +1636,7 @@ func getGoGC() int {
 	// If the GOGC env var is set, use the same logic as upstream Go.
 	if goGCEnv != "" {
 		// Special case for GOGC=off.
-		if strings.ToLower(goGCEnv) == "off" {
+		if strings.EqualFold(goGCEnv, "off") {
 			return -1
 		}
 		i, err := strconv.Atoi(goGCEnv)

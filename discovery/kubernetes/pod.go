@@ -282,7 +282,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 		Source: podSource(pod),
 	}
 	// PodIP can be empty when a pod is starting or has been evicted.
-	if len(pod.Status.PodIP) == 0 {
+	if pod.Status.PodIP == "" {
 		return tg
 	}
 

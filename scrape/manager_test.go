@@ -1282,7 +1282,7 @@ func TestTargetDisappearsAfterProviderRemoved(t *testing.T) {
 	myJobSDTargetURL := "my:9876"
 	myJobStaticTargetURL := "my:5432"
 
-	sdFileContent := fmt.Sprintf(`[{"targets": ["%s"]}]`, myJobSDTargetURL)
+	sdFileContent := fmt.Sprintf(`[{"targets": [%q]}]`, myJobSDTargetURL)
 	sDFile := writeIntoFile(t, sdFileContent, "*targets.json")
 
 	baseConfig := `
@@ -1382,8 +1382,8 @@ func TestOnlyProviderStaleTargetsAreDropped(t *testing.T) {
 	jobTarget1URL := "foo:9876"
 	jobTarget2URL := "foo:5432"
 
-	sdFile1Content := fmt.Sprintf(`[{"targets": ["%s"]}]`, jobTarget1URL)
-	sdFile2Content := fmt.Sprintf(`[{"targets": ["%s"]}]`, jobTarget2URL)
+	sdFile1Content := fmt.Sprintf(`[{"targets": [%q]}]`, jobTarget1URL)
+	sdFile2Content := fmt.Sprintf(`[{"targets": [%q]}]`, jobTarget2URL)
 	sDFile1 := writeIntoFile(t, sdFile1Content, "*targets.json")
 	sDFile2 := writeIntoFile(t, sdFile2Content, "*targets.json")
 
@@ -1443,7 +1443,7 @@ func TestProviderStaleTargetsAreDropped(t *testing.T) {
 	jobName := "my-job"
 	jobTargetURL := "foo:9876"
 
-	sdFileContent := fmt.Sprintf(`[{"targets": ["%s"]}]`, jobTargetURL)
+	sdFileContent := fmt.Sprintf(`[{"targets": [%q]}]`, jobTargetURL)
 	sDFile := writeIntoFile(t, sdFileContent, "*targets.json")
 
 	baseConfig := `
@@ -1503,7 +1503,7 @@ func TestOnlyStaleTargetsAreDropped(t *testing.T) {
 	otherJob := "other-job"
 	otherJobTargetURL := "other:1234"
 
-	sdFileContent := fmt.Sprintf(`[{"targets": ["%s"]}]`, myJobSDTargetURL)
+	sdFileContent := fmt.Sprintf(`[{"targets": [%q]}]`, myJobSDTargetURL)
 	sDFile := writeIntoFile(t, sdFileContent, "*targets.json")
 
 	baseConfig := `

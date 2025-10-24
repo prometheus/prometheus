@@ -94,7 +94,7 @@ func Unquote(s string) (t string, err error) {
 
 	var runeTmp [utf8.UTFMax]byte
 	buf := make([]byte, 0, 3*len(s)/2) // Try to avoid more allocations.
-	for len(s) > 0 {
+	for s != "" {
 		c, multibyte, ss, err := unquoteChar(s, quote)
 		if err != nil {
 			return "", err

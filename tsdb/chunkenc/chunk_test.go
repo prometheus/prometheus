@@ -15,7 +15,6 @@ package chunkenc
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"math/rand"
 	"testing"
@@ -32,7 +31,7 @@ func TestChunk(t *testing.T) {
 	for enc, nc := range map[Encoding]func() Chunk{
 		EncXOR: func() Chunk { return NewXORChunk() },
 	} {
-		t.Run(fmt.Sprintf("%v", enc), func(t *testing.T) {
+		t.Run(enc.String(), func(t *testing.T) {
 			for range make([]struct{}, 1) {
 				c := nc()
 				testChunk(t, c)

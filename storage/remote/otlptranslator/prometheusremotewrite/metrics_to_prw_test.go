@@ -1102,27 +1102,29 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 			// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
 			metricType = model.MetricTypeUnknown
 		}
-		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
-			name:        fmt.Sprintf("histogram_%d%s_bucket", i, suffix),
-			familyName:  fmt.Sprintf("histogram_%d%s", i, suffix),
-			metricType:  metricType,
-			unit:        "unit",
-			description: "histogram",
-		})
-		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
-			name:        fmt.Sprintf("histogram_%d%s_count", i, suffix),
-			familyName:  fmt.Sprintf("histogram_%d%s", i, suffix),
-			metricType:  metricType,
-			unit:        "unit",
-			description: "histogram",
-		})
-		wantPromMetrics = append(wantPromMetrics, wantPrometheusMetric{
-			name:        fmt.Sprintf("histogram_%d%s_sum", i, suffix),
-			familyName:  fmt.Sprintf("histogram_%d%s", i, suffix),
-			metricType:  metricType,
-			unit:        "unit",
-			description: "histogram",
-		})
+		wantPromMetrics = append(wantPromMetrics,
+			wantPrometheusMetric{
+				name:        fmt.Sprintf("histogram_%d%s_bucket", i, suffix),
+				familyName:  fmt.Sprintf("histogram_%d%s", i, suffix),
+				metricType:  metricType,
+				unit:        "unit",
+				description: "histogram",
+			},
+			wantPrometheusMetric{
+				name:        fmt.Sprintf("histogram_%d%s_count", i, suffix),
+				familyName:  fmt.Sprintf("histogram_%d%s", i, suffix),
+				metricType:  metricType,
+				unit:        "unit",
+				description: "histogram",
+			},
+			wantPrometheusMetric{
+				name:        fmt.Sprintf("histogram_%d%s_sum", i, suffix),
+				familyName:  fmt.Sprintf("histogram_%d%s", i, suffix),
+				metricType:  metricType,
+				unit:        "unit",
+				description: "histogram",
+			},
+		)
 	}
 
 	for i := 1; i <= nonHistogramCount; i++ {

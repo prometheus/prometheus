@@ -171,7 +171,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	}
 
 	ilc := d.isvc.List(d.project, d.zone)
-	if len(d.filter) > 0 {
+	if d.filter != "" {
 		ilc = ilc.Filter(d.filter)
 	}
 	err := ilc.Pages(ctx, func(l *compute.InstanceList) error {

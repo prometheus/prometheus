@@ -520,8 +520,10 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 		}
 
 		if r.restored.Load() {
-			vec = append(vec, r.sample(a, ts.Add(-queryOffset)))
-			vec = append(vec, r.forStateSample(a, ts.Add(-queryOffset), float64(a.ActiveAt.Unix())))
+			vec = append(vec,
+				r.sample(a, ts.Add(-queryOffset)),
+				r.forStateSample(a, ts.Add(-queryOffset), float64(a.ActiveAt.Unix())),
+			)
 		}
 	}
 
