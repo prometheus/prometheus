@@ -1784,7 +1784,7 @@ func TestRuntimeRetentionConfigChange(t *testing.T) {
 	require.Equal(t, nineHoursMs, actBlocks[0].meta.MinTime, "first remaining block should be within retention")
 	require.Equal(t, initialRetentionDuration, actBlocks[1].meta.MaxTime, "last remaining block should be the newest")
 
-	require.Greater(t, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), 0, "time retention count should be incremented")
+	require.Positive(t, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "time retention count should be incremented")
 }
 
 func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
