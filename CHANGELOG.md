@@ -3,7 +3,7 @@
 ## main / unreleased
 
 ## 3.7.2 / 2025-10-22
-
+* [CHANGE] Enable Native Histograms by default for scraping and remote write #17401
 * [BUGFIX] AWS SD: Fix AWS SDK v2 credentials handling for EC2 and Lightsail discovery. #17355
 * [BUGFIX] AWS SD: Load AWS region from IMDS when not set. #17376
 * [BUGFIX] Relabeling: Fix `labelmap` action validation with the legacy metric name validation scheme. #17372
