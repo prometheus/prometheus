@@ -3223,6 +3223,11 @@ with this feature.
 
 
 # Configures data retention settings for TSDB.
+#
+# Note: When retention is changed at runtime, the retention
+# settings are updated immediately, but block deletion based on the new retention policy
+# occurs during the next block reload cycle. This happens automatically within 1 minute
+# or when a compaction completes, whichever comes first.
 [ retention: <retention> ] :
   # How long to retain samples in storage. If neither this option nor the size option
   # is set, the retention time defaults to 15d. Units Supported: y, w, d, h, m, s, ms.

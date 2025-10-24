@@ -42,6 +42,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -1717,6 +1718,73 @@ func TestSizeRetentionMetric(t *testing.T) {
 		actMaxBytes := int64(prom_testutil.ToFloat64(db.metrics.maxBytes))
 		require.Equal(t, c.expMaxBytes, actMaxBytes, "metric retention limit bytes mismatch")
 	}
+}
+
+// TestRuntimeRetentionConfigChange tests that retention configuration can be
+// changed at runtime via ApplyConfig and that the retention logic properly
+// deletes blocks when retention is shortened. This test also ensures race-free
+// concurrent access to retention settings.
+func TestRuntimeRetentionConfigChange(t *testing.T) {
+	const (
+		initialRetentionDuration = int64(10 * time.Hour / time.Millisecond) // 10 hours
+		shorterRetentionDuration = int64(1 * time.Hour / time.Millisecond)  // 1 hour
+	)
+
+	db := openTestDB(t, &Options{
+		RetentionDuration: initialRetentionDuration,
+	}, []int64{100})
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	nineHoursMs := int64(9 * time.Hour / time.Millisecond)
+	nineAndHalfHoursMs := int64((9*time.Hour + 30*time.Minute) / time.Millisecond)
+	blocks := []*BlockMeta{
+		{MinTime: 0, MaxTime: 100},                                       // 10 hours old (beyond new retention)
+		{MinTime: 100, MaxTime: 200},                                     // 9.9 hours old (beyond new retention)
+		{MinTime: nineHoursMs, MaxTime: nineAndHalfHoursMs},              // 1 hour old (within new retention)
+		{MinTime: nineAndHalfHoursMs, MaxTime: initialRetentionDuration}, // 0.5 hours old (within new retention)
+	}
+
+	for _, m := range blocks {
+		createBlock(t, db.Dir(), genSeries(10, 10, m.MinTime, m.MaxTime))
+	}
+
+	// Reload blocks and verify all are loaded.
+	require.NoError(t, db.reloadBlocks())
+	require.Len(t, db.Blocks(), len(blocks), "expected all blocks to be loaded initially")
+
+	cfg := &config.Config{
+		StorageConfig: config.StorageConfig{
+			TSDBConfig: &config.TSDBConfig{
+				Retention: &config.TSDBRetentionConfig{
+					Time: model.Duration(shorterRetentionDuration),
+				},
+			},
+		},
+	}
+
+	require.NoError(t, db.ApplyConfig(cfg), "ApplyConfig should succeed")
+
+	actualRetention := db.getRetentionDuration()
+	require.Equal(t, shorterRetentionDuration, actualRetention, "retention duration should be updated")
+
+	expectedRetentionSeconds := (time.Duration(shorterRetentionDuration) * time.Millisecond).Seconds()
+	actualRetentionSeconds := prom_testutil.ToFloat64(db.metrics.retentionDuration)
+	require.Equal(t, expectedRetentionSeconds, actualRetentionSeconds, "retention duration metric should be updated")
+
+	require.NoError(t, db.reloadBlocks())
+
+	// Verify that blocks beyond the new retention were deleted.
+	// We expect only the last 2 blocks to remain (those within 1 hour).
+	actBlocks := db.Blocks()
+	require.Len(t, actBlocks, 2, "expected old blocks to be deleted after retention change")
+
+	// Verify the remaining blocks are the newest ones.
+	require.Equal(t, nineHoursMs, actBlocks[0].meta.MinTime, "first remaining block should be within retention")
+	require.Equal(t, initialRetentionDuration, actBlocks[1].meta.MaxTime, "last remaining block should be the newest")
+
+	require.Greater(t, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), 0, "time retention count should be incremented")
 }
 
 func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
