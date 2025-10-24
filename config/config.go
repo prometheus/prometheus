@@ -157,7 +157,7 @@ var (
 		OTLPConfig:   DefaultOTLPConfig,
 	}
 
-	f bool
+	t bool = true
 	// DefaultGlobalConfig is the default global configuration.
 	DefaultGlobalConfig = GlobalConfig{
 		ScrapeInterval:     model.Duration(1 * time.Minute),
@@ -172,7 +172,7 @@ var (
 		ScrapeProtocols: nil,
 		// When the native histogram feature flag is enabled,
 		// ScrapeNativeHistograms default changes to true.
-		ScrapeNativeHistograms:         &f,
+		ScrapeNativeHistograms:         &t,
 		ConvertClassicHistogramsToNHCB: false,
 		AlwaysScrapeClassicHistograms:  false,
 		MetricNameValidationScheme:     model.UTF8Validation,
@@ -213,11 +213,12 @@ var (
 
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
-		RemoteTimeout:    model.Duration(30 * time.Second),
-		ProtobufMessage:  RemoteWriteProtoMsgV1,
-		QueueConfig:      DefaultQueueConfig,
-		MetadataConfig:   DefaultMetadataConfig,
-		HTTPClientConfig: DefaultRemoteWriteHTTPClientConfig,
+		RemoteTimeout:        model.Duration(30 * time.Second),
+		ProtobufMessage:      RemoteWriteProtoMsgV1,
+		QueueConfig:          DefaultQueueConfig,
+		MetadataConfig:       DefaultMetadataConfig,
+		HTTPClientConfig:     DefaultRemoteWriteHTTPClientConfig,
+		SendNativeHistograms: true,
 	}
 
 	// DefaultQueueConfig is the default remote queue configuration.

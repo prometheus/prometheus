@@ -10,6 +10,8 @@ global:
   label_value_length_limit: 200
   query_log_file: query.log
   scrape_failure_log_file: fail.log
+  scrape_native_histograms: false
+  
   # scrape_timeout is set to the global default (10s).
 
   external_labels:
@@ -37,6 +39,7 @@ remote_write:
       tls_config:
         cert_file: valid_cert_file
         key_file: valid_key_file
+    send_native_histograms: false
 
   - url: http://remote2/push
     protobuf_message: io.prometheus.write.v2.Request
@@ -46,6 +49,7 @@ remote_write:
       key_file: valid_key_file
     headers:
       name: value
+    send_native_histograms: false
 
 otlp:
   promote_resource_attributes: ["k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"]
@@ -66,7 +70,6 @@ remote_read:
 
 scrape_configs:
   - job_name: prometheus
-
     honor_labels: true
     # scrape_interval is defined by the configured global (15s).
     # scrape_timeout is defined by the global default (10s).
@@ -123,8 +126,10 @@ scrape_configs:
 
     tls_config:
       min_version: TLS10
-
+    scrape_native_histograms: false
+    
   - job_name: service-x
+    scrape_native_histograms: false
 
     basic_auth:
       username: admin_name
@@ -176,6 +181,7 @@ scrape_configs:
         action: drop
 
   - job_name: service-y
+    scrape_native_histograms: false
 
     consul_sd_configs:
       - server: "localhost:1234"
@@ -201,6 +207,7 @@ scrape_configs:
         replacement: ${2}
 
   - job_name: service-z
+    scrape_native_histograms: false
 
     tls_config:
       cert_file: valid_cert_file
@@ -210,6 +217,7 @@ scrape_configs:
       credentials: mysecret
 
   - job_name: service-kubernetes
+    scrape_native_histograms: false
 
     kubernetes_sd_configs:
       - role: endpoints
@@ -223,6 +231,7 @@ scrape_configs:
           password: "mysecret"
 
   - job_name: service-kubernetes-namespaces
+    scrape_native_histograms: false
 
     kubernetes_sd_configs:
       - role: endpoints
@@ -236,12 +245,15 @@ scrape_configs:
       password_file: valid_password_file
 
   - job_name: service-kuma
+    scrape_native_histograms: false
 
     kuma_sd_configs:
       - server: http://kuma-control-plane.kuma-system.svc:5676
         client_id: main-prometheus
 
   - job_name: service-marathon
+    scrape_native_histograms: false
+
     marathon_sd_configs:
       - servers:
           - "https://marathon.example.com:443"
@@ -252,10 +264,14 @@ scrape_configs:
           key_file: valid_key_file
 
   - job_name: service-nomad
+    scrape_native_histograms: false
+
     nomad_sd_configs:
       - server: 'http://localhost:4646'
 
   - job_name: service-ec2
+    scrape_native_histograms: false
+
     ec2_sd_configs:
       - region: us-east-1
         access_key: access
@@ -272,6 +288,8 @@ scrape_configs:
               - db
 
   - job_name: service-lightsail
+    scrape_native_histograms: false
+
     lightsail_sd_configs:
       - region: us-east-1
         access_key: access
@@ -279,6 +297,8 @@ scrape_configs:
         profile: profile
 
   - job_name: service-azure
+    scrape_native_histograms: false
+
     azure_sd_configs:
       - environment: AzurePublicCloud
         authentication_method: OAuth
@@ -290,6 +310,8 @@ scrape_configs:
         port: 9100
 
   - job_name: service-nerve
+    scrape_native_histograms: false
+
     nerve_sd_configs:
       - servers:
           - localhost
@@ -297,12 +319,16 @@ scrape_configs:
           - /monitoring
 
   - job_name: 0123service-xxx
+    scrape_native_histograms: false
+
     metrics_path: /metrics
     static_configs:
       - targets:
           - localhost:9090
 
   - job_name: badfederation
+    scrape_native_histograms: false
+
     honor_timestamps: false
     metrics_path: /federate
     static_configs:
@@ -310,16 +336,22 @@ scrape_configs:
           - localhost:9090
 
   - job_name: 測試
+    scrape_native_histograms: false
+
     metrics_path: /metrics
     static_configs:
       - targets:
           - localhost:9090
 
   - job_name: httpsd
+    scrape_native_histograms: false
+
     http_sd_configs:
       - url: "http://example.com/prometheus"
 
   - job_name: service-triton
+    scrape_native_histograms: false
+
     triton_sd_configs:
       - account: "testAccount"
         dns_suffix: "triton.example.com"
@@ -332,20 +364,28 @@ scrape_configs:
           key_file: valid_key_file
 
   - job_name: digitalocean-droplets
+    scrape_native_histograms: false
+
     digitalocean_sd_configs:
       - authorization:
           credentials: abcdef
 
   - job_name: docker
+    scrape_native_histograms: false
+
     docker_sd_configs:
       - host: unix:///var/run/docker.sock
 
   - job_name: dockerswarm
+    scrape_native_histograms: false
+
     dockerswarm_sd_configs:
       - host: http://127.0.0.1:2375
         role: nodes
 
   - job_name: service-openstack
+    scrape_native_histograms: false
+
     openstack_sd_configs:
       - role: instance
         region: RegionOne
@@ -357,6 +397,8 @@ scrape_configs:
           key_file: valid_key_file
 
   - job_name: service-puppetdb
+    scrape_native_histograms: false
+
     puppetdb_sd_configs:
       - url: https://puppetserver/
         query: 'resources { type = "Package" and title = "httpd" }'
@@ -384,10 +426,14 @@ scrape_configs:
           password: abcdef
 
   - job_name: service-eureka
+    scrape_native_histograms: false
+
     eureka_sd_configs:
       - server: "http://eureka.example.com:8761/eureka"
 
   - job_name: ovhcloud
+    scrape_native_histograms: false
+
     ovhcloud_sd_configs:
       - service: vps
         endpoint: ovh-eu
@@ -403,6 +449,8 @@ scrape_configs:
         refresh_interval: 1m
 
   - job_name: scaleway
+    scrape_native_histograms: false
+
     scaleway_sd_configs:
       - role: instance
         project_id: 11111111-1111-1111-1111-111111111112
@@ -414,29 +462,39 @@ scrape_configs:
         secret_key: 11111111-1111-1111-1111-111111111111
 
   - job_name: linode-instances
+    scrape_native_histograms: false
+
     linode_sd_configs:
       - authorization:
           credentials: abcdef
 
   - job_name: stackit-servers
+    scrape_native_histograms: false
+
     stackit_sd_configs:
       - project: 11111111-1111-1111-1111-111111111111
         authorization:
           credentials: abcdef
 
   - job_name: uyuni
+    scrape_native_histograms: false
+
     uyuni_sd_configs:
       - server: https://localhost:1234
         username: gopher
         password: hole
 
   - job_name: ionos
+    scrape_native_histograms: false
+
     ionos_sd_configs:
       - datacenter_id: 8feda53f-15f0-447f-badf-ebe32dad2fc0
         authorization:
           credentials: abcdef
 
   - job_name: vultr
+    scrape_native_histograms: false
+
     vultr_sd_configs:
       - authorization:
           credentials: abcdef

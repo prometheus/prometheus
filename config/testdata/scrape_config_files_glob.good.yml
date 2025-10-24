@@ -1,2 +1,4 @@
+global:
+  scrape_native_histograms: false
 scrape_config_files:
   - scrape_configs/*.yml

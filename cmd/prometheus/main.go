@@ -254,11 +254,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				parser.ExperimentalDurationExpr = true
 				logger.Info("Experimental duration expression parsing enabled.")
 			case "native-histograms":
-				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
-				t := true
-				config.DefaultConfig.GlobalConfig.ScrapeNativeHistograms = &t
-				config.DefaultGlobalConfig.ScrapeNativeHistograms = &t
-				logger.Warn("This option for --enable-feature is being phased out. It currently changes the default for the scrape_native_histograms scrape config setting to true, but will become a no-op in v3.9+. Stop using this option and set scrape_native_histograms in the scrape config instead.", "option", o)
+				logger.Warn("This option for --enable-feature is now a no-op. Native histograms are enabled by default (scrape_native_histograms=true). To change this, configure scrape_native_histograms in your config file.", "option", o)
 			case "ooo-native-histograms":
 				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			case "created-timestamp-zero-ingestion":

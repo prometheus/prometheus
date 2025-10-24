@@ -2666,7 +2666,11 @@ func TestGetScrapeConfigs(t *testing.T) {
 			ConvertClassicHistogramsToNHCB: boolPtr(opts.ConvertClassicHistToNHCB),
 		}
 		if opts.ScrapeProtocols == nil {
-			sc.ScrapeProtocols = DefaultScrapeProtocols
+			if opts.ScrapeNativeHistograms == true {
+				sc.ScrapeProtocols = DefaultProtoFirstScrapeProtocols
+			} else {
+				sc.ScrapeProtocols = DefaultScrapeProtocols
+			}
 		}
 		return &sc
 	}
@@ -2835,37 +2839,37 @@ func TestGetScrapeConfigs(t *testing.T) {
 		{
 			name:           "A global config that enables convert classic histograms to nhcb.",
 			configFile:     "testdata/global_convert_classic_hist_to_nhcb.good.yml",
-			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: true})},
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: true, ScrapeNativeHistograms: true})},
 		},
 		{
 			name:           "A global config that enables convert classic histograms to nhcb and scrape config that disables the conversion",
 			configFile:     "testdata/local_disable_convert_classic_hist_to_nhcb.good.yml",
-			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false})},
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false, ScrapeNativeHistograms: false})},
 		},
 		{
 			name:           "A global config that disables convert classic histograms to nhcb and scrape config that enables the conversion",
 			configFile:     "testdata/local_convert_classic_hist_to_nhcb.good.yml",
-			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: true})},
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: true, ScrapeNativeHistograms: true})},
 		},
 		{
 			name:           "A global config that enables always scrape classic histograms",
 			configFile:     "testdata/global_enable_always_scrape_classic_hist.good.yml",
-			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: true, ConvertClassicHistToNHCB: false})},
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: true, ConvertClassicHistToNHCB: false, ScrapeNativeHistograms: false})},
 		},
 		{
 			name:           "A global config that disables always scrape classic histograms",
 			configFile:     "testdata/global_disable_always_scrape_classic_hist.good.yml",
-			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false})},
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false, ScrapeNativeHistograms: false})},
 		},
 		{
 			name:           "A global config that disables always scrape classic histograms and scrape config that enables it",
 			configFile:     "testdata/local_enable_always_scrape_classic_hist.good.yml",
-			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: true, ConvertClassicHistToNHCB: false})},
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: true, ConvertClassicHistToNHCB: false, ScrapeNativeHistograms: false})},
 		},
 		{
 			name:           "A global config that enables always scrape classic histograms and scrape config that disables it",
 			configFile:     "testdata/local_disable_always_scrape_classic_hist.good.yml",
-			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false})},
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false, ScrapeNativeHistograms: false})},
 		},
 		{
 			name:           "A global config that enables scrape native histograms",

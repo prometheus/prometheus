@@ -5,3 +5,4 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:8080']
     always_scrape_classic_histograms: true
+    scrape_native_histograms: false

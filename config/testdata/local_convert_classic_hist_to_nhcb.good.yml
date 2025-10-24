@@ -5,3 +5,4 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:8080']
     convert_classic_histograms_to_nhcb: true
+    scrape_native_histograms: true
