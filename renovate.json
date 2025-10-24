@@ -1,0 +1,62 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "extends": [
+      "config:recommended"
+    ],
+    "separateMultipleMajor": true,
+    "baseBranches": ["main"],
+    "postUpdateOptions": [
+      "gomodTidy",
+      "gomodUpdateImportPaths"
+    ],
+    "schedule": ["* 0-8 * * 1"],
+    "timezone": "UTC",
+    "packageRules": [
+      {
+        "description": "Don't update replace directives",
+        "matchPackageNames": [
+          "github.com/fsnotify/fsnotify"
+        ],
+        "enabled": false
+      },
+      {
+        "description": "Don't update prometheus-io namespace packages",
+        "matchPackageNames": ["@prometheus-io/**"],
+        "enabled": false
+      },
+      {
+        "description": "Group Mantine UI dependencies",
+        "matchFileNames": [
+          "web/ui/mantine-ui/package.json"
+        ],
+        "groupName": "Mantine UI",
+        "matchUpdateTypes": ["minor", "patch"],
+        "enabled": true
+      },
+      {
+        "description": "Group React App dependencies",
+        "matchFileNames": [
+          "web/ui/react-app/package.json"
+        ],
+        "groupName": "React App",
+        "matchUpdateTypes": ["minor", "patch"],
+        "enabled": true
+      },
+      {
+        "description": "Group module dependencies",
+        "matchFileNames": [
+          "web/ui/module/**/package.json"
+        ],
+        "groupName": "Modules",
+        "matchUpdateTypes": ["minor", "patch"],
+        "enabled": true
+      }
+    ],
+    "branchPrefix": "deps-update/",
+    "vulnerabilityAlerts": {
+      "enabled": true,
+      "labels": ["security-update"]
+    },
+    "osvVulnerabilityAlerts": true,
+    "dependencyDashboardApproval": false
+}

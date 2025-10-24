@@ -14,6 +14,7 @@
 package scrape
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -34,6 +35,8 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/storage"
 )
 
 const (
@@ -718,4 +721,41 @@ func TestMaxSchemaAppender(t *testing.T) {
 			})
 		}
 	}
+}
+
+// Test sample_limit when a scrape containst Native Histograms.
+func TestAppendWithSampleLimitAndNativeHistogram(t *testing.T) {
+	const sampleLimit = 2
+	resApp := &collectResultAppender{}
+	sl := newBasicScrapeLoop(t, context.Background(), nil, func(_ context.Context) storage.Appender {
+		return resApp
+	}, 0)
+	sl.sampleLimit = sampleLimit
+
+	now := time.Now()
+	app := appender(sl.appender(context.Background()), sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
+
+	// sample_limit is set to 2, so first two scrapes should work
+	_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "foo"), timestamp.FromTime(now), 1)
+	require.NoError(t, err)
+
+	// Second sample, should be ok.
+	_, err = app.AppendHistogram(
+		0,
+		labels.FromStrings(model.MetricNameLabel, "my_histogram1"),
+		timestamp.FromTime(now),
+		&histogram.Histogram{},
+		nil,
+	)
+	require.NoError(t, err)
+
+	// This is third sample with sample_limit=2, it should trigger errSampleLimit.
+	_, err = app.AppendHistogram(
+		0,
+		labels.FromStrings(model.MetricNameLabel, "my_histogram2"),
+		timestamp.FromTime(now),
+		&histogram.Histogram{},
+		nil,
+	)
+	require.ErrorIs(t, err, errSampleLimit)
 }

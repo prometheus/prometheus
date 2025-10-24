@@ -408,7 +408,7 @@ func (w *Writer) cut() error {
 			// Uncached IO is implemented using direct I/O for now.
 			wbuf, err = fileutil.NewDirectIOWriter(f, size)
 		} else {
-			wbuf, err = fileutil.NewBufioWriterWithSeek(f, size)
+			wbuf, err = fileutil.NewBufioWriterWithSize(f, size)
 		}
 		if err != nil {
 			return err

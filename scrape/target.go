@@ -347,6 +347,22 @@ func (app *limitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t in
 	return ref, nil
 }
 
+func (app *limitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	// Bypass sample_limit checks only if we have a staleness marker for a known series (ref value is non-zero).
+	// This ensures that if a series is already in TSDB then we always write the marker.
+	if ref == 0 || (h != nil && !value.IsStaleNaN(h.Sum)) || (fh != nil && !value.IsStaleNaN(fh.Sum)) {
+		app.i++
+		if app.i > app.limit {
+			return 0, errSampleLimit
+		}
+	}
+	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
+	if err != nil {
+		return 0, err
+	}
+	return ref, nil
+}
+
 type timeLimitAppender struct {
 	storage.Appender
 

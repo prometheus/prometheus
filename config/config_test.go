@@ -26,6 +26,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -123,7 +124,7 @@ var expectedConf = &Config{
 	RemoteWriteConfigs: []*RemoteWriteConfig{
 		{
 			URL:             mustParseURL("http://remote1/push"),
-			ProtobufMessage: RemoteWriteProtoMsgV1,
+			ProtobufMessage: remoteapi.WriteV1MessageType,
 			RemoteTimeout:   model.Duration(30 * time.Second),
 			Name:            "drop_expensive",
 			WriteRelabelConfigs: []*relabel.Config{
@@ -154,7 +155,7 @@ var expectedConf = &Config{
 		},
 		{
 			URL:             mustParseURL("http://remote2/push"),
-			ProtobufMessage: RemoteWriteProtoMsgV2,
+			ProtobufMessage: remoteapi.WriteV2MessageType,
 			RemoteTimeout:   model.Duration(30 * time.Second),
 			QueueConfig:     DefaultQueueConfig,
 			MetadataConfig:  DefaultMetadataConfig,
@@ -175,7 +176,9 @@ var expectedConf = &Config{
 		PromoteResourceAttributes: []string{
 			"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name",
 		},
-		TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
+		TranslationStrategy:                  otlptranslator.UnderscoreEscapingWithSuffixes,
+		LabelNameUnderscoreSanitization:      true,
+		LabelNamePreserveMultipleUnderscores: true,
 	},
 
 	RemoteReadConfigs: []*RemoteReadConfig{
@@ -1874,6 +1877,48 @@ func TestOTLPPromoteScopeMetadata(t *testing.T) {
 	})
 }
 
+func TestOTLPLabelUnderscoreSanitization(t *testing.T) {
+	t.Run("defaults to true", func(t *testing.T) {
+		conf, err := LoadFile(filepath.Join("testdata", "otlp_label_underscore_sanitization_defaults.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		// Test that default values are true
+		require.True(t, conf.OTLPConfig.LabelNameUnderscoreSanitization)
+		require.True(t, conf.OTLPConfig.LabelNamePreserveMultipleUnderscores)
+	})
+
+	t.Run("explicitly enabled", func(t *testing.T) {
+		conf, err := LoadFile(filepath.Join("testdata", "otlp_label_underscore_sanitization_enabled.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(conf)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+
+		require.True(t, got.OTLPConfig.LabelNameUnderscoreSanitization)
+		require.True(t, got.OTLPConfig.LabelNamePreserveMultipleUnderscores)
+	})
+
+	t.Run("explicitly disabled", func(t *testing.T) {
+		conf, err := LoadFile(filepath.Join("testdata", "otlp_label_underscore_sanitization_disabled.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		// When explicitly set to false, they should be false
+		require.False(t, conf.OTLPConfig.LabelNameUnderscoreSanitization)
+		require.False(t, conf.OTLPConfig.LabelNamePreserveMultipleUnderscores)
+	})
+
+	t.Run("empty config uses defaults", func(t *testing.T) {
+		conf, err := LoadFile(filepath.Join("testdata", "otlp_empty.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		// Empty config should use default values (true)
+		require.True(t, conf.OTLPConfig.LabelNameUnderscoreSanitization)
+		require.True(t, conf.OTLPConfig.LabelNamePreserveMultipleUnderscores)
+	})
+}
+
 func TestOTLPAllowUTF8(t *testing.T) {
 	t.Run("good config - NoUTF8EscapingWithSuffixes", func(t *testing.T) {
 		fpath := filepath.Join("testdata", "otlp_allow_utf8.good.yml")
@@ -2324,7 +2369,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "remote_write_wrong_msg.bad.yml",
-		errMsg:   `invalid protobuf_message value: unknown remote write protobuf message io.prometheus.writet.v2.Request, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request`,
+		errMsg:   `invalid protobuf_message value: unknown type for remote write protobuf message io.prometheus.writet.v2.Request, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request`,
 	},
 	{
 		filename: "remote_write_url_missing.bad.yml",

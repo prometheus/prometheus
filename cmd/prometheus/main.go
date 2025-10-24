@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
@@ -405,7 +406,7 @@ func main() {
 	a.Flag("web.enable-remote-write-receiver", "Enable API endpoint accepting remote write requests.").
 		Default("false").BoolVar(&cfg.web.EnableRemoteWriteReceiver)
 
-	supportedRemoteWriteProtoMsgs := config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2}
+	supportedRemoteWriteProtoMsgs := remoteapi.MessageTypes{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType}
 	a.Flag("web.remote-write-receiver.accepted-protobuf-messages", fmt.Sprintf("List of the remote write protobuf messages to accept when receiving the remote writes. Supported values: %v", supportedRemoteWriteProtoMsgs.String())).
 		Default(supportedRemoteWriteProtoMsgs.Strings()...).SetValue(rwProtoMsgFlagValue(&cfg.web.AcceptRemoteWriteProtoMsgs))
 
@@ -1928,12 +1929,12 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 	}
 }
 
-// rwProtoMsgFlagParser is a custom parser for config.RemoteWriteProtoMsg enum.
+// rwProtoMsgFlagParser is a custom parser for remoteapi.WriteMessageType enum.
 type rwProtoMsgFlagParser struct {
-	msgs *[]config.RemoteWriteProtoMsg
+	msgs *remoteapi.MessageTypes
 }
 
-func rwProtoMsgFlagValue(msgs *[]config.RemoteWriteProtoMsg) kingpin.Value {
+func rwProtoMsgFlagValue(msgs *remoteapi.MessageTypes) kingpin.Value {
 	return &rwProtoMsgFlagParser{msgs: msgs}
 }
 
@@ -1951,7 +1952,7 @@ func (p *rwProtoMsgFlagParser) String() string {
 }
 
 func (p *rwProtoMsgFlagParser) Set(opt string) error {
-	t := config.RemoteWriteProtoMsg(opt)
+	t := remoteapi.WriteMessageType(opt)
 	if err := t.Validate(); err != nil {
 		return err
 	}
