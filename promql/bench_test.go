@@ -16,6 +16,7 @@ package promql_test
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"testing"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -95,25 +97,36 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, in
 	return nil
 }
 
+// setupJoinQueryTestData creates numInstances series for two metrics ("rpc_request_success_total" and
+// "rpc_request_error_total") that can be joined on "instance" label for benchmarking join performance.
 func setupJoinQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, interval, numIntervals, numInstances int) error {
 	ctx := context.Background()
 
-	commonLabels := []string{
+	commonLabels := labels.FromStrings(
 		"environment", "staging",
 		"cluster", "test-kubernetes-cluster",
 		"namespace", "test-kubernetes-namespace",
 		"job", "worker",
 		"rpc_method", "fetch-my-data-from-this-service",
 		"domain", "test-domain",
-	}
+	)
+	builder := labels.NewBuilder(commonLabels)
+
+	rnd := rand.New(rand.NewSource(0)) // Fixed seed for deterministic results.
 
 	var metrics []labels.Labels
 	for range numInstances {
-		instance := uuid.New().String()
-		labelsWithInstance := append(commonLabels, "instance", instance)
+		instance, err := uuid.NewRandomFromReader(rnd)
+		if err != nil {
+			return err
+		}
+		builder.Set("instance", instance.String())
 
-		metrics = append(metrics, labels.FromStrings(append(labelsWithInstance, "__name__", "rpc_request_success_total")...))
-		metrics = append(metrics, labels.FromStrings(append(labelsWithInstance, "__name__", "rpc_request_error_total")...))
+		builder.Set("__name__", "rpc_request_success_total")
+		metrics = append(metrics, builder.Labels())
+
+		builder.Set("__name__", "rpc_request_error_total")
+		metrics = append(metrics, builder.Labels())
 	}
 
 	refs := make([]storage.SeriesRef, len(metrics))
@@ -355,6 +368,7 @@ func BenchmarkJoinQuery(b *testing.B) {
 	stor := teststorage.New(b)
 	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
 	defer stor.Close()
+
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
@@ -364,15 +378,13 @@ func BenchmarkJoinQuery(b *testing.B) {
 	engine := promqltest.NewTestEngineWithOpts(b, opts)
 
 	const interval = 10000 // 10s interval.
+
 	// A day of data plus 10k steps.
 	numIntervals := 8640 + 10000
 
-	err := setupJoinQueryTestData(stor, engine, interval, numIntervals, 1000)
-	if err != nil {
-		b.Fatal(err)
-	}
+	require.NoError(b, setupJoinQueryTestData(stor, engine, interval, numIntervals, 1000))
 
-	cases := []benchCase{
+	for _, c := range []benchCase{
 		{
 			expr:  `rpc_request_success_total + rpc_request_error_total`,
 			steps: 10000,
@@ -382,36 +394,33 @@ func BenchmarkJoinQuery(b *testing.B) {
 			steps: 10000,
 		},
 		{
-			expr:  `rpc_request_success_total AND rpc_request_error_total{instance=~"0.*"}`,
+			expr:  `rpc_request_success_total AND rpc_request_error_total{instance=~"0.*"}`, // 0.* keeps 1/16 of UUID values
 			steps: 10000,
 		},
 		{
-			expr:  `rpc_request_success_total OR rpc_request_error_total{instance=~"0.*"}`,
+			expr:  `rpc_request_success_total OR rpc_request_error_total{instance=~"0.*"}`, // 0.* keeps 1/16 of UUID values
 			steps: 10000,
 		},
 		{
-			expr:  `rpc_request_success_total UNLESS rpc_request_error_total{instance=~"0.*"}`,
+			expr:  `rpc_request_success_total UNLESS rpc_request_error_total{instance=~"0.*"}`, // 0.* keeps 1/16 of UUID values
 			steps: 10000,
 		},
-	}
-
-	for _, c := range cases {
-		name := fmt.Sprintf("expr=%s,steps=%d", c.expr, c.steps)
+	} {
+		name := fmt.Sprintf("expr=%s/steps=%d", c.expr, c.steps)
 		b.Run(name, func(b *testing.B) {
 			ctx := context.Background()
 			b.ReportAllocs()
 			for range b.N {
 				qry, err := engine.NewRangeQuery(
 					ctx, stor, nil, c.expr,
-					time.Unix(int64((numIntervals-c.steps)*10), 0),
-					time.Unix(int64(numIntervals*10), 0), time.Second*10)
-				if err != nil {
-					b.Fatal(err)
-				}
+					timestamp.Time(int64((numIntervals-c.steps)*10_000)),
+					timestamp.Time(int64(numIntervals*10_000)),
+					time.Second*10)
+				require.NoError(b, err)
+
 				res := qry.Exec(ctx)
-				if res.Err != nil {
-					b.Fatal(res.Err)
-				}
+				require.NoError(b, res.Err)
+
 				qry.Close()
 			}
 		})
