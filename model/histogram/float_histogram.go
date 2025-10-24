@@ -2026,24 +2026,24 @@ func (h *FloatHistogram) ReduceResolution(targetSchema int32) error {
 
 // kahanReduceResolution works like reduceResolution, but it is specialized for FloatHistogram's KahanAdd method.
 // Unlike reduceResolution, which supports both float and integer buckets, this function only operates on float buckets.
-// It also takes an additional argument, originCompBuckets, representing the compensation buckets for the origin histogram.
-// This function modifies both the buckets of the origin histogram and its corresponding compensation histogram.
+// It also takes an additional argument, originCompensationBuckets, representing the compensation buckets for the origin histogram.
+// Modifies both the origin histogram buckets and their associated compensation buckets.
 func kahanReduceResolution(
 	originSpans []Span,
 	originReceivingBuckets []float64,
-	originCompBuckets []float64,
+	originCompensationBuckets []float64,
 	originSchema,
 	targetSchema int32,
 	inplace bool,
-) (newSpans []Span, newReceivingBuckets, newCompBuckets []float64) {
+) (newSpans []Span, newReceivingBuckets, newCompensationBuckets []float64) {
 	var (
-		targetSpans            []Span    // The spans in the target schema.
-		targetReceivingBuckets []float64 // The receiving bucket counts in the target schema.
-		targetCompBuckets      []float64 // The compensation bucket counts in the target schema.
-		bucketIdx              int32     // The index of bucket in the origin schema.
-		bucketCountIdx         int       // The position of a bucket in origin bucket count slice `originBuckets`.
-		targetBucketIdx        int32     // The index of bucket in the target schema.
-		lastTargetBucketIdx    int32     // The index of the last added target bucket.
+		targetSpans               []Span    // The spans in the target schema.
+		targetReceivingBuckets    []float64 // The receiving bucket counts in the target schema.
+		targetCompensationBuckets []float64 // The compensation bucket counts in the target schema.
+		bucketIdx                 int32     // The index of bucket in the origin schema.
+		bucketCountIdx            int       // The position of a bucket in origin bucket count slice `originBuckets`.
+		targetBucketIdx           int32     // The index of bucket in the target schema.
+		lastTargetBucketIdx       int32     // The index of the last added target bucket.
 	)
 
 	if inplace {
@@ -2051,7 +2051,7 @@ func kahanReduceResolution(
 		// target slices don't grow faster than origin slices are being read.
 		targetSpans = originSpans[:0]
 		targetReceivingBuckets = originReceivingBuckets[:0]
-		targetCompBuckets = originCompBuckets[:0]
+		targetCompensationBuckets = originCompensationBuckets[:0]
 	}
 
 	for _, span := range originSpans {
@@ -2071,17 +2071,17 @@ func kahanReduceResolution(
 				targetSpans = append(targetSpans, span)
 				targetReceivingBuckets = append(targetReceivingBuckets, originReceivingBuckets[bucketCountIdx])
 				lastTargetBucketIdx = targetBucketIdx
-				targetCompBuckets = append(targetCompBuckets, originCompBuckets[bucketCountIdx])
+				targetCompensationBuckets = append(targetCompensationBuckets, originCompensationBuckets[bucketCountIdx])
 
 			case lastTargetBucketIdx == targetBucketIdx:
 				// The current bucket has to be merged into the same target bucket as the previous bucket.
 				lastBucketIdx := len(targetReceivingBuckets) - 1
-				targetReceivingBuckets[lastBucketIdx], targetCompBuckets[lastBucketIdx] = kahansum.Inc(
+				targetReceivingBuckets[lastBucketIdx], targetCompensationBuckets[lastBucketIdx] = kahansum.Inc(
 					originReceivingBuckets[bucketCountIdx],
 					targetReceivingBuckets[lastBucketIdx],
-					targetCompBuckets[lastBucketIdx],
+					targetCompensationBuckets[lastBucketIdx],
 				)
-				targetCompBuckets[lastBucketIdx] += originCompBuckets[bucketCountIdx]
+				targetCompensationBuckets[lastBucketIdx] += originCompensationBuckets[bucketCountIdx]
 
 			case (lastTargetBucketIdx + 1) == targetBucketIdx:
 				// The current bucket has to go into a new target bucket,
@@ -2090,7 +2090,7 @@ func kahanReduceResolution(
 				targetSpans[len(targetSpans)-1].Length++
 				lastTargetBucketIdx++
 				targetReceivingBuckets = append(targetReceivingBuckets, originReceivingBuckets[bucketCountIdx])
-				targetCompBuckets = append(targetCompBuckets, originCompBuckets[bucketCountIdx])
+				targetCompensationBuckets = append(targetCompensationBuckets, originCompensationBuckets[bucketCountIdx])
 
 			case (lastTargetBucketIdx + 1) < targetBucketIdx:
 				// The current bucket has to go into a new target bucket,
@@ -2103,7 +2103,7 @@ func kahanReduceResolution(
 				targetSpans = append(targetSpans, span)
 				lastTargetBucketIdx = targetBucketIdx
 				targetReceivingBuckets = append(targetReceivingBuckets, originReceivingBuckets[bucketCountIdx])
-				targetCompBuckets = append(targetCompBuckets, originCompBuckets[bucketCountIdx])
+				targetCompensationBuckets = append(targetCompensationBuckets, originCompensationBuckets[bucketCountIdx])
 			}
 
 			bucketIdx++
@@ -2111,7 +2111,7 @@ func kahanReduceResolution(
 		}
 	}
 
-	return targetSpans, targetReceivingBuckets, targetCompBuckets
+	return targetSpans, targetReceivingBuckets, targetCompensationBuckets
 }
 
 // newCompensationHistogram initializes a new compensation histogram that can be used
@@ -2174,25 +2174,6 @@ func (h *FloatHistogram) adjustCounterReset(other *FloatHistogram) (counterReset
 		return true
 	}
 	return false
-}
-
-// NewCompensationHistogram initializes a new compensation histogram that can be used
-// alongside the current FloatHistogram in Kahan summation.
-// The compensation histogram is structured to match the receiving histogram's bucket
-// layout including its schema and custom values, and it shares spans with the receiving histogram.
-// However, the bucket values in the compensation histogram are initialized to zero.
-func (h *FloatHistogram) NewCompensationHistogram() *FloatHistogram {
-	c := &FloatHistogram{
-		Schema:          h.Schema,
-		CustomValues:    h.CustomValues,
-		PositiveBuckets: make([]float64, len(h.PositiveBuckets)),
-		PositiveSpans:   h.PositiveSpans,
-		NegativeSpans:   h.NegativeSpans,
-	}
-	if !h.UsesCustomBuckets() {
-		c.NegativeBuckets = make([]float64, len(h.NegativeBuckets))
-	}
-	return c
 }
 
 // HasOverflow reports whether any of the FloatHistogram's fields contain an infinite value.

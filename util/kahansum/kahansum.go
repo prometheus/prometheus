@@ -34,10 +34,6 @@ func Inc(inc, sum, c float64) (newSum, newC float64) {
 	return t, c
 }
 
-// Dec performs subtraction of one floating-point number from another using the Kahan summation algorithm.
-// We get incorrect results if this function is inlined; see https://github.com/prometheus/prometheus/issues/16714.
-//
-//go:noinline
 func Dec(dec, sum, c float64) (newSum, newC float64) {
 	return Inc(-dec, sum, c)
 }

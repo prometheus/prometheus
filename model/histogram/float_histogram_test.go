@@ -2531,8 +2531,8 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 		expNHCBBoundsReconciled                bool
 	}{
 		{
-			"larger zero bucket in first histogram",
-			&FloatHistogram{
+			name: "larger zero bucket in first histogram",
+			in1: &FloatHistogram{
 				ZeroThreshold:   1,
 				ZeroCount:       17,
 				Count:           21,
@@ -2542,14 +2542,14 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				NegativeSpans:   []Span{{4, 2}, {1, 2}},
 				NegativeBuckets: []float64{1, 1, 4, 4},
 			},
-			&FloatHistogram{
+			comp: &FloatHistogram{
 				ZeroThreshold:   1,
 				PositiveSpans:   []Span{{1, 2}, {0, 3}},
 				PositiveBuckets: []float64{0.02, 0.03, 0.06, 0.02, 0.05},
 				NegativeSpans:   []Span{{4, 2}, {1, 2}},
 				NegativeBuckets: []float64{0.01, 0.01, 0.04, 0.04},
 			},
-			&FloatHistogram{
+			in2: &FloatHistogram{
 				ZeroThreshold:   0.01,
 				ZeroCount:       11,
 				Count:           30,
@@ -2559,7 +2559,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				NegativeSpans:   []Span{{3, 2}, {3, 2}},
 				NegativeBuckets: []float64{3, 1, 5, 6},
 			},
-			&FloatHistogram{
+			expectedSum: &FloatHistogram{
 				ZeroThreshold:   1,
 				ZeroCount:       29,
 				Count:           51,
@@ -2569,20 +2569,20 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				NegativeSpans:   []Span{{3, 3}, {1, 3}},
 				NegativeBuckets: []float64{3, 2.01, 1.01, 4.04, 9.04, 6},
 			},
-			&FloatHistogram{
+			expectedC: &FloatHistogram{
 				ZeroThreshold:   1,
 				PositiveSpans:   []Span{{1, 2}, {0, 3}},
 				PositiveBuckets: []float64{0.02, 0.03, 0.06, 0.02, 0.05},
 				NegativeSpans:   []Span{{3, 3}, {1, 3}},
 				NegativeBuckets: []float64{0, 0.01, 0.01, 0.04, 0.04, 0},
 			},
-			"",
-			false,
-			false,
+			expErrMsg:                "",
+			expCounterResetCollision: false,
+			expNHCBBoundsReconciled:  false,
 		},
 		{
-			"smaller zero bucket in first histogram",
-			&FloatHistogram{
+			name: "smaller zero bucket in first histogram",
+			in1: &FloatHistogram{
 				ZeroThreshold:   0.01,
 				ZeroCount:       11,
 				Count:           40,
@@ -2592,7 +2592,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				NegativeSpans:   []Span{{3, 2}, {3, 2}},
 				NegativeBuckets: []float64{3, 1, 5, 6},
 			},
-			&FloatHistogram{
+			comp: &FloatHistogram{
 				ZeroThreshold:   0.01,
 				ZeroCount:       0,
 				PositiveSpans:   []Span{{-2, 2}, {2, 3}},
@@ -2600,7 +2600,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				NegativeSpans:   []Span{{3, 2}, {3, 2}},
 				NegativeBuckets: []float64{0.01, 0.01, 0.04, 0.04},
 			},
-			&FloatHistogram{
+			in2: &FloatHistogram{
 				ZeroThreshold:   1,
 				ZeroCount:       17,
 				Count:           11,
@@ -2610,7 +2610,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				NegativeSpans:   []Span{{4, 2}, {1, 2}},
 				NegativeBuckets: []float64{1, 1, 4, 4},
 			},
-			&FloatHistogram{
+			expectedSum: &FloatHistogram{
 				ZeroThreshold:   1,
 				ZeroCount:       31.05,
 				Count:           51,
@@ -2620,7 +2620,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				NegativeSpans:   []Span{{3, 3}, {1, 3}},
 				NegativeBuckets: []float64{3.01, 2.01, 1, 4, 9.04, 6.04},
 			},
-			&FloatHistogram{
+			expectedC: &FloatHistogram{
 				ZeroThreshold:   1,
 				ZeroCount:       0.05,
 				PositiveSpans:   []Span{{1, 5}},
@@ -2628,13 +2628,13 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				NegativeSpans:   []Span{{3, 3}, {1, 3}},
 				NegativeBuckets: []float64{0.01, 0.01, 0, 0, 0.04, 0.04},
 			},
-			"",
-			false,
-			false,
+			expErrMsg:                "",
+			expCounterResetCollision: false,
+			expNHCBBoundsReconciled:  false,
 		},
 		{
-			"first histogram contains zero buckets and Compact is called",
-			&FloatHistogram{
+			name: "first histogram contains zero buckets and Compact is called",
+			in1: &FloatHistogram{
 				ZeroThreshold:   0.01,
 				ZeroCount:       11,
 				Count:           30,
@@ -2642,12 +2642,12 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				PositiveSpans:   []Span{{-2, 2}, {1, 1}, {1, 3}},
 				PositiveBuckets: []float64{1, 3, 3, 0, 7, -6},
 			},
-			&FloatHistogram{
+			comp: &FloatHistogram{
 				ZeroThreshold:   0.01,
 				PositiveSpans:   []Span{{-2, 2}, {1, 1}, {1, 3}},
 				PositiveBuckets: []float64{7, 2, 0.03, 0, 0.05, 0.06},
 			},
-			&FloatHistogram{
+			in2: &FloatHistogram{
 				ZeroThreshold:   1,
 				ZeroCount:       17,
 				Count:           21,
@@ -2655,7 +2655,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				PositiveSpans:   []Span{{1, 2}, {1, 2}},
 				PositiveBuckets: []float64{2, 3, 2, 5},
 			},
-			&FloatHistogram{
+			expectedSum: &FloatHistogram{
 				ZeroThreshold:   1,
 				ZeroCount:       41,
 				Count:           51,
@@ -2663,19 +2663,19 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				PositiveSpans:   []Span{{1, 2}, {1, 2}},
 				PositiveBuckets: []float64{5.03, 3, 9.05, -0.94},
 			},
-			&FloatHistogram{
+			expectedC: &FloatHistogram{
 				ZeroThreshold:   1,
 				ZeroCount:       9,
 				PositiveSpans:   []Span{{1, 2}, {1, 2}},
 				PositiveBuckets: []float64{0.03, 0, 0.05, 0.06},
 			},
-			"",
-			false,
-			false,
+			expErrMsg:                "",
+			expCounterResetCollision: false,
+			expNHCBBoundsReconciled:  false,
 		},
 		{
-			"reduce resolution",
-			&FloatHistogram{
+			name: "reduce resolution",
+			in1: &FloatHistogram{
 				Schema:          2,
 				ZeroThreshold:   0.01,
 				ZeroCount:       11,
@@ -2684,14 +2684,14 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				PositiveSpans:   []Span{{-2, 2}, {1, 1}, {1, 3}},
 				PositiveBuckets: []float64{1, 3, 3, 0, 7, -6},
 			},
-			&FloatHistogram{
+			comp: &FloatHistogram{
 				Schema:          2,
 				ZeroThreshold:   0.01,
 				ZeroCount:       1,
 				PositiveSpans:   []Span{{-2, 2}, {1, 1}, {1, 3}},
 				PositiveBuckets: []float64{7, 2, 0.03, 0, 0.05, 0.06},
 			},
-			&FloatHistogram{
+			in2: &FloatHistogram{
 				Schema:          1,
 				ZeroThreshold:   1,
 				ZeroCount:       17,
@@ -2700,7 +2700,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				PositiveSpans:   []Span{{1, 2}, {1, 2}},
 				PositiveBuckets: []float64{2, 3, 2, 5},
 			},
-			&FloatHistogram{
+			expectedSum: &FloatHistogram{
 				Schema:          1,
 				ZeroThreshold:   1,
 				ZeroCount:       42,
@@ -2709,16 +2709,16 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				PositiveSpans:   []Span{{1, 5}},
 				PositiveBuckets: []float64{5.03, 10.05, -5.94, 2, 5},
 			},
-			&FloatHistogram{
+			expectedC: &FloatHistogram{
 				Schema:          1,
 				ZeroThreshold:   1,
 				ZeroCount:       10,
 				PositiveSpans:   []Span{{1, 5}},
 				PositiveBuckets: []float64{0.03, 0.05, 0.06, 0, 0},
 			},
-			"",
-			false,
-			false,
+			expErrMsg:                "",
+			expCounterResetCollision: false,
+			expNHCBBoundsReconciled:  false,
 		},
 		{
 			name: "warn on counter reset hint collision",

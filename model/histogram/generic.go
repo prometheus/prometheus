@@ -228,14 +228,14 @@ func (b *baseBucketIterator[BC, IBC]) strippedAt() strippedBucket[BC] {
 }
 
 // compactBuckets is a generic function used by both Histogram.Compact and
-// FloatHistogram.Compact. Set isDeltaBuckets to true if the provided buckets are
+// FloatHistogram.Compact. Set deltaBuckets to true if the provided buckets are
 // deltas. Set it to false if the buckets contain absolute counts.
-// primaryBuckets hold the main histogram values, while compBuckets (if provided) store
+// primaryBuckets hold the main histogram values, while compensationBuckets (if provided) store
 // Kahan compensation values, which are processed in parallel to maintain synchronization.
 func compactBuckets[IBC InternalBucketCount](
-	primaryBuckets []IBC, compBuckets []float64,
-	spans []Span, maxEmptyBuckets int, isDeltaBuckets bool,
-) (updatedPrimaryBuckets []IBC, updatedCompBuckets []float64, updatedSpans []Span) {
+	primaryBuckets []IBC, compensationBuckets []float64,
+	spans []Span, maxEmptyBuckets int, deltaBuckets bool,
+) (updatedPrimaryBuckets []IBC, updatedCompensationBuckets []float64, updatedSpans []Span) {
 	// Fast path: If there are no empty buckets AND no offset in any span is
 	// <= maxEmptyBuckets AND no span has length 0, there is nothing to do and we can return
 	// immediately. We check that first because it's cheap and presumably
@@ -243,7 +243,7 @@ func compactBuckets[IBC InternalBucketCount](
 	nothingToDo := true
 	var currentBucketAbsolute IBC
 	for _, bucket := range primaryBuckets {
-		if isDeltaBuckets {
+		if deltaBuckets {
 			currentBucketAbsolute += bucket
 		} else {
 			currentBucketAbsolute = bucket
@@ -261,7 +261,7 @@ func compactBuckets[IBC InternalBucketCount](
 			}
 		}
 		if nothingToDo {
-			return primaryBuckets, compBuckets, spans
+			return primaryBuckets, compensationBuckets, spans
 		}
 	}
 
@@ -319,7 +319,7 @@ func compactBuckets[IBC InternalBucketCount](
 	// what. Also cut out empty buckets from the middle of a span but only
 	// if there are more than maxEmptyBuckets consecutive empty buckets.
 	for iBucket < len(primaryBuckets) {
-		if isDeltaBuckets {
+		if deltaBuckets {
 			currentBucketAbsolute += primaryBuckets[iBucket]
 		} else {
 			currentBucketAbsolute = primaryBuckets[iBucket]
@@ -332,20 +332,20 @@ func compactBuckets[IBC InternalBucketCount](
 				// span, and there are few enough to not bother.
 				// Just fast-forward.
 				iBucket += nEmpty
-				if isDeltaBuckets {
+				if deltaBuckets {
 					currentBucketAbsolute = 0
 				}
 				posInSpan += uint32(nEmpty)
 				continue
 			}
 			// In all other cases, we cut out the empty buckets.
-			if isDeltaBuckets && iBucket+nEmpty < len(primaryBuckets) {
+			if deltaBuckets && iBucket+nEmpty < len(primaryBuckets) {
 				currentBucketAbsolute = -primaryBuckets[iBucket]
 				primaryBuckets[iBucket+nEmpty] += primaryBuckets[iBucket]
 			}
 			primaryBuckets = append(primaryBuckets[:iBucket], primaryBuckets[iBucket+nEmpty:]...)
-			if compBuckets != nil {
-				compBuckets = append(compBuckets[:iBucket], compBuckets[iBucket+nEmpty:]...)
+			if compensationBuckets != nil {
+				compensationBuckets = append(compensationBuckets[:iBucket], compensationBuckets[iBucket+nEmpty:]...)
 			}
 			if posInSpan == 0 {
 				// Start of span.
@@ -397,13 +397,13 @@ func compactBuckets[IBC InternalBucketCount](
 		}
 	}
 	if maxEmptyBuckets == 0 || len(primaryBuckets) == 0 {
-		return primaryBuckets, compBuckets, spans
+		return primaryBuckets, compensationBuckets, spans
 	}
 
 	// Finally, check if any offsets between spans are small enough to merge
 	// the spans.
 	iBucket = int(spans[0].Length)
-	if isDeltaBuckets {
+	if deltaBuckets {
 		currentBucketAbsolute = 0
 		for _, bucket := range primaryBuckets[:iBucket] {
 			currentBucketAbsolute += bucket
@@ -413,7 +413,7 @@ func compactBuckets[IBC InternalBucketCount](
 	for iSpan < len(spans) {
 		if int(spans[iSpan].Offset) > maxEmptyBuckets {
 			l := int(spans[iSpan].Length)
-			if isDeltaBuckets {
+			if deltaBuckets {
 				for _, bucket := range primaryBuckets[iBucket : iBucket+l] {
 					currentBucketAbsolute += bucket
 				}
@@ -429,16 +429,16 @@ func compactBuckets[IBC InternalBucketCount](
 		newPrimaryBuckets := make([]IBC, len(primaryBuckets)+offset)
 		copy(newPrimaryBuckets, primaryBuckets[:iBucket])
 		copy(newPrimaryBuckets[iBucket+offset:], primaryBuckets[iBucket:])
-		if isDeltaBuckets {
+		if deltaBuckets {
 			newPrimaryBuckets[iBucket] = -currentBucketAbsolute
 			newPrimaryBuckets[iBucket+offset] += currentBucketAbsolute
 		}
 		primaryBuckets = newPrimaryBuckets
-		if compBuckets != nil {
-			newCompBuckets := make([]float64, len(compBuckets)+offset)
-			copy(newCompBuckets, compBuckets[:iBucket])
-			copy(newCompBuckets[iBucket+offset:], compBuckets[iBucket:])
-			compBuckets = newCompBuckets
+		if compensationBuckets != nil {
+			newCompensationBuckets := make([]float64, len(compensationBuckets)+offset)
+			copy(newCompensationBuckets, compensationBuckets[:iBucket])
+			copy(newCompensationBuckets[iBucket+offset:], compensationBuckets[iBucket:])
+			compensationBuckets = newCompensationBuckets
 		}
 		iBucket += offset
 		currentBucketAbsolute = primaryBuckets[iBucket]
@@ -447,7 +447,7 @@ func compactBuckets[IBC InternalBucketCount](
 		// then do it in one go through all the buckets.
 	}
 
-	return primaryBuckets, compBuckets, spans
+	return primaryBuckets, compensationBuckets, spans
 }
 
 func checkHistogramSpans(spans []Span, numBuckets int) error {
