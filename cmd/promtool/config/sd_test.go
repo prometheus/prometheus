@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package config
 
 import (
 	"testing"
@@ -72,4 +72,69 @@ func TestSDCheckResult(t *testing.T) {
 	}
 
 	testutil.RequireEqual(t, expectedSDCheckResult, getSDCheckResult(targetGroups, scrapeConfig))
+}
+
+func TestCheckSD(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		file     string
+		jobName  string
+		exitCode int
+	}{
+		{
+			name:     "check SD with good job name",
+			file:     "config_with_service_discovery_files.yml",
+			jobName:  "prometheus",
+			exitCode: SuccessExitCode,
+		},
+		{
+			name:     "check SD with bad job name",
+			file:     "config_with_service_discovery_files.yml",
+			jobName:  "bad_job_name",
+			exitCode: FailureExitCode,
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			exitCode := CheckSD("../testdata/"+test.file, test.jobName, 5*time.Second, nil)
+			require.Equal(t, test.exitCode, exitCode)
+		})
+	}
+}
+
+func TestCheckSDWithOutput(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name      string
+		file      string
+		jobName   string
+		exitCode  int
+		logOutput bool
+	}{
+		{
+			name:     "check SD with good job name",
+			file:     "config_with_service_discovery_files.yml",
+			jobName:  "prometheus",
+			exitCode: SuccessExitCode,
+		},
+		{
+			name:      "check SD with bad job name",
+			file:      "config_with_service_discovery_files.yml",
+			jobName:   "bad_job_name",
+			exitCode:  FailureExitCode,
+			logOutput: true,
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			exitCode, output := CheckSDWithOutput("../testdata/"+test.file, test.jobName, 5*time.Second, nil)
+			if test.logOutput {
+				t.Logf("%s output:\n%s", test.name, output)
+			}
+			require.Equal(t, test.exitCode, exitCode)
+		})
+	}
 }

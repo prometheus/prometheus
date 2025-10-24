@@ -29,6 +29,7 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/prometheus/prometheus/cmd/promtool/config"
 	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
 )
 
@@ -65,7 +66,7 @@ func QueryInstant(url *url.URL, roundTripper http.RoundTripper, query, evalTime 
 	api, err := newAPI(url, roundTripper, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return failureExitCode
+		return config.FailureExitCode
 	}
 
 	eTime := time.Now()
@@ -73,7 +74,7 @@ func QueryInstant(url *url.URL, roundTripper http.RoundTripper, query, evalTime 
 		eTime, err = parseTime(evalTime)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error parsing evaluation time:", err)
-			return failureExitCode
+			return config.FailureExitCode
 		}
 	}
 
@@ -87,7 +88,7 @@ func QueryInstant(url *url.URL, roundTripper http.RoundTripper, query, evalTime 
 
 	p.printValue(val)
 
-	return successExitCode
+	return config.SuccessExitCode
 }
 
 // QueryRange performs a range query against a Prometheus server.
@@ -95,7 +96,7 @@ func QueryRange(url *url.URL, roundTripper http.RoundTripper, headers map[string
 	api, err := newAPI(url, roundTripper, headers)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return failureExitCode
+		return config.FailureExitCode
 	}
 
 	var stime, etime time.Time
@@ -106,7 +107,7 @@ func QueryRange(url *url.URL, roundTripper http.RoundTripper, headers map[string
 		etime, err = parseTime(end)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
-			return failureExitCode
+			return config.FailureExitCode
 		}
 	}
 
@@ -116,13 +117,13 @@ func QueryRange(url *url.URL, roundTripper http.RoundTripper, headers map[string
 		stime, err = parseTime(start)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
-			return failureExitCode
+			return config.FailureExitCode
 		}
 	}
 
 	if !stime.Before(etime) {
 		fmt.Fprintln(os.Stderr, "start time is not before end time")
-		return failureExitCode
+		return config.FailureExitCode
 	}
 
 	if step == 0 {
@@ -142,7 +143,7 @@ func QueryRange(url *url.URL, roundTripper http.RoundTripper, headers map[string
 	}
 
 	p.printValue(val)
-	return successExitCode
+	return config.SuccessExitCode
 }
 
 // QuerySeries queries for a series against a Prometheus server.
@@ -150,13 +151,13 @@ func QuerySeries(url *url.URL, roundTripper http.RoundTripper, matchers []string
 	api, err := newAPI(url, roundTripper, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return failureExitCode
+		return config.FailureExitCode
 	}
 
 	stime, etime, err := parseStartTimeAndEndTime(start, end)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		return failureExitCode
+		return config.FailureExitCode
 	}
 
 	// Run query against client.
@@ -169,7 +170,7 @@ func QuerySeries(url *url.URL, roundTripper http.RoundTripper, matchers []string
 	}
 
 	p.printSeries(val)
-	return successExitCode
+	return config.SuccessExitCode
 }
 
 // QueryLabels queries for label values against a Prometheus server.
@@ -177,13 +178,13 @@ func QueryLabels(url *url.URL, roundTripper http.RoundTripper, matchers []string
 	api, err := newAPI(url, roundTripper, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return failureExitCode
+		return config.FailureExitCode
 	}
 
 	stime, etime, err := parseStartTimeAndEndTime(start, end)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		return failureExitCode
+		return config.FailureExitCode
 	}
 
 	// Run query against client.
@@ -199,7 +200,7 @@ func QueryLabels(url *url.URL, roundTripper http.RoundTripper, matchers []string
 	}
 
 	p.printLabelValues(val)
-	return successExitCode
+	return config.SuccessExitCode
 }
 
 func handleAPIError(err error) int {
@@ -210,7 +211,7 @@ func handleAPIError(err error) int {
 		fmt.Fprintln(os.Stderr, "query error:", err)
 	}
 
-	return failureExitCode
+	return config.FailureExitCode
 }
 
 func parseStartTimeAndEndTime(start, end string) (time.Time, time.Time, error) {

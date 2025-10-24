@@ -45,18 +45,17 @@ import (
 	"github.com/prometheus/exporter-toolkit/web"
 	"go.yaml.in/yaml/v2"
 
+	toolconfig "github.com/prometheus/prometheus/cmd/promtool/config"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
-	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/util/documentcli"
 )
@@ -70,23 +69,14 @@ func init() {
 }
 
 const (
-	successExitCode = 0
-	failureExitCode = 1
-	// Exit code 3 is used for "one or more lint issues detected".
-	lintErrExitCode = 3
-
-	lintOptionAll                   = "all"
-	lintOptionDuplicateRules        = "duplicate-rules"
-	lintOptionTooLongScrapeInterval = "too-long-scrape-interval"
-	lintOptionNone                  = "none"
-	checkHealth                     = "/-/healthy"
-	checkReadiness                  = "/-/ready"
+	checkHealth    = "/-/healthy"
+	checkReadiness = "/-/ready"
 )
 
 var (
-	lintRulesOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
+	lintRulesOptions = []string{toolconfig.LintOptionAll, toolconfig.LintOptionDuplicateRules, toolconfig.LintOptionNone}
 	// Same as lintRulesOptions, but including scrape config linting options as well.
-	lintConfigOptions = append(append([]string{}, lintRulesOptions...), lintOptionTooLongScrapeInterval)
+	lintConfigOptions = append(append([]string{}, lintRulesOptions...), toolconfig.LintOptionTooLongScrapeInterval)
 )
 
 const httpConfigFileDescription = "HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool"
@@ -127,7 +117,7 @@ func main() {
 	checkConfigLint := checkConfigCmd.Flag(
 		"lint",
 		"Linting checks to apply to the rules/scrape configs specified in the config. Available options are: "+strings.Join(lintConfigOptions, ", ")+". Use --lint=none to disable linting",
-	).Default(lintOptionDuplicateRules).String()
+	).Default(toolconfig.LintOptionDuplicateRules).String()
 	checkConfigLintFatal := checkConfigCmd.Flag(
 		"lint-fatal",
 		"Make lint errors exit with exit code 3.").Default("false").Bool()
@@ -155,7 +145,7 @@ func main() {
 	checkRulesLint := checkRulesCmd.Flag(
 		"lint",
 		"Linting checks to apply. Available options are: "+strings.Join(lintRulesOptions, ", ")+". Use --lint=none to disable linting",
-	).Default(lintOptionDuplicateRules).String()
+	).Default(toolconfig.LintOptionDuplicateRules).String()
 	checkRulesLintFatal := checkRulesCmd.Flag(
 		"lint-fatal",
 		"Make lint errors exit with exit code 3.").Default("false").Bool()
@@ -356,10 +346,10 @@ func main() {
 
 	switch parsedCmd {
 	case sdCheckCmd.FullCommand():
-		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, prometheus.DefaultRegisterer))
+		os.Exit(toolconfig.CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, prometheus.DefaultRegisterer))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newConfigLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkConfigIgnoreUnknownFields, model.UTF8Validation, model.Duration(*checkLookbackDelta)), *configFiles...))
+		os.Exit(toolconfig.CheckConfig(*agentMode, *checkConfigSyntaxOnly, toolconfig.NewConfigLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkConfigIgnoreUnknownFields, model.UTF8Validation, model.Duration(*checkLookbackDelta)), *configFiles...))
 
 	case checkServerHealthCmd.FullCommand():
 		os.Exit(checkErr(CheckServerStatus(serverURL, checkHealth, httpRoundTripper)))
@@ -371,7 +361,7 @@ func main() {
 		os.Exit(CheckWebConfig(*webConfigFiles...))
 
 	case checkRulesCmd.FullCommand():
-		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesIgnoreUnknownFields, model.UTF8Validation), *ruleFiles...))
+		os.Exit(toolconfig.CheckRules(toolconfig.NewRulesLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesIgnoreUnknownFields, model.UTF8Validation), true, *ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
@@ -465,82 +455,6 @@ func checkExperimental(f bool) {
 	}
 }
 
-var errLint = errors.New("lint error")
-
-type rulesLintConfig struct {
-	all                  bool
-	duplicateRules       bool
-	fatal                bool
-	ignoreUnknownFields  bool
-	nameValidationScheme model.ValidationScheme
-}
-
-func newRulesLintConfig(stringVal string, fatal, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) rulesLintConfig {
-	items := strings.Split(stringVal, ",")
-	ls := rulesLintConfig{
-		fatal:                fatal,
-		ignoreUnknownFields:  ignoreUnknownFields,
-		nameValidationScheme: nameValidationScheme,
-	}
-	for _, setting := range items {
-		switch setting {
-		case lintOptionAll:
-			ls.all = true
-		case lintOptionDuplicateRules:
-			ls.duplicateRules = true
-		case lintOptionNone:
-		default:
-			fmt.Printf("WARNING: unknown lint option: %q\n", setting)
-		}
-	}
-	return ls
-}
-
-func (ls rulesLintConfig) lintDuplicateRules() bool {
-	return ls.all || ls.duplicateRules
-}
-
-type configLintConfig struct {
-	rulesLintConfig
-
-	lookbackDelta model.Duration
-}
-
-func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme, lookbackDelta model.Duration) configLintConfig {
-	c := configLintConfig{
-		rulesLintConfig: rulesLintConfig{
-			fatal: fatal,
-		},
-	}
-
-	lintNone := false
-	var rulesOptions []string
-	for _, option := range strings.Split(optionsStr, ",") {
-		switch option {
-		case lintOptionAll, lintOptionTooLongScrapeInterval:
-			c.lookbackDelta = lookbackDelta
-			if option == lintOptionAll {
-				rulesOptions = append(rulesOptions, lintOptionAll)
-			}
-		case lintOptionNone:
-			lintNone = true
-		default:
-			rulesOptions = append(rulesOptions, option)
-		}
-	}
-
-	if lintNone {
-		c.lookbackDelta = 0
-		rulesOptions = nil
-	}
-
-	if len(rulesOptions) > 0 {
-		c.rulesLintConfig = newRulesLintConfig(strings.Join(rulesOptions, ","), fatal, ignoreUnknownFields, nameValidationScheme)
-	}
-
-	return c
-}
-
 // CheckServerStatus - healthy & ready.
 func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper http.RoundTripper) error {
 	if serverURL.Scheme == "" {
@@ -578,42 +492,6 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 	return nil
 }
 
-// CheckConfig validates configuration files.
-func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig, files ...string) int {
-	failed := false
-	hasErrors := false
-
-	for _, f := range files {
-		ruleFiles, scrapeConfigs, err := checkConfig(agentMode, f, checkSyntaxOnly)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "  FAILED:", err)
-			hasErrors = true
-			failed = true
-		} else {
-			if len(ruleFiles) > 0 {
-				fmt.Printf("  SUCCESS: %d rule files found\n", len(ruleFiles))
-			}
-			fmt.Printf(" SUCCESS: %s is valid prometheus config file syntax\n", f)
-		}
-		fmt.Println()
-
-		if !checkSyntaxOnly {
-			scrapeConfigsFailed := lintScrapeConfigs(scrapeConfigs, lintSettings)
-			failed = failed || scrapeConfigsFailed
-			rulesFailed, rulesHaveErrors := checkRules(ruleFiles, lintSettings.rulesLintConfig)
-			failed = failed || rulesFailed
-			hasErrors = hasErrors || rulesHaveErrors
-		}
-	}
-	if failed && hasErrors {
-		return failureExitCode
-	}
-	if failed && lintSettings.fatal {
-		return lintErrExitCode
-	}
-	return successExitCode
-}
-
 // CheckWebConfig validates web configuration files.
 func CheckWebConfig(files ...string) int {
 	failed := false
@@ -627,9 +505,9 @@ func CheckWebConfig(files ...string) int {
 		fmt.Fprintln(os.Stderr, f, "SUCCESS")
 	}
 	if failed {
-		return failureExitCode
+		return toolconfig.FailureExitCode
 	}
-	return successExitCode
+	return toolconfig.SuccessExitCode
 }
 
 func checkFileExists(fn string) error {
@@ -826,190 +704,6 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 	return targetGroups, nil
 }
 
-// CheckRules validates rule files.
-func CheckRules(ls rulesLintConfig, files ...string) int {
-	failed := false
-	hasErrors := false
-	if len(files) == 0 {
-		failed, hasErrors = checkRulesFromStdin(ls)
-	} else {
-		failed, hasErrors = checkRules(files, ls)
-	}
-
-	if failed && hasErrors {
-		return failureExitCode
-	}
-	if failed && ls.fatal {
-		return lintErrExitCode
-	}
-
-	return successExitCode
-}
-
-// checkRulesFromStdin validates rule from stdin.
-func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
-	failed := false
-	hasErrors := false
-	fmt.Println("Checking standard input")
-	data, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "  FAILED:", err)
-		return true, true
-	}
-	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme)
-	if errs != nil {
-		failed = true
-		fmt.Fprintln(os.Stderr, "  FAILED:")
-		for _, e := range errs {
-			fmt.Fprintln(os.Stderr, e.Error())
-			hasErrors = hasErrors || !errors.Is(e, errLint)
-		}
-		if hasErrors {
-			return failed, hasErrors
-		}
-	}
-	if n, errs := checkRuleGroups(rgs, ls); errs != nil {
-		fmt.Fprintln(os.Stderr, "  FAILED:")
-		for _, e := range errs {
-			fmt.Fprintln(os.Stderr, e.Error())
-		}
-		failed = true
-		for _, err := range errs {
-			hasErrors = hasErrors || !errors.Is(err, errLint)
-		}
-	} else {
-		fmt.Printf("  SUCCESS: %d rules found\n", n)
-	}
-	fmt.Println()
-	return failed, hasErrors
-}
-
-// checkRules validates rule files.
-func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
-	failed := false
-	hasErrors := false
-	for _, f := range files {
-		fmt.Println("Checking", f)
-		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme)
-		if errs != nil {
-			failed = true
-			fmt.Fprintln(os.Stderr, "  FAILED:")
-			for _, e := range errs {
-				fmt.Fprintln(os.Stderr, e.Error())
-				hasErrors = hasErrors || !errors.Is(e, errLint)
-			}
-			if hasErrors {
-				continue
-			}
-		}
-		if n, errs := checkRuleGroups(rgs, ls); errs != nil {
-			fmt.Fprintln(os.Stderr, "  FAILED:")
-			for _, e := range errs {
-				fmt.Fprintln(os.Stderr, e.Error())
-			}
-			failed = true
-			for _, err := range errs {
-				hasErrors = hasErrors || !errors.Is(err, errLint)
-			}
-		} else {
-			fmt.Printf("  SUCCESS: %d rules found\n", n)
-		}
-		fmt.Println()
-	}
-	return failed, hasErrors
-}
-
-func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings rulesLintConfig) (int, []error) {
-	numRules := 0
-	for _, rg := range rgs.Groups {
-		numRules += len(rg.Rules)
-	}
-
-	if lintSettings.lintDuplicateRules() {
-		dRules := checkDuplicates(rgs.Groups)
-		if len(dRules) != 0 {
-			errMessage := fmt.Sprintf("%d duplicate rule(s) found.\n", len(dRules))
-			for _, n := range dRules {
-				errMessage += fmt.Sprintf("Metric: %s\nLabel(s):\n", n.metric)
-				n.label.Range(func(l labels.Label) {
-					errMessage += fmt.Sprintf("\t%s: %s\n", l.Name, l.Value)
-				})
-			}
-			errMessage += "Might cause inconsistency while recording expressions"
-			return 0, []error{fmt.Errorf("%w %s", errLint, errMessage)}
-		}
-	}
-
-	return numRules, nil
-}
-
-func lintScrapeConfigs(scrapeConfigs []*config.ScrapeConfig, lintSettings configLintConfig) bool {
-	for _, scfg := range scrapeConfigs {
-		if lintSettings.lookbackDelta > 0 && scfg.ScrapeInterval >= lintSettings.lookbackDelta {
-			fmt.Fprintf(os.Stderr, "  FAILED: too long scrape interval found, data point will be marked as stale - job: %s, interval: %s\n", scfg.JobName, scfg.ScrapeInterval)
-			return true
-		}
-	}
-	return false
-}
-
-type compareRuleType struct {
-	metric string
-	label  labels.Labels
-}
-
-type compareRuleTypes []compareRuleType
-
-func (c compareRuleTypes) Len() int           { return len(c) }
-func (c compareRuleTypes) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
-func (c compareRuleTypes) Less(i, j int) bool { return compare(c[i], c[j]) < 0 }
-
-func compare(a, b compareRuleType) int {
-	if res := strings.Compare(a.metric, b.metric); res != 0 {
-		return res
-	}
-
-	return labels.Compare(a.label, b.label)
-}
-
-func checkDuplicates(groups []rulefmt.RuleGroup) []compareRuleType {
-	var duplicates []compareRuleType
-	var cRules compareRuleTypes
-
-	for _, group := range groups {
-		for _, rule := range group.Rules {
-			cRules = append(cRules, compareRuleType{
-				metric: ruleMetric(rule),
-				label:  rules.FromMaps(group.Labels, rule.Labels),
-			})
-		}
-	}
-	if len(cRules) < 2 {
-		return duplicates
-	}
-	sort.Sort(cRules)
-
-	last := cRules[0]
-	for i := 1; i < len(cRules); i++ {
-		if compare(last, cRules[i]) == 0 {
-			// Don't add a duplicated rule multiple times.
-			if len(duplicates) == 0 || compare(last, duplicates[len(duplicates)-1]) != 0 {
-				duplicates = append(duplicates, cRules[i])
-			}
-		}
-		last = cRules[i]
-	}
-
-	return duplicates
-}
-
-func ruleMetric(rule rulefmt.Rule) string {
-	if rule.Alert != "" {
-		return rule.Alert
-	}
-	return rule.Record
-}
-
 var checkMetricsUsage = strings.TrimSpace(`
 Pass Prometheus metrics over stdin to lint them for consistency and correctness.
 
@@ -1028,7 +722,7 @@ func CheckMetrics(extended bool) int {
 	problems, err := l.Lint()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error while linting:", err)
-		return failureExitCode
+		return toolconfig.FailureExitCode
 	}
 
 	for _, p := range problems {
@@ -1036,14 +730,14 @@ func CheckMetrics(extended bool) int {
 	}
 
 	if len(problems) > 0 {
-		return lintErrExitCode
+		return toolconfig.LintErrExitCode
 	}
 
 	if extended {
 		stats, total, err := checkMetricsExtended(&buf)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			return failureExitCode
+			return toolconfig.FailureExitCode
 		}
 		w := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', tabwriter.TabIndent)
 		fmt.Fprintf(w, "Metric\tCardinality\tPercentage\t\n")
@@ -1054,7 +748,7 @@ func CheckMetrics(extended bool) int {
 		w.Flush()
 	}
 
-	return successExitCode
+	return toolconfig.SuccessExitCode
 }
 
 type metricStat struct {
@@ -1158,9 +852,9 @@ func debugPprof(url string) int {
 		endPointGroups: pprofEndpoints,
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, "error completing debug command:", err)
-		return failureExitCode
+		return toolconfig.FailureExitCode
 	}
-	return successExitCode
+	return toolconfig.SuccessExitCode
 }
 
 func debugMetrics(url string) int {
@@ -1170,9 +864,9 @@ func debugMetrics(url string) int {
 		endPointGroups: metricsEndpoints,
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, "error completing debug command:", err)
-		return failureExitCode
+		return toolconfig.FailureExitCode
 	}
-	return successExitCode
+	return toolconfig.SuccessExitCode
 }
 
 func debugAll(url string) int {
@@ -1182,9 +876,9 @@ func debugAll(url string) int {
 		endPointGroups: allEndpoints,
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, "error completing debug command:", err)
-		return failureExitCode
+		return toolconfig.FailureExitCode
 	}
-	return successExitCode
+	return toolconfig.SuccessExitCode
 }
 
 type printer interface {
