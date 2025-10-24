@@ -11,9 +11,7 @@ global:
   query_log_file: query.log
   scrape_failure_log_file: fail.log
   scrape_native_histograms: false
-  
   # scrape_timeout is set to the global default (10s).
-
   external_labels:
     monitor: codelab
     foo: bar
@@ -71,6 +69,7 @@ remote_read:
 scrape_configs:
   - job_name: prometheus
     honor_labels: true
+    scrape_native_histograms: false
     # scrape_interval is defined by the configured global (15s).
     # scrape_timeout is defined by the global default (10s).
 
@@ -126,8 +125,7 @@ scrape_configs:
 
     tls_config:
       min_version: TLS10
-    scrape_native_histograms: false
-    
+
   - job_name: service-x
     scrape_native_histograms: false
 
