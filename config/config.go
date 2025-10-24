@@ -158,7 +158,7 @@ var (
 		OTLPConfig:   DefaultOTLPConfig,
 	}
 
-	t bool = true
+	t = true
 	// DefaultGlobalConfig is the default global configuration.
 	DefaultGlobalConfig = GlobalConfig{
 		ScrapeInterval:     model.Duration(1 * time.Minute),
