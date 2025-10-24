@@ -69,8 +69,8 @@ func newRobotDiscovery(conf *SDConfig, _ *slog.Logger) (*robotDiscovery, error) 
 	return d, nil
 }
 
-func (d *robotDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) {
-	req, err := http.NewRequest(http.MethodGet, d.endpoint+"/server", nil)
+func (d *robotDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.endpoint+"/server", http.NoBody)
 	if err != nil {
 		return nil, err
 	}

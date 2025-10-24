@@ -211,11 +211,10 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		endpoint = fmt.Sprintf("%s?groups=%s", endpoint, groups)
 	}
 
-	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
-	req = req.WithContext(ctx)
 	resp, err := d.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("an error occurred when requesting targets from the discovery endpoint: %w", err)

@@ -9450,7 +9450,7 @@ func TestBlockClosingBlockedDuringRemoteRead(t *testing.T) {
 	data, err := proto.Marshal(req)
 	require.NoError(t, err)
 
-	request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(snappy.Encode(nil, data)))
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "", bytes.NewBuffer(snappy.Encode(nil, data)))
 	require.NoError(t, err)
 
 	blockedRecorder := &blockedResponseRecorder{

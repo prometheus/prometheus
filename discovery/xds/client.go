@@ -179,11 +179,10 @@ func (rc *HTTPResourceClient) Fetch(ctx context.Context) (*v3.DiscoveryResponse,
 		return nil, err
 	}
 
-	request, err := http.NewRequest(http.MethodPost, rc.endpoint, bytes.NewBuffer(reqBody))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, rc.endpoint, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, err
 	}
-	request = request.WithContext(ctx)
 
 	request.Header.Add("User-Agent", userAgent)
 	request.Header.Add("Content-Type", "application/json")

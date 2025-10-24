@@ -830,7 +830,7 @@ var UserAgent = version.PrometheusUserAgent()
 
 func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	if s.req == nil {
-		req, err := http.NewRequest(http.MethodGet, s.URL().String(), nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.URL().String(), http.NoBody)
 		if err != nil {
 			return nil, err
 		}

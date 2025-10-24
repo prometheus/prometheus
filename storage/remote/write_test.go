@@ -1144,7 +1144,7 @@ func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg c
 	buf, err := exportRequest.MarshalProto()
 	require.NoError(t, err)
 
-	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	req, err := http.NewRequestWithContext(t.Context(), "", "", bytes.NewReader(buf))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/x-protobuf")
 
@@ -1278,7 +1278,7 @@ func TestOTLPDelta(t *testing.T) {
 	proto, err := pmetricotlp.NewExportRequestFromMetrics(md).MarshalProto()
 	require.NoError(t, err)
 
-	req, err := http.NewRequest("", "", bytes.NewReader(proto))
+	req, err := http.NewRequestWithContext(t.Context(), "", "", bytes.NewReader(proto))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/x-protobuf")
 
@@ -1498,7 +1498,7 @@ func BenchmarkOTLP(b *testing.B) {
 						data, err := ex.MarshalProto()
 						require.NoError(b, err)
 
-						req, err := http.NewRequest("", "", bytes.NewReader(data))
+						req, err := http.NewRequestWithContext(b.Context(), "", "", bytes.NewReader(data))
 						require.NoError(b, err)
 						req.Header.Set("Content-Type", "application/x-protobuf")
 

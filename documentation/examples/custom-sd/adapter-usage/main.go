@@ -162,7 +162,13 @@ func (*discovery) parseServiceNodes(resp *http.Response, name string) (*targetgr
 func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	for c := time.Tick(time.Duration(d.refreshInterval) * time.Second); ; {
 		var srvs map[string][]string
-		resp, err := http.Get(fmt.Sprintf("http://%s/v1/catalog/services", d.address))
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s/v1/catalog/services", d.address), http.NoBody)
+		if err != nil {
+			d.logger.Error("Error creating request", "err", err)
+			time.Sleep(time.Duration(d.refreshInterval) * time.Second)
+			continue
+		}
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			d.logger.Error("Error getting services list", "err", err)
 			time.Sleep(time.Duration(d.refreshInterval) * time.Second)
@@ -198,7 +204,12 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			if name == "consul" {
 				continue
 			}
-			resp, err := http.Get(fmt.Sprintf("http://%s/v1/catalog/service/%s", d.address, name))
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s/v1/catalog/service/%s", d.address, name), http.NoBody)
+			if err != nil {
+				d.logger.Error("Error creating request", "service", name, "err", err)
+				break
+			}
+			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				d.logger.Error("Error getting services nodes", "service", name, "err", err)
 				break
