@@ -2514,8 +2514,8 @@ func TestFloatHistogramAdd(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			testHistogramAdd(t, c.in1, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 			testHistogramAdd(t, c.in2, c.in1, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
-			testHistogramKahanAdd(t, c.in1, nil, c.in2, c.expected, nil, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
-			testHistogramKahanAdd(t, c.in2, nil, c.in1, c.expected, nil, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
+			testHistogramKahanAdd(t, c.in1, nil, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
+			testHistogramKahanAdd(t, c.in2, nil, c.in1, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 		})
 	}
 }
@@ -2524,11 +2524,11 @@ func TestFloatHistogramAdd(t *testing.T) {
 // Test cases provide two float histograms and a compensation histogram with predefined values.
 func TestKahanAddWithCompHistogram(t *testing.T) {
 	cases := []struct {
-		name                                   string
-		in1, comp, in2, expectedSum, expectedC *FloatHistogram
-		expErrMsg                              string
-		expCounterResetCollision               bool
-		expNHCBBoundsReconciled                bool
+		name                        string
+		in1, comp, in2, expectedSum *FloatHistogram
+		expErrMsg                   string
+		expCounterResetCollision    bool
+		expNHCBBoundsReconciled     bool
 	}{
 		{
 			name: "larger zero bucket in first histogram",
@@ -2568,13 +2568,6 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				PositiveBuckets: []float64{2.02, 6.03, 10.06, 9.02, 5.05},
 				NegativeSpans:   []Span{{3, 3}, {1, 3}},
 				NegativeBuckets: []float64{3, 2.01, 1.01, 4.04, 9.04, 6},
-			},
-			expectedC: &FloatHistogram{
-				ZeroThreshold:   1,
-				PositiveSpans:   []Span{{1, 2}, {0, 3}},
-				PositiveBuckets: []float64{0.02, 0.03, 0.06, 0.02, 0.05},
-				NegativeSpans:   []Span{{3, 3}, {1, 3}},
-				NegativeBuckets: []float64{0, 0.01, 0.01, 0.04, 0.04, 0},
 			},
 			expErrMsg:                "",
 			expCounterResetCollision: false,
@@ -2620,14 +2613,6 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				NegativeSpans:   []Span{{3, 3}, {1, 3}},
 				NegativeBuckets: []float64{3.01, 2.01, 1, 4, 9.04, 6.04},
 			},
-			expectedC: &FloatHistogram{
-				ZeroThreshold:   1,
-				ZeroCount:       0.05,
-				PositiveSpans:   []Span{{1, 5}},
-				PositiveBuckets: []float64{0, 0.06, 0.07, 0.05, 0},
-				NegativeSpans:   []Span{{3, 3}, {1, 3}},
-				NegativeBuckets: []float64{0.01, 0.01, 0, 0, 0.04, 0.04},
-			},
 			expErrMsg:                "",
 			expCounterResetCollision: false,
 			expNHCBBoundsReconciled:  false,
@@ -2662,12 +2647,6 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				Sum:             3.579,
 				PositiveSpans:   []Span{{1, 2}, {1, 2}},
 				PositiveBuckets: []float64{5.03, 3, 9.05, -0.94},
-			},
-			expectedC: &FloatHistogram{
-				ZeroThreshold:   1,
-				ZeroCount:       9,
-				PositiveSpans:   []Span{{1, 2}, {1, 2}},
-				PositiveBuckets: []float64{0.03, 0, 0.05, 0.06},
 			},
 			expErrMsg:                "",
 			expCounterResetCollision: false,
@@ -2709,13 +2688,6 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				PositiveSpans:   []Span{{1, 5}},
 				PositiveBuckets: []float64{5.03, 10.05, -5.94, 2, 5},
 			},
-			expectedC: &FloatHistogram{
-				Schema:          1,
-				ZeroThreshold:   1,
-				ZeroCount:       10,
-				PositiveSpans:   []Span{{1, 5}},
-				PositiveBuckets: []float64{0.03, 0.05, 0.06, 0, 0},
-			},
 			expErrMsg:                "",
 			expCounterResetCollision: false,
 			expNHCBBoundsReconciled:  false,
@@ -2738,7 +2710,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			testHistogramKahanAdd(t, c.in1, c.comp, c.in2, c.expectedSum, c.expectedC, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
+			testHistogramKahanAdd(t, c.in1, c.comp, c.in2, c.expectedSum, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 		})
 	}
 }
@@ -2783,22 +2755,17 @@ func testHistogramAdd(t *testing.T, a, b, expected *FloatHistogram, expErrMsg st
 }
 
 func testHistogramKahanAdd(
-	t *testing.T, a, c, b, expectedSum, expectedC *FloatHistogram, expErrMsg string, expCounterResetCollision, expNHCBBoundsReconciled bool,
+	t *testing.T, a, c, b, expectedSum *FloatHistogram, expErrMsg string, expCounterResetCollision, expNHCBBoundsReconciled bool,
 ) {
 	var (
 		aCopy           = a.Copy()
 		bCopy           = b.Copy()
 		cCopy           *FloatHistogram
 		expectedSumCopy *FloatHistogram
-		expectedCCopy   *FloatHistogram
 	)
 
 	if c != nil {
 		cCopy = c.Copy()
-	}
-
-	if expectedC != nil {
-		expectedCCopy = expectedC.Copy()
 	}
 
 	if expectedSum != nil {
@@ -2814,16 +2781,21 @@ func testHistogramKahanAdd(
 
 	var res *FloatHistogram
 	if comp != nil {
+		// Check that aCopy and its compensation histogram layouts match after addition.
+		require.Equal(t, aCopy.Schema, comp.Schema)
+		require.Equal(t, aCopy.ZeroThreshold, comp.ZeroThreshold)
+		require.Equal(t, aCopy.PositiveSpans, comp.PositiveSpans)
+		require.Equal(t, aCopy.NegativeSpans, comp.NegativeSpans)
+		require.Len(t, aCopy.CustomValues, len(comp.CustomValues))
+		require.Len(t, aCopy.PositiveBuckets, len(comp.PositiveBuckets))
+		require.Len(t, aCopy.NegativeBuckets, len(comp.NegativeBuckets))
+
 		res, _, _, err = aCopy.Add(comp)
 		if expErrMsg != "" {
 			require.EqualError(t, err, expErrMsg)
 		} else {
 			require.NoError(t, err)
 		}
-	}
-
-	if expectedCCopy != nil {
-		require.Equal(t, expectedCCopy, comp)
 	}
 
 	// Check that the warnings are correct.

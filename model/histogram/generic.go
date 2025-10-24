@@ -230,12 +230,22 @@ func (b *baseBucketIterator[BC, IBC]) strippedAt() strippedBucket[BC] {
 // compactBuckets is a generic function used by both Histogram.Compact and
 // FloatHistogram.Compact. Set deltaBuckets to true if the provided buckets are
 // deltas. Set it to false if the buckets contain absolute counts.
+// For float histograms, deltaBuckets is always false.
 // primaryBuckets hold the main histogram values, while compensationBuckets (if provided) store
-// Kahan compensation values, which are processed in parallel to maintain synchronization.
+// Kahan compensation values. compensationBuckets can only be provided for float histograms
+// and are processed in parallel with primaryBuckets to maintain synchronization.
 func compactBuckets[IBC InternalBucketCount](
 	primaryBuckets []IBC, compensationBuckets []float64,
 	spans []Span, maxEmptyBuckets int, deltaBuckets bool,
 ) (updatedPrimaryBuckets []IBC, updatedCompensationBuckets []float64, updatedSpans []Span) {
+	if deltaBuckets && compensationBuckets != nil {
+		panic("histogram type mismatch: deltaBuckets cannot be true when compensationBuckets is provided")
+	} else if compensationBuckets != nil && len(primaryBuckets) != len(compensationBuckets) {
+		panic(fmt.Errorf(
+			"primary buckets layout (%v) mismatch against associated compensation buckets layout (%v)",
+			primaryBuckets, compensationBuckets),
+		)
+	}
 	// Fast path: If there are no empty buckets AND no offset in any span is
 	// <= maxEmptyBuckets AND no span has length 0, there is nothing to do and we can return
 	// immediately. We check that first because it's cheap and presumably
@@ -273,12 +283,19 @@ func compactBuckets[IBC InternalBucketCount](
 	emptyBucketsHere := func() int {
 		i := 0
 		abs := currentBucketAbsolute
-		for uint32(i)+posInSpan < spans[iSpan].Length && abs == 0 {
+		comp := float64(0)
+		if compensationBuckets != nil {
+			comp = compensationBuckets[iBucket]
+		}
+		for uint32(i)+posInSpan < spans[iSpan].Length && abs == 0 && comp == 0 {
 			i++
 			if i+iBucket >= len(primaryBuckets) {
 				break
 			}
 			abs = primaryBuckets[i+iBucket]
+			if compensationBuckets != nil {
+				comp = compensationBuckets[i+iBucket]
+			}
 		}
 		return i
 	}
