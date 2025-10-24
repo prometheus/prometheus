@@ -54,6 +54,12 @@ type Settings struct {
 	// PromoteScopeMetadata controls whether to promote OTel scope metadata to metric labels.
 	PromoteScopeMetadata    bool
 	EnableTypeAndUnitLabels bool
+	// LabelNameUnderscoreSanitization controls whether to enable prepending of 'key' to labels
+	// starting with '_'. Reserved labels starting with `__` are not modified.
+	LabelNameUnderscoreSanitization bool
+	// LabelNamePreserveMultipleUnderscores enables preserving of multiple
+	// consecutive underscores in label names when AllowUTF8 is false.
+	LabelNamePreserveMultipleUnderscores bool
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
@@ -165,8 +171,9 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					// Cumulative temporality is always valid.
 					// Delta temporality is also valid if AllowDeltaTemporality is true.
 					// All other temporality values are invalid.
-					(temporality != pmetric.AggregationTemporalityCumulative &&
-						(!settings.AllowDeltaTemporality || temporality != pmetric.AggregationTemporalityDelta)) {
+					//nolint:staticcheck // QF1001 Applying De Morgan’s law would make the conditions harder to read.
+					!(temporality == pmetric.AggregationTemporalityCumulative ||
+						(settings.AllowDeltaTemporality && temporality == pmetric.AggregationTemporalityDelta)) {
 					errs = multierr.Append(errs, fmt.Errorf("invalid temporality and type combination for metric %q", metric.Name()))
 					continue
 				}
@@ -304,12 +311,11 @@ func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAtt
 }
 
 // addPromotedAttributes adds labels for promoted resourceAttributes to the builder.
-func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builder, resourceAttributes pcommon.Map, allowUTF8 bool) error {
+func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builder, resourceAttributes pcommon.Map, labelNamer otlptranslator.LabelNamer) error {
 	if s == nil {
 		return nil
 	}
 
-	labelNamer := otlptranslator.LabelNamer{UTF8Allowed: allowUTF8}
 	if s.promoteAll {
 		var err error
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {

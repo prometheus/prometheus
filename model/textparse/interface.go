@@ -127,6 +127,17 @@ type ParserOptions struct {
 	// in the parsed metrics.
 	EnableTypeAndUnitLabels bool
 
+	// IgnoreNativeHistograms causes the parser to completely ignore all
+	// parts of native histograms, but to keep the ability to convert
+	// classic histograms to NHCB. This has the implication that even a
+	// histogram that has some native parts but not a single classic bucket
+	// will be parsed as a classic histogram (with only the +Inf bucket and
+	// count and sum). Setting this also allows converting a classic
+	// histogram that already has a native representation to an NHCB. This
+	// option has no effect on parsers for formats that do not support
+	// native histograms.
+	IgnoreNativeHistograms bool
+
 	// ConvertClassicHistogramsToNHCB enables conversion of classic histograms
 	// to native histogram custom buckets (NHCB) format.
 	ConvertClassicHistogramsToNHCB bool
@@ -168,7 +179,14 @@ func New(b []byte, contentType string, st *labels.SymbolTable, opts ParserOption
 			o.enableTypeAndUnitLabels = opts.EnableTypeAndUnitLabels
 		})
 	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b, opts.KeepClassicOnClassicAndNativeHistograms, opts.ConvertClassicHistogramsToNHCB, opts.EnableTypeAndUnitLabels, st), err
+		return NewProtobufParser(
+			b,
+			opts.IgnoreNativeHistograms,
+			opts.KeepClassicOnClassicAndNativeHistograms,
+			opts.ConvertClassicHistogramsToNHCB,
+			opts.EnableTypeAndUnitLabels,
+			st,
+		), err
 	case "text/plain":
 		baseParser = NewPromParser(b, st, opts.EnableTypeAndUnitLabels)
 	default:

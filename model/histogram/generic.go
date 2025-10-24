@@ -38,8 +38,8 @@ var (
 	ErrHistogramCustomBucketsMismatch   = errors.New("histogram custom bounds are too few")
 	ErrHistogramCustomBucketsInvalid    = errors.New("histogram custom bounds must be in strictly increasing order")
 	ErrHistogramCustomBucketsInfinite   = errors.New("histogram custom bounds must be finite")
+	ErrHistogramCustomBucketsNaN        = errors.New("histogram custom bounds must not be NaN")
 	ErrHistogramsIncompatibleSchema     = errors.New("cannot apply this operation on histograms with a mix of exponential and custom bucket schemas")
-	ErrHistogramsIncompatibleBounds     = errors.New("cannot apply this operation on custom buckets histograms with different custom bounds")
 	ErrHistogramCustomBucketsZeroCount  = errors.New("custom buckets: must have zero count of 0")
 	ErrHistogramCustomBucketsZeroThresh = errors.New("custom buckets: must have zero threshold of 0")
 	ErrHistogramCustomBucketsNegSpans   = errors.New("custom buckets: must not have negative spans")
@@ -77,6 +77,20 @@ func IsValidSchema(s int32) bool {
 // reduce resolution to the nearest supported schema.
 func IsKnownSchema(s int32) bool {
 	return IsCustomBucketsSchema(s) || IsExponentialSchemaReserved(s)
+}
+
+// CustomBucketBoundsMatch compares histogram custom bucket bounds (CustomValues)
+// and returns true if all values match.
+func CustomBucketBoundsMatch(c1, c2 []float64) bool {
+	if len(c1) != len(c2) {
+		return false
+	}
+	for i, c := range c1 {
+		if c != c2[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // BucketCount is a type constraint for the count in a bucket, which can be
@@ -453,8 +467,11 @@ func checkHistogramBuckets[BC BucketCount, IBC InternalBucketCount](buckets []IB
 
 func checkHistogramCustomBounds(bounds []float64, spans []Span, numBuckets int) error {
 	prev := math.Inf(-1)
-	for _, curr := range bounds {
-		if curr <= prev {
+	for i, curr := range bounds {
+		if math.IsNaN(curr) {
+			return ErrHistogramCustomBucketsNaN
+		}
+		if i > 0 && curr <= prev {
 			return fmt.Errorf("previous bound is %f and current is %f: %w", prev, curr, ErrHistogramCustomBucketsInvalid)
 		}
 		prev = curr

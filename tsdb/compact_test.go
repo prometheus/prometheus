@@ -1988,7 +1988,7 @@ func TestDelayedCompaction(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if c.compactionDelay > 0 && runtime.GOOS == "windows" {
+			if runtime.GOOS == "windows" {
 				t.Skip("Time imprecision on windows makes the test flaky, see https://github.com/prometheus/prometheus/issues/16450")
 			}
 			t.Parallel()

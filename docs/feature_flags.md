@@ -49,25 +49,15 @@ computed at all.
 
 `--enable-feature=native-histograms`
 
-When enabled, Prometheus will ingest native histograms (formerly also known as
-sparse histograms or high-res histograms). Native histograms are still highly
-experimental. Expect breaking changes to happen (including those rendering the
-TSDB unreadable).
+_This feature flag is being phased out. You should not use it anymore._
 
-Native histograms are currently only supported in the traditional Prometheus
-protobuf exposition format. This feature flag therefore also enables a new (and
-also experimental) protobuf parser, through which _all_ metrics are ingested
-(i.e. not only native histograms). Prometheus will try to negotiate the
-protobuf format first. The instrumented target needs to support the protobuf
-format, too, _and_ it needs to expose native histograms. The protobuf format
-allows to expose classic and native histograms side by side. With this feature
-flag disabled, Prometheus will continue to parse the classic histogram (albeit
-via the text format). With this flag enabled, Prometheus will still ingest
-those classic histograms that do not come with a corresponding native
-histogram. However, if a native histogram is present, Prometheus will ignore
-the corresponding classic histogram, with the notable exception of exemplars,
-which are always ingested. To keep the classic histograms as well, enable
-`always_scrape_classic_histograms` in the scrape job.
+Native histograms are a stable feature by now. However, to scrape native
+histograms, a scrape config setting `scrape_native_histograms` is required. To
+ease the transition, this feature flag sets the default value of
+`scrape_native_histograms` to `true`. From v3.9 on, this feature flag will be a
+true no-op, and the default value of `scrape_native_histograms` will be always
+`false`. If you are still using this feature flag while running v3.8, update
+your scrape configs and stop using the feature flag before upgrading to v3.9.
 
 ## Experimental PromQL functions
 
@@ -83,7 +73,12 @@ entirely.
 
 Enables ingestion of created timestamp. Created timestamps are injected as 0 valued samples when appropriate. See [PromCon talk](https://youtu.be/nWf0BfQ5EEA) for details.
 
-Currently Prometheus supports created timestamps only on the traditional Prometheus Protobuf protocol (WIP for other protocols). As a result, when enabling this feature, the Prometheus protobuf scrape protocol will be prioritized (See `scrape_config.scrape_protocols` settings for more details).
+Currently Prometheus supports created timestamps only on the traditional
+Prometheus Protobuf protocol (WIP for other protocols). Therefore, enabling
+this feature pre-sets the global `scrape_protocols` configuration option to 
+`[ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ]`,
+resulting in negotiating the Prometheus Protobuf protocol with first priority
+(unless the `scrape_protocols` option is set to a different value explicitly).
 
 Besides enabling this feature in Prometheus, created timestamps need to be exposed by the application being scraped.
 

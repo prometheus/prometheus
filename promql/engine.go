@@ -2862,10 +2862,13 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			fl, fr = fr, fl
 			hl, hr = hr, hl
 		}
-		floatValue, histogramValue, keep, err := vectorElemBinop(op, fl, fr, hl, hr, pos)
+		floatValue, histogramValue, keep, info, err := vectorElemBinop(op, fl, fr, hl, hr, pos)
 		if err != nil {
 			lastErr = err
 			continue
+		}
+		if info != nil {
+			lastErr = info
 		}
 		switch {
 		case returnBool:
@@ -2986,7 +2989,7 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 			lf, rf = rf, lf
 			lh, rh = rh, lh
 		}
-		float, histogram, keep, err := vectorElemBinop(op, lf, rf, lh, rh, pos)
+		float, histogram, keep, _, err := vectorElemBinop(op, lf, rf, lh, rh, pos)
 		if err != nil && !errors.Is(err, annotations.PromQLWarning) {
 			lastErr = err
 			continue
@@ -3054,89 +3057,98 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 }
 
 // vectorElemBinop evaluates a binary operation between two Vector elements.
-func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram, pos posrange.PositionRange) (float64, *histogram.FloatHistogram, bool, error) {
+func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram, pos posrange.PositionRange) (res float64, resH *histogram.FloatHistogram, keep bool, info, err error) {
 	opName := parser.ItemTypeStr[op]
 	switch {
 	case hlhs == nil && hrhs == nil:
 		{
 			switch op {
 			case parser.ADD:
-				return lhs + rhs, nil, true, nil
+				return lhs + rhs, nil, true, nil, nil
 			case parser.SUB:
-				return lhs - rhs, nil, true, nil
+				return lhs - rhs, nil, true, nil, nil
 			case parser.MUL:
-				return lhs * rhs, nil, true, nil
+				return lhs * rhs, nil, true, nil, nil
 			case parser.DIV:
-				return lhs / rhs, nil, true, nil
+				return lhs / rhs, nil, true, nil, nil
 			case parser.POW:
-				return math.Pow(lhs, rhs), nil, true, nil
+				return math.Pow(lhs, rhs), nil, true, nil, nil
 			case parser.MOD:
-				return math.Mod(lhs, rhs), nil, true, nil
+				return math.Mod(lhs, rhs), nil, true, nil, nil
 			case parser.EQLC:
-				return lhs, nil, lhs == rhs, nil
+				return lhs, nil, lhs == rhs, nil, nil
 			case parser.NEQ:
-				return lhs, nil, lhs != rhs, nil
+				return lhs, nil, lhs != rhs, nil, nil
 			case parser.GTR:
-				return lhs, nil, lhs > rhs, nil
+				return lhs, nil, lhs > rhs, nil, nil
 			case parser.LSS:
-				return lhs, nil, lhs < rhs, nil
+				return lhs, nil, lhs < rhs, nil, nil
 			case parser.GTE:
-				return lhs, nil, lhs >= rhs, nil
+				return lhs, nil, lhs >= rhs, nil, nil
 			case parser.LTE:
-				return lhs, nil, lhs <= rhs, nil
+				return lhs, nil, lhs <= rhs, nil, nil
 			case parser.ATAN2:
-				return math.Atan2(lhs, rhs), nil, true, nil
+				return math.Atan2(lhs, rhs), nil, true, nil, nil
 			}
 		}
 	case hlhs == nil && hrhs != nil:
 		{
 			switch op {
 			case parser.MUL:
-				return 0, hrhs.Copy().Mul(lhs).Compact(0), true, nil
+				return 0, hrhs.Copy().Mul(lhs).Compact(0), true, nil, nil
 			case parser.ADD, parser.SUB, parser.DIV, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
+				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
 			}
 		}
 	case hlhs != nil && hrhs == nil:
 		{
 			switch op {
 			case parser.MUL:
-				return 0, hlhs.Copy().Mul(rhs).Compact(0), true, nil
+				return 0, hlhs.Copy().Mul(rhs).Compact(0), true, nil, nil
 			case parser.DIV:
-				return 0, hlhs.Copy().Div(rhs).Compact(0), true, nil
+				return 0, hlhs.Copy().Div(rhs).Compact(0), true, nil, nil
 			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
+				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
 			}
 		}
 	case hlhs != nil && hrhs != nil:
 		{
 			switch op {
 			case parser.ADD:
-				res, counterResetCollision, err := hlhs.Copy().Add(hrhs)
+				res, counterResetCollision, nhcbBoundsReconciled, err := hlhs.Copy().Add(hrhs)
 				if err != nil {
-					return 0, nil, false, err
+					return 0, nil, false, nil, err
 				}
 				if counterResetCollision {
 					err = annotations.NewHistogramCounterResetCollisionWarning(pos, annotations.HistogramAdd)
 				}
-				return 0, res.Compact(0), true, err
-			case parser.SUB:
-				res, counterResetCollision, err := hlhs.Copy().Sub(hrhs)
-				if err != nil {
-					return 0, nil, false, err
+				if nhcbBoundsReconciled {
+					info = annotations.NewMismatchedCustomBucketsHistogramsInfo(pos, annotations.HistogramAdd)
 				}
+				return 0, res.Compact(0), true, info, err
+			case parser.SUB:
+				res, counterResetCollision, nhcbBoundsReconciled, err := hlhs.Copy().Sub(hrhs)
+				if err != nil {
+					return 0, nil, false, nil, err
+				}
+				// The result must be marked as gauge.
+				res.CounterResetHint = histogram.GaugeType
 				if counterResetCollision {
 					err = annotations.NewHistogramCounterResetCollisionWarning(pos, annotations.HistogramSub)
 				}
-				return 0, res.Compact(0), true, err
+				if nhcbBoundsReconciled {
+					info = annotations.NewMismatchedCustomBucketsHistogramsInfo(pos, annotations.HistogramSub)
+				}
+
+				return 0, res.Compact(0), true, info, err
 			case parser.EQLC:
 				// This operation expects that both histograms are compacted.
-				return 0, hlhs, hlhs.Equals(hrhs), nil
+				return 0, hlhs, hlhs.Equals(hrhs), nil, nil
 			case parser.NEQ:
 				// This operation expects that both histograms are compacted.
-				return 0, hlhs, !hlhs.Equals(hrhs), nil
+				return 0, hlhs, !hlhs.Equals(hrhs), nil, nil
 			case parser.MUL, parser.DIV, parser.POW, parser.MOD, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
+				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
 			}
 		}
 	}
@@ -3155,9 +3167,11 @@ type groupedAggregation struct {
 	seen                   bool // Was this output groups seen in the input at this timestamp.
 	hasFloat               bool // Has at least 1 float64 sample aggregated.
 	hasHistogram           bool // Has at least 1 histogram sample aggregated.
-	incompatibleHistograms bool // If true, group has seen mixed exponential and custom buckets, or incompatible custom buckets.
+	incompatibleHistograms bool // If true, group has seen mixed exponential and custom buckets.
 	groupAggrComplete      bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group.
 	incrementalMean        bool // True after reverting to incremental calculation of the mean value.
+	counterResetSeen       bool // Counter reset hint CounterReset seen. Currently only used for histogram samples.
+	notCounterResetSeen    bool // Counter reset hint NotCounterReset seen. Currently only used for histogram samples.
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.
@@ -3194,6 +3208,12 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				} else {
 					group.histogramValue = h.Copy()
 					group.hasHistogram = true
+					switch h.CounterResetHint {
+					case histogram.CounterReset:
+						group.counterResetSeen = true
+					case histogram.NotCounterReset:
+						group.notCounterResetSeen = true
+					}
 				}
 			case parser.STDVAR, parser.STDDEV:
 				switch {
@@ -3241,13 +3261,19 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if h != nil {
 				group.hasHistogram = true
 				if group.histogramValue != nil {
-					_, counterResetCollision, err := group.histogramValue.Add(h)
+					switch h.CounterResetHint {
+					case histogram.CounterReset:
+						group.counterResetSeen = true
+					case histogram.NotCounterReset:
+						group.notCounterResetSeen = true
+					}
+					_, _, nhcbBoundsReconciled, err := group.histogramValue.Add(h)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
 					}
-					if counterResetCollision {
-						annos.Add(annotations.NewHistogramCounterResetCollisionWarning(e.Expr.PositionRange(), annotations.HistogramAgg))
+					if nhcbBoundsReconciled {
+						annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(e.Expr.PositionRange(), annotations.HistogramAgg))
 					}
 				}
 				// Otherwise the aggregation contained floats
@@ -3295,25 +3321,33 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if h != nil {
 				group.hasHistogram = true
 				if group.histogramValue != nil {
+					switch h.CounterResetHint {
+					case histogram.CounterReset:
+						group.counterResetSeen = true
+					case histogram.NotCounterReset:
+						group.notCounterResetSeen = true
+					}
 					left := h.Copy().Div(group.groupCount)
 					right := group.histogramValue.Copy().Div(group.groupCount)
-					toAdd, counterResetCollision, err := left.Sub(right)
+
+					toAdd, _, nhcbBoundsReconciled, err := left.Sub(right)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
 						continue
 					}
-					if counterResetCollision {
-						annos.Add(annotations.NewHistogramCounterResetCollisionWarning(e.Expr.PositionRange(), annotations.HistogramAgg))
+					if nhcbBoundsReconciled {
+						annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(e.Expr.PositionRange(), annotations.HistogramAgg))
 					}
-					_, counterResetCollision, err = group.histogramValue.Add(toAdd)
+
+					_, _, nhcbBoundsReconciled, err = group.histogramValue.Add(toAdd)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
 						continue
 					}
-					if counterResetCollision {
-						annos.Add(annotations.NewHistogramCounterResetCollisionWarning(e.Expr.PositionRange(), annotations.HistogramAgg))
+					if nhcbBoundsReconciled {
+						annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(e.Expr.PositionRange(), annotations.HistogramAgg))
 					}
 				}
 				// Otherwise the aggregation contained floats
@@ -3446,8 +3480,16 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			default:
 				aggr.floatValue += aggr.floatKahanC
 			}
+
 		default:
 			// For other aggregations, we already have the right value.
+		}
+
+		// This only is relevant for AVG and SUM with native histograms
+		// involved, but since those booleans aren't touched in other
+		// cases, we can just do it here in general.
+		if aggr.counterResetSeen && aggr.notCounterResetSeen {
+			annos.Add(annotations.NewHistogramCounterResetCollisionWarning(e.Expr.PositionRange(), annotations.HistogramAgg))
 		}
 
 		ss := &outputMatrix[ri]
@@ -3788,8 +3830,6 @@ func handleAggregationError(err error, e *parser.AggregateExpr, metricName strin
 	pos := e.Expr.PositionRange()
 	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 		annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
-	} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-		annos.Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, pos))
 	}
 }
 
@@ -3804,7 +3844,7 @@ func handleVectorBinopError(err error, e *parser.BinaryExpr) annotations.Annotat
 		return annotations.New().Add(err)
 	}
 	// TODO(NeerajGartia21): Test the exact annotation output once the testing framework can do so.
-	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) || errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 		return annotations.New().Add(annotations.NewIncompatibleBucketLayoutInBinOpWarning(op, pos))
 	}
 	return nil

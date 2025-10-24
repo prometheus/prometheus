@@ -67,15 +67,35 @@ func TestCreateAttributes(t *testing.T) {
 	attrs.PutStr("metric-attr", "metric value")
 	attrs.PutStr("metric-attr-other", "metric value other")
 
+	// Setup resources with underscores for sanitization tests
+	resourceAttrsWithUnderscores := map[string]string{
+		"service.name":        "service name",
+		"service.instance.id": "service ID",
+		"_private":            "private value",
+		"__reserved__":        "reserved value",
+		"label___multi":       "multi value",
+	}
+	resourceWithUnderscores := pcommon.NewResource()
+	for k, v := range resourceAttrsWithUnderscores {
+		resourceWithUnderscores.Attributes().PutStr(k, v)
+	}
+	attrsWithUnderscores := pcommon.NewMap()
+	attrsWithUnderscores.PutStr("_metric_private", "private metric")
+	attrsWithUnderscores.PutStr("metric___multi", "multi metric")
+
 	testCases := []struct {
-		name                         string
-		scope                        scope
-		promoteAllResourceAttributes bool
-		promoteResourceAttributes    []string
-		promoteScope                 bool
-		ignoreResourceAttributes     []string
-		ignoreAttrs                  []string
-		expectedLabels               labels.Labels
+		name                                 string
+		resource                             pcommon.Resource
+		attrs                                pcommon.Map
+		scope                                scope
+		promoteAllResourceAttributes         bool
+		promoteResourceAttributes            []string
+		promoteScope                         bool
+		ignoreResourceAttributes             []string
+		ignoreAttrs                          []string
+		labelNameUnderscoreSanitization      bool
+		labelNamePreserveMultipleUnderscores bool
+		expectedLabels                       labels.Labels
 	}{
 		{
 			name:                      "Successful conversion without resource attribute promotion and without scope promotion",
@@ -251,6 +271,121 @@ func TestCreateAttributes(t *testing.T) {
 				"otel_scope_attr2", "value2",
 			),
 		},
+		// Label sanitization test cases
+		{
+			name:                                 "Underscore sanitization enabled - prepends key_ to labels starting with single _",
+			resource:                             resourceWithUnderscores,
+			attrs:                                attrsWithUnderscores,
+			promoteResourceAttributes:            []string{"_private"},
+			labelNameUnderscoreSanitization:      true,
+			labelNamePreserveMultipleUnderscores: true,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"key_private", "private value",
+				"key_metric_private", "private metric",
+				"metric___multi", "multi metric",
+			),
+		},
+		{
+			name:                                 "Underscore sanitization disabled - keeps labels with _ as-is",
+			resource:                             resourceWithUnderscores,
+			attrs:                                attrsWithUnderscores,
+			promoteResourceAttributes:            []string{"_private"},
+			labelNameUnderscoreSanitization:      false,
+			labelNamePreserveMultipleUnderscores: true,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"_private", "private value",
+				"_metric_private", "private metric",
+				"metric___multi", "multi metric",
+			),
+		},
+		{
+			name:                                 "Multiple underscores preserved - keeps consecutive underscores",
+			resource:                             resourceWithUnderscores,
+			attrs:                                attrsWithUnderscores,
+			promoteResourceAttributes:            []string{"label___multi"},
+			labelNameUnderscoreSanitization:      false,
+			labelNamePreserveMultipleUnderscores: true,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"label___multi", "multi value",
+				"_metric_private", "private metric",
+				"metric___multi", "multi metric",
+			),
+		},
+		{
+			name:                                 "Multiple underscores collapsed - collapses to single underscore",
+			resource:                             resourceWithUnderscores,
+			attrs:                                attrsWithUnderscores,
+			promoteResourceAttributes:            []string{"label___multi"},
+			labelNameUnderscoreSanitization:      false,
+			labelNamePreserveMultipleUnderscores: false,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"label_multi", "multi value",
+				"_metric_private", "private metric",
+				"metric_multi", "multi metric",
+			),
+		},
+		{
+			name:                                 "Both sanitization options enabled",
+			resource:                             resourceWithUnderscores,
+			attrs:                                attrsWithUnderscores,
+			promoteResourceAttributes:            []string{"_private", "label___multi"},
+			labelNameUnderscoreSanitization:      true,
+			labelNamePreserveMultipleUnderscores: true,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"key_private", "private value",
+				"label___multi", "multi value",
+				"key_metric_private", "private metric",
+				"metric___multi", "multi metric",
+			),
+		},
+		{
+			name:                                 "Both sanitization options disabled",
+			resource:                             resourceWithUnderscores,
+			attrs:                                attrsWithUnderscores,
+			promoteResourceAttributes:            []string{"_private", "label___multi"},
+			labelNameUnderscoreSanitization:      false,
+			labelNamePreserveMultipleUnderscores: false,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"_private", "private value",
+				"label_multi", "multi value",
+				"_metric_private", "private metric",
+				"metric_multi", "multi metric",
+			),
+		},
+		{
+			name:                                 "Reserved labels (starting with __) are never modified",
+			resource:                             resourceWithUnderscores,
+			attrs:                                attrsWithUnderscores,
+			promoteResourceAttributes:            []string{"__reserved__"},
+			labelNameUnderscoreSanitization:      true,
+			labelNamePreserveMultipleUnderscores: false,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"__reserved__", "reserved value",
+				"key_metric_private", "private metric",
+				"metric_multi", "multi metric",
+			),
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -261,12 +396,27 @@ func TestCreateAttributes(t *testing.T) {
 					PromoteResourceAttributes:    tc.promoteResourceAttributes,
 					IgnoreResourceAttributes:     tc.ignoreResourceAttributes,
 				}),
-				PromoteScopeMetadata: tc.promoteScope,
+				PromoteScopeMetadata:                 tc.promoteScope,
+				LabelNameUnderscoreSanitization:      tc.labelNameUnderscoreSanitization,
+				LabelNamePreserveMultipleUnderscores: tc.labelNamePreserveMultipleUnderscores,
 			}
-			lbls, err := c.createAttributes(resource, attrs, tc.scope, settings, tc.ignoreAttrs, false, Metadata{}, model.MetricNameLabel, "test_metric")
+			// Use test case specific resource/attrs if provided, otherwise use defaults
+			// Check if tc.resource is initialized (non-zero) by trying to get its attributes
+			testResource := resource
+			testAttrs := attrs
+			// For pcommon types, we can check if they're non-zero by seeing if they have attributes
+			// Since zero-initialized Resource is not valid, we use a simple heuristic:
+			// if the struct has been explicitly set in the test case, use it
+			if tc.resource != (pcommon.Resource{}) {
+				testResource = tc.resource
+			}
+			if tc.attrs != (pcommon.Map{}) {
+				testAttrs = tc.attrs
+			}
+			lbls, err := c.createAttributes(testResource, testAttrs, tc.scope, settings, tc.ignoreAttrs, false, Metadata{}, model.MetricNameLabel, "test_metric")
 			require.NoError(t, err)
 
-			testutil.RequireEqual(t, lbls, tc.expectedLabels)
+			testutil.RequireEqual(t, tc.expectedLabels, lbls)
 		})
 	}
 }

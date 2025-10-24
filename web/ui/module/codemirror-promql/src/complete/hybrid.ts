@@ -376,7 +376,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
           { kind: ContextKind.Aggregation }
         );
         if (parent.type.id !== FunctionCallBody && parent.type.id !== MatrixSelector) {
-          // it's too avoid to autocomplete a number in situation where it shouldn't.
+          // it's to avoid to autocomplete a number in situation where it shouldn't.
           // Like with `sum by(rat)`
           result.push({ kind: ContextKind.Number });
         }
