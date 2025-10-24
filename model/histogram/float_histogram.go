@@ -424,7 +424,6 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (updatedC *FloatHist
 	if c == nil {
 		c = h.newCompensationHistogram()
 	}
-
 	if !h.UsesCustomBuckets() {
 		otherZeroCount := h.reconcileZeroBuckets(other, c)
 		h.ZeroCount, c.ZeroCount = kahansum.Inc(otherZeroCount, h.ZeroCount, c.ZeroCount)
@@ -1118,7 +1117,7 @@ outer:
 			// Bucket to be merged into zero bucket.
 			hZeroCount, cZeroCount = kahansum.Inc(b.Count, hZeroCount, cZeroCount)
 			if c != nil {
-				cZeroCount += c.PositiveBuckets[bucketsIdx]
+				hZeroCount, cZeroCount = kahansum.Inc(c.PositiveBuckets[bucketsIdx], hZeroCount, cZeroCount)
 			}
 			if b.Upper > largerThreshold {
 				// New threshold ended up within a bucket. if it's
@@ -1141,7 +1140,7 @@ outer:
 			// Bucket to be merged into zero bucket.
 			hZeroCount, cZeroCount = kahansum.Inc(b.Count, hZeroCount, cZeroCount)
 			if c != nil {
-				cZeroCount += c.NegativeBuckets[bucketsIdx]
+				hZeroCount, cZeroCount = kahansum.Inc(c.NegativeBuckets[bucketsIdx], hZeroCount, cZeroCount)
 			}
 			if b.Lower < -largerThreshold {
 				// New threshold ended up within a bucket. If
@@ -1174,6 +1173,9 @@ func (h *FloatHistogram) trimBucketsInZeroBucket(c *FloatHistogram) {
 			break
 		}
 		h.PositiveBuckets[bucketsIdx] = 0
+		if c != nil {
+			c.PositiveBuckets[bucketsIdx] = 0
+		}
 		bucketsIdx++
 	}
 	i = h.NegativeBucketIterator()
@@ -1184,6 +1186,9 @@ func (h *FloatHistogram) trimBucketsInZeroBucket(c *FloatHistogram) {
 			break
 		}
 		h.NegativeBuckets[bucketsIdx] = 0
+		if c != nil {
+			c.NegativeBuckets[bucketsIdx] = 0
+		}
 		bucketsIdx++
 	}
 	// We are abusing Compact to trim the buckets set to zero
@@ -2081,7 +2086,11 @@ func kahanReduceResolution(
 					targetReceivingBuckets[lastBucketIdx],
 					targetCompensationBuckets[lastBucketIdx],
 				)
-				targetCompensationBuckets[lastBucketIdx] += originCompensationBuckets[bucketCountIdx]
+				targetReceivingBuckets[lastBucketIdx], targetCompensationBuckets[lastBucketIdx] = kahansum.Inc(
+					originCompensationBuckets[bucketCountIdx],
+					targetReceivingBuckets[lastBucketIdx],
+					targetCompensationBuckets[lastBucketIdx],
+				)
 
 			case (lastTargetBucketIdx + 1) == targetBucketIdx:
 				// The current bucket has to go into a new target bucket,
