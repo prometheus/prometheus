@@ -28,6 +28,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -38,12 +39,10 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
 	"github.com/prometheus/prometheus/storage/remote/googleiam"
-	"github.com/prometheus/prometheus/util/compression"
 )
 
 const (
@@ -59,9 +58,9 @@ var (
 	// UserAgent represents Prometheus version to use for user agent header.
 	UserAgent = version.PrometheusUserAgent()
 
-	remoteWriteContentTypeHeaders = map[config.RemoteWriteProtoMsg]string{
-		config.RemoteWriteProtoMsgV1: appProtoContentType, // Also application/x-protobuf;proto=prometheus.WriteRequest but simplified for compatibility with 1.x spec.
-		config.RemoteWriteProtoMsgV2: appProtoContentType + ";proto=io.prometheus.write.v2.Request",
+	remoteWriteContentTypeHeaders = map[remoteapi.WriteMessageType]string{
+		remoteapi.WriteV1MessageType: appProtoContentType, // Also application/x-protobuf;proto=prometheus.WriteRequest but simplified for compatibility with 1.x spec.
+		remoteapi.WriteV2MessageType: appProtoContentType + ";proto=io.prometheus.write.v2.Request",
 	}
 
 	AcceptedResponseTypes = []prompb.ReadRequest_ResponseType{
@@ -121,8 +120,8 @@ type Client struct {
 	readQueriesTotal    *prometheus.CounterVec
 	readQueriesDuration prometheus.ObserverVec
 
-	writeProtoMsg    config.RemoteWriteProtoMsg
-	writeCompression compression.Type // Not exposed by ClientConfig for now.
+	writeProtoMsg    remoteapi.WriteMessageType
+	writeCompression remoteapi.Compression
 }
 
 // ClientConfig configures a client.
@@ -135,7 +134,7 @@ type ClientConfig struct {
 	GoogleIAMConfig       *googleiam.Config
 	Headers               map[string]string
 	RetryOnRateLimit      bool
-	WriteProtoMsg         config.RemoteWriteProtoMsg
+	WriteProtoMsg         remoteapi.WriteMessageType
 	ChunkedReadLimit      uint64
 	RoundRobinDNS         bool
 	AcceptedResponseTypes []prompb.ReadRequest_ResponseType
@@ -217,7 +216,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 		}
 	}
 
-	writeProtoMsg := config.RemoteWriteProtoMsgV1
+	writeProtoMsg := remoteapi.WriteV1MessageType
 	if conf.WriteProtoMsg != "" {
 		writeProtoMsg = conf.WriteProtoMsg
 	}
@@ -233,7 +232,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 		retryOnRateLimit: conf.RetryOnRateLimit,
 		timeout:          time.Duration(conf.Timeout),
 		writeProtoMsg:    writeProtoMsg,
-		writeCompression: compression.Snappy,
+		writeCompression: remoteapi.SnappyBlockCompression,
 	}, nil
 }
 
@@ -270,10 +269,10 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 		return WriteResponseStats{}, err
 	}
 
-	httpReq.Header.Add("Content-Encoding", c.writeCompression)
+	httpReq.Header.Add("Content-Encoding", string(c.writeCompression))
 	httpReq.Header.Set("Content-Type", remoteWriteContentTypeHeaders[c.writeProtoMsg])
 	httpReq.Header.Set("User-Agent", UserAgent)
-	if c.writeProtoMsg == config.RemoteWriteProtoMsgV1 {
+	if c.writeProtoMsg == remoteapi.WriteV1MessageType {
 		// Compatibility mode for 1.0.
 		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion1HeaderValue)
 	} else {
