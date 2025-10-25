@@ -459,6 +459,41 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	// items in the list are already sorted.
 }
 
+func mergeIntoOldInPlace(old []storage.SeriesRef, tail []storage.SeriesRef) ([]storage.SeriesRef, bool) {
+	origOldLen := len(old)
+	tailLen := len(tail)
+	if tailLen == 0 {
+		return old, true
+	}
+
+	if cap(old) < origOldLen+tailLen {
+		return nil, false
+	}
+
+	old = old[:origOldLen+tailLen]
+
+	i := origOldLen - 1
+	j := tailLen - 1
+	k := len(old) - 1
+
+	for i >= 0 && j >= 0 {
+		if old[i] > tail[j] {
+			old[k] = old[i]
+			i--
+		} else {
+			old[k] = tail[j]
+			j--
+		}
+		k--
+	}
+	for j >= 0 {
+		old[k] = tail[j]
+		j--
+		k--
+	}
+	return old, true
+}
+
 func (p *MemPostings) flushNameValue(name, value string) {
 	p.mtx.Lock()
 	tail := p.tail[name][value]
@@ -466,26 +501,67 @@ func (p *MemPostings) flushNameValue(name, value string) {
 		p.mtx.Unlock()
 		return
 	}
-	tailCopy := append([]storage.SeriesRef(nil), tail...)
+	tailCopy := slices.Clone(tail)
 	if p.committed[name] == nil {
 		p.committed[name] = make(map[string][]storage.SeriesRef)
 	}
 	p.tail[name][value] = nil
 	old := p.committed[name][value]
-	// Add to lvs only when first flushing this label value (when old is empty).
-	// This ensures lvs only contains values that are visible in committed postings.
 	isNewValue := len(old) == 0
 	p.mtx.Unlock()
 
 	sort.Slice(tailCopy, func(i, j int) bool { return tailCopy[i] < tailCopy[j] })
-	newCommitted := mergeSorted(old, tailCopy)
 
 	p.mtx.Lock()
 	if p.committed[name] == nil {
 		p.committed[name] = make(map[string][]storage.SeriesRef)
 	}
+
+	old = p.committed[name][value]
+
+	if len(old) == 0 {
+		p.committed[name][value] = tailCopy
+		if isNewValue {
+			p.lvs[name] = appendWithExponentialGrowth(p.lvs[name], value)
+		}
+		p.mtx.Unlock()
+		return
+	}
+
+	if len(tailCopy) > 0 && old[len(old)-1] < tailCopy[0] {
+		if cap(old) >= len(old)+len(tailCopy) {
+			origLen := len(old)
+			old = old[:origLen+len(tailCopy)]
+			copy(old[origLen:], tailCopy)
+			p.committed[name][value] = old
+			if isNewValue {
+				p.lvs[name] = appendWithExponentialGrowth(p.lvs[name], value)
+			}
+			p.mtx.Unlock()
+			return
+		}
+		newCommitted := append(append([]storage.SeriesRef{}, old...), tailCopy...)
+		p.committed[name][value] = newCommitted
+		if isNewValue {
+			p.lvs[name] = appendWithExponentialGrowth(p.lvs[name], value)
+		}
+		p.mtx.Unlock()
+		return
+	}
+
+	// General case: need to interleave (merge).
+	// Try in-place merge (from end) if old has required capacity.
+	if merged, ok := mergeIntoOldInPlace(old, tailCopy); ok {
+		p.committed[name][value] = merged
+		if isNewValue {
+			p.lvs[name] = appendWithExponentialGrowth(p.lvs[name], value)
+		}
+		p.mtx.Unlock()
+		return
+	}
+
+	newCommitted := mergeSorted(old, tailCopy)
 	p.committed[name][value] = newCommitted
-	// Now that the value is in committed, add it to lvs if it's new.
 	if isNewValue {
 		p.lvs[name] = appendWithExponentialGrowth(p.lvs[name], value)
 	}

@@ -1576,18 +1576,17 @@ func TestMemPostings_Unordered_Add_Get(t *testing.T) {
 		// First, add next series.
 		next := ref + 1
 		mp.Add(next, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(next))))
-		mp.Flush(labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
-
-		p := mp.Postings(context.Background(), labels.MetricName, "test")
+		mp.Flush(labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(next))))
 
 		// Now add current ref.
 		mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
 		mp.Flush(labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
+		p := mp.Postings(context.Background(), labels.MetricName, "test")
 
 		// Next postings should still reference the next series.
 		nextExpanded, err := ExpandPostings(p)
 		require.NoError(t, err)
-		require.Len(t, nextExpanded, int(ref))
+		require.Len(t, nextExpanded, int(next))
 		require.Equal(t, next, nextExpanded[len(nextExpanded)-1])
 	}
 }
