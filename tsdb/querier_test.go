@@ -169,9 +169,6 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 		require.NoError(t, mi.AddSeries(storage.SeriesRef(i), ls, metas...))
 
 		postings.Add(storage.SeriesRef(i), ls)
-		postings.Flush(ls)
-		allName, allValue := index.AllPostingsKey()
-		postings.Flush(labels.FromStrings(allName, allValue))
 
 		ls.Range(func(l labels.Label) {
 			vs, present := lblIdx[l.Name]

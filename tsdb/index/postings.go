@@ -408,6 +408,7 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 }
 
 // Add a label set to the postings index.
+// This method adds the series to the tail and immediately flushes it to make it visible to readers.
 func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	p.mtx.Lock()
 
@@ -416,13 +417,16 @@ func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	})
 	p.addFor(id, allPostingsKey)
 	p.mtx.Unlock()
+
+	p.Flush(lset)
+	allName, allValue := AllPostingsKey()
+	p.Flush(labels.FromStrings(allName, allValue))
 }
 
 // Flush moves postings for the given label set from tail to committed storage.
 // This makes the postings visible to readers via Postings(), Stats(), and other query methods.
-// Flush must be called after Add() to make the data visible, as Add() only writes to tail.
-// Note: Flush does not automatically flush the "all postings" key (empty label "").
-// Callers should explicitly flush AllPostingsKey() if needed.
+// Note: Add() automatically calls Flush, so this method is typically not needed by callers.
+// This method is primarily for internal use or advanced scenarios where fine-grained control is needed.
 func (p *MemPostings) Flush(lset labels.Labels) {
 	lset.Range(func(l labels.Label) {
 		p.flushNameValue(l.Name, l.Value)

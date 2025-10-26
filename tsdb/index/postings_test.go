@@ -947,19 +947,12 @@ func TestMemPostingsStats(t *testing.T) {
 
 	// add some postings to the MemPostings
 	p.Add(1, labels.FromStrings("label", "value1"))
-	p.Flush(labels.FromStrings("label", "value1"))
 
 	p.Add(1, labels.FromStrings("label", "value2"))
-	p.Flush(labels.FromStrings("label", "value2"))
 
 	p.Add(1, labels.FromStrings("label", "value3"))
-	p.Flush(labels.FromStrings("label", "value3"))
 
 	p.Add(2, labels.FromStrings("label", "value1"))
-	p.Flush(labels.FromStrings("label", "value1"))
-
-	allName, allValue := AllPostingsKey()
-	p.Flush(labels.FromStrings(allName, allValue))
 
 	// call the Stats method to calculate the cardinality statistics
 	// passing a fake calculation so we get the same result regardless of compilation -tags.
@@ -984,17 +977,10 @@ func TestMemPostingsStats(t *testing.T) {
 func TestMemPostings_Delete(t *testing.T) {
 	p := NewMemPostings()
 	p.Add(1, labels.FromStrings("lbl1", "a"))
-	p.Flush(labels.FromStrings("lbl1", "a"))
 
 	p.Add(2, labels.FromStrings("lbl1", "b"))
-	p.Flush(labels.FromStrings("lbl1", "b"))
 
 	p.Add(3, labels.FromStrings("lbl2", "a"))
-	p.Flush(labels.FromStrings("lbl2", "a"))
-
-	// Flush allPostingsKey
-	allName, allValue := AllPostingsKey()
-	p.Flush(labels.FromStrings(allName, allValue))
 
 	before := p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 	deletedRefs := map[storage.SeriesRef]struct{}{
@@ -1496,19 +1482,12 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
 	mp := NewMemPostings()
 	mp.Add(1, labels.FromStrings("foo", "1"))
-	mp.Flush(labels.FromStrings("foo", "1"))
 
 	mp.Add(2, labels.FromStrings("foo", "2"))
-	mp.Flush(labels.FromStrings("foo", "2"))
 
 	mp.Add(3, labels.FromStrings("foo", "3"))
-	mp.Flush(labels.FromStrings("foo", "3"))
 
 	mp.Add(4, labels.FromStrings("foo", "4"))
-	mp.Flush(labels.FromStrings("foo", "4"))
-
-	allName, allValue := AllPostingsKey()
-	mp.Flush(labels.FromStrings(allName, allValue))
 
 	isEven := func(v string) bool {
 		iv, err := strconv.Atoi(v)
@@ -1528,19 +1507,12 @@ func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
 func TestMemPostings_PostingsForAllLabelValues(t *testing.T) {
 	mp := NewMemPostings()
 	mp.Add(1, labels.FromStrings("foo", "1"))
-	mp.Flush(labels.FromStrings("foo", "1"))
 
 	mp.Add(2, labels.FromStrings("foo", "2"))
-	mp.Flush(labels.FromStrings("foo", "2"))
 
 	mp.Add(3, labels.FromStrings("foo", "3"))
-	mp.Flush(labels.FromStrings("foo", "3"))
 
 	mp.Add(4, labels.FromStrings("foo", "4"))
-	mp.Flush(labels.FromStrings("foo", "4"))
-
-	allName, allValue := AllPostingsKey()
-	mp.Flush(labels.FromStrings(allName, allValue))
 
 	p := mp.PostingsForAllLabelValues(context.Background(), "foo")
 	require.NoError(t, p.Err())
@@ -1555,11 +1527,7 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	seriesCount := 10 * checkContextEveryNIterations
 	for i := 1; i <= seriesCount; i++ {
 		memP.Add(storage.SeriesRef(i), labels.FromStrings("__name__", fmt.Sprintf("%4d", i)))
-		memP.Flush(labels.FromStrings("__name__", fmt.Sprintf("%4d", i)))
 	}
-	// Flush allPostingsKey
-	allName, allValue := AllPostingsKey()
-	memP.Flush(labels.FromStrings(allName, allValue))
 
 	failAfter := uint64(seriesCount / 2 / checkContextEveryNIterations)
 	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
@@ -1603,7 +1571,6 @@ func TestMemPostings_Concurrent_Add_Get(t *testing.T) {
 		defer wg.Done()
 		for ref := range refs {
 			mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
-			mp.Flush(labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
 			p := mp.Postings(context.Background(), labels.MetricName, "test")
 			_, err := ExpandPostings(p)
 			if err != nil {
@@ -1619,7 +1586,6 @@ func TestMemPostings_Concurrent_Add_Get(t *testing.T) {
 		// We don't read the value of the postings here,
 		// this is tested in TestMemPostings_Unordered_Add_Get where it's easier to achieve the determinism.
 		// This test just checks that there's no data race.
-		mp.Flush(labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
 		p := mp.Postings(context.Background(), labels.MetricName, "test")
 		// its for single slice only!
 		_, err := ExpandPostings(p)
