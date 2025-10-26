@@ -463,9 +463,8 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	// items in the list are already sorted.
 }
 
-func mergeIntoOldInPlace(old []storage.SeriesRef, tail []storage.SeriesRef) ([]storage.SeriesRef, bool) {
-	origOldLen := len(old)
-	tailLen := len(tail)
+func mergeIntoOldInPlace(old, tail []storage.SeriesRef) ([]storage.SeriesRef, bool) {
+	origOldLen, tailLen := len(old), len(tail)
 	if tailLen == 0 {
 		return old, true
 	}
@@ -476,9 +475,7 @@ func mergeIntoOldInPlace(old []storage.SeriesRef, tail []storage.SeriesRef) ([]s
 
 	old = old[:origOldLen+tailLen]
 
-	i := origOldLen - 1
-	j := tailLen - 1
-	k := len(old) - 1
+	i, j, k := origOldLen-1, tailLen-1, len(old)-1
 
 	for i >= 0 && j >= 0 {
 		if old[i] > tail[j] {

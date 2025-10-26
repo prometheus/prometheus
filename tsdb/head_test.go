@@ -6673,7 +6673,6 @@ func TestStripeSeries_gc(t *testing.T) {
 func TestPostingsCardinalityStats(t *testing.T) {
 	head := &Head{postings: index.NewMemPostings()}
 	head.postings.Add(1, labels.FromStrings(labels.MetricName, "t", "n", "v1"))
-
 	head.postings.Add(2, labels.FromStrings(labels.MetricName, "t", "n", "v2"))
 
 	statsForMetricName := head.PostingsCardinalityStats(labels.MetricName, 10)

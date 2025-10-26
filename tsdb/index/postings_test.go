@@ -947,11 +947,8 @@ func TestMemPostingsStats(t *testing.T) {
 
 	// add some postings to the MemPostings
 	p.Add(1, labels.FromStrings("label", "value1"))
-
 	p.Add(1, labels.FromStrings("label", "value2"))
-
 	p.Add(1, labels.FromStrings("label", "value3"))
-
 	p.Add(2, labels.FromStrings("label", "value1"))
 
 	// call the Stats method to calculate the cardinality statistics
@@ -977,9 +974,7 @@ func TestMemPostingsStats(t *testing.T) {
 func TestMemPostings_Delete(t *testing.T) {
 	p := NewMemPostings()
 	p.Add(1, labels.FromStrings("lbl1", "a"))
-
 	p.Add(2, labels.FromStrings("lbl1", "b"))
-
 	p.Add(3, labels.FromStrings("lbl2", "a"))
 
 	before := p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
@@ -1482,11 +1477,8 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
 	mp := NewMemPostings()
 	mp.Add(1, labels.FromStrings("foo", "1"))
-
 	mp.Add(2, labels.FromStrings("foo", "2"))
-
 	mp.Add(3, labels.FromStrings("foo", "3"))
-
 	mp.Add(4, labels.FromStrings("foo", "4"))
 
 	isEven := func(v string) bool {
@@ -1507,11 +1499,8 @@ func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
 func TestMemPostings_PostingsForAllLabelValues(t *testing.T) {
 	mp := NewMemPostings()
 	mp.Add(1, labels.FromStrings("foo", "1"))
-
 	mp.Add(2, labels.FromStrings("foo", "2"))
-
 	mp.Add(3, labels.FromStrings("foo", "3"))
-
 	mp.Add(4, labels.FromStrings("foo", "4"))
 
 	p := mp.PostingsForAllLabelValues(context.Background(), "foo")
