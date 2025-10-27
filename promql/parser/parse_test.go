@@ -735,6 +735,17 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `@@`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 1},
+				Err:           errors.New(`unexpected <op:@>`),
+				Query:         `@@`,
+			},
+		},
+	},
+	{
 		input: "1 offset 1d",
 		fail:  true,
 		errors: ParseErrors{
