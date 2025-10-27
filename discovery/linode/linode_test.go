@@ -238,7 +238,11 @@ func TestLinodeSDRefresh(t *testing.T) {
 		defer metrics.Unregister()
 		defer refreshMetrics.Unregister()
 
-		d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+		d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+			Logger:  promslog.NewNopLogger(),
+			Metrics: metrics,
+			SetName: "linode",
+		})
 		require.NoError(t, err)
 		endpoint, err := url.Parse(sdmock.Endpoint())
 		require.NoError(t, err)

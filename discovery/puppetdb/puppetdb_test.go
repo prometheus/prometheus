@@ -70,7 +70,11 @@ func TestPuppetSlashInURL(t *testing.T) {
 		metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 		require.NoError(t, metrics.Register())
 
-		d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+		d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+			Logger:  promslog.NewNopLogger(),
+			Metrics: metrics,
+			SetName: "puppetdb",
+		})
 		require.NoError(t, err)
 		require.Equal(t, apiURL, d.url)
 
@@ -94,7 +98,11 @@ func TestPuppetDBRefresh(t *testing.T) {
 	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:  promslog.NewNopLogger(),
+		Metrics: metrics,
+		SetName: "puppetdb",
+	})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -142,7 +150,11 @@ func TestPuppetDBRefreshWithParameters(t *testing.T) {
 	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:  promslog.NewNopLogger(),
+		Metrics: metrics,
+		SetName: "puppetdb",
+	})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -201,7 +213,11 @@ func TestPuppetDBInvalidCode(t *testing.T) {
 	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:  promslog.NewNopLogger(),
+		Metrics: metrics,
+		SetName: "puppetdb",
+	})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -229,7 +245,11 @@ func TestPuppetDBInvalidFormat(t *testing.T) {
 	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:  promslog.NewNopLogger(),
+		Metrics: metrics,
+		SetName: "puppetdb",
+	})
 	require.NoError(t, err)
 
 	ctx := context.Background()

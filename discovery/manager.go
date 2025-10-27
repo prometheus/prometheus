@@ -479,6 +479,7 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 			Logger:            m.logger.With("discovery", typ, "config", setName),
 			HTTPClientOptions: m.httpOpts,
 			Metrics:           m.sdMetrics[typ],
+			SetName:           setName,
 		})
 		if err != nil {
 			m.logger.Error("Cannot create service discovery", "err", err, "type", typ, "config", setName)

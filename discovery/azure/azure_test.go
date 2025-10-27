@@ -659,7 +659,11 @@ func TestAzureRefresh(t *testing.T) {
 			refreshMetrics := discovery.NewRefreshMetrics(reg)
 			metrics := azureSDConfig.NewDiscovererMetrics(reg, refreshMetrics)
 
-			sd, err := NewDiscovery(azureSDConfig, nil, metrics)
+			sd, err := NewDiscovery(azureSDConfig, discovery.DiscovererOptions{
+				Logger:  nil,
+				Metrics: metrics,
+				SetName: "azure",
+			})
 			require.NoError(t, err)
 
 			tg, err := sd.refreshAzureClient(context.Background(), azureClient)
