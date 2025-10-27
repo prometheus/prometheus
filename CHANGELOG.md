@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+* [FEATURE] Templates: Add urlQueryEscape to template functions. #17403
+
 ## 3.7.2 / 2025-10-22
 
 * [BUGFIX] AWS SD: Fix AWS SDK v2 credentials handling for EC2 and Lightsail discovery. #17355

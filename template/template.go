@@ -288,6 +288,7 @@ func NewTemplateExpander(
 				}
 				return float64(time.Duration(v)) / float64(time.Second), nil
 			},
+			"urlQueryEscape": url.QueryEscape,
 		},
 		options: options,
 	}
