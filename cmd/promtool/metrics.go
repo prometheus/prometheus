@@ -23,11 +23,8 @@ import (
 	"os"
 	"time"
 
-	config_util "github.com/prometheus/common/config"
-	"github.com/prometheus/common/model"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 
-	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/fmtutil"
 )
 
@@ -39,26 +36,20 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 		return failureExitCode
 	}
 
-	// build remote write client
-	writeClient, err := remote.NewWriteClient("remote-write", &remote.ClientConfig{
-		URL:     &config_util.URL{URL: addressURL},
-		Timeout: model.Duration(timeout),
-	})
+	// Build HTTP client with custom transport for headers.
+	httpClient := &http.Client{
+		Transport: &setHeadersTransport{
+			RoundTripper: roundTripper,
+			headers:      headers,
+		},
+		Timeout: timeout,
+	}
+
+	// Create remote write API client.
+	writeAPI, err := remoteapi.NewAPI(addressURL.String(), remoteapi.WithAPIHTTPClient(httpClient))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return failureExitCode
-	}
-
-	// set custom tls config from httpConfigFilePath
-	// set custom headers to every request
-	client, ok := writeClient.(*remote.Client)
-	if !ok {
-		fmt.Fprintln(os.Stderr, fmt.Errorf("unexpected type %T", writeClient))
-		return failureExitCode
-	}
-	client.Client.Transport = &setHeadersTransport{
-		RoundTripper: roundTripper,
-		headers:      headers,
 	}
 
 	var data []byte
@@ -71,7 +62,7 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 			return failureExitCode
 		}
 		fmt.Printf("Parsing standard input\n")
-		if parseAndPushMetrics(client, data, labels) {
+		if parseAndPushMetrics(writeAPI, data, labels) {
 			fmt.Printf("  SUCCESS: metrics pushed to remote write.\n")
 			return successExitCode
 		}
@@ -87,7 +78,7 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 		}
 
 		fmt.Printf("Parsing metrics file %s\n", file)
-		if parseAndPushMetrics(client, data, labels) {
+		if parseAndPushMetrics(writeAPI, data, labels) {
 			fmt.Printf("  SUCCESS: metrics file %s pushed to remote write.\n", file)
 			continue
 		}
@@ -101,28 +92,16 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 	return successExitCode
 }
 
-// TODO(bwplotka): Add PRW 2.0 support.
-func parseAndPushMetrics(client *remote.Client, data []byte, labels map[string]string) bool {
+func parseAndPushMetrics(writeAPI *remoteapi.API, data []byte, labels map[string]string) bool {
 	metricsData, err := fmtutil.MetricTextToWriteRequest(bytes.NewReader(data), labels)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return false
 	}
 
-	raw, err := metricsData.Marshal()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "  FAILED:", err)
-		return false
-	}
-
-	// Encode the request body into snappy encoding.
-	compressed, err := compression.Encode(compression.Snappy, raw, nil)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "  FAILED:", err)
-		return false
-	}
-
-	_, err = client.Store(context.Background(), compressed, 0)
+	// Use remoteapi.Write which handles marshaling and compression internally.
+	// TODO: Add feature flags to support V2.
+	_, err = writeAPI.Write(context.Background(), remoteapi.WriteV1MessageType, metricsData)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return false
