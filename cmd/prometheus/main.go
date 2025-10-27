@@ -1916,7 +1916,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
 		UseUncachedIO:                  opts.UseUncachedIO,
-		BlockReloadInterval:            int64(time.Duration(opts.BlockReloadInterval) / time.Millisecond),
+		BlockReloadInterval:            time.Duration(opts.BlockReloadInterval),
 	}
 }
 

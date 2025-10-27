@@ -93,7 +93,7 @@ func DefaultOptions() *Options {
 		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
 		CompactionDelay:             time.Duration(0),
 		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
-		BlockReloadInterval:         int64(1 * time.Minute / time.Millisecond),
+		BlockReloadInterval:         1 * time.Minute,
 	}
 }
 
@@ -222,7 +222,7 @@ type Options struct {
 	UseUncachedIO bool
 
 	// BlockReloadInterval is the interval at which blocks are reloaded.
-	BlockReloadInterval int64
+	BlockReloadInterval time.Duration
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -818,7 +818,7 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 		opts.OutOfOrderTimeWindow = 0
 	}
 	if opts.BlockReloadInterval <= 0 {
-		opts.BlockReloadInterval = int64(1 * time.Minute / time.Millisecond)
+		opts.BlockReloadInterval = 1 * time.Minute
 	}
 
 	if len(rngs) == 0 {
@@ -1040,8 +1040,6 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		opts.CompactionDelay = db.generateCompactionDelay()
 	}
 
-	db.logger.Debug("VALUE IN DB.run", "opts.BlockReloadInterval", opts.BlockReloadInterval)
-
 	go db.run(ctx)
 
 	return db, nil
@@ -1098,26 +1096,19 @@ func (db *DB) run(ctx context.Context) {
 
 	backoff := time.Duration(0)
 
-	reloadBlockInterval := time.Duration(db.opts.BlockReloadInterval) * time.Millisecond
-	if reloadBlockInterval == 0 {
-		reloadBlockInterval = 1 * time.Minute * time.Millisecond
-	}
-
 	for {
 		select {
 		case <-db.stopc:
 			return
 		case <-time.After(backoff):
 		}
-
 		select {
-		case <-time.After(reloadBlockInterval):
+		case <-time.After(db.opts.BlockReloadInterval):
 			db.cmtx.Lock()
 			if err := db.reloadBlocks(); err != nil {
 				db.logger.Error("reloadBlocks", "err", err)
 			}
 			db.cmtx.Unlock()
-
 			select {
 			case db.compactc <- struct{}{}:
 			default:
