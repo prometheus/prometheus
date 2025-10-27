@@ -3229,6 +3229,26 @@ with this feature.
 # the agent's WAL to accept out-of-order samples that fall within the specified time window relative
 # to the timestamp of the last appended sample for the same series.
 [ out_of_order_time_window: <duration> | default = 0s ]
+
+
+# Configures data retention settings for TSDB.
+#
+# Note: When retention is changed at runtime, the retention
+# settings are updated immediately, but block deletion based on the new retention policy
+# occurs during the next block reload cycle. This happens automatically within 1 minute
+# or when a compaction completes, whichever comes first.
+[ retention: <retention> ] :
+  # How long to retain samples in storage. If neither this option nor the size option
+  # is set, the retention time defaults to 15d. Units Supported: y, w, d, h, m, s, ms.
+  # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.time.
+  [ time: <duration> | default = 15d ]
+
+  # Maximum number of bytes that can be stored for blocks. A unit is required,
+  # supported units: B, KB, MB, GB, TB, PB, EB. Ex: "512MB". Based on powers-of-2, so 1KB is 1024B.
+  # If set to 0 or not set, size-based retention is disabled.
+  # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.size.
+  [ size: <size> | default = 0 ]
+
 ```
 
 ### `<exemplars>`
