@@ -310,9 +310,8 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 	}
 	// We need to set URL's so that metric creation doesn't panic.
 	for i := range conf.RemoteWriteConfigs {
-		u, _ := url.Parse("http://test-storage.com")
 		conf.RemoteWriteConfigs[i].URL = &common_config.URL{
-			URL: u,
+			URL: mustUrlParse("http://test-storage.com"),
 		}
 	}
 	require.NoError(t, s.ApplyConfig(conf))

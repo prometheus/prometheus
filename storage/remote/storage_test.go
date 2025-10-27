@@ -126,16 +126,21 @@ func TestIgnoreExternalLabels(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// mustUrlParse parses a URL and panics on error.
+func mustUrlParse(rawURL string) *url.URL {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse URL %q: %v", rawURL, err))
+	}
+	return u
+}
+
 // baseRemoteWriteConfig copy values from global Default Write config
 // to avoid change global state and cross impact test execution.
 func baseRemoteWriteConfig(host string) *config.RemoteWriteConfig {
 	cfg := config.DefaultRemoteWriteConfig
-	u, err := url.Parse(host)
-	if err != nil {
-		panic(err)
-	}
 	cfg.URL = &common_config.URL{
-		URL: u,
+		URL: mustUrlParse(host),
 	}
 	return &cfg
 }
@@ -144,12 +149,8 @@ func baseRemoteWriteConfig(host string) *config.RemoteWriteConfig {
 // to avoid change global state and cross impact test execution.
 func baseRemoteReadConfig(host string) *config.RemoteReadConfig {
 	cfg := config.DefaultRemoteReadConfig
-	u, err := url.Parse(host)
-	if err != nil {
-		panic(err)
-	}
 	cfg.URL = &common_config.URL{
-		URL: u,
+		URL: mustUrlParse(host),
 	}
 	return &cfg
 }

@@ -100,7 +100,7 @@ func parseAndPushMetrics(writeAPI *remoteapi.API, data []byte, labels map[string
 	}
 
 	// Use remoteapi.Write which handles marshaling and compression internally.
-	// Default to V1 for compatibility.
+	// TODO: Add feature flags to support V2.
 	_, err = writeAPI.Write(context.Background(), remoteapi.WriteV1MessageType, metricsData)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
