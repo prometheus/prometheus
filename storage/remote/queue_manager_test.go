@@ -2477,31 +2477,32 @@ func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
 	}
 }
 
-// TestPopulateV2TimeSeries_AgentMode verifies that type and unit labels are properly
-// extracted from labels even when d.metadata is nil (agent mode scenario).
-func TestPopulateV2TimeSeries_AgentMode(t *testing.T) {
+// TestPopulateV2TimeSeries_MetadataAndTypeAndUnit verifies that type and unit labels are properly
+// extracted from labels even when d.metadata is not nil (agent mode scenario).
+// Regression test for https://github.com/prometheus/prometheus/issues/17381.
+func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 	symbolTable := writev2.NewSymbolTable()
 
 	testCases := []struct {
 		name              string
 		typeLabel         string
 		unitLabel         string
-		metadata          *metadata.Metadata // nil simulates agent mode.
+		metadata          *metadata.Metadata
 		expectedType      writev2.Metadata_MetricType
 		expectedUnit      string
 		enableTypeAndUnit bool
 	}{
 		{
-			name:              "agent_mode_with_type_and_unit_labels_enabled",
+			name:              "type_and_unit_no_meta",
 			typeLabel:         "gauge",
 			unitLabel:         "bytes",
-			metadata:          nil, // Agent mode - no metadata records.
+			metadata:          nil,
 			expectedType:      writev2.Metadata_METRIC_TYPE_GAUGE,
 			expectedUnit:      "bytes",
 			enableTypeAndUnit: true,
 		},
 		{
-			name:              "agent_mode_with_type_no_unit",
+			name:              "type_no_unit_no_meta",
 			typeLabel:         "counter",
 			unitLabel:         "",
 			metadata:          nil,
@@ -2510,7 +2511,7 @@ func TestPopulateV2TimeSeries_AgentMode(t *testing.T) {
 			enableTypeAndUnit: true,
 		},
 		{
-			name:              "agent_mode_disabled_feature",
+			name:              "no_type_and_unit_no_meta",
 			typeLabel:         "gauge",
 			unitLabel:         "bytes",
 			metadata:          nil,
@@ -2519,7 +2520,7 @@ func TestPopulateV2TimeSeries_AgentMode(t *testing.T) {
 			enableTypeAndUnit: false,
 		},
 		{
-			name:      "agent_mode_with_explicit_metadata",
+			name:      "type_and_unit_and_meta",
 			typeLabel: "gauge",
 			unitLabel: "bytes",
 			metadata: &metadata.Metadata{
@@ -2532,7 +2533,7 @@ func TestPopulateV2TimeSeries_AgentMode(t *testing.T) {
 			enableTypeAndUnit: true,
 		},
 		{
-			name:      "labels_override_metadata_when_feature_enabled",
+			name:      "type-and-unit-overrides-meta",
 			typeLabel: "counter",
 			unitLabel: "requests",
 			metadata: &metadata.Metadata{
@@ -2566,7 +2567,7 @@ func TestPopulateV2TimeSeries_AgentMode(t *testing.T) {
 				value:        123.45,
 				timestamp:    time.Now().UnixMilli(),
 				sType:        tSample,
-				metadata:     tc.metadata, // nil for agent mode.
+				metadata:     tc.metadata,
 			}
 
 			pendingData := make([]writev2.TimeSeries, 1)

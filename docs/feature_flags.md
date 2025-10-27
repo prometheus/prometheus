@@ -270,11 +270,21 @@ Those labels are sourced from the metadata structured of the existing scrape and
 like OpenMetrics Text, Prometheus Text, Prometheus Proto, Remote Write 2 and OTLP. All the user provided labels with
 `__type__` and `__unit__` will be overridden.
 
+### Behavior with metadata records
+
+When this feature is enabled, type and unit information is **always** extracted from labels and takes precedence
+over any metadata records, including those passed via the `metadata-wal-records` feature or any other mechanism.
+This applies to all Prometheus modes (agent, server, etc.).
+
+In practice, this should not cause issues because type and unit information typically comes from the same source
+during scraping. However, in cases where metadata records differ from label values (e.g., due to bugs in scraping or
+manual metadata injection), the label-based type and unit will override the metadata records.
+
 PromQL layer will handle those labels the same way __name__ is handled, e.g. dropped
 on certain operations like `-` or `+` and affected by `promql-delayed-name-removal` feature.
 
 This feature enables important metadata information to be accessible directly with samples and PromQL layer.
- 
+
 It's especially useful for users who:
 
 * Want to be able to select metrics based on type or unit.

@@ -1947,12 +1947,11 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			m := schema.NewMetadataFromLabels(d.seriesLabels)
 			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(m.Type)
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(m.Unit)
-			// Use Help from d.metadata if available, otherwise leave empty.
+			pendingData[nPending].Metadata.HelpRef = 0 // Type and unit does not give us help.
+			// Use Help from d.metadata if available.
 			if d.metadata != nil {
 				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
 				nPendingMetadata++
-			} else {
-				pendingData[nPending].Metadata.HelpRef = 0
 			}
 		case d.metadata != nil:
 			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(d.metadata.Type)
