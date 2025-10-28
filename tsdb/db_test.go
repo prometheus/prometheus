@@ -1747,7 +1747,9 @@ func TestRuntimeRetentionConfigChange(t *testing.T) {
 	}
 
 	for _, m := range blocks {
-		createBlock(t, db.Dir(), genSeries(10, 10, m.MinTime, m.MaxTime))
+		createBlock(t, db.Dir(), genSeriesFromSampleGenerator(10, 10, m.MinTime, m.MaxTime, int64(time.Minute/time.Millisecond), func(ts int64) chunks.Sample {
+			return sample{t: ts, f: rand.Float64()}
+		}))
 	}
 
 	// Reload blocks and verify all are loaded.
