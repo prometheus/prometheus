@@ -34,9 +34,6 @@ For complete instructions on how to compile see: [Building From Source](https://
 For quickly compiling and testing your changes do:
 
 ```bash
-# Install goyacc if it's not installed already
-go install golang.org/x/tools/cmd/goyacc@latest
-
 # For building.
 go build ./cmd/prometheus/
 ./prometheus
