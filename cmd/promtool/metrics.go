@@ -29,7 +29,7 @@ import (
 )
 
 // PushMetrics to a prometheus remote write (for testing purpose only).
-func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, timeout time.Duration, labels map[string]string, files ...string) int {
+func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, timeout time.Duration, version string, labels map[string]string, files ...string) int {
 	addressURL, err := url.Parse(url.String())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -52,6 +52,18 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 		return failureExitCode
 	}
 
+	// Determine message type based on version flag.
+	var messageType remoteapi.WriteMessageType
+	switch version {
+	case "2":
+		messageType = remoteapi.WriteV2MessageType
+	case "1":
+		messageType = remoteapi.WriteV1MessageType
+	default:
+		fmt.Fprintf(os.Stderr, "  FAILED: invalid remote write version %q, must be 1 or 2\n", version)
+		return failureExitCode
+	}
+
 	var data []byte
 	var failed bool
 
@@ -62,7 +74,7 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 			return failureExitCode
 		}
 		fmt.Printf("Parsing standard input\n")
-		if parseAndPushMetrics(writeAPI, data, labels) {
+		if parseAndPushMetrics(writeAPI, messageType, data, labels) {
 			fmt.Printf("  SUCCESS: metrics pushed to remote write.\n")
 			return successExitCode
 		}
@@ -78,7 +90,7 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 		}
 
 		fmt.Printf("Parsing metrics file %s\n", file)
-		if parseAndPushMetrics(writeAPI, data, labels) {
+		if parseAndPushMetrics(writeAPI, messageType, data, labels) {
 			fmt.Printf("  SUCCESS: metrics file %s pushed to remote write.\n", file)
 			continue
 		}
@@ -92,7 +104,7 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 	return successExitCode
 }
 
-func parseAndPushMetrics(writeAPI *remoteapi.API, data []byte, labels map[string]string) bool {
+func parseAndPushMetrics(writeAPI *remoteapi.API, messageType remoteapi.WriteMessageType, data []byte, labels map[string]string) bool {
 	metricsData, err := fmtutil.MetricTextToWriteRequest(bytes.NewReader(data), labels)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
@@ -100,8 +112,7 @@ func parseAndPushMetrics(writeAPI *remoteapi.API, data []byte, labels map[string
 	}
 
 	// Use remoteapi.Write which handles marshaling and compression internally.
-	// TODO: Add feature flags to support V2.
-	_, err = writeAPI.Write(context.Background(), remoteapi.WriteV1MessageType, metricsData)
+	_, err = writeAPI.Write(context.Background(), messageType, metricsData)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return false
