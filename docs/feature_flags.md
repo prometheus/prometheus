@@ -266,19 +266,9 @@ These may not work well if the `<range>` is not a multiple of the collection int
 When enabled, Prometheus will start injecting additional, reserved `__type__`
 and `__unit__` labels as designed in the [PROM-39 proposal](https://github.com/prometheus/proposals/pull/39).
 
-Those labels are sourced from the metadata structured of the existing scrape and ingestion formats
+Those labels are sourced from the metadata structures of the existing scrape and ingestion formats
 like OpenMetrics Text, Prometheus Text, Prometheus Proto, Remote Write 2 and OTLP. All the user provided labels with
 `__type__` and `__unit__` will be overridden.
-
-### Behavior with metadata records
-
-When this feature is enabled, type and unit information is **always** extracted from labels and takes precedence
-over any metadata records, including those passed via the `metadata-wal-records` feature or any other mechanism.
-This applies to all Prometheus modes (agent, server, etc.).
-
-In practice, this should not cause issues because type and unit information typically comes from the same source
-during scraping. However, in cases where metadata records differ from label values (e.g., due to bugs in scraping or
-manual metadata injection), the label-based type and unit will override the metadata records.
 
 PromQL layer will handle those labels the same way __name__ is handled, e.g. dropped
 on certain operations like `-` or `+` and affected by `promql-delayed-name-removal` feature.
@@ -293,6 +283,12 @@ It's especially useful for users who:
 
 In future more [work is planned](https://github.com/prometheus/prometheus/issues/16610) that will depend on this e.g. rich PromQL UX that helps
 when wrong types are used on wrong functions, automatic renames, delta types and more.
+
+### Behavior with metadata records
+
+When this feature is enabled and the metadata WAL records exists, in an unlikely situation when type or unit are different across those, 
+the Prometheus outputs intends to prefer the `__type__` and `__unit__` labels values. For example on Remote Write 2.0, 
+if  the metadata record somehow (e.g. due to bug) says "counter", but `__type__="gauge"` the remote time series will be set to a gauge.
 
 ## Use Uncached IO
 
