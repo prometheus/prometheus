@@ -20,8 +20,9 @@ import (
 	"time"
 
 	dto "github.com/prometheus/client_model/go"
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/prompb"
 )
 
 var writeRequestFixture = &prompb.WriteRequest{
