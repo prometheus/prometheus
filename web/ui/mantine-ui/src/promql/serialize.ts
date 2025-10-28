@@ -56,13 +56,18 @@ const serializeSelector = (node: VectorSelector | MatrixSelector): string => {
     node.type === nodeType.matrixSelector
       ? `[${formatPrometheusDuration(node.range)}]`
       : "";
+  const extendedAttribute = node.anchored
+    ? " anchored"
+    : node.smoothed
+      ? " smoothed"
+      : "";
   const atAndOffset = serializeAtAndOffset(
     node.timestamp,
     node.startOrEnd,
     node.offset
   );
 
-  return `${!metricExtendedCharset ? metricName : ""}${matchers.length > 0 ? `{${matchers.join(",")}}` : ""}${range}${atAndOffset}`;
+  return `${!metricExtendedCharset ? metricName : ""}${matchers.length > 0 ? `{${matchers.join(",")}}` : ""}${range}${extendedAttribute}${atAndOffset}`;
 };
 
 const serializeNode = (

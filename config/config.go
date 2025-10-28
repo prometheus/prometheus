@@ -1051,6 +1051,15 @@ type StorageConfig struct {
 	ExemplarsConfig *ExemplarsConfig `yaml:"exemplars,omitempty"`
 }
 
+// TSDBRetentionConfig holds the configuration retention of data in storage storage.
+type TSDBRetentionConfig struct {
+	// How long to retain samples in storage.
+	Time model.Duration `yaml:"time,omitempty"`
+
+	// Maximum number of bytes that can be stored for blocks.
+	Size units.Base2Bytes `yaml:"size,omitempty"`
+}
+
 // TSDBConfig configures runtime reloadable configuration options.
 type TSDBConfig struct {
 	// OutOfOrderTimeWindow sets how long back in time an out-of-order sample can be inserted
@@ -1063,6 +1072,8 @@ type TSDBConfig struct {
 	// During unmarshall, this is converted into milliseconds and stored in OutOfOrderTimeWindow.
 	// This should not be used directly and must be converted into OutOfOrderTimeWindow.
 	OutOfOrderTimeWindowFlag model.Duration `yaml:"out_of_order_time_window,omitempty"`
+
+	Retention *TSDBRetentionConfig `yaml:"retention,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
