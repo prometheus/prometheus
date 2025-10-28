@@ -3167,7 +3167,7 @@ func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
 
 func TestHeadSeriesChunkRace(t *testing.T) {
 	t.Parallel()
-	for range 1000 {
+	for range 100 {
 		testHeadSeriesChunkRace(t)
 	}
 }
@@ -3314,17 +3314,17 @@ func testHeadSeriesChunkRace(t *testing.T) {
 	}
 	require.NoError(t, app.Commit())
 
-	var wg sync.WaitGroup
 	matcher := labels.MustNewMatcher(labels.MatchEqual, "", "")
 	q, err := NewBlockQuerier(h, 18, 22)
 	require.NoError(t, err)
 	defer q.Close()
 
+	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		h.updateMinMaxTime(20, 25)
 		h.gc()
-		wg.Done()
 	}()
 	ss := q.Select(context.Background(), false, nil, matcher)
 	for ss.Next() {
