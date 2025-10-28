@@ -730,6 +730,9 @@ outer:
 		// filling a queue/resharding as quickly as possible.
 		// TODO: Consider using the average duration of a request as the backoff.
 		backoff := model.Duration(5 * time.Millisecond)
+
+		t.metrics.highestTimestamp.Set(float64(s.T / 1000))
+		t.dataIn.incr(1)
 		for {
 			select {
 			case <-t.quit:
@@ -786,6 +789,9 @@ outer:
 		t.seriesMtx.Unlock()
 		// This will only loop if the queues are being resharded.
 		backoff := t.cfg.MinBackoff
+
+		t.metrics.highestTimestamp.Set(float64(s.T / 1000))
+		t.dataIn.incr(1)
 		for {
 			select {
 			case <-t.quit:
@@ -847,6 +853,9 @@ outer:
 		t.seriesMtx.Unlock()
 
 		backoff := model.Duration(5 * time.Millisecond)
+
+		t.metrics.highestTimestamp.Set(float64(s.T / 1000))
+		t.dataIn.incr(1)
 		for {
 			select {
 			case <-t.quit:
@@ -907,6 +916,9 @@ outer:
 		t.seriesMtx.Unlock()
 
 		backoff := model.Duration(5 * time.Millisecond)
+
+		t.metrics.highestTimestamp.Set(float64(s.T / 1000))
+		t.dataIn.incr(1)
 		for {
 			select {
 			case <-t.quit:
@@ -1348,8 +1360,6 @@ func (s *shards) enqueue(ref chunks.HeadSeriesRef, data timeSeries) bool {
 		default:
 			return true
 		}
-		s.qm.metrics.highestTimestamp.Set(float64(data.timestamp / 1000))
-		s.qm.dataIn.incr(1)
 		return true
 	}
 }
