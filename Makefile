@@ -125,7 +125,12 @@ promql/parser/generated_parser.y.go: promql/parser/generated_parser.y
 .PHONY: clean-parser
 clean-parser:
 	@echo ">> cleaning generated parser"
+ifeq (, $(shell command -v goyacc 2> /dev/null))
+	@echo "goyacc not installed so skipping"
+	@echo "To install: \"go install golang.org/x/tools/cmd/goyacc@$(GOYACC_VERSION)\" or run \"make install-goyacc\""
+else
 	@rm -f promql/parser/generated_parser.y.go
+endif
 
 .PHONY: check-generated-parser
 check-generated-parser: clean-parser promql/parser/generated_parser.y.go
