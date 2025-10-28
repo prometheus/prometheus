@@ -36,6 +36,7 @@ export interface PrometheusClient {
   // Note that the returned list can be a superset of those suggestions for the prefix (i.e., including ones without the
   // prefix), as codemirror will filter these out when displaying suggestions to the user.
   metricNames(prefix?: string): Promise<string[]>;
+
   // flags returns flag values that prometheus was configured with.
   flags(): Promise<Record<string, string>>;
 }
@@ -77,7 +78,7 @@ const serviceUnavailable = 503;
 
 // HTTPPrometheusClient is the HTTP client that should be used to get some information from the different endpoint provided by prometheus.
 export class HTTPPrometheusClient implements PrometheusClient {
-  private readonly lookbackInterval = 60 * 60 * 1000 * 12; //12 hours
+  private readonly lookbackInterval: undefined | number; //12 hours
   private readonly url: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly errorHandler?: (error: any) => void;
@@ -91,9 +92,7 @@ export class HTTPPrometheusClient implements PrometheusClient {
   constructor(config: PrometheusConfig) {
     this.url = config.url ? config.url : '';
     this.errorHandler = config.httpErrorHandler;
-    if (config.lookbackInterval) {
-      this.lookbackInterval = config.lookbackInterval;
-    }
+    this.lookbackInterval = config.lookbackInterval;
     if (config.fetchFn) {
       this.fetchFn = config.fetchFn;
     }
@@ -109,75 +108,50 @@ export class HTTPPrometheusClient implements PrometheusClient {
   }
 
   labelNames(metricName?: string): Promise<string[]> {
-    const end = new Date();
-    const start = new Date(end.getTime() - this.lookbackInterval);
-    if (metricName === undefined || metricName === '') {
-      const request = this.buildRequest(
-        this.labelsEndpoint(),
-        new URLSearchParams({
-          start: start.toISOString(),
-          end: end.toISOString(),
-        })
-      );
-      // See https://prometheus.io/docs/prometheus/latest/querying/api/#getting-label-names
-      return this.fetchAPI<string[]>(request.uri, {
-        method: this.httpMethod,
-        body: request.body,
-      }).catch((error) => {
-        if (this.errorHandler) {
-          this.errorHandler(error);
-        }
-        return [];
-      });
+    const params: URLSearchParams = new URLSearchParams();
+    if (this.lookbackInterval) {
+      const end = new Date();
+      const start = new Date(end.getTime() - this.lookbackInterval);
+      params.set('start', start.toISOString());
+      params.set('end', end.toISOString());
     }
-
-    return this.series(metricName).then((series) => {
-      const labelNames = new Set<string>();
-      for (const labelSet of series) {
-        for (const [key] of Object.entries(labelSet)) {
-          if (key === '__name__') {
-            continue;
-          }
-          labelNames.add(key);
-        }
+    if (metricName && metricName.length > 0) {
+      params.set('match[]', labelMatchersToString(metricName));
+    }
+    const request = this.buildRequest(this.labelsEndpoint(), params);
+    // See https://prometheus.io/docs/prometheus/latest/querying/api/#getting-label-names
+    return this.fetchAPI<string[]>(request.uri, {
+      method: this.httpMethod,
+      body: request.body,
+    }).catch((error) => {
+      if (this.errorHandler) {
+        this.errorHandler(error);
       }
-      return Array.from(labelNames);
+      return [];
     });
   }
 
   // labelValues return a list of the value associated to the given labelName.
   // In case a metric is provided, then the list of values is then associated to the couple <MetricName, LabelName>
   labelValues(labelName: string, metricName?: string, matchers?: Matcher[]): Promise<string[]> {
-    const end = new Date();
-    const start = new Date(end.getTime() - this.lookbackInterval);
-
-    if (!metricName || metricName.length === 0) {
-      const params: URLSearchParams = new URLSearchParams({
-        start: start.toISOString(),
-        end: end.toISOString(),
-      });
-      // See https://prometheus.io/docs/prometheus/latest/querying/api/#querying-label-values
-      return this.fetchAPI<string[]>(`${this.labelValuesEndpoint().replace(/:name/gi, labelName)}?${params}`).catch((error) => {
-        if (this.errorHandler) {
-          this.errorHandler(error);
-        }
-        return [];
-      });
+    const params: URLSearchParams = new URLSearchParams();
+    if (this.lookbackInterval) {
+      const end = new Date();
+      const start = new Date(end.getTime() - this.lookbackInterval);
+      params.set('start', start.toISOString());
+      params.set('end', end.toISOString());
     }
 
-    return this.series(metricName, matchers, labelName).then((series) => {
-      const labelValues = new Set<string>();
-      for (const labelSet of series) {
-        for (const [key, value] of Object.entries(labelSet)) {
-          if (key === '__name__') {
-            continue;
-          }
-          if (key === labelName) {
-            labelValues.add(value);
-          }
-        }
+    if (metricName && metricName.length > 0) {
+      params.set('match[]', labelMatchersToString(metricName, matchers, labelName));
+    }
+
+    // See https://prometheus.io/docs/prometheus/latest/querying/api/#querying-label-values
+    return this.fetchAPI<string[]>(`${this.labelValuesEndpoint().replace(/:name/gi, labelName)}?${params}`).catch((error) => {
+      if (this.errorHandler) {
+        this.errorHandler(error);
       }
-      return Array.from(labelValues);
+      return [];
     });
   }
 
@@ -191,16 +165,15 @@ export class HTTPPrometheusClient implements PrometheusClient {
   }
 
   series(metricName: string, matchers?: Matcher[], labelName?: string): Promise<Map<string, string>[]> {
-    const end = new Date();
-    const start = new Date(end.getTime() - this.lookbackInterval);
-    const request = this.buildRequest(
-      this.seriesEndpoint(),
-      new URLSearchParams({
-        start: start.toISOString(),
-        end: end.toISOString(),
-        'match[]': labelMatchersToString(metricName, matchers, labelName),
-      })
-    );
+    const params: URLSearchParams = new URLSearchParams();
+    if (this.lookbackInterval) {
+      const end = new Date();
+      const start = new Date(end.getTime() - this.lookbackInterval);
+      params.set('start', start.toISOString());
+      params.set('end', end.toISOString());
+    }
+    params.set('match[]', labelMatchersToString(metricName, matchers, labelName));
+    const request = this.buildRequest(this.seriesEndpoint(), params);
     // See https://prometheus.io/docs/prometheus/latest/querying/api/#finding-series-by-label-matchers
     return this.fetchAPI<Map<string, string>[]>(request.uri, {
       method: this.httpMethod,
@@ -306,13 +279,18 @@ class Cache {
     }
   }
 
+  getAssociations(metricName: string): Map<string, Set<string>> {
+    let currentAssociation = this.completeAssociation.get(metricName);
+    if (!currentAssociation) {
+      currentAssociation = new Map<string, Set<string>>();
+      this.completeAssociation.set(metricName, currentAssociation);
+    }
+    return currentAssociation;
+  }
+
   setAssociations(metricName: string, series: Map<string, string>[]): void {
     series.forEach((labelSet: Map<string, string>) => {
-      let currentAssociation = this.completeAssociation.get(metricName);
-      if (!currentAssociation) {
-        currentAssociation = new Map<string, Set<string>>();
-        this.completeAssociation.set(metricName, currentAssociation);
-      }
+      const currentAssociation = this.getAssociations(metricName);
 
       for (const [key, value] of Object.entries(labelSet)) {
         if (key === '__name__') {
@@ -324,6 +302,30 @@ class Cache {
         } else {
           labelValues.add(value);
         }
+      }
+    });
+  }
+
+  setLabelValuesAssociation(metricName: string, labelName: string, labelValues: string[]): void {
+    const currentAssociation = this.getAssociations(metricName);
+    const set = currentAssociation.get(labelName);
+    if (set === undefined) {
+      currentAssociation.set(labelName, new Set<string>(labelValues));
+    } else {
+      labelValues.forEach((value) => {
+        set.add(value);
+      });
+    }
+  }
+
+  setLabelNamesAssociation(metricName: string, labelNames: string[]): void {
+    const currentAssociation = this.getAssociations(metricName);
+    labelNames.forEach((labelName) => {
+      if (labelName === '__name__') {
+        return;
+      }
+      if (!currentAssociation.has(labelName)) {
+        currentAssociation.set(labelName, new Set<string>());
       }
     });
   }
@@ -344,7 +346,10 @@ class Cache {
     return this.metricMetadata;
   }
 
-  setLabelNames(labelNames: string[]): void {
+  setLabelNames(labelNames: string[], metricName?: string): void {
+    if (metricName && metricName.length > 0) {
+      this.setLabelNamesAssociation(metricName, labelNames);
+    }
     this.labelNames = labelNames;
   }
 
@@ -356,7 +361,10 @@ class Cache {
     return labelSet ? Array.from(labelSet.keys()) : [];
   }
 
-  setLabelValues(labelName: string, labelValues: string[]): void {
+  setLabelValues(labelName: string, labelValues: string[], metricName?: string): void {
+    if (metricName && metricName.length > 0) {
+      this.setLabelValuesAssociation(metricName, labelName, labelValues);
+    }
     this.labelValues.set(labelName, labelValues);
   }
 
@@ -389,14 +397,8 @@ export class CachedPrometheusClient implements PrometheusClient {
     if (cachedLabel && cachedLabel.length > 0) {
       return Promise.resolve(cachedLabel);
     }
-
-    if (metricName === undefined || metricName === '') {
-      return this.client.labelNames().then((labelNames) => {
-        this.cache.setLabelNames(labelNames);
-        return labelNames;
-      });
-    }
-    return this.series(metricName).then(() => {
+    return this.client.labelNames(metricName).then((labelNames) => {
+      this.cache.setLabelNames(labelNames, metricName);
       return this.cache.getLabelNames(metricName);
     });
   }
@@ -406,16 +408,9 @@ export class CachedPrometheusClient implements PrometheusClient {
     if (cachedLabel && cachedLabel.length > 0) {
       return Promise.resolve(cachedLabel);
     }
-
-    if (metricName === undefined || metricName === '') {
-      return this.client.labelValues(labelName).then((labelValues) => {
-        this.cache.setLabelValues(labelName, labelValues);
-        return labelValues;
-      });
-    }
-
-    return this.series(metricName).then(() => {
-      return this.cache.getLabelValues(labelName, metricName);
+    return this.client.labelValues(labelName, metricName).then((labelValues) => {
+      this.cache.setLabelValues(labelName, labelValues, metricName);
+      return labelValues;
     });
   }
 
