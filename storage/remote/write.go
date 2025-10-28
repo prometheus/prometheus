@@ -34,26 +34,24 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
-// TODO: Remove along with timestampTracker logic once we can be sure no user
-// will encounter a gap that these metrics cover but other metrics don't.
 var (
 	samplesIn = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "samples_in_total",
-		Help:      "Samples in to remote storage, compare to samples out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_samples_dropped_total",
+		Help:      "Samples in to remote storage, compare to samples out for queue managers.",
 	})
 	exemplarsIn = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "exemplars_in_total",
-		Help:      "Exemplars in to remote storage, compare to exemplars out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_exemplars_dropped_total",
+		Help:      "Exemplars in to remote storage, compare to exemplars out for queue managers.",
 	})
 	histogramsIn = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "histograms_in_total",
-		Help:      "HistogramSamples in to remote storage, compare to histograms out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_histograms_dropped_total",
+		Help:      "HistogramSamples in to remote storage, compare to histograms out for queue managers.",
 	})
 )
 
@@ -68,9 +66,11 @@ type WriteStorage struct {
 	externalLabels    labels.Labels
 	dir               string
 	queues            map[string]*QueueManager
+	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
 	interner          *pool
 	scraper           ReadyScrapeManager
+	quit              chan struct{}
 
 	// For timestampTracker.
 	highestTimestamp        *maxTimestamp
@@ -89,17 +89,17 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 		logger:            logger,
 		reg:               reg,
 		flushDeadline:     flushDeadline,
+		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		dir:               dir,
 		interner:          newPool(),
 		scraper:           sm,
-		// TODO: Remove along with timestampTracker logic once we can be sure no user
-		// will encounter a gap that this metric covers but other metrics don't.
+		quit:              make(chan struct{}),
 		highestTimestamp: &maxTimestamp{
 			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 				Namespace: namespace,
 				Subsystem: subsystem,
 				Name:      "highest_timestamp_in_seconds",
-				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch. Initialized to 0 when no data has been received yet. Deprecated, check prometheus_remote_storage_queue_highest_timestamp_seconds which is more accurate.",
+				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch. Initialized to 0 when no data has been received yet.",
 			}),
 		},
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
@@ -107,7 +107,21 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 	if reg != nil {
 		reg.MustRegister(rws.highestTimestamp)
 	}
+	go rws.run()
 	return rws
+}
+
+func (rws *WriteStorage) run() {
+	ticker := time.NewTicker(shardUpdateDuration)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			rws.samplesIn.tick()
+		case <-rws.quit:
+			return
+		}
+	}
 }
 
 func (rws *WriteStorage) Notify() {
@@ -187,6 +201,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.liveReaderMetrics,
 			rws.logger,
 			rws.dir,
+			rws.samplesIn,
 			rwConf.QueueConfig,
 			rwConf.MetadataConfig,
 			conf.GlobalConfig.ExternalLabels,
@@ -194,6 +209,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			c,
 			rws.flushDeadline,
 			rws.interner,
+			rws.highestTimestamp,
 			rws.scraper,
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
@@ -254,6 +270,7 @@ func (rws *WriteStorage) Close() error {
 	for _, q := range rws.queues {
 		q.Stop()
 	}
+	close(rws.quit)
 
 	rws.watcherMetrics.Unregister()
 	rws.liveReaderMetrics.Unregister()
@@ -329,6 +346,8 @@ func (*timestampTracker) UpdateMetadata(storage.SeriesRef, labels.Labels, metada
 
 // Commit implements storage.Appender.
 func (t *timestampTracker) Commit() error {
+	t.writeStorage.samplesIn.incr(t.samples + t.exemplars + t.histograms)
+
 	samplesIn.Add(float64(t.samples))
 	exemplarsIn.Add(float64(t.exemplars))
 	histogramsIn.Add(float64(t.histograms))
