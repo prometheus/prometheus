@@ -308,13 +308,13 @@ func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, pro
 	c := NewTestWriteClient(protoMsg)
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
-	return c, newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg)
+	return c, newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg, nil)
 }
 
-func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType) *QueueManager {
+func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType, relabelConfig []*relabel.Config) *QueueManager {
 	dir := t.TempDir()
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), nil, false, false, false, protoMsg)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, cfg, mcfg, labels.EmptyLabels(), relabelConfig, c, deadline, newPool(), nil, false, false, false, protoMsg)
 
 	return m
 }
@@ -406,7 +406,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 			cfg.MaxShards = 1
 
 			c := NewTestWriteClient(protoMsg)
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, nil)
 			m.StoreSeries(series, 0)
 			m.Start()
 			defer m.Stop()
@@ -466,7 +466,7 @@ func TestShutdown(t *testing.T) {
 		cfg := config.DefaultQueueConfig
 		mcfg := config.DefaultMetadataConfig
 
-		m := newTestQueueManager(t, cfg, mcfg, deadline, c, remoteapi.WriteV1MessageType)
+		m := newTestQueueManager(t, cfg, mcfg, deadline, c, remoteapi.WriteV1MessageType, nil)
 		n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
 		samples, series := createTimeseries(n, n)
 		m.StoreSeries(series, 0)
@@ -496,7 +496,7 @@ func TestSeriesReset(t *testing.T) {
 
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
-	m := newTestQueueManager(t, cfg, mcfg, deadline, c, remoteapi.WriteV1MessageType)
+	m := newTestQueueManager(t, cfg, mcfg, deadline, c, remoteapi.WriteV1MessageType, nil)
 	for i := range numSegments {
 		series := []record.RefSeries{}
 		for j := range numSeries {
@@ -522,7 +522,7 @@ func TestReshard(t *testing.T) {
 			cfg.MaxShards = 1
 
 			c := NewTestWriteClient(protoMsg)
-			m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, protoMsg, nil)
 			c.expectSamples(samples, series)
 			m.StoreSeries(series, 0)
 
@@ -562,7 +562,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 			exitCh := make(chan struct{})
 			go func() {
 				for {
-					m = newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+					m = newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, nil)
 
 					m.Start()
 					h.Unlock()
@@ -602,7 +602,7 @@ func TestReshardPartialBatch(t *testing.T) {
 			flushDeadline := 10 * time.Millisecond
 			cfg.BatchSendDeadline = model.Duration(batchSendDeadline)
 
-			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg, nil)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -649,7 +649,7 @@ func TestQueueFilledDeadlock(t *testing.T) {
 			batchSendDeadline := time.Millisecond
 			cfg.BatchSendDeadline = model.Duration(batchSendDeadline)
 
-			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg, nil)
 			m.StoreSeries(series, 0)
 			m.Start()
 			defer m.Stop()
@@ -1396,7 +1396,7 @@ func BenchmarkSampleSend(b *testing.B) {
 	// todo: test with new proto type(s)
 	for _, format := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		b.Run(string(format), func(b *testing.B) {
-			m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, format)
+			m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, format, nil)
 			m.StoreSeries(series, 0)
 
 			// These should be received by the client.
@@ -1978,7 +1978,7 @@ func TestDropOldTimeSeries(t *testing.T) {
 			mcfg := config.DefaultMetadataConfig
 			cfg.MaxShards = 1
 			cfg.SampleAgeLimit = model.Duration(60 * time.Second)
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, nil)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -2016,7 +2016,7 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 	metadataCfg.SendInterval = model.Duration(time.Second * 60)
 	metadataCfg.MaxSamplesPerSend = maxSamplesPerSend
 	c := NewTestWriteClient(remoteapi.WriteV1MessageType)
-	m := newTestQueueManager(t, cfg, metadataCfg, time.Second, c, remoteapi.WriteV1MessageType)
+	m := newTestQueueManager(t, cfg, metadataCfg, time.Second, c, remoteapi.WriteV1MessageType, nil)
 
 	m.Start()
 
@@ -2509,7 +2509,7 @@ func TestAppendHistogramSchemaValidation(t *testing.T) {
 			mcfg := config.DefaultMetadataConfig
 			cfg.MaxShards = 1
 
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, nil)
 			m.sendNativeHistograms = true
 
 			// Create series for the histograms
@@ -2649,4 +2649,111 @@ func TestAppendHistogramSchemaValidation(t *testing.T) {
 			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal))
 		})
 	}
+}
+
+func TestDataInRateWithBlockedQueue(t *testing.T) {
+	cfg := config.DefaultQueueConfig
+	cfg.Capacity = 4
+	cfg.MaxShards = 1
+	cfg.MaxSamplesPerSend = 1
+
+	blockingClient := NewTestBlockedWriteClient()
+	dropRelabelConfig := []*relabel.Config{{
+		SourceLabels: model.LabelNames{"__name__"},
+		Regex:        relabel.MustNewRegexp("dropped_metric"),
+		Action:       relabel.Drop,
+	}}
+	m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, blockingClient, remoteapi.WriteV1MessageType, dropRelabelConfig)
+
+	m.Start()
+	defer func() {
+		if m.shards != nil && m.shards.hardShutdown != nil {
+			m.shards.hardShutdown()
+		}
+	}()
+
+	series := []record.RefSeries{
+		{Ref: chunks.HeadSeriesRef(0), Labels: labels.FromStrings("__name__", "test_metric")},
+		{Ref: chunks.HeadSeriesRef(1), Labels: labels.FromStrings("__name__", "dropped_metric")},
+	}
+	m.StoreSeries(series, 0)
+
+	done := make(chan struct{})
+	defer close(done)
+
+	acceptedSamples := []record.RefSample{
+		{Ref: chunks.HeadSeriesRef(0), T: 1001, V: 1.0},
+		{Ref: chunks.HeadSeriesRef(0), T: 1002, V: 2.0},
+		{Ref: chunks.HeadSeriesRef(0), T: 1003, V: 3.0},
+	}
+	m.Append(acceptedSamples)
+
+	expected3 := float64(3) / float64(shardUpdateDuration/time.Second)
+	origRate := 0.0
+	require.Eventually(t, func() bool {
+		m.dataIn.tick()
+		origRate = m.dataIn.rate()
+		// The initial dataIn rate should be somewhere in this range.
+		return origRate >= expected3-0.1 && origRate <= expected3+0.1
+	}, 500*time.Millisecond, 50*time.Millisecond, "dataIn should count 3 accepted samples")
+
+	// Let the rate go lower so we can more easily measure an increase.
+	lowerRate := 0.0
+	require.Eventually(t, func() bool {
+		m.dataIn.tick()
+		lowerRate = m.dataIn.rate()
+		return (lowerRate < origRate/2.0)
+	}, 2*time.Second, 100*time.Millisecond, "dataIn rate should drop over time")
+
+	droppedSamples := []record.RefSample{
+		{Ref: chunks.HeadSeriesRef(1), T: 2001, V: 10.0},
+		{Ref: chunks.HeadSeriesRef(1), T: 2002, V: 20.0},
+	}
+	m.Append(droppedSamples)
+
+	dropRate := 0.0
+	require.Eventually(t, func() bool {
+		m.dataIn.tick()
+		dropRate = m.dataIn.rate()
+		// The rate should continue to drop when we've appended samples that will be droped by the shard.
+		return (dropRate < lowerRate/2)
+	}, 500*time.Millisecond, 50*time.Millisecond, "dataIn should NOT change after appending dropped samples")
+
+	moreSamples := []record.RefSample{
+		{Ref: chunks.HeadSeriesRef(0), T: 1004, V: 4.0},
+		{Ref: chunks.HeadSeriesRef(0), T: 1005, V: 5.0},
+	}
+	m.Append(moreSamples)
+
+	additionalRate := 0.0
+	require.Eventually(t, func() bool {
+		m.dataIn.tick()
+		additionalRate = m.dataIn.rate()
+		// Rate should increase again
+		return additionalRate > dropRate
+	}, 500*time.Millisecond, 50*time.Millisecond, "dataIn should increase for valid samples")
+
+	require.Eventually(t, func() bool {
+		m.dataIn.tick()
+		lowerRate = m.dataIn.rate()
+		fmt.Println("lowerRate: ", lowerRate)
+		// Allow lower rate again for easier measurement of increase.
+		return (lowerRate < additionalRate/2.0)
+	}, 2*time.Second, 100*time.Millisecond, "dataIn rate drop over time")
+
+	overflowSamples := []record.RefSample{
+		{Ref: chunks.HeadSeriesRef(0), T: 1006, V: 4.0},
+		{Ref: chunks.HeadSeriesRef(0), T: 1007, V: 5.0},
+	}
+	// Append overflow sample(s) in a go routine since Append is blocking and the queue for our single shard is at capacity.
+	go func() {
+		m.Append(overflowSamples)
+	}()
+
+	require.Eventually(t, func() bool {
+		m.dataIn.tick()
+		rate := m.dataIn.rate()
+		// The rate should increase when we append samples even if the queue is full.
+		return rate > lowerRate
+	}, 5*time.Second, 100*time.Millisecond, "dataIn increase even if the queue is full")
 }
