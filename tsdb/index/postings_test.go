@@ -36,17 +36,17 @@ import (
 
 func TestMemPostings_addFor(t *testing.T) {
 	p := NewMemPostings()
-	p.m[allPostingsKey.Name] = map[string][]storage.SeriesRef{}
-	p.m[allPostingsKey.Name][allPostingsKey.Value] = []storage.SeriesRef{1, 2, 3, 4, 6, 7, 8}
+	p.tail[allPostingsKey.Name] = map[string][]storage.SeriesRef{}
+	p.tail[allPostingsKey.Name][allPostingsKey.Value] = []storage.SeriesRef{1, 2, 3, 4, 6, 7, 8}
 
 	p.addFor(5, allPostingsKey)
 
-	require.Equal(t, []storage.SeriesRef{1, 2, 3, 4, 5, 6, 7, 8}, p.m[allPostingsKey.Name][allPostingsKey.Value])
+	require.Equal(t, []storage.SeriesRef{1, 2, 3, 4, 6, 7, 8, 5}, p.tail[allPostingsKey.Name][allPostingsKey.Value])
 }
 
 func TestMemPostings_ensureOrder(t *testing.T) {
 	p := NewUnorderedMemPostings()
-	p.m["a"] = map[string][]storage.SeriesRef{}
+	p.committed["a"] = map[string][]storage.SeriesRef{}
 
 	for i := range 100 {
 		l := make([]storage.SeriesRef, 100)
@@ -55,12 +55,12 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 		}
 		v := strconv.Itoa(i)
 
-		p.m["a"][v] = l
+		p.committed["a"][v] = l
 	}
 
 	p.EnsureOrder(0)
 
-	for _, e := range p.m {
+	for _, e := range p.committed {
 		for _, l := range e {
 			ok := sort.SliceIsSorted(l, func(i, j int) bool {
 				return l[i] < l[j]
@@ -100,7 +100,7 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 			// Generate postings.
 			for l := 0; l < testData.numLabels; l++ {
 				labelName := strconv.Itoa(l)
-				p.m[labelName] = map[string][]storage.SeriesRef{}
+				p.committed[labelName] = map[string][]storage.SeriesRef{}
 
 				for v := 0; v < testData.numValuesPerLabel; v++ {
 					refs := make([]storage.SeriesRef, testData.numRefsPerValue)
@@ -109,7 +109,7 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 					}
 
 					labelValue := strconv.Itoa(v)
-					p.m[labelName][labelValue] = refs
+					p.committed[labelName][labelValue] = refs
 				}
 			}
 
@@ -126,7 +126,6 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 func TestIntersect(t *testing.T) {
 	a := newListPostings(1, 2, 3)
 	b := newListPostings(2, 3, 4)
-
 	cases := []struct {
 		in []Postings
 
@@ -1526,4 +1525,59 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	})
 	require.Error(t, p.Err())
 	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
+}
+
+func TestMemPostings_Unordered_Add_Get(t *testing.T) {
+	mp := NewMemPostings()
+	for ref := storage.SeriesRef(1); ref < 8; ref += 2 {
+		// First, add next series.
+		next := ref + 1
+		mp.Add(next, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(next))))
+		mp.Flush(labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(next))))
+
+		// Now add current ref.
+		mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
+		mp.Flush(labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
+		p := mp.Postings(context.Background(), labels.MetricName, "test")
+
+		// Next postings should still reference the next series.
+		nextExpanded, err := ExpandPostings(p)
+		require.NoError(t, err)
+		require.Len(t, nextExpanded, int(next))
+		require.Equal(t, next, nextExpanded[len(nextExpanded)-1])
+	}
+}
+
+func TestMemPostings_Concurrent_Add_Get(t *testing.T) {
+	refs := make(chan storage.SeriesRef)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	t.Cleanup(wg.Wait)
+	t.Cleanup(func() { close(refs) })
+
+	mp := NewMemPostings()
+	go func() {
+		defer wg.Done()
+		for ref := range refs {
+			mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
+			p := mp.Postings(context.Background(), labels.MetricName, "test")
+			_, err := ExpandPostings(p)
+			if err != nil {
+				t.Errorf("unexpected error: %s", err)
+			}
+		}
+	}()
+	for ref := storage.SeriesRef(1); ref < 8; ref += 2 {
+		// Add next ref in another goroutine so they would race.
+		refs <- ref + 1
+		// Add current ref here
+		mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
+		// We don't read the value of the postings here,
+		// this is tested in TestMemPostings_Unordered_Add_Get where it's easier to achieve the determinism.
+		// This test just checks that there's no data race.
+		p := mp.Postings(context.Background(), labels.MetricName, "test")
+		// its for single slice only!
+		_, err := ExpandPostings(p)
+		require.NoError(t, err)
+	}
 }
