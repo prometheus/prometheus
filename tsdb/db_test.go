@@ -1784,7 +1784,7 @@ func TestRuntimeRetentionConfigChange(t *testing.T) {
 
 	// Verify the remaining blocks are the newest ones.
 	require.Equal(t, nineHoursMs, actBlocks[0].meta.MinTime, "first remaining block should be within retention")
-	require.Equal(t, initialRetentionDuration, actBlocks[1].meta.MaxTime, "last remaining block should be the newest")
+	require.Equal(t, nineAndHalfHoursMs, actBlocks[1].meta.MinTime, "last remaining block should be the newest")
 
 	require.Positive(t, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "time retention count should be incremented")
 }
