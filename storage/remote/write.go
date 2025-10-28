@@ -66,9 +66,11 @@ type WriteStorage struct {
 	externalLabels    labels.Labels
 	dir               string
 	queues            map[string]*QueueManager
+	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
 	interner          *pool
 	scraper           ReadyScrapeManager
+	quit              chan struct{}
 
 	// For timestampTracker.
 	highestTimestamp        *maxTimestamp
@@ -87,9 +89,11 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 		logger:            logger,
 		reg:               reg,
 		flushDeadline:     flushDeadline,
+		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		dir:               dir,
 		interner:          newPool(),
 		scraper:           sm,
+		quit:              make(chan struct{}),
 		highestTimestamp: &maxTimestamp{
 			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -103,7 +107,21 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 	if reg != nil {
 		reg.MustRegister(rws.highestTimestamp)
 	}
+	go rws.run()
 	return rws
+}
+
+func (rws *WriteStorage) run() {
+	ticker := time.NewTicker(shardUpdateDuration)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			rws.samplesIn.tick()
+		case <-rws.quit:
+			return
+		}
+	}
 }
 
 func (rws *WriteStorage) Notify() {
@@ -183,6 +201,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.liveReaderMetrics,
 			rws.logger,
 			rws.dir,
+			rws.samplesIn,
 			rwConf.QueueConfig,
 			rwConf.MetadataConfig,
 			conf.GlobalConfig.ExternalLabels,
@@ -190,6 +209,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			c,
 			rws.flushDeadline,
 			rws.interner,
+			rws.highestTimestamp,
 			rws.scraper,
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
@@ -250,6 +270,7 @@ func (rws *WriteStorage) Close() error {
 	for _, q := range rws.queues {
 		q.Stop()
 	}
+	close(rws.quit)
 
 	rws.watcherMetrics.Unregister()
 	rws.liveReaderMetrics.Unregister()
@@ -325,6 +346,8 @@ func (*timestampTracker) UpdateMetadata(storage.SeriesRef, labels.Labels, metada
 
 // Commit implements storage.Appender.
 func (t *timestampTracker) Commit() error {
+	t.writeStorage.samplesIn.incr(t.samples + t.exemplars + t.histograms)
+
 	samplesIn.Add(float64(t.samples))
 	exemplarsIn.Add(float64(t.exemplars))
 	histogramsIn.Add(float64(t.histograms))
