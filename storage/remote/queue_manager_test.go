@@ -2490,6 +2490,30 @@ func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
 	}
 }
 
+func TestHighestTimestampOnAppend(t *testing.T) {
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			nSamples := 11 * config.DefaultQueueConfig.Capacity
+			nSeries := 3
+			samples, series := createTimeseries(nSamples, nSeries)
+
+			_, m := newTestClientAndQueueManager(t, defaultFlushDeadline, protoMsg)
+			m.Start()
+			defer m.Stop()
+
+			require.Equal(t, 0.0, m.metrics.highestTimestamp.Get())
+
+			m.StoreSeries(series, 0)
+			require.True(t, m.Append(samples))
+
+			// Check that Append sets the highest timestamp correctly.
+			highestTs := float64((nSamples - 1) / 1000)
+			require.Greater(t, highestTs, 0.0)
+			require.Equal(t, highestTs, m.metrics.highestTimestamp.Get())
+		})
+	}
+}
+
 func TestAppendHistogramSchemaValidation(t *testing.T) {
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(string(protoMsg), func(t *testing.T) {
