@@ -2661,7 +2661,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				Count:           30,
 				Sum:             2.345,
 				PositiveSpans:   []Span{{-2, 2}, {1, 1}, {1, 3}},
-				PositiveBuckets: []float64{1, 3, 3, 0, 7, -6},
+				PositiveBuckets: []float64{1, 3, 1e100, 0, 7, -6},
 			},
 			comp: &FloatHistogram{
 				Schema:          2,
@@ -2677,7 +2677,7 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				Count:           21,
 				Sum:             1.234,
 				PositiveSpans:   []Span{{1, 2}, {1, 2}},
-				PositiveBuckets: []float64{2, 3, 2, 5},
+				PositiveBuckets: []float64{-1e100, 3, 2, 5},
 			},
 			expectedSum: &FloatHistogram{
 				Schema:          1,
@@ -2686,7 +2686,47 @@ func TestKahanAddWithCompHistogram(t *testing.T) {
 				Count:           51,
 				Sum:             3.579,
 				PositiveSpans:   []Span{{1, 5}},
-				PositiveBuckets: []float64{5.03, 10.05, -5.94, 2, 5},
+				PositiveBuckets: []float64{0.03, 10.05, -5.94, 2, 5},
+			},
+			expErrMsg:                "",
+			expCounterResetCollision: false,
+			expNHCBBoundsReconciled:  false,
+		},
+		{
+			name: "reduce resolution of 'other' histogram",
+			in1: &FloatHistogram{
+				Schema:          0,
+				ZeroThreshold:   1,
+				ZeroCount:       17,
+				Count:           21,
+				Sum:             1.234,
+				PositiveSpans:   []Span{{1, 2}, {1, 2}},
+				PositiveBuckets: []float64{2, 3, 2, 5},
+			},
+			comp: &FloatHistogram{
+				Schema:          0,
+				ZeroThreshold:   1,
+				ZeroCount:       1,
+				PositiveSpans:   []Span{{1, 2}, {1, 2}},
+				PositiveBuckets: []float64{17, 2, 0.03, 0},
+			},
+			in2: &FloatHistogram{
+				Schema:          2,
+				ZeroThreshold:   0.01,
+				ZeroCount:       11,
+				Count:           30,
+				Sum:             2.345,
+				PositiveSpans:   []Span{{-2, 3}, {1, 1}, {1, 3}},
+				PositiveBuckets: []float64{1e100, 4.1, -1e100, 2.1, 0, 7, -6},
+			},
+			expectedSum: &FloatHistogram{
+				Schema:          0,
+				ZeroThreshold:   1,
+				ZeroCount:       33.1,
+				Count:           51,
+				Sum:             3.579,
+				PositiveSpans:   []Span{{1, 2}, {1, 2}},
+				PositiveBuckets: []float64{21.1, 6, 2.03, 5},
 			},
 			expErrMsg:                "",
 			expCounterResetCollision: false,
@@ -2993,6 +3033,7 @@ func TestFloatHistogramSub(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			testFloatHistogramSub(t, c.in1, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
+			testFloatHistogramKahanSub(t, c.in1, nil, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 
 			var expectedNegative *FloatHistogram
 			if c.expected != nil {
@@ -3003,6 +3044,7 @@ func TestFloatHistogramSub(t *testing.T) {
 				expectedNegative.CounterResetHint = c.expected.CounterResetHint
 			}
 			testFloatHistogramSub(t, c.in2, c.in1, expectedNegative, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
+			testFloatHistogramKahanSub(t, c.in2, nil, c.in1, expectedNegative, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 		})
 	}
 }
@@ -3043,6 +3085,66 @@ func testFloatHistogramSub(t *testing.T, a, b, expected *FloatHistogram, expErrM
 		// Check that the warnings are correct.
 		require.Equal(t, expCounterResetCollision, counterResetCollision)
 		require.Equal(t, expNHCBBoundsReconciled, nhcbBoundsReconciled)
+	}
+}
+
+func testFloatHistogramKahanSub(
+	t *testing.T, a, c, b, expectedSum *FloatHistogram, expErrMsg string, expCounterResetCollision, expNHCBBoundsReconciled bool,
+) {
+	var (
+		aCopy           = a.Copy()
+		bCopy           = b.Copy()
+		cCopy           *FloatHistogram
+		expectedSumCopy *FloatHistogram
+	)
+
+	if c != nil {
+		cCopy = c.Copy()
+	}
+
+	if expectedSum != nil {
+		expectedSumCopy = expectedSum.Copy()
+	}
+
+	comp, counterResetCollision, nhcbBoundsReconciled, err := aCopy.KahanSub(bCopy, cCopy)
+	if expErrMsg != "" {
+		require.EqualError(t, err, expErrMsg)
+	} else {
+		require.NoError(t, err)
+	}
+
+	var res *FloatHistogram
+	if comp != nil {
+		// Check that aCopy and its compensation histogram layouts match after addition.
+		require.Equal(t, aCopy.ZeroThreshold, comp.ZeroThreshold)
+		require.Equal(t, aCopy.PositiveSpans, comp.PositiveSpans)
+		require.Equal(t, aCopy.NegativeSpans, comp.NegativeSpans)
+		require.Len(t, aCopy.PositiveBuckets, len(comp.PositiveBuckets))
+		require.Len(t, aCopy.NegativeBuckets, len(comp.NegativeBuckets))
+
+		res, _, _, err = aCopy.Add(comp)
+		if expErrMsg != "" {
+			require.EqualError(t, err, expErrMsg)
+		} else {
+			require.NoError(t, err)
+		}
+	}
+
+	// Check that the warnings are correct.
+	require.Equal(t, expCounterResetCollision, counterResetCollision)
+	require.Equal(t, expNHCBBoundsReconciled, nhcbBoundsReconciled)
+
+	if expectedSum != nil {
+		res.Compact(0)
+		expectedSumCopy.Compact(0)
+
+		require.Equal(t, expectedSumCopy, res)
+
+		// Has it also happened in-place?
+		require.Equal(t, expectedSumCopy, aCopy)
+
+		// Check that the argument was not mutated.
+		require.Equal(t, b, bCopy)
 	}
 }
 
