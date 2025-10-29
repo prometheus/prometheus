@@ -417,12 +417,12 @@ Push metrics to a prometheus remote write (for testing purpose only).
 
 ###### Flags
 
-| Flag | Description | Default |
-| --- | --- | --- |
-| <code class="text-nowrap">--label</code> | Label to attach to metrics. Can be specified multiple times. | `job=promtool` |
-| <code class="text-nowrap">--timeout</code> | The time to wait for pushing metrics. | `30s` |
-| <code class="text-nowrap">--header</code> | Prometheus remote write header. |  |
-| <code class="text-nowrap">--remote-write-version</code> | Remote write protocol version to use (1 or 2). | `1` |
+| Flag                                                | Description | Default |
+|-----------------------------------------------------| --- | -- |
+| <code class="text-nowrap">--label</code>            | Label to attach to metrics. Can be specified multiple times. | `job=promtool` |
+| <code class="text-nowrap">--timeout</code>          | The time to wait for pushing metrics. | `30s` |
+| <code class="text-nowrap">--header</code>           | Prometheus remote write header. |  |
+| <code class="text-nowrap">--protobuf_message</code> | Protobuf message to use when writing | `prometheus.WriteRequest` |
 
 
 
