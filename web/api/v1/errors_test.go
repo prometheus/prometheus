@@ -168,6 +168,7 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overri
 		false,
 		false,
 		overrideErrorCode,
+		nil,
 	)
 
 	promRouter := route.New().WithPrefix("/api/v1")
