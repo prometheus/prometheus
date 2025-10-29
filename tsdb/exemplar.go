@@ -36,10 +36,11 @@ const (
 )
 
 type CircularExemplarStorage struct {
-	lock      sync.RWMutex
-	exemplars []circularBufferEntry
-	nextIndex int
-	metrics   *ExemplarMetrics
+	lock          sync.RWMutex
+	exemplars     []circularBufferEntry
+	nextIndex     int
+	metrics       *ExemplarMetrics
+	oooTimeWindow int64
 
 	// Map of series labels as a string to index entry, which points to the first
 	// and last exemplar for the series in the exemplars circular buffer.
@@ -55,6 +56,7 @@ type indexEntry struct {
 type circularBufferEntry struct {
 	exemplar exemplar.Exemplar
 	next     int
+	prev     int
 	ref      *indexEntry
 }
 
@@ -115,15 +117,19 @@ func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
 // If we assume the average case 95 bytes per exemplar we can fit 5651272 exemplars in
 // 1GB of extra memory, accounting for the fact that this is heap allocated space.
 // If len <= 0, then the exemplar storage is essentially a noop storage but can later be
-// resized to store exemplars.
-func NewCircularExemplarStorage(length int64, m *ExemplarMetrics) (ExemplarStorage, error) {
+// resized to store exemplars. If oooTimeWindow <= 0, out-of-order exemplars are disabled.
+func NewCircularExemplarStorage(length int64, m *ExemplarMetrics, oooTimeWindow int64) (ExemplarStorage, error) {
 	if length < 0 {
 		length = 0
 	}
+	if oooTimeWindow < 0 {
+		oooTimeWindow = 0
+	}
 	c := &CircularExemplarStorage{
-		exemplars: make([]circularBufferEntry, length),
-		index:     make(map[string]*indexEntry, length/estimatedExemplarsPerSeries),
-		metrics:   m,
+		exemplars:     make([]circularBufferEntry, length),
+		index:         make(map[string]*indexEntry, length/estimatedExemplarsPerSeries),
+		metrics:       m,
+		oooTimeWindow: oooTimeWindow,
 	}
 
 	c.metrics.maxExemplars.Set(float64(length))
@@ -170,6 +176,9 @@ func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*label
 			continue
 		}
 		se.SeriesLabels = idx.seriesLabels
+
+		// TODO: Since we maintain a doubly-linked-list, we can also iterate from head to tail
+		//  which might be more performant if the selected interval is skewed to the head.
 
 		// Loop through all exemplars in the circular buffer for the current series.
 		for e.exemplar.Ts <= end {
@@ -268,6 +277,9 @@ func (ce *CircularExemplarStorage) validateExemplar(idx *indexEntry, e exemplar.
 		if appended {
 			ce.metrics.outOfOrderExemplars.Inc()
 		}
+		if e.Ts > newestExemplar.Ts-ce.oooTimeWindow {
+			return nil
+		}
 		return storage.ErrOutOfOrderExemplar
 	}
 	return nil
@@ -358,7 +370,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	var buf [1024]byte
 	seriesLabels := l.Bytes(buf[:])
 
-	idx, ok := ce.index[string(seriesLabels)]
+	idx, indexExists := ce.index[string(seriesLabels)]
 	err := ce.validateExemplar(idx, e, true)
 	if err != nil {
 		if errors.Is(err, storage.ErrDuplicateExemplar) {
@@ -368,38 +380,93 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 		return err
 	}
 
-	if !ok {
-		idx = &indexEntry{oldest: ce.nextIndex, seriesLabels: l}
+	if !indexExists {
+		idx = &indexEntry{
+			oldest:       ce.nextIndex,
+			newest:       ce.nextIndex,
+			seriesLabels: l,
+		}
 		ce.index[string(seriesLabels)] = idx
-	} else {
-		ce.exemplars[idx.newest].next = ce.nextIndex
 	}
 
 	if prev := &ce.exemplars[ce.nextIndex]; prev.ref != nil {
-		// There exists an exemplar already on this ce.nextIndex entry,
-		// drop it, to make place for others.
-		if prev.next == noExemplar {
-			// Last item for this series, remove index entry.
-			var buf [1024]byte
-			prevLabels := prev.ref.seriesLabels.Bytes(buf[:])
-			delete(ce.index, string(prevLabels))
+		ref := prev.ref
+
+		if prev.prev != noExemplar {
+			ce.exemplars[prev.prev].next = prev.next
 		} else {
-			prev.ref.oldest = prev.next
+			ref.oldest = prev.next
+		}
+
+		if prev.next != noExemplar {
+			ce.exemplars[prev.next].prev = prev.prev
+		} else {
+			ref.newest = prev.prev
+		}
+
+		// If this was the only exemplar for the series, delete the index entry
+		if ref.oldest == noExemplar && ref.newest == noExemplar {
+			var buf [1024]byte
+			prevLabels := ref.seriesLabels.Bytes(buf[:])
+			delete(ce.index, string(prevLabels))
 		}
 	}
 
-	// Default the next value to -1 (which we use to detect that we've iterated through all exemplars for a series in Select)
-	// since this is the first exemplar stored for this series.
-	ce.exemplars[ce.nextIndex].next = noExemplar
+	// We create a new entry in the linked list.
 	ce.exemplars[ce.nextIndex].exemplar = e
 	ce.exemplars[ce.nextIndex].ref = idx
-	idx.newest = ce.nextIndex
+
+	switch {
+	case !indexExists:
+		// We just created the index, so this is the first exemplar. Set prev and next
+		// values to -1 to indicate that this is the first and last entry of the linked
+		// list. Iteration (up or down) terminates on -1.
+		ce.exemplars[ce.nextIndex].prev = noExemplar
+		ce.exemplars[ce.nextIndex].next = noExemplar
+	case e.Ts >= ce.exemplars[idx.newest].exemplar.Ts:
+		// If we add the exemplar at the tip (after newest) we set the next value to -1
+		// (which we use to detect that we've iterated through all exemplars for a series
+		// in Select).
+		ce.exemplars[idx.newest].next = ce.nextIndex
+		ce.exemplars[ce.nextIndex].prev = idx.newest
+		ce.exemplars[ce.nextIndex].next = noExemplar
+		idx.newest = ce.nextIndex
+	case e.Ts < ce.exemplars[idx.oldest].exemplar.Ts:
+		// If we add the exemplar at the tail (before oldest) we set the prev value to -1, and
+		// next value to oldest.
+		ce.exemplars[idx.oldest].prev = ce.nextIndex
+		ce.exemplars[ce.nextIndex].prev = noExemplar
+		ce.exemplars[ce.nextIndex].next = idx.oldest
+		idx.oldest = ce.nextIndex
+	default:
+		// If we add the exemplar in between existing exemplars, we find the latest
+		// in-order exemplar, insert the new exemplar and restore ordering.
+		insertAt := ce.findInsertionIndex(e, idx)
+		nextExemplar := ce.exemplars[insertAt].next
+		ce.exemplars[ce.nextIndex].prev = insertAt
+		ce.exemplars[ce.nextIndex].next = nextExemplar
+		ce.exemplars[insertAt].next = ce.nextIndex
+		if nextExemplar != noExemplar {
+			ce.exemplars[nextExemplar].prev = ce.nextIndex
+		}
+	}
 
 	ce.nextIndex = (ce.nextIndex + 1) % len(ce.exemplars)
 
 	ce.metrics.exemplarsAppended.Inc()
 	ce.computeMetrics()
 	return nil
+}
+
+func (ce *CircularExemplarStorage) findInsertionIndex(e exemplar.Exemplar, idx *indexEntry) int {
+	for i := idx.newest; i != noExemplar; {
+		current := ce.exemplars[i]
+		if current.exemplar.Ts < e.Ts {
+			return i
+		}
+		i = current.prev
+	}
+	return idx.oldest
 }
 
 func (ce *CircularExemplarStorage) computeMetrics() {
