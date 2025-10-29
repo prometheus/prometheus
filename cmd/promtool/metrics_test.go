@@ -143,7 +143,7 @@ func (m *mockStorage) Store(req *http.Request, _ remoteapi.WriteMessageType) (*r
 	return resp, nil
 }
 
-func TestPushMetricsInvalidVersion(t *testing.T) {
+func TestPushMetricsInvalidProtoMsg(t *testing.T) {
 	_, store, serverURL := setupTestServer(t, remoteapi.MessageTypes{remoteapi.WriteV1MessageType})
 	tmpFile := createMetricsFile(t, "test_metric 1\n")
 

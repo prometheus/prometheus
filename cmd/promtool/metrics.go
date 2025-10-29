@@ -52,7 +52,7 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 		return failureExitCode
 	}
 
-	// Determine message type based on version flag.
+	// Determine message type based on protobuf_message flag.
 	var messageType remoteapi.WriteMessageType
 	switch protoMsg {
 	case "io.prometheus.write.v2.Request":
