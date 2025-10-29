@@ -36,6 +36,7 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -412,4 +413,30 @@ func floatToTime(v float64) (*time.Time, error) {
 	}
 	t := model.TimeFromUnixNano(int64(timestamp)).Time().UTC()
 	return &t, nil
+}
+
+// templateFunctions returns a representative funcMap with all available template functions.
+// This is used to discover which functions are available for feature registration.
+func templateFunctions() text_template.FuncMap {
+	// Create a dummy expander to get the function map.
+	expander := NewTemplateExpander(
+		context.Background(),
+		"",
+		"",
+		nil,
+		0,
+		nil,
+		&url.URL{},
+		nil,
+	)
+	return expander.funcMap
+}
+
+// RegisterFeatures registers all template functions with the feature registry.
+func RegisterFeatures(r features.Collector) {
+	// Get all function names from the template function map.
+	funcMap := templateFunctions()
+	for name := range funcMap {
+		r.Enable(features.TemplatingFunctions, name)
+	}
 }
