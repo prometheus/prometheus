@@ -56,7 +56,7 @@ func TestPushMetrics(t *testing.T) {
 	tests := []struct {
 		name        string
 		metricsData string
-		version     string
+		protoMsg    string
 		serverTypes remoteapi.MessageTypes
 	}{
 		{
@@ -66,7 +66,7 @@ func TestPushMetrics(t *testing.T) {
 test_metric{label="value1"} 42.0
 test_metric{label="value2"} 43.0
 `,
-			version:     "1",
+			protoMsg:    "prometheus.WriteRequest",
 			serverTypes: remoteapi.MessageTypes{remoteapi.WriteV1MessageType},
 		},
 		{
@@ -75,7 +75,7 @@ test_metric{label="value2"} 43.0
 # TYPE test_counter counter
 test_counter 100
 `,
-			version:     "1",
+			protoMsg:    "prometheus.WriteRequest",
 			serverTypes: remoteapi.MessageTypes{remoteapi.WriteV1MessageType},
 		},
 		{
@@ -85,7 +85,7 @@ test_counter 100
 test_metric{label="value1"} 42.0
 test_metric{label="value2"} 43.0
 `,
-			version:     "2",
+			protoMsg:    "io.prometheus.write.v2.Request",
 			serverTypes: remoteapi.MessageTypes{remoteapi.WriteV2MessageType},
 		},
 	}
@@ -100,7 +100,7 @@ test_metric{label="value2"} 43.0
 				http.DefaultTransport,
 				map[string]string{},
 				30*time.Second,
-				tc.version,
+				tc.protoMsg,
 				map[string]string{"job": "test"},
 				tmpFile,
 			)
@@ -152,11 +152,11 @@ func TestPushMetricsInvalidVersion(t *testing.T) {
 		http.DefaultTransport,
 		map[string]string{},
 		30*time.Second,
-		"3", // Invalid version.
+		"blablalba", // Invalid protoMsg.
 		map[string]string{"job": "test"},
 		tmpFile,
 	)
 
 	require.Equal(t, failureExitCode, status)
-	require.False(t, store.called, "Handler should not have been called for invalid version")
+	require.False(t, store.called, "Handler should not have been called for invalid protoMsg")
 }
