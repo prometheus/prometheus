@@ -273,8 +273,8 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 		// Reset number of samples in memory after each timestamp.
 		ev.currentSamples = tempNumSamples
 		// Gather input vectors for this timestamp.
-		baseVector, _ = ev.gatherVector(ts, mat, baseVector, nil, nil, nil)
-		infoVector, _ = ev.gatherVector(ts, infoMat, infoVector, nil, nil, nil)
+		baseVector, _ = ev.gatherVector(ts, mat, baseVector, EvalSeriesHelpers{}, nil)
+		infoVector, _ = ev.gatherVector(ts, infoMat, infoVector, EvalSeriesHelpers{}, nil)
 
 		enh.Ts = ts
 		result, err := ev.combineWithInfoVector(baseVector, infoVector, ignoreSeries, baseSigs, infoSigs, enh, dataLabelMatchers)
