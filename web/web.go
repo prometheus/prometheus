@@ -57,6 +57,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
+	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/netconnlimit"
 	"github.com/prometheus/prometheus/util/notifications"
@@ -300,8 +301,9 @@ type Options struct {
 
 	AcceptRemoteWriteProtoMsgs remoteapi.MessageTypes
 
-	Gatherer   prometheus.Gatherer
-	Registerer prometheus.Registerer
+	Gatherer        prometheus.Gatherer
+	Registerer      prometheus.Registerer
+	FeatureRegistry features.Collector
 }
 
 // New initializes a new web Handler.
@@ -399,7 +401,26 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.EnableTypeAndUnitLabels,
 		o.AppendMetadata,
 		nil,
+		o.FeatureRegistry,
 	)
+
+	if r := o.FeatureRegistry; r != nil {
+		// Set dynamic API features (based on configuration).
+		r.Set(features.API, "lifecycle", o.EnableLifecycle)
+		r.Set(features.API, "admin", o.EnableAdminAPI)
+		r.Set(features.API, "remote_write_receiver", o.EnableRemoteWriteReceiver)
+		r.Set(features.API, "otlp_write_receiver", o.EnableOTLPWriteReceiver)
+		r.Set(features.OTLPReceiver, "delta_conversion", o.ConvertOTLPDelta)
+		r.Set(features.OTLPReceiver, "native_delta_ingestion", o.NativeOTLPDeltaIngestion)
+		r.Enable(features.API, "label_values_match") // match[] parameter for label values endpoint.
+		r.Enable(features.API, "query_warnings")     // warnings in query responses.
+		r.Enable(features.API, "query_stats")        // stats parameter for query endpoints.
+		r.Enable(features.API, "time_range_series")  // start/end parameters for /series endpoint.
+		r.Enable(features.API, "time_range_labels")  // start/end parameters for /labels endpoints.
+		r.Enable(features.API, "exclude_alerts")     // exclude_alerts parameter for /rules endpoint.
+		r.Set(features.UI, "ui_v3", !o.UseOldUI)
+		r.Set(features.UI, "ui_v2", o.UseOldUI)
+	}
 
 	if o.RoutePrefix != "/" {
 		// If the prefix is missing for the root path, prepend it.
