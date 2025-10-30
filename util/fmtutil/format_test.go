@@ -15,8 +15,11 @@ package fmtutil
 
 import (
 	"bytes"
+	"math"
 	"testing"
+	"time"
 
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/prompb"
@@ -230,4 +233,51 @@ func TestMetricTextToWriteRequestErrorParsingMetricType(t *testing.T) {
 
 	_, err := MetricTextToWriteRequest(input, labels)
 	require.Equal(t, "text format parsing error in line 3: unknown metric type \"info\"", err.Error())
+}
+
+func TestMakeTimeseries_HistogramInfBucket(t *testing.T) {
+	tests := map[string]*dto.Histogram{
+		"Histogram missing +Inf bucket": {
+			Bucket: []*dto.Bucket{
+				{CumulativeCount: p[uint64](5), UpperBound: p(1.0)},
+				{CumulativeCount: p[uint64](10), UpperBound: p(5.0)},
+			},
+			SampleCount: p[uint64](15),
+		},
+		"Histogram already has +Inf bucket": {
+			Bucket: []*dto.Bucket{
+				{CumulativeCount: p[uint64](5), UpperBound: p(1.0)},
+				{CumulativeCount: p[uint64](10), UpperBound: p(5.0)},
+				{CumulativeCount: p[uint64](15), UpperBound: p(math.Inf(1))},
+			},
+			SampleCount: p[uint64](15),
+		},
+	}
+
+	for name, histogram := range tests {
+		t.Run(name, func(t *testing.T) {
+			wr := &prompb.WriteRequest{}
+			labels := map[string]string{"__name__": "test_histogram"}
+			metric := &dto.Metric{
+				Histogram:   histogram,
+				TimestampMs: p(time.Now().UnixMilli()),
+			}
+
+			require.NoError(t, makeTimeseries(wr, labels, metric))
+
+			var hasInf bool
+			for _, ts := range wr.Timeseries {
+				for _, lbl := range ts.Labels {
+					if lbl.Name == "le" && lbl.Value == "+Inf" {
+						hasInf = true
+					}
+				}
+			}
+			require.Truef(t, hasInf, "expected +Inf bucket in histogram")
+		})
+	}
+}
+
+func p[T any](v T) *T {
+	return &v
 }
