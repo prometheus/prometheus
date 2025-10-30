@@ -250,6 +250,69 @@ curl 'http://localhost:9090/api/v1/format_query?query=foo/bar'
 }
 ```
 
+## Querying query logs
+
+The following endpoint retrieves query logs when query logging is enabled via the `query_log_file` configuration option:
+
+```
+GET /api/v1/query_log
+```
+
+URL query parameters:
+
+- `limit=<number>`: Maximum number of query log entries to return. Returns the most recent entries. Defaults to 1000 if not specified. Must be a non-negative integer.
+
+Query logs contain information about executed queries including the query expression, execution time, and performance statistics.
+
+**Note:** This endpoint requires:
+1. The `query-logging-api` [feature flag](../feature_flags.md#query-logging-api) to be enabled (`--enable-feature=query-logging-api`)
+2. Query logging to be configured in the Prometheus configuration via `query_log_file`
+
+If either requirement is not met, the endpoint will return an error. See the [feature flags documentation](../feature_flags.md#query-logging-api) for security considerations.
+
+The `data` section of the query result is an array of query log entries, each containing:
+
+- `params`: Query parameters including the query expression, start/end timestamps, and step interval
+- `stats`: Execution statistics including timing information and sample counts
+- `ts`: Timestamp when the query was logged
+
+The following example retrieves the last 10 query log entries:
+
+```bash
+curl 'http://localhost:9090/api/v1/query_log?limit=10'
+```
+
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "params": {
+        "query": "up",
+        "start": "2025-10-18T20:34:30.562Z",
+        "end": "2025-10-18T20:34:30.562Z",
+        "step": 0
+      },
+      "stats": {
+        "timings": {
+          "evalTotalTime": 0.000178083,
+          "execQueueTime": 0.000021584,
+          "execTotalTime": 0.000182125,
+          "innerEvalTime": 0.000011584,
+          "queryPreparationTime": 0.000163833,
+          "resultSortTime": 0
+        },
+        "samples": {
+          "totalQueryableSamples": 1,
+          "peakSamples": 1
+        }
+      },
+      "ts": ""
+    }
+  ]
+}
+```
+
 ## Parsing a PromQL expressions into a abstract syntax tree (AST)
 
 This endpoint is **experimental** and might change in the future. It is currently only meant to be used by Prometheus' own web UI, and the endpoint name and exact format returned may change from one Prometheus version to another. It may also be removed again in case it is no longer needed by the UI.

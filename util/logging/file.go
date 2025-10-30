@@ -14,13 +14,17 @@
 package logging
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 
 	"github.com/prometheus/common/promslog"
+
+	"github.com/prometheus/prometheus/model/querylog"
 )
 
 var _ slog.Handler = (*JSONFileLogger)(nil)
@@ -91,4 +95,31 @@ func (l *JSONFileLogger) WithGroup(name string) slog.Handler {
 	}
 
 	return &JSONFileLogger{file: l.file, handler: l.handler.WithGroup(name)}
+}
+
+// ReadQueryLogs reads and parses all query logs from the log file.
+// It implements a query log reader interface for API access.
+func (l *JSONFileLogger) ReadQueryLogs(_ context.Context) ([]querylog.QueryLog, error) {
+	// Open a separate file handle for reading to avoid interfering with the logger's write handle
+	f, err := os.Open(l.file.Name())
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var logs []querylog.QueryLog
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		var q querylog.QueryLog
+		if err := json.Unmarshal(scanner.Bytes(), &q); err != nil {
+			return nil, fmt.Errorf("failed to parse query log entry: %w", err)
+		}
+		logs = append(logs, q)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading query log file: %w", err)
+	}
+
+	return logs, nil
 }

@@ -14,11 +14,13 @@
 package v1
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -44,6 +46,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/querylog"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
@@ -4758,9 +4761,192 @@ func TestQueryTimeout(t *testing.T) {
 	}
 }
 
+func TestQueryLogEndpoint(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+        load 1m
+            test_metric1{foo="bar"} 0+100x100
+			test_metric1{foo="boo"} 1+0x100
+    `)
+	t.Cleanup(func() { storage.Close() })
+
+	now := time.Now()
+
+	queryLog := querylog.QueryLog{
+		Params: querylog.Params{
+			Query: "test_metric1{foo=\"bar\"}",
+			Start: "1234567890",
+			End:   "1234567891",
+		},
+		Stats: querylog.Stats{
+			Timings: querylog.Timings{
+				EvalTotalTime:        1.0,
+				ExecQueueTime:        0.1,
+				ExecTotalTime:        1.1,
+				InnerEvalTime:        0.5,
+				QueryPreparationTime: 0.2,
+				ResultSortTime:       0.3,
+			},
+			Samples: querylog.Samples{
+				TotalQueryableSamples: 100,
+				PeakSamples:           50,
+			},
+		},
+		Timestamp: "2025-02-11T00:00:00Z",
+	}
+
+	queryLogBytes, err := json.Marshal(queryLog)
+	require.NoError(t, err)
+
+	engine := &fakeEngine{
+		queryLogger: &fakeQueryLogger{
+			reader: bytes.NewReader(queryLogBytes),
+		},
+	}
+	api := &API{
+		Queryable:             storage,
+		QueryEngine:           engine,
+		ExemplarQueryable:     storage.ExemplarQueryable(),
+		alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
+		flagsMap:              sampleFlagMap,
+		now:                   func() time.Time { return now },
+		config:                func() config.Config { return samplePrometheusCfg },
+		ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+		enableQueryLoggingAPI: true,
+	}
+
+	// Send a query
+	query := url.Values{
+		"query": []string{"test_metric1"},
+		"time":  []string{"123.4"},
+	}
+	ctx := context.Background()
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("?%s", query.Encode()), nil)
+	require.NoError(t, err)
+	api.query(req.WithContext(ctx))
+
+	// Validate that the query log returns those queries in the response
+	req, err = http.NewRequest(http.MethodGet, "", nil)
+	require.NoError(t, err)
+	res := api.queryLog(req.WithContext(ctx))
+	assertAPIError(t, res.err, errorNone)
+
+	testutil.RequireEqual(t, []querylog.QueryLog{queryLog}, res.data)
+}
+
+func TestQueryLogEndpointWithLimit(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+        load 1m
+            test_metric1{foo="bar"} 0+100x100
+    `)
+	t.Cleanup(func() { storage.Close() })
+
+	now := time.Now()
+
+	// Create multiple query log entries
+	logs := make([]querylog.QueryLog, 5)
+	for i := 0; i < 5; i++ {
+		logs[i] = querylog.QueryLog{
+			Params: querylog.Params{
+				Query: fmt.Sprintf("query_%d", i),
+				Start: "1234567890",
+				End:   "1234567891",
+			},
+			Stats: querylog.Stats{
+				Timings: querylog.Timings{
+					EvalTotalTime: 1.0,
+				},
+				Samples: querylog.Samples{
+					TotalQueryableSamples: 100,
+					PeakSamples:           50,
+				},
+			},
+			Timestamp: "2025-02-11T00:00:00Z",
+		}
+	}
+
+	// Marshal all logs as newline-delimited JSON
+	var logBytes bytes.Buffer
+	for _, log := range logs {
+		b, err := json.Marshal(log)
+		require.NoError(t, err)
+		logBytes.Write(b)
+		logBytes.WriteByte('\n')
+	}
+
+	engine := &fakeEngine{
+		queryLogger: &fakeQueryLogger{
+			reader: &logBytes,
+		},
+	}
+	api := &API{
+		Queryable:             storage,
+		QueryEngine:           engine,
+		ExemplarQueryable:     storage.ExemplarQueryable(),
+		alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
+		flagsMap:              sampleFlagMap,
+		now:                   func() time.Time { return now },
+		config:                func() config.Config { return samplePrometheusCfg },
+		ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+		enableQueryLoggingAPI: true,
+	}
+
+	ctx := context.Background()
+
+	// Test with limit=3 (should return last 3 entries)
+	req, err := http.NewRequest(http.MethodGet, "?limit=3", nil)
+	require.NoError(t, err)
+	res := api.queryLog(req.WithContext(ctx))
+	assertAPIError(t, res.err, errorNone)
+
+	resultLogs := res.data.([]querylog.QueryLog)
+	require.Len(t, resultLogs, 3)
+	// Should return the last 3 entries (indexes 2, 3, 4)
+	testutil.RequireEqual(t, "query_2", resultLogs[0].Params.Query)
+	testutil.RequireEqual(t, "query_3", resultLogs[1].Params.Query)
+	testutil.RequireEqual(t, "query_4", resultLogs[2].Params.Query)
+}
+
+func TestQueryLogEndpointDisabled(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+        load 1m
+            test_metric1{foo="bar"} 0+100x100
+    `)
+	t.Cleanup(func() { storage.Close() })
+
+	now := time.Now()
+
+	engine := &fakeEngine{
+		queryLogger: &fakeQueryLogger{
+			reader: bytes.NewReader([]byte{}),
+		},
+	}
+	api := &API{
+		Queryable:             storage,
+		QueryEngine:           engine,
+		ExemplarQueryable:     storage.ExemplarQueryable(),
+		alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
+		flagsMap:              sampleFlagMap,
+		now:                   func() time.Time { return now },
+		config:                func() config.Config { return samplePrometheusCfg },
+		ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+		enableQueryLoggingAPI: false, // Feature flag disabled
+	}
+
+	ctx := context.Background()
+	req, err := http.NewRequest(http.MethodGet, "", nil)
+	require.NoError(t, err)
+	res := api.queryLog(req.WithContext(ctx))
+
+	// Should return errorUnavailable when feature is disabled
+	assertAPIError(t, res.err, errorUnavailable)
+	require.Contains(t, res.err.err.Error(), "query logging API is disabled")
+	require.Contains(t, res.err.err.Error(), "--enable-feature=query-logging-api")
+}
+
 // fakeEngine is a fake QueryEngine implementation.
 type fakeEngine struct {
-	query fakeQuery
+	query       fakeQuery
+	queryLogger *fakeQueryLogger
 }
 
 func (e *fakeEngine) NewInstantQuery(context.Context, storage.Queryable, promql.QueryOpts, string, time.Time) (promql.Query, error) {
@@ -4769,6 +4955,10 @@ func (e *fakeEngine) NewInstantQuery(context.Context, storage.Queryable, promql.
 
 func (e *fakeEngine) NewRangeQuery(context.Context, storage.Queryable, promql.QueryOpts, string, time.Time, time.Time, time.Duration) (promql.Query, error) {
 	return &e.query, nil
+}
+
+func (e *fakeEngine) GetEngineQueryLogger(_ context.Context) (promql.QueryLogger, error) {
+	return e.queryLogger, nil
 }
 
 // fakeQuery is a fake Query implementation.
@@ -4800,4 +4990,48 @@ func (*fakeQuery) Cancel() {}
 
 func (q *fakeQuery) String() string {
 	return q.query
+}
+
+// fakeQueryLogger is a fake QueryLogger implementation.
+type fakeQueryLogger struct {
+	reader io.Reader
+}
+
+func (*fakeQueryLogger) Close() error {
+	return nil
+}
+
+func (*fakeQueryLogger) Log(...interface{}) error {
+	return nil
+}
+
+func (l *fakeQueryLogger) ReadQueryLogs(_ context.Context) ([]querylog.QueryLog, error) {
+	var logs []querylog.QueryLog
+	decoder := json.NewDecoder(l.reader)
+	for {
+		var q querylog.QueryLog
+		if err := decoder.Decode(&q); err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, err
+		}
+		logs = append(logs, q)
+	}
+	return logs, nil
+}
+
+func (*fakeQueryLogger) Enabled(_ context.Context, _ slog.Level) bool {
+	return true
+}
+
+func (*fakeQueryLogger) Handle(_ context.Context, _ slog.Record) error {
+	return nil
+}
+
+func (*fakeQueryLogger) WithAttrs(_ []slog.Attr) slog.Handler {
+	return nil
+}
+
+func (*fakeQueryLogger) WithGroup(_ string) slog.Handler {
+	return nil
 }

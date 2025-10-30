@@ -233,18 +233,19 @@ type API struct {
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 	globalURLOptions      GlobalURLOptions
 
-	db                  TSDBAdminStats
-	dbDir               string
-	enableAdmin         bool
-	logger              *slog.Logger
-	CORSOrigin          *regexp.Regexp
-	buildInfo           *PrometheusVersion
-	runtimeInfo         func() (RuntimeInfo, error)
-	gatherer            prometheus.Gatherer
-	isAgent             bool
-	statsRenderer       StatsRenderer
-	notificationsGetter func() []notifications.Notification
-	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
+	db                    TSDBAdminStats
+	dbDir                 string
+	enableAdmin           bool
+	enableQueryLoggingAPI bool
+	logger                *slog.Logger
+	CORSOrigin            *regexp.Regexp
+	buildInfo             *PrometheusVersion
+	runtimeInfo           func() (RuntimeInfo, error)
+	gatherer              prometheus.Gatherer
+	isAgent               bool
+	statsRenderer         StatsRenderer
+	notificationsGetter   func() []notifications.Notification
+	notificationsSub      func() (<-chan notifications.Notification, func(), bool)
 	// Allows customizing the default mapping
 	overrideErrorCode OverrideErrorCode
 
@@ -291,6 +292,7 @@ func NewAPI(
 	ctZeroIngestionEnabled bool,
 	lookbackDelta time.Duration,
 	enableTypeAndUnitLabels bool,
+	enableQueryLoggingAPI bool,
 	overrideErrorCode OverrideErrorCode,
 ) *API {
 	a := &API{
@@ -302,25 +304,26 @@ func NewAPI(
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
-		now:                 time.Now,
-		config:              configFunc,
-		flagsMap:            flagsMap,
-		ready:               readyFunc,
-		globalURLOptions:    globalURLOptions,
-		db:                  db,
-		dbDir:               dbDir,
-		enableAdmin:         enableAdmin,
-		rulesRetriever:      rr,
-		logger:              logger,
-		CORSOrigin:          corsOrigin,
-		runtimeInfo:         runtimeInfo,
-		buildInfo:           buildInfo,
-		gatherer:            gatherer,
-		isAgent:             isAgent,
-		statsRenderer:       DefaultStatsRenderer,
-		notificationsGetter: notificationsGetter,
-		notificationsSub:    notificationsSub,
-		overrideErrorCode:   overrideErrorCode,
+		now:                   time.Now,
+		config:                configFunc,
+		flagsMap:              flagsMap,
+		ready:                 readyFunc,
+		globalURLOptions:      globalURLOptions,
+		db:                    db,
+		dbDir:                 dbDir,
+		enableAdmin:           enableAdmin,
+		enableQueryLoggingAPI: enableQueryLoggingAPI,
+		rulesRetriever:        rr,
+		logger:                logger,
+		CORSOrigin:            corsOrigin,
+		runtimeInfo:           runtimeInfo,
+		buildInfo:             buildInfo,
+		gatherer:              gatherer,
+		isAgent:               isAgent,
+		statsRenderer:         DefaultStatsRenderer,
+		notificationsGetter:   notificationsGetter,
+		notificationsSub:      notificationsSub,
+		overrideErrorCode:     overrideErrorCode,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -450,6 +453,8 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alerts", wrapAgent(api.alerts))
 	r.Get("/rules", wrapAgent(api.rules))
 
+	r.Get("/query_log", wrapAgent(api.queryLog))
+
 	// Admin APIs
 	r.Post("/admin/tsdb/delete_series", wrapAgent(api.deleteSeries))
 	r.Post("/admin/tsdb/clean_tombstones", wrapAgent(api.cleanTombstones))
@@ -543,6 +548,47 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		Result:     res.Value,
 		Stats:      qs,
 	}, nil, warnings, qry.Close}
+}
+
+func (api *API) queryLog(r *http.Request) (result apiFuncResult) {
+	if !api.enableQueryLoggingAPI {
+		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("query logging API is disabled. Enable it with --enable-feature=query-logging-api")}, nil, nil}
+	}
+
+	ctx := r.Context()
+	logger, err := api.QueryEngine.GetEngineQueryLogger(ctx)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
+	}
+
+	// Parse limit parameter
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+	// Default limit to prevent overwhelming responses with large log files
+	if limit == 0 {
+		limit = 1000
+	}
+
+	// Check if the logger implements the QueryLogReader interface
+	reader, ok := logger.(promql.QueryLogReader)
+	if !ok {
+		return apiFuncResult{nil, &apiError{errorExec, errors.New("query logger does not support reading logs")}, nil, nil}
+	}
+
+	// Read and parse query logs
+	logs, err := reader.ReadQueryLogs(ctx)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
+	}
+
+	// Apply limit (return last N entries)
+	if len(logs) > limit {
+		logs = logs[len(logs)-limit:]
+	}
+
+	return apiFuncResult{logs, nil, nil, nil}
 }
 
 func (*API) formatQuery(r *http.Request) (result apiFuncResult) {
