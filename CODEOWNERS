@@ -1,0 +1,10 @@
+# Prometheus team members are members of the "default maintainers" github team.
+# They are code owners by default for the whole repo.
+* @prometheus/default-maintainers
+
+# Example adding a dedicated maintainer for AWS SD, and also "default
+# maintainers" so that they do not need to bypass codeowners check to merge
+# something.
+# Example comes from
+# https://github.com/prometheus/prometheus/pull/17105#issuecomment-3248209452
+# /discovery/aws/ @matt-gp @prometheus/default-maintainers
