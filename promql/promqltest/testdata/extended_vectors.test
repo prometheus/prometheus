@@ -169,7 +169,7 @@ eval instant at 110s increase(metric[1m] smoothed)
 eval instant at 125s increase(metric[1m] smoothed)
     {} 4.666666666
 
-# Test that inverval is left-open.
+# Test that interval is left-open.
 
 clear
 load 1m
