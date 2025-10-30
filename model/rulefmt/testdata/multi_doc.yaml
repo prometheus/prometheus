@@ -1,0 +1,23 @@
+groups:
+  - name: first-group
+    interval: 30s
+    rules:
+      - alert: FirstAlert
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          description: "First document alert"
+---
+groups:
+  - name: second-group
+    interval: 30s
+    rules:
+      - alert: SecondAlert
+        expr: down == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          description: "Second document alert (should be ignored)"

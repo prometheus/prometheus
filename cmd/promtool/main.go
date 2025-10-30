@@ -477,6 +477,43 @@ func checkExperimental(f bool) {
 
 var errLint = errors.New("lint error")
 
+// categorizeParseErrors separates parsing errors into warnings and failures.
+func categorizeParseErrors(errs []error) (warnings, failures []error, hadWarnings, hasErrors bool) {
+	for _, e := range errs {
+		switch {
+		case errors.Is(e, rulefmt.ErrMultiDoc):
+			warnings = append(warnings, e)
+			hadWarnings = true
+		case errors.Is(e, errLint):
+			failures = append(failures, e)
+			hadWarnings = true
+		default:
+			failures = append(failures, e)
+			hasErrors = true
+		}
+	}
+	return warnings, failures, hadWarnings, hasErrors
+}
+
+// printCategorizedErrors prints warnings and failures to stderr.
+func printCategorizedErrors(warnings, failures []error) bool {
+	if len(warnings) > 0 {
+		fmt.Fprintln(os.Stderr, "  WARNING:")
+		for _, e := range warnings {
+			fmt.Fprintln(os.Stderr, e.Error())
+		}
+	}
+
+	if len(failures) > 0 {
+		fmt.Fprintln(os.Stderr, "  FAILED:")
+		for _, e := range failures {
+			fmt.Fprintln(os.Stderr, e.Error())
+		}
+		return true
+	}
+	return false
+}
+
 type rulesLintConfig struct {
 	all                  bool
 	duplicateRules       bool
@@ -867,13 +904,13 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 		return true, true
 	}
 	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme)
+	hadParseWarnings := false
 	if errs != nil {
-		failed = true
-		fmt.Fprintln(os.Stderr, "  FAILED:")
-		for _, e := range errs {
-			fmt.Fprintln(os.Stderr, e.Error())
-			hasErrors = hasErrors || !errors.Is(e, errLint)
-		}
+		warnings, failures, hadWarnings, criticalErrors := categorizeParseErrors(errs)
+		hadParseWarnings = hadWarnings
+		hasErrors = criticalErrors
+		failed = printCategorizedErrors(warnings, failures)
+
 		if hasErrors {
 			return failed, hasErrors
 		}
@@ -887,7 +924,8 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 		for _, err := range errs {
 			hasErrors = hasErrors || !errors.Is(err, errLint)
 		}
-	} else {
+	} else if !hadParseWarnings {
+		// Only print SUCCESS if there were no parse warnings.
 		fmt.Printf("  SUCCESS: %d rules found\n", n)
 	}
 	fmt.Println()
@@ -901,13 +939,13 @@ func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 	for _, f := range files {
 		fmt.Println("Checking", f)
 		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme)
+		hadParseWarnings := false
 		if errs != nil {
-			failed = true
-			fmt.Fprintln(os.Stderr, "  FAILED:")
-			for _, e := range errs {
-				fmt.Fprintln(os.Stderr, e.Error())
-				hasErrors = hasErrors || !errors.Is(e, errLint)
-			}
+			warnings, failures, hadWarnings, criticalErrors := categorizeParseErrors(errs)
+			hadParseWarnings = hadWarnings
+			hasErrors = criticalErrors
+			failed = printCategorizedErrors(warnings, failures)
+
 			if hasErrors {
 				continue
 			}
@@ -921,7 +959,8 @@ func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 			for _, err := range errs {
 				hasErrors = hasErrors || !errors.Is(err, errLint)
 			}
-		} else {
+		} else if !hadParseWarnings {
+			// Only print SUCCESS if there were no parse warnings.
 			fmt.Printf("  SUCCESS: %d rules found\n", n)
 		}
 		fmt.Println()
