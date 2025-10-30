@@ -1144,8 +1144,15 @@ func (ev *evaluator) Eval(ctx context.Context, expr parser.Expr) (v parser.Value
 
 // EvalSeriesHelper stores extra information about a series.
 type EvalSeriesHelper struct {
-	// Used to map left-hand to right-hand in binary operations.
-	signature string
+	// Ordinal number of join signature, used to map left-hand to right-hand in binary operations.
+	sigOrdinal int
+}
+
+type metricHashes []uint64
+
+type metricWithHash struct {
+	metric labels.Labels
+	hash   uint64
 }
 
 // EvalNodeHelper stores extra information and caches for evaluating a single node across steps.
@@ -1154,6 +1161,8 @@ type EvalNodeHelper struct {
 	Ts int64
 	// Vector that can be used for output.
 	Out Vector
+
+	hashes metricHashes
 
 	// Caches.
 	// funcHistogramQuantile and funcHistogramFraction for classic histograms.
@@ -1165,9 +1174,13 @@ type EvalNodeHelper struct {
 	lblResultBuf []byte
 
 	// For binary vector matching.
-	rightSigs    map[string]Sample
-	matchedSigs  map[string]map[uint64]struct{}
-	resultMetric map[string]labels.Labels
+	rightSigs    map[int]Sample
+	matchedSigs  map[int]map[uint64]struct{}
+	resultMetric map[string]metricWithHash
+	numSigs      int
+
+	// For info series matching.
+	rightStrSigs map[string]Sample
 
 	// Additional options for the evaluation.
 	enableDelayedNameRemoval bool
@@ -1252,11 +1265,12 @@ func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annota
 // function call results.
 // The prepSeries function (if provided) can be used to prepare the helper
 // for each series, then passed to each call funcCall.
-func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Labels, *EvalSeriesHelper), funcCall func([]Vector, Matrix, [][]EvalSeriesHelper, *EvalNodeHelper) (Vector, annotations.Annotations), exprs ...parser.Expr) (Matrix, annotations.Annotations) {
+func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatching, funcCall func([]Vector, Matrix, [][]EvalSeriesHelper, *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations), exprs ...parser.Expr) (Matrix, annotations.Annotations) {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 	matrixes := make([]Matrix, len(exprs))
 	origMatrixes := make([]Matrix, len(exprs))
 	originalNumSamples := ev.currentSamples
+	useSignatures := matching != nil
 
 	var warnings annotations.Annotations
 	for i, e := range exprs {
@@ -1297,18 +1311,46 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 		bufHelpers    [][]EvalSeriesHelper // Buffer updated on each step
 	)
 
-	// If the series preparation function is provided, we should run it for
-	// every single series in the matrix.
-	if prepSeries != nil {
+	if useSignatures {
+		var (
+			// Function to compute the join signature for each series.
+			sigf  func(labels.Labels) string
+			buf   = make([]byte, 0, 1024)
+			names = slices.Clone(matching.MatchingLabels)
+		)
+		if matching.On {
+			slices.Sort(names)
+			sigf = func(lset labels.Labels) string {
+				return string(lset.BytesWithLabels(buf, names...))
+			}
+		} else { // "without"
+			names = append([]string{labels.MetricName}, names...)
+			slices.Sort(names)
+			sigf = func(lset labels.Labels) string {
+				return string(lset.BytesWithoutLabels(buf, names...))
+			}
+		}
+
 		seriesHelpers = make([][]EvalSeriesHelper, len(exprs))
 		bufHelpers = make([][]EvalSeriesHelper, len(exprs))
+
+		signatureToOrdinal := make(map[string]int)
 
 		for i := range exprs {
 			seriesHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 			bufHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 
 			for si, series := range matrixes[i] {
-				prepSeries(series.Metric, &seriesHelpers[i][si])
+				strSig := sigf(series.Metric)
+
+				if sigOrd, ok := signatureToOrdinal[strSig]; ok {
+					seriesHelpers[i][si] = EvalSeriesHelper{sigOrdinal: sigOrd}
+					continue
+				}
+
+				signatureToOrdinal[strSig] = enh.numSigs
+				seriesHelpers[i][si] = EvalSeriesHelper{sigOrdinal: enh.numSigs}
+				enh.numSigs++
 			}
 		}
 	}
@@ -1323,20 +1365,20 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 		for i := range exprs {
 			var bh []EvalSeriesHelper
 			var sh []EvalSeriesHelper
-			if prepSeries != nil {
+			if useSignatures {
 				bh = bufHelpers[i][:0]
 				sh = seriesHelpers[i]
 			}
 			vectors[i], bh = ev.gatherVector(ts, matrixes[i], vectors[i], bh, sh)
-			if prepSeries != nil {
+			if useSignatures {
 				bufHelpers[i] = bh
 			}
 		}
 
 		// Make the function call.
 		enh.Ts = ts
-		result, ws := funcCall(vectors, nil, bufHelpers, enh)
-		enh.Out = result[:0] // Reuse result vector.
+		result, hashes, ws := funcCall(vectors, nil, bufHelpers, enh)
+		enh.Out, enh.hashes = result[:0], hashes[:0] // Reuse result vector.
 		warnings.Merge(ws)
 
 		vecNumSamples := result.TotalSamples()
@@ -1369,8 +1411,13 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 		}
 
 		// Add samples in output vector to output series.
-		for _, sample := range result {
-			h := sample.Metric.Hash()
+		for i, sample := range result {
+			var h uint64
+			if len(hashes) > 0 {
+				h = hashes[i]
+			} else {
+				h = sample.Metric.Hash()
+			}
 			ss, ok := seriess[h]
 			if ok {
 				if ss.ts == ts { // If we've seen this output series before at this timestamp, it's a duplicate.
@@ -1773,7 +1820,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				sortedGrouping = append(sortedGrouping, valueLabel.Val)
 				slices.Sort(sortedGrouping)
 			}
-			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
 				return ev.aggregationCountValues(e, sortedGrouping, valueLabel.Val, v[0], enh)
 			}, e.Expr)
 		}
@@ -1850,9 +1897,9 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		if !matrixArg {
 			// Does not have a matrix argument.
-			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
 				vec, annos := call(v, nil, e.Args, enh)
-				return vec, warnings.Merge(annos)
+				return vec, nil, warnings.Merge(annos)
 			}, e.Args...)
 		}
 
@@ -2124,54 +2171,48 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 	case *parser.BinaryExpr:
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeScalar:
-			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
 				val := scalarBinop(e.Op, v[0][0].F, v[1][0].F)
-				return append(enh.Out, Sample{F: val}), nil
+				return append(enh.Out, Sample{F: val}), nil, nil
 			}, e.LHS, e.RHS)
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeVector:
-			// Function to compute the join signature for each series.
-			buf := make([]byte, 0, 1024)
-			sigf := signatureFunc(e.VectorMatching.On, buf, e.VectorMatching.MatchingLabels...)
-			initSignatures := func(series labels.Labels, h *EvalSeriesHelper) {
-				h.signature = sigf(series)
-			}
 			switch e.Op {
 			case parser.LAND:
-				return ev.rangeEval(ctx, initSignatures, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					return ev.VectorAnd(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
+				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
+					return ev.VectorAnd(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil, nil
 				}, e.LHS, e.RHS)
 			case parser.LOR:
-				return ev.rangeEval(ctx, initSignatures, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					return ev.VectorOr(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
+				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
+					return ev.VectorOr(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil, nil
 				}, e.LHS, e.RHS)
 			case parser.LUNLESS:
-				return ev.rangeEval(ctx, initSignatures, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					return ev.VectorUnless(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
+				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
+					return ev.VectorUnless(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil, nil
 				}, e.LHS, e.RHS)
 			default:
-				return ev.rangeEval(ctx, initSignatures, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					vec, err := ev.VectorBinop(e.Op, v[0], v[1], e.VectorMatching, e.ReturnBool, sh[0], sh[1], enh, e.PositionRange())
-					return vec, handleVectorBinopError(err, e)
+				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
+					vec, hashes, err := ev.VectorBinop(e.Op, v[0], v[1], e.VectorMatching, e.ReturnBool, sh[0], sh[1], enh, e.PositionRange())
+					return vec, hashes, handleVectorBinopError(err, e)
 				}, e.LHS, e.RHS)
 			}
 
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeScalar:
-			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
 				vec, err := ev.VectorscalarBinop(e.Op, v[0], Scalar{V: v[1][0].F}, false, e.ReturnBool, enh, e.PositionRange())
-				return vec, handleVectorBinopError(err, e)
+				return vec, nil, handleVectorBinopError(err, e)
 			}, e.LHS, e.RHS)
 
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeVector:
-			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
 				vec, err := ev.VectorscalarBinop(e.Op, v[1], Scalar{V: v[0][0].F}, true, e.ReturnBool, enh, e.PositionRange())
-				return vec, handleVectorBinopError(err, e)
+				return vec, nil, handleVectorBinopError(err, e)
 			}, e.LHS, e.RHS)
 		}
 
 	case *parser.NumberLiteral:
 		span.SetAttributes(attribute.Float64("value", e.Val))
-		return ev.rangeEval(ctx, nil, func(_ []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-			return append(enh.Out, Sample{F: e.Val, Metric: labels.EmptyLabels()}), nil
+		return ev.rangeEval(ctx, nil, func(_ []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
+			return append(enh.Out, Sample{F: e.Val, Metric: labels.EmptyLabels()}), nil, nil
 		})
 
 	case *parser.StringLiteral:
@@ -2340,7 +2381,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 		seriesIterators[i] = storage.NewMemoizedIterator(it, durationMilliseconds(ev.lookbackDelta)-1)
 	}
 
-	return ev.rangeEval(ctx, nil, func(_ []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return ev.rangeEval(ctx, nil, func(_ []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
 		if vs.Timestamp != nil {
 			// This is a special case for "timestamp()" when the @ modifier is used, to ensure that
 			// we return a point for each time step in this case.
@@ -2370,7 +2411,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 		}
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 		vec, annos := call([]Vector{vec}, nil, e.Args, enh)
-		return vec, ws.Merge(annos)
+		return vec, nil, ws.Merge(annos)
 	})
 }
 
@@ -2720,16 +2761,15 @@ func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lh
 		return nil // Short-circuit: AND with nothing is nothing.
 	}
 
-	// The set of signatures for the right-hand side Vector.
-	rightSigs := map[string]struct{}{}
-	// Add all rhs samples to a map so we can easily find matches later.
+	// Ordinals of signatures present on the right-hand side.
+	rightSigOrdinalsPresent := make([]bool, enh.numSigs)
 	for _, sh := range rhsh {
-		rightSigs[sh.signature] = struct{}{}
+		rightSigOrdinalsPresent[sh.sigOrdinal] = true
 	}
 
 	for i, ls := range lhs {
 		// If there's a matching entry in the right-hand side Vector, add the sample.
-		if _, ok := rightSigs[lhsh[i].signature]; ok {
+		if rightSigOrdinalsPresent[lhsh[i].sigOrdinal] {
 			enh.Out = append(enh.Out, ls)
 		}
 	}
@@ -2748,15 +2788,15 @@ func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhs
 		return enh.Out
 	}
 
-	leftSigs := map[string]struct{}{}
+	leftSigOrdinalsPresent := make([]bool, enh.numSigs)
 	// Add everything from the left-hand-side Vector.
 	for i, ls := range lhs {
-		leftSigs[lhsh[i].signature] = struct{}{}
+		leftSigOrdinalsPresent[lhsh[i].sigOrdinal] = true
 		enh.Out = append(enh.Out, ls)
 	}
 	// Add all right-hand side elements which have not been added from the left-hand side.
 	for j, rs := range rhs {
-		if _, ok := leftSigs[rhsh[j].signature]; !ok {
+		if !leftSigOrdinalsPresent[rhsh[j].sigOrdinal] {
 			enh.Out = append(enh.Out, rs)
 		}
 	}
@@ -2774,13 +2814,14 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 		return enh.Out
 	}
 
-	rightSigs := map[string]struct{}{}
+	// Ordinals of signatures present on the right-hand side.
+	rightSigOrdinalsPresent := make([]bool, enh.numSigs)
 	for _, sh := range rhsh {
-		rightSigs[sh.signature] = struct{}{}
+		rightSigOrdinalsPresent[sh.sigOrdinal] = true
 	}
 
 	for i, ls := range lhs {
-		if _, ok := rightSigs[lhsh[i].signature]; !ok {
+		if !rightSigOrdinalsPresent[lhsh[i].sigOrdinal] {
 			enh.Out = append(enh.Out, ls)
 		}
 	}
@@ -2788,12 +2829,12 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 }
 
 // VectorBinop evaluates a binary operation between two Vectors, excluding set operators.
-func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *parser.VectorMatching, returnBool bool, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper, pos posrange.PositionRange) (Vector, error) {
+func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *parser.VectorMatching, returnBool bool, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper, pos posrange.PositionRange) (Vector, metricHashes, error) {
 	if matching.Card == parser.CardManyToMany {
 		panic("many-to-many only allowed for set operators")
 	}
 	if len(lhs) == 0 || len(rhs) == 0 {
-		return nil, nil // Short-circuit: nothing is going to match.
+		return nil, nil, nil // Short-circuit: nothing is going to match.
 	}
 
 	// The control flow below handles one-to-one or many-to-one matching.
@@ -2804,22 +2845,20 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		lhsh, rhsh = rhsh, lhsh
 	}
 
-	// All samples from the rhs hashed by the matching label/values.
+	// All samples from the rhs by their join signature ordinal.
 	if enh.rightSigs == nil {
-		enh.rightSigs = make(map[string]Sample, len(enh.Out))
+		enh.rightSigs = make(map[int]Sample, len(enh.Out))
 	} else {
-		for k := range enh.rightSigs {
-			delete(enh.rightSigs, k)
-		}
+		clear(enh.rightSigs)
 	}
 	rightSigs := enh.rightSigs
 
 	// Add all rhs samples to a map so we can easily find matches later.
 	for i, rs := range rhs {
-		sig := rhsh[i].signature
+		sigOrd := rhsh[i].sigOrdinal
 		// The rhs is guaranteed to be the 'one' side. Having multiple samples
 		// with the same signature means that the matching is many-to-many.
-		if duplSample, found := rightSigs[sig]; found {
+		if duplSample, found := rightSigs[sigOrd]; found {
 			// oneSide represents which side of the vector represents the 'one' in the many-to-one relationship.
 			oneSide := "right"
 			if matching.Card == parser.CardOneToMany {
@@ -2830,17 +2869,15 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			ev.errorf("found duplicate series for the match group %s on the %s hand-side of the operation: [%s, %s]"+
 				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, rs.Metric.String(), duplSample.Metric.String())
 		}
-		rightSigs[sig] = rs
+		rightSigs[sigOrd] = rs
 	}
 
-	// Tracks the match-signature. For one-to-one operations the value is nil. For many-to-one
-	// the value is a set of signatures to detect duplicated result elements.
+	// Tracks the matching by signature ordinals. For one-to-one operations the value is nil.
+	// For many-to-one the value is a set of hashes to detect duplicated result elements.
 	if enh.matchedSigs == nil {
-		enh.matchedSigs = make(map[string]map[uint64]struct{}, len(rightSigs))
+		enh.matchedSigs = make(map[int]map[uint64]struct{}, len(rightSigs))
 	} else {
-		for k := range enh.matchedSigs {
-			delete(enh.matchedSigs, k)
-		}
+		clear(enh.matchedSigs)
 	}
 	matchedSigs := enh.matchedSigs
 
@@ -2848,9 +2885,9 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	// the binary operation.
 	var lastErr error
 	for i, ls := range lhs {
-		sig := lhsh[i].signature
+		sigOrd := lhsh[i].sigOrdinal
 
-		rs, found := rightSigs[sig] // Look for a match in the rhs Vector.
+		rs, found := rightSigs[sigOrd] // Look for a match in the rhs Vector.
 		if !found {
 			continue
 		}
@@ -2881,25 +2918,25 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		case !keep:
 			continue
 		}
-		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
-		if !ev.enableDelayedNameRemoval && returnBool {
-			metric = metric.DropReserved(schema.IsMetadataLabel)
-		}
-		insertedSigs, exists := matchedSigs[sig]
+
+		dropMetricName := !ev.enableDelayedNameRemoval && returnBool
+		metric := resultMetric(ls.Metric, rs.Metric, op, matching, dropMetricName, enh)
+
+		insertedSigs, exists := matchedSigs[sigOrd]
 		if matching.Card == parser.CardOneToOne {
 			if exists {
 				ev.errorf("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)")
 			}
-			matchedSigs[sig] = nil // Set existence to true.
+			matchedSigs[sigOrd] = nil // Set existence to true.
 		} else {
 			// In many-to-one matching the grouping labels have to ensure a unique metric
 			// for the result Vector. Check whether those labels have already been added for
 			// the same matching labels.
-			insertSig := metric.Hash()
+			insertSig := metric.hash
 
 			if !exists {
 				insertedSigs = map[uint64]struct{}{}
-				matchedSigs[sig] = insertedSigs
+				matchedSigs[sigOrd] = insertedSigs
 			} else if _, duplicate := insertedSigs[insertSig]; duplicate {
 				ev.errorf("multiple matches for labels: grouping labels must ensure unique matches")
 			}
@@ -2907,34 +2944,21 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		}
 
 		enh.Out = append(enh.Out, Sample{
-			Metric:   metric,
+			Metric:   metric.metric,
 			F:        floatValue,
 			H:        histogramValue,
 			DropName: returnBool,
 		})
+		enh.hashes = append(enh.hashes, metric.hash)
 	}
-	return enh.Out, lastErr
-}
-
-func signatureFunc(on bool, b []byte, names ...string) func(labels.Labels) string {
-	if on {
-		slices.Sort(names)
-		return func(lset labels.Labels) string {
-			return string(lset.BytesWithLabels(b, names...))
-		}
-	}
-	names = append([]string{labels.MetricName}, names...)
-	slices.Sort(names)
-	return func(lset labels.Labels) string {
-		return string(lset.BytesWithoutLabels(b, names...))
-	}
+	return enh.Out, enh.hashes, lastErr
 }
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
 // binary operation and the matching options.
-func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, enh *EvalNodeHelper) labels.Labels {
+func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, dropMetricName bool, enh *EvalNodeHelper) metricWithHash {
 	if enh.resultMetric == nil {
-		enh.resultMetric = make(map[string]labels.Labels, len(enh.Out))
+		enh.resultMetric = make(map[string]metricWithHash, len(enh.Out))
 	}
 
 	enh.resetBuilder(lhs)
@@ -2950,7 +2974,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	}
 	str := string(enh.lblResultBuf)
 
-	if changesMetricSchema(op) {
+	if dropMetricName || changesMetricSchema(op) {
 		// Setting empty Metadata causes the deletion of those if they exists.
 		schema.Metadata{}.SetToLabels(enh.lb)
 	}
@@ -2971,8 +2995,13 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 		}
 	}
 
-	ret := enh.lb.Labels()
+	metric := enh.lb.Labels()
+	ret := metricWithHash{
+		metric: metric,
+		hash:   metric.Hash(),
+	}
 	enh.resultMetric[str] = ret
+
 	return ret
 }
 
@@ -3727,7 +3756,7 @@ seriesLoop:
 
 // aggregationCountValues evaluates count_values on vec.
 // Outputs as many series per group as there are values in the input.
-func (*evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []string, valueLabel string, vec Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func (*evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []string, valueLabel string, vec Vector, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
 	type groupCount struct {
 		labels labels.Labels
 		count  int
@@ -3770,7 +3799,7 @@ func (*evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []str
 			F:      float64(aggr.count),
 		})
 	}
-	return enh.Out, nil
+	return enh.Out, nil, nil
 }
 
 func (ev *evaluator) cleanupMetricLabels(v parser.Value) {

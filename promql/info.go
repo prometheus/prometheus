@@ -337,10 +337,10 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[u
 	}
 
 	// All samples from the info Vector hashed by the matching label/values.
-	if enh.rightSigs == nil {
-		enh.rightSigs = make(map[string]Sample, len(enh.Out))
+	if enh.rightStrSigs == nil {
+		enh.rightStrSigs = make(map[string]Sample, len(enh.Out))
 	} else {
-		clear(enh.rightSigs)
+		clear(enh.rightStrSigs)
 	}
 
 	for _, s := range info {
@@ -351,7 +351,7 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[u
 		origT := int64(s.F)
 
 		sig := infoSigs[s.Metric.Hash()]
-		if existing, exists := enh.rightSigs[sig]; exists {
+		if existing, exists := enh.rightStrSigs[sig]; exists {
 			// We encode original info sample timestamps via the float value.
 			existingOrigT := int64(existing.F)
 			switch {
@@ -359,14 +359,14 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[u
 				// Keep the other info sample, since it's newer.
 			case existingOrigT < origT:
 				// Keep this info sample, since it's newer.
-				enh.rightSigs[sig] = s
+				enh.rightStrSigs[sig] = s
 			default:
 				// The two info samples have the same timestamp - conflict.
 				ev.errorf("found duplicate series for info metric: existing %s @ %d, new %s @ %d",
 					existing.Metric.String(), existingOrigT, s.Metric.String(), origT)
 			}
 		} else {
-			enh.rightSigs[sig] = s
+			enh.rightStrSigs[sig] = s
 		}
 	}
 
@@ -389,7 +389,7 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[u
 		// For every info metric name, try to find an info series with the same signature.
 		seenInfoMetrics := map[string]struct{}{}
 		for infoName, sig := range baseSigs[hash] {
-			is, exists := enh.rightSigs[sig]
+			is, exists := enh.rightStrSigs[sig]
 			if !exists {
 				continue
 			}
