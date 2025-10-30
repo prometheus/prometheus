@@ -984,13 +984,15 @@ type TestWriteClient struct {
 // NewTestWriteClient creates a new testing write client.
 func NewTestWriteClient(protoMsg remoteapi.WriteMessageType) *TestWriteClient {
 	return &TestWriteClient{
-		receivedSamples:  map[string][]prompb.Sample{},
-		expectedSamples:  map[string][]prompb.Sample{},
-		receivedMetadata: map[string][]prompb.MetricMetadata{},
-		expectedMetadata: map[string][]prompb.MetricMetadata{},
-		protoMsg:         protoMsg,
-		storeWait:        0,
-		returnError:      nil,
+		receivedSamples:         map[string][]prompb.Sample{},
+		expectedSamples:         map[string][]prompb.Sample{},
+		receivedHistograms:      map[string][]prompb.Histogram{},
+		expectedHistograms:      map[string][]prompb.Histogram{},
+		receivedFloatHistograms: map[string][]prompb.Histogram{},
+		expectedFloatHistograms: map[string][]prompb.Histogram{},
+		protoMsg:                protoMsg,
+		storeWait:               0,
+		returnError:             nil,
 	}
 }
 
@@ -1038,9 +1040,6 @@ func (c *TestWriteClient) expectHistograms(hh []record.RefHistogramSample, serie
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	c.expectedHistograms = map[string][]prompb.Histogram{}
-	c.receivedHistograms = map[string][]prompb.Histogram{}
-
 	for _, h := range hh {
 		tsID := getSeriesIDFromRef(series[h.Ref])
 		c.expectedHistograms[tsID] = append(c.expectedHistograms[tsID], prompb.FromIntHistogram(h.T, h.H))
@@ -1050,9 +1049,6 @@ func (c *TestWriteClient) expectHistograms(hh []record.RefHistogramSample, serie
 func (c *TestWriteClient) expectFloatHistograms(fhs []record.RefFloatHistogramSample, series []record.RefSeries) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
-
-	c.expectedFloatHistograms = map[string][]prompb.Histogram{}
-	c.receivedFloatHistograms = map[string][]prompb.Histogram{}
 
 	for _, fh := range fhs {
 		tsID := getSeriesIDFromRef(series[fh.Ref])
@@ -2666,303 +2662,117 @@ func TestAppendHistogramSchemaValidation(t *testing.T) {
 	}
 }
 
-func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
-	histogramCases := []struct {
-		name        string
-		protoMsg    remoteapi.WriteMessageType
-		histogram   []record.RefHistogramSample
-		SampleCount int
+func TestAppendToConvertNHCBToClassic(t *testing.T) {
+	h := &histogram.Histogram{
+		Schema:       histogram.CustomBucketsSchema,
+		CustomValues: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 4, Length: 1},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 2, 3, 4, 5},
+		Count:           35,
+		Sum:             123,
+	}
+
+	fh := &histogram.FloatHistogram{
+		Schema:       histogram.CustomBucketsSchema,
+		CustomValues: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 4, Length: 1},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []float64{1, 2, 3, 4, 5},
+		Count:           15,
+		Sum:             123,
+	}
+
+	testCases := []struct {
+		name                    string
+		protoMsg                remoteapi.WriteMessageType
+		isFloatHistogram        bool
+		expectedSamplesCount    float64
+		expectedHistogramsCount float64
+		convertFlag             bool
 	}{
 		{
-			name:     "valid histogram nhcb to classic conversion v1",
-			protoMsg: remoteapi.WriteV1MessageType,
-			histogram: []record.RefHistogramSample{{
-				Ref: chunks.HeadSeriesRef(0),
-				T:   1234567890,
-				H: &histogram.Histogram{
-					Schema:          histogram.CustomBucketsSchema,
-					Count:           3,
-					Sum:             6.0,
-					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
-					PositiveBuckets: []int64{1, 1},
-					CustomValues:    []float64{1.0, 5.0},
-				},
-			}},
-			SampleCount: 5,
+			name:                    "convert nhcb to classic v1",
+			protoMsg:                remoteapi.WriteV1MessageType,
+			isFloatHistogram:        false,
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+			convertFlag:             true,
 		},
 		{
-			name:     "valid histogram nhcb to classic conversion v2",
-			protoMsg: remoteapi.WriteV2MessageType,
-			histogram: []record.RefHistogramSample{{
-				Ref: chunks.HeadSeriesRef(0),
-				T:   1234567890,
-				H: &histogram.Histogram{
-					Schema:          histogram.CustomBucketsSchema,
-					Count:           3,
-					Sum:             6.0,
-					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
-					PositiveBuckets: []int64{1, 1},
-					CustomValues:    []float64{1.0, 5.0},
-				},
-			}},
-			SampleCount: 5,
+			name:                    "convert float nhcb to classic v1",
+			protoMsg:                remoteapi.WriteV1MessageType,
+			isFloatHistogram:        true,
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+			convertFlag:             true,
 		},
 		{
-			name:     "empty histogram nhcb to classic conversion",
-			protoMsg: remoteapi.WriteV1MessageType,
-			histogram: []record.RefHistogramSample{{
-				Ref: chunks.HeadSeriesRef(0),
-				T:   1234567890,
-				H: &histogram.Histogram{
-					Schema:          histogram.CustomBucketsSchema,
-					Count:           0,
-					Sum:             0.0,
-					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 0}},
-					PositiveBuckets: []int64{},
-					CustomValues:    []float64{},
-				},
-			}},
-			SampleCount: 3,
+			name:                    "convert nhcb to classic v2",
+			protoMsg:                remoteapi.WriteV2MessageType,
+			isFloatHistogram:        false,
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+			convertFlag:             true,
 		},
 		{
-			name:     "nil histogram nhcb to classic conversion",
-			protoMsg: remoteapi.WriteV1MessageType,
-			histogram: []record.RefHistogramSample{{
-				Ref: chunks.HeadSeriesRef(0),
-				T:   1234567890,
-				H:   nil,
-			}},
-			SampleCount: 0,
+			name:                    "convert float nhcb to classic v2",
+			protoMsg:                remoteapi.WriteV2MessageType,
+			isFloatHistogram:        true,
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+			convertFlag:             true,
 		},
 		{
-			name:     "multiple valid histogram nhcb to classic conversion v1",
-			protoMsg: remoteapi.WriteV1MessageType,
-			histogram: []record.RefHistogramSample{{
-				Ref: chunks.HeadSeriesRef(0),
-				T:   1234567890,
-				H: &histogram.Histogram{
-					Schema:          histogram.CustomBucketsSchema,
-					Count:           3,
-					Sum:             6.0,
-					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
-					PositiveBuckets: []int64{1, 1},
-					CustomValues:    []float64{1.0, 5.0},
-				},
-			}, {
-				Ref: chunks.HeadSeriesRef(0),
-				T:   1234567890,
-				H: &histogram.Histogram{
-					Schema:          histogram.CustomBucketsSchema,
-					Count:           22,
-					Sum:             20.0,
-					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
-					PositiveBuckets: []int64{3, 4, 5},
-					CustomValues:    []float64{1.0, 5.0, 7.0},
-				},
-			}},
-			SampleCount: 11,
+			name:                    "no nhcb to classic conversion v2",
+			protoMsg:                remoteapi.WriteV2MessageType,
+			convertFlag:             false,
+			isFloatHistogram:        false,
+			expectedSamplesCount:    0,
+			expectedHistogramsCount: 1,
 		},
 		{
-			name:     "multiple valid histogram nhcb to classic conversion v2",
-			protoMsg: remoteapi.WriteV2MessageType,
-			histogram: []record.RefHistogramSample{{
-				Ref: chunks.HeadSeriesRef(0),
-				T:   1234567890,
-				H: &histogram.Histogram{
-					Schema:          histogram.CustomBucketsSchema,
-					Count:           3,
-					Sum:             6.0,
-					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
-					PositiveBuckets: []int64{1, 1},
-					CustomValues:    []float64{1.0, 5.0},
-				},
-			}, {
-				Ref: chunks.HeadSeriesRef(0),
-				T:   1234567890,
-				H: &histogram.Histogram{
-					Schema:          histogram.CustomBucketsSchema,
-					Count:           22,
-					Sum:             20.0,
-					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
-					PositiveBuckets: []int64{3, 4, 5},
-					CustomValues:    []float64{1.0, 5.0, 7.0},
-				},
-			}},
-			SampleCount: 11,
+			name:                    "no float nhcb to classic conversion v2",
+			protoMsg:                remoteapi.WriteV2MessageType,
+			convertFlag:             false,
+			isFloatHistogram:        true,
+			expectedSamplesCount:    0,
+			expectedHistogramsCount: 1,
 		},
 	}
 
-	floatHistogramCases := []struct {
-		name        string
-		protoMsg    remoteapi.WriteMessageType
-		histogram   []record.RefFloatHistogramSample
-		SampleCount int
-	}{
-		{
-			name:     "valid histogram nhcb to classic conversion v1",
-			protoMsg: remoteapi.WriteV1MessageType,
-			histogram: []record.RefFloatHistogramSample{
-				{
-					Ref: chunks.HeadSeriesRef(0),
-					T:   1234567890,
-					FH: &histogram.FloatHistogram{
-						Schema:          histogram.CustomBucketsSchema,
-						Count:           2.0,
-						Sum:             6.0,
-						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
-						PositiveBuckets: []float64{1.0, 1.0},
-						CustomValues:    []float64{1.0, 5.0},
-					},
-				},
-			},
-			SampleCount: 5,
-		},
-		{
-			name:     "valid histogram nhcb to classic conversion v2",
-			protoMsg: remoteapi.WriteV2MessageType,
-			histogram: []record.RefFloatHistogramSample{{
-				Ref: chunks.HeadSeriesRef(0),
-				T:   1234567890,
-				FH: &histogram.FloatHistogram{
-					Schema:          histogram.CustomBucketsSchema,
-					Count:           2.0,
-					Sum:             6.0,
-					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
-					PositiveBuckets: []float64{1, 1},
-					CustomValues:    []float64{1.0, 5.0},
-				},
-			}},
-			SampleCount: 5,
-		},
-		{
-			name:     "empty histogram nhcb to classic conversion",
-			protoMsg: remoteapi.WriteV1MessageType,
-			histogram: []record.RefFloatHistogramSample{
-				{
-					Ref: chunks.HeadSeriesRef(0),
-					T:   1234567890,
-					FH: &histogram.FloatHistogram{
-						Schema: histogram.CustomBucketsSchema,
-
-						Count:           0,
-						Sum:             0.0,
-						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 0}},
-						PositiveBuckets: []float64{},
-						CustomValues:    []float64{},
-					},
-				},
-			},
-			SampleCount: 3,
-		},
-		{
-			name:     "Nil Histogram NHCB to Classic Conversion",
-			protoMsg: remoteapi.WriteV1MessageType,
-			histogram: []record.RefFloatHistogramSample{{
-				Ref: chunks.HeadSeriesRef(0),
-				T:   1234567890,
-				FH:  nil,
-			}},
-			SampleCount: 0,
-		},
-		{
-			name:     "Multiple valid histogram NHCB to Classic Conversion V1",
-			protoMsg: remoteapi.WriteV1MessageType,
-			histogram: []record.RefFloatHistogramSample{{
-				Ref: chunks.HeadSeriesRef(0),
-				T:   1234567890,
-				FH: &histogram.FloatHistogram{
-					Schema:          histogram.CustomBucketsSchema,
-					Count:           2,
-					Sum:             6.0,
-					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
-					PositiveBuckets: []float64{1, 1},
-					CustomValues:    []float64{1.0, 5.0},
-				},
-			}, {
-				Ref: chunks.HeadSeriesRef(0),
-				T:   1234567890,
-				FH: &histogram.FloatHistogram{
-					Schema:          histogram.CustomBucketsSchema,
-					Count:           3,
-					Sum:             20.0,
-					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
-					PositiveBuckets: []float64{1, 1, 1},
-					CustomValues:    []float64{1.0, 5.0, 7.0},
-				},
-			}},
-			SampleCount: 11,
-		},
-		{
-			name:     "valid histogram NHCB to Classic Conversion V2",
-			protoMsg: remoteapi.WriteV2MessageType,
-			histogram: []record.RefFloatHistogramSample{{
-				Ref: chunks.HeadSeriesRef(0),
-				T:   1234567890,
-				FH: &histogram.FloatHistogram{
-					Schema:          histogram.CustomBucketsSchema,
-					Count:           2,
-					Sum:             6.0,
-					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
-					PositiveBuckets: []float64{1, 1},
-					CustomValues:    []float64{1.0, 5.0},
-				},
-			}, {
-				Ref: chunks.HeadSeriesRef(0),
-				T:   1234567890,
-				FH: &histogram.FloatHistogram{
-					Schema:          histogram.CustomBucketsSchema,
-					Count:           3,
-					Sum:             20.0,
-					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
-					PositiveBuckets: []float64{1, 1, 1},
-					CustomValues:    []float64{1.0, 5.0, 7.0},
-				},
-			}, {
-				Ref: chunks.HeadSeriesRef(0),
-				T:   1234567890,
-				FH: &histogram.FloatHistogram{
-					Schema:       histogram.CustomBucketsSchema,
-					CustomValues: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
-					PositiveSpans: []histogram.Span{
-						{Offset: 0, Length: 2},
-						{Offset: 4, Length: 1},
-						{Offset: 1, Length: 2},
-					},
-					PositiveBuckets: []float64{1, 2, 3, 4, 5}, // 1 -> 2 -> 0 -> 0 -> 0 -> 0 -> 3 -> 0 -> 4 -> 5
-					Count:           15,                       // 1 -> 3 -> 3 -> 3 -> 3 -> 3 -> 6 -> 6 -> 10 -> 15
-					Sum:             123,
-				},
-			}},
-			SampleCount: 24,
-		},
-	}
-
-	for _, hc := range histogramCases {
-		t.Run(hc.name, func(t *testing.T) {
-			c := NewTestWriteClient(hc.protoMsg)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := NewTestWriteClient(tc.protoMsg)
 			cfg := testDefaultQueueConfig()
 			mcfg := config.DefaultMetadataConfig
 			cfg.MaxShards = 1
 
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, hc.protoMsg, true)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, tc.protoMsg, tc.convertFlag)
 			m.sendNativeHistograms = true
 
-			series := []record.RefSeries{
-				{
-					Ref:    chunks.HeadSeriesRef(0),
-					Labels: labels.FromStrings("__name__", "test_histogram"),
-				},
-			}
+			series := []record.RefSeries{{
+				Ref:    chunks.HeadSeriesRef(0),
+				Labels: labels.FromStrings("__name__", "test_histogram"),
+			}}
 			m.StoreSeries(series, 0)
-
-			histograms := hc.histogram
 
 			m.Start()
 			defer m.Stop()
 
 			initialDroppedConversionError := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues("nhcb_to_classic_conversion_error"))
 
-			require.True(t, m.AppendHistograms(histograms))
+			if !tc.isFloatHistogram {
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{{Ref: chunks.HeadSeriesRef(0), T: 1234567890, H: h}}))
+			} else {
+				require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{{Ref: chunks.HeadSeriesRef(0), T: 1234567890, FH: fh}}))
+			}
 
 			time.Sleep(2 * time.Second)
 
@@ -2970,47 +2780,10 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 			require.Equal(t, initialDroppedConversionError, finalDroppedConversionError, "No conversion errors should occur")
 
 			finalSamplesTotal := client_testutil.ToFloat64(m.metrics.samplesTotal)
-			require.Equal(t, float64(hc.SampleCount), finalSamplesTotal, "NHCB conversion should create classic histogram samples")
-			t.Logf("Total samples before conversion: %f", finalSamplesTotal)
+			finalHistogramsTotal := client_testutil.ToFloat64(m.metrics.histogramsTotal)
 
-			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal))
-		})
-	}
-	for _, fhc := range floatHistogramCases {
-		t.Run(fhc.name, func(t *testing.T) {
-			c := NewTestWriteClient(fhc.protoMsg)
-			cfg := testDefaultQueueConfig()
-			mcfg := config.DefaultMetadataConfig
-			cfg.MaxShards = 1
-
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, fhc.protoMsg, true)
-			m.sendNativeHistograms = true
-
-			series := []record.RefSeries{
-				{
-					Ref:    chunks.HeadSeriesRef(0),
-					Labels: labels.FromStrings("__name__", "test_histogram"),
-				},
-			}
-			m.StoreSeries(series, 0)
-
-			histograms := fhc.histogram
-
-			m.Start()
-			defer m.Stop()
-
-			initialDroppedConversionError := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues("nhcb_to_classic_conversion_error"))
-
-			require.True(t, m.AppendFloatHistograms(histograms))
-
-			time.Sleep(2 * time.Second)
-
-			finalDroppedConversionError := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues("nhcb_to_classic_conversion_error"))
-			require.Equal(t, initialDroppedConversionError, finalDroppedConversionError, "No conversion errors should occur")
-
-			finalSamplesTotal := client_testutil.ToFloat64(m.metrics.samplesTotal)
-			require.Equal(t, float64(fhc.SampleCount), finalSamplesTotal, "NHCB conversion should create classic histogram samples")
-			t.Logf("Total samples before conversion: %f", finalSamplesTotal)
+			require.Equal(t, tc.expectedSamplesCount, finalSamplesTotal, "Expected samples count mismatch")
+			require.Equal(t, tc.expectedHistogramsCount, finalHistogramsTotal, "Expected histograms count mismatch")
 
 			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal))
 		})
