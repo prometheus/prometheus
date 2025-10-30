@@ -1747,7 +1747,9 @@ func TestRuntimeRetentionConfigChange(t *testing.T) {
 	}
 
 	for _, m := range blocks {
-		createBlock(t, db.Dir(), genSeries(10, 10, m.MinTime, m.MaxTime))
+		createBlock(t, db.Dir(), genSeriesFromSampleGenerator(10, 10, m.MinTime, m.MaxTime, int64(time.Minute/time.Millisecond), func(ts int64) chunks.Sample {
+			return sample{t: ts, f: rand.Float64()}
+		}))
 	}
 
 	// Reload blocks and verify all are loaded.
@@ -1782,7 +1784,7 @@ func TestRuntimeRetentionConfigChange(t *testing.T) {
 
 	// Verify the remaining blocks are the newest ones.
 	require.Equal(t, nineHoursMs, actBlocks[0].meta.MinTime, "first remaining block should be within retention")
-	require.Equal(t, initialRetentionDuration, actBlocks[1].meta.MaxTime, "last remaining block should be the newest")
+	require.Equal(t, nineAndHalfHoursMs, actBlocks[1].meta.MinTime, "last remaining block should be the newest")
 
 	require.Positive(t, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "time retention count should be incremented")
 }

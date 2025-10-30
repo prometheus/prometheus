@@ -562,12 +562,41 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		settings.LookbackDelta = defaultLookbackDelta
 	}
 	interval := settings.LookbackDelta / 2
+
+	// Deduplicate target_info samples with the same labelset and timestamp across
+	// multiple resources in the same batch.
+	labelsHash := lbls.Hash()
+
+	var key targetInfoKey
 	for timestamp := earliestTimestamp; timestamp.Before(latestTimestamp); timestamp = timestamp.Add(interval) {
-		if err := c.appender.AppendSample(lbls, meta, 0, timestamp.UnixMilli(), float64(1), nil); err != nil {
+		timestampMs := timestamp.UnixMilli()
+		key = targetInfoKey{
+			labelsHash: labelsHash,
+			timestamp:  timestampMs,
+		}
+		if _, exists := c.seenTargetInfo[key]; exists {
+			// Skip duplicate.
+			continue
+		}
+
+		c.seenTargetInfo[key] = struct{}{}
+		if err := c.appender.AppendSample(lbls, meta, 0, timestampMs, float64(1), nil); err != nil {
 			return err
 		}
 	}
-	return c.appender.AppendSample(lbls, meta, 0, latestTimestamp.UnixMilli(), float64(1), nil)
+
+	// Append the final sample at latestTimestamp.
+	finalTimestampMs := latestTimestamp.UnixMilli()
+	key = targetInfoKey{
+		labelsHash: labelsHash,
+		timestamp:  finalTimestampMs,
+	}
+	if _, exists := c.seenTargetInfo[key]; exists {
+		return nil
+	}
+
+	c.seenTargetInfo[key] = struct{}{}
+	return c.appender.AppendSample(lbls, meta, 0, finalTimestampMs, float64(1), nil)
 }
 
 // convertTimeStamp converts OTLP timestamp in ns to timestamp in ms.

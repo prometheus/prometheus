@@ -55,6 +55,17 @@ import (
 
 const defaultFlushDeadline = 1 * time.Minute
 
+func newHighestTimestampMetric() *maxTimestamp {
+	return &maxTimestamp{
+		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "highest_timestamp_in_seconds",
+			Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch. Initialized to 0 when no data has been received yet",
+		}),
+	}
+}
+
 func TestBasicContentNegotiation(t *testing.T) {
 	t.Parallel()
 	queueConfig := config.DefaultQueueConfig
@@ -314,7 +325,7 @@ func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, pro
 func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType) *QueueManager {
 	dir := t.TempDir()
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), nil, false, false, false, protoMsg)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg)
 
 	return m
 }
@@ -770,7 +781,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		}
 	)
 
-	m := NewQueueManager(metrics, nil, nil, nil, "", cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), nil, false, false, false, remoteapi.WriteV1MessageType)
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType)
 	m.StoreSeries(fakeSeries, 0)
 
 	// Attempt to samples while the manager is running. We immediately stop the
@@ -1459,7 +1470,7 @@ func BenchmarkStoreSeries(b *testing.B) {
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
 
-				m := NewQueueManager(metrics, nil, nil, nil, dir, cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), nil, false, false, false, remoteapi.WriteV1MessageType)
+				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType)
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -1559,8 +1570,9 @@ func TestCalculateDesiredShards(t *testing.T) {
 	addSamples := func(s int64, ts time.Duration) {
 		pendingSamples += s
 		samplesIn.incr(s)
+		samplesIn.tick()
 
-		m.metrics.highestTimestamp.Set(float64(startedAt.Add(ts).Unix()))
+		m.highestRecvTimestamp.Set(float64(startedAt.Add(ts).Unix()))
 	}
 
 	// helper function for sending samples.
@@ -1617,6 +1629,7 @@ func TestCalculateDesiredShardsDetail(t *testing.T) {
 		prevShards      int
 		dataIn          int64 // Quantities normalised to seconds.
 		dataOut         int64
+		dataDropped     int64
 		dataOutDuration float64
 		backlog         float64
 		expectedShards  int
@@ -1763,9 +1776,11 @@ func TestCalculateDesiredShardsDetail(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m.numShards = tc.prevShards
 			forceEMWA(samplesIn, tc.dataIn*int64(shardUpdateDuration/time.Second))
+			samplesIn.tick()
 			forceEMWA(m.dataOut, tc.dataOut*int64(shardUpdateDuration/time.Second))
+			forceEMWA(m.dataDropped, tc.dataDropped*int64(shardUpdateDuration/time.Second))
 			forceEMWA(m.dataOutDuration, int64(tc.dataOutDuration*float64(shardUpdateDuration)))
-			m.metrics.highestTimestamp.value = tc.backlog // Not Set() because it can only increase value.
+			m.highestRecvTimestamp.value = tc.backlog // Not Set() because it can only increase value.
 
 			require.Equal(t, tc.expectedShards, m.calculateDesiredShards())
 		})

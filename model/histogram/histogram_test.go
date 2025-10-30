@@ -1609,6 +1609,7 @@ func TestHistogramValidation(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			if err := tc.h.Validate(); tc.errMsg != "" {
+				require.ErrorAs(t, err, new(Error))
 				require.EqualError(t, err, tc.errMsg)
 			} else {
 				require.NoError(t, err)
@@ -1619,6 +1620,7 @@ func TestHistogramValidation(t *testing.T) {
 
 			fh := tc.h.ToFloat(nil)
 			if err := fh.Validate(); tc.errMsg != "" {
+				require.ErrorAs(t, err, new(Error))
 				require.EqualError(t, err, tc.errMsg)
 			} else {
 				require.NoError(t, err)
