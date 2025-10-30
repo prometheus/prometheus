@@ -49,6 +49,7 @@ var (
 	// NOTE(bwplotka): This can be both an instrumentation failure or commonly expected
 	// behaviour, and we currently don't have a way to determine this. As a result
 	// it's recommended to ignore this error for now.
+	// TODO(bwplotka): Rename CT to ST/start timestamp.
 	ErrOutOfOrderCT      = errors.New("created timestamp out of order, ignoring")
 	ErrCTNewerThanSample = errors.New("CT is newer or the same as sample's timestamp, ignoring")
 )
@@ -351,6 +352,7 @@ type HistogramAppender interface {
 	// to AppendHistogramCTZeroSample() at any point.
 	//
 	// If the reference is 0 it must not be used for caching.
+	// TODO(bwplotka): Rename CT to ST/start timestamp.
 	AppendHistogramCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
 }
 
@@ -367,6 +369,7 @@ type MetadataUpdater interface {
 }
 
 // CreatedTimestampAppender provides an interface for appending CT to storage.
+// TODO(bwplotka): Rename to ST/start timestamp.
 type CreatedTimestampAppender interface {
 	// AppendCTZeroSample adds synthetic zero sample for the given ct timestamp,
 	// which will be associated with given series, labels and the incoming
