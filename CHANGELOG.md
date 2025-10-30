@@ -4,6 +4,13 @@
 
 * [FEATURE] Templates: Add urlQueryEscape to template functions. #17403
 
+## 3.7.3 / 2025-10-29
+
+* [BUGFIX] UI: Revert changed (and breaking) redirect behavior for `-web.external-url` if `-web.route-prefix` is configured, which was introduced in #17240. #17389
+* [BUGFIX] Fix federation of some native histograms. #17299 #17409
+* [BUGFIX] promtool: `check config` would fail when `--lint=none` flag was set. #17399 #17414
+* [BUGFIX] Remote-write: fix a deadlock in the queue resharding logic that can lead to suboptimal queue behavior. #17412
+
 ## 3.7.2 / 2025-10-22
 
 * [BUGFIX] AWS SD: Fix AWS SDK v2 credentials handling for EC2 and Lightsail discovery. #17355
