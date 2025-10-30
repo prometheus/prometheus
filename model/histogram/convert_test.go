@@ -136,7 +136,7 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 			},
 		},
 		{
-			name: "mismatched bucket lengths with more filled bucket count",
+			name: "extra bucket counts than custom values",
 			nhcb: &Histogram{
 				CustomValues:    []float64{1, 2},
 				PositiveBuckets: []int64{10, 20, 30},
@@ -145,8 +145,14 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 				Sum:             100.0,
 				Schema:          CustomBucketsSchema,
 			},
-			labels:    labels.FromStrings("__name__", "test_metric_bucket"),
-			expectErr: true,
+			labels: labels.FromStrings("__name__", "test_metric"),
+			expected: []sample{
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "1.0"), val: 10},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "2.0"), val: 40},
+				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "+Inf"), val: 100},
+				{lset: labels.FromStrings("__name__", "test_metric_count"), val: 100},
+				{lset: labels.FromStrings("__name__", "test_metric_sum"), val: 100},
+			},
 		},
 		{
 			name: "mismatched bucket lengths with less filled bucket count",
@@ -234,7 +240,7 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 					{1, 2},
 				},
 				PositiveBuckets: []int64{1, 2, 3, 4, 5}, // 1 -> 3 -> 3 -> 3 -> 3 -> 3 -> 6 ->6 ->10 -> 15
-				Count:           53,                     // 1 -> 4 -> 7 -> 10 -> 13 -> 16 -> 22 -> 28 -> 38 -> 53
+				Count:           35,                     // 1 -> 4 -> 7 -> 10 -> 13 -> 16 -> 22 -> 28 -> 38 -> 53
 				Sum:             123,
 			},
 			labels: labels.FromStrings("__name__", "test_metric"),
@@ -250,7 +256,7 @@ func TestConvertNHCBToClassicHistogram(t *testing.T) {
 				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "9.0"), val: 38},
 				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "10.0"), val: 53},
 				{lset: labels.FromStrings("__name__", "test_metric_bucket", "le", "+Inf"), val: 53},
-				{lset: labels.FromStrings("__name__", "test_metric_count"), val: 53},
+				{lset: labels.FromStrings("__name__", "test_metric_count"), val: 35},
 				{lset: labels.FromStrings("__name__", "test_metric_sum"), val: 123},
 			},
 		},

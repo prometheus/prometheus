@@ -62,10 +62,15 @@ global:
 
   # The protocols to negotiate during a scrape with the client.
   # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
-  # OpenMetricsText1.0.0, PrometheusText0.0.4.
-  # The default value changes to [ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ]
-  # when native_histogram feature flag is set.
-  [ scrape_protocols: [<string>, ...] | default = [ OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ] ]
+  # OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
+  # If left unset both here and in an individual scrape config, the
+  # negotiation order used in that scrape config depends on the effective
+  # value of scrape_native_histograms for that scrape config.
+  # If scrape_native_histograms is false, the order is
+  # [ OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText1.0.0, PrometheusText0.0.4 ].
+  # If scrape_native_histograms is true, the order is
+  # [ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText1.0.0, PrometheusText0.0.4 ].
+  [ scrape_protocols: [<string>, ...] ]
 
   # How frequently to evaluate rules.
   [ evaluation_interval: <duration> | default = 1m ]
@@ -138,14 +143,57 @@ global:
   # and underscores.
   [ metric_name_validation_scheme: <string> | default "utf8" ]
 
-  # Specifies whether to convert all scraped classic histograms into native
-  # histograms with custom buckets.
-  [ convert_classic_histograms_to_nhcb: <bool> | default = false]
+  # If true, native histograms exposed by a target are recognized during
+  # scraping and ingested as such. If false, any native parts of histograms
+  # are ignored and only the classic parts are recognized (possibly as
+  # a classic histogram with only the +Inf buckets if no explicit classic
+  # buckets are part of the histogram).
+  [ scrape_native_histograms: <bool> | default = false ]
 
-  # Specifies whether to scrape a classic histogram, even if it is also exposed as a native
-  # histogram (has no effect without --enable-feature=native-histograms).
+  # Specifies whether to convert scraped classic histograms into native
+  # histograms with custom buckets.
+  [ convert_classic_histograms_to_nhcb: <bool> | default = false ]
+
+  # Specifies whether to additionally scrape the classic parts of a histogram,
+  # even if it is also exposed with native parts or it is converted into a
+  # native histogram with custom buckets.
   [ always_scrape_classic_histograms: <boolean> | default = false ]
 
+  # The following explains the various combinations of the last three options
+  # in various exposition cases.
+  #
+  # CASE 1: A histogram is solely exposed as a classic histogram. (Note that
+  # this also applies if the used scrape protocol (also see the
+  # scrape_protocols setting) does not support native histograms.) In this
+  # case, the scrape_native_histograms setting has no effect. If
+  # convert_classic_histograms_to_nhcb is false, the histogram is ingested as
+  # a classic histograms. If convert_classic_histograms_to_nhcb is true, the
+  # histograms is converted to an NHCB. In this case, 
+  # always_scrape_classic_histograms determines whether it is also ingested
+  # as a classic histograms or not.
+  #
+  # CASE 2: A histogram is solely exposed as a native histogram, i.e. it has
+  # no classic buckets except the optional +Inf bucket but it is marked as a
+  # native histogram (by some "native parts", at the very least by a no-op
+  # span). If scrape_native_histograms is false, this case is handled like case
+  # 1, but the resulting classic histogram or NHCB only has a sole bucket, the
+  # +Inf bucket. If scrape_native_histograms is true, however, the histogram is
+  # recognized as a pure native histogram and ingested as such. There will be
+  # no classic histgram ingested, no matter what 
+  # always_scrape_classic_histograms is set to, and there will be no
+  # conversion to an NHCB, no matter what convert_classic_histograms_to_nhcb
+  # is set to.
+  #
+  # CASE 3: A histogram is exposed as both a native and a classic histogram,
+  # i.e. it has "native parts" (at the very least a no-op span) and it has at
+  # least one classic bucket that is not the +Inf bucket. If
+  # scrape_native_histograms is false, this case is handled like case 1. The
+  # native parts are ignored, and there will be either a classic histogram, an
+  # NHCB, or both. If scrape_native_histograms is true, the histogram is
+  # ingested as a native histogram. There will be no NHCB, no matter what
+  # convert_classic_histograms_to_nhcb is set to (it would collide with the
+  # actual native histogram). However, there will be a classic histogram if (and
+  # only if) always_scrape_classic_histograms is set to true.
 
 runtime:
   # Configure the Go garbage collector GOGC parameter
@@ -222,6 +270,15 @@ otlp:
   # Enables promotion of OTel scope metadata (i.e. name, version, schema URL, and attributes) to metric labels.
   # This is disabled by default for backwards compatibility, but according to OTel spec, scope metadata _should_ be identifying, i.e. translated to metric labels.
   [ promote_scope_metadata: <boolean> | default = false ]
+  # Controls whether to enable prepending of 'key_' to labels starting with '_'.
+  # Reserved labels starting with '__' are not modified.
+  # This is only relevant when translation_strategy uses underscore escaping
+  # (e.g., "UnderscoreEscapingWithSuffixes" or "UnderscoreEscapingWithoutSuffixes").
+  [ label_name_underscore_sanitization: <boolean> | default = true ]
+  # Enables preserving of multiple consecutive underscores in label names when
+  # translation_strategy uses underscore escaping. When true (default), multiple
+  # consecutive underscores are preserved during label name sanitization.
+  [ label_name_preserve_multiple_underscores: <boolean> | default = true ]
 
 # Settings related to the remote read feature.
 remote_read:
@@ -263,18 +320,18 @@ job_name: <job_name>
 # The protocols to negotiate during a scrape with the client.
 # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
 # OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
-[ scrape_protocols: [<string>, ...] | default = <global_config.scrape_protocols> ]
+# If not set in the global config, the default value depends on the 
+# setting of scrape_native_histograms. If false, it is
+# [ OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText1.0.0, PrometheusText0.0.4 ].
+# If true, it is
+# [ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText1.0.0, PrometheusText0.0.4 ].
+[ scrape_protocols: [<string>, ...] | default = <dynamic> ]
 
 # Fallback protocol to use if a scrape returns blank, unparsable, or otherwise
 # invalid Content-Type.
 # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
 # OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
 [ fallback_scrape_protocol: <string> ]
-
-# Whether to scrape a classic histogram, even if it is also exposed as a native
-# histogram (has no effect without --enable-feature=native-histograms).
-[ always_scrape_classic_histograms: <boolean> |
-default = <global.always_scrape_classic_histograms> ]
 
 # The HTTP resource path on which to fetch metrics from targets.
 [ metrics_path: <path> | default = /metrics ]
@@ -570,10 +627,25 @@ metric_relabel_configs:
 # schema 8, but might change in the future).
 [ native_histogram_min_bucket_factor: <float> | default = 0 ]
 
+# If true, native histograms exposed by a target are recognized during
+# scraping and ingested as such. If false, any native parts of histograms
+# are ignored and only the classic parts are recognized (possibly as
+# a classic histogram with only the +Inf buckets if no explicit classic
+# buckets are part of the histogram).
+[ scrape_native_histograms: <bool> | default = <global.scrape_native_histograms> ]
+
 # Specifies whether to convert classic histograms into native histograms with
-# custom buckets (has no effect without --enable-feature=native-histograms).
-[ convert_classic_histograms_to_nhcb: <bool> | default =
-<global.convert_classic_histograms_to_nhcb>]
+# custom buckets.
+[ convert_classic_histograms_to_nhcb: <bool> | default = <global.convert_classic_histograms_to_nhcb>]
+
+# Specifies whether to additionally scrape the classic parts of a histogram,
+# even if it is also exposed with native parts or it is converted into a
+# native histogram with custom buckets.
+[ always_scrape_classic_histograms: <boolean> | default = <global.always_scrape_classic_histograms> ]
+
+# See global configuration above for further explanations of how the last three
+# options combine their effects.
+
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.
@@ -3164,6 +3236,26 @@ with this feature.
 # the agent's WAL to accept out-of-order samples that fall within the specified time window relative
 # to the timestamp of the last appended sample for the same series.
 [ out_of_order_time_window: <duration> | default = 0s ]
+
+
+# Configures data retention settings for TSDB.
+#
+# Note: When retention is changed at runtime, the retention
+# settings are updated immediately, but block deletion based on the new retention policy
+# occurs during the next block reload cycle. This happens automatically within 1 minute
+# or when a compaction completes, whichever comes first.
+[ retention: <retention> ] :
+  # How long to retain samples in storage. If neither this option nor the size option
+  # is set, the retention time defaults to 15d. Units Supported: y, w, d, h, m, s, ms.
+  # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.time.
+  [ time: <duration> | default = 15d ]
+
+  # Maximum number of bytes that can be stored for blocks. A unit is required,
+  # supported units: B, KB, MB, GB, TB, PB, EB. Ex: "512MB". Based on powers-of-2, so 1KB is 1024B.
+  # If set to 0 or not set, size-based retention is disabled.
+  # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.size.
+  [ size: <size> | default = 0 ]
+
 ```
 
 ### `<exemplars>`

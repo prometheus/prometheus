@@ -476,13 +476,15 @@ type rulesLintConfig struct {
 }
 
 func newRulesLintConfig(stringVal string, fatal, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) rulesLintConfig {
-	items := strings.Split(stringVal, ",")
 	ls := rulesLintConfig{
 		fatal:                fatal,
 		ignoreUnknownFields:  ignoreUnknownFields,
 		nameValidationScheme: nameValidationScheme,
 	}
-	for _, setting := range items {
+	if stringVal == "" {
+		return ls
+	}
+	for _, setting := range strings.Split(stringVal, ",") {
 		switch setting {
 		case lintOptionAll:
 			ls.all = true
@@ -534,9 +536,7 @@ func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, nam
 		rulesOptions = nil
 	}
 
-	if len(rulesOptions) > 0 {
-		c.rulesLintConfig = newRulesLintConfig(strings.Join(rulesOptions, ","), fatal, ignoreUnknownFields, nameValidationScheme)
-	}
+	c.rulesLintConfig = newRulesLintConfig(strings.Join(rulesOptions, ","), fatal, ignoreUnknownFields, nameValidationScheme)
 
 	return c
 }

@@ -497,14 +497,14 @@ func (p *parser) mergeMaps(left, right *map[string]any) (ret *map[string]any) {
 
 func (p *parser) histogramsIncreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
 	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
-		res, _, err := a.Add(b)
+		res, _, _, err := a.Add(b)
 		return res, err
 	})
 }
 
 func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
 	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
-		res, _, err := a.Sub(b)
+		res, _, _, err := a.Sub(b)
 		return res, err
 	})
 }
@@ -803,11 +803,14 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 				p.addParseErrf(node.PositionRange(), "expected type %s in %s, got %s", DocumentedType(ValueTypeVector), fmt.Sprintf("call to function %q", n.Func.Name), DocumentedType(n.Args[1].Type()))
 			}
 			// Check the vector selector in the input doesn't contain a metric name
-			if n.Args[1].(*VectorSelector).Name != "" {
+			if vs, ok := n.Args[1].(*VectorSelector); ok && vs.Name != "" {
 				p.addParseErrf(n.Args[1].PositionRange(), "expected label selectors only, got vector selector instead")
+			} else if ok {
+				// Set Vector Selector flag to bypass empty matcher check
+				vs.BypassEmptyMatcherCheck = true
+			} else {
+				p.addParseErrf(n.Args[1].PositionRange(), "expected label selectors only")
 			}
-			// Set Vector Selector flag to bypass empty matcher check
-			n.Args[1].(*VectorSelector).BypassEmptyMatcherCheck = true
 		}
 
 		for i, arg := range n.Args {

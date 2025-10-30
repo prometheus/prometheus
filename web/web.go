@@ -38,6 +38,7 @@ import (
 	"github.com/alecthomas/units"
 	"github.com/grafana/regexp"
 	"github.com/mwitkow/go-conntrack"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	io_prometheus_client "github.com/prometheus/client_model/go"
@@ -296,7 +297,7 @@ type Options struct {
 	EnableTypeAndUnitLabels    bool
 	AppName                    string
 
-	AcceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg
+	AcceptRemoteWriteProtoMsgs remoteapi.MessageTypes
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -417,12 +418,12 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	readyf := h.testReady
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, path.Join(o.RoutePrefix, homePage), http.StatusFound)
+		http.Redirect(w, r, path.Join(o.ExternalURL.Path, homePage), http.StatusFound)
 	})
 
 	if !o.UseOldUI {
 		router.Get("/graph", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, path.Join(o.RoutePrefix, "/query?"+r.URL.RawQuery), http.StatusFound)
+			http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/query?"+r.URL.RawQuery), http.StatusFound)
 		})
 	}
 

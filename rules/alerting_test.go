@@ -85,6 +85,8 @@ func TestAlertingRuleState(t *testing.T) {
 	for i, test := range tests {
 		rule := NewAlertingRule(test.name, nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
 		rule.active = test.active
+		// Set evaluation timestamp to simulate that the rule has been evaluated
+		rule.SetEvaluationTimestamp(time.Now())
 		got := rule.State()
 		require.Equal(t, test.want, got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
 	}

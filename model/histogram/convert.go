@@ -18,14 +18,18 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/model/labels"
 )
 
 // ConvertNHCBToClassic converts Native Histogram Custom Buckets (NHCB) to classic histogram series.
 // This conversion is needed in various scenarios where users need to get NHCB back to classic histogram format,
 // such as Remote Write v1 for external system compatibility and migration use cases.
+//
+// When calling this function, caller must ensure that provided nhcb is valid NHCB histogram.
 func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Builder, emitSeriesFn func(labels labels.Labels, value float64) error) error {
-	baseName := lset.Get("__name__")
+	baseName := lset.Get(model.MetricNameLabel)
 	if baseName == "" {
 		return errors.New("metric name label '__name__' is missing")
 	}
@@ -50,21 +54,14 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 			return errors.New("unsupported histogram schema, not a NHCB")
 		}
 
-		filledBuckets := 0
-		totalBuckets := 0
-		for _, span := range h.PositiveSpans {
-			filledBuckets += int(span.Length)
-			totalBuckets += int(span.Offset) + int(span.Length)
-		}
-		if filledBuckets != len(h.PositiveBuckets) {
-			return errors.New("mismatched lengths of positive buckets and spans")
-		}
-		if totalBuckets > len(h.CustomValues) {
-			return errors.New("mismatched lengths of custom values and buckets from span calculation")
+		// Validate the histogram before conversion.
+		// The caller must ensure that the provided histogram is valid NHCB.
+		if h.Validate() != nil {
+			return errors.New(h.Validate().Error())
 		}
 
 		customValues = h.CustomValues
-		positiveBuckets = make([]float64, len(customValues))
+		positiveBuckets = make([]float64, len(customValues)+1)
 
 		// Histograms are in delta format so we first bring them to absolute format.
 		acc := int64(0)
@@ -87,21 +84,13 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 			return errors.New("unsupported histogram schema, not a NHCB")
 		}
 
-		filledBuckets := 0
-		totalBuckets := 0
-		for _, s := range h.PositiveSpans {
-			filledBuckets += int(s.Length)
-			totalBuckets += int(s.Offset) + int(s.Length)
+		// Validate the histogram before conversion.
+		// The caller must ensure that the provided histogram is valid NHCB.
+		if h.Validate() != nil {
+			return errors.New(h.Validate().Error())
 		}
-		if filledBuckets != len(h.PositiveBuckets) {
-			return errors.New("mismatched lengths of positive buckets and spans")
-		}
-		if totalBuckets > len(h.CustomValues) {
-			return errors.New("mismatched lengths of custom values and buckets from span calculation")
-		}
-
 		customValues = h.CustomValues
-		positiveBuckets = make([]float64, len(customValues))
+		positiveBuckets = make([]float64, len(customValues)+1)
 
 		for _, span := range h.PositiveSpans {
 			// Since Float Histogram is already in absolute format we should
@@ -120,39 +109,34 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 		return fmt.Errorf("unsupported histogram type: %T", h)
 	}
 
-	// Each customValue corresponds to a positive bucket (aligned with the "le" label).
-	// The lengths of customValues and positiveBuckets must match to avoid inconsistencies
-	// while mapping bucket counts to their upper bounds.
-	if len(customValues) != len(positiveBuckets) {
-		return errors.New("mismatched lengths of custom values and positive buckets")
-	}
-
 	currCount := float64(0)
 	for i, val := range customValues {
 		currCount += positiveBuckets[i]
 		lsetBuilder.Reset(lset)
-		lsetBuilder.Set("__name__", baseName+"_bucket")
-		lsetBuilder.Set("le", labels.FormatOpenMetricsFloat(val))
+		lsetBuilder.Set(model.MetricNameLabel, baseName+"_bucket")
+		lsetBuilder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(val))
 		if err := emitSeriesFn(lsetBuilder.Labels(), currCount); err != nil {
 			return err
 		}
 	}
 
+	currCount += positiveBuckets[len(positiveBuckets)-1]
+
 	lsetBuilder.Reset(lset)
-	lsetBuilder.Set("__name__", baseName+"_bucket")
-	lsetBuilder.Set("le", labels.FormatOpenMetricsFloat(math.Inf(1)))
+	lsetBuilder.Set(model.MetricNameLabel, baseName+"_bucket")
+	lsetBuilder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(math.Inf(1)))
 	if err := emitSeriesFn(lsetBuilder.Labels(), currCount); err != nil {
 		return err
 	}
 
 	lsetBuilder.Reset(lset)
-	lsetBuilder.Set("__name__", baseName+"_count")
+	lsetBuilder.Set(model.MetricNameLabel, baseName+"_count")
 	if err := emitSeriesFn(lsetBuilder.Labels(), count); err != nil {
 		return err
 	}
 
 	lsetBuilder.Reset(lset)
-	lsetBuilder.Set("__name__", baseName+"_sum")
+	lsetBuilder.Set(model.MetricNameLabel, baseName+"_sum")
 	if err := emitSeriesFn(lsetBuilder.Labels(), sum); err != nil {
 		return err
 	}

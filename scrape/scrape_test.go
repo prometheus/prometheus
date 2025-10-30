@@ -1366,8 +1366,7 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	target := &Target{
 		labels: labels.FromStrings("pod_label_invalid_012\xff", "test"),
@@ -1398,8 +1397,7 @@ func TestScrapeLoopFailLegacyUnderUTF8(t *testing.T) {
 	// legacy.
 	s := teststorage.New(t)
 	defer s.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	sl := newBasicScrapeLoop(t, ctx, &testScraper{}, s.Appender, 0)
 	sl.validationScheme = model.LegacyValidation
@@ -1544,7 +1542,7 @@ func BenchmarkScrapeLoopAppend(b *testing.B) {
 
 					b.ReportAllocs()
 					b.ResetTimer()
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						ts = ts.Add(time.Second)
 						_, _, _, err := sl.append(slApp, bcase.parsable, bcase.contentType, ts)
 						if err != nil {
@@ -2190,14 +2188,13 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 	app := &bucketLimitAppender{Appender: resApp, limit: 2}
 
 	sl := newBasicScrapeLoop(t, context.Background(), nil, func(context.Context) storage.Appender { return app }, 0)
-	sl.enableNativeHistogramIngestion = true
+	sl.enableNativeHistogramScraping = true
 	sl.sampleMutator = func(l labels.Labels) labels.Labels {
 		if l.Has("deleteme") {
 			return labels.EmptyLabels()
 		}
 		return l
 	}
-	sl.sampleLimit = app.limit
 
 	metric := dto.Metric{}
 	err := sl.metrics.targetScrapeNativeHistogramBucketLimit.Write(&metric)
@@ -2931,6 +2928,11 @@ metric: <
 >
 
 `,
+			floats: []floatSample{
+				{metric: labels.FromStrings("__name__", "test_histogram_count"), t: 1234568, f: 175},
+				{metric: labels.FromStrings("__name__", "test_histogram_sum"), t: 1234568, f: 0.0008280461746287094},
+				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "+Inf"), t: 1234568, f: 175},
+			},
 		},
 	}
 
@@ -2943,7 +2945,7 @@ metric: <
 			}
 
 			sl := newBasicScrapeLoop(t, context.Background(), nil, func(context.Context) storage.Appender { return app }, 0)
-			sl.enableNativeHistogramIngestion = test.enableNativeHistogramsIngestion
+			sl.enableNativeHistogramScraping = test.enableNativeHistogramsIngestion
 			sl.sampleMutator = func(l labels.Labels) labels.Labels {
 				return mutateSampleLabels(l, discoveryLabels, false, nil)
 			}
@@ -3277,8 +3279,8 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 					"Expected Accept header to prefer application/vnd.google.protobuf.")
 			}
 
-			contentTypes := strings.Split(accept, ",")
-			for _, ct := range contentTypes {
+			contentTypes := strings.SplitSeq(accept, ",")
+			for ct := range contentTypes {
 				match := qValuePattern.FindStringSubmatch(ct)
 				require.Len(t, match, 3)
 				qValue, err := strconv.ParseFloat(match[1], 64)
@@ -4100,8 +4102,7 @@ func TestScrapeReportLimit(t *testing.T) {
 		// scrape have been inserted in the database.
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
 	require.NoError(t, err)
 	defer q.Close()
@@ -4155,8 +4156,7 @@ func TestScrapeUTF8(t *testing.T) {
 		// scrape have been inserted in the database.
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
 	require.NoError(t, err)
 	defer q.Close()
@@ -4391,8 +4391,7 @@ test_summary_count 199
 	case <-scrapedTwice:
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	q, err := simpleStorage.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
 	require.NoError(t, err)
 	defer q.Close()
@@ -4837,7 +4836,7 @@ metric: <
 				sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return simpleStorage.Appender(ctx) }, 0)
 				sl.alwaysScrapeClassicHist = tc.alwaysScrapeClassicHistograms
 				sl.convertClassicHistToNHCB = tc.convertClassicHistToNHCB
-				sl.enableNativeHistogramIngestion = true
+				sl.enableNativeHistogramScraping = true
 				app := simpleStorage.Appender(context.Background())
 
 				var content []byte
@@ -4865,8 +4864,7 @@ metric: <
 				sl.append(app, content, contentType, time.Now())
 				require.NoError(t, app.Commit())
 
-				ctx, cancel := context.WithCancel(context.Background())
-				defer cancel()
+				ctx := t.Context()
 				q, err := simpleStorage.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
 				require.NoError(t, err)
 				defer q.Close()
@@ -4978,8 +4976,7 @@ disk_usage_bytes 456
 	case <-scrapedTwice:
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	q, err := simpleStorage.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
 	require.NoError(t, err)
 	defer q.Close()
@@ -5244,7 +5241,7 @@ func BenchmarkTargetScraperGzip(b *testing.B) {
 				timeout: time.Second,
 			}
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				_, err = ts.scrape(context.Background())
 				require.NoError(b, err)
 			}
@@ -5356,6 +5353,7 @@ global:
   scrape_timeout: 25ms
 scrape_configs:
   - job_name: test
+    scrape_native_histograms: true
     %s
     static_configs:
       - targets: [%s]
@@ -5363,10 +5361,9 @@ scrape_configs:
 
 	s := teststorage.New(t)
 	defer s.Close()
-	s.EnableNativeHistograms()
 	reg := prometheus.NewRegistry()
 
-	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond), EnableNativeHistogramsIngestion: true}, nil, nil, s, reg)
+	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)}, nil, nil, s, reg)
 	require.NoError(t, err)
 	cfg, err := config.Load(configStr, promslog.NewNopLogger())
 	require.NoError(t, err)

@@ -42,6 +42,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -86,7 +87,6 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
 	if opts == nil {
 		opts = DefaultOptions()
 	}
-	opts.EnableNativeHistograms = true
 
 	if len(rngs) == 0 {
 		db, err = Open(tmpdir, nil, nil, opts, nil)
@@ -1718,6 +1718,75 @@ func TestSizeRetentionMetric(t *testing.T) {
 		actMaxBytes := int64(prom_testutil.ToFloat64(db.metrics.maxBytes))
 		require.Equal(t, c.expMaxBytes, actMaxBytes, "metric retention limit bytes mismatch")
 	}
+}
+
+// TestRuntimeRetentionConfigChange tests that retention configuration can be
+// changed at runtime via ApplyConfig and that the retention logic properly
+// deletes blocks when retention is shortened. This test also ensures race-free
+// concurrent access to retention settings.
+func TestRuntimeRetentionConfigChange(t *testing.T) {
+	const (
+		initialRetentionDuration = int64(10 * time.Hour / time.Millisecond) // 10 hours
+		shorterRetentionDuration = int64(1 * time.Hour / time.Millisecond)  // 1 hour
+	)
+
+	db := openTestDB(t, &Options{
+		RetentionDuration: initialRetentionDuration,
+	}, []int64{100})
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	nineHoursMs := int64(9 * time.Hour / time.Millisecond)
+	nineAndHalfHoursMs := int64((9*time.Hour + 30*time.Minute) / time.Millisecond)
+	blocks := []*BlockMeta{
+		{MinTime: 0, MaxTime: 100},                                       // 10 hours old (beyond new retention)
+		{MinTime: 100, MaxTime: 200},                                     // 9.9 hours old (beyond new retention)
+		{MinTime: nineHoursMs, MaxTime: nineAndHalfHoursMs},              // 1 hour old (within new retention)
+		{MinTime: nineAndHalfHoursMs, MaxTime: initialRetentionDuration}, // 0.5 hours old (within new retention)
+	}
+
+	for _, m := range blocks {
+		createBlock(t, db.Dir(), genSeriesFromSampleGenerator(10, 10, m.MinTime, m.MaxTime, int64(time.Minute/time.Millisecond), func(ts int64) chunks.Sample {
+			return sample{t: ts, f: rand.Float64()}
+		}))
+	}
+
+	// Reload blocks and verify all are loaded.
+	require.NoError(t, db.reloadBlocks())
+	require.Len(t, db.Blocks(), len(blocks), "expected all blocks to be loaded initially")
+
+	cfg := &config.Config{
+		StorageConfig: config.StorageConfig{
+			TSDBConfig: &config.TSDBConfig{
+				Retention: &config.TSDBRetentionConfig{
+					Time: model.Duration(shorterRetentionDuration),
+				},
+			},
+		},
+	}
+
+	require.NoError(t, db.ApplyConfig(cfg), "ApplyConfig should succeed")
+
+	actualRetention := db.getRetentionDuration()
+	require.Equal(t, shorterRetentionDuration, actualRetention, "retention duration should be updated")
+
+	expectedRetentionSeconds := (time.Duration(shorterRetentionDuration) * time.Millisecond).Seconds()
+	actualRetentionSeconds := prom_testutil.ToFloat64(db.metrics.retentionDuration)
+	require.Equal(t, expectedRetentionSeconds, actualRetentionSeconds, "retention duration metric should be updated")
+
+	require.NoError(t, db.reloadBlocks())
+
+	// Verify that blocks beyond the new retention were deleted.
+	// We expect only the last 2 blocks to remain (those within 1 hour).
+	actBlocks := db.Blocks()
+	require.Len(t, actBlocks, 2, "expected old blocks to be deleted after retention change")
+
+	// Verify the remaining blocks are the newest ones.
+	require.Equal(t, nineHoursMs, actBlocks[0].meta.MinTime, "first remaining block should be within retention")
+	require.Equal(t, nineAndHalfHoursMs, actBlocks[1].meta.MinTime, "last remaining block should be the newest")
+
+	require.Positive(t, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "time retention count should be incremented")
 }
 
 func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
@@ -4517,7 +4586,6 @@ func testOOOWALWrite(t *testing.T,
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
-	db.EnableNativeHistograms()
 
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
@@ -4934,7 +5002,6 @@ func TestMultipleEncodingsCommitOrder(t *testing.T) {
 
 	db := openTestDB(t, opts, nil)
 	db.DisableCompactions()
-	db.EnableNativeHistograms()
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -5087,7 +5154,6 @@ func testOOOCompaction(t *testing.T, scenario sampleTypeScenario, addExtraSample
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.EnableNativeHistograms = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -5295,7 +5361,6 @@ func testOOOCompactionWithNormalCompaction(t *testing.T, scenario sampleTypeScen
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
 	db.DisableCompactions() // We want to manually call it.
-	db.EnableNativeHistograms()
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
 	})
@@ -5403,12 +5468,10 @@ func testOOOCompactionWithDisabledWriteLog(t *testing.T, scenario sampleTypeScen
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.WALSegmentSize = -1 // disabled WAL and WBL
-	opts.EnableNativeHistograms = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
 	db.DisableCompactions() // We want to manually call it.
-	db.EnableNativeHistograms()
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
 	})
@@ -5515,7 +5578,6 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T, scenario sa
 	opts.OutOfOrderCapMax = 10
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.EnableMemorySnapshotOnShutdown = true
-	opts.EnableNativeHistograms = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -5880,7 +5942,6 @@ func testQuerierOOOQuery(t *testing.T,
 			opts.OutOfOrderCapMax = tc.oooCap
 			db := openTestDB(t, opts, nil)
 			db.DisableCompactions()
-			db.EnableNativeHistograms()
 			defer func() {
 				require.NoError(t, db.Close())
 			}()
@@ -6210,7 +6271,6 @@ func testChunkQuerierOOOQuery(t *testing.T,
 			opts.OutOfOrderCapMax = tc.oooCap
 			db := openTestDB(t, opts, nil)
 			db.DisableCompactions()
-			db.EnableNativeHistograms()
 			defer func() {
 				require.NoError(t, db.Close())
 			}()
@@ -6729,7 +6789,6 @@ func testOOOAppendAndQuery(t *testing.T, scenario sampleTypeScenario) {
 
 	db := openTestDB(t, opts, nil)
 	db.DisableCompactions()
-	db.EnableNativeHistograms()
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
 	})
@@ -6861,7 +6920,6 @@ func testOOODisabled(t *testing.T, scenario sampleTypeScenario) {
 	opts.OutOfOrderTimeWindow = 0
 	db := openTestDB(t, opts, nil)
 	db.DisableCompactions()
-	db.EnableNativeHistograms()
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
 	})
@@ -6934,7 +6992,6 @@ func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
-	opts.EnableNativeHistograms = true
 
 	db := openTestDB(t, opts, nil)
 	db.DisableCompactions()
@@ -7127,7 +7184,6 @@ func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
 		db, err := Open(dir, nil, nil, opts, nil)
 		require.NoError(t, err)
 		db.DisableCompactions() // We want to manually call it.
-		db.EnableNativeHistograms()
 		t.Cleanup(func() {
 			require.NoError(t, db.Close())
 		})
@@ -7488,7 +7544,6 @@ func TestInterleavedInOrderAndOOOHistogramCompactionWithCounterResets(t *testing
 		db, err := Open(dir, nil, nil, opts, nil)
 		require.NoError(t, err)
 		db.DisableCompactions() // We want to manually call it.
-		db.EnableNativeHistograms()
 		t.Cleanup(func() {
 			require.NoError(t, db.Close())
 		})
@@ -7604,7 +7659,6 @@ func testOOOCompactionFailure(t *testing.T, scenario sampleTypeScenario) {
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
 	db.DisableCompactions() // We want to manually call it.
-	db.EnableNativeHistograms()
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
 	})
@@ -7892,7 +7946,6 @@ func testOOOMmapCorruption(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 10
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.EnableNativeHistograms = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -8027,7 +8080,6 @@ func testOutOfOrderRuntimeConfig(t *testing.T, scenario sampleTypeScenario) {
 
 		opts := DefaultOptions()
 		opts.OutOfOrderTimeWindow = oooTimeWindow
-		opts.EnableNativeHistograms = true
 
 		db, err := Open(dir, nil, nil, opts, nil)
 		require.NoError(t, err)
@@ -8322,7 +8374,6 @@ func testNoGapAfterRestartWithOOO(t *testing.T, scenario sampleTypeScenario) {
 
 			opts := DefaultOptions()
 			opts.OutOfOrderTimeWindow = 30 * time.Minute.Milliseconds()
-			opts.EnableNativeHistograms = true
 
 			db, err := Open(dir, nil, nil, opts, nil)
 			require.NoError(t, err)
@@ -8381,7 +8432,6 @@ func testWblReplayAfterOOODisableAndRestart(t *testing.T, scenario sampleTypeSce
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
-	opts.EnableNativeHistograms = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -8449,7 +8499,6 @@ func testPanicOnApplyConfig(t *testing.T, scenario sampleTypeScenario) {
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
-	opts.EnableNativeHistograms = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -8509,7 +8558,6 @@ func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenari
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
-	opts.EnableNativeHistograms = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -8999,59 +9047,6 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 	}
 }
 
-func TestNativeHistogramFlag(t *testing.T) {
-	dir := t.TempDir()
-	db, err := Open(dir, nil, nil, nil, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, db.Close())
-	})
-	h := &histogram.Histogram{
-		Count:         9,
-		ZeroCount:     4,
-		ZeroThreshold: 0.001,
-		Sum:           35.5,
-		Schema:        1,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 2},
-			{Offset: 2, Length: 2},
-		},
-		PositiveBuckets: []int64{1, 1, -1, 0},
-	}
-
-	l := labels.FromStrings("foo", "bar")
-
-	app := db.Appender(context.Background())
-
-	// Disabled by default.
-	_, err = app.AppendHistogram(0, l, 100, h, nil)
-	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
-	_, err = app.AppendHistogram(0, l, 105, nil, h.ToFloat(nil))
-	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
-
-	// Enable and append.
-	db.EnableNativeHistograms()
-	_, err = app.AppendHistogram(0, l, 200, h, nil)
-	require.NoError(t, err)
-	_, err = app.AppendHistogram(0, l, 205, nil, h.ToFloat(nil))
-	require.NoError(t, err)
-
-	db.DisableNativeHistograms()
-	_, err = app.AppendHistogram(0, l, 300, h, nil)
-	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
-	_, err = app.AppendHistogram(0, l, 305, nil, h.ToFloat(nil))
-	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
-
-	require.NoError(t, app.Commit())
-
-	q, err := db.Querier(math.MinInt, math.MaxInt64)
-	require.NoError(t, err)
-	act := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	require.Equal(t, map[string][]chunks.Sample{
-		l.String(): {sample{t: 200, h: h}, sample{t: 205, fh: h.ToFloat(nil)}},
-	}, act)
-}
-
 func TestOOONativeHistogramsSettings(t *testing.T) {
 	h := &histogram.Histogram{
 		Count:         9,
@@ -9076,8 +9071,6 @@ func TestOOONativeHistogramsSettings(t *testing.T) {
 			require.NoError(t, db.Close())
 		}()
 
-		db.EnableNativeHistograms()
-
 		app := db.Appender(context.Background())
 		_, err := app.AppendHistogram(0, l, 100, h, nil)
 		require.NoError(t, err)
@@ -9094,32 +9087,6 @@ func TestOOONativeHistogramsSettings(t *testing.T) {
 			l.String(): {sample{t: 100, h: h}},
 		}, act)
 	})
-	t.Run("Test OOO Native Histograms if OOO is enabled and Native Histograms are disabled", func(t *testing.T) {
-		opts := DefaultOptions()
-		opts.OutOfOrderTimeWindow = 100
-		db := openTestDB(t, opts, []int64{100})
-		defer func() {
-			require.NoError(t, db.Close())
-		}()
-
-		db.DisableNativeHistograms()
-
-		// Attempt to add an in-order sample
-		app := db.Appender(context.Background())
-		_, err := app.AppendHistogram(0, l, 200, h, nil)
-		require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
-
-		// Attempt to add an OOO sample
-		_, err = app.AppendHistogram(0, l, 100, h, nil)
-		require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
-
-		require.NoError(t, app.Commit())
-
-		q, err := db.Querier(math.MinInt, math.MaxInt64)
-		require.NoError(t, err)
-		act := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-		require.Equal(t, map[string][]chunks.Sample{}, act)
-	})
 	t.Run("Test OOO native histograms when both OOO and Native Histograms are enabled", func(t *testing.T) {
 		opts := DefaultOptions()
 		opts.OutOfOrderTimeWindow = 100
@@ -9127,8 +9094,6 @@ func TestOOONativeHistogramsSettings(t *testing.T) {
 		defer func() {
 			require.NoError(t, db.Close())
 		}()
-
-		db.EnableNativeHistograms()
 
 		// Add in-order samples
 		app := db.Appender(context.Background())

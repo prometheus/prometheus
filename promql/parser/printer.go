@@ -229,7 +229,6 @@ func (node *Call) ShortString() string {
 }
 
 func (node *MatrixSelector) atOffset() (string, string) {
-	// Copy the Vector selector before changing the offset
 	vecSelector := node.VectorSelector.(*VectorSelector)
 	offset := ""
 	switch {
@@ -254,20 +253,21 @@ func (node *MatrixSelector) atOffset() (string, string) {
 
 func (node *MatrixSelector) String() string {
 	at, offset := node.atOffset()
-	// Copy the Vector selector before changing the offset
+	// Copy the Vector selector so we can modify it to not print @, offset, and other modifiers twice.
 	vecSelector := *node.VectorSelector.(*VectorSelector)
-	// Do not print the @ and offset twice.
-	offsetVal, offsetExprVal, atVal, preproc := vecSelector.OriginalOffset, vecSelector.OriginalOffsetExpr, vecSelector.Timestamp, vecSelector.StartOrEnd
+	anchored, smoothed := vecSelector.Anchored, vecSelector.Smoothed
 	vecSelector.OriginalOffset = 0
 	vecSelector.OriginalOffsetExpr = nil
 	vecSelector.Timestamp = nil
 	vecSelector.StartOrEnd = 0
+	vecSelector.Anchored = false
+	vecSelector.Smoothed = false
 
 	extendedAttribute := ""
 	switch {
-	case vecSelector.Anchored:
+	case anchored:
 		extendedAttribute = " anchored"
-	case vecSelector.Smoothed:
+	case smoothed:
 		extendedAttribute = " smoothed"
 	}
 	rangeStr := model.Duration(node.Range).String()
@@ -275,8 +275,6 @@ func (node *MatrixSelector) String() string {
 		rangeStr = node.RangeExpr.String()
 	}
 	str := fmt.Sprintf("%s[%s]%s%s%s", vecSelector.String(), rangeStr, extendedAttribute, at, offset)
-
-	vecSelector.OriginalOffset, vecSelector.OriginalOffsetExpr, vecSelector.Timestamp, vecSelector.StartOrEnd = offsetVal, offsetExprVal, atVal, preproc
 
 	return str
 }

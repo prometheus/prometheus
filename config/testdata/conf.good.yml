@@ -369,6 +369,7 @@ scrape_configs:
           key_file: valid_key_file
 
   - job_name: hetzner
+    scrape_native_histograms: true
     relabel_configs:
       - action: uppercase
         source_labels: [instance]
@@ -452,6 +453,9 @@ alerting:
 storage:
   tsdb:
     out_of_order_time_window: 30m
+    retention:
+      time: 1d
+      size: 1GB
 
 tracing:
   endpoint: "localhost:4317"

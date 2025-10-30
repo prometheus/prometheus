@@ -580,9 +580,9 @@ sample values. JSON does not support special float values such as `NaN`, `Inf`,
 and `-Inf`, so sample values are transferred as quoted JSON strings rather than
 raw numbers.
 
-The keys `"histogram"` and `"histograms"` only show up if the experimental
-native histograms are present in the response. Their placeholder `<histogram>`
-is explained in detail in its own section below.
+The keys `"histogram"` and `"histograms"` only show up if native histograms
+are present in the response. Their placeholder `<histogram>` is explained
+in detail in its own section below.
 
 ### Range vectors
 
@@ -649,9 +649,6 @@ String results are returned as result type `string`. The corresponding
 ### Native histograms
 
 The `<histogram>` placeholder used above is formatted as follows.
-
-_Note that native histograms are an experimental feature, and the format below
-might still change._
 
 ```json
 {
@@ -745,7 +742,7 @@ curl 'http://localhost:9090/api/v1/targets?state=active'
 ```
 
 ```json
-
+{
   "status": "success",
   "data": {
     "activeTargets": [
@@ -781,7 +778,7 @@ curl 'http://localhost:9090/api/v1/targets?scrapePool=node_exporter'
 ```
 
 ```json
-
+{
   "status": "success",
   "data": {
     "activeTargets": [
@@ -945,7 +942,7 @@ contain metric metadata and the target label set.
 The following example returns all metadata entries for the `go_goroutines` metric
 from the first two targets with label `job="prometheus"`.
 
-```json
+```bash
 curl -G http://localhost:9091/api/v1/targets/metadata \
     --data-urlencode 'metric=go_goroutines' \
     --data-urlencode 'match_target={job="prometheus"}' \

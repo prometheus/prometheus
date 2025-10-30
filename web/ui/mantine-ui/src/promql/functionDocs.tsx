@@ -1010,8 +1010,7 @@ const funcDocs: Record<string, React.ReactNode> = {
     <>
       <p>
         <em>
-          This function only acts on native histograms, which are an experimental feature. The behavior of this function may
-          change in future versions of Prometheus, including its removal from PromQL.
+          This function only acts on native histograms.
         </em>
       </p>
 
@@ -1043,8 +1042,7 @@ const funcDocs: Record<string, React.ReactNode> = {
     <>
       <p>
         <em>
-          Both functions only act on native histograms, which are an experimental feature. The behavior of these functions
-          may change in future versions of Prometheus, including their removal from PromQL.
+          Both functions only act on native histograms.
         </em>
       </p>
 
@@ -1071,8 +1069,7 @@ const funcDocs: Record<string, React.ReactNode> = {
     <>
       <p>
         <em>
-          This function only acts on native histograms, which are an experimental feature. The behavior of this function may
-          change in future versions of Prometheus, including its removal from PromQL.
+          This function only acts on native histograms.
         </em>
       </p>
 
@@ -1119,13 +1116,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         <a href="https://prometheus.io/docs/concepts/metric_types/#histogram">classic histogram</a> or from a native
         histogram. (See <a href="https://prometheus.io/docs/practices/histograms">histograms and summaries</a> for a detailed
         explanation of φ-quantiles and the usage of the (classic) histogram metric type in general.)
-      </p>
-
-      <p>
-        <em>
-          Note that native histograms are an experimental feature. The behavior of this function when dealing with native
-          histograms may change in future versions of Prometheus.
-        </em>
       </p>
 
       <p>
@@ -1260,8 +1250,7 @@ const funcDocs: Record<string, React.ReactNode> = {
     <>
       <p>
         <em>
-          Both functions only act on native histograms, which are an experimental feature. The behavior of these functions
-          may change in future versions of Prometheus, including their removal from PromQL.
+          Both functions only act on native histograms.
         </em>
       </p>
 

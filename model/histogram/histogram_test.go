@@ -1579,6 +1579,12 @@ func TestHistogramValidation(t *testing.T) {
 			},
 			errMsg: "custom buckets: last +Inf bound must not be explicitly defined: histogram custom bounds must be finite",
 		},
+		"valid custom buckets histogram with explicit -Inf bound": {
+			h: &Histogram{
+				Schema:       CustomBucketsSchema,
+				CustomValues: []float64{math.Inf(-1), 1},
+			},
+		},
 		"reject custom buckets histogram with NaN bound": {
 			h: &Histogram{
 				Schema:       CustomBucketsSchema,
@@ -1603,6 +1609,7 @@ func TestHistogramValidation(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			if err := tc.h.Validate(); tc.errMsg != "" {
+				require.ErrorAs(t, err, new(Error))
 				require.EqualError(t, err, tc.errMsg)
 			} else {
 				require.NoError(t, err)
@@ -1613,6 +1620,7 @@ func TestHistogramValidation(t *testing.T) {
 
 			fh := tc.h.ToFloat(nil)
 			if err := fh.Validate(); tc.errMsg != "" {
+				require.ErrorAs(t, err, new(Error))
 				require.EqualError(t, err, tc.errMsg)
 			} else {
 				require.NoError(t, err)
