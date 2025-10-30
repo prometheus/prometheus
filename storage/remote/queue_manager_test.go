@@ -2654,21 +2654,19 @@ func TestAppendHistogramSchemaValidation(t *testing.T) {
 func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 	histogramCases := []struct {
 		name        string
-		protoMsg    config.RemoteWriteProtoMsg
+		protoMsg    remoteapi.WriteMessageType
 		histogram   []record.RefHistogramSample
 		SampleCount int
 	}{
 		{
 			name:     "valid histogram nhcb to classic conversion v1",
-			protoMsg: config.RemoteWriteProtoMsgV1,
+			protoMsg: remoteapi.WriteV1MessageType,
 			histogram: []record.RefHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
 				T:   1234567890,
 				H: &histogram.Histogram{
 					Schema:          histogram.CustomBucketsSchema,
-					ZeroThreshold:   1e-128,
-					ZeroCount:       0,
-					Count:           2,
+					Count:           3,
 					Sum:             6.0,
 					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
 					PositiveBuckets: []int64{1, 1},
@@ -2679,15 +2677,13 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 		},
 		{
 			name:     "valid histogram nhcb to classic conversion v2",
-			protoMsg: config.RemoteWriteProtoMsgV2,
+			protoMsg: remoteapi.WriteV2MessageType,
 			histogram: []record.RefHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
 				T:   1234567890,
 				H: &histogram.Histogram{
 					Schema:          histogram.CustomBucketsSchema,
-					ZeroThreshold:   1e-128,
-					ZeroCount:       0,
-					Count:           2,
+					Count:           3,
 					Sum:             6.0,
 					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
 					PositiveBuckets: []int64{1, 1},
@@ -2698,14 +2694,12 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 		},
 		{
 			name:     "empty histogram nhcb to classic conversion",
-			protoMsg: config.RemoteWriteProtoMsgV1,
+			protoMsg: remoteapi.WriteV1MessageType,
 			histogram: []record.RefHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
 				T:   1234567890,
 				H: &histogram.Histogram{
 					Schema:          histogram.CustomBucketsSchema,
-					ZeroThreshold:   1e-128,
-					ZeroCount:       0,
 					Count:           0,
 					Sum:             0.0,
 					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 0}},
@@ -2717,7 +2711,7 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 		},
 		{
 			name:     "nil histogram nhcb to classic conversion",
-			protoMsg: config.RemoteWriteProtoMsgV1,
+			protoMsg: remoteapi.WriteV1MessageType,
 			histogram: []record.RefHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
 				T:   1234567890,
@@ -2727,15 +2721,13 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 		},
 		{
 			name:     "multiple valid histogram nhcb to classic conversion v1",
-			protoMsg: config.RemoteWriteProtoMsgV1,
+			protoMsg: remoteapi.WriteV1MessageType,
 			histogram: []record.RefHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
 				T:   1234567890,
 				H: &histogram.Histogram{
 					Schema:          histogram.CustomBucketsSchema,
-					ZeroThreshold:   1e-128,
-					ZeroCount:       0,
-					Count:           2,
+					Count:           3,
 					Sum:             6.0,
 					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
 					PositiveBuckets: []int64{1, 1},
@@ -2746,9 +2738,7 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 				T:   1234567890,
 				H: &histogram.Histogram{
 					Schema:          histogram.CustomBucketsSchema,
-					ZeroThreshold:   1e-128,
-					ZeroCount:       0,
-					Count:           5,
+					Count:           22,
 					Sum:             20.0,
 					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
 					PositiveBuckets: []int64{3, 4, 5},
@@ -2759,15 +2749,13 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 		},
 		{
 			name:     "multiple valid histogram nhcb to classic conversion v2",
-			protoMsg: config.RemoteWriteProtoMsgV2,
+			protoMsg: remoteapi.WriteV2MessageType,
 			histogram: []record.RefHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
 				T:   1234567890,
 				H: &histogram.Histogram{
 					Schema:          histogram.CustomBucketsSchema,
-					ZeroThreshold:   1e-128,
-					ZeroCount:       0,
-					Count:           2,
+					Count:           3,
 					Sum:             6.0,
 					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
 					PositiveBuckets: []int64{1, 1},
@@ -2778,9 +2766,7 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 				T:   1234567890,
 				H: &histogram.Histogram{
 					Schema:          histogram.CustomBucketsSchema,
-					ZeroThreshold:   1e-128,
-					ZeroCount:       0,
-					Count:           5,
+					Count:           22,
 					Sum:             20.0,
 					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
 					PositiveBuckets: []int64{3, 4, 5},
@@ -2793,21 +2779,19 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 
 	floatHistogramCases := []struct {
 		name        string
-		protoMsg    config.RemoteWriteProtoMsg
+		protoMsg    remoteapi.WriteMessageType
 		histogram   []record.RefFloatHistogramSample
 		SampleCount int
 	}{
 		{
 			name:     "valid histogram nhcb to classic conversion v1",
-			protoMsg: config.RemoteWriteProtoMsgV1,
+			protoMsg: remoteapi.WriteV1MessageType,
 			histogram: []record.RefFloatHistogramSample{
 				{
 					Ref: chunks.HeadSeriesRef(0),
 					T:   1234567890,
 					FH: &histogram.FloatHistogram{
 						Schema:          histogram.CustomBucketsSchema,
-						ZeroThreshold:   1e-128,
-						ZeroCount:       0,
 						Count:           2.0,
 						Sum:             6.0,
 						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
@@ -2820,15 +2804,13 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 		},
 		{
 			name:     "valid histogram nhcb to classic conversion v2",
-			protoMsg: config.RemoteWriteProtoMsgV2,
+			protoMsg: remoteapi.WriteV2MessageType,
 			histogram: []record.RefFloatHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
 				T:   1234567890,
 				FH: &histogram.FloatHistogram{
 					Schema:          histogram.CustomBucketsSchema,
-					ZeroThreshold:   1e-128,
-					ZeroCount:       0,
-					Count:           2,
+					Count:           2.0,
 					Sum:             6.0,
 					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
 					PositiveBuckets: []float64{1, 1},
@@ -2839,15 +2821,14 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 		},
 		{
 			name:     "empty histogram nhcb to classic conversion",
-			protoMsg: config.RemoteWriteProtoMsgV1,
+			protoMsg: remoteapi.WriteV1MessageType,
 			histogram: []record.RefFloatHistogramSample{
 				{
 					Ref: chunks.HeadSeriesRef(0),
 					T:   1234567890,
 					FH: &histogram.FloatHistogram{
-						Schema:          histogram.CustomBucketsSchema,
-						ZeroThreshold:   1e-128,
-						ZeroCount:       0,
+						Schema: histogram.CustomBucketsSchema,
+
 						Count:           0,
 						Sum:             0.0,
 						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 0}},
@@ -2860,7 +2841,7 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 		},
 		{
 			name:     "Nil Histogram NHCB to Classic Conversion",
-			protoMsg: config.RemoteWriteProtoMsgV1,
+			protoMsg: remoteapi.WriteV1MessageType,
 			histogram: []record.RefFloatHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
 				T:   1234567890,
@@ -2870,14 +2851,12 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 		},
 		{
 			name:     "Multiple valid histogram NHCB to Classic Conversion V1",
-			protoMsg: config.RemoteWriteProtoMsgV1,
+			protoMsg: remoteapi.WriteV1MessageType,
 			histogram: []record.RefFloatHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
 				T:   1234567890,
 				FH: &histogram.FloatHistogram{
 					Schema:          histogram.CustomBucketsSchema,
-					ZeroThreshold:   1e-128,
-					ZeroCount:       0,
 					Count:           2,
 					Sum:             6.0,
 					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
@@ -2889,8 +2868,6 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 				T:   1234567890,
 				FH: &histogram.FloatHistogram{
 					Schema:          histogram.CustomBucketsSchema,
-					ZeroThreshold:   1e-128,
-					ZeroCount:       0,
 					Count:           3,
 					Sum:             20.0,
 					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
@@ -2902,14 +2879,12 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 		},
 		{
 			name:     "valid histogram NHCB to Classic Conversion V2",
-			protoMsg: config.RemoteWriteProtoMsgV2,
+			protoMsg: remoteapi.WriteV2MessageType,
 			histogram: []record.RefFloatHistogramSample{{
 				Ref: chunks.HeadSeriesRef(0),
 				T:   1234567890,
 				FH: &histogram.FloatHistogram{
 					Schema:          histogram.CustomBucketsSchema,
-					ZeroThreshold:   1e-128,
-					ZeroCount:       0,
 					Count:           2,
 					Sum:             6.0,
 					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
@@ -2921,8 +2896,6 @@ func TestAppendHistogramConvertNHCBToClassic(t *testing.T) {
 				T:   1234567890,
 				FH: &histogram.FloatHistogram{
 					Schema:          histogram.CustomBucketsSchema,
-					ZeroThreshold:   1e-128,
-					ZeroCount:       0,
 					Count:           3,
 					Sum:             20.0,
 					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},

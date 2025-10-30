@@ -854,7 +854,7 @@ outer:
 					value:        value,
 					sType:        tSample,
 				}) {
-					return fmt.Errorf("conversion error: failed to enqueue converted classic histogram sample")
+					return errors.New("conversion error: failed to enqueue converted classic histogram sample")
 				}
 				return nil
 			})
@@ -951,7 +951,7 @@ outer:
 					value:        value,
 					sType:        tSample,
 				}) {
-					return fmt.Errorf("conversion error: failed to enqueue converted classic histogram sample")
+					return errors.New("conversion error: failed to enqueue converted classic histogram sample")
 				}
 				return nil
 			})
