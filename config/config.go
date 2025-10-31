@@ -1529,6 +1529,9 @@ type QueueConfig struct {
 // storage.
 type MetadataConfig struct {
 	// Send controls whether we send metric metadata to remote storage.
+	// For Remote Write v1: Metadata is sent in periodic batches.
+	// For Remote Write v2+: Metadata is sent inline with samples, and when enabled,
+	//                       missing metadata (especially Help) is looked up from scrape cache.
 	Send bool `yaml:"send"`
 	// SendInterval controls how frequently we send metric metadata.
 	SendInterval model.Duration `yaml:"send_interval"`

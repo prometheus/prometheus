@@ -162,3 +162,28 @@ func (mw *MetadataWatcher) ready() bool {
 	mw.manager = m
 	return true
 }
+
+// GetMetadataForMetric retrieves metadata for a specific metric family from the scrape cache.
+// This is used by Remote Write v2 to get metadata (especially Help strings) when not available
+// from WAL records. Returns nil if scrape manager is not ready or metadata is not found.
+func (mw *MetadataWatcher) GetMetadataForMetric(metricFamily string) *scrape.MetricMetadata {
+	if !mw.ready() {
+		return nil
+	}
+
+	// Iterate through all active targets to find metadata for this metric family
+	for _, tset := range mw.manager.TargetsActive() {
+		for _, target := range tset {
+			if meta, ok := target.GetMetadata(metricFamily); ok {
+				return &scrape.MetricMetadata{
+					MetricFamily: meta.MetricFamily,
+					Type:         meta.Type,
+					Help:         meta.Help,
+					Unit:         meta.Unit,
+				}
+			}
+		}
+	}
+
+	return nil
+}
