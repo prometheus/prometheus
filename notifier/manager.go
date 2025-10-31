@@ -499,6 +499,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 				}
 
 				n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
+				n.metrics.latencyHistogram.WithLabelValues(url).Observe(time.Since(begin).Seconds())
 				n.metrics.sent.WithLabelValues(url).Add(float64(count))
 
 				wg.Done()

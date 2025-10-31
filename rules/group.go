@@ -519,6 +519,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			since := time.Since(t)
 			g.metrics.EvalDuration.Observe(since.Seconds())
+			g.metrics.EvalDurationHistogram.Observe(since.Seconds())
 			rule.SetEvaluationDuration(since)
 			rule.SetEvaluationTimestamp(t)
 		}(time.Now())
@@ -910,19 +911,21 @@ const namespace = "prometheus"
 
 // Metrics for rule evaluation.
 type Metrics struct {
-	EvalDuration             prometheus.Summary
-	IterationDuration        prometheus.Summary
-	IterationsMissed         *prometheus.CounterVec
-	IterationsScheduled      *prometheus.CounterVec
-	EvalTotal                *prometheus.CounterVec
-	EvalFailures             *prometheus.CounterVec
-	GroupInterval            *prometheus.GaugeVec
-	GroupLastEvalTime        *prometheus.GaugeVec
-	GroupLastDuration        *prometheus.GaugeVec
-	GroupLastRuleDurationSum *prometheus.GaugeVec
-	GroupLastRestoreDuration *prometheus.GaugeVec
-	GroupRules               *prometheus.GaugeVec
-	GroupSamples             *prometheus.GaugeVec
+	EvalDuration               prometheus.Summary
+	EvalDurationHistogram      prometheus.Histogram
+	IterationDuration          prometheus.Summary
+	IterationDurationHistogram prometheus.Histogram
+	IterationsMissed           *prometheus.CounterVec
+	IterationsScheduled        *prometheus.CounterVec
+	EvalTotal                  *prometheus.CounterVec
+	EvalFailures               *prometheus.CounterVec
+	GroupInterval              *prometheus.GaugeVec
+	GroupLastEvalTime          *prometheus.GaugeVec
+	GroupLastDuration          *prometheus.GaugeVec
+	GroupLastRuleDurationSum   *prometheus.GaugeVec
+	GroupLastRestoreDuration   *prometheus.GaugeVec
+	GroupRules                 *prometheus.GaugeVec
+	GroupSamples               *prometheus.GaugeVec
 }
 
 // NewGroupMetrics creates a new instance of Metrics and registers it with the provided registerer,
@@ -936,11 +939,29 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 				Help:       "The duration for a rule to execute.",
 				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 			}),
+		EvalDurationHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace:                       namespace,
+			Name:                            "rule_evaluation_duration_histogram_seconds",
+			Help:                            "The duration for a rule to execute.",
+			Buckets:                         []float64{.01, .1, 1, 10},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		}),
 		IterationDuration: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace:  namespace,
 			Name:       "rule_group_duration_seconds",
 			Help:       "The duration of rule group evaluations.",
 			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
+		}),
+		IterationDurationHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace:                       namespace,
+			Name:                            "rule_group_duration_histogram_seconds",
+			Help:                            "The duration of rule group evaluations.",
+			Buckets:                         []float64{.01, .1, 1, 10},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 		IterationsMissed: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -1035,7 +1056,9 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 	if reg != nil {
 		reg.MustRegister(
 			m.EvalDuration,
+			m.EvalDurationHistogram,
 			m.IterationDuration,
+			m.IterationDurationHistogram,
 			m.IterationsMissed,
 			m.IterationsScheduled,
 			m.EvalTotal,

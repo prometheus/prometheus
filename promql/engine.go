@@ -76,15 +76,19 @@ const (
 )
 
 type engineMetrics struct {
-	currentQueries       prometheus.Gauge
-	maxConcurrentQueries prometheus.Gauge
-	queryLogEnabled      prometheus.Gauge
-	queryLogFailures     prometheus.Counter
-	queryQueueTime       prometheus.Observer
-	queryPrepareTime     prometheus.Observer
-	queryInnerEval       prometheus.Observer
-	queryResultSort      prometheus.Observer
-	querySamples         prometheus.Counter
+	currentQueries            prometheus.Gauge
+	maxConcurrentQueries      prometheus.Gauge
+	queryLogEnabled           prometheus.Gauge
+	queryLogFailures          prometheus.Counter
+	queryQueueTime            prometheus.Observer
+	queryQueueTimeHistogram   prometheus.Observer
+	queryPrepareTime          prometheus.Observer
+	queryPrepareTimeHistogram prometheus.Observer
+	queryInnerEval            prometheus.Observer
+	queryInnerEvalHistogram   prometheus.Observer
+	queryResultSort           prometheus.Observer
+	queryResultSortHistogram  prometheus.Observer
+	querySamples              prometheus.Counter
 }
 
 type (
@@ -363,6 +367,19 @@ func NewEngine(opts EngineOpts) *Engine {
 		[]string{"slice"},
 	)
 
+	queryResultHistogram := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace:                       namespace,
+		Subsystem:                       subsystem,
+		Name:                            "query_duration_histogram_seconds",
+		Help:                            "The duration of various parts of PromQL query execution.",
+		Buckets:                         []float64{.01, .1, 1, 10},
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+	},
+		[]string{"slice"},
+	)
+
 	metrics := &engineMetrics{
 		currentQueries: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
@@ -394,10 +411,14 @@ func NewEngine(opts EngineOpts) *Engine {
 			Name:      "query_samples_total",
 			Help:      "The total number of samples loaded by all queries.",
 		}),
-		queryQueueTime:   queryResultSummary.WithLabelValues("queue_time"),
-		queryPrepareTime: queryResultSummary.WithLabelValues("prepare_time"),
-		queryInnerEval:   queryResultSummary.WithLabelValues("inner_eval"),
-		queryResultSort:  queryResultSummary.WithLabelValues("result_sort"),
+		queryQueueTime:            queryResultSummary.WithLabelValues("queue_time"),
+		queryQueueTimeHistogram:   queryResultHistogram.WithLabelValues("queue_time"),
+		queryPrepareTime:          queryResultSummary.WithLabelValues("prepare_time"),
+		queryPrepareTimeHistogram: queryResultHistogram.WithLabelValues("prepare_time"),
+		queryInnerEval:            queryResultSummary.WithLabelValues("inner_eval"),
+		queryInnerEvalHistogram:   queryResultHistogram.WithLabelValues("inner_eval"),
+		queryResultSort:           queryResultSummary.WithLabelValues("result_sort"),
+		queryResultSortHistogram:  queryResultHistogram.WithLabelValues("result_sort"),
 	}
 
 	if t := opts.ActiveQueryTracker; t != nil {
@@ -421,6 +442,7 @@ func NewEngine(opts EngineOpts) *Engine {
 			metrics.queryLogFailures,
 			metrics.querySamples,
 			queryResultSummary,
+			queryResultHistogram,
 		)
 	}
 
@@ -701,7 +723,7 @@ func (ng *Engine) queueActive(ctx context.Context, q *query) (func(), error) {
 	if ng.activeQueryTracker == nil {
 		return func() {}, nil
 	}
-	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime)
+	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime, ng.metrics.queryQueueTimeHistogram)
 	queryIndex, err := ng.activeQueryTracker.Insert(ctx, q.q)
 	queueSpanTimer.Finish()
 	return func() { ng.activeQueryTracker.Delete(queryIndex) }, err
@@ -717,7 +739,7 @@ func durationMilliseconds(d time.Duration) int64 {
 
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.EvalStmt) (parser.Value, annotations.Annotations, error) {
-	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime)
+	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime, ng.metrics.queryPrepareTimeHistogram)
 	mint, maxt := FindMinMaxTime(s)
 	querier, err := query.queryable.Querier(mint, maxt)
 	if err != nil {
@@ -732,7 +754,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	// Modify the offset of vector and matrix selectors for the @ modifier
 	// w.r.t. the start time since only 1 evaluation will be done on them.
 	setOffsetForAtModifier(timeMilliseconds(s.Start), s.Expr)
-	evalSpanTimer, ctxInnerEval := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval)
+	evalSpanTimer, ctxInnerEval := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval, ng.metrics.queryInnerEvalHistogram)
 	// Instant evaluation. This is executed as a range evaluation with one step.
 	if s.Start.Equal(s.End) && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
@@ -835,7 +857,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 }
 
 func (ng *Engine) sortMatrixResult(ctx context.Context, query *query, mat Matrix) {
-	sortSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.ResultSortTime, ng.metrics.queryResultSort)
+	sortSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.ResultSortTime, ng.metrics.queryResultSort, ng.metrics.queryResultSortHistogram)
 	sort.Sort(mat)
 	sortSpanTimer.Finish()
 }
