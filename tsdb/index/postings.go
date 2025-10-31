@@ -641,14 +641,27 @@ func (it *intersectPostings) Seek(target storage.SeriesRef) bool {
 }
 
 func (it *intersectPostings) Next() bool {
-	target := it.current
-	for _, p := range it.postings {
+	// Move forward the first Postings and take its value as the target to match.
+	if !it.postings[0].Next() {
+		return false
+	}
+	target := it.postings[0].At()
+	allEqual := true
+	for _, p := range it.postings[1:] { // Now move forward all the other ones and check if they match.
 		if !p.Next() {
 			return false
 		}
-		if p.At() > target {
-			target = p.At()
+		at := p.At()
+		if at > target { // This one is past the target, so pick up a new target to Seek at the end.
+			target = at
+			allEqual = false
+		} else if at < target { // This one needs to Seek to the target, but carry on with other postings in case they have an even higher target.
+			allEqual = false
 		}
+	}
+	if allEqual {
+		it.current = target
+		return true
 	}
 	return it.Seek(target)
 }
@@ -851,15 +864,17 @@ func (it *ListPostings) Seek(x storage.SeriesRef) bool {
 		return false
 	}
 
-	// Do binary search between current position and end.
-	i, _ := slices.BinarySearch(it.list, x)
-	if i < len(it.list) {
-		it.cur = it.list[i]
-		it.list = it.list[i+1:]
-		return true
+	i := 0 // Check the next item in the list, otherwise binary search between current position and end.
+	if it.list[0] < x {
+		i, _ = slices.BinarySearch(it.list, x)
+		if i >= len(it.list) { // Off the end - terminate the iterator.
+			it.list = nil
+			return false
+		}
 	}
-	it.list = nil
-	return false
+	it.cur = it.list[i]
+	it.list = it.list[i+1:]
+	return true
 }
 
 func (*ListPostings) Err() error {
