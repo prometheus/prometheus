@@ -201,7 +201,7 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 	)
 	sm.targetIntervalLengthHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:                            "prometheus_target_interval_histogram_length_seconds",
+			Name:                            "prometheus_target_interval_length_histogram_seconds",
 			Help:                            "Actual intervals between scrapes.",
 			Buckets:                         []float64{.01, .1, 1, 10},
 			NativeHistogramBucketFactor:     1.1,
