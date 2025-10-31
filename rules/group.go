@@ -914,7 +914,7 @@ type Metrics struct {
 	EvalDuration               prometheus.Summary
 	EvalDurationHistogram      prometheus.Histogram
 	IterationDuration          prometheus.Summary
-	IterationHistogramDuration prometheus.Histogram
+	IterationDurationHistogram prometheus.Histogram
 	IterationsMissed           *prometheus.CounterVec
 	IterationsScheduled        *prometheus.CounterVec
 	EvalTotal                  *prometheus.CounterVec
