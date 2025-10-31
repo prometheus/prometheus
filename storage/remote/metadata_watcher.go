@@ -171,7 +171,6 @@ func (mw *MetadataWatcher) GetMetadataForMetric(metricFamily string) *scrape.Met
 		return nil
 	}
 
-	// Iterate through all active targets to find metadata for this metric family
 	for _, tset := range mw.manager.TargetsActive() {
 		for _, target := range tset {
 			if meta, ok := target.GetMetadata(metricFamily); ok {
