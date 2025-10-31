@@ -100,6 +100,26 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
 	return db
 }
 
+func openTestDBWithDir(t testing.TB, dir string, opts *Options, rngs []int64) (db *DB) {
+	var err error
+
+	if opts == nil {
+		opts = DefaultOptions()
+	}
+	opts.EnableNativeHistograms = true
+
+	if len(rngs) == 0 {
+		db, err = Open(dir, nil, nil, opts, nil)
+	} else {
+		opts, rngs = validateOpts(opts, rngs)
+		db, err = open(dir, nil, nil, opts, rngs, nil)
+	}
+	require.NoError(t, err)
+
+	// Do not Close() the test database by default as it will deadlock on test failures.
+	return db
+}
+
 // query runs a matcher query against the querier and fully expands its data.
 func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]chunks.Sample {
 	ss := q.Select(context.Background(), false, nil, matchers...)
@@ -1536,6 +1556,69 @@ func TestTimeRetention(t *testing.T) {
 
 			require.Equal(t, 1, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "metric retention count mismatch")
 			require.Len(t, actBlocks, len(tc.expBlocks))
+			for i, eb := range tc.expBlocks {
+				require.Equal(t, eb.MinTime, actBlocks[i].meta.MinTime)
+				require.Equal(t, eb.MaxTime, actBlocks[i].meta.MaxTime)
+			}
+		})
+	}
+}
+
+func TestTsdbOpenTimeRetention(t *testing.T) {
+	testCases := []struct {
+		name              string
+		blocks            []*BlockMeta
+		expBlocks         []*BlockMeta
+		retentionDuration int64
+	}{
+		{
+			name: "Block max time delta greater than retention duration",
+			blocks: []*BlockMeta{
+				{MinTime: 500, MaxTime: 900}, // Oldest block, beyond retention
+				{MinTime: 1000, MaxTime: 1500},
+				{MinTime: 1500, MaxTime: 2000}, // Newest block
+			},
+			expBlocks: []*BlockMeta{
+				{MinTime: 1000, MaxTime: 1500},
+				{MinTime: 1500, MaxTime: 2000},
+			},
+			retentionDuration: 1000,
+		},
+		{
+			name: "Block max time delta equal to retention duration",
+			blocks: []*BlockMeta{
+				{MinTime: 500, MaxTime: 900},   // Oldest block
+				{MinTime: 1000, MaxTime: 1500}, // Coinciding exactly with the retention duration.
+				{MinTime: 1500, MaxTime: 2000}, // Newest block
+			},
+			expBlocks: []*BlockMeta{
+				{MinTime: 1500, MaxTime: 2000},
+			},
+			retentionDuration: 500,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			db := openTestDBWithDir(t, dir, nil, []int64{1000})
+			for _, m := range tc.blocks {
+				createBlock(t, db.Dir(), genSeries(10, 10, m.MinTime, m.MaxTime))
+			}
+
+			require.NoError(t, db.reloadBlocks())       // Reload the db to register the new blocks.
+			require.Len(t, db.Blocks(), len(tc.blocks)) // Ensure all blocks are registered.
+
+			db.Close()
+
+			db = openTestDBWithDir(t, dir, &Options{RetentionDuration: tc.retentionDuration}, []int64{1000})
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
+
+			actBlocks := db.Blocks()
+			require.Equal(t, 1, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "metric retention count mismatch")
+			require.Len(t, actBlocks, len(tc.expBlocks))
+
 			for i, eb := range tc.expBlocks {
 				require.Equal(t, eb.MinTime, actBlocks[i].meta.MinTime)
 				require.Equal(t, eb.MaxTime, actBlocks[i].meta.MaxTime)
