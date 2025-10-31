@@ -157,7 +157,7 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 	)
 	sm.targetSyncIntervalLengthHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:                            "prometheus_target_sync_histogram_length_seconds",
+			Name:                            "prometheus_target_sync_length_histogram_seconds",
 			Help:                            "Actual interval to sync the scrape pool.",
 			Buckets:                         []float64{.01, .1, 1, 10},
 			NativeHistogramBucketFactor:     1.1,
