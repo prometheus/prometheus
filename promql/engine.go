@@ -370,7 +370,7 @@ func NewEngine(opts EngineOpts) *Engine {
 	queryResultHistogram := prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:                       namespace,
 		Subsystem:                       subsystem,
-		Name:                            "query_histogram_duration_seconds",
+		Name:                            "query_duration_histogram_seconds",
 		Help:                            "The duration of various parts of PromQL query execution.",
 		Buckets:                         []float64{.01, .1, 1, 10},
 		NativeHistogramBucketFactor:     1.1,
