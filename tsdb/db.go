@@ -1102,6 +1102,7 @@ func (db *DB) run(ctx context.Context) {
 			return
 		case <-time.After(backoff):
 		}
+
 		select {
 		case <-time.After(db.opts.BlockReloadInterval):
 			db.cmtx.Lock()
@@ -1109,6 +1110,7 @@ func (db *DB) run(ctx context.Context) {
 				db.logger.Error("reloadBlocks", "err", err)
 			}
 			db.cmtx.Unlock()
+
 			select {
 			case db.compactc <- struct{}{}:
 			default:

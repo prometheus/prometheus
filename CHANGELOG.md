@@ -3,6 +3,7 @@
 ## main / unreleased
 
 * [FEATURE] Templates: Add urlQueryEscape to template functions. #17403
+* [ENHANCEMENT] TSDB: Add Option to configure TSDB Block Reload Interval using `block_reload_interval` #16728
 
 ## 3.7.3 / 2025-10-29
 
@@ -138,7 +139,6 @@
 ## 3.4.2 / 2025-06-26
 
 * [BUGFIX] OTLP receiver: Fix default configuration not being respected if the `otlp:` block is unset in the config file. #16693
-* [ENHANCEMENT] TSDB: Add Option to configure TSDB Block Reload Interval using `block_reload_interval` #16728
 
 ## 3.4.1 / 2025-05-31
 

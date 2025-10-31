@@ -674,7 +674,9 @@ func main() {
 	}
 	if cfgFile.StorageConfig.TSDBConfig != nil {
 		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
-		cfg.tsdb.BlockReloadInterval = cfgFile.StorageConfig.TSDBConfig.BlockReloadInterval
+		if cfgFile.StorageConfig.TSDBConfig.BlockReloadInterval > 0 {
+			cfg.tsdb.BlockReloadInterval = cfgFile.StorageConfig.TSDBConfig.BlockReloadInterval
+		}
 		if cfgFile.StorageConfig.TSDBConfig.Retention != nil {
 			if cfgFile.StorageConfig.TSDBConfig.Retention.Time > 0 {
 				cfg.tsdb.RetentionDuration = cfgFile.StorageConfig.TSDBConfig.Retention.Time
