@@ -81,12 +81,12 @@ type engineMetrics struct {
 	queryLogEnabled           prometheus.Gauge
 	queryLogFailures          prometheus.Counter
 	queryQueueTime            prometheus.Observer
-	queryPrepareTime          prometheus.Observer
-	queryInnerEval            prometheus.Observer
-	queryResultSort           prometheus.Observer
 	queryQueueTimeHistogram   prometheus.Observer
+	queryPrepareTime          prometheus.Observer
 	queryPrepareTimeHistogram prometheus.Observer
+	queryInnerEval            prometheus.Observer
 	queryInnerEvalHistogram   prometheus.Observer
+	queryResultSort           prometheus.Observer
 	queryResultSortHistogram  prometheus.Observer
 	querySamples              prometheus.Counter
 }
