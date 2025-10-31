@@ -1950,7 +1950,7 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 
 		totalSize := 0
 		for i := 0; i < b.N; i++ {
-			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false)
+			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false, nil)
 			req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, nil, cEnc, "snappy")
 			if err != nil {
 				b.Fatal(err)
@@ -2356,7 +2356,7 @@ func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
 	}
 
 	nSamples, nExemplars, nHistograms, nMetadata, nUnexpected := populateV2TimeSeries(
-		&symbolTable, batch, pendingData, false, false, false)
+		&symbolTable, batch, pendingData, false, false, false, nil)
 
 	require.Equal(t, 2, nSamples, "Should count 2 samples")
 	require.Equal(t, 0, nExemplars, "Should count 0 exemplars")
@@ -2476,6 +2476,7 @@ func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
 				false, // sendExemplars
 				false, // sendNativeHistograms
 				true,  // enableTypeAndUnitLabels
+				nil,   // metadataWatcher
 			)
 
 			require.Equal(t, 1, nSamples, "Should have 1 sample")
@@ -2596,6 +2597,7 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 				false,
 				false,
 				tc.enableTypeAndUnit,
+				nil, // metadataWatcher
 			)
 
 			require.Equal(t, 1, nSamples, "Should have 1 sample")
@@ -2619,6 +2621,168 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 			if tc.metadata != nil && tc.enableTypeAndUnit {
 				require.Equal(t, 1, nMetadata, "Should count metadata when d.metadata is provided")
 			}
+		})
+	}
+}
+
+// TestPopulateV2TimeSeries_ScrapeCacheFallback tests that when metadata.send=true
+// and WAL metadata is missing, RW2 looks up metadata from the scrape cache.
+func TestPopulateV2TimeSeries_ScrapeCacheFallback(t *testing.T) {
+	metadataStore := &TestMetaStore{
+		Metadata: []scrape.MetricMetadata{
+			{
+				MetricFamily: "test_gauge",
+				Type:         model.MetricTypeGauge,
+				Help:         "Test gauge from scrape cache",
+				Unit:         "bytes",
+			},
+			{
+				MetricFamily: "test_counter_total",
+				Type:         model.MetricTypeCounter,
+				Help:         "Test counter from scrape cache",
+				Unit:         "seconds",
+			},
+		},
+	}
+
+	target := &scrape.Target{}
+	target.SetMetadataStore(metadataStore)
+
+	fakeManager := &fakeManager{
+		activeTargets: map[string][]*scrape.Target{
+			"test_job": {target},
+		},
+	}
+
+	scrapeMgr := &scrapeManagerMock{
+		ready: true,
+	}
+
+	metadataWatcher := NewMetadataWatcher(promslog.NewNopLogger(), scrapeMgr, "test", nil, interval, deadline)
+	metadataWatcher.manager = fakeManager
+
+	tests := []struct {
+		name                  string
+		metricName            string
+		walMetadata           *metadata.Metadata
+		metadataWatcher       *MetadataWatcher
+		enableTypeAndUnit     bool
+		expectedHelp          string
+		expectedType          writev2.Metadata_MetricType
+		expectedUnit          string
+		expectedMetadataCount int
+	}{
+		{
+			name:                  "no WAL, scrape cache provides all metadata",
+			metricName:            "test_gauge",
+			walMetadata:           nil,
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "Test gauge from scrape cache",
+			expectedType:          writev2.Metadata_METRIC_TYPE_GAUGE,
+			expectedUnit:          "bytes",
+			expectedMetadataCount: 1,
+		},
+		{
+			name:       "WAL metadata exists, scrape cache not consulted",
+			metricName: "test_gauge",
+			walMetadata: &metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Help: "Help from WAL",
+				Unit: "milliseconds",
+			},
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "Help from WAL",
+			expectedType:          writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit:          "milliseconds",
+			expectedMetadataCount: 1,
+		},
+		{
+			name:                  "no WAL, no watcher, falls back to unspecified",
+			metricName:            "test_gauge",
+			walMetadata:           nil,
+			metadataWatcher:       nil,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "",
+			expectedType:          writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			expectedUnit:          "",
+			expectedMetadataCount: 0,
+		},
+		{
+			name:                  "metric not in scrape cache",
+			metricName:            "unknown_metric",
+			walMetadata:           nil,
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "",
+			expectedType:          writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			expectedUnit:          "",
+			expectedMetadataCount: 0,
+		},
+		{
+			name:                  "type-and-unit with scrape cache Help",
+			metricName:            "test_gauge",
+			walMetadata:           nil,
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     true,
+			expectedHelp:          "Test gauge from scrape cache",
+			expectedType:          writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			expectedUnit:          "",
+			expectedMetadataCount: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			symbolTable := writev2.NewSymbolTable()
+			pendingData := make([]writev2.TimeSeries, 1)
+
+			batch := []timeSeries{
+				{
+					seriesLabels: labels.FromStrings("__name__", tc.metricName, "job", "test"),
+					metadata:     tc.walMetadata,
+					value:        123.45,
+					timestamp:    time.Now().UnixMilli(),
+					sType:        tSample,
+				},
+			}
+
+			nSamples, nExemplars, nHistograms, nMetadata, _ := populateV2TimeSeries(
+				&symbolTable,
+				batch,
+				pendingData,
+				false,
+				false,
+				tc.enableTypeAndUnit,
+				tc.metadataWatcher,
+			)
+
+			require.Equal(t, 1, nSamples, "Should have 1 sample")
+			require.Equal(t, 0, nExemplars, "Should have 0 exemplars")
+			require.Equal(t, 0, nHistograms, "Should have 0 histograms")
+			require.Equal(t, tc.expectedMetadataCount, nMetadata, "Metadata count should match")
+
+			// Verify metadata.
+			require.Equal(t, tc.expectedType, pendingData[0].Metadata.Type, "Type should match")
+
+			symbols := symbolTable.Symbols()
+
+			// Verify Help.
+			var actualHelp string
+			helpRef := pendingData[0].Metadata.HelpRef
+			if helpRef > 0 && helpRef < uint32(len(symbols)) {
+				actualHelp = symbols[helpRef]
+			}
+			require.Equal(t, tc.expectedHelp, actualHelp, "Help should match")
+
+			// Verify Unit.
+			var actualUnit string
+			unitRef := pendingData[0].Metadata.UnitRef
+			if unitRef > 0 && unitRef < uint32(len(symbols)) {
+				actualUnit = symbols[unitRef]
+			}
+			require.Equal(t, tc.expectedUnit, actualUnit, "Unit should match")
 		})
 	}
 }

@@ -3146,9 +3146,15 @@ queue_config:
   # which means that all samples are sent.
   [ sample_age_limit: <duration> | default = 0s ]
 
-# Configures the sending of series metadata to remote storage
-# if the `prometheus.WriteRequest` message was chosen. When
-# `io.prometheus.write.v2.Request` is used, metadata is always sent.
+# Configures the sending of series metadata to remote storage.
+#
+# For Remote Write v1 (`prometheus.WriteRequest`):
+#   - `send: true` enables periodic batch sending of metadata from scrape cache
+#   - Metadata is sent separately from samples
+#
+# For Remote Write v2 (`io.prometheus.write.v2.Request`):
+#   - `send: true` enables scrape cache as an alternative metadata source (especially HELP) from metadata-wal-records feature 
+#   - Metadata is always sent inline with samples
 #
 # Metadata configuration is subject to change at any point
 # or be removed in future releases.
@@ -3156,8 +3162,10 @@ metadata_config:
   # Whether metric metadata is sent to remote storage or not.
   [ send: <boolean> | default = true ]
   # How frequently metric metadata is sent to remote storage.
+  # Only applies to Remote Write v1.
   [ send_interval: <duration> | default = 1m ]
   # Maximum number of samples per send.
+  # Only applies to Remote Write v1.
   [ max_samples_per_send: <int> | default = 500]
 
 # HTTP client settings, including authentication methods (such as basic auth and
