@@ -851,15 +851,17 @@ func (it *ListPostings) Seek(x storage.SeriesRef) bool {
 		return false
 	}
 
-	// Do binary search between current position and end.
-	i, _ := slices.BinarySearch(it.list, x)
-	if i < len(it.list) {
-		it.cur = it.list[i]
-		it.list = it.list[i+1:]
-		return true
+	i := 0 // Check the next item in the list, otherwise binary search between current position and end.
+	if it.list[0] < x {
+		i, _ = slices.BinarySearch(it.list, x)
+		if i >= len(it.list) { // Off the end - terminate the iterator.
+			it.list = nil
+			return false
+		}
 	}
-	it.list = nil
-	return false
+	it.cur = it.list[i]
+	it.list = it.list[i+1:]
+	return true
 }
 
 func (*ListPostings) Err() error {
