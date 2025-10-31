@@ -371,7 +371,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		Namespace:                       namespace,
 		Subsystem:                       subsystem,
 		Name:                            "query_histogram_duration_seconds",
-		Help:                            "Query timings",
+		Help:                            "The duration of various parts of PromQL query execution.",
 		Buckets:                         []float64{.01, .1, 1, 10},
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
