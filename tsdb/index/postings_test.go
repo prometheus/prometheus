@@ -347,13 +347,13 @@ func BenchmarkIntersect(t *testing.B) {
 		}
 	})
 
-	// Many matchers(k >> n).
+	// Many matchers.
 	t.Run("ManyPostings", func(bench *testing.B) {
 		var lps []*ListPostings
 		var refs [][]storage.SeriesRef
 
-		// Create 100000 matchers(k=100000), making sure all memory allocation is done before starting the loop.
-		for range 100000 {
+		// Create 100 matchers, making sure all memory allocation is done before starting the loop.
+		for range 100 {
 			var temp []storage.SeriesRef
 			for j := storage.SeriesRef(1); j < 100; j++ {
 				temp = append(temp, j)
