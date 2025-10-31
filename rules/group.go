@@ -912,7 +912,7 @@ const namespace = "prometheus"
 // Metrics for rule evaluation.
 type Metrics struct {
 	EvalDuration               prometheus.Summary
-	EvalHistogramDuration      prometheus.Histogram
+	EvalDurationHistogram      prometheus.Histogram
 	IterationDuration          prometheus.Summary
 	IterationHistogramDuration prometheus.Histogram
 	IterationsMissed           *prometheus.CounterVec
