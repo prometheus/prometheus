@@ -583,9 +583,7 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig,
 	failed := false
 	hasErrors := false
 
-	fmt.Printf("Checking config: %#v\n", lintSettings)
 	for _, f := range files {
-		fmt.Printf("Checking file %s\n", f)
 		ruleFiles, scrapeConfigs, err := checkConfig(agentMode, f, checkSyntaxOnly)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
@@ -890,9 +888,7 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 	failed := false
 	hasErrors := false
-	fmt.Printf("Checking rules: %#v\n", ls)
 	for _, f := range files {
-		fmt.Printf("Checking rules file %s\n", f)
 		fmt.Println("Checking", f)
 		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme)
 		if errs != nil {
