@@ -49,7 +49,7 @@ func NewRefreshMetrics(reg prometheus.Registerer) RefreshMetricsManager {
 			[]string{"mechanism", "config"}),
 		durationHistVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:                            "prometheus_sd_refresh_histogram_duration_seconds",
+				Name:                            "prometheus_sd_refresh_duration_histogram_seconds",
 				Help:                            "The duration of a refresh for the given SD mechanism.",
 				Buckets:                         []float64{.01, .1, 1, 10},
 				NativeHistogramBucketFactor:     1.1,
