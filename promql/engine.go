@@ -412,12 +412,12 @@ func NewEngine(opts EngineOpts) *Engine {
 			Help:      "The total number of samples loaded by all queries.",
 		}),
 		queryQueueTime:            queryResultSummary.WithLabelValues("queue_time"),
-		queryPrepareTime:          queryResultSummary.WithLabelValues("prepare_time"),
-		queryInnerEval:            queryResultSummary.WithLabelValues("inner_eval"),
-		queryResultSort:           queryResultSummary.WithLabelValues("result_sort"),
 		queryQueueTimeHistogram:   queryResultHistogram.WithLabelValues("queue_time"),
+		queryPrepareTime:          queryResultSummary.WithLabelValues("prepare_time"),
 		queryPrepareTimeHistogram: queryResultHistogram.WithLabelValues("prepare_time"),
+		queryInnerEval:            queryResultSummary.WithLabelValues("inner_eval"),
 		queryInnerEvalHistogram:   queryResultHistogram.WithLabelValues("inner_eval"),
+		queryResultSort:           queryResultSummary.WithLabelValues("result_sort"),
 		queryResultSortHistogram:  queryResultHistogram.WithLabelValues("result_sort"),
 	}
 
