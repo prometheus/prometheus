@@ -21,3 +21,8 @@ type Metadata struct {
 	Unit string           `json:"unit"`
 	Help string           `json:"help"`
 }
+
+// IsEmpty returns true if metadata structure is empty, including unknown type case.
+func (m Metadata) IsEmpty() bool {
+	return (m.Type == "" || m.Type == model.MetricTypeUnknown) && m.Unit == "" && m.Help == ""
+}
