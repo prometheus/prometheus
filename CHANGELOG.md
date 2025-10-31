@@ -1,7 +1,7 @@
 # Changelog
 
 ## main / unreleased
-
+* [FEATURE] Remote Write: Add experimental flag `convert_nhcb_to_classic` to convert NHCB to classic histograms for external system that dont support NHCBs. #17205
 * [FEATURE] Templates: Add urlQueryEscape to template functions. #17403
 
 ## 3.7.3 / 2025-10-29
@@ -49,7 +49,7 @@
 * [PERF] TSDB: Optimize appender creation, slightly speeding up startup. #16922
 * [PERF] TSDB: Improve speed of querying a series with multiple matchers. #13971
 * [BUGFIX] Alerting: Mutating alerts relabeling (using `replace` actions, etc.) within a `alertmanager_config.alert_relabel_configs` block is now scoped correctly and no longer yields altered alerts to subsequent blocks. #17063
-* [BUGFIX] Config: Infer valid escaping scheme when scrape config validation scheme is set. #16923
+* [BUGFIX] Config: Infer escaping scheme when scrape config validation scheme is set.
 * [BUGFIX] TSDB: Correctly handle appending mixed-typed samples to the same series. #17071 #17241 #17290 #17295 #17296
 * [BUGFIX] Remote-write: Prevent sending unsupported native histograms with custom buckets (NHCB) over Remote-write 1.0, log warning. #17146
 * [BUGFIX] TSDB: Fix metadata entries handling on `metadata-wal-records` experimental feature for native histograms with custom buckets (NHCB) in protobuf scraping. #17156
