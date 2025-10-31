@@ -941,7 +941,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			}),
 		EvalHistogramDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Namespace:                       namespace,
-			Name:                            "rule_evaluation_histogram_duration_seconds",
+			Name:                            "rule_evaluation_duration_histogram_seconds",
 			Help:                            "The duration for a rule to execute.",
 			Buckets:                         []float64{.01, .1, 1, 10},
 			NativeHistogramBucketFactor:     1.1,
