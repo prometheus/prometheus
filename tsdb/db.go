@@ -93,6 +93,7 @@ func DefaultOptions() *Options {
 		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
 		CompactionDelay:             time.Duration(0),
 		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
+		WALShards:                   10,
 	}
 }
 
@@ -219,6 +220,15 @@ type Options struct {
 
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
+
+	// WALShards controls how many independent WAL shards to create under <db>/wal.
+	// If <= 1, a single non-sharded WAL is used (current behavior).
+	WALShards int
+
+	// WALShardWriteFanout, when true, writes to both the legacy single WAL (for
+	// backward-compatible replay) and the sharded WALs. This is useful as a
+	// transitional mode until Head replay becomes shard-aware. Default false.
+	WALShardWriteFanout bool
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -286,6 +296,9 @@ type DB struct {
 	blockQuerierFunc BlockQuerierFunc
 
 	blockChunkQuerierFunc BlockChunkQuerierFunc
+
+	// nil if not using sharded WAL.
+	shardedWAL *wlog.Sharded
 }
 
 type dbMetrics struct {
@@ -936,19 +949,84 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		if opts.WALSegmentSize > 0 {
 			segmentSize = opts.WALSegmentSize
 		}
-		wal, err = wlog.NewSize(l, r, walDir, segmentSize, opts.WALCompression)
-		if err != nil {
-			return nil, err
+		fmt.Println("walDIR: 🗂️", walDir)
+		fmt.Println("opts.WALShards: 🗂️", opts.WALShards)
+		// If sharded layout already exists on disk, we’ll keep the single WAL pointer nil for now
+		// and let Head detect & replay shards later (head wiring to be added).
+		if shardDirs, ok, err := wlog.DetectShardedLayout(walDir); err != nil {
+			return nil, fmt.Errorf("detect sharded wal: %w", err)
+		} else if ok {
+			l.Info("Detected sharded WAL layout", "shards", len(shardDirs))
+			// Leave wal=nil for now; Head will be responsible for sharded replay.
+		} else if opts.WALShards > 1 {
+			// Create new shard layout.
+			sw, err := wlog.NewSharded(l, r, walDir, opts.WALShards, segmentSize, opts.WALCompression)
+			if err != nil {
+				return nil, fmt.Errorf("create sharded wal: %w", err)
+			}
+
+			// Transitional fanout: write to both for backward-compat replay (optional).
+			if opts.WALShardWriteFanout {
+				legacy, err := wlog.NewSize(l, r, walDir, segmentSize, opts.WALCompression)
+				if err != nil {
+					return nil, fmt.Errorf("create legacy wal for fanout: %w", err)
+				}
+				// Simple: choose to expose the legacy as db.head.wal for writes,
+				// while exposing sharded WAL set to Head via head options (to read later).
+				wal = legacy
+				// Store the sharded pointer in db for later (e.g., Close) if you add a db field.
+				db.shardedWAL = sw
+				db.head.shardedWAL = sw
+			} else {
+				// No legacy. We'll keep wal=nil and rely on Head to use shards for writes too.
+				db.shardedWAL = sw
+			}
+		} else if opts.WALSegmentSize >= 0 {
+			// Single, non-sharded WAL (current behavior).
+			var err error
+			wal, err = wlog.NewSize(l, r, walDir, segmentSize, opts.WALCompression)
+			if err != nil {
+				return nil, err
+			}
 		}
+
+		// Below given code is now shifted to above only run in the case of non shared wal.
+		// wal, err = wlog.NewSize(l, r, walDir, segmentSize, opts.WALCompression)
+		// if err != nil {
+		// 	return nil, err
+		// }
+
 		// Check if there is a WBL on disk, in which case we should replay that data.
+		// wblSize, err := fileutil.DirSize(wblDir)
+		// if err != nil && !os.IsNotExist(err) {
+		// 	return nil, err
+		// }
+		// if opts.OutOfOrderTimeWindow > 0 || wblSize > 0 {
+		// 	wbl, err = wlog.NewSize(l, r, wblDir, segmentSize, opts.WALCompression)
+		// 	if err != nil {
+		// 		return nil, err
+		// 	}
+		// }
+
+		// WBL mirrors the WAL logic but is optional and only created if OOO is enabled or present on disk.
 		wblSize, err := fileutil.DirSize(wblDir)
 		if err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
 		if opts.OutOfOrderTimeWindow > 0 || wblSize > 0 {
-			wbl, err = wlog.NewSize(l, r, wblDir, segmentSize, opts.WALCompression)
-			if err != nil {
-				return nil, err
+			if opts.WALShards > 1 {
+				// Shard the WBL directory too.
+				if _, ok, _ := wlog.DetectShardedLayout(wblDir); !ok {
+					if _, err := wlog.NewSharded(l, r, wblDir, opts.WALShards, segmentSize, opts.WALCompression); err != nil {
+						return nil, fmt.Errorf("create sharded wbl: %w", err)
+					}
+				}
+				// For now, keep db.head.wbl nil and let Head handle sharded WBL replay later.
+			} else {
+				wbl, err = wlog.NewSize(l, r, wblDir, segmentSize, opts.WALCompression)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
@@ -975,7 +1053,13 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
 		headOpts.IsolationDisabled = opts.IsolationDisabled
 	}
-	db.head, err = NewHead(r, l, wal, wbl, headOpts, stats.Head)
+	if db.shardedWAL != nil {
+		// We created or detected sharded WAL, so use sharded head.
+		db.head, err = NewHeadWithShards(r, l, wal, db.shardedWAL, wbl, headOpts, stats.Head)
+	} else {
+		// Fallback: single WAL.
+		db.head, err = NewHead(r, l, wal, wbl, headOpts, stats.Head)
+	}
 	if err != nil {
 		return nil, err
 	}

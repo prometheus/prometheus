@@ -1061,8 +1061,120 @@ func (a *headAppender) log() error {
 	buf := a.head.getBytesBuffer()
 	defer func() { a.head.putBytesBuffer(buf) }()
 
+	// 1) build per-shard buckets
+	perShardSeries := make([][]record.RefSeries, a.head.shardCount)
+	perShardSamples := make([][]record.RefSample, a.head.shardCount)
+	perShardMetadata := make([][]record.RefMetadata, a.head.shardCount)
+	perShardHistogramSample := make([][]record.RefHistogramSample, a.head.shardCount)
+	perShardFloatHistogramSample := make([][]record.RefFloatHistogramSample, a.head.shardCount)
+	perShardExemplar := make([][]exemplarWithSeriesRef, a.head.shardCount)
+
+	// perShard holds: seriesRefs, metadata, samples, histos, floatHistos, exemplars
+
+	// a) series: decide shard by labels hash (or consult refToShard if set),
+	// and set refToShard for any new refs we see here.
+	for i := range a.seriesRefs {
+		rs := a.seriesRefs[i]
+		shard := a.head.pickShardForNewSeries(rs.Labels, rs.Ref) // computes and stores refToShard
+		perShardSeries[shard] = append(perShardSeries[shard], rs)
+	}
+
+	// b) metadata: use metadataSeries[i].ref -> refToShard
+	for i := range a.metadata {
+		ref := a.metadata[i].Ref
+		shard := a.head.refToShard[ref]
+		perShardMetadata[shard] = append(perShardMetadata[shard], a.metadata[i])
+	}
+
+	// c) samples (and same idea for histograms/float histograms)
+	for i := range a.samples {
+		ref := a.samples[i].Ref
+		shard := a.head.refToShard[ref]
+		perShardSamples[shard] = append(perShardSamples[shard], a.samples[i])
+	}
+	for i := range a.histograms {
+		ref := a.samples[i].Ref
+		shard := a.head.refToShard[ref]
+		perShardHistogramSample[shard] = append(perShardHistogramSample[shard], a.histograms[i])
+	}
+	for i := range a.floatHistograms {
+		ref := a.samples[i].Ref
+		shard := a.head.refToShard[ref]
+		perShardFloatHistogramSample[shard] = append(perShardFloatHistogramSample[shard], a.floatHistograms[i])
+	}
+	for i := range a.exemplars {
+		ref := a.samples[i].Ref
+		shard := a.head.refToShard[ref]
+		perShardExemplar[shard] = append(perShardExemplar[shard], a.exemplars[i])
+	}
+
 	var rec []byte
 	var enc record.Encoder
+
+	for shard := 0; shard < a.head.shardCount; shard++ {
+		w := a.head.shardWALs[shard]
+		if len(perShardSeries) > 0 {
+			rec := enc.Series(perShardSeries[shard], buf)
+			buf = rec[:0]
+			if err := w.Log(rec); err != nil {
+				return fmt.Errorf("log series: %w", err)
+			}
+		}
+		if len(perShardMetadata[shard]) > 0 {
+			rec := enc.Metadata(perShardMetadata[shard], buf)
+			buf = rec[:0]
+			if err := w.Log(rec); err != nil {
+				return fmt.Errorf("log metadata: %w", err)
+			}
+		}
+		if len(perShardHistogramSample[shard]) > 0 {
+			var customBucketsHistograms []record.RefHistogramSample
+			rec, customBucketsHistograms = enc.HistogramSamples(perShardHistogramSample[shard], buf)
+			buf = rec[:0]
+			if len(rec) > 0 {
+				if err := w.Log(rec); err != nil {
+					return fmt.Errorf("log histograms: %w", err)
+				}
+			}
+
+			if len(customBucketsHistograms) > 0 {
+				rec = enc.CustomBucketsHistogramSamples(customBucketsHistograms, buf)
+				if err := w.Log(rec); err != nil {
+					return fmt.Errorf("log custom buckets histograms: %w", err)
+				}
+			}
+
+		}
+		if len(perShardFloatHistogramSample[shard]) > 0 {
+			var customBucketsFloatHistograms []record.RefFloatHistogramSample
+			rec, customBucketsFloatHistograms = enc.FloatHistogramSamples(perShardFloatHistogramSample[shard], buf)
+			buf = rec[:0]
+			if len(rec) > 0 {
+				if err := w.Log(rec); err != nil {
+					return fmt.Errorf("log float histograms: %w", err)
+				}
+			}
+
+			if len(customBucketsFloatHistograms) > 0 {
+				rec = enc.CustomBucketsFloatHistogramSamples(customBucketsFloatHistograms, buf)
+				if err := w.Log(rec); err != nil {
+					return fmt.Errorf("log custom buckets float histograms: %w", err)
+				}
+			}
+		}
+		// Exemplars should be logged after samples (float/native histogram/etc),
+		// otherwise it might happen that we send the exemplars in a remote write
+		// batch before the samples, which in turn means the exemplar is rejected
+		// for missing series, since series are created due to samples.
+		if len(perShardExemplar[shard]) > 0 {
+			rec = enc.Exemplars(exemplarsForEncoding(perShardExemplar[shard]), buf)
+			buf = rec[:0]
+
+			if err := a.head.wal.Log(rec); err != nil {
+				return fmt.Errorf("log exemplars: %w", err)
+			}
+		}
+	}
 
 	if len(a.seriesRefs) > 0 {
 		rec = enc.Series(a.seriesRefs, buf)
