@@ -44,7 +44,7 @@ require (
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.18.0
 	github.com/kolo/xmlrpc v0.0.0-20220921171641-a4b6fa1dd06b
-	github.com/linode/linodego v1.59.0
+	github.com/linode/linodego v1.60.0
 	github.com/miekg/dns v1.1.68
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
