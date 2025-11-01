@@ -91,3 +91,38 @@ eval instant at 10m topk(10, sum by (__name__, env) (metric_total{env="1"}))
 
 eval instant at 10m topk(10, sum by (__name__, env) (rate(metric_total{env="1"}[10m])))
 	{env="1"} 0.2
+
+clear
+
+# More testing for __name__ label drop with different input series.
+load 1m
+  metric_total{env="1"} 0+1x10
+  metric_total{env="2"} 0+3x10
+
+# Metric name is preserved as there is no function that drops it.
+eval instant at 10m sum by (__name__) (metric_total{env="1"})
+  metric_total 10
+
+# Metric name is dropped at the end because of rate and because there is no label function to preserve it.
+eval instant at 10m sum by (__name__) (rate(metric_total{env="2"}[5m]))
+  {} 0.05
+
+# Metric name is preserved with label_replace even though it would have been dropped with rate.
+eval instant at 10m label_replace(sum by (__name__) (rate(metric_total{env="2"}[5m])), "__name__", "$1", "__name__", "(.+)")
+  metric_total 0.05
+
+# Combining the above cases in an OR expression, we drop the name if any of the series drops it.
+eval instant at 10m sum by (__name__) (metric_total{env="1"} or rate(metric_total{env="2"}[5m]))
+  {} 10.05
+
+# Changing the order of the OR expression should not change the result.
+eval instant at 10m sum by (__name__) (rate(metric_total{env="2"}[5m]) or metric_total{env="1"})
+  {} 10.05
+
+# With non-matching first selector, we use the second to determine if __name__ is dropped.
+eval instant at 10m sum by (__name__) (metric_total{env="3"} or rate(metric_total{env="2"}[5m]))
+  {} 0.05
+
+# Same as above, but with reversed order.
+eval instant at 10m sum by (__name__) (rate(metric_total{env="3"}[5m]) or metric_total{env="1"})
+  metric_total 10

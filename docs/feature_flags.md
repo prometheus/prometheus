@@ -143,6 +143,9 @@ These queries are rare to occur and easy to fix. (In the above example,
 removing `by (__name__)` doesn't change anything without the feature flag and
 fixes the possible problem with the feature flag.)
 
+When we have multiple series for the same grouping key that do not agree on the same dropping
+name behaviour, if at least 1 series drops the name, we drop the name for all series.
+
 ## Auto Reload Config
 
 `--enable-feature=auto-reload-config`
