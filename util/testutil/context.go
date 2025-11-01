@@ -17,7 +17,7 @@ import (
 	"context"
 	"time"
 
-	"go.uber.org/atomic"
+	"sync/atomic"
 )
 
 // A MockContext provides a simple stub implementation of a Context.
@@ -55,7 +55,7 @@ type MockContextErrAfter struct {
 }
 
 func (c *MockContextErrAfter) Err() error {
-	c.count.Inc()
+	c.count.Add(1)
 	if c.count.Load() >= c.FailAfter {
 		return context.Canceled
 	}

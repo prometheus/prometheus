@@ -52,7 +52,8 @@ import (
 	promslogflag "github.com/prometheus/common/promslog/flag"
 	"github.com/prometheus/common/version"
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
-	"go.uber.org/atomic"
+	"sync/atomic"
+
 	"go.uber.org/automaxprocs/maxprocs"
 	"k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
@@ -73,7 +74,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tracing"
-	"github.com/prometheus/prometheus/tsdb"
+	 "github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/documentcli"

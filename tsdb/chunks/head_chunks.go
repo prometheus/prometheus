@@ -28,7 +28,7 @@ import (
 
 	"github.com/dennwc/varint"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/atomic"
+	"sync/atomic"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
