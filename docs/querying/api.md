@@ -807,6 +807,64 @@ curl 'http://localhost:9090/api/v1/targets?scrapePool=node_exporter'
 }
 ```
 
+## Relabel steps
+
+This endpoint is **experimental** and might change in the future. It is currently only meant to be used by Prometheus' own web UI, and the endpoint name and exact format returned may change from one Prometheus version to another. It may also be removed again in case it is no longer needed by the UI.
+
+The following endpoint returns a step-by-step list of relabeling rules and their effects on a given target's label set.
+
+```
+GET /api/v1/targets/relabel_steps
+```
+
+URL query parameters:
+- `scrapePool=<string>`: The scrape pool name of the target, used to determine the relabeling rules to apply. Required.
+- `labels=<string>`: A JSON object containing the label set of the target before any relabeling is applied. Required.
+
+The following example returns the relabeling steps for a discovered target in the `prometheus` scrape pool with the label set `{"__address__": "localhost:9090", "job": "prometheus"}`:
+
+```bash
+curl -g 'http://localhost:9090/api/v1/targets/relabel_steps?scrapePool=prometheus&labels={"__address__":"localhost:9090","job":"prometheus"}'
+```
+
+```json
+{
+   "data" : {
+      "steps" : [
+         {
+            "keep" : true,
+            "output" : {
+               "__address__" : "localhost:9090",
+               "env" : "development",
+               "job" : "prometheus"
+            },
+            "rule" : {
+               "action" : "replace",
+               "regex" : "(.*)",
+               "replacement" : "development",
+               "separator" : ";",
+               "target_label" : "env"
+            }
+         },
+         {
+            "keep" : false,
+            "output" : {},
+            "rule" : {
+               "action" : "drop",
+               "regex" : "localhost:.*",
+               "replacement" : "$1",
+               "separator" : ";",
+               "source_labels" : [
+                  "__address__"
+               ]
+            }
+         }
+      ]
+   },
+   "status" : "success"
+}
+```
+
 ## Rules
 
 The `/rules` API endpoint returns a list of alerting and recording rules that
