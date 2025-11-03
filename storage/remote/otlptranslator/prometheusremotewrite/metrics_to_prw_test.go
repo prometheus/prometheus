@@ -1065,7 +1065,7 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 											noOpLogger := promslog.NewNopLogger()
 											b.ResetTimer()
 
-											for range b.N {
+											for b.Loop() {
 												app := &noOpAppender{}
 												mockAppender := NewCombinedAppender(app, noOpLogger, false, appMetrics)
 												converter := NewPrometheusConverter(mockAppender)

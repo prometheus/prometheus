@@ -2052,7 +2052,7 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 
 				b.ResetTimer()
 
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					var sets []storage.SeriesSet
 					for _, s := range in {
 						sets = append(sets, newMockSeriesSet(s))
@@ -2676,7 +2676,7 @@ func BenchmarkSetMatcher(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for n := 0; n < b.N; n++ {
+			for b.Loop() {
 				ss := sq.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "test", c.pattern))
 				for ss.Next() {
 				}
@@ -3279,9 +3279,8 @@ func BenchmarkQueries(b *testing.B) {
 }
 
 func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors labels.Selector) {
-	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ss := q.Select(context.Background(), false, nil, selectors...)
 		var actualExpansions int
 		var it chunkenc.Iterator
@@ -3524,8 +3523,8 @@ func BenchmarkHeadChunkQuerier(b *testing.B) {
 		require.NoError(b, q.Close())
 	}(querier)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		ss := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
 		total := 0
 		for ss.Next() {
@@ -3569,8 +3568,8 @@ func BenchmarkHeadQuerier(b *testing.B) {
 		require.NoError(b, q.Close())
 	}(querier)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		ss := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
 		total := int64(0)
 		for ss.Next() {

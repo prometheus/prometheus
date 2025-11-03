@@ -5766,13 +5766,13 @@ func FuzzProtobufParser_Labels(f *testing.F) {
 	) {
 		var (
 			r              = rand.New(rand.NewSource(randSeed))
-			buffers        = pool.New(1+r.Intn(128), 128+r.Intn(1024), 2, func(sz int) interface{} { return make([]byte, 0, sz) })
+			buffers        = pool.New(1+r.Intn(128), 128+r.Intn(1024), 2, func(sz int) any { return make([]byte, 0, sz) })
 			lastScrapeSize = 0
 			observedLabels []labels.Labels
 			st             = labels.NewSymbolTable()
 		)
 
-		for i := 0; i < 20; i++ { // run multiple iterations to encounter memory corruptions
+		for range 20 { // run multiple iterations to encounter memory corruptions
 			// Get buffer from pool like in scrape.go
 			b := buffers.Get(lastScrapeSize).([]byte)
 			buf := bytes.NewBuffer(b)
@@ -5848,7 +5848,7 @@ func generateFuzzMetricFamily(
 		Unit: unit,
 	}
 	metricsCount := r.Intn(20)
-	for i := 0; i < metricsCount; i++ {
+	for range metricsCount {
 		metric := dto.Metric{
 			Label: generateFuzzLabels(r),
 		}
@@ -5870,7 +5870,7 @@ func generateFuzzMetricFamily(
 func generateExemplars(r *rand.Rand) []*dto.Exemplar {
 	exemplarsCount := r.Intn(5)
 	exemplars := make([]*dto.Exemplar, 0, exemplarsCount)
-	for i := 0; i < exemplarsCount; i++ {
+	for range exemplarsCount {
 		exemplars = append(exemplars, &dto.Exemplar{
 			Label: generateFuzzLabels(r),
 			Value: r.Float64(),
@@ -5886,7 +5886,7 @@ func generateExemplars(r *rand.Rand) []*dto.Exemplar {
 func generateFuzzLabels(r *rand.Rand) []dto.LabelPair {
 	labelsCount := r.Intn(10)
 	ls := make([]dto.LabelPair, 0, labelsCount)
-	for i := 0; i < labelsCount; i++ {
+	for range labelsCount {
 		ls = append(ls, dto.LabelPair{
 			Name:  generateValidLabelName(r),
 			Value: generateValidLabelName(r),
@@ -5897,7 +5897,7 @@ func generateFuzzLabels(r *rand.Rand) []dto.LabelPair {
 
 func generateHelp(r *rand.Rand) string {
 	result := make([]string, 1+r.Intn(20))
-	for i := 0; i < len(result); i++ {
+	for i := range result {
 		result[i] = generateValidLabelName(r)
 	}
 	return strings.Join(result, "_")
