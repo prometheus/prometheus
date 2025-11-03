@@ -599,6 +599,36 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedLabels:          labels.FromStrings("__name__", "test_metric", "foo", "bar"),
 		},
 		{
+			desc: "Type and unit labels disabled - metadata should not be stored in WAL",
+			input: func() []writev2.TimeSeries {
+				symbolTable := writev2.NewSymbolTable()
+				labelRefs := symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric_wal", "instance", "localhost"), nil)
+				helpRef := symbolTable.Symbolize("Test metric for WAL verification")
+				unitRef := symbolTable.Symbolize("seconds")
+				return []writev2.TimeSeries{
+					{
+						LabelsRefs: labelRefs,
+						Metadata: writev2.Metadata{
+							Type:    writev2.Metadata_METRIC_TYPE_GAUGE,
+							HelpRef: helpRef,
+							UnitRef: unitRef,
+						},
+						Samples: []writev2.Sample{{Value: 42.0, Timestamp: 2000}},
+					},
+				}
+			}(),
+			symbols: func() []string {
+				symbolTable := writev2.NewSymbolTable()
+				symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric_wal", "instance", "localhost"), nil)
+				symbolTable.Symbolize("Test metric for WAL verification")
+				symbolTable.Symbolize("seconds")
+				return symbolTable.Symbols()
+			}(),
+			expectedCode:            http.StatusNoContent,
+			enableTypeAndUnitLabels: false,
+			expectedLabels:          labels.FromStrings("__name__", "test_metric_wal", "instance", "localhost"),
+		},
+		{
 			desc: "Type and unit labels enabled but no metadata",
 			input: func() []writev2.TimeSeries {
 				symbolTable := writev2.NewSymbolTable()
@@ -766,11 +796,16 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 						j++
 					}
 				}
-				if tc.updateMetadataErr == nil {
+				if tc.enableTypeAndUnitLabels && tc.updateMetadataErr == nil {
 					expectedMeta := ts.ToMetadata(writeV2RequestFixture.Symbols)
 					requireEqual(t, mockMetadata{ls, expectedMeta}, appendable.metadata[m])
 					m++
 				}
+			}
+
+			// Verify that when the feature flag is disabled, no metadata is stored in WAL.
+			if !tc.enableTypeAndUnitLabels {
+				require.Empty(t, appendable.metadata, "metadata should not be stored when enableTypeAndUnitLabels is false")
 			}
 		})
 	}
