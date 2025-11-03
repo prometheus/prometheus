@@ -62,13 +62,19 @@ type MemPostings struct {
 
 	// m holds the postings lists for each label-value pair, indexed first by label name, and then by label value.
 	//
-	// mtx must be held when interacting with m (the appropriate one for reading or writing).
+	// committed holds the postings that are visible to readers.
+	// All read operations (Postings, Stats, Iter, etc.) query this map.
+	// Data is moved here from tail via Flush().
+	// mtx must be held when interacting with committed.
 	// It is safe to retain a reference to a postings list after releasing the lock.
-	//
-	// BUG: There's currently a data race in addFor, which might modify the tail of the postings list:
-	// https://github.com/prometheus/prometheus/issues/15317
-	m map[string]map[string][]storage.SeriesRef
+	committed map[string]map[string][]storage.SeriesRef
 
+	// tail holds newly added postings that are not yet visible to readers.
+	// Add() writes to tail by appending, keeping it unsorted for fast writes.
+	// Flush() sorts tail data and merges it into committed.
+	// This separation prevents data races where readers might access partially sorted slices.
+	// mtx must be held when interacting with tail.
+	tail map[string]map[string][]storage.SeriesRef
 	// lvs holds the label values for each label name.
 	// lvs[name] is essentially an unsorted append-only list of all keys in m[name]
 	// mtx must be held when interacting with lvs.
@@ -83,9 +89,10 @@ const defaultLabelNamesMapSize = 512
 // NewMemPostings returns a memPostings that's ready for reads and writes.
 func NewMemPostings() *MemPostings {
 	return &MemPostings{
-		m:       make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
-		lvs:     make(map[string][]string, defaultLabelNamesMapSize),
-		ordered: true,
+		committed: make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
+		tail:      make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
+		lvs:       make(map[string][]string, defaultLabelNamesMapSize),
+		ordered:   true,
 	}
 }
 
@@ -93,9 +100,10 @@ func NewMemPostings() *MemPostings {
 // until EnsureOrder() was called once.
 func NewUnorderedMemPostings() *MemPostings {
 	return &MemPostings{
-		m:       make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
-		lvs:     make(map[string][]string, defaultLabelNamesMapSize),
-		ordered: false,
+		committed: make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
+		tail:      make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
+		lvs:       make(map[string][]string, defaultLabelNamesMapSize),
+		ordered:   false,
 	}
 }
 
@@ -128,9 +136,9 @@ func (p *MemPostings) Symbols() StringIter {
 // SortedKeys returns a list of sorted label keys of the postings.
 func (p *MemPostings) SortedKeys() []labels.Label {
 	p.mtx.RLock()
-	keys := make([]labels.Label, 0, len(p.m))
+	keys := make([]labels.Label, 0, len(p.committed))
 
-	for n, e := range p.m {
+	for n, e := range p.committed {
 		for v := range e {
 			keys = append(keys, labels.Label{Name: n, Value: v})
 		}
@@ -153,13 +161,13 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 func (p *MemPostings) LabelNames() []string {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
-	n := len(p.m)
+	n := len(p.committed)
 	if n == 0 {
 		return nil
 	}
 
 	names := make([]string, 0, n-1)
-	for name := range p.m {
+	for name := range p.committed {
 		if name != allPostingsKey.Name {
 			names = append(names, name)
 		}
@@ -210,7 +218,7 @@ func (p *MemPostings) Stats(label string, limit int, labelSizeFunc func(string, 
 	labelValueLength.init(limit)
 	labelValuePairs.init(limit)
 
-	for n, e := range p.m {
+	for n, e := range p.committed {
 		if n == "" {
 			continue
 		}
@@ -281,7 +289,7 @@ func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 	}
 
 	nextJob := ensureOrderBatchPool.Get().(*[][]storage.SeriesRef)
-	for _, e := range p.m {
+	for _, e := range p.committed {
 		for _, l := range e {
 			*nextJob = append(*nextJob, l)
 
@@ -311,7 +319,7 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 
 	affectedLabelNames := map[string]struct{}{}
 	process := func(l labels.Label) {
-		orig := p.m[l.Name][l.Value]
+		orig := p.committed[l.Name][l.Value]
 		repl := make([]storage.SeriesRef, 0, len(orig))
 		for _, id := range orig {
 			if _, ok := deleted[id]; !ok {
@@ -319,9 +327,9 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 			}
 		}
 		if len(repl) > 0 {
-			p.m[l.Name][l.Value] = repl
+			p.committed[l.Name][l.Value] = repl
 		} else {
-			delete(p.m[l.Name], l.Value)
+			delete(p.committed[l.Name], l.Value)
 			affectedLabelNames[l.Name] = struct{}{}
 		}
 	}
@@ -350,17 +358,17 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 			p.unlockWaitAndLockAgain()
 		}
 
-		if len(p.m[name]) == 0 {
+		if len(p.committed[name]) == 0 {
 			// Delete the label name key if we deleted all values.
-			delete(p.m, name)
+			delete(p.committed, name)
 			delete(p.lvs, name)
 			continue
 		}
 
 		// Create the new slice with enough room to grow without reallocating.
 		// We have deleted values here, so there's definitely some churn, so be prepared for it.
-		lvs := make([]string, 0, exponentialSliceGrowthFactor*len(p.m[name]))
-		for v := range p.m[name] {
+		lvs := make([]string, 0, exponentialSliceGrowthFactor*len(p.committed[name]))
+		for v := range p.committed[name] {
 			lvs = append(lvs, v)
 		}
 		p.lvs[name] = lvs
@@ -389,7 +397,7 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 
-	for n, e := range p.m {
+	for n, e := range p.committed {
 		for v, p := range e {
 			if err := f(labels.Label{Name: n, Value: v}, newListPostings(p...)); err != nil {
 				return err
@@ -400,6 +408,7 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 }
 
 // Add a label set to the postings index.
+// This method adds the series to the tail and immediately flushes it to make it visible to readers.
 func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	p.mtx.Lock()
 
@@ -407,8 +416,21 @@ func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 		p.addFor(id, l)
 	})
 	p.addFor(id, allPostingsKey)
-
 	p.mtx.Unlock()
+
+	p.Flush(lset)
+	allName, allValue := AllPostingsKey()
+	p.Flush(labels.FromStrings(allName, allValue))
+}
+
+// Flush moves postings for the given label set from tail to committed storage.
+// This makes the postings visible to readers via Postings(), Stats(), and other query methods.
+// Note: Add() automatically calls Flush, so this method is typically not needed by callers.
+// This method is primarily for internal use or advanced scenarios where fine-grained control is needed.
+func (p *MemPostings) Flush(lset labels.Labels) {
+	lset.Range(func(l labels.Label) {
+		p.flushNameValue(l.Name, l.Value)
+	})
 }
 
 func appendWithExponentialGrowth[T any](a []T, v T) []T {
@@ -421,15 +443,14 @@ func appendWithExponentialGrowth[T any](a []T, v T) []T {
 }
 
 func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
-	nm, ok := p.m[l.Name]
+	nm, ok := p.tail[l.Name]
 	if !ok {
 		nm = map[string][]storage.SeriesRef{}
-		p.m[l.Name] = nm
+		p.tail[l.Name] = nm
 	}
-	vm, ok := nm[l.Value]
-	if !ok {
-		p.lvs[l.Name] = appendWithExponentialGrowth(p.lvs[l.Name], l.Value)
-	}
+	vm := nm[l.Value]
+	// Note: We don't add to lvs here anymore. Label values are only added to lvs
+	// during Flush() when they become visible in committed postings.
 	list := appendWithExponentialGrowth(vm, id)
 	nm[l.Value] = list
 
@@ -440,12 +461,133 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	// be generated independently before adding them to postings.
 	// We repair order violations on insert. The invariant is that the first n-1
 	// items in the list are already sorted.
-	for i := len(list) - 1; i >= 1; i-- {
-		if list[i] >= list[i-1] {
-			break
-		}
-		list[i], list[i-1] = list[i-1], list[i]
+}
+
+func mergeIntoOldInPlace(old, tail []storage.SeriesRef) ([]storage.SeriesRef, bool) {
+	origOldLen, tailLen := len(old), len(tail)
+	if tailLen == 0 {
+		return old, true
 	}
+
+	if cap(old) < origOldLen+tailLen {
+		return nil, false
+	}
+
+	old = old[:origOldLen+tailLen]
+
+	i, j, k := origOldLen-1, tailLen-1, len(old)-1
+
+	for i >= 0 && j >= 0 {
+		if old[i] > tail[j] {
+			old[k] = old[i]
+			i--
+		} else {
+			old[k] = tail[j]
+			j--
+		}
+		k--
+	}
+	for j >= 0 {
+		old[k] = tail[j]
+		j--
+		k--
+	}
+	return old, true
+}
+
+func (p *MemPostings) flushNameValue(name, value string) {
+	p.mtx.Lock()
+	tail := p.tail[name][value]
+	if len(tail) == 0 {
+		p.mtx.Unlock()
+		return
+	}
+	tailCopy := slices.Clone(tail)
+	if p.committed[name] == nil {
+		p.committed[name] = make(map[string][]storage.SeriesRef)
+	}
+	p.tail[name][value] = nil
+	old := p.committed[name][value]
+	isNewValue := len(old) == 0
+	p.mtx.Unlock()
+
+	sort.Slice(tailCopy, func(i, j int) bool { return tailCopy[i] < tailCopy[j] })
+
+	p.mtx.Lock()
+	if p.committed[name] == nil {
+		p.committed[name] = make(map[string][]storage.SeriesRef)
+	}
+
+	old = p.committed[name][value]
+
+	if len(old) == 0 {
+		p.committed[name][value] = tailCopy
+		if isNewValue {
+			p.lvs[name] = appendWithExponentialGrowth(p.lvs[name], value)
+		}
+		p.mtx.Unlock()
+		return
+	}
+
+	if len(tailCopy) > 0 && old[len(old)-1] < tailCopy[0] {
+		if cap(old) >= len(old)+len(tailCopy) {
+			origLen := len(old)
+			old = old[:origLen+len(tailCopy)]
+			copy(old[origLen:], tailCopy)
+			p.committed[name][value] = old
+			if isNewValue {
+				p.lvs[name] = appendWithExponentialGrowth(p.lvs[name], value)
+			}
+			p.mtx.Unlock()
+			return
+		}
+		newCommitted := append(append([]storage.SeriesRef{}, old...), tailCopy...)
+		p.committed[name][value] = newCommitted
+		if isNewValue {
+			p.lvs[name] = appendWithExponentialGrowth(p.lvs[name], value)
+		}
+		p.mtx.Unlock()
+		return
+	}
+
+	// General case: need to interleave (merge).
+	// Try in-place merge (from end) if old has required capacity.
+	if merged, ok := mergeIntoOldInPlace(old, tailCopy); ok {
+		p.committed[name][value] = merged
+		if isNewValue {
+			p.lvs[name] = appendWithExponentialGrowth(p.lvs[name], value)
+		}
+		p.mtx.Unlock()
+		return
+	}
+
+	newCommitted := mergeSorted(old, tailCopy)
+	p.committed[name][value] = newCommitted
+	if isNewValue {
+		p.lvs[name] = appendWithExponentialGrowth(p.lvs[name], value)
+	}
+	p.mtx.Unlock()
+}
+
+func mergeSorted(old, tail []storage.SeriesRef) []storage.SeriesRef {
+	res := make([]storage.SeriesRef, 0, len(old)+len(tail))
+	i, j := 0, 0
+	for i < len(old) && j < len(tail) {
+		if old[i] <= tail[j] {
+			res = append(res, old[i])
+			i++
+		} else {
+			res = append(res, tail[j])
+			j++
+		}
+	}
+	if i < len(old) {
+		res = append(res, old[i:]...)
+	}
+	if j < len(tail) {
+		res = append(res, tail[j:]...)
+	}
+	return res
 }
 
 func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
@@ -481,7 +623,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	its := make([]*ListPostings, 0, len(vals))
 	lps := make([]ListPostings, len(vals))
 	p.mtx.RLock()
-	e := p.m[name]
+	e := p.committed[name]
 	for i, v := range vals {
 		if refs, ok := e[v]; ok {
 			// Some of the values may have been garbage-collected in the meantime this is fine, we'll just skip them.
@@ -498,12 +640,11 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	return Merge(ctx, its...)
 }
 
-// Postings returns a postings iterator for the given label values.
 func (p *MemPostings) Postings(ctx context.Context, name string, values ...string) Postings {
 	res := make([]*ListPostings, 0, len(values))
 	lps := make([]ListPostings, len(values))
 	p.mtx.RLock()
-	postingsMapForName := p.m[name]
+	postingsMapForName := p.committed[name]
 	for i, value := range values {
 		if lp := postingsMapForName[value]; lp != nil {
 			lps[i] = ListPostings{list: lp}
@@ -511,13 +652,14 @@ func (p *MemPostings) Postings(ctx context.Context, name string, values ...strin
 		}
 	}
 	p.mtx.RUnlock()
+
 	return Merge(ctx, res...)
 }
 
 func (p *MemPostings) PostingsForAllLabelValues(ctx context.Context, name string) Postings {
 	p.mtx.RLock()
 
-	e := p.m[name]
+	e := p.committed[name]
 	its := make([]*ListPostings, 0, len(e))
 	lps := make([]ListPostings, len(e))
 	i := 0
