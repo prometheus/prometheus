@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -171,6 +172,25 @@ func (mw *MetadataWatcher) GetMetadataForMetric(metricFamily string) *scrape.Met
 		return nil
 	}
 
+	// First try: exact match.
+	if meta := mw.lookupMetadata(metricFamily); meta != nil {
+		return meta
+	}
+
+	// Second try: strip suffix after last underscore and try again.
+	// This handles histogram suffixes like _bucket, _count, _sum and counter _total.
+	if idx := strings.LastIndexByte(metricFamily, '_'); idx > 0 {
+		baseName := metricFamily[:idx]
+		if meta := mw.lookupMetadata(baseName); meta != nil {
+			return meta
+		}
+	}
+
+	return nil
+}
+
+// lookupMetadata performs the actual metadata lookup from active targets.
+func (mw *MetadataWatcher) lookupMetadata(metricFamily string) *scrape.MetricMetadata {
 	for _, tset := range mw.manager.TargetsActive() {
 		for _, target := range tset {
 			if meta, ok := target.GetMetadata(metricFamily); ok {
@@ -183,6 +203,5 @@ func (mw *MetadataWatcher) GetMetadataForMetric(metricFamily string) *scrape.Met
 			}
 		}
 	}
-
 	return nil
 }

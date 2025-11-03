@@ -2625,9 +2625,9 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 	}
 }
 
-// TestPopulateV2TimeSeries_ScrapeCacheFallback tests that when metadata.send=true
+// TestPopulateV2TimeSeries_ScrapeCache tests that when metadata.send=true
 // and WAL metadata is missing, RW2 looks up metadata from the scrape cache.
-func TestPopulateV2TimeSeries_ScrapeCacheFallback(t *testing.T) {
+func TestPopulateV2TimeSeries_ScrapeCache(t *testing.T) {
 	metadataStore := &TestMetaStore{
 		Metadata: []scrape.MetricMetadata{
 			{
@@ -2641,6 +2641,24 @@ func TestPopulateV2TimeSeries_ScrapeCacheFallback(t *testing.T) {
 				Type:         model.MetricTypeCounter,
 				Help:         "Test counter from scrape cache",
 				Unit:         "seconds",
+			},
+			{
+				MetricFamily: "http_request_duration_seconds",
+				Type:         model.MetricTypeHistogram,
+				Help:         "HTTP request duration histogram",
+				Unit:         "seconds",
+			},
+			{
+				MetricFamily: "requests_total",
+				Type:         model.MetricTypeCounter,
+				Help:         "Total requests counter",
+				Unit:         "requests",
+			},
+			{
+				MetricFamily: "custom_metric",
+				Type:         model.MetricTypeCounter,
+				Help:         "Custom counter with _total suffix",
+				Unit:         "",
 			},
 		},
 	}
@@ -2672,6 +2690,7 @@ func TestPopulateV2TimeSeries_ScrapeCacheFallback(t *testing.T) {
 		expectedUnit          string
 		expectedMetadataCount int
 	}{
+		// Basic scrape cache fallback tests
 		{
 			name:                  "no WAL, scrape cache provides all metadata",
 			metricName:            "test_gauge",
@@ -2731,6 +2750,62 @@ func TestPopulateV2TimeSeries_ScrapeCacheFallback(t *testing.T) {
 			expectedUnit:          "",
 			expectedMetadataCount: 1,
 		},
+		// Complex metric type tests (histograms, counters with suffixes)
+		{
+			name:                  "histogram _bucket suffix should match base metric",
+			metricName:            "http_request_duration_seconds_bucket",
+			walMetadata:           nil,
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "HTTP request duration histogram",
+			expectedType:          writev2.Metadata_METRIC_TYPE_HISTOGRAM,
+			expectedUnit:          "seconds",
+			expectedMetadataCount: 1,
+		},
+		{
+			name:                  "histogram _count suffix should match base metric",
+			metricName:            "http_request_duration_seconds_count",
+			walMetadata:           nil,
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "HTTP request duration histogram",
+			expectedType:          writev2.Metadata_METRIC_TYPE_HISTOGRAM,
+			expectedUnit:          "seconds",
+			expectedMetadataCount: 1,
+		},
+		{
+			name:                  "histogram _sum suffix should match base metric",
+			metricName:            "http_request_duration_seconds_sum",
+			walMetadata:           nil,
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "HTTP request duration histogram",
+			expectedType:          writev2.Metadata_METRIC_TYPE_HISTOGRAM,
+			expectedUnit:          "seconds",
+			expectedMetadataCount: 1,
+		},
+		{
+			name:                  "OpenMetrics 2.0 counter with _total (exact match)",
+			metricName:            "requests_total",
+			walMetadata:           nil,
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "Total requests counter",
+			expectedType:          writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit:          "requests",
+			expectedMetadataCount: 1,
+		},
+		{
+			name:                  "counter _total stripped matches base (custom_metric_total -> custom_metric)",
+			metricName:            "custom_metric_total",
+			walMetadata:           nil,
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "Custom counter with _total suffix",
+			expectedType:          writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit:          "",
+			expectedMetadataCount: 1,
+		},
 	}
 
 	for _, tc := range tests {
@@ -2784,6 +2859,124 @@ func TestPopulateV2TimeSeries_ScrapeCacheFallback(t *testing.T) {
 			}
 			require.Equal(t, tc.expectedUnit, actualUnit, "Unit should match")
 		})
+	}
+}
+
+// TestPopulateV2TimeSeries_ScrapeCacheHistogram tests metadata lookup for a histogram
+// that creates multiple series (_bucket with different le labels, _count, _sum).
+func TestPopulateV2TimeSeries_ScrapeCacheHistogram(t *testing.T) {
+	metadataStore := &TestMetaStore{
+		Metadata: []scrape.MetricMetadata{
+			{
+				MetricFamily: "http_request_duration_seconds",
+				Type:         model.MetricTypeHistogram,
+				Help:         "HTTP request latency in seconds",
+				Unit:         "seconds",
+			},
+		},
+	}
+
+	target := &scrape.Target{}
+	target.SetMetadataStore(metadataStore)
+
+	fakeManager := &fakeManager{
+		activeTargets: map[string][]*scrape.Target{
+			"api": {target},
+		},
+	}
+
+	scrapeMgr := &scrapeManagerMock{
+		ready: true,
+	}
+
+	metadataWatcher := NewMetadataWatcher(promslog.NewNopLogger(), scrapeMgr, "test", nil, interval, deadline)
+	metadataWatcher.manager = fakeManager
+
+	now := time.Now().UnixMilli()
+	batch := []timeSeries{
+		{
+			seriesLabels: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "le", "0.1", "method", "GET", "status", "200"),
+			metadata:     nil,
+			value:        50,
+			timestamp:    now,
+			sType:        tSample,
+		},
+		{
+			seriesLabels: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "le", "0.5", "method", "GET", "status", "200"),
+			metadata:     nil,
+			value:        100,
+			timestamp:    now,
+			sType:        tSample,
+		},
+		{
+			seriesLabels: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "le", "1", "method", "GET", "status", "200"),
+			metadata:     nil,
+			value:        150,
+			timestamp:    now,
+			sType:        tSample,
+		},
+		{
+			seriesLabels: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "le", "+Inf", "method", "GET", "status", "200"),
+			metadata:     nil,
+			value:        200,
+			timestamp:    now,
+			sType:        tSample,
+		},
+		{
+			seriesLabels: labels.FromStrings("__name__", "http_request_duration_seconds_sum", "method", "GET", "status", "200"),
+			metadata:     nil,
+			value:        45.5,
+			timestamp:    now,
+			sType:        tSample,
+		},
+		{
+			seriesLabels: labels.FromStrings("__name__", "http_request_duration_seconds_count", "method", "GET", "status", "200"),
+			metadata:     nil,
+			value:        200,
+			timestamp:    now,
+			sType:        tSample,
+		},
+	}
+
+	symbolTable := writev2.NewSymbolTable()
+	pendingData := make([]writev2.TimeSeries, len(batch))
+
+	nSamples, nExemplars, nHistograms, nMetadata, _ := populateV2TimeSeries(
+		&symbolTable,
+		batch,
+		pendingData,
+		false,
+		false,
+		false,
+		metadataWatcher,
+	)
+
+	// Verify counts.
+	require.Equal(t, 6, nSamples, "Should have 6 samples (4 buckets + sum + count)")
+	require.Equal(t, 0, nExemplars, "Should have 0 exemplars")
+	require.Equal(t, 0, nHistograms, "Should have 0 histograms")
+	require.Equal(t, 6, nMetadata, "All 6 series should have metadata")
+
+	symbols := symbolTable.Symbols()
+
+	// Verify all series got the same metadata from the base histogram metric.
+	for i, series := range pendingData {
+		require.Equal(t, writev2.Metadata_METRIC_TYPE_HISTOGRAM, series.Metadata.Type,
+			"Series %d should have HISTOGRAM type", i)
+
+		var actualHelp string
+		if series.Metadata.HelpRef > 0 && series.Metadata.HelpRef < uint32(len(symbols)) {
+			actualHelp = symbols[series.Metadata.HelpRef]
+		}
+		require.Equal(t, "HTTP request latency in seconds", actualHelp,
+			"Series %d should have correct Help from base metric", i)
+
+		var actualUnit string
+		if series.Metadata.UnitRef > 0 && series.Metadata.UnitRef < uint32(len(symbols)) {
+			actualUnit = symbols[series.Metadata.UnitRef]
+		}
+		require.Equal(t, "seconds", actualUnit,
+			"Series %d should have correct Unit from base metric", i)
 	}
 }
 
