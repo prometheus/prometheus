@@ -3153,8 +3153,12 @@ queue_config:
 #   - Metadata is sent separately from samples
 #
 # For Remote Write v2 (`io.prometheus.write.v2.Request`):
-#   - `send: true` enables scrape cache as an alternative metadata source (especially HELP) from metadata-wal-records feature 
 #   - Metadata is always sent inline with samples
+#   - When WAL metadata is missing and `send: true`:
+#     - With type-and-unit-labels: Only Help is looked up from scrape cache
+#       (Type and Unit come from __type__ and __unit__ labels)
+#     - Without type-and-unit-labels: All metadata (Type, Help, Unit) is
+#       looked up from scrape cache
 #
 # Metadata configuration is subject to change at any point
 # or be removed in future releases.
