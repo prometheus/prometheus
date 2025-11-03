@@ -1492,12 +1492,7 @@ http_requests_total{method="GET",status="200"} 123
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create agent DB.
-			dbDir := t.TempDir()
-			rs := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
-			defer rs.Close()
-
-			db, err := Open(promslog.NewNopLogger(), nil, rs, dbDir, DefaultOptions())
-			require.NoError(t, err)
+			db := createTestAgentDB(t, nil, DefaultOptions())
 
 			ctx := context.Background()
 			app := db.Appender(ctx)
@@ -1555,10 +1550,11 @@ http_requests_total{method="GET",status="200"} 123
 			require.NoError(t, app.Commit())
 
 			// Close DB to flush WAL before reading it.
+			walDir := db.wal.Dir()
 			require.NoError(t, db.Close())
 
 			// Read the WAL and verify the labels.
-			walSamples := readWALSamples(t, dbDir+"/wal")
+			walSamples := readWALSamples(t, walDir)
 
 			// Build a map of actual labels from WAL for easier verification.
 			actualLabels := make(map[string]labels.Labels)
