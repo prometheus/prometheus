@@ -2310,7 +2310,7 @@ func reuseOrGetHPointSlices(prevSS *Series, numSteps int) (r []HPoint) {
 	if prevSS != nil && cap(prevSS.Histograms)-2*len(prevSS.Histograms) > 0 {
 		r = prevSS.Histograms[len(prevSS.Histograms):]
 		prevSS.Histograms = prevSS.Histograms[0:len(prevSS.Histograms):len(prevSS.Histograms)]
-		return
+		return r
 	}
 
 	return getHPointSlice(numSteps)
@@ -2322,7 +2322,7 @@ func reuseOrGetFPointSlices(prevSS *Series, numSteps int) (r []FPoint) {
 	if prevSS != nil && cap(prevSS.Floats)-2*len(prevSS.Floats) > 0 {
 		r = prevSS.Floats[len(prevSS.Floats):]
 		prevSS.Floats = prevSS.Floats[0:len(prevSS.Floats):len(prevSS.Floats)]
-		return
+		return r
 	}
 
 	return getFPointSlice(numSteps)

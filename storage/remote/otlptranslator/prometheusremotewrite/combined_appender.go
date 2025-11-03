@@ -186,7 +186,7 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 
 	if ref == 0 {
 		// We cannot update metadata or add exemplars on non existent series.
-		return
+		return err
 	}
 
 	if !exists || series.meta.Help != meta.Help || series.meta.Type != meta.Type || series.meta.Unit != meta.Unit {
@@ -210,7 +210,7 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 
 	b.appendExemplars(ref, ls, es)
 
-	return
+	return err
 }
 
 func sampleType(h *histogram.Histogram) string {

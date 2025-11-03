@@ -799,7 +799,7 @@ func formatSeriesSetOpenMetrics(ss storage.SeriesSet) error {
 		series := ss.At()
 		lbs := series.Labels()
 		metricName := lbs.Get(labels.MetricName)
-		lbs = lbs.DropMetricName()
+		lbs = lbs.DropReserved(func(n string) bool { return n == labels.MetricName })
 		it := series.Iterator(nil)
 		for it.Next() == chunkenc.ValFloat {
 			ts, val := it.At()
@@ -889,5 +889,5 @@ func generateBucket(minVal, maxVal int) (start, end, step int) {
 	start = minVal - minVal%step
 	end = maxVal - maxVal%step + step
 
-	return
+	return start, end, step
 }
