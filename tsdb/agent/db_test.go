@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
@@ -1392,5 +1393,207 @@ func BenchmarkCreateSeries(b *testing.B) {
 
 	for _, l := range lbls {
 		app.getOrCreate(l)
+	}
+}
+
+// TestAgentModeWithTypeAndUnitLabelsFeature validates that the type-and-unit-labels
+// feature works end-to-end in agent mode by parsing metrics with TYPE and UNIT metadata
+// and verifying the labels are correctly stored in the WAL based on the feature flag.
+func TestAgentModeWithTypeAndUnitLabelsFeature(t *testing.T) {
+	testCases := []struct {
+		name              string
+		enableFeature     bool
+		metricsText       string
+		expectedInWAL     map[string]map[string]string // metric -> (label -> value).
+		notExpectedLabels []string
+	}{
+		{
+			name:          "feature enabled - counter with type and unit",
+			enableFeature: true,
+			metricsText: `# TYPE http_requests counter
+# UNIT http_requests requests
+http_requests_total 123
+# EOF
+`,
+			expectedInWAL: map[string]map[string]string{
+				"http_requests_total": {
+					"__name__": "http_requests_total",
+					"__type__": "counter",
+					"__unit__": "requests",
+				},
+			},
+		},
+		{
+			name:          "feature enabled - gauge with type, no unit",
+			enableFeature: true,
+			metricsText: `# TYPE memory_usage gauge
+memory_usage_bytes 456789
+# EOF
+`,
+			expectedInWAL: map[string]map[string]string{
+				"memory_usage_bytes": {
+					"__name__": "memory_usage_bytes",
+					"__type__": "gauge",
+				},
+			},
+		},
+		{
+			name:          "feature enabled - histogram with type and unit",
+			enableFeature: true,
+			metricsText: `# TYPE request_duration_seconds histogram
+# UNIT request_duration_seconds seconds
+request_duration_seconds_bucket{le="0.1"} 10
+# EOF
+`,
+			expectedInWAL: map[string]map[string]string{
+				"request_duration_seconds_bucket": {
+					"__name__": "request_duration_seconds_bucket",
+					"__type__": "histogram",
+					"__unit__": "seconds",
+					"le":       "0.1",
+				},
+			},
+		},
+		{
+			name:          "feature disabled - no type/unit labels",
+			enableFeature: false,
+			metricsText: `# TYPE http_requests counter
+# UNIT http_requests requests
+http_requests_total 123
+# EOF
+`,
+			expectedInWAL: map[string]map[string]string{
+				"http_requests_total": {
+					"__name__": "http_requests_total",
+				},
+			},
+			notExpectedLabels: []string{"__type__", "__unit__"},
+		},
+		{
+			name:          "feature enabled - metric with existing labels",
+			enableFeature: true,
+			metricsText: `# TYPE http_requests counter
+# UNIT http_requests requests
+http_requests_total{method="GET",status="200"} 123
+# EOF
+`,
+			expectedInWAL: map[string]map[string]string{
+				"http_requests_total": {
+					"__name__": "http_requests_total",
+					"__type__": "counter",
+					"__unit__": "requests",
+					"method":   "GET",
+					"status":   "200",
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create agent DB.
+			dbDir := t.TempDir()
+			rs := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
+			defer rs.Close()
+
+			db, err := Open(promslog.NewNopLogger(), nil, rs, dbDir, DefaultOptions())
+			require.NoError(t, err)
+
+			ctx := context.Background()
+			app := db.Appender(ctx)
+
+			// Parse metrics using textparse with the feature flag.
+			symbolTable := labels.NewSymbolTable()
+			parser, err := textparse.New([]byte(tc.metricsText), "application/openmetrics-text", symbolTable, textparse.ParserOptions{
+				EnableTypeAndUnitLabels: tc.enableFeature,
+			})
+			require.NoError(t, err)
+
+			// Parse and append all metrics.
+			baseTimestamp := time.Now().UnixMilli()
+			sampleCount := 0
+
+			for {
+				et, err := parser.Next()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				require.NoError(t, err)
+
+				switch et {
+				case textparse.EntrySeries:
+					// Create fresh labels for each series.
+					var lbls labels.Labels
+					parser.Labels(&lbls)
+					_, ts, v := parser.Series()
+
+					sampleTs := baseTimestamp + int64(sampleCount)
+					if ts != nil {
+						sampleTs = *ts
+					}
+					sampleCount++
+
+					_, err = app.Append(0, lbls, sampleTs, v)
+					require.NoError(t, err)
+				case textparse.EntryHistogram:
+					// Create fresh labels for each histogram.
+					var lbls labels.Labels
+					parser.Labels(&lbls)
+					_, ts, h, fh := parser.Histogram()
+
+					sampleTs := baseTimestamp + int64(sampleCount)
+					if ts != nil {
+						sampleTs = *ts
+					}
+					sampleCount++
+
+					_, err = app.AppendHistogram(0, lbls, sampleTs, h, fh)
+					require.NoError(t, err)
+				}
+			}
+
+			require.NoError(t, app.Commit())
+
+			// Close DB to flush WAL before reading it.
+			require.NoError(t, db.Close())
+
+			// Read the WAL and verify the labels.
+			walSamples := readWALSamples(t, dbDir+"/wal")
+
+			// Build a map of actual labels from WAL for easier verification.
+			actualLabels := make(map[string]labels.Labels)
+			for _, sample := range walSamples {
+				metricName := sample.lbls.Get("__name__")
+				if metricName != "" {
+					actualLabels[metricName] = sample.lbls
+				}
+			}
+
+			// Verify expected labels are present.
+			for metricName, expectedLabelsMap := range tc.expectedInWAL {
+				actualLbls, found := actualLabels[metricName]
+				require.True(t, found, "metric %s should be in WAL", metricName)
+
+				// Check each expected label.
+				for labelName, expectedValue := range expectedLabelsMap {
+					actualValue := actualLbls.Get(labelName)
+					require.Equal(t, expectedValue, actualValue,
+						"metric %s should have label %s=%s, got %s",
+						metricName, labelName, expectedValue, actualValue)
+				}
+			}
+
+			// Verify labels that should NOT be present.
+			if len(tc.notExpectedLabels) > 0 {
+				for _, sample := range walSamples {
+					for _, labelName := range tc.notExpectedLabels {
+						actualValue := sample.lbls.Get(labelName)
+						require.Empty(t, actualValue,
+							"metric %s should not have label %s, but got value %s",
+							sample.lbls.Get("__name__"), labelName, actualValue)
+					}
+				}
+			}
+		})
 	}
 }
