@@ -26,12 +26,12 @@ import (
 // NOTE(bwplotka): This file's code is tested in /prompb/rwcommon.
 
 // ToLabels return model labels.Labels from timeseries' remote labels.
-func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, _ []string) labels.Labels {
+func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, _ []string, _ bool) labels.Labels {
 	return labelProtosToLabels(b, m.GetLabels())
 }
 
 // ToLabels return model labels.Labels from timeseries' remote labels.
-func (m ChunkedSeries) ToLabels(b *labels.ScratchBuilder, _ []string) labels.Labels {
+func (m ChunkedSeries) ToLabels(b *labels.ScratchBuilder, _ []string, _ bool) labels.Labels {
 	return labelProtosToLabels(b, m.GetLabels())
 }
 
