@@ -130,7 +130,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 			}
 
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -237,7 +237,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			}
 
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, false, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -272,7 +272,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 		}
 
 		appendable := &mockAppendable{}
-		handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, false)
+		handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, false, false)
 
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, req)
@@ -301,7 +301,7 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	// in Prometheus, so keeping like this to not break existing 1.0 clients.
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -365,6 +365,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 
 		ingestCTZeroSample      bool
 		enableTypeAndUnitLabels bool
+		appendMetadata          bool
 		expectedLabels          labels.Labels // For verifying type/unit labels
 	}{
 		{
@@ -599,6 +600,37 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedLabels:          labels.FromStrings("__name__", "test_metric", "foo", "bar"),
 		},
 		{
+			desc: "Metadata-wal-records disabled - metadata should not be stored in WAL",
+			input: func() []writev2.TimeSeries {
+				symbolTable := writev2.NewSymbolTable()
+				labelRefs := symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric_wal", "instance", "localhost"), nil)
+				helpRef := symbolTable.Symbolize("Test metric for WAL verification")
+				unitRef := symbolTable.Symbolize("seconds")
+				return []writev2.TimeSeries{
+					{
+						LabelsRefs: labelRefs,
+						Metadata: writev2.Metadata{
+							Type:    writev2.Metadata_METRIC_TYPE_GAUGE,
+							HelpRef: helpRef,
+							UnitRef: unitRef,
+						},
+						Samples: []writev2.Sample{{Value: 42.0, Timestamp: 2000}},
+					},
+				}
+			}(),
+			symbols: func() []string {
+				symbolTable := writev2.NewSymbolTable()
+				symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric_wal", "instance", "localhost"), nil)
+				symbolTable.Symbolize("Test metric for WAL verification")
+				symbolTable.Symbolize("seconds")
+				return symbolTable.Symbols()
+			}(),
+			expectedCode:            http.StatusNoContent,
+			enableTypeAndUnitLabels: false,
+			appendMetadata:          false,
+			expectedLabels:          labels.FromStrings("__name__", "test_metric_wal", "instance", "localhost"),
+		},
+		{
 			desc: "Type and unit labels enabled but no metadata",
 			input: func() []writev2.TimeSeries {
 				symbolTable := writev2.NewSymbolTable()
@@ -674,7 +706,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				appendExemplarErr:     tc.appendExemplarErr,
 				updateMetadataErr:     tc.updateMetadataErr,
 			}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, tc.ingestCTZeroSample, tc.enableTypeAndUnitLabels)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, tc.ingestCTZeroSample, tc.enableTypeAndUnitLabels, tc.appendMetadata)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -766,11 +798,16 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 						j++
 					}
 				}
-				if tc.updateMetadataErr == nil {
+				if tc.appendMetadata && tc.updateMetadataErr == nil {
 					expectedMeta := ts.ToMetadata(writeV2RequestFixture.Symbols)
 					requireEqual(t, mockMetadata{ls, expectedMeta}, appendable.metadata[m])
 					m++
 				}
+			}
+
+			// Verify that when the feature flag is disabled, no metadata is stored in WAL.
+			if !tc.appendMetadata {
+				require.Empty(t, appendable.metadata, "metadata should not be stored when appendMetadata (metadata-wal-records) is false")
 			}
 		})
 	}
@@ -802,7 +839,7 @@ func TestOutOfOrderSample_V1Message(t *testing.T) {
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -844,7 +881,7 @@ func TestOutOfOrderExemplar_V1Message(t *testing.T) {
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -882,7 +919,7 @@ func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -932,9 +969,9 @@ func BenchmarkRemoteWriteHandler(b *testing.B) {
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{tc.protoFormat}, false, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{tc.protoFormat}, false, false, false)
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				b.StopTimer()
 				buf, err := tc.payloadFunc()
 				require.NoError(b, err)
@@ -957,7 +994,7 @@ func TestCommitErr_V1Message(t *testing.T) {
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{commitErr: errors.New("commit error")}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -1023,7 +1060,7 @@ func TestHistogramValidationErrorHandling(t *testing.T) {
 				require.NoError(t, err)
 				t.Cleanup(func() { require.NoError(t, db.Close()) })
 
-				handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []remoteapi.WriteMessageType{protoMsg}, false, false)
+				handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []remoteapi.WriteMessageType{protoMsg}, false, false, false)
 				recorder := httptest.NewRecorder()
 
 				var buf []byte
@@ -1068,7 +1105,7 @@ func TestCommitErr_V2Message(t *testing.T) {
 	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 
 	appendable := &mockAppendable{commitErr: errors.New("commit error")}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, false, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -1095,7 +1132,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 		require.NoError(b, db.Close())
 	})
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false, false)
 
 	buf, _, _, err := buildWriteRequest(nil, genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil, nil, "snappy")
 	require.NoError(b, err)
@@ -1426,7 +1463,7 @@ func TestHistogramsReduction(t *testing.T) {
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(string(protoMsg), func(t *testing.T) {
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{protoMsg}, false, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{protoMsg}, false, false, false)
 
 			var (
 				err     error

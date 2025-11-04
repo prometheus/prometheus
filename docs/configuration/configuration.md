@@ -179,7 +179,7 @@ global:
   # 1, but the resulting classic histogram or NHCB only has a sole bucket, the
   # +Inf bucket. If scrape_native_histograms is true, however, the histogram is
   # recognized as a pure native histogram and ingested as such. There will be
-  # no classic histgram ingested, no matter what 
+  # no classic histogram ingested, no matter what 
   # always_scrape_classic_histograms is set to, and there will be no
   # conversion to an NHCB, no matter what convert_classic_histograms_to_nhcb
   # is set to.

@@ -166,6 +166,7 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overri
 		false,
 		5*time.Minute,
 		false,
+		false,
 		overrideErrorCode,
 	)
 
@@ -263,6 +264,10 @@ func (DummyTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
 // TargetsDroppedCounts implements targetRetriever.
 func (DummyTargetRetriever) TargetsDroppedCounts() map[string]int {
 	return nil
+}
+
+func (DummyTargetRetriever) ScrapePoolConfig(_ string) (*config.ScrapeConfig, error) {
+	return nil, errors.New("not implemented")
 }
 
 // DummyAlertmanagerRetriever implements AlertmanagerRetriever.

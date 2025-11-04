@@ -1580,7 +1580,7 @@ eval instant at 5m metric - 0.5 * metric
   {id="1"} {{count:2 sum:2 counter_reset_hint:gauge buckets:[0.5 1 0.5]}}
   {id="2"} {{count:2 sum:2 counter_reset_hint:gauge buckets:[0.5 1 0.5]}}
 
-# Subtraction results in gauges, now with actually negtive result.
+# Subtraction results in gauges, now with actually negative result.
 eval instant at 5m metric - 2 * metric
   expect no_warn
   expect no_info

@@ -94,7 +94,7 @@ func BenchmarkIsolation(b *testing.B) {
 					defer wg.Done()
 					<-start
 
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						appendID, _ := iso.newAppendID(0)
 
 						iso.closeAppend(appendID)
@@ -124,7 +124,7 @@ func BenchmarkIsolationWithState(b *testing.B) {
 					defer wg.Done()
 					<-start
 
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						appendID, _ := iso.newAppendID(0)
 
 						iso.closeAppend(appendID)
@@ -144,7 +144,7 @@ func BenchmarkIsolationWithState(b *testing.B) {
 					defer wg.Done()
 					<-start
 
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						s := iso.State(math.MinInt64, math.MaxInt64)
 						s.Close()
 					}

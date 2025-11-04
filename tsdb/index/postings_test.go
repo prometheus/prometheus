@@ -115,7 +115,7 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 
 			b.ResetTimer()
 
-			for n := 0; n < b.N; n++ {
+			for b.Loop() {
 				p.EnsureOrder(0)
 				p.ordered = false
 			}
@@ -307,7 +307,7 @@ func BenchmarkIntersect(t *testing.B) {
 
 		bench.ResetTimer()
 		bench.ReportAllocs()
-		for i := 0; i < bench.N; i++ {
+		for bench.Loop() {
 			i1 := newListPostings(a...)
 			i2 := newListPostings(b...)
 			i3 := newListPostings(c...)
@@ -336,7 +336,7 @@ func BenchmarkIntersect(t *testing.B) {
 
 		bench.ResetTimer()
 		bench.ReportAllocs()
-		for i := 0; i < bench.N; i++ {
+		for bench.Loop() {
 			i1 := newListPostings(a...)
 			i2 := newListPostings(b...)
 			i3 := newListPostings(c...)
@@ -365,7 +365,7 @@ func BenchmarkIntersect(t *testing.B) {
 		its := make([]Postings, len(refs))
 		bench.ResetTimer()
 		bench.ReportAllocs()
-		for i := 0; i < bench.N; i++ {
+		for bench.Loop() {
 			// Reset the ListPostings to their original values each time round the loop.
 			for j := range refs {
 				lps[j].list = refs[j]
@@ -396,7 +396,7 @@ func BenchmarkMerge(t *testing.B) {
 	for _, nSeries := range []int{1, 10, 10000, 100000} {
 		t.Run(strconv.Itoa(nSeries), func(bench *testing.B) {
 			ctx := context.Background()
-			for i := 0; i < bench.N; i++ {
+			for bench.Loop() {
 				// Reset the ListPostings to their original values each time round the loop.
 				for j := range refs[:nSeries] {
 					lps[j].list = refs[j]
@@ -936,8 +936,8 @@ func BenchmarkPostings_Stats(b *testing.B) {
 		createPostingsLabelValues(fmt.Sprintf("area-%d", i), "new_area_of_work-", 1e3)
 		createPostingsLabelValues(fmt.Sprintf("request_id-%d", i), "owner_name_work-", 1e3)
 	}
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+
+	for b.Loop() {
 		p.Stats("__name__", 10, labels.SizeOfLabels)
 	}
 }
@@ -1083,7 +1083,7 @@ func BenchmarkMemPostings_Delete(b *testing.B) {
 					})
 
 					b.ResetTimer()
-					for n := 0; n < b.N; n++ {
+					for n := 0; b.Loop(); n++ {
 						deleted := make(map[storage.SeriesRef]struct{}, refs)
 						affected := make(map[labels.Label]struct{}, refs)
 						for i := range refs {
@@ -1396,7 +1396,7 @@ func BenchmarkListPostings(b *testing.B) {
 
 	for _, count := range []int{100, 1e3, 10e3, 100e3, maxCount} {
 		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				p := NewListPostings(input[:count])
 				var sum storage.SeriesRef
 				for p.Next() {
@@ -1446,7 +1446,7 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 			require.NoError(b, err)
 			b.Logf("Fast matcher matches %d series", len(fp))
 			b.Run("matcher=fast", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					mp.PostingsForLabelMatching(context.Background(), "label", fast.MatchString).Next()
 				}
 			})
@@ -1455,13 +1455,13 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 			require.NoError(b, err)
 			b.Logf("Slow matcher matches %d series", len(sp))
 			b.Run("matcher=slow", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					mp.PostingsForLabelMatching(context.Background(), "label", slow.MatchString).Next()
 				}
 			})
 
 			b.Run("matcher=all", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					// Match everything.
 					p := mp.PostingsForLabelMatching(context.Background(), "label", func(_ string) bool { return true })
 					var sum storage.SeriesRef

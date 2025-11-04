@@ -83,8 +83,7 @@ func TestRefresh(t *testing.T) {
 	)
 
 	ch := make(chan []*targetgroup.Group)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go d.Run(ctx, ch)
 
 	tg := <-ch

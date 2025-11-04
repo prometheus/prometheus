@@ -232,11 +232,10 @@ func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 	}
 
 	b.ReportAllocs()
-	b.ResetTimer()
 
 	var res float64
 	var it Iterator
-	for i := 0; i < b.N; {
+	for i := 0; b.Loop(); {
 		it := chunk.Iterator(it)
 
 		for it.Next() == ValFloat {
@@ -295,9 +294,8 @@ func benchmarkAppender(b *testing.B, deltas func() (int64, float64), newChunk fu
 	}
 
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		c := newChunk()
 
 		a, err := c.Appender()

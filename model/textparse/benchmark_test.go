@@ -172,10 +172,9 @@ func benchParse(b *testing.B, data []byte, parser string) {
 
 	b.SetBytes(int64(len(data)))
 	b.ReportAllocs()
-	b.ResetTimer()
 
 	st := labels.NewSymbolTable()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		p := newParserFn(data, st)
 
 	Inner:
@@ -229,9 +228,8 @@ func benchExpFmt(b *testing.B, data []byte, expFormatTypeStr string) {
 
 	b.SetBytes(int64(len(data)))
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		decSamples := make(model.Vector, 0, 50)
 		sdec := expfmt.SampleDecoder{
 			Dec: expfmt.NewDecoder(bytes.NewReader(data), expfmt.NewFormat(expfmtFormatType)),
@@ -302,7 +300,7 @@ Inner:
 	b.Run("case=no-ct", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			if p.CreatedTimestamp() != 0 {
 				b.Fatal("should be nil")
 			}
@@ -332,7 +330,7 @@ Inner2:
 	b.Run("case=ct", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			if p.CreatedTimestamp() == 0 {
 				b.Fatal("should be not nil")
 			}

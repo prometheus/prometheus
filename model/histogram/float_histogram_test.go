@@ -3854,9 +3854,8 @@ func BenchmarkFloatHistogramAllBucketIterator(b *testing.B) {
 	fh := createRandomFloatHistogram(rng, 50)
 
 	b.ReportAllocs() // the current implementation reports 1 alloc
-	b.ResetTimer()
 
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		for it := fh.AllBucketIterator(); it.Next(); {
 		}
 	}
@@ -3868,9 +3867,8 @@ func BenchmarkFloatHistogramDetectReset(b *testing.B) {
 	fh := createRandomFloatHistogram(rng, 50)
 
 	b.ReportAllocs() // the current implementation reports 0 allocs
-	b.ResetTimer()
 
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		// Detect against the itself (no resets is the worst case input).
 		fh.DetectReset(fh)
 	}

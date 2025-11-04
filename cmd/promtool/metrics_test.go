@@ -26,64 +26,88 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// setupTestServer creates a test server with a mock storage for remote write testing.
+func setupTestServer(t *testing.T, supportedTypes remoteapi.MessageTypes) (*httptest.Server, *mockStorage, *url.URL) {
+	t.Helper()
+
+	store := &mockStorage{}
+	handler := remoteapi.NewWriteHandler(store, supportedTypes)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	return server, store, serverURL
+}
+
+// createMetricsFile creates a temporary file with the given metrics data.
+func createMetricsFile(t *testing.T, metricsData string) string {
+	t.Helper()
+
+	tmpFile := t.TempDir() + "/metrics.txt"
+	err := os.WriteFile(tmpFile, []byte(metricsData), 0o644)
+	require.NoError(t, err)
+
+	return tmpFile
+}
+
 func TestPushMetrics(t *testing.T) {
 	tests := []struct {
 		name        string
 		metricsData string
+		protoMsg    string
+		serverTypes remoteapi.MessageTypes
 	}{
 		{
-			name: "successful push with gauge metrics",
+			name: "successful push with gauge metrics (V1)",
 			metricsData: `# HELP test_metric A test metric
 # TYPE test_metric gauge
 test_metric{label="value1"} 42.0
 test_metric{label="value2"} 43.0
 `,
+			protoMsg:    "prometheus.WriteRequest",
+			serverTypes: remoteapi.MessageTypes{remoteapi.WriteV1MessageType},
 		},
 		{
-			name: "successful push with counter metrics",
+			name: "successful push with counter metrics (V1)",
 			metricsData: `# HELP test_counter A test counter
 # TYPE test_counter counter
 test_counter 100
 `,
+			protoMsg:    "prometheus.WriteRequest",
+			serverTypes: remoteapi.MessageTypes{remoteapi.WriteV1MessageType},
+		},
+		{
+			name: "successful push with gauge metrics (V2)",
+			metricsData: `# HELP test_metric A test metric
+# TYPE test_metric gauge
+test_metric{label="value1"} 42.0
+test_metric{label="value2"} 43.0
+`,
+			protoMsg:    "io.prometheus.write.v2.Request",
+			serverTypes: remoteapi.MessageTypes{remoteapi.WriteV2MessageType},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// Create test server using client_golang's remote write handler.
-			store := &mockStorage{}
-			handler := remoteapi.NewWriteHandler(
-				store,
-				remoteapi.MessageTypes{remoteapi.WriteV1MessageType},
-			)
+			_, store, serverURL := setupTestServer(t, tc.serverTypes)
+			tmpFile := createMetricsFile(t, tc.metricsData)
 
-			server := httptest.NewServer(handler)
-			defer server.Close()
-
-			serverURL, err := url.Parse(server.URL)
-			require.NoError(t, err)
-
-			// Create a temp file with metrics data.
-			tmpFile := t.TempDir() + "/metrics.txt"
-			err = os.WriteFile(tmpFile, []byte(tc.metricsData), 0o644)
-			require.NoError(t, err)
-
-			// Call PushMetrics.
 			status := PushMetrics(
 				serverURL,
 				http.DefaultTransport,
 				map[string]string{},
 				30*time.Second,
+				tc.protoMsg,
 				map[string]string{"job": "test"},
 				tmpFile,
 			)
 
 			require.Equal(t, successExitCode, status)
-			// Verify that the handler received and processed the request.
 			require.True(t, store.called, "Handler should have been called")
 			require.NoError(t, store.lastErr, "Handler should not have returned an error")
-
-			// Verify proper data propagation.
 			require.NotEmpty(t, store.receivedData, "Request should contain data (compression and decompression successful)")
 			require.Contains(t, store.receivedContentType, "application/x-protobuf", "Content-Type should be protobuf")
 		})
@@ -117,4 +141,22 @@ func (m *mockStorage) Store(req *http.Request, _ remoteapi.WriteMessageType) (*r
 	resp := remoteapi.NewWriteResponse()
 	resp.SetStatusCode(http.StatusNoContent)
 	return resp, nil
+}
+
+func TestPushMetricsInvalidProtoMsg(t *testing.T) {
+	_, store, serverURL := setupTestServer(t, remoteapi.MessageTypes{remoteapi.WriteV1MessageType})
+	tmpFile := createMetricsFile(t, "test_metric 1\n")
+
+	status := PushMetrics(
+		serverURL,
+		http.DefaultTransport,
+		map[string]string{},
+		30*time.Second,
+		"blablalba", // Invalid protoMsg.
+		map[string]string{"job": "test"},
+		tmpFile,
+	)
+
+	require.Equal(t, failureExitCode, status)
+	require.False(t, store.called, "Handler should not have been called for invalid protoMsg")
 }

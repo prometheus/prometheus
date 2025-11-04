@@ -389,7 +389,7 @@ type SeriesSet interface {
 	Next() bool
 	// At returns full series. Returned series should be iterable even after Next is called.
 	At() Series
-	// The error that iteration as failed with.
+	// The error that iteration has failed with.
 	// When an error occurs, set cannot continue to iterate.
 	Err() error
 	// A collection of warnings for the whole set.
