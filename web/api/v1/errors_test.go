@@ -265,6 +265,10 @@ func (DummyTargetRetriever) TargetsDroppedCounts() map[string]int {
 	return nil
 }
 
+func (DummyTargetRetriever) ScrapePoolConfig(_ string) (*config.ScrapeConfig, error) {
+	return nil, errors.New("not implemented")
+}
+
 // DummyAlertmanagerRetriever implements AlertmanagerRetriever.
 type DummyAlertmanagerRetriever struct{}
 

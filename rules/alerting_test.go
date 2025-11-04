@@ -569,7 +569,7 @@ func BenchmarkAlertingRuleAtomicField(b *testing.B) {
 	rule := NewAlertingRule("bench", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
 	done := make(chan struct{})
 	go func() {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			rule.GetEvaluationTimestamp()
 		}
 		close(done)
@@ -594,8 +594,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 	}
 
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
-	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
+	ctx := t.Context()
 
 	now := time.Now()
 

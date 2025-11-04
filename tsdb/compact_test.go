@@ -1174,7 +1174,7 @@ func BenchmarkCompaction(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				_, err = c.Compact(dir, blockDirs, blocks)
 				require.NoError(b, err)
 			}
@@ -1204,7 +1204,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for i := 0; b.Loop(); i++ {
 				createBlockFromHead(b, filepath.Join(dir, fmt.Sprintf("%d-%d", i, labelNames)), h)
 			}
 			h.Close()
@@ -1242,7 +1242,7 @@ func BenchmarkCompactionFromOOOHead(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for i := 0; b.Loop(); i++ {
 				oooHead, err := NewOOOCompactionHead(context.TODO(), h)
 				require.NoError(b, err)
 				createBlockFromOOOHead(b, filepath.Join(dir, fmt.Sprintf("%d-%d", i, labelNames)), oooHead)

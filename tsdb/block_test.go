@@ -83,7 +83,7 @@ func BenchmarkOpenBlock(b *testing.B) {
 	tmpdir := b.TempDir()
 	blockDir := createBlock(b, tmpdir, genSeries(1e6, 20, 0, 10))
 	b.Run("benchmark", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			block, err := OpenBlock(nil, blockDir, nil, nil)
 			require.NoError(b, err)
 			require.NoError(b, block.Close())
@@ -455,10 +455,9 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 
 	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "c_ninety", "value0")}
 
-	b.ResetTimer()
 	b.ReportAllocs()
 
-	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
+	for b.Loop() {
 		actualValues, err := indexReader.LabelValues(ctx, "b_tens", nil, matchers...)
 		require.NoError(b, err)
 		require.Len(b, actualValues, 9)

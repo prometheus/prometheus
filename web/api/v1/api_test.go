@@ -31,6 +31,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/grafana/regexp"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -44,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
@@ -160,6 +164,25 @@ func (t testTargetRetriever) TargetsDroppedCounts() map[string]int {
 		r[k] = len(v)
 	}
 	return r
+}
+
+func (testTargetRetriever) ScrapePoolConfig(_ string) (*config.ScrapeConfig, error) {
+	return &config.ScrapeConfig{
+		RelabelConfigs: []*relabel.Config{
+			{
+				Action:               relabel.Replace,
+				Replacement:          "example.com:443",
+				TargetLabel:          "__address__",
+				Regex:                relabel.MustNewRegexp(""),
+				NameValidationScheme: model.LegacyValidation,
+			},
+			{
+				Action:       relabel.Drop,
+				SourceLabels: []model.LabelName{"__address__"},
+				Regex:        relabel.MustNewRegexp(`example\.com:.*`),
+			},
+		},
+	}, nil
 }
 
 func (t *testTargetRetriever) SetMetadataStoreForTargets(identifier string, metadata scrape.MetricMetadataStore) error {
@@ -1881,6 +1904,37 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					},
 				},
 				DroppedTargetCounts: map[string]int{"blackbox": 1},
+			},
+		},
+		{
+			endpoint: api.targetRelabelSteps,
+			query:    url.Values{"scrapePool": []string{"testpool"}, "labels": []string{`{"job":"test","__address__":"localhost:9090"}`}},
+			response: &RelabelStepsResponse{
+				Steps: []RelabelStep{
+					{
+						Rule: &relabel.Config{
+							Action:               relabel.Replace,
+							Replacement:          "example.com:443",
+							TargetLabel:          "__address__",
+							Regex:                relabel.MustNewRegexp(""),
+							NameValidationScheme: model.LegacyValidation,
+						},
+						Output: labels.FromMap(map[string]string{
+							"job":         "test",
+							"__address__": "example.com:443",
+						}),
+						Keep: true,
+					},
+					{
+						Rule: &relabel.Config{
+							Action:       relabel.Drop,
+							SourceLabels: []model.LabelName{"__address__"},
+							Regex:        relabel.MustNewRegexp(`example\.com:.*`),
+						},
+						Output: labels.EmptyLabels(),
+						Keep:   false,
+					},
+				},
 			},
 		},
 		// With a matching metric.
@@ -3772,7 +3826,9 @@ func assertAPIError(t *testing.T, got *apiError, exp errorType) {
 func assertAPIResponse(t *testing.T, got, exp any) {
 	t.Helper()
 
-	testutil.RequireEqual(t, exp, got)
+	testutil.RequireEqualWithOptions(t, exp, got, []cmp.Option{
+		cmpopts.IgnoreUnexported(regexp.Regexp{}),
+	})
 }
 
 func assertAPIResponseLength(t *testing.T, got any, expLen int) {
@@ -4511,7 +4567,7 @@ func BenchmarkRespond(b *testing.B) {
 			b.ResetTimer()
 			api := API{}
 			api.InstallCodec(JSONCodec{})
-			for n := 0; n < b.N; n++ {
+			for b.Loop() {
 				api.respond(&testResponseWriter, request, c.response, nil, "")
 			}
 		})

@@ -100,7 +100,7 @@ func (m *mockCombinedAppender) Commit() error {
 	return nil
 }
 
-func requireEqual(t testing.TB, expected, actual interface{}, msgAndArgs ...interface{}) {
+func requireEqual(t testing.TB, expected, actual any, msgAndArgs ...any) {
 	testutil.RequireEqualWithOptions(t, expected, actual, []cmp.Option{cmp.AllowUnexported(combinedSample{}, combinedHistogram{})}, msgAndArgs...)
 }
 

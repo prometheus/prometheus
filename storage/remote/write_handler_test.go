@@ -934,7 +934,7 @@ func BenchmarkRemoteWriteHandler(b *testing.B) {
 			appendable := &mockAppendable{}
 			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{tc.protoFormat}, false, false)
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				b.StopTimer()
 				buf, err := tc.payloadFunc()
 				require.NoError(b, err)
