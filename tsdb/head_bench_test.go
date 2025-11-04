@@ -42,7 +42,7 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 	require.NoError(b, err)
 	defer h.Close()
 
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)), false)
 	}
 }
@@ -81,7 +81,7 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 	require.NoError(b, err)
 	defer h.Close()
 
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)), false)
 	}
 }
@@ -130,7 +130,7 @@ func BenchmarkHead_WalCommit(b *testing.B) {
 					b.ReportAllocs()
 					b.ResetTimer()
 
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						b.StopTimer()
 						h, w := newTestHead(b, 10000, compression.None, false)
 						b.Cleanup(func() {

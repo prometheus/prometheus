@@ -362,7 +362,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			ctx := context.Background()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				qry, err := engine.NewRangeQuery(
 					ctx, stor, nil, c.expr,
 					time.Unix(int64((numIntervals-c.steps)*10), 0),
@@ -426,7 +426,7 @@ func BenchmarkJoinQuery(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			ctx := context.Background()
 			b.ReportAllocs()
-			for range b.N {
+			for b.Loop() {
 				qry, err := engine.NewRangeQuery(
 					ctx, stor, nil, c.expr,
 					timestamp.Time(int64((numIntervals-c.steps)*10_000)),
@@ -508,7 +508,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
 			ng := promqltest.NewTestEngineWithOpts(b, opts)
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
 				if err != nil {
 					b.Fatal(err)
@@ -578,7 +578,7 @@ func BenchmarkNativeHistogramsCustomBuckets(b *testing.B) {
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
 			ng := promqltest.NewTestEngineWithOpts(b, opts)
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
 				if err != nil {
 					b.Fatal(err)
@@ -640,7 +640,7 @@ func BenchmarkInfoFunction(b *testing.B) {
 		engine := promql.NewEngine(opts)
 		b.Run(tc.name, func(b *testing.B) {
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				b.StopTimer() // Stop the timer to exclude setup time.
 				qry, err := engine.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
 				require.NoError(b, err)
@@ -795,7 +795,7 @@ func BenchmarkParser(b *testing.B) {
 	for _, c := range cases {
 		b.Run(c, func(b *testing.B) {
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				parser.ParseExpr(c)
 			}
 		})
@@ -804,7 +804,7 @@ func BenchmarkParser(b *testing.B) {
 		b.Run("preprocess "+c, func(b *testing.B) {
 			expr, _ := parser.ParseExpr(c)
 			start, end := time.Now().Add(-time.Hour), time.Now()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				promql.PreprocessExpr(expr, start, end, 0)
 			}
 		})
@@ -813,7 +813,7 @@ func BenchmarkParser(b *testing.B) {
 		name := fmt.Sprintf("%s (should fail)", c)
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				parser.ParseExpr(c)
 			}
 		})

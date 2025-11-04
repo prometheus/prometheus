@@ -173,7 +173,7 @@ func verifyConfigReloadMetric(t *testing.T, baseURL string, expectedValue float6
 	var actualValue float64
 	found := false
 
-	for _, line := range strings.Split(lines, "\n") {
+	for line := range strings.SplitSeq(lines, "\n") {
 		if strings.HasPrefix(line, configReloadMetric) {
 			parts := strings.Fields(line)
 			if len(parts) >= 2 {

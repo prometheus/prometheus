@@ -1353,7 +1353,7 @@ func benchmarkDrain(b *testing.B, makeSeriesSet func() SeriesSet) {
 	var t int64
 	var v float64
 	var iter chunkenc.Iterator
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		seriesSet := makeSeriesSet()
 		for seriesSet.Next() {
 			iter = seriesSet.At().Iterator(iter)

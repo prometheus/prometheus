@@ -1081,8 +1081,7 @@ func TestNHCBAndCTZeroIngestion(t *testing.T) {
 		expectedHistogramSum = 45.5
 	)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	app := &collectResultAppender{}
 	discoveryManager, scrapeManager := runManagers(t, ctx, &Options{

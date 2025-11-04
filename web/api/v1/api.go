@@ -1539,7 +1539,7 @@ type AlertingRule struct {
 type RecordingRule struct {
 	Name           string           `json:"name"`
 	Query          string           `json:"query"`
-	Labels         labels.Labels    `json:"labels,omitempty"`
+	Labels         labels.Labels    `json:"labels"`
 	Health         rules.RuleHealth `json:"health"`
 	LastError      string           `json:"lastError,omitempty"`
 	EvaluationTime float64          `json:"evaluationTime"`

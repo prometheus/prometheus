@@ -340,8 +340,7 @@ func main() {
 	}
 
 	for _, f := range *featureList {
-		opts := strings.Split(f, ",")
-		for _, o := range opts {
+		for o := range strings.SplitSeq(f, ",") {
 			switch o {
 			case "promql-experimental-functions":
 				parser.EnableExperimentalFunctions = true
@@ -485,7 +484,7 @@ func newRulesLintConfig(stringVal string, fatal, ignoreUnknownFields bool, nameV
 	if stringVal == "" {
 		return ls
 	}
-	for _, setting := range strings.Split(stringVal, ",") {
+	for setting := range strings.SplitSeq(stringVal, ",") {
 		switch setting {
 		case lintOptionAll:
 			ls.all = true
@@ -518,7 +517,7 @@ func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, nam
 
 	lintNone := false
 	var rulesOptions []string
-	for _, option := range strings.Split(optionsStr, ",") {
+	for option := range strings.SplitSeq(optionsStr, ",") {
 		switch option {
 		case lintOptionAll, lintOptionTooLongScrapeInterval:
 			c.lookbackDelta = lookbackDelta
