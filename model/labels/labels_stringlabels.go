@@ -21,7 +21,13 @@ import (
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
+
+	"github.com/prometheus/prometheus/util/features"
 )
+
+func init() {
+	features.Enable(features.Prometheus, "stringlabels")
+}
 
 // Labels is implemented by a single flat string holding name/value pairs.
 // Each name and value is preceded by its length, encoded as a single byte

@@ -23,7 +23,12 @@ import (
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/prometheus/prometheus/util/features"
 )
+
+func init() {
+	features.Enable(features.Prometheus, "slicelabels")
+}
 
 // Labels is a sorted set of labels. Order has to be guaranteed upon
 // instantiation.
