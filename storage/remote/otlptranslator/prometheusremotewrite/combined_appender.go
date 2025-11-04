@@ -82,7 +82,7 @@ func NewCombinedAppenderMetrics(reg prometheus.Registerer) CombinedAppenderMetri
 // NewCombinedAppender creates a combined appender that sets start times and
 // updates metadata for each series only once, and appends samples and
 // exemplars for each call.
-func NewCombinedAppender(app storage.Appender, logger *slog.Logger, ingestCTZeroSample bool, appendMetadata bool, metrics CombinedAppenderMetrics) CombinedAppender {
+func NewCombinedAppender(app storage.Appender, logger *slog.Logger, ingestCTZeroSample, appendMetadata bool, metrics CombinedAppenderMetrics) CombinedAppender {
 	return &combinedAppender{
 		app:                            app,
 		logger:                         logger,
@@ -188,7 +188,7 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 
 	if ref == 0 {
 		// We cannot update metadata or add exemplars on non existent series.
-		return
+		return err
 	}
 
 	if !exists || series.meta.Help != meta.Help || series.meta.Type != meta.Type || series.meta.Unit != meta.Unit {
@@ -218,7 +218,7 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 
 	b.appendExemplars(ref, ls, es)
 
-	return
+	return err
 }
 
 func sampleType(h *histogram.Histogram) string {
