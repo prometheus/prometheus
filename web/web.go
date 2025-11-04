@@ -295,6 +295,7 @@ type Options struct {
 	IsAgent                    bool
 	CTZeroIngestionEnabled     bool
 	EnableTypeAndUnitLabels    bool
+	AppendMetadata             bool
 	AppName                    string
 
 	AcceptRemoteWriteProtoMsgs remoteapi.MessageTypes
@@ -396,6 +397,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.CTZeroIngestionEnabled,
 		o.LookbackDelta,
 		o.EnableTypeAndUnitLabels,
+		o.AppendMetadata,
 		nil,
 	)
 

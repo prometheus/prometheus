@@ -55,6 +55,7 @@ type writeHandler struct {
 
 	ingestCTZeroSample      bool
 	enableTypeAndUnitLabels bool
+	appendMetadata          bool
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -64,7 +65,7 @@ const maxAheadTime = 10 * time.Minute
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMsgs remoteapi.MessageTypes, ingestCTZeroSample, enableTypeAndUnitLabels bool) http.Handler {
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMsgs remoteapi.MessageTypes, ingestCTZeroSample, enableTypeAndUnitLabels, appendMetadata bool) http.Handler {
 	h := &writeHandler{
 		logger:     logger,
 		appendable: appendable,
@@ -83,6 +84,7 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable 
 
 		ingestCTZeroSample:      ingestCTZeroSample,
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
+		appendMetadata:          appendMetadata,
 	}
 	return remoteapi.NewWriteHandler(h, acceptedMsgs, remoteapi.WithWriteHandlerLogger(logger))
 }
@@ -448,11 +450,15 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			h.logger.Error("failed to ingest exemplar, emitting error log, but no error for PRW caller", "err", err.Error(), "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e))
 		}
 
-		if _, err = app.UpdateMetadata(ref, ls, m); err != nil {
-			h.logger.Debug("error while updating metadata from remote write", "err", err)
-			// Metadata is attached to each series, so since Prometheus does not reject sample without metadata information,
-			// we don't report remote write error either. We increment metric instead.
-			samplesWithoutMetadata += rs.AllSamples() - allSamplesSoFar
+		// Only update metadata in WAL if the metadata-wal-records feature is enabled.
+		// Without this feature, metadata is not persisted to WAL.
+		if h.appendMetadata {
+			if _, err = app.UpdateMetadata(ref, ls, m); err != nil {
+				h.logger.Debug("error while updating metadata from remote write", "err", err)
+				// Metadata is attached to each series, so since Prometheus does not reject sample without metadata information,
+				// we don't report remote write error either. We increment metric instead.
+				samplesWithoutMetadata += rs.AllSamples() - allSamplesSoFar
+			}
 		}
 	}
 
