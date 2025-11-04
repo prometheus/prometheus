@@ -1,3 +1,16 @@
+// Copyright 2025 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package chunkenc
 
 import (
@@ -20,7 +33,7 @@ type fmtCase struct {
 	newChunkFn func() Chunk
 }
 
-func sampleCases() []sampleCase {
+func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampleCase)) {
 	const nSamples = 120 // Same as tsdb.DefaultSamplesPerChunk.
 
 	var (
@@ -29,7 +42,7 @@ func sampleCases() []sampleCase {
 		initV = 1243535.123
 	)
 
-	return []sampleCase{
+	sampleCases := []sampleCase{
 		{
 			name: "constant",
 			samples: func() (ret []pair) {
@@ -66,11 +79,15 @@ func sampleCases() []sampleCase {
 			}(),
 		},
 	}
-}
 
-func fmtCases() []fmtCase {
-	return []fmtCase{
+	for _, f := range []fmtCase{
 		{name: "XOR", newChunkFn: func() Chunk { return NewXORChunk() }},
+	} {
+		for _, s := range sampleCases {
+			b.Run(fmt.Sprintf("fmt=%s/samples=%s", f.name, s.name), func(b *testing.B) {
+				fn(b, f, s)
+			})
+		}
 	}
 }
 
@@ -81,26 +98,22 @@ func fmtCases() []fmtCase {
 	  | tee ${bench}.txt
 */
 func BenchmarkAppender(b *testing.B) {
-	for _, fc := range fmtCases() {
-		for _, sc := range sampleCases() {
-			b.Run(fmt.Sprintf("fmt=%s/samples=%s", fc.name, sc.name), func(b *testing.B) {
-				b.ReportAllocs()
+	foreachFmtSampleCase(b, func(b *testing.B, f fmtCase, s sampleCase) {
+		b.ReportAllocs()
 
-				for b.Loop() {
-					c := fc.newChunkFn()
+		for b.Loop() {
+			c := f.newChunkFn()
 
-					a, err := c.Appender()
-					if err != nil {
-						b.Fatalf("get appender: %s", err)
-					}
-					for _, p := range sc.samples {
-						a.Append(p.t, p.v)
-					}
-					b.ReportMetric(float64(len(c.Bytes())), "B/chunk")
-				}
-			})
+			a, err := c.Appender()
+			if err != nil {
+				b.Fatalf("get appender: %s", err)
+			}
+			for _, p := range s.samples {
+				a.Append(p.t, p.v)
+			}
+			b.ReportMetric(float64(len(c.Bytes())), "B/chunk")
 		}
-	}
+	})
 }
 
 /*
@@ -110,72 +123,36 @@ func BenchmarkAppender(b *testing.B) {
 	  | tee ${bench}.txt
 */
 func BenchmarkIterator(b *testing.B) {
-	for _, fc := range fmtCases() {
-		for _, sc := range sampleCases() {
-			b.Run(fmt.Sprintf("fmt=%s/samples=%s", fc.name, sc.name), func(b *testing.B) {
-				b.ReportAllocs()
+	foreachFmtSampleCase(b, func(b *testing.B, f fmtCase, s sampleCase) {
+		b.ReportAllocs()
 
-				c := fc.newChunkFn()
-				a, err := c.Appender()
-				if err != nil {
-					b.Fatalf("get appender: %s", err)
-				}
-				for _, p := range sc.samples {
-					a.Append(p.t, p.v)
-				}
-
-				var (
-					sink float64
-					it   Iterator
-				)
-				// Measure decoding efficiency.
-				for i := 0; b.Loop(); {
-					b.ReportMetric(float64(len(c.Bytes())), "B/chunk")
-
-					it := c.Iterator(it)
-					for it.Next() == ValFloat {
-						_, v := it.At()
-						sink = v
-						i++
-					}
-					if err := it.Err(); err != nil && !errors.Is(err, io.EOF) {
-						require.NoError(b, err)
-					}
-					_ = sink
-				}
-			})
+		c := f.newChunkFn()
+		a, err := c.Appender()
+		if err != nil {
+			b.Fatalf("get appender: %s", err)
 		}
-	}
-}
-
-/*
-	export bench=compact && go test \
-	  -run '^$' -bench '^BenchmarkCompact' \
-	  -benchtime 5s -count 6 -cpu 2 -timeout 999m \
-	  | tee ${bench}.txt
-*/
-func BenchmarkCompact(b *testing.B) {
-	for _, fc := range fmtCases() {
-		for _, sc := range sampleCases() {
-			b.Run(fmt.Sprintf("fmt=%s/samples=%s", fc.name, sc.name), func(b *testing.B) {
-				b.ReportAllocs()
-
-				c := fc.newChunkFn()
-				a, err := c.Appender()
-				if err != nil {
-					b.Fatalf("get appender: %s", err)
-				}
-				for _, p := range sc.samples {
-					a.Append(p.t, p.v)
-				}
-
-				// Measure size before and after compaction and it's efficiency.
-				for b.Loop() {
-					b.ReportMetric(float64(len(c.Bytes())), "B/chunk")
-					c.Compact()
-					b.ReportMetric(float64(len(c.Bytes())), "B/compacted_chunk")
-				}
-			})
+		for _, p := range s.samples {
+			a.Append(p.t, p.v)
 		}
-	}
+
+		var (
+			sink float64
+			it   Iterator
+		)
+		// Measure decoding efficiency.
+		for i := 0; b.Loop(); {
+			b.ReportMetric(float64(len(c.Bytes())), "B/chunk")
+
+			it := c.Iterator(it)
+			for it.Next() == ValFloat {
+				_, v := it.At()
+				sink = v
+				i++
+			}
+			if err := it.Err(); err != nil && !errors.Is(err, io.EOF) {
+				require.NoError(b, err)
+			}
+			_ = sink
+		}
+	})
 }
