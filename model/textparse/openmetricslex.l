@@ -64,7 +64,8 @@ S     [ ]
 <sLabels>,                            return tComma
 <sLValue>\"(\\.|[^\\"\n])*\"          l.state = sLabels; return tLValue
 <sValue>{S}[^ \n]+                    l.state = sTimestamp; return tValue
-<sTimestamp>{S}[^ \n]+                return tTimestamp
+<sTimestamp>{S}[^c \n][^ \n]*         return tTimestamp
+<sTimestamp>{S}ct@[^ \n]+             return tCreated
 <sTimestamp>\n                        l.state = sInit; return tLinebreak
 <sTimestamp>{S}#{S}\{                 l.state = sExemplar; return tComment
 
