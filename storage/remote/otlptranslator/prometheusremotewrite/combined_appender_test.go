@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -512,7 +513,6 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			},
 		}))
 
-		// With appendMetadata=false, UpdateMetadata should NOT be called
 		require.Len(t, app.records, 5)
 		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
 		ref := app.records[0].outRef
@@ -532,7 +532,6 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 		app.appendCTZeroSampleError = errors.New("test error")
 		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 3, 4, 62.0, nil))
 
-		// With appendMetadata=false, UpdateMetadata should NOT be called
 		require.Len(t, app.records, 4)
 		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
 		ref := app.records[0].outRef
@@ -619,7 +618,6 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			},
 		}))
 
-		// With appendMetadata=false, UpdateMetadata should NOT be called
 		require.Len(t, app.records, 5)
 		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
 		ref := app.records[0].outRef
@@ -644,30 +642,27 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("metadata is NOT updated when appendMetadata flag is false", func(t *testing.T) {
-		app := &appenderRecorder{}
-		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, false, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
+	for _, appendMetadata := range []bool{false, true} {
+		t.Run(fmt.Sprintf("appendMetadata=%t", appendMetadata), func(t *testing.T) {
+			app := &appenderRecorder{}
+			capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, appendMetadata, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
 
-		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 1, 2, 42.0, nil))
+			require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 1, 2, 42.0, nil))
 
-		// Verify the operations: AppendCTZeroSample and Append, but NO UpdateMetadata
-		require.Len(t, app.records, 2)
-		requireEqualOp(t, "AppendCTZeroSample", app.records[0])
-		requireEqualOp(t, "Append", app.records[1])
-	})
-
-	t.Run("metadata IS updated when appendMetadata flag is true", func(t *testing.T) {
-		app := &appenderRecorder{}
-		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
-
-		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 1, 2, 42.0, nil))
-
-		// Verify the operations: AppendCTZeroSample, Append, and UpdateMetadata
-		require.Len(t, app.records, 3)
-		requireEqualOp(t, "AppendCTZeroSample", app.records[0])
-		requireEqualOp(t, "Append", app.records[1])
-		requireEqualOp(t, "UpdateMetadata", app.records[2])
-	})
+			if appendMetadata {
+				// Verify the operations: AppendCTZeroSample, Append, and UpdateMetadata
+				require.Len(t, app.records, 3)
+				requireEqualOp(t, "AppendCTZeroSample", app.records[0])
+				requireEqualOp(t, "Append", app.records[1])
+				requireEqualOp(t, "UpdateMetadata", app.records[2])
+			} else {
+				// Verify the operations: AppendCTZeroSample and Append, but NO UpdateMetadata
+				require.Len(t, app.records, 2)
+				requireEqualOp(t, "AppendCTZeroSample", app.records[0])
+				requireEqualOp(t, "Append", app.records[1])
+			}
+		})
+	}
 }
 
 // TestCombinedAppenderMetadataChanges verifies that UpdateMetadata is called
