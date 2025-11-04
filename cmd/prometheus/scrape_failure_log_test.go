@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
+	"sync/atomic"
 
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -37,7 +37,7 @@ func TestScrapeFailureLogFile(t *testing.T) {
 	}
 
 	// Tracks the number of requests made to the mock server.
-	var requestCount atomic.Int32
+	var requestCount int32
 
 	// Starts a server that always returns HTTP 500 errors.
 	mockServerAddress := startGarbageServer(t, &requestCount)
@@ -88,7 +88,7 @@ scrape_configs:
 
 	// Wait until the mock server receives at least two requests from Prometheus.
 	require.Eventually(t, func() bool {
-		return requestCount.Load() >= 2
+		return atomic.LoadInt32(&requestCount) >= 2
 	}, 30*time.Second, 500*time.Millisecond, "Expected at least two requests to the mock server")
 
 	// Verify that the scrape failures have been logged to the specified file.
@@ -121,9 +121,9 @@ scrape_configs:
 
 	// Wait for at least two more requests to the mock server to ensure
 	// Prometheus continues scraping.
-	requestsBeforeReload := requestCount.Load()
+	requestsBeforeReload := atomic.LoadInt32(&requestCount)
 	require.Eventually(t, func() bool {
-		return requestCount.Load() >= requestsBeforeReload+2
+		return atomic.LoadInt32(&requestCount) >= requestsBeforeReload+2
 	}, 30*time.Second, 500*time.Millisecond, "Expected two more requests to the mock server after configuration reload")
 
 	// Ensure that no new lines were added to the scrape failure log file after
@@ -152,9 +152,9 @@ scrape_configs:
 	// Wait for at least two more requests to the mock server and verify that
 	// new log entries are created.
 	postReloadLogLineCount := countLinesInFile(scrapeFailureLogFile)
-	requestsBeforeReAddingLog := requestCount.Load()
+	requestsBeforeReAddingLog := atomic.LoadInt32(&requestCount)
 	require.Eventually(t, func() bool {
-		return requestCount.Load() >= requestsBeforeReAddingLog+2
+		return atomic.LoadInt32(&requestCount) >= requestsBeforeReAddingLog+2
 	}, 30*time.Second, 500*time.Millisecond, "Expected two additional requests after re-adding the log setting")
 
 	// Confirm that new lines were added to the scrape failure log file.
@@ -163,9 +163,9 @@ scrape_configs:
 
 // startGarbageServer sets up a mock server that returns a 500 Internal Server Error
 // for all requests. It also increments the request count each time it's hit.
-func startGarbageServer(t *testing.T, requestCount *atomic.Int32) string {
+func startGarbageServer(t *testing.T, requestCount *int32) string {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		requestCount.Inc()
+		atomic.AddInt32(requestCount, 1)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	t.Cleanup(server.Close)

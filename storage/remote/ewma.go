@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/atomic"
+	"sync/atomic"
 )
 
 // ewmaRate tracks an exponentially weighted moving average of a per-second rate.

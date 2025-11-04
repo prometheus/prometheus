@@ -37,7 +37,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
+	"sync/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"
@@ -1236,7 +1236,8 @@ func TestHead_RaceBetweenSeriesCreationAndGC(t *testing.T) {
 	for i := range totalSeries {
 		series[i] = labels.FromStrings("foo", strconv.Itoa(i))
 	}
-	done := atomic.NewBool(false)
+	var done atomic.Bool
+// No need to store false - it's the default value
 
 	go func() {
 		defer done.Store(true)
@@ -7038,7 +7039,7 @@ type countSeriesLifecycleCallback struct {
 }
 
 func (*countSeriesLifecycleCallback) PreCreation(labels.Labels) error { return nil }
-func (c *countSeriesLifecycleCallback) PostCreation(labels.Labels)    { c.created.Inc() }
+func (c *countSeriesLifecycleCallback) PostCreation(labels.Labels)    { c.created.Add(1) }
 func (c *countSeriesLifecycleCallback) PostDeletion(s map[chunks.HeadSeriesRef]labels.Labels) {
 	c.deleted.Add(int64(len(s)))
 }

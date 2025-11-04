@@ -34,7 +34,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
+	"sync/atomic"
 	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -1420,12 +1420,12 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 			externalURL:         "",
 			active:              m,
 			logger:              nil,
-			restored:            atomic.NewBool(true),
-			health:              atomic.NewString(string(HealthUnknown)),
-			evaluationTimestamp: atomic.NewTime(time.Time{}),
-			evaluationDuration:  atomic.NewDuration(0),
-			lastError:           atomic.NewError(nil),
 		}
+			rule.restored.Store(true)
+			rule.health.Store(string(HealthUnknown))
+			rule.evaluationTimestamp.Store(0) // Store as int64 (nanoseconds)
+			rule.evaluationDuration.Store(0)
+		
 
 		group := NewGroup(GroupOptions{
 			Name:              "default",
@@ -2353,7 +2353,7 @@ func TestNewRuleGroupRestoration(t *testing.T) {
 	var evalCount atomic.Int32
 	ch := make(chan int32)
 	noopEvalIterFunc := func(context.Context, *Group, time.Time) {
-		evalCount.Inc()
+		evalCount.Add(1)
 		ch <- evalCount.Load()
 	}
 
@@ -2418,7 +2418,7 @@ func TestNewRuleGroupRestorationWithRestoreNewGroupOption(t *testing.T) {
 	var evalCount atomic.Int32
 	ch := make(chan int32)
 	noopEvalIterFunc := func(context.Context, *Group, time.Time) {
-		evalCount.Inc()
+		evalCount.Add(1)
 		ch <- evalCount.Load()
 	}
 
