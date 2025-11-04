@@ -21,7 +21,9 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -39,10 +41,9 @@ func TestRecoverEvaluatorRuntime(t *testing.T) {
 		require.Contains(t, output.String(), "sum(up)")
 	}()
 	defer ev.recover(expr, nil, &err)
-
 	// Cause a runtime panic.
 	var a []int
-	a[123] = 1
+	a[123] = 1 //nolint:govet // This is intended to cause a runtime panic.
 }
 
 func TestRecoverEvaluatorError(t *testing.T) {
@@ -77,4 +78,91 @@ func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
 	defer ev.recover(nil, &ws, &err)
 
 	panic(e)
+}
+
+func TestVectorElemBinop_Histograms(t *testing.T) {
+	testCases := []struct {
+		name       string
+		op         parser.ItemType
+		hlhs, hrhs *histogram.FloatHistogram
+		want       *histogram.FloatHistogram
+		wantErr    error
+		wantInfo   error
+	}{
+		{
+			name: "ADD with unknown counter reset hints",
+			op:   parser.ADD,
+			hlhs: &histogram.FloatHistogram{},
+			hrhs: &histogram.FloatHistogram{},
+			want: &histogram.FloatHistogram{},
+		},
+		{
+			name: "ADD with mixed counter reset hints",
+			op:   parser.ADD,
+			hlhs: &histogram.FloatHistogram{
+				CounterResetHint: histogram.CounterReset,
+			},
+			hrhs: &histogram.FloatHistogram{
+				CounterResetHint: histogram.NotCounterReset,
+			},
+			want:    &histogram.FloatHistogram{},
+			wantErr: annotations.HistogramCounterResetCollisionWarning,
+		},
+		{
+			name: "SUB with unknown counter reset hints",
+			op:   parser.SUB,
+			hlhs: &histogram.FloatHistogram{},
+			hrhs: &histogram.FloatHistogram{},
+			want: &histogram.FloatHistogram{
+				CounterResetHint: histogram.GaugeType,
+			},
+		},
+		{
+			name: "SUB with mixed counter reset hints",
+			op:   parser.SUB,
+			hlhs: &histogram.FloatHistogram{
+				CounterResetHint: histogram.CounterReset,
+			},
+			hrhs: &histogram.FloatHistogram{
+				CounterResetHint: histogram.NotCounterReset,
+			},
+			want:    &histogram.FloatHistogram{},
+			wantErr: annotations.HistogramCounterResetCollisionWarning,
+		},
+		{
+			name:     "ADD with mismatched NHCB bounds",
+			op:       parser.ADD,
+			hlhs:     &histogram.FloatHistogram{Schema: histogram.CustomBucketsSchema, PositiveBuckets: []float64{}, CustomValues: []float64{1}},
+			hrhs:     &histogram.FloatHistogram{Schema: histogram.CustomBucketsSchema, PositiveBuckets: []float64{}, CustomValues: []float64{2}},
+			want:     &histogram.FloatHistogram{Schema: histogram.CustomBucketsSchema, PositiveBuckets: []float64{}},
+			wantInfo: annotations.MismatchedCustomBucketsHistogramsInfo,
+		},
+		{
+			name:     "SUB with mismatched NHCB bounds",
+			op:       parser.SUB,
+			hlhs:     &histogram.FloatHistogram{Schema: histogram.CustomBucketsSchema, PositiveBuckets: []float64{}, CustomValues: []float64{1}},
+			hrhs:     &histogram.FloatHistogram{Schema: histogram.CustomBucketsSchema, PositiveBuckets: []float64{}, CustomValues: []float64{2}},
+			want:     &histogram.FloatHistogram{Schema: histogram.CustomBucketsSchema, PositiveBuckets: []float64{}, CounterResetHint: histogram.GaugeType},
+			wantInfo: annotations.MismatchedCustomBucketsHistogramsInfo,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, got, _, info, err := vectorElemBinop(tc.op, 0, 0, tc.hlhs, tc.hrhs, posrange.PositionRange{})
+
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+
+			if tc.wantInfo != nil {
+				require.ErrorIs(t, info, tc.wantInfo)
+			} else {
+				require.NoError(t, info)
+			}
+
+			require.Equal(t, tc.want, got)
+		})
+	}
 }

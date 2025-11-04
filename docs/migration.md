@@ -1,9 +1,8 @@
 ---
-title: Migration
+title: Prometheus 3.0 migration guide
+nav_title: Migration
 sort_rank: 10
 ---
-
-# Prometheus 3.0 migration guide
 
 In line with our [stability promise](https://prometheus.io/docs/prometheus/latest/stability/),
 the Prometheus 3.0 release contains a number of backwards incompatible changes.
@@ -43,6 +42,10 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
 
   Prometheus v3 will log a warning if you continue to pass these to
   `--enable-feature`.
+
+- Starting from Prometheus version v3.8, the feature flag `native-histograms` is
+  deprecated. Use the new `scrape_native_histograms` global and per-scrape
+  configuration option instead.
 
 ## Configuration
 

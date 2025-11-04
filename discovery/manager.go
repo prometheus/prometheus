@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"reflect"
 	"sync"
 	"time"
@@ -37,7 +38,7 @@ type poolKey struct {
 type Provider struct {
 	name   string
 	d      Discoverer
-	config interface{}
+	config any
 
 	cancel context.CancelFunc
 	// done should be called after cleaning up resources associated with cancelled provider.
@@ -57,10 +58,12 @@ func (p *Provider) Discoverer() Discoverer {
 
 // IsStarted return true if Discoverer is started.
 func (p *Provider) IsStarted() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	return p.cancel != nil
 }
 
-func (p *Provider) Config() interface{} {
+func (p *Provider) Config() any {
 	return p.config
 }
 
@@ -216,15 +219,22 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 		newProviders []*Provider
 	)
 	for _, prov := range m.providers {
-		// Cancel obsolete providers.
-		if len(prov.newSubs) == 0 {
+		// Cancel obsolete providers if it has no new subs and it has a cancel function.
+		// prov.cancel != nil is the same check as we use in IsStarted() method but we don't call IsStarted
+		// here because it would take a lock and we need the same lock ourselves for other reads.
+		prov.mu.RLock()
+		if len(prov.newSubs) == 0 && prov.cancel != nil {
 			wg.Add(1)
 			prov.done = func() {
 				wg.Done()
 			}
+
 			prov.cancel()
+			prov.mu.RUnlock()
 			continue
 		}
+		prov.mu.RUnlock()
+
 		newProviders = append(newProviders, prov)
 		// refTargets keeps reference targets used to populate new subs' targets as they should be the same.
 		var refTargets map[string]*targetgroup.Group
@@ -246,9 +256,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 			}
 			if l := len(refTargets); l > 0 {
 				m.targets[poolKey{s, prov.name}] = make(map[string]*targetgroup.Group, l)
-				for k, v := range refTargets {
-					m.targets[poolKey{s, prov.name}][k] = v
-				}
+				maps.Copy(m.targets[poolKey{s, prov.name}], refTargets)
 			}
 		}
 		m.targetsMtx.Unlock()
@@ -298,7 +306,9 @@ func (m *Manager) startProvider(ctx context.Context, p *Provider) {
 	ctx, cancel := context.WithCancel(ctx)
 	updates := make(chan []*targetgroup.Group)
 
+	p.mu.Lock()
 	p.cancel = cancel
+	p.mu.Unlock()
 
 	go p.d.Run(ctx, updates)
 	go m.updater(ctx, p, updates)
@@ -306,16 +316,20 @@ func (m *Manager) startProvider(ctx context.Context, p *Provider) {
 
 // cleaner cleans resources associated with provider.
 func (m *Manager) cleaner(p *Provider) {
-	p.mu.RLock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	m.targetsMtx.Lock()
 	for s := range p.subs {
 		delete(m.targets, poolKey{s, p.name})
 	}
 	m.targetsMtx.Unlock()
-	p.mu.RUnlock()
 	if p.done != nil {
 		p.done()
 	}
+
+	// Provider was cleaned so mark is as down.
+	p.cancel = nil
 }
 
 func (m *Manager) updater(ctx context.Context, p *Provider, updates chan []*targetgroup.Group) {
@@ -350,8 +364,10 @@ func (m *Manager) updater(ctx context.Context, p *Provider, updates chan []*targ
 
 func (m *Manager) sender() {
 	ticker := time.NewTicker(m.updatert)
-	defer ticker.Stop()
-
+	defer func() {
+		ticker.Stop()
+		close(m.syncCh)
+	}()
 	for {
 		select {
 		case <-m.ctx.Done():
@@ -380,9 +396,11 @@ func (m *Manager) cancelDiscoverers() {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
 	for _, p := range m.providers {
+		p.mu.RLock()
 		if p.cancel != nil {
 			p.cancel()
 		}
+		p.mu.RUnlock()
 	}
 }
 
@@ -490,20 +508,4 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 		add(StaticConfig{{}})
 	}
 	return failed
-}
-
-// StaticProvider holds a list of target groups that never change.
-type StaticProvider struct {
-	TargetGroups []*targetgroup.Group
-}
-
-// Run implements the Worker interface.
-func (sd *StaticProvider) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	// We still have to consider that the consumer exits right away in which case
-	// the context will be canceled.
-	select {
-	case ch <- sd.TargetGroups:
-	case <-ctx.Done():
-	}
-	close(ch)
 }

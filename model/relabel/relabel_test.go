@@ -20,7 +20,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -694,6 +694,42 @@ func TestRelabel(t *testing.T) {
 				"label2_line1": "val_line2",
 			}),
 		},
+		{
+			input: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"__name__"},
+					Regex:        MustNewRegexp(".*_total$"),
+					TargetLabel:  "__type__",
+					Replacement:  "counter",
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__": "http_requests_total",
+				"__type__": "counter",
+			}),
+		},
+		{
+			input: labels.FromMap(map[string]string{
+				"__name__": "disk_usage_bytes",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"__name__"},
+					Regex:        MustNewRegexp(".*_bytes$"),
+					TargetLabel:  "__unit__",
+					Replacement:  "bytes",
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__name__": "disk_usage_bytes",
+				"__unit__": "bytes",
+			}),
+		},
 	}
 
 	for _, test := range tests {
@@ -711,7 +747,8 @@ func TestRelabel(t *testing.T) {
 			if cfg.Replacement == "" {
 				cfg.Replacement = DefaultRelabelConfig.Replacement
 			}
-			require.NoError(t, cfg.Validate())
+			cfg.NameValidationScheme = model.UTF8Validation
+			require.NoError(t, cfg.Validate(model.UTF8Validation))
 		}
 
 		res, keep := Process(test.input, test.relabel...)
@@ -728,59 +765,92 @@ func TestRelabelValidate(t *testing.T) {
 		expected string
 	}{
 		{
-			config:   Config{},
+			config: Config{
+				NameValidationScheme: model.UTF8Validation,
+			},
 			expected: `relabel action cannot be empty`,
 		},
 		{
 			config: Config{
-				Action: Replace,
+				Action:               Replace,
+				NameValidationScheme: model.UTF8Validation,
 			},
 			expected: `requires 'target_label' value`,
 		},
 		{
 			config: Config{
-				Action: Lowercase,
+				Action:               Lowercase,
+				NameValidationScheme: model.UTF8Validation,
 			},
 			expected: `requires 'target_label' value`,
 		},
 		{
 			config: Config{
-				Action:      Lowercase,
-				Replacement: DefaultRelabelConfig.Replacement,
-				TargetLabel: "${3}", // With UTF-8 naming, this is now a legal relabel rule.
+				Action:               Lowercase,
+				Replacement:          DefaultRelabelConfig.Replacement,
+				TargetLabel:          "${3}", // With UTF-8 naming, this is now a legal relabel rule.
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 		{
 			config: Config{
-				SourceLabels: model.LabelNames{"a"},
-				Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
-				Action:       Replace,
-				Replacement:  "${1}",
-				TargetLabel:  "${3}",
+				Action:               Lowercase,
+				Replacement:          DefaultRelabelConfig.Replacement,
+				TargetLabel:          "${3}", // Fails with legacy validation
+				NameValidationScheme: model.LegacyValidation,
+			},
+			expected: "\"${3}\" is invalid 'target_label' for lowercase action",
+		},
+		{
+			config: Config{
+				SourceLabels:         model.LabelNames{"a"},
+				Regex:                MustNewRegexp("some-([^-]+)-([^,]+)"),
+				Action:               Replace,
+				Replacement:          "${1}",
+				TargetLabel:          "${3}",
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 		{
 			config: Config{
-				SourceLabels: model.LabelNames{"a"},
-				Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
-				Action:       Replace,
-				Replacement:  "${1}",
-				TargetLabel:  "0${3}", // With UTF-8 naming this targets a valid label.
+				SourceLabels:         model.LabelNames{"a"},
+				Regex:                MustNewRegexp("some-([^-]+)-([^,]+)"),
+				Action:               Replace,
+				Replacement:          "${1}",
+				TargetLabel:          "0${3}", // With UTF-8 naming this targets a valid label.
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 		{
 			config: Config{
-				SourceLabels: model.LabelNames{"a"},
-				Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
-				Action:       Replace,
-				Replacement:  "${1}",
-				TargetLabel:  "-${3}", // With UTF-8 naming this targets a valid label.
+				SourceLabels:         model.LabelNames{"a"},
+				Regex:                MustNewRegexp("some-([^-]+)-([^,]+)"),
+				Action:               Replace,
+				Replacement:          "${1}",
+				TargetLabel:          "-${3}", // With UTF-8 naming this targets a valid label.
+				NameValidationScheme: model.UTF8Validation,
+			},
+		},
+		{
+			config: Config{
+				Regex:                MustNewRegexp("__meta_kubernetes_pod_label_(strimzi_io_.+)"),
+				Action:               LabelMap,
+				Replacement:          "$1",
+				NameValidationScheme: model.LegacyValidation,
+			},
+		},
+		{
+			config: Config{
+				Regex:                MustNewRegexp("__meta_(.+)"),
+				Action:               LabelMap,
+				Replacement:          "${1}",
+				NameValidationScheme: model.LegacyValidation,
 			},
 		},
 	}
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			err := test.config.Validate()
+			err := test.config.Validate(model.UTF8Validation)
 			if test.expected == "" {
 				require.NoError(t, err)
 			} else {
@@ -995,7 +1065,7 @@ func BenchmarkRelabel(b *testing.B) {
 	}
 	for _, tt := range tests {
 		b.Run(tt.name, func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				_, _ = Process(tt.lbls, tt.cfgs...)
 			}
 		})

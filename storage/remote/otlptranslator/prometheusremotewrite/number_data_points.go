@@ -25,11 +25,10 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/prompb"
 )
 
 func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, settings Settings, name string,
+	resource pcommon.Resource, settings Settings, scope scope, meta Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -37,36 +36,42 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		}
 
 		pt := dataPoints.At(x)
-		labels := createAttributes(
+		labels, err := c.createAttributes(
 			resource,
 			pt.Attributes(),
+			scope,
 			settings,
 			nil,
 			true,
+			meta,
 			model.MetricNameLabel,
-			name,
+			meta.MetricFamilyName,
 		)
-		sample := &prompb.Sample{
-			// convert ns to ms
-			Timestamp: convertTimeStamp(pt.Timestamp()),
+		if err != nil {
+			return err
 		}
+		var val float64
 		switch pt.ValueType() {
 		case pmetric.NumberDataPointValueTypeInt:
-			sample.Value = float64(pt.IntValue())
+			val = float64(pt.IntValue())
 		case pmetric.NumberDataPointValueTypeDouble:
-			sample.Value = pt.DoubleValue()
+			val = pt.DoubleValue()
 		}
 		if pt.Flags().NoRecordedValue() {
-			sample.Value = math.Float64frombits(value.StaleNaN)
+			val = math.Float64frombits(value.StaleNaN)
 		}
-		c.addSample(sample, labels)
+		ts := convertTimeStamp(pt.Timestamp())
+		ct := convertTimeStamp(pt.StartTimestamp())
+		if err := c.appender.AppendSample(labels, meta, ct, ts, val, nil); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
 func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string,
+	resource pcommon.Resource, settings Settings, scope scope, meta Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -74,53 +79,38 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		}
 
 		pt := dataPoints.At(x)
-		lbls := createAttributes(
+		lbls, err := c.createAttributes(
 			resource,
 			pt.Attributes(),
+			scope,
 			settings,
 			nil,
 			true,
+			meta,
 			model.MetricNameLabel,
-			name,
+			meta.MetricFamilyName,
 		)
-		sample := &prompb.Sample{
-			// convert ns to ms
-			Timestamp: convertTimeStamp(pt.Timestamp()),
+		if err != nil {
+			return nil
 		}
+		var val float64
 		switch pt.ValueType() {
 		case pmetric.NumberDataPointValueTypeInt:
-			sample.Value = float64(pt.IntValue())
+			val = float64(pt.IntValue())
 		case pmetric.NumberDataPointValueTypeDouble:
-			sample.Value = pt.DoubleValue()
+			val = pt.DoubleValue()
 		}
 		if pt.Flags().NoRecordedValue() {
-			sample.Value = math.Float64frombits(value.StaleNaN)
+			val = math.Float64frombits(value.StaleNaN)
 		}
-		ts := c.addSample(sample, lbls)
-		if ts != nil {
-			exemplars, err := getPromExemplars[pmetric.NumberDataPoint](ctx, &c.everyN, pt)
-			if err != nil {
-				return err
-			}
-			ts.Exemplars = append(ts.Exemplars, exemplars...)
+		ts := convertTimeStamp(pt.Timestamp())
+		ct := convertTimeStamp(pt.StartTimestamp())
+		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
+		if err != nil {
+			return err
 		}
-
-		// add created time series if needed
-		if settings.ExportCreatedMetric && metric.Sum().IsMonotonic() {
-			startTimestamp := pt.StartTimestamp()
-			if startTimestamp == 0 {
-				return nil
-			}
-
-			createdLabels := make([]prompb.Label, len(lbls))
-			copy(createdLabels, lbls)
-			for i, l := range createdLabels {
-				if l.Name == model.MetricNameLabel {
-					createdLabels[i].Value = name + createdSuffix
-					break
-				}
-			}
-			c.addTimeSeriesIfNeeded(createdLabels, startTimestamp, pt.Timestamp())
+		if err := c.appender.AppendSample(lbls, meta, ct, ts, val, exemplars); err != nil {
+			return err
 		}
 	}
 

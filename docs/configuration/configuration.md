@@ -3,8 +3,6 @@ title: Configuration
 sort_rank: 1
 ---
 
-# Configuration
-
 Prometheus is configured via command-line flags and a configuration file. While
 the command-line flags configure immutable system parameters (such as storage
 locations, amount of data to keep on disk and in memory, etc.), the
@@ -64,10 +62,15 @@ global:
 
   # The protocols to negotiate during a scrape with the client.
   # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
-  # OpenMetricsText1.0.0, PrometheusText0.0.4.
-  # The default value changes to [ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ]
-  # when native_histogram feature flag is set.
-  [ scrape_protocols: [<string>, ...] | default = [ OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ] ]
+  # OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
+  # If left unset both here and in an individual scrape config, the
+  # negotiation order used in that scrape config depends on the effective
+  # value of scrape_native_histograms for that scrape config.
+  # If scrape_native_histograms is false, the order is
+  # [ OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText1.0.0, PrometheusText0.0.4 ].
+  # If scrape_native_histograms is true, the order is
+  # [ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText1.0.0, PrometheusText0.0.4 ].
+  [ scrape_protocols: [<string>, ...] ]
 
   # How frequently to evaluate rules.
   [ evaluation_interval: <duration> | default = 1m ]
@@ -140,14 +143,57 @@ global:
   # and underscores.
   [ metric_name_validation_scheme: <string> | default "utf8" ]
 
-  # Specifies whether to convert all scraped classic histograms into native
-  # histograms with custom buckets.
-  [ convert_classic_histograms_to_nhcb: <bool> | default = false]
+  # If true, native histograms exposed by a target are recognized during
+  # scraping and ingested as such. If false, any native parts of histograms
+  # are ignored and only the classic parts are recognized (possibly as
+  # a classic histogram with only the +Inf buckets if no explicit classic
+  # buckets are part of the histogram).
+  [ scrape_native_histograms: <bool> | default = false ]
 
-  # Specifies whether to scrape a classic histogram, even if it is also exposed as a native
-  # histogram (has no effect without --enable-feature=native-histograms).
+  # Specifies whether to convert scraped classic histograms into native
+  # histograms with custom buckets.
+  [ convert_classic_histograms_to_nhcb: <bool> | default = false ]
+
+  # Specifies whether to additionally scrape the classic parts of a histogram,
+  # even if it is also exposed with native parts or it is converted into a
+  # native histogram with custom buckets.
   [ always_scrape_classic_histograms: <boolean> | default = false ]
 
+  # The following explains the various combinations of the last three options
+  # in various exposition cases.
+  #
+  # CASE 1: A histogram is solely exposed as a classic histogram. (Note that
+  # this also applies if the used scrape protocol (also see the
+  # scrape_protocols setting) does not support native histograms.) In this
+  # case, the scrape_native_histograms setting has no effect. If
+  # convert_classic_histograms_to_nhcb is false, the histogram is ingested as
+  # a classic histograms. If convert_classic_histograms_to_nhcb is true, the
+  # histograms is converted to an NHCB. In this case, 
+  # always_scrape_classic_histograms determines whether it is also ingested
+  # as a classic histograms or not.
+  #
+  # CASE 2: A histogram is solely exposed as a native histogram, i.e. it has
+  # no classic buckets except the optional +Inf bucket but it is marked as a
+  # native histogram (by some "native parts", at the very least by a no-op
+  # span). If scrape_native_histograms is false, this case is handled like case
+  # 1, but the resulting classic histogram or NHCB only has a sole bucket, the
+  # +Inf bucket. If scrape_native_histograms is true, however, the histogram is
+  # recognized as a pure native histogram and ingested as such. There will be
+  # no classic histogram ingested, no matter what 
+  # always_scrape_classic_histograms is set to, and there will be no
+  # conversion to an NHCB, no matter what convert_classic_histograms_to_nhcb
+  # is set to.
+  #
+  # CASE 3: A histogram is exposed as both a native and a classic histogram,
+  # i.e. it has "native parts" (at the very least a no-op span) and it has at
+  # least one classic bucket that is not the +Inf bucket. If
+  # scrape_native_histograms is false, this case is handled like case 1. The
+  # native parts are ignored, and there will be either a classic histogram, an
+  # NHCB, or both. If scrape_native_histograms is true, the histogram is
+  # ingested as a native histogram. There will be no NHCB, no matter what
+  # convert_classic_histograms_to_nhcb is set to (it would collide with the
+  # actual native histogram). However, there will be a classic histogram if (and
+  # only if) always_scrape_classic_histograms is set to true.
 
 runtime:
   # Configure the Go garbage collector GOGC parameter
@@ -183,7 +229,15 @@ remote_write:
 # Settings related to the OTLP receiver feature.
 # See https://prometheus.io/docs/guides/opentelemetry/ for best practices.
 otlp:
+  # Promote specific list of resource attributes to labels.
+  # It cannot be configured simultaneously with 'promote_all_resource_attributes: true'.
   [ promote_resource_attributes: [<string>, ...] | default = [ ] ]
+  # Promoting all resource attributes to labels, except for the ones configured with 'ignore_resource_attributes'.
+  # Be aware that changes in attributes received by the OTLP endpoint may result in time series churn and lead to high memory usage by the Prometheus server.
+  # It cannot be set to 'true' simultaneously with 'promote_resource_attributes'.
+  [ promote_all_resource_attributes: <boolean> | default = false ]
+  # Which resource attributes to ignore, can only be set when 'promote_all_resource_attributes' is true.
+  [ ignore_resource_attributes: [<string>, ...] | default = [] ]
   # Configures translation of OTLP metrics when received through the OTLP metrics
   # endpoint. Available values:
   # - "UnderscoreEscapingWithSuffixes" refers to commonly agreed normalization used
@@ -191,6 +245,11 @@ otlp:
   # - "NoUTF8EscapingWithSuffixes" is a mode that relies on UTF-8 support in Prometheus.
   #   It preserves all special characters like dots, but still adds required metric name suffixes
   #   for units and _total, as UnderscoreEscapingWithSuffixes does.
+  # - "UnderscoreEscapingWithoutSuffixes" translates metric name characters that
+  #   are not alphanumerics/underscores/colons to underscores, and label name
+  #   characters that are not alphanumerics/underscores to underscores, but
+  #   unlike UnderscoreEscapingWithSuffixes it does not append any suffixes to
+  #   the names.
   # - (EXPERIMENTAL) "NoTranslation" is a mode that relies on UTF-8 support in Prometheus.
   #   It preserves all special character like dots and won't append special suffixes for metric
   #   unit and type.
@@ -205,9 +264,21 @@ otlp:
   # Enables adding "service.name", "service.namespace" and "service.instance.id"
   # resource attributes to the "target_info" metric, on top of converting
   # them into the "instance" and "job" labels.
-  [ keep_identifying_resource_attributes: <boolean> | default = false]
+  [ keep_identifying_resource_attributes: <boolean> | default = false ]
   # Configures optional translation of OTLP explicit bucket histograms into native histograms with custom buckets.
-  [ convert_histograms_to_nhcb: <boolean> | default = false]
+  [ convert_histograms_to_nhcb: <boolean> | default = false ]
+  # Enables promotion of OTel scope metadata (i.e. name, version, schema URL, and attributes) to metric labels.
+  # This is disabled by default for backwards compatibility, but according to OTel spec, scope metadata _should_ be identifying, i.e. translated to metric labels.
+  [ promote_scope_metadata: <boolean> | default = false ]
+  # Controls whether to enable prepending of 'key_' to labels starting with '_'.
+  # Reserved labels starting with '__' are not modified.
+  # This is only relevant when translation_strategy uses underscore escaping
+  # (e.g., "UnderscoreEscapingWithSuffixes" or "UnderscoreEscapingWithoutSuffixes").
+  [ label_name_underscore_sanitization: <boolean> | default = true ]
+  # Enables preserving of multiple consecutive underscores in label names when
+  # translation_strategy uses underscore escaping. When true (default), multiple
+  # consecutive underscores are preserved during label name sanitization.
+  [ label_name_preserve_multiple_underscores: <boolean> | default = true ]
 
 # Settings related to the remote read feature.
 remote_read:
@@ -249,18 +320,18 @@ job_name: <job_name>
 # The protocols to negotiate during a scrape with the client.
 # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
 # OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
-[ scrape_protocols: [<string>, ...] | default = <global_config.scrape_protocols> ]
+# If not set in the global config, the default value depends on the 
+# setting of scrape_native_histograms. If false, it is
+# [ OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText1.0.0, PrometheusText0.0.4 ].
+# If true, it is
+# [ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText1.0.0, PrometheusText0.0.4 ].
+[ scrape_protocols: [<string>, ...] | default = <dynamic> ]
 
-# Fallback protocol to use if a scrape returns blank, unparseable, or otherwise
+# Fallback protocol to use if a scrape returns blank, unparsable, or otherwise
 # invalid Content-Type.
 # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
 # OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
 [ fallback_scrape_protocol: <string> ]
-
-# Whether to scrape a classic histogram, even if it is also exposed as a native
-# histogram (has no effect without --enable-feature=native-histograms).
-[ always_scrape_classic_histograms: <boolean> |
-default = <global.always_scrape_classic_hisotgrams> ]
 
 # The HTTP resource path on which to fetch metrics from targets.
 [ metrics_path: <path> | default = /metrics ]
@@ -425,6 +496,10 @@ scaleway_sd_configs:
 serverset_sd_configs:
   [ - <serverset_sd_config> ... ]
 
+# List of STACKIT service discovery configurations.
+stackit_sd_configs:
+  [ - <stackit_sd_config> ... ]
+
 # List of Triton service discovery configurations.
 triton_sd_configs:
   [ - <triton_sd_config> ... ]
@@ -503,7 +578,7 @@ metric_relabel_configs:
 # If this value is left blank, Prometheus will default to `allow-utf-8` if the
 # validation scheme for the current scrape config is set to utf8, or
 # `underscores` if the validation scheme is set to `legacy`.
-[ metric_name_escaping_scheme: <string> | default "utf8" ]
+[ metric_name_escaping_scheme: <string> | default "allow-utf-8" ]
 
 # Limit on total number of positive and negative buckets allowed in a single
 # native histogram. The resolution of a histogram with more buckets will be
@@ -552,10 +627,25 @@ metric_relabel_configs:
 # schema 8, but might change in the future).
 [ native_histogram_min_bucket_factor: <float> | default = 0 ]
 
+# If true, native histograms exposed by a target are recognized during
+# scraping and ingested as such. If false, any native parts of histograms
+# are ignored and only the classic parts are recognized (possibly as
+# a classic histogram with only the +Inf buckets if no explicit classic
+# buckets are part of the histogram).
+[ scrape_native_histograms: <bool> | default = <global.scrape_native_histograms> ]
+
 # Specifies whether to convert classic histograms into native histograms with
-# custom buckets (has no effect without --enable-feature=native-histograms).
-[ convert_classic_histograms_to_nhcb: <bool> | default =
-<global.convert_classic_histograms_to_nhcb>]
+# custom buckets.
+[ convert_classic_histograms_to_nhcb: <bool> | default = <global.convert_classic_histograms_to_nhcb>]
+
+# Specifies whether to additionally scrape the classic parts of a histogram,
+# even if it is also exposed with native parts or it is converted into a
+# native histogram with custom buckets.
+[ always_scrape_classic_histograms: <boolean> | default = <global.always_scrape_classic_histograms> ]
+
+# See global configuration above for further explanations of how the last three
+# options combine their effects.
+
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.
@@ -1828,6 +1918,9 @@ The `endpoints` role discovers targets from listed endpoints of a service. For e
 address one target is discovered per port. If the endpoint is backed by a pod, all
 additional container ports of the pod, not bound to an endpoint port, are discovered as targets as well.
 
+Note that the Endpoints API is [deprecated in Kubernetes v1.33+](https://kubernetes.io/blog/2025/04/24/endpoints-deprecation/),
+it is recommended to use EndpointSlices instead and switch to the `endpointslice` role below.
+
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
@@ -1949,8 +2042,11 @@ namespaces:
 # Optional metadata to attach to discovered targets. If omitted, no additional metadata is attached.
 attach_metadata:
 # Attaches node metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice.
-# When set to true, Prometheus must have permissions to get Nodes.
+# When set to true, Prometheus must have permissions to list/watch Nodes.
   [ node: <boolean> | default = false ]
+# Attaches namespace metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice, service, ingress.
+# When set to true, Prometheus must have permissions to list/watch Namespaces.
+  [ namespace: <boolean> | default = false ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
@@ -2248,6 +2344,70 @@ paths:
 ```
 
 Serverset data must be in the JSON format, the Thrift format is not currently supported.
+
+### `<stackit_sd_config>`
+
+[STACKIT](https://www.stackit.de/de/) SD configurations allow retrieving
+scrape targets from various APIs.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_stackit_availability_zone`: The availability zone of the server.
+* `__meta_stackit_label_<labelname>`: Each server label, with unsupported characters replaced by underscores.</labelname>
+* `__meta_stackit_labelpresent_<labelname>`: "true" for each label of the server, with unsupported characters replaced by underscores.</labelname>
+* `__meta_stackit_private_ipv4_<networkname>`: the private ipv4 address of the server within a given network
+* `__meta_stackit_public_ipv4`: the public ipv4 address of the server
+* `__meta_stackit_id`: The ID of the target.
+* `__meta_stackit_type`: The type or brand of the target.
+* `__meta_stackit_name`: The server name.
+* `__meta_stackit_status`: The current status of the server.
+* `__meta_stackit_power_status`: The power status of the server.
+
+See below for the configuration options for STACKIT discovery:
+
+```yaml
+# The STACKIT project
+project: <string>
+
+# STACKIT region to use. No automatic discovery of the region is done.
+[ region : <string> | default = "eu01" ]
+
+# Custom API endpoint to be used. Format scheme://host:port
+[ endpoint : <string>  ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# Raw private key string used for authenticating a service account
+[ private_key: <string> ]
+
+# Path to a file containing the raw private key string
+[ private_key_path: <string> ]
+
+# Full JSON-formatted service account key used for authentication
+[ service_account_key: <string> ]
+
+# Path to a file containing the JSON-formatted service account key
+[ service_account_key_path: <string> ]
+
+# Path to a file containing STACKIT credentials.
+[ credentials_file_path: <string> ]
+
+# The time after which the servers are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+
+# HTTP client settings, including authentication methods (such as basic auth and
+# authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+[ <http_config> ]
+```
+
+A Service Account Token can be set through `http_config`.
+
+```yaml
+stackit_sd_config:
+- authorization:
+    credentials: <token>
+```
 
 ### `<triton_sd_config>`
 
@@ -2821,6 +2981,10 @@ scaleway_sd_configs:
 serverset_sd_configs:
   [ - <serverset_sd_config> ... ]
 
+# List of STACKIT service discovery configurations.
+stackit_sd_configs:
+  [ - <stackit_sd_config> ... ]
+
 # List of Triton service discovery configurations.
 triton_sd_configs:
   [ - <triton_sd_config> ... ]
@@ -2928,6 +3092,12 @@ azuread:
   # Azure Managed Identity.  Leave 'client_id' blank to use the default managed identity.
   [ managed_identity:
       [ client_id: <string> ] ]
+
+  # Azure Workload Identity.
+  [ workload_identity:
+     client_id: <string>
+     tenant_id: <string>
+     [ token_file_path: <string> | default = "/var/run/secrets/azure/tokens/azure-identity-token" ] ]
 
   # Azure OAuth.
   [ oauth:
@@ -3059,6 +3229,26 @@ with this feature.
 # the agent's WAL to accept out-of-order samples that fall within the specified time window relative
 # to the timestamp of the last appended sample for the same series.
 [ out_of_order_time_window: <duration> | default = 0s ]
+
+
+# Configures data retention settings for TSDB.
+#
+# Note: When retention is changed at runtime, the retention
+# settings are updated immediately, but block deletion based on the new retention policy
+# occurs during the next block reload cycle. This happens automatically within 1 minute
+# or when a compaction completes, whichever comes first.
+[ retention: <retention> ] :
+  # How long to retain samples in storage. If neither this option nor the size option
+  # is set, the retention time defaults to 15d. Units Supported: y, w, d, h, m, s, ms.
+  # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.time.
+  [ time: <duration> | default = 15d ]
+
+  # Maximum number of bytes that can be stored for blocks. A unit is required,
+  # supported units: B, KB, MB, GB, TB, PB, EB. Ex: "512MB". Based on powers-of-2, so 1KB is 1024B.
+  # If set to 0 or not set, size-based retention is disabled.
+  # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.size.
+  [ size: <size> | default = 0 ]
+
 ```
 
 ### `<exemplars>`

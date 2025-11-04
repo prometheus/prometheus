@@ -172,7 +172,7 @@ func (p *OpenMetricsParser) Series() ([]byte, *int64, float64) {
 
 // Histogram returns (nil, nil, nil, nil) for now because OpenMetrics does not
 // support sparse histograms yet.
-func (p *OpenMetricsParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
+func (*OpenMetricsParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
 	return nil, nil, nil, nil
 }
 
@@ -183,7 +183,7 @@ func (p *OpenMetricsParser) Help() ([]byte, []byte) {
 	m := p.l.b[p.offsets[0]:p.offsets[1]]
 
 	// Replacer causes allocations. Replace only when necessary.
-	if strings.IndexByte(yoloString(p.text), byte('\\')) >= 0 {
+	if bytes.IndexByte(p.text, byte('\\')) >= 0 {
 		// OpenMetrics always uses the Prometheus format label value escaping.
 		return m, []byte(lvalReplacer.Replace(string(p.text)))
 	}
@@ -213,7 +213,9 @@ func (p *OpenMetricsParser) Comment() []byte {
 
 // Labels writes the labels of the current sample into the passed labels.
 func (p *OpenMetricsParser) Labels(l *labels.Labels) {
-	s := yoloString(p.series)
+	// Defensive copy in case the following keeps a reference.
+	// See https://github.com/prometheus/prometheus/issues/16490
+	s := string(p.series)
 
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
@@ -434,10 +436,7 @@ func (p *OpenMetricsParser) nextToken() token {
 }
 
 func (p *OpenMetricsParser) parseError(exp string, got token) error {
-	e := p.l.i + 1
-	if len(p.l.b) < e {
-		e = len(p.l.b)
-	}
+	e := min(len(p.l.b), p.l.i+1)
 	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
 }
 
@@ -774,7 +773,7 @@ func normalizeFloatsInLabelValues(t model.MetricType, l, v string) string {
 	if (t == model.MetricTypeSummary && l == model.QuantileLabel) || (t == model.MetricTypeHistogram && l == model.BucketLabel) {
 		f, err := strconv.ParseFloat(v, 64)
 		if err == nil {
-			return formatOpenMetricsFloat(f)
+			return labels.FormatOpenMetricsFloat(f)
 		}
 	}
 	return v

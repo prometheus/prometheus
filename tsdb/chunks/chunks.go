@@ -307,18 +307,24 @@ func WithUncachedIO(enabled bool) WriterOption {
 	}
 }
 
+// WithSegmentSize sets the chunk segment size for the writer.
+// Passing a value less than or equal to 0 causes the default segment size (DefaultChunkSegmentSize) to be used.
 func WithSegmentSize(segmentSize int64) WriterOption {
 	return func(o *writerOptions) {
 		if segmentSize <= 0 {
 			segmentSize = DefaultChunkSegmentSize
 		}
+
 		o.segmentSize = segmentSize
 	}
 }
 
 // NewWriter returns a new writer against the given directory.
+// It uses DefaultChunkSegmentSize as the default segment size.
 func NewWriter(dir string, opts ...WriterOption) (*Writer, error) {
-	options := &writerOptions{}
+	options := &writerOptions{
+		segmentSize: DefaultChunkSegmentSize,
+	}
 
 	for _, opt := range opts {
 		opt(options)
@@ -402,7 +408,7 @@ func (w *Writer) cut() error {
 			// Uncached IO is implemented using direct I/O for now.
 			wbuf, err = fileutil.NewDirectIOWriter(f, size)
 		} else {
-			wbuf, err = fileutil.NewBufioWriterWithSeek(f, size)
+			wbuf, err = fileutil.NewBufioWriterWithSize(f, size)
 		}
 		if err != nil {
 			return err

@@ -1,9 +1,8 @@
 ---
-title: Recording rules
+title: Defining recording rules
+nav_title: Recording rules
 sort_rank: 2
 ---
-
-# Defining recording rules
 
 ## Configuring rules
 

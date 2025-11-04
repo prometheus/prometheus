@@ -54,7 +54,7 @@ func (e *AggregateExpr) Pretty(level int) string {
 		return s
 	}
 
-	s += e.getAggOpStr()
+	s += e.ShortString()
 	s += "(\n"
 
 	if e.Op.IsAggregatorWithParam() {
@@ -84,8 +84,8 @@ func (e *DurationExpr) Pretty(int) string {
 	fmt.Println("e.LHS", e.LHS)
 	fmt.Println("e.RHS", e.RHS)
 	if e.LHS == nil {
-		// This is a unary negative duration expression.
-		s = fmt.Sprintf("%s %s", e.Op, e.RHS.Pretty(0))
+		// This is a unary duration expression.
+		s = fmt.Sprintf("%s%s", e.Op, e.RHS.Pretty(0))
 	} else {
 		s = fmt.Sprintf("%s %s %s", e.LHS.Pretty(0), e.Op, e.RHS.Pretty(0))
 	}
@@ -105,7 +105,7 @@ func (e *Call) Pretty(level int) string {
 	return s
 }
 
-func (e *EvalStmt) Pretty(_ int) string {
+func (e *EvalStmt) Pretty(int) string {
 	return "EVAL " + e.Expr.String()
 }
 

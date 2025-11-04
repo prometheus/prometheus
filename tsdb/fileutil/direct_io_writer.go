@@ -27,7 +27,7 @@ import (
 
 const (
 	// the defaults are deliberately set higher to cover most setups.
-	// On Linux >= 6.14, statx(2) https://man7.org/linux/man-pages/man2/statx.2.html will be later
+	// On Linux >= 6.1, statx(2) https://man7.org/linux/man-pages/man2/statx.2.html will be later
 	// used to fetch the exact alignment restrictions.
 	defaultAlignment = 4096
 	defaultBufSize   = 4096
@@ -249,8 +249,10 @@ func (b *directIOWriter) Reset(f *os.File) error {
 	return nil
 }
 
+// fileDirectIORqmts fetches alignment requirements via Statx, falling back to default
+// values when unsupported.
 func fileDirectIORqmts(f *os.File) (*directIORqmts, error) {
-	alignmentRqmts, err := fetchDirectIORqmts(f.Fd())
+	alignmentRqmts, err := fetchDirectIORqmtsFromStatx(f.Fd())
 	switch {
 	case errors.Is(err, errStatxNotSupported):
 		alignmentRqmts = defaultDirectIORqmts()
@@ -378,9 +380,9 @@ func defaultDirectIORqmts() *directIORqmts {
 	}
 }
 
-// fetchDirectIORqmts retrieves direct I/O alignment requirements for a file descriptor using statx
-// when possible.
-func fetchDirectIORqmts(fd uintptr) (*directIORqmts, error) {
+// fetchDirectIORqmtsFromStatx tries to retrieve direct I/O alignment requirements for the
+// file descriptor using statx.
+func fetchDirectIORqmtsFromStatx(fd uintptr) (*directIORqmts, error) {
 	var stat unix.Statx_t
 	flags := unix.AT_SYMLINK_NOFOLLOW | unix.AT_EMPTY_PATH | unix.AT_STATX_DONT_SYNC
 	mask := unix.STATX_DIOALIGN

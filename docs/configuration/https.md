@@ -3,8 +3,6 @@ title: HTTPS and authentication
 sort_rank: 7
 ---
 
-# HTTPS and authentication
-
 Prometheus supports basic authentication and TLS.
 This is **experimental** and might change in the future.
 

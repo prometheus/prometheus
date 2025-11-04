@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -468,6 +469,31 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "2015",
 		},
 		{
+			// toDuration - input as float64 seconds, returns *time.Duration.
+			text:   `{{ (1800 | toDuration).String }}`,
+			output: "30m0s",
+		},
+		{
+			// toDuration - input as string seconds, returns *time.Duration.
+			text:   `{{ ("1800" | toDuration).String }}`,
+			output: "30m0s",
+		},
+		{
+			// now - returns fixed timestamp as float64 seconds.
+			text:   `{{ now }}`,
+			output: "1.353755652e+09",
+		},
+		{
+			// now - returns fixed timestamp converted to formatted time string.
+			text:   `{{ (now | toTime).Format "Mon Jan 2 15:04:05 2006" }}`,
+			output: "Sat Nov 24 11:14:12 2012",
+		},
+		{
+			// returns Unix milliseconds timestamp for 30 minutes ago.
+			text:   `{{ ("-30m" | parseDuration | toDuration | (now | toTime).Add).UnixMilli }}`,
+			output: "1353753852000",
+		},
+		{
 			// Title.
 			text:   "{{ \"aa bb CC\" | title }}",
 			output: "Aa Bb CC",
@@ -514,9 +540,14 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "http://testhost:9090/path/prefix",
 		},
 		{
-			// parseDuration (using printf to ensure the return is a string).
+			// parseDuration with positive duration (using printf to ensure the return is a string).
 			text:   "{{ printf \"%0.2f\" (parseDuration \"1h2m10ms\") }}",
 			output: "3720.01",
+		},
+		{
+			// parseDuration with negative duration (using printf to ensure the return is a string).
+			text:   "{{ printf \"%0.2f\" (parseDuration \"-1h2m10ms\") }}",
+			output: "-3720.01",
 		},
 		{
 			// Simple hostname.
@@ -559,7 +590,7 @@ func TestTemplateExpansion(t *testing.T) {
 type scenario struct {
 	text        string
 	output      string
-	input       interface{}
+	input       any
 	options     []string
 	queryResult promql.Vector
 	shouldFail  bool
@@ -574,12 +605,12 @@ func testTemplateExpansion(t *testing.T, scenarios []scenario) {
 	}
 
 	for _, s := range scenarios {
-		queryFunc := func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) {
+		queryFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
 			return s.queryResult, nil
 		}
 		var result string
 		var err error
-		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, 0, queryFunc, extURL, s.options)
+		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, model.Time(1353755652000), queryFunc, extURL, s.options)
 		if s.html {
 			result, err = expander.ExpandHTML(nil)
 		} else {

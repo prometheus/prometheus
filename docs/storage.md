@@ -3,8 +3,6 @@ title: Storage
 sort_rank: 5
 ---
 
-# Storage
-
 Prometheus includes a local on-disk time series database, but also optionally integrates with remote storage systems.
 
 ## Local storage
@@ -99,7 +97,7 @@ Prometheus has several flags that configure local storage. The most important ar
   (m-mapped Head chunks) directory combined (peaks every 2 hours).
 - `--storage.tsdb.wal-compression`: Enables compression of the write-ahead log (WAL).
   Depending on your data, you can expect the WAL size to be halved with little extra
-  cpu load. This flag was introduced in 2.11.0 and enabled by default in 2.20.0.
+  CPU load. This flag was introduced in 2.11.0 and enabled by default in 2.20.0.
   Note that once enabled, downgrading Prometheus to a version below 2.11.0 will
   require deleting the WAL.
 
@@ -119,8 +117,8 @@ If your local storage becomes corrupted to the point where Prometheus will not
 start it is recommended to backup the storage directory and restore the
 corrupted block directories from your backups. If you do not have backups the
 last resort is to remove the corrupted files. For example you can try removing
-individual block directories or the write-ahead-log (wal) files. Note that this
-means losing the data for the time range those blocks or wal covers.
+individual block directories or the write-ahead-log (WAL) files. Note that this
+means losing the data for the time range those blocks or WAL covers.
 
 CAUTION: Non-POSIX compliant filesystems are not supported for Prometheus'
 local storage as unrecoverable corruptions may happen. NFS filesystems
@@ -215,7 +213,7 @@ procedure, as they cannot be represented in the OpenMetrics format.
 
 ### Usage
 
-Backfilling can be used via the Promtool command line. Promtool will write the blocks
+Backfilling can be used via the `promtool` command line. `promtool` will write the blocks
 to a directory. By default this output directory is ./data/, you can change it by
 using the name of the desired output directory as an optional argument in the sub-command.
 

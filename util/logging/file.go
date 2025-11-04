@@ -27,8 +27,8 @@ var _ slog.Handler = (*JSONFileLogger)(nil)
 
 var _ io.Closer = (*JSONFileLogger)(nil)
 
-// JSONFileLogger represents a logger that writes JSON to a file. It implements
-// the slog.Handler interface, as well as the io.Closer interface.
+// JSONFileLogger represents a logger that writes JSON to a file.
+// It implements the promql.QueryLogger interface.
 type JSONFileLogger struct {
 	handler slog.Handler
 	file    *os.File

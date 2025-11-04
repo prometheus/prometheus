@@ -48,11 +48,12 @@ type ruleImporter struct {
 }
 
 type ruleImporterConfig struct {
-	outputDir        string
-	start            time.Time
-	end              time.Time
-	evalInterval     time.Duration
-	maxBlockDuration time.Duration
+	outputDir            string
+	start                time.Time
+	end                  time.Time
+	evalInterval         time.Duration
+	maxBlockDuration     time.Duration
+	nameValidationScheme model.ValidationScheme
 }
 
 // newRuleImporter creates a new rule importer that can be used to parse and evaluate recording rule files and create new series
@@ -60,10 +61,12 @@ type ruleImporterConfig struct {
 func newRuleImporter(logger *slog.Logger, config ruleImporterConfig, apiClient queryRangeAPI) *ruleImporter {
 	logger.Info("new rule importer", "component", "backfiller", "start", config.start.Format(time.RFC822), "end", config.end.Format(time.RFC822))
 	return &ruleImporter{
-		logger:      logger,
-		config:      config,
-		apiClient:   apiClient,
-		ruleManager: rules.NewManager(&rules.ManagerOptions{}),
+		logger:    logger,
+		config:    config,
+		apiClient: apiClient,
+		ruleManager: rules.NewManager(&rules.ManagerOptions{
+			NameValidationScheme: config.nameValidationScheme,
+		}),
 	}
 }
 

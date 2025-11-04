@@ -668,7 +668,6 @@ func TestTargetUpdatesOrder(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		tc := tc
 		t.Run(tc.title, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -784,8 +783,7 @@ func pk(provider, setName string, n int) poolKey {
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
@@ -821,8 +819,7 @@ func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
@@ -861,8 +858,7 @@ func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
@@ -904,8 +900,7 @@ func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testi
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
@@ -972,8 +967,7 @@ func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 }
 
 func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
@@ -1016,8 +1010,7 @@ func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 }
 
 func TestDiscovererConfigs(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
@@ -1053,8 +1046,7 @@ func TestDiscovererConfigs(t *testing.T) {
 // removing all targets from the static_configs cleans the corresponding targetGroups entries to avoid leaks and sends an empty update.
 // The update is required to signal the consumers that the previous targets should be dropped.
 func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
@@ -1095,8 +1087,7 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 }
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
@@ -1134,8 +1125,7 @@ func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
 	processedConfig := Configs{
 		staticConfig("foo:9090", "bar:9090", "baz:9090"),
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
@@ -1158,7 +1148,7 @@ func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
 
 type errorConfig struct{ err error }
 
-func (e errorConfig) Name() string                                        { return "error" }
+func (errorConfig) Name() string                                          { return "error" }
 func (e errorConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) { return nil, e.err }
 
 // NewDiscovererMetrics implements discovery.Config.
@@ -1176,7 +1166,7 @@ func (lockStaticConfig) NewDiscovererMetrics(prometheus.Registerer, RefreshMetri
 	return &NoopDiscovererMetrics{}
 }
 
-func (s lockStaticConfig) Name() string { return "lockstatic" }
+func (lockStaticConfig) Name() string { return "lockstatic" }
 func (s lockStaticConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) {
 	return (lockStaticDiscoverer)(s), nil
 }
@@ -1195,8 +1185,7 @@ func (s lockStaticDiscoverer) Run(ctx context.Context, up chan<- []*targetgroup.
 }
 
 func TestGaugeFailedConfigs(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
@@ -1350,7 +1339,6 @@ func TestCoordinationWithReceiver(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.title, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -1447,8 +1435,7 @@ func (o onceProvider) Run(_ context.Context, ch chan<- []*targetgroup.Group) {
 // TestTargetSetTargetGroupsUpdateDuringApplyConfig is used to detect races when
 // ApplyConfig happens at the same time as targets update.
 func TestTargetSetTargetGroupsUpdateDuringApplyConfig(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
@@ -1471,7 +1458,7 @@ func TestTargetSetTargetGroupsUpdateDuringApplyConfig(t *testing.T) {
 	wg.Add(2000)
 
 	start := make(chan struct{})
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		go func() {
 			<-start
 			td.update([]*targetgroup.Group{
@@ -1485,7 +1472,7 @@ func TestTargetSetTargetGroupsUpdateDuringApplyConfig(t *testing.T) {
 		}()
 	}
 
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		go func(i int) {
 			<-start
 			c := map[string]Configs{
@@ -1521,7 +1508,7 @@ func (*testDiscoverer) NewDiscovererMetrics(prometheus.Registerer, RefreshMetric
 }
 
 // Name implements Config.
-func (t *testDiscoverer) Name() string {
+func (*testDiscoverer) Name() string {
 	return "test"
 }
 
@@ -1545,7 +1532,7 @@ func (t *testDiscoverer) update(tgs []*targetgroup.Group) {
 func TestUnregisterMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	// Check that all metrics can be unregistered, allowing a second manager to be created.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		ctx, cancel := context.WithCancel(context.Background())
 
 		refreshMetrics, sdMetrics := NewTestMetrics(t, reg)
@@ -1561,4 +1548,54 @@ func TestUnregisterMetrics(t *testing.T) {
 		refreshMetrics.Unregister()
 		cancel()
 	}
+}
+
+// Calling ApplyConfig() that removes providers at the same time as shutting down
+// the manager should not hang.
+func TestConfigReloadAndShutdownRace(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	_, sdMetrics := NewTestMetrics(t, reg)
+
+	mgrCtx, mgrCancel := context.WithCancel(context.Background())
+	discoveryManager := NewManager(mgrCtx, promslog.NewNopLogger(), reg, sdMetrics)
+	require.NotNil(t, discoveryManager)
+	discoveryManager.updatert = 100 * time.Millisecond
+
+	var wgDiscovery sync.WaitGroup
+	wgDiscovery.Add(1)
+	go func() {
+		discoveryManager.Run()
+		wgDiscovery.Done()
+	}()
+	time.Sleep(time.Millisecond * 200)
+
+	var wgBg sync.WaitGroup
+	updateChan := discoveryManager.SyncCh()
+	wgBg.Add(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		defer wgBg.Done()
+		select {
+		case <-ctx.Done():
+			return
+		case <-updateChan:
+		}
+	}()
+
+	c := map[string]Configs{
+		"prometheus": {staticConfig("bar:9090")},
+	}
+	discoveryManager.ApplyConfig(c)
+
+	delete(c, "prometheus")
+	wgBg.Add(1)
+	go func() {
+		discoveryManager.ApplyConfig(c)
+		wgBg.Done()
+	}()
+	mgrCancel()
+	wgDiscovery.Wait()
+
+	cancel()
+	wgBg.Wait()
 }

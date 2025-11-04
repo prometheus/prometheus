@@ -3,8 +3,6 @@ title: HTTP API
 sort_rank: 7
 ---
 
-# HTTP API
-
 The current stable HTTP API is reachable under `/api/v1` on a Prometheus
 server. Any non-breaking additions will be added under that endpoint.
 
@@ -87,6 +85,7 @@ URL query parameters:
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Doesn’t affect scalars or strings but truncates the number of series for matrices and vectors. Optional. 0 means disabled.
+- `lookback_delta=<number>`: Override the the [lookback period](#staleness) just for this query. Optional.
 
 The current server time is used if the `time` parameter is omitted.
 
@@ -159,6 +158,7 @@ URL query parameters:
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
+- `lookback_delta=<number>`: Override the the [lookback period](#staleness) just for this query. Optional.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -350,7 +350,9 @@ You can URL-encode these parameters directly in the request body by using the `P
 or dynamic number of series selectors that may breach server-side URL character limits.
 
 The `data` section of the query result consists of a list of objects that
-contain the label name/value pairs which identify each series.
+contain the label name/value pairs which identify each series. Note that the
+`start` and `end` times are approximate and the result may contain label values
+for series which have no samples in the given interval.
 
 The following example returns all series that match either of the selectors
 `up` or `process_start_time_seconds{job="prometheus"}`:
@@ -399,8 +401,9 @@ URL query parameters:
   series from which to read the label names. Optional.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
-
-The `data` section of the JSON response is a list of string label names.
+The `data` section of the JSON response is a list of string label names. Note
+that the `start` and `end` times are approximate and the result may contain
+label names for series which have no samples in the given interval.
 
 Here is an example.
 
@@ -453,7 +456,10 @@ URL query parameters:
   series from which to read the label values. Optional.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
-The `data` section of the JSON response is a list of string label values.
+The `data` section of the JSON response is a list of string label values. Note
+that the `start` and `end` times are approximate and the result may contain
+label values for series which have no samples in the given interval.
+
 
 This example queries for all label values for the `http_status_code` label:
 
@@ -574,9 +580,9 @@ sample values. JSON does not support special float values such as `NaN`, `Inf`,
 and `-Inf`, so sample values are transferred as quoted JSON strings rather than
 raw numbers.
 
-The keys `"histogram"` and `"histograms"` only show up if the experimental
-native histograms are present in the response. Their placeholder `<histogram>`
-is explained in detail in its own section below.
+The keys `"histogram"` and `"histograms"` only show up if native histograms
+are present in the response. Their placeholder `<histogram>` is explained
+in detail in its own section below.
 
 ### Range vectors
 
@@ -643,9 +649,6 @@ String results are returned as result type `string`. The corresponding
 ### Native histograms
 
 The `<histogram>` placeholder used above is formatted as follows.
-
-_Note that native histograms are an experimental feature, and the format below
-might still change._
 
 ```json
 {
@@ -739,7 +742,7 @@ curl 'http://localhost:9090/api/v1/targets?state=active'
 ```
 
 ```json
-
+{
   "status": "success",
   "data": {
     "activeTargets": [
@@ -775,7 +778,7 @@ curl 'http://localhost:9090/api/v1/targets?scrapePool=node_exporter'
 ```
 
 ```json
-
+{
   "status": "success",
   "data": {
     "activeTargets": [
@@ -801,6 +804,64 @@ curl 'http://localhost:9090/api/v1/targets?scrapePool=node_exporter'
     ],
     "droppedTargets": []
   }
+}
+```
+
+## Relabel steps
+
+This endpoint is **experimental** and might change in the future. It is currently only meant to be used by Prometheus' own web UI, and the endpoint name and exact format returned may change from one Prometheus version to another. It may also be removed again in case it is no longer needed by the UI.
+
+The following endpoint returns a step-by-step list of relabeling rules and their effects on a given target's label set.
+
+```
+GET /api/v1/targets/relabel_steps
+```
+
+URL query parameters:
+- `scrapePool=<string>`: The scrape pool name of the target, used to determine the relabeling rules to apply. Required.
+- `labels=<string>`: A JSON object containing the label set of the target before any relabeling is applied. Required.
+
+The following example returns the relabeling steps for a discovered target in the `prometheus` scrape pool with the label set `{"__address__": "localhost:9090", "job": "prometheus"}`:
+
+```bash
+curl -g 'http://localhost:9090/api/v1/targets/relabel_steps?scrapePool=prometheus&labels={"__address__":"localhost:9090","job":"prometheus"}'
+```
+
+```json
+{
+   "data" : {
+      "steps" : [
+         {
+            "keep" : true,
+            "output" : {
+               "__address__" : "localhost:9090",
+               "env" : "development",
+               "job" : "prometheus"
+            },
+            "rule" : {
+               "action" : "replace",
+               "regex" : "(.*)",
+               "replacement" : "development",
+               "separator" : ";",
+               "target_label" : "env"
+            }
+         },
+         {
+            "keep" : false,
+            "output" : {},
+            "rule" : {
+               "action" : "drop",
+               "regex" : "localhost:.*",
+               "replacement" : "$1",
+               "separator" : ";",
+               "source_labels" : [
+                  "__address__"
+               ]
+            }
+         }
+      ]
+   },
+   "status" : "success"
 }
 ```
 
@@ -939,7 +1000,7 @@ contain metric metadata and the target label set.
 The following example returns all metadata entries for the `go_goroutines` metric
 from the first two targets with label `job="prometheus"`.
 
-```json
+```bash
 curl -G http://localhost:9091/api/v1/targets/metadata \
     --data-urlencode 'metric=go_goroutines' \
     --data-urlencode 'match_target={job="prometheus"}' \
@@ -1351,6 +1412,64 @@ curl http://localhost:9090/api/v1/status/tsdb
       {
         "name": "instance=localhost:9090",
         "value": 425
+      }
+    ]
+  }
+}
+```
+
+*New in v3.6.0*
+
+### TSDB Blocks
+
+**NOTE**: This endpoint is **experimental** and might change in the future. The endpoint name and the exact format of the returned data may change between Prometheus versions. The **exact metadata returned** by this endpoint is an implementation detail and may change in future Prometheus versions.
+
+The following endpoint returns the list of currently loaded TSDB blocks and their metadata.
+
+```
+GET /api/v1/status/tsdb/blocks
+```
+
+This endpoint returns the following information for each block:
+
+- `ulid`: Unique ID of the block.
+- `minTime`: Minimum timestamp (in milliseconds) of the block.
+- `maxTime`: Maximum timestamp (in milliseconds) of the block.
+- `stats`:
+  - `numSeries`: Number of series in the block.
+  - `numSamples`: Number of samples in the block.
+  - `numChunks`: Number of chunks in the block.
+- `compaction`:
+  - `level`: The compaction level of the block.
+  - `sources`: List of ULIDs of source blocks used to compact this block.
+- `version`: The block version.
+
+
+```bash
+curl http://localhost:9090/api/v1/status/tsdb/blocks
+```
+
+```json
+{
+  "status": "success",
+  "data": {
+    "blocks": [
+      {
+        "ulid": "01JZ8JKZY6XSK3PTDP9ZKRWT60",
+        "minTime": 1750860620060,
+        "maxTime": 1750867200000,
+        "stats": {
+          "numSamples": 13701,
+          "numSeries": 716,
+          "numChunks": 716
+        },
+        "compaction": {
+          "level": 1,
+          "sources": [
+            "01JZ8JKZY6XSK3PTDP9ZKRWT60"
+          ]
+        },
+        "version": 1
       }
     ]
   }

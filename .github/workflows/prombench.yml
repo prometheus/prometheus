@@ -2,6 +2,8 @@ on:
   repository_dispatch:
     types: [prombench_start, prombench_restart, prombench_stop]
 name: Prombench Workflow
+permissions:
+  contents: read
 env:
   AUTH_FILE: ${{ secrets.TEST_INFRA_PROVIDER_AUTH }}
   CLUSTER_NAME: test-infra

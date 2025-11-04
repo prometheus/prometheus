@@ -52,11 +52,15 @@ type dbAdapter struct {
 	*tsdb.DB
 }
 
+func (a *dbAdapter) BlockMetas() ([]tsdb.BlockMeta, error) {
+	return a.DB.BlockMetas(), nil
+}
+
 func (a *dbAdapter) Stats(statsByLabelName string, limit int) (*tsdb.Stats, error) {
 	return a.Head().Stats(statsByLabelName, limit), nil
 }
 
-func (a *dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
+func (*dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
 }
 
@@ -106,8 +110,7 @@ func TestReadyAndHealthy(t *testing.T) {
 		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {
@@ -224,8 +227,7 @@ func TestRoutePrefix(t *testing.T) {
 	if err != nil {
 		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {
@@ -483,7 +485,7 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -545,8 +547,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {
@@ -569,6 +570,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		"/query_range":                 {http.MethodGet, http.MethodPost},
 		"/query_exemplars":             {http.MethodGet, http.MethodPost},
 		"/status/tsdb":                 {http.MethodGet},
+		"/status/tsdb/blocks":          {http.MethodGet},
 		"/alerts":                      {http.MethodGet},
 		"/rules":                       {http.MethodGet},
 		"/admin/tsdb/delete_series":    {http.MethodPost, http.MethodPut},
@@ -678,8 +680,7 @@ func TestMultipleListenAddresses(t *testing.T) {
 		panic(fmt.Sprintf("Unable to start web listener: %s", err))
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {

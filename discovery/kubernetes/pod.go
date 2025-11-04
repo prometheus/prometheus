@@ -40,16 +40,18 @@ const (
 
 // Pod discovers new pod targets.
 type Pod struct {
-	podInf           cache.SharedIndexInformer
-	nodeInf          cache.SharedInformer
-	withNodeMetadata bool
-	store            cache.Store
-	logger           *slog.Logger
-	queue            *workqueue.Type
+	podInf                cache.SharedIndexInformer
+	nodeInf               cache.SharedInformer
+	withNodeMetadata      bool
+	namespaceInf          cache.SharedInformer
+	withNamespaceMetadata bool
+	store                 cache.Store
+	logger                *slog.Logger
+	queue                 *workqueue.Typed[string]
 }
 
 // NewPod creates a new pod discovery.
-func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInformer, eventCount *prometheus.CounterVec) *Pod {
+func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace cache.SharedInformer, eventCount *prometheus.CounterVec) *Pod {
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
@@ -59,23 +61,27 @@ func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes cache.SharedIn
 	podUpdateCount := eventCount.WithLabelValues(RolePod.String(), MetricLabelRoleUpdate)
 
 	p := &Pod{
-		podInf:           pods,
-		nodeInf:          nodes,
-		withNodeMetadata: nodes != nil,
-		store:            pods.GetStore(),
-		logger:           l,
-		queue:            workqueue.NewNamed(RolePod.String()),
+		podInf:                pods,
+		nodeInf:               nodes,
+		withNodeMetadata:      nodes != nil,
+		namespaceInf:          namespace,
+		withNamespaceMetadata: namespace != nil,
+		store:                 pods.GetStore(),
+		logger:                l,
+		queue: workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{
+			Name: RolePod.String(),
+		}),
 	}
 	_, err := p.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(o interface{}) {
+		AddFunc: func(o any) {
 			podAddCount.Inc()
 			p.enqueue(o)
 		},
-		DeleteFunc: func(o interface{}) {
+		DeleteFunc: func(o any) {
 			podDeleteCount.Inc()
 			p.enqueue(o)
 		},
-		UpdateFunc: func(_, o interface{}) {
+		UpdateFunc: func(_, o any) {
 			podUpdateCount.Inc()
 			p.enqueue(o)
 		},
@@ -86,15 +92,15 @@ func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes cache.SharedIn
 
 	if p.withNodeMetadata {
 		_, err = p.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(o interface{}) {
+			AddFunc: func(o any) {
 				node := o.(*apiv1.Node)
 				p.enqueuePodsForNode(node.Name)
 			},
-			UpdateFunc: func(_, o interface{}) {
+			UpdateFunc: func(_, o any) {
 				node := o.(*apiv1.Node)
 				p.enqueuePodsForNode(node.Name)
 			},
-			DeleteFunc: func(o interface{}) {
+			DeleteFunc: func(o any) {
 				nodeName, err := nodeName(o)
 				if err != nil {
 					l.Error("Error getting Node name", "err", err)
@@ -107,10 +113,24 @@ func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes cache.SharedIn
 		}
 	}
 
+	if p.withNamespaceMetadata {
+		_, err = p.namespaceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(_, o any) {
+				namespace := o.(*apiv1.Namespace)
+				p.enqueuePodsForNamespace(namespace.Name)
+			},
+			// Creation and deletion will trigger events for the change handlers of the resources within the namespace.
+			// No need to have additional handlers for them here.
+		})
+		if err != nil {
+			l.Error("Error adding namespaces event handler.", "err", err)
+		}
+	}
+
 	return p
 }
 
-func (p *Pod) enqueue(obj interface{}) {
+func (p *Pod) enqueue(obj any) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		return
@@ -126,6 +146,9 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	cacheSyncs := []cache.InformerSynced{p.podInf.HasSynced}
 	if p.withNodeMetadata {
 		cacheSyncs = append(cacheSyncs, p.nodeInf.HasSynced)
+	}
+	if p.withNamespaceMetadata {
+		cacheSyncs = append(cacheSyncs, p.namespaceInf.HasSynced)
 	}
 
 	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
@@ -145,12 +168,11 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 }
 
 func (p *Pod) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
-	keyObj, quit := p.queue.Get()
+	key, quit := p.queue.Get()
 	if quit {
 		return false
 	}
-	defer p.queue.Done(keyObj)
-	key := keyObj.(string)
+	defer p.queue.Done(key)
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -174,7 +196,7 @@ func (p *Pod) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool 
 	return true
 }
 
-func convertToPod(o interface{}) (*apiv1.Pod, error) {
+func convertToPod(o any) (*apiv1.Pod, error) {
 	pod, ok := o.(*apiv1.Pod)
 	if ok {
 		return pod, nil
@@ -237,7 +259,7 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 	return ls
 }
 
-func (p *Pod) findPodContainerStatus(statuses *[]apiv1.ContainerStatus, containerName string) (*apiv1.ContainerStatus, error) {
+func (*Pod) findPodContainerStatus(statuses *[]apiv1.ContainerStatus, containerName string) (*apiv1.ContainerStatus, error) {
 	for _, s := range *statuses {
 		if s.Name == containerName {
 			return &s, nil
@@ -268,6 +290,9 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	tg.Labels[namespaceLabel] = lv(pod.Namespace)
 	if p.withNodeMetadata {
 		tg.Labels = addNodeLabels(tg.Labels, p.nodeInf, p.logger, &pod.Spec.NodeName)
+	}
+	if p.withNamespaceMetadata {
+		tg.Labels = addNamespaceLabels(tg.Labels, p.namespaceInf, p.logger, pod.Namespace)
 	}
 
 	containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
@@ -319,6 +344,18 @@ func (p *Pod) enqueuePodsForNode(nodeName string) {
 	pods, err := p.podInf.GetIndexer().ByIndex(nodeIndex, nodeName)
 	if err != nil {
 		p.logger.Error("Error getting pods for node", "node", nodeName, "err", err)
+		return
+	}
+
+	for _, pod := range pods {
+		p.enqueue(pod.(*apiv1.Pod))
+	}
+}
+
+func (p *Pod) enqueuePodsForNamespace(namespace string) {
+	pods, err := p.podInf.GetIndexer().ByIndex(cache.NamespaceIndex, namespace)
+	if err != nil {
+		p.logger.Error("Error getting pods in namespace", "namespace", namespace, "err", err)
 		return
 	}
 

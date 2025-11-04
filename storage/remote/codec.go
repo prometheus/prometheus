@@ -340,7 +340,7 @@ func (e errSeriesSet) Err() error {
 	return e.err
 }
 
-func (e errSeriesSet) Warnings() annotations.Annotations { return nil }
+func (errSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // concreteSeriesSet implements storage.SeriesSet.
 type concreteSeriesSet struct {
@@ -357,11 +357,11 @@ func (c *concreteSeriesSet) At() storage.Series {
 	return c.series[c.cur-1]
 }
 
-func (c *concreteSeriesSet) Err() error {
+func (*concreteSeriesSet) Err() error {
 	return nil
 }
 
-func (c *concreteSeriesSet) Warnings() annotations.Annotations { return nil }
+func (*concreteSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // concreteSeries implements storage.Series.
 type concreteSeries struct {
@@ -388,6 +388,7 @@ type concreteSeriesIterator struct {
 	histogramsCur int
 	curValType    chunkenc.ValueType
 	series        *concreteSeries
+	err           error
 }
 
 func newConcreteSeriesIterator(series *concreteSeries) chunkenc.Iterator {
@@ -404,10 +405,14 @@ func (c *concreteSeriesIterator) reset(series *concreteSeries) {
 	c.histogramsCur = -1
 	c.curValType = chunkenc.ValNone
 	c.series = series
+	c.err = nil
 }
 
 // Seek implements storage.SeriesIterator.
 func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
+	if c.err != nil {
+		return chunkenc.ValNone
+	}
 	if c.floatsCur == -1 {
 		c.floatsCur = 0
 	}
@@ -439,7 +444,7 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 		if c.series.floats[c.floatsCur].Timestamp <= c.series.histograms[c.histogramsCur].Timestamp {
 			c.curValType = chunkenc.ValFloat
 		} else {
-			c.curValType = getHistogramValType(&c.series.histograms[c.histogramsCur])
+			c.curValType = chunkenc.ValHistogram
 		}
 		// When the timestamps do not overlap the cursor for the non-selected sample type has advanced too
 		// far; we decrement it back down here.
@@ -453,9 +458,24 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	case c.floatsCur < len(c.series.floats):
 		c.curValType = chunkenc.ValFloat
 	case c.histogramsCur < len(c.series.histograms):
-		c.curValType = getHistogramValType(&c.series.histograms[c.histogramsCur])
+		c.curValType = chunkenc.ValHistogram
+	}
+	if c.curValType == chunkenc.ValHistogram {
+		h := &c.series.histograms[c.histogramsCur]
+		c.curValType = getHistogramValType(h)
+		c.err = validateHistogramSchema(h)
+	}
+	if c.err != nil {
+		c.curValType = chunkenc.ValNone
 	}
 	return c.curValType
+}
+
+func validateHistogramSchema(h *prompb.Histogram) error {
+	if histogram.IsKnownSchema(h.Schema) {
+		return nil
+	}
+	return histogram.UnknownSchemaError(h.Schema)
 }
 
 func getHistogramValType(h *prompb.Histogram) chunkenc.ValueType {
@@ -480,14 +500,28 @@ func (c *concreteSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *hist
 		panic("iterator is not on an integer histogram sample")
 	}
 	h := c.series.histograms[c.histogramsCur]
-	return h.Timestamp, h.ToIntHistogram()
+	mh := h.ToIntHistogram()
+	if mh.Schema > histogram.ExponentialSchemaMax && mh.Schema <= histogram.ExponentialSchemaMaxReserved {
+		// This is a very slow path, but it should only happen if the
+		// sample is from a newer Prometheus version that supports higher
+		// resolution.
+		mh.ReduceResolution(histogram.ExponentialSchemaMax)
+	}
+	return h.Timestamp, mh
 }
 
 // AtFloatHistogram implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if c.curValType == chunkenc.ValHistogram || c.curValType == chunkenc.ValFloatHistogram {
 		fh := c.series.histograms[c.histogramsCur]
-		return fh.Timestamp, fh.ToFloatHistogram() // integer will be auto-converted.
+		mfh := fh.ToFloatHistogram() // integer will be auto-converted.
+		if mfh.Schema > histogram.ExponentialSchemaMax && mfh.Schema <= histogram.ExponentialSchemaMaxReserved {
+			// This is a very slow path, but it should only happen if the
+			// sample is from a newer Prometheus version that supports higher
+			// resolution.
+			mfh.ReduceResolution(histogram.ExponentialSchemaMax)
+		}
+		return fh.Timestamp, mfh
 	}
 	panic("iterator is not on a histogram sample")
 }
@@ -504,6 +538,9 @@ const noTS = int64(math.MaxInt64)
 
 // Next implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
+	if c.err != nil {
+		return chunkenc.ValNone
+	}
 	peekFloatTS := noTS
 	if c.floatsCur+1 < len(c.series.floats) {
 		peekFloatTS = c.series.floats[c.floatsCur+1].Timestamp
@@ -532,12 +569,21 @@ func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 		c.histogramsCur++
 		c.curValType = chunkenc.ValFloat
 	}
+
+	if c.curValType == chunkenc.ValHistogram {
+		h := &c.series.histograms[c.histogramsCur]
+		c.curValType = getHistogramValType(h)
+		c.err = validateHistogramSchema(h)
+	}
+	if c.err != nil {
+		c.curValType = chunkenc.ValNone
+	}
 	return c.curValType
 }
 
 // Err implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) Err() error {
-	return nil
+	return c.err
 }
 
 // chunkedSeriesSet implements storage.SeriesSet.
@@ -547,8 +593,9 @@ type chunkedSeriesSet struct {
 	mint, maxt    int64
 	cancel        func(error)
 
-	current storage.Series
-	err     error
+	current   storage.Series
+	err       error
+	exhausted bool
 }
 
 func NewChunkedSeriesSet(chunkedReader *ChunkedReader, respBody io.ReadCloser, mint, maxt int64, cancel func(error)) storage.SeriesSet {
@@ -564,6 +611,12 @@ func NewChunkedSeriesSet(chunkedReader *ChunkedReader, respBody io.ReadCloser, m
 // Next return true if there is a next series and false otherwise. It will
 // block until the next series is available.
 func (s *chunkedSeriesSet) Next() bool {
+	if s.exhausted {
+		// Don't try to read the next series again.
+		// This prevents errors like "http: read on closed response body" if Next() is called after it has already returned false.
+		return false
+	}
+
 	res := &prompb.ChunkedReadResponse{}
 
 	err := s.chunkedReader.NextProto(res)
@@ -575,6 +628,7 @@ func (s *chunkedSeriesSet) Next() bool {
 
 		_ = s.respBody.Close()
 		s.cancel(err)
+		s.exhausted = true
 
 		return false
 	}
@@ -599,7 +653,7 @@ func (s *chunkedSeriesSet) Err() error {
 	return s.err
 }
 
-func (s *chunkedSeriesSet) Warnings() annotations.Annotations {
+func (*chunkedSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
@@ -758,10 +812,10 @@ func (it *chunkedSeriesIterator) Err() error {
 // also making sure that there are no labels with duplicate names.
 func validateLabelsAndMetricName(ls []prompb.Label) error {
 	for i, l := range ls {
-		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
+		if l.Name == labels.MetricName && !model.UTF8Validation.IsValidMetricName(l.Value) {
 			return fmt.Errorf("invalid metric name: %v", l.Value)
 		}
-		if !model.LabelName(l.Name).IsValid() {
+		if !model.UTF8Validation.IsValidLabelName(l.Name) {
 			return fmt.Errorf("invalid label name: %v", l.Name)
 		}
 		if !model.LabelValue(l.Value).IsValid() {

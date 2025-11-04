@@ -1,0 +1,2 @@
+otlp:
+  ignore_resource_attributes: ["k8s.job.name"]

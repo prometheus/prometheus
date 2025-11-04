@@ -52,6 +52,8 @@ import (
 )
 
 const (
+	chunkHeaderSize               = 2
+	chunkAllocationSize           = 128
 	chunkCompactCapacityThreshold = 32
 )
 
@@ -62,7 +64,7 @@ type XORChunk struct {
 
 // NewXORChunk returns a new chunk with XOR encoding.
 func NewXORChunk() *XORChunk {
-	b := make([]byte, 2, 128)
+	b := make([]byte, chunkHeaderSize, chunkAllocationSize)
 	return &XORChunk{b: bstream{stream: b, count: 0}}
 }
 
@@ -71,7 +73,7 @@ func (c *XORChunk) Reset(stream []byte) {
 }
 
 // Encoding returns the encoding type.
-func (c *XORChunk) Encoding() Encoding {
+func (*XORChunk) Encoding() Encoding {
 	return EncXOR
 }
 
@@ -98,6 +100,9 @@ func (c *XORChunk) Compact() {
 // It is not valid to call Appender() multiple times concurrently or to use multiple
 // Appenders on the same chunk.
 func (c *XORChunk) Appender() (Appender, error) {
+	if len(c.b.stream) == chunkHeaderSize { // Avoid allocating an Iterator when chunk is empty.
+		return &xorAppender{b: &c.b, t: math.MinInt64, leading: 0xff}, nil
+	}
 	it := c.iterator(nil)
 
 	// To get an appender we must know the state it would have if we had
@@ -117,9 +122,6 @@ func (c *XORChunk) Appender() (Appender, error) {
 		leading:  it.leading,
 		trailing: it.trailing,
 	}
-	if it.numTotal == 0 {
-		a.leading = 0xff
-	}
 	return a, nil
 }
 
@@ -131,7 +133,7 @@ func (c *XORChunk) iterator(it Iterator) *xorIterator {
 	return &xorIterator{
 		// The first 2 bytes contain chunk headers.
 		// We skip that for actual samples.
-		br:       newBReader(c.b.bytes()[2:]),
+		br:       newBReader(c.b.bytes()[chunkHeaderSize:]),
 		numTotal: binary.BigEndian.Uint16(c.b.bytes()),
 		t:        math.MinInt64,
 	}
@@ -223,11 +225,11 @@ func (a *xorAppender) writeVDelta(v float64) {
 	xorWrite(a.b, v, a.v, &a.leading, &a.trailing)
 }
 
-func (a *xorAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
+func (*xorAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float chunk")
 }
 
-func (a *xorAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
+func (*xorAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a float histogram sample to a float chunk")
 }
 
@@ -263,11 +265,11 @@ func (it *xorIterator) At() (int64, float64) {
 	return it.t, it.val
 }
 
-func (it *xorIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+func (*xorIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	panic("cannot call xorIterator.AtHistogram")
 }
 
-func (it *xorIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+func (*xorIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	panic("cannot call xorIterator.AtFloatHistogram")
 }
 
@@ -282,7 +284,7 @@ func (it *xorIterator) Err() error {
 func (it *xorIterator) Reset(b []byte) {
 	// The first 2 bytes contain chunk headers.
 	// We skip that for actual samples.
-	it.br = newBReader(b[2:])
+	it.br = newBReader(b[chunkHeaderSize:])
 	it.numTotal = binary.BigEndian.Uint16(b)
 
 	it.numRead = 0
@@ -330,7 +332,7 @@ func (it *xorIterator) Next() ValueType {
 
 	var d byte
 	// read delta-of-delta
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		d <<= 1
 		bit, err := it.br.readBitFast()
 		if err != nil {

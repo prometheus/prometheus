@@ -114,9 +114,7 @@ func TestFastRegexMatcher_MatchString(t *testing.T) {
 	testValues = append(testValues, generateRandomValues()...)
 
 	for _, r := range regexes {
-		r := r
 		for _, v := range testValues {
-			v := v
 			t.Run(readable(r)+` on "`+readable(v)+`"`, func(t *testing.T) {
 				t.Parallel()
 				m, err := NewFastRegexMatcher(r)
@@ -245,7 +243,6 @@ func TestFindSetMatches(t *testing.T) {
 		// too many combinations
 		{"[a-z][a-z]", nil, false},
 	} {
-		c := c
 		t.Run(c.pattern, func(t *testing.T) {
 			t.Parallel()
 			parsed, err := syntax.Parse(c.pattern, syntax.Perl|syntax.DotNL)
@@ -288,7 +285,7 @@ func BenchmarkFastRegexMatcher(b *testing.B) {
 			require.NoError(b, err)
 
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				for _, text := range texts {
 					_ = m.MatchString(text)
 				}
@@ -332,7 +329,7 @@ func BenchmarkToNormalizedLower(b *testing.B) {
 								inputs[i] = benchCase(l, uppercase, asciiOnly, i)
 							}
 							b.ResetTimer()
-							for n := 0; n < b.N; n++ {
+							for n := 0; b.Loop(); n++ {
 								var a [256]byte
 								toNormalisedLower(inputs[n%len(inputs)], a[:])
 							}
@@ -416,7 +413,6 @@ func TestStringMatcherFromRegexp(t *testing.T) {
 		{"foo.?", &literalPrefixSensitiveStringMatcher{prefix: "foo", right: &zeroOrOneCharacterStringMatcher{matchNL: true}}},
 		{"f.?o", nil},
 	} {
-		c := c
 		t.Run(c.pattern, func(t *testing.T) {
 			t.Parallel()
 			parsed, err := syntax.Parse(c.pattern, syntax.Perl|syntax.DotNL)
@@ -683,7 +679,7 @@ func randString(randGenerator *rand.Rand, length int) string {
 
 func randStrings(randGenerator *rand.Rand, many, length int) []string {
 	out := make([]string, 0, many)
-	for i := 0; i < many; i++ {
+	for range many {
 		out = append(out, randString(randGenerator, length))
 	}
 	return out
@@ -1127,7 +1123,7 @@ func BenchmarkOptimizeEqualOrPrefixStringMatchers(b *testing.B) {
 					}
 
 					b.Run("without optimizeEqualOrPrefixStringMatchers()", func(b *testing.B) {
-						for n := 0; n < b.N; n++ {
+						for b.Loop() {
 							for _, t := range texts {
 								unoptimized.Matches(t)
 							}
@@ -1135,7 +1131,7 @@ func BenchmarkOptimizeEqualOrPrefixStringMatchers(b *testing.B) {
 					})
 
 					b.Run("with optimizeEqualOrPrefixStringMatchers()", func(b *testing.B) {
-						for n := 0; n < b.N; n++ {
+						for b.Loop() {
 							for _, t := range texts {
 								optimized.Matches(t)
 							}
@@ -1224,9 +1220,8 @@ func BenchmarkZeroOrOneCharacterStringMatcher(b *testing.B) {
 	}
 
 	matcher := &zeroOrOneCharacterStringMatcher{matchNL: true}
-	b.ResetTimer()
 
-	for n := 0; n < b.N; n++ {
+	for n := 0; b.Loop(); n++ {
 		c := cases[n%len(cases)]
 		got := matcher.Matches(c.str)
 		if got != c.matches {

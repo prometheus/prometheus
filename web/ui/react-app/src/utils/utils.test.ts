@@ -15,6 +15,7 @@ import {
   parseOption,
   decodePanelOptionsFromQueryString,
   parsePrometheusFloat,
+  createExpressionLink,
 } from '.';
 import { GraphDisplayMode, PanelType } from '../pages/graph/Panel';
 
@@ -330,6 +331,18 @@ describe('Utils', () => {
       });
       it('returns -17 when param is -1.7e+01', () => {
         expect(parsePrometheusFloat('-1.7e+01')).toEqual(-17);
+      });
+    });
+    describe('createExpressionLink',()=>{
+      it('<....>builds link',()=>{
+        expect(createExpressionLink('up')).toEqual(
+          `../graph?g0.expr=up&g0.tab=1&g0.display_mode=${GraphDisplayMode.Lines}&g0.show_exemplars=0&g0.range_input=1h`
+        );
+      });
+      it('url-encodes PromQL',() =>{
+        expect(createExpressionLink('ALERTS{alertname="HighCPU"}')).toEqual(
+          `../graph?g0.expr=ALERTS%7Balertname%3D%22High%20CPU%22%7D&g0.tab=1&g0.display_mode=${GraphDisplayMode.Lines}&g0.show_exemplars=0&g0.range_input=1h`
+        );
       });
     });
   });

@@ -3,8 +3,6 @@ title: Getting started
 sort_rank: 1
 ---
 
-# Getting started
-
 This guide is a "Hello World"-style tutorial which shows how to install,
 configure, and use a simple Prometheus instance. You will download and run
 Prometheus locally, configure it to scrape itself and an example application,
@@ -81,7 +79,7 @@ navigating to its metrics endpoint:
 
 Let us explore data that Prometheus has collected about itself. To
 use Prometheus's built-in expression browser, navigate to
-http://localhost:9090/graph and choose the "Table" view within the "Graph" tab.
+http://localhost:9090/query and choose the "Graph" tab.
 
 As you can gather from [localhost:9090/metrics](http://localhost:9090/metrics),
 one metric that Prometheus exports about itself is named
@@ -115,7 +113,7 @@ For more about the expression language, see the
 
 ## Using the graphing interface
 
-To graph expressions, navigate to http://localhost:9090/graph and use the "Graph"
+To graph expressions, navigate to http://localhost:9090/query and use the "Graph"
 tab.
 
 For example, enter the following expression to graph the per-second rate of chunks

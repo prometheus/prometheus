@@ -283,7 +283,8 @@ func (h *FloatHistogram) ZeroBucket() Bucket[float64] {
 // bucket counts including the zero bucket and the count and the sum of
 // observations. The bucket layout stays the same. This method changes the
 // receiving histogram directly (rather than acting on a copy). It returns a
-// pointer to the receiving histogram for convenience.
+// pointer to the receiving histogram for convenience. If factor is negative,
+// the counter reset hint is set to GaugeType.
 func (h *FloatHistogram) Mul(factor float64) *FloatHistogram {
 	h.ZeroCount *= factor
 	h.Count *= factor
@@ -294,11 +295,15 @@ func (h *FloatHistogram) Mul(factor float64) *FloatHistogram {
 	for i := range h.NegativeBuckets {
 		h.NegativeBuckets[i] *= factor
 	}
+	if factor < 0 {
+		h.CounterResetHint = GaugeType
+	}
 	return h
 }
 
 // Div works like Mul but divides instead of multiplies.
-// When dividing by 0, everything will be set to Inf.
+// When dividing by 0, everything will be set to Inf. If scalar is negative,
+// the counter reset hint is set to GaugeType.
 func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
 	h.ZeroCount /= scalar
 	h.Count /= scalar
@@ -317,6 +322,9 @@ func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
 	for i := range h.NegativeBuckets {
 		h.NegativeBuckets[i] /= scalar
 	}
+	if scalar < 0 {
+		h.CounterResetHint = GaugeType
+	}
 	return h
 }
 
@@ -330,41 +338,20 @@ func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
 // The method reconciles differences in the zero threshold and in the schema, and
 // changes them if needed. The other histogram will not be modified in any case.
 // Adding is currently only supported between 2 exponential histograms, or between
-// 2 custom buckets histograms with the exact same custom bounds.
+// 2 custom buckets histograms with the exact same custom bounds. If CounterResetHint
+// values conflict, the receiver's hint is set to unknown, and counterResetCollision
+// is returned as true. A counter reset conflict occurs iff one of two histograms indicate
+// a counter reset (CounterReset) while the other indicates no reset (NotCounterReset).
+//
+// In case of mismatched NHCB bounds, they will be reconciled to the intersection of
+// both histograms, and nhcbBoundsReconciled will be returned as true.
 //
 // This method returns a pointer to the receiving histogram for convenience.
-func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
-	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
-		return nil, ErrHistogramsIncompatibleSchema
+func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counterResetCollision, nhcbBoundsReconciled bool, err error) {
+	if err := h.checkSchemaAndBounds(other); err != nil {
+		return nil, false, false, err
 	}
-	if h.UsesCustomBuckets() && !FloatBucketsMatch(h.CustomValues, other.CustomValues) {
-		return nil, ErrHistogramsIncompatibleBounds
-	}
-
-	switch {
-	case other.CounterResetHint == h.CounterResetHint:
-		// Adding apples to apples, all good. No need to change anything.
-	case h.CounterResetHint == GaugeType:
-		// Adding something else to a gauge. That's probably OK. Outcome is a gauge.
-		// Nothing to do since the receiver is already marked as gauge.
-	case other.CounterResetHint == GaugeType:
-		// Similar to before, but this time the receiver is "something else" and we have to change it to gauge.
-		h.CounterResetHint = GaugeType
-	case h.CounterResetHint == UnknownCounterReset:
-		// With the receiver's CounterResetHint being "unknown", this could still be legitimate
-		// if the caller knows what they are doing. Outcome is then again "unknown".
-		// No need to do anything since the receiver's CounterResetHint is already "unknown".
-	case other.CounterResetHint == UnknownCounterReset:
-		// Similar to before, but now we have to set the receiver's CounterResetHint to "unknown".
-		h.CounterResetHint = UnknownCounterReset
-	default:
-		// All other cases shouldn't actually happen.
-		// They are a direct collision of CounterReset and NotCounterReset.
-		// Conservatively set the CounterResetHint to "unknown" and issue a warning.
-		h.CounterResetHint = UnknownCounterReset
-		// TODO(trevorwhitney): Actually issue the warning as soon as the plumbing for it is in place
-	}
-
+	counterResetCollision = h.adjustCounterReset(other)
 	if !h.UsesCustomBuckets() {
 		otherZeroCount := h.reconcileZeroBuckets(other)
 		h.ZeroCount += otherZeroCount
@@ -380,8 +367,21 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
 	)
 
 	if h.UsesCustomBuckets() {
-		h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
-		return h, nil
+		if CustomBucketBoundsMatch(h.CustomValues, other.CustomValues) {
+			h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
+		} else {
+			nhcbBoundsReconciled = true
+			intersectedBounds := intersectCustomBucketBounds(h.CustomValues, other.CustomValues)
+
+			// Add with mapping - maps both histograms to intersected layout.
+			h.PositiveSpans, h.PositiveBuckets = addCustomBucketsWithMismatches(
+				false,
+				hPositiveSpans, hPositiveBuckets, h.CustomValues,
+				otherPositiveSpans, otherPositiveBuckets, other.CustomValues,
+				intersectedBounds)
+			h.CustomValues = intersectedBounds
+		}
+		return h, counterResetCollision, nhcbBoundsReconciled, nil
 	}
 
 	var (
@@ -405,18 +405,19 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
 	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
 	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hNegativeSpans, hNegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
 
-	return h, nil
+	return h, counterResetCollision, nhcbBoundsReconciled, nil
 }
 
-// Sub works like Add but subtracts the other histogram.
-func (h *FloatHistogram) Sub(other *FloatHistogram) (*FloatHistogram, error) {
-	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
-		return nil, ErrHistogramsIncompatibleSchema
+// Sub works like Add but subtracts the other histogram. It uses the same logic
+// to adjust the counter reset hint. This is useful where this method is used
+// for incremental mean calculation. However, if it is used for the actual "-"
+// operator in PromQL, the counter reset needs to be set to GaugeType after
+// calling this method.
+func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counterResetCollision, nhcbBoundsReconciled bool, err error) {
+	if err := h.checkSchemaAndBounds(other); err != nil {
+		return nil, false, false, err
 	}
-	if h.UsesCustomBuckets() && !FloatBucketsMatch(h.CustomValues, other.CustomValues) {
-		return nil, ErrHistogramsIncompatibleBounds
-	}
-
+	counterResetCollision = h.adjustCounterReset(other)
 	if !h.UsesCustomBuckets() {
 		otherZeroCount := h.reconcileZeroBuckets(other)
 		h.ZeroCount -= otherZeroCount
@@ -432,8 +433,21 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (*FloatHistogram, error) {
 	)
 
 	if h.UsesCustomBuckets() {
-		h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
-		return h, nil
+		if CustomBucketBoundsMatch(h.CustomValues, other.CustomValues) {
+			h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
+		} else {
+			nhcbBoundsReconciled = true
+			intersectedBounds := intersectCustomBucketBounds(h.CustomValues, other.CustomValues)
+
+			// Subtract with mapping - maps both histograms to intersected layout.
+			h.PositiveSpans, h.PositiveBuckets = addCustomBucketsWithMismatches(
+				true,
+				hPositiveSpans, hPositiveBuckets, h.CustomValues,
+				otherPositiveSpans, otherPositiveBuckets, other.CustomValues,
+				intersectedBounds)
+			h.CustomValues = intersectedBounds
+		}
+		return h, counterResetCollision, nhcbBoundsReconciled, nil
 	}
 
 	var (
@@ -456,7 +470,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (*FloatHistogram, error) {
 	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
 	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hNegativeSpans, hNegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
 
-	return h, nil
+	return h, counterResetCollision, nhcbBoundsReconciled, nil
 }
 
 // Equals returns true if the given float histogram matches exactly.
@@ -480,7 +494,7 @@ func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 	}
 
 	if h.UsesCustomBuckets() {
-		if !FloatBucketsMatch(h.CustomValues, h2.CustomValues) {
+		if !CustomBucketBoundsMatch(h.CustomValues, h2.CustomValues) {
 			return false
 		}
 	}
@@ -493,14 +507,14 @@ func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 	if !spansMatch(h.NegativeSpans, h2.NegativeSpans) {
 		return false
 	}
-	if !FloatBucketsMatch(h.NegativeBuckets, h2.NegativeBuckets) {
+	if !floatBucketsMatch(h.NegativeBuckets, h2.NegativeBuckets) {
 		return false
 	}
 
 	if !spansMatch(h.PositiveSpans, h2.PositiveSpans) {
 		return false
 	}
-	if !FloatBucketsMatch(h.PositiveBuckets, h2.PositiveBuckets) {
+	if !floatBucketsMatch(h.PositiveBuckets, h2.PositiveBuckets) {
 		return false
 	}
 
@@ -619,11 +633,17 @@ func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
 	if h.Count < previous.Count {
 		return true
 	}
-	if h.UsesCustomBuckets() != previous.UsesCustomBuckets() || (h.UsesCustomBuckets() && !FloatBucketsMatch(h.CustomValues, previous.CustomValues)) {
-		// Mark that something has changed or that the application has been restarted. However, this does
-		// not matter so much since the change in schema will be handled directly in the chunks and PromQL
-		// functions.
-		return true
+	if h.UsesCustomBuckets() {
+		if !previous.UsesCustomBuckets() {
+			// Mark that something has changed or that the application has been restarted. However, this does
+			// not matter so much since the change in schema will be handled directly in the chunks and PromQL
+			// functions.
+			return true
+		}
+		if !CustomBucketBoundsMatch(h.CustomValues, previous.CustomValues) {
+			// Custom bounds don't match - check if any reconciled bucket value has decreased.
+			return h.detectResetWithMismatchedCustomBounds(previous, h.CustomValues, previous.CustomValues)
+		}
 	}
 	if h.Schema > previous.Schema {
 		return true
@@ -778,23 +798,24 @@ func (h *FloatHistogram) AllReverseBucketIterator() BucketIterator[float64] {
 // create false positives here.
 func (h *FloatHistogram) Validate() error {
 	var nCount, pCount float64
-	if h.UsesCustomBuckets() {
+	switch {
+	case IsCustomBucketsSchema(h.Schema):
 		if err := checkHistogramCustomBounds(h.CustomValues, h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
 			return fmt.Errorf("custom buckets: %w", err)
 		}
 		if h.ZeroCount != 0 {
-			return errors.New("custom buckets: must have zero count of 0")
+			return ErrHistogramCustomBucketsZeroCount
 		}
 		if h.ZeroThreshold != 0 {
-			return errors.New("custom buckets: must have zero threshold of 0")
+			return ErrHistogramCustomBucketsZeroThresh
 		}
 		if len(h.NegativeSpans) > 0 {
-			return errors.New("custom buckets: must not have negative spans")
+			return ErrHistogramCustomBucketsNegSpans
 		}
 		if len(h.NegativeBuckets) > 0 {
-			return errors.New("custom buckets: must not have negative buckets")
+			return ErrHistogramCustomBucketsNegBuckets
 		}
-	} else {
+	case IsExponentialSchema(h.Schema):
 		if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
 			return fmt.Errorf("positive side: %w", err)
 		}
@@ -805,9 +826,17 @@ func (h *FloatHistogram) Validate() error {
 		if err != nil {
 			return fmt.Errorf("negative side: %w", err)
 		}
-		if h.CustomValues != nil {
-			return errors.New("histogram with exponential schema must not have custom bounds")
+		if h.ZeroCount < 0 {
+			return fmt.Errorf("zero bucket has observation count of %v: %w", h.ZeroCount, ErrHistogramNegativeBucketCount)
 		}
+		if h.CustomValues != nil {
+			return ErrHistogramExpSchemaCustomBounds
+		}
+	default:
+		return InvalidSchemaError(h.Schema)
+	}
+	if h.Count < 0 {
+		return fmt.Errorf("observation count is  %v: %w", h.Count, ErrHistogramNegativeCount)
 	}
 	err := checkHistogramBuckets(h.PositiveBuckets, &pCount, false)
 	if err != nil {
@@ -975,7 +1004,7 @@ func (h *FloatHistogram) floatBucketIterator(
 	return i
 }
 
-// reverseFloatBucketIterator is a low-level constructor for reverse bucket iterators.
+// newReverseFloatBucketIterator is a low-level constructor for reverse bucket iterators.
 func newReverseFloatBucketIterator(
 	spans []Span, buckets []float64, schema int32, positive bool, customValues []float64,
 ) reverseFloatBucketIterator {
@@ -1323,7 +1352,9 @@ func addBuckets(
 	return spansA, bucketsA
 }
 
-func FloatBucketsMatch(b1, b2 []float64) bool {
+// floatBucketsMatch compares bucket values of two float histograms using binary float comparison
+// and returns true if all values match.
+func floatBucketsMatch(b1, b2 []float64) bool {
 	if len(b1) != len(b2) {
 		return false
 	}
@@ -1333,6 +1364,204 @@ func FloatBucketsMatch(b1, b2 []float64) bool {
 		}
 	}
 	return true
+}
+
+// detectResetWithMismatchedCustomBounds checks if any bucket count has decreased when
+// comparing NHCBs with mismatched custom bounds. It maps both histograms
+// to the intersected bounds on-the-fly and compares values without allocating
+// arrays for all mapped buckets.
+// Will panic if called with histograms that are not NHCB.
+func (h *FloatHistogram) detectResetWithMismatchedCustomBounds(
+	previous *FloatHistogram, currBounds, prevBounds []float64,
+) bool {
+	if h.Schema != CustomBucketsSchema || previous.Schema != CustomBucketsSchema {
+		panic("detectResetWithMismatchedCustomBounds called with non-NHCB schema")
+	}
+	currIt := h.floatBucketIterator(true, 0, CustomBucketsSchema)
+	prevIt := previous.floatBucketIterator(true, 0, CustomBucketsSchema)
+
+	rollupSumForBound := func(iter *floatBucketIterator, iterStarted bool, iterBucket Bucket[float64], bound float64) (float64, Bucket[float64], bool) {
+		if !iterStarted {
+			if !iter.Next() {
+				return 0, Bucket[float64]{}, false
+			}
+			iterBucket = iter.At()
+		}
+		var sum float64
+		for iterBucket.Upper <= bound {
+			sum += iterBucket.Count
+			if !iter.Next() {
+				return sum, Bucket[float64]{}, false
+			}
+			iterBucket = iter.At()
+		}
+		return sum, iterBucket, true
+	}
+
+	var (
+		currBoundIdx, prevBoundIdx   = 0, 0
+		currBucket, prevBucket       Bucket[float64]
+		currIterStarted, currHasMore bool
+		prevIterStarted, prevHasMore bool
+	)
+
+	for currBoundIdx <= len(currBounds) && prevBoundIdx <= len(prevBounds) {
+		currBound := math.Inf(1)
+		if currBoundIdx < len(currBounds) {
+			currBound = currBounds[currBoundIdx]
+		}
+		prevBound := math.Inf(1)
+		if prevBoundIdx < len(prevBounds) {
+			prevBound = prevBounds[prevBoundIdx]
+		}
+
+		switch {
+		case currBound == prevBound:
+			// Check matching bound, rolling up lesser buckets that have not been accounter for yet.
+			currRollupSum := 0.0
+			if !currIterStarted || currHasMore {
+				currRollupSum, currBucket, currHasMore = rollupSumForBound(&currIt, currIterStarted, currBucket, currBound)
+				currIterStarted = true
+			}
+
+			prevRollupSum := 0.0
+			if !prevIterStarted || prevHasMore {
+				prevRollupSum, prevBucket, prevHasMore = rollupSumForBound(&prevIt, prevIterStarted, prevBucket, currBound)
+				prevIterStarted = true
+			}
+
+			if currRollupSum < prevRollupSum {
+				return true
+			}
+
+			currBoundIdx++
+			prevBoundIdx++
+		case currBound < prevBound:
+			currBoundIdx++
+		default:
+			prevBoundIdx++
+		}
+	}
+
+	return false
+}
+
+// intersectCustomBucketBounds returns the intersection of two custom bucket boundary sets.
+func intersectCustomBucketBounds(boundsA, boundsB []float64) []float64 {
+	if len(boundsA) == 0 || len(boundsB) == 0 {
+		return nil
+	}
+
+	var (
+		result []float64
+		i, j   = 0, 0
+	)
+
+	for i < len(boundsA) && j < len(boundsB) {
+		switch {
+		case boundsA[i] == boundsB[j]:
+			if result == nil {
+				// Allocate a new slice because FloatHistogram.CustomValues has to be immutable.
+				result = make([]float64, 0, min(len(boundsA), len(boundsB)))
+			}
+			result = append(result, boundsA[i])
+			i++
+			j++
+		case boundsA[i] < boundsB[j]:
+			i++
+		default:
+			j++
+		}
+	}
+
+	return result
+}
+
+// addCustomBucketsWithMismatches handles adding/subtracting custom bucket histograms
+// with mismatched bucket layouts by mapping both to an intersected layout.
+func addCustomBucketsWithMismatches(
+	negative bool,
+	spansA []Span, bucketsA, boundsA []float64,
+	spansB []Span, bucketsB, boundsB []float64,
+	intersectedBounds []float64,
+) ([]Span, []float64) {
+	targetBuckets := make([]float64, len(intersectedBounds)+1)
+
+	mapBuckets := func(spans []Span, buckets, bounds []float64, negative bool) {
+		srcIdx := 0
+		bucketIdx := 0
+		intersectIdx := 0
+
+		for _, span := range spans {
+			srcIdx += int(span.Offset)
+			for range span.Length {
+				if bucketIdx < len(buckets) {
+					value := buckets[bucketIdx]
+
+					// Find target bucket index.
+					targetIdx := len(targetBuckets) - 1 // Default to +Inf bucket.
+					if srcIdx < len(bounds) {
+						srcBound := bounds[srcIdx]
+						// Since both arrays are sorted, we can continue from where we left off.
+						for intersectIdx < len(intersectedBounds) {
+							if intersectedBounds[intersectIdx] >= srcBound {
+								targetIdx = intersectIdx
+								break
+							}
+							intersectIdx++
+						}
+					}
+
+					if negative {
+						targetBuckets[targetIdx] -= value
+					} else {
+						targetBuckets[targetIdx] += value
+					}
+				}
+				srcIdx++
+				bucketIdx++
+			}
+		}
+	}
+
+	// Map both histograms to the intersected layout.
+	mapBuckets(spansA, bucketsA, boundsA, false)
+	mapBuckets(spansB, bucketsB, boundsB, negative)
+
+	// Build spans and buckets, excluding zero-valued buckets from the final result.
+	destSpans := spansA[:0]          // Reuse spansA capacity for destSpans since we don't need it anymore.
+	destBuckets := targetBuckets[:0] // Reuse targetBuckets capacity for destBuckets since it's guaranteed to be large enough.
+	lastIdx := int32(-1)
+
+	for i, count := range targetBuckets {
+		if count == 0 {
+			continue
+		}
+
+		destBuckets = append(destBuckets, count)
+		idx := int32(i)
+
+		if len(destSpans) > 0 && idx == lastIdx+1 {
+			// Consecutive bucket, extend the last span.
+			destSpans[len(destSpans)-1].Length++
+		} else {
+			// New span needed.
+			// TODO: optimize away small gaps.
+			offset := idx
+			if len(destSpans) > 0 {
+				// Convert to relative offset from the end of the last span.
+				prevEnd := lastIdx
+				offset = idx - prevEnd - 1
+			}
+			destSpans = append(destSpans, Span{
+				Offset: offset,
+				Length: 1,
+			})
+		}
+		lastIdx = idx
+	}
+
+	return destSpans, destBuckets
 }
 
 // ReduceResolution reduces the float histogram's spans, buckets into target schema.
@@ -1355,4 +1584,46 @@ func (h *FloatHistogram) ReduceResolution(targetSchema int32) *FloatHistogram {
 
 	h.Schema = targetSchema
 	return h
+}
+
+// checkSchemaAndBounds checks if two histograms are compatible because they
+// both use a standard exponential schema or because they both are NHCBs.
+func (h *FloatHistogram) checkSchemaAndBounds(other *FloatHistogram) error {
+	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
+		return ErrHistogramsIncompatibleSchema
+	}
+	return nil
+}
+
+// adjustCounterReset is used for addition and subtraction. Those operation are
+// usually only performed between gauge histograms, but if one or both are
+// counters, we try to at least set the counter reset hint to something
+// meaningful (see code comments below). The return counterResetCollision is
+// true if one histogram has a counter reset hint of CounterReset and the other
+// NotCounterReset. All other combinations are not considered a collision.
+func (h *FloatHistogram) adjustCounterReset(other *FloatHistogram) (counterResetCollision bool) {
+	switch {
+	case other.CounterResetHint == h.CounterResetHint:
+		// Adding apples to apples, all good. No need to change anything.
+	case h.CounterResetHint == GaugeType:
+		// Adding something else to a gauge. That's probably OK. Outcome is a gauge.
+		// Nothing to do since the receiver is already marked as gauge.
+	case other.CounterResetHint == GaugeType:
+		// Similar to before, but this time the receiver is "something else" and we have to change it to gauge.
+		h.CounterResetHint = GaugeType
+	case h.CounterResetHint == UnknownCounterReset:
+		// With the receiver's CounterResetHint being "unknown", this could still be legitimate
+		// if the caller knows what they are doing. Outcome is then again "unknown".
+		// No need to do anything since the receiver's CounterResetHint is already "unknown".
+	case other.CounterResetHint == UnknownCounterReset:
+		// Similar to before, but now we have to set the receiver's CounterResetHint to "unknown".
+		h.CounterResetHint = UnknownCounterReset
+	default:
+		// All other cases shouldn't actually happen.
+		// They are a direct collision of CounterReset and NotCounterReset.
+		// Conservatively set the CounterResetHint to "unknown" and issue a warning.
+		h.CounterResetHint = UnknownCounterReset
+		return true
+	}
+	return false
 }

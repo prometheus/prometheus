@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	html_template "html/template"
+	"maps"
 	"math"
 	"net"
 	"net/url"
@@ -59,7 +60,7 @@ func init() {
 // A version of vector that's easier to use from templates.
 type sample struct {
 	Labels map[string]string
-	Value  interface{}
+	Value  any
 }
 type queryResult []*sample
 
@@ -110,7 +111,7 @@ func query(ctx context.Context, q string, ts time.Time, queryFn QueryFunc) (quer
 type Expander struct {
 	text    string
 	name    string
-	data    interface{}
+	data    any
 	funcMap text_template.FuncMap
 	options []string
 }
@@ -120,7 +121,7 @@ func NewTemplateExpander(
 	ctx context.Context,
 	text string,
 	name string,
-	data interface{},
+	data any,
 	timestamp model.Time,
 	queryFunc QueryFunc,
 	externalURL *url.URL,
@@ -146,14 +147,14 @@ func NewTemplateExpander(
 			"label": func(label string, s *sample) string {
 				return s.Labels[label]
 			},
-			"value": func(s *sample) interface{} {
+			"value": func(s *sample) any {
 				return s.Value
 			},
 			"strvalue": func(s *sample) string {
 				return s.Labels["__value__"]
 			},
-			"args": func(args ...interface{}) map[string]interface{} {
-				result := make(map[string]interface{})
+			"args": func(args ...any) map[string]any {
+				result := make(map[string]any)
 				for i, a := range args {
 					result[fmt.Sprintf("arg%d", i)] = a
 				}
@@ -199,7 +200,7 @@ func NewTemplateExpander(
 				}
 				return host
 			},
-			"humanize": func(i interface{}) (string, error) {
+			"humanize": func(i any) (string, error) {
 				v, err := common_templates.ConvertToFloat(i)
 				if err != nil {
 					return "", err
@@ -228,7 +229,7 @@ func NewTemplateExpander(
 				}
 				return fmt.Sprintf("%.4g%s", v, prefix), nil
 			},
-			"humanize1024": func(i interface{}) (string, error) {
+			"humanize1024": func(i any) (string, error) {
 				v, err := common_templates.ConvertToFloat(i)
 				if err != nil {
 					return "", err
@@ -247,7 +248,7 @@ func NewTemplateExpander(
 				return fmt.Sprintf("%.4g%s", v, prefix), nil
 			},
 			"humanizeDuration": common_templates.HumanizeDuration,
-			"humanizePercentage": func(i interface{}) (string, error) {
+			"humanizePercentage": func(i any) (string, error) {
 				v, err := common_templates.ConvertToFloat(i)
 				if err != nil {
 					return "", err
@@ -255,13 +256,24 @@ func NewTemplateExpander(
 				return fmt.Sprintf("%.4g%%", v*100), nil
 			},
 			"humanizeTimestamp": common_templates.HumanizeTimestamp,
-			"toTime": func(i interface{}) (*time.Time, error) {
+			"toTime": func(i any) (*time.Time, error) {
 				v, err := common_templates.ConvertToFloat(i)
 				if err != nil {
 					return nil, err
 				}
 
 				return floatToTime(v)
+			},
+			"toDuration": func(i any) (*time.Duration, error) {
+				v, err := common_templates.ConvertToFloat(i)
+				if err != nil {
+					return nil, err
+				}
+				d := time.Duration(v * float64(time.Second))
+				return &d, nil
+			},
+			"now": func() float64 {
+				return float64(timestamp) / 1000.0
 			},
 			"pathPrefix": func() string {
 				return externalURL.Path
@@ -270,24 +282,25 @@ func NewTemplateExpander(
 				return externalURL.String()
 			},
 			"parseDuration": func(d string) (float64, error) {
-				v, err := model.ParseDuration(d)
+				v, err := model.ParseDurationAllowNegative(d)
 				if err != nil {
 					return 0, err
 				}
 				return float64(time.Duration(v)) / float64(time.Second), nil
 			},
+			"urlQueryEscape": url.QueryEscape,
 		},
 		options: options,
 	}
 }
 
 // AlertTemplateData returns the interface to be used in expanding the template.
-func AlertTemplateData(labels, externalLabels map[string]string, externalURL string, smpl promql.Sample) interface{} {
+func AlertTemplateData(labels, externalLabels map[string]string, externalURL string, smpl promql.Sample) any {
 	res := struct {
 		Labels         map[string]string
 		ExternalLabels map[string]string
 		ExternalURL    string
-		Value          interface{}
+		Value          any
 	}{
 		Labels:         labels,
 		ExternalLabels: externalLabels,
@@ -305,9 +318,7 @@ func AlertTemplateData(labels, externalLabels map[string]string, externalURL str
 // Funcs adds the functions in fm to the Expander's function map.
 // Existing functions will be overwritten in case of conflict.
 func (te Expander) Funcs(fm text_template.FuncMap) {
-	for k, v := range fm {
-		te.funcMap[k] = v
-	}
+	maps.Copy(te.funcMap, fm)
 }
 
 // Expand expands a template in text (non-HTML) mode.
@@ -358,7 +369,7 @@ func (te Expander) ExpandHTML(templateFiles []string) (result string, resultErr 
 	tmpl := html_template.New(te.name).Funcs(html_template.FuncMap(te.funcMap))
 	tmpl.Option(te.options...)
 	tmpl.Funcs(html_template.FuncMap{
-		"tmpl": func(name string, data interface{}) (html_template.HTML, error) {
+		"tmpl": func(name string, data any) (html_template.HTML, error) {
 			var buffer bytes.Buffer
 			err := tmpl.ExecuteTemplate(&buffer, name, data)
 			return html_template.HTML(buffer.String()), err

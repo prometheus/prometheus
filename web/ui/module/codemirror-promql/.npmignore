@@ -3,7 +3,6 @@
 /release/**/test/
 /scripts/
 /.circleci/
-/src/
 /test/
 /examples/
 /gulpfile.js

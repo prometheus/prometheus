@@ -15,6 +15,7 @@ import { useElementSize } from "@mantine/hooks";
 import UPlotChart, { UPlotChartRange } from "./UPlotChart";
 import ASTNode, { nodeType } from "../../promql/ast";
 import serializeNode from "../../promql/serialize";
+import { useSettings } from "../../state/settingsSlice";
 
 export interface GraphProps {
   expr: string;
@@ -41,6 +42,7 @@ const Graph: FC<GraphProps> = ({
 }) => {
   const { ref, width } = useElementSize();
   const [rerender, setRerender] = useState(true);
+  const { showQueryWarnings, showQueryInfoNotices } = useSettings();
 
   const effectiveExpr =
     node === null
@@ -54,6 +56,8 @@ const Graph: FC<GraphProps> = ({
                 offset: node.offset,
                 timestamp: node.timestamp,
                 startOrEnd: node.startOrEnd,
+                anchored: node.anchored,
+                smoothed: node.smoothed,
               }
             : node
         );
@@ -83,6 +87,36 @@ const Graph: FC<GraphProps> = ({
     data: SuccessAPIResponse<RangeQueryResult>;
     range: UPlotChartRange;
   } | null>(null);
+
+  // Helper function to render warnings.
+  const renderAlerts = (warnings?: string[], infos?: string[]) => {
+    return (
+      <>
+        {showQueryWarnings &&
+          warnings?.map((w, idx) => (
+            <Alert
+              key={idx}
+              color="red"
+              title="Query warning"
+              icon={<IconAlertTriangle />}
+            >
+              {w}
+            </Alert>
+          ))}
+        {showQueryInfoNotices &&
+          infos?.map((w, idx) => (
+            <Alert
+              key={idx}
+              color="yellow"
+              title="Query notice"
+              icon={<IconInfoCircle />}
+            >
+              {w}
+            </Alert>
+          ))}
+      </>
+    );
+  };
 
   useEffect(() => {
     if (data !== undefined) {
@@ -148,9 +182,12 @@ const Graph: FC<GraphProps> = ({
 
   if (result.length === 0) {
     return (
-      <Alert title="Empty query result" icon={<IconInfoCircle />}>
-        This query returned no data.
-      </Alert>
+      <Stack>
+        <Alert title="Empty query result" icon={<IconInfoCircle />}>
+          This query returned no data.
+        </Alert>
+        {renderAlerts(dataAndRange.data.warnings)}
+      </Stack>
     );
   }
 
@@ -166,6 +203,7 @@ const Graph: FC<GraphProps> = ({
           graphing the equivalent instant vector selector instead.
         </Alert>
       )}
+      {renderAlerts(dataAndRange.data.warnings, dataAndRange.data.infos)}
       <Box pos="relative" ref={ref} className={classes.chartWrapper}>
         <LoadingOverlay
           visible={isFetching}

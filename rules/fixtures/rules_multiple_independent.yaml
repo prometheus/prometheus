@@ -13,3 +13,7 @@ groups:
         expr: sum by (job)(rate(http_requests_total[1h]))
       - record: job:http_requests:rate2h
         expr: sum by (job)(rate(http_requests_total[2h]))
+      - record: job:http_requests_unless_single_alert:rate2h
+        expr: sum by (job)(rate(http_requests_total[2h])) unless (count by (job) (ALERTS{alertname="alert_1"}) > 0)
+      - record: job:http_requests_unless_multiple_alerts:rate2h
+        expr: sum by (job)(rate(http_requests_total[2h])) unless (count by (job) (ALERTS{alertname=~"alert_1|alert_2"}) > 0)

@@ -4,10 +4,7 @@ nav_title: Functions
 sort_rank: 3
 ---
 
-# Functions
-
-Some functions have default arguments, e.g. `year(v=vector(time())
-instant-vector)`. This means that there is one argument `v` which is an instant
+Some functions have default arguments, e.g. `year(v=vector(time()) instant-vector)`. This means that there is one argument `v` which is an instant
 vector, which if not provided it will default to the value of the expression
 `vector(time())`.
 
@@ -108,22 +105,22 @@ vector are ignored silently.
 
 ## `day_of_month()`
 
-`day_of_month(v=vector(time()) instant-vector)` interpretes float samples in
+`day_of_month(v=vector(time()) instant-vector)` interprets float samples in
 `v` as timestamps (number of seconds since January 1, 1970 UTC) and returns the
 day of the month (in UTC) for each of those timestamps. Returned values are
 from 1 to 31. Histogram samples in the input vector are ignored silently.
 
 ## `day_of_week()`
 
-`day_of_week(v=vector(time()) instant-vector)` interpretes float samples in `v`
+`day_of_week(v=vector(time()) instant-vector)` interprets float samples in `v`
 as timestamps (number of seconds since January 1, 1970 UTC) and returns the day
 of the week (in UTC) for each of those timestamps. Returned values are from 0
 to 6, where 0 means Sunday etc. Histogram samples in the input vector are
 ignored silently.
 
-## `day_of_year()` 
+## `day_of_year()`
 
-`day_of_year(v=vector(time()) instant-vector)` interpretes float samples in `v`
+`day_of_year(v=vector(time()) instant-vector)` interprets float samples in `v`
 as timestamps (number of seconds since January 1, 1970 UTC) and returns the day
 of the year (in UTC) for each of those timestamps. Returned values are from 1
 to 365 for non-leap years, and 1 to 366 in leap years. Histogram samples in the
@@ -131,7 +128,7 @@ input vector are ignored silently.
 
 ## `days_in_month()`
 
-`days_in_month(v=vector(time()) instant-vector)` interpretes float samples in
+`days_in_month(v=vector(time()) instant-vector)` interprets float samples in
 `v` as timestamps (number of seconds since January 1, 1970 UTC) and returns the
 number of days in the month of each of those timestamps (in UTC). Returned
 values are from 28 to 31. Histogram samples in the input vector are ignored silently.
@@ -255,9 +252,9 @@ histogram samples:
 
 `histogram_fraction(lower scalar, upper scalar, b instant-vector)` returns the
 estimated fraction of observations between the provided lower and upper values
-for each classic or native histogram contained in `b`. Float samples in `b` are 
+for each classic or native histogram contained in `b`. Float samples in `b` are
 considered the counts of observations in each bucket of one or more classic
-histograms, while native histogram samples in `b` are treated each individually 
+histograms, while native histogram samples in `b` are treated each individually
 as a separate histogram. This works in the same way as for `histogram_quantile()`.
 (See there for more details.)
 
@@ -268,12 +265,12 @@ histograms, it is easy to accidentally pick lower or upper values that are very
 far away from any bucket boundary, leading to large margins of error. Rather than
 using `histogram_fraction()` with classic histograms, it is often a more robust approach
 to directly act on the bucket series when calculating fractions. See the
-[calculation of the Apdex scare](https://prometheus.io/docs/practices/histograms/#apdex-score)
+[calculation of the Apdex score](https://prometheus.io/docs/practices/histograms/#apdex-score)
 as a typical example.
 
 For example, the following expression calculates the fraction of HTTP requests
 over the last hour that took 200ms or less:
-    
+
     histogram_fraction(0, 0.2, rate(http_request_duration_seconds[1h]))
 
 The error of the estimation depends on the resolution of the underlying native
@@ -295,6 +292,10 @@ boundaries, the function uses interpolation to estimate the fraction. With the
 resulting uncertainty, it becomes irrelevant if the boundaries are inclusive or
 exclusive.
 
+Special case for native histograms with standard exponential buckets:
+`NaN` observations are considered outside of any buckets in this case.
+`histogram_fraction(-Inf, +Inf, b)` effectively returns the fraction of
+non-`NaN` observations and may therefore be less than 1.
 
 ## `histogram_quantile()`
 
@@ -345,7 +346,7 @@ included in the `by` clause. The following expression aggregates the 90th
 percentile by `job` for classic histograms:
 
     histogram_quantile(0.9, sum by (job, le) (rate(http_request_duration_seconds_bucket[10m])))
-	
+
 When aggregating native histograms, the expression simplifies to:
 
     histogram_quantile(0.9, sum by (job) (rate(http_request_duration_seconds[10m])))
@@ -387,9 +388,16 @@ Special cases for classic histograms:
   is applied within that bucket. Otherwise, the upper bound of the lowest
   bucket is returned for quantiles located in the lowest bucket.
 
-Special cases for native histograms (relevant for the exact interpolation
-happening within the zero bucket):
+Special cases for native histograms:
 
+* If a native histogram with standard exponential buckets has `NaN`
+  observations and the quantile falls into one of the existing exponential
+  buckets, the result is skewed towards higher values due to `NaN`
+  observations treated as `+Inf`. This is flagged with an info level
+  annotation.
+* If a native histogram with standard exponential buckets has `NaN`
+  observations and the quantile falls above all of the existing exponential
+  buckets, `NaN` is returned. This is flagged with an info level annotation.
 * A zero bucket with finite width is assumed to contain no negative
   observations if the histogram has observations in positive buckets, but none
   in negative buckets.
@@ -429,7 +437,7 @@ annotation, you should find and remove the source of the invalid data.
 
 `histogram_stddev(v instant-vector)` returns the estimated standard deviation
 of observations for each histogram sample in `v`. For this estimation, all observations
-in a bucket are assumed to have the value of the mean of the bucket boundaries. For 
+in a bucket are assumed to have the value of the mean of the bucket boundaries. For
 the zero bucket and for buckets with custom boundaries, the arithmetic mean is used.
 For the usual exponential buckets, the geometric mean is used. Float samples are ignored
 and do not show up in the returned vector.
@@ -439,7 +447,7 @@ variance of observations for each histogram sample in `v`.
 
 ## `hour()`
 
-`hour(v=vector(time()) instant-vector)` interpretes float samples in `v` as
+`hour(v=vector(time()) instant-vector)` interprets float samples in `v` as
 timestamps (number of seconds since January 1, 1970 UTC) and returns the hour
 of the day (in UTC) for each of those timestamps. Returned values are from 0
 to 23. Histogram samples in the input vector are ignored silently.
@@ -489,10 +497,10 @@ consistently on a per-second basis.
 _The `info` function is an experiment to improve UX
 around including labels from [info metrics](https://grafana.com/blog/2021/08/04/how-to-use-promql-joins-for-more-effective-queries-of-prometheus-metrics-at-scale/#info-metrics).
 The behavior of this function may change in future versions of Prometheus,
-including its removal from PromQL. `info` has to be enabled via the 
+including its removal from PromQL. `info` has to be enabled via the
 [feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`._
 
-`info(v instant-vector, [data-label-selector instant-vector])` finds, for each time 
+`info(v instant-vector, [data-label-selector instant-vector])` finds, for each time
 series in `v`, all info series with matching _identifying_ labels (more on
 this later), and adds the union of their _data_ (i.e., non-identifying) labels
 to the time series. The second argument `data-label-selector` is optional.
@@ -509,8 +517,8 @@ function, we “logically” define info series identity in a different way than
 in the conventional Prometheus view.) The identifying labels of an info series
 are used to join it to regular (non-info) series, i.e. those series that have
 the same labels as the identifying labels of the info series. The data labels, which are
-the ones added to the regular series by the `info` function, effectively encode 
-metadata key value pairs. (This implies that a change in the data labels 
+the ones added to the regular series by the `info` function, effectively encode
+metadata key value pairs. (This implies that a change in the data labels
 in the conventional Prometheus view constitutes the end of one info series and
 the beginning of a new info series, while the “logical” view of the `info` function is
 that the same info series continues to exist, just with different “data”.)
@@ -534,7 +542,7 @@ This query is not only verbose and hard to write, it might also run into an “i
 If any of the data labels of `target_info` changes, Prometheus sees that as a change of series
 (as alluded to above, Prometheus just has no native concept of non-identifying labels).
 If the old `target_info` series is not properly marked as stale (which can happen with certain ingestion paths),
-the query above will fail for up to 5m (the lookback delta) because it will find a conflicting 
+the query above will fail for up to 5m (the lookback delta) because it will find a conflicting
 match with both the old and the new version of `target_info`.
 
 The `info` function not only resolves this conflict in favor of the newer series, it also simplifies the syntax
@@ -565,7 +573,7 @@ restrict them by providing a `__name__` label matcher, e.g.
 In its current iteration, `info` defaults to considering only info series with
 the name `target_info`. It also assumes that the identifying info series labels are
 `instance` and `job`. `info` does support other info series names however, through
-`__name__` label matchers. E.g., one can explicitly say to consider both 
+`__name__` label matchers. E.g., one can explicitly say to consider both
 `target_info` and `build_info` as follows:
 `{__name__=~"(target|build)_info"}`. However, the identifying labels always
 have to be `instance` and `job`.
@@ -603,7 +611,7 @@ spikes are hard to read.
 Note that when combining `irate()` with an
 [aggregation operator](operators.md#aggregation-operators) (e.g. `sum()`)
 or a function aggregating over time (any function ending in `_over_time`),
-always take a `irate()` first, then aggregate. Otherwise `irate()` cannot detect
+always take an `irate()` first, then aggregate. Otherwise `irate()` cannot detect
 counter resets when your target restarts.
 
 ## `label_join()`
@@ -665,14 +673,14 @@ cases are equivalent to those in `ln`.
 
 ## `minute()`
 
-`minute(v=vector(time()) instant-vector)` interpretes float samples in `v` as
+`minute(v=vector(time()) instant-vector)` interprets float samples in `v` as
 timestamps (number of seconds since January 1, 1970 UTC) and returns the minute
 of the hour (in UTC) for each of those timestamps. Returned values are from 0
 to 59. Histogram samples in the input vector are ignored silently.
 
 ## `month()`
 
-`month(v=vector(time()) instant-vector)` interpretes float samples in `v` as
+`month(v=vector(time()) instant-vector)` interprets float samples in `v` as
 timestamps (number of seconds since January 1, 1970 UTC) and returns the month
 of the year (in UTC) for each of those timestamps. Returned values are from 1
 to 12, where 1 means January etc. Histogram samples in the input vector are
@@ -786,7 +794,7 @@ sorted by the values of the given labels in ascending order. In case these
 label values are equal, elements are sorted by their full label sets.
 `sort_by_label` acts on float and histogram samples in the same way.
 
-Please note that `sort_by_label` only affect the results of instant queries, as
+Please note that `sort_by_label` only affects the results of instant queries, as
 range query results always have a fixed output ordering.
 
 `sort_by_label` uses [natural sort
@@ -849,14 +857,23 @@ additional functions are available:
 
 * `mad_over_time(range-vector)`: the median absolute deviation of all float
   samples in the specified interval.
+* `ts_of_min_over_time(range-vector)`: the timestamp of the last float sample
+  that has the minimum value of all float samples in the specified interval.
+* `ts_of_max_over_time(range-vector)`: the timestamp of the last float sample
+  that has the maximum value of all float samples in the specified interval.
+* `ts_of_last_over_time(range-vector)`: the timestamp of last sample in the
+  specified interval.
+* `first_over_time(range-vector)`: the oldest sample in the specified interval.
+* `ts_of_first_over_time(range-vector)`: the timestamp of earliest sample in the
+  specified interval.
 
 Note that all values in the specified interval have the same weight in the
 aggregation even if the values are not equally spaced throughout the interval.
 
 These functions act on histograms in the following way:
 
-- `count_over_time`, `last_over_time`, and `present_over_time()` act on float
-  and histogram samples in the same way.
+- `count_over_time`, `first_over_time`, `last_over_time`, and
+  `present_over_time()` act on float and histogram samples in the same way.
 - `avg_over_time()` and `sum_over_time()` act on histogram samples in a way
   that corresponds to the respective aggregation operators. If a series
   contains a mix of float samples and histogram samples within the range, the
@@ -867,6 +884,13 @@ These functions act on histograms in the following way:
   output. For ranges with a mix of histogram and float samples, only the float
   samples are processed and the omission of the histogram samples is flagged by
   an info-level annotation.
+
+`first_over_time(m[1m])` differs from `m offset 1m` in that the former will
+select the first sample of `m` _within_ the 1m range, where `m offset 1m` will
+select the most recent sample within the lookback interval _outside and prior
+to_ the 1m offset. This is particularly useful with `first_over_time(m[step()])`
+in range queries (available when `--enable-feature=promql-duration-expr` is set)
+to ensure that the sample selected is within the range step.
 
 ## Trigonometric Functions
 

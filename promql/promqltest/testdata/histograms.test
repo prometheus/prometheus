@@ -70,74 +70,91 @@ load_with_nhcb 5m
 
 # Test histogram_count.
 eval instant at 50m histogram_count(testhistogram3)
+	expect no_warn
 	{start="positive"} 110
 	{start="negative"} 20
 
 # Classic way of accessing the count still works.
 eval instant at 50m testhistogram3_count
+	expect no_warn
 	testhistogram3_count{start="positive"} 110
 	testhistogram3_count{start="negative"} 20
 
 # Test histogram_sum.
 eval instant at 50m histogram_sum(testhistogram3)
+	expect no_warn
 	{start="positive"} 330
 	{start="negative"} 80
 
 # Classic way of accessing the sum still works.
 eval instant at 50m testhistogram3_sum
+	expect no_warn
 	testhistogram3_sum{start="positive"} 330
 	testhistogram3_sum{start="negative"} 80
 
 # Test histogram_avg. This has no classic equivalent.
 eval instant at 50m histogram_avg(testhistogram3)
+	expect no_warn
 	{start="positive"} 3
 	{start="negative"} 4
 
 # Test histogram_stddev. This has no classic equivalent.
 eval instant at 50m histogram_stddev(testhistogram3)
+	expect no_warn
 	{start="positive"} 2.7435461458749795
 	{start="negative"} 4.187667907081458
 
 # Test histogram_stdvar. This has no classic equivalent.
 eval instant at 50m histogram_stdvar(testhistogram3)
+	expect no_warn
 	{start="positive"} 7.527045454545455
 	{start="negative"} 17.5365625
 
 # Test histogram_fraction.
 #
 eval instant at 50m histogram_fraction(0, 4, testhistogram2)
+	expect no_warn
 	{} 0.6666666666666666
 
 eval instant at 50m histogram_fraction(0, 4, testhistogram2_bucket)
+	expect no_warn
 	{} 0.6666666666666666
 
 eval instant at 50m histogram_fraction(0, 6, testhistogram2)
+	expect no_warn
 	{} 1
 
 eval instant at 50m histogram_fraction(0, 6, testhistogram2_bucket)
+	expect no_warn
 	{} 1
 
 eval instant at 50m histogram_fraction(0, 3.5, testhistogram2)
+	expect no_warn
 	{} 0.5833333333333334
 
 eval instant at 50m histogram_fraction(0, 3.5, testhistogram2_bucket)
+	expect no_warn
 	{} 0.5833333333333334
 
 
 eval instant at 50m histogram_fraction(0, 0.2, testhistogram3)
+	expect no_warn
 	{start="positive"} 0.6363636363636364
 	{start="negative"} 0
 
 eval instant at 50m histogram_fraction(0, 0.2, testhistogram3_bucket)
+	expect no_warn
 	{start="positive"} 0.6363636363636364
 	{start="negative"} 0
 
 eval instant at 50m histogram_fraction(0, 0.2, rate(testhistogram3[10m]))
+	expect no_warn
 	{start="positive"} 0.6363636363636364
 	{start="negative"} 0
 
 
 eval instant at 50m histogram_fraction(0, 0.2, rate(testhistogram3_bucket[10m]))
+	expect no_warn
 	{start="positive"} 0.6363636363636364
 	{start="negative"} 0
 
@@ -145,276 +162,345 @@ eval instant at 50m histogram_fraction(0, 0.2, rate(testhistogram3_bucket[10m]))
 # it exists) and divide by the count to get the same result.
 
 eval instant at 50m testhistogram3_bucket{le=".2"} / ignoring(le) testhistogram3_count
+	expect no_warn
 	{start="positive"} 0.6363636363636364
 
 eval instant at 50m rate(testhistogram3_bucket{le=".2"}[10m]) / ignoring(le) rate(testhistogram3_count[10m])
+	expect no_warn
 	{start="positive"} 0.6363636363636364
 
 # Test histogram_quantile, native and classic.
 
 eval instant at 50m histogram_quantile(0, testhistogram3)
+	expect no_warn
 	{start="positive"} 0
 	{start="negative"} -0.25
 
 eval instant at 50m histogram_quantile(0, testhistogram3_bucket)
+	expect no_warn
 	{start="positive"} 0
 	{start="negative"} -0.25
 
 eval instant at 50m histogram_quantile(0.25, testhistogram3)
+	expect no_warn
 	{start="positive"} 0.055
 	{start="negative"} -0.225
 
 eval instant at 50m histogram_quantile(0.25, testhistogram3_bucket)
+	expect no_warn
 	{start="positive"} 0.055
 	{start="negative"} -0.225
 
 eval instant at 50m histogram_quantile(0.5, testhistogram3)
+	expect no_warn
 	{start="positive"} 0.125
 	{start="negative"} -0.2
 
 eval instant at 50m histogram_quantile(0.5, testhistogram3_bucket)
+	expect no_warn
 	{start="positive"} 0.125
 	{start="negative"} -0.2
 
 eval instant at 50m histogram_quantile(0.75, testhistogram3)
+	expect no_warn
 	{start="positive"} 0.45
 	{start="negative"} -0.15
 
 eval instant at 50m histogram_quantile(0.75, testhistogram3_bucket)
+	expect no_warn
 	{start="positive"} 0.45
 	{start="negative"} -0.15
 
 eval instant at 50m histogram_quantile(1, testhistogram3)
+	expect no_warn
 	{start="positive"} 1
 	{start="negative"} -0.1
 
 eval instant at 50m histogram_quantile(1, testhistogram3_bucket)
+	expect no_warn
 	{start="positive"} 1
 	{start="negative"} -0.1
 
 # Quantile too low.
 
-eval_warn instant at 50m histogram_quantile(-0.1, testhistogram)
+eval instant at 50m histogram_quantile(-0.1, testhistogram)
+	expect warn
 	{start="positive"} -Inf
 	{start="negative"} -Inf
 
-eval_warn instant at 50m histogram_quantile(-0.1, testhistogram_bucket)
+eval instant at 50m histogram_quantile(-0.1, testhistogram_bucket)
+	expect warn
 	{start="positive"} -Inf
 	{start="negative"} -Inf
 
 # Quantile too high.
 
-eval_warn instant at 50m histogram_quantile(1.01, testhistogram)
+eval instant at 50m histogram_quantile(1.01, testhistogram)
+	expect warn
 	{start="positive"} +Inf
 	{start="negative"} +Inf
 
-eval_warn instant at 50m histogram_quantile(1.01, testhistogram_bucket)
+eval instant at 50m histogram_quantile(1.01, testhistogram_bucket)
+	expect warn
 	{start="positive"} +Inf
 	{start="negative"} +Inf
 
 # Quantile invalid.
 
-eval_warn instant at 50m histogram_quantile(NaN, testhistogram)
+eval instant at 50m histogram_quantile(NaN, testhistogram)
+	expect warn
 	{start="positive"} NaN
 	{start="negative"} NaN
 
-eval_warn instant at 50m histogram_quantile(NaN, testhistogram_bucket)
+eval instant at 50m histogram_quantile(NaN, testhistogram_bucket)
+	expect warn
 	{start="positive"} NaN
 	{start="negative"} NaN
+
+eval instant at 50m histogram_quantile(NaN, non_existent)
+  expect warn msg: PromQL warning: quantile value should be between 0 and 1, got NaN
 
 # Quantile value in lowest bucket.
 
 eval instant at 50m histogram_quantile(0, testhistogram)
+	expect no_warn
 	{start="positive"} 0
 	{start="negative"} -0.2
 
 eval instant at 50m histogram_quantile(0, testhistogram_bucket)
+	expect no_warn
 	{start="positive"} 0
 	{start="negative"} -0.2
 
 # Quantile value in highest bucket.
 
 eval instant at 50m histogram_quantile(1, testhistogram)
+	expect no_warn
 	{start="positive"} 1
 	{start="negative"} 0.3
 
 eval instant at 50m histogram_quantile(1, testhistogram_bucket)
+	expect no_warn
 	{start="positive"} 1
 	{start="negative"} 0.3
 
 # Finally some useful quantiles.
 
 eval instant at 50m histogram_quantile(0.2, testhistogram)
+	expect no_warn
 	{start="positive"} 0.048
 	{start="negative"} -0.2
 
 eval instant at 50m histogram_quantile(0.2, testhistogram_bucket)
+	expect no_warn
 	{start="positive"} 0.048
 	{start="negative"} -0.2
 
 eval instant at 50m histogram_quantile(0.5, testhistogram)
+	expect no_warn
 	{start="positive"} 0.15
 	{start="negative"} -0.15
 
 eval instant at 50m histogram_quantile(0.5, testhistogram_bucket)
+	expect no_warn
 	{start="positive"} 0.15
 	{start="negative"} -0.15
 
 eval instant at 50m histogram_quantile(0.8, testhistogram)
+	expect no_warn
 	{start="positive"} 0.72
 	{start="negative"} 0.3
 
 eval instant at 50m histogram_quantile(0.8, testhistogram_bucket)
+	expect no_warn
 	{start="positive"} 0.72
 	{start="negative"} 0.3
 
 # More realistic with rates.
 eval instant at 50m histogram_quantile(0.2, rate(testhistogram[10m]))
+	expect no_warn
 	{start="positive"} 0.048
 	{start="negative"} -0.2
 
 eval instant at 50m histogram_quantile(0.2, rate(testhistogram_bucket[10m]))
+	expect no_warn
 	{start="positive"} 0.048
 	{start="negative"} -0.2
 
 eval instant at 50m histogram_quantile(0.5, rate(testhistogram[10m]))
+	expect no_warn
 	{start="positive"} 0.15
 	{start="negative"} -0.15
 
 eval instant at 50m histogram_quantile(0.5, rate(testhistogram_bucket[10m]))
+	expect no_warn
 	{start="positive"} 0.15
 	{start="negative"} -0.15
 
 eval instant at 50m histogram_quantile(0.8, rate(testhistogram[10m]))
+	expect no_warn
 	{start="positive"} 0.72
 	{start="negative"} 0.3
 
 eval instant at 50m histogram_quantile(0.8, rate(testhistogram_bucket[10m]))
+	expect no_warn
 	{start="positive"} 0.72
 	{start="negative"} 0.3
 
 # Want results exactly in the middle of the bucket.
 
 eval instant at 7m histogram_quantile(1./6., testhistogram2)
+	expect no_warn
 	{} 1
 
 eval instant at 7m histogram_quantile(1./6., testhistogram2_bucket)
+	expect no_warn
 	{} 1
 
 eval instant at 7m histogram_quantile(0.5, testhistogram2)
+	expect no_warn
 	{} 3
 
 eval instant at 7m histogram_quantile(0.5, testhistogram2_bucket)
+	expect no_warn
 	{} 3
 
 eval instant at 7m histogram_quantile(5./6., testhistogram2)
+	expect no_warn
 	{} 5
 
 eval instant at 7m histogram_quantile(5./6., testhistogram2_bucket)
+	expect no_warn
 	{} 5
 
 eval instant at 47m histogram_quantile(1./6., rate(testhistogram2[15m]))
+	expect no_warn
 	{} 1
 
 eval instant at 47m histogram_quantile(1./6., rate(testhistogram2_bucket[15m]))
+	expect no_warn
 	{} 1
 
 eval instant at 47m histogram_quantile(0.5, rate(testhistogram2[15m]))
+	expect no_warn
 	{} 3
 
 eval instant at 47m histogram_quantile(0.5, rate(testhistogram2_bucket[15m]))
+	expect no_warn
 	{} 3
 
 eval instant at 47m histogram_quantile(5./6., rate(testhistogram2[15m]))
+	expect no_warn
 	{} 5
 
 eval instant at 47m histogram_quantile(5./6., rate(testhistogram2_bucket[15m]))
+	expect no_warn
 	{} 5
 
 # Aggregated histogram: Everything in one. Note how native histograms
 # don't require aggregation by le.
 
 eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds[10m])))
+	expect no_warn
 	{} 0.075
 
 eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[10m])) by (le))
+	expect no_warn
 	{} 0.075
 
 eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds[10m])))
+	expect no_warn
 	{} 0.1277777777777778
 
 eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds_bucket[10m])) by (le))
+	expect no_warn
 	{} 0.1277777777777778
 
 # Aggregated histogram: Everything in one. Now with avg, which does not change anything.
 
 eval instant at 50m histogram_quantile(0.3, avg(rate(request_duration_seconds[10m])))
+	expect no_warn
 	{} 0.075
 
 eval instant at 50m histogram_quantile(0.3, avg(rate(request_duration_seconds_bucket[10m])) by (le))
+	expect no_warn
 	{} 0.075
 
 eval instant at 50m histogram_quantile(0.5, avg(rate(request_duration_seconds[10m])))
+	expect no_warn
 	{} 0.12777777777777778
 
 eval instant at 50m histogram_quantile(0.5, avg(rate(request_duration_seconds_bucket[10m])) by (le))
+	expect no_warn
 	{} 0.12777777777777778
 
 # Aggregated histogram: By instance.
 
 eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds[10m])) by (instance))
+	expect no_warn
 	{instance="ins1"} 0.075
 	{instance="ins2"} 0.075
 
 eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[10m])) by (le, instance))
+	expect no_warn
 	{instance="ins1"} 0.075
 	{instance="ins2"} 0.075
 
 eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds[10m])) by (instance))
+	expect no_warn
 	{instance="ins1"} 0.1333333333
 	{instance="ins2"} 0.125
 
 eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds_bucket[10m])) by (le, instance))
+	expect no_warn
 	{instance="ins1"} 0.1333333333
 	{instance="ins2"} 0.125
 
 # Aggregated histogram: By job.
 eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds[10m])) by (job))
+	expect no_warn
 	{job="job1"} 0.1
 	{job="job2"} 0.0642857142857143
 
 eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[10m])) by (le, job))
+	expect no_warn
 	{job="job1"} 0.1
 	{job="job2"} 0.0642857142857143
 
 eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds[10m])) by (job))
+	expect no_warn
 	{job="job1"} 0.14
 	{job="job2"} 0.1125
 
 eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds_bucket[10m])) by (le, job))
+	expect no_warn
 	{job="job1"} 0.14
 	{job="job2"} 0.1125
 
 # Aggregated histogram: By job and instance.
 eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds[10m])) by (job, instance))
+	expect no_warn
 	{instance="ins1", job="job1"} 0.11
 	{instance="ins2", job="job1"} 0.09
 	{instance="ins1", job="job2"} 0.06
 	{instance="ins2", job="job2"} 0.0675
 
 eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[10m])) by (le, job, instance))
+	expect no_warn
 	{instance="ins1", job="job1"} 0.11
 	{instance="ins2", job="job1"} 0.09
 	{instance="ins1", job="job2"} 0.06
 	{instance="ins2", job="job2"} 0.0675
 
 eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds[10m])) by (job, instance))
+	expect no_warn
 	{instance="ins1", job="job1"} 0.15
 	{instance="ins2", job="job1"} 0.1333333333333333
 	{instance="ins1", job="job2"} 0.1
 	{instance="ins2", job="job2"} 0.1166666666666667
 
 eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds_bucket[10m])) by (le, job, instance))
+	expect no_warn
 	{instance="ins1", job="job1"} 0.15
 	{instance="ins2", job="job1"} 0.1333333333333333
 	{instance="ins1", job="job2"} 0.1
@@ -422,24 +508,28 @@ eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds_bu
 
 # The unaggregated histogram for comparison. Same result as the previous one.
 eval instant at 50m histogram_quantile(0.3, rate(request_duration_seconds[10m]))
+	expect no_warn
 	{instance="ins1", job="job1"} 0.11
 	{instance="ins2", job="job1"} 0.09
 	{instance="ins1", job="job2"} 0.06
 	{instance="ins2", job="job2"} 0.0675
 
 eval instant at 50m histogram_quantile(0.3, rate(request_duration_seconds_bucket[10m]))
+	expect no_warn
 	{instance="ins1", job="job1"} 0.11
 	{instance="ins2", job="job1"} 0.09
 	{instance="ins1", job="job2"} 0.06
 	{instance="ins2", job="job2"} 0.0675
 
 eval instant at 50m histogram_quantile(0.5, rate(request_duration_seconds[10m]))
+	expect no_warn
 	{instance="ins1", job="job1"} 0.15
 	{instance="ins2", job="job1"} 0.13333333333333333
 	{instance="ins1", job="job2"} 0.1
 	{instance="ins2", job="job2"} 0.11666666666666667
 
 eval instant at 50m histogram_quantile(0.5, rate(request_duration_seconds_bucket[10m]))
+	expect no_warn
 	{instance="ins1", job="job1"} 0.15
 	{instance="ins2", job="job1"} 0.13333333333333333
 	{instance="ins1", job="job2"} 0.1
@@ -447,25 +537,32 @@ eval instant at 50m histogram_quantile(0.5, rate(request_duration_seconds_bucket
 
 # All NHCBs summed into one.
 eval instant at 50m sum(request_duration_seconds)
+	expect no_warn
 	{} {{schema:-53 count:250 custom_values:[0.1 0.2] buckets:[100 90 60]}}
 
 eval instant at 50m sum(request_duration_seconds{job="job1",instance="ins1"} + ignoring(job,instance) request_duration_seconds{job="job1",instance="ins2"} + ignoring(job,instance) request_duration_seconds{job="job2",instance="ins1"} + ignoring(job,instance) request_duration_seconds{job="job2",instance="ins2"})
+	expect no_warn
 	{} {{schema:-53 count:250 custom_values:[0.1 0.2] buckets:[100 90 60]}}
 
 eval instant at 50m avg(request_duration_seconds)
+	expect no_warn
 	{} {{schema:-53 count:62.5 custom_values:[0.1 0.2] buckets:[25 22.5 15]}}
 
 # To verify the result above, calculate from classic histogram as well.
 eval instant at 50m avg (request_duration_seconds_bucket{le="0.1"})
+	expect no_warn
 	{} 25
 
 eval instant at 50m avg (request_duration_seconds_bucket{le="0.2"}) - avg (request_duration_seconds_bucket{le="0.1"})
+	expect no_warn
 	{} 22.5
 
 eval instant at 50m avg (request_duration_seconds_bucket{le="+Inf"}) - avg (request_duration_seconds_bucket{le="0.2"})
+	expect no_warn
 	{} 15
 
 eval instant at 50m count(request_duration_seconds)
+	expect no_warn
 	{} 4
 
 # A histogram with nonmonotonic bucket counts. This may happen when recording
@@ -481,13 +578,16 @@ load 5m
     nonmonotonic_bucket{le="+Inf"}  0+8x10
 
 # Nonmonotonic buckets, triggering an info annotation.
-eval_info instant at 50m histogram_quantile(0.01, nonmonotonic_bucket)
+eval instant at 50m histogram_quantile(0.01, nonmonotonic_bucket)
+    expect info
     {} 0.0045
 
-eval_info instant at 50m histogram_quantile(0.5, nonmonotonic_bucket)
+eval instant at 50m histogram_quantile(0.5, nonmonotonic_bucket)
+    expect info
     {} 8.5
 
-eval_info instant at 50m histogram_quantile(0.99, nonmonotonic_bucket)
+eval instant at 50m histogram_quantile(0.99, nonmonotonic_bucket)
+    expect info
     {} 979.75
 
 # Buckets with different representations of the same upper bound.
@@ -522,9 +622,11 @@ load_with_nhcb 5m
 	request_duration_seconds2_bucket{job="job1", instance="ins1", le="0.2"}	 0+3x10
 	request_duration_seconds2_bucket{job="job1", instance="ins1", le="+Inf"} 0+4x10
 
-eval_fail instant at 50m histogram_quantile(0.99, {__name__=~"request_duration_seconds\\d*_bucket"})
+eval instant at 50m histogram_quantile(0.99, {__name__=~"request_duration_seconds\\d*_bucket"})
+  expect fail
 
-eval_fail instant at 50m histogram_quantile(0.99, {__name__=~"request_duration_seconds\\d*"})
+eval instant at 50m histogram_quantile(0.99, {__name__=~"request_duration_seconds\\d*"})
+    expect fail
 
 # Histogram with constant buckets.
 load_with_nhcb 1m

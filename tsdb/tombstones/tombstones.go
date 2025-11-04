@@ -353,7 +353,7 @@ func (in Intervals) Add(n Interval) Intervals {
 		return append(in, n)
 	}
 	// Find min and max indexes of intervals that overlap with the new interval.
-	// Intervals are closed [t1, t2] and t is discreet, so if neighbour intervals are 1 step difference
+	// Intervals are closed [t1, t2] and t is discrete, so if neighbour intervals are 1 step difference
 	// to the new one, we can merge those together.
 	mini := 0
 	if n.Mint != math.MinInt64 { // Avoid overflow.
@@ -377,9 +377,6 @@ func (in Intervals) Add(n Interval) Intervals {
 	if n.Mint < in[mini].Mint {
 		in[mini].Mint = n.Mint
 	}
-	in[mini].Maxt = in[maxi+mini-1].Maxt
-	if n.Maxt > in[mini].Maxt {
-		in[mini].Maxt = n.Maxt
-	}
+	in[mini].Maxt = max(n.Maxt, in[maxi+mini-1].Maxt)
 	return append(in[:mini+1], in[maxi+mini:]...)
 }

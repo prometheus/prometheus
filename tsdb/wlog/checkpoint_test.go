@@ -113,6 +113,7 @@ func TestDeleteCheckpoints(t *testing.T) {
 }
 
 func TestCheckpoint(t *testing.T) {
+	t.Parallel()
 	makeHistogram := func(i int) *histogram.Histogram {
 		return &histogram.Histogram{
 			Count:         5 + uint64(i*4),
@@ -291,7 +292,7 @@ func TestCheckpoint(t *testing.T) {
 			}
 			require.NoError(t, w.Close())
 
-			stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef, _ int) bool {
+			stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
 				return x%2 == 0
 			}, last/2)
 			require.NoError(t, err)
@@ -310,7 +311,7 @@ func TestCheckpoint(t *testing.T) {
 			require.NoError(t, err)
 			defer sr.Close()
 
-			dec := record.NewDecoder(labels.NewSymbolTable())
+			dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
 			var series []record.RefSeries
 			var metadata []record.RefMetadata
 			r := NewReader(sr)

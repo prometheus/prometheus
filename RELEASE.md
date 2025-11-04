@@ -15,7 +15,10 @@ Please see [the v2.55 RELEASE.md](https://github.com/prometheus/prometheus/blob/
 | v3.3           | 2025-03-11                                 | Ayoub Mrini (Github: @machine424)  |
 | v3.4           | 2025-04-29                                 | Jan-Otto Kröpke (Github: @jkroepke)|
 | v3.5 LTS       | 2025-06-03                                 | Bryan Boreham (GitHub: @bboreham)  |
-| v3.6           | 2025-07-15                                 | **volunteer welcome**              |
+| v3.6           | 2025-08-01                                 | Ayoub Mrini (Github: @machine424)  |
+| v3.7           | 2025-09-25                                 | Arthur Sens and George Krajcsovits (Github: @ArthurSens and @krajorama)|
+| v3.8           | 2025-11-06                                 | Jan Fajerski (GitHub: @jan--f)     |
+| v3.9           | 2025-12-18                                 | **volunteer welcome**              |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
@@ -107,7 +110,7 @@ Changes for a patch release or release candidate should be merged into the previ
 
 Bump the version in the `VERSION` file and update `CHANGELOG.md`. Do this in a proper PR pointing to the release branch as this gives others the opportunity to chime in on the release in general and on the addition to the changelog in particular. For a release candidate, append something like `-rc.0` to the version (with the corresponding changes to the tag name, the release name etc.).
 
-When updating the `CHANGELOG.md` look at all PRs included in the release since the last release and verify if they need a changelog entry.
+When updating the `CHANGELOG.md` look at all PRs included in the release since the last release and verify if they need a changelog entry. Most PRs will have their changelog entries specified in the `release-notes` blocks within their PR descriptions.
 
 Note that `CHANGELOG.md` should only document changes relevant to users of Prometheus, including external API changes, performance improvements, and new features. Do not document changes of internal interfaces, code refactorings and clean-ups, changes to the build process, etc. People interested in these are asked to refer to the git history.
 
@@ -119,6 +122,7 @@ Entries in the `CHANGELOG.md` are meant to be in this order:
 * `[CHANGE]`
 * `[FEATURE]`
 * `[ENHANCEMENT]`
+* `[PERF]`
 * `[BUGFIX]`
 
 Then bump the UI module version:
@@ -126,6 +130,9 @@ Then bump the UI module version:
 ```bash
 make ui-bump-version
 ```
+
+All of the above goes to make a PR, which you should create targeting the `release-x.y` branch, then wait for CI to complete and get an approval.
+Once the PR is ready, merge it into the release branch and pull it down to your work area. Then you are ready for the next step:
 
 ### 2. Draft the new release
 

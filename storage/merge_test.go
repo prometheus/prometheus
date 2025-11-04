@@ -1053,9 +1053,9 @@ func (m *mockChunkSeriesSet) Next() bool {
 
 func (m *mockChunkSeriesSet) At() ChunkSeries { return m.series[m.idx] }
 
-func (m *mockChunkSeriesSet) Err() error { return nil }
+func (*mockChunkSeriesSet) Err() error { return nil }
 
-func (m *mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
+func (*mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func TestChainSampleIterator(t *testing.T) {
 	for sampleType, sampleFunc := range map[string]func(int64) chunks.Sample{
@@ -1329,10 +1329,10 @@ func TestChainSampleIteratorSeekHistogramCounterResetHint(t *testing.T) {
 
 func makeSeries(numSeries, numSamples int) []Series {
 	series := []Series{}
-	for j := 0; j < numSeries; j++ {
+	for j := range numSeries {
 		labels := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
 		samples := []chunks.Sample{}
-		for k := 0; k < numSamples; k++ {
+		for k := range numSamples {
 			samples = append(samples, fSample{t: int64(k), f: float64(k)})
 		}
 		series = append(series, NewListSeries(labels, samples))
@@ -1353,7 +1353,7 @@ func benchmarkDrain(b *testing.B, makeSeriesSet func() SeriesSet) {
 	var t int64
 	var v float64
 	var iter chunkenc.Iterator
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		seriesSet := makeSeriesSet()
 		for seriesSet.Next() {
 			iter = seriesSet.At().Iterator(iter)
@@ -1393,9 +1393,9 @@ func BenchmarkMergeSeriesSet(b *testing.B) {
 func BenchmarkMergeLabelValuesWithLimit(b *testing.B) {
 	var queriers []genericQuerier
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		var lbls []string
-		for j := 0; j < 100000; j++ {
+		for j := range 100000 {
 			lbls = append(lbls, fmt.Sprintf("querier_%d_label_%d", i, j))
 		}
 		q := &mockQuerier{resp: lbls}
@@ -1409,7 +1409,7 @@ func BenchmarkMergeLabelValuesWithLimit(b *testing.B) {
 		},
 	}
 
-	b.Run("benchmark", func(_ *testing.B) {
+	b.Run("benchmark", func(*testing.B) {
 		ctx := context.Background()
 		hints := &LabelHints{
 			Limit: 1000,
@@ -1680,7 +1680,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 }
 
 // Check slice but ignore difference between nil and empty.
-func requireEqualSlice[T any](t require.TestingT, a, b []T, msgAndArgs ...interface{}) {
+func requireEqualSlice[T any](t require.TestingT, a, b []T, msgAndArgs ...any) {
 	if len(a) == 0 {
 		require.Empty(t, b, msgAndArgs...)
 	} else {
@@ -1692,27 +1692,27 @@ type errIterator struct {
 	err error
 }
 
-func (e errIterator) Next() chunkenc.ValueType {
+func (errIterator) Next() chunkenc.ValueType {
 	return chunkenc.ValNone
 }
 
-func (e errIterator) Seek(_ int64) chunkenc.ValueType {
+func (errIterator) Seek(int64) chunkenc.ValueType {
 	return chunkenc.ValNone
 }
 
-func (e errIterator) At() (int64, float64) {
+func (errIterator) At() (int64, float64) {
 	return 0, 0
 }
 
-func (e errIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+func (errIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	return 0, nil
 }
 
-func (e errIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+func (errIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return 0, nil
 }
 
-func (e errIterator) AtT() int64 {
+func (errIterator) AtT() int64 {
 	return 0
 }
 

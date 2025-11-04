@@ -17,17 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 )
-
-func TestNewGroup(t *testing.T) {
-	g := NewGroup(GroupOptions{
-		File: "test-file",
-		Name: "test-name",
-	})
-	require.Equal(t, promslog.NewNopLogger().With("file", "test-file", "group", "test-name"), g.logger)
-}
 
 func TestGroup_Equals(t *testing.T) {
 	tests := map[string]struct {

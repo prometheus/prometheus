@@ -1,9 +1,7 @@
 ---
-title: Unit Testing for Rules
+title: Unit testing for rules
 sort_rank: 6
 ---
-
-# Unit Testing for Rules
 
 You can use `promtool` to test your rules.
 
@@ -11,7 +9,7 @@ You can use `promtool` to test your rules.
 # For a single test file.
 ./promtool test rules test.yml
 
-# If you have multiple test files, say test1.yml,test2.yml,test2.yml
+# If you have multiple test files, say test1.yml,test2.yml,test3.yml
 ./promtool test rules test1.yml test2.yml test3.yml
 ```
 
@@ -100,8 +98,10 @@ series: <string>
 #     Native histograms support the same expanding notation as floating point numbers, i.e. 'axn', 'a+bxn' and 'a-bxn'.
 #     All properties are optional and default to 0. The order is not important. The following properties are supported:
 #     - schema (int):
-#         Currently valid schema numbers are -4 <= n <= 8. They are all for
-#         base-2 bucket schemas, where 1 is a bucket boundary in each case, and
+#         Currently valid schema numbers are -53 and -4 <= n <= 8.
+#         Schema -53 is the custom buckets schema, upper bucket boundaries are defined in custom_values
+#         like for classic histograms, and you shouldn't use z_bucket, z_bucket_w, n_buckets, n_offset.
+#         The rest are base-2 standard schemas, where 1.0 is a bucket boundary in each case, and
 #         then each power of two is divided into 2^n logarithmic buckets.  Or
 #         in other words, each bucket boundary is the previous boundary times
 #         2^(2^-n).
@@ -125,6 +125,10 @@ series: <string>
 #         The starting index of the first entry in the negative buckets.
 #     - counter_reset_hint (one of 'unknown', 'reset', 'not_reset' or 'gauge')
 #         The counter reset hint associated with this histogram. Defaults to 'unknown' if not set.
+#     - custom_values (list of floats in ascending order):
+#         The upper limits for custom buckets when schema is -53. 
+#         These have the same role as the 'le' numbers in classic histograms.
+#         Do not append '+Inf' at the end, it is implicit.
 values: <string>
 ```
 

@@ -326,7 +326,7 @@ func mergeSamples(a, b []prompb.Sample) []prompb.Sample {
 }
 
 // Name identifies the client as an InfluxDB client.
-func (c Client) Name() string {
+func (Client) Name() string {
 	return "influxdb"
 }
 

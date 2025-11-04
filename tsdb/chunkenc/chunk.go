@@ -223,17 +223,17 @@ type mockSeriesIterator struct {
 	currIndex  int
 }
 
-func (it *mockSeriesIterator) Seek(int64) ValueType { return ValNone }
+func (*mockSeriesIterator) Seek(int64) ValueType { return ValNone }
 
 func (it *mockSeriesIterator) At() (int64, float64) {
 	return it.timeStamps[it.currIndex], it.values[it.currIndex]
 }
 
-func (it *mockSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+func (*mockSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	return math.MinInt64, nil
 }
 
-func (it *mockSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+func (*mockSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return math.MinInt64, nil
 }
 
@@ -249,7 +249,7 @@ func (it *mockSeriesIterator) Next() ValueType {
 
 	return ValNone
 }
-func (it *mockSeriesIterator) Err() error { return nil }
+func (*mockSeriesIterator) Err() error { return nil }
 
 // NewNopIterator returns a new chunk iterator that does not hold any data.
 func NewNopIterator() Iterator {
@@ -288,17 +288,17 @@ type pool struct {
 func NewPool() Pool {
 	return &pool{
 		xor: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				return &XORChunk{b: bstream{}}
 			},
 		},
 		histogram: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				return &HistogramChunk{b: bstream{}}
 			},
 		},
 		floatHistogram: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				return &FloatHistogramChunk{b: bstream{}}
 			},
 		},

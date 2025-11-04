@@ -72,7 +72,7 @@ func TestIsolation(t *testing.T) {
 
 func countOpenReads(iso *isolation) int {
 	count := 0
-	iso.TraverseOpenReads(func(_ *isolationState) bool {
+	iso.TraverseOpenReads(func(*isolationState) bool {
 		count++
 		return true
 	})
@@ -87,14 +87,14 @@ func BenchmarkIsolation(b *testing.B) {
 			wg := sync.WaitGroup{}
 			start := make(chan struct{})
 
-			for g := 0; g < goroutines; g++ {
+			for range goroutines {
 				wg.Add(1)
 
 				go func() {
 					defer wg.Done()
 					<-start
 
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						appendID, _ := iso.newAppendID(0)
 
 						iso.closeAppend(appendID)
@@ -117,14 +117,14 @@ func BenchmarkIsolationWithState(b *testing.B) {
 			wg := sync.WaitGroup{}
 			start := make(chan struct{})
 
-			for g := 0; g < goroutines; g++ {
+			for range goroutines {
 				wg.Add(1)
 
 				go func() {
 					defer wg.Done()
 					<-start
 
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						appendID, _ := iso.newAppendID(0)
 
 						iso.closeAppend(appendID)
@@ -144,7 +144,7 @@ func BenchmarkIsolationWithState(b *testing.B) {
 					defer wg.Done()
 					<-start
 
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						s := iso.State(math.MinInt64, math.MaxInt64)
 						s.Close()
 					}

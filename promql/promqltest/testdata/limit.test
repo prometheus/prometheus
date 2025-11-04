@@ -15,10 +15,14 @@ load 5m
 	bar 0 1 0 -1 0 1 0 -1 0 1 0
 
 eval instant at 50m count(limitk by (group) (0, http_requests))
-# empty
+    expect no_info
+    expect no_warn
+    # empty
 
 eval instant at 50m count(limitk by (group) (-1, http_requests))
-# empty
+    expect no_info
+    expect no_warn
+    # empty
 
 # Exercise k==1 special case (as sample is added before the main series loop).
 eval instant at 50m count(limitk by (group) (1, http_requests) and http_requests)

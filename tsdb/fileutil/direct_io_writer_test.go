@@ -27,7 +27,7 @@ import (
 func directIORqmtsForTest(tb testing.TB) *directIORqmts {
 	f, err := os.OpenFile(path.Join(tb.TempDir(), "foo"), os.O_CREATE|os.O_WRONLY, 0o666)
 	require.NoError(tb, err)
-	alignmentRqmts, err := fetchDirectIORqmts(f.Fd())
+	alignmentRqmts, err := fileDirectIORqmts(f)
 	require.NoError(tb, err)
 	return alignmentRqmts
 }
@@ -144,7 +144,7 @@ func TestDirectIOWriter(t *testing.T) {
 			fileName := path.Join(t.TempDir(), "test")
 
 			data := make([]byte, tc.dataSize)
-			for i := 0; i < len(data); i++ {
+			for i := range data {
 				// Do not use 256 as it may be a divider of requiredAlignment. To avoid patterns.
 				data[i] = byte(i % 251)
 			}

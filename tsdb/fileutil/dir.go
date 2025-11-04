@@ -22,6 +22,10 @@ func DirSize(dir string) (int64, error) {
 	var size int64
 	err := filepath.Walk(dir, func(_ string, info os.FileInfo, err error) error {
 		if err != nil {
+			// Ignore missing files that may have been deleted during the walk.
+			if os.IsNotExist(err) {
+				return nil
+			}
 			return err
 		}
 		if !info.IsDir() {

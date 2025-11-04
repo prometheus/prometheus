@@ -419,7 +419,7 @@ func BenchmarkAddExemplar(b *testing.B) {
 	for _, capacity := range []int{1000, 10000, 100000} {
 		for _, n := range []int{10000, 100000, 1000000} {
 			b.Run(fmt.Sprintf("%d/%d", n, capacity), func(b *testing.B) {
-				for j := 0; j < b.N; j++ {
+				for b.Loop() {
 					b.StopTimer()
 					exs, err := NewCircularExemplarStorage(int64(capacity), eMetrics)
 					require.NoError(b, err)
@@ -427,7 +427,7 @@ func BenchmarkAddExemplar(b *testing.B) {
 					var l labels.Labels
 					b.StartTimer()
 
-					for i := 0; i < n; i++ {
+					for i := range n {
 						if i%100 == 0 {
 							l = labels.FromStrings("service", strconv.Itoa(i))
 						}
@@ -477,7 +477,7 @@ func BenchmarkResizeExemplars(b *testing.B) {
 
 	for _, tc := range testCases {
 		b.Run(fmt.Sprintf("%s-%d-to-%d", tc.name, tc.startSize, tc.endSize), func(b *testing.B) {
-			for j := 0; j < b.N; j++ {
+			for b.Loop() {
 				b.StopTimer()
 				exs, err := NewCircularExemplarStorage(tc.startSize, eMetrics)
 				require.NoError(b, err)
@@ -525,12 +525,12 @@ func TestCircularExemplarStorage_Concurrent_AddExemplar_Resize(t *testing.T) {
 		defer wg.Done()
 
 		<-started
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			require.NoError(t, es.AddExemplar(l, e))
 		}
 	}()
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		es.Resize(int64(i + 1))
 		if i == 0 {
 			close(started)

@@ -125,15 +125,15 @@ type MockQuerier struct {
 	SelectMockFunction func(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
 }
 
-func (q *MockQuerier) LabelValues(context.Context, string, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*MockQuerier) LabelValues(context.Context, string, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (q *MockQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*MockQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (q *MockQuerier) Close() error {
+func (*MockQuerier) Close() error {
 	return nil
 }
 
@@ -223,6 +223,19 @@ type SelectHints struct {
 	// When disabled, the result may contain samples outside the queried time range but Select() performances
 	// may be improved.
 	DisableTrimming bool
+
+	// Projection hints. They are currently unused in the Prometheus promql engine but can be used by different
+	// implementations of the Queryable interface and engines.
+	// These hints are useful for queries like `sum by (label) (rate(metric[5m]))` - we can safely evaluate it
+	// even if we only fetch the `label` label. For some storage implementations this is beneficial.
+
+	// ProjectionLabels are the minimum amount of labels required to be fetched for this Select call
+	// When honored it is required to add an __series_hash__ label containing the hash of all labels
+	// of a particular series so that the engine can still perform horizontal joins.
+	ProjectionLabels []string
+
+	// ProjectionInclude defines if we have to include or exclude the labels from the ProjectLabels field.
+	ProjectionInclude bool
 }
 
 // LabelHints specifies hints passed for label reads.
@@ -376,7 +389,7 @@ type SeriesSet interface {
 	Next() bool
 	// At returns full series. Returned series should be iterable even after Next is called.
 	At() Series
-	// The error that iteration as failed with.
+	// The error that iteration has failed with.
 	// When an error occurs, set cannot continue to iterate.
 	Err() error
 	// A collection of warnings for the whole set.
@@ -395,10 +408,10 @@ type testSeriesSet struct {
 	series Series
 }
 
-func (s testSeriesSet) Next() bool                        { return true }
-func (s testSeriesSet) At() Series                        { return s.series }
-func (s testSeriesSet) Err() error                        { return nil }
-func (s testSeriesSet) Warnings() annotations.Annotations { return nil }
+func (testSeriesSet) Next() bool                        { return true }
+func (s testSeriesSet) At() Series                      { return s.series }
+func (testSeriesSet) Err() error                        { return nil }
+func (testSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // TestSeriesSet returns a mock series set.
 func TestSeriesSet(series Series) SeriesSet {
@@ -409,10 +422,10 @@ type errSeriesSet struct {
 	err error
 }
 
-func (s errSeriesSet) Next() bool                        { return false }
-func (s errSeriesSet) At() Series                        { return nil }
-func (s errSeriesSet) Err() error                        { return s.err }
-func (s errSeriesSet) Warnings() annotations.Annotations { return nil }
+func (errSeriesSet) Next() bool                        { return false }
+func (errSeriesSet) At() Series                        { return nil }
+func (s errSeriesSet) Err() error                      { return s.err }
+func (errSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // ErrSeriesSet returns a series set that wraps an error.
 func ErrSeriesSet(err error) SeriesSet {
@@ -430,10 +443,10 @@ type errChunkSeriesSet struct {
 	err error
 }
 
-func (s errChunkSeriesSet) Next() bool                        { return false }
-func (s errChunkSeriesSet) At() ChunkSeries                   { return nil }
-func (s errChunkSeriesSet) Err() error                        { return s.err }
-func (s errChunkSeriesSet) Warnings() annotations.Annotations { return nil }
+func (errChunkSeriesSet) Next() bool                        { return false }
+func (errChunkSeriesSet) At() ChunkSeries                   { return nil }
+func (s errChunkSeriesSet) Err() error                      { return s.err }
+func (errChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // ErrChunkSeriesSet returns a chunk series set that wraps an error.
 func ErrChunkSeriesSet(err error) ChunkSeriesSet {

@@ -106,7 +106,43 @@ eval range from <start> to <end> step <step> <query>
 * `<start>` and `<end>` specify the time range of the range query, and use the same syntax as `<time>`
 * `<step>` is the step of the range query, and uses the same syntax as `<time>` (eg. `30s`) 
 * `<expect>`(optional) specifies expected annotations, errors, or result ordering.
+* `<expect range vector>` (optional) for an instant query you can specify expected range vector timestamps
+* `<expect string> "<string>"` (optional) for matching a string literal
 * `<series>` and `<points>` specify the expected values, and follow the same syntax as for `load` above
+
+### `expect string`
+
+This can be used to specify that a string literal is the expected result.
+
+Note that this is only supported on instant queries.
+
+For example;
+
+```
+eval instant at 50m ("Foo")
+ expect string "Foo"
+```
+
+The expected string value must be within quotes. Double or back quotes are supported.
+
+### `expect range vector`
+
+This can be used to specify the expected timestamps on a range vector resulting from an instant query.
+
+```
+expect range vector <start> to <end> step <step>
+```
+
+For example;
+```
+load 10s
+  some_metric{env="a"} 1+1x5
+  some_metric{env="b"} 2+2x5
+eval instant at 1m some_metric[1m]
+  expect range vector from 10s to 1m step 10s
+  some_metric{env="a"} 2 3 4 5 6
+  some_metric{env="b"} 4 6 8 10 12
+```
 
 ### `expect` Syntax
 
@@ -164,3 +200,30 @@ There can be multiple `<expect>` lines for a given `<type>`. Each `<type>` valid
 Every `<expect>` line must match at least one corresponding annotation or error.
 
 If at least one `<expect>` line of type `warn` or `info` is present, then all corresponding annotations must have a matching `expect` line.
+
+#### Migrating Test Files to the New Syntax
+
+- All `.test` files in the directory specified by the --dir flag will be updated in place.
+- Deprecated syntax will be replaced with the recommended `expect` line statements.
+
+Usage:
+```sh
+go run ./promql/promqltest/cmd/migrate/main.go --mode=strict [--dir=<directory>]
+```
+
+The `--mode` flag controls how expectations are migrated:
+- `strict`: Strictly migrates all expectations to the new syntax.
+  This is probably more verbose than intended because the old syntax
+  implied many constraints that are often not needed.
+- `basic`: Like `strict` but never creates `no_info` and `no_warn`
+  expectations. This can be a good starting point to manually add 
+  `no_info` and `no_warn` expectations and/or remove `info` and 
+  `warn` expectations as needed.
+- `tolerant`: Only creates `expect fail` and `expect ordered` where
+  appropriate. All desired expectations about presence or absence 
+  of `info` and `warn` have to be added manually.
+
+All three modes create valid passing tests from previously passing tests.
+`basic` and `tolerant` just test fewer expectations than the previous tests.
+
+The --dir flag specifies the directory containing test files to migrate.

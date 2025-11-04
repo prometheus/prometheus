@@ -17,6 +17,7 @@
 package textparse
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -188,7 +189,7 @@ func (p *PromParser) Series() ([]byte, *int64, float64) {
 
 // Histogram returns (nil, nil, nil, nil) for now because the Prometheus text
 // format does not support sparse histograms yet.
-func (p *PromParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
+func (*PromParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
 	return nil, nil, nil, nil
 }
 
@@ -199,7 +200,7 @@ func (p *PromParser) Help() ([]byte, []byte) {
 	m := p.l.b[p.offsets[0]:p.offsets[1]]
 
 	// Replacer causes allocations. Replace only when necessary.
-	if strings.IndexByte(yoloString(p.text), byte('\\')) >= 0 {
+	if bytes.IndexByte(p.text, byte('\\')) >= 0 {
 		return m, []byte(helpReplacer.Replace(string(p.text)))
 	}
 	return m, p.text
@@ -215,7 +216,7 @@ func (p *PromParser) Type() ([]byte, model.MetricType) {
 // Unit returns the metric name and unit in the current entry.
 // Must only be called after Next returned a unit entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *PromParser) Unit() ([]byte, []byte) {
+func (*PromParser) Unit() ([]byte, []byte) {
 	// The Prometheus format does not have units.
 	return nil, nil
 }
@@ -229,7 +230,9 @@ func (p *PromParser) Comment() []byte {
 
 // Labels writes the labels of the current sample into the passed labels.
 func (p *PromParser) Labels(l *labels.Labels) {
-	s := yoloString(p.series)
+	// Defensive copy in case the following keeps a reference.
+	// See https://github.com/prometheus/prometheus/issues/16490
+	s := string(p.series)
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
 
@@ -267,13 +270,13 @@ func (p *PromParser) Labels(l *labels.Labels) {
 // Exemplar implements the Parser interface. However, since the classic
 // Prometheus text format does not support exemplars, this implementation simply
 // returns false and does nothing else.
-func (p *PromParser) Exemplar(*exemplar.Exemplar) bool {
+func (*PromParser) Exemplar(*exemplar.Exemplar) bool {
 	return false
 }
 
 // CreatedTimestamp returns 0 as it's not implemented yet.
 // TODO(bwplotka): https://github.com/prometheus/prometheus/issues/12980
-func (p *PromParser) CreatedTimestamp() int64 {
+func (*PromParser) CreatedTimestamp() int64 {
 	return 0
 }
 
@@ -288,10 +291,7 @@ func (p *PromParser) nextToken() token {
 }
 
 func (p *PromParser) parseError(exp string, got token) error {
-	e := p.l.i + 1
-	if len(p.l.b) < e {
-		e = len(p.l.b)
-	}
+	e := min(len(p.l.b), p.l.i+1)
 	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
 }
 

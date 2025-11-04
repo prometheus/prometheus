@@ -3,8 +3,6 @@ title: Feature flags
 sort_rank: 12
 ---
 
-# Feature flags
-
 Here is a list of features that are disabled by default since they are breaking changes or are considered experimental.
 Their behaviour can change in future releases which will be communicated via the [release changelog](https://github.com/prometheus/prometheus/blob/main/CHANGELOG.md).
 
@@ -51,25 +49,15 @@ computed at all.
 
 `--enable-feature=native-histograms`
 
-When enabled, Prometheus will ingest native histograms (formerly also known as
-sparse histograms or high-res histograms). Native histograms are still highly
-experimental. Expect breaking changes to happen (including those rendering the
-TSDB unreadable).
+_This feature flag is being phased out. You should not use it anymore._
 
-Native histograms are currently only supported in the traditional Prometheus
-protobuf exposition format. This feature flag therefore also enables a new (and
-also experimental) protobuf parser, through which _all_ metrics are ingested
-(i.e. not only native histograms). Prometheus will try to negotiate the
-protobuf format first. The instrumented target needs to support the protobuf
-format, too, _and_ it needs to expose native histograms. The protobuf format
-allows to expose classic and native histograms side by side. With this feature
-flag disabled, Prometheus will continue to parse the classic histogram (albeit
-via the text format). With this flag enabled, Prometheus will still ingest
-those classic histograms that do not come with a corresponding native
-histogram. However, if a native histogram is present, Prometheus will ignore
-the corresponding classic histogram, with the notable exception of exemplars,
-which are always ingested. To keep the classic histograms as well, enable
-`always_scrape_classic_histograms` in the scrape job.
+Native histograms are a stable feature by now. However, to scrape native
+histograms, a scrape config setting `scrape_native_histograms` is required. To
+ease the transition, this feature flag sets the default value of
+`scrape_native_histograms` to `true`. From v3.9 on, this feature flag will be a
+true no-op, and the default value of `scrape_native_histograms` will be always
+`false`. If you are still using this feature flag while running v3.8, update
+your scrape configs and stop using the feature flag before upgrading to v3.9.
 
 ## Experimental PromQL functions
 
@@ -85,7 +73,12 @@ entirely.
 
 Enables ingestion of created timestamp. Created timestamps are injected as 0 valued samples when appropriate. See [PromCon talk](https://youtu.be/nWf0BfQ5EEA) for details.
 
-Currently Prometheus supports created timestamps only on the traditional Prometheus Protobuf protocol (WIP for other protocols). As a result, when enabling this feature, the Prometheus protobuf scrape protocol will be prioritized (See `scrape_config.scrape_protocols` settings for more details).
+Currently Prometheus supports created timestamps only on the traditional
+Prometheus Protobuf protocol (WIP for other protocols). Therefore, enabling
+this feature pre-sets the global `scrape_protocols` configuration option to 
+`[ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ]`,
+resulting in negotiating the Prometheus Protobuf protocol with first priority
+(unless the `scrape_protocols` option is set to a different value explicitly).
 
 Besides enabling this feature in Prometheus, created timestamps need to be exposed by the application being scraped.
 
@@ -183,21 +176,37 @@ This state is periodically ([`max_stale`][d2c]) cleared of inactive series.
 Enabling this _can_ have negative impact on performance, because the in-memory
 state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
+[d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
+
 ## PromQL arithmetic expressions in time durations
 
 `--enable-feature=promql-duration-expr`
 
-With this flag, arithmetic expressions can be used in time durations in range queries and offset durations. For example:
+With this flag, arithmetic expressions can be used in time durations in range queries and offset durations.
 
 In range queries:
-    rate(http_requests_total[5m * 2])  # 10 minute range
-    rate(http_requests_total[(5+2) * 1m])  # 7 minute range
+```
+rate(http_requests_total[5m * 2])  # 10 minute range
+rate(http_requests_total[(5+2) * 1m])  # 7 minute range
+```
 
 In offset durations:
-    http_requests_total offset (1h / 2)  # 30 minute offset
-    http_requests_total offset ((2 ^ 3) * 1m)  # 8 minute offset
+```
+http_requests_total offset (1h / 2)  # 30 minute offset
+http_requests_total offset ((2 ^ 3) * 1m)  # 8 minute offset
+```
 
-Note: Duration expressions are not supported in the @ timestamp operator.
+When using offset with duration expressions, you must wrap the expression in
+parentheses. Without parentheses, only the first duration value will be used in
+the offset calculation.
+
+`step()` can be used in duration expressions.
+For a **range query**, it resolves to the step width of the range query.
+For an **instant query**, it resolves to `0s`. 
+
+`min(<duration>, <duration>)` and `max(<duration>, <duration>)` can be used to find the minimum or maximum of two duration expressions.
+
+**Note**: Duration expressions are not supported in the @ timestamp operator.
 
 The following operators are supported:
 
@@ -210,14 +219,16 @@ The following operators are supported:
 
 Examples of equivalent durations:
 
-* `5m * 2` is the equivalent to `10m` or `600s`
-* `10m - 1m` is the equivalent to `9m` or `540s`
-* `(5+2) * 1m` is the equivalent to `7m` or `420s`
-* `1h / 2` is the equivalent to `30m` or `1800s`
-* `4h % 3h` is the equivalent to `1h` or `3600s`
-* `(2 ^ 3) * 1m` is the equivalent to `8m` or `480s`
+* `5m * 2` is equivalent to `10m` or `600s`
+* `10m - 1m` is equivalent to `9m` or `540s`
+* `(5+2) * 1m` is equivalent to `7m` or `420s`
+* `1h / 2` is equivalent to `30m` or `1800s`
+* `4h % 3h` is equivalent to `1h` or `3600s`
+* `(2 ^ 3) * 1m` is equivalent to `8m` or `480s`
+* `step() + 1` is equivalent to the query step width increased by 1s.
+* `max(step(), 5s)` is equivalent to the larger of the query step width and `5s`.
+* `min(2 * step() + 5s, 5m)` is equivalent to the smaller of twice the query step increased by `5s` and `5m`.
 
-[d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
 
 ## OTLP Native Delta Support
 
@@ -255,7 +266,7 @@ These may not work well if the `<range>` is not a multiple of the collection int
 When enabled, Prometheus will start injecting additional, reserved `__type__`
 and `__unit__` labels as designed in the [PROM-39 proposal](https://github.com/prometheus/proposals/pull/39).
 
-Those labels are sourced from the metadata structured of the existing scrape and ingestion formats
+Those labels are sourced from the metadata structures of the existing scrape and ingestion formats
 like OpenMetrics Text, Prometheus Text, Prometheus Proto, Remote Write 2 and OTLP. All the user provided labels with
 `__type__` and `__unit__` will be overridden.
 
@@ -263,7 +274,7 @@ PromQL layer will handle those labels the same way __name__ is handled, e.g. dro
 on certain operations like `-` or `+` and affected by `promql-delayed-name-removal` feature.
 
 This feature enables important metadata information to be accessible directly with samples and PromQL layer.
- 
+
 It's especially useful for users who:
 
 * Want to be able to select metrics based on type or unit.
@@ -272,6 +283,12 @@ It's especially useful for users who:
 
 In future more [work is planned](https://github.com/prometheus/prometheus/issues/16610) that will depend on this e.g. rich PromQL UX that helps
 when wrong types are used on wrong functions, automatic renames, delta types and more.
+
+### Behavior with metadata records
+
+When this feature is enabled and the metadata WAL records exists, in an unlikely situation when type or unit are different across those, 
+the Prometheus outputs intends to prefer the `__type__` and `__unit__` labels values. For example on Remote Write 2.0, 
+if  the metadata record somehow (e.g. due to bug) says "counter", but `__type__="gauge"` the remote time series will be set to a gauge.
 
 ## Use Uncached IO
 
@@ -286,3 +303,42 @@ memory in response to misleading cache growth.
 This is currently implemented using direct I/O.
 
 For more details, see the [proposal](https://github.com/prometheus/proposals/pull/45).
+
+## Extended Range Selectors
+
+`--enable-feature=promql-extended-range-selectors`
+
+Enables experimental `anchored` and `smoothed` modifiers for PromQL range and instant selectors. These modifiers provide more control over how range boundaries are handled in functions like `rate` and `increase`, especially with missing or irregular data.
+
+Native Histograms are not yet supported by the extended range selectors.
+
+### `anchored`
+
+Uses the most recent sample (within the lookback delta) at the beginning of the range, or alternatively the first sample within the range if there is no sample within the lookback delta. The last sample within the range is also used at the end of the range. No extrapolation or interpolation is applied, so this is useful to get the direct difference between sample values.
+
+Anchored range selector work with: `resets`, `changes`, `rate`, `increase`, and `delta`.
+
+Example query:
+`increase(http_requests_total[5m] anchored)`
+
+**Note**: When using the anchored modifier with the increase function, the results returned are integers.
+
+### `smoothed`
+
+In range selectors, linearly interpolates values at the range boundaries, using the sample values before and after the boundaries for an improved estimation that is robust against irregular scrapes and missing samples. However, it requires a sample after the evaluation interval to work properly, see note below.
+
+For instant selectors, values are linearly interpolated at the evaluation timestamp using the samples immediately before and after that point.
+
+Smoothed range selectors work with: `rate`, `increase`, and `delta`.
+
+Example query:
+`rate(http_requests_total[step()] smoothed)`
+
+> **Note for alerting and recording rules:**
+> The `smoothed` modifier requires samples after the evaluation interval, so using it directly in alerting or recording rules will typically *under-estimate* the result, as future samples are not available at evaluation time.
+> To use `smoothed` safely in rules, you **must** apply a `query_offset` to the rule group (see [documentation](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#rule_group)) to ensure the calculation window is fully in the past and all needed samples are available.  
+> For critical alerting, set the offset to at least one scrape interval; for less critical or more resilient use cases, consider a larger offset (multiple scrape intervals) to tolerate missed scrapes.
+
+For more details, see the [design doc](https://github.com/prometheus/proposals/blob/main/proposals/2025-04-04_extended-range-selectors-semantics.md).
+
+**Note**: Extended Range Selectors are not supported for subqueries.

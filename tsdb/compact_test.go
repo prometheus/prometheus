@@ -1098,6 +1098,13 @@ func TestCompaction_populateBlock(t *testing.T) {
 				s.NumChunks += uint64(len(series.chunks))
 				for _, chk := range series.chunks {
 					s.NumSamples += uint64(len(chk))
+					for _, smpl := range chk {
+						if smpl.h != nil || smpl.fh != nil {
+							s.NumHistogramSamples++
+						} else {
+							s.NumFloatSamples++
+						}
+					}
 				}
 			}
 			require.Equal(t, s, meta.Stats)
@@ -1167,7 +1174,7 @@ func BenchmarkCompaction(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				_, err = c.Compact(dir, blockDirs, blocks)
 				require.NoError(b, err)
 			}
@@ -1189,7 +1196,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 			require.NoError(b, err)
 			for ln := 0; ln < labelNames; ln++ {
 				app := h.Appender(context.Background())
-				for lv := 0; lv < labelValues; lv++ {
+				for lv := range labelValues {
 					app.Append(0, labels.FromStrings(strconv.Itoa(ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln)), 0, 0)
 				}
 				require.NoError(b, app.Commit())
@@ -1197,7 +1204,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for i := 0; b.Loop(); i++ {
 				createBlockFromHead(b, filepath.Join(dir, fmt.Sprintf("%d-%d", i, labelNames)), h)
 			}
 			h.Close()
@@ -1221,11 +1228,11 @@ func BenchmarkCompactionFromOOOHead(b *testing.B) {
 			require.NoError(b, err)
 			for ln := 0; ln < labelNames; ln++ {
 				app := h.Appender(context.Background())
-				for lv := 0; lv < labelValues; lv++ {
+				for lv := range labelValues {
 					lbls := labels.FromStrings(strconv.Itoa(ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln))
 					_, err = app.Append(0, lbls, int64(totalSamples), 0)
 					require.NoError(b, err)
-					for ts := 0; ts < totalSamples; ts++ {
+					for ts := range totalSamples {
 						_, err = app.Append(0, lbls, int64(ts), float64(ts))
 						require.NoError(b, err)
 					}
@@ -1235,7 +1242,7 @@ func BenchmarkCompactionFromOOOHead(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for i := 0; b.Loop(); i++ {
 				oooHead, err := NewOOOCompactionHead(context.TODO(), h)
 				require.NoError(b, err)
 				createBlockFromOOOHead(b, filepath.Join(dir, fmt.Sprintf("%d-%d", i, labelNames)), oooHead)
@@ -1262,7 +1269,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 	// no new blocks were created when compaction is disabled.
 	db.DisableCompactions()
 	app := db.Appender(context.Background())
-	for i := int64(0); i < 3; i++ {
+	for i := range int64(3) {
 		_, err := app.Append(0, label, i*blockRange, 0)
 		require.NoError(t, err)
 		_, err = app.Append(0, label, i*blockRange+1000, 0)
@@ -1275,7 +1282,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 	default:
 	}
 
-	for x := 0; x < 10; x++ {
+	for range 10 {
 		if prom_testutil.ToFloat64(db.metrics.compactionsSkipped) > 0.0 {
 			break
 		}
@@ -1291,7 +1298,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 	case db.compactc <- struct{}{}:
 	default:
 	}
-	for x := 0; x < 100; x++ {
+	for range 100 {
 		if len(db.Blocks()) > 0 {
 			break
 		}
@@ -1303,6 +1310,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 // TestCancelCompactions ensures that when the db is closed
 // any running compaction is cancelled to unblock closing the db.
 func TestCancelCompactions(t *testing.T) {
+	t.Parallel()
 	tmpdir := t.TempDir()
 
 	// Create some blocks to fall within the compaction range.
@@ -1372,6 +1380,7 @@ func TestCancelCompactions(t *testing.T) {
 // TestDeleteCompactionBlockAfterFailedReload ensures that a failed reloadBlocks immediately after a compaction
 // deletes the resulting block to avoid creating blocks with the same time range.
 func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
+	t.Parallel()
 	tests := map[string]func(*DB) int{
 		"Test Head Compaction": func(db *DB) int {
 			rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 - 1
@@ -1674,7 +1683,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 							ref storage.SeriesRef
 							err error
 						)
-						for i := 0; i < numHistograms; i++ {
+						for i := range numHistograms {
 							ts := int64(i) * timeStep
 							ref, err = sparseApp.AppendHistogram(ref, ah.baseLabels, ts, ah.hists[i], nil)
 							require.NoError(t, err)
@@ -1699,7 +1708,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					// Ingest histograms the old way.
 					for _, ah := range allSparseSeries {
 						refs := make([]storage.SeriesRef, c.numBuckets+((c.numSpans-1)*c.gapBetweenSpans))
-						for i := 0; i < numHistograms; i++ {
+						for i := range numHistograms {
 							ts := int64(i) * timeStep
 
 							h := ah.hists[i]
@@ -1957,10 +1966,6 @@ func TestDelayedCompaction(t *testing.T) {
 		for db.head.compactable() {
 			time.Sleep(time.Millisecond)
 		}
-		if runtime.GOOS == "windows" {
-			// TODO: enable on windows once ms resolution timers are better supported.
-			return
-		}
 		duration := time.Since(start)
 		require.Less(t, duration, delay)
 	}
@@ -1982,8 +1987,10 @@ func TestDelayedCompaction(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
+			if runtime.GOOS == "windows" {
+				t.Skip("Time imprecision on windows makes the test flaky, see https://github.com/prometheus/prometheus/issues/16450")
+			}
 			t.Parallel()
 
 			var options *Options
@@ -2094,6 +2101,7 @@ func TestDelayedCompaction(t *testing.T) {
 // TestDelayedCompactionDoesNotBlockUnrelatedOps makes sure that when delayed compaction is enabled,
 // operations that don't directly derive from the Head compaction are not delayed, here we consider disk blocks compaction.
 func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name            string
 		whenCompactable bool
@@ -2109,7 +2117,6 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 

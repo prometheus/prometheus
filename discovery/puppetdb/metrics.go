@@ -24,9 +24,9 @@ type puppetdbMetrics struct {
 }
 
 // Register implements discovery.DiscovererMetrics.
-func (m *puppetdbMetrics) Register() error {
+func (*puppetdbMetrics) Register() error {
 	return nil
 }
 
 // Unregister implements discovery.DiscovererMetrics.
-func (m *puppetdbMetrics) Unregister() {}
+func (*puppetdbMetrics) Unregister() {}

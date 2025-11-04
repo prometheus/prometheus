@@ -20,7 +20,9 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/almost"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 // smallDeltaTolerance is the threshold for relative deltas between classic
@@ -195,24 +197,34 @@ func BucketQuantile(q float64, buckets Buckets) (float64, bool, bool) {
 //
 // If q is NaN, NaN is returned.
 //
+// If the native histogram has NaN observations and the quantile falls into
+// an existing bucket, then an additional info level annotation is returned
+// informing the user about possible skew to higher values as NaNs are
+// considered +Inf in this case.
+//
+// If the native histogram has NaN observations and the quantile falls above
+// all existing buckets, then NaN is returned along with an additional info
+// level annotation informing the user that this has happened.
+//
 // HistogramQuantile is for calculating the histogram_quantile() of native
 // histograms. See also: BucketQuantile for classic histograms.
 //
 // HistogramQuantile is exported as it may be used by other PromQL engine
 // implementations.
-func HistogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
+func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string, pos posrange.PositionRange) (float64, annotations.Annotations) {
 	if q < 0 {
-		return math.Inf(-1)
+		return math.Inf(-1), nil
 	}
 	if q > 1 {
-		return math.Inf(+1)
+		return math.Inf(+1), nil
 	}
 
 	if h.Count == 0 || math.IsNaN(q) {
-		return math.NaN()
+		return math.NaN(), nil
 	}
 
 	var (
+		annos  annotations.Annotations
 		bucket histogram.Bucket[float64]
 		count  float64
 		it     histogram.BucketIterator[float64]
@@ -255,12 +267,12 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 		if bucket.Lower == math.Inf(-1) {
 			// first bucket, with lower bound -Inf
 			if bucket.Upper <= 0 {
-				return bucket.Upper
+				return bucket.Upper, annos
 			}
 			bucket.Lower = 0
 		} else if bucket.Upper == math.Inf(1) {
 			// last bucket, with upper bound +Inf
-			return bucket.Lower
+			return bucket.Lower, annos
 		}
 	}
 	// Due to numerical inaccuracies, we could end up with a higher count
@@ -270,20 +282,42 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 	}
 	// We could have hit the highest bucket without even reaching the rank
 	// (this should only happen if the histogram contains observations of
-	// the value NaN), in which case we simply return the upper limit of the
-	// highest explicit bucket.
+	// the value NaN, in which case Sum is also NaN), in which case we simply
+	// return NaN.
+	// See https://github.com/prometheus/prometheus/issues/16578
 	if count < rank {
-		return bucket.Upper
+		if math.IsNaN(h.Sum) {
+			return math.NaN(), annos.Add(annotations.NewNativeHistogramQuantileNaNResultInfo(metricName, pos))
+		}
+		// This should not happen. Either NaNs are in the +Inf bucket (NHCB) and
+		// then count >= rank, or Sum is set to NaN. Might be a precision issue
+		// or something wrong with the histogram, fall back to returning the
+		// upper bound of the highest explicit bucket.
+		return bucket.Upper, annos
 	}
 
 	// NaN observations increase h.Count but not the total number of
 	// observations in the buckets. Therefore, we have to use the forward
-	// iterator to find percentiles. We recognize histograms containing NaN
-	// observations by checking if their h.Sum is NaN.
+	// iterator to find percentiles.
 	if math.IsNaN(h.Sum) || q < 0.5 {
 		rank -= count - bucket.Count
 	} else {
 		rank = count - rank
+	}
+	// We recognize histograms containing NaN observations by checking if their
+	// h.Sum is NaN and total number of observations is higher than the h.Count.
+	// If the latter is lost in precision, then the skew isn't worth reporting
+	// anyway. If the number is not greater, then the histogram observed -Inf
+	// and +Inf at some point, which made the Sum == NaN.
+	if math.IsNaN(h.Sum) {
+		// Detect if h.Count is greater than sum of buckets.
+		for it.Next() {
+			bucket = it.At()
+			count += bucket.Count
+		}
+		if count < h.Count {
+			annos.Add(annotations.NewNativeHistogramQuantileNaNSkewInfo(metricName, pos))
+		}
 	}
 
 	// The fraction of how far we are into the current bucket.
@@ -292,7 +326,7 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 	// Return linear interpolation for custom buckets and for quantiles that
 	// end up in the zero bucket.
 	if h.UsesCustomBuckets() || (bucket.Lower <= 0 && bucket.Upper >= 0) {
-		return bucket.Lower + (bucket.Upper-bucket.Lower)*fraction
+		return bucket.Lower + (bucket.Upper-bucket.Lower)*fraction, annos
 	}
 
 	// For exponential buckets, we interpolate on a logarithmic scale. On a
@@ -305,10 +339,10 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 	logLower := math.Log2(math.Abs(bucket.Lower))
 	logUpper := math.Log2(math.Abs(bucket.Upper))
 	if bucket.Lower > 0 { // Positive bucket.
-		return math.Exp2(logLower + (logUpper-logLower)*fraction)
+		return math.Exp2(logLower + (logUpper-logLower)*fraction), annos
 	}
 	// Otherwise, we are in a negative bucket and have to mirror things.
-	return -math.Exp2(logUpper + (logLower-logUpper)*(1-fraction))
+	return -math.Exp2(logUpper + (logLower-logUpper)*(1-fraction)), annos
 }
 
 // HistogramFraction calculates the fraction of observations between the
@@ -343,23 +377,29 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 //
 // If lower >= upper and the histogram has at least 1 observation, zero is returned.
 //
+// If the histogram has NaN observations, these are not considered in any bucket
+// thus histogram_fraction(-Inf, +Inf, v) might be less than 1.0. The function
+// returns an info level annotation in this case.
+//
 // HistogramFraction is exported as it may be used by other PromQL engine
 // implementations.
-func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram) float64 {
+func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram, metricName string, pos posrange.PositionRange) (float64, annotations.Annotations) {
 	if h.Count == 0 || math.IsNaN(lower) || math.IsNaN(upper) {
-		return math.NaN()
+		return math.NaN(), nil
 	}
 	if lower >= upper {
-		return 0
+		return 0, nil
 	}
 
 	var (
-		rank, lowerRank, upperRank float64
-		lowerSet, upperSet         bool
-		it                         = h.AllBucketIterator()
+		count, rank, lowerRank, upperRank float64
+		lowerSet, upperSet                bool
+		it                                = h.AllBucketIterator()
+		annos                             annotations.Annotations
 	)
 	for it.Next() {
 		b := it.At()
+		count += b.Count
 		zeroBucket := false
 
 		// interpolateLinearly is used for custom buckets to be
@@ -438,14 +478,28 @@ func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram) float6
 		}
 		rank += b.Count
 	}
-	if !lowerSet || lowerRank > h.Count {
-		lowerRank = h.Count
-	}
-	if !upperSet || upperRank > h.Count {
-		upperRank = h.Count
+	if math.IsNaN(h.Sum) {
+		// There might be NaN observations, so we need to adjust
+		// the count to only include non `NaN` observations.
+		for it.Next() {
+			b := it.At()
+			count += b.Count
+		}
+		if count < h.Count {
+			annos.Add(annotations.NewNativeHistogramFractionNaNsInfo(metricName, pos))
+		}
+	} else {
+		count = h.Count
 	}
 
-	return (upperRank - lowerRank) / h.Count
+	if !lowerSet || lowerRank > count {
+		lowerRank = count
+	}
+	if !upperSet || upperRank > count {
+		upperRank = count
+	}
+
+	return (upperRank - lowerRank) / h.Count, annos
 }
 
 // BucketFraction is a version of HistogramFraction for classic histograms.

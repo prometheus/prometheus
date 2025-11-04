@@ -19,7 +19,7 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/swarm"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -48,7 +48,7 @@ func (d *Discovery) refreshNodes(ctx context.Context) ([]*targetgroup.Group, err
 		Source: "DockerSwarm",
 	}
 
-	nodes, err := d.client.NodeList(ctx, types.NodeListOptions{Filters: d.filters})
+	nodes, err := d.client.NodeList(ctx, swarm.NodeListOptions{Filters: d.filters})
 	if err != nil {
 		return nil, fmt.Errorf("error while listing swarm nodes: %w", err)
 	}
@@ -85,7 +85,7 @@ func (d *Discovery) refreshNodes(ctx context.Context) ([]*targetgroup.Group, err
 }
 
 func (d *Discovery) getNodesLabels(ctx context.Context) (map[string]map[string]string, error) {
-	nodes, err := d.client.NodeList(ctx, types.NodeListOptions{})
+	nodes, err := d.client.NodeList(ctx, swarm.NodeListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("error while listing swarm nodes: %w", err)
 	}

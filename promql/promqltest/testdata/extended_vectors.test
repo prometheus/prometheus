@@ -1,0 +1,414 @@
+# Reference from PROM-52: Complete dataset
+
+load 15s
+  metric 1+1x4 9+1x4
+
+eval instant at 5s increase(metric[1m])
+
+eval instant at 20s increase(metric[1m])
+    {} 1.833333333
+
+eval instant at 35s increase(metric[1m])
+    {} 2.833333333
+
+eval instant at 50s increase(metric[1m])
+    {} 4
+
+eval instant at 65s increase(metric[1m])
+    {} 4
+
+eval instant at 80s increase(metric[1m])
+    {} 8
+
+eval instant at 95s increase(metric[1m])
+    {} 8
+
+eval instant at 110s increase(metric[1m])
+    {} 8
+
+eval instant at 125s increase(metric[1m])
+    {} 4
+
+eval instant at 5s increase(metric[1m] anchored)
+    {} 0
+
+eval instant at 20s increase(metric[1m] anchored)
+    {} 1
+
+eval instant at 35s increase(metric[1m] anchored)
+    {} 2
+
+eval instant at 50s increase(metric[1m] anchored)
+    {} 3
+
+eval instant at 65s increase(metric[1m] anchored)
+    {} 4
+
+eval instant at 80s increase(metric[1m] anchored)
+    {} 7
+
+eval instant at 95s increase(metric[1m] anchored)
+    {} 7
+
+eval instant at 110s increase(metric[1m] anchored)
+    {} 7
+
+eval instant at 125s increase(metric[1m] anchored)
+    {} 7
+
+eval instant at 5s increase(metric[1m] smoothed)
+    {} 0.333333333
+
+eval instant at 20s increase(metric[1m] smoothed)
+    {} 1.333333333
+
+eval instant at 35s increase(metric[1m] smoothed)
+    {} 2.333333333
+
+eval instant at 50s increase(metric[1m] smoothed)
+    {} 3.333333333
+
+eval instant at 65s increase(metric[1m] smoothed)
+    {} 5
+
+eval instant at 80s increase(metric[1m] smoothed)
+    {} 7
+
+eval instant at 95s increase(metric[1m] smoothed)
+    {} 7
+
+eval instant at 110s increase(metric[1m] smoothed)
+    {} 7
+
+eval instant at 125s increase(metric[1m] smoothed)
+    {} 6
+
+# Reference from PROM-52: Partial dataset
+
+clear
+load 15s
+  metric 1+1x2 _ _ 9+1x4
+
+eval instant at 5s increase(metric[1m])
+
+eval instant at 20s increase(metric[1m])
+    {} 1.833333333
+
+eval instant at 35s increase(metric[1m])
+    {} 2.833333333
+
+eval instant at 50s increase(metric[1m])
+    {} 3.166666666
+
+eval instant at 65s increase(metric[1m])
+    {} 2.166666666
+
+eval instant at 80s increase(metric[1m])
+    {} 8
+
+eval instant at 95s increase(metric[1m])
+    {} 1.833333333
+
+eval instant at 110s increase(metric[1m])
+    {} 2.833333333
+
+eval instant at 125s increase(metric[1m])
+    {} 4
+
+eval instant at 5s increase(metric[1m] anchored)
+    {} 0
+
+eval instant at 20s increase(metric[1m] anchored)
+    {} 1
+
+eval instant at 35s increase(metric[1m] anchored)
+    {} 2
+
+eval instant at 50s increase(metric[1m] anchored)
+    {} 2
+
+eval instant at 65s increase(metric[1m] anchored)
+    {} 2
+
+eval instant at 80s increase(metric[1m] anchored)
+    {} 7
+
+eval instant at 95s increase(metric[1m] anchored)
+    {} 7
+
+eval instant at 110s increase(metric[1m] anchored)
+    {} 8
+
+eval instant at 125s increase(metric[1m] anchored)
+    {} 9
+
+eval instant at 5s increase(metric[1m] smoothed)
+    {} 0.333333333
+
+eval instant at 20s increase(metric[1m] smoothed)
+    {} 1.333333333
+
+eval instant at 35s increase(metric[1m] smoothed)
+    {} 2.666666666
+
+eval instant at 50s increase(metric[1m] smoothed)
+    {} 4.666666666
+
+eval instant at 65s increase(metric[1m] smoothed)
+    {} 6.333333333
+
+eval instant at 80s increase(metric[1m] smoothed)
+    {} 7
+
+eval instant at 95s increase(metric[1m] smoothed)
+    {} 6.666666666
+
+eval instant at 110s increase(metric[1m] smoothed)
+    {} 5.666666666
+
+eval instant at 125s increase(metric[1m] smoothed)
+    {} 4.666666666
+
+# Test that interval is left-open.
+
+clear
+load 1m
+    metric 1 2 _ 4 5
+
+eval instant at 2m increase(metric[1m] smoothed)
+    {} 1
+
+eval instant at 2m increase(metric[1m] anchored)
+
+# Basic test with counter resets
+
+clear
+load 1m
+    metric{id="1"} 1+1x4 1+1x4
+    metric{id="2"} 3 2+2x9
+    metric{id="3"} 5+3x2 3+3x6
+
+eval instant at 1m30s increase(metric[1m])
+
+eval instant at 1m30s increase(metric[1m] smoothed)
+    {id="1"} 1
+    {id="2"} 2
+    {id="3"} 3
+
+eval instant at 1m30s increase(metric[1m] anchored)
+    {id="1"} 1
+    {id="2"} 2
+    {id="3"} 3
+
+eval instant at 1m30s delta(metric[1m])
+
+eval instant at 1m30s delta(metric[1m] anchored)
+    {id="1"} 1
+    {id="2"} -1
+    {id="3"} 3
+
+eval instant at 3m0s delta(metric[1m] anchored)
+    {id="1"} 1
+    {id="2"} 2
+    {id="3"} -8
+
+eval instant at 3m30s delta(metric[1m] anchored)
+    {id="1"} 1
+    {id="2"} 2
+    {id="3"} -8
+
+eval instant at 6m increase(metric[5m])
+    {id="1"} 5
+    {id="2"} 10
+    {id="3"} 15
+
+eval instant at 6m15s increase(metric[5m] smoothed)
+    {id="1"} 5
+    {id="2"} 10
+    {id="3"} 15
+
+eval instant at 6m increase(metric[5m] smoothed)
+    {id="1"} 5
+    {id="2"} 10
+    {id="3"} 15
+
+eval instant at 5m increase(metric[5m] anchored)
+    {id="1"} 5
+    {id="2"} 10
+    {id="3"} 15
+
+eval instant at 15m increase(metric[5m] anchored)
+
+clear
+load 1m
+    metric{id="1"} 11 -1 100 0
+    metric{id="2"} 0 0 100 0 0 11 -1
+
+eval instant at 5m30s delta(metric[5m] smoothed)
+    {id="1"} -5
+    {id="2"} 5
+
+eval instant at 5m45s delta(metric[5m] smoothed)
+    {id="1"} -2
+    {id="2"} 2
+
+clear
+load 1m
+    metric{id="1"} 1+1x10
+    metric{id="2"} 1 1+1x10
+    metric{id="3"} 99-1x10
+    metric{id="4"} 99 99-1x10
+
+eval instant at 5m changes(metric[5m])
+    {id="1"} 4
+    {id="2"} 4
+    {id="3"} 4
+    {id="4"} 4
+
+eval instant at 5m30s changes(metric[5m])
+    {id="1"} 4
+    {id="2"} 4
+    {id="3"} 4
+    {id="4"} 4
+
+
+eval instant at 5m0s changes(metric[5m] anchored)
+    {id="1"} 5
+    {id="2"} 4
+    {id="3"} 5
+    {id="4"} 4
+
+eval instant at 6m changes(metric[5m] anchored)
+    {id="1"} 5
+    {id="2"} 5
+    {id="3"} 5
+    {id="4"} 5
+
+eval instant at 5m30s changes(metric[5m] anchored)
+    {id="1"} 5
+    {id="2"} 4
+    {id="3"} 5
+    {id="4"} 4
+
+eval instant at 5m30s resets(metric[5m])
+    {id="1"} 0
+    {id="2"} 0
+    {id="3"} 4
+    {id="4"} 4
+
+eval instant at 5m30s resets(metric[5m] anchored)
+    {id="1"} 0
+    {id="2"} 0
+    {id="3"} 5
+    {id="4"} 4
+
+clear
+load 1m
+    metric{id="1"} 2 _ 1 _ _ _ _ _ 0
+    metric{id="2"} 99-1x10
+
+eval instant at 2m changes(metric[1m])
+    {id="1"} 0
+    {id="2"} 0
+
+eval instant at 3m changes(metric[1m])
+    {id="2"} 0
+
+eval instant at 2m changes(metric[1m] anchored)
+    {id="1"} 1
+    {id="2"} 1
+
+eval instant at 3m changes(metric[1m] anchored)
+    {id="1"} 1
+    {id="2"} 1
+
+eval instant at 8m changes(metric[1m] anchored)
+    {id="1"} 0
+    {id="2"} 1
+
+eval instant at 8m changes(metric[1m1ms] anchored)
+    {id="1"} 1
+    {id="2"} 2
+
+eval instant at 2m resets(metric[1m])
+    {id="1"} 0
+    {id="2"} 0
+
+eval instant at 3m resets(metric[1m])
+    {id="2"} 0
+
+eval instant at 2m resets(metric[1m] anchored)
+    {id="1"} 1
+    {id="2"} 1
+
+eval instant at 3m resets(metric[1m] anchored)
+    {id="1"} 1
+    {id="2"} 1
+
+eval instant at 8m resets(metric[1m] anchored)
+    {id="1"} 0
+    {id="2"} 1
+
+eval instant at 8m resets(metric[1m1ms] anchored)
+    {id="1"} 1
+    {id="2"} 2
+
+clear
+load 1m
+    metric 9 8 5 4 
+    
+eval instant at 2m15s increase(metric[2m] smoothed)
+    {} 12
+
+clear
+eval instant at 1m deriv(foo[3m] smoothed)
+    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with deriv
+
+eval instant at 1m resets(foo[3m] smoothed)
+    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with resets
+
+eval instant at 1m changes(foo[3m] smoothed)
+    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with changes
+
+eval instant at 1m max_over_time(foo[3m] smoothed)
+    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with max_over_time
+
+eval instant at 1m predict_linear(foo[3m] smoothed, 4)
+    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with predict_linear
+
+eval instant at 1m deriv(foo[3m] anchored)
+    expect fail msg: anchored modifier can only be used with: changes, delta, increase, rate, resets - not with deriv
+
+eval instant at 1m resets(foo[3m] anchored)
+
+eval instant at 1m changes(foo[3m] anchored)
+
+eval instant at 1m max_over_time(foo[3m] anchored)
+    expect fail msg: anchored modifier can only be used with: changes, delta, increase, rate, resets - not with max_over_time
+
+eval instant at 1m predict_linear(foo[3m] anchored, 4)
+    expect fail msg: anchored modifier can only be used with: changes, delta, increase, rate, resets - not with predict_linear
+
+clear
+load 10s
+    metric 1+1x10
+    withreset 1+1x4 1+1x5
+    notregular 0 5 100 2 8
+
+eval instant at 10s metric smoothed
+    metric 2
+
+eval instant at 15s metric smoothed
+    metric 2.5
+
+eval instant at 5s metric smoothed
+    metric 1.5
+
+eval instant at 105s metric smoothed
+    metric 11
+
+eval instant at 45s withreset smoothed
+    withreset 3
+
+eval instant at 30s notregular smoothed
+    notregular 2

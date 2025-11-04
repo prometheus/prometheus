@@ -19,6 +19,7 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"reflect"
+	"runtime"
 	"sync"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -60,7 +62,7 @@ func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(str
 		graceShut:              make(chan struct{}),
 		triggerReload:          make(chan struct{}, 1),
 		metrics:                sm,
-		buffers:                pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) }),
+		buffers:                pool.New(1e3, 100e6, 3, func(sz int) any { return make([]byte, 0, sz) }),
 	}
 
 	m.metrics.setTargetMetadataCacheGatherer(m)
@@ -84,8 +86,6 @@ type Options struct {
 	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
 	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
 	EnableCreatedTimestampZeroIngestion bool
-	// Option to enable the ingestion of native histograms.
-	EnableNativeHistogramsIngestion bool
 
 	// EnableTypeAndUnitLabels
 	EnableTypeAndUnitLabels bool
@@ -125,7 +125,10 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 	go m.reloader()
 	for {
 		select {
-		case ts := <-tsets:
+		case ts, ok := <-tsets:
+			if !ok {
+				break
+			}
 			m.updateTsets(ts)
 
 			select {
@@ -177,11 +180,6 @@ func (m *Manager) reload() {
 			scrapeConfig, ok := m.scrapeConfigs[setName]
 			if !ok {
 				m.logger.Error("error reloading target set", "err", "invalid config id:"+setName)
-				continue
-			}
-			if scrapeConfig.ConvertClassicHistogramsToNHCBEnabled() && m.opts.EnableCreatedTimestampZeroIngestion {
-				// TODO(krajorama): fix https://github.com/prometheus/prometheus/issues/15137
-				m.logger.Error("error reloading target set", "err", "cannot convert classic histograms to native histograms with custom buckets and ingest created timestamp zero samples at the same time due to https://github.com/prometheus/prometheus/issues/15137")
 				continue
 			}
 			m.metrics.targetScrapePools.Inc()
@@ -287,29 +285,55 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	}
 
 	// Cleanup and reload pool if the configuration has changed.
-	var failed bool
-	for name, sp := range m.scrapePools {
-		switch cfg, ok := m.scrapeConfigs[name]; {
-		case !ok:
-			sp.stop()
-			delete(m.scrapePools, name)
-		case !reflect.DeepEqual(sp.config, cfg):
-			err := sp.reload(cfg)
-			if err != nil {
-				m.logger.Error("error reloading scrape pool", "err", err, "scrape_pool", name)
-				failed = true
-			}
-			fallthrough
-		case ok:
-			if l, ok := m.scrapeFailureLoggers[cfg.ScrapeFailureLogFile]; ok {
-				sp.SetScrapeFailureLogger(l)
-			} else {
-				sp.logger.Error("No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", name)
-			}
-		}
-	}
+	var (
+		failed   atomic.Bool
+		wg       sync.WaitGroup
+		toDelete sync.Map // Stores the list of names of pools to delete.
+	)
 
-	if failed {
+	// Use a buffered channel to limit reload concurrency.
+	// Each scrape pool writes the channel before we start to reload it and read from it at the end.
+	// This means only N pools can be reloaded at the same time.
+	canReload := make(chan int, runtime.GOMAXPROCS(0))
+	for poolName, pool := range m.scrapePools {
+		canReload <- 1
+		wg.Add(1)
+		cfg, ok := m.scrapeConfigs[poolName]
+		// Reload each scrape pool in a dedicated goroutine so we don't have to wait a long time
+		// if we have a lot of scrape pools to update.
+		go func(name string, sp *scrapePool, cfg *config.ScrapeConfig, ok bool) {
+			defer func() {
+				wg.Done()
+				<-canReload
+			}()
+			switch {
+			case !ok:
+				sp.stop()
+				toDelete.Store(name, struct{}{})
+			case !reflect.DeepEqual(sp.config, cfg):
+				err := sp.reload(cfg)
+				if err != nil {
+					m.logger.Error("error reloading scrape pool", "err", err, "scrape_pool", name)
+					failed.Store(true)
+				}
+				fallthrough
+			case ok:
+				if l, ok := m.scrapeFailureLoggers[cfg.ScrapeFailureLogFile]; ok {
+					sp.SetScrapeFailureLogger(l)
+				} else {
+					sp.logger.Error("No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", name)
+				}
+			}
+		}(poolName, pool, cfg, ok)
+	}
+	wg.Wait()
+
+	toDelete.Range(func(name, _ any) bool {
+		delete(m.scrapePools, name.(string))
+		return true
+	})
+
+	if failed.Load() {
 		return errors.New("failed to apply the new configuration")
 	}
 	return nil
@@ -372,4 +396,35 @@ func (m *Manager) TargetsDroppedCounts() map[string]int {
 		counts[tset] = sp.droppedTargetsCount
 	}
 	return counts
+}
+
+func (m *Manager) ScrapePoolConfig(scrapePool string) (*config.ScrapeConfig, error) {
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+
+	sp, ok := m.scrapePools[scrapePool]
+	if !ok {
+		return nil, fmt.Errorf("scrape pool %q not found", scrapePool)
+	}
+
+	return sp.config, nil
+}
+
+// DisableEndOfRunStalenessMarkers disables the end-of-run staleness markers for the provided targets in the given
+// targetSet. When the end-of-run staleness is disabled for a target, when it goes away, there will be no staleness
+// markers written for its series.
+func (m *Manager) DisableEndOfRunStalenessMarkers(targetSet string, targets []*Target) {
+	// This avoids mutex lock contention.
+	if len(targets) == 0 {
+		return
+	}
+
+	// Only hold the lock to find the scrape pool
+	m.mtxScrape.Lock()
+	sp, ok := m.scrapePools[targetSet]
+	m.mtxScrape.Unlock()
+
+	if ok {
+		sp.disableEndOfRunStalenessMarkers(targets)
+	}
 }

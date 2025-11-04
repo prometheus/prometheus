@@ -1,5 +1,5 @@
 import { FC, useEffect, useId, useLayoutEffect, useState } from "react";
-import { Alert, Skeleton, Box, Group, Stack, Text } from "@mantine/core";
+import { Alert, Skeleton, Box, Group, Stack } from "@mantine/core";
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import { InstantQueryResult } from "../../api/responseTypes/query";
 import { useAPIQuery } from "../../api/api";
@@ -9,6 +9,8 @@ import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import { setVisualizer } from "../../state/queryPageSlice";
 import TimeInput from "./TimeInput";
 import DataTable from "./DataTable";
+import QueryStatsDisplay from "./QueryStatsDisplay";
+import { useSettings } from "../../state/settingsSlice";
 dayjs.extend(timezone);
 
 export interface TableTabProps {
@@ -25,6 +27,7 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
     (state) => state.queryPage.panels[panelIdx]
   );
   const dispatch = useAppDispatch();
+  const { showQueryWarnings, showQueryInfoNotices } = useSettings();
 
   const { endTime, range } = visualizer;
 
@@ -34,6 +37,7 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
     params: {
       query: expr,
       time: `${(endTime !== null ? endTime : Date.now()) / 1000}`,
+      stats: "true",
     },
     enabled: expr !== "",
     recordResponseTime: setResponseTime,
@@ -66,10 +70,11 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
           }
         />
         {!isFetching && data !== undefined && (
-          <Text size="xs" c="gray">
-            Load time: {responseTime}ms &ensp; Result series:{" "}
-            {data.data.result.length}
-          </Text>
+          <QueryStatsDisplay
+            numResults={data.data.result.length}
+            responseTime={responseTime}
+            stats={data.data.stats!}
+          />
         )}
       </Group>
       {isFetching ? (
@@ -96,27 +101,29 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
             </Alert>
           )}
 
-          {data.warnings?.map((w, idx) => (
-            <Alert
-              key={idx}
-              color="red"
-              title="Query warning"
-              icon={<IconAlertTriangle />}
-            >
-              {w}
-            </Alert>
-          ))}
+          {showQueryWarnings &&
+            data.warnings?.map((w, idx) => (
+              <Alert
+                key={idx}
+                color="red"
+                title="Query warning"
+                icon={<IconAlertTriangle />}
+              >
+                {w}
+              </Alert>
+            ))}
 
-          {data.infos?.map((w, idx) => (
-            <Alert
-              key={idx}
-              color="yellow"
-              title="Query notice"
-              icon={<IconInfoCircle />}
-            >
-              {w}
-            </Alert>
-          ))}
+          {showQueryInfoNotices &&
+            data.infos?.map((w, idx) => (
+              <Alert
+                key={idx}
+                color="yellow"
+                title="Query notice"
+                icon={<IconInfoCircle />}
+              >
+                {w}
+              </Alert>
+            ))}
           <DataTable
             data={data.data}
             limitResults={limitResults}

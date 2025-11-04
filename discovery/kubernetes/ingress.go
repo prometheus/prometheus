@@ -22,6 +22,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -31,14 +32,16 @@ import (
 
 // Ingress implements discovery of Kubernetes ingress.
 type Ingress struct {
-	logger   *slog.Logger
-	informer cache.SharedInformer
-	store    cache.Store
-	queue    *workqueue.Type
+	logger                *slog.Logger
+	informer              cache.SharedIndexInformer
+	store                 cache.Store
+	queue                 *workqueue.Typed[string]
+	namespaceInf          cache.SharedInformer
+	withNamespaceMetadata bool
 }
 
 // NewIngress returns a new ingress discovery.
-func NewIngress(l *slog.Logger, inf cache.SharedInformer, eventCount *prometheus.CounterVec) *Ingress {
+func NewIngress(l *slog.Logger, inf cache.SharedIndexInformer, namespace cache.SharedInformer, eventCount *prometheus.CounterVec) *Ingress {
 	ingressAddCount := eventCount.WithLabelValues(RoleIngress.String(), MetricLabelRoleAdd)
 	ingressUpdateCount := eventCount.WithLabelValues(RoleIngress.String(), MetricLabelRoleUpdate)
 	ingressDeleteCount := eventCount.WithLabelValues(RoleIngress.String(), MetricLabelRoleDelete)
@@ -47,19 +50,23 @@ func NewIngress(l *slog.Logger, inf cache.SharedInformer, eventCount *prometheus
 		logger:   l,
 		informer: inf,
 		store:    inf.GetStore(),
-		queue:    workqueue.NewNamed(RoleIngress.String()),
+		queue: workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{
+			Name: RoleIngress.String(),
+		}),
+		namespaceInf:          namespace,
+		withNamespaceMetadata: namespace != nil,
 	}
 
 	_, err := s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(o interface{}) {
+		AddFunc: func(o any) {
 			ingressAddCount.Inc()
 			s.enqueue(o)
 		},
-		DeleteFunc: func(o interface{}) {
+		DeleteFunc: func(o any) {
 			ingressDeleteCount.Inc()
 			s.enqueue(o)
 		},
-		UpdateFunc: func(_, o interface{}) {
+		UpdateFunc: func(_, o any) {
 			ingressUpdateCount.Inc()
 			s.enqueue(o)
 		},
@@ -67,10 +74,25 @@ func NewIngress(l *slog.Logger, inf cache.SharedInformer, eventCount *prometheus
 	if err != nil {
 		l.Error("Error adding ingresses event handler.", "err", err)
 	}
+
+	if s.withNamespaceMetadata {
+		_, err = s.namespaceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(_, o any) {
+				namespace := o.(*apiv1.Namespace)
+				s.enqueueNamespace(namespace.Name)
+			},
+			// Creation and deletion will trigger events for the change handlers of the resources within the namespace.
+			// No need to have additional handlers for them here.
+		})
+		if err != nil {
+			l.Error("Error adding namespaces event handler.", "err", err)
+		}
+	}
+
 	return s
 }
 
-func (i *Ingress) enqueue(obj interface{}) {
+func (i *Ingress) enqueue(obj any) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		return
@@ -79,11 +101,28 @@ func (i *Ingress) enqueue(obj interface{}) {
 	i.queue.Add(key)
 }
 
+func (i *Ingress) enqueueNamespace(namespace string) {
+	ingresses, err := i.informer.GetIndexer().ByIndex(cache.NamespaceIndex, namespace)
+	if err != nil {
+		i.logger.Error("Error getting ingresses in namespace", "namespace", namespace, "err", err)
+		return
+	}
+
+	for _, ingress := range ingresses {
+		i.enqueue(ingress)
+	}
+}
+
 // Run implements the Discoverer interface.
 func (i *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer i.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(ctx.Done(), i.informer.HasSynced) {
+	cacheSyncs := []cache.InformerSynced{i.informer.HasSynced}
+	if i.withNamespaceMetadata {
+		cacheSyncs = append(cacheSyncs, i.namespaceInf.HasSynced)
+	}
+
+	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
 		if !errors.Is(ctx.Err(), context.Canceled) {
 			i.logger.Error("ingress informer unable to sync cache")
 		}
@@ -100,12 +139,11 @@ func (i *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 }
 
 func (i *Ingress) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
-	keyObj, quit := i.queue.Get()
+	key, quit := i.queue.Get()
 	if quit {
 		return false
 	}
-	defer i.queue.Done(keyObj)
-	key := keyObj.(string)
+	defer i.queue.Done(key)
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -199,6 +237,10 @@ func (i *Ingress) buildIngress(ingress v1.Ingress) *targetgroup.Group {
 		Source: ingressSource(ingress),
 	}
 	tg.Labels = ingressLabels(ingress)
+
+	if i.withNamespaceMetadata {
+		tg.Labels = addNamespaceLabels(tg.Labels, i.namespaceInf, i.logger, ingress.Namespace)
+	}
 
 	for _, rule := range ingress.Spec.Rules {
 		scheme := "http"

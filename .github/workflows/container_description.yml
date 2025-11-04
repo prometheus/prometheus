@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: git checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - name: Set docker hub repo name
         run: echo "DOCKER_REPO_NAME=$(make docker-repo-name)" >> $GITHUB_ENV
       - name: Push README to Dockerhub
@@ -41,6 +43,8 @@ jobs:
     steps:
       - name: git checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - name: Set quay.io org name
         run: echo "DOCKER_REPO=$(echo quay.io/${GITHUB_REPOSITORY_OWNER} | tr -d '-')" >> $GITHUB_ENV
       - name: Set quay.io repo name

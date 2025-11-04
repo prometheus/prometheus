@@ -3,8 +3,6 @@ title: Installation
 sort_rank: 2
 ---
 
-# Installation
-
 ## Using pre-compiled binaries
 
 We provide precompiled binaries for most official Prometheus components. Check
