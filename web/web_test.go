@@ -110,8 +110,7 @@ func TestReadyAndHealthy(t *testing.T) {
 		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {
@@ -228,8 +227,7 @@ func TestRoutePrefix(t *testing.T) {
 	if err != nil {
 		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {
@@ -549,8 +547,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {
@@ -683,8 +680,7 @@ func TestMultipleListenAddresses(t *testing.T) {
 		panic(fmt.Sprintf("Unable to start web listener: %s", err))
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {

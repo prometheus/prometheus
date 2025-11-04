@@ -58,7 +58,7 @@ func TestLabels_String(t *testing.T) {
 
 func BenchmarkString(b *testing.B) {
 	ls := New(benchmarkLabels...)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = ls.String()
 	}
 }
@@ -86,7 +86,7 @@ var GlobalTotal uint64 // Encourage the compiler not to elide the benchmark comp
 func BenchmarkSize(b *testing.B) {
 	lb := New(benchmarkLabels...)
 	b.Run("SizeOfLabels", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			var total uint64
 			lb.Range(func(l Label) {
 				total += SizeOfLabels(l.Name, l.Value, 1)
@@ -95,7 +95,7 @@ func BenchmarkSize(b *testing.B) {
 		}
 	})
 	b.Run("ByteSize", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			GlobalTotal = lb.ByteSize()
 		}
 	})
@@ -641,12 +641,12 @@ func BenchmarkLabels_Get(b *testing.B) {
 			} {
 				b.Run(scenario.desc, func(b *testing.B) {
 					b.Run("get", func(b *testing.B) {
-						for i := 0; i < b.N; i++ {
+						for b.Loop() {
 							_ = labels.Get(scenario.label)
 						}
 					})
 					b.Run("has", func(b *testing.B) {
-						for i := 0; i < b.N; i++ {
+						for b.Loop() {
 							_ = labels.Has(scenario.label)
 						}
 					})
@@ -696,7 +696,7 @@ func BenchmarkLabels_Equals(b *testing.B) {
 	for _, scenario := range comparisonBenchmarkScenarios {
 		b.Run(scenario.desc, func(b *testing.B) {
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				_ = Equal(scenario.base, scenario.other)
 			}
 		})
@@ -707,7 +707,7 @@ func BenchmarkLabels_Compare(b *testing.B) {
 	for _, scenario := range comparisonBenchmarkScenarios {
 		b.Run(scenario.desc, func(b *testing.B) {
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				_ = Compare(scenario.base, scenario.other)
 			}
 		})
@@ -942,7 +942,7 @@ func BenchmarkLabels_Hash(b *testing.B) {
 
 			b.ReportAllocs()
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				h = tcase.lbls.Hash()
 			}
 			benchmarkLabelsResult = h
@@ -965,7 +965,7 @@ var benchmarkLabels = []Label{
 func BenchmarkBuilder(b *testing.B) {
 	var l Labels
 	builder := NewBuilder(EmptyLabels())
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		builder.Reset(EmptyLabels())
 		for _, l := range benchmarkLabels {
 			builder.Set(l.Name, l.Value)
@@ -978,7 +978,7 @@ func BenchmarkBuilder(b *testing.B) {
 func BenchmarkLabels_Copy(b *testing.B) {
 	l := NewForBenchmark(benchmarkLabels...)
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		l = l.Copy()
 	}
 }

@@ -37,7 +37,7 @@ func TestDedupe(t *testing.T) {
 
 	// Trim empty lines
 	lines := []string{}
-	for _, line := range strings.Split(buf.String(), "\n") {
+	for line := range strings.SplitSeq(buf.String(), "\n") {
 		if line != "" {
 			lines = append(lines, line)
 		}
@@ -49,7 +49,7 @@ func TestDedupe(t *testing.T) {
 	dlog.Info("test", "hello", "world")
 	// Trim empty lines
 	lines = []string{}
-	for _, line := range strings.Split(buf.String(), "\n") {
+	for line := range strings.SplitSeq(buf.String(), "\n") {
 		if line != "" {
 			lines = append(lines, line)
 		}

@@ -266,7 +266,7 @@ These may not work well if the `<range>` is not a multiple of the collection int
 When enabled, Prometheus will start injecting additional, reserved `__type__`
 and `__unit__` labels as designed in the [PROM-39 proposal](https://github.com/prometheus/proposals/pull/39).
 
-Those labels are sourced from the metadata structured of the existing scrape and ingestion formats
+Those labels are sourced from the metadata structures of the existing scrape and ingestion formats
 like OpenMetrics Text, Prometheus Text, Prometheus Proto, Remote Write 2 and OTLP. All the user provided labels with
 `__type__` and `__unit__` will be overridden.
 
@@ -274,7 +274,7 @@ PromQL layer will handle those labels the same way __name__ is handled, e.g. dro
 on certain operations like `-` or `+` and affected by `promql-delayed-name-removal` feature.
 
 This feature enables important metadata information to be accessible directly with samples and PromQL layer.
- 
+
 It's especially useful for users who:
 
 * Want to be able to select metrics based on type or unit.
@@ -283,6 +283,12 @@ It's especially useful for users who:
 
 In future more [work is planned](https://github.com/prometheus/prometheus/issues/16610) that will depend on this e.g. rich PromQL UX that helps
 when wrong types are used on wrong functions, automatic renames, delta types and more.
+
+### Behavior with metadata records
+
+When this feature is enabled and the metadata WAL records exists, in an unlikely situation when type or unit are different across those, 
+the Prometheus outputs intends to prefer the `__type__` and `__unit__` labels values. For example on Remote Write 2.0, 
+if  the metadata record somehow (e.g. due to bug) says "counter", but `__type__="gauge"` the remote time series will be set to a gauge.
 
 ## Use Uncached IO
 

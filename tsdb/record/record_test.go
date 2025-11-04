@@ -722,7 +722,7 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 					b.Run(fmt.Sprintf("type=%s/labels=%d/histograms=%d/buckets=%d", maker.name, labelCount, histograms, buckets), func(b *testing.B) {
 						series, samples, nhcbs := maker.make(labelCount, histograms, buckets)
 						enc := Encoder{}
-						for range b.N {
+						for b.Loop() {
 							var buf []byte
 							enc.Series(series, buf)
 							enc.Samples(samples, buf)

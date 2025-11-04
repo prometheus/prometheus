@@ -524,7 +524,7 @@ func BenchmarkWAL_LogBatched(b *testing.B) {
 			var recs [][]byte
 			b.SetBytes(2048)
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				recs = append(recs, buf[:])
 				if len(recs) < 1000 {
 					continue
@@ -553,7 +553,7 @@ func BenchmarkWAL_Log(b *testing.B) {
 			var buf [2048]byte
 			b.SetBytes(2048)
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				err := w.Log(buf[:])
 				require.NoError(b, err)
 			}

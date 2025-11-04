@@ -410,7 +410,7 @@ func BenchmarkConvertBucketLayout(b *testing.B) {
 			}
 		}
 		b.Run(fmt.Sprintf("gap %d", scenario.gap), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				convertBucketsLayout(buckets.BucketCounts().AsRaw(), buckets.Offset(), 0, true)
 			}
 		})
@@ -1010,7 +1010,7 @@ func BenchmarkConvertHistogramBucketsToNHCBLayout(b *testing.B) {
 			}
 		}
 		b.Run(fmt.Sprintf("gap %d", scenario.gap), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				offset := getBucketOffset(buckets)
 				convertBucketsLayout(buckets, int32(offset), 0, false)
 			}

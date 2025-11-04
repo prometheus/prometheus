@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
@@ -235,7 +236,6 @@ func TestSampleDelivery(t *testing.T) {
 		{protoMsg: remoteapi.WriteV1MessageType, samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
 		{protoMsg: remoteapi.WriteV1MessageType, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
 
-		// TODO(alexg): update some portion of this test to check for the 2.0 metadata
 		{protoMsg: remoteapi.WriteV2MessageType, samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
 		{protoMsg: remoteapi.WriteV2MessageType, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
 		{protoMsg: remoteapi.WriteV2MessageType, samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
@@ -306,6 +306,9 @@ func TestSampleDelivery(t *testing.T) {
 			c.expectExemplars(exemplars[len(exemplars)/2:], series)
 			c.expectHistograms(histograms[len(histograms)/2:], series)
 			c.expectFloatHistograms(floatHistograms[len(floatHistograms)/2:], series)
+			if tc.protoMsg == remoteapi.WriteV2MessageType && len(metadata) > 0 {
+				c.expectMetadataForBatch(metadata, series, samples[len(samples)/2:], exemplars[len(exemplars)/2:], histograms[len(histograms)/2:], floatHistograms[len(floatHistograms)/2:])
+			}
 			qm.Append(samples[len(samples)/2:])
 			qm.AppendExemplars(exemplars[len(exemplars)/2:])
 			qm.AppendHistograms(histograms[len(histograms)/2:])
@@ -470,54 +473,76 @@ func TestSampleDeliveryOrder(t *testing.T) {
 
 func TestShutdown(t *testing.T) {
 	t.Parallel()
-	synctest.Test(t, func(t *testing.T) {
-		deadline := 15 * time.Second
-		c := NewTestBlockedWriteClient()
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				deadline := 15 * time.Second
+				c := NewTestBlockedWriteClient()
 
-		cfg := config.DefaultQueueConfig
-		mcfg := config.DefaultMetadataConfig
+				cfg := config.DefaultQueueConfig
+				mcfg := config.DefaultMetadataConfig
 
-		m := newTestQueueManager(t, cfg, mcfg, deadline, c, remoteapi.WriteV1MessageType)
-		n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
-		samples, series := createTimeseries(n, n)
-		m.StoreSeries(series, 0)
-		m.Start()
+				m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg)
+				n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
+				samples, series := createTimeseries(n, n)
+				m.StoreSeries(series, 0)
+				m.Start()
 
-		// Append blocks to guarantee delivery, so we do it in the background.
-		go func() {
-			m.Append(samples)
-		}()
-		synctest.Wait()
+				// Append blocks to guarantee delivery, so we do it in the background.
+				go func() {
+					m.Append(samples)
+				}()
+				synctest.Wait()
 
-		// Test to ensure that Stop doesn't block.
-		start := time.Now()
-		m.Stop()
-		// The samples will never be delivered, so duration should
-		// be at least equal to deadline, otherwise the flush deadline
-		// was not respected.
-		require.Equal(t, time.Since(start), deadline)
-	})
+				// Test to ensure that Stop doesn't block.
+				start := time.Now()
+				m.Stop()
+				// The samples will never be delivered, so duration should
+				// be at least equal to deadline, otherwise the flush deadline
+				// was not respected.
+				require.Equal(t, time.Since(start), deadline)
+			})
+		})
+	}
 }
 
 func TestSeriesReset(t *testing.T) {
-	c := NewTestBlockedWriteClient()
-	deadline := 5 * time.Second
-	numSegments := 4
-	numSeries := 25
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			c := NewTestBlockedWriteClient()
+			deadline := 5 * time.Second
+			numSegments := 4
+			numSeries := 25
 
-	cfg := config.DefaultQueueConfig
-	mcfg := config.DefaultMetadataConfig
-	m := newTestQueueManager(t, cfg, mcfg, deadline, c, remoteapi.WriteV1MessageType)
-	for i := range numSegments {
-		series := []record.RefSeries{}
-		for j := range numSeries {
-			series = append(series, record.RefSeries{Ref: chunks.HeadSeriesRef((i * 100) + j), Labels: labels.FromStrings("a", "a")})
-		}
-		m.StoreSeries(series, i)
+			cfg := config.DefaultQueueConfig
+			mcfg := config.DefaultMetadataConfig
+			m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg)
+			for i := range numSegments {
+				series := []record.RefSeries{}
+				metadata := []record.RefMetadata{}
+				for j := range numSeries {
+					ref := chunks.HeadSeriesRef((i * 100) + j)
+					series = append(series, record.RefSeries{Ref: ref, Labels: labels.FromStrings("a", "a")})
+					metadata = append(metadata, record.RefMetadata{Ref: ref, Type: 1, Unit: "", Help: "test"})
+				}
+				m.StoreSeries(series, i)
+				m.StoreMetadata(metadata)
+			}
+			require.Len(t, m.seriesLabels, numSegments*numSeries)
+			// V2 stores metadata in seriesMetadata map for inline sending.
+			// V1 sends metadata separately via MetadataWatcher, so seriesMetadata is not populated.
+			if protoMsg == remoteapi.WriteV2MessageType {
+				require.Len(t, m.seriesMetadata, numSegments*numSeries)
+			}
+
+			m.SeriesReset(2)
+			require.Len(t, m.seriesLabels, numSegments*numSeries/2)
+			// Verify metadata is also reset for V2
+			if protoMsg == remoteapi.WriteV2MessageType {
+				require.Len(t, m.seriesMetadata, numSegments*numSeries/2)
+			}
+		})
 	}
-	require.Len(t, m.seriesLabels, numSegments*numSeries)
-	m.SeriesReset(2)
-	require.Len(t, m.seriesLabels, numSegments*numSeries/2)
 }
 
 func TestReshard(t *testing.T) {
@@ -1415,7 +1440,7 @@ func BenchmarkSampleSend(b *testing.B) {
 			defer m.Stop()
 
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for i := 0; b.Loop(); i++ {
 				m.Append(samples)
 				m.UpdateSeriesSegment(series, i+1) // simulate what wlog.Watcher.garbageCollectSeries does
 				m.SeriesReset(i + 1)
@@ -1463,7 +1488,7 @@ func BenchmarkStoreSeries(b *testing.B) {
 
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				c := NewTestWriteClient(remoteapi.WriteV1MessageType)
 				dir := b.TempDir()
 				cfg := config.DefaultQueueConfig
@@ -1907,7 +1932,7 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 		pBuf := proto.NewBuffer(nil)
 
 		totalSize := 0
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			populateTimeSeries(batch, seriesBuff, true, true)
 			req, _, _, err := buildWriteRequest(noopLogger, seriesBuff, nil, pBuf, nil, cEnc, compression.Snappy)
 			if err != nil {
@@ -1948,7 +1973,7 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 		pBuf := []byte{}
 
 		totalSize := 0
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false)
 			req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, nil, cEnc, "snappy")
 			if err != nil {
@@ -2014,65 +2039,69 @@ func TestIsSampleOld(t *testing.T) {
 // Simulates scenario in which remote write endpoint is down and a subset of samples is dropped due to age limit while backoffing.
 func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 	t.Parallel()
-	maxSamplesPerSend := 10
-	sampleAgeLimit := time.Second * 2
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			maxSamplesPerSend := 10
+			sampleAgeLimit := time.Second * 2
 
-	cfg := config.DefaultQueueConfig
-	cfg.MaxShards = 1
-	cfg.SampleAgeLimit = model.Duration(sampleAgeLimit)
-	// Set the batch send deadline to 5 minutes to effectively disable it.
-	cfg.BatchSendDeadline = model.Duration(time.Minute * 5)
-	cfg.Capacity = 10 * maxSamplesPerSend // more than the amount of data we append in the test
-	cfg.MaxBackoff = model.Duration(time.Millisecond * 100)
-	cfg.MinBackoff = model.Duration(time.Millisecond * 100)
-	cfg.MaxSamplesPerSend = maxSamplesPerSend
-	metadataCfg := config.DefaultMetadataConfig
-	metadataCfg.Send = true
-	metadataCfg.SendInterval = model.Duration(time.Second * 60)
-	metadataCfg.MaxSamplesPerSend = maxSamplesPerSend
-	c := NewTestWriteClient(remoteapi.WriteV1MessageType)
-	m := newTestQueueManager(t, cfg, metadataCfg, time.Second, c, remoteapi.WriteV1MessageType)
+			cfg := config.DefaultQueueConfig
+			cfg.MaxShards = 1
+			cfg.SampleAgeLimit = model.Duration(sampleAgeLimit)
+			// Set the batch send deadline to 5 minutes to effectively disable it.
+			cfg.BatchSendDeadline = model.Duration(time.Minute * 5)
+			cfg.Capacity = 10 * maxSamplesPerSend // more than the amount of data we append in the test
+			cfg.MaxBackoff = model.Duration(time.Millisecond * 100)
+			cfg.MinBackoff = model.Duration(time.Millisecond * 100)
+			cfg.MaxSamplesPerSend = maxSamplesPerSend
+			metadataCfg := config.DefaultMetadataConfig
+			metadataCfg.Send = true
+			metadataCfg.SendInterval = model.Duration(time.Second * 60)
+			metadataCfg.MaxSamplesPerSend = maxSamplesPerSend
+			c := NewTestWriteClient(protoMsg)
+			m := newTestQueueManager(t, cfg, metadataCfg, time.Second, c, protoMsg)
 
-	m.Start()
+			m.Start()
 
-	batchID := 0
-	expectedSamples := map[string][]prompb.Sample{}
+			batchID := 0
+			expectedSamples := map[string][]prompb.Sample{}
 
-	appendData := func(numberOfSeries int, timeAdd time.Duration, shouldBeDropped bool) {
-		t.Log(">>>>  Appending series ", numberOfSeries, " as batch ID ", batchID, " with timeAdd ", timeAdd, " and should be dropped ", shouldBeDropped)
-		samples, series := createTimeseriesWithRandomLabelCount(strconv.Itoa(batchID), numberOfSeries, timeAdd, 9)
-		m.StoreSeries(series, batchID)
-		sent := m.Append(samples)
-		require.True(t, sent, "samples not sent")
-		if !shouldBeDropped {
-			for _, s := range samples {
-				tsID := getSeriesIDFromRef(series[s.Ref])
-				expectedSamples[tsID] = append(c.expectedSamples[tsID], prompb.Sample{
-					Timestamp: s.T,
-					Value:     s.V,
-				})
+			appendData := func(numberOfSeries int, timeAdd time.Duration, shouldBeDropped bool) {
+				t.Log(">>>>  Appending series ", numberOfSeries, " as batch ID ", batchID, " with timeAdd ", timeAdd, " and should be dropped ", shouldBeDropped)
+				samples, series := createTimeseriesWithRandomLabelCount(strconv.Itoa(batchID), numberOfSeries, timeAdd, 9)
+				m.StoreSeries(series, batchID)
+				sent := m.Append(samples)
+				require.True(t, sent, "samples not sent")
+				if !shouldBeDropped {
+					for _, s := range samples {
+						tsID := getSeriesIDFromRef(series[s.Ref])
+						expectedSamples[tsID] = append(c.expectedSamples[tsID], prompb.Sample{
+							Timestamp: s.T,
+							Value:     s.V,
+						})
+					}
+				}
+				batchID++
 			}
-		}
-		batchID++
-	}
-	timeShift := -time.Millisecond * 5
+			timeShift := -time.Millisecond * 5
 
-	c.SetReturnError(RecoverableError{context.DeadlineExceeded, defaultBackoff})
+			c.SetReturnError(RecoverableError{context.DeadlineExceeded, defaultBackoff})
 
-	appendData(maxSamplesPerSend/2, timeShift, true)
-	time.Sleep(sampleAgeLimit)
-	appendData(maxSamplesPerSend/2, timeShift, true)
-	time.Sleep(sampleAgeLimit / 10)
-	appendData(maxSamplesPerSend/2, timeShift, true)
-	time.Sleep(2 * sampleAgeLimit)
-	appendData(2*maxSamplesPerSend, timeShift, false)
-	time.Sleep(sampleAgeLimit / 2)
-	c.SetReturnError(nil)
-	appendData(5, timeShift, false)
-	m.Stop()
+			appendData(maxSamplesPerSend/2, timeShift, true)
+			time.Sleep(sampleAgeLimit)
+			appendData(maxSamplesPerSend/2, timeShift, true)
+			time.Sleep(sampleAgeLimit / 10)
+			appendData(maxSamplesPerSend/2, timeShift, true)
+			time.Sleep(2 * sampleAgeLimit)
+			appendData(2*maxSamplesPerSend, timeShift, false)
+			time.Sleep(sampleAgeLimit / 2)
+			c.SetReturnError(nil)
+			appendData(5, timeShift, false)
+			m.Stop()
 
-	if diff := cmp.Diff(expectedSamples, c.receivedSamples); diff != "" {
-		t.Errorf("mismatch (-want +got):\n%s", diff)
+			if diff := cmp.Diff(expectedSamples, c.receivedSamples); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -2336,7 +2365,7 @@ func BenchmarkBuildTimeSeries(b *testing.B) {
 	// Send one sample per series, which is the typical remote_write case
 	const numSamples = 10000
 	filter := func(ts prompb.TimeSeries) bool { return filterTsLimit(99, ts) }
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		samples := createProtoTimeseriesWithOld(numSamples, 100, extraLabels...)
 		_, _, result, _, _, _ := buildTimeSeries(samples, filter)
 		require.NotNil(b, result)
@@ -2488,6 +2517,136 @@ func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
 
 			symbols := symbolTable.Symbols()
 			require.Equal(t, tc.unitLabel, symbols[unitRef], "Unit should match")
+		})
+	}
+}
+
+// TestPopulateV2TimeSeries_MetadataAndTypeAndUnit verifies that type and unit labels are properly
+// extracted from labels even when d.metadata is not nil (agent mode scenario).
+// Regression test for https://github.com/prometheus/prometheus/issues/17381.
+func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
+	symbolTable := writev2.NewSymbolTable()
+
+	testCases := []struct {
+		name              string
+		typeLabel         string
+		unitLabel         string
+		metadata          *metadata.Metadata
+		expectedType      writev2.Metadata_MetricType
+		expectedUnit      string
+		enableTypeAndUnit bool
+	}{
+		{
+			name:              "type_and_unit_no_meta",
+			typeLabel:         "gauge",
+			unitLabel:         "bytes",
+			metadata:          nil,
+			expectedType:      writev2.Metadata_METRIC_TYPE_GAUGE,
+			expectedUnit:      "bytes",
+			enableTypeAndUnit: true,
+		},
+		{
+			name:              "type_no_unit_no_meta",
+			typeLabel:         "counter",
+			unitLabel:         "",
+			metadata:          nil,
+			expectedType:      writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit:      "",
+			enableTypeAndUnit: true,
+		},
+		{
+			name:              "no_type_and_unit_no_meta",
+			typeLabel:         "gauge",
+			unitLabel:         "bytes",
+			metadata:          nil,
+			expectedType:      writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			expectedUnit:      "",
+			enableTypeAndUnit: false,
+		},
+		{
+			name:      "type_and_unit_and_meta",
+			typeLabel: "gauge",
+			unitLabel: "bytes",
+			metadata: &metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "bytes",
+				Help: "Test metric",
+			},
+			expectedType:      writev2.Metadata_METRIC_TYPE_GAUGE,
+			expectedUnit:      "bytes",
+			enableTypeAndUnit: true,
+		},
+		{
+			name:      "type-and-unit-overrides-meta",
+			typeLabel: "counter",
+			unitLabel: "requests",
+			metadata: &metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "bytes",
+				Help: "Test metric",
+			},
+			expectedType:      writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit:      "requests",
+			enableTypeAndUnit: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			batch := make([]timeSeries, 1)
+			builder := labels.NewScratchBuilder(3)
+
+			// Simulate labels with __type__ and __unit__ as scraped with type-and-unit-labels feature.
+			builder.Add(labels.MetricName, "test_metric")
+			if tc.typeLabel != "" {
+				builder.Add("__type__", tc.typeLabel)
+			}
+			if tc.unitLabel != "" {
+				builder.Add("__unit__", tc.unitLabel)
+			}
+			builder.Sort()
+
+			batch[0] = timeSeries{
+				seriesLabels: builder.Labels(),
+				value:        123.45,
+				timestamp:    time.Now().UnixMilli(),
+				sType:        tSample,
+				metadata:     tc.metadata,
+			}
+
+			pendingData := make([]writev2.TimeSeries, 1)
+
+			symbolTable.Reset()
+			nSamples, nExemplars, nHistograms, nMetadata, _ := populateV2TimeSeries(
+				&symbolTable,
+				batch,
+				pendingData,
+				false,
+				false,
+				tc.enableTypeAndUnit,
+			)
+
+			require.Equal(t, 1, nSamples, "Should have 1 sample")
+			require.Equal(t, 0, nExemplars, "Should have 0 exemplars")
+			require.Equal(t, 0, nHistograms, "Should have 0 histograms")
+
+			// Verify type is correctly extracted.
+			require.Equal(t, tc.expectedType, pendingData[0].Metadata.Type,
+				"Type should match expected for %s", tc.name)
+
+			// Verify unit is correctly extracted.
+			unitRef := pendingData[0].Metadata.UnitRef
+			symbols := symbolTable.Symbols()
+			var actualUnit string
+			if unitRef > 0 && unitRef < uint32(len(symbols)) {
+				actualUnit = symbols[unitRef]
+			}
+			require.Equal(t, tc.expectedUnit, actualUnit, "Unit should match for %s", tc.name)
+
+			// Verify metadata count.
+			if tc.metadata != nil && tc.enableTypeAndUnit {
+				require.Equal(t, 1, nMetadata, "Should count metadata when d.metadata is provided")
+			}
 		})
 	}
 }

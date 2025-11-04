@@ -59,8 +59,8 @@ func BenchmarkPostingStatsMaxHep(b *testing.B) {
 	stats := &maxHeap{}
 	const maxCount = 9000000
 	const heapLength = 10
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+
+	for b.Loop() {
 		stats.init(heapLength)
 		for i := range maxCount {
 			item := Stat{

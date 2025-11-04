@@ -1954,20 +1954,27 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
-		if d.metadata != nil {
+		switch {
+		case enableTypeAndUnitLabels:
+			m := schema.NewMetadataFromLabels(d.seriesLabels)
+			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(m.Type)
+			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(m.Unit)
+			pendingData[nPending].Metadata.HelpRef = 0 // Type and unit does not give us help.
+			// Use Help from d.metadata if available.
+			if d.metadata != nil {
+				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
+				nPendingMetadata++
+			}
+		case d.metadata != nil:
 			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(d.metadata.Type)
 			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(d.metadata.Unit)
 			nPendingMetadata++
-		} else {
-			var m schema.Metadata
-			if enableTypeAndUnitLabels {
-				m = schema.NewMetadataFromLabels(d.seriesLabels)
-			}
+		default:
 			// Safeguard against sending garbage in case of not having metadata
 			// for whatever reason.
-			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(m.Type)
-			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(m.Unit)
+			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(model.MetricTypeUnknown)
+			pendingData[nPending].Metadata.UnitRef = 0
 			pendingData[nPending].Metadata.HelpRef = 0
 		}
 

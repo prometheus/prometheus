@@ -232,7 +232,7 @@ func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
 					start.Add(1)
 
 					jobs := make(chan chunkWriteJob, b.N)
-					for i := 0; i < b.N; i++ {
+					for i := 0; b.Loop(); i++ {
 						jobs <- chunkWriteJob{
 							seriesRef: HeadSeriesRef(i),
 							ref:       ChunkDiskMapperRef(i),

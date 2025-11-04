@@ -221,8 +221,7 @@ type flagConfig struct {
 // setFeatureListOptions sets the corresponding options from the featureList.
 func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 	for _, f := range c.featureList {
-		opts := strings.Split(f, ",")
-		for _, o := range opts {
+		for o := range strings.SplitSeq(f, ",") {
 			switch o {
 			case "exemplar-storage":
 				c.tsdb.EnableExemplarStorage = true
@@ -235,6 +234,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Experimental additional scrape metrics enabled")
 			case "metadata-wal-records":
 				c.scrape.AppendMetadata = true
+				c.web.AppendMetadata = true
 				logger.Info("Experimental metadata records in WAL enabled")
 			case "promql-per-step-stats":
 				c.enablePerStepStats = true
