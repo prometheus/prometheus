@@ -118,11 +118,9 @@ func TestReadyAndHealthy(t *testing.T) {
 		}
 	}()
 
-	// Give some time for the web goroutine to run since we need the server
-	// to be up before starting tests.
-	time.Sleep(5 * time.Second)
-
 	baseURL := "http://localhost" + port
+
+	waitForServerReady(t, baseURL, 5*time.Second)
 
 	resp, err := http.Get(baseURL + "/-/healthy")
 	require.NoError(t, err)
@@ -235,11 +233,9 @@ func TestRoutePrefix(t *testing.T) {
 		}
 	}()
 
-	// Give some time for the web goroutine to run since we need the server
-	// to be up before starting tests.
-	time.Sleep(5 * time.Second)
-
 	baseURL := "http://localhost" + port
+
+	waitForServerReady(t, baseURL+opts.RoutePrefix, 5*time.Second)
 
 	resp, err := http.Get(baseURL + opts.RoutePrefix + "/-/healthy")
 	require.NoError(t, err)
@@ -426,9 +422,9 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 		close(closed)
 	}()
 
-	// Give some time for the web goroutine to run since we need the server
-	// to be up before starting tests.
-	time.Sleep(5 * time.Second)
+	baseURL := "http://localhost" + port
+
+	waitForServerReady(t, baseURL, 5*time.Second)
 
 	// Open a socket, and don't use it. This connection should then be closed
 	// after the ReadTimeout.
@@ -477,11 +473,9 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 		close(closed)
 	}()
 
-	// Give some time for the web goroutine to run since we need the server
-	// to be up before starting tests.
-	time.Sleep(5 * time.Second)
-
 	baseURL := opts.ExternalURL.Scheme + "://" + opts.ExternalURL.Host
+
+	waitForServerReady(t, baseURL, 5*time.Second)
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
@@ -555,10 +549,9 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		}
 	}()
 
-	// Give some time for the web goroutine to run since we need the server
-	// to be up before starting tests.
-	time.Sleep(5 * time.Second)
 	baseURL := "http://localhost" + port + "/api/v1"
+
+	waitForServerReady(t, "http://localhost"+port, 5*time.Second)
 
 	// Test for non-available endpoints in the Agent mode.
 	for path, methods := range map[string][]string{
@@ -688,9 +681,7 @@ func TestMultipleListenAddresses(t *testing.T) {
 		}
 	}()
 
-	// Give some time for the web goroutine to run since we need the server
-	// to be up before starting tests.
-	time.Sleep(5 * time.Second)
+	waitForServerReady(t, "http://localhost"+port1, 5*time.Second)
 
 	// Set to ready.
 	webHandler.SetReady(Ready)
@@ -708,4 +699,25 @@ func TestMultipleListenAddresses(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		cleanupTestResponse(t, resp)
 	}
+}
+
+// Give some time for the web goroutine to run since we need the server
+// to be up before starting tests.
+func waitForServerReady(t *testing.T, baseURL string, timeout time.Duration) {
+	t.Helper()
+
+	interval := 100 * time.Millisecond
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(baseURL + "/-/healthy")
+		if resp != nil {
+			cleanupTestResponse(t, resp)
+		}
+		if err == nil && resp.StatusCode == http.StatusOK {
+			return
+		}
+		time.Sleep(interval)
+	}
+	t.Fatalf("Server did not become ready within %v", timeout)
 }
