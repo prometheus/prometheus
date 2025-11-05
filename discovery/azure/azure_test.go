@@ -725,11 +725,11 @@ func defaultMockInterfaceServer(interfaceResp armnetwork.Interface) fakenetwork.
 	return fakenetwork.InterfacesServer{
 		Get: func(context.Context, string, string, *armnetwork.InterfacesClientGetOptions) (resp azfake.Responder[armnetwork.InterfacesClientGetResponse], errResp azfake.ErrorResponder) {
 			resp.SetResponse(http.StatusOK, armnetwork.InterfacesClientGetResponse{Interface: interfaceResp}, nil)
-			return
+			return resp, errResp
 		},
 		GetVirtualMachineScaleSetNetworkInterface: func(context.Context, string, string, string, string, *armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceOptions) (resp azfake.Responder[armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceResponse], errResp azfake.ErrorResponder) {
 			resp.SetResponse(http.StatusOK, armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceResponse{Interface: interfaceResp}, nil)
-			return
+			return resp, errResp
 		},
 	}
 }
@@ -740,7 +740,7 @@ func defaultMockVMServer(vmResp []armcompute.VirtualMachinesClientListAllRespons
 			for _, page := range vmResp {
 				resp.AddPage(http.StatusOK, page, nil)
 			}
-			return
+			return resp
 		},
 	}
 }
@@ -751,7 +751,7 @@ func defaultMockVMSSServer(vmssResp []armcompute.VirtualMachineScaleSetsClientLi
 			for _, page := range vmssResp {
 				resp.AddPage(http.StatusOK, page, nil)
 			}
-			return
+			return resp
 		},
 	}
 }
@@ -762,7 +762,7 @@ func defaultMockVMSSVMServer(vmssvmResp []armcompute.VirtualMachineScaleSetVMsCl
 			for _, page := range vmssvmResp {
 				resp.AddPage(http.StatusOK, page, nil)
 			}
-			return
+			return resp
 		},
 	}
 }

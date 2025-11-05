@@ -789,7 +789,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 		// While not technically the same number of series we expect, it's as good of an approximation as any.
 		seriesByLabels := make(map[string]storage.Series, alertRule.ActiveAlertsCount())
 		for sset.Next() {
-			seriesByLabels[sset.At().Labels().DropMetricName().String()] = sset.At()
+			seriesByLabels[sset.At().Labels().DropReserved(func(n string) bool { return n == labels.MetricName }).String()] = sset.At()
 		}
 
 		// No results for this alert rule.

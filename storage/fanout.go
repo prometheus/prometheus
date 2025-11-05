@@ -253,7 +253,7 @@ func (f *fanoutAppender) Commit() (err error) {
 			}
 		}
 	}
-	return
+	return err
 }
 
 func (f *fanoutAppender) Rollback() (err error) {
