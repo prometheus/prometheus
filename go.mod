@@ -39,7 +39,7 @@ require (
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
 	github.com/hashicorp/consul/api v1.32.0
 	github.com/hashicorp/nomad/api v0.0.0-20250930071859-eaa0fe0e27af
-	github.com/hetznercloud/hcloud-go/v2 v2.25.1
+	github.com/hetznercloud/hcloud-go/v2 v2.29.0
 	github.com/ionos-cloud/sdk-go/v6 v6.3.4
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.18.0
