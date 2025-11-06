@@ -9578,7 +9578,7 @@ func TestBlockReloadInterval(t *testing.T) {
 		reloadCount    float64
 	}{
 		{
-			name:           "extermely small duraion",
+			name:           "extremely small interval",
 			reloadInterval: 1 * time.Millisecond,
 			reloadCount:    5,
 		},
