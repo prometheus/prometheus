@@ -22,6 +22,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/crc32"
+	"log"
 	"log/slog"
 	"math"
 	"math/rand"
@@ -9567,5 +9568,43 @@ func TestBlockClosingBlockedDuringRemoteRead(t *testing.T) {
 	case <-time.After(10 * time.Millisecond):
 		require.Fail(t, "Closing the block timed out.")
 	case <-blockClosed:
+	}
+}
+
+func TestBlockReloadInterval(t *testing.T) {
+	cases := []struct {
+		name           string
+		reloadInterval time.Duration
+		reloadCount    float64
+	}{
+		{
+			name:           "extermely small duraion",
+			reloadInterval: 1 * time.Millisecond,
+			reloadCount:    5,
+		},
+		{
+			name:           "one reload",
+			reloadInterval: 1 * time.Second,
+			reloadCount:    5,
+		},
+		{
+			name:           "five reloads",
+			reloadInterval: 5 * time.Second,
+			reloadCount:    1,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			db := openTestDB(t, &Options{
+				BlockReloadInterval: c.reloadInterval,
+			}, nil)
+
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
+			log.Println("reload time is ", db.opts.BlockReloadInterval)
+			time.Sleep(5 * time.Second)
+			require.Equal(t, c.reloadCount, prom_testutil.ToFloat64(db.metrics.reloads))
+		})
 	}
 }

@@ -817,8 +817,8 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
 	}
-	if opts.BlockReloadInterval <= 0 {
-		opts.BlockReloadInterval = 1 * time.Minute
+	if opts.BlockReloadInterval < 1*time.Second {
+		opts.BlockReloadInterval = 1 * time.Second
 	}
 
 	if len(rngs) == 0 {
