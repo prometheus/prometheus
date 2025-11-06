@@ -1,5 +1,4 @@
 import {
-  Accordion,
   Alert,
   Anchor,
   Badge,
@@ -10,10 +9,7 @@ import {
   Text,
 } from "@mantine/core";
 import { KVSearch } from "@nexucis/kvsearch";
-import {
-  IconAlertTriangle,
-  IconInfoCircle,
-} from "@tabler/icons-react";
+import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import { useSuspenseAPIQuery } from "../../api/api";
 import { Target, TargetsResult } from "../../api/responseTypes/targets";
 import React, { FC, memo, useMemo } from "react";
@@ -31,6 +27,7 @@ import panelClasses from "../../Panel.module.css";
 import TargetLabels from "./TargetLabels";
 import ScrapeTimingDetails from "./ScrapeTimingDetails";
 import { targetPoolDisplayLimit } from "./TargetsPage";
+import { Accordion } from "../../components/Accordion";
 
 type ScrapePool = {
   targets: Target[];

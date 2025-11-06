@@ -101,6 +101,11 @@ https://github.com/microsoft/vscode-codicons
 Copyright (c) Microsoft Corporation and other contributors
 See https://github.com/microsoft/vscode-codicons/blob/main/LICENSE for license details.
 
+Mantine UI
+https://github.com/mantinedev/mantine
+Copyright (c) 2021 Vitaly Rtishchev
+See https://github.com/mantinedev/mantine/blob/master/LICENSE for license details.
+
 We also use code from a large number of npm packages. For details, see:
 - https://github.com/prometheus/prometheus/blob/main/web/ui/react-app/package.json
 - https://github.com/prometheus/prometheus/blob/main/web/ui/react-app/package-lock.json
