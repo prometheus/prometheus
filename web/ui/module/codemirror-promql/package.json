@@ -33,14 +33,14 @@
     "lru-cache": "^11.2.2"
   },
   "devDependencies": {
-    "@codemirror/autocomplete": "^6.19.0",
+    "@codemirror/autocomplete": "^6.19.1",
     "@codemirror/language": "^6.11.3",
-    "@codemirror/lint": "^6.8.5",
+    "@codemirror/lint": "^6.9.2",
     "@codemirror/state": "^6.5.2",
-    "@codemirror/view": "^6.38.4",
-    "@lezer/common": "^1.2.3",
-    "@lezer/highlight": "^1.2.1",
-    "@lezer/lr": "^1.4.2",
+    "@codemirror/view": "^6.38.6",
+    "@lezer/common": "^1.3.0",
+    "@lezer/highlight": "^1.2.3",
+    "@lezer/lr": "^1.4.3",
     "eslint-plugin-prettier": "^5.5.4",
     "isomorphic-fetch": "^3.0.0",
     "nock": "^14.0.10"
