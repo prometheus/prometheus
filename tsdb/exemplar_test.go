@@ -419,7 +419,7 @@ func BenchmarkAddExemplar(b *testing.B) {
 	for _, capacity := range []int{1000, 10000, 100000} {
 		for _, n := range []int{10000, 100000, 1000000} {
 			b.Run(fmt.Sprintf("%d/%d", n, capacity), func(b *testing.B) {
-				for j := 0; j < b.N; j++ {
+				for b.Loop() {
 					b.StopTimer()
 					exs, err := NewCircularExemplarStorage(int64(capacity), eMetrics)
 					require.NoError(b, err)
@@ -477,7 +477,7 @@ func BenchmarkResizeExemplars(b *testing.B) {
 
 	for _, tc := range testCases {
 		b.Run(fmt.Sprintf("%s-%d-to-%d", tc.name, tc.startSize, tc.endSize), func(b *testing.B) {
-			for j := 0; j < b.N; j++ {
+			for b.Loop() {
 				b.StopTimer()
 				exs, err := NewCircularExemplarStorage(tc.startSize, eMetrics)
 				require.NoError(b, err)

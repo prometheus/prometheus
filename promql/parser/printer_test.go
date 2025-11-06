@@ -286,7 +286,7 @@ func BenchmarkExprString(b *testing.B) {
 		b.Run(readable(test), func(b *testing.B) {
 			expr, err := ParseExpr(test)
 			require.NoError(b, err)
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				_ = expr.String()
 			}
 		})

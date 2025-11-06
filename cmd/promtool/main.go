@@ -222,6 +222,7 @@ func main() {
 	pushMetricsLabels := pushMetricsCmd.Flag("label", "Label to attach to metrics. Can be specified multiple times.").Default("job=promtool").StringMap()
 	pushMetricsTimeout := pushMetricsCmd.Flag("timeout", "The time to wait for pushing metrics.").Default("30s").Duration()
 	pushMetricsHeaders := pushMetricsCmd.Flag("header", "Prometheus remote write header.").StringMap()
+	pushMetricsProtoMsg := pushMetricsCmd.Flag("protobuf_message", "Protobuf message to use when writing (prometheus.WriteRequest or io.prometheus.write.v2.Request).").Default("prometheus.WriteRequest").String()
 
 	testCmd := app.Command("test", "Unit testing.")
 	junitOutFile := testCmd.Flag("junit", "File path to store JUnit XML test results.").OpenFile(os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
@@ -339,8 +340,7 @@ func main() {
 	}
 
 	for _, f := range *featureList {
-		opts := strings.Split(f, ",")
-		for _, o := range opts {
+		for o := range strings.SplitSeq(f, ",") {
 			switch o {
 			case "promql-experimental-functions":
 				parser.EnableExperimentalFunctions = true
@@ -377,7 +377,7 @@ func main() {
 		os.Exit(CheckMetrics(*checkMetricsExtended))
 
 	case pushMetricsCmd.FullCommand():
-		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsLabels, *metricFiles...))
+		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsProtoMsg, *pushMetricsLabels, *metricFiles...))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantExpr, *queryInstantTime, p))
@@ -476,13 +476,15 @@ type rulesLintConfig struct {
 }
 
 func newRulesLintConfig(stringVal string, fatal, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) rulesLintConfig {
-	items := strings.Split(stringVal, ",")
 	ls := rulesLintConfig{
 		fatal:                fatal,
 		ignoreUnknownFields:  ignoreUnknownFields,
 		nameValidationScheme: nameValidationScheme,
 	}
-	for _, setting := range items {
+	if stringVal == "" {
+		return ls
+	}
+	for setting := range strings.SplitSeq(stringVal, ",") {
 		switch setting {
 		case lintOptionAll:
 			ls.all = true
@@ -515,7 +517,7 @@ func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, nam
 
 	lintNone := false
 	var rulesOptions []string
-	for _, option := range strings.Split(optionsStr, ",") {
+	for option := range strings.SplitSeq(optionsStr, ",") {
 		switch option {
 		case lintOptionAll, lintOptionTooLongScrapeInterval:
 			c.lookbackDelta = lookbackDelta
@@ -534,9 +536,7 @@ func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, nam
 		rulesOptions = nil
 	}
 
-	if len(rulesOptions) > 0 {
-		c.rulesLintConfig = newRulesLintConfig(strings.Join(rulesOptions, ","), fatal, ignoreUnknownFields, nameValidationScheme)
-	}
+	c.rulesLintConfig = newRulesLintConfig(strings.Join(rulesOptions, ","), fatal, ignoreUnknownFields, nameValidationScheme)
 
 	return c
 }
@@ -928,15 +928,16 @@ func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings rulesLintConfig) (int
 	if lintSettings.lintDuplicateRules() {
 		dRules := checkDuplicates(rgs.Groups)
 		if len(dRules) != 0 {
-			errMessage := fmt.Sprintf("%d duplicate rule(s) found.\n", len(dRules))
+			var errMessage strings.Builder
+			errMessage.WriteString(fmt.Sprintf("%d duplicate rule(s) found.\n", len(dRules)))
 			for _, n := range dRules {
-				errMessage += fmt.Sprintf("Metric: %s\nLabel(s):\n", n.metric)
+				errMessage.WriteString(fmt.Sprintf("Metric: %s\nLabel(s):\n", n.metric))
 				n.label.Range(func(l labels.Label) {
-					errMessage += fmt.Sprintf("\t%s: %s\n", l.Name, l.Value)
+					errMessage.WriteString(fmt.Sprintf("\t%s: %s\n", l.Name, l.Value))
 				})
 			}
-			errMessage += "Might cause inconsistency while recording expressions"
-			return 0, []error{fmt.Errorf("%w %s", errLint, errMessage)}
+			errMessage.WriteString("Might cause inconsistency while recording expressions")
+			return 0, []error{fmt.Errorf("%w %s", errLint, errMessage.String())}
 		}
 	}
 

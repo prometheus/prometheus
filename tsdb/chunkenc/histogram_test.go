@@ -1762,7 +1762,7 @@ func BenchmarkAppendable(b *testing.B) {
 	hApp := app.(*HistogramAppender)
 
 	isAppendable := true
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _, _, _, ok, _ := hApp.appendable(h)
 		isAppendable = isAppendable && ok
 	}

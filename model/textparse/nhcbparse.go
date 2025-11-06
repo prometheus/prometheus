@@ -373,7 +373,7 @@ func (p *NHCBParser) processNHCB() bool {
 			p.fhNHCB = fh
 		}
 
-		lblsWithMetricName := p.tempLsetNHCB.DropMetricName()
+		lblsWithMetricName := p.tempLsetNHCB.DropReserved(func(n string) bool { return n == labels.MetricName })
 		// Ensure we return `metric` instead of `metric{}` for name only
 		// series, for consistency with wrapped parsers.
 		if lblsWithMetricName.IsEmpty() {

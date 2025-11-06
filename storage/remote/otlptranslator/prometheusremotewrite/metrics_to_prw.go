@@ -68,6 +68,14 @@ type PrometheusConverter struct {
 	scratchBuilder labels.ScratchBuilder
 	builder        *labels.Builder
 	appender       CombinedAppender
+	// seenTargetInfo tracks target_info samples within a batch to prevent duplicates.
+	seenTargetInfo map[targetInfoKey]struct{}
+}
+
+// targetInfoKey uniquely identifies a target_info sample by its labelset and timestamp.
+type targetInfoKey struct {
+	labelsHash uint64
+	timestamp  int64
 }
 
 func NewPrometheusConverter(appender CombinedAppender) *PrometheusConverter {
@@ -129,6 +137,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	}
 	unitNamer := otlptranslator.UnitNamer{}
 	c.everyN = everyNTimes{n: 128}
+	c.seenTargetInfo = make(map[targetInfoKey]struct{})
 	resourceMetricsSlice := md.ResourceMetrics()
 
 	numMetrics := 0
@@ -156,7 +165,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 			for k := 0; k < metricSlice.Len(); k++ {
 				if err := c.everyN.checkContext(ctx); err != nil {
 					errs = multierr.Append(errs, err)
-					return
+					return annots, errs
 				}
 
 				metric := metricSlice.At(k)
@@ -204,7 +213,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-							return
+							return annots, errs
 						}
 					}
 				case pmetric.MetricTypeSum:
@@ -216,7 +225,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-							return
+							return annots, errs
 						}
 					}
 				case pmetric.MetricTypeHistogram:
@@ -233,14 +242,14 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						if err != nil {
 							errs = multierr.Append(errs, err)
 							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-								return
+								return annots, errs
 							}
 						}
 					} else {
 						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 							errs = multierr.Append(errs, err)
 							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-								return
+								return annots, errs
 							}
 						}
 					}
@@ -263,7 +272,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					if err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-							return
+							return annots, errs
 						}
 					}
 				case pmetric.MetricTypeSummary:
@@ -275,7 +284,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-							return
+							return annots, errs
 						}
 					}
 				default:
@@ -292,7 +301,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		}
 	}
 
-	return
+	return annots, errs
 }
 
 func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAttributes {

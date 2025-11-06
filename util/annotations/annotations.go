@@ -107,7 +107,7 @@ func (a Annotations) AsStrings(query string, maxWarnings, maxInfos int) (warning
 	if infoSkipped > 0 {
 		infos = append(infos, fmt.Sprintf("%d more info annotations omitted", infoSkipped))
 	}
-	return
+	return warnings, infos
 }
 
 // CountWarningsAndInfo counts and returns the number of warnings and infos in the
@@ -121,7 +121,7 @@ func (a Annotations) CountWarningsAndInfo() (countWarnings, countInfo int) {
 			countInfo++
 		}
 	}
-	return
+	return countWarnings, countInfo
 }
 
 //nolint:staticcheck,revive // error-naming.
@@ -134,16 +134,15 @@ var (
 	PromQLInfo    = errors.New("PromQL info")
 	PromQLWarning = errors.New("PromQL warning")
 
-	InvalidRatioWarning                        = fmt.Errorf("%w: ratio value should be between -1 and 1", PromQLWarning)
-	InvalidQuantileWarning                     = fmt.Errorf("%w: quantile value should be between 0 and 1", PromQLWarning)
-	BadBucketLabelWarning                      = fmt.Errorf("%w: bucket label %q is missing or has a malformed value", PromQLWarning, model.BucketLabel)
-	MixedFloatsHistogramsWarning               = fmt.Errorf("%w: encountered a mix of histograms and floats for", PromQLWarning)
-	MixedClassicNativeHistogramsWarning        = fmt.Errorf("%w: vector contains a mix of classic and native histograms", PromQLWarning)
-	NativeHistogramNotCounterWarning           = fmt.Errorf("%w: this native histogram metric is not a counter:", PromQLWarning)
-	NativeHistogramNotGaugeWarning             = fmt.Errorf("%w: this native histogram metric is not a gauge:", PromQLWarning)
-	MixedExponentialCustomHistogramsWarning    = fmt.Errorf("%w: vector contains a mix of histograms with exponential and custom buckets schemas for metric name", PromQLWarning)
-	IncompatibleCustomBucketsHistogramsWarning = fmt.Errorf("%w: vector contains histograms with incompatible custom buckets for metric name", PromQLWarning)
-	IncompatibleBucketLayoutInBinOpWarning     = fmt.Errorf("%w: incompatible bucket layout encountered for binary operator", PromQLWarning)
+	InvalidRatioWarning                     = fmt.Errorf("%w: ratio value should be between -1 and 1", PromQLWarning)
+	InvalidQuantileWarning                  = fmt.Errorf("%w: quantile value should be between 0 and 1", PromQLWarning)
+	BadBucketLabelWarning                   = fmt.Errorf("%w: bucket label %q is missing or has a malformed value", PromQLWarning, model.BucketLabel)
+	MixedFloatsHistogramsWarning            = fmt.Errorf("%w: encountered a mix of histograms and floats for", PromQLWarning)
+	MixedClassicNativeHistogramsWarning     = fmt.Errorf("%w: vector contains a mix of classic and native histograms", PromQLWarning)
+	NativeHistogramNotCounterWarning        = fmt.Errorf("%w: this native histogram metric is not a counter:", PromQLWarning)
+	NativeHistogramNotGaugeWarning          = fmt.Errorf("%w: this native histogram metric is not a gauge:", PromQLWarning)
+	MixedExponentialCustomHistogramsWarning = fmt.Errorf("%w: vector contains a mix of histograms with exponential and custom buckets schemas for metric name", PromQLWarning)
+	IncompatibleBucketLayoutInBinOpWarning  = fmt.Errorf("%w: incompatible bucket layout encountered for binary operator", PromQLWarning)
 
 	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
 	PossibleNonCounterLabelInfo             = fmt.Errorf("%w: metric might not be a counter, __type__ label is not set to %q or %q", PromQLInfo, model.MetricTypeCounter, model.MetricTypeHistogram)
@@ -155,6 +154,7 @@ var (
 	NativeHistogramQuantileNaNSkewInfo      = fmt.Errorf("%w: input to histogram_quantile has NaN observations, result is skewed higher", PromQLInfo)
 	NativeHistogramFractionNaNsInfo         = fmt.Errorf("%w: input to histogram_fraction has NaN observations, which are excluded from all fractions", PromQLInfo)
 	HistogramCounterResetCollisionWarning   = fmt.Errorf("%w: conflicting counter resets during histogram", PromQLWarning)
+	MismatchedCustomBucketsHistogramsInfo   = fmt.Errorf("%w: mismatched custom buckets were reconciled during", PromQLInfo)
 )
 
 type annoErr struct {
@@ -264,15 +264,6 @@ func NewMixedExponentialCustomHistogramsWarning(metricName string, pos posrange.
 	}
 }
 
-// NewIncompatibleCustomBucketsHistogramsWarning is used when the queried series includes
-// custom buckets histograms with incompatible custom bounds.
-func NewIncompatibleCustomBucketsHistogramsWarning(metricName string, pos posrange.PositionRange) error {
-	return annoErr{
-		PositionRange: pos,
-		Err:           fmt.Errorf("%w %q", IncompatibleCustomBucketsHistogramsWarning, metricName),
-	}
-}
-
 // NewPossibleNonCounterInfo is used when a named counter metric with only float samples does not
 // have the suffixes _total, _sum, _count, or _bucket.
 func NewPossibleNonCounterInfo(metricName string, pos posrange.PositionRange) error {
@@ -365,16 +356,29 @@ const (
 	HistogramAgg HistogramOperation = "aggregation"
 )
 
+func (op HistogramOperation) String() string {
+	switch op {
+	case HistogramAdd, HistogramSub, HistogramAgg:
+		return string(op)
+	default:
+		return "unknown operation"
+	}
+}
+
 // NewHistogramCounterResetCollisionWarning is used when two counter histograms are added or subtracted where one has
 // a CounterReset hint and the other has NotCounterReset.
 func NewHistogramCounterResetCollisionWarning(pos posrange.PositionRange, operation HistogramOperation) error {
-	switch operation {
-	case HistogramAdd, HistogramSub, HistogramAgg:
-	default:
-		operation = "unknown operation"
-	}
 	return annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w %s", HistogramCounterResetCollisionWarning, operation),
+		Err:           fmt.Errorf("%w %s", HistogramCounterResetCollisionWarning, operation.String()),
+	}
+}
+
+// NewMismatchedCustomBucketsHistogramsInfo is used when the queried series includes
+// custom buckets histograms with mismatched custom bounds that cause reconciling.
+func NewMismatchedCustomBucketsHistogramsInfo(pos posrange.PositionRange, operation HistogramOperation) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %s", MismatchedCustomBucketsHistogramsInfo, operation.String()),
 	}
 }

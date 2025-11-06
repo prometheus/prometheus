@@ -197,9 +197,8 @@ func TestCheckDuplicates(t *testing.T) {
 func BenchmarkCheckDuplicates(b *testing.B) {
 	rgs, err := rulefmt.ParseFile("./testdata/rules_large.yml", false, model.UTF8Validation)
 	require.Empty(b, err)
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		checkDuplicates(rgs.Groups)
 	}
 }

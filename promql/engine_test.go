@@ -164,8 +164,7 @@ func TestQueryTimeout(t *testing.T) {
 		Timeout:    5 * time.Millisecond,
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
-	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
+	ctx := t.Context()
 
 	query := engine.NewTestQuery(func(ctx context.Context) error {
 		time.Sleep(100 * time.Millisecond)
@@ -189,8 +188,7 @@ func TestQueryCancel(t *testing.T) {
 		Timeout:    10 * time.Second,
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
-	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
+	ctx := t.Context()
 
 	// Cancel a running query before it completes.
 	block := make(chan struct{})
@@ -267,8 +265,7 @@ func TestQueryError(t *testing.T) {
 	queryable := storage.QueryableFunc(func(_, _ int64) (storage.Querier, error) {
 		return &errQuerier{err: errStorage}, nil
 	})
-	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
+	ctx := t.Context()
 
 	vectorQuery, err := engine.NewInstantQuery(ctx, queryable, nil, "foo", time.Unix(1, 0))
 	require.NoError(t, err)

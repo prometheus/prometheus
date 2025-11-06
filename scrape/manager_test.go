@@ -1081,8 +1081,7 @@ func TestNHCBAndCTZeroIngestion(t *testing.T) {
 		expectedHistogramSum = 45.5
 	)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	app := &collectResultAppender{}
 	discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
@@ -1587,4 +1586,51 @@ scrape_configs:
 		false,
 		[]string{fmt.Sprintf("http://%s/metrics", otherJobTargetURL)},
 	)
+}
+
+func TestManagerDisableEndOfRunStalenessMarkers(t *testing.T) {
+	cfgText := `
+scrape_configs:
+ - job_name: one
+   scrape_interval: 1m
+   scrape_timeout: 1m
+ - job_name: two
+   scrape_interval: 1m
+   scrape_timeout: 1m
+`
+
+	cfg := loadConfiguration(t, cfgText)
+
+	m, err := NewManager(&Options{}, nil, nil, &nopAppendable{}, prometheus.NewRegistry())
+	require.NoError(t, err)
+	defer m.Stop()
+	require.NoError(t, m.ApplyConfig(cfg))
+
+	// Pass targets to the manager.
+	tgs := map[string][]*targetgroup.Group{
+		"one": {{Targets: []model.LabelSet{{"__address__": "h1"}, {"__address__": "h2"}, {"__address__": "h3"}}}},
+		"two": {{Targets: []model.LabelSet{{"__address__": "h4"}}}},
+	}
+	m.updateTsets(tgs)
+	m.reload()
+
+	activeTargets := m.TargetsActive()
+	targetsToDisable := []*Target{
+		activeTargets["one"][0],
+		activeTargets["one"][2],
+	}
+
+	// Disable end of run staleness markers for some targets.
+	m.DisableEndOfRunStalenessMarkers("one", targetsToDisable)
+	// This should be a no-op
+	m.DisableEndOfRunStalenessMarkers("non-existent-job", targetsToDisable)
+
+	// Check that the end of run staleness markers are disabled for the correct targets.
+	for _, group := range []string{"one", "two"} {
+		for _, tg := range activeTargets[group] {
+			loop := m.scrapePools[group].loops[tg.hash()].(*scrapeLoop)
+			expectedDisabled := slices.Contains(targetsToDisable, tg)
+			require.Equal(t, expectedDisabled, loop.disabledEndOfRunStalenessMarkers.Load())
+		}
+	}
 }

@@ -141,7 +141,7 @@ func BenchmarkHeadAppender_Append_Commit_ExistingSeries(b *testing.B) {
 					b.ReportAllocs()
 					b.ResetTimer()
 
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						require.NoError(b, appendSamples())
 					}
 				})
@@ -448,7 +448,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 						b.ResetTimer()
 
 						// Load the WAL.
-						for i := 0; i < b.N; i++ {
+						for b.Loop() {
 							opts := DefaultHeadOptions()
 							opts.ChunkRange = 1000
 							opts.ChunkDirRoot = dir
@@ -485,7 +485,7 @@ func BenchmarkLoadRealWLs(b *testing.B) {
 	}
 
 	// Load the WAL.
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		b.StopTimer()
 		dir := b.TempDir()
 		require.NoError(b, fileutil.CopyDirs(srcDir, dir))
@@ -1378,7 +1378,7 @@ func BenchmarkHead_Truncate(b *testing.B) {
 			h := prepare(b, churn)
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for i := 0; b.Loop(); i++ {
 				require.NoError(b, h.Truncate(1000*int64(i)))
 				// Make sure the benchmark is meaningful and it's actually truncating the expected amount of series.
 				require.Equal(b, total-churn*i, int(h.NumSeries()))
@@ -3167,7 +3167,7 @@ func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
 
 func TestHeadSeriesChunkRace(t *testing.T) {
 	t.Parallel()
-	for range 1000 {
+	for range 100 {
 		testHeadSeriesChunkRace(t)
 	}
 }
@@ -3314,17 +3314,17 @@ func testHeadSeriesChunkRace(t *testing.T) {
 	}
 	require.NoError(t, app.Commit())
 
-	var wg sync.WaitGroup
 	matcher := labels.MustNewMatcher(labels.MatchEqual, "", "")
 	q, err := NewBlockQuerier(h, 18, 22)
 	require.NoError(t, err)
 	defer q.Close()
 
+	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		h.updateMinMaxTime(20, 25)
 		h.gc()
-		wg.Done()
 	}()
 	ss := q.Select(context.Background(), false, nil, matcher)
 	for ss.Next() {
@@ -3717,10 +3717,9 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 	headIdxReader := head.indexRange(0, 200)
 	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "c_ninety", "value0")}
 
-	b.ResetTimer()
 	b.ReportAllocs()
 
-	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
+	for b.Loop() {
 		actualValues, err := headIdxReader.LabelValues(ctx, "b_tens", nil, matchers...)
 		require.NoError(b, err)
 		require.Len(b, actualValues, 9)

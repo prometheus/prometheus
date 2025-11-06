@@ -165,10 +165,9 @@ func BenchmarkStreamReadEndpoint(b *testing.B) {
 	data, err := proto.Marshal(req)
 	require.NoError(b, err)
 
-	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		compressed := snappy.Encode(nil, data)
 		request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(compressed))
 		require.NoError(b, err)

@@ -16,15 +16,18 @@ package promql_test
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -83,6 +86,57 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, in
 		_, err := a.Append(0, metric, ts, float64(s)/float64(len(metrics)))
 		if err != nil {
 			return err
+		}
+		if err := a.Commit(); err != nil {
+			return err
+		}
+	}
+
+	stor.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
+	stor.Compact(ctx)
+	return nil
+}
+
+// setupJoinQueryTestData creates numInstances series for two metrics ("rpc_request_success_total" and
+// "rpc_request_error_total") that can be joined on "instance" label for benchmarking join performance.
+func setupJoinQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, interval, numIntervals, numInstances int) error {
+	ctx := context.Background()
+
+	commonLabels := labels.FromStrings(
+		"environment", "staging",
+		"cluster", "test-kubernetes-cluster",
+		"namespace", "test-kubernetes-namespace",
+		"job", "worker",
+		"rpc_method", "fetch-my-data-from-this-service",
+		"domain", "test-domain",
+	)
+	builder := labels.NewBuilder(commonLabels)
+
+	rnd := rand.New(rand.NewSource(0)) // Fixed seed for deterministic results.
+
+	var metrics []labels.Labels
+	for range numInstances {
+		instance, err := uuid.NewRandomFromReader(rnd)
+		if err != nil {
+			return err
+		}
+		builder.Set("instance", instance.String())
+
+		builder.Set("__name__", "rpc_request_success_total")
+		metrics = append(metrics, builder.Labels())
+
+		builder.Set("__name__", "rpc_request_error_total")
+		metrics = append(metrics, builder.Labels())
+	}
+
+	refs := make([]storage.SeriesRef, len(metrics))
+
+	for s := range numIntervals {
+		a := stor.Appender(context.Background())
+		ts := int64(s * interval)
+		for i, metric := range metrics {
+			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
+			refs[i] = ref
 		}
 		if err := a.Commit(); err != nil {
 			return err
@@ -308,7 +362,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			ctx := context.Background()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				qry, err := engine.NewRangeQuery(
 					ctx, stor, nil, c.expr,
 					time.Unix(int64((numIntervals-c.steps)*10), 0),
@@ -320,6 +374,69 @@ func BenchmarkRangeQuery(b *testing.B) {
 				if res.Err != nil {
 					b.Fatal(res.Err)
 				}
+				qry.Close()
+			}
+		})
+	}
+}
+
+func BenchmarkJoinQuery(b *testing.B) {
+	stor := teststorage.New(b)
+	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
+	defer stor.Close()
+
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 50000000,
+		Timeout:    100 * time.Second,
+	}
+	engine := promqltest.NewTestEngineWithOpts(b, opts)
+
+	const interval = 10000 // 10s interval.
+
+	// A day of data plus 10k steps.
+	numIntervals := 8640 + 10000
+
+	require.NoError(b, setupJoinQueryTestData(stor, engine, interval, numIntervals, 1000))
+
+	for _, c := range []benchCase{
+		{
+			expr:  `rpc_request_success_total + rpc_request_error_total`,
+			steps: 10000,
+		},
+		{
+			expr:  `rpc_request_success_total + ON (job, instance) GROUP_LEFT rpc_request_error_total`,
+			steps: 10000,
+		},
+		{
+			expr:  `rpc_request_success_total AND rpc_request_error_total{instance=~"0.*"}`, // 0.* keeps 1/16 of UUID values
+			steps: 10000,
+		},
+		{
+			expr:  `rpc_request_success_total OR rpc_request_error_total{instance=~"0.*"}`, // 0.* keeps 1/16 of UUID values
+			steps: 10000,
+		},
+		{
+			expr:  `rpc_request_success_total UNLESS rpc_request_error_total{instance=~"0.*"}`, // 0.* keeps 1/16 of UUID values
+			steps: 10000,
+		},
+	} {
+		name := fmt.Sprintf("expr=%s/steps=%d", c.expr, c.steps)
+		b.Run(name, func(b *testing.B) {
+			ctx := context.Background()
+			b.ReportAllocs()
+			for b.Loop() {
+				qry, err := engine.NewRangeQuery(
+					ctx, stor, nil, c.expr,
+					timestamp.Time(int64((numIntervals-c.steps)*10_000)),
+					timestamp.Time(int64(numIntervals*10_000)),
+					time.Second*10)
+				require.NoError(b, err)
+
+				res := qry.Exec(ctx)
+				require.NoError(b, res.Err)
+
 				qry.Close()
 			}
 		})
@@ -391,7 +508,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
 			ng := promqltest.NewTestEngineWithOpts(b, opts)
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
 				if err != nil {
 					b.Fatal(err)
@@ -461,7 +578,7 @@ func BenchmarkNativeHistogramsCustomBuckets(b *testing.B) {
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
 			ng := promqltest.NewTestEngineWithOpts(b, opts)
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
 				if err != nil {
 					b.Fatal(err)
@@ -523,7 +640,7 @@ func BenchmarkInfoFunction(b *testing.B) {
 		engine := promql.NewEngine(opts)
 		b.Run(tc.name, func(b *testing.B) {
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				b.StopTimer() // Stop the timer to exclude setup time.
 				qry, err := engine.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
 				require.NoError(b, err)
@@ -678,7 +795,7 @@ func BenchmarkParser(b *testing.B) {
 	for _, c := range cases {
 		b.Run(c, func(b *testing.B) {
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				parser.ParseExpr(c)
 			}
 		})
@@ -687,7 +804,7 @@ func BenchmarkParser(b *testing.B) {
 		b.Run("preprocess "+c, func(b *testing.B) {
 			expr, _ := parser.ParseExpr(c)
 			start, end := time.Now().Add(-time.Hour), time.Now()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				promql.PreprocessExpr(expr, start, end, 0)
 			}
 		})
@@ -696,7 +813,7 @@ func BenchmarkParser(b *testing.B) {
 		name := fmt.Sprintf("%s (should fail)", c)
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				parser.ParseExpr(c)
 			}
 		})

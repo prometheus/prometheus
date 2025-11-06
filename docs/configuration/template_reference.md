@@ -78,6 +78,7 @@ versions.
 | tableLink  | expr | string | Returns path to tabular ("Table") view in the [expression browser](https://prometheus.io/docs/visualization/browser/) for the expression. |
 | parseDuration | string | float | Parses a duration string such as "1h" into the number of seconds it represents. |
 | stripDomain | string | string | Removes the domain part of a FQDN. Leaves port untouched. |
+| urlQueryEscape | string | string | [url.QueryEscape](https://pkg.go.dev/net/url#QueryEscape) Escapes the string so it can be safely placed inside a URL query. |
 
 ### Others
 

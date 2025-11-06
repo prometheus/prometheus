@@ -735,6 +735,17 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `@@`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 1},
+				Err:           errors.New(`unexpected <op:@>`),
+				Query:         `@@`,
+			},
+		},
+	},
+	{
 		input: "1 offset 1d",
 		fail:  true,
 		errors: ParseErrors{
@@ -4373,6 +4384,17 @@ var testExpr = []struct {
 				},
 			},
 			PosRange: posrange.PositionRange{Start: 0, End: 73},
+		},
+	},
+	{
+		input: `info(http_request_counter_total{namespace="zzz"}, {foo="bar"} == 1)`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 50, End: 66},
+				Err:           errors.New("expected label selectors only"),
+				Query:         `info(http_request_counter_total{namespace="zzz"}, {foo="bar"} == 1)`,
+			},
 		},
 	},
 	// Test that nested parentheses result in the correct position range.

@@ -453,6 +453,9 @@ alerting:
 storage:
   tsdb:
     out_of_order_time_window: 30m
+    retention:
+      time: 1d
+      size: 1GB
 
 tracing:
   endpoint: "localhost:4317"

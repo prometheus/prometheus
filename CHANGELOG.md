@@ -3,6 +3,22 @@
 ## main / unreleased
 
 * [BUGFIX] Discovery/Consul: Fix filter parameter not being applied to health service endpoint, causing Node and Node.Meta filters to be ignored. #16087
+* [FEATURE] Templates: Add urlQueryEscape to template functions. #17403
+
+## 3.7.3 / 2025-10-29
+
+* [BUGFIX] UI: Revert changed (and breaking) redirect behavior for `-web.external-url` if `-web.route-prefix` is configured, which was introduced in #17240. #17389
+* [BUGFIX] Fix federation of some native histograms. #17299 #17409
+* [BUGFIX] promtool: `check config` would fail when `--lint=none` flag was set. #17399 #17414
+* [BUGFIX] Remote-write: fix a deadlock in the queue resharding logic that can lead to suboptimal queue behavior. #17412
+
+## 3.7.2 / 2025-10-22
+
+* [BUGFIX] AWS SD: Fix AWS SDK v2 credentials handling for EC2 and Lightsail discovery. #17355
+* [BUGFIX] AWS SD: Load AWS region from IMDS when not set. #17376
+* [BUGFIX] Relabeling: Fix `labelmap` action validation with the legacy metric name validation scheme. #17372
+* [BUGFIX] PromQL: Fix parsing failure when `anchored` and `smoothed` are used as metric names and label names. #17353
+* [BUGFIX] PromQL: Fix formatting of range vector selectors with `smoothed`/`anchored` modifier. #17354
 
 ## 3.7.1 / 2025-10-16
 
@@ -50,7 +66,7 @@
 * [BUGFIX] TSDB: Avoid misleading `Failed to calculate size of \"wal\" dir` error logs during WAL clean-up. #17006
 * [BUGFIX] TSDB: Prevent erroneously dropping series records during WAL checkpoints. #17029
 * [BUGFIX] UI: Fix redirect to path of `-web.external-url` if `-web.route-prefix` is configured. #17240
-* [BUGIFX] Remote-write: Do not panic on invalid symbol table in remote-write 2.0. #17160
+* [BUGFIX] Remote-write: Do not panic on invalid symbol table in remote-write 2.0. #17160
 
 ## 3.6.0 / 2025-09-17
 

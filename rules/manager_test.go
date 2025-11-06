@@ -1508,7 +1508,7 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 
 	expHist := hists[0].ToFloat(nil)
 	for _, h := range hists[1:] {
-		expHist, _, err = expHist.Add(h.ToFloat(nil))
+		expHist, _, _, err = expHist.Add(h.ToFloat(nil))
 		require.NoError(t, err)
 	}
 
@@ -2772,8 +2772,7 @@ func BenchmarkRuleDependencyController_AnalyseRules(b *testing.B) {
 	require.Empty(b, errs)
 	require.Len(b, groups, 1)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, g := range groups {
 			ruleManager.opts.RuleDependencyController.AnalyseRules(g.rules)
 		}

@@ -41,6 +41,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -641,6 +642,16 @@ func (sp *scrapePool) refreshTargetLimitErr() error {
 	return nil
 }
 
+func (sp *scrapePool) disableEndOfRunStalenessMarkers(targets []*Target) {
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
+	for i := range targets {
+		if l, ok := sp.loops[targets[i].hash()]; ok {
+			l.disableEndOfRunStalenessMarkers()
+		}
+	}
+}
+
 func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 	if limits == nil {
 		return nil
@@ -957,7 +968,7 @@ type scrapeLoop struct {
 	cancel      func()
 	stopped     chan struct{}
 
-	disabledEndOfRunStalenessMarkers bool
+	disabledEndOfRunStalenessMarkers atomic.Bool
 
 	reportExtraMetrics  bool
 	appendMetadataToWAL bool
@@ -1397,7 +1408,7 @@ mainLoop:
 
 	close(sl.stopped)
 
-	if !sl.disabledEndOfRunStalenessMarkers {
+	if !sl.disabledEndOfRunStalenessMarkers.Load() {
 		sl.endOfRunStaleness(last, ticker, sl.interval)
 	}
 }
@@ -1563,6 +1574,11 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	case <-time.After(interval / 10):
 	}
 
+	// Check if end-of-run staleness markers have been disabled while we were waiting.
+	if sl.disabledEndOfRunStalenessMarkers.Load() {
+		return
+	}
+
 	// Call sl.append again with an empty scrape to trigger stale markers.
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
@@ -1597,7 +1613,7 @@ func (sl *scrapeLoop) stop() {
 }
 
 func (sl *scrapeLoop) disableEndOfRunStalenessMarkers() {
-	sl.disabledEndOfRunStalenessMarkers = true
+	sl.disabledEndOfRunStalenessMarkers.Store(true)
 }
 
 func (sl *scrapeLoop) getCache() *scrapeCache {
@@ -1626,7 +1642,7 @@ func (sl *scrapeLoop) updateStaleMarkers(app storage.Appender, defTime int64) (e
 		}
 		return err == nil
 	})
-	return
+	return err
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
@@ -1636,7 +1652,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		// Empty scrape. Just update the stale makers and swap the cache (but don't flush it).
 		err = sl.updateStaleMarkers(app, defTime)
 		sl.cache.iterDone(false)
-		return
+		return total, added, seriesAdded, err
 	}
 
 	p, err := textparse.New(b, contentType, sl.symbolTable, textparse.ParserOptions{
@@ -1654,7 +1670,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 			"fallback_media_type", sl.fallbackScrapeProtocol,
 			"err", err,
 		)
-		return
+		return total, added, seriesAdded, err
 	}
 	if err != nil {
 		sl.l.Debug(
@@ -1936,7 +1952,7 @@ loop:
 	if err == nil {
 		err = sl.updateStaleMarkers(app, defTime)
 	}
-	return
+	return total, added, seriesAdded, err
 }
 
 func isSeriesPartOfFamily(mName string, mfName []byte, typ model.MetricType) bool {
@@ -2134,32 +2150,32 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 	b := labels.NewBuilderWithSymbolTable(sl.symbolTable)
 
 	if err = sl.addReportSample(app, scrapeHealthMetric, ts, health, b); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeDurationMetric, ts, duration.Seconds(), b); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeSamplesMetric, ts, float64(scraped), b); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, samplesPostRelabelMetric, ts, float64(added), b); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeSeriesAddedMetric, ts, float64(seriesAdded), b); err != nil {
-		return
+		return err
 	}
 	if sl.reportExtraMetrics {
 		if err = sl.addReportSample(app, scrapeTimeoutMetric, ts, sl.timeout.Seconds(), b); err != nil {
-			return
+			return err
 		}
 		if err = sl.addReportSample(app, scrapeSampleLimitMetric, ts, float64(sl.sampleLimit), b); err != nil {
-			return
+			return err
 		}
 		if err = sl.addReportSample(app, scrapeBodySizeBytesMetric, ts, float64(bytes), b); err != nil {
-			return
+			return err
 		}
 	}
-	return
+	return err
 }
 
 func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err error) {
@@ -2169,32 +2185,32 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 	b := labels.NewBuilder(labels.EmptyLabels())
 
 	if err = sl.addReportSample(app, scrapeHealthMetric, ts, stale, b); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeDurationMetric, ts, stale, b); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeSamplesMetric, ts, stale, b); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, samplesPostRelabelMetric, ts, stale, b); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeSeriesAddedMetric, ts, stale, b); err != nil {
-		return
+		return err
 	}
 	if sl.reportExtraMetrics {
 		if err = sl.addReportSample(app, scrapeTimeoutMetric, ts, stale, b); err != nil {
-			return
+			return err
 		}
 		if err = sl.addReportSample(app, scrapeSampleLimitMetric, ts, stale, b); err != nil {
-			return
+			return err
 		}
 		if err = sl.addReportSample(app, scrapeBodySizeBytesMetric, ts, stale, b); err != nil {
-			return
+			return err
 		}
 	}
-	return
+	return err
 }
 
 func (sl *scrapeLoop) addReportSample(app storage.Appender, s reportSample, t int64, v float64, b *labels.Builder) error {

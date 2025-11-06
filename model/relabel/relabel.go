@@ -86,7 +86,7 @@ func (a *Action) UnmarshalYAML(unmarshal func(any) error) error {
 type Config struct {
 	// A list of labels from which values are taken and concatenated
 	// with the configured separator in order.
-	SourceLabels model.LabelNames `yaml:"source_labels,flow,omitempty" json:"sourceLabels,omitempty"`
+	SourceLabels model.LabelNames `yaml:"source_labels,flow,omitempty" json:"source_labels,omitempty"`
 	// Separator is the string between concatenated values from the source labels.
 	Separator string `yaml:"separator,omitempty" json:"separator,omitempty"`
 	// Regex against which the concatenation is matched.
@@ -95,7 +95,7 @@ type Config struct {
 	Modulus uint64 `yaml:"modulus,omitempty" json:"modulus,omitempty"`
 	// TargetLabel is the label to which the resulting string is written in a replacement.
 	// Regexp interpolation is allowed for the replace action.
-	TargetLabel string `yaml:"target_label,omitempty" json:"targetLabel,omitempty"`
+	TargetLabel string `yaml:"target_label,omitempty" json:"target_label,omitempty"`
 	// Replacement is the regex replacement pattern to be used.
 	Replacement string `yaml:"replacement,omitempty" json:"replacement,omitempty"`
 	// Action is the action to be performed for the relabeling.
@@ -145,7 +145,13 @@ func (c *Config) Validate(nameValidationScheme model.ValidationScheme) error {
 		// UTF-8 allows ${} characters, so standard validation allow $variables by default.
 		// TODO(bwplotka): Relabelling users cannot put $ and ${<...>} characters in metric names or values.
 		// Design escaping mechanism to allow that, once valid use case appears.
-		return c.NameValidationScheme.IsValidLabelName(value)
+		switch c.NameValidationScheme {
+		case model.UTF8Validation:
+			return c.NameValidationScheme.IsValidLabelName(value)
+		default:
+			// For legacy validation, use the legacy regex that allows $variables.
+			return relabelTargetLegacy.MatchString(value)
+		}
 	}
 	if c.Action == Replace && varInRegexTemplate(c.TargetLabel) && !isValidLabelNameWithRegexVarFn(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
