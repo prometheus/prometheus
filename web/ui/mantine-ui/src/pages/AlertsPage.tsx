@@ -3,7 +3,6 @@ import {
   Group,
   Table,
   Text,
-  Accordion,
   Badge,
   Tooltip,
   Box,
@@ -38,6 +37,7 @@ import { KVSearch } from "@nexucis/kvsearch";
 import { inputIconStyle } from "../styles";
 import CustomInfiniteScroll from "../components/CustomInfiniteScroll";
 import classes from "./AlertsPage.module.css";
+import { Accordion } from "../components/Accordion";
 
 type AlertsPageData = {
   // How many rules are in each state across all groups.
