@@ -460,8 +460,8 @@ github.com/prometheus/procfs v0.0.2/go.mod h1:TjEm7ze935MbeOT/UhFTIMYKhuLP4wbCsT
 github.com/prometheus/procfs v0.0.8/go.mod h1:7Qr8sr6344vo1JqZ6HhLceV9o3AJ1Ff+GxbHq6oeK9A=
 github.com/prometheus/procfs v0.16.1 h1:hZ15bTNuirocR6u0JZ6BAHHmwS1p8B4P6MRqxtzMyRg=
 github.com/prometheus/procfs v0.16.1/go.mod h1:teAbpZRB1iIAJYREa1LsoWUXykVXA1KlTmWl8x/U+Is=
-github.com/prometheus/sigv4 v0.2.1 h1:hl8D3+QEzU9rRmbKIRwMKRwaFGyLkbPdH5ZerglRHY0=
-github.com/prometheus/sigv4 v0.2.1/go.mod h1:ySk6TahIlsR2sxADuHy4IBFhwEjRGGsfbbLGhFYFj6Q=
+github.com/prometheus/sigv4 v0.3.0 h1:QIG7nTbu0JTnNidGI1Uwl5AGVIChWUACxn2B/BQ1kms=
+github.com/prometheus/sigv4 v0.3.0/go.mod h1:fKtFYDus2M43CWKMNtGvFNHGXnAJJEGZbiYCmVp/F8I=
 github.com/puzpuzpuz/xsync/v3 v3.5.1 h1:GJYJZwO6IdxN/IKbneznS6yPkVC+c3zyY/j19c++5Fg=
 github.com/puzpuzpuz/xsync/v3 v3.5.1/go.mod h1:VjzYrABPabuM4KyBh1Ftq6u8nhwY5tBPKP9jpmh0nnA=
 github.com/rogpeppe/go-internal v1.13.1 h1:KvO1DLK/DRN07sQ1LQKScxyZJuNnedQ5/wKSR38lUII=
