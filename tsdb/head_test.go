@@ -1152,7 +1152,7 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 		{
 			name: "keep series still in the head",
 			prepare: func(t *testing.T, h *Head) {
-				_, _, err := h.getOrCreateWithID(chunks.HeadSeriesRef(existingRef), existingLbls.Hash(), existingLbls, false)
+				_, _, err := h.getOrCreateWithOptionalID(chunks.HeadSeriesRef(existingRef), existingLbls.Hash(), existingLbls, false)
 				require.NoError(t, err)
 			},
 			expected: true,
@@ -6627,18 +6627,12 @@ func stripeSeriesWithCollidingSeries(t *testing.T) (*stripeSeries, *memSeries, *
 	hash := lbls1.Hash()
 	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
 
-	got, created, err := s.getOrSet(hash, lbls1, func() *memSeries {
-		return &ms1
-	})
-	require.NoError(t, err)
+	got, created := s.setUnlessAlreadySet(hash, lbls1, &ms1)
 	require.True(t, created)
 	require.Same(t, &ms1, got)
 
 	// Add a conflicting series
-	got, created, err = s.getOrSet(hash, lbls2, func() *memSeries {
-		return &ms2
-	})
-	require.NoError(t, err)
+	got, created = s.setUnlessAlreadySet(hash, lbls2, &ms2)
 	require.True(t, created)
 	require.Same(t, &ms2, got)
 

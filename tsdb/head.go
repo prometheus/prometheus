@@ -1738,32 +1738,31 @@ func (*Head) String() string {
 }
 
 func (h *Head) getOrCreate(hash uint64, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
-	// Just using `getOrCreateWithID` below would be semantically sufficient, but we'd create
-	// a new series on every sample inserted via Add(), which causes allocations
-	// and makes our series IDs rather random and harder to compress in postings.
 	s := h.series.getByHash(hash, lset)
 	if s != nil {
 		return s, false, nil
 	}
 
-	// Optimistically assume that we are the first one to create the series.
-	id := chunks.HeadSeriesRef(h.lastSeriesID.Inc())
-
-	return h.getOrCreateWithID(id, hash, lset, pendingCommit)
+	return h.getOrCreateWithOptionalID(0, hash, lset, pendingCommit)
 }
 
-func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
-	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		shardHash := uint64(0)
-		if h.opts.EnableSharding {
-			shardHash = labels.StableHash(lset)
-		}
-
-		return newMemSeries(lset, id, shardHash, h.opts.IsolationDisabled, pendingCommit)
-	})
-	if err != nil {
-		return nil, false, err
+// If id is zero, one will be allocated.
+func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
+	if preCreationErr := h.series.seriesLifecycleCallback.PreCreation(lset); preCreationErr != nil {
+		return nil, false, preCreationErr
 	}
+	if id == 0 {
+		// Note this id is wasted in the case where a concurrent operation creates the same series first.
+		id = chunks.HeadSeriesRef(h.lastSeriesID.Inc())
+	}
+
+	shardHash := uint64(0)
+	if h.opts.EnableSharding {
+		shardHash = labels.StableHash(lset)
+	}
+	optimisticallyCreatedSeries := newMemSeries(lset, id, shardHash, h.opts.IsolationDisabled, pendingCommit)
+
+	s, created := h.series.setUnlessAlreadySet(hash, lset, optimisticallyCreatedSeries)
 	if !created {
 		return s, false, nil
 	}
@@ -2061,35 +2060,15 @@ func (s *stripeSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
 	return series
 }
 
-func (s *stripeSeries) getOrSet(hash uint64, lset labels.Labels, createSeries func() *memSeries) (*memSeries, bool, error) {
-	// PreCreation is called here to avoid calling it inside the lock.
-	// It is not necessary to call it just before creating a series,
-	// rather it gives a 'hint' whether to create a series or not.
-	preCreationErr := s.seriesLifecycleCallback.PreCreation(lset)
-
-	// Create the series, unless the PreCreation() callback as failed.
-	// If failed, we'll not allow to create a new series anyway.
-	var series *memSeries
-	if preCreationErr == nil {
-		series = createSeries()
-	}
-
+func (s *stripeSeries) setUnlessAlreadySet(hash uint64, lset labels.Labels, series *memSeries) (*memSeries, bool) {
 	i := hash & uint64(s.size-1)
 	s.locks[i].Lock()
-
 	if prev := s.hashes[i].get(hash, lset); prev != nil {
 		s.locks[i].Unlock()
-		return prev, false, nil
+		return prev, false
 	}
-	if preCreationErr == nil {
-		s.hashes[i].set(hash, series)
-	}
+	s.hashes[i].set(hash, series)
 	s.locks[i].Unlock()
-
-	if preCreationErr != nil {
-		// The callback prevented creation of series.
-		return nil, false, preCreationErr
-	}
 
 	i = uint64(series.ref) & uint64(s.size-1)
 
@@ -2097,7 +2076,7 @@ func (s *stripeSeries) getOrSet(hash uint64, lset labels.Labels, createSeries fu
 	s.series[i][series.ref] = series
 	s.locks[i].Unlock()
 
-	return series, true, nil
+	return series, true
 }
 
 func (s *stripeSeries) postCreation(lset labels.Labels) {
