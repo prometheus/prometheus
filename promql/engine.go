@@ -1144,7 +1144,12 @@ func (ev *evaluator) Eval(ctx context.Context, expr parser.Expr) (v parser.Value
 
 // EvalSeriesHelper stores extra information about a series.
 type EvalSeriesHelper struct {
-	// Ordinal number of join signature, used to map left-hand to right-hand in binary operations.
+	// Ordinal number of join signature, used to map left-hand to right-hand in
+	// binary operations. For example given the following series, if
+	// the join signature is job, instance then:
+	// metric{job="a", instance="1", other="x"} -> sigOrdinal 0
+	// metric{job="a", instance="1", other="y"} -> sigOrdinal 0
+	// metric{job="a", instance="2", other="x"} -> sigOrdinal 1
 	sigOrdinal int
 }
 
