@@ -283,8 +283,8 @@ github.com/hashicorp/serf v0.10.1 h1:Z1H2J60yRKvfDYAOZLd2MU0ND4AH/WDz7xYHDWQsIPY
 github.com/hashicorp/serf v0.10.1/go.mod h1:yL2t6BqATOLGc5HF7qbFkTfXoPIY0WZdWHfEvMqbG+4=
 github.com/hetznercloud/hcloud-go/v2 v2.29.0 h1:LzNFw5XLBfftyu3WM1sdSLjOZBlWORtz2hgGydHaYV8=
 github.com/hetznercloud/hcloud-go/v2 v2.29.0/go.mod h1:XBU4+EDH2KVqu2KU7Ws0+ciZcX4ygukQl/J0L5GS8P8=
-github.com/ionos-cloud/sdk-go/v6 v6.3.4 h1:jTvGl4LOF8v8OYoEIBNVwbFoqSGAFqn6vGE7sp7/BqQ=
-github.com/ionos-cloud/sdk-go/v6 v6.3.4/go.mod h1:wCVwNJ/21W29FWFUv+fNawOTMlFoP1dS3L+ZuztFW48=
+github.com/ionos-cloud/sdk-go/v6 v6.3.5 h1:6fHArdV1lf50iRhCkCP7wkvGwWzVwi+l9w1t5mwkOa8=
+github.com/ionos-cloud/sdk-go/v6 v6.3.5/go.mod h1:nUGHP4kZHAZngCVr4v6C8nuargFrtvt7GrzH/hqn7c4=
 github.com/jarcoal/httpmock v1.4.1 h1:0Ju+VCFuARfFlhVXFc2HxlcQkfB+Xq12/EotHko+x2A=
 github.com/jarcoal/httpmock v1.4.1/go.mod h1:ftW1xULwo+j0R0JJkJIIi7UKigZUXCLLanykgjwBXL0=
 github.com/josharian/intern v1.0.0 h1:vlS4z54oSdjm0bgjRigI+G1HpF+tI+9rE5LLzOg8HmY=
