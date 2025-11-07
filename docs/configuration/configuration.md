@@ -3034,6 +3034,11 @@ sigv4:
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
 
+  # Defines the FIPS mode for the AWS STS endpoint.
+  # Requires Prometheus >= 2.54.0
+  # Note: FIPS STS selection should be configured via use_fips_sts_endpoint rather than environment variables. (The problem report that motivated this: AWS_USE_FIPS_ENDPOINT no longer works.)
+  [ use_fips_sts_endpoint: <boolean> | default = false ]
+
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
 [ <http_config> ]
@@ -3239,6 +3244,11 @@ sigv4:
 
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
+
+  # Defines the FIPS mode for the AWS STS endpoint.
+  # Requires Prometheus >= 2.54.0
+  # Note: FIPS STS selection should be configured via use_fips_sts_endpoint rather than environment variables. (The problem report that motivated this: AWS_USE_FIPS_ENDPOINT no longer works.)
+  [ use_fips_sts_endpoint: <boolean> | default = false ]
 
 # Optional AzureAD configuration.
 # Cannot be used at the same time as basic_auth, authorization, oauth2, sigv4 or google_iam.
