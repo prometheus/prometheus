@@ -2,7 +2,39 @@
 
 ## main / unreleased
 
-* [FEATURE] Templates: Add urlQueryEscape to template functions. #17403
+## 3.8.0-rc.0 / 2025-11-07
+
+* [CHANGE] TSDB: Native Histogram Custom Bounds with a NaN threshold are now rejected. #17287
+* [FEATURE] Dockerfile: Add OpenContainers spec labels to Dockerfile. #16483
+* [FEATURE] SD: Add unified AWS service discovery for ec2, lightsail and ecs services. #17046
+* [FEATURE] Native histograms are now a stable, but optional feature, use the `scrape_native_histogram` config setting. #17232 #17315
+* [FEATURE] UI: Support anchored and smoothed keyword in promql editor. #17239
+* [FEATURE] UI: Show detailed relabeling steps for each discovered target. #17337
+* [FEATURE] Alerting: Add urlQueryEscape to template functions. #17403
+* [FEATURE] Promtool: Add  Remote-Write 2.0 support to `promtool push metrics` via the `--protobuf_message` flag. #17417
+* [ENHANCEMENT] Clarify the docs about handling negative native histograms.  #17249
+* [ENHANCEMENT] Mixin: Add static UID to the remote-write dashboard. #17256
+* [ENHANCEMENT] PromQL: Reconcile mismatched NHCB bounds in `Add` and `Sub`. #17278
+* [ENHANCEMENT] Alerting: Add "unknown" state for alerting rules that haven't been evaluated yet. #17282
+* [ENHANCEMENT] Scrape: Allow simultaneous use of classic histogram → NHCB conversion and zero-timestamp ingestion. #17305
+* [ENHANCEMENT] UI: Add smoothed/anchored in explain. #17334
+* [ENHANCEMENT] OTLP: De-duplicate any `target_info` samples with the same timestamp for the same series. #17400
+* [ENHANCEMENT] Document `use_fips_sts_endpoint` in `sigv4` config sections. #17304
+* [ENHANCEMENT] Document Prometheus Agent. #14519
+* [PERF] PromQL: Speed up parsing of variadic functions. #17316
+* [PERF] UI: Speed up alerts/rules/... pages by not rendering collapsed content. #17485
+* [PERF] UI: Performance improvement when getting label name and values in promql editor. #17194
+* [PERF] UI: Speed up /alerts for many firing alerts via virtual scrolling.  #17254
+* [BUGFIX] PromQL: Fix slice indexing bug in info function on churning series. #17199
+* [BUGFIX] API: Reduce lock contention on `/api/v1/targets`. #17306
+* [BUGFIX] PromQL: Consistent handling of gauge vs. counter histograms in aggregations. #17312
+* [BUGFIX] TSDB: Allow NHCB with -Inf as the first custom value. #17320
+* [BUGFIX] UI: Fix duplicate loading of data from the API speed up rendering of some pages. #17357
+* [BUGFIX] Old UI: Fix createExpressionLink to correctly build /graph URLs so links from Alerts/Rules work again. #17365
+* [BUGFIX] PromQL: Avoid panic when parsing malformed `info` call. #17379
+* [BUGFIX] PromQL: Include histograms when enforcing sample_limit. #17390
+* [BUGFIX] Config: Fix panic if TLS CA file is absent. #17418
+* [BUGFIX] PromQL: Fix `histogram_fraction` for classic histograms and NHCB if lower bound is in the first bucket. #17424
 
 ## 3.7.3 / 2025-10-29
 
