@@ -14,6 +14,17 @@ load 5m
 	vector_matching_a{l="y"} 0+2x50
 	vector_matching_b{l="x"} 0+4x25
 
+eval range from 0 to 30m step 5m vector_matching_a @ start() and vector_matching_b
+	vector_matching_a{l="x"} 0 0 0 0 0 0 0
+
+eval range from 0 to 30m step 5m vector_matching_a @ end() and vector_matching_b
+	vector_matching_a{l="x"} 6 6 6 6 6 6 6
+
+eval range from 0 to 30m step 5m vector_matching_a and vector_matching_b @ end()
+	vector_matching_a{l="x"} 0 1 2 3 4 5 6
+
+eval range from 0 to 30m step 5m vector_matching_a @ start() and vector_matching_b @ end()
+	vector_matching_a{l="x"} 0 0 0 0 0 0 0
 
 eval instant at 50m SUM(http_requests_total) BY (job) - COUNT(http_requests_total) BY (job)
 	{job="api-server"} 996

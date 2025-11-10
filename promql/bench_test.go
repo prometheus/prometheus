@@ -304,6 +304,16 @@ func rangeQueryCases() []benchCase {
 		{
 			expr: "timestamp(a_X)",
 		},
+		// Vector Ops.
+		{
+			expr: "rate(a_X[1m]) and topk(1, rate(a_X[1m] @ start()))",
+		},
+		{
+			expr: "rate(a_X[1m] @ start()) or rate(a_X[1m])",
+		},
+		{
+			expr: "rate(a_X[1m]) unless rate(a_X[1m] @ start())",
+		},
 	}
 
 	// X in an expr will be replaced by different metric sizes.
