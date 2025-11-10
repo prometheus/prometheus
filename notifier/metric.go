@@ -46,10 +46,10 @@ func newAlertMetrics(
 			[]string{alertmanagerLabel},
 		),
 		latencyHistogram: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace:                       namespace,
-			Subsystem:                       subsystem,
-			Name:                            "latency_histogram_seconds",
-			Help:                            "Latency histogram for sending alert notifications.",
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "latency_histogram_seconds",
+			Help:      "Latency histogram for sending alert notifications.",
 
 			Buckets:                         []float64{.01, .1, 1, 10},
 			NativeHistogramBucketFactor:     1.1,
