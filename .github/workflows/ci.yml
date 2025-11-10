@@ -23,6 +23,7 @@ jobs:
       - uses: ./.github/promci/actions/setup_environment
         with:
           enable_npm: true
+      - run: go test ./cmd/prometheus/ -count 10 -test.run TestRemoteWrite_ReshardingWithoutDeadlock
       - run: make GO_ONLY=1 SKIP_GOLANGCI_LINT=1
       - run: go test ./tsdb/ -test.tsdb-isolation=false
       - run: make -C documentation/examples/remote_storage

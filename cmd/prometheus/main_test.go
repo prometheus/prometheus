@@ -1009,26 +1009,31 @@ remote_write:
 	require.Eventually(t, func() bool {
 		r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
 		if err != nil {
+			t.Logf("error getting metrics: %v", err)
 			return false
 		}
 		defer r.Body.Close()
 		if r.StatusCode != http.StatusOK {
+			t.Logf("status code: %d", r.StatusCode)
 			return false
 		}
 
 		metrics, err := io.ReadAll(r.Body)
 		if err != nil {
+			t.Logf("error reading metrics: %v", err)
 			return false
 		}
 
 		checkInitialDesiredShardsOnce.Do(func() {
 			s, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_shards_desired")
+			t.Logf("initial desired shards: %f", s)
 			require.NoError(t, err)
 			require.Equal(t, 1.0, s)
 		})
 
 		desiredShards, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_shards_desired")
 		if err != nil || desiredShards <= 1 {
+			t.Logf("desired shards: %f", desiredShards)
 			return false
 		}
 		return true

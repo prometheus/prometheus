@@ -1152,8 +1152,11 @@ func (t *QueueManager) calculateDesiredShards() int {
 		delay           = highestRecv - highestSent
 		dataPending     = delay * dataInRate * dataKeptRatio
 	)
+	fmt.Printf("dataInRate: %f, dataOutRate: %f, dataKeptRatio: %f, dataOutDuration: %f, dataPendingRate: %f, dataPending: %f, highestSent: %f, highestRecv: %f, delay: %f\n", dataInRate, dataOutRate, dataKeptRatio, dataOutDuration, dataPendingRate, dataPending, highestSent, highestRecv, delay)
+	fmt.Printf("t.numShards: %d\n", t.numShards)
 
 	if dataOutRate <= 0 {
+		fmt.Printf("dataOutRate <= 0, returning t.numShards: %d\n", t.numShards)
 		return t.numShards
 	}
 
@@ -1164,6 +1167,7 @@ func (t *QueueManager) calculateDesiredShards() int {
 		timePerSample = dataOutDuration / dataOutRate
 		desiredShards = timePerSample * (dataInRate*dataKeptRatio + backlogCatchup)
 	)
+	fmt.Printf("updating desired shards to: %f\n", desiredShards)
 	t.metrics.desiredNumShards.Set(desiredShards)
 	t.logger.Debug("QueueManager.calculateDesiredShards",
 		"dataInRate", dataInRate,
