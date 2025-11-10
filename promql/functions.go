@@ -1709,15 +1709,19 @@ func funcHistogramQuantile(vectorVals []Vector, _ Matrix, args parser.Expression
 
 // pickFirstSampleIndex returns the index of the last sample before
 // or at the range start, or 0 if none exist before the range start.
-// If the vector selector is not anchored, it always returns 0.
-func pickFirstSampleIndex(floats []FPoint, args parser.Expressions, enh *EvalNodeHelper) int {
+// If the vector selector is not anchored, it always returns 0, true.
+// The second return value is false if there are no samples in range (for anchored selectors).
+func pickFirstSampleIndex(floats []FPoint, args parser.Expressions, enh *EvalNodeHelper) (int, bool) {
 	ms := args[0].(*parser.MatrixSelector)
 	vs := ms.VectorSelector.(*parser.VectorSelector)
 	if !vs.Anchored {
-		return 0
+		return 0, true
 	}
 	rangeStart := enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
-	return max(0, sort.Search(len(floats)-1, func(i int) bool { return floats[i].T > rangeStart })-1)
+	if len(floats) == 0 || floats[len(floats)-1].T <= rangeStart {
+		return 0, false
+	}
+	return max(0, sort.Search(len(floats)-1, func(i int) bool { return floats[i].T > rangeStart })-1), true
 }
 
 // === resets(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
@@ -1730,7 +1734,10 @@ func funcResets(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eval
 	}
 
 	var prevSample, curSample Sample
-	firstSampleIndex := pickFirstSampleIndex(floats, args, enh)
+	firstSampleIndex, found := pickFirstSampleIndex(floats, args, enh)
+	if !found {
+		return enh.Out, nil
+	}
 	for iFloat, iHistogram := firstSampleIndex, 0; iFloat < len(floats) || iHistogram < len(histograms); {
 		switch {
 		// Process a float sample if no histogram sample remains or its timestamp is earlier.
@@ -1776,7 +1783,10 @@ func funcChanges(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eva
 	}
 
 	var prevSample, curSample Sample
-	firstSampleIndex := pickFirstSampleIndex(floats, args, enh)
+	firstSampleIndex, found := pickFirstSampleIndex(floats, args, enh)
+	if !found {
+		return enh.Out, nil
+	}
 	for iFloat, iHistogram := firstSampleIndex, 0; iFloat < len(floats) || iHistogram < len(histograms); {
 		switch {
 		// Process a float sample if no histogram sample remains or its timestamp is earlier.
