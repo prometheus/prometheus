@@ -106,13 +106,15 @@ func TestTSDBDump(t *testing.T) {
 		sandboxDirRoot string
 		match          []string
 		expectedDump   string
+		expectedSeries string
 	}{
 		{
-			name:         "default match",
-			mint:         math.MinInt64,
-			maxt:         math.MaxInt64,
-			match:        []string{"{__name__=~'(?s:.*)'}"},
-			expectedDump: "testdata/dump-test-1.prom",
+			name:           "default match",
+			mint:           math.MinInt64,
+			maxt:           math.MaxInt64,
+			match:          []string{"{__name__=~'(?s:.*)'}"},
+			expectedDump:   "testdata/dump-test-1.prom",
+			expectedSeries: "testdata/dump-series-1.prom",
 		},
 		{
 			name:           "default match with sandbox dir root set",
@@ -121,41 +123,47 @@ func TestTSDBDump(t *testing.T) {
 			sandboxDirRoot: t.TempDir(),
 			match:          []string{"{__name__=~'(?s:.*)'}"},
 			expectedDump:   "testdata/dump-test-1.prom",
+			expectedSeries: "testdata/dump-series-1.prom",
 		},
 		{
-			name:         "same matcher twice",
-			mint:         math.MinInt64,
-			maxt:         math.MaxInt64,
-			match:        []string{"{foo=~'.+'}", "{foo=~'.+'}"},
-			expectedDump: "testdata/dump-test-1.prom",
+			name:           "same matcher twice",
+			mint:           math.MinInt64,
+			maxt:           math.MaxInt64,
+			match:          []string{"{foo=~'.+'}", "{foo=~'.+'}"},
+			expectedDump:   "testdata/dump-test-1.prom",
+			expectedSeries: "testdata/dump-series-1.prom",
 		},
 		{
-			name:         "no duplication",
-			mint:         math.MinInt64,
-			maxt:         math.MaxInt64,
-			match:        []string{"{__name__=~'(?s:.*)'}", "{baz='abc'}"},
-			expectedDump: "testdata/dump-test-1.prom",
+			name:           "no duplication",
+			mint:           math.MinInt64,
+			maxt:           math.MaxInt64,
+			match:          []string{"{__name__=~'(?s:.*)'}", "{baz='abc'}"},
+			expectedDump:   "testdata/dump-test-1.prom",
+			expectedSeries: "testdata/dump-series-1.prom",
 		},
 		{
-			name:         "well merged",
-			mint:         math.MinInt64,
-			maxt:         math.MaxInt64,
-			match:        []string{"{__name__='heavy_metric'}", "{baz='abc'}"},
-			expectedDump: "testdata/dump-test-1.prom",
+			name:           "well merged",
+			mint:           math.MinInt64,
+			maxt:           math.MaxInt64,
+			match:          []string{"{__name__='heavy_metric'}", "{baz='abc'}"},
+			expectedDump:   "testdata/dump-test-1.prom",
+			expectedSeries: "testdata/dump-series-1.prom",
 		},
 		{
-			name:         "multi matchers",
-			mint:         math.MinInt64,
-			maxt:         math.MaxInt64,
-			match:        []string{"{__name__='heavy_metric',foo='foo'}", "{__name__='metric'}"},
-			expectedDump: "testdata/dump-test-2.prom",
+			name:           "multi matchers",
+			mint:           math.MinInt64,
+			maxt:           math.MaxInt64,
+			match:          []string{"{__name__='heavy_metric',foo='foo'}", "{__name__='metric'}"},
+			expectedDump:   "testdata/dump-test-2.prom",
+			expectedSeries: "testdata/dump-series-2.prom",
 		},
 		{
-			name:         "with reduced mint and maxt",
-			mint:         int64(60000),
-			maxt:         int64(120000),
-			match:        []string{"{__name__='metric'}"},
-			expectedDump: "testdata/dump-test-3.prom",
+			name:           "with reduced mint and maxt",
+			mint:           int64(60000),
+			maxt:           int64(120000),
+			match:          []string{"{__name__='metric'}"},
+			expectedDump:   "testdata/dump-test-3.prom",
+			expectedSeries: "testdata/dump-series-3.prom",
 		},
 	}
 	for _, tt := range tests {
@@ -166,6 +174,12 @@ func TestTSDBDump(t *testing.T) {
 			expectedMetrics = normalizeNewLine(expectedMetrics)
 			// Sort both, because Prometheus does not guarantee the output order.
 			require.Equal(t, sortLines(string(expectedMetrics)), sortLines(dumpedMetrics))
+
+			dumpedSeries := getDumpedSamples(t, storage.Dir(), tt.sandboxDirRoot, tt.mint, tt.maxt, tt.match, formatSeriesSetToJSON)
+			expectedSeries, err := os.ReadFile(tt.expectedSeries)
+			require.NoError(t, err)
+			expectedSeries = normalizeNewLine(expectedSeries)
+			require.Equal(t, sortLines(string(expectedSeries)), sortLines(dumpedSeries))
 		})
 	}
 }
@@ -174,98 +188,6 @@ func sortLines(buf string) string {
 	lines := strings.Split(buf, "\n")
 	slices.Sort(lines)
 	return strings.Join(lines, "\n")
-}
-
-// getDumpedSeries dumps series and returns them.
-func getDumpedSeries(t *testing.T, path string, mint, maxt int64, match []string, formatter SeriesSetFormatter) string {
-	t.Helper()
-
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := dumpTSDBData(
-		context.Background(),
-		path,
-		t.TempDir(),
-		mint,
-		maxt,
-		match,
-		formatter,
-	)
-	require.NoError(t, err)
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	return buf.String()
-}
-
-func TestTSDBDumpSeries(t *testing.T) {
-	storage := promqltest.LoadedStorage(t, `
-		load 1m
-			metric{foo="bar", baz="abc"} 1 2 3 4 5
-			heavy_metric{foo="bar"} 5 4 3 2 1
-			heavy_metric{foo="foo"} 5 4 3 2 1
-	`)
-
-	expectedArray := []string{
-		`{"__name__":"heavy_metric","foo":"bar"}
-`,
-		`{"__name__":"heavy_metric","foo":"foo"}
-`,
-		`{"__name__":"metric","baz":"abc","foo":"bar"}
-`,
-	}
-
-	tests := []struct {
-		name     string
-		mint     int64
-		maxt     int64
-		match    []string
-		expected string
-	}{
-		{
-			name:     "default match",
-			match:    []string{"{__name__=~'(?s:.*)'}"},
-			expected: strings.Join(expectedArray, ""),
-		},
-		{
-			name:     "same matcher twice",
-			match:    []string{"{foo=~'.+'}", "{foo=~'.+'}"},
-			expected: strings.Join(expectedArray, ""),
-		},
-		{
-			name:     "no duplication",
-			match:    []string{"{__name__=~'(?s:.*)'}", "{baz='abc'}"},
-			expected: strings.Join(expectedArray, ""),
-		},
-		{
-			name:     "well merged",
-			match:    []string{"{__name__='heavy_metric'}", "{baz='abc'}"},
-			expected: strings.Join(expectedArray, ""),
-		},
-		{
-			name:     "multi matchers",
-			match:    []string{"{__name__='heavy_metric',foo='foo'}", "{__name__='metric'}"},
-			expected: expectedArray[1] + expectedArray[2],
-		},
-		{
-			name:     "with reduced mint and maxt",
-			match:    []string{"{__name__='metric'}"},
-			expected: expectedArray[2],
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dumpedSeries := getDumpedSeries(t, storage.Dir(), tt.mint, tt.maxt, tt.match, formatSeriesSetToJSON)
-			expectedSeries := normalizeNewLine([]byte(tt.expected))
-			// Sort both, because Prometheus does not guarantee the output order.
-			require.Equal(t, sortLines(string(expectedSeries)), sortLines(dumpedSeries))
-		})
-	}
 }
 
 func TestTSDBDumpOpenMetrics(t *testing.T) {

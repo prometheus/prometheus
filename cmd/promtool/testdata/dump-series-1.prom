@@ -1,0 +1,3 @@
+{"__name__":"heavy_metric","foo":"bar"}
+{"__name__":"heavy_metric","foo":"foo"}
+{"__name__":"metric","baz":"abc","foo":"bar"}
