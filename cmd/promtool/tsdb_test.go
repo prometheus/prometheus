@@ -175,7 +175,7 @@ func TestTSDBDump(t *testing.T) {
 			// Sort both, because Prometheus does not guarantee the output order.
 			require.Equal(t, sortLines(string(expectedMetrics)), sortLines(dumpedMetrics))
 
-			dumpedSeries := getDumpedSamples(t, storage.Dir(), tt.sandboxDirRoot, tt.mint, tt.maxt, tt.match, formatSeriesSetToJSON)
+			dumpedSeries := getDumpedSamples(t, storage.Dir(), tt.sandboxDirRoot, tt.mint, tt.maxt, tt.match, formatSeriesSetLabelsToJSON)
 			expectedSeries, err := os.ReadFile(tt.expectedSeries)
 			require.NoError(t, err)
 			expectedSeries = normalizeNewLine(expectedSeries)

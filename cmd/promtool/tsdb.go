@@ -799,7 +799,7 @@ func CondensedString(ls labels.Labels) string {
 	return b.String()
 }
 
-func formatSeriesSetToJSON(ss storage.SeriesSet) error {
+func formatSeriesSetLabelsToJSON(ss storage.SeriesSet) error {
 	seriesCache := make(map[string]struct{})
 	for ss.Next() {
 		series := ss.At()
