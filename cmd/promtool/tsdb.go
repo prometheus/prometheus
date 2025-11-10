@@ -711,7 +711,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 
 type SeriesSetFormatter func(series storage.SeriesSet) error
 
-func dumpSamples(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt int64, match []string, formatter SeriesSetFormatter) (err error) {
+func dumpTSDBData(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt int64, match []string, formatter SeriesSetFormatter) (err error) {
 	db, err := tsdb.OpenDBReadOnly(dbDir, sandboxDirRoot, nil)
 	if err != nil {
 		return err

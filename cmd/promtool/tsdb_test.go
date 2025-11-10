@@ -63,7 +63,7 @@ func getDumpedSamples(t *testing.T, databasePath, sandboxDirRoot string, mint, m
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	err := dumpSamples(
+	err := dumpTSDBData(
 		context.Background(),
 		databasePath,
 		sandboxDirRoot,
@@ -184,7 +184,7 @@ func getDumpedSeries(t *testing.T, path string, mint, maxt int64, match []string
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	err := dumpSamples(
+	err := dumpTSDBData(
 		context.Background(),
 		path,
 		t.TempDir(),
