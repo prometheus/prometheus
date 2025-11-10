@@ -36,6 +36,10 @@ func (e Error) Unwrap() error {
 	return e.error
 }
 
+func Errorf(format string, a ...any) Error {
+	return Error{error: fmt.Errorf(format, a...)}
+}
+
 var (
 	ErrHistogramCountNotBigEnough       = Error{error: errors.New("histogram's observation count should be at least the number of observations found in the buckets")}
 	ErrHistogramCountMismatch           = Error{error: errors.New("histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)")}
@@ -440,12 +444,12 @@ func checkHistogramSpans(spans []Span, numBuckets int) error {
 	var spanBuckets int
 	for n, span := range spans {
 		if n > 0 && span.Offset < 0 {
-			return fmt.Errorf("span number %d with offset %d: %w", n+1, span.Offset, ErrHistogramSpanNegativeOffset)
+			return Errorf("span number %d with offset %d: %w", n+1, span.Offset, ErrHistogramSpanNegativeOffset)
 		}
 		spanBuckets += int(span.Length)
 	}
 	if spanBuckets != numBuckets {
-		return fmt.Errorf("spans need %d buckets, have %d buckets: %w", spanBuckets, numBuckets, ErrHistogramSpansBucketsMismatch)
+		return Errorf("spans need %d buckets, have %d buckets: %w", spanBuckets, numBuckets, ErrHistogramSpansBucketsMismatch)
 	}
 	return nil
 }
@@ -464,7 +468,7 @@ func checkHistogramBuckets[BC BucketCount, IBC InternalBucketCount](buckets []IB
 			c = buckets[i]
 		}
 		if c < 0 {
-			return fmt.Errorf("bucket number %d has observation count of %v: %w", i+1, c, ErrHistogramNegativeBucketCount)
+			return Errorf("bucket number %d has observation count of %v: %w", i+1, c, ErrHistogramNegativeBucketCount)
 		}
 		last = c
 		*count += BC(c)
@@ -480,28 +484,28 @@ func checkHistogramCustomBounds(bounds []float64, spans []Span, numBuckets int) 
 			return ErrHistogramCustomBucketsNaN
 		}
 		if i > 0 && curr <= prev {
-			return fmt.Errorf("previous bound is %f and current is %f: %w", prev, curr, ErrHistogramCustomBucketsInvalid)
+			return Errorf("previous bound is %f and current is %f: %w", prev, curr, ErrHistogramCustomBucketsInvalid)
 		}
 		prev = curr
 	}
 	if prev == math.Inf(1) {
-		return fmt.Errorf("last +Inf bound must not be explicitly defined: %w", ErrHistogramCustomBucketsInfinite)
+		return Errorf("last +Inf bound must not be explicitly defined: %w", ErrHistogramCustomBucketsInfinite)
 	}
 
 	var spanBuckets int
 	var totalSpanLength int
 	for n, span := range spans {
 		if span.Offset < 0 {
-			return fmt.Errorf("span number %d with offset %d: %w", n+1, span.Offset, ErrHistogramSpanNegativeOffset)
+			return Errorf("span number %d with offset %d: %w", n+1, span.Offset, ErrHistogramSpanNegativeOffset)
 		}
 		spanBuckets += int(span.Length)
 		totalSpanLength += int(span.Length) + int(span.Offset)
 	}
 	if spanBuckets != numBuckets {
-		return fmt.Errorf("spans need %d buckets, have %d buckets: %w", spanBuckets, numBuckets, ErrHistogramSpansBucketsMismatch)
+		return Errorf("spans need %d buckets, have %d buckets: %w", spanBuckets, numBuckets, ErrHistogramSpansBucketsMismatch)
 	}
 	if (len(bounds) + 1) < totalSpanLength {
-		return fmt.Errorf("only %d custom bounds defined which is insufficient to cover total span length of %d: %w", len(bounds), totalSpanLength, ErrHistogramCustomBucketsMismatch)
+		return Errorf("only %d custom bounds defined which is insufficient to cover total span length of %d: %w", len(bounds), totalSpanLength, ErrHistogramCustomBucketsMismatch)
 	}
 
 	return nil
@@ -512,7 +516,7 @@ func getBound(idx, schema int32, customValues []float64) float64 {
 		length := int32(len(customValues))
 		switch {
 		case idx > length || idx < -1:
-			panic(fmt.Errorf("index %d out of bounds for custom bounds of length %d", idx, length))
+			panic(Errorf("index %d out of bounds for custom bounds of length %d", idx, length))
 		case idx == length:
 			return math.Inf(1)
 		case idx == -1:

@@ -148,13 +148,13 @@ func (h *FloatHistogram) CopyToSchema(targetSchema int32) *FloatHistogram {
 		return h.Copy()
 	}
 	if h.UsesCustomBuckets() {
-		panic(fmt.Errorf("cannot reduce resolution to %d when there are custom buckets", targetSchema))
+		panic(Errorf("cannot reduce resolution to %d when there are custom buckets", targetSchema))
 	}
 	if IsCustomBucketsSchema(targetSchema) {
 		panic("cannot reduce resolution to custom buckets schema")
 	}
 	if targetSchema > h.Schema {
-		panic(fmt.Errorf("cannot copy from schema %d to %d", h.Schema, targetSchema))
+		panic(Errorf("cannot copy from schema %d to %d", h.Schema, targetSchema))
 	}
 	c := FloatHistogram{
 		Schema:        targetSchema,
@@ -801,7 +801,7 @@ func (h *FloatHistogram) Validate() error {
 	switch {
 	case IsCustomBucketsSchema(h.Schema):
 		if err := checkHistogramCustomBounds(h.CustomValues, h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
-			return fmt.Errorf("custom buckets: %w", err)
+			return Errorf("custom buckets: %w", err)
 		}
 		if h.ZeroCount != 0 {
 			return ErrHistogramCustomBucketsZeroCount
@@ -817,17 +817,17 @@ func (h *FloatHistogram) Validate() error {
 		}
 	case IsExponentialSchema(h.Schema):
 		if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
-			return fmt.Errorf("positive side: %w", err)
+			return Errorf("positive side: %w", err)
 		}
 		if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
-			return fmt.Errorf("negative side: %w", err)
+			return Errorf("negative side: %w", err)
 		}
 		err := checkHistogramBuckets(h.NegativeBuckets, &nCount, false)
 		if err != nil {
-			return fmt.Errorf("negative side: %w", err)
+			return Errorf("negative side: %w", err)
 		}
 		if h.ZeroCount < 0 {
-			return fmt.Errorf("zero bucket has observation count of %v: %w", h.ZeroCount, ErrHistogramNegativeBucketCount)
+			return Errorf("zero bucket has observation count of %v: %w", h.ZeroCount, ErrHistogramNegativeBucketCount)
 		}
 		if h.CustomValues != nil {
 			return ErrHistogramExpSchemaCustomBounds
@@ -836,11 +836,11 @@ func (h *FloatHistogram) Validate() error {
 		return InvalidSchemaError(h.Schema)
 	}
 	if h.Count < 0 {
-		return fmt.Errorf("observation count is  %v: %w", h.Count, ErrHistogramNegativeCount)
+		return Errorf("observation count is  %v: %w", h.Count, ErrHistogramNegativeCount)
 	}
 	err := checkHistogramBuckets(h.PositiveBuckets, &pCount, false)
 	if err != nil {
-		return fmt.Errorf("positive side: %w", err)
+		return Errorf("positive side: %w", err)
 	}
 
 	return nil
@@ -859,7 +859,7 @@ func (h *FloatHistogram) zeroCountForLargerThreshold(largerThreshold float64) (c
 		return h.ZeroCount, largerThreshold
 	}
 	if largerThreshold < h.ZeroThreshold {
-		panic(fmt.Errorf("new threshold %f is less than old threshold %f", largerThreshold, h.ZeroThreshold))
+		panic(Errorf("new threshold %f is less than old threshold %f", largerThreshold, h.ZeroThreshold))
 	}
 outer:
 	for {
@@ -982,7 +982,7 @@ func (h *FloatHistogram) floatBucketIterator(
 		panic(errors.New("cannot merge from exponential buckets schema to custom schema"))
 	}
 	if targetSchema > h.Schema {
-		panic(fmt.Errorf("cannot merge from schema %d to %d", h.Schema, targetSchema))
+		panic(Errorf("cannot merge from schema %d to %d", h.Schema, targetSchema))
 	}
 	i := floatBucketIterator{
 		baseBucketIterator: baseBucketIterator[float64, float64]{
@@ -1576,7 +1576,7 @@ func (h *FloatHistogram) ReduceResolution(targetSchema int32) *FloatHistogram {
 		panic("cannot reduce resolution to custom buckets schema")
 	}
 	if targetSchema >= h.Schema {
-		panic(fmt.Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema))
+		panic(Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema))
 	}
 
 	h.PositiveSpans, h.PositiveBuckets = reduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false, true)

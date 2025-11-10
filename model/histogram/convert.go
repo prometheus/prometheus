@@ -15,7 +15,6 @@ package histogram
 
 import (
 	"errors"
-	"fmt"
 	"math"
 
 	"github.com/prometheus/common/model"
@@ -106,7 +105,7 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 		count = h.Count
 		sum = h.Sum
 	default:
-		return fmt.Errorf("unsupported histogram type: %T", h)
+		return Errorf("unsupported histogram type: %T", h)
 	}
 
 	currCount := float64(0)

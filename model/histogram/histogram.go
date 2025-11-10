@@ -427,7 +427,7 @@ func (h *Histogram) Validate() error {
 	switch {
 	case IsCustomBucketsSchema(h.Schema):
 		if err := checkHistogramCustomBounds(h.CustomValues, h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
-			return fmt.Errorf("custom buckets: %w", err)
+			return Errorf("custom buckets: %w", err)
 		}
 		if h.ZeroCount != 0 {
 			return ErrHistogramCustomBucketsZeroCount
@@ -443,14 +443,14 @@ func (h *Histogram) Validate() error {
 		}
 	case IsExponentialSchema(h.Schema):
 		if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
-			return fmt.Errorf("positive side: %w", err)
+			return Errorf("positive side: %w", err)
 		}
 		if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
-			return fmt.Errorf("negative side: %w", err)
+			return Errorf("negative side: %w", err)
 		}
 		err := checkHistogramBuckets(h.NegativeBuckets, &nCount, true)
 		if err != nil {
-			return fmt.Errorf("negative side: %w", err)
+			return Errorf("negative side: %w", err)
 		}
 		if h.CustomValues != nil {
 			return ErrHistogramExpSchemaCustomBounds
@@ -460,17 +460,17 @@ func (h *Histogram) Validate() error {
 	}
 	err := checkHistogramBuckets(h.PositiveBuckets, &pCount, true)
 	if err != nil {
-		return fmt.Errorf("positive side: %w", err)
+		return Errorf("positive side: %w", err)
 	}
 
 	sumOfBuckets := nCount + pCount + h.ZeroCount
 	if math.IsNaN(h.Sum) {
 		if sumOfBuckets > h.Count {
-			return fmt.Errorf("%d observations found in buckets, but the Count field is %d: %w", sumOfBuckets, h.Count, ErrHistogramCountNotBigEnough)
+			return Errorf("%d observations found in buckets, but the Count field is %d: %w", sumOfBuckets, h.Count, ErrHistogramCountNotBigEnough)
 		}
 	} else {
 		if sumOfBuckets != h.Count {
-			return fmt.Errorf("%d observations found in buckets, but the Count field is %d: %w", sumOfBuckets, h.Count, ErrHistogramCountMismatch)
+			return Errorf("%d observations found in buckets, but the Count field is %d: %w", sumOfBuckets, h.Count, ErrHistogramCountMismatch)
 		}
 	}
 
@@ -618,7 +618,7 @@ func (h *Histogram) ReduceResolution(targetSchema int32) *Histogram {
 		panic("cannot reduce resolution to custom buckets schema")
 	}
 	if targetSchema >= h.Schema {
-		panic(fmt.Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema))
+		panic(Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema))
 	}
 
 	h.PositiveSpans, h.PositiveBuckets = reduceResolution(
