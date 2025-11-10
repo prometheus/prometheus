@@ -650,13 +650,11 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 1, 2, 42.0, nil))
 
 			if appendMetadata {
-				// Verify the operations: AppendCTZeroSample, Append, and UpdateMetadata
 				require.Len(t, app.records, 3)
 				requireEqualOp(t, "AppendCTZeroSample", app.records[0])
 				requireEqualOp(t, "Append", app.records[1])
 				requireEqualOp(t, "UpdateMetadata", app.records[2])
 			} else {
-				// Verify the operations: AppendCTZeroSample and Append, but NO UpdateMetadata
 				require.Len(t, app.records, 2)
 				requireEqualOp(t, "AppendCTZeroSample", app.records[0])
 				requireEqualOp(t, "Append", app.records[1])
