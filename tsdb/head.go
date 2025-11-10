@@ -161,6 +161,8 @@ type HeadOptions struct {
 	OutOfOrderTimeWindow atomic.Int64
 	OutOfOrderCapMax     atomic.Int64
 
+	OutOfOrderExemplarTimeWindow atomic.Int64
+
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
 	ChunkDirRoot         string
@@ -253,6 +255,10 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		opts.OutOfOrderTimeWindow.Store(0)
 	}
 
+	if opts.OutOfOrderExemplarTimeWindow.Load() < 0 {
+		opts.OutOfOrderTimeWindow.Store(0)
+	}
+
 	// Time window can be set on runtime. So the capMin and capMax should be valid
 	// even if ooo is not enabled yet.
 	capMax := opts.OutOfOrderCapMax.Load()
@@ -327,7 +333,7 @@ func (h *Head) resetInMemoryState() error {
 	if em == nil {
 		em = NewExemplarMetrics(h.reg)
 	}
-	es, err := NewCircularExemplarStorage(h.opts.MaxExemplars.Load(), em, h.opts.OutOfOrderTimeWindow.Load())
+	es, err := NewCircularExemplarStorage(h.opts.MaxExemplars.Load(), em, h.opts.OutOfOrderExemplarTimeWindow.Load())
 	if err != nil {
 		return err
 	}
@@ -1037,6 +1043,20 @@ func (h *Head) ApplyConfig(cfg *config.Config, wbl *wlog.WL) {
 		return
 	}
 
+	oooExemplarWindow := int64(0)
+	if ec := cfg.StorageConfig.ExemplarsConfig; ec != nil {
+		oooTimeWindow = ec.OutOfOrderTimeWindow
+	}
+	if oooTimeWindow < 0 {
+		oooTimeWindow = 0
+	}
+	oldOOOExemplarWindow := h.opts.OutOfOrderExemplarTimeWindow.Load()
+	if oooExemplarWindow != oldOOOExemplarWindow {
+		h.opts.OutOfOrderExemplarTimeWindow.Store(oooExemplarWindow)
+		h.exemplars.(*CircularExemplarStorage).SetOutOfOrderTimeWindow(oooTimeWindow)
+		h.logger.Info("Exemplar out-of-order window adjust", "from", oldOOOExemplarWindow, "to", oooTimeWindow)
+	}
+
 	// Head uses opts.MaxExemplars in combination with opts.EnableExemplarStorage
 	// to decide if it should pass exemplars along to its exemplar storage, so we
 	// need to update opts.MaxExemplars here.
@@ -1044,12 +1064,10 @@ func (h *Head) ApplyConfig(cfg *config.Config, wbl *wlog.WL) {
 	h.opts.MaxExemplars.Store(cfg.StorageConfig.ExemplarsConfig.MaxExemplars)
 	newSize := h.opts.MaxExemplars.Load()
 
-	if prevSize == newSize {
-		return
+	if prevSize != newSize {
+		migrated := h.exemplars.(*CircularExemplarStorage).Resize(newSize)
+		h.logger.Info("Exemplar storage resized", "from", prevSize, "to", newSize, "migrated", migrated)
 	}
-
-	migrated := h.exemplars.(*CircularExemplarStorage).Resize(newSize)
-	h.logger.Info("Exemplar storage resized", "from", prevSize, "to", newSize, "migrated", migrated)
 }
 
 // SetOutOfOrderTimeWindow updates the out of order related parameters.
