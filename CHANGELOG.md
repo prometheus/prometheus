@@ -2,6 +2,7 @@
 
 ## main / unreleased
 
+* [BUGFIX] Discovery/Consul: Fix filter parameter not being applied to health service endpoint, causing Node and Node.Meta filters to be ignored. #16087
 * [FEATURE] Templates: Add urlQueryEscape to template functions. #17403
 
 ## 3.7.3 / 2025-10-29
