@@ -71,6 +71,7 @@ type WriteStorage struct {
 	interner          *pool
 	scraper           ReadyScrapeManager
 	quit              chan struct{}
+	head              HeadReader
 
 	// For timestampTracker.
 	highestTimestamp        *maxTimestamp
@@ -132,6 +133,12 @@ func (rws *WriteStorage) Notify() {
 		// These should all be non blocking
 		q.watcher.Notify()
 	}
+}
+
+func (rws *WriteStorage) SetHead(head HeadReader) {
+	rws.mtx.Lock()
+	defer rws.mtx.Unlock()
+	rws.head = head
 }
 
 // ApplyConfig updates the state as the new config requires.
@@ -215,6 +222,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.SendNativeHistograms,
 			rws.enableTypeAndUnitLabels,
 			rwConf.ProtobufMessage,
+			rws.head,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)

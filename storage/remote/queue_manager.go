@@ -413,6 +413,14 @@ type WriteClient interface {
 	Endpoint() string
 }
 
+// HeadReader defines an interface for reading series metadata from TSDB head.
+type HeadReader interface {
+	// GetMetadataByRef returns the metadata for the series with the given reference.
+	// Also returns the series labels hash for verification against ref reuse.
+	// Returns nil metadata if the series is not found.
+	GetMetadataByRef(ref chunks.HeadSeriesRef) (meta *metadata.Metadata, labelsHash uint64, err error)
+}
+
 // QueueManager manages a queue of samples to be sent to the Storage
 // indicated by the provided WriteClient. Implements writeTo interface
 // used by WAL Watcher.
@@ -433,6 +441,7 @@ type QueueManager struct {
 	enableTypeAndUnitLabels bool
 	watcher                 *wlog.Watcher
 	metadataWatcher         *MetadataWatcher
+	head                    HeadReader
 
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
@@ -486,6 +495,7 @@ func NewQueueManager(
 	enableNativeHistogramRemoteWrite bool,
 	enableTypeAndUnitLabels bool,
 	protoMsg remoteapi.WriteMessageType,
+	head HeadReader,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -509,6 +519,7 @@ func NewQueueManager(
 		sendExemplars:           enableExemplarRemoteWrite,
 		sendNativeHistograms:    enableNativeHistogramRemoteWrite,
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
+		head:                    head,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
 		seriesMetadata:       make(map[chunks.HeadSeriesRef]*metadata.Metadata),
@@ -738,6 +749,7 @@ outer:
 			}
 			if t.shards.enqueue(s.Ref, timeSeries{
 				seriesLabels: lbls,
+				seriesRef:    s.Ref,
 				metadata:     meta,
 				timestamp:    s.T,
 				value:        s.V,
@@ -796,6 +808,7 @@ outer:
 			}
 			if t.shards.enqueue(e.Ref, timeSeries{
 				seriesLabels:   lbls,
+				seriesRef:      e.Ref,
 				metadata:       meta,
 				timestamp:      e.T,
 				value:          e.V,
@@ -858,6 +871,7 @@ outer:
 			}
 			if t.shards.enqueue(h.Ref, timeSeries{
 				seriesLabels: lbls,
+				seriesRef:    h.Ref,
 				metadata:     meta,
 				timestamp:    h.T,
 				histogram:    h.H,
@@ -919,6 +933,7 @@ outer:
 			}
 			if t.shards.enqueue(h.Ref, timeSeries{
 				seriesLabels:   lbls,
+				seriesRef:      h.Ref,
 				metadata:       meta,
 				timestamp:      h.T,
 				floatHistogram: h.FH,
@@ -1377,6 +1392,7 @@ type queue struct {
 
 type timeSeries struct {
 	seriesLabels   labels.Labels
+	seriesRef      chunks.HeadSeriesRef // Series reference for TSDB head metadata lookup.
 	value          float64
 	histogram      *histogram.Histogram
 	floatHistogram *histogram.FloatHistogram
@@ -1576,7 +1592,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			}
 			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, encBuf, compr)
 		case remoteapi.WriteV2MessageType:
-			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels, s.qm.metadataWatcher)
+			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels, s.qm.head, s.qm.metadataWatcher)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
 			if nUnexpectedMetadata > 0 {
 				s.qm.logger.Warn("unexpected metadata sType in populateV2TimeSeries", "count", nUnexpectedMetadata)
@@ -1947,14 +1963,23 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	return accumulatedStats, err
 }
 
-func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool, metadataWatcher *MetadataWatcher) (int, int, int, int, int) {
+func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool, head HeadReader, metadataWatcher *MetadataWatcher) (int, int, int, int, int) {
 	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
 
-		// Try to get metadata from scrape cache if metadata.send=true and we need it.
+		var headMetadata *metadata.Metadata
 		var scrapeCacheMetadata *scrape.MetricMetadata
-		if metadataWatcher != nil && d.metadata == nil {
+
+		if d.metadata == nil && d.seriesRef != 0 && head != nil {
+			if meta, labelsHash, err := head.GetMetadataByRef(d.seriesRef); err == nil && meta != nil {
+				if labelsHash == d.seriesLabels.Hash() {
+					headMetadata = meta
+				}
+			}
+		}
+
+		if headMetadata == nil && metadataWatcher != nil && d.metadata == nil {
 			metricName := d.seriesLabels.Get(labels.MetricName)
 			if metricName != "" {
 				scrapeCacheMetadata = metadataWatcher.GetMetadataForMetric(metricName)
@@ -1967,9 +1992,11 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(m.Type)
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(m.Unit)
 			pendingData[nPending].Metadata.HelpRef = 0 // Type and unit does not give us help.
-			// Use Help from d.metadata (WAL) if available, otherwise from scrape cache.
 			if d.metadata != nil {
 				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
+				nPendingMetadata++
+			} else if headMetadata != nil {
+				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(headMetadata.Help)
 				nPendingMetadata++
 			} else if scrapeCacheMetadata != nil {
 				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(scrapeCacheMetadata.Help)
@@ -1979,6 +2006,11 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(d.metadata.Type)
 			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(d.metadata.Unit)
+			nPendingMetadata++
+		case headMetadata != nil:
+			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(headMetadata.Type)
+			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(headMetadata.Help)
+			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(headMetadata.Unit)
 			nPendingMetadata++
 		case scrapeCacheMetadata != nil:
 			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(scrapeCacheMetadata.Type)

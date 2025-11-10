@@ -1653,6 +1653,16 @@ func (h *Head) NumStaleSeries() uint64 {
 	return h.numStaleSeries.Load()
 }
 
+// GetMetadataByRef returns the metadata for the series with the given reference.
+// Also returns the series labels hash for verification against ref reuse.
+func (h *Head) GetMetadataByRef(ref chunks.HeadSeriesRef) (meta *metadata.Metadata, labelsHash uint64, err error) {
+	series := h.series.getByID(ref)
+	if series == nil {
+		return nil, 0, nil
+	}
+	return series.meta, series.lset.Hash(), nil
+}
+
 var headULID = ulid.MustParse("0000000000XXXXXXXXXXXXHEAD")
 
 // Meta returns meta information about the head.

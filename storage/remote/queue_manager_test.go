@@ -328,7 +328,7 @@ func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, pro
 func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType) *QueueManager {
 	dir := t.TempDir()
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg, nil)
 
 	return m
 }
@@ -806,7 +806,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		}
 	)
 
-	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType)
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, nil)
 	m.StoreSeries(fakeSeries, 0)
 
 	// Attempt to samples while the manager is running. We immediately stop the
@@ -1395,6 +1395,33 @@ func (c *MockWriteClient) Store(ctx context.Context, bb []byte, n int) (WriteRes
 func (c *MockWriteClient) Name() string     { return c.NameFunc() }
 func (c *MockWriteClient) Endpoint() string { return c.EndpointFunc() }
 
+// mockHeadReader is a mock implementation of HeadReader for testing.
+type mockHeadReader struct {
+	metadata map[chunks.HeadSeriesRef]*metadata.Metadata
+	hashes   map[chunks.HeadSeriesRef]uint64
+}
+
+func newMockHeadReader() *mockHeadReader {
+	return &mockHeadReader{
+		metadata: make(map[chunks.HeadSeriesRef]*metadata.Metadata),
+		hashes:   make(map[chunks.HeadSeriesRef]uint64),
+	}
+}
+
+func (m *mockHeadReader) GetMetadataByRef(ref chunks.HeadSeriesRef) (*metadata.Metadata, uint64, error) {
+	meta, ok := m.metadata[ref]
+	if !ok {
+		return nil, 0, nil
+	}
+	hash := m.hashes[ref]
+	return meta, hash, nil
+}
+
+func (m *mockHeadReader) addSeries(ref chunks.HeadSeriesRef, meta *metadata.Metadata, labelsHash uint64) {
+	m.metadata[ref] = meta
+	m.hashes[ref] = labelsHash
+}
+
 // Extra labels to make a more realistic workload - taken from Kubernetes' embedded cAdvisor metrics.
 var extraLabels []labels.Label = []labels.Label{
 	{Name: "kubernetes_io_arch", Value: "amd64"},
@@ -1495,7 +1522,7 @@ func BenchmarkStoreSeries(b *testing.B) {
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
 
-				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType)
+				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, nil)
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -1974,7 +2001,7 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 
 		totalSize := 0
 		for b.Loop() {
-			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false, nil)
+			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false, nil, nil)
 			req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, nil, cEnc, "snappy")
 			if err != nil {
 				b.Fatal(err)
@@ -2384,7 +2411,7 @@ func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
 	}
 
 	nSamples, nExemplars, nHistograms, nMetadata, nUnexpected := populateV2TimeSeries(
-		&symbolTable, batch, pendingData, false, false, false, nil)
+		&symbolTable, batch, pendingData, false, false, false, nil, nil)
 
 	require.Equal(t, 2, nSamples, "Should count 2 samples")
 	require.Equal(t, 0, nExemplars, "Should count 0 exemplars")
@@ -2504,6 +2531,7 @@ func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
 				false, // sendExemplars
 				false, // sendNativeHistograms
 				true,  // enableTypeAndUnitLabels
+				nil,   // head
 				nil,   // metadataWatcher
 			)
 
@@ -2625,6 +2653,7 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 				false,
 				false,
 				tc.enableTypeAndUnit,
+				nil, // head
 				nil, // metadataWatcher
 			)
 
@@ -2858,6 +2887,7 @@ func TestPopulateV2TimeSeries_ScrapeCache(t *testing.T) {
 				false,
 				false,
 				tc.enableTypeAndUnit,
+				nil, // head
 				tc.metadataWatcher,
 			)
 
@@ -2976,6 +3006,7 @@ func TestPopulateV2TimeSeries_ScrapeCacheHistogram(t *testing.T) {
 		false,
 		false,
 		false,
+		nil,
 		metadataWatcher,
 	)
 
@@ -3006,6 +3037,145 @@ func TestPopulateV2TimeSeries_ScrapeCacheHistogram(t *testing.T) {
 		require.Equal(t, "seconds", actualUnit,
 			"Series %d should have correct Unit from base metric", i)
 	}
+}
+
+// TestHeadReaderMetadataLookup tests basic HeadReader functionality.
+func TestHeadReaderMetadataLookup(t *testing.T) {
+	head := newMockHeadReader()
+
+	// Add test series with metadata.
+	ref := chunks.HeadSeriesRef(1)
+	meta := &metadata.Metadata{
+		Type: "counter",
+		Unit: "bytes",
+		Help: "Total bytes processed",
+	}
+	lbls := labels.FromStrings("__name__", "http_requests_total", "job", "api")
+	head.addSeries(ref, meta, lbls.Hash())
+
+	// Test successful lookup.
+	gotMeta, gotHash, err := head.GetMetadataByRef(ref)
+	require.NoError(t, err)
+	require.NotNil(t, gotMeta)
+	require.Equal(t, meta.Type, gotMeta.Type)
+	require.Equal(t, meta.Unit, gotMeta.Unit)
+	require.Equal(t, meta.Help, gotMeta.Help)
+	require.Equal(t, lbls.Hash(), gotHash)
+
+	// Test missing series.
+	missingMeta, missingHash, err := head.GetMetadataByRef(chunks.HeadSeriesRef(999))
+	require.NoError(t, err)
+	require.Nil(t, missingMeta)
+	require.Equal(t, uint64(0), missingHash)
+}
+
+// TestHeadMetadataWithLabelHashMismatch tests ref reuse protection.
+func TestHeadMetadataWithLabelHashMismatch(t *testing.T) {
+	head := newMockHeadReader()
+
+	ref := chunks.HeadSeriesRef(1)
+	originalLabels := labels.FromStrings("__name__", "metric1", "job", "old")
+	meta := &metadata.Metadata{
+		Type: "counter",
+		Help: "Original help",
+	}
+	head.addSeries(ref, meta, originalLabels.Hash())
+
+	newLabels := labels.FromStrings("__name__", "metric1", "job", "new")
+
+	batch := []timeSeries{
+		{
+			seriesLabels: newLabels, // Different labels
+			seriesRef:    ref,       // Same ref
+			metadata:     nil,
+			timestamp:    1000,
+			value:        1.0,
+			sType:        tSample,
+		},
+	}
+
+	symbolTable := writev2.NewSymbolTable()
+	pendingData := make([]writev2.TimeSeries, 1)
+
+	nSamples, _, _, nMetadata, _ := populateV2TimeSeries(
+		&symbolTable, batch, pendingData,
+		false, false, false,
+		head, nil,
+	)
+
+	require.Equal(t, 1, nSamples)
+	// Hash mismatch should prevent metadata lookup.
+	require.Equal(t, 0, nMetadata, "Metadata should NOT be used due to hash mismatch")
+}
+
+// TestPopulateV2TimeSeriesWithHeadMetadata tests metadata lookup from TSDB head.
+func TestPopulateV2TimeSeriesWithHeadMetadata(t *testing.T) {
+	head := newMockHeadReader()
+
+	// Setup test data
+	ref1 := chunks.HeadSeriesRef(1)
+	ref2 := chunks.HeadSeriesRef(2)
+
+	lbls1 := labels.FromStrings("__name__", "metric1", "job", "test")
+	lbls2 := labels.FromStrings("__name__", "metric2", "job", "test")
+
+	meta1 := &metadata.Metadata{
+		Type: "counter",
+		Unit: "seconds",
+		Help: "Metric 1 help text",
+	}
+	meta2 := &metadata.Metadata{
+		Type: "gauge",
+		Unit: "bytes",
+		Help: "Metric 2 help text",
+	}
+
+	head.addSeries(ref1, meta1, lbls1.Hash())
+	head.addSeries(ref2, meta2, lbls2.Hash())
+
+	batch := []timeSeries{
+		{
+			seriesLabels: lbls1,
+			seriesRef:    ref1,
+			metadata:     nil,
+			timestamp:    1000,
+			value:        42.0,
+			sType:        tSample,
+		},
+		{
+			seriesLabels: lbls2,
+			seriesRef:    ref2,
+			metadata:     nil,
+			timestamp:    1000,
+			value:        100.0,
+			sType:        tSample,
+		},
+	}
+
+	symbolTable := writev2.NewSymbolTable()
+	pendingData := make([]writev2.TimeSeries, len(batch))
+
+	nSamples, nExemplars, nHistograms, nMetadata, nUnexpected := populateV2TimeSeries(
+		&symbolTable, batch, pendingData,
+		false,
+		false,
+		false,
+		head,
+		nil,
+	)
+
+	require.Equal(t, 2, nSamples, "Should have 2 samples")
+	require.Equal(t, 0, nExemplars, "Should have 0 exemplars")
+	require.Equal(t, 0, nHistograms, "Should have 0 histograms")
+	require.Equal(t, 2, nMetadata, "Should have 2 metadata from head")
+	require.Equal(t, 0, nUnexpected, "Should have 0 unexpected metadata")
+
+	// Verify metadata was populated from head.
+	require.Equal(t, writev2.FromMetadataType(meta1.Type), pendingData[0].Metadata.Type)
+	require.NotZero(t, pendingData[0].Metadata.HelpRef, "Help should be populated from head")
+
+	require.Equal(t, writev2.FromMetadataType(meta2.Type), pendingData[1].Metadata.Type)
+	require.NotZero(t, pendingData[1].Metadata.HelpRef, "Help should be populated from head")
 }
 
 func TestHighestTimestampOnAppend(t *testing.T) {
