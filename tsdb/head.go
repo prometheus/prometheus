@@ -562,6 +562,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.checkpointDeleteTotal,
 			m.checkpointCreationFail,
 			m.checkpointCreationTotal,
+			m.oooHistogram,
 			m.mmapChunksTotal,
 			m.mmapChunkCorruptionTotal,
 			m.snapshotReplayErrorTotal,
