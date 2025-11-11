@@ -2444,7 +2444,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_vultr_instance_disk_gb` : The size of the disk in GB.
 * `__meta_vultr_instance_allowed_bandwidth_gb` : Monthly bandwidth quota in GB.
 
-* `__meta_vultr_baremetal_id` : A unique ID for the vultr baremetal
+* `__meta_vultr_baremetal_id` : A unique ID for the vultr baremetal.
 * `__meta_vultr_baremetal_label` : The user-supplied label for this baremetal.
 * `__meta_vultr_baremetal_os` : The Operating System name.
 * `__meta_vultr_baremetal_os_id` : The Operating System id used by this baremetal.
