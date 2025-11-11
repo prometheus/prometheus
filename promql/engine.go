@@ -1945,7 +1945,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		// drop the metric name in the output.
 		dropName := (e.Func.Name != "last_over_time" && e.Func.Name != "first_over_time")
 		vectorVals := make([]Vector, len(e.Args)-1)
-		
+
 		// Check if this matrix selector came from a subquery and handle evaluation samples.
 		// For instant queries, count evaluation samples once total (before processing series).
 		// For range queries, we'll count result matrix samples per step (matching test expectations).
@@ -1960,7 +1960,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, subqueryEvalSamples)
 			}
 		}
-		
+
 		for i, s := range selVS.Series {
 			if err := contextDone(ctx, "expression evaluation"); err != nil {
 				ev.error(err)
