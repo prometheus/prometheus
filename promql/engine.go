@@ -1692,7 +1692,7 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 // evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
 // It returns: (matrixSelector, resultMatrixSamples, evaluationSamples, warnings)
 // - resultMatrixSamples: samples in the result matrix (for memory management)
-// - evaluationSamples: total samples scanned during subquery evaluation (for statistics)
+// - evaluationSamples: total samples scanned during subquery evaluation (for statistics).
 func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr) (*parser.MatrixSelector, int, int64, annotations.Annotations) {
 	samplesStats := ev.samplesStats
 	// Avoid double counting samples when running a subquery, those samples will be counted in later stage.
