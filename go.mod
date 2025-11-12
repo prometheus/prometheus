@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus
 
-go 1.24.0
+go 1.24.7
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.19.1
@@ -21,6 +21,7 @@ require (
 	github.com/aws/smithy-go v1.23.2
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3
 	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/danielgtaylor/huma/v2 v2.34.1
 	github.com/dennwc/varint v1.0.0
 	github.com/digitalocean/godo v1.168.0
 	github.com/docker/docker v28.5.2+incompatible
@@ -37,6 +38,7 @@ require (
 	github.com/google/pprof v0.0.0-20250923004556-9e5a51aed1e8
 	github.com/google/uuid v1.6.0
 	github.com/gophercloud/gophercloud/v2 v2.8.0
+	github.com/gorilla/schema v1.4.1
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
 	github.com/hashicorp/consul/api v1.32.0
 	github.com/hashicorp/nomad/api v0.0.0-20250930071859-eaa0fe0e27af
@@ -54,6 +56,8 @@ require (
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.139.0
 	github.com/ovh/go-ovh v1.9.0
+	github.com/pb33f/libopenapi v0.28.2
+	github.com/pb33f/libopenapi-validator v0.9.2
 	github.com/prometheus/alertmanager v0.28.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_golang/exp v0.0.0-20250914183048-a974e0d45e0a
@@ -103,7 +107,14 @@ require (
 )
 
 require (
+	github.com/bahlo/generic-list-go v0.2.0 // indirect
+	github.com/basgys/goxml2json v1.1.1-0.20231018121955-e66ee54ceaad // indirect
+	github.com/buger/jsonparser v1.1.1 // indirect
+	github.com/pb33f/jsonpath v0.1.2 // indirect
+	github.com/pb33f/ordered-map/v2 v2.3.0 // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
+	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 )
@@ -180,7 +191,7 @@ require (
 	github.com/knadh/koanf/v2 v2.3.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
 	github.com/mdlayher/vsock v1.2.1 // indirect
