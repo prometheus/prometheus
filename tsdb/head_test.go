@@ -66,7 +66,6 @@ func newTestHeadDefaultOptions(chunkRange int64, oooEnabled bool) *HeadOptions {
 	opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
 	if oooEnabled {
 		opts.OutOfOrderTimeWindow.Store(10 * time.Minute.Milliseconds())
-		opts.OutOfOrderExemplarTimeWindow.Store(10 * time.Minute.Milliseconds())
 	}
 	return opts
 }
