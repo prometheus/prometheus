@@ -4159,7 +4159,7 @@ func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, sample *Sample) bo
 	return s.AddRatioSampleWithOffset(ratioLimit, sampleOffset)
 }
 
-func (s *HashRatioSampler) AddRatioSampleWithOffset(ratioLimit float64, sampleOffset float64) bool {
+func (*HashRatioSampler) AddRatioSampleWithOffset(ratioLimit, sampleOffset float64) bool {
 	// If ratioLimit >= 0: add sample if sampleOffset is lesser than ratioLimit
 	//
 	// 0.0        ratioLimit                1.0
