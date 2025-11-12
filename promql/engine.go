@@ -4133,7 +4133,7 @@ func makeInt64Pointer(val int64) *int64 {
 // RatioSampler allows unit-testing (previously: Randomizer).
 type RatioSampler interface {
 	// Return this sample "offset" between [0.0, 1.0]
-	sampleOffset(ts int64, sample *Sample) float64
+	SampleOffset(ts int64, sample *Sample) float64
 	AddRatioSample(r float64, sample *Sample) bool
 }
 
@@ -4147,7 +4147,7 @@ func NewHashRatioSampler() *HashRatioSampler {
 	return &HashRatioSampler{}
 }
 
-func (*HashRatioSampler) sampleOffset(_ int64, sample *Sample) float64 {
+func (*HashRatioSampler) SampleOffset(_ int64, sample *Sample) float64 {
 	const (
 		float64MaxUint64 = float64(math.MaxUint64)
 	)
@@ -4155,6 +4155,11 @@ func (*HashRatioSampler) sampleOffset(_ int64, sample *Sample) float64 {
 }
 
 func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, sample *Sample) bool {
+	sampleOffset := s.SampleOffset(sample.T, sample)
+	return s.AddRatioSampleWithOffset(ratioLimit, sampleOffset)
+}
+
+func (s *HashRatioSampler) AddRatioSampleWithOffset(ratioLimit float64, sampleOffset float64) bool {
 	// If ratioLimit >= 0: add sample if sampleOffset is lesser than ratioLimit
 	//
 	// 0.0        ratioLimit                1.0
@@ -4175,7 +4180,6 @@ func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, sample *Sample) bo
 	// e.g.:
 	//   sampleOffset==0.3 && ratioLimit==-0.6
 	//     0.3 >= 0.4 ? --> don't add sample
-	sampleOffset := s.sampleOffset(sample.T, sample)
 	return (ratioLimit >= 0 && sampleOffset < ratioLimit) ||
 		(ratioLimit < 0 && sampleOffset >= (1.0+ratioLimit))
 }
