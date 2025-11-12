@@ -416,9 +416,8 @@ type WriteClient interface {
 // HeadReader defines an interface for reading series metadata from TSDB head.
 type HeadReader interface {
 	// GetMetadataByRef returns the metadata for the series with the given reference.
-	// Also returns the series labels hash for verification against ref reuse.
-	// Returns nil metadata if the series is not found.
-	GetMetadataByRef(ref chunks.HeadSeriesRef) (meta *metadata.Metadata, labelsHash uint64, err error)
+	// Returns metadata with type MetricTypeUnknown if the series is not found.
+	GetMetadataByRef(ref chunks.HeadSeriesRef) (meta metadata.Metadata)
 }
 
 // QueueManager manages a queue of samples to be sent to the Storage
@@ -1972,10 +1971,10 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		var scrapeCacheMetadata *scrape.MetricMetadata
 
 		if d.metadata == nil && d.seriesRef != 0 && head != nil {
-			if meta, labelsHash, err := head.GetMetadataByRef(d.seriesRef); err == nil && meta != nil {
-				if labelsHash == d.seriesLabels.Hash() {
-					headMetadata = meta
-				}
+			meta := head.GetMetadataByRef(d.seriesRef)
+			// Only use metadata if it's not unknown type.
+			if meta.Type != model.MetricTypeUnknown {
+				headMetadata = &meta
 			}
 		}
 

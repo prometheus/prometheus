@@ -46,6 +46,7 @@ import (
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/compression"
@@ -1395,31 +1396,18 @@ func (c *MockWriteClient) Store(ctx context.Context, bb []byte, n int) (WriteRes
 func (c *MockWriteClient) Name() string     { return c.NameFunc() }
 func (c *MockWriteClient) Endpoint() string { return c.EndpointFunc() }
 
-// mockHeadReader is a mock implementation of HeadReader for testing.
-type mockHeadReader struct {
-	metadata map[chunks.HeadSeriesRef]*metadata.Metadata
-	hashes   map[chunks.HeadSeriesRef]uint64
-}
+func addSeriesWithMetadata(t *testing.T, h *tsdb.Head, lbls labels.Labels, meta metadata.Metadata) chunks.HeadSeriesRef {
+	app := h.Appender(context.Background())
 
-func newMockHeadReader() *mockHeadReader {
-	return &mockHeadReader{
-		metadata: make(map[chunks.HeadSeriesRef]*metadata.Metadata),
-		hashes:   make(map[chunks.HeadSeriesRef]uint64),
-	}
-}
+	ref, err := app.Append(0, lbls, 1000, 1.0)
+	require.NoError(t, err)
 
-func (m *mockHeadReader) GetMetadataByRef(ref chunks.HeadSeriesRef) (*metadata.Metadata, uint64, error) {
-	meta, ok := m.metadata[ref]
-	if !ok {
-		return nil, 0, nil
-	}
-	hash := m.hashes[ref]
-	return meta, hash, nil
-}
+	_, err = app.UpdateMetadata(0, lbls, meta)
+	require.NoError(t, err)
 
-func (m *mockHeadReader) addSeries(ref chunks.HeadSeriesRef, meta *metadata.Metadata, labelsHash uint64) {
-	m.metadata[ref] = meta
-	m.hashes[ref] = labelsHash
+	require.NoError(t, app.Commit())
+
+	return chunks.HeadSeriesRef(ref)
 }
 
 // Extra labels to make a more realistic workload - taken from Kubernetes' embedded cAdvisor metrics.
@@ -3039,99 +3027,39 @@ func TestPopulateV2TimeSeries_ScrapeCacheHistogram(t *testing.T) {
 	}
 }
 
-// TestHeadReaderMetadataLookup tests basic HeadReader functionality.
-func TestHeadReaderMetadataLookup(t *testing.T) {
-	head := newMockHeadReader()
-
-	// Add test series with metadata.
-	ref := chunks.HeadSeriesRef(1)
-	meta := &metadata.Metadata{
-		Type: "counter",
-		Unit: "bytes",
-		Help: "Total bytes processed",
-	}
-	lbls := labels.FromStrings("__name__", "http_requests_total", "job", "api")
-	head.addSeries(ref, meta, lbls.Hash())
-
-	// Test successful lookup.
-	gotMeta, gotHash, err := head.GetMetadataByRef(ref)
-	require.NoError(t, err)
-	require.NotNil(t, gotMeta)
-	require.Equal(t, meta.Type, gotMeta.Type)
-	require.Equal(t, meta.Unit, gotMeta.Unit)
-	require.Equal(t, meta.Help, gotMeta.Help)
-	require.Equal(t, lbls.Hash(), gotHash)
-
-	// Test missing series.
-	missingMeta, missingHash, err := head.GetMetadataByRef(chunks.HeadSeriesRef(999))
-	require.NoError(t, err)
-	require.Nil(t, missingMeta)
-	require.Equal(t, uint64(0), missingHash)
-}
-
-// TestHeadMetadataWithLabelHashMismatch tests ref reuse protection.
-func TestHeadMetadataWithLabelHashMismatch(t *testing.T) {
-	head := newMockHeadReader()
-
-	ref := chunks.HeadSeriesRef(1)
-	originalLabels := labels.FromStrings("__name__", "metric1", "job", "old")
-	meta := &metadata.Metadata{
-		Type: "counter",
-		Help: "Original help",
-	}
-	head.addSeries(ref, meta, originalLabels.Hash())
-
-	newLabels := labels.FromStrings("__name__", "metric1", "job", "new")
-
-	batch := []timeSeries{
-		{
-			seriesLabels: newLabels, // Different labels
-			seriesRef:    ref,       // Same ref
-			metadata:     nil,
-			timestamp:    1000,
-			value:        1.0,
-			sType:        tSample,
-		},
-	}
-
-	symbolTable := writev2.NewSymbolTable()
-	pendingData := make([]writev2.TimeSeries, 1)
-
-	nSamples, _, _, nMetadata, _ := populateV2TimeSeries(
-		&symbolTable, batch, pendingData,
-		false, false, false,
-		head, nil,
-	)
-
-	require.Equal(t, 1, nSamples)
-	// Hash mismatch should prevent metadata lookup.
-	require.Equal(t, 0, nMetadata, "Metadata should NOT be used due to hash mismatch")
-}
-
 // TestPopulateV2TimeSeriesWithHeadMetadata tests metadata lookup from TSDB head.
 func TestPopulateV2TimeSeriesWithHeadMetadata(t *testing.T) {
-	head := newMockHeadReader()
+	dir := t.TempDir()
 
-	// Setup test data
-	ref1 := chunks.HeadSeriesRef(1)
-	ref2 := chunks.HeadSeriesRef(2)
+	opts := tsdb.DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = dir
 
+	head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	// Setup test data.
 	lbls1 := labels.FromStrings("__name__", "metric1", "job", "test")
 	lbls2 := labels.FromStrings("__name__", "metric2", "job", "test")
 
-	meta1 := &metadata.Metadata{
+	meta1 := metadata.Metadata{
 		Type: "counter",
 		Unit: "seconds",
 		Help: "Metric 1 help text",
 	}
-	meta2 := &metadata.Metadata{
+	meta2 := metadata.Metadata{
 		Type: "gauge",
 		Unit: "bytes",
 		Help: "Metric 2 help text",
 	}
 
-	head.addSeries(ref1, meta1, lbls1.Hash())
-	head.addSeries(ref2, meta2, lbls2.Hash())
+	ref1 := addSeriesWithMetadata(t, head, lbls1, meta1)
+	ref2 := addSeriesWithMetadata(t, head, lbls2, meta2)
 
 	batch := []timeSeries{
 		{

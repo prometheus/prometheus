@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -44,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -7335,4 +7337,34 @@ func TestHistogramStalenessConversionMetrics(t *testing.T) {
 				"Histogram counter should match actual histogram samples stored")
 		})
 	}
+}
+func TestHead_GetMetadataByRef(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	lbls := labels.FromStrings("__name__", "http_requests_total", "job", "api")
+	meta := metadata.Metadata{
+		Type: "counter",
+		Unit: "bytes",
+		Help: "Total bytes processed",
+	}
+
+	app := head.Appender(context.Background())
+	ref, err := app.Append(0, lbls, 1000, 1.0)
+	require.NoError(t, err)
+	_, err = app.UpdateMetadata(0, lbls, meta)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Test successful lookup.
+	gotMeta := head.GetMetadataByRef(chunks.HeadSeriesRef(ref))
+	require.Equal(t, meta.Type, gotMeta.Type)
+	require.Equal(t, meta.Unit, gotMeta.Unit)
+	require.Equal(t, meta.Help, gotMeta.Help)
+
+	// Test missing series.
+	missingMeta := head.GetMetadataByRef(chunks.HeadSeriesRef(999999))
+	require.Equal(t, model.MetricTypeUnknown, missingMeta.Type)
 }
