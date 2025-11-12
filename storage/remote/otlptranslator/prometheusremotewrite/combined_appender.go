@@ -191,24 +191,26 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 		return
 	}
 
-	// Only update metadata in WAL if the metadata-wal-records feature is enabled.
-	// Without this feature, metadata is not persisted to WAL.
-	if b.appendMetadata && (!exists || series.meta.Help != meta.Help || series.meta.Type != meta.Type || series.meta.Unit != meta.Unit) {
-		updateRefs = true
-		// If this is the first time we see this series, set the metadata.
-		_, err := b.app.UpdateMetadata(ref, ls, meta)
-		if err != nil {
-			b.samplesAppendedWithoutMetadata.Add(1)
-			b.logger.Warn("Error while updating metadata from OTLP", "err", err)
-		}
-	}
+	metadataChanged := exists && (series.meta.Help != meta.Help || series.meta.Type != meta.Type || series.meta.Unit != meta.Unit)
 
-	if updateRefs {
+	// Update cache if references changed or metadata changed.
+	if updateRefs || metadataChanged {
 		b.refs[hash] = seriesRef{
 			ref:  ref,
 			ct:   ct,
 			ls:   ls,
 			meta: meta,
+		}
+	}
+
+	// Update metadata in storage if enabled and needed.
+	if b.appendMetadata && (!exists || metadataChanged) {
+		// Only update metadata in WAL if the metadata-wal-records feature is enabled.
+		// Without this feature, metadata is not persisted to WAL.
+		_, err := b.app.UpdateMetadata(ref, ls, meta)
+		if err != nil {
+			b.samplesAppendedWithoutMetadata.Add(1)
+			b.logger.Warn("Error while updating metadata from OTLP", "err", err)
 		}
 	}
 

@@ -856,3 +856,82 @@ func (a *appenderRecorder) Rollback() error {
 func (*appenderRecorder) SetOptions(_ *storage.AppendOptions) {
 	panic("not implemented")
 }
+
+func TestMetadataChangedLogic(t *testing.T) {
+	seriesLabels := labels.FromStrings(model.MetricNameLabel, "test_metric", "foo", "bar")
+	baseMetadata := Metadata{
+		Metadata:         metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "original"},
+		MetricFamilyName: "test_metric",
+	}
+
+	tests := []struct {
+		name           string
+		appendMetadata bool
+		modifyMetadata func(Metadata) Metadata
+		expectWALCall  bool
+		verifyCached   func(*testing.T, metadata.Metadata)
+	}{
+		{
+			name:           "appendMetadata=false, no change",
+			appendMetadata: false,
+			modifyMetadata: func(m Metadata) Metadata { return m },
+			expectWALCall:  false,
+			verifyCached:   func(t *testing.T, m metadata.Metadata) { require.Equal(t, "original", m.Help) },
+		},
+		{
+			name:           "appendMetadata=false, help changes - cache updated, no WAL",
+			appendMetadata: false,
+			modifyMetadata: func(m Metadata) Metadata { m.Help = "changed"; return m },
+			expectWALCall:  false,
+			verifyCached:   func(t *testing.T, m metadata.Metadata) { require.Equal(t, "changed", m.Help) },
+		},
+		{
+			name:           "appendMetadata=true, help changes - cache and WAL updated",
+			appendMetadata: true,
+			modifyMetadata: func(m Metadata) Metadata { m.Help = "changed"; return m },
+			expectWALCall:  true,
+			verifyCached:   func(t *testing.T, m metadata.Metadata) { require.Equal(t, "changed", m.Help) },
+		},
+		{
+			name:           "appendMetadata=true, unit changes",
+			appendMetadata: true,
+			modifyMetadata: func(m Metadata) Metadata { m.Unit = "seconds"; return m },
+			expectWALCall:  true,
+			verifyCached:   func(t *testing.T, m metadata.Metadata) { require.Equal(t, "seconds", m.Unit) },
+		},
+		{
+			name:           "appendMetadata=true, type changes",
+			appendMetadata: true,
+			modifyMetadata: func(m Metadata) Metadata { m.Type = model.MetricTypeGauge; return m },
+			expectWALCall:  true,
+			verifyCached:   func(t *testing.T, m metadata.Metadata) { require.Equal(t, model.MetricTypeGauge, m.Type) },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := &appenderRecorder{}
+			capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, tt.appendMetadata, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
+
+			require.NoError(t, capp.AppendSample(seriesLabels.Copy(), baseMetadata, 1, 2, 42.0, nil))
+
+			modifiedMetadata := tt.modifyMetadata(baseMetadata)
+			app.records = nil
+			require.NoError(t, capp.AppendSample(seriesLabels.Copy(), modifiedMetadata, 1, 3, 43.0, nil))
+
+			hash := seriesLabels.Hash()
+			cached, exists := capp.(*combinedAppender).refs[hash]
+			require.True(t, exists)
+			tt.verifyCached(t, cached.meta)
+
+			updateMetadataCalled := false
+			for _, record := range app.records {
+				if record.op == "UpdateMetadata" {
+					updateMetadataCalled = true
+					break
+				}
+			}
+			require.Equal(t, tt.expectWALCall, updateMetadataCalled)
+		})
+	}
+}
