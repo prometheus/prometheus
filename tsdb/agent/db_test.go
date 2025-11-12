@@ -1142,12 +1142,12 @@ type walSample struct {
 	ref  storage.SeriesRef
 }
 
-func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
+func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 	t.Parallel()
 
 	type appendableSample struct {
 		t            int64
-		ct           int64
+		st           int64
 		v            float64
 		lbls         labels.Labels
 		h            *histogram.Histogram
@@ -1169,8 +1169,8 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 		{
 			name: "in order ct+normal sample/floatSamples",
 			inputSamples: []appendableSample{
-				{t: 100, ct: 1, v: 10, lbls: defLbls},
-				{t: 101, ct: 1, v: 10, lbls: defLbls},
+				{t: 100, st: 1, v: 10, lbls: defLbls},
+				{t: 101, st: 1, v: 10, lbls: defLbls},
 			},
 			expectedSamples: []*walSample{
 				{t: 1, f: 0, lbls: defLbls},
@@ -1179,17 +1179,17 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 			},
 		},
 		{
-			name: "CT+float && CT+histogram samples",
+			name: "ST+float && ST+histogram samples",
 			inputSamples: []appendableSample{
 				{
 					t:    100,
-					ct:   30,
+					st:   30,
 					v:    20,
 					lbls: defLbls,
 				},
 				{
 					t:    300,
-					ct:   230,
+					st:   230,
 					h:    testHistogram,
 					lbls: defLbls,
 				},
@@ -1203,20 +1203,20 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 			expectedSeriesCount: 1,
 		},
 		{
-			name: "CT+float && CT+histogram samples with error",
+			name: "ST+float && ST+histogram samples with error",
 			inputSamples: []appendableSample{
 				{
-					// invalid CT
+					// invalid ST
 					t:            100,
-					ct:           100,
+					st:           100,
 					v:            10,
 					lbls:         defLbls,
 					expectsError: true,
 				},
 				{
-					// invalid CT histogram
+					// invalid ST histogram
 					t:            300,
-					ct:           300,
+					st:           300,
 					h:            testHistogram,
 					lbls:         defLbls,
 					expectsError: true,
@@ -1231,8 +1231,8 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 		{
 			name: "In order ct+normal sample/histogram",
 			inputSamples: []appendableSample{
-				{t: 100, h: testHistogram, ct: 1, lbls: defLbls},
-				{t: 101, h: testHistogram, ct: 1, lbls: defLbls},
+				{t: 100, h: testHistogram, st: 1, lbls: defLbls},
+				{t: 101, h: testHistogram, st: 1, lbls: defLbls},
 			},
 			expectedSamples: []*walSample{
 				{t: 1, h: &histogram.Histogram{}},
@@ -1243,10 +1243,10 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 		{
 			name: "ct+normal then OOO sample/float",
 			inputSamples: []appendableSample{
-				{t: 60_000, ct: 40_000, v: 10, lbls: defLbls},
-				{t: 120_000, ct: 40_000, v: 10, lbls: defLbls},
-				{t: 180_000, ct: 40_000, v: 10, lbls: defLbls},
-				{t: 50_000, ct: 40_000, v: 10, lbls: defLbls},
+				{t: 60_000, st: 40_000, v: 10, lbls: defLbls},
+				{t: 120_000, st: 40_000, v: 10, lbls: defLbls},
+				{t: 180_000, st: 40_000, v: 10, lbls: defLbls},
+				{t: 50_000, st: 40_000, v: 10, lbls: defLbls},
 			},
 			expectedSamples: []*walSample{
 				{t: 40_000, f: 0, lbls: defLbls},
@@ -1271,8 +1271,8 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 			for _, sample := range tc.inputSamples {
 				// We supposed to write a Histogram to the WAL
 				if sample.h != nil {
-					_, err := app.AppendHistogramCTZeroSample(0, sample.lbls, sample.t, sample.ct, zeroHistogram, nil)
-					if !errors.Is(err, storage.ErrOutOfOrderCT) {
+					_, err := app.AppendHistogramSTZeroSample(0, sample.lbls, sample.t, sample.st, zeroHistogram, nil)
+					if !errors.Is(err, storage.ErrOutOfOrderST) {
 						require.Equal(t, sample.expectsError, err != nil, "expected error: %v, got: %v", sample.expectsError, err)
 					}
 
@@ -1280,8 +1280,8 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 					require.NoError(t, err)
 				} else {
 					// We supposed to write a float sample to the WAL
-					_, err := app.AppendCTZeroSample(0, sample.lbls, sample.t, sample.ct)
-					if !errors.Is(err, storage.ErrOutOfOrderCT) {
+					_, err := app.AppendSTZeroSample(0, sample.lbls, sample.t, sample.st)
+					if !errors.Is(err, storage.ErrOutOfOrderST) {
 						require.Equal(t, sample.expectsError, err != nil, "expected error: %v, got: %v", sample.expectsError, err)
 					}
 

@@ -272,7 +272,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                convertTimeStamp(ts),
-						ct:               convertTimeStamp(ts),
+						st:               convertTimeStamp(ts),
 						v:                1,
 					},
 				}

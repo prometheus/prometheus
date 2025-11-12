@@ -83,14 +83,14 @@ func (a *initAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t
 	return a.app.AppendHistogram(ref, l, t, h, fh)
 }
 
-func (a *initAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *initAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.Labels, t, st int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if a.app != nil {
-		return a.app.AppendHistogramCTZeroSample(ref, l, t, ct, h, fh)
+		return a.app.AppendHistogramSTZeroSample(ref, l, t, st, h, fh)
 	}
 	a.head.initTime(t)
 	a.app = a.head.appender()
 
-	return a.app.AppendHistogramCTZeroSample(ref, l, t, ct, h, fh)
+	return a.app.AppendHistogramSTZeroSample(ref, l, t, st, h, fh)
 }
 
 func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
@@ -102,15 +102,15 @@ func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m 
 	return a.app.UpdateMetadata(ref, l, m)
 }
 
-func (a *initAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64) (storage.SeriesRef, error) {
+func (a *initAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, st int64) (storage.SeriesRef, error) {
 	if a.app != nil {
-		return a.app.AppendCTZeroSample(ref, lset, t, ct)
+		return a.app.AppendSTZeroSample(ref, lset, t, st)
 	}
 
 	a.head.initTime(t)
 	a.app = a.head.appender()
 
-	return a.app.AppendCTZeroSample(ref, lset, t, ct)
+	return a.app.AppendSTZeroSample(ref, lset, t, st)
 }
 
 // initTime initializes a head with the first timestamp. This only needs to be called
@@ -483,12 +483,12 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	return storage.SeriesRef(s.ref), nil
 }
 
-// AppendCTZeroSample appends synthetic zero sample for ct timestamp. It returns
+// AppendSTZeroSample appends synthetic zero sample for st timestamp. It returns
 // error when sample can't be appended. See
-// storage.CreatedTimestampAppender.AppendCTZeroSample for further documentation.
-func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64) (storage.SeriesRef, error) {
-	if ct >= t {
-		return 0, storage.ErrCTNewerThanSample
+// storage.StartTimestampAppender.AppendSTZeroSample for further documentation.
+func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, st int64) (storage.SeriesRef, error) {
+	if st >= t {
+		return 0, storage.ErrSTNewerThanSample
 	}
 
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
@@ -500,11 +500,11 @@ func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Lab
 		}
 	}
 
-	// Check if CT wouldn't be OOO vs samples we already might have for this series.
+	// Check if ST wouldn't be OOO vs samples we already might have for this series.
 	// NOTE(bwplotka): This will be often hit as it's expected for long living
-	// counters to share the same CT.
+	// counters to share the same ST.
 	s.Lock()
-	isOOO, _, err := s.appendable(ct, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	isOOO, _, err := s.appendable(st, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 	if err == nil {
 		s.pendingCommit = true
 	}
@@ -513,14 +513,14 @@ func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Lab
 		return 0, err
 	}
 	if isOOO {
-		return storage.SeriesRef(s.ref), storage.ErrOutOfOrderCT
+		return storage.SeriesRef(s.ref), storage.ErrOutOfOrderST
 	}
 
-	if ct > a.maxt {
-		a.maxt = ct
+	if st > a.maxt {
+		a.maxt = st
 	}
 	b := a.getCurrentBatch(stFloat, s.ref)
-	b.floats = append(b.floats, record.RefSample{Ref: s.ref, T: ct, V: 0.0})
+	b.floats = append(b.floats, record.RefSample{Ref: s.ref, T: st, V: 0.0})
 	b.floatSeries = append(b.floatSeries, s)
 	return storage.SeriesRef(s.ref), nil
 }
@@ -902,9 +902,9 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 	return storage.SeriesRef(s.ref), nil
 }
 
-func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	if ct >= t {
-		return 0, storage.ErrCTNewerThanSample
+func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, st int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	if st >= t {
+		return 0, storage.ErrSTNewerThanSample
 	}
 
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
@@ -919,7 +919,7 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 	switch {
 	case h != nil:
 		zeroHistogram := &histogram.Histogram{
-			// The CTZeroSample represents a counter reset by definition.
+			// The STZeroSample represents a counter reset by definition.
 			CounterResetHint: histogram.CounterReset,
 			// Replicate other fields to avoid needless chunk creation.
 			Schema:        h.Schema,
@@ -927,41 +927,41 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 			CustomValues:  h.CustomValues,
 		}
 		s.Lock()
-		// For CTZeroSamples OOO is not allowed.
+		// For STZeroSamples OOO is not allowed.
 		// We set it to true to make this implementation as close as possible to the float implementation.
-		isOOO, _, err := s.appendableHistogram(ct, zeroHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		isOOO, _, err := s.appendableHistogram(st, zeroHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
 			s.Unlock()
 			if errors.Is(err, storage.ErrOutOfOrderSample) {
-				return 0, storage.ErrOutOfOrderCT
+				return 0, storage.ErrOutOfOrderST
 			}
 
 			return 0, err
 		}
 
-		// OOO is not allowed because after the first scrape, CT will be the same for most (if not all) future samples.
+		// OOO is not allowed because after the first scrape, ST will be the same for most (if not all) future samples.
 		// This is to prevent the injected zero from being marked as OOO forever.
 		if isOOO {
 			s.Unlock()
-			return 0, storage.ErrOutOfOrderCT
+			return 0, storage.ErrOutOfOrderST
 		}
 
 		s.pendingCommit = true
 		s.Unlock()
-		st := stHistogram
+		sTyp := stHistogram
 		if h.UsesCustomBuckets() {
-			st = stCustomBucketHistogram
+			sTyp = stCustomBucketHistogram
 		}
-		b := a.getCurrentBatch(st, s.ref)
+		b := a.getCurrentBatch(sTyp, s.ref)
 		b.histograms = append(b.histograms, record.RefHistogramSample{
 			Ref: s.ref,
-			T:   ct,
+			T:   st,
 			H:   zeroHistogram,
 		})
 		b.histogramSeries = append(b.histogramSeries, s)
 	case fh != nil:
 		zeroFloatHistogram := &histogram.FloatHistogram{
-			// The CTZeroSample represents a counter reset by definition.
+			// The STZeroSample represents a counter reset by definition.
 			CounterResetHint: histogram.CounterReset,
 			// Replicate other fields to avoid needless chunk creation.
 			Schema:        fh.Schema,
@@ -970,40 +970,40 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 		}
 		s.Lock()
 		// We set it to true to make this implementation as close as possible to the float implementation.
-		isOOO, _, err := s.appendableFloatHistogram(ct, zeroFloatHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow) // OOO is not allowed for CTZeroSamples.
+		isOOO, _, err := s.appendableFloatHistogram(st, zeroFloatHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow) // OOO is not allowed for STZeroSamples.
 		if err != nil {
 			s.Unlock()
 			if errors.Is(err, storage.ErrOutOfOrderSample) {
-				return 0, storage.ErrOutOfOrderCT
+				return 0, storage.ErrOutOfOrderST
 			}
 
 			return 0, err
 		}
 
-		// OOO is not allowed because after the first scrape, CT will be the same for most (if not all) future samples.
+		// OOO is not allowed because after the first scrape, ST will be the same for most (if not all) future samples.
 		// This is to prevent the injected zero from being marked as OOO forever.
 		if isOOO {
 			s.Unlock()
-			return 0, storage.ErrOutOfOrderCT
+			return 0, storage.ErrOutOfOrderST
 		}
 
 		s.pendingCommit = true
 		s.Unlock()
-		st := stFloatHistogram
+		sTyp := stFloatHistogram
 		if fh.UsesCustomBuckets() {
-			st = stCustomBucketFloatHistogram
+			sTyp = stCustomBucketFloatHistogram
 		}
-		b := a.getCurrentBatch(st, s.ref)
+		b := a.getCurrentBatch(sTyp, s.ref)
 		b.floatHistograms = append(b.floatHistograms, record.RefFloatHistogramSample{
 			Ref: s.ref,
-			T:   ct,
+			T:   st,
 			FH:  zeroFloatHistogram,
 		})
 		b.floatHistogramSeries = append(b.floatHistogramSeries, s)
 	}
 
-	if ct > a.maxt {
-		a.maxt = ct
+	if st > a.maxt {
+		a.maxt = st
 	}
 
 	return storage.SeriesRef(s.ref), nil

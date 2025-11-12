@@ -67,20 +67,27 @@ Enables PromQL functions that are considered experimental. These functions
 might change their name, syntax, or semantics. They might also get removed
 entirely.
 
-## Created Timestamps Zero Injection
+## Start (Created) Timestamps Zero Injection
 
 `--enable-feature=created-timestamp-zero-ingestion`
 
-Enables ingestion of created timestamp. Created timestamps are injected as 0 valued samples when appropriate. See [PromCon talk](https://youtu.be/nWf0BfQ5EEA) for details.
+> NOTE: CreatedTimestamp feature was renamed to StartTimestamp for consistency. The above flag uses old name for stability.
 
-Currently Prometheus supports created timestamps only on the traditional
-Prometheus Protobuf protocol (WIP for other protocols). Therefore, enabling
-this feature pre-sets the global `scrape_protocols` configuration option to 
-`[ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ]`,
-resulting in negotiating the Prometheus Protobuf protocol with first priority
-(unless the `scrape_protocols` option is set to a different value explicitly).
+Enables ingestion of start timestamp. Start timestamps are injected as 0 valued samples when appropriate. See [PromCon talk](https://youtu.be/nWf0BfQ5EEA) for details.
 
-Besides enabling this feature in Prometheus, created timestamps need to be exposed by the application being scraped.
+Currently, Prometheus supports start timestamps on the
+
+* `PrometheusProto`
+* `OpenMetrics1.0.0`
+  
+
+From the above, Prometheus recommends `PrometheusProto`. This is because OpenMetrics 1.0 Start Timestamp information is shared as a `<metric>_created` metric and parsing those
+are prone to errors and expensive (thus, adding an overhead). You also need to be careful to not pollute your Prometheus with extra `_created` metrics.
+  
+Therefore, when `created-timestamp-zero-ingestion` is enabled Prometheus changes the global `scrape_protocols` default configuration option to 
+`[ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ]`, resulting in negotiating the Prometheus Protobuf protocol first (unless the `scrape_protocols` option is set to a different value explicitly).
+
+Besides enabling this feature in Prometheus, start timestamps need to be exposed by the application being scraped.
 
 ## Concurrent evaluation of independent rules
 

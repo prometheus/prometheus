@@ -36,7 +36,7 @@ import (
 // and allows comparison with expfmt decoders if applicable.
 //
 // NOTE(bwplotka): Previous iterations of this benchmark had different cases for isolated
-// Series, Series+Metrics with and without reuse, Series+CT. Those cases are sometimes
+// Series, Series+Metrics with and without reuse, Series+ST. Those cases are sometimes
 // good to know if you are working on a certain optimization, but it does not
 // make sense to persist such cases for everybody (e.g. for CI one day).
 // For local iteration, feel free to adjust cases/comment out code etc.
@@ -153,7 +153,7 @@ func benchParse(b *testing.B, data []byte, parser string) {
 		}
 	case "omtext":
 		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
-			return NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
+			return NewOpenMetricsParser(b, st, WithOMParserSTSeriesSkipped())
 		}
 	case "omtext_with_nhcb":
 		newParserFn = func(buf []byte, st *labels.SymbolTable) Parser {
@@ -206,7 +206,7 @@ func benchParse(b *testing.B, data []byte, parser string) {
 			}
 
 			p.Labels(&res)
-			_ = p.CreatedTimestamp()
+			_ = p.StartTimestamp()
 			for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
 			}
 		}
@@ -266,11 +266,11 @@ func readTestdataFile(tb testing.TB, file string) []byte {
 
 /*
 	export bench=v1 && go test ./model/textparse/... \
-		 -run '^$' -bench '^BenchmarkCreatedTimestampPromProto' \
+		 -run '^$' -bench '^BenchmarkStartTimestampPromProto' \
 		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
 	 | tee ${bench}.txt
 */
-func BenchmarkCreatedTimestampPromProto(b *testing.B) {
+func BenchmarkStartTimestampPromProto(b *testing.B) {
 	data := createTestProtoBuf(b).Bytes()
 
 	st := labels.NewSymbolTable()
@@ -301,7 +301,7 @@ Inner:
 		b.ReportAllocs()
 		b.ResetTimer()
 		for b.Loop() {
-			if p.CreatedTimestamp() != 0 {
+			if p.StartTimestamp() != 0 {
 				b.Fatal("should be nil")
 			}
 		}
@@ -331,7 +331,7 @@ Inner2:
 		b.ReportAllocs()
 		b.ResetTimer()
 		for b.Loop() {
-			if p.CreatedTimestamp() == 0 {
+			if p.StartTimestamp() == 0 {
 				b.Fatal("should be not nil")
 			}
 		}

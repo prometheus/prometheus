@@ -263,8 +263,8 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "ooo-native-histograms":
 				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			case "created-timestamp-zero-ingestion":
-				c.scrape.EnableCreatedTimestampZeroIngestion = true
-				c.web.CTZeroIngestionEnabled = true
+				c.scrape.EnableStartTimestampZeroIngestion = true
+				c.web.STZeroIngestionEnabled = true
 				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
@@ -1729,7 +1729,7 @@ func (notReadyAppender) AppendHistogram(storage.SeriesRef, labels.Labels, int64,
 	return 0, tsdb.ErrNotReady
 }
 
-func (notReadyAppender) AppendHistogramCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (notReadyAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 
@@ -1737,7 +1737,7 @@ func (notReadyAppender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadat
 	return 0, tsdb.ErrNotReady
 }
 
-func (notReadyAppender) AppendCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
+func (notReadyAppender) AppendSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 

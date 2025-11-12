@@ -83,7 +83,7 @@ type NHCBParser struct {
 	fhNHCB           *histogram.FloatHistogram
 	lsetNHCB         labels.Labels
 	exemplars        []exemplar.Exemplar
-	ctNHCB           int64
+	stNHCB           int64
 	metricStringNHCB string
 
 	// Collates values from the classic histogram series to build
@@ -92,7 +92,7 @@ type NHCBParser struct {
 	tempNHCB          convertnhcb.TempHistogram
 	tempExemplars     []exemplar.Exemplar
 	tempExemplarCount int
-	tempCT            int64
+	tempST            int64
 
 	// Remembers the last base histogram metric name (assuming it's
 	// a classic histogram) so we can tell if the next float series
@@ -159,16 +159,16 @@ func (p *NHCBParser) Exemplar(ex *exemplar.Exemplar) bool {
 	return p.parser.Exemplar(ex)
 }
 
-func (p *NHCBParser) CreatedTimestamp() int64 {
+func (p *NHCBParser) StartTimestamp() int64 {
 	switch p.state {
 	case stateStart, stateInhibiting:
 		if p.entry == EntrySeries || p.entry == EntryHistogram {
-			return p.parser.CreatedTimestamp()
+			return p.parser.StartTimestamp()
 		}
 	case stateCollecting:
-		return p.tempCT
+		return p.tempST
 	case stateEmitting:
-		return p.ctNHCB
+		return p.stNHCB
 	}
 	return 0
 }
@@ -318,7 +318,7 @@ func (p *NHCBParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 func (p *NHCBParser) processClassicHistogramSeries(lset labels.Labels, name string, updateHist func(*convertnhcb.TempHistogram)) {
 	if p.state != stateCollecting {
 		p.storeClassicLabels(name)
-		p.tempCT = p.parser.CreatedTimestamp()
+		p.tempST = p.parser.StartTimestamp()
 		p.state = stateCollecting
 		p.tempLsetNHCB = convertnhcb.GetHistogramMetricBase(lset, name)
 	}
@@ -385,13 +385,13 @@ func (p *NHCBParser) processNHCB() bool {
 		p.bytesNHCB = []byte(p.metricStringNHCB)
 		p.lsetNHCB = p.tempLsetNHCB
 		p.swapExemplars()
-		p.ctNHCB = p.tempCT
+		p.stNHCB = p.tempST
 		p.state = stateEmitting
 	} else {
 		p.state = stateStart
 	}
 	p.tempNHCB.Reset()
 	p.tempExemplarCount = 0
-	p.tempCT = 0
+	p.tempST = 0
 	return err == nil
 }

@@ -318,22 +318,22 @@ func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels,
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, ct int64) (storage.SeriesRef, error) {
+func (t *timestampTracker) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, st int64) (storage.SeriesRef, error) {
 	t.samples++
-	if ct > t.highestTimestamp {
-		// Theoretically, we should never see a CT zero sample with a timestamp higher than the highest timestamp we've seen so far.
+	if st > t.highestTimestamp {
+		// Theoretically, we should never see a ST zero sample with a timestamp higher than the highest timestamp we've seen so far.
 		// However, we're not going to enforce that here, as it is not the responsibility of the tracker to enforce this.
-		t.highestTimestamp = ct
+		t.highestTimestamp = st
 	}
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendHistogramCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, ct int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (t *timestampTracker) AppendHistogramSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, st int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	t.histograms++
-	if ct > t.highestTimestamp {
-		// Theoretically, we should never see a CT zero sample with a timestamp higher than the highest timestamp we've seen so far.
+	if st > t.highestTimestamp {
+		// Theoretically, we should never see a ST zero sample with a timestamp higher than the highest timestamp we've seen so far.
 		// However, we're not going to enforce that here, as it is not the responsibility of the tracker to enforce this.
-		t.highestTimestamp = ct
+		t.highestTimestamp = st
 	}
 	return 0, nil
 }

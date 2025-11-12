@@ -67,13 +67,13 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			return annots, err
 		}
 		ts := convertTimeStamp(pt.Timestamp())
-		ct := convertTimeStamp(pt.StartTimestamp())
+		st := convertTimeStamp(pt.StartTimestamp())
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return annots, err
 		}
 		// OTel exponential histograms are always Int Histograms.
-		if err = c.appender.AppendHistogram(lbls, meta, ct, ts, hp, exemplars); err != nil {
+		if err = c.appender.AppendHistogram(lbls, meta, st, ts, hp, exemplars); err != nil {
 			return annots, err
 		}
 	}
@@ -286,12 +286,12 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 			return annots, err
 		}
 		ts := convertTimeStamp(pt.Timestamp())
-		ct := convertTimeStamp(pt.StartTimestamp())
+		st := convertTimeStamp(pt.StartTimestamp())
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return annots, err
 		}
-		if err = c.appender.AppendHistogram(lbls, meta, ct, ts, hp, exemplars); err != nil {
+		if err = c.appender.AppendHistogram(lbls, meta, st, ts, hp, exemplars); err != nil {
 			return annots, err
 		}
 	}

@@ -44,13 +44,13 @@ var (
 	ErrExemplarsDisabled           = errors.New("exemplar storage is disabled or max exemplars is less than or equal to 0")
 	ErrNativeHistogramsDisabled    = errors.New("native histograms are disabled")
 
-	// ErrOutOfOrderCT indicates failed append of CT to the storage
-	// due to CT being older the then newer sample.
+	// ErrOutOfOrderST indicates failed append of ST to the storage
+	// due to ST being older the then newer sample.
 	// NOTE(bwplotka): This can be both an instrumentation failure or commonly expected
 	// behaviour, and we currently don't have a way to determine this. As a result
 	// it's recommended to ignore this error for now.
-	ErrOutOfOrderCT      = errors.New("created timestamp out of order, ignoring")
-	ErrCTNewerThanSample = errors.New("CT is newer or the same as sample's timestamp, ignoring")
+	ErrOutOfOrderST      = errors.New("created timestamp out of order, ignoring")
+	ErrSTNewerThanSample = errors.New("ST is newer or the same as sample's timestamp, ignoring")
 )
 
 // SeriesRef is a generic series reference. In prometheus it is either a
@@ -294,7 +294,7 @@ type Appender interface {
 	ExemplarAppender
 	HistogramAppender
 	MetadataUpdater
-	CreatedTimestampAppender
+	StartTimestampAppender
 }
 
 // GetRef is an extra interface on Appenders used by downstream projects
@@ -338,20 +338,20 @@ type HistogramAppender interface {
 	// pointer. AppendHistogram won't mutate the histogram, but in turn
 	// depends on the caller to not mutate it either.
 	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
-	// AppendHistogramCTZeroSample adds synthetic zero sample for the given ct timestamp,
+	// AppendHistogramSTZeroSample adds synthetic zero sample for the given st timestamp,
 	// which will be associated with given series, labels and the incoming
-	// sample's t (timestamp). AppendHistogramCTZeroSample returns error if zero sample can't be
-	// appended, for example when ct is too old, or when it would collide with
+	// sample's t (timestamp). AppendHistogramSTZeroSample returns error if zero sample can't be
+	// appended, for example when st is too old, or when it would collide with
 	// incoming sample (sample has priority).
 	//
-	// AppendHistogramCTZeroSample has to be called before the corresponding histogram AppendHistogram.
+	// AppendHistogramSTZeroSample has to be called before the corresponding histogram AppendHistogram.
 	// A series reference number is returned which can be used to modify the
-	// CT for the given series in the same or later transactions.
+	// ST for the given series in the same or later transactions.
 	// Returned reference numbers are ephemeral and may be rejected in calls
-	// to AppendHistogramCTZeroSample() at any point.
+	// to AppendHistogramSTZeroSample() at any point.
 	//
 	// If the reference is 0 it must not be used for caching.
-	AppendHistogramCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
+	AppendHistogramSTZeroSample(ref SeriesRef, l labels.Labels, t, st int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
 }
 
 // MetadataUpdater provides an interface for associating metadata to stored series.
@@ -366,22 +366,22 @@ type MetadataUpdater interface {
 	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
 }
 
-// CreatedTimestampAppender provides an interface for appending CT to storage.
-type CreatedTimestampAppender interface {
-	// AppendCTZeroSample adds synthetic zero sample for the given ct timestamp,
+// StartTimestampAppender provides an interface for appending ST to storage.
+type StartTimestampAppender interface {
+	// AppendSTZeroSample adds synthetic zero sample for the given st timestamp,
 	// which will be associated with given series, labels and the incoming
-	// sample's t (timestamp). AppendCTZeroSample returns error if zero sample can't be
-	// appended, for example when ct is too old, or when it would collide with
+	// sample's t (timestamp). AppendSTZeroSample returns error if zero sample can't be
+	// appended, for example when st is too old, or when it would collide with
 	// incoming sample (sample has priority).
 	//
-	// AppendCTZeroSample has to be called before the corresponding sample Append.
+	// AppendSTZeroSample has to be called before the corresponding sample Append.
 	// A series reference number is returned which can be used to modify the
-	// CT for the given series in the same or later transactions.
+	// ST for the given series in the same or later transactions.
 	// Returned reference numbers are ephemeral and may be rejected in calls
-	// to AppendCTZeroSample() at any point.
+	// to AppendSTZeroSample() at any point.
 	//
 	// If the reference is 0 it must not be used for caching.
-	AppendCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64) (SeriesRef, error)
+	AppendSTZeroSample(ref SeriesRef, l labels.Labels, t, st int64) (SeriesRef, error)
 }
 
 // SeriesSet contains a set of series.
