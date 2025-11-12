@@ -3072,7 +3072,6 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 
 // vectorElemBinop evaluates a binary operation between two Vector elements.
 func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram, pos posrange.PositionRange) (res float64, resH *histogram.FloatHistogram, keep bool, info, err error) {
-	opName := parser.ItemTypeStr[op]
 	switch {
 	case hlhs == nil && hrhs == nil:
 		{
@@ -3111,7 +3110,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			case parser.MUL:
 				return 0, hrhs.Copy().Mul(lhs).Compact(0), true, nil, nil
 			case parser.ADD, parser.SUB, parser.DIV, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
-				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
+				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("float", parser.ItemTypeStr[op], "histogram", pos)
 			}
 		}
 	case hlhs != nil && hrhs == nil:
@@ -3122,7 +3121,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			case parser.DIV:
 				return 0, hlhs.Copy().Div(rhs).Compact(0), true, nil, nil
 			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
-				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
+				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", parser.ItemTypeStr[op], "float", pos)
 			}
 		}
 	case hlhs != nil && hrhs != nil:
@@ -3162,7 +3161,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 				// This operation expects that both histograms are compacted.
 				return 0, hlhs, !hlhs.Equals(hrhs), nil, nil
 			case parser.MUL, parser.DIV, parser.POW, parser.MOD, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
-				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
+				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", parser.ItemTypeStr[op], "histogram", pos)
 			}
 		}
 	}
@@ -3852,13 +3851,13 @@ func handleVectorBinopError(err error, e *parser.BinaryExpr) annotations.Annotat
 	if err == nil {
 		return nil
 	}
-	op := parser.ItemTypeStr[e.Op]
-	pos := e.PositionRange()
 	if errors.Is(err, annotations.PromQLInfo) || errors.Is(err, annotations.PromQLWarning) {
 		return annotations.New().Add(err)
 	}
 	// TODO(NeerajGartia21): Test the exact annotation output once the testing framework can do so.
 	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+		op := parser.ItemTypeStr[e.Op]
+		pos := e.PositionRange()
 		return annotations.New().Add(annotations.NewIncompatibleBucketLayoutInBinOpWarning(op, pos))
 	}
 	return nil
