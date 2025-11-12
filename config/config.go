@@ -1172,24 +1172,6 @@ type ExemplarsConfig struct {
 	// MaxExemplars sets the size, in # of exemplars stored, of the single circular buffer used to store exemplars in memory.
 	// Use a value of 0 or less than 0 to disable the storage without having to restart Prometheus.
 	MaxExemplars int64 `yaml:"max_exemplars,omitempty"`
-
-	// OutOfOrderTimeWindow sets how long back in time an out-of-order exemplar can be inserted
-	// into the TSDB. This flag is typically set while unmarshaling the configuration file and translating
-	// OutOfOrderTimeWindowFlag's duration. The unit of this flag is expected to be the same as any
-	// other timestamp in the TSDB.
-	OutOfOrderTimeWindow int64
-
-	OutOfOrderTimeWindowFlag model.Duration `yaml:"out_of_order_time_window,omitempty"`
-}
-
-func (t *ExemplarsConfig) UnmarshalYAML(unmarshal func(any) error) error {
-	*t = ExemplarsConfig{}
-	type plain ExemplarsConfig
-	if err := unmarshal((*plain)(t)); err != nil {
-		return err
-	}
-	t.OutOfOrderTimeWindow = time.Duration(t.OutOfOrderTimeWindowFlag).Milliseconds()
-	return nil
 }
 
 // AlertingConfig configures alerting and alertmanager related configs.
