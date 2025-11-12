@@ -4133,7 +4133,7 @@ func makeInt64Pointer(val int64) *int64 {
 // RatioSampler allows unit-testing (previously: Randomizer).
 type RatioSampler interface {
 	// Return this sample "offset" between [0.0, 1.0]
-	SampleOffset(ts int64, sample *Sample) float64
+	SampleOffset(sample *Sample) float64
 	AddRatioSample(r float64, sample *Sample) bool
 }
 
@@ -4147,7 +4147,7 @@ func NewHashRatioSampler() *HashRatioSampler {
 	return &HashRatioSampler{}
 }
 
-func (*HashRatioSampler) SampleOffset(_ int64, sample *Sample) float64 {
+func (*HashRatioSampler) SampleOffset(sample *Sample) float64 {
 	const (
 		float64MaxUint64 = float64(math.MaxUint64)
 	)
@@ -4155,7 +4155,7 @@ func (*HashRatioSampler) SampleOffset(_ int64, sample *Sample) float64 {
 }
 
 func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, sample *Sample) bool {
-	sampleOffset := s.SampleOffset(sample.T, sample)
+	sampleOffset := s.SampleOffset(sample)
 	return s.AddRatioSampleWithOffset(ratioLimit, sampleOffset)
 }
 
