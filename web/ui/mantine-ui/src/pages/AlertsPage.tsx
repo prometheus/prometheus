@@ -20,7 +20,13 @@ import badgeClasses from "../Badge.module.css";
 import panelClasses from "../Panel.module.css";
 import RuleDefinition from "../components/RuleDefinition";
 import { humanizeDurationRelative, now } from "../lib/formatTime";
-import { Fragment, useEffect, useMemo } from "react";
+import {
+  CompositionEvent,
+  Fragment,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { StateMultiSelect } from "../components/StateMultiSelect";
 import { IconInfoCircle, IconSearch } from "@tabler/icons-react";
 import { LabelBadges } from "../components/LabelBadges";
@@ -172,6 +178,31 @@ export default function AlertsPage() {
     "search",
     withDefault(StringParam, "")
   );
+
+  const [searchInput, setSearchInput] = useState<string>(searchFilter || "");
+  const [onComposition, setOnComposition] = useState(false);
+
+  function handleComposition(event: CompositionEvent<HTMLInputElement>) {
+    if (event.type === "compositionstart") {
+      setOnComposition(true);
+    }
+    if (event.type === "compositionend") {
+      setOnComposition(false);
+    }
+  }
+
+  useEffect(() => {
+    if (searchFilter != searchInput) {
+      setSearchInput(searchFilter || "");
+    }
+  }, [searchFilter, setSearchInput]);
+
+  useEffect(() => {
+    if (!onComposition) {
+      setSearchFilter(searchInput || "");
+    }
+  }, [searchInput, onComposition, setSearchFilter]);
+
   const [debouncedSearch] = useDebouncedValue<string>(searchFilter.trim(), 250);
   const [showEmptyGroups, setShowEmptyGroups] = useLocalStorage<boolean>({
     key: "alertsPage.showEmptyGroups",
@@ -449,11 +480,11 @@ export default function AlertsPage() {
           flex={1}
           leftSection={<IconSearch style={inputIconStyle} />}
           placeholder="Filter by rule name or labels"
-          value={searchFilter || ""}
-          onChange={(event) =>
-            setSearchFilter(event.currentTarget.value || null)
-          }
-        ></TextInput>
+          onCompositionStart={handleComposition}
+          onCompositionEnd={handleComposition}
+          value={searchInput || ""}
+          onChange={(event) => setSearchInput(event.currentTarget.value || "")}
+        />
       </Group>
       {alertsPageData.groups.length === 0 ? (
         <Alert title="No rules found" icon={<IconInfoCircle />}>
