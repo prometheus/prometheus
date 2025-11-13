@@ -1627,6 +1627,9 @@ type LazyLoaderOpts struct {
 	// Currently defaults to false, matches the "promql-delayed-name-removal"
 	// feature flag.
 	EnableDelayedNameRemoval bool
+	// MaxSamples is the maximum number of samples a query can load into memory.
+	// If 0, the default value of DefaultMaxSamplesPerQuery is used.
+	MaxSamples int
 }
 
 // NewLazyLoader returns an initialized empty LazyLoader.
@@ -1681,10 +1684,15 @@ func (ll *LazyLoader) clear() error {
 		return err
 	}
 
+	maxSamples := ll.opts.MaxSamples
+	if maxSamples == 0 {
+		maxSamples = DefaultMaxSamplesPerQuery
+	}
+
 	opts := promql.EngineOpts{
 		Logger:                   nil,
 		Reg:                      nil,
-		MaxSamples:               10000,
+		MaxSamples:               maxSamples,
 		Timeout:                  100 * time.Second,
 		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(ll.SubqueryInterval) },
 		EnableAtModifier:         ll.opts.EnableAtModifier,
