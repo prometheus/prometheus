@@ -546,7 +546,7 @@ func BucketFraction(lower, upper float64, buckets Buckets) float64 {
 
 	// If the upper bound of the first bucket is greater than 0, we assume
 	// we are dealing with positive buckets only and lowerBound for the
-	// first bucket is set to 0; otherwise it is set to -Inf
+	// first bucket is set to 0; otherwise it is set to -Inf.
 	lowerBound := 0.0
 	if buckets[0].UpperBound <= 0 {
 		lowerBound = math.Inf(-1)
