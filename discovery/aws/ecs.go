@@ -118,7 +118,7 @@ func (*ECSSDConfig) Name() string { return "ecs" }
 
 // NewDiscoverer returns a Discoverer for the EC2 Config.
 func (c *ECSSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewECSDiscovery(c, opts.Logger, opts.Metrics)
+	return NewECSDiscovery(c, opts)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the ECS Config.
@@ -165,22 +165,22 @@ type ECSDiscovery struct {
 }
 
 // NewECSDiscovery returns a new ECSDiscovery which periodically refreshes its targets.
-func NewECSDiscovery(conf *ECSSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*ECSDiscovery, error) {
-	m, ok := metrics.(*ecsMetrics)
+func NewECSDiscovery(conf *ECSSDConfig, opts discovery.DiscovererOptions) (*ECSDiscovery, error) {
+	m, ok := opts.Metrics.(*ecsMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
 	}
 
-	if logger == nil {
-		logger = promslog.NewNopLogger()
+	if opts.Logger == nil {
+		opts.Logger = promslog.NewNopLogger()
 	}
 	d := &ECSDiscovery{
-		logger: logger,
+		logger: opts.Logger,
 		cfg:    conf,
 	}
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "ecs",
 			Interval:            time.Duration(d.cfg.RefreshInterval),
 			RefreshF:            d.refresh,
