@@ -1301,6 +1301,30 @@ func TestOTLPDelta(t *testing.T) {
 	}
 }
 
+func TestOTLPWriteHandler_NativeHistogramsDisabled(t *testing.T) {
+	// Build an OTLP request that includes histogram data, then ensure handler returns 422 when NH is disabled.
+	timestamp := time.Now()
+	exportRequest := generateOTLPWriteRequest(timestamp, time.Time{})
+
+	buf, err := exportRequest.MarshalProto()
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/x-protobuf")
+
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	appendable := &mockAppendable{appendHistogramErr: storage.ErrNativeHistogramsDisabled}
+	handler := NewOTLPWriteHandler(log, nil, appendable, func() config.Config {
+		return config.Config{OTLPConfig: config.DefaultOTLPConfig}
+	}, OTLPOptions{})
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	resp := rec.Result()
+	require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
+}
+
 func BenchmarkOTLP(b *testing.B) {
 	start := time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC)
 
