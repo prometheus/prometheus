@@ -142,7 +142,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	fn := filepath.Join(dir, indexFilename)
 
 	// An empty index must still result in a readable file.
-	iw, err := NewWriter(context.Background(), fn)
+	iw, err := NewWriter(context.Background(), fn, false)
 	require.NoError(t, err)
 	require.NoError(t, iw.Close())
 
@@ -414,7 +414,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 }
 
 func TestWriter_ShouldReturnErrorOnSeriesWithDuplicatedLabelNames(t *testing.T) {
-	w, err := NewWriter(context.Background(), filepath.Join(t.TempDir(), "index"))
+	w, err := NewWriter(context.Background(), filepath.Join(t.TempDir(), "index"), false)
 	require.NoError(t, err)
 
 	require.NoError(t, w.AddSymbol("__name__"))
@@ -536,7 +536,7 @@ func TestDecoder_Postings_WrongInput(t *testing.T) {
 func TestChunksRefOrdering(t *testing.T) {
 	dir := t.TempDir()
 
-	idx, err := NewWriter(context.Background(), filepath.Join(dir, "index"))
+	idx, err := NewWriter(context.Background(), filepath.Join(dir, "index"), false)
 	require.NoError(t, err)
 
 	require.NoError(t, idx.AddSymbol("1"))
@@ -556,7 +556,7 @@ func TestChunksRefOrdering(t *testing.T) {
 func TestChunksTimeOrdering(t *testing.T) {
 	dir := t.TempDir()
 
-	idx, err := NewWriter(context.Background(), filepath.Join(dir, "index"))
+	idx, err := NewWriter(context.Background(), filepath.Join(dir, "index"), false)
 	require.NoError(t, err)
 
 	require.NoError(t, idx.AddSymbol("1"))
@@ -681,7 +681,7 @@ func createFileReader(ctx context.Context, tb testing.TB, input indexWriterSerie
 
 	fn := filepath.Join(tb.TempDir(), indexFilename)
 
-	iw, err := NewWriter(ctx, fn)
+	iw, err := NewWriter(ctx, fn, false)
 	require.NoError(tb, err)
 
 	symbols := map[string]struct{}{}

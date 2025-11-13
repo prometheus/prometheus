@@ -620,7 +620,7 @@ func testPostingsForLabelMatching(t *testing.T, offset storage.SeriesRef, setUp 
 
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []storage.Series) string {
-	blockDir, err := CreateBlock(series, dir, 0, promslog.NewNopLogger())
+	blockDir, err := CreateBlock(series, dir, 0, false, promslog.NewNopLogger())
 	require.NoError(tb, err)
 	return blockDir
 }
