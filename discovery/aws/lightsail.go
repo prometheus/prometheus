@@ -135,12 +135,16 @@ func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	return c.HTTPClientConfig.Validate()
 }
 
+type lightsailClient interface {
+	GetInstances(ctx context.Context, params *lightsail.GetInstancesInput, optFns ...func(*lightsail.Options)) (*lightsail.GetInstancesOutput, error)
+}
+
 // LightsailDiscovery periodically performs Lightsail-SD requests. It implements
 // the Discoverer interface.
 type LightsailDiscovery struct {
 	*refresh.Discovery
 	cfg       *LightsailSDConfig
-	lightsail *lightsail.Client
+	lightsail lightsailClient
 }
 
 // NewLightsailDiscovery returns a new LightsailDiscovery which periodically refreshes its targets.
@@ -170,7 +174,7 @@ func NewLightsailDiscovery(conf *LightsailSDConfig, opts discovery.DiscovererOpt
 	return d, nil
 }
 
-func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsail.Client, error) {
+func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (lightsailClient, error) {
 	if d.lightsail != nil {
 		return d.lightsail, nil
 	}
