@@ -122,7 +122,7 @@ var (
 					writev2.FromIntHistogram(30, &testHistogramCustomBuckets),
 					writev2.FromFloatHistogram(40, testHistogramCustomBuckets.ToFloat(nil)),
 				},
-				CreatedTimestamp: 1, // CT needs to be lower than the sample's timestamp.
+				CreatedTimestamp: 1, // ST needs to be lower than the sample's timestamp.
 			},
 			{
 				LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, // Same series as first.

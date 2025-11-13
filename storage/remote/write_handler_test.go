@@ -358,12 +358,12 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 
 		commitErr             error
 		appendSampleErr       error
-		appendCTZeroSampleErr error
+		appendSTZeroSampleErr error
 		appendHistogramErr    error
 		appendExemplarErr     error
 		updateMetadataErr     error
 
-		ingestCTZeroSample      bool
+		ingestSTZeroSample      bool
 		enableTypeAndUnitLabels bool
 		appendMetadata          bool
 		expectedLabels          labels.Labels // For verifying type/unit labels
@@ -372,7 +372,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			desc:               "All timeseries accepted/ct_enabled",
 			input:              writeV2RequestFixture.Timeseries,
 			expectedCode:       http.StatusNoContent,
-			ingestCTZeroSample: true,
+			ingestSTZeroSample: true,
 		},
 		{
 			desc:         "All timeseries accepted/ct_disabled",
@@ -701,12 +701,12 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			appendable := &mockAppendable{
 				commitErr:             tc.commitErr,
 				appendSampleErr:       tc.appendSampleErr,
-				appendCTZeroSampleErr: tc.appendCTZeroSampleErr,
+				appendSTZeroSampleErr: tc.appendSTZeroSampleErr,
 				appendHistogramErr:    tc.appendHistogramErr,
 				appendExemplarErr:     tc.appendExemplarErr,
 				updateMetadataErr:     tc.updateMetadataErr,
 			}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, tc.ingestCTZeroSample, tc.enableTypeAndUnitLabels, tc.appendMetadata)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, tc.ingestSTZeroSample, tc.enableTypeAndUnitLabels, tc.appendMetadata)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -758,7 +758,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				require.NoError(t, err)
 
 				for _, s := range ts.Samples {
-					if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+					if ts.CreatedTimestamp != 0 && tc.ingestSTZeroSample {
 						requireEqual(t, mockSample{ls, ts.CreatedTimestamp, 0}, appendable.samples[i])
 						i++
 					}
@@ -768,7 +768,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				for _, hp := range ts.Histograms {
 					if hp.IsFloatHistogram() {
 						fh := hp.ToFloatHistogram()
-						if !zeroFloatHistogramIngested && ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+						if !zeroFloatHistogramIngested && ts.CreatedTimestamp != 0 && tc.ingestSTZeroSample {
 							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, nil, &histogram.FloatHistogram{}}, appendable.histograms[k])
 							k++
 							zeroFloatHistogramIngested = true
@@ -776,7 +776,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 						requireEqual(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
 					} else {
 						h := hp.ToIntHistogram()
-						if !zeroHistogramIngested && ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+						if !zeroHistogramIngested && ts.CreatedTimestamp != 0 && tc.ingestSTZeroSample {
 							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, &histogram.Histogram{}, nil}, appendable.histograms[k])
 							k++
 							zeroHistogramIngested = true
@@ -785,7 +785,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 					}
 					k++
 				}
-				if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+				if ts.CreatedTimestamp != 0 && tc.ingestSTZeroSample {
 					require.True(t, zeroHistogramIngested)
 					require.True(t, zeroFloatHistogramIngested)
 				}
@@ -1190,7 +1190,7 @@ type mockAppendable struct {
 	// optional errors to inject.
 	commitErr             error
 	appendSampleErr       error
-	appendCTZeroSampleErr error
+	appendSTZeroSampleErr error
 	appendHistogramErr    error
 	appendExemplarErr     error
 	updateMetadataErr     error
@@ -1342,13 +1342,13 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	return storage.SeriesRef(hash), nil
 }
 
-func (m *mockAppendable) AppendHistogramCTZeroSample(_ storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	if m.appendCTZeroSampleErr != nil {
-		return 0, m.appendCTZeroSampleErr
+func (m *mockAppendable) AppendHistogramSTZeroSample(_ storage.SeriesRef, l labels.Labels, t, st int64, h *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	if m.appendSTZeroSampleErr != nil {
+		return 0, m.appendSTZeroSampleErr
 	}
 
 	// Created Timestamp can't be higher than the original sample's timestamp.
-	if ct > t {
+	if st > t {
 		return 0, storage.ErrOutOfOrderSample
 	}
 	hash := l.Hash()
@@ -1358,10 +1358,10 @@ func (m *mockAppendable) AppendHistogramCTZeroSample(_ storage.SeriesRef, l labe
 	} else {
 		latestTs = m.latestFloatHist[hash]
 	}
-	if ct < latestTs {
+	if st < latestTs {
 		return 0, storage.ErrOutOfOrderSample
 	}
-	if ct == latestTs {
+	if st == latestTs {
 		return 0, storage.ErrDuplicateSampleForTimestamp
 	}
 
@@ -1374,11 +1374,11 @@ func (m *mockAppendable) AppendHistogramCTZeroSample(_ storage.SeriesRef, l labe
 	}
 
 	if h != nil {
-		m.latestHistogram[hash] = ct
-		m.histograms = append(m.histograms, mockHistogram{l, ct, &histogram.Histogram{}, nil})
+		m.latestHistogram[hash] = st
+		m.histograms = append(m.histograms, mockHistogram{l, st, &histogram.Histogram{}, nil})
 	} else {
-		m.latestFloatHist[hash] = ct
-		m.histograms = append(m.histograms, mockHistogram{l, ct, nil, &histogram.FloatHistogram{}})
+		m.latestFloatHist[hash] = st
+		m.histograms = append(m.histograms, mockHistogram{l, st, nil, &histogram.FloatHistogram{}})
 	}
 	return storage.SeriesRef(hash), nil
 }
@@ -1392,21 +1392,21 @@ func (m *mockAppendable) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, 
 	return ref, nil
 }
 
-func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
-	if m.appendCTZeroSampleErr != nil {
-		return 0, m.appendCTZeroSampleErr
+func (m *mockAppendable) AppendSTZeroSample(_ storage.SeriesRef, l labels.Labels, t, st int64) (storage.SeriesRef, error) {
+	if m.appendSTZeroSampleErr != nil {
+		return 0, m.appendSTZeroSampleErr
 	}
 
 	// Created Timestamp can't be higher than the original sample's timestamp.
-	if ct > t {
+	if st > t {
 		return 0, storage.ErrOutOfOrderSample
 	}
 	hash := l.Hash()
 	latestTs := m.latestSample[hash]
-	if ct < latestTs {
+	if st < latestTs {
 		return 0, storage.ErrOutOfOrderSample
 	}
-	if ct == latestTs {
+	if st == latestTs {
 		return 0, storage.ErrDuplicateSampleForTimestamp
 	}
 
@@ -1417,8 +1417,8 @@ func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, l labels.Labels
 		return 0, tsdb.ErrInvalidSample
 	}
 
-	m.latestSample[hash] = ct
-	m.samples = append(m.samples, mockSample{l, ct, 0})
+	m.latestSample[hash] = st
+	m.samples = append(m.samples, mockSample{l, st, 0})
 	return storage.SeriesRef(hash), nil
 }
 

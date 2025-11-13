@@ -61,8 +61,8 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		ts := convertTimeStamp(pt.Timestamp())
-		ct := convertTimeStamp(pt.StartTimestamp())
-		if err := c.appender.AppendSample(labels, meta, ct, ts, val, nil); err != nil {
+		st := convertTimeStamp(pt.StartTimestamp())
+		if err := c.appender.AppendSample(labels, meta, st, ts, val, nil); err != nil {
 			return err
 		}
 	}
@@ -104,12 +104,12 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		ts := convertTimeStamp(pt.Timestamp())
-		ct := convertTimeStamp(pt.StartTimestamp())
+		st := convertTimeStamp(pt.StartTimestamp())
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return err
 		}
-		if err := c.appender.AppendSample(lbls, meta, ct, ts, val, exemplars); err != nil {
+		if err := c.appender.AppendSample(lbls, meta, st, ts, val, exemplars); err != nil {
 			return err
 		}
 	}

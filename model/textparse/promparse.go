@@ -274,9 +274,9 @@ func (*PromParser) Exemplar(*exemplar.Exemplar) bool {
 	return false
 }
 
-// CreatedTimestamp returns 0 as it's not implemented yet.
+// StartTimestamp returns 0 as it's not implemented yet.
 // TODO(bwplotka): https://github.com/prometheus/prometheus/issues/12980
-func (*PromParser) CreatedTimestamp() int64 {
+func (*PromParser) StartTimestamp() int64 {
 	return 0
 }
 

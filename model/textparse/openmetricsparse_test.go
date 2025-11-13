@@ -66,7 +66,7 @@ ss{A="a"} 0
 _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
 testmetric{label="\"bar\""} 1
-# HELP foo Counter with and without labels to certify CT is parsed for both cases
+# HELP foo Counter with and without labels to certify ST is parsed for both cases
 # TYPE foo counter
 foo_total 17.0 1520879607.789 # {id="counter-test"} 5
 foo_created 1520872607.123
@@ -75,7 +75,7 @@ foo_created{a="b"} 1520872607.123
 foo_total{le="c"} 21.0
 foo_created{le="c"} 1520872621.123
 foo_total{le="1"} 10.0
-# HELP bar Summary with CT at the end, making sure we find CT even if it's multiple lines a far
+# HELP bar Summary with ST at the end, making sure we find ST even if it's multiple lines a far
 # TYPE bar summary
 bar_count 17.0
 bar_sum 324789.3
@@ -89,7 +89,7 @@ baz_bucket{le="+Inf"} 17
 baz_count 17
 baz_sum 324789.3
 baz_created 1520872609.125
-# HELP fizz_created Gauge which shouldn't be parsed as CT
+# HELP fizz_created Gauge which shouldn't be parsed as ST
 # TYPE fizz_created gauge
 fizz_created 17.0
 # HELP something Histogram with _created between buckets and summary
@@ -351,7 +351,7 @@ foobar{quantile="0.99"} 150.1`
 					lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
 				}, {
 					m:    "foo",
-					help: "Counter with and without labels to certify CT is parsed for both cases",
+					help: "Counter with and without labels to certify ST is parsed for both cases",
 				}, {
 					m:   "foo",
 					typ: model.MetricTypeCounter,
@@ -367,7 +367,7 @@ foobar{quantile="0.99"} 150.1`
 					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
 					},
-					ct: 1520872607123,
+					st: 1520872607123,
 				}, {
 					m: `foo_total{a="b"}`,
 					v: 17.0,
@@ -380,7 +380,7 @@ foobar{quantile="0.99"} 150.1`
 					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
 					},
-					ct: 1520872607123,
+					st: 1520872607123,
 				}, {
 					m: `foo_total{le="c"}`,
 					v: 21.0,
@@ -389,7 +389,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "foo_total", "__type__", string(model.MetricTypeCounter), "le", "c"),
 						labels.FromStrings("__name__", "foo_total", "le", "c"),
 					),
-					ct: 1520872621123,
+					st: 1520872621123,
 				}, {
 					m: `foo_total{le="1"}`,
 					v: 10.0,
@@ -400,7 +400,7 @@ foobar{quantile="0.99"} 150.1`
 					),
 				}, {
 					m:    "bar",
-					help: "Summary with CT at the end, making sure we find CT even if it's multiple lines a far",
+					help: "Summary with ST at the end, making sure we find ST even if it's multiple lines a far",
 				}, {
 					m:   "bar",
 					typ: model.MetricTypeSummary,
@@ -412,7 +412,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "bar_count", "__type__", string(model.MetricTypeSummary)),
 						labels.FromStrings("__name__", "bar_count"),
 					),
-					ct: 1520872608124,
+					st: 1520872608124,
 				}, {
 					m: "bar_sum",
 					v: 324789.3,
@@ -421,7 +421,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "bar_sum", "__type__", string(model.MetricTypeSummary)),
 						labels.FromStrings("__name__", "bar_sum"),
 					),
-					ct: 1520872608124,
+					st: 1520872608124,
 				}, {
 					m: `bar{quantile="0.95"}`,
 					v: 123.7,
@@ -430,7 +430,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "bar", "__type__", string(model.MetricTypeSummary), "quantile", "0.95"),
 						labels.FromStrings("__name__", "bar", "quantile", "0.95"),
 					),
-					ct: 1520872608124,
+					st: 1520872608124,
 				}, {
 					m: `bar{quantile="0.99"}`,
 					v: 150.0,
@@ -439,7 +439,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "bar", "__type__", string(model.MetricTypeSummary), "quantile", "0.99"),
 						labels.FromStrings("__name__", "bar", "quantile", "0.99"),
 					),
-					ct: 1520872608124,
+					st: 1520872608124,
 				}, {
 					m:    "baz",
 					help: "Histogram with the same objective as above's summary",
@@ -454,7 +454,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "baz_bucket", "__type__", string(model.MetricTypeHistogram), "le", "0.0"),
 						labels.FromStrings("__name__", "baz_bucket", "le", "0.0"),
 					),
-					ct: 1520872609125,
+					st: 1520872609125,
 				}, {
 					m: `baz_bucket{le="+Inf"}`,
 					v: 17,
@@ -463,7 +463,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "baz_bucket", "__type__", string(model.MetricTypeHistogram), "le", "+Inf"),
 						labels.FromStrings("__name__", "baz_bucket", "le", "+Inf"),
 					),
-					ct: 1520872609125,
+					st: 1520872609125,
 				}, {
 					m: `baz_count`,
 					v: 17,
@@ -472,7 +472,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "baz_count", "__type__", string(model.MetricTypeHistogram)),
 						labels.FromStrings("__name__", "baz_count"),
 					),
-					ct: 1520872609125,
+					st: 1520872609125,
 				}, {
 					m: `baz_sum`,
 					v: 324789.3,
@@ -481,10 +481,10 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "baz_sum", "__type__", string(model.MetricTypeHistogram)),
 						labels.FromStrings("__name__", "baz_sum"),
 					),
-					ct: 1520872609125,
+					st: 1520872609125,
 				}, {
 					m:    "fizz_created",
-					help: "Gauge which shouldn't be parsed as CT",
+					help: "Gauge which shouldn't be parsed as ST",
 				}, {
 					m:   "fizz_created",
 					typ: model.MetricTypeGauge,
@@ -510,7 +510,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "something_count", "__type__", string(model.MetricTypeHistogram)),
 						labels.FromStrings("__name__", "something_count"),
 					),
-					ct: 1520430001000,
+					st: 1520430001000,
 				}, {
 					m: `something_sum`,
 					v: 324789.4,
@@ -519,7 +519,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "something_sum", "__type__", string(model.MetricTypeHistogram)),
 						labels.FromStrings("__name__", "something_sum"),
 					),
-					ct: 1520430001000,
+					st: 1520430001000,
 				}, {
 					m: `something_bucket{le="0.0"}`,
 					v: 1,
@@ -528,7 +528,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "something_bucket", "__type__", string(model.MetricTypeHistogram), "le", "0.0"),
 						labels.FromStrings("__name__", "something_bucket", "le", "0.0"),
 					),
-					ct: 1520430001000,
+					st: 1520430001000,
 				}, {
 					m: `something_bucket{le="1"}`,
 					v: 2,
@@ -537,7 +537,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "something_bucket", "__type__", string(model.MetricTypeHistogram), "le", "1.0"),
 						labels.FromStrings("__name__", "something_bucket", "le", "1.0"),
 					),
-					ct: 1520430001000,
+					st: 1520430001000,
 				}, {
 					m: `something_bucket{le="+Inf"}`,
 					v: 18,
@@ -546,7 +546,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "something_bucket", "__type__", string(model.MetricTypeHistogram), "le", "+Inf"),
 						labels.FromStrings("__name__", "something_bucket", "le", "+Inf"),
 					),
-					ct: 1520430001000,
+					st: 1520430001000,
 				}, {
 					m:    "yum",
 					help: "Summary with _created between sum and quantiles",
@@ -561,7 +561,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "yum_count", "__type__", string(model.MetricTypeSummary)),
 						labels.FromStrings("__name__", "yum_count"),
 					),
-					ct: 1520430003000,
+					st: 1520430003000,
 				}, {
 					m: `yum_sum`,
 					v: 324789.5,
@@ -570,7 +570,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "yum_sum", "__type__", string(model.MetricTypeSummary)),
 						labels.FromStrings("__name__", "yum_sum"),
 					),
-					ct: 1520430003000,
+					st: 1520430003000,
 				}, {
 					m: `yum{quantile="0.95"}`,
 					v: 123.7,
@@ -579,7 +579,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "yum", "__type__", string(model.MetricTypeSummary), "quantile", "0.95"),
 						labels.FromStrings("__name__", "yum", "quantile", "0.95"),
 					),
-					ct: 1520430003000,
+					st: 1520430003000,
 				}, {
 					m: `yum{quantile="0.99"}`,
 					v: 150.0,
@@ -588,7 +588,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "yum", "__type__", string(model.MetricTypeSummary), "quantile", "0.99"),
 						labels.FromStrings("__name__", "yum", "quantile", "0.99"),
 					),
-					ct: 1520430003000,
+					st: 1520430003000,
 				}, {
 					m:    "foobar",
 					help: "Summary with _created as the first line",
@@ -603,7 +603,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "foobar_count", "__type__", string(model.MetricTypeSummary)),
 						labels.FromStrings("__name__", "foobar_count"),
 					),
-					ct: 1520430004000,
+					st: 1520430004000,
 				}, {
 					m: `foobar_sum`,
 					v: 324789.6,
@@ -612,7 +612,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "foobar_sum", "__type__", string(model.MetricTypeSummary)),
 						labels.FromStrings("__name__", "foobar_sum"),
 					),
-					ct: 1520430004000,
+					st: 1520430004000,
 				}, {
 					m: `foobar{quantile="0.95"}`,
 					v: 123.8,
@@ -621,7 +621,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "foobar", "__type__", string(model.MetricTypeSummary), "quantile", "0.95"),
 						labels.FromStrings("__name__", "foobar", "quantile", "0.95"),
 					),
-					ct: 1520430004000,
+					st: 1520430004000,
 				}, {
 					m: `foobar{quantile="0.99"}`,
 					v: 150.1,
@@ -630,7 +630,7 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "foobar", "__type__", string(model.MetricTypeSummary), "quantile", "0.99"),
 						labels.FromStrings("__name__", "foobar", "quantile", "0.99"),
 					),
-					ct: 1520430004000,
+					st: 1520430004000,
 				}, {
 					m:    "metric",
 					help: "foo\x00bar",
@@ -640,7 +640,7 @@ foobar{quantile="0.99"} 150.1`
 					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"), model.MetricTypeSummary),
 				},
 			}
-			opts := []OpenMetricsOption{WithOMParserCTSeriesSkipped()}
+			opts := []OpenMetricsOption{WithOMParserSTSeriesSkipped()}
 			if typeAndUnitEnabled {
 				opts = append(opts, WithOMParserTypeAndUnitLabels())
 			}
@@ -684,12 +684,12 @@ quotedexemplar2_count 1 # {"id.thing"="histogram-count-test",other="hello"} 4
 			m:    `{"go.gc_duration_seconds",quantile="0"}`,
 			v:    4.9351e-05,
 			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.0"),
-			ct:   1520872607123,
+			st:   1520872607123,
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0.25"}`,
 			v:    7.424100000000001e-05,
 			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.25"),
-			ct:   1520872607123,
+			st:   1520872607123,
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0.5",a="b"}`,
 			v:    8.3835e-05,
@@ -732,7 +732,7 @@ choices}`, "strange©™\n'quoted' \"name\"", "6"),
 		},
 	}
 
-	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserSTSeriesSkipped())
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -1028,7 +1028,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable(), WithOMParserSTSeriesSkipped())
 		var err error
 		for err == nil {
 			_, err = p.Next()
@@ -1093,7 +1093,7 @@ func TestOMNullByteHandling(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable(), WithOMParserSTSeriesSkipped())
 		var err error
 		for err == nil {
 			_, err = p.Next()
@@ -1108,10 +1108,10 @@ func TestOMNullByteHandling(t *testing.T) {
 	}
 }
 
-// TestCTParseFailures tests known failure edge cases, we know does not work due
+// TestSTParseFailures tests known failure edge cases, we know does not work due
 // current OM spec limitations or clients with broken OM format.
-// TODO(maniktherana): Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
-func TestCTParseFailures(t *testing.T) {
+// TODO(maniktherana): Make sure OM 1.1/2.0 pass ST via metadata or exemplar-like to avoid this.
+func TestSTParseFailures(t *testing.T) {
 	for _, tcase := range []struct {
 		name     string
 		input    string
@@ -1143,19 +1143,19 @@ thing_c_total 14123.232
 				},
 				{
 					m:  `thing_count`,
-					ct: 0, // Should be int64p(1520872607123).
+					st: 0, // Should be int64p(1520872607123).
 				},
 				{
 					m:  `thing_sum`,
-					ct: 0, // Should be int64p(1520872607123).
+					st: 0, // Should be int64p(1520872607123).
 				},
 				{
 					m:  `thing_bucket{le="0.0"}`,
-					ct: 0, // Should be int64p(1520872607123).
+					st: 0, // Should be int64p(1520872607123).
 				},
 				{
 					m:  `thing_bucket{le="+Inf"}`,
-					ct: 0, // Should be int64p(1520872607123),
+					st: 0, // Should be int64p(1520872607123),
 				},
 				{
 					m:    "thing_c",
@@ -1167,7 +1167,7 @@ thing_c_total 14123.232
 				},
 				{
 					m:  `thing_c_total`,
-					ct: 0, // Should be int64p(1520872607123).
+					st: 0, // Should be int64p(1520872607123).
 				},
 			},
 		},
@@ -1197,9 +1197,9 @@ foo_created{a="b"} 1520872608.123
 		},
 	} {
 		t.Run(fmt.Sprintf("case=%v", tcase.name), func(t *testing.T) {
-			p := NewOpenMetricsParser([]byte(tcase.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+			p := NewOpenMetricsParser([]byte(tcase.input), labels.NewSymbolTable(), WithOMParserSTSeriesSkipped())
 			got := testParse(t, p)
-			resetValAndLset(got) // Keep this test focused on metric, basic entries and CT only.
+			resetValAndLset(got) // Keep this test focused on metric, basic entries and ST only.
 			requireEntries(t, tcase.expected, got)
 		})
 	}

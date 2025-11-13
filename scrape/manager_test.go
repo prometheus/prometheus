@@ -749,8 +749,8 @@ func setupTestServer(t *testing.T, typ string, toWrite []byte) *httptest.Server 
 	return server
 }
 
-// TestManagerCTZeroIngestion tests scrape manager for various CT cases.
-func TestManagerCTZeroIngestion(t *testing.T) {
+// TestManagerSTZeroIngestion tests scrape manager for various ST cases.
+func TestManagerSTZeroIngestion(t *testing.T) {
 	t.Parallel()
 	const (
 		// _total suffix is required, otherwise expfmt with OMText will mark metric as "unknown"
@@ -761,26 +761,26 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 
 	for _, testFormat := range []config.ScrapeProtocol{config.PrometheusProto, config.OpenMetricsText1_0_0} {
 		t.Run(fmt.Sprintf("format=%s", testFormat), func(t *testing.T) {
-			for _, testWithCT := range []bool{false, true} {
-				t.Run(fmt.Sprintf("withCT=%v", testWithCT), func(t *testing.T) {
-					for _, testCTZeroIngest := range []bool{false, true} {
-						t.Run(fmt.Sprintf("ctZeroIngest=%v", testCTZeroIngest), func(t *testing.T) {
+			for _, testWithST := range []bool{false, true} {
+				t.Run(fmt.Sprintf("withST=%v", testWithST), func(t *testing.T) {
+					for _, testSTZeroIngest := range []bool{false, true} {
+						t.Run(fmt.Sprintf("ctZeroIngest=%v", testSTZeroIngest), func(t *testing.T) {
 							ctx, cancel := context.WithCancel(context.Background())
 							defer cancel()
 
 							sampleTs := time.Now()
-							ctTs := time.Time{}
-							if testWithCT {
-								ctTs = sampleTs.Add(-2 * time.Minute)
+							stTs := time.Time{}
+							if testWithST {
+								stTs = sampleTs.Add(-2 * time.Minute)
 							}
 
 							// TODO(bwplotka): Add more types than just counter?
-							encoded := prepareTestEncodedCounter(t, testFormat, expectedMetricName, expectedSampleValue, sampleTs, ctTs)
+							encoded := prepareTestEncodedCounter(t, testFormat, expectedMetricName, expectedSampleValue, sampleTs, stTs)
 
 							app := &collectResultAppender{}
 							discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
-								EnableCreatedTimestampZeroIngestion: testCTZeroIngest,
-								skipOffsetting:                      true,
+								EnableStartTimestampZeroIngestion: testSTZeroIngest,
+								skipOffsetting:                    true,
 							}, &collectResultAppendable{app})
 							defer scrapeManager.Stop()
 
@@ -817,12 +817,12 @@ scrape_configs:
 							}), "after 1 minute")
 
 							// Verify results.
-							// Verify what we got vs expectations around CT injection.
+							// Verify what we got vs expectations around ST injection.
 							samples := findSamplesForMetric(app.resultFloats, expectedMetricName)
-							if testWithCT && testCTZeroIngest {
+							if testWithST && testSTZeroIngest {
 								require.Len(t, samples, 2)
 								require.Equal(t, 0.0, samples[0].f)
-								require.Equal(t, timestamp.FromTime(ctTs), samples[0].t)
+								require.Equal(t, timestamp.FromTime(stTs), samples[0].t)
 								require.Equal(t, expectedSampleValue, samples[1].f)
 								require.Equal(t, timestamp.FromTime(sampleTs), samples[1].t)
 							} else {
@@ -832,16 +832,16 @@ scrape_configs:
 							}
 
 							// Verify what we got vs expectations around additional _created series for OM text.
-							// enableCTZeroInjection also kills that _created line.
+							// enableSTZeroInjection also kills that _created line.
 							createdSeriesSamples := findSamplesForMetric(app.resultFloats, expectedCreatedMetricName)
-							if testFormat == config.OpenMetricsText1_0_0 && testWithCT && !testCTZeroIngest {
-								// For OM Text, when counter has CT, and feature flag disabled we should see _created lines.
+							if testFormat == config.OpenMetricsText1_0_0 && testWithST && !testSTZeroIngest {
+								// For OM Text, when counter has ST, and feature flag disabled we should see _created lines.
 								require.Len(t, createdSeriesSamples, 1)
 								// Conversion taken from common/expfmt.writeOpenMetricsFloat.
-								// We don't check the ct timestamp as explicit ts was not implemented in expfmt.Encoder,
+								// We don't check the st timestamp as explicit ts was not implemented in expfmt.Encoder,
 								// but exists in OM https://github.com/prometheus/OpenMetrics/blob/v1.0.0/specification/OpenMetrics.md#:~:text=An%20example%20with%20a%20Metric%20with%20no%20labels%2C%20and%20a%20MetricPoint%20with%20a%20timestamp%20and%20a%20created
-								// We can implement this, but we want to potentially get rid of OM 1.0 CT lines
-								require.Equal(t, float64(timestamppb.New(ctTs).AsTime().UnixNano())/1e9, createdSeriesSamples[0].f)
+								// We can implement this, but we want to potentially get rid of OM 1.0 ST lines
+								require.Equal(t, float64(timestamppb.New(stTs).AsTime().UnixNano())/1e9, createdSeriesSamples[0].f)
 							} else {
 								require.Empty(t, createdSeriesSamples)
 							}
@@ -853,12 +853,12 @@ scrape_configs:
 	}
 }
 
-func prepareTestEncodedCounter(t *testing.T, format config.ScrapeProtocol, mName string, v float64, ts, ct time.Time) (encoded []byte) {
+func prepareTestEncodedCounter(t *testing.T, format config.ScrapeProtocol, mName string, v float64, ts, st time.Time) (encoded []byte) {
 	t.Helper()
 
 	counter := &dto.Counter{Value: proto.Float64(v)}
-	if !ct.IsZero() {
-		counter.CreatedTimestamp = timestamppb.New(ct)
+	if !st.IsZero() {
+		counter.CreatedTimestamp = timestamppb.New(st)
 	}
 	ctrType := dto.MetricType_COUNTER
 	inputMetric := &dto.MetricFamily{
@@ -923,40 +923,40 @@ func generateTestHistogram(i int) *dto.Histogram {
 	return h
 }
 
-func TestManagerCTZeroIngestionHistogram(t *testing.T) {
+func TestManagerSTZeroIngestionHistogram(t *testing.T) {
 	t.Parallel()
 	const mName = "expected_histogram"
 
 	for _, tc := range []struct {
 		name                  string
 		inputHistSample       *dto.Histogram
-		enableCTZeroIngestion bool
+		enableSTZeroIngestion bool
 	}{
 		{
-			name: "disabled with CT on histogram",
+			name: "disabled with ST on histogram",
 			inputHistSample: func() *dto.Histogram {
 				h := generateTestHistogram(0)
 				h.CreatedTimestamp = timestamppb.Now()
 				return h
 			}(),
-			enableCTZeroIngestion: false,
+			enableSTZeroIngestion: false,
 		},
 		{
-			name: "enabled with CT on histogram",
+			name: "enabled with ST on histogram",
 			inputHistSample: func() *dto.Histogram {
 				h := generateTestHistogram(0)
 				h.CreatedTimestamp = timestamppb.Now()
 				return h
 			}(),
-			enableCTZeroIngestion: true,
+			enableSTZeroIngestion: true,
 		},
 		{
-			name: "enabled without CT on histogram",
+			name: "enabled without ST on histogram",
 			inputHistSample: func() *dto.Histogram {
 				h := generateTestHistogram(0)
 				return h
 			}(),
-			enableCTZeroIngestion: true,
+			enableSTZeroIngestion: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -966,8 +966,8 @@ func TestManagerCTZeroIngestionHistogram(t *testing.T) {
 
 			app := &collectResultAppender{}
 			discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
-				EnableCreatedTimestampZeroIngestion: tc.enableCTZeroIngestion,
-				skipOffsetting:                      true,
+				EnableStartTimestampZeroIngestion: tc.enableSTZeroIngestion,
+				skipOffsetting:                    true,
 			}, &collectResultAppendable{app})
 			defer scrapeManager.Stop()
 
@@ -1035,8 +1035,8 @@ scrape_configs:
 			}), "after 1 minute")
 
 			// Check for zero samples, assuming we only injected always one histogram sample.
-			// Did it contain CT to inject? If yes, was CT zero enabled?
-			if tc.inputHistSample.CreatedTimestamp.IsValid() && tc.enableCTZeroIngestion {
+			// Did it contain ST to inject? If yes, was ST zero enabled?
+			if tc.inputHistSample.CreatedTimestamp.IsValid() && tc.enableSTZeroIngestion {
 				require.Len(t, got, 2)
 				// Zero sample.
 				require.Equal(t, histogram.Histogram{}, *got[0].h)
@@ -1066,12 +1066,12 @@ func TestUnregisterMetrics(t *testing.T) {
 	}
 }
 
-// TestNHCBAndCTZeroIngestion verifies that both ConvertClassicHistogramsToNHCBEnabled
-// and EnableCreatedTimestampZeroIngestion can be used simultaneously without errors.
+// TestNHCBAndSTZeroIngestion verifies that both ConvertClassicHistogramsToNHCBEnabled
+// and EnableStartTimestampZeroIngestion can be used simultaneously without errors.
 // This test addresses issue #17216 by ensuring the previously blocking check has been removed.
 // The test verifies that the presence of exemplars in the input does not cause errors,
 // although exemplars are not preserved during NHCB conversion (as documented below).
-func TestNHCBAndCTZeroIngestion(t *testing.T) {
+func TestNHCBAndSTZeroIngestion(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -1085,8 +1085,8 @@ func TestNHCBAndCTZeroIngestion(t *testing.T) {
 
 	app := &collectResultAppender{}
 	discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
-		EnableCreatedTimestampZeroIngestion: true,
-		skipOffsetting:                      true,
+		EnableStartTimestampZeroIngestion: true,
+		skipOffsetting:                    true,
 	}, &collectResultAppendable{app})
 	defer scrapeManager.Stop()
 
@@ -1122,7 +1122,7 @@ test_histogram_created 1520430001
 	serverURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
-	// Configuration with both convert_classic_histograms_to_nhcb enabled and CT zero ingestion enabled.
+	// Configuration with both convert_classic_histograms_to_nhcb enabled and ST zero ingestion enabled.
 	testConfig := fmt.Sprintf(`
 global:
   # Use a very long scrape_interval to prevent automatic scraping during the test.
@@ -1167,7 +1167,7 @@ scrape_configs:
 	// Verify that samples were ingested (proving both features work together).
 	got := getMatchingHistograms()
 
-	// With CT zero ingestion enabled and a created timestamp present, we expect 2 samples:
+	// With ST zero ingestion enabled and a created timestamp present, we expect 2 samples:
 	// one zero sample and one actual sample.
 	require.Len(t, got, 2, "expected 2 histogram samples (zero sample + actual sample)")
 	require.Equal(t, histogram.Histogram{}, *got[0].h, "first sample should be zero sample")
