@@ -778,11 +778,11 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 	}
 
 	chkDataLenInt := int(chkDataLen)
-	if chkDataLenStart > math.MaxInt-n-chkDataLenInt {
+	if chkDataLenStart > math.MaxInt - n - chkDataLenInt {
 		return nil, &CorruptionErr{
 			Dir:       cdm.dir.Name(),
 			FileIndex: sgmIndex,
-			Err:       fmt.Errorf("chunk data end exceeds supported size"),
+			Err:       fmt.Errorf("chunk data end overflows supported size (start=%d, len=%d, n=%d)", chkDataLenStart, chkDataLenInt, n),
 		}
 	}
 
