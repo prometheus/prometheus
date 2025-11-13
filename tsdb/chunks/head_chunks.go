@@ -778,7 +778,7 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 	}
 
 	chkDataLenInt := int(chkDataLen)
-	if chkDataLenStart > math.MaxInt - n - chkDataLenInt {
+	if chkDataLenStart > math.MaxInt-n-chkDataLenInt {
 		return nil, &CorruptionErr{
 			Dir:       cdm.dir.Name(),
 			FileIndex: sgmIndex,
