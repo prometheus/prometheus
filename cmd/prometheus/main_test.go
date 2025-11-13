@@ -1005,33 +1005,87 @@ remote_write:
 	)
 	require.NoError(t, prom.Start())
 
-	var checkInitialDesiredShardsOnce sync.Once
-	require.Eventually(t, func() bool {
+	getMetrics := func(t *testing.T) []byte {
+		t.Helper()
 		r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
 		if err != nil {
-			return false
+			t.Log("Getting metrics failed", "err", err)
+			return nil
 		}
 		defer r.Body.Close()
 		if r.StatusCode != http.StatusOK {
+			t.Log("Getting metrics failed", "status_code", r.StatusCode)
+			return nil
+		}
+		data, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		return data
+	}
+
+	// Step 1: Wait for Prometheus to be ready and remote write to initialize.
+	t.Log("Waiting for Prometheus to initialize and start remote write...")
+	require.Eventually(t, func() bool {
+		metrics := getMetrics(t)
+		if metrics == nil {
 			return false
 		}
-
-		metrics, err := io.ReadAll(r.Body)
+		desiredShards, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_shards_desired")
 		if err != nil {
 			return false
 		}
+		// Initial desired shards should be 1.
+		require.Equal(t, 1.0, desiredShards)
+		return true
+	}, 10*time.Second, 100*time.Millisecond, "Prometheus failed to initialize")
 
-		checkInitialDesiredShardsOnce.Do(func() {
-			s, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_shards_desired")
-			require.NoError(t, err)
-			require.Equal(t, 1.0, s)
-		})
-
-		desiredShards, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_shards_desired")
-		if err != nil || desiredShards <= 1 {
+	// Step 2: Wait for scraping to start and samples to be sent to remote write.
+	t.Log("Waiting for samples to be sent to remote write...")
+	require.Eventually(t, func() bool {
+		metrics := getMetrics(t)
+		if metrics == nil {
 			return false
 		}
-		return true
-		// 3*shardUpdateDuration to allow for the resharding logic to run.
-	}, 30*time.Second, 1*time.Second)
+		sentTotal, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeCounter, "prometheus_remote_storage_samples_total")
+		if err != nil {
+			return false
+		}
+		// We need at least some samples to have been sent.
+		return sentTotal > 0
+	}, 15*time.Second, 100*time.Millisecond, "No samples were sent to remote write")
+
+	// Step 3: Wait for backpressure to build up (pending samples > 0).
+	// This indicates the queue is filling up due to the slow remote write endpoint.
+	t.Log("Waiting for backpressure to build up (pending samples)...")
+	require.Eventually(t, func() bool {
+		metrics := getMetrics(t)
+		if metrics == nil {
+			return false
+		}
+		pendingSamples, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_samples_pending")
+		if err != nil {
+			return false
+		}
+		// We need pending samples to accumulate, indicating queue pressure.
+		return pendingSamples > 0
+	}, 15*time.Second, 100*time.Millisecond, "No pending samples accumulated")
+
+	// Step 4: Now wait for the resharding logic to detect the need for more shards.
+	// The resharding logic runs every 10 seconds (shardUpdateDuration), and it needs:
+	// - A positive dataOutRate (samples being sent)
+	// - A recent lastSendTimestamp (within the last shardUpdateDuration)
+	// - Sufficient backlog/latency to trigger shard increase
+	// We give it up to 3 full cycles (30s) plus buffer time for the conditions to stabilize.
+	t.Log("Waiting for resharding to occur (desired shards > 1)...")
+	require.Eventually(t, func() bool {
+		metrics := getMetrics(t)
+		if metrics == nil {
+			return false
+		}
+		desiredShards, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_shards_desired")
+		if err != nil {
+			return false
+		}
+		// Resharding has occurred when desired shard count increases above 1.
+		return desiredShards > 1
+	}, 45*time.Second, 500*time.Millisecond, "Resharding did not occur within expected time")
 }
