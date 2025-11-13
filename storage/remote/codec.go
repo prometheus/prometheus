@@ -42,6 +42,8 @@ import (
 const (
 	// decodeReadLimit is the maximum size of a read request body in bytes.
 	decodeReadLimit = 32 * 1024 * 1024
+	// decodeWriteLimit is the maximum size of a remote write request body in bytes.
+	decodeWriteLimit = 32 * 1024 * 1024
 
 	pbContentType   = "application/x-protobuf"
 	jsonContentType = "application/json"
@@ -65,6 +67,13 @@ func DecodeReadRequest(r *http.Request) (*prompb.ReadRequest, error) {
 	compressed, err := io.ReadAll(io.LimitReader(r.Body, decodeReadLimit))
 	if err != nil {
 		return nil, err
+	}
+
+	// Ensure the decoded size is within a safe bound before allocating.
+	if decodedLen, err := snappy.DecodedLen(compressed); err != nil {
+		return nil, err
+	} else if decodedLen > decodeReadLimit {
+		return nil, fmt.Errorf("decoded read request too large (>%d bytes)", decodeReadLimit)
 	}
 
 	reqBuf, err := snappy.Decode(nil, compressed)
@@ -912,9 +921,15 @@ func FromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, erro
 // snappy decompression.
 // Used also by documentation/examples/remote_storage.
 func DecodeWriteRequest(r io.Reader) (*prompb.WriteRequest, error) {
-	compressed, err := io.ReadAll(r)
+	compressed, err := io.ReadAll(io.LimitReader(r, decodeWriteLimit))
 	if err != nil {
 		return nil, err
+	}
+
+	if decodedLen, err := snappy.DecodedLen(compressed); err != nil {
+		return nil, err
+	} else if decodedLen > decodeWriteLimit {
+		return nil, fmt.Errorf("decoded write request too large (>%d bytes)", decodeWriteLimit)
 	}
 
 	reqBuf, err := snappy.Decode(nil, compressed)
@@ -934,9 +949,15 @@ func DecodeWriteRequest(r io.Reader) (*prompb.WriteRequest, error) {
 // snappy decompression.
 // Used also by documentation/examples/remote_storage.
 func DecodeWriteV2Request(r io.Reader) (*writev2.Request, error) {
-	compressed, err := io.ReadAll(r)
+	compressed, err := io.ReadAll(io.LimitReader(r, decodeWriteLimit))
 	if err != nil {
 		return nil, err
+	}
+
+	if decodedLen, err := snappy.DecodedLen(compressed); err != nil {
+		return nil, err
+	} else if decodedLen > decodeWriteLimit {
+		return nil, fmt.Errorf("decoded write request too large (>%d bytes)", decodeWriteLimit)
 	}
 
 	reqBuf, err := snappy.Decode(nil, compressed)
@@ -973,6 +994,7 @@ func DecodeOTLPWriteRequest(r *http.Request) (pmetricotlp.ExportRequest, error) 
 	}
 
 	reader := r.Body
+	var gzipReader *gzip.Reader
 	// Handle compression.
 	switch r.Header.Get("Content-Encoding") {
 	case "gzip":
@@ -981,6 +1003,7 @@ func DecodeOTLPWriteRequest(r *http.Request) (pmetricotlp.ExportRequest, error) 
 			return pmetricotlp.NewExportRequest(), err
 		}
 		reader = gr
+		gzipReader = gr
 
 	case "":
 		// No compression.
@@ -989,12 +1012,29 @@ func DecodeOTLPWriteRequest(r *http.Request) (pmetricotlp.ExportRequest, error) 
 		return pmetricotlp.NewExportRequest(), fmt.Errorf("unsupported compression: %s. Only \"gzip\" or no compression supported", r.Header.Get("Content-Encoding"))
 	}
 
-	body, err := io.ReadAll(reader)
+	limitedReader := io.LimitReader(reader, int64(decodeWriteLimit)+1)
+	body, err := io.ReadAll(limitedReader)
 	if err != nil {
-		r.Body.Close()
+		if gzipReader != nil {
+			_ = gzipReader.Close()
+		}
+		_ = r.Body.Close()
 		return pmetricotlp.NewExportRequest(), err
 	}
-	if err = r.Body.Close(); err != nil {
+	if len(body) > decodeWriteLimit {
+		if gzipReader != nil {
+			_ = gzipReader.Close()
+		}
+		_ = r.Body.Close()
+		return pmetricotlp.NewExportRequest(), fmt.Errorf("decoded write request too large (>%d bytes)", decodeWriteLimit)
+	}
+	if gzipReader != nil {
+		if err := gzipReader.Close(); err != nil {
+			_ = r.Body.Close()
+			return pmetricotlp.NewExportRequest(), err
+		}
+	}
+	if err := r.Body.Close(); err != nil {
 		return pmetricotlp.NewExportRequest(), err
 	}
 	otlpReq, err := decoderFunc(body)
