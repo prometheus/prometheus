@@ -43,18 +43,19 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
   Prometheus v3 will log a warning if you continue to pass these to
   `--enable-feature`.
 
-- Starting from Prometheus version v3.8, the feature flag `native-histograms` is
-  deprecated. Use the new `scrape_native_histograms` global and per-scrape
-  configuration option instead.
+- Starting from v3.9, the feature flag `native-histograms` is a no-op. Native
+  histograms are a stable feature now, but scraping them has to be enabled via
+  the `scrape_native_histograms` global or per-scrape configuration option
+  (added in v3.8).
 
 ## Configuration
 
-- The scrape job level configuration option `scrape_classic_histograms` has been
-  renamed to `always_scrape_classic_histograms`. If you use the
-  `--enable-feature=native-histograms` feature flag to ingest native histograms
-  and you also want to ingest classic histograms that an endpoint might expose
-  along with native histograms, be sure to add this configuration or change your
-  configuration from the old name.
+- The scrape job level configuration option `scrape_classic_histograms` has
+  been renamed to `always_scrape_classic_histograms`. If you use the
+  `scrape_native_histograms` scrape configuration option to ingest native
+  histograms and you also want to ingest classic histograms that an endpoint
+  might expose along with native histograms, be sure to add this configuration
+  or change your configuration from the old name.
 - The `http_config.enable_http2` in `remote_write` items default has been
   changed to `false`. In Prometheus v2 the remote write http client would
   default to use http2. In order to parallelize multiple remote write queues
