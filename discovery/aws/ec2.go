@@ -113,7 +113,7 @@ func (*EC2SDConfig) Name() string { return "ec2" }
 
 // NewDiscoverer returns a Discoverer for the EC2 Config.
 func (c *EC2SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewEC2Discovery(c, opts.Logger, opts.Metrics)
+	return NewEC2Discovery(c, opts)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the EC2 Config.
@@ -180,23 +180,24 @@ type EC2Discovery struct {
 }
 
 // NewEC2Discovery returns a new EC2Discovery which periodically refreshes its targets.
-func NewEC2Discovery(conf *EC2SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*EC2Discovery, error) {
-	m, ok := metrics.(*ec2Metrics)
+func NewEC2Discovery(conf *EC2SDConfig, opts discovery.DiscovererOptions) (*EC2Discovery, error) {
+	m, ok := opts.Metrics.(*ec2Metrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
 	}
 
-	if logger == nil {
-		logger = promslog.NewNopLogger()
+	if opts.Logger == nil {
+		opts.Logger = promslog.NewNopLogger()
 	}
 	d := &EC2Discovery{
-		logger: logger,
+		logger: opts.Logger,
 		cfg:    conf,
 	}
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "ec2",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(d.cfg.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,

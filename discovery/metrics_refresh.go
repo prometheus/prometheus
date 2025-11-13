@@ -36,14 +36,14 @@ func NewRefreshMetrics(reg prometheus.Registerer) RefreshMetricsManager {
 				Name: "prometheus_sd_refresh_failures_total",
 				Help: "Number of refresh failures for the given SD mechanism.",
 			},
-			[]string{"mechanism"}),
+			[]string{"mechanism", "config"}),
 		durationVec: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
 				Name:       "prometheus_sd_refresh_duration_seconds",
 				Help:       "The duration of a refresh in seconds for the given SD mechanism.",
 				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 			},
-			[]string{"mechanism"}),
+			[]string{"mechanism", "config"}),
 	}
 
 	// The reason we register metric vectors instead of metrics is so that
@@ -56,11 +56,11 @@ func NewRefreshMetrics(reg prometheus.Registerer) RefreshMetricsManager {
 	return m
 }
 
-// Instantiate returns metrics out of metric vectors.
-func (m *RefreshMetricsVecs) Instantiate(mech string) *RefreshMetrics {
+// Instantiate returns metrics out of metric vectors for a given mechanism and config.
+func (m *RefreshMetricsVecs) Instantiate(mech, config string) *RefreshMetrics {
 	return &RefreshMetrics{
-		Failures: m.failuresVec.WithLabelValues(mech),
-		Duration: m.durationVec.WithLabelValues(mech),
+		Failures: m.failuresVec.WithLabelValues(mech, config),
+		Duration: m.durationVec.WithLabelValues(mech, config),
 	}
 }
 

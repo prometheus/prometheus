@@ -54,6 +54,9 @@ type DiscovererOptions struct {
 	// Extra HTTP client options to expose to Discoverers. This field may be
 	// ignored; Discoverer implementations must opt-in to reading it.
 	HTTPClientOptions []config.HTTPClientOption
+
+	// SetName identifies this discoverer set.
+	SetName string
 }
 
 // RefreshMetrics are used by the "refresh" package.
@@ -66,7 +69,7 @@ type RefreshMetrics struct {
 
 // RefreshMetricsInstantiator instantiates the metrics used by the "refresh" package.
 type RefreshMetricsInstantiator interface {
-	Instantiate(mech string) *RefreshMetrics
+	Instantiate(mech, setName string) *RefreshMetrics
 }
 
 // RefreshMetricsManager is an interface for registering, unregistering, and
