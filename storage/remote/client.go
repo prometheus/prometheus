@@ -461,6 +461,12 @@ func (*Client) handleSampledResponse(req *prompb.ReadRequest, httpResp *http.Res
 		_ = httpResp.Body.Close()
 	}()
 
+	if decodedLen, err := snappy.DecodedLen(compressed); err != nil {
+		return nil, fmt.Errorf("error reading response: %w", err)
+	} else if decodedLen > decodeReadLimit {
+		return nil, fmt.Errorf("decoded remote read response too large (>%d bytes)", decodeReadLimit)
+	}
+
 	uncompressed, err := snappy.Decode(nil, compressed)
 	if err != nil {
 		return nil, fmt.Errorf("error reading response: %w", err)
