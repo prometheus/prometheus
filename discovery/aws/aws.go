@@ -218,7 +218,8 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 		opts.Metrics = &ec2Metrics{refreshMetrics: awsMetrics.refreshMetrics}
 		return NewEC2Discovery(c.EC2SDConfig, opts)
 	case RoleECS:
-		return NewECSDiscovery(c.ECSSDConfig, opts.Logger, &ecsMetrics{refreshMetrics: awsMetrics.refreshMetrics})
+		opts.Metrics = &ecsMetrics{refreshMetrics: awsMetrics.refreshMetrics}
+		return NewECSDiscovery(c.ECSSDConfig, opts)
 	case RoleLightsail:
 		opts.Metrics = &lightsailMetrics{refreshMetrics: awsMetrics.refreshMetrics}
 		return NewLightsailDiscovery(c.LightsailSDConfig, opts)
