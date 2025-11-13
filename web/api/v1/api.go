@@ -348,6 +348,7 @@ func NewAPI(
 			LookbackDelta:           lookbackDelta,
 			IngestCTZeroSample:      ctZeroIngestionEnabled,
 			EnableTypeAndUnitLabels: enableTypeAndUnitLabels,
+			AppendMetadata:          appendMetadata,
 		})
 	}
 

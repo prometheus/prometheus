@@ -501,6 +501,8 @@ type OTLPOptions struct {
 	// IngestCTZeroSample enables writing zero samples based on the start time
 	// of metrics.
 	IngestCTZeroSample bool
+	// AppendMetadata enables writing metadata to WAL when metadata-wal-records feature is enabled.
+	AppendMetadata bool
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
@@ -519,6 +521,7 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 		lookbackDelta:           opts.LookbackDelta,
 		ingestCTZeroSample:      opts.IngestCTZeroSample,
 		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
+		appendMetadata:          opts.AppendMetadata,
 		// Register metrics.
 		metrics: otlptranslator.NewCombinedAppenderMetrics(reg),
 	}
@@ -561,6 +564,7 @@ type rwExporter struct {
 	lookbackDelta           time.Duration
 	ingestCTZeroSample      bool
 	enableTypeAndUnitLabels bool
+	appendMetadata          bool
 
 	// Metrics.
 	metrics otlptranslator.CombinedAppenderMetrics
@@ -572,7 +576,7 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		Appender: rw.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
-	combinedAppender := otlptranslator.NewCombinedAppender(app, rw.logger, rw.ingestCTZeroSample, rw.metrics)
+	combinedAppender := otlptranslator.NewCombinedAppender(app, rw.logger, rw.ingestCTZeroSample, rw.appendMetadata, rw.metrics)
 	converter := otlptranslator.NewPrometheusConverter(combinedAppender)
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
 		AddMetricSuffixes:                    otlpCfg.TranslationStrategy.ShouldAddSuffixes(),

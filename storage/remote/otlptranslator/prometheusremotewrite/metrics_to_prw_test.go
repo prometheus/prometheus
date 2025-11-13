@@ -1067,7 +1067,7 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 
 											for b.Loop() {
 												app := &noOpAppender{}
-												mockAppender := NewCombinedAppender(app, noOpLogger, false, appMetrics)
+												mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
 												converter := NewPrometheusConverter(mockAppender)
 												annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
 												require.NoError(b, err)

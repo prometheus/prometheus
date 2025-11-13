@@ -82,11 +82,12 @@ func NewCombinedAppenderMetrics(reg prometheus.Registerer) CombinedAppenderMetri
 // NewCombinedAppender creates a combined appender that sets start times and
 // updates metadata for each series only once, and appends samples and
 // exemplars for each call.
-func NewCombinedAppender(app storage.Appender, logger *slog.Logger, ingestCTZeroSample bool, metrics CombinedAppenderMetrics) CombinedAppender {
+func NewCombinedAppender(app storage.Appender, logger *slog.Logger, ingestCTZeroSample, appendMetadata bool, metrics CombinedAppenderMetrics) CombinedAppender {
 	return &combinedAppender{
 		app:                            app,
 		logger:                         logger,
 		ingestCTZeroSample:             ingestCTZeroSample,
+		appendMetadata:                 appendMetadata,
 		refs:                           make(map[uint64]seriesRef),
 		samplesAppendedWithoutMetadata: metrics.samplesAppendedWithoutMetadata,
 		outOfOrderExemplars:            metrics.outOfOrderExemplars,
@@ -106,6 +107,7 @@ type combinedAppender struct {
 	samplesAppendedWithoutMetadata prometheus.Counter
 	outOfOrderExemplars            prometheus.Counter
 	ingestCTZeroSample             bool
+	appendMetadata                 bool
 	// Used to ensure we only update metadata and created timestamps once, and to share storage.SeriesRefs.
 	// To detect hash collision it also stores the labels.
 	// There is no overflow/conflict list, the TSDB will handle that part.
@@ -189,22 +191,26 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 		return err
 	}
 
-	if !exists || series.meta.Help != meta.Help || series.meta.Type != meta.Type || series.meta.Unit != meta.Unit {
-		updateRefs = true
-		// If this is the first time we see this series, set the metadata.
-		_, err := b.app.UpdateMetadata(ref, ls, meta)
-		if err != nil {
-			b.samplesAppendedWithoutMetadata.Add(1)
-			b.logger.Warn("Error while updating metadata from OTLP", "err", err)
-		}
-	}
+	metadataChanged := exists && (series.meta.Help != meta.Help || series.meta.Type != meta.Type || series.meta.Unit != meta.Unit)
 
-	if updateRefs {
+	// Update cache if references changed or metadata changed.
+	if updateRefs || metadataChanged {
 		b.refs[hash] = seriesRef{
 			ref:  ref,
 			ct:   ct,
 			ls:   ls,
 			meta: meta,
+		}
+	}
+
+	// Update metadata in storage if enabled and needed.
+	if b.appendMetadata && (!exists || metadataChanged) {
+		// Only update metadata in WAL if the metadata-wal-records feature is enabled.
+		// Without this feature, metadata is not persisted to WAL.
+		_, err := b.app.UpdateMetadata(ref, ls, meta)
+		if err != nil {
+			b.samplesAppendedWithoutMetadata.Add(1)
+			b.logger.Warn("Error while updating metadata from OTLP", "err", err)
 		}
 	}
 

@@ -921,6 +921,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			otlpOpts := OTLPOptions{
 				EnableTypeAndUnitLabels: testCase.typeAndUnitLabels,
+				AppendMetadata:          true,
 			}
 			appendable := handleOTLP(t, exportRequest, testCase.otlpCfg, otlpOpts)
 			for _, sample := range testCase.expectedSamples {
