@@ -4139,6 +4139,7 @@ type RatioSampler interface {
 
 // HashRatioSampler uses Hash(labels.String()) / maxUint64 as a "deterministic"
 // value in [0.0, 1.0].
+// It is a utility used for limit_ratio aggregations.
 type HashRatioSampler struct{}
 
 var ratiosampler RatioSampler = NewHashRatioSampler()
@@ -4151,6 +4152,17 @@ func (s *HashRatioSampler) sampleOffset(_ int64, sample *Sample) float64 {
 	return s.SampleOffsetByLabels(sample.Metric)
 }
 
+// SampleOffsetByLabels returns a deterministic sampling offset in the range [0, 1)
+// derived from the hash of the provided metric labels.
+//
+// The offset is computed by normalizing the 64-bit hash value of the label set
+// to a float64 fraction of math.MaxUint64. This ensures that metrics with the
+// same label set always produce the same offset, while different label sets
+// produce uniformly distributed offsets suitable for sampling decisions.
+//
+// Note that this function allows for the actual labels.Labels to be passed in,
+// by passing the need to pass in a Sample. This allows downstream projects, such as
+// Mimir to leverage this offset directly.
 func (*HashRatioSampler) SampleOffsetByLabels(metric labels.Labels) float64 {
 	const (
 		float64MaxUint64 = float64(math.MaxUint64)
@@ -4158,11 +4170,27 @@ func (*HashRatioSampler) SampleOffsetByLabels(metric labels.Labels) float64 {
 	return float64(metric.Hash()) / float64MaxUint64
 }
 
+// AddRatioSample returns a bool indicating if the sampling offset for the given sample is
+// within the given ratio limit.
+//
+// See SampleOffsetByLabels() for further details on the sample offset.
+// See AddRatioSampleWithOffset() for further details on the ratioLimit and sampling offset comparison.
 func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, sample *Sample) bool {
 	sampleOffset := s.sampleOffset(sample.T, sample)
 	return s.AddRatioSampleWithOffset(ratioLimit, sampleOffset)
 }
 
+// AddRatioSampleWithOffset reports whether the given sampling offset falls within
+// the specified ratio limit.
+//
+// The ratioLimit must be in the range [-1, 1]. The sampleOffset should be derived
+// using SampleOffsetByLabels().
+//
+// When ratioLimit >= 0, the function returns true if sampleOffset < ratioLimit.
+// When ratioLimit < 0, the function returns true if sampleOffset >= 1 + ratioLimit.
+//
+// Accepting the sampleOffset as a parameter allows downstream projects, such as
+// Mimir, to reuse this sampling logic directly in functional tests.
 func (*HashRatioSampler) AddRatioSampleWithOffset(ratioLimit, sampleOffset float64) bool {
 	// If ratioLimit >= 0: add sample if sampleOffset is lesser than ratioLimit
 	//
