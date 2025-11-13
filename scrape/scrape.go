@@ -592,7 +592,7 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 }
 
 func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*relabel.Config) labels.Labels {
-	lb := labels.NewBuilder(lset)
+	lb := labels.NewBuilder(lset.WithoutEmpty())
 
 	if honor {
 		target.LabelsRange(func(l labels.Label) {
