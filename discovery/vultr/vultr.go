@@ -52,7 +52,27 @@ const (
 	vultrInstanceLabelMemory       = vultrInstanceLabel + "ram_mb"
 	vultrInstanceLabelBandwidth    = vultrInstanceLabel + "allowed_bandwidth_gb"
 	vultrInstanceLabelDisk         = vultrInstanceLabel + "disk_gb"
-	separator                      = ","
+
+	vultrBaremetalLabel             = model.MetaLabelPrefix + "vultr_baremetal_"
+	vultrBaremetalLabelID           = vultrBaremetalLabel + "id"
+	vultrBaremetalLabelLabel        = vultrBaremetalLabel + "label"
+	vultrBaremetalLabelOS           = vultrBaremetalLabel + "os"
+	vultrBaremetalLabelOSID         = vultrBaremetalLabel + "os_id"
+	vultrBaremetalLabelAppID        = vultrBaremetalLabel + "app_id"
+	vultrBaremetalLabelImageID      = vultrBaremetalLabel + "image_id"
+	vultrBaremetalLabelRegion       = vultrBaremetalLabel + "region"
+	vultrBaremetalLabelPlan         = vultrBaremetalLabel + "plan"
+	vultrBaremetalLabelMainIP       = vultrBaremetalLabel + "main_ip"
+	vultrBaremetalLabelMainIPv6     = vultrBaremetalLabel + "main_ipv6"
+	vultrBaremetalLabelNetmaskv4    = vultrBaremetalLabel + "netmask_v4"
+	vultrBaremetalLabelGatewayv4    = vultrBaremetalLabel + "gateway_v4"
+	vultrBaremetalLabelFeatures     = vultrBaremetalLabel + "features"
+	vultrBaremetalLabelTags         = vultrBaremetalLabel + "tags"
+	vultrBaremetalLabelServerStatus = vultrBaremetalLabel + "server_status"
+	vultrBaremetalLabelCPU          = vultrBaremetalLabel + "cpu_count"
+	vultrBaremetalLabelMemory       = vultrBaremetalLabel + "ram_mb"
+	vultrBaremetalLabelDisk         = vultrBaremetalLabel + "disk_gb"
+	separator                       = ","
 )
 
 // DefaultSDConfig is the default Vultr SD configuration.
@@ -195,6 +215,49 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		tg.Targets = append(tg.Targets, labels)
 	}
 
+	baremetals, err := d.listBaremetals(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, baremetal := range baremetals {
+		labels := model.LabelSet{
+			vultrBaremetalLabelLabel:        model.LabelValue(baremetal.Label),
+			vultrBaremetalLabelID:           model.LabelValue(baremetal.ID),
+			vultrBaremetalLabelOS:           model.LabelValue(baremetal.Os),
+			vultrBaremetalLabelOSID:         model.LabelValue(strconv.Itoa(baremetal.OsID)),
+			vultrBaremetalLabelAppID:        model.LabelValue(strconv.Itoa(baremetal.AppID)),
+			vultrBaremetalLabelImageID:      model.LabelValue(baremetal.ImageID),
+			vultrBaremetalLabelRegion:       model.LabelValue(baremetal.Region),
+			vultrBaremetalLabelPlan:         model.LabelValue(baremetal.Plan),
+			vultrBaremetalLabelMainIP:       model.LabelValue(baremetal.MainIP),
+			vultrBaremetalLabelMainIPv6:     model.LabelValue(baremetal.V6MainIP),
+			vultrBaremetalLabelNetmaskv4:    model.LabelValue(baremetal.NetmaskV4),
+			vultrBaremetalLabelGatewayv4:    model.LabelValue(baremetal.GatewayV4),
+			vultrBaremetalLabelServerStatus: model.LabelValue(baremetal.Status),
+			vultrBaremetalLabelCPU:          model.LabelValue(strconv.Itoa(baremetal.CPUCount)),
+			vultrBaremetalLabelMemory:       model.LabelValue(baremetal.RAM),
+			vultrBaremetalLabelDisk:         model.LabelValue(baremetal.Disk),
+		}
+
+		addr := net.JoinHostPort(baremetal.MainIP, strconv.FormatUint(uint64(d.port), 10))
+		labels[model.AddressLabel] = model.LabelValue(addr)
+
+		// We surround the separated list with the separator as well. This way regular expressions
+		// in relabeling rules don't have to consider feature positions.
+		if len(baremetal.Features) > 0 {
+			features := separator + strings.Join(baremetal.Features, separator) + separator
+			labels[vultrBaremetalLabelFeatures] = model.LabelValue(features)
+		}
+
+		if len(baremetal.Tags) > 0 {
+			tags := separator + strings.Join(baremetal.Tags, separator) + separator
+			labels[vultrBaremetalLabelTags] = model.LabelValue(tags)
+		}
+
+		tg.Targets = append(tg.Targets, labels)
+	}
+
 	return []*targetgroup.Group{tg}, nil
 }
 
@@ -219,4 +282,27 @@ func (d *Discovery) listInstances(ctx context.Context) ([]govultr.Instance, erro
 	}
 
 	return instances, nil
+}
+
+func (d *Discovery) listBaremetals(ctx context.Context) ([]govultr.BareMetalServer, error) {
+	var baremetals []govultr.BareMetalServer
+
+	listOptions := &govultr.ListOptions{
+		PerPage: 100,
+	}
+
+	for {
+		pagedBaremetals, meta, err := d.client.BareMetalServer.List(ctx, listOptions)
+		if err != nil {
+			return nil, err
+		}
+		baremetals = append(baremetals, pagedBaremetals...)
+
+		if meta.Links.Next == "" {
+			break
+		}
+		listOptions.Cursor = meta.Links.Next
+	}
+
+	return baremetals, nil
 }
