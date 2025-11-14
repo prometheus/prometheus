@@ -88,10 +88,15 @@ func TestDB_InvalidSeries(t *testing.T) {
 	})
 }
 
-func createTestAgentDB(t testing.TB, reg prometheus.Registerer, opts *Options) *DB {
+func createTestAgentDB(t testing.TB, reg prometheus.Registerer, opts *Options, dir ...string) *DB {
 	t.Helper()
 
 	dbDir := t.TempDir()
+
+	if len(dir) > 0 && dir[0] != "" {
+		dbDir = dir[0]
+	}
+
 	rs := remote.NewStorage(promslog.NewNopLogger(), reg, startTime, dbDir, time.Second*30, nil, false)
 	t.Cleanup(func() {
 		require.NoError(t, rs.Close())
@@ -1317,7 +1322,78 @@ func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 	}
 }
 
-func readWALSamples(t *testing.T, walDir string) []walSample {
+func TestDuplicateSeriesRefsByHash(t *testing.T) {
+	dbDir := t.TempDir()
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = 360_000
+	db := createTestAgentDB(t, nil, opts, dbDir)
+
+	app := db.Appender(context.Background())
+
+	metricNames := []string{"foo", "bar", "baz", "blerg"}
+	originalSeriesRefs := make([]chunks.HeadSeriesRef, 0, len(metricNames))
+	for _, metricName := range metricNames {
+		lbls := labels.FromMap(map[string]string{"__name__": metricName})
+
+		ref, err := app.Append(storage.SeriesRef(0), lbls, int64(0), 10.0)
+		require.NoError(t, err)
+		originalSeriesRefs = append(originalSeriesRefs, chunks.HeadSeriesRef(ref))
+		ref2, err := app.Append(ref, lbls, int64(10), 100.0)
+		require.NoError(t, err)
+		require.Equal(t, ref, ref2)
+	}
+	require.NoError(t, app.Commit())
+
+	// Forcefully create a bunch of new segments to force a truncation
+	for i := 0; i < 3; i++ {
+		_, err := db.wal.NextSegmentSync()
+		require.NoError(t, err)
+	}
+	// No series should be deleted yet
+	require.Equal(t, 0, len(db.deleted))
+
+	// Truncate at 1 ms higher than the highest timestamp
+	err := db.truncate(11)
+	require.NoError(t, err)
+
+	// The original SeriesRefs should be considered deleted
+	for _, ref := range originalSeriesRefs {
+		require.Nil(t, db.series.GetByID(ref))
+		require.Contains(t, db.deleted, ref)
+	}
+
+	duplicateSeriesRefs := make([]chunks.HeadSeriesRef, 0, len(metricNames))
+	for _, metricName := range metricNames {
+		lbls := labels.FromMap(map[string]string{"__name__": metricName})
+		ref, err := app.Append(storage.SeriesRef(0), lbls, int64(20), 10.0)
+		require.NoError(t, err)
+		duplicateSeriesRefs = append(duplicateSeriesRefs, chunks.HeadSeriesRef(ref))
+	}
+	require.NoError(t, app.Commit())
+
+	// The duplicate SeriesRefs should be in series
+	for _, ref := range duplicateSeriesRefs {
+		require.NotNil(t, db.series.GetByID(ref))
+	}
+
+	// Close the WAL before we have a chance to remove the original RefIDs
+	require.NoError(t, db.Close())
+
+	db = createTestAgentDB(t, nil, opts, dbDir)
+	// The original SeriesRefs should be in series
+	for _, ref := range originalSeriesRefs {
+		require.NotNil(t, db.series.GetByID(ref))
+		require.NotContains(t, db.deleted, ref)
+	}
+
+	// The duplicated SeriesRefs should be considered deleted
+	for _, ref := range duplicateSeriesRefs {
+		require.Nil(t, db.series.GetByID(ref))
+		require.Contains(t, db.deleted, ref)
+	}
+}
+
+func readWALSamples(t *testing.T, walDir string) []*walSample {
 	t.Helper()
 	sr, err := wlog.NewSegmentsReader(walDir)
 	require.NoError(t, err)
