@@ -3277,6 +3277,14 @@ azuread:
   [ sdk:
       [ tenant_id: <string> ] ]
 
+  # Optional custom OAuth 2.0 scope to request when acquiring tokens.
+  # If not specified, defaults to the appropriate monitoring scope for the cloud:
+  # - AzurePublic: https://monitor.azure.com//.default
+  # - AzureGovernment: https://monitor.azure.us//.default  
+  # - AzureChina: https://monitor.azure.cn//.default
+  # Use this to authenticate against custom Azure applications or non-standard endpoints.
+  [ scope: <string> ]
+
 # WARNING: Remote write is NOT SUPPORTED by Google Cloud. This configuration is reserved for future use.
 # Optional Google Cloud Monitoring configuration.
 # Cannot be used at the same time as basic_auth, authorization, oauth2, sigv4 or azuread.
