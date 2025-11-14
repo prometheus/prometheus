@@ -14,16 +14,19 @@
 package chunkenc
 
 import (
+	"errors"
 	"fmt"
 	"math/bits"
 )
+
+var unsetErr = errors.New("varbit: unset")
 
 // putVarbitInt writes an int64 using varbit encoding with a bit bucketing
 // optimized for the dod's observed in histogram buckets, plus a few additional
 // buckets for large numbers.
 //
 // For optimal space utilization, each branch didn't need to support any values
-// of any of the prior branches. So we could expand the range of each branch. Do
+// of the prior branches. So we could expand the range of each branch. Do
 // more with fewer bits. It would come at the price of more expensive encoding
 // and decoding (cutting out and later adding back that center-piece we
 // skip). With the distributions of values we see in practice, we would reduce
@@ -60,6 +63,11 @@ func putVarbitInt(b *bstream, val int64) {
 		b.writeBits(uint64(val), 64)
 	}
 }
+
+//// Not so simple!
+//func putVarbitUnset(b *bstream) {
+//	b.writeBits(0b101, 3) // Sentinel, otherwise unused value that indicates unset element.
+//}
 
 // readVarbitInt reads an int64 encoded with putVarbitInt.
 func readVarbitInt(b *bstreamReader) (int64, error) {
