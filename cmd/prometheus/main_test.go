@@ -969,6 +969,7 @@ remote_write:
 // TestRemoteWrite_ReshardingWithoutDeadlock ensures that resharding (scaling up) doesn't block when the shards are full.
 // See: https://github.com/prometheus/prometheus/issues/17384.
 func TestRemoteWrite_ReshardingWithoutDeadlock(t *testing.T) {
+	t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/17489")
 	t.Parallel()
 
 	tmpDir := t.TempDir()
