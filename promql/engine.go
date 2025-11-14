@@ -3172,7 +3172,7 @@ type groupedAggregation struct {
 	incrementalMean        bool // True after reverting to incremental calculation of the mean value.
 	counterResetSeen       bool // Counter reset hint CounterReset seen. Currently only used for histogram samples.
 	notCounterResetSeen    bool // Counter reset hint NotCounterReset seen. Currently only used for histogram samples.
-	dropName               bool // True if any series in this group have DropName set.
+	dropName               bool // True if any sample in this group has DropName set.
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.

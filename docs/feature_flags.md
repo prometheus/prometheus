@@ -143,8 +143,7 @@ These queries are rare to occur and easy to fix. (In the above example,
 removing `by (__name__)` doesn't change anything without the feature flag and
 fixes the possible problem with the feature flag.)
 
-When we have multiple series for the same grouping key that do not agree on the same dropping
-name behaviour, if at least 1 series drops the name, we drop the name for all series.
+It is possible to craft a query that aggregates by `__name__` and puts samples with and without delayed name removal into the same group. In that case, the name is removed from the affected group. Note that this case hardly occurs in queries that fulfill a practical purpose.
 
 ## Auto Reload Config
 
