@@ -45,20 +45,6 @@ statistics. Currently this is limited to totalQueryableSamples.
 When disabled in either the engine or the query, per-step statistics are not
 computed at all.
 
-## Native Histograms
-
-`--enable-feature=native-histograms`
-
-_This feature flag is being phased out. You should not use it anymore._
-
-Native histograms are a stable feature by now. However, to scrape native
-histograms, a scrape config setting `scrape_native_histograms` is required. To
-ease the transition, this feature flag sets the default value of
-`scrape_native_histograms` to `true`. From v3.9 on, this feature flag will be a
-true no-op, and the default value of `scrape_native_histograms` will be always
-`false`. If you are still using this feature flag while running v3.8, update
-your scrape configs and stop using the feature flag before upgrading to v3.9.
-
 ## Experimental PromQL functions
 
 `--enable-feature=promql-experimental-functions`
