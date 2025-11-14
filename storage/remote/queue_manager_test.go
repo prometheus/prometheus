@@ -46,6 +46,7 @@ import (
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/compression"
@@ -328,7 +329,7 @@ func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, pro
 func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType) *QueueManager {
 	dir := t.TempDir()
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg, nil)
 
 	return m
 }
@@ -806,7 +807,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		}
 	)
 
-	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType)
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, nil)
 	m.StoreSeries(fakeSeries, 0)
 
 	// Attempt to samples while the manager is running. We immediately stop the
@@ -1395,6 +1396,20 @@ func (c *MockWriteClient) Store(ctx context.Context, bb []byte, n int) (WriteRes
 func (c *MockWriteClient) Name() string     { return c.NameFunc() }
 func (c *MockWriteClient) Endpoint() string { return c.EndpointFunc() }
 
+func addSeriesWithMetadata(t *testing.T, h *tsdb.Head, lbls labels.Labels, meta metadata.Metadata) chunks.HeadSeriesRef {
+	app := h.Appender(context.Background())
+
+	ref, err := app.Append(0, lbls, 1000, 1.0)
+	require.NoError(t, err)
+
+	_, err = app.UpdateMetadata(0, lbls, meta)
+	require.NoError(t, err)
+
+	require.NoError(t, app.Commit())
+
+	return chunks.HeadSeriesRef(ref)
+}
+
 // Extra labels to make a more realistic workload - taken from Kubernetes' embedded cAdvisor metrics.
 var extraLabels []labels.Label = []labels.Label{
 	{Name: "kubernetes_io_arch", Value: "amd64"},
@@ -1495,7 +1510,7 @@ func BenchmarkStoreSeries(b *testing.B) {
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
 
-				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType)
+				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, nil)
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -1974,7 +1989,7 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 
 		totalSize := 0
 		for b.Loop() {
-			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false)
+			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false, nil, nil)
 			req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, nil, cEnc, "snappy")
 			if err != nil {
 				b.Fatal(err)
@@ -2384,7 +2399,7 @@ func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
 	}
 
 	nSamples, nExemplars, nHistograms, nMetadata, nUnexpected := populateV2TimeSeries(
-		&symbolTable, batch, pendingData, false, false, false)
+		&symbolTable, batch, pendingData, false, false, false, nil, nil)
 
 	require.Equal(t, 2, nSamples, "Should count 2 samples")
 	require.Equal(t, 0, nExemplars, "Should count 0 exemplars")
@@ -2504,6 +2519,8 @@ func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
 				false, // sendExemplars
 				false, // sendNativeHistograms
 				true,  // enableTypeAndUnitLabels
+				nil,   // head
+				nil,   // metadataWatcher
 			)
 
 			require.Equal(t, 1, nSamples, "Should have 1 sample")
@@ -2624,6 +2641,8 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 				false,
 				false,
 				tc.enableTypeAndUnit,
+				nil, // head
+				nil, // metadataWatcher
 			)
 
 			require.Equal(t, 1, nSamples, "Should have 1 sample")
@@ -2649,6 +2668,442 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPopulateV2TimeSeries_ScrapeCache tests that when metadata.send=true
+// and WAL metadata is missing, RW2 looks up metadata from the scrape cache.
+func TestPopulateV2TimeSeries_ScrapeCache(t *testing.T) {
+	metadataStore := &TestMetaStore{
+		Metadata: []scrape.MetricMetadata{
+			{
+				MetricFamily: "test_gauge",
+				Type:         model.MetricTypeGauge,
+				Help:         "Test gauge from scrape cache",
+				Unit:         "bytes",
+			},
+			{
+				MetricFamily: "test_counter_total",
+				Type:         model.MetricTypeCounter,
+				Help:         "Test counter from scrape cache",
+				Unit:         "seconds",
+			},
+			{
+				MetricFamily: "http_request_duration_seconds",
+				Type:         model.MetricTypeHistogram,
+				Help:         "HTTP request duration histogram",
+				Unit:         "seconds",
+			},
+			{
+				MetricFamily: "requests_total",
+				Type:         model.MetricTypeCounter,
+				Help:         "Total requests counter",
+				Unit:         "requests",
+			},
+			{
+				MetricFamily: "custom_metric",
+				Type:         model.MetricTypeCounter,
+				Help:         "Custom counter with _total suffix",
+				Unit:         "",
+			},
+		},
+	}
+
+	target := &scrape.Target{}
+	target.SetMetadataStore(metadataStore)
+
+	fakeManager := &fakeManager{
+		activeTargets: map[string][]*scrape.Target{
+			"test_job": {target},
+		},
+	}
+
+	scrapeMgr := &scrapeManagerMock{
+		ready: true,
+	}
+
+	metadataWatcher := NewMetadataWatcher(promslog.NewNopLogger(), scrapeMgr, "test", nil, interval, deadline)
+	metadataWatcher.manager = fakeManager
+
+	tests := []struct {
+		name                  string
+		metricName            string
+		walMetadata           *metadata.Metadata
+		metadataWatcher       *MetadataWatcher
+		enableTypeAndUnit     bool
+		expectedHelp          string
+		expectedType          writev2.Metadata_MetricType
+		expectedUnit          string
+		expectedMetadataCount int
+	}{
+		// Basic scrape cache fallback tests
+		{
+			name:                  "no WAL, scrape cache provides all metadata",
+			metricName:            "test_gauge",
+			walMetadata:           nil,
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "Test gauge from scrape cache",
+			expectedType:          writev2.Metadata_METRIC_TYPE_GAUGE,
+			expectedUnit:          "bytes",
+			expectedMetadataCount: 1,
+		},
+		{
+			name:       "WAL metadata exists, scrape cache not consulted",
+			metricName: "test_gauge",
+			walMetadata: &metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Help: "Help from WAL",
+				Unit: "milliseconds",
+			},
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "Help from WAL",
+			expectedType:          writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit:          "milliseconds",
+			expectedMetadataCount: 1,
+		},
+		{
+			name:                  "no WAL, no watcher, falls back to unspecified",
+			metricName:            "test_gauge",
+			walMetadata:           nil,
+			metadataWatcher:       nil,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "",
+			expectedType:          writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			expectedUnit:          "",
+			expectedMetadataCount: 0,
+		},
+		{
+			name:                  "metric not in scrape cache",
+			metricName:            "unknown_metric",
+			walMetadata:           nil,
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "",
+			expectedType:          writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			expectedUnit:          "",
+			expectedMetadataCount: 0,
+		},
+		{
+			name:                  "type-and-unit with scrape cache Help",
+			metricName:            "test_gauge",
+			walMetadata:           nil,
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     true,
+			expectedHelp:          "Test gauge from scrape cache",
+			expectedType:          writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			expectedUnit:          "",
+			expectedMetadataCount: 1,
+		},
+		// Complex metric type tests (histograms, counters with suffixes)
+		{
+			name:                  "histogram _bucket suffix should match base metric",
+			metricName:            "http_request_duration_seconds_bucket",
+			walMetadata:           nil,
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "HTTP request duration histogram",
+			expectedType:          writev2.Metadata_METRIC_TYPE_HISTOGRAM,
+			expectedUnit:          "seconds",
+			expectedMetadataCount: 1,
+		},
+		{
+			name:                  "histogram _count suffix should match base metric",
+			metricName:            "http_request_duration_seconds_count",
+			walMetadata:           nil,
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "HTTP request duration histogram",
+			expectedType:          writev2.Metadata_METRIC_TYPE_HISTOGRAM,
+			expectedUnit:          "seconds",
+			expectedMetadataCount: 1,
+		},
+		{
+			name:                  "histogram _sum suffix should match base metric",
+			metricName:            "http_request_duration_seconds_sum",
+			walMetadata:           nil,
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "HTTP request duration histogram",
+			expectedType:          writev2.Metadata_METRIC_TYPE_HISTOGRAM,
+			expectedUnit:          "seconds",
+			expectedMetadataCount: 1,
+		},
+		{
+			name:                  "OpenMetrics 2.0 counter with _total (exact match)",
+			metricName:            "requests_total",
+			walMetadata:           nil,
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "Total requests counter",
+			expectedType:          writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit:          "requests",
+			expectedMetadataCount: 1,
+		},
+		{
+			name:                  "counter _total stripped matches base (custom_metric_total -> custom_metric)",
+			metricName:            "custom_metric_total",
+			walMetadata:           nil,
+			metadataWatcher:       metadataWatcher,
+			enableTypeAndUnit:     false,
+			expectedHelp:          "Custom counter with _total suffix",
+			expectedType:          writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit:          "",
+			expectedMetadataCount: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			symbolTable := writev2.NewSymbolTable()
+			pendingData := make([]writev2.TimeSeries, 1)
+
+			batch := []timeSeries{
+				{
+					seriesLabels: labels.FromStrings("__name__", tc.metricName, "job", "test"),
+					metadata:     tc.walMetadata,
+					value:        123.45,
+					timestamp:    time.Now().UnixMilli(),
+					sType:        tSample,
+				},
+			}
+
+			nSamples, nExemplars, nHistograms, nMetadata, _ := populateV2TimeSeries(
+				&symbolTable,
+				batch,
+				pendingData,
+				false,
+				false,
+				tc.enableTypeAndUnit,
+				nil, // head
+				tc.metadataWatcher,
+			)
+
+			require.Equal(t, 1, nSamples, "Should have 1 sample")
+			require.Equal(t, 0, nExemplars, "Should have 0 exemplars")
+			require.Equal(t, 0, nHistograms, "Should have 0 histograms")
+			require.Equal(t, tc.expectedMetadataCount, nMetadata, "Metadata count should match")
+
+			// Verify metadata.
+			require.Equal(t, tc.expectedType, pendingData[0].Metadata.Type, "Type should match")
+
+			symbols := symbolTable.Symbols()
+
+			// Verify Help.
+			var actualHelp string
+			helpRef := pendingData[0].Metadata.HelpRef
+			if helpRef > 0 && helpRef < uint32(len(symbols)) {
+				actualHelp = symbols[helpRef]
+			}
+			require.Equal(t, tc.expectedHelp, actualHelp, "Help should match")
+
+			// Verify Unit.
+			var actualUnit string
+			unitRef := pendingData[0].Metadata.UnitRef
+			if unitRef > 0 && unitRef < uint32(len(symbols)) {
+				actualUnit = symbols[unitRef]
+			}
+			require.Equal(t, tc.expectedUnit, actualUnit, "Unit should match")
+		})
+	}
+}
+
+// TestPopulateV2TimeSeries_ScrapeCacheHistogram tests metadata lookup for a histogram
+// that creates multiple series (_bucket with different le labels, _count, _sum).
+func TestPopulateV2TimeSeries_ScrapeCacheHistogram(t *testing.T) {
+	metadataStore := &TestMetaStore{
+		Metadata: []scrape.MetricMetadata{
+			{
+				MetricFamily: "http_request_duration_seconds",
+				Type:         model.MetricTypeHistogram,
+				Help:         "HTTP request latency in seconds",
+				Unit:         "seconds",
+			},
+		},
+	}
+
+	target := &scrape.Target{}
+	target.SetMetadataStore(metadataStore)
+
+	fakeManager := &fakeManager{
+		activeTargets: map[string][]*scrape.Target{
+			"api": {target},
+		},
+	}
+
+	scrapeMgr := &scrapeManagerMock{
+		ready: true,
+	}
+
+	metadataWatcher := NewMetadataWatcher(promslog.NewNopLogger(), scrapeMgr, "test", nil, interval, deadline)
+	metadataWatcher.manager = fakeManager
+
+	now := time.Now().UnixMilli()
+	batch := []timeSeries{
+		{
+			seriesLabels: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "le", "0.1", "method", "GET", "status", "200"),
+			metadata:     nil,
+			value:        50,
+			timestamp:    now,
+			sType:        tSample,
+		},
+		{
+			seriesLabels: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "le", "0.5", "method", "GET", "status", "200"),
+			metadata:     nil,
+			value:        100,
+			timestamp:    now,
+			sType:        tSample,
+		},
+		{
+			seriesLabels: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "le", "1", "method", "GET", "status", "200"),
+			metadata:     nil,
+			value:        150,
+			timestamp:    now,
+			sType:        tSample,
+		},
+		{
+			seriesLabels: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "le", "+Inf", "method", "GET", "status", "200"),
+			metadata:     nil,
+			value:        200,
+			timestamp:    now,
+			sType:        tSample,
+		},
+		{
+			seriesLabels: labels.FromStrings("__name__", "http_request_duration_seconds_sum", "method", "GET", "status", "200"),
+			metadata:     nil,
+			value:        45.5,
+			timestamp:    now,
+			sType:        tSample,
+		},
+		{
+			seriesLabels: labels.FromStrings("__name__", "http_request_duration_seconds_count", "method", "GET", "status", "200"),
+			metadata:     nil,
+			value:        200,
+			timestamp:    now,
+			sType:        tSample,
+		},
+	}
+
+	symbolTable := writev2.NewSymbolTable()
+	pendingData := make([]writev2.TimeSeries, len(batch))
+
+	nSamples, nExemplars, nHistograms, nMetadata, _ := populateV2TimeSeries(
+		&symbolTable,
+		batch,
+		pendingData,
+		false,
+		false,
+		false,
+		nil,
+		metadataWatcher,
+	)
+
+	// Verify counts.
+	require.Equal(t, 6, nSamples, "Should have 6 samples (4 buckets + sum + count)")
+	require.Equal(t, 0, nExemplars, "Should have 0 exemplars")
+	require.Equal(t, 0, nHistograms, "Should have 0 histograms")
+	require.Equal(t, 6, nMetadata, "All 6 series should have metadata")
+
+	symbols := symbolTable.Symbols()
+
+	// Verify all series got the same metadata from the base histogram metric.
+	for i, series := range pendingData {
+		require.Equal(t, writev2.Metadata_METRIC_TYPE_HISTOGRAM, series.Metadata.Type,
+			"Series %d should have HISTOGRAM type", i)
+
+		var actualHelp string
+		if series.Metadata.HelpRef > 0 && series.Metadata.HelpRef < uint32(len(symbols)) {
+			actualHelp = symbols[series.Metadata.HelpRef]
+		}
+		require.Equal(t, "HTTP request latency in seconds", actualHelp,
+			"Series %d should have correct Help from base metric", i)
+
+		var actualUnit string
+		if series.Metadata.UnitRef > 0 && series.Metadata.UnitRef < uint32(len(symbols)) {
+			actualUnit = symbols[series.Metadata.UnitRef]
+		}
+		require.Equal(t, "seconds", actualUnit,
+			"Series %d should have correct Unit from base metric", i)
+	}
+}
+
+// TestPopulateV2TimeSeriesWithHeadMetadata tests metadata lookup from TSDB head.
+func TestPopulateV2TimeSeriesWithHeadMetadata(t *testing.T) {
+	dir := t.TempDir()
+
+	opts := tsdb.DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = dir
+
+	head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	// Setup test data.
+	lbls1 := labels.FromStrings("__name__", "metric1", "job", "test")
+	lbls2 := labels.FromStrings("__name__", "metric2", "job", "test")
+
+	meta1 := metadata.Metadata{
+		Type: "counter",
+		Unit: "seconds",
+		Help: "Metric 1 help text",
+	}
+	meta2 := metadata.Metadata{
+		Type: "gauge",
+		Unit: "bytes",
+		Help: "Metric 2 help text",
+	}
+
+	ref1 := addSeriesWithMetadata(t, head, lbls1, meta1)
+	ref2 := addSeriesWithMetadata(t, head, lbls2, meta2)
+
+	batch := []timeSeries{
+		{
+			seriesLabels: lbls1,
+			seriesRef:    ref1,
+			metadata:     nil,
+			timestamp:    1000,
+			value:        42.0,
+			sType:        tSample,
+		},
+		{
+			seriesLabels: lbls2,
+			seriesRef:    ref2,
+			metadata:     nil,
+			timestamp:    1000,
+			value:        100.0,
+			sType:        tSample,
+		},
+	}
+
+	symbolTable := writev2.NewSymbolTable()
+	pendingData := make([]writev2.TimeSeries, len(batch))
+
+	nSamples, nExemplars, nHistograms, nMetadata, nUnexpected := populateV2TimeSeries(
+		&symbolTable, batch, pendingData,
+		false,
+		false,
+		false,
+		head,
+		nil,
+	)
+
+	require.Equal(t, 2, nSamples, "Should have 2 samples")
+	require.Equal(t, 0, nExemplars, "Should have 0 exemplars")
+	require.Equal(t, 0, nHistograms, "Should have 0 histograms")
+	require.Equal(t, 2, nMetadata, "Should have 2 metadata from head")
+	require.Equal(t, 0, nUnexpected, "Should have 0 unexpected metadata")
+
+	// Verify metadata was populated from head.
+	require.Equal(t, writev2.FromMetadataType(meta1.Type), pendingData[0].Metadata.Type)
+	require.NotZero(t, pendingData[0].Metadata.HelpRef, "Help should be populated from head")
+
+	require.Equal(t, writev2.FromMetadataType(meta2.Type), pendingData[1].Metadata.Type)
+	require.NotZero(t, pendingData[1].Metadata.HelpRef, "Help should be populated from head")
 }
 
 func TestHighestTimestampOnAppend(t *testing.T) {

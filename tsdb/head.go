@@ -28,6 +28,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"go.uber.org/atomic"
 
@@ -1652,6 +1653,21 @@ func (h *Head) NumSeries() uint64 {
 // NumStaleSeries returns the number of stale series in the head.
 func (h *Head) NumStaleSeries() uint64 {
 	return h.numStaleSeries.Load()
+}
+
+// GetMetadataByRef returns the metadata for the series with the given reference.
+func (h *Head) GetMetadataByRef(ref chunks.HeadSeriesRef) (meta metadata.Metadata) {
+	series := h.series.getByID(ref)
+	if series == nil {
+		// Return metadata with unknown type for non-existent series.
+		return metadata.Metadata{Type: model.MetricTypeUnknown}
+	}
+	series.Lock()
+	defer series.Unlock()
+	if series.meta == nil {
+		return metadata.Metadata{Type: model.MetricTypeUnknown}
+	}
+	return *series.meta
 }
 
 var headULID = ulid.MustParse("0000000000XXXXXXXXXXXXHEAD")
