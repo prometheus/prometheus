@@ -49,7 +49,7 @@ var (
 	// NOTE(bwplotka): This can be both an instrumentation failure or commonly expected
 	// behaviour, and we currently don't have a way to determine this. As a result
 	// it's recommended to ignore this error for now.
-	ErrOutOfOrderST      = errors.New("created timestamp out of order, ignoring")
+	ErrOutOfOrderST      = errors.New("start timestamp out of order, ignoring")
 	ErrSTNewerThanSample = errors.New("ST is newer or the same as sample's timestamp, ignoring")
 )
 

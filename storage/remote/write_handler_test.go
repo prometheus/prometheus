@@ -752,14 +752,12 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				i, j, k, m int
 			)
 			for _, ts := range writeV2RequestFixture.Timeseries {
-				zeroHistogramIngested := false
-				zeroFloatHistogramIngested := false
 				ls, err := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
 				require.NoError(t, err)
 
 				for _, s := range ts.Samples {
-					if ts.CreatedTimestamp != 0 && tc.ingestSTZeroSample {
-						requireEqual(t, mockSample{ls, ts.CreatedTimestamp, 0}, appendable.samples[i])
+					if s.StartTimestamp != 0 && tc.ingestSTZeroSample {
+						requireEqual(t, mockSample{ls, s.StartTimestamp, 0}, appendable.samples[i])
 						i++
 					}
 					requireEqual(t, mockSample{ls, s.Timestamp, s.Value}, appendable.samples[i])
@@ -768,26 +766,20 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				for _, hp := range ts.Histograms {
 					if hp.IsFloatHistogram() {
 						fh := hp.ToFloatHistogram()
-						if !zeroFloatHistogramIngested && ts.CreatedTimestamp != 0 && tc.ingestSTZeroSample {
-							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, nil, &histogram.FloatHistogram{}}, appendable.histograms[k])
+						if hp.StartTimestamp != 0 && tc.ingestSTZeroSample {
+							requireEqual(t, mockHistogram{ls, hp.StartTimestamp, nil, &histogram.FloatHistogram{}}, appendable.histograms[k])
 							k++
-							zeroFloatHistogramIngested = true
 						}
 						requireEqual(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
 					} else {
 						h := hp.ToIntHistogram()
-						if !zeroHistogramIngested && ts.CreatedTimestamp != 0 && tc.ingestSTZeroSample {
-							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, &histogram.Histogram{}, nil}, appendable.histograms[k])
+						if hp.StartTimestamp != 0 && tc.ingestSTZeroSample {
+							requireEqual(t, mockHistogram{ls, hp.StartTimestamp, &histogram.Histogram{}, nil}, appendable.histograms[k])
 							k++
-							zeroHistogramIngested = true
 						}
 						requireEqual(t, mockHistogram{ls, hp.Timestamp, h, nil}, appendable.histograms[k])
 					}
 					k++
-				}
-				if ts.CreatedTimestamp != 0 && tc.ingestSTZeroSample {
-					require.True(t, zeroHistogramIngested)
-					require.True(t, zeroFloatHistogramIngested)
 				}
 				if tc.appendExemplarErr == nil {
 					for _, e := range ts.Exemplars {

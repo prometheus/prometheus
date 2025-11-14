@@ -114,7 +114,7 @@ var (
 					HelpRef: 15, // Symbolized writeV2RequestSeries1Metadata.Help.
 					UnitRef: 16, // Symbolized writeV2RequestSeries1Metadata.Unit.
 				},
-				Samples:   []writev2.Sample{{Value: 1, Timestamp: 10}},
+				Samples:   []writev2.Sample{{Value: 1, Timestamp: 10, StartTimestamp: 1}}, // ST needs to be lower than the sample's timestamp.
 				Exemplars: []writev2.Exemplar{{LabelsRefs: []uint32{11, 12}, Value: 1, Timestamp: 10}},
 				Histograms: []writev2.Histogram{
 					writev2.FromIntHistogram(10, &testHistogram),
@@ -122,7 +122,6 @@ var (
 					writev2.FromIntHistogram(30, &testHistogramCustomBuckets),
 					writev2.FromFloatHistogram(40, testHistogramCustomBuckets.ToFloat(nil)),
 				},
-				CreatedTimestamp: 1, // ST needs to be lower than the sample's timestamp.
 			},
 			{
 				LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, // Same series as first.
@@ -182,7 +181,7 @@ func TestWriteV2RequestFixture(t *testing.T) {
 					HelpRef: st.Symbolize(writeV2RequestSeries1Metadata.Help),
 					UnitRef: st.Symbolize(writeV2RequestSeries1Metadata.Unit),
 				},
-				Samples:   []writev2.Sample{{Value: 1, Timestamp: 10}},
+				Samples:   []writev2.Sample{{Value: 1, Timestamp: 10, StartTimestamp: 1}},
 				Exemplars: []writev2.Exemplar{{LabelsRefs: exemplar1LabelRefs, Value: 1, Timestamp: 10}},
 				Histograms: []writev2.Histogram{
 					writev2.FromIntHistogram(10, &testHistogram),
@@ -190,7 +189,6 @@ func TestWriteV2RequestFixture(t *testing.T) {
 					writev2.FromIntHistogram(30, &testHistogramCustomBuckets),
 					writev2.FromFloatHistogram(40, testHistogramCustomBuckets.ToFloat(nil)),
 				},
-				CreatedTimestamp: 1,
 			},
 			{
 				LabelsRefs: labelRefs,
