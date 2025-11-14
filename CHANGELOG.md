@@ -3,7 +3,6 @@
 ## main / unreleased
 
 * [FEATURE] Templates: Add urlQueryEscape to template functions. #17403
-* [ENHANCEMENT] TSDB: Add Option to configure TSDB Block Reload Interval using `block_reload_interval` #16728
 
 ## 3.7.3 / 2025-10-29
 

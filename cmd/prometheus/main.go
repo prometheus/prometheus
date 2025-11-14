@@ -672,12 +672,12 @@ func main() {
 		}
 		cfg.tsdb.MaxExemplars = cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars
 	}
+	if cfg.tsdb.BlockReloadInterval < model.Duration(1*time.Second) {
+		logger.Warn("The option --storage.tsdb.block-reload-interval is set to a value less than 1s. Setting it to 1s to avoid overload.")
+		cfg.tsdb.BlockReloadInterval = model.Duration(1 * time.Second)
+	}
 	if cfgFile.StorageConfig.TSDBConfig != nil {
 		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
-		if cfg.tsdb.BlockReloadInterval < model.Duration(1*time.Second) {
-			logger.Warn("The option --storage.tsdb.block-reload-interval is set to a value less than 1s. Setting it to 1s to avoid overload.")
-			cfg.tsdb.BlockReloadInterval = model.Duration(1 * time.Second)
-		}
 		if cfgFile.StorageConfig.TSDBConfig.Retention != nil {
 			if cfgFile.StorageConfig.TSDBConfig.Retention.Time > 0 {
 				cfg.tsdb.RetentionDuration = cfgFile.StorageConfig.TSDBConfig.Retention.Time
