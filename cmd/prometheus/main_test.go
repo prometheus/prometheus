@@ -977,13 +977,14 @@ func TestRemoteWrite_ReshardingWithoutDeadlock(t *testing.T) {
 	port := testutil.RandomUnprivilegedPort(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		time.Sleep(time.Second)
+		// Help filling up the queue.
+		time.Sleep(30*time.Second)
 	}))
 	t.Cleanup(server.Close)
 
 	config := fmt.Sprintf(`
 global:
-  scrape_interval: 100ms
+  scrape_interval: 1s
 scrape_configs:
   - job_name: 'self'
     static_configs:
