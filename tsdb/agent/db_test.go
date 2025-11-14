@@ -1325,7 +1325,6 @@ func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 func TestDuplicateSeriesRefsByHash(t *testing.T) {
 	dbDir := t.TempDir()
 	opts := DefaultOptions()
-	opts.OutOfOrderTimeWindow = 360_000
 	db := createTestAgentDB(t, nil, opts, dbDir)
 
 	app := db.Appender(context.Background())
@@ -1344,19 +1343,19 @@ func TestDuplicateSeriesRefsByHash(t *testing.T) {
 	}
 	require.NoError(t, app.Commit())
 
-	// Forcefully create a bunch of new segments to force a truncation
+	// Forcefully create a bunch of new segments to force a truncation.
 	for i := 0; i < 3; i++ {
 		_, err := db.wal.NextSegmentSync()
 		require.NoError(t, err)
 	}
 	// No series should be deleted yet
-	require.Equal(t, 0, len(db.deleted))
+	require.Empty(t, db.deleted)
 
-	// Truncate at 1 ms higher than the highest timestamp
+	// Truncate at 1 ms higher than the highest timestamp.
 	err := db.truncate(11)
 	require.NoError(t, err)
 
-	// The original SeriesRefs should be considered deleted
+	// The original SeriesRefs should be considered deleted.
 	for _, ref := range originalSeriesRefs {
 		require.Nil(t, db.series.GetByID(ref))
 		require.Contains(t, db.deleted, ref)
@@ -1371,22 +1370,22 @@ func TestDuplicateSeriesRefsByHash(t *testing.T) {
 	}
 	require.NoError(t, app.Commit())
 
-	// The duplicate SeriesRefs should be in series
+	// The duplicate SeriesRefs should be in series.
 	for _, ref := range duplicateSeriesRefs {
 		require.NotNil(t, db.series.GetByID(ref))
 	}
 
-	// Close the WAL before we have a chance to remove the original RefIDs
+	// Close the WAL before we have a chance to remove the original RefIDs.
 	require.NoError(t, db.Close())
 
 	db = createTestAgentDB(t, nil, opts, dbDir)
-	// The original SeriesRefs should be in series
+	// The original SeriesRefs should be in series.
 	for _, ref := range originalSeriesRefs {
 		require.NotNil(t, db.series.GetByID(ref))
 		require.NotContains(t, db.deleted, ref)
 	}
 
-	// The duplicated SeriesRefs should be considered deleted
+	// The duplicated SeriesRefs should be considered deleted.
 	for _, ref := range duplicateSeriesRefs {
 		require.Nil(t, db.series.GetByID(ref))
 		require.Contains(t, db.deleted, ref)
