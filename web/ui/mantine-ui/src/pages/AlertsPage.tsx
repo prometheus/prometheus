@@ -195,7 +195,7 @@ export default function AlertsPage() {
     if (searchFilter != searchInput) {
       setSearchInput(searchFilter || "");
     }
-  }, [searchFilter, setSearchInput]);
+  }, [searchFilter, setSearchInput, searchInput]);
 
   useEffect(() => {
     if (!onComposition) {
