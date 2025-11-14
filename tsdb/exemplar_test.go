@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,7 +36,7 @@ var eMetrics = NewExemplarMetrics(prometheus.DefaultRegisterer)
 
 // Tests the same exemplar cases as AddExemplar, but specifically the ValidateExemplar function so it can be relied on externally.
 func TestValidateExemplar(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(2, eMetrics)
+	exs, err := NewCircularExemplarStorage(2, eMetrics, 0)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -77,7 +78,7 @@ func TestValidateExemplar(t *testing.T) {
 }
 
 func TestAddExemplar(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(2, eMetrics)
+	exs, err := NewCircularExemplarStorage(2, eMetrics, 0)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -119,11 +120,521 @@ func TestAddExemplar(t *testing.T) {
 	require.Equal(t, storage.ErrExemplarLabelLength, es.AddExemplar(l, e4))
 }
 
+func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
+	series1 := labels.FromStrings("trace_id", "foo")
+	series2 := labels.FromStrings("trace_id", "bar")
+
+	series1Matcher := []*labels.Matcher{{
+		Type:  labels.MatchEqual,
+		Name:  "trace_id",
+		Value: series1.Get("trace_id"),
+	}}
+
+	series2Matcher := []*labels.Matcher{{
+		Type:  labels.MatchEqual,
+		Name:  "trace_id",
+		Value: series2.Get("trace_id"),
+	}}
+
+	testCases := []struct {
+		name          string
+		exemplars     []exemplar.Exemplar
+		wantExemplars []exemplar.Exemplar
+		matcher       []*labels.Matcher
+		wantError     error
+	}{
+		{
+			name: "insert after newest",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
+			},
+			matcher: series1Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
+			},
+		},
+		{
+			name: "insert after newest",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1000},
+				{Labels: series1, Value: 0.2, Ts: 950},
+			},
+			matcher: series1Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.2, Ts: 950},
+				{Labels: series1, Value: 0.1, Ts: 1000},
+			},
+		},
+		{
+			name: "insert before oldest",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 2},
+				{Labels: series1, Value: 0.2, Ts: 1},
+			},
+			matcher: series1Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.2, Ts: 1},
+				{Labels: series1, Value: 0.1, Ts: 2},
+			},
+		},
+		{
+			name: "insert in between",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 3},
+				{Labels: series1, Value: 0.3, Ts: 2},
+			},
+			matcher: series1Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.3, Ts: 2},
+				{Labels: series1, Value: 0.2, Ts: 3},
+			},
+		},
+		{
+			name: "insert after newest with overflow",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
+				{Labels: series1, Value: 0.3, Ts: 3},
+				{Labels: series1, Value: 0.4, Ts: 4},
+			},
+			matcher: series1Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.2, Ts: 2},
+				{Labels: series1, Value: 0.3, Ts: 3},
+				{Labels: series1, Value: 0.4, Ts: 4},
+			},
+		},
+		{
+			name: "insert before oldest with overflow",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
+				{Labels: series1, Value: 0.3, Ts: 3},
+				{Labels: series1, Value: 0.4, Ts: 0},
+			},
+			matcher: series1Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.4, Ts: 0},
+				{Labels: series1, Value: 0.2, Ts: 2},
+				{Labels: series1, Value: 0.3, Ts: 3},
+			},
+		},
+		{
+			name: "insert between with overflow",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 3},
+				{Labels: series1, Value: 0.3, Ts: 4},
+				{Labels: series1, Value: 0.4, Ts: 2},
+			},
+			matcher: series1Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.4, Ts: 2},
+				{Labels: series1, Value: 0.2, Ts: 3},
+				{Labels: series1, Value: 0.3, Ts: 4},
+			},
+		},
+		{
+			name: "insert out of the OOO window",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 200},
+				{Labels: series1, Value: 0.2, Ts: 1},
+			},
+			wantError: storage.ErrOutOfOrderExemplar,
+		},
+		{
+			name: "insert multiple series",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 3},
+				{Labels: series2, Value: 0.3, Ts: 4},
+			},
+			matcher: series1Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 3},
+			},
+		},
+		{
+			name: "insert multiple series with overflow",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series2, Value: 0.1, Ts: 1},
+				{Labels: series2, Value: 0.2, Ts: 2},
+				{Labels: series2, Value: 0.3, Ts: 3},
+				{Labels: series1, Value: 0.4, Ts: 4},
+			},
+			matcher: series2Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series2, Value: 0.2, Ts: 2},
+				{Labels: series2, Value: 0.3, Ts: 3},
+			},
+		},
+		{
+			name: "series1 overflows series2 out-of-order",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series2, Value: 0.1, Ts: 3},
+				{Labels: series2, Value: 0.2, Ts: 2},
+				{Labels: series2, Value: 0.3, Ts: 4},
+				{Labels: series1, Value: 0.4, Ts: 4},
+				{Labels: series1, Value: 0.5, Ts: 1},
+			},
+			matcher: series2Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series2, Value: 0.3, Ts: 4},
+			},
+		},
+		{
+			name: "ignore duplicate exemplars",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 3},
+				{Labels: series1, Value: 0.1, Ts: 3},
+			},
+			matcher: series1Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 3},
+			},
+		},
+		{
+			name: "empty timestamps",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 0},
+				{Labels: series1, Value: 0.2, Ts: 0},
+			},
+			matcher: series1Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 0},
+				{Labels: series1, Value: 0.2, Ts: 0},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			exs, err := NewCircularExemplarStorage(3, eMetrics, 100)
+			require.NoError(t, err)
+			es := exs.(*CircularExemplarStorage)
+
+			// Add exemplars and compare tc.wantErr against the first exemplar failing.
+			var addError error
+			for i, ex := range tc.exemplars {
+				addError = es.AddExemplar(ex.Labels, ex)
+				if addError != nil {
+					break
+				}
+				if testing.Verbose() {
+					t.Logf("Buffer[%d]:\n%s", i, debugCircularBuffer(es))
+				}
+			}
+			if tc.wantError == nil {
+				require.NoError(t, addError)
+			} else {
+				require.ErrorIs(t, addError, tc.wantError)
+			}
+			if (addError != nil) != (tc.wantError != nil) {
+				t.Fatalf("Unexpected error while adding exemplar: %v Circular buffer: \n%s", addError, debugCircularBuffer(es))
+			} else if addError != nil {
+				return
+			}
+
+			// Ensure exemplars are returned correctly and in-order.
+			gotExemplars, err := es.Select(0, 1000, tc.matcher)
+			require.NoError(t, err)
+			if len(tc.wantExemplars) == 0 {
+				require.Empty(t, gotExemplars)
+			} else {
+				require.Len(t, gotExemplars, 1)
+				require.Equal(t, tc.wantExemplars, gotExemplars[0].Exemplars)
+			}
+		})
+	}
+}
+
+func TestCircularExemplarStorage_Resize(t *testing.T) {
+	series1 := labels.FromStrings("trace_id", "foo")
+	series2 := labels.FromStrings("trace_id", "bar")
+	matcher1 := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchRegexp, "trace_id", "(foo|bar)"),
+	}
+
+	testCases := []struct {
+		name          string
+		exemplars     []exemplar.Exemplar
+		resize        int64
+		wantExemplars []exemplar.Exemplar
+		wantNextIndex int
+		wantError     error
+	}{
+		{
+			name: "in-order, grow",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
+			},
+			resize: 10,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
+			},
+			wantNextIndex: 2,
+		},
+		{
+			name: "in-order, shrink",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
+				{Labels: series1, Value: 0.3, Ts: 3},
+			},
+			resize: 2,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.2, Ts: 2},
+				{Labels: series1, Value: 0.3, Ts: 3},
+			},
+			wantNextIndex: 0,
+		},
+		{
+			name: "out-of-order, shrink",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.3, Ts: 3},
+				{Labels: series1, Value: 0.2, Ts: 2},
+				{Labels: series1, Value: 0.1, Ts: 1},
+			},
+			resize: 2,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
+			},
+			wantNextIndex: 0,
+		},
+		{
+			name: "out-of-order, grow",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.3, Ts: 3},
+				{Labels: series1, Value: 0.2, Ts: 2},
+			},
+			resize: 5,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.2, Ts: 2},
+				{Labels: series1, Value: 0.3, Ts: 3},
+			},
+			wantNextIndex: 2,
+		},
+		{
+			name: "duplicate timestamps",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 1},
+				{Labels: series1, Value: 0.3, Ts: 2},
+			},
+			resize: 3,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 1},
+				{Labels: series1, Value: 0.3, Ts: 2},
+			},
+		},
+		{
+			name:          "empty input, grow",
+			exemplars:     []exemplar.Exemplar{},
+			resize:        10,
+			wantExemplars: []exemplar.Exemplar{},
+			wantNextIndex: 0,
+		},
+		{
+			name:          "empty input, shrink",
+			exemplars:     []exemplar.Exemplar{},
+			resize:        1,
+			wantExemplars: []exemplar.Exemplar{},
+			wantNextIndex: 0,
+		},
+		{
+			name: "shrink to zero",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
+			},
+			resize:        0,
+			wantExemplars: []exemplar.Exemplar{},
+			wantNextIndex: 0,
+		},
+		{
+			name: "multiple series, shrink",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series2, Value: 1.1, Ts: 2},
+				{Labels: series1, Value: 0.2, Ts: 3},
+				{Labels: series2, Value: 1.2, Ts: 4},
+			},
+			resize: 2,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.2, Ts: 3},
+				{Labels: series2, Value: 1.2, Ts: 4},
+			},
+			wantNextIndex: 0,
+		},
+		{
+			name: "shrink to one",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
+			},
+			resize: 1,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.2, Ts: 2},
+			},
+			wantNextIndex: 0,
+		},
+		{
+			name: "shrink to two",
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+			},
+			resize: 2,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+			},
+			wantNextIndex: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			exs, err := NewCircularExemplarStorage(3, eMetrics, 100)
+			require.NoError(t, err)
+			es := exs.(*CircularExemplarStorage)
+
+			for _, ex := range tc.exemplars {
+				require.NoError(t, es.AddExemplar(ex.Labels, ex))
+			}
+
+			// Resize the circular buffer.
+			if testing.Verbose() {
+				t.Logf("Buffer[before-resize]:\n%s", debugCircularBuffer(es))
+			}
+			es.Resize(tc.resize)
+			if testing.Verbose() {
+				t.Logf("Buffer[after-resize]:\n%s", debugCircularBuffer(es))
+			}
+
+			// Ensure exemplars are returned correctly and in-order.
+			gotExemplars, err := es.Select(0, 1000, matcher1)
+			require.NoError(t, err)
+			flat := make([]exemplar.Exemplar, 0)
+			for _, group := range gotExemplars {
+				flat = append(flat, group.Exemplars...)
+			}
+			sort.Slice(flat, func(i, j int) bool {
+				return flat[i].Ts < flat[j].Ts
+			})
+			require.Equal(t, tc.wantExemplars, flat, "exemplar mismatch")
+			require.Equal(t, tc.wantNextIndex, es.nextIndex, "next index mismatch")
+		})
+	}
+
+	exemplars1to4 := []exemplar.Exemplar{
+		{Labels: series1, Value: 0.1, Ts: 1},
+		{Labels: series1, Value: 0.2, Ts: 2},
+		{Labels: series1, Value: 0.3, Ts: 3},
+		{Labels: series1, Value: 0.4, Ts: 4},
+	}
+	exemplars5to7 := []exemplar.Exemplar{
+		{Labels: series1, Value: 0.5, Ts: 5},
+		{Labels: series1, Value: 0.6, Ts: 6},
+		{Labels: series1, Value: 0.7, Ts: 7},
+	}
+
+	t.Run("shrink then grow", func(t *testing.T) {
+		exs, err := NewCircularExemplarStorage(3, eMetrics, 100)
+		require.NoError(t, err)
+		es := exs.(*CircularExemplarStorage)
+
+		for _, ex := range exemplars1to4 {
+			require.NoError(t, es.AddExemplar(ex.Labels, ex))
+		}
+
+		if testing.Verbose() {
+			t.Logf("Buffer[before-resize-2]:\n%s", debugCircularBuffer(es))
+		}
+
+		es.Resize(2)
+		if testing.Verbose() {
+			t.Logf("Buffer[after-resize-2]:\n%s", debugCircularBuffer(es))
+		}
+
+		gotExemplars, err := es.Select(0, 1000, matcher1)
+		require.NoError(t, err)
+		require.Len(t, gotExemplars, 1)
+		require.Len(t, gotExemplars[0].Exemplars, 2)
+
+		if testing.Verbose() {
+			t.Logf("Buffer[before-resize-5]:\n%s", debugCircularBuffer(es))
+		}
+		es.Resize(5)
+
+		if testing.Verbose() {
+			t.Logf("Buffer[after-resize-5]:\n%s", debugCircularBuffer(es))
+		}
+		for _, ex := range exemplars5to7 {
+			require.NoError(t, es.AddExemplar(ex.Labels, ex))
+		}
+		gotExemplars, err = es.Select(0, 1000, matcher1)
+		require.NoError(t, err)
+		require.Len(t, gotExemplars, 1)
+		require.Len(t, gotExemplars[0].Exemplars, 5)
+	})
+
+	t.Run("grow then shrink", func(t *testing.T) {
+		exs, err := NewCircularExemplarStorage(3, eMetrics, 100)
+		require.NoError(t, err)
+		es := exs.(*CircularExemplarStorage)
+
+		for _, ex := range exemplars1to4 {
+			require.NoError(t, es.AddExemplar(ex.Labels, ex))
+		}
+
+		if testing.Verbose() {
+			t.Logf("Buffer[before-resize-5]:\n%s", debugCircularBuffer(es))
+		}
+
+		es.Resize(5)
+
+		if testing.Verbose() {
+			t.Logf("Buffer[after-resize-5]:\n%s", debugCircularBuffer(es))
+		}
+
+		for _, ex := range exemplars5to7 {
+			require.NoError(t, es.AddExemplar(ex.Labels, ex))
+		}
+
+		gotExemplars, err := es.Select(0, 1000, matcher1)
+		require.NoError(t, err)
+		require.Len(t, gotExemplars, 1)
+		require.Len(t, gotExemplars[0].Exemplars, 5)
+
+		if testing.Verbose() {
+			t.Logf("Buffer[before-resize-2]:\n%s", debugCircularBuffer(es))
+		}
+
+		es.Resize(2)
+
+		if testing.Verbose() {
+			t.Logf("Buffer[after-resize-2]:\n%s", debugCircularBuffer(es))
+		}
+
+		gotExemplars, err = es.Select(0, 1000, matcher1)
+		require.NoError(t, err)
+		require.Len(t, gotExemplars, 1)
+		require.Len(t, gotExemplars[0].Exemplars, 2)
+	})
+}
+
 func TestStorageOverflow(t *testing.T) {
 	// Test that circular buffer index and assignment
 	// works properly, adding more exemplars than can
 	// be stored and then querying for them.
-	exs, err := NewCircularExemplarStorage(5, eMetrics)
+	exs, err := NewCircularExemplarStorage(5, eMetrics, 0)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -152,7 +663,7 @@ func TestStorageOverflow(t *testing.T) {
 }
 
 func TestSelectExemplar(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(5, eMetrics)
+	exs, err := NewCircularExemplarStorage(5, eMetrics, 0)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -179,7 +690,7 @@ func TestSelectExemplar(t *testing.T) {
 }
 
 func TestSelectExemplar_MultiSeries(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(5, eMetrics)
+	exs, err := NewCircularExemplarStorage(5, eMetrics, 0)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -223,7 +734,7 @@ func TestSelectExemplar_MultiSeries(t *testing.T) {
 
 func TestSelectExemplar_TimeRange(t *testing.T) {
 	var lenEs int64 = 5
-	exs, err := NewCircularExemplarStorage(lenEs, eMetrics)
+	exs, err := NewCircularExemplarStorage(lenEs, eMetrics, 0)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -251,7 +762,7 @@ func TestSelectExemplar_TimeRange(t *testing.T) {
 // Test to ensure that even though a series matches more than one matcher from the
 // query that it's exemplars are only included in the result a single time.
 func TestSelectExemplar_DuplicateSeries(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(4, eMetrics)
+	exs, err := NewCircularExemplarStorage(4, eMetrics, 0)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -286,7 +797,7 @@ func TestSelectExemplar_DuplicateSeries(t *testing.T) {
 }
 
 func TestIndexOverwrite(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(2, eMetrics)
+	exs, err := NewCircularExemplarStorage(2, eMetrics, 0)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -374,7 +885,7 @@ func TestResize(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			exs, err := NewCircularExemplarStorage(tc.startSize, eMetrics)
+			exs, err := NewCircularExemplarStorage(tc.startSize, eMetrics, 0)
 			require.NoError(t, err)
 			es := exs.(*CircularExemplarStorage)
 
@@ -386,7 +897,14 @@ func TestResize(t *testing.T) {
 				require.NoError(t, err)
 			}
 
+			if testing.Verbose() {
+				t.Logf("Buffer[before-resize]:\n%s", debugCircularBuffer(es))
+			}
 			resized := es.Resize(tc.newCount)
+			if testing.Verbose() {
+				t.Logf("Buffer[after-resize]:\n%s", debugCircularBuffer(es))
+			}
+
 			require.Equal(t, tc.expectedMigrated, resized)
 
 			q, err := es.Querier(context.TODO())
@@ -421,7 +939,7 @@ func BenchmarkAddExemplar(b *testing.B) {
 			b.Run(fmt.Sprintf("%d/%d", n, capacity), func(b *testing.B) {
 				for b.Loop() {
 					b.StopTimer()
-					exs, err := NewCircularExemplarStorage(int64(capacity), eMetrics)
+					exs, err := NewCircularExemplarStorage(int64(capacity), eMetrics, 0)
 					require.NoError(b, err)
 					es := exs.(*CircularExemplarStorage)
 					var l labels.Labels
@@ -434,6 +952,91 @@ func BenchmarkAddExemplar(b *testing.B) {
 						err = es.AddExemplar(l, exemplar.Exemplar{Value: float64(i), Ts: int64(i), Labels: exLabels})
 						if err != nil {
 							require.NoError(b, err)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+func BenchmarkAddExemplar_OutOfOrder(b *testing.B) {
+	// We need to include these labels since we do length calculation
+	// before adding.
+	exLabels := labels.FromStrings("trace_id", "89620921")
+
+	const (
+		capacity = 5000
+	)
+
+	fillOneSeries := func(es *CircularExemplarStorage) {
+		for i := range capacity {
+			e := exemplar.Exemplar{Value: float64(i), Ts: int64(i), Labels: exLabels}
+			if err := es.AddExemplar(exLabels, e); err != nil {
+				panic(err)
+			}
+		}
+	}
+
+	fillMultipleSeries := func(es *CircularExemplarStorage) {
+		for i := range capacity {
+			l := labels.FromStrings("service", strconv.Itoa(i))
+			e := exemplar.Exemplar{Value: float64(i), Ts: int64(i), Labels: l}
+			if err := es.AddExemplar(l, e); err != nil {
+				panic(err)
+			}
+		}
+	}
+
+	outOfOrder := func(ts *int64, _ *labels.Labels) {
+		switch *ts % 3 {
+		case 0:
+			return
+		case 1:
+			*ts = capacity - *ts
+		case 2:
+			*ts = (capacity - *ts) + 100
+		}
+	}
+
+	reverseOrder := func(ts *int64, _ *labels.Labels) {
+		*ts = capacity - *ts
+	}
+
+	multipleSeries := func(f func(*int64, *labels.Labels)) func(*int64, *labels.Labels) {
+		return func(ts *int64, l *labels.Labels) {
+			f(ts, l)
+			*l = labels.FromStrings("service", strconv.Itoa(int(*ts)))
+		}
+	}
+
+	for fillName, setup := range map[string]func(es *CircularExemplarStorage){
+		"empty":         func(*CircularExemplarStorage) {},
+		"full-one":      fillOneSeries,
+		"full-multiple": fillMultipleSeries,
+	} {
+		for orderName, forEach := range map[string]func(ts *int64, l *labels.Labels){
+			"in-order":           func(*int64, *labels.Labels) {},
+			"reverse":            reverseOrder,
+			"out-of-order":       outOfOrder,
+			"multi-in-order":     multipleSeries(func(*int64, *labels.Labels) {}),
+			"multi-reverse":      multipleSeries(reverseOrder),
+			"multi-out-of-order": multipleSeries(outOfOrder),
+		} {
+			b.Run(fmt.Sprintf("%s/%s", fillName, orderName), func(b *testing.B) {
+				exs, err := NewCircularExemplarStorage(int64(capacity), eMetrics, 100000)
+				require.NoError(b, err)
+				es := exs.(*CircularExemplarStorage)
+				l := labels.FromStrings("service", "0")
+				setup(es)
+				b.ResetTimer()
+				for b.Loop() {
+					for i := range capacity {
+						ts := int64(i)
+						forEach(&ts, &l)
+						err = es.AddExemplar(l, exemplar.Exemplar{Value: float64(i), Ts: ts, Labels: l})
+						if err != nil {
+							b.Fatalf("Failed to insert item %d %s: %v", i, l, err)
 						}
 					}
 				}
@@ -479,7 +1082,7 @@ func BenchmarkResizeExemplars(b *testing.B) {
 		b.Run(fmt.Sprintf("%s-%d-to-%d", tc.name, tc.startSize, tc.endSize), func(b *testing.B) {
 			for b.Loop() {
 				b.StopTimer()
-				exs, err := NewCircularExemplarStorage(tc.startSize, eMetrics)
+				exs, err := NewCircularExemplarStorage(tc.startSize, eMetrics, 0)
 				require.NoError(b, err)
 				es := exs.(*CircularExemplarStorage)
 
@@ -504,7 +1107,7 @@ func BenchmarkResizeExemplars(b *testing.B) {
 // TestCircularExemplarStorage_Concurrent_AddExemplar_Resize tries to provoke a data race between AddExemplar and Resize.
 // Run with race detection enabled.
 func TestCircularExemplarStorage_Concurrent_AddExemplar_Resize(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(0, eMetrics)
+	exs, err := NewCircularExemplarStorage(0, eMetrics, 0)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -536,4 +1139,32 @@ func TestCircularExemplarStorage_Concurrent_AddExemplar_Resize(t *testing.T) {
 			close(started)
 		}
 	}
+}
+
+// debugCircularBuffer iterates all exemplars in the circular exemplar storage
+// and returns them as a string. The textual representation contains index
+// pointers and helps debugging exemplar storage.
+func debugCircularBuffer(ce *CircularExemplarStorage) string {
+	var sb strings.Builder
+	for i, e := range ce.exemplars {
+		if e.ref == nil {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf(
+			"i: %d, ts: %d, next: %d, prev: %d",
+			i, e.exemplar.Ts, e.next, e.prev,
+		))
+		for _, idx := range ce.index {
+			if i == idx.newest {
+				sb.WriteString(" <- newest " + idx.seriesLabels.String())
+			}
+			if i == idx.oldest {
+				sb.WriteString(" <- oldest " + idx.seriesLabels.String())
+			}
+		}
+		sb.WriteString("\n")
+	}
+	sb.WriteString(fmt.Sprintf("Next index: %d\n", ce.nextIndex))
+	sb.WriteString(fmt.Sprintf("Buffer size: %d/%d\n", ce.bufferLength, len(ce.exemplars)))
+	return sb.String()
 }
