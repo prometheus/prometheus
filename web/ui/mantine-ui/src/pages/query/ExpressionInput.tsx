@@ -46,6 +46,8 @@ import {
   closeBrackets,
   closeBracketsKeymap,
   completionKeymap,
+  nextSnippetField,
+  prevSnippetField,
 } from "@codemirror/autocomplete";
 import {
   defaultKeymap,
@@ -285,6 +287,8 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
             ...completionKeymap,
             ...lintKeymap,
           ]),
+          // Ensure snippet navigation (TAB/Shift-TAB) works with higher precedence
+          Prec.high(keymap.of([{ key: "Tab", run: nextSnippetField, shift: prevSnippetField }])),
           placeholder("Enter expression (press Shift+Enter for newlines)"),
           enableSyntaxHighlighting
             ? syntaxHighlighting(
