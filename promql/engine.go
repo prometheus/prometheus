@@ -3185,6 +3185,7 @@ type groupedAggregation struct {
 	incrementalMean        bool // True after reverting to incremental calculation of the mean value.
 	counterResetSeen       bool // Counter reset hint CounterReset seen. Currently only used for histogram samples.
 	notCounterResetSeen    bool // Counter reset hint NotCounterReset seen. Currently only used for histogram samples.
+	dropName               bool // True if any sample in this group has DropName set.
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.
@@ -3213,6 +3214,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				floatMean:              f,
 				incompatibleHistograms: false,
 				groupCount:             1,
+				dropName:               inputMatrix[si].DropName,
 			}
 			switch op {
 			case parser.AVG, parser.SUM:
@@ -3267,6 +3269,10 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 
 		if group.incompatibleHistograms {
 			continue
+		}
+
+		if inputMatrix[si].DropName {
+			group.dropName = true
 		}
 
 		switch op {
@@ -3507,7 +3513,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 
 		ss := &outputMatrix[ri]
 		addToSeries(ss, enh.Ts, aggr.floatValue, aggr.histogramValue, numSteps)
-		ss.DropName = inputMatrix[ri].DropName
+		ss.DropName = aggr.dropName
 	}
 
 	return annos

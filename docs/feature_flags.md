@@ -150,6 +150,8 @@ These queries are rare to occur and easy to fix. (In the above example,
 removing `by (__name__)` doesn't change anything without the feature flag and
 fixes the possible problem with the feature flag.)
 
+It is possible to craft a query that aggregates by `__name__` and puts samples with and without delayed name removal into the same group. In that case, the name is removed from the affected group. Note that this case hardly occurs in queries that fulfill a practical purpose.
+
 ## Auto Reload Config
 
 `--enable-feature=auto-reload-config`
