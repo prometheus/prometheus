@@ -14,9 +14,9 @@ Prometheus's local time series database stores data in a custom, highly efficien
 Ingested samples are grouped into two-hour blocks. Each block consists of a directory that 
 contains a chunks subdirectory with all the time series samples for that time window, 
 a metadata file,  and an index file (which maps metric names and labels to the time series 
-in the chunks directory). By default, the samples in the chunks directory are organized 
-into one or more segment files, each up to 512 MB. When series are deleted via the API, 
-deletion records are stored in separate tombstone files rather than being immediately 
+in the chunks directory). The samples in the chunks directory are organized into one 
+or more segment files, each up to 512 MB by default. When series are deleted via the API, 
+the deletion records are stored in separate tombstone files rather than being immediately 
 removed from the chunk segments.
 
 The current block for incoming samples is kept in memory and is not fully
