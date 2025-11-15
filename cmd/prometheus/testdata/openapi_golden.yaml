@@ -1,0 +1,348 @@
+components:
+  schemas:
+    Error:
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+        errorType:
+          type: string
+        status:
+          type: string
+      required:
+        - status
+        - errorType
+        - error
+      type: object
+    Metadata:
+      additionalProperties: false
+      properties:
+        help:
+          type: string
+        type:
+          type: string
+        unit:
+          type: string
+      required:
+        - type
+        - unit
+        - help
+      type: object
+    MetadataOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          additionalProperties:
+            items:
+              $ref: "#/components/schemas/Metadata"
+            type:
+              - array
+              - "null"
+          type: object
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    QueryRangeOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          properties:
+            result:
+              description: Query result. The structure depends on the resultType field.
+              oneOf:
+                - description: "Matrix result: array of time series, each with a metric and array of [timestamp, value] points"
+                  items:
+                    additionalProperties: false
+                    properties:
+                      histograms:
+                        description: Array of histogram data points (optional)
+                        type: array
+                      metric:
+                        description: Label set for this series
+                        type: object
+                      values:
+                        description: Array of [timestamp, value] pairs
+                        items:
+                          maxItems: 2
+                          minItems: 2
+                          type: array
+                        type: array
+                    required:
+                      - metric
+                      - values
+                    type: object
+                  type: array
+                - description: "Vector result: array of instant samples, each with a metric and a single [timestamp, value]"
+                  items:
+                    additionalProperties: false
+                    properties:
+                      histogram:
+                        description: Histogram data (optional)
+                        type: object
+                      metric:
+                        description: Label set for this sample
+                        type: object
+                      value:
+                        description: Single [timestamp, value] pair
+                        maxItems: 2
+                        minItems: 2
+                        type: array
+                    required:
+                      - metric
+                      - value
+                    type: object
+                  type: array
+                - description: "Scalar result: [timestamp, value]"
+                  items:
+                    oneOf:
+                      - type: number
+                      - type: string
+                  maxItems: 2
+                  minItems: 2
+                  type: array
+                - description: "String result: [timestamp, string_value]"
+                  items:
+                    oneOf:
+                      - type: number
+                      - type: string
+                  maxItems: 2
+                  minItems: 2
+                  type: array
+            resultType:
+              description: The type of the result
+              enum:
+                - matrix
+                - vector
+                - scalar
+                - string
+              type: string
+            stats:
+              description: Query statistics (optional)
+              type: object
+          required:
+            - resultType
+            - result
+          type: object
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+info:
+  contact:
+    name: Prometheus Community
+    url: https://prometheus.io/community/
+  description: Prometheus is an Open-Source monitoring system with a dimensional data model, flexible query language, efficient time series database and modern alerting approach.
+  title: Prometheus API
+  version: ""
+openapi: 3.1.0
+paths:
+  /metadata:
+    get:
+      operationId: get-metadata
+      parameters:
+        - description: The maximum number of metrics to return.
+          example: 100
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: -1
+            description: The maximum number of metrics to return.
+            examples:
+              - 100
+            format: int64
+            type: integer
+        - description: The maximum number of metadata entries per metric to return.
+          example: 10
+          explode: false
+          in: query
+          name: limitPerMetric
+          schema:
+            default: -1
+            description: The maximum number of metadata entries per metric to return.
+            examples:
+              - 10
+            format: int64
+            type: integer
+        - description: A metric name to filter metadata for. All metric metadata is retrieved if left empty.
+          example: go_goroutines
+          explode: false
+          in: query
+          name: metric
+          schema:
+            description: A metric name to filter metadata for. All metric metadata is retrieved if left empty.
+            examples:
+              - go_goroutines
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetadataOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Get metadata
+  /query_range:
+    get:
+      operationId: query-range
+      parameters:
+        - description: The maximum number of metrics to return.
+          example: 100
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: -1
+            description: The maximum number of metrics to return.
+            examples:
+              - 100
+            format: int64
+            type: integer
+        - description: The start time of the query.
+          example: "2021-01-01T00:00:00Z"
+          explode: false
+          in: query
+          name: start
+          required: true
+          schema:
+            description: The start time of the query.
+            examples:
+              - "2021-01-01T00:00:00Z"
+            format: prometheus-time
+            type: string
+        - description: The end time of the query.
+          example: "2021-01-01T00:00:00Z"
+          explode: false
+          in: query
+          name: end
+          required: true
+          schema:
+            description: The end time of the query.
+            examples:
+              - "2021-01-01T00:00:00Z"
+            format: prometheus-time
+            type: string
+        - description: The step size of the query.
+          example: 1h
+          explode: false
+          in: query
+          name: step
+          required: true
+          schema:
+            description: The step size of the query.
+            examples:
+              - 1h
+            format: duration
+            type: string
+        - description: The query to execute.
+          example: up
+          explode: false
+          in: query
+          name: query
+          required: true
+          schema:
+            description: The query to execute.
+            examples:
+              - up
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryRangeOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+    post:
+      operationId: query-range-post
+      parameters:
+        - description: The maximum number of metrics to return.
+          example: 100
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: -1
+            description: The maximum number of metrics to return.
+            examples:
+              - 100
+            format: int64
+            type: integer
+        - description: The start time of the query.
+          example: "2021-01-01T00:00:00Z"
+          explode: false
+          in: query
+          name: start
+          required: true
+          schema:
+            description: The start time of the query.
+            examples:
+              - "2021-01-01T00:00:00Z"
+            format: prometheus-time
+            type: string
+        - description: The end time of the query.
+          example: "2021-01-01T00:00:00Z"
+          explode: false
+          in: query
+          name: end
+          required: true
+          schema:
+            description: The end time of the query.
+            examples:
+              - "2021-01-01T00:00:00Z"
+            format: prometheus-time
+            type: string
+        - description: The step size of the query.
+          example: 1h
+          explode: false
+          in: query
+          name: step
+          required: true
+          schema:
+            description: The step size of the query.
+            examples:
+              - 1h
+            format: duration
+            type: string
+        - description: The query to execute.
+          example: up
+          explode: false
+          in: query
+          name: query
+          required: true
+          schema:
+            description: The query to execute.
+            examples:
+              - up
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryRangeOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+servers:
+  - url: http://localhost:9090/api/v1
