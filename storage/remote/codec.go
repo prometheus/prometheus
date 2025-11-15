@@ -64,7 +64,7 @@ func (e HTTPError) Status() int {
 
 // DecodeReadRequest reads a remote.Request from a http.Request.
 func DecodeReadRequest(r *http.Request) (*prompb.ReadRequest, error) {
-	compressed, err := io.ReadAll(io.LimitReader(r.Body, decodeReadLimit))
+	compressed, err := io.ReadAll(io.LimitReader(r.Body, int64(snappy.MaxEncodedLen(decodeReadLimit)+1)))
 	if err != nil {
 		return nil, err
 	}
@@ -921,7 +921,7 @@ func FromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, erro
 // snappy decompression.
 // Used also by documentation/examples/remote_storage.
 func DecodeWriteRequest(r io.Reader) (*prompb.WriteRequest, error) {
-	compressed, err := io.ReadAll(io.LimitReader(r, decodeWriteLimit))
+	compressed, err := io.ReadAll(io.LimitReader(r, int64(snappy.MaxEncodedLen(decodeWriteLimit)+1)))
 	if err != nil {
 		return nil, err
 	}
@@ -949,7 +949,7 @@ func DecodeWriteRequest(r io.Reader) (*prompb.WriteRequest, error) {
 // snappy decompression.
 // Used also by documentation/examples/remote_storage.
 func DecodeWriteV2Request(r io.Reader) (*writev2.Request, error) {
-	compressed, err := io.ReadAll(io.LimitReader(r, decodeWriteLimit))
+	compressed, err := io.ReadAll(io.LimitReader(r, int64(snappy.MaxEncodedLen(decodeWriteLimit)+1)))
 	if err != nil {
 		return nil, err
 	}
