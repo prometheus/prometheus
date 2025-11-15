@@ -980,26 +980,32 @@ func TestRemoteWrite_ReshardingWithoutDeadlock(t *testing.T) {
 
 			server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 				// Help filling up the queue.
-				// time.Sleep(5*time.Second)
-				time.Sleep(time.Second)
+				time.Sleep(5 * time.Second)
 			}))
 			t.Cleanup(server.Close)
 
 			config := fmt.Sprintf(`
 global:
-  # scrape_interval: 1s
-  scrape_interval: 100ms
+  # Using a smaller interval may cause the scrape to time out.
+  scrape_interval: 1s
 scrape_configs:
-  - job_name: 'self'
+  # Scrape multiple times to increase the amount of data sent and help fill the queue more quickly.
+  - job_name: 'self1'
+    static_configs:
+      - targets: ['localhost:%d']
+  - job_name: 'self2'
+    static_configs:
+      - targets: ['localhost:%d']
+  - job_name: 'self3'
     static_configs:
       - targets: ['localhost:%d']
 
 remote_write:
   - url: %s
     queue_config:
-      # Speed up the queue being full.
+      # Helps the queue fill more quickly.
       capacity: 1
-`, port, server.URL)
+`, port, port, port, server.URL)
 			require.NoError(t, os.WriteFile(configFile, []byte(config), 0o777))
 
 			prom := prometheusCommandWithLogging(

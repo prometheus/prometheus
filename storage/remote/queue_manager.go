@@ -977,8 +977,6 @@ func (t *QueueManager) Start() {
 		t.metadataWatcher.Start()
 	}
 
-	fmt.Println("XXXXXXXX")
-
 	t.wg.Add(2)
 	go t.updateShardsLoop()
 	go t.reshardLoop()
