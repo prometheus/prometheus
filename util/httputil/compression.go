@@ -56,6 +56,7 @@ func (c *compressedResponseWriter) Close() {
 
 // Constructs a new compressedResponseWriter based on client request headers.
 func newCompressedResponseWriter(writer http.ResponseWriter, req *http.Request) *compressedResponseWriter {
+	writer.Header().Add("Vary", acceptEncodingHeader)
 	raw := req.Header.Get(acceptEncodingHeader)
 	var (
 		encoding   string
@@ -65,13 +66,17 @@ func newCompressedResponseWriter(writer http.ResponseWriter, req *http.Request) 
 		encoding, raw, commaFound = strings.Cut(raw, ",")
 		switch strings.TrimSpace(encoding) {
 		case gzipEncoding:
-			writer.Header().Set(contentEncodingHeader, gzipEncoding)
+			h := writer.Header()
+			h.Del("Content-Length") // avoid stale length after compression
+			h.Set(contentEncodingHeader, gzipEncoding)
 			return &compressedResponseWriter{
 				ResponseWriter: writer,
 				writer:         gzip.NewWriter(writer),
 			}
 		case deflateEncoding:
-			writer.Header().Set(contentEncodingHeader, deflateEncoding)
+			h := writer.Header()
+			h.Del("Content-Length")
+			h.Set(contentEncodingHeader, deflateEncoding)
 			return &compressedResponseWriter{
 				ResponseWriter: writer,
 				writer:         zlib.NewWriter(writer),
