@@ -969,70 +969,98 @@ remote_write:
 // TestRemoteWrite_ReshardingWithoutDeadlock ensures that resharding (scaling up) doesn't block when the shards are full.
 // See: https://github.com/prometheus/prometheus/issues/17384.
 func TestRemoteWrite_ReshardingWithoutDeadlock(t *testing.T) {
-	t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/17489")
 	t.Parallel()
 
-	tmpDir := t.TempDir()
-	configFile := filepath.Join(tmpDir, "prometheus.yml")
+	for i := range 1000 {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configFile := filepath.Join(tmpDir, "prometheus.yml")
 
-	port := testutil.RandomUnprivilegedPort(t)
+			port := testutil.RandomUnprivilegedPort(t)
 
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		time.Sleep(time.Second)
-	}))
-	t.Cleanup(server.Close)
+			server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				// Help filling up the queue.
+				time.Sleep(5 * time.Second)
+			}))
+			t.Cleanup(server.Close)
 
-	config := fmt.Sprintf(`
+			config := fmt.Sprintf(`
 global:
-  scrape_interval: 100ms
+  # Using a smaller interval may cause the scrape to time out.
+  scrape_interval: 1s
 scrape_configs:
-  - job_name: 'self'
+  # Scrape multiple times to increase the amount of data sent and help fill the queue more quickly.
+  - job_name: 'self1'
+    static_configs:
+      - targets: ['localhost:%d']
+  - job_name: 'self2'
+    static_configs:
+      - targets: ['localhost:%d']
+  - job_name: 'self3'
     static_configs:
       - targets: ['localhost:%d']
 
 remote_write:
   - url: %s
     queue_config:
-      # Speed up the queue being full.
+      # Helps the queue fill more quickly.
       capacity: 1
-`, port, server.URL)
-	require.NoError(t, os.WriteFile(configFile, []byte(config), 0o777))
+`, port, port, port, server.URL)
+			require.NoError(t, os.WriteFile(configFile, []byte(config), 0o777))
 
-	prom := prometheusCommandWithLogging(
-		t,
-		configFile,
-		port,
-		fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
-	)
-	require.NoError(t, prom.Start())
+			prom := prometheusCommandWithLogging(
+				t,
+				configFile,
+				port,
+				fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
+				"--log.level=debug",
+			)
+			require.NoError(t, prom.Start())
 
-	var checkInitialDesiredShardsOnce sync.Once
-	require.Eventually(t, func() bool {
-		r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
-		if err != nil {
-			return false
-		}
-		defer r.Body.Close()
-		if r.StatusCode != http.StatusOK {
-			return false
-		}
+			const desiredShardsMetric = "prometheus_remote_storage_shards_desired"
+			getMetrics := func() ([]byte, error) {
+				r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+				if err != nil {
+					return nil, err
+				}
+				defer r.Body.Close()
+				if r.StatusCode != http.StatusOK {
+					return nil, fmt.Errorf("unexpected status code: %d", r.StatusCode)
+				}
 
-		metrics, err := io.ReadAll(r.Body)
-		if err != nil {
-			return false
-		}
+				metrics, err := io.ReadAll(r.Body)
+				if err != nil {
+					return nil, err
+				}
+				return metrics, nil
+			}
 
-		checkInitialDesiredShardsOnce.Do(func() {
-			s, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_shards_desired")
-			require.NoError(t, err)
-			require.Equal(t, 1.0, s)
+			// Ensure the initial desired shards is 1.
+			require.Eventually(t, func() bool {
+				metrics, err := getMetrics()
+				if err != nil {
+					return false
+				}
+				initialDesiredShards, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, desiredShardsMetric)
+				if err != nil {
+					return false
+				}
+				return initialDesiredShards == 1.0
+			}, 10*time.Second, 100*time.Millisecond)
+
+			// Ensure scaling up is triggered after shardUpdateDuration.
+			require.Eventually(t, func() bool {
+				metrics, err := getMetrics()
+				if err != nil {
+					return false
+				}
+				desiredShards, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, desiredShardsMetric)
+				if err != nil || desiredShards <= 1.0 {
+					return false
+				}
+				return true
+				// 3*shardUpdateDuration to allow for the resharding logic to run.
+			}, 30*time.Second, 1*time.Second)
 		})
-
-		desiredShards, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_shards_desired")
-		if err != nil || desiredShards <= 1 {
-			return false
-		}
-		return true
-		// 3*shardUpdateDuration to allow for the resharding logic to run.
-	}, 30*time.Second, 1*time.Second)
+	}
 }

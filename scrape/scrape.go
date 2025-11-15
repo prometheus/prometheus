@@ -1462,8 +1462,11 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	var resp *http.Response
 	var b []byte
 	var buf *bytes.Buffer
+	start = time.Now()
 	scrapeCtx, cancel := context.WithTimeout(sl.parentCtx, sl.timeout)
 	resp, scrapeErr = sl.scraper.scrape(scrapeCtx)
+	scrapeDuration := time.Since(start)
+	fmt.Println("XXXXX scrapeDuration", scrapeDuration, "err", scrapeErr, "sl.timeout", sl.timeout)
 	if scrapeErr == nil {
 		b = sl.buffers.Get(sl.lastScrapeSize).([]byte)
 		defer sl.buffers.Put(b)

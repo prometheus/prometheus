@@ -151,7 +151,7 @@ common-test-short: $(GOTEST_DIR)
 .PHONY: common-test
 common-test: $(GOTEST_DIR)
 	@echo ">> running all tests"
-	$(GOTEST) $(test-flags) $(GOOPTS) $(pkgs)
+	$(GOTEST) $(test-flags) --timeout 300000s -v $(GOOPTS) $(pkgs)
 
 $(GOTEST_DIR):
 	@mkdir -p $@
