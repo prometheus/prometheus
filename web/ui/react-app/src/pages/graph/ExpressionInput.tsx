@@ -14,8 +14,6 @@ import {
   CompletionResult,
   closeBrackets,
   closeBracketsKeymap,
-  nextSnippetField,
-  prevSnippetField,
 } from '@codemirror/autocomplete';
 import { baseTheme, lightTheme, darkTheme, promqlHighlighter, darkPromqlHighlighter } from './CMTheme';
 
@@ -152,9 +150,10 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
           autocompletion(),
           highlightSelectionMatches(),
           EditorView.lineWrapping,
-          keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, ...completionKeymap, ...lintKeymap]),
-          // Ensure snippet navigation (TAB/Shift-TAB) works with higher precedence
-          Prec.high(keymap.of([{ key: 'Tab', run: nextSnippetField, shift: prevSnippetField }])),
+          // snippetKeymap is automatically included by autocompletion() with highest precedence
+          // No need to explicitly provide it - autocompletion handles snippet navigation
+          // Order keymaps to prioritize snippet navigation - completionKeymap before defaultKeymap
+          keymap.of([...closeBracketsKeymap, ...completionKeymap, ...defaultKeymap, ...historyKeymap, ...lintKeymap]),
           placeholder('Expression (press Shift+Enter for newlines)'),
           dynamicConfigCompartment.of(dynamicConfig),
           // This keymap is added without precedence so that closing the autocomplete dropdown
