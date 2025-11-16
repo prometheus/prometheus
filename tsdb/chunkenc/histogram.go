@@ -939,7 +939,14 @@ func (it *histogramIterator) AtHistogram(h *histogram.Histogram) (int64, *histog
 			// chunk is from a newer Prometheus version that supports higher
 			// resolution.
 			h = h.Copy()
-			h.ReduceResolution(histogram.ExponentialSchemaMax)
+			if err := h.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+				// With the checks above, this can only happen
+				// with invalid data in a chunk. As this is a
+				// rare edge case of a rare edge case, we'd
+				// rather not create all the plumbing to handle
+				// this error gracefully.
+				panic(err)
+			}
 		}
 		return it.t, h
 	}
@@ -970,7 +977,13 @@ func (it *histogramIterator) AtHistogram(h *histogram.Histogram) (int64, *histog
 		// This is a very slow path, but it should only happen if the
 		// chunk is from a newer Prometheus version that supports higher
 		// resolution.
-		h.ReduceResolution(histogram.ExponentialSchemaMax)
+		if err := h.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+			// With the checks above, this can only happen with
+			// invalid data in a chunk. As this is a rare edge case
+			// of a rare edge case, we'd rather not create all the
+			// plumbing to handle this error gracefully.
+			panic(err)
+		}
 	}
 
 	return it.t, h
@@ -1000,7 +1013,14 @@ func (it *histogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int
 			// chunk is from a newer Prometheus version that supports higher
 			// resolution.
 			fh = fh.Copy()
-			fh.ReduceResolution(histogram.ExponentialSchemaMax)
+			if err := fh.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+				// With the checks above, this can only happen
+				// with invalid data in a chunk. As this is a
+				// rare edge case of a rare edge case, we'd
+				// rather not create all the plumbing to handle
+				// this error gracefully.
+				panic(err)
+			}
 		}
 		return it.t, fh
 	}
@@ -1039,7 +1059,13 @@ func (it *histogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int
 		// This is a very slow path, but it should only happen if the
 		// chunk is from a newer Prometheus version that supports higher
 		// resolution.
-		fh.ReduceResolution(histogram.ExponentialSchemaMax)
+		if err := fh.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+			// With the checks above, this can only happen with
+			// invalid data in a chunk. As this is a rare edge case
+			// of a rare edge case, we'd rather not create all the
+			// plumbing to handle this error gracefully.
+			panic(err)
+		}
 	}
 
 	return it.t, fh

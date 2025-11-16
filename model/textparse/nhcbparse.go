@@ -352,7 +352,7 @@ func (p *NHCBParser) swapExemplars() {
 }
 
 // processNHCB converts the collated classic histogram series to NHCB and caches the info
-// to be returned to callers. Retruns true if the conversion was successful.
+// to be returned to callers. Returns true if the conversion was successful.
 func (p *NHCBParser) processNHCB() bool {
 	if p.state != stateCollecting {
 		return false
