@@ -272,6 +272,32 @@ func TestMultipleSDConfigsDoNotShareState(t *testing.T) {
 					"LightsailSDConfig objects should not share the same memory address")
 			},
 		},
+		{
+			name: "MSKMultipleJobsDifferentPorts",
+			yaml: `
+- role: msk
+  region: ap-south-1
+  port: 6060
+  clusters: ["cluster-1"]
+- role: msk
+  region: ap-south-1
+  port: 6061
+  clusters: ["cluster-2"]`,
+			validateFunc: func(t *testing.T, cfg1, cfg2 *SDConfig) {
+				require.Equal(t, RoleMSK, cfg1.Role)
+				require.Equal(t, RoleMSK, cfg2.Role)
+				require.NotNil(t, cfg1.MSKSDConfig)
+				require.NotNil(t, cfg2.MSKSDConfig)
+
+				require.Equal(t, 6060, cfg1.MSKSDConfig.Port)
+				require.Equal(t, []string{"cluster-1"}, cfg1.MSKSDConfig.Clusters)
+				require.Equal(t, 6061, cfg2.MSKSDConfig.Port)
+				require.Equal(t, []string{"cluster-2"}, cfg2.MSKSDConfig.Clusters)
+
+				require.NotSame(t, cfg1.MSKSDConfig, cfg2.MSKSDConfig,
+					"MSKSDConfig objects should not share the same memory address")
+			},
+		},
 	}
 
 	for _, tt := range tests {
