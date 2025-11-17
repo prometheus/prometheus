@@ -30,11 +30,7 @@ const (
 	EncXOR
 	EncHistogram
 	EncFloatHistogram
-	// XORV2 means it supports natively AppendV2 (so storing STs).
-	EncXORV2Naive  = 4
-	EncXORV2Opt    = 5
-	EncXORV2Opt2   = 6
-	EncALPBuffered = 7
+	EncXOROptST = 4
 )
 
 func (e Encoding) String() string {
@@ -47,16 +43,10 @@ func (e Encoding) String() string {
 		return "histogram"
 	case EncFloatHistogram:
 		return "floathistogram"
-	case EncXORV2Naive:
-		return "XORV2Naive"
-	case EncXORV2Opt:
-		return "EncXORV2Opt"
-	case EncXORV2Opt2:
-		return "EncXORV2Opt2"
-	case EncALPBuffered:
-		return "EncALPBuffered"
+	case EncXOROptST:
+		return "XOROptST"
 	}
-	return "<unknown>"
+	return fmt.Sprintf("<unknown>%d", uint8(e))
 }
 
 // IsValidEncoding returns true for supported encodings.
@@ -168,6 +158,18 @@ type ignoreSTAppenderV2 struct {
 
 func (a *ignoreSTAppenderV2) Append(_, t int64, v float64) {
 	a.Appender.Append(t, v)
+}
+
+type profilerEnabled interface {
+	BitProfiledAppend(p *bitProfiler[any], _, t int64, v float64)
+}
+
+func (a *ignoreSTAppenderV2) BitProfiledAppend(p *bitProfiler[any], st, t int64, v float64) {
+	pa, ok := a.Appender.(profilerEnabled)
+	if !ok {
+		panic("expected append to implement BitProfiledAppend(p *bitProfiler[any], st, t int64, v float64)")
+	}
+	pa.BitProfiledAppend(p, 0, t, v)
 }
 
 func (a *ignoreSTAppenderV2) AppendHistogram(prev *HistogramAppender, _, t int64, h *histogram.Histogram, appendOnly bool) (Chunk, bool, Appender, error) {

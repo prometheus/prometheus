@@ -14,12 +14,12 @@
 package chunkenc
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"math/rand"
+	"os"
 	"testing"
 	"time"
 
@@ -58,7 +58,7 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			samples: func() (ret []triple) {
 				t, v := initT, initV
 				for range nSamples {
-					t += 1000
+					t += 15000
 					ret = append(ret, triple{st: 0, t: t, v: v})
 				}
 				return ret
@@ -71,7 +71,7 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			samples: func() (ret []triple) {
 				t, v := initT, initV
 				for range nSamples {
-					t += 1000
+					t += 15000
 					ret = append(ret, triple{st: initST, t: t, v: v})
 				}
 				return ret
@@ -85,7 +85,7 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 				st, t, v := initST, initT, initV
 				for range nSamples {
 					st = t + 1 // ST is a tight interval after the last t+1ms.
-					t += 1000
+					t += 15000
 					ret = append(ret, triple{st: st, t: t, v: v})
 				}
 				return ret
@@ -197,10 +197,11 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 
 	for _, f := range []fmtCase{
 		{name: "XOR (ST ignored)", newChunkFn: func() Chunk { return NewXORChunk() }},
+		//{name: "XORvarbit (ST ignored)", newChunkFn: func() Chunk { return NewXORVarbitChunk() }},
+		//{name: "XORvarbitTS (ST ignored)", newChunkFn: func() Chunk { return NewXORVarbitTSChunk() }},
 		//{name: "XORV2Naive", newChunkFn: func() Chunk { return NewXORV2NaiveChunk() }},
-		//{name: "XORV2Opt", newChunkFn: func() Chunk { return NewXORV2OptChunk() }},
-		{name: "XORV2Opt2", newChunkFn: func() Chunk { return NewXORV2Opt2Chunk() }},
-		{name: "ALPBuffered", newChunkFn: func() Chunk { return NewALPBufferedChunk() }},
+		//{name: "XOROptST", newChunkFn: func() Chunk { return NewXOROptSTChunk() }},
+		//{name: "ALPBuffered", newChunkFn: func() Chunk { return NewALPBufferedChunk() }},
 	} {
 		for _, s := range sampleCases {
 			b.Run(fmt.Sprintf("fmt=%s/%s", f.name, s.name), func(b *testing.B) {
@@ -211,10 +212,18 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 }
 
 /*
-	export bench=append && go test \
+	export bench=bw.bench/append.xor && go test \
 	  -run '^$' -bench '^BenchmarkAppender' \
-	  -benchtime 2s -count 6 -cpu 2 -timeout 999m \
+	  -benchtime 1s -count 6 -cpu 2 -timeout 999m \
 	  | tee ${bench}.txt
+
+For profiles:
+
+	 export bench=bw.bench/append && go test \
+		  -run '^$' -bench '^BenchmarkAppender' \
+		  -benchtime 10000x -count 6 -cpu 2 -timeout 999m \
+		  -cpuprofile=${bench}.cpu.pprof \
+		  | tee ${bench}.txt
 */
 func BenchmarkAppender(b *testing.B) {
 	foreachFmtSampleCase(b, func(b *testing.B, f fmtCase, s sampleCase) {
@@ -245,10 +254,22 @@ type supportsAppenderV2 interface {
 }
 
 /*
-	export bench=iter && go test \
-	  -run '^$' -bench '^BenchmarkIterator' \
-	  -benchtime 2s -count 6 -cpu 2 -timeout 999m \
-	  | tee ${bench}.txt
+		export bench=bw.bench/iter.xor && go test \
+		  -run '^$' -bench '^BenchmarkIterator' \
+		  -benchtime 1s -count 6 -cpu 2 -timeout 999m \
+		  | tee ${bench}.txt
+
+	 export bench=bw.bench/iter.xor && go test \
+			  -run '^$' -bench '^BenchmarkIterator' \
+			  -benchtime 10000x -count 6 -cpu 2 -timeout 999m \
+		  -cpuprofile=${bench}.cpu.pprof \
+			  | tee ${bench}.txt
+
+		 export bench=bw.bench/iter.xorvts && go test \
+			  -run '^$' -bench '^BenchmarkIterator' \
+			  -benchtime 10000x -count 6 -cpu 2 -timeout 999m \
+		  -cpuprofile=${bench}.cpu.pprof \
+			  | tee ${bench}.txt
 */
 func BenchmarkIterator(b *testing.B) {
 	foreachFmtSampleCase(b, func(b *testing.B, f fmtCase, s sampleCase) {
@@ -321,44 +342,50 @@ func BenchmarkIterator(b *testing.B) {
 	})
 }
 
-func BenchmarkYolo(b *testing.B) {
-	ts := timestamp.FromTime(time.Now())
-	var ret []byte
-	buf := make([]byte, binary.MaxVarintLen64)
-	fmt.Println("start")
-	for _, varintByte := range buf[:binary.PutVarint(buf, ts)] {
-		ret = append(ret, varintByte)
-		fmt.Println("varintByte", varintByte)
-	}
-	fmt.Println("wrote", len(ret))
+func BenchmarkProfileBits(b *testing.B) {
+	profileFile, err := os.OpenFile("./bw.bench/bitprofile.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666)
+	require.NoError(b, err)
 
-	b.ReportAllocs()
-	for b.Loop() {
-		var ret []byte
-		buf := make([]byte, binary.MaxVarintLen64)
-		for _, varintByte := range buf[:binary.PutVarint(buf, ts)] {
-			ret = append(ret, varintByte)
+	diffs := map[string]*bitProfiler[any]{}
+
+	foreachFmtSampleCase(b, func(b *testing.B, f fmtCase, s sampleCase) {
+		if s.name != "vt=random steps/st=delta" {
+			return
 		}
-	}
-}
 
-func BenchmarkYolo2(b *testing.B) {
-	ts := int64(0)
-	var ret []byte
-	buf := make([]byte, binary.MaxVarintLen64)
-	fmt.Println("start")
-	for _, varintByte := range buf[:binary.PutVarint(buf, ts)] {
-		ret = append(ret, varintByte)
-		fmt.Println("varintByte", varintByte)
-	}
-	fmt.Println("wrote", len(ret))
+		c := f.newChunkFn()
 
-	b.ReportAllocs()
-	for b.Loop() {
-		var ret []byte
-		buf := make([]byte, binary.MaxVarintLen64)
-		for _, varintByte := range buf[:binary.PutVarint(buf, ts)] {
-			ret = append(ret, varintByte)
+		profile := &bitProfiler[any]{}
+
+		newAppenderFn, _ := compatNewAppenderV2(c)
+		a, err := newAppenderFn()
+		pa, ok := a.(profilerEnabled)
+		if !ok {
+			b.Fatal("expected appender having a BitProfiledAppend(p *bitProfiler[any], _, t int64, v float64) method")
 		}
-	}
+
+		if err != nil {
+			b.Fatalf("get appender: %s", err)
+		}
+		for _, p := range s.samples {
+			pa.BitProfiledAppend(profile, p.st, p.t, p.v)
+		}
+		// NOTE: Some buffered implementations only encode on Bytes().
+		b.ReportMetric(float64(len(c.Bytes())), "B/chunk")
+		require.Equal(b, len(s.samples), c.NumSamples())
+
+		fmt.Fprintf(profileFile, "%s:\n %s\n\n", b.Name(), profile.PrintBitSizesAndValues(1000))
+
+		diff, ok := diffs[s.name]
+		if !ok {
+			diffs[s.name] = profile
+		} else {
+			fmt.Fprintf(profileFile, "%s\n\n", profile.Diff(diff).PrintBitSizes(240))
+		}
+
+		// Totally ignore b.Loop, does not matter.
+		for b.Loop() {
+		}
+	})
+	profileFile.Close()
 }

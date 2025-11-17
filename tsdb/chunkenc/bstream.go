@@ -99,6 +99,10 @@ func (b *bstream) writeByte(byt byte) {
 	b.stream = append(b.stream, byt<<b.count)
 }
 
+func (b *bstream) lenBits() int {
+	return 8*len(b.stream) - int(b.count)
+}
+
 // writeBits writes the nbits right-most bits of u to the stream
 // in left-to-right order.
 func (b *bstream) writeBits(u uint64, nbits int) {

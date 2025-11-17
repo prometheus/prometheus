@@ -31,17 +31,18 @@ type triple struct {
 
 func TestChunk(t *testing.T) {
 	for enc, nc := range map[Encoding]func() Chunk{
-		EncXOR:         func() Chunk { return NewXORChunk() },
-		EncXORV2Naive:  func() Chunk { return NewXORV2NaiveChunk() },
-		EncXORV2Opt:    func() Chunk { return NewXORV2OptChunk() },
-		EncXORV2Opt2:   func() Chunk { return NewXORV2Opt2Chunk() },
-		EncALPBuffered: func() Chunk { return NewALPBufferedChunk() },
+		EncXOR:      func() Chunk { return NewXORChunk() },
+		101:         func() Chunk { return NewXORVarbitChunk() },
+		110:         func() Chunk { return NewXORVarbitTSChunk() },
+		EncXOROptST: func() Chunk { return NewXOROptSTChunk() },
+		102:         func() Chunk { return NewXORSTNaiveChunk() },
+		103:         func() Chunk { return NewALPBufferedChunk() },
 	} {
 		t.Run(fmt.Sprintf("enc=%v", enc), func(t *testing.T) {
 			floatEquals := func(a, b float64) bool {
 				return a == b
 			}
-			if enc == EncALPBuffered {
+			if enc == 103 { // ALP is lossy.
 				floatEquals = func(a, b float64) bool {
 					return math.Abs(a-b) < 1e-9
 				}

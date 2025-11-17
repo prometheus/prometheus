@@ -49,7 +49,7 @@ func (c *ALPBufferedChunk) Reset(stream []byte) {
 
 // Encoding returns the encoding type.
 func (*ALPBufferedChunk) Encoding() Encoding {
-	return EncALPBuffered
+	return EncNone
 }
 
 // Bytes returns the underlying byte slice of the chunk.

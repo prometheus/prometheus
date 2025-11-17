@@ -58,6 +58,7 @@ const (
 )
 
 // XORChunk holds XOR encoded sample data.
+// 2B(numSamples), varint(t), xor(v), varuint(tDelta), xor(v), varint(tDod), xor(v), ...
 type XORChunk struct {
 	b bstream
 }
@@ -207,6 +208,73 @@ func (a *xorAppender) Append(t int64, v float64) {
 		}
 
 		a.writeVDelta(v)
+	}
+
+	a.t = t
+	a.v = v
+	binary.BigEndian.PutUint16(a.b.bytes(), num+1)
+	a.tDelta = tDelta
+}
+
+func (a *xorAppender) BitProfiledAppend(p *bitProfiler[any], _, t int64, v float64) {
+	var tDelta uint64
+	num := binary.BigEndian.Uint16(a.b.bytes())
+
+	switch num {
+	case 0:
+		p.Write(a.b, t, "t", func() {
+			buf := make([]byte, binary.MaxVarintLen64)
+			for _, b := range buf[:binary.PutVarint(buf, t)] {
+				a.b.writeByte(b)
+			}
+		})
+		p.Write(a.b, v, "v", func() {
+			a.b.writeBits(math.Float64bits(v), 64)
+		})
+	case 1:
+		tDelta = uint64(t - a.t)
+		p.Write(a.b, t, "tDelta", func() {
+			buf := make([]byte, binary.MaxVarintLen64)
+			for _, b := range buf[:binary.PutUvarint(buf, tDelta)] {
+				a.b.writeByte(b)
+			}
+		})
+		p.Write(a.b, v, "v", func() {
+			a.writeVDelta(v)
+		})
+
+	default:
+		tDelta = uint64(t - a.t)
+		dod := int64(tDelta - a.tDelta)
+		p.Write(a.b, dodSample{t: t, tDelta: tDelta, dod: dod}, "tDod", func() {
+			// Gorilla has a max resolution of seconds, Prometheus milliseconds.
+			// Thus we use higher value range steps with larger bit size.
+			//
+			// TODO(beorn7): This seems to needlessly jump to large bit
+			// sizes even for very small deviations from zero. Timestamp
+			// compression can probably benefit from some smaller bit
+			// buckets. See also what was done for histogram encoding in
+			// varbit.go.
+			switch {
+			case dod == 0:
+				a.b.writeBit(zero)
+			case bitRange(dod, 14):
+				a.b.writeByte(0b10<<6 | (uint8(dod>>8) & (1<<6 - 1))) // 0b10 size code combined with 6 bits of dod.
+				a.b.writeByte(uint8(dod))                             // Bottom 8 bits of dod.
+			case bitRange(dod, 17):
+				a.b.writeBits(0b110, 3)
+				a.b.writeBits(uint64(dod), 17)
+			case bitRange(dod, 20):
+				a.b.writeBits(0b1110, 4)
+				a.b.writeBits(uint64(dod), 20)
+			default:
+				a.b.writeBits(0b1111, 4)
+				a.b.writeBits(uint64(dod), 64)
+			}
+		})
+		p.Write(a.b, v, "v", func() {
+			a.writeVDelta(v)
+		})
 	}
 
 	a.t = t
