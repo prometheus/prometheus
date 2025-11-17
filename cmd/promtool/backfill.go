@@ -89,7 +89,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 	blockDuration := getCompatibleBlockDuration(maxBlockDuration)
 	mint = blockDuration * (mint / blockDuration)
 
-	db, err := tsdb.OpenDBReadOnly(outputDir, "", nil)
+	db, err := tsdb.OpenDBReadOnly(outputDir, "", false, nil)
 	if err != nil {
 		return err
 	}
@@ -120,7 +120,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 			// also need to append samples throughout the whole block range. To allow that, we
 			// pretend that the block is twice as large here, but only really add sample in the
 			// original interval later.
-			w, err := tsdb.NewBlockWriter(promslog.NewNopLogger(), outputDir, 2*blockDuration)
+			w, err := tsdb.NewBlockWriter(promslog.NewNopLogger(), outputDir, 2*blockDuration, false)
 			if err != nil {
 				return fmt.Errorf("block writer: %w", err)
 			}

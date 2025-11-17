@@ -109,6 +109,7 @@
 * [ENHANCEMENT] UI: Clear search field on `/targets` page. #16567
 * [ENHANCEMENT] Rules: Check that rules parse without error earlier at startup. #16601
 * [ENHANCEMENT] Promtool: Optional fuzzy float64 comparison in rules unittests. #16395
+* [ENHANCEMENT] TSDB: Add configuration parameters for only caching series label symbols when writing TSDB indexes. #15836
 * [PERF] PromQL: Reuse `histogramStatsIterator` where possible. #16686
 * [PERF] PromQL: Reuse storage for custom bucket values for native histograms. #16565
 * [PERF] UI: Optimize memoization and search debouncing on `/targets` page. #16589
