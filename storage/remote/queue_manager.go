@@ -720,244 +720,207 @@ func isV2TimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, s
 	}
 }
 
-// Append queues a sample to be sent to the remote storage. Blocks until all samples are
-// enqueued on their shards or a shutdown signal is received.
-func (t *QueueManager) Append(samples []record.RefSample) bool {
+// appendItemConfig contains configuration for the appendWithRetry helper.
+type appendItemConfig[T any] struct {
+	// dataTypeName is used for logging (e.g., "sample", "exemplar", "histogram").
+	dataTypeName string
+
+	// getRef extracts the series reference from an item.
+	getRef func(T) chunks.HeadSeriesRef
+
+	// getTimestamp extracts the timestamp from an item.
+	getTimestamp func(T) int64
+
+	// checkEnabled checks if this data type is enabled (return true if enabled or no check needed).
+	checkEnabled func() bool
+
+	// checkSpecificDrop performs data-type-specific drop checks (e.g., NHCB check for histograms).
+	// Returns true if the item should be dropped.
+	checkSpecificDrop func(T) bool
+
+	// droppedMetric is the metric counter for dropped items of this type.
+	droppedMetric *prometheus.CounterVec
+
+	// buildTimeSeries constructs a timeSeries from the item, labels, and metadata.
+	buildTimeSeries func(T, labels.Labels, *metadata.Metadata) timeSeries
+
+	// initialBackoff is the starting backoff duration for retries.
+	initialBackoff model.Duration
+}
+
+// appendWithRetry is a generic helper function that implements the common append logic
+// for all data types (samples, exemplars, histograms, float histograms).
+// It handles age checking, series lookup, dropped series tracking, and retry logic.
+func appendWithRetry[T any](qm *QueueManager, items []T, cfg appendItemConfig[T]) bool {
+	// Early return if this data type is not enabled
+	if !cfg.checkEnabled() {
+		return true
+	}
+
 	currentTime := time.Now()
 outer:
-	for _, s := range samples {
-		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), s.T) {
-			t.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Inc()
+	for _, item := range items {
+		ts := cfg.getTimestamp(item)
+		if isSampleOld(currentTime, time.Duration(qm.cfg.SampleAgeLimit), ts) {
+			cfg.droppedMetric.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
-		t.seriesMtx.Lock()
-		lbls, ok := t.seriesLabels[s.Ref]
+
+		if cfg.checkSpecificDrop != nil && cfg.checkSpecificDrop(item) {
+			continue
+		}
+
+		ref := cfg.getRef(item)
+		qm.seriesMtx.Lock()
+		lbls, ok := qm.seriesLabels[ref]
 		if !ok {
-			t.dataDropped.incr(1)
-			if _, ok := t.droppedSeries[s.Ref]; !ok {
-				t.logger.Info("Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
-				t.metrics.droppedSamplesTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+			qm.dataDropped.incr(1)
+			if _, ok := qm.droppedSeries[ref]; !ok {
+				qm.logger.Info(fmt.Sprintf("Dropped %s for series that was not explicitly dropped via relabelling", cfg.dataTypeName), "ref", ref)
+				cfg.droppedMetric.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
 			} else {
-				t.metrics.droppedSamplesTotal.WithLabelValues(reasonDroppedSeries).Inc()
+				cfg.droppedMetric.WithLabelValues(reasonDroppedSeries).Inc()
 			}
-			t.seriesMtx.Unlock()
+			qm.seriesMtx.Unlock()
 			continue
 		}
 		// TODO(cstyan): Handle or at least log an error if no metadata is found.
 		// See https://github.com/prometheus/prometheus/issues/14405
-		meta := t.seriesMetadata[s.Ref]
-		t.seriesMtx.Unlock()
-		// Start with a very small backoff. This should not be t.cfg.MinBackoff
-		// as it can happen without errors, and we want to pickup work after
-		// filling a queue/resharding as quickly as possible.
-		// TODO: Consider using the average duration of a request as the backoff.
-		backoff := model.Duration(5 * time.Millisecond)
+		meta := qm.seriesMetadata[ref]
+		qm.seriesMtx.Unlock()
+
+		// Retry loop with exponential backoff.
+		backoff := cfg.initialBackoff
 		for {
 			select {
-			case <-t.quit:
+			case <-qm.quit:
 				return false
 			default:
 			}
-			if t.shards.enqueue(s.Ref, timeSeries{
-				seriesLabels: lbls,
-				metadata:     meta,
-				timestamp:    s.T,
-				value:        s.V,
-				sType:        tSample,
-			}) {
+
+			ts := cfg.buildTimeSeries(item, lbls, meta)
+			if qm.shards.enqueue(ref, ts) {
 				continue outer
 			}
 
-			t.metrics.enqueueRetriesTotal.Inc()
+			qm.metrics.enqueueRetriesTotal.Inc()
 			time.Sleep(time.Duration(backoff))
 			backoff *= 2
-			// It is reasonable to use t.cfg.MaxBackoff here, as if we have hit
+			// It is reasonable to use qm.cfg.MaxBackoff here, as if we have hit
 			// the full backoff we are likely waiting for external resources.
-			if backoff > t.cfg.MaxBackoff {
-				backoff = t.cfg.MaxBackoff
+			if backoff > qm.cfg.MaxBackoff {
+				backoff = qm.cfg.MaxBackoff
 			}
 		}
 	}
 	return true
 }
 
+// Append queues a sample to be sent to the remote storage. Blocks until all samples are
+// enqueued on their shards or a shutdown signal is received.
+func (t *QueueManager) Append(samples []record.RefSample) bool {
+	// Start with a very small backoff. This should not be t.cfg.MinBackoff
+	// as it can happen without errors, and we want to pickup work after
+	// filling a queue/resharding as quickly as possible.
+	// TODO: Consider using the average duration of a request as the backoff.
+	return appendWithRetry(t, samples, appendItemConfig[record.RefSample]{
+		dataTypeName:  "sample",
+		getRef:        func(s record.RefSample) chunks.HeadSeriesRef { return s.Ref },
+		getTimestamp:  func(s record.RefSample) int64 { return s.T },
+		checkEnabled:  func() bool { return true }, // Samples are always enabled
+		droppedMetric: t.metrics.droppedSamplesTotal,
+		buildTimeSeries: func(s record.RefSample, lbls labels.Labels, meta *metadata.Metadata) timeSeries {
+			return timeSeries{
+				seriesLabels: lbls,
+				metadata:     meta,
+				timestamp:    s.T,
+				value:        s.V,
+				sType:        tSample,
+			}
+		},
+		initialBackoff: model.Duration(5 * time.Millisecond),
+	})
+}
+
 func (t *QueueManager) AppendExemplars(exemplars []record.RefExemplar) bool {
-	if !t.sendExemplars {
-		return true
-	}
-	currentTime := time.Now()
-outer:
-	for _, e := range exemplars {
-		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), e.T) {
-			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld).Inc()
-			continue
-		}
-		t.seriesMtx.Lock()
-		lbls, ok := t.seriesLabels[e.Ref]
-		if !ok {
-			// Track dropped exemplars in the same EWMA for sharding calc.
-			t.dataDropped.incr(1)
-			if _, ok := t.droppedSeries[e.Ref]; !ok {
-				t.logger.Info("Dropped exemplar for series that was not explicitly dropped via relabelling", "ref", e.Ref)
-				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
-			} else {
-				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDroppedSeries).Inc()
-			}
-			t.seriesMtx.Unlock()
-			continue
-		}
-		meta := t.seriesMetadata[e.Ref]
-		t.seriesMtx.Unlock()
-		// This will only loop if the queues are being resharded.
-		backoff := t.cfg.MinBackoff
-		for {
-			select {
-			case <-t.quit:
-				return false
-			default:
-			}
-			if t.shards.enqueue(e.Ref, timeSeries{
+	// Use 5ms backoff (same as samples) for consistency.
+	// The original t.cfg.MinBackoff (typically 30ms) was an unintentional divergence.
+	return appendWithRetry(t, exemplars, appendItemConfig[record.RefExemplar]{
+		dataTypeName:  "exemplar",
+		getRef:        func(e record.RefExemplar) chunks.HeadSeriesRef { return e.Ref },
+		getTimestamp:  func(e record.RefExemplar) int64 { return e.T },
+		checkEnabled:  func() bool { return t.sendExemplars },
+		droppedMetric: t.metrics.droppedExemplarsTotal,
+		buildTimeSeries: func(e record.RefExemplar, lbls labels.Labels, meta *metadata.Metadata) timeSeries {
+			return timeSeries{
 				seriesLabels:   lbls,
 				metadata:       meta,
 				timestamp:      e.T,
 				value:          e.V,
 				exemplarLabels: e.Labels,
 				sType:          tExemplar,
-			}) {
-				continue outer
 			}
-
-			t.metrics.enqueueRetriesTotal.Inc()
-			time.Sleep(time.Duration(backoff))
-			backoff *= 2
-			if backoff > t.cfg.MaxBackoff {
-				backoff = t.cfg.MaxBackoff
-			}
-		}
-	}
-	return true
+		},
+		initialBackoff: model.Duration(5 * time.Millisecond),
+	})
 }
 
 func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample) bool {
-	if !t.sendNativeHistograms {
-		return true
-	}
-	currentTime := time.Now()
-outer:
-	for _, h := range histograms {
-		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
-			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
-			continue
-		}
-		if t.protoMsg == remoteapi.WriteV1MessageType && h.H != nil && h.H.Schema == histogram.CustomBucketsSchema {
+	return appendWithRetry(t, histograms, appendItemConfig[record.RefHistogramSample]{
+		dataTypeName: "histogram",
+		getRef:       func(h record.RefHistogramSample) chunks.HeadSeriesRef { return h.Ref },
+		getTimestamp: func(h record.RefHistogramSample) int64 { return h.T },
+		checkEnabled: func() bool { return t.sendNativeHistograms },
+		checkSpecificDrop: func(h record.RefHistogramSample) bool {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
-			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
-			t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
-			continue
-		}
-		t.seriesMtx.Lock()
-		lbls, ok := t.seriesLabels[h.Ref]
-		if !ok {
-			t.dataDropped.incr(1)
-			if _, ok := t.droppedSeries[h.Ref]; !ok {
-				t.logger.Info("Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
-				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
-			} else {
-				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+			if t.protoMsg == remoteapi.WriteV1MessageType && h.H != nil && h.H.Schema == histogram.CustomBucketsSchema {
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
+				t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
+				return true
 			}
-			t.seriesMtx.Unlock()
-			continue
-		}
-		meta := t.seriesMetadata[h.Ref]
-		t.seriesMtx.Unlock()
-
-		backoff := model.Duration(5 * time.Millisecond)
-		for {
-			select {
-			case <-t.quit:
-				return false
-			default:
-			}
-			if t.shards.enqueue(h.Ref, timeSeries{
+			return false
+		},
+		droppedMetric: t.metrics.droppedHistogramsTotal,
+		buildTimeSeries: func(h record.RefHistogramSample, lbls labels.Labels, meta *metadata.Metadata) timeSeries {
+			return timeSeries{
 				seriesLabels: lbls,
 				metadata:     meta,
 				timestamp:    h.T,
 				histogram:    h.H,
 				sType:        tHistogram,
-			}) {
-				continue outer
 			}
-
-			t.metrics.enqueueRetriesTotal.Inc()
-			time.Sleep(time.Duration(backoff))
-			backoff *= 2
-			if backoff > t.cfg.MaxBackoff {
-				backoff = t.cfg.MaxBackoff
-			}
-		}
-	}
-	return true
+		},
+		initialBackoff: model.Duration(5 * time.Millisecond),
+	})
 }
 
 func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHistogramSample) bool {
-	if !t.sendNativeHistograms {
-		return true
-	}
-	currentTime := time.Now()
-outer:
-	for _, h := range floatHistograms {
-		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
-			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
-			continue
-		}
-		if t.protoMsg == remoteapi.WriteV1MessageType && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
+	return appendWithRetry(t, floatHistograms, appendItemConfig[record.RefFloatHistogramSample]{
+		dataTypeName: "histogram",
+		getRef:       func(h record.RefFloatHistogramSample) chunks.HeadSeriesRef { return h.Ref },
+		getTimestamp: func(h record.RefFloatHistogramSample) int64 { return h.T },
+		checkEnabled: func() bool { return t.sendNativeHistograms },
+		checkSpecificDrop: func(h record.RefFloatHistogramSample) bool {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
-			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
-			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
-			continue
-		}
-		t.seriesMtx.Lock()
-		lbls, ok := t.seriesLabels[h.Ref]
-		if !ok {
-			t.dataDropped.incr(1)
-			if _, ok := t.droppedSeries[h.Ref]; !ok {
-				t.logger.Info("Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
-				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
-			} else {
-				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+			if t.protoMsg == remoteapi.WriteV1MessageType && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
+				t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support it", "ref", h.Ref)
+				return true
 			}
-			t.seriesMtx.Unlock()
-			continue
-		}
-		meta := t.seriesMetadata[h.Ref]
-		t.seriesMtx.Unlock()
-
-		backoff := model.Duration(5 * time.Millisecond)
-		for {
-			select {
-			case <-t.quit:
-				return false
-			default:
-			}
-			if t.shards.enqueue(h.Ref, timeSeries{
+			return false
+		},
+		droppedMetric: t.metrics.droppedHistogramsTotal,
+		buildTimeSeries: func(h record.RefFloatHistogramSample, lbls labels.Labels, meta *metadata.Metadata) timeSeries {
+			return timeSeries{
 				seriesLabels:   lbls,
 				metadata:       meta,
 				timestamp:      h.T,
 				floatHistogram: h.FH,
 				sType:          tFloatHistogram,
-			}) {
-				continue outer
 			}
-
-			t.metrics.enqueueRetriesTotal.Inc()
-			time.Sleep(time.Duration(backoff))
-			backoff *= 2
-			if backoff > t.cfg.MaxBackoff {
-				backoff = t.cfg.MaxBackoff
-			}
-		}
-	}
-	return true
+		},
+		initialBackoff: model.Duration(5 * time.Millisecond),
+	})
 }
 
 // Start the queue manager sending samples to the remote storage.
