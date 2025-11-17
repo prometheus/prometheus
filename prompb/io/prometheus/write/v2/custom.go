@@ -80,11 +80,6 @@ func (m *TimeSeries) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i -= len(m.XXX_unrecognized)
 		copy(dAtA[i:], m.XXX_unrecognized)
 	}
-	if m.CreatedTimestamp != 0 {
-		i = encodeVarintTypes(dAtA, i, uint64(m.CreatedTimestamp))
-		i--
-		dAtA[i] = 0x30
-	}
 	{
 		size, err := m.Metadata.MarshalToSizedBuffer(dAtA[:i])
 		if err != nil {
