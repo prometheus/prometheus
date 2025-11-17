@@ -813,6 +813,104 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 	}
 }
 
+// TestRemoteWriteHandler_V2Message_NoDuplicateTypeAndUnitLabels verifies that when
+// type-and-unit-labels feature is enabled, the receiver correctly handles cases where
+// __type__ and __unit__ labels are already present in the incoming labels.
+// Regression test for https://github.com/prometheus/prometheus/issues/17480.
+func TestRemoteWriteHandler_V2Message_NoDuplicateTypeAndUnitLabels(t *testing.T) {
+	for _, tc := range []struct {
+		desc           string
+		labelsToSend   labels.Labels
+		metadataToSend writev2.Metadata
+		expectedLabels labels.Labels
+	}{
+		{
+			desc:         "Labels with __type__ and __unit__ should not be duplicated",
+			labelsToSend: labels.FromStrings("__name__", "node_cpu_seconds_total", "__type__", "counter", "__unit__", "seconds", "cpu", "0", "mode", "idle"),
+			metadataToSend: writev2.Metadata{
+				Type: writev2.Metadata_METRIC_TYPE_COUNTER,
+			},
+			expectedLabels: labels.FromStrings("__name__", "node_cpu_seconds_total", "__type__", "counter", "__unit__", "seconds", "cpu", "0", "mode", "idle"),
+		},
+		{
+			desc:         "Labels with __type__ only should not be duplicated",
+			labelsToSend: labels.FromStrings("__name__", "test_gauge", "__type__", "gauge", "instance", "localhost"),
+			metadataToSend: writev2.Metadata{
+				Type: writev2.Metadata_METRIC_TYPE_GAUGE,
+			},
+			expectedLabels: labels.FromStrings("__name__", "test_gauge", "__type__", "gauge", "instance", "localhost"),
+		},
+		{
+			desc:         "Labels with __unit__ only should not be duplicated when metadata has unit",
+			labelsToSend: labels.FromStrings("__name__", "test_metric", "__unit__", "bytes", "job", "test"),
+			metadataToSend: writev2.Metadata{
+				Type: writev2.Metadata_METRIC_TYPE_GAUGE,
+			},
+			expectedLabels: labels.FromStrings("__name__", "test_metric", "__type__", "gauge", "__unit__", "bytes", "job", "test"),
+		},
+		{
+			desc:         "Metadata type and unit override labels",
+			labelsToSend: labels.FromStrings("__name__", "test_metric", "__type__", "counter", "__unit__", "seconds", "job", "test"),
+			metadataToSend: writev2.Metadata{
+				Type: writev2.Metadata_METRIC_TYPE_GAUGE,
+			},
+			expectedLabels: labels.FromStrings("__name__", "test_metric", "__type__", "gauge", "__unit__", "seconds", "job", "test"),
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			symbolTable := writev2.NewSymbolTable()
+			labelRefs := symbolTable.SymbolizeLabels(tc.labelsToSend, nil)
+
+			var unitRef uint32
+			if unit := tc.labelsToSend.Get("__unit__"); unit != "" {
+				unitRef = symbolTable.Symbolize(unit)
+			}
+
+			ts := []writev2.TimeSeries{
+				{
+					LabelsRefs: labelRefs,
+					Metadata: writev2.Metadata{
+						Type:    tc.metadataToSend.Type,
+						UnitRef: unitRef,
+					},
+					Samples: []writev2.Sample{{Value: 42.0, Timestamp: 1000}},
+				},
+			}
+
+			payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), ts, symbolTable.Symbols(), nil, nil, nil, "snappy")
+			require.NoError(t, err)
+
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+			require.NoError(t, err)
+
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+			req.Header.Set("Content-Encoding", compression.Snappy)
+			req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+
+			appendable := &mockAppendable{}
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, true, false)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			resp := recorder.Result()
+			require.Equal(t, http.StatusNoContent, resp.StatusCode)
+
+			require.Len(t, appendable.samples, 1)
+			receivedLabels := appendable.samples[0].l
+
+			duplicateLabel, hasDuplicate := receivedLabels.HasDuplicateLabelNames()
+			require.False(t, hasDuplicate, "Labels should NOT contain duplicates, but found duplicate label: %s\nReceived labels: %s", duplicateLabel, receivedLabels.String())
+
+			require.Equal(t, tc.expectedLabels.String(), receivedLabels.String(), "Labels should match expected")
+
+			if tc.expectedLabels.Get("__type__") != "" {
+				require.NotEmpty(t, receivedLabels.Get("__type__"), "__type__ should be present in labels")
+			}
+		})
+	}
+}
+
 // NOTE: V2 Message is tested in TestRemoteWriteHandler_V2Message.
 func TestOutOfOrderSample_V1Message(t *testing.T) {
 	for _, tc := range []struct {
