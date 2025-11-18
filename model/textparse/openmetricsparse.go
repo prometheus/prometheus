@@ -23,7 +23,6 @@ import (
 	"io"
 	"math"
 	"strconv"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/cespare/xxhash/v2"
@@ -519,13 +518,6 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		case tType:
 			return EntryType, nil
 		case tUnit:
-			p.unit = string(p.text)
-			m := yoloString(p.l.b[p.offsets[0]:p.offsets[1]])
-			if len(p.unit) > 0 {
-				if !strings.HasSuffix(m, p.unit) || len(m) < len(p.unit)+1 || p.l.b[p.offsets[1]-len(p.unit)-1] != '_' {
-					return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", p.unit, m)
-				}
-			}
 			return EntryUnit, nil
 		}
 
