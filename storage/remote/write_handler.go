@@ -327,7 +327,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			ls.Range(func(l labels.Label) {
 				// Skip __type__ and __unit__ labels if they exist in the incoming labels.
 				// They will be added from metadata to avoid duplicates.
-				if l.Name != "__type__" && l.Name != "__unit__" {
+				if l.Name != model.MetricTypeLabel && l.Name != model.MetricUnitLabel {
 					slb.Add(l.Name, l.Value)
 				}
 			})
