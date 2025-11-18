@@ -814,6 +814,18 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			err:   "expected text in TYPE",
 		},
 		{
+			input: "# UNIT metric suffix\n#EOF\n",
+			err:   "unit \"suffix\" not a suffix of metric \"metric\"",
+		},
+		{
+			input: "# UNIT metricsuffix suffix\n#EOF\n",
+			err:   "unit \"suffix\" not a suffix of metric \"metricsuffix\"",
+		},
+		{
+			input: "# UNIT m suffix\n#EOF\n",
+			err:   "unit \"suffix\" not a suffix of metric \"m\"",
+		},
+		{
 			input: "# UNIT \n#EOF\n",
 			err:   "expected metric name after UNIT, got \"\\n\" (\"INVALID\") while parsing: \"# UNIT \\n\"",
 		},
