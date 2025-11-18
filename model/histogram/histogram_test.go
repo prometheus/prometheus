@@ -243,6 +243,46 @@ func TestCumulativeBucketIterator(t *testing.T) {
 				{Lower: math.Inf(-1), Upper: math.Inf(1), Count: 5, LowerInclusive: true, UpperInclusive: true, Index: 4},
 			},
 		},
+		{
+			histogram: Histogram{
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				// One spurious bucket, which we expect to be ignored.
+				PositiveBuckets: []int64{1, 1, -1, 0, 2},
+			},
+			expectedBuckets: []Bucket[uint64]{
+				{Lower: math.Inf(-1), Upper: 1, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: 0},
+				{Lower: math.Inf(-1), Upper: 2, Count: 3, LowerInclusive: true, UpperInclusive: true, Index: 1},
+
+				{Lower: math.Inf(-1), Upper: 4, Count: 3, LowerInclusive: true, UpperInclusive: true, Index: 2},
+
+				{Lower: math.Inf(-1), Upper: 8, Count: 4, LowerInclusive: true, UpperInclusive: true, Index: 3},
+				{Lower: math.Inf(-1), Upper: 16, Count: 5, LowerInclusive: true, UpperInclusive: true, Index: 4},
+			},
+		},
+		{
+			histogram: Histogram{
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 3},
+				},
+				// One bucket is missing. We expect the iteration to end with the last bucket.
+				PositiveBuckets: []int64{1, 1, -1, 0},
+			},
+			expectedBuckets: []Bucket[uint64]{
+				{Lower: math.Inf(-1), Upper: 1, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: 0},
+				{Lower: math.Inf(-1), Upper: 2, Count: 3, LowerInclusive: true, UpperInclusive: true, Index: 1},
+
+				{Lower: math.Inf(-1), Upper: 4, Count: 3, LowerInclusive: true, UpperInclusive: true, Index: 2},
+
+				{Lower: math.Inf(-1), Upper: 8, Count: 4, LowerInclusive: true, UpperInclusive: true, Index: 3},
+				{Lower: math.Inf(-1), Upper: 16, Count: 5, LowerInclusive: true, UpperInclusive: true, Index: 4},
+			},
+		},
 	}
 
 	for i, c := range cases {
@@ -458,6 +498,46 @@ func TestRegularBucketIterator(t *testing.T) {
 				{Lower: 50, Upper: math.Inf(1), Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 4},
 			},
 			expectedNegativeBuckets: []Bucket[uint64]{},
+		},
+		{
+			histogram: Histogram{
+				Schema: 0,
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 5},
+					{Offset: 1, Length: 1},
+				},
+				// One spurious bucket, which we expect to be ignored.
+				NegativeBuckets: []int64{1, 2, -2, 1, -1, 0, 3},
+			},
+			expectedPositiveBuckets: []Bucket[uint64]{},
+			expectedNegativeBuckets: []Bucket[uint64]{
+				{Lower: -1, Upper: -0.5, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 0},
+				{Lower: -2, Upper: -1, Count: 3, LowerInclusive: true, UpperInclusive: false, Index: 1},
+				{Lower: -4, Upper: -2, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 2},
+				{Lower: -8, Upper: -4, Count: 2, LowerInclusive: true, UpperInclusive: false, Index: 3},
+				{Lower: -16, Upper: -8, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 4},
+
+				{Lower: -64, Upper: -32, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 6},
+			},
+		},
+		{
+			histogram: Histogram{
+				Schema: 0,
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 5},
+					{Offset: 1, Length: 1},
+				},
+				// One bucket is missing. We expect the iteration to end with the last bucket.
+				NegativeBuckets: []int64{1, 2, -2, 1, -1},
+			},
+			expectedPositiveBuckets: []Bucket[uint64]{},
+			expectedNegativeBuckets: []Bucket[uint64]{
+				{Lower: -1, Upper: -0.5, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 0},
+				{Lower: -2, Upper: -1, Count: 3, LowerInclusive: true, UpperInclusive: false, Index: 1},
+				{Lower: -4, Upper: -2, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 2},
+				{Lower: -8, Upper: -4, Count: 2, LowerInclusive: true, UpperInclusive: false, Index: 3},
+				{Lower: -16, Upper: -8, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 4},
+			},
 		},
 	}
 

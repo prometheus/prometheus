@@ -515,6 +515,11 @@ func (r *regularBucketIterator) Next() bool {
 		r.currIdx += span.Offset
 	}
 
+	// This protects against index out of range panic, which
+	// can only happen with an invalid histogram.
+	if r.bucketsIdx >= len(r.buckets) {
+		return false
+	}
 	r.currCount += r.buckets[r.bucketsIdx]
 	r.idxInSpan++
 	r.bucketsIdx++
@@ -576,6 +581,11 @@ func (c *cumulativeBucketIterator) Next() bool {
 		c.initialized = true
 	}
 
+	// This protects against index out of range panic, which
+	// can only happen with an invalid histogram.
+	if c.posBucketsIdx >= len(c.h.PositiveBuckets) {
+		return false
+	}
 	c.currCount += c.h.PositiveBuckets[c.posBucketsIdx]
 	c.currCumulativeCount += uint64(c.currCount)
 	c.currUpper = getBound(c.currIdx, c.h.Schema, c.h.CustomValues)
