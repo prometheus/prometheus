@@ -2846,7 +2846,7 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 	}
 
 	// Ordinals of signatures present on the right-hand side.
-	rightSigOrdinalsPresent := make([]bool, enh.numSigs)
+	rightSigOrdinalsPresent := enh.resetSigsPresent()
 	for _, sh := range rhsh {
 		rightSigOrdinalsPresent[sh.sigOrdinal] = true
 	}
