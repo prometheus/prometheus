@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 )
 
-func TestBlockExcludeFilterThanos(t *testing.T) {
+func TestBlockExcludeFilter(t *testing.T) {
 	for _, test := range []struct {
 		summary    string         // Description of the test case.
 		uploaded   []ulid.ULID    // List of blocks marked as uploaded inside the shipper file.
@@ -91,16 +91,16 @@ func TestBlockExcludeFilterThanos(t *testing.T) {
 			for _, ul := range test.uploaded {
 				uploaded = append(uploaded, ul.String())
 			}
-			ts := ThanosShipperMetaFile{Uploaded: uploaded}
+			ts := UploadMetaFile{Uploaded: uploaded}
 			data, err := json.Marshal(ts)
-			require.NoError(t, err, "failed to marshall ThanosShipperMetaFile file")
-			require.NoError(t, os.WriteFile(shipperPath, data, 0o644), "failed to write ThanosShipperMetaFile file")
+			require.NoError(t, err, "failed to marshall upload meta file")
+			require.NoError(t, os.WriteFile(shipperPath, data, 0o644), "failed to write upload meta file")
 
 			if test.setupFn != nil {
 				test.setupFn(shipperPath)
 			}
 
-			fn := exludeBlocksPendingThanosUpload(promslog.NewNopLogger(), shipperPath)
+			fn := exludeBlocksPendingUpload(promslog.NewNopLogger(), shipperPath)
 			isExcluded := fn(&test.meta)
 			require.Equal(t, test.isExcluded, isExcluded)
 		})
