@@ -720,8 +720,13 @@ func isV2TimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, s
 	}
 }
 
+// refTypes is supported record types that can be appended to the queue manager.
+type refTypes interface {
+	record.RefSample | record.RefExemplar | record.RefHistogramSample | record.RefFloatHistogramSample
+}
+
 // appendItemConfig contains configuration for the appendWithRetry helper.
-type appendItemConfig[T any] struct {
+type appendItemConfig[T refTypes] struct {
 	// dataTypeName is used for logging (e.g., "sample", "exemplar", "histogram").
 	dataTypeName string
 
@@ -751,7 +756,7 @@ type appendItemConfig[T any] struct {
 // appendWithRetry is a generic helper function that implements the common append logic
 // for all data types (samples, exemplars, histograms, float histograms).
 // It handles age checking, series lookup, dropped series tracking, and retry logic.
-func appendWithRetry[T any](qm *QueueManager, items []T, cfg appendItemConfig[T]) bool {
+func appendWithRetry[T refTypes](qm *QueueManager, items []T, cfg appendItemConfig[T]) bool {
 	// Early return if this data type is not enabled
 	if !cfg.checkEnabled() {
 		return true
