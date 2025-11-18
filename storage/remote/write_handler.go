@@ -325,7 +325,11 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		if h.enableTypeAndUnitLabels && (m.Type != model.MetricTypeUnknown || m.Unit != "") {
 			slb := labels.NewScratchBuilder(ls.Len() + 2) // +2 for __type__ and __unit__
 			ls.Range(func(l labels.Label) {
-				slb.Add(l.Name, l.Value)
+				// Skip __type__ and __unit__ labels if they exist in the incoming labels.
+				// They will be added from metadata to avoid duplicates.
+				if l.Name != model.MetricTypeLabel && l.Name != model.MetricUnitLabel {
+					slb.Add(l.Name, l.Value)
+				}
 			})
 			schema.Metadata{Type: m.Type, Unit: m.Unit}.AddToLabels(&slb)
 			slb.Sort()
