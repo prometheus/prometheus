@@ -4151,13 +4151,17 @@ func makeInt64Pointer(val int64) *int64 {
 
 // RatioSampler allows unit-testing (previously: Randomizer).
 type RatioSampler interface {
-	// Return this sample "offset" between [0.0, 1.0]
-	sampleOffset(ts int64, sample *Sample) float64
-	AddRatioSample(r float64, sample *Sample) bool
+	// SampleOffset returns this sample "offset" between [0.0, 1.0].
+	SampleOffset(metric *labels.Labels) float64
+	// AddRatioSample reports whether the sampling offset for the given sample falls within the specified ratio limit.
+	AddRatioSample(ratioLimit float64, sample *Sample) bool
+	// AddRatioSampleWithOffset reports whether the given sampling offset falls within the specified ratio limit.
+	AddRatioSampleWithOffset(ratioLimit, sampleOffset float64) bool
 }
 
 // HashRatioSampler uses Hash(labels.String()) / maxUint64 as a "deterministic"
 // value in [0.0, 1.0].
+// It is a utility used for limit_ratio aggregations.
 type HashRatioSampler struct{}
 
 var ratiosampler RatioSampler = NewHashRatioSampler()
@@ -4166,14 +4170,42 @@ func NewHashRatioSampler() *HashRatioSampler {
 	return &HashRatioSampler{}
 }
 
-func (*HashRatioSampler) sampleOffset(_ int64, sample *Sample) float64 {
+// SampleOffset returns a deterministic sampling offset in the range [0, 1)
+// derived from the hash of the provided metric labels.
+//
+// The offset is computed by normalizing the 64-bit hash value of the label set
+// to a float64 fraction of math.MaxUint64. This ensures that metrics with the
+// same label set always produce the same offset, while different label sets
+// produce uniformly distributed offsets suitable for sampling decisions.
+func (*HashRatioSampler) SampleOffset(metric *labels.Labels) float64 {
 	const (
 		float64MaxUint64 = float64(math.MaxUint64)
 	)
-	return float64(sample.Metric.Hash()) / float64MaxUint64
+	return float64(metric.Hash()) / float64MaxUint64
 }
 
+// AddRatioSample returns a bool indicating if the sampling offset for the given sample is
+// within the given ratio limit.
+//
+// See SampleOffset() for further details on the sample offset.
+// See AddRatioSampleWithOffset() for further details on the ratioLimit and sampling offset comparison.
 func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, sample *Sample) bool {
+	sampleOffset := s.SampleOffset(&sample.Metric)
+	return s.AddRatioSampleWithOffset(ratioLimit, sampleOffset)
+}
+
+// AddRatioSampleWithOffset reports whether the given sampling offset falls within
+// the specified ratio limit.
+//
+// The ratioLimit must be in the range [-1, 1]. The sampleOffset should be derived
+// using SampleOffset().
+//
+// When ratioLimit >= 0, the function returns true if sampleOffset < ratioLimit.
+// When ratioLimit < 0, the function returns true if sampleOffset >= 1 + ratioLimit.
+//
+// Note that this method could be moved into AddRatioSample and removed from the Prometheus codebase,
+// but it is useful for downstream projects using this code as a library.
+func (*HashRatioSampler) AddRatioSampleWithOffset(ratioLimit, sampleOffset float64) bool {
 	// If ratioLimit >= 0: add sample if sampleOffset is lesser than ratioLimit
 	//
 	// 0.0        ratioLimit                1.0
@@ -4194,7 +4226,6 @@ func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, sample *Sample) bo
 	// e.g.:
 	//   sampleOffset==0.3 && ratioLimit==-0.6
 	//     0.3 >= 0.4 ? --> don't add sample
-	sampleOffset := s.sampleOffset(sample.T, sample)
 	return (ratioLimit >= 0 && sampleOffset < ratioLimit) ||
 		(ratioLimit < 0 && sampleOffset >= (1.0+ratioLimit))
 }
