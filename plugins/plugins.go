@@ -56,6 +56,8 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/stackit"
 	// Register triton plugin.
 	_ "github.com/prometheus/prometheus/discovery/triton"
+	// Register upcloud plugin.
+	_ "github.com/prometheus/prometheus/discovery/upcloud"
 	// Register uyuni plugin.
 	_ "github.com/prometheus/prometheus/discovery/uyuni"
 	// Register vultr plugin.
