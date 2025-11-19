@@ -112,7 +112,7 @@ common-all: precheck style check_license lint yamllint unused build test
 .PHONY: common-style
 common-style:
 	@echo ">> checking code style"
-	@fmtRes=$$($(GOFMT) -d $$(find . -path ./vendor -prune -o -name '*.go' -print)); \
+	@fmtRes=$$($(GOFMT) -d $$(git ls-files '*.go' ':!:vendor/*' || find . -path ./vendor -prune -o -name '*.go' -print)); \
 	if [ -n "$${fmtRes}" ]; then \
 		echo "gofmt checking failed!"; echo "$${fmtRes}"; echo; \
 		echo "Please ensure you are using $$($(GO) version) for formatting code."; \
@@ -122,7 +122,7 @@ common-style:
 .PHONY: common-check_license
 common-check_license:
 	@echo ">> checking license header"
-	@licRes=$$(for file in $$(find . -type f -iname '*.go' ! -path './vendor/*') ; do \
+	@licRes=$$(for file in $$(git ls-files '*.go' ':!:vendor/*' || find . -path ./vendor -prune -o -type f -iname '*.go' -print) ; do \
                awk 'NR<=3' $$file | grep -Eq "(Copyright|generated|GENERATED)" || echo $$file; \
        done); \
        if [ -n "$${licRes}" ]; then \
