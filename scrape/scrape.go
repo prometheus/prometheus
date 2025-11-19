@@ -1453,7 +1453,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		}
 		if errc != nil {
 			select {
-			case errc <- scrapeErr:
+			case errc <- forcedErr:
 			case <-sl.ctx.Done():
 			}
 		}
