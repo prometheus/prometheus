@@ -555,7 +555,6 @@ func NewQueueManager(
 		logger.Warn("usage of 'metadata_config.send' is redundant when using remote write v2 (or higher) as metadata will always be gathered from the WAL and included for every series within each write request")
 		t.mcfg.Send = false
 	}
-
 	if t.mcfg.Send {
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
 	}
@@ -971,7 +970,6 @@ func (t *QueueManager) Start() {
 
 	t.shards.start(t.numShards)
 	t.watcher.Start()
-
 	if t.mcfg.Send {
 		t.metadataWatcher.Start()
 	}
@@ -994,7 +992,6 @@ func (t *QueueManager) Stop() {
 	t.wg.Wait()
 	t.shards.stop()
 	t.watcher.Stop()
-
 	if t.mcfg.Send {
 		t.metadataWatcher.Stop()
 	}
@@ -1988,6 +1985,7 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(m.Type)
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(m.Unit)
 			pendingData[nPending].Metadata.HelpRef = 0 // Type and unit does not give us help.
+			// Use Help from d.metadata if available.
 			if d.metadata != nil {
 				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
 				nPendingMetadata++
