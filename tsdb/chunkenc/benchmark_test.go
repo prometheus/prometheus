@@ -166,6 +166,23 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			}(),
 		},
 		{
+			name: "vt=random 0-1/st=cumulative-periodic-resets",
+			samples: func() (ret []triple) {
+				st, t, v := initST, initT, initV
+				for i := range nSamples {
+					t += int64(r.Intn(100) - 50 + 15000) // 15 seconds +- up to 100ms of jitter.
+					v += r.Float64()                     // Random between 0 and 1.0.
+					if i%6 == 5 {
+						st = t - 10000 // Reset of 10s before current t.
+					} else {
+						st = initST
+					}
+					ret = append(ret, triple{st: st, t: t, v: v})
+				}
+				return ret
+			}(),
+		},
+		{
 			name: "vt=random 0-1/st=cumulative-periodic-zeros",
 			samples: func() (ret []triple) {
 				st, t, v := initST, initT, initV
@@ -174,6 +191,8 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 					v += r.Float64()                     // Random between 0 and 1.0.
 					if i%6 == 5 {
 						st = 0
+					} else {
+						st = initT
 					}
 					ret = append(ret, triple{st: st, t: t, v: v})
 				}
@@ -196,11 +215,11 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 	}
 
 	for _, f := range []fmtCase{
-		{name: "XOR (ST ignored)", newChunkFn: func() Chunk { return NewXORChunk() }},
+		//{name: "XOR (ST ignored)", newChunkFn: func() Chunk { return NewXORChunk() }},
 		//{name: "XORvarbit (ST ignored)", newChunkFn: func() Chunk { return NewXORVarbitChunk() }},
 		//{name: "XORvarbitTS (ST ignored)", newChunkFn: func() Chunk { return NewXORVarbitTSChunk() }},
 		//{name: "XORV2Naive", newChunkFn: func() Chunk { return NewXORV2NaiveChunk() }},
-		//{name: "XOROptST", newChunkFn: func() Chunk { return NewXOROptSTChunk() }},
+		{name: "XOROptST", newChunkFn: func() Chunk { return NewXOROptSTChunk() }},
 		//{name: "ALPBuffered", newChunkFn: func() Chunk { return NewALPBufferedChunk() }},
 	} {
 		for _, s := range sampleCases {
@@ -212,16 +231,16 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 }
 
 /*
-	export bench=bw.bench/append.xor && go test \
+	export bench=bw.bench/append.xoroptstv2 && go test \
 	  -run '^$' -bench '^BenchmarkAppender' \
 	  -benchtime 1s -count 6 -cpu 2 -timeout 999m \
 	  | tee ${bench}.txt
 
 For profiles:
 
-	 export bench=bw.bench/append && go test \
+	 export bench=bw.bench/appendprof.xoroptstv2 && go test \
 		  -run '^$' -bench '^BenchmarkAppender' \
-		  -benchtime 10000x -count 6 -cpu 2 -timeout 999m \
+		  -benchtime 1s -count 1 -cpu 2 -timeout 999m \
 		  -cpuprofile=${bench}.cpu.pprof \
 		  | tee ${bench}.txt
 */
@@ -254,22 +273,16 @@ type supportsAppenderV2 interface {
 }
 
 /*
-		export bench=bw.bench/iter.xor && go test \
+	export bench=bw.bench/iter.xoroptst && go test \
+	  -run '^$' -bench '^BenchmarkIterator' \
+	  -benchtime 1s -count 6 -cpu 2 -timeout 999m \
+	  | tee ${bench}.txt
+
+	 export bench=bw.bench/iter.xoroptst && go test \
 		  -run '^$' -bench '^BenchmarkIterator' \
-		  -benchtime 1s -count 6 -cpu 2 -timeout 999m \
+		  -benchtime 1s -count 1 -cpu 2 -timeout 999m \
+	  -cpuprofile=${bench}.cpu.pprof \
 		  | tee ${bench}.txt
-
-	 export bench=bw.bench/iter.xor && go test \
-			  -run '^$' -bench '^BenchmarkIterator' \
-			  -benchtime 10000x -count 6 -cpu 2 -timeout 999m \
-		  -cpuprofile=${bench}.cpu.pprof \
-			  | tee ${bench}.txt
-
-		 export bench=bw.bench/iter.xorvts && go test \
-			  -run '^$' -bench '^BenchmarkIterator' \
-			  -benchtime 10000x -count 6 -cpu 2 -timeout 999m \
-		  -cpuprofile=${bench}.cpu.pprof \
-			  | tee ${bench}.txt
 */
 func BenchmarkIterator(b *testing.B) {
 	foreachFmtSampleCase(b, func(b *testing.B, f fmtCase, s sampleCase) {

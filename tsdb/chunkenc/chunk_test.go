@@ -198,6 +198,9 @@ func testChunk(t *testing.T, c Chunk, data []triple, floatEquals func(a, b float
 	}
 	require.NoError(t, it1.Err())
 	if diff := cmp.Diff(data, res1, cmp.AllowUnexported(triple{}), cmp.Comparer(floatEquals)); diff != "" {
+		// fmt.Println("exp", data[:10])
+		// fmt.Println("got", res1[:10])
+
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 
