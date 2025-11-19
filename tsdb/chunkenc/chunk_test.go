@@ -31,12 +31,21 @@ type triple struct {
 
 func TestChunk(t *testing.T) {
 	for enc, nc := range map[Encoding]func() Chunk{
-		EncXOR:      func() Chunk { return NewXORChunk() },
-		101:         func() Chunk { return NewXORVarbitChunk() },
-		110:         func() Chunk { return NewXORVarbitTSChunk() },
+		EncXOR: func() Chunk { return NewXORChunk() },
+
+		// Most tempting one.
 		EncXOROptST: func() Chunk { return NewXOROptSTChunk() },
-		102:         func() Chunk { return NewXORSTNaiveChunk() },
-		103:         func() Chunk { return NewALPBufferedChunk() },
+
+		// Slow naive ST implementation.
+		102: func() Chunk { return NewXORSTNaiveChunk() },
+
+		// Fun, buffered ones! Very fast, but require more mem.
+		103: func() Chunk { return NewALPBufferedChunk() },
+		133: func() Chunk { return NewXORBufferedChunk() },
+
+		// Non-ST varbit fun attempts (less space, but a bit slower).
+		101: func() Chunk { return NewXORVarbitChunk() },
+		110: func() Chunk { return NewXORVarbitTSChunk() },
 	} {
 		t.Run(fmt.Sprintf("enc=%v", enc), func(t *testing.T) {
 			floatEquals := func(a, b float64) bool {
@@ -49,7 +58,6 @@ func TestChunk(t *testing.T) {
 			}
 
 			t.Run("data=realistic-v1", func(t *testing.T) {
-				t.Skip("% ")
 				c := nc()
 				var data []triple
 				var (
@@ -68,7 +76,6 @@ func TestChunk(t *testing.T) {
 				testChunk(t, c, data, floatEquals)
 			})
 			t.Run("data=realistic-constcumulative", func(t *testing.T) {
-				t.Skip("5")
 				c := nc()
 
 				var data []triple
@@ -200,6 +207,8 @@ func testChunk(t *testing.T, c Chunk, data []triple, floatEquals func(a, b float
 	}
 	require.NoError(t, it1.Err())
 	if diff := cmp.Diff(data, res1, cmp.AllowUnexported(triple{}), cmp.Comparer(floatEquals)); diff != "" {
+		fmt.Println(data[:10])
+		fmt.Println(res1[:10])
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 

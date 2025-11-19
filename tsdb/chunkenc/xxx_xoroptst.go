@@ -20,11 +20,45 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 )
 
-const chunkSTHeaderSize = 1
+const (
+	chunkSTHeaderSize  = 1
+	maxFirstSTChangeOn = 0x7F
+)
+
+func writeHeaderFirstSTKnown(b []byte) {
+	b[0] = 0x80
+}
+
+func writeHeaderFirstSTChangeOn(b []byte, firstSTChangeOn uint16) {
+	// First bit indicates the initial ST value.
+	// Here we save the sample number from where the first change occurs in the
+	// rest of the byte (7 bits)
+
+	if firstSTChangeOn > maxFirstSTChangeOn {
+		// This should never happen, would cause corruption (ST already skipped but shouldn't).
+		return
+	}
+	b[0] |= uint8(firstSTChangeOn)
+}
+
+func readSTHeader(b []byte) (firstSTKnown bool, firstSTChangeOn uint16) {
+	if b[0] == 0x00 {
+		return false, 0
+	}
+	if b[0] == 0x80 {
+		return true, 0
+	}
+	mask := byte(0x80)
+	if b[0]&mask != 0 {
+		firstSTKnown = true
+	}
+	mask = 0x7F
+	return firstSTKnown, uint16(b[0] & mask)
+}
 
 // xorOptSTChunk holds encoded sample data:
 // 2B(numSamples), 1B(stHeader), ?varint(st), varint(t), xor(v), ?varuint(stDelta), varuint(tDelta), xor(v), ?classicvarbitint(stDod), classicvarbitint(tDod), xor(v), ...
-// stHeader: 1b(nonZeroFirstST), 7b(stSampleUntil)
+// stHeader: 1b(firstSTKnown), 7b(firstSTChangeOn)
 type xorOptSTChunk struct {
 	b bstream
 }
@@ -473,39 +507,6 @@ func (it *xorOptSTtIterator) stAgnosticDoDNext() ValueType {
 	it.tDelta = uint64(int64(it.tDelta) + dod)
 	it.t += int64(it.tDelta)
 	return it.readValue()
-}
-
-const maxFirstSTChangeOn = 0x7F
-
-func writeHeaderFirstSTKnown(b []byte) {
-	b[0] = 0x80
-}
-
-func writeHeaderFirstSTChangeOn(b []byte, firstSTChangeOn uint16) {
-	// First bit indicates the initial ST value.
-	// Here we save the sample number from where the first change occurs in the
-	// rest of the byte (7 bits)
-
-	if firstSTChangeOn > maxFirstSTChangeOn {
-		// This should never happen, would cause corruption (ST already skipped but shouldn't).
-		return
-	}
-	b[0] |= uint8(firstSTChangeOn)
-}
-
-func readSTHeader(b []byte) (firstSTKnown bool, firstSTChangeOn uint16) {
-	if b[0] == 0x00 {
-		return false, 0
-	}
-	if b[0] == 0x80 {
-		return true, 0
-	}
-	mask := byte(0x80)
-	if b[0]&mask != 0 {
-		firstSTKnown = true
-	}
-	mask = 0x7F
-	return firstSTKnown, uint16(b[0] & mask)
 }
 
 func (it *xorOptSTtIterator) readValue() ValueType {

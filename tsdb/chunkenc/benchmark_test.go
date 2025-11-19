@@ -215,12 +215,22 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 	}
 
 	for _, f := range []fmtCase{
+		// Reference.
 		{name: "XOR (ST ignored)", newChunkFn: func() Chunk { return NewXORChunk() }},
+
+		// Most tempting one.
+		{name: "XOROptST", newChunkFn: func() Chunk { return NewXOROptSTChunk() }},
+
+		// Slow naive ST implementation.
+		//{name: "XORSTNaive", newChunkFn: func() Chunk { return NewXORSTNaiveChunk() }},
+
+		// Non-ST varbit fun attempts (less space, but a bit slower).
 		//{name: "XORvarbit (ST ignored)", newChunkFn: func() Chunk { return NewXORVarbitChunk() }},
 		//{name: "XORvarbitTS (ST ignored)", newChunkFn: func() Chunk { return NewXORVarbitTSChunk() }},
-		//{name: "XORV2Naive", newChunkFn: func() Chunk { return NewXORV2NaiveChunk() }},
-		{name: "XOROptST", newChunkFn: func() Chunk { return NewXOROptSTChunk() }},
+
+		// Fun, buffered ones! Very fast, but require more mem.
 		//{name: "ALPBuffered", newChunkFn: func() Chunk { return NewALPBufferedChunk() }},
+		{name: "XORBuffered", newChunkFn: func() Chunk { return NewXORBufferedChunk() }},
 	} {
 		for _, s := range sampleCases {
 			b.Run(fmt.Sprintf("fmt=%s/%s", f.name, s.name), func(b *testing.B) {
@@ -231,7 +241,7 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 }
 
 /*
-	export bench=bw.bench/append.xoroptstv3 && go test \
+	export bench=bw.bench/append.all && go test \
 	  -run '^$' -bench '^BenchmarkAppender' \
 	  -benchtime 1s -count 6 -cpu 2 -timeout 999m \
 	  | tee ${bench}.txt
@@ -273,7 +283,7 @@ type supportsAppenderV2 interface {
 }
 
 /*
-	export bench=bw.bench/iter.xoroptst && go test \
+	export bench=bw.bench/iter.all && go test \
 	  -run '^$' -bench '^BenchmarkIterator' \
 	  -benchtime 1s -count 6 -cpu 2 -timeout 999m \
 	  | tee ${bench}.txt
