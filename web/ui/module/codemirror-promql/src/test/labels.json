@@ -1,0 +1,10 @@
+{
+  "status": "success",
+  "data": [
+    "__name__",
+    "env",
+    "instance",
+    "job",
+    "state"
+  ]
+}

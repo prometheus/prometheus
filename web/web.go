@@ -293,8 +293,9 @@ type Options struct {
 	ConvertOTLPDelta           bool
 	NativeOTLPDeltaIngestion   bool
 	IsAgent                    bool
-	CTZeroIngestionEnabled     bool
+	STZeroIngestionEnabled     bool
 	EnableTypeAndUnitLabels    bool
+	AppendMetadata             bool
 	AppName                    string
 
 	AcceptRemoteWriteProtoMsgs remoteapi.MessageTypes
@@ -393,9 +394,10 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.EnableOTLPWriteReceiver,
 		o.ConvertOTLPDelta,
 		o.NativeOTLPDeltaIngestion,
-		o.CTZeroIngestionEnabled,
+		o.STZeroIngestionEnabled,
 		o.LookbackDelta,
 		o.EnableTypeAndUnitLabels,
+		o.AppendMetadata,
 		nil,
 	)
 

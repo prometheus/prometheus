@@ -32,6 +32,7 @@ import (
 )
 
 // Endpoints discovers new endpoint targets.
+//
 // Deprecated: The Endpoints API is deprecated starting in K8s v1.33+. Use EndpointSlice.
 type Endpoints struct {
 	logger *slog.Logger
@@ -52,6 +53,7 @@ type Endpoints struct {
 }
 
 // NewEndpoints returns a new endpoints discovery.
+//
 // Deprecated: The Endpoints API is deprecated starting in K8s v1.33+. Use NewEndpointSlice.
 func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node, namespace cache.SharedInformer, eventCount *prometheus.CounterVec) *Endpoints {
 	if l == nil {

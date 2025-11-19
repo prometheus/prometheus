@@ -400,24 +400,24 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 	return true
 }
 
-// CreatedTimestamp returns CT or 0 if CT is not present on counters, summaries or histograms.
-func (p *ProtobufParser) CreatedTimestamp() int64 {
-	var ct *types.Timestamp
+// StartTimestamp returns ST or 0 if ST is not present on counters, summaries or histograms.
+func (p *ProtobufParser) StartTimestamp() int64 {
+	var st *types.Timestamp
 	switch p.dec.GetType() {
 	case dto.MetricType_COUNTER:
-		ct = p.dec.GetCounter().GetCreatedTimestamp()
+		st = p.dec.GetCounter().GetCreatedTimestamp()
 	case dto.MetricType_SUMMARY:
-		ct = p.dec.GetSummary().GetCreatedTimestamp()
+		st = p.dec.GetSummary().GetCreatedTimestamp()
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
-		ct = p.dec.GetHistogram().GetCreatedTimestamp()
+		st = p.dec.GetHistogram().GetCreatedTimestamp()
 	default:
 	}
-	if ct == nil {
+	if st == nil {
 		return 0
 	}
 	// Same as the gogo proto types.TimestampFromProto but straight to integer.
 	// and without validation.
-	return ct.GetSeconds()*1e3 + int64(ct.GetNanos())/1e6
+	return st.GetSeconds()*1e3 + int64(st.GetNanos())/1e6
 }
 
 // Next advances the parser to the next "sample" (emulating the behavior of a

@@ -527,11 +527,12 @@ Outer:
 
 // seriesLoadingString returns the input series in PromQL notation.
 func (tg *testGroup) seriesLoadingString() string {
-	result := fmt.Sprintf("load %v\n", shortDuration(tg.Interval))
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("load %v\n", shortDuration(tg.Interval)))
 	for _, is := range tg.InputSeries {
-		result += fmt.Sprintf("  %v %v\n", is.Series, is.Values)
+		result.WriteString(fmt.Sprintf("  %v %v\n", is.Series, is.Values))
 	}
-	return result
+	return result.String()
 }
 
 func shortDuration(d model.Duration) string {

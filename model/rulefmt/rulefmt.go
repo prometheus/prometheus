@@ -100,7 +100,7 @@ type ruleGroups struct {
 func (g *RuleGroups) Validate(node ruleGroups, nameValidationScheme model.ValidationScheme) (errs []error) {
 	if err := namevalidationutil.CheckNameValidationScheme(nameValidationScheme); err != nil {
 		errs = append(errs, err)
-		return
+		return errs
 	}
 
 	set := map[string]struct{}{}
@@ -286,7 +286,7 @@ func (r *Rule) Validate(node RuleNode, nameValidationScheme model.ValidationSche
 		nodes = append(nodes, WrappedError{err: err})
 	}
 
-	return
+	return nodes
 }
 
 // testTemplateParsing checks if the templates used in labels and annotations

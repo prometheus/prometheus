@@ -53,8 +53,9 @@ type writeHandler struct {
 	samplesWithInvalidLabelsTotal  prometheus.Counter
 	samplesAppendedWithoutMetadata prometheus.Counter
 
-	ingestCTZeroSample      bool
+	ingestSTZeroSample      bool
 	enableTypeAndUnitLabels bool
+	appendMetadata          bool
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -64,7 +65,7 @@ const maxAheadTime = 10 * time.Minute
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMsgs remoteapi.MessageTypes, ingestCTZeroSample, enableTypeAndUnitLabels bool) http.Handler {
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMsgs remoteapi.MessageTypes, ingestSTZeroSample, enableTypeAndUnitLabels, appendMetadata bool) http.Handler {
 	h := &writeHandler{
 		logger:     logger,
 		appendable: appendable,
@@ -81,8 +82,9 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable 
 			Help:      "The total number of received remote write samples (and histogram samples) which were ingested without corresponding metadata.",
 		}),
 
-		ingestCTZeroSample:      ingestCTZeroSample,
+		ingestSTZeroSample:      ingestSTZeroSample,
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
+		appendMetadata:          appendMetadata,
 	}
 	return remoteapi.NewWriteHandler(h, acceptedMsgs, remoteapi.WithWriteHandlerLogger(logger))
 }
@@ -323,7 +325,11 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		if h.enableTypeAndUnitLabels && (m.Type != model.MetricTypeUnknown || m.Unit != "") {
 			slb := labels.NewScratchBuilder(ls.Len() + 2) // +2 for __type__ and __unit__
 			ls.Range(func(l labels.Label) {
-				slb.Add(l.Name, l.Value)
+				// Skip __type__ and __unit__ labels if they exist in the incoming labels.
+				// They will be added from metadata to avoid duplicates.
+				if l.Name != model.MetricTypeLabel && l.Name != model.MetricUnitLabel {
+					slb.Add(l.Name, l.Value)
+				}
 			})
 			schema.Metadata{Type: m.Type, Unit: m.Unit}.AddToLabels(&slb)
 			slb.Sort()
@@ -351,20 +357,18 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 		allSamplesSoFar := rs.AllSamples()
 		var ref storage.SeriesRef
-
-		// Samples.
-		if h.ingestCTZeroSample && len(ts.Samples) > 0 && ts.Samples[0].Timestamp != 0 && ts.CreatedTimestamp != 0 {
-			// CT only needs to be ingested for the first sample, it will be considered
-			// out of order for the rest.
-			ref, err = app.AppendCTZeroSample(ref, ls, ts.Samples[0].Timestamp, ts.CreatedTimestamp)
-			if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
-				// Even for the first sample OOO is a common scenario because
-				// we can't tell if a CT was already ingested in a previous request.
-				// We ignore the error.
-				h.logger.Debug("Error when appending CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ts.CreatedTimestamp, "timestamp", ts.Samples[0].Timestamp)
-			}
-		}
 		for _, s := range ts.Samples {
+			if h.ingestSTZeroSample && s.StartTimestamp != 0 && s.Timestamp != 0 {
+				ref, err = app.AppendSTZeroSample(ref, ls, s.Timestamp, s.StartTimestamp)
+				// We treat OOO errors specially as it's a common scenario given:
+				// * We can't tell if ST was already ingested in a previous request.
+				// * We don't check if ST changed for stream of samples (we typically have one though),
+				// as it's checked in the AppendSTZeroSample reliably.
+				if err != nil && !errors.Is(err, storage.ErrOutOfOrderST) {
+					h.logger.Debug("Error when appending ST from remote write request", "err", err, "series", ls.String(), "start_timestamp", s.StartTimestamp, "timestamp", s.Timestamp)
+				}
+			}
+
 			ref, err = app.Append(ref, ls, s.GetTimestamp(), s.GetValue())
 			if err == nil {
 				rs.Samples++
@@ -385,15 +389,14 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 		// Native Histograms.
 		for _, hp := range ts.Histograms {
-			if h.ingestCTZeroSample && hp.Timestamp != 0 && ts.CreatedTimestamp != 0 {
-				// Differently from samples, we need to handle CT for each histogram instead of just the first one.
-				// This is because histograms and float histograms are stored separately, even if they have the same labels.
-				ref, err = h.handleHistogramZeroSample(app, ref, ls, hp, ts.CreatedTimestamp)
-				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
-					// Even for the first sample OOO is a common scenario because
-					// we can't tell if a CT was already ingested in a previous request.
-					// We ignore the error.
-					h.logger.Debug("Error when appending CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ts.CreatedTimestamp, "timestamp", hp.Timestamp)
+			if h.ingestSTZeroSample && hp.StartTimestamp != 0 && hp.Timestamp != 0 {
+				ref, err = h.handleHistogramZeroSample(app, ref, ls, hp, hp.StartTimestamp)
+				// We treat OOO errors specially as it's a common scenario given:
+				// * We can't tell if ST was already ingested in a previous request.
+				// * We don't check if ST changed for stream of samples (we typically have one though),
+				// as it's checked in the ingestSTZeroSample reliably.
+				if err != nil && !errors.Is(err, storage.ErrOutOfOrderST) {
+					h.logger.Debug("Error when appending ST from remote write request", "err", err, "series", ls.String(), "start_timestamp", hp.StartTimestamp, "timestamp", hp.Timestamp)
 				}
 			}
 			if hp.IsFloatHistogram() {
@@ -448,11 +451,15 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			h.logger.Error("failed to ingest exemplar, emitting error log, but no error for PRW caller", "err", err.Error(), "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e))
 		}
 
-		if _, err = app.UpdateMetadata(ref, ls, m); err != nil {
-			h.logger.Debug("error while updating metadata from remote write", "err", err)
-			// Metadata is attached to each series, so since Prometheus does not reject sample without metadata information,
-			// we don't report remote write error either. We increment metric instead.
-			samplesWithoutMetadata += rs.AllSamples() - allSamplesSoFar
+		// Only update metadata in WAL if the metadata-wal-records feature is enabled.
+		// Without this feature, metadata is not persisted to WAL.
+		if h.appendMetadata {
+			if _, err = app.UpdateMetadata(ref, ls, m); err != nil {
+				h.logger.Debug("error while updating metadata from remote write", "err", err)
+				// Metadata is attached to each series, so since Prometheus does not reject sample without metadata information,
+				// we don't report remote write error either. We increment metric instead.
+				samplesWithoutMetadata += rs.AllSamples() - allSamplesSoFar
+			}
 		}
 	}
 
@@ -468,14 +475,14 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 	return samplesWithoutMetadata, http.StatusBadRequest, errors.Join(badRequestErrs...)
 }
 
-// handleHistogramZeroSample appends CT as a zero-value sample with CT value as the sample timestamp.
-// It doesn't return errors in case of out of order CT.
-func (*writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist writev2.Histogram, ct int64) (storage.SeriesRef, error) {
+// handleHistogramZeroSample appends ST as a zero-value sample with st value as the sample timestamp.
+// It doesn't return errors in case of out of order ST.
+func (*writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist writev2.Histogram, st int64) (storage.SeriesRef, error) {
 	var err error
 	if hist.IsFloatHistogram() {
-		ref, err = app.AppendHistogramCTZeroSample(ref, l, hist.Timestamp, ct, nil, hist.ToFloatHistogram())
+		ref, err = app.AppendHistogramSTZeroSample(ref, l, hist.Timestamp, st, nil, hist.ToFloatHistogram())
 	} else {
-		ref, err = app.AppendHistogramCTZeroSample(ref, l, hist.Timestamp, ct, hist.ToIntHistogram(), nil)
+		ref, err = app.AppendHistogramSTZeroSample(ref, l, hist.Timestamp, st, hist.ToIntHistogram(), nil)
 	}
 	return ref, err
 }
@@ -492,9 +499,11 @@ type OTLPOptions struct {
 	LookbackDelta time.Duration
 	// Add type and unit labels to the metrics.
 	EnableTypeAndUnitLabels bool
-	// IngestCTZeroSample enables writing zero samples based on the start time
+	// IngestSTZeroSample enables writing zero samples based on the start time
 	// of metrics.
-	IngestCTZeroSample bool
+	IngestSTZeroSample bool
+	// AppendMetadata enables writing metadata to WAL when metadata-wal-records feature is enabled.
+	AppendMetadata bool
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
@@ -511,8 +520,9 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 		config:                  configFunc,
 		allowDeltaTemporality:   opts.NativeDelta,
 		lookbackDelta:           opts.LookbackDelta,
-		ingestCTZeroSample:      opts.IngestCTZeroSample,
+		ingestSTZeroSample:      opts.IngestSTZeroSample,
 		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
+		appendMetadata:          opts.AppendMetadata,
 		// Register metrics.
 		metrics: otlptranslator.NewCombinedAppenderMetrics(reg),
 	}
@@ -553,8 +563,9 @@ type rwExporter struct {
 	config                  func() config.Config
 	allowDeltaTemporality   bool
 	lookbackDelta           time.Duration
-	ingestCTZeroSample      bool
+	ingestSTZeroSample      bool
 	enableTypeAndUnitLabels bool
+	appendMetadata          bool
 
 	// Metrics.
 	metrics otlptranslator.CombinedAppenderMetrics
@@ -566,7 +577,7 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		Appender: rw.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
-	combinedAppender := otlptranslator.NewCombinedAppender(app, rw.logger, rw.ingestCTZeroSample, rw.metrics)
+	combinedAppender := otlptranslator.NewCombinedAppender(app, rw.logger, rw.ingestSTZeroSample, rw.appendMetadata, rw.metrics)
 	converter := otlptranslator.NewPrometheusConverter(combinedAppender)
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
 		AddMetricSuffixes:                    otlpCfg.TranslationStrategy.ShouldAddSuffixes(),

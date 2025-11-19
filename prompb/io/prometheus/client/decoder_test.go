@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"strings"
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
@@ -236,9 +237,11 @@ func generateMetricFamilyText(labelsCount int) string {
 	randomName := fmt.Sprintf("metric_%d", rand.Intn(1000))
 	randomHelp := fmt.Sprintf("Test metric to demonstrate forced corruption %d.", rand.Intn(1000))
 	labels10 := ""
+	var labels10Sb239 strings.Builder
 	for range labelsCount {
-		labels10 += generateLabels()
+		labels10Sb239.WriteString(generateLabels())
 	}
+	labels10 += labels10Sb239.String()
 	return fmt.Sprintf(`name: "%s"
 help: "%s"
 type: GAUGE

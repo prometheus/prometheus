@@ -1144,8 +1144,13 @@ func (ev *evaluator) Eval(ctx context.Context, expr parser.Expr) (v parser.Value
 
 // EvalSeriesHelper stores extra information about a series.
 type EvalSeriesHelper struct {
-	// Used to map left-hand to right-hand in binary operations.
-	signature string
+	// Ordinal number of join signature, used to map left-hand to right-hand in
+	// binary operations. For example given the following series, if
+	// the join signature is job, instance then:
+	// metric{job="a", instance="1", other="x"} -> sigOrdinal 0
+	// metric{job="a", instance="1", other="y"} -> sigOrdinal 0
+	// metric{job="a", instance="2", other="x"} -> sigOrdinal 1
+	sigOrdinal int
 }
 
 // EvalNodeHelper stores extra information and caches for evaluating a single node across steps.
@@ -1165,9 +1170,13 @@ type EvalNodeHelper struct {
 	lblResultBuf []byte
 
 	// For binary vector matching.
-	rightSigs    map[string]Sample
-	matchedSigs  map[string]map[uint64]struct{}
+	rightSigs    map[int]Sample
+	matchedSigs  map[int]map[uint64]struct{}
 	resultMetric map[string]labels.Labels
+	numSigs      int
+
+	// For info series matching.
+	rightStrSigs map[string]Sample
 
 	// Additional options for the evaluation.
 	enableDelayedNameRemoval bool
@@ -1252,11 +1261,12 @@ func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annota
 // function call results.
 // The prepSeries function (if provided) can be used to prepare the helper
 // for each series, then passed to each call funcCall.
-func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Labels, *EvalSeriesHelper), funcCall func([]Vector, Matrix, [][]EvalSeriesHelper, *EvalNodeHelper) (Vector, annotations.Annotations), exprs ...parser.Expr) (Matrix, annotations.Annotations) {
+func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatching, funcCall func([]Vector, Matrix, [][]EvalSeriesHelper, *EvalNodeHelper) (Vector, annotations.Annotations), exprs ...parser.Expr) (Matrix, annotations.Annotations) {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 	matrixes := make([]Matrix, len(exprs))
 	origMatrixes := make([]Matrix, len(exprs))
 	originalNumSamples := ev.currentSamples
+	useSignatures := matching != nil
 
 	var warnings annotations.Annotations
 	for i, e := range exprs {
@@ -1297,18 +1307,46 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 		bufHelpers    [][]EvalSeriesHelper // Buffer updated on each step
 	)
 
-	// If the series preparation function is provided, we should run it for
-	// every single series in the matrix.
-	if prepSeries != nil {
+	if useSignatures {
+		var (
+			// Function to compute the join signature for each series.
+			sigf  func(labels.Labels) string
+			buf   = make([]byte, 0, 1024)
+			names = slices.Clone(matching.MatchingLabels)
+		)
+		if matching.On {
+			slices.Sort(names)
+			sigf = func(lset labels.Labels) string {
+				return string(lset.BytesWithLabels(buf, names...))
+			}
+		} else { // "without"
+			names = append([]string{labels.MetricName}, names...)
+			slices.Sort(names)
+			sigf = func(lset labels.Labels) string {
+				return string(lset.BytesWithoutLabels(buf, names...))
+			}
+		}
+
 		seriesHelpers = make([][]EvalSeriesHelper, len(exprs))
 		bufHelpers = make([][]EvalSeriesHelper, len(exprs))
+
+		signatureToOrdinal := make(map[string]int)
 
 		for i := range exprs {
 			seriesHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 			bufHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 
 			for si, series := range matrixes[i] {
-				prepSeries(series.Metric, &seriesHelpers[i][si])
+				strSig := sigf(series.Metric)
+
+				if sigOrd, ok := signatureToOrdinal[strSig]; ok {
+					seriesHelpers[i][si] = EvalSeriesHelper{sigOrdinal: sigOrd}
+					continue
+				}
+
+				signatureToOrdinal[strSig] = enh.numSigs
+				seriesHelpers[i][si] = EvalSeriesHelper{sigOrdinal: enh.numSigs}
+				enh.numSigs++
 			}
 		}
 	}
@@ -1323,12 +1361,12 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 		for i := range exprs {
 			var bh []EvalSeriesHelper
 			var sh []EvalSeriesHelper
-			if prepSeries != nil {
+			if useSignatures {
 				bh = bufHelpers[i][:0]
 				sh = seriesHelpers[i]
 			}
 			vectors[i], bh = ev.gatherVector(ts, matrixes[i], vectors[i], bh, sh)
-			if prepSeries != nil {
+			if useSignatures {
 				bufHelpers[i] = bh
 			}
 		}
@@ -2129,27 +2167,21 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				return append(enh.Out, Sample{F: val}), nil
 			}, e.LHS, e.RHS)
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeVector:
-			// Function to compute the join signature for each series.
-			buf := make([]byte, 0, 1024)
-			sigf := signatureFunc(e.VectorMatching.On, buf, e.VectorMatching.MatchingLabels...)
-			initSignatures := func(series labels.Labels, h *EvalSeriesHelper) {
-				h.signature = sigf(series)
-			}
 			switch e.Op {
 			case parser.LAND:
-				return ev.rangeEval(ctx, initSignatures, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 					return ev.VectorAnd(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
 				}, e.LHS, e.RHS)
 			case parser.LOR:
-				return ev.rangeEval(ctx, initSignatures, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 					return ev.VectorOr(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
 				}, e.LHS, e.RHS)
 			case parser.LUNLESS:
-				return ev.rangeEval(ctx, initSignatures, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 					return ev.VectorUnless(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
 				}, e.LHS, e.RHS)
 			default:
-				return ev.rangeEval(ctx, initSignatures, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 					vec, err := ev.VectorBinop(e.Op, v[0], v[1], e.VectorMatching, e.ReturnBool, sh[0], sh[1], enh, e.PositionRange())
 					return vec, handleVectorBinopError(err, e)
 				}, e.LHS, e.RHS)
@@ -2310,7 +2342,7 @@ func reuseOrGetHPointSlices(prevSS *Series, numSteps int) (r []HPoint) {
 	if prevSS != nil && cap(prevSS.Histograms)-2*len(prevSS.Histograms) > 0 {
 		r = prevSS.Histograms[len(prevSS.Histograms):]
 		prevSS.Histograms = prevSS.Histograms[0:len(prevSS.Histograms):len(prevSS.Histograms)]
-		return
+		return r
 	}
 
 	return getHPointSlice(numSteps)
@@ -2322,7 +2354,7 @@ func reuseOrGetFPointSlices(prevSS *Series, numSteps int) (r []FPoint) {
 	if prevSS != nil && cap(prevSS.Floats)-2*len(prevSS.Floats) > 0 {
 		r = prevSS.Floats[len(prevSS.Floats):]
 		prevSS.Floats = prevSS.Floats[0:len(prevSS.Floats):len(prevSS.Floats)]
-		return
+		return r
 	}
 
 	return getFPointSlice(numSteps)
@@ -2720,16 +2752,15 @@ func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lh
 		return nil // Short-circuit: AND with nothing is nothing.
 	}
 
-	// The set of signatures for the right-hand side Vector.
-	rightSigs := map[string]struct{}{}
-	// Add all rhs samples to a map so we can easily find matches later.
+	// Ordinals of signatures present on the right-hand side.
+	rightSigOrdinalsPresent := make([]bool, enh.numSigs)
 	for _, sh := range rhsh {
-		rightSigs[sh.signature] = struct{}{}
+		rightSigOrdinalsPresent[sh.sigOrdinal] = true
 	}
 
 	for i, ls := range lhs {
 		// If there's a matching entry in the right-hand side Vector, add the sample.
-		if _, ok := rightSigs[lhsh[i].signature]; ok {
+		if rightSigOrdinalsPresent[lhsh[i].sigOrdinal] {
 			enh.Out = append(enh.Out, ls)
 		}
 	}
@@ -2748,15 +2779,15 @@ func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhs
 		return enh.Out
 	}
 
-	leftSigs := map[string]struct{}{}
+	leftSigOrdinalsPresent := make([]bool, enh.numSigs)
 	// Add everything from the left-hand-side Vector.
 	for i, ls := range lhs {
-		leftSigs[lhsh[i].signature] = struct{}{}
+		leftSigOrdinalsPresent[lhsh[i].sigOrdinal] = true
 		enh.Out = append(enh.Out, ls)
 	}
 	// Add all right-hand side elements which have not been added from the left-hand side.
 	for j, rs := range rhs {
-		if _, ok := leftSigs[rhsh[j].signature]; !ok {
+		if !leftSigOrdinalsPresent[rhsh[j].sigOrdinal] {
 			enh.Out = append(enh.Out, rs)
 		}
 	}
@@ -2774,13 +2805,14 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 		return enh.Out
 	}
 
-	rightSigs := map[string]struct{}{}
+	// Ordinals of signatures present on the right-hand side.
+	rightSigOrdinalsPresent := make([]bool, enh.numSigs)
 	for _, sh := range rhsh {
-		rightSigs[sh.signature] = struct{}{}
+		rightSigOrdinalsPresent[sh.sigOrdinal] = true
 	}
 
 	for i, ls := range lhs {
-		if _, ok := rightSigs[lhsh[i].signature]; !ok {
+		if !rightSigOrdinalsPresent[lhsh[i].sigOrdinal] {
 			enh.Out = append(enh.Out, ls)
 		}
 	}
@@ -2804,22 +2836,20 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		lhsh, rhsh = rhsh, lhsh
 	}
 
-	// All samples from the rhs hashed by the matching label/values.
+	// All samples from the rhs by their join signature ordinal.
 	if enh.rightSigs == nil {
-		enh.rightSigs = make(map[string]Sample, len(enh.Out))
+		enh.rightSigs = make(map[int]Sample, len(enh.Out))
 	} else {
-		for k := range enh.rightSigs {
-			delete(enh.rightSigs, k)
-		}
+		clear(enh.rightSigs)
 	}
 	rightSigs := enh.rightSigs
 
 	// Add all rhs samples to a map so we can easily find matches later.
 	for i, rs := range rhs {
-		sig := rhsh[i].signature
+		sigOrd := rhsh[i].sigOrdinal
 		// The rhs is guaranteed to be the 'one' side. Having multiple samples
 		// with the same signature means that the matching is many-to-many.
-		if duplSample, found := rightSigs[sig]; found {
+		if duplSample, found := rightSigs[sigOrd]; found {
 			// oneSide represents which side of the vector represents the 'one' in the many-to-one relationship.
 			oneSide := "right"
 			if matching.Card == parser.CardOneToMany {
@@ -2830,17 +2860,15 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			ev.errorf("found duplicate series for the match group %s on the %s hand-side of the operation: [%s, %s]"+
 				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, rs.Metric.String(), duplSample.Metric.String())
 		}
-		rightSigs[sig] = rs
+		rightSigs[sigOrd] = rs
 	}
 
-	// Tracks the match-signature. For one-to-one operations the value is nil. For many-to-one
-	// the value is a set of signatures to detect duplicated result elements.
+	// Tracks the matching by signature ordinals. For one-to-one operations the value is nil.
+	// For many-to-one the value is a set of hashes to detect duplicated result elements.
 	if enh.matchedSigs == nil {
-		enh.matchedSigs = make(map[string]map[uint64]struct{}, len(rightSigs))
+		enh.matchedSigs = make(map[int]map[uint64]struct{}, len(rightSigs))
 	} else {
-		for k := range enh.matchedSigs {
-			delete(enh.matchedSigs, k)
-		}
+		clear(enh.matchedSigs)
 	}
 	matchedSigs := enh.matchedSigs
 
@@ -2848,9 +2876,9 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	// the binary operation.
 	var lastErr error
 	for i, ls := range lhs {
-		sig := lhsh[i].signature
+		sigOrd := lhsh[i].sigOrdinal
 
-		rs, found := rightSigs[sig] // Look for a match in the rhs Vector.
+		rs, found := rightSigs[sigOrd] // Look for a match in the rhs Vector.
 		if !found {
 			continue
 		}
@@ -2885,12 +2913,12 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		if !ev.enableDelayedNameRemoval && returnBool {
 			metric = metric.DropReserved(schema.IsMetadataLabel)
 		}
-		insertedSigs, exists := matchedSigs[sig]
+		insertedSigs, exists := matchedSigs[sigOrd]
 		if matching.Card == parser.CardOneToOne {
 			if exists {
 				ev.errorf("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)")
 			}
-			matchedSigs[sig] = nil // Set existence to true.
+			matchedSigs[sigOrd] = nil // Set existence to true.
 		} else {
 			// In many-to-one matching the grouping labels have to ensure a unique metric
 			// for the result Vector. Check whether those labels have already been added for
@@ -2899,7 +2927,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 			if !exists {
 				insertedSigs = map[uint64]struct{}{}
-				matchedSigs[sig] = insertedSigs
+				matchedSigs[sigOrd] = insertedSigs
 			} else if _, duplicate := insertedSigs[insertSig]; duplicate {
 				ev.errorf("multiple matches for labels: grouping labels must ensure unique matches")
 			}
@@ -2916,20 +2944,6 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	return enh.Out, lastErr
 }
 
-func signatureFunc(on bool, b []byte, names ...string) func(labels.Labels) string {
-	if on {
-		slices.Sort(names)
-		return func(lset labels.Labels) string {
-			return string(lset.BytesWithLabels(b, names...))
-		}
-	}
-	names = append([]string{labels.MetricName}, names...)
-	slices.Sort(names)
-	return func(lset labels.Labels) string {
-		return string(lset.BytesWithoutLabels(b, names...))
-	}
-}
-
 // resultMetric returns the metric for the given sample(s) based on the Vector
 // binary operation and the matching options.
 func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, enh *EvalNodeHelper) labels.Labels {
@@ -2937,7 +2951,6 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 		enh.resultMetric = make(map[string]labels.Labels, len(enh.Out))
 	}
 
-	enh.resetBuilder(lhs)
 	buf := bytes.NewBuffer(enh.lblResultBuf[:0])
 	enh.lblBuf = lhs.Bytes(enh.lblBuf)
 	buf.Write(enh.lblBuf)
@@ -2950,6 +2963,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	}
 	str := string(enh.lblResultBuf)
 
+	enh.resetBuilder(lhs)
 	if changesMetricSchema(op) {
 		// Setting empty Metadata causes the deletion of those if they exists.
 		schema.Metadata{}.SetToLabels(enh.lb)
@@ -3058,7 +3072,6 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 
 // vectorElemBinop evaluates a binary operation between two Vector elements.
 func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram, pos posrange.PositionRange) (res float64, resH *histogram.FloatHistogram, keep bool, info, err error) {
-	opName := parser.ItemTypeStr[op]
 	switch {
 	case hlhs == nil && hrhs == nil:
 		{
@@ -3097,7 +3110,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			case parser.MUL:
 				return 0, hrhs.Copy().Mul(lhs).Compact(0), true, nil, nil
 			case parser.ADD, parser.SUB, parser.DIV, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
-				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
+				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("float", parser.ItemTypeStr[op], "histogram", pos)
 			}
 		}
 	case hlhs != nil && hrhs == nil:
@@ -3108,7 +3121,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			case parser.DIV:
 				return 0, hlhs.Copy().Div(rhs).Compact(0), true, nil, nil
 			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
-				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
+				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", parser.ItemTypeStr[op], "float", pos)
 			}
 		}
 	case hlhs != nil && hrhs != nil:
@@ -3148,7 +3161,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 				// This operation expects that both histograms are compacted.
 				return 0, hlhs, !hlhs.Equals(hrhs), nil, nil
 			case parser.MUL, parser.DIV, parser.POW, parser.MOD, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
-				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
+				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", parser.ItemTypeStr[op], "histogram", pos)
 			}
 		}
 	}
@@ -3172,6 +3185,7 @@ type groupedAggregation struct {
 	incrementalMean        bool // True after reverting to incremental calculation of the mean value.
 	counterResetSeen       bool // Counter reset hint CounterReset seen. Currently only used for histogram samples.
 	notCounterResetSeen    bool // Counter reset hint NotCounterReset seen. Currently only used for histogram samples.
+	dropName               bool // True if any sample in this group has DropName set.
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.
@@ -3200,6 +3214,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				floatMean:              f,
 				incompatibleHistograms: false,
 				groupCount:             1,
+				dropName:               inputMatrix[si].DropName,
 			}
 			switch op {
 			case parser.AVG, parser.SUM:
@@ -3254,6 +3269,10 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 
 		if group.incompatibleHistograms {
 			continue
+		}
+
+		if inputMatrix[si].DropName {
+			group.dropName = true
 		}
 
 		switch op {
@@ -3494,7 +3513,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 
 		ss := &outputMatrix[ri]
 		addToSeries(ss, enh.Ts, aggr.floatValue, aggr.histogramValue, numSteps)
-		ss.DropName = inputMatrix[ri].DropName
+		ss.DropName = aggr.dropName
 	}
 
 	return annos
@@ -3838,13 +3857,13 @@ func handleVectorBinopError(err error, e *parser.BinaryExpr) annotations.Annotat
 	if err == nil {
 		return nil
 	}
-	op := parser.ItemTypeStr[e.Op]
-	pos := e.PositionRange()
 	if errors.Is(err, annotations.PromQLInfo) || errors.Is(err, annotations.PromQLWarning) {
 		return annotations.New().Add(err)
 	}
 	// TODO(NeerajGartia21): Test the exact annotation output once the testing framework can do so.
 	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+		op := parser.ItemTypeStr[e.Op]
+		pos := e.PositionRange()
 		return annotations.New().Add(annotations.NewIncompatibleBucketLayoutInBinOpWarning(op, pos))
 	}
 	return nil
@@ -4132,13 +4151,17 @@ func makeInt64Pointer(val int64) *int64 {
 
 // RatioSampler allows unit-testing (previously: Randomizer).
 type RatioSampler interface {
-	// Return this sample "offset" between [0.0, 1.0]
-	sampleOffset(ts int64, sample *Sample) float64
-	AddRatioSample(r float64, sample *Sample) bool
+	// SampleOffset returns this sample "offset" between [0.0, 1.0].
+	SampleOffset(metric *labels.Labels) float64
+	// AddRatioSample reports whether the sampling offset for the given sample falls within the specified ratio limit.
+	AddRatioSample(ratioLimit float64, sample *Sample) bool
+	// AddRatioSampleWithOffset reports whether the given sampling offset falls within the specified ratio limit.
+	AddRatioSampleWithOffset(ratioLimit, sampleOffset float64) bool
 }
 
 // HashRatioSampler uses Hash(labels.String()) / maxUint64 as a "deterministic"
 // value in [0.0, 1.0].
+// It is a utility used for limit_ratio aggregations.
 type HashRatioSampler struct{}
 
 var ratiosampler RatioSampler = NewHashRatioSampler()
@@ -4147,14 +4170,42 @@ func NewHashRatioSampler() *HashRatioSampler {
 	return &HashRatioSampler{}
 }
 
-func (*HashRatioSampler) sampleOffset(_ int64, sample *Sample) float64 {
+// SampleOffset returns a deterministic sampling offset in the range [0, 1)
+// derived from the hash of the provided metric labels.
+//
+// The offset is computed by normalizing the 64-bit hash value of the label set
+// to a float64 fraction of math.MaxUint64. This ensures that metrics with the
+// same label set always produce the same offset, while different label sets
+// produce uniformly distributed offsets suitable for sampling decisions.
+func (*HashRatioSampler) SampleOffset(metric *labels.Labels) float64 {
 	const (
 		float64MaxUint64 = float64(math.MaxUint64)
 	)
-	return float64(sample.Metric.Hash()) / float64MaxUint64
+	return float64(metric.Hash()) / float64MaxUint64
 }
 
+// AddRatioSample returns a bool indicating if the sampling offset for the given sample is
+// within the given ratio limit.
+//
+// See SampleOffset() for further details on the sample offset.
+// See AddRatioSampleWithOffset() for further details on the ratioLimit and sampling offset comparison.
 func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, sample *Sample) bool {
+	sampleOffset := s.SampleOffset(&sample.Metric)
+	return s.AddRatioSampleWithOffset(ratioLimit, sampleOffset)
+}
+
+// AddRatioSampleWithOffset reports whether the given sampling offset falls within
+// the specified ratio limit.
+//
+// The ratioLimit must be in the range [-1, 1]. The sampleOffset should be derived
+// using SampleOffset().
+//
+// When ratioLimit >= 0, the function returns true if sampleOffset < ratioLimit.
+// When ratioLimit < 0, the function returns true if sampleOffset >= 1 + ratioLimit.
+//
+// Note that this method could be moved into AddRatioSample and removed from the Prometheus codebase,
+// but it is useful for downstream projects using this code as a library.
+func (*HashRatioSampler) AddRatioSampleWithOffset(ratioLimit, sampleOffset float64) bool {
 	// If ratioLimit >= 0: add sample if sampleOffset is lesser than ratioLimit
 	//
 	// 0.0        ratioLimit                1.0
@@ -4175,7 +4226,6 @@ func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, sample *Sample) bo
 	// e.g.:
 	//   sampleOffset==0.3 && ratioLimit==-0.6
 	//     0.3 >= 0.4 ? --> don't add sample
-	sampleOffset := s.sampleOffset(sample.T, sample)
 	return (ratioLimit >= 0 && sampleOffset < ratioLimit) ||
 		(ratioLimit < 0 && sampleOffset >= (1.0+ratioLimit))
 }

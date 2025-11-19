@@ -120,7 +120,7 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 			}
 			app, err = chunk.Appender()
 			if err != nil {
-				return
+				return chks, err
 			}
 		}
 		switch encoding {

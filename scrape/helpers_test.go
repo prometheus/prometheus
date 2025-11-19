@@ -19,7 +19,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"math/rand"
 	"strings"
 	"sync"
 	"testing"
@@ -57,7 +56,7 @@ func (nopAppender) AppendHistogram(storage.SeriesRef, labels.Labels, int64, *his
 	return 3, nil
 }
 
-func (nopAppender) AppendHistogramCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (nopAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	return 0, nil
 }
 
@@ -65,7 +64,7 @@ func (nopAppender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Met
 	return 4, nil
 }
 
-func (nopAppender) AppendCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
+func (nopAppender) AppendSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
 	return 5, nil
 }
 
@@ -148,10 +147,11 @@ func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels
 		f:      v,
 	})
 
-	if ref == 0 {
-		ref = storage.SeriesRef(rand.Uint64())
-	}
 	if a.next == nil {
+		if ref == 0 {
+			// Use labels hash as a stand-in for unique series reference, to avoid having to track all series.
+			ref = storage.SeriesRef(lset.Hash())
+		}
 		return ref, nil
 	}
 
@@ -184,29 +184,29 @@ func (a *collectResultAppender) AppendHistogram(ref storage.SeriesRef, l labels.
 	return a.next.AppendHistogram(ref, l, t, h, fh)
 }
 
-func (a *collectResultAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, _, ct int64, h *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *collectResultAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.Labels, _, st int64, h *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if h != nil {
-		return a.AppendHistogram(ref, l, ct, &histogram.Histogram{}, nil)
+		return a.AppendHistogram(ref, l, st, &histogram.Histogram{}, nil)
 	}
-	return a.AppendHistogram(ref, l, ct, nil, &histogram.FloatHistogram{})
+	return a.AppendHistogram(ref, l, st, nil, &histogram.FloatHistogram{})
 }
 
 func (a *collectResultAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 	a.pendingMetadata = append(a.pendingMetadata, metadataEntry{metric: l, m: m})
-	if ref == 0 {
-		ref = storage.SeriesRef(rand.Uint64())
-	}
 	if a.next == nil {
+		if ref == 0 {
+			ref = storage.SeriesRef(l.Hash())
+		}
 		return ref, nil
 	}
 
 	return a.next.UpdateMetadata(ref, l, m)
 }
 
-func (a *collectResultAppender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, _, ct int64) (storage.SeriesRef, error) {
-	return a.Append(ref, l, ct, 0.0)
+func (a *collectResultAppender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, _, st int64) (storage.SeriesRef, error) {
+	return a.Append(ref, l, st, 0.0)
 }
 
 func (a *collectResultAppender) Commit() error {

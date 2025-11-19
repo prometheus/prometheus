@@ -25,6 +25,7 @@ import (
 
 const (
 	// MetricName is a special label name that represent a metric name.
+	//
 	// Deprecated: Use schema.Metadata structure and its methods.
 	MetricName = "__name__"
 

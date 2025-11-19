@@ -166,6 +166,7 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overri
 		false,
 		5*time.Minute,
 		false,
+		false,
 		overrideErrorCode,
 	)
 

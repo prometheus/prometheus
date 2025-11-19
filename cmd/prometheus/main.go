@@ -234,6 +234,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Experimental additional scrape metrics enabled")
 			case "metadata-wal-records":
 				c.scrape.AppendMetadata = true
+				c.web.AppendMetadata = true
 				c.tsdb.EnableMetadataWALRecords = true
 				logger.Info("Experimental metadata records in WAL enabled")
 			case "metadata-series-cache":
@@ -258,16 +259,12 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				parser.ExperimentalDurationExpr = true
 				logger.Info("Experimental duration expression parsing enabled.")
 			case "native-histograms":
-				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
-				t := true
-				config.DefaultConfig.GlobalConfig.ScrapeNativeHistograms = &t
-				config.DefaultGlobalConfig.ScrapeNativeHistograms = &t
-				logger.Warn("This option for --enable-feature is being phased out. It currently changes the default for the scrape_native_histograms scrape config setting to true, but will become a no-op in v3.9+. Stop using this option and set scrape_native_histograms in the scrape config instead.", "option", o)
+				logger.Warn("This option for --enable-feature is a no-op. To scrape native histograms, set the scrape_native_histograms scrape config setting to true.", "option", o)
 			case "ooo-native-histograms":
 				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			case "created-timestamp-zero-ingestion":
-				c.scrape.EnableCreatedTimestampZeroIngestion = true
-				c.web.CTZeroIngestionEnabled = true
+				c.scrape.EnableStartTimestampZeroIngestion = true
+				c.web.STZeroIngestionEnabled = true
 				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
@@ -567,7 +564,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative, promql-duration-expr, use-uncached-io, promql-extended-range-selectors. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative, promql-duration-expr, use-uncached-io, promql-extended-range-selectors. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -1732,7 +1729,7 @@ func (notReadyAppender) AppendHistogram(storage.SeriesRef, labels.Labels, int64,
 	return 0, tsdb.ErrNotReady
 }
 
-func (notReadyAppender) AppendHistogramCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (notReadyAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 
@@ -1740,7 +1737,7 @@ func (notReadyAppender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadat
 	return 0, tsdb.ErrNotReady
 }
 
-func (notReadyAppender) AppendCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
+func (notReadyAppender) AppendSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 

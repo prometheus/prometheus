@@ -13,10 +13,15 @@
 
 package notifier
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 type alertMetrics struct {
-	latency                 *prometheus.SummaryVec
+	latencySummary          *prometheus.SummaryVec
+	latencyHistogram        *prometheus.HistogramVec
 	errors                  *prometheus.CounterVec
 	sent                    *prometheus.CounterVec
 	dropped                 prometheus.Counter
@@ -25,14 +30,31 @@ type alertMetrics struct {
 	alertmanagersDiscovered prometheus.GaugeFunc
 }
 
-func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanagersDiscovered func() float64) *alertMetrics {
+func newAlertMetrics(
+	r prometheus.Registerer,
+	queueCap int,
+	queueLen, alertmanagersDiscovered func() float64,
+) *alertMetrics {
 	m := &alertMetrics{
-		latency: prometheus.NewSummaryVec(prometheus.SummaryOpts{
+		latencySummary: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Namespace:  namespace,
 			Subsystem:  subsystem,
 			Name:       "latency_seconds",
 			Help:       "Latency quantiles for sending alert notifications.",
 			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+		},
+			[]string{alertmanagerLabel},
+		),
+		latencyHistogram: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "latency_histogram_seconds",
+			Help:      "Latency histogram for sending alert notifications.",
+
+			Buckets:                         []float64{.01, .1, 1, 10},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		},
 			[]string{alertmanagerLabel},
 		),
@@ -80,7 +102,8 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanag
 
 	if r != nil {
 		r.MustRegister(
-			m.latency,
+			m.latencySummary,
+			m.latencyHistogram,
 			m.errors,
 			m.sent,
 			m.dropped,

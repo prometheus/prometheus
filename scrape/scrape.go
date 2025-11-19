@@ -41,6 +41,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -214,7 +215,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			opts.alwaysScrapeClassicHist,
 			opts.convertClassicHistToNHCB,
 			cfg.ScrapeNativeHistogramsEnabled(),
-			options.EnableCreatedTimestampZeroIngestion,
+			options.EnableStartTimestampZeroIngestion,
 			options.EnableTypeAndUnitLabels,
 			options.ExtraMetrics,
 			options.AppendMetadata,
@@ -642,6 +643,16 @@ func (sp *scrapePool) refreshTargetLimitErr() error {
 	return nil
 }
 
+func (sp *scrapePool) disableEndOfRunStalenessMarkers(targets []*Target) {
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
+	for i := range targets {
+		if l, ok := sp.loops[targets[i].hash()]; ok {
+			l.disableEndOfRunStalenessMarkers()
+		}
+	}
+}
+
 func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 	if limits == nil {
 		return nil
@@ -941,7 +952,7 @@ type scrapeLoop struct {
 
 	alwaysScrapeClassicHist  bool
 	convertClassicHistToNHCB bool
-	enableCTZeroIngestion    bool
+	enableSTZeroIngestion    bool
 	enableTypeAndUnitLabels  bool
 	fallbackScrapeProtocol   string
 
@@ -958,7 +969,7 @@ type scrapeLoop struct {
 	cancel      func()
 	stopped     chan struct{}
 
-	disabledEndOfRunStalenessMarkers bool
+	disabledEndOfRunStalenessMarkers atomic.Bool
 
 	reportExtraMetrics        bool
 	appendMetadataToWAL       bool
@@ -987,11 +998,9 @@ type scrapeCache struct {
 	// be a pointer so we can update it.
 	droppedSeries map[string]*uint64
 
-	// seriesCur and seriesPrev store the labels of series that were seen
-	// in the current and previous scrape.
-	// We hold two maps and swap them out to save allocations.
-	seriesCur  map[uint64]*cacheEntry
-	seriesPrev map[uint64]*cacheEntry
+	// Series that were seen in the current and previous scrape, for staleness detection.
+	seriesCur  map[storage.SeriesRef]*cacheEntry
+	seriesPrev map[storage.SeriesRef]*cacheEntry
 
 	// TODO(bwplotka): Consider moving Metadata API to use WAL instead of scrape loop to
 	// avoid locking (using metadata API can block scraping).
@@ -1018,8 +1027,8 @@ func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	return &scrapeCache{
 		series:        map[string]*cacheEntry{},
 		droppedSeries: map[string]*uint64{},
-		seriesCur:     map[uint64]*cacheEntry{},
-		seriesPrev:    map[uint64]*cacheEntry{},
+		seriesCur:     map[storage.SeriesRef]*cacheEntry{},
+		seriesPrev:    map[storage.SeriesRef]*cacheEntry{},
 		metadata:      map[string]*metaEntry{},
 		metrics:       metrics,
 	}
@@ -1067,13 +1076,9 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		c.metaMtx.Unlock()
 	}
 
-	// Swap current and previous series.
+	// Swap current and previous series then clear the new current, to save allocations.
 	c.seriesPrev, c.seriesCur = c.seriesCur, c.seriesPrev
-
-	// We have to delete every single key in the map.
-	for k := range c.seriesCur {
-		delete(c.seriesCur, k)
-	}
+	clear(c.seriesCur)
 
 	c.iter++
 }
@@ -1110,13 +1115,13 @@ func (c *scrapeCache) getDropped(met []byte) bool {
 	return ok
 }
 
-func (c *scrapeCache) trackStaleness(hash uint64, ce *cacheEntry) {
-	c.seriesCur[hash] = ce
+func (c *scrapeCache) trackStaleness(ref storage.SeriesRef, ce *cacheEntry) {
+	c.seriesCur[ref] = ce
 }
 
 func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool) {
-	for h, ce := range c.seriesPrev {
-		if _, ok := c.seriesCur[h]; !ok {
+	for ref, ce := range c.seriesPrev {
+		if _, ok := c.seriesCur[ref]; !ok {
 			if !f(ce.ref, ce.lset) {
 				break
 			}
@@ -1255,7 +1260,7 @@ func newScrapeLoop(ctx context.Context,
 	alwaysScrapeClassicHist bool,
 	convertClassicHistToNHCB bool,
 	enableNativeHistogramScraping bool,
-	enableCTZeroIngestion bool,
+	enableSTZeroIngestion bool,
 	enableTypeAndUnitLabels bool,
 	reportExtraMetrics bool,
 	appendMetadataToWAL bool,
@@ -1313,7 +1318,7 @@ func newScrapeLoop(ctx context.Context,
 		timeout:                       timeout,
 		alwaysScrapeClassicHist:       alwaysScrapeClassicHist,
 		convertClassicHistToNHCB:      convertClassicHistToNHCB,
-		enableCTZeroIngestion:         enableCTZeroIngestion,
+		enableSTZeroIngestion:         enableSTZeroIngestion,
 		enableTypeAndUnitLabels:       enableTypeAndUnitLabels,
 		fallbackScrapeProtocol:        fallbackScrapeProtocol,
 		enableNativeHistogramScraping: enableNativeHistogramScraping,
@@ -1401,7 +1406,7 @@ mainLoop:
 
 	close(sl.stopped)
 
-	if !sl.disabledEndOfRunStalenessMarkers {
+	if !sl.disabledEndOfRunStalenessMarkers.Load() {
 		sl.endOfRunStaleness(last, ticker, sl.interval)
 	}
 }
@@ -1567,6 +1572,11 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	case <-time.After(interval / 10):
 	}
 
+	// Check if end-of-run staleness markers have been disabled while we were waiting.
+	if sl.disabledEndOfRunStalenessMarkers.Load() {
+		return
+	}
+
 	// Call sl.append again with an empty scrape to trigger stale markers.
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
@@ -1601,7 +1611,7 @@ func (sl *scrapeLoop) stop() {
 }
 
 func (sl *scrapeLoop) disableEndOfRunStalenessMarkers() {
-	sl.disabledEndOfRunStalenessMarkers = true
+	sl.disabledEndOfRunStalenessMarkers.Store(true)
 }
 
 func (sl *scrapeLoop) getCache() *scrapeCache {
@@ -1630,7 +1640,7 @@ func (sl *scrapeLoop) updateStaleMarkers(app storage.Appender, defTime int64) (e
 		}
 		return err == nil
 	})
-	return
+	return err
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
@@ -1640,7 +1650,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		// Empty scrape. Just update the stale makers and swap the cache (but don't flush it).
 		err = sl.updateStaleMarkers(app, defTime)
 		sl.cache.iterDone(false)
-		return
+		return total, added, seriesAdded, err
 	}
 
 	p, err := textparse.New(b, contentType, sl.symbolTable, textparse.ParserOptions{
@@ -1648,7 +1658,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		IgnoreNativeHistograms:                  !sl.enableNativeHistogramScraping,
 		ConvertClassicHistogramsToNHCB:          sl.convertClassicHistToNHCB,
 		KeepClassicOnClassicAndNativeHistograms: sl.alwaysScrapeClassicHist,
-		OpenMetricsSkipCTSeries:                 sl.enableCTZeroIngestion,
+		OpenMetricsSkipSTSeries:                 sl.enableSTZeroIngestion,
 		FallbackContentType:                     sl.fallbackScrapeProtocol,
 	})
 	if p == nil {
@@ -1658,7 +1668,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 			"fallback_media_type", sl.fallbackScrapeProtocol,
 			"err", err,
 		)
-		return
+		return total, added, seriesAdded, err
 	}
 	if err != nil {
 		sl.l.Debug(
@@ -1789,21 +1799,21 @@ loop:
 		if seriesAlreadyScraped && parsedTimestamp == nil {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
-			if sl.enableCTZeroIngestion {
-				if ctMs := p.CreatedTimestamp(); ctMs != 0 {
+			if sl.enableSTZeroIngestion {
+				if stMs := p.StartTimestamp(); stMs != 0 {
 					if isHistogram {
 						if h != nil {
-							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, ctMs, h, nil)
+							ref, err = app.AppendHistogramSTZeroSample(ref, lset, t, stMs, h, nil)
 						} else {
-							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, ctMs, nil, fh)
+							ref, err = app.AppendHistogramSTZeroSample(ref, lset, t, stMs, nil, fh)
 						}
 					} else {
-						ref, err = app.AppendCTZeroSample(ref, lset, t, ctMs)
+						ref, err = app.AppendSTZeroSample(ref, lset, t, stMs)
 					}
-					if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
-						// CT is an experimental feature. For now, we don't need to fail the
+					if err != nil && !errors.Is(err, storage.ErrOutOfOrderST) { // OOO is a common case, ignoring completely for now.
+						// ST is an experimental feature. For now, we don't need to fail the
 						// scrape on errors updating the created timestamp, log debug.
-						sl.l.Debug("Error when appending CT in scrape loop", "series", string(met), "ct", ctMs, "t", t, "err", err)
+						sl.l.Debug("Error when appending ST in scrape loop", "series", string(met), "ct", stMs, "t", t, "err", err)
 					}
 				}
 			}
@@ -1821,7 +1831,7 @@ loop:
 
 		if err == nil {
 			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil {
-				sl.cache.trackStaleness(ce.hash, ce)
+				sl.cache.trackStaleness(ce.ref, ce)
 			}
 		}
 
@@ -1842,7 +1852,7 @@ loop:
 			if ce != nil && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
 				// Bypass staleness logic if there is an explicit timestamp.
 				// But make sure we only do this if we have a cache entry (ce) for our series.
-				sl.cache.trackStaleness(hash, ce)
+				sl.cache.trackStaleness(ref, ce)
 			}
 			if sampleAdded && sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
@@ -1902,7 +1912,7 @@ loop:
 			if !seriesCached || lastMeta.lastIterChange == sl.cache.iter {
 				// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
 				// However, optional TYPE etc metadata and broken OM text can break this, detect those cases here.
-				// TODO(bwplotka): Consider moving this to parser as many parser users end up doing this (e.g. CT and NHCB parsing).
+				// TODO(bwplotka): Consider moving this to parser as many parser users end up doing this (e.g. ST and NHCB parsing).
 				if isSeriesPartOfFamily(lset.Get(labels.MetricName), lastMFName, lastMeta.Type) {
 					if _, merr := app.UpdateMetadata(ref, lset, lastMeta.Metadata); merr != nil {
 						// No need to fail the scrape on errors appending metadata.
@@ -1941,7 +1951,7 @@ loop:
 	if err == nil {
 		err = sl.updateStaleMarkers(app, defTime)
 	}
-	return
+	return total, added, seriesAdded, err
 }
 
 func isSeriesPartOfFamily(mName string, mfName []byte, typ model.MetricType) bool {
@@ -2139,32 +2149,32 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 	b := labels.NewBuilderWithSymbolTable(sl.symbolTable)
 
 	if err = sl.addReportSample(app, scrapeHealthMetric, ts, health, b); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeDurationMetric, ts, duration.Seconds(), b); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeSamplesMetric, ts, float64(scraped), b); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, samplesPostRelabelMetric, ts, float64(added), b); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeSeriesAddedMetric, ts, float64(seriesAdded), b); err != nil {
-		return
+		return err
 	}
 	if sl.reportExtraMetrics {
 		if err = sl.addReportSample(app, scrapeTimeoutMetric, ts, sl.timeout.Seconds(), b); err != nil {
-			return
+			return err
 		}
 		if err = sl.addReportSample(app, scrapeSampleLimitMetric, ts, float64(sl.sampleLimit), b); err != nil {
-			return
+			return err
 		}
 		if err = sl.addReportSample(app, scrapeBodySizeBytesMetric, ts, float64(bytes), b); err != nil {
-			return
+			return err
 		}
 	}
-	return
+	return err
 }
 
 func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err error) {
@@ -2174,32 +2184,32 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 	b := labels.NewBuilder(labels.EmptyLabels())
 
 	if err = sl.addReportSample(app, scrapeHealthMetric, ts, stale, b); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeDurationMetric, ts, stale, b); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeSamplesMetric, ts, stale, b); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, samplesPostRelabelMetric, ts, stale, b); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeSeriesAddedMetric, ts, stale, b); err != nil {
-		return
+		return err
 	}
 	if sl.reportExtraMetrics {
 		if err = sl.addReportSample(app, scrapeTimeoutMetric, ts, stale, b); err != nil {
-			return
+			return err
 		}
 		if err = sl.addReportSample(app, scrapeSampleLimitMetric, ts, stale, b); err != nil {
-			return
+			return err
 		}
 		if err = sl.addReportSample(app, scrapeBodySizeBytesMetric, ts, stale, b); err != nil {
-			return
+			return err
 		}
 	}
-	return
+	return err
 }
 
 func (sl *scrapeLoop) addReportSample(app storage.Appender, s reportSample, t int64, v float64, b *labels.Builder) error {

@@ -673,7 +673,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           7,
 							Schema:          1,
@@ -689,7 +689,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           4,
 							Schema:          1,
@@ -746,7 +746,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           7,
 							Schema:          1,
@@ -762,7 +762,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           4,
 							Schema:          1,
@@ -819,7 +819,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           7,
 							Schema:          1,
@@ -835,7 +835,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						ls:               labelsAnother,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           4,
 							Schema:          1,
@@ -1146,7 +1146,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           3,
 							Sum:             3,
@@ -1162,7 +1162,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           11,
 							Sum:             5,
@@ -1219,7 +1219,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           3,
 							Sum:             3,
@@ -1235,7 +1235,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           11,
 							Sum:             5,
@@ -1292,7 +1292,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           6,
 							Sum:             3,
@@ -1308,7 +1308,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 						ls:               labelsAnother,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           11,
 							Sum:             5,

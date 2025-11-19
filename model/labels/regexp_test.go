@@ -988,7 +988,7 @@ func TestFindEqualOrPrefixStringMatchers(t *testing.T) {
 			return true
 		})
 
-		return
+		return matches, ok
 	}
 
 	t.Run("empty matcher", func(t *testing.T) {

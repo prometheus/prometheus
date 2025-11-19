@@ -45,20 +45,6 @@ statistics. Currently this is limited to totalQueryableSamples.
 When disabled in either the engine or the query, per-step statistics are not
 computed at all.
 
-## Native Histograms
-
-`--enable-feature=native-histograms`
-
-_This feature flag is being phased out. You should not use it anymore._
-
-Native histograms are a stable feature by now. However, to scrape native
-histograms, a scrape config setting `scrape_native_histograms` is required. To
-ease the transition, this feature flag sets the default value of
-`scrape_native_histograms` to `true`. From v3.9 on, this feature flag will be a
-true no-op, and the default value of `scrape_native_histograms` will be always
-`false`. If you are still using this feature flag while running v3.8, update
-your scrape configs and stop using the feature flag before upgrading to v3.9.
-
 ## Experimental PromQL functions
 
 `--enable-feature=promql-experimental-functions`
@@ -67,20 +53,27 @@ Enables PromQL functions that are considered experimental. These functions
 might change their name, syntax, or semantics. They might also get removed
 entirely.
 
-## Created Timestamps Zero Injection
+## Start (Created) Timestamps Zero Injection
 
 `--enable-feature=created-timestamp-zero-ingestion`
 
-Enables ingestion of created timestamp. Created timestamps are injected as 0 valued samples when appropriate. See [PromCon talk](https://youtu.be/nWf0BfQ5EEA) for details.
+> NOTE: CreatedTimestamp feature was renamed to StartTimestamp for consistency. The above flag uses old name for stability.
 
-Currently Prometheus supports created timestamps only on the traditional
-Prometheus Protobuf protocol (WIP for other protocols). Therefore, enabling
-this feature pre-sets the global `scrape_protocols` configuration option to 
-`[ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ]`,
-resulting in negotiating the Prometheus Protobuf protocol with first priority
-(unless the `scrape_protocols` option is set to a different value explicitly).
+Enables ingestion of start timestamp. Start timestamps are injected as 0 valued samples when appropriate. See [PromCon talk](https://youtu.be/nWf0BfQ5EEA) for details.
 
-Besides enabling this feature in Prometheus, created timestamps need to be exposed by the application being scraped.
+Currently, Prometheus supports start timestamps on the
+
+* `PrometheusProto`
+* `OpenMetrics1.0.0`
+  
+
+From the above, Prometheus recommends `PrometheusProto`. This is because OpenMetrics 1.0 Start Timestamp information is shared as a `<metric>_created` metric and parsing those
+are prone to errors and expensive (thus, adding an overhead). You also need to be careful to not pollute your Prometheus with extra `_created` metrics.
+  
+Therefore, when `created-timestamp-zero-ingestion` is enabled Prometheus changes the global `scrape_protocols` default configuration option to 
+`[ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ]`, resulting in negotiating the Prometheus Protobuf protocol first (unless the `scrape_protocols` option is set to a different value explicitly).
+
+Besides enabling this feature in Prometheus, start timestamps need to be exposed by the application being scraped.
 
 ## Concurrent evaluation of independent rules
 
@@ -170,6 +163,8 @@ GitHub](https://github.com/prometheus/prometheus/issues/11397#issuecomment-14519
 These queries are rare to occur and easy to fix. (In the above example,
 removing `by (__name__)` doesn't change anything without the feature flag and
 fixes the possible problem with the feature flag.)
+
+It is possible to craft a query that aggregates by `__name__` and puts samples with and without delayed name removal into the same group. In that case, the name is removed from the affected group. Note that this case hardly occurs in queries that fulfill a practical purpose.
 
 ## Auto Reload Config
 

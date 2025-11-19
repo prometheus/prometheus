@@ -3,6 +3,7 @@
 ## main / unreleased
 
 * [FEATURE] Templates: Add urlQueryEscape to template functions. #17403
+* [BUGFIX] TSDB: Register `prometheus_tsdb_sample_ooo_delta` metric properly. #17477
 
 ## 3.7.3 / 2025-10-29
 
