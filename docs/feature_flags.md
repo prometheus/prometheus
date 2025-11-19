@@ -107,28 +107,8 @@ This must be used if you would like to send metadata using the new remote write 
 `--enable-feature=metadata-series-cache`
 
 When enabled, Prometheus will populate series-level metadata cache in TSDB head
-without writing metadata to WAL records. This provides efficient metadata lookup for
-Remote Write 2.0 at near-zero cost.
-
-**How it works:**
-- Metadata is stored in memory per series (in `memSeries.meta` field)
-- No WAL overhead (metadata is not written to WAL unless `metadata-wal-records` is also enabled)
-- Metadata is ephemeral (lost on restart, not persisted)
-- Compatible with Remote Write 2.0 metadata sending
-
-**Use with Remote Write 2.0:**
-This feature is designed for Remote Write 2.0, where metadata can be looked up
-efficiently from the series reference without expensive scrape cache lookups or
-WAL persistence overhead.
-
-**Comparison with metadata-wal-records:**
-- `metadata-wal-records`: Persists metadata to WAL (durable, survives restarts, has WAL overhead)
-- `metadata-series-cache`: In-memory only (faster, lower overhead, ephemeral)
-- Both can be enabled together for durability + performance (metadata written to WAL and cached in memory)
-
-**Note:** This is useful for Remote Write 2.0 when you want efficient metadata
-access without the WAL persistence cost. Metadata will be repopulated from scrapes
-after restart.
+without writing metadata to WAL records. This feature is designed for Remote Write 2.0, where metadata can be looked up
+efficiently from the series reference.
 
 ## Delay compaction start time
 
