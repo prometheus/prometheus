@@ -4747,7 +4747,7 @@ func TestMetadataInWAL(t *testing.T) {
 	}
 
 	opts := DefaultOptions()
-	opts.EnableMetadataWALRecords = true
+	opts.AppendMetadata = true
 
 	db := newTestDB(t, opts)
 	ctx := context.Background()
@@ -4817,7 +4817,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	ctx := context.Background()
 	numSamples := 10000
 	opts := DefaultHeadOptions()
-	opts.EnableMetadataWALRecords = true
+	opts.AppendMetadata = true
 	opts.ChunkRange = int64(numSamples) * 10
 	opts.EnableExemplarStorage = true
 	opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
@@ -4924,7 +4924,7 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	}
 
 	opts := DefaultOptions()
-	opts.EnableMetadataWALRecords = true
+	opts.AppendMetadata = true
 	db := openTestDB(t, opts, nil)
 	ctx := context.Background()
 

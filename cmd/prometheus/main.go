@@ -235,7 +235,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "metadata-wal-records":
 				c.scrape.AppendMetadata = true
 				c.web.AppendMetadata = true
-				c.tsdb.EnableMetadataWALRecords = true
+				c.tsdb.AppendMetadata = true
 				logger.Info("Experimental metadata records in WAL enabled")
 			case "metadata-series-cache":
 				c.scrape.EnableMetadataSeriesCache = true
@@ -1883,7 +1883,7 @@ type tsdbOptions struct {
 	EnableExemplarStorage          bool
 	MaxExemplars                   int64
 	EnableMemorySnapshotOnShutdown bool
-	EnableMetadataWALRecords       bool
+	AppendMetadata                 bool
 	EnableDelayedCompaction        bool
 	CompactionDelayMaxPercent      int
 	EnableOverlappingCompaction    bool
@@ -1906,7 +1906,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableExemplarStorage:          opts.EnableExemplarStorage,
 		MaxExemplars:                   opts.MaxExemplars,
 		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
-		EnableMetadataWALRecords:       opts.EnableMetadataWALRecords,
+		AppendMetadata:                 opts.AppendMetadata,
 		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
 		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,

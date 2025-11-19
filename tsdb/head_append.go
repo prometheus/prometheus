@@ -1075,7 +1075,7 @@ func (a *headAppender) log() error {
 	for _, b := range a.batches {
 		// Only log metadata to WAL if metadata-wal-records feature is enabled.
 		// Metadata is always committed to memory (see commitMetadata), but WAL logging is optional.
-		if len(b.metadata) > 0 && a.head.opts.EnableMetadataWALRecords {
+		if len(b.metadata) > 0 && a.head.opts.AppendMetadata {
 			rec = enc.Metadata(b.metadata, buf)
 			buf = rec[:0]
 

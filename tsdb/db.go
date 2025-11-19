@@ -169,9 +169,9 @@ type Options struct {
 	// Enables the snapshot of in-memory chunks on shutdown. This makes restarts faster.
 	EnableMemorySnapshotOnShutdown bool
 
-	// EnableMetadataWALRecords enables writing metadata to WAL records.
+	// AppendMetadata enables writing metadata to WAL records.
 	// When false, metadata is only stored in memory (memSeries.meta).
-	EnableMetadataWALRecords bool
+	AppendMetadata bool
 
 	// MaxExemplars sets the size, in # of exemplars stored, of the single circular buffer used to store exemplars in memory.
 	// See tsdb/exemplar.go, specifically the CircularExemplarStorage struct and it's constructor NewCircularExemplarStorage.
@@ -969,7 +969,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
-	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
+	headOpts.AppendMetadata = opts.AppendMetadata
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding

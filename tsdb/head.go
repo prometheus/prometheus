@@ -178,7 +178,7 @@ type HeadOptions struct {
 	SeriesCallback                 SeriesLifecycleCallback
 	EnableExemplarStorage          bool
 	EnableMemorySnapshotOnShutdown bool
-	EnableMetadataWALRecords       bool
+	AppendMetadata                 bool
 
 	IsolationDisabled bool
 
