@@ -544,14 +544,14 @@ func (*OOOCompactionHeadIndexReader) Close() error {
 
 // HeadAndOOOQuerier queries both the head and the out-of-order head.
 type HeadAndOOOQuerier struct {
-	oooQuerier storage.Querier
-	querier    storage.Querier // Used for LabelNames, LabelValues, but may be nil if head was truncated in the mean time, in which case we ignore it and not close it in the end.
+	oooHeadQuerier storage.Querier
+	querier        storage.Querier // Used for LabelNames, LabelValues, but may be nil if head was truncated in the mean time, in which case we ignore it and not close it in the end.
 }
 
 func NewHeadAndOOOQuerier(oooHeadQuerier, headQuerier storage.Querier) storage.Querier {
 	return &HeadAndOOOQuerier{
-		oooQuerier: oooHeadQuerier,
-		querier:    headQuerier,
+		oooHeadQuerier: oooHeadQuerier,
+		querier:        headQuerier,
 	}
 }
 
@@ -570,7 +570,7 @@ func (q *HeadAndOOOQuerier) LabelNames(ctx context.Context, hints *storage.Label
 }
 
 func (q *HeadAndOOOQuerier) Close() error {
-	if err := q.oooQuerier.Close(); err != nil {
+	if err := q.oooHeadQuerier.Close(); err != nil {
 		return err
 	}
 	if q.querier == nil {
@@ -580,19 +580,19 @@ func (q *HeadAndOOOQuerier) Close() error {
 }
 
 func (q *HeadAndOOOQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	return q.oooQuerier.Select(ctx, sortSeries, hints, matchers...)
+	return q.oooHeadQuerier.Select(ctx, sortSeries, hints, matchers...)
 }
 
 // HeadAndOOOChunkQuerier queries both the head and the out-of-order head.
 type HeadAndOOOChunkQuerier struct {
-	oooQuerier storage.ChunkQuerier
-	querier    storage.ChunkQuerier
+	oooHeadQuerier storage.ChunkQuerier
+	querier        storage.ChunkQuerier
 }
 
 func NewHeadAndOOOChunkQuerier(oooHeadQuerier, headQuerier storage.ChunkQuerier) storage.ChunkQuerier {
 	return &HeadAndOOOChunkQuerier{
-		oooQuerier: oooHeadQuerier,
-		querier:    headQuerier,
+		oooHeadQuerier: oooHeadQuerier,
+		querier:        headQuerier,
 	}
 }
 
@@ -611,7 +611,7 @@ func (q *HeadAndOOOChunkQuerier) LabelNames(ctx context.Context, hints *storage.
 }
 
 func (q *HeadAndOOOChunkQuerier) Close() error {
-	if err := q.oooQuerier.Close(); err != nil {
+	if err := q.oooHeadQuerier.Close(); err != nil {
 		return err
 	}
 	if q.querier == nil {
@@ -621,5 +621,5 @@ func (q *HeadAndOOOChunkQuerier) Close() error {
 }
 
 func (q *HeadAndOOOChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
-	return q.oooQuerier.Select(ctx, sortSeries, hints, matchers...)
+	return q.oooHeadQuerier.Select(ctx, sortSeries, hints, matchers...)
 }
