@@ -215,7 +215,7 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 	}
 
 	for _, f := range []fmtCase{
-		//{name: "XOR (ST ignored)", newChunkFn: func() Chunk { return NewXORChunk() }},
+		{name: "XOR (ST ignored)", newChunkFn: func() Chunk { return NewXORChunk() }},
 		//{name: "XORvarbit (ST ignored)", newChunkFn: func() Chunk { return NewXORVarbitChunk() }},
 		//{name: "XORvarbitTS (ST ignored)", newChunkFn: func() Chunk { return NewXORVarbitTSChunk() }},
 		//{name: "XORV2Naive", newChunkFn: func() Chunk { return NewXORV2NaiveChunk() }},
@@ -231,7 +231,7 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 }
 
 /*
-	export bench=bw.bench/append.xoroptstv2 && go test \
+	export bench=bw.bench/append.xoroptstv3 && go test \
 	  -run '^$' -bench '^BenchmarkAppender' \
 	  -benchtime 1s -count 6 -cpu 2 -timeout 999m \
 	  | tee ${bench}.txt
@@ -362,9 +362,9 @@ func BenchmarkProfileBits(b *testing.B) {
 	diffs := map[string]*bitProfiler[any]{}
 
 	foreachFmtSampleCase(b, func(b *testing.B, f fmtCase, s sampleCase) {
-		if s.name != "vt=random steps/st=delta" {
-			return
-		}
+		//if s.name != "vt=random steps/st=delta" {
+		//	return
+		//}
 
 		c := f.newChunkFn()
 

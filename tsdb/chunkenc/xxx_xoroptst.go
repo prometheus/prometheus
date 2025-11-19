@@ -96,10 +96,8 @@ func (c *xorOptSTChunk) AppenderV2() (AppenderV2, error) {
 		leading:  it.leading,
 		trailing: it.trailing,
 
-		numTotal:                 it.numTotal,
-		stZeroInitially:          it.stZeroInitially,
-		stSameUntil:              it.stSameUntil,
-		stChangeTrackingDisabled: it.stSameUntil != it.numTotal,
+		numTotal:        it.numTotal,
+		firstSTChangeOn: it.firstSTChangeOn,
 	}
 	return a, nil
 }
@@ -126,15 +124,7 @@ type xorOptSTAppender struct {
 	b        *bstream
 	numTotal uint16
 
-	// stZeroInitially if true, indicates that the first ST sample was zero
-	// and there is no first ST value encoded.
-	stZeroInitially bool
-	// stSameUntil is a sample number (counting from 0) when ST changed over the
-	// first ST appended value.
-	// This means that reader should read first sample and then start reading
-	// STs only from stSameUntil sample onwards.
-	stSameUntil              uint16
-	stChangeTrackingDisabled bool
+	firstSTChangeOn uint16
 
 	st, t   int64
 	v       float64
@@ -161,8 +151,8 @@ type xorOptSTtIterator struct {
 	br       bstreamReader
 	numTotal uint16
 
-	stZeroInitially bool
-	stSameUntil     uint16
+	firstSTKnown    bool
+	firstSTChangeOn uint16
 
 	numRead uint16
 
@@ -175,6 +165,8 @@ type xorOptSTtIterator struct {
 	stDelta int64
 	tDelta  uint64
 	err     error
+
+	nextFn func() ValueType
 }
 
 func (it *xorOptSTtIterator) Seek(t int64) ValueType {
@@ -218,7 +210,7 @@ func (it *xorOptSTtIterator) Reset(b []byte) {
 	// We skip initial headers for actual samples.
 	it.br = newBReader(b[chunkHeaderSize+chunkSTHeaderSize:])
 	it.numTotal = binary.BigEndian.Uint16(b)
-	it.stZeroInitially, it.stSameUntil = readSTHeader(b[chunkHeaderSize:], it.numTotal)
+	it.firstSTKnown, it.firstSTChangeOn = readSTHeader(b[chunkHeaderSize:])
 	it.numRead = 0
 	it.st = 0
 	it.t = 0
@@ -228,6 +220,7 @@ func (it *xorOptSTtIterator) Reset(b []byte) {
 	it.stDelta = 0
 	it.tDelta = 0
 	it.err = nil
+	it.nextFn = it.initNext
 }
 
 func (a *xorOptSTAppender) Append(st, t int64, v float64) {
@@ -244,8 +237,7 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 			for _, b := range buf[:binary.PutVarint(buf, st)] {
 				a.b.writeByte(b)
 			}
-		} else {
-			a.stZeroInitially = true
+			writeHeaderFirstSTKnown(a.b.bytes()[chunkHeaderSize:])
 		}
 
 		for _, b := range buf[:binary.PutVarint(buf, t)] {
@@ -268,9 +260,16 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 		}
 		a.writeVDelta(v)
 	default:
+		if a.firstSTChangeOn == 0 && a.numTotal == maxFirstSTChangeOn {
+			// We are at the 127th sample. firstSTChangeOn can only fit 7 bits due to a
+			// single byte header constrain, which is fine, given typical 120 sample size.
+			a.firstSTChangeOn = a.numTotal
+			writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], a.firstSTChangeOn)
+		}
+
 		stDelta = st - a.st
 		sdod := stDelta - a.stDelta
-		if sdod != 0 || a.stChangeTrackingDisabled {
+		if sdod != 0 || a.firstSTChangeOn != 0 {
 			stChanged = true
 			putClassicVarbitInt(a.b, sdod)
 		}
@@ -290,30 +289,33 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 	a.numTotal++
 	binary.BigEndian.PutUint16(a.b.bytes(), a.numTotal)
 
-	// Bump stSameUntil if we see continuously unchanged ST over all samples so far.
-	if !a.stChangeTrackingDisabled && !stChanged {
-		a.stSameUntil++
+	// firstSTChangeOn == 0 indicates that we have one ST value (zero or not)
+	// for all STs in the appends until now. If we see a first "update"
+	// we are saving this number in the header and continue tracking all DoD (including zeros).
+	if a.firstSTChangeOn == 0 && stChanged {
+		a.firstSTChangeOn = a.numTotal - 1
+		writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], a.firstSTChangeOn)
 	}
-	a.stChangeTrackingDisabled = !updateSTHeader(a.b.bytes()[chunkHeaderSize:], a.stZeroInitially, a.stSameUntil, a.numTotal)
 }
 
 func (a *xorOptSTAppender) BitProfiledAppend(p *bitProfiler[any], st, t int64, v float64) {
 	var (
-		stDelta int64
-		tDelta  uint64
+		stDelta   int64
+		tDelta    uint64
+		stChanged bool
 	)
-	// TODO update!!!
-	num := binary.BigEndian.Uint16(a.b.bytes())
-	stChangedOnNum := binary.BigEndian.Uint16(a.b.bytes()[chunkHeaderSize:])
 
-	switch num {
+	switch a.numTotal {
 	case 0:
 		buf := make([]byte, binary.MaxVarintLen64)
-		p.Write(a.b, t, "st", func() {
-			for _, b := range buf[:binary.PutVarint(buf, st)] {
-				a.b.writeByte(b)
-			}
-		})
+		if st != 0 {
+			p.Write(a.b, t, "st", func() {
+				for _, b := range buf[:binary.PutVarint(buf, st)] {
+					a.b.writeByte(b)
+				}
+				writeHeaderFirstSTKnown(a.b.bytes()[chunkHeaderSize:])
+			})
+		}
 		p.Write(a.b, t, "t", func() {
 			for _, b := range buf[:binary.PutVarint(buf, t)] {
 				a.b.writeByte(b)
@@ -325,14 +327,14 @@ func (a *xorOptSTAppender) BitProfiledAppend(p *bitProfiler[any], st, t int64, v
 	case 1:
 		buf := make([]byte, binary.MaxVarintLen64)
 		stDelta = st - a.st
-		p.Write(a.b, t, "stDelta", func() {
-			if stDelta != 0 {
-				stChangedOnNum = num
+		if stDelta != 0 {
+			stChanged = true
+			p.Write(a.b, t, "stDelta", func() {
 				for _, b := range buf[:binary.PutVarint(buf, stDelta)] {
 					a.b.writeByte(b)
 				}
-			}
-		})
+			})
+		}
 
 		tDelta = uint64(t - a.t)
 		p.Write(a.b, t, "tDelta", func() {
@@ -343,47 +345,57 @@ func (a *xorOptSTAppender) BitProfiledAppend(p *bitProfiler[any], st, t int64, v
 		p.Write(a.b, v, "v", func() {
 			a.writeVDelta(v)
 		})
-
 	default:
 		stDelta = st - a.st
 		sdod := stDelta - a.stDelta
-		if stChangedOnNum != 0 {
+		if sdod != 0 || a.firstSTChangeOn != 0 {
 			p.Write(a.b, dodSample{t: t, tDelta: tDelta, dod: sdod}, "tDod", func() {
-				putClassicVarbitInt(a.b, sdod)
-			})
-		} else if sdod != 0 {
-			stChangedOnNum = num
-			p.Write(a.b, dodSample{t: t, tDelta: tDelta, dod: sdod}, "tDod", func() {
+				stChanged = true
 				putClassicVarbitInt(a.b, sdod)
 			})
 		}
 
 		tDelta = uint64(t - a.t)
 		dod := int64(tDelta - a.tDelta)
-		p.Write(a.b, dodSample{t: t, tDelta: tDelta, dod: dod}, "tDod", func() {
+		p.Write(a.b, dodSample{t: t, tDelta: tDelta, dod: sdod}, "tDod", func() {
 			putClassicVarbitInt(a.b, dod)
 		})
 		p.Write(a.b, v, "v", func() {
 			a.writeVDelta(v)
 		})
 	}
+
 	a.st = st
 	a.t = t
 	a.v = v
-	binary.BigEndian.PutUint16(a.b.bytes(), num+1)
-	binary.BigEndian.PutUint16(a.b.bytes()[chunkHeaderSize:], stChangedOnNum)
 	a.tDelta = tDelta
 	a.stDelta = stDelta
+
+	a.numTotal++
+	binary.BigEndian.PutUint16(a.b.bytes(), a.numTotal)
+
+	// firstSTChangeOn == 0 indicates that we have one ST value (zero or not)
+	// for all STs in the appends until now. If we see a first "update" OR
+	// we are at the 127th sample, we are saving this number in the header
+	// and continue tracking all DoD (including zeros). 0x7F is due to a single byte
+	// header constrain, which is fine, given typical 120 sample size.
+	if a.firstSTChangeOn == 0 && (stChanged || a.numTotal > 0x7F) {
+		a.firstSTChangeOn = a.numTotal - 1
+		writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], a.firstSTChangeOn)
+	}
 }
 
 func (it *xorOptSTtIterator) Next() ValueType {
 	if it.err != nil || it.numRead == it.numTotal {
 		return ValNone
 	}
+	return it.nextFn()
+}
 
+func (it *xorOptSTtIterator) initNext() ValueType {
 	switch it.numRead {
 	case 0:
-		if !it.stZeroInitially {
+		if it.firstSTKnown {
 			st, err := binary.ReadVarint(&it.br)
 			if err != nil {
 				it.err = err
@@ -391,33 +403,6 @@ func (it *xorOptSTtIterator) Next() ValueType {
 			}
 			it.st = st
 		}
-	case 1:
-		if it.stSameUntil <= it.numRead {
-			stDelta, err := binary.ReadVarint(&it.br)
-			if err != nil {
-				it.err = err
-				return ValNone
-			}
-			it.stDelta = stDelta
-			it.st += it.stDelta
-		}
-	default:
-		if it.stSameUntil <= it.numRead {
-			sdod, err := readClassicVarbitInt(&it.br)
-			if err != nil {
-				it.err = err
-				return ValNone
-			}
-			it.stDelta = it.stDelta + sdod
-			it.st += it.stDelta
-		}
-	}
-	return it.stAgnosticNext()
-}
-
-func (it *xorOptSTtIterator) stAgnosticNext() ValueType {
-	switch it.numRead {
-	case 0:
 		t, err := binary.ReadVarint(&it.br)
 		if err != nil {
 			it.err = err
@@ -434,6 +419,23 @@ func (it *xorOptSTtIterator) stAgnosticNext() ValueType {
 		it.numRead++
 		return ValFloat
 	case 1:
+		if it.firstSTChangeOn == 0 {
+			// This means we have same (zero or non-zero) ST value for the rest of
+			// chunk. We can set rest of next functions to use ~classic XOR chunk iterations.
+			it.nextFn = it.stAgnosticDoDNext
+		} else if it.firstSTChangeOn == 1 {
+			stDelta, err := binary.ReadVarint(&it.br)
+			if err != nil {
+				it.err = err
+				return ValNone
+			}
+			it.stDelta = stDelta
+			it.st += it.stDelta
+
+			// We got early ST change on the second sample, likely delta.
+			// Continue ST rich flow from the next iteration.
+			it.nextFn = it.stDoDNext
+		}
 		tDelta, err := binary.ReadUvarint(&it.br)
 		if err != nil {
 			it.err = err
@@ -443,81 +445,67 @@ func (it *xorOptSTtIterator) stAgnosticNext() ValueType {
 		it.t += int64(it.tDelta)
 		return it.readValue()
 	default:
-		dod, err := readClassicVarbitInt(&it.br)
-		if err != nil {
-			it.err = err
-			return ValNone
+		if it.firstSTChangeOn == it.numRead {
+			it.nextFn = it.stDoDNext
+			return it.stDoDNext()
 		}
-
-		it.tDelta = uint64(int64(it.tDelta) + dod)
-		it.t += int64(it.tDelta)
-		return it.readValue()
+		return it.stAgnosticDoDNext()
 	}
 }
 
-// NOTE: A lot of info we can pack within 1 byte. We can:
-// * we can project stSameUntil input into 63 number (e.g. stSameUntil*63/numTotal)
-// * we can project stSameUntil input into 127 number (e.g. stSameUntil*127/numTotal) which would fit exact samples.
-// * we could use 6 bits to indicate where ST changes, when it's worth to write (and read it). For 120 samples it means 20 sample chunks.
-// updateSTHeader updates one byte ST header with stZeroInitially and stSameUntil data.
-// numTotal is used to encode a special case of a chunk having a single ST value (so far).
-//
-// updateSTHeader returns true is returned if it's ok to skip ST tracking until next changed value. False means encoders have to start tracking
-// all ST DoD values.
-//
-// NOTE: Given 1B constrain we can only fit 127 samples before we don't have space for tracking stSameUntil.
-// For those cases encoders and decoders would have to start tracking ST even if they don't change for the rest
-// of a chunk. This is fine as typically we see 120 chunk samples.
-func updateSTHeader(b []byte, stZeroInitially bool, stSameUntil, numTotal uint16) (ok bool) {
-	// First bit indicates initial ST value. 0 bit means 0 ST, otherwise non-zero (need to read first varint).
-	b[0] = 0x00
-	if !stZeroInitially {
-		b[0] = 0x80
+func (it *xorOptSTtIterator) stDoDNext() ValueType {
+	sdod, err := readClassicVarbitInt(&it.br)
+	if err != nil {
+		it.err = err
+		return ValNone
 	}
+	it.stDelta = it.stDelta + sdod
+	it.st += it.stDelta
+	return it.stAgnosticDoDNext()
+}
 
-	if stSameUntil > 0x7F {
+func (it *xorOptSTtIterator) stAgnosticDoDNext() ValueType {
+	dod, err := readClassicVarbitInt(&it.br)
+	if err != nil {
+		it.err = err
+		return ValNone
+	}
+	it.tDelta = uint64(int64(it.tDelta) + dod)
+	it.t += int64(it.tDelta)
+	return it.readValue()
+}
+
+const maxFirstSTChangeOn = 0x7F
+
+func writeHeaderFirstSTKnown(b []byte) {
+	b[0] = 0x80
+}
+
+func writeHeaderFirstSTChangeOn(b []byte, firstSTChangeOn uint16) {
+	// First bit indicates the initial ST value.
+	// Here we save the sample number from where the first change occurs in the
+	// rest of the byte (7 bits)
+
+	if firstSTChangeOn > maxFirstSTChangeOn {
 		// This should never happen, would cause corruption (ST already skipped but shouldn't).
-		return false
+		return
 	}
-
-	if stSameUntil >= numTotal {
-		// Fast path for the fully unchanged chunk.
-		// 0000 0000 for noST.
-		// 1000 0000 for single ST value for the whole chunk.
-		return stSameUntil != 0x7F
-	}
-
-	rest := uint8(stSameUntil)
-	if rest == 0 {
-		// stSameUntil == 0 makes no sense, but we treat it as stSameUntil == 1
-		rest = 1
-	}
-	b[0] |= rest
-	return false
+	b[0] |= uint8(firstSTChangeOn)
 }
 
-func readSTHeader(b []byte, numTotal uint16) (stZeroInitially bool, stSameUntil uint16) {
+func readSTHeader(b []byte) (firstSTKnown bool, firstSTChangeOn uint16) {
 	if b[0] == 0x00 {
-		// Maybe easier without numTotal?
-		return true, numTotal
+		return false, 0
 	}
 	if b[0] == 0x80 {
-		return false, numTotal
+		return true, 0
 	}
-	if b[0] == 0x7F {
-		return true, 127
-	}
-	if b[0] == 0xFF {
-		return false, 127
-	}
-
 	mask := byte(0x80)
-	if b[0]&mask == 0 {
-		stZeroInitially = true
+	if b[0]&mask != 0 {
+		firstSTKnown = true
 	}
-
 	mask = 0x7F
-	return stZeroInitially, uint16(b[0] & mask)
+	return firstSTKnown, uint16(b[0] & mask)
 }
 
 func (it *xorOptSTtIterator) readValue() ValueType {

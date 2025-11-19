@@ -14,7 +14,6 @@
 package chunkenc
 
 import (
-	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -22,104 +21,26 @@ import (
 
 func TestSTHeader(t *testing.T) {
 	b := make([]byte, 1)
-	require.True(t, updateSTHeader(b, false, 120, 120))
-	stZeroInitially, stSameUntil := readSTHeader(b, 120)
-	require.False(t, stZeroInitially)
-	require.Equal(t, uint16(120), stSameUntil)
+	writeHeaderFirstSTKnown(b)
+	firstSTKnown, firstSTChangeOn := readSTHeader(b)
+	require.True(t, firstSTKnown)
+	require.Equal(t, uint16(0), firstSTChangeOn)
 
-	require.True(t, updateSTHeader(b, true, 120, 120))
-	stZeroInitially, stSameUntil = readSTHeader(b, 120)
-	require.True(t, stZeroInitially)
-	require.Equal(t, uint16(120), stSameUntil)
+	b = make([]byte, 1)
+	firstSTKnown, firstSTChangeOn = readSTHeader(b)
+	require.False(t, firstSTKnown)
+	require.Equal(t, uint16(0), firstSTChangeOn)
 
-	require.False(t, updateSTHeader(b, false, 20, 120))
-	stZeroInitially, stSameUntil = readSTHeader(b, 120)
-	require.False(t, stZeroInitially)
-	require.Equal(t, uint16(20), stSameUntil)
+	b = make([]byte, 1)
+	writeHeaderFirstSTChangeOn(b, 1)
+	firstSTKnown, firstSTChangeOn = readSTHeader(b)
+	require.False(t, firstSTKnown)
+	require.Equal(t, uint16(1), firstSTChangeOn)
 
-	require.False(t, updateSTHeader(b, true, 20, 120))
-	stZeroInitially, stSameUntil = readSTHeader(b, 120)
-	require.True(t, stZeroInitially)
-	require.Equal(t, uint16(20), stSameUntil)
-
-	require.False(t, updateSTHeader(b, true, 21, 120))
-	_, stSameUntil = readSTHeader(b, 120)
-	require.Equal(t, uint16(21), stSameUntil)
-
-	require.False(t, updateSTHeader(b, true, 19, 120))
-	_, stSameUntil = readSTHeader(b, 120)
-	require.Equal(t, uint16(19), stSameUntil)
-
-	require.False(t, updateSTHeader(b, true, 1, 120))
-	_, stSameUntil = readSTHeader(b, 120)
-	require.Equal(t, uint16(1), stSameUntil)
-
-	require.False(t, updateSTHeader(b, true, 2, 120))
-	_, stSameUntil = readSTHeader(b, 120)
-	require.Equal(t, uint16(2), stSameUntil)
-
-	require.False(t, updateSTHeader(b, true, 119, 120))
-	_, stSameUntil = readSTHeader(b, 120)
-	require.Equal(t, uint16(119), stSameUntil)
-
-	require.False(t, updateSTHeader(b, true, 127, 128))
-	_, stSameUntil = readSTHeader(b, 128)
-	require.Equal(t, uint16(127), stSameUntil)
-
-	// Not full chunks works fine.
-	require.True(t, updateSTHeader(b, false, 21, 21))
-	stZeroInitially, stSameUntil = readSTHeader(b, 21)
-	require.False(t, stZeroInitially)
-	require.Equal(t, uint16(21), stSameUntil)
-
-	require.False(t, updateSTHeader(b, false, 21, 90))
-	stZeroInitially, stSameUntil = readSTHeader(b, 90)
-	require.False(t, stZeroInitially)
-	require.Equal(t, uint16(21), stSameUntil)
-
-	require.False(t, updateSTHeader(b, true, 19, 90))
-	stZeroInitially, stSameUntil = readSTHeader(b, 90)
-	require.True(t, stZeroInitially)
-	require.Equal(t, uint16(19), stSameUntil)
-
-	require.False(t, updateSTHeader(b, false, 4, 127))
-	stZeroInitially, stSameUntil = readSTHeader(b, 127)
-	require.False(t, stZeroInitially)
-	require.Equal(t, uint16(4), stSameUntil)
-
-	require.False(t, updateSTHeader(b, false, 4, 129))
-	stZeroInitially, stSameUntil = readSTHeader(b, 129)
-	require.False(t, stZeroInitially)
-	require.Equal(t, uint16(4), stSameUntil)
-
-	require.False(t, updateSTHeader(b, false, 4, 130))
-	stZeroInitially, stSameUntil = readSTHeader(b, 131)
-	require.False(t, stZeroInitially)
-	require.Equal(t, uint16(4), stSameUntil)
-
-	require.False(t, updateSTHeader(b, false, 4, 130))
-	stZeroInitially, stSameUntil = readSTHeader(b, 131)
-	require.False(t, stZeroInitially)
-	require.Equal(t, uint16(4), stSameUntil)
-
-	require.False(t, updateSTHeader(b, true, 127, 9999))
-	_, stSameUntil = readSTHeader(b, 9999)
-	require.Equal(t, uint16(127), stSameUntil)
-
-	// Wrong/odd inputs.
-	require.False(t, updateSTHeader(b, true, 0, 120))
-	_, stSameUntil = readSTHeader(b, 120)
-	require.Equal(t, uint16(1), stSameUntil)
-
-	require.False(t, updateSTHeader(b, true, 200, 120))
-	_, stSameUntil = readSTHeader(b, 120)
-	require.Equal(t, uint16(120), stSameUntil)
-
-	require.False(t, updateSTHeader(b, true, math.MaxUint16, 120))
-	_, stSameUntil = readSTHeader(b, 120)
-	require.Equal(t, uint16(120), stSameUntil)
-
-	require.False(t, updateSTHeader(b, true, 20, math.MaxUint16))
-	_, stSameUntil = readSTHeader(b, math.MaxUint16)
-	require.Equal(t, uint16(20), stSameUntil)
+	b = make([]byte, 1)
+	writeHeaderFirstSTKnown(b)
+	writeHeaderFirstSTChangeOn(b, 119)
+	firstSTKnown, firstSTChangeOn = readSTHeader(b)
+	require.True(t, firstSTKnown)
+	require.Equal(t, uint16(119), firstSTChangeOn)
 }
