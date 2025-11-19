@@ -81,8 +81,7 @@ type Options struct {
 	// can be written to the WAL and thus read for remote write.
 	// TODO: implement some form of metadata storage
 	AppendMetadata bool
-	// Option to enable series-level metadata cache without WAL records.
-	// When enabled, UpdateMetadata is called to populate memSeries.meta for efficient Remote Write 2.0.
+	// Option to enable series-level metadata cache for efficient metadata lookup.
 	EnableMetadataSeriesCache bool
 	// Option to increase the interval used by scrape manager to throttle target groups updates.
 	DiscoveryReloadInterval model.Duration

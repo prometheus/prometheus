@@ -1906,7 +1906,6 @@ loop:
 			sl.metrics.targetScrapeExemplarOutOfOrder.Add(float64(outOfOrderExemplars))
 		}
 
-		// Call UpdateMetadata if either WAL records OR series cache is enabled.
 		if (sl.appendMetadataToWAL || sl.enableMetadataSeriesCache) && lastMeta != nil {
 			// Is it new series OR did metadata change for this family?
 			if !seriesCached || lastMeta.lastIterChange == sl.cache.iter {
