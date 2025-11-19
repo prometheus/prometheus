@@ -4083,10 +4083,10 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators(t *te
 	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier was closed")
 }
 
-func newTestDB(t *testing.T) *DB {
+func newTestDB(t *testing.T, opts *Options) *DB {
 	dir := t.TempDir()
 
-	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
+	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
@@ -4746,7 +4746,10 @@ func TestMetadataInWAL(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	db := newTestDB(t)
+	opts := DefaultOptions()
+	opts.EnableMetadataWALRecords = true
+
+	db := newTestDB(t, opts)
 	ctx := context.Background()
 
 	// Add some series so we can append metadata to them.
@@ -4813,7 +4816,12 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 
 	ctx := context.Background()
 	numSamples := 10000
-	hb, w := newTestHead(t, int64(numSamples)*10, compression.None, false)
+	opts := DefaultHeadOptions()
+	opts.EnableMetadataWALRecords = true
+	opts.ChunkRange = int64(numSamples) * 10
+	opts.EnableExemplarStorage = true
+	opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
+	hb, w := newTestHeadWithOptions(t, compression.None, opts)
 
 	// Add some series so we can append metadata to them.
 	app := hb.Appender(ctx)
@@ -4915,7 +4923,9 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	db := openTestDB(t, nil, nil)
+	opts := DefaultOptions()
+	opts.EnableMetadataWALRecords = true
+	db := openTestDB(t, opts, nil)
 	ctx := context.Background()
 
 	// Add some series so we can append metadata to them.

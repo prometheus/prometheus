@@ -3797,7 +3797,7 @@ func TestIteratorSeekIntoBuffer(t *testing.T) {
 // Tests https://github.com/prometheus/prometheus/issues/8221.
 func TestChunkNotFoundHeadGCRace(t *testing.T) {
 	t.Parallel()
-	db := newTestDB(t)
+	db := newTestDB(t, DefaultOptions())
 	db.DisableCompactions()
 	ctx := context.Background()
 
@@ -3864,7 +3864,7 @@ func TestChunkNotFoundHeadGCRace(t *testing.T) {
 // Tests https://github.com/prometheus/prometheus/issues/9079.
 func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 	t.Parallel()
-	db := newTestDB(t)
+	db := newTestDB(t, DefaultOptions())
 	db.DisableCompactions()
 	ctx := context.Background()
 
@@ -3912,7 +3912,7 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 }
 
 func TestIsQuerierCollidingWithTruncation(t *testing.T) {
-	db := newTestDB(t)
+	db := newTestDB(t, DefaultOptions())
 	db.DisableCompactions()
 
 	var (
@@ -3958,7 +3958,7 @@ func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 
 func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 	t.Parallel()
-	db := newTestDB(t)
+	db := newTestDB(t, DefaultOptions())
 	db.DisableCompactions()
 
 	sampleTs := func(i int64) int64 { return i * DefaultBlockDuration / (4 * 120) }
@@ -7332,6 +7332,7 @@ func TestHistogramStalenessConversionMetrics(t *testing.T) {
 		})
 	}
 }
+
 func TestHead_GetMetadataByRef(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
 	defer func() {
