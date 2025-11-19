@@ -5945,3 +5945,104 @@ func TestScrapeLoopDisableStalenessMarkerInjection(t *testing.T) {
 		}
 	}
 }
+
+// TestScrapeMetadataSeriesCacheFeature tests the metadata series cache feature at the scrape level.
+// When enableMetadataSeriesCache is true, the scrape loop should call UpdateMetadata.
+// When false, the scrape loop should NOT call UpdateMetadata.
+func TestScrapeMetadataSeriesCacheFeature(t *testing.T) {
+	const scrapeData = `# TYPE test_metric counter
+# HELP test_metric some help text
+test_metric_total 1
+# TYPE test_gauge gauge
+# HELP test_gauge gauge help text
+test_gauge{foo="bar"} 42
+# EOF`
+
+	expectedMetadata := []metadataEntry{
+		{
+			metric: labels.FromStrings("__name__", "test_metric_total"),
+			m:      metadata.Metadata{Type: "counter", Unit: "", Help: "some help text"},
+		},
+		{
+			metric: labels.FromStrings("__name__", "test_gauge", "foo", "bar"),
+			m:      metadata.Metadata{Type: "gauge", Unit: "", Help: "gauge help text"},
+		},
+	}
+
+	testCases := []struct {
+		name                      string
+		enableMetadataSeriesCache bool
+		expectedMetadataCount     int
+		expectedMetadata          []metadataEntry
+	}{
+		{
+			name:                      "with_metadata_series_cache_enabled",
+			enableMetadataSeriesCache: true,
+			expectedMetadataCount:     2,
+			expectedMetadata:          expectedMetadata,
+		},
+		{
+			name:                      "with_metadata_series_cache_disabled",
+			enableMetadataSeriesCache: false,
+			expectedMetadataCount:     0,
+			expectedMetadata:          nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			capp := &collectResultAppender{}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			sl := newScrapeLoop(ctx,
+				&testScraper{},
+				nil, nil,
+				nopMutator,
+				nopMutator,
+				func(context.Context) storage.Appender { return capp },
+				nil,
+				labels.NewSymbolTable(),
+				0,
+				true,
+				false,
+				true,
+				0, 0, histogram.ExponentialSchemaMax,
+				nil,
+				0,
+				time.Hour,
+				false,
+				false,
+				false,
+				false,
+				false,
+				false,
+				false,
+				tc.enableMetadataSeriesCache,
+				nil,
+				false,
+				newTestScrapeMetrics(t),
+				false,
+				model.UTF8Validation,
+				model.NoEscaping,
+				"",
+			)
+
+			now := time.Now()
+			slApp := sl.appender(ctx)
+			_, _, _, err := sl.append(slApp, []byte(scrapeData), "application/openmetrics-text", now)
+			require.NoError(t, err)
+			require.NoError(t, slApp.Commit())
+
+			// Verify metadata count.
+			require.Len(t, capp.resultMetadata, tc.expectedMetadataCount,
+				"unexpected number of metadata entries")
+
+			// Verify metadata content when enabled.
+			if tc.enableMetadataSeriesCache {
+				testutil.RequireEqualWithOptions(t, tc.expectedMetadata, capp.resultMetadata,
+					[]cmp.Option{cmp.Comparer(metadataEntryEqual)})
+			}
+		})
+	}
+}
