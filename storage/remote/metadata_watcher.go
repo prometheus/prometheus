@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -162,46 +161,4 @@ func (mw *MetadataWatcher) ready() bool {
 
 	mw.manager = m
 	return true
-}
-
-// GetMetadataForMetric retrieves metadata for a specific metric family from the scrape cache.
-// This is used by Remote Write v2 to get metadata (especially Help strings) when not available
-// from WAL records. Returns nil if scrape manager is not ready or metadata is not found.
-func (mw *MetadataWatcher) GetMetadataForMetric(metricFamily string) *scrape.MetricMetadata {
-	if !mw.ready() {
-		return nil
-	}
-
-	// First try: exact match.
-	if meta := mw.lookupMetadata(metricFamily); meta != nil {
-		return meta
-	}
-
-	// Second try: strip suffix after last underscore and try again.
-	// This handles histogram suffixes like _bucket, _count, _sum and counter _total.
-	if idx := strings.LastIndexByte(metricFamily, '_'); idx > 0 {
-		baseName := metricFamily[:idx]
-		if meta := mw.lookupMetadata(baseName); meta != nil {
-			return meta
-		}
-	}
-
-	return nil
-}
-
-// lookupMetadata performs the actual metadata lookup from active targets.
-func (mw *MetadataWatcher) lookupMetadata(metricFamily string) *scrape.MetricMetadata {
-	for _, tset := range mw.manager.TargetsActive() {
-		for _, target := range tset {
-			if meta, ok := target.GetMetadata(metricFamily); ok {
-				return &scrape.MetricMetadata{
-					MetricFamily: meta.MetricFamily,
-					Type:         meta.Type,
-					Help:         meta.Help,
-					Unit:         meta.Unit,
-				}
-			}
-		}
-	}
-	return nil
 }

@@ -235,6 +235,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "metadata-wal-records":
 				c.scrape.AppendMetadata = true
 				logger.Info("Experimental metadata records in WAL enabled")
+			case "metadata-series-cache":
+				c.scrape.EnableMetadataSeriesCache = true
+				logger.Info("Experimental series-level metadata cache enabled (without WAL records)")
 			case "promql-per-step-stats":
 				c.enablePerStepStats = true
 				logger.Info("Experimental per-step statistics reporting")

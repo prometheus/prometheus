@@ -547,9 +547,15 @@ func NewQueueManager(
 
 	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata)
 
-	// Create MetadataWatcher when metadata.send=true for both RW1 and RW2.
-	// For RW1: The watcher will be started to periodically send metadata batches.
-	// For RW2: The watcher is used for on-demand metadata lookups from scrape cache.
+	// The current MetadataWatcher implementation is mutually exclusive
+	// with the new approach, which stores metadata as WAL records and
+	// ships them alongside series. If both mechanisms are set, the new one
+	// takes precedence by implicitly disabling the older one.
+	if t.mcfg.Send && t.protoMsg != remoteapi.WriteV1MessageType {
+		logger.Warn("usage of 'metadata_config.send' is redundant when using remote write v2 (or higher) as metadata will always be gathered from the WAL and included for every series within each write request")
+		t.mcfg.Send = false
+	}
+
 	if t.mcfg.Send {
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
 	}
@@ -965,9 +971,8 @@ func (t *QueueManager) Start() {
 
 	t.shards.start(t.numShards)
 	t.watcher.Start()
-	// Only start MetadataWatcher for RW1 (for periodic batch sending).
-	// For RW2, the watcher is used only for on-demand lookups, not periodic sending.
-	if t.mcfg.Send && t.protoMsg == remoteapi.WriteV1MessageType {
+
+	if t.mcfg.Send {
 		t.metadataWatcher.Start()
 	}
 
@@ -989,8 +994,8 @@ func (t *QueueManager) Stop() {
 	t.wg.Wait()
 	t.shards.stop()
 	t.watcher.Stop()
-	// Only stop MetadataWatcher if it was started (RW1 only).
-	if t.mcfg.Send && t.protoMsg == remoteapi.WriteV1MessageType {
+
+	if t.mcfg.Send {
 		t.metadataWatcher.Stop()
 	}
 	t.metrics.unregister()
@@ -1591,7 +1596,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			}
 			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, encBuf, compr)
 		case remoteapi.WriteV2MessageType:
-			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels, s.qm.head, s.qm.metadataWatcher)
+			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels, s.qm.head)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
 			if nUnexpectedMetadata > 0 {
 				s.qm.logger.Warn("unexpected metadata sType in populateV2TimeSeries", "count", nUnexpectedMetadata)
@@ -1962,26 +1967,18 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	return accumulatedStats, err
 }
 
-func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool, head HeadReader, metadataWatcher *MetadataWatcher) (int, int, int, int, int) {
+func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool, head HeadReader) (int, int, int, int, int) {
 	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
 
 		var headMetadata *metadata.Metadata
-		var scrapeCacheMetadata *scrape.MetricMetadata
 
 		if d.metadata == nil && d.seriesRef != 0 && head != nil {
 			meta := head.GetMetadataByRef(d.seriesRef)
 			// Only use metadata if it's not unknown type.
 			if meta.Type != model.MetricTypeUnknown {
 				headMetadata = &meta
-			}
-		}
-
-		if headMetadata == nil && metadataWatcher != nil && d.metadata == nil {
-			metricName := d.seriesLabels.Get(labels.MetricName)
-			if metricName != "" {
-				scrapeCacheMetadata = metadataWatcher.GetMetadataForMetric(metricName)
 			}
 		}
 
@@ -1997,9 +1994,6 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			} else if headMetadata != nil {
 				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(headMetadata.Help)
 				nPendingMetadata++
-			} else if scrapeCacheMetadata != nil {
-				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(scrapeCacheMetadata.Help)
-				nPendingMetadata++
 			}
 		case d.metadata != nil:
 			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(d.metadata.Type)
@@ -2010,11 +2004,6 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(headMetadata.Type)
 			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(headMetadata.Help)
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(headMetadata.Unit)
-			nPendingMetadata++
-		case scrapeCacheMetadata != nil:
-			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(scrapeCacheMetadata.Type)
-			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(scrapeCacheMetadata.Help)
-			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(scrapeCacheMetadata.Unit)
 			nPendingMetadata++
 		default:
 			// Safeguard against sending garbage in case of not having metadata
