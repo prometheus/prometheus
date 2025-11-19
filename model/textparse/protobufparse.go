@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/gogo/protobuf/types"
@@ -465,16 +464,6 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			// All good.
 		default:
 			return EntryInvalid, fmt.Errorf("unknown metric type for metric %q: %s", name, p.dec.GetType())
-		}
-		unit := p.dec.GetUnit()
-		if len(unit) > 0 {
-			if p.dec.GetType() == dto.MetricType_COUNTER && strings.HasSuffix(name, "_total") {
-				if !strings.HasSuffix(name[:len(name)-6], unit) || len(name)-6 < len(unit)+1 || name[len(name)-6-len(unit)-1] != '_' {
-					return EntryInvalid, fmt.Errorf("unit %q not a suffix of counter %q", unit, name)
-				}
-			} else if !strings.HasSuffix(name, unit) || len(name) < len(unit)+1 || name[len(name)-len(unit)-1] != '_' {
-				return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", unit, name)
-			}
 		}
 		p.entryBytes.Reset()
 		p.entryBytes.WriteString(name)
