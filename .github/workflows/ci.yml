@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - uses: prometheus/promci@c6d50d8e6149e4079661f68b565de32a2053ec5b # v0.5.1
+      - uses: prometheus/promci@bb1909986b91b37c4104dd742c4684f43cf1b260 # v0.5.2
       - uses: ./.github/promci/actions/setup_environment
         with:
           enable_npm: true
@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - uses: prometheus/promci@c6d50d8e6149e4079661f68b565de32a2053ec5b # v0.5.1
+      - uses: prometheus/promci@bb1909986b91b37c4104dd742c4684f43cf1b260 # v0.5.2
       - uses: ./.github/promci/actions/setup_environment
       - run: go test --tags=dedupelabels ./...
       - run: go test --tags=slicelabels -race ./cmd/prometheus ./model/textparse ./prompb/...
@@ -81,7 +81,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - uses: prometheus/promci@c6d50d8e6149e4079661f68b565de32a2053ec5b # v0.5.1
+      - uses: prometheus/promci@bb1909986b91b37c4104dd742c4684f43cf1b260 # v0.5.2
       - uses: ./.github/promci/actions/setup_environment
         with:
           enable_go: false
@@ -146,7 +146,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - uses: prometheus/promci@c6d50d8e6149e4079661f68b565de32a2053ec5b # v0.5.1
+      - uses: prometheus/promci@bb1909986b91b37c4104dd742c4684f43cf1b260 # v0.5.2
       - uses: ./.github/promci/actions/build
         with:
           promu_opts: "-p linux/amd64 -p windows/amd64 -p linux/arm64 -p darwin/amd64 -p darwin/arm64 -p linux/386"
@@ -173,7 +173,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - uses: prometheus/promci@c6d50d8e6149e4079661f68b565de32a2053ec5b # v0.5.1
+      - uses: prometheus/promci@bb1909986b91b37c4104dd742c4684f43cf1b260 # v0.5.2
       - uses: ./.github/promci/actions/build
         with:
           parallelism: 12
@@ -268,7 +268,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - uses: prometheus/promci@c6d50d8e6149e4079661f68b565de32a2053ec5b # v0.5.1
+      - uses: prometheus/promci@bb1909986b91b37c4104dd742c4684f43cf1b260 # v0.5.2
       - uses: ./.github/promci/actions/publish_main
         with:
           docker_hub_login: ${{ secrets.docker_hub_login }}
@@ -287,7 +287,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - uses: prometheus/promci@c6d50d8e6149e4079661f68b565de32a2053ec5b # v0.5.1
+      - uses: prometheus/promci@bb1909986b91b37c4104dd742c4684f43cf1b260 # v0.5.2
       - uses: ./.github/promci/actions/publish_release
         with:
           docker_hub_login: ${{ secrets.docker_hub_login }}
@@ -304,7 +304,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - uses: prometheus/promci@c6d50d8e6149e4079661f68b565de32a2053ec5b # v0.5.1
+      - uses: prometheus/promci@bb1909986b91b37c4104dd742c4684f43cf1b260 # v0.5.2
       - name: Install nodejs
         uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
