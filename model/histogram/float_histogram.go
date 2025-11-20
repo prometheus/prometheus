@@ -1050,15 +1050,20 @@ func (i *floatBucketIterator) Next() bool {
 	if i.spansIdx >= len(i.spans) {
 		return false
 	}
+	span := i.spans[i.spansIdx]
 
 	if i.schema == i.targetSchema {
 		// Fast path for the common case.
-		span := i.spans[i.spansIdx]
 		if i.bucketsIdx == 0 {
 			// Seed origIdx for the first bucket.
 			i.currIdx = span.Offset
 		} else {
 			i.currIdx++
+		}
+		if i.bucketsIdx >= len(i.buckets) {
+			// This protects against index out of range panic, which
+			// can only happen with an invalid histogram.
+			return false
 		}
 
 		for i.idxInSpan >= span.Length {
@@ -1080,7 +1085,6 @@ func (i *floatBucketIterator) Next() bool {
 		// Copy all of these into local variables so that we can forward to the
 		// next bucket and then roll back if needed.
 		origIdx, spansIdx, idxInSpan := i.origIdx, i.spansIdx, i.idxInSpan
-		span := i.spans[spansIdx]
 		firstPass := true
 		i.currCount = 0
 
@@ -1091,6 +1095,14 @@ func (i *floatBucketIterator) Next() bool {
 				origIdx = span.Offset
 			} else {
 				origIdx++
+			}
+			if i.bucketsIdx >= len(i.buckets) {
+				// This protects against index out of range panic, which
+				// can only happen with an invalid histogram.
+				if firstPass {
+					return false
+				}
+				break mergeLoop
 			}
 			for idxInSpan >= span.Length {
 				// We have exhausted the current span and have to find a new
@@ -1152,6 +1164,11 @@ func (i *reverseFloatBucketIterator) Next() bool {
 		// We have exhausted the current span and have to find a new
 		// one. We'll even handle pathologic spans of length 0.
 		i.spansIdx--
+		if i.spansIdx < 0 {
+			// This protects against index out of range panic, which
+			// can only happen with an invalid histogram.
+			return false
+		}
 		i.idxInSpan = int32(i.spans[i.spansIdx].Length) - 1
 		i.currIdx -= i.spans[i.spansIdx+1].Offset
 	}
