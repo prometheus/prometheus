@@ -18,6 +18,12 @@ updates:
     schedule:
       interval: "monthly"
     groups:
+      aws:
+        patterns:
+          - "github.com/aws/*"
+      azure:
+        patterns:
+          - "github.com/Azure/*"
       k8s.io:
         patterns:
           - "k8s.io/*"
