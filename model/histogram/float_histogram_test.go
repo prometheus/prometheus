@@ -3978,6 +3978,8 @@ func TestFloatHistogramReduceResolution(t *testing.T) {
 			err := tc.origin.ReduceResolution(tc.targetSchema)
 			if tc.errorMsg != "" {
 				require.Equal(t, tc.errorMsg, err.Error())
+				// The returned error should be a histogram.Error.
+				require.ErrorAs(t, err, &Error{})
 				return
 			}
 			require.NoError(t, err)

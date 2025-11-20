@@ -1572,6 +1572,8 @@ func addCustomBucketsWithMismatches(
 //   - Any spans have an invalid offset.
 //   - The spans are inconsistent with the number of buckets.
 func (h *FloatHistogram) ReduceResolution(targetSchema int32) error {
+	// Note that the follow three returns are not returning a
+	// histogram.Error because they are programming errors.
 	if h.UsesCustomBuckets() {
 		return errors.New("cannot reduce resolution when there are custom buckets")
 	}
