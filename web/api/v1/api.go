@@ -34,6 +34,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/grafana/regexp"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/munnerz/goautoneg"
@@ -80,6 +81,17 @@ type errorNum int
 type errorType struct {
 	num errorNum
 	str string
+}
+
+func (e errorType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.str)
+}
+
+func (e errorType) Schema(r huma.Registry) *huma.Schema {
+	return &huma.Schema{
+		Type:   huma.TypeString,
+		Format: "",
+	}
 }
 
 const (
@@ -255,6 +267,8 @@ type API struct {
 	otlpWriteHandler   http.Handler
 
 	codecs []Codec
+
+	humaAPI huma.API
 }
 
 // NewAPI returns an initialized API type.
@@ -376,6 +390,11 @@ func setUnavailStatusOnTSDBNotReady(r apiFuncResult) apiFuncResult {
 
 // Register the API's endpoints in the given router.
 func (api *API) Register(r *route.Router) {
+	api.RegisterWithHuma(r, &HumaOptions{Enabled: false})
+}
+
+// RegisterWithHuma registers the API's endpoints in the given router with optional Huma support.
+func (api *API) RegisterWithHuma(r *route.Router, opts *HumaOptions) {
 	wrap := func(f apiFunc) http.HandlerFunc {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			httputil.SetCORS(w, api.CORSOrigin, r)
@@ -408,12 +427,19 @@ func (api *API) Register(r *route.Router) {
 		})
 	}
 
+	humaWrap := api.initiateHuma(opts)
+
+	if opts.Enabled {
+		r.Get("/openapi.json", humaWrap(nil))
+		r.Get("/openapi.yaml", humaWrap(nil))
+	}
+
 	r.Options("/*path", wrap(api.options))
 
-	r.Get("/query", wrapAgent(api.query))
-	r.Post("/query", wrapAgent(api.query))
-	r.Get("/query_range", wrapAgent(api.queryRange))
-	r.Post("/query_range", wrapAgent(api.queryRange))
+	r.Get("/query", humaWrap(wrapAgent(api.query)))
+	r.Post("/query", humaWrap(wrapAgent(api.query)))
+	r.Get("/query_range", humaWrap(wrapAgent(api.queryRange)))
+	r.Post("/query_range", humaWrap(wrapAgent(api.queryRange)))
 	r.Get("/query_exemplars", wrapAgent(api.queryExemplars))
 	r.Post("/query_exemplars", wrapAgent(api.queryExemplars))
 
@@ -437,15 +463,15 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/targets/relabel_steps", wrap(api.targetRelabelSteps))
 	r.Get("/alertmanagers", wrapAgent(api.alertmanagers))
 
-	r.Get("/metadata", wrap(api.metricMetadata))
+	r.Get("/metadata", humaWrap(wrap(api.metricMetadata)))
 
-	r.Get("/status/config", wrap(api.serveConfig))
-	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
-	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
-	r.Get("/status/flags", wrap(api.serveFlags))
-	r.Get("/status/tsdb", wrapAgent(api.serveTSDBStatus))
-	r.Get("/status/tsdb/blocks", wrapAgent(api.serveTSDBBlocks))
-	r.Get("/status/walreplay", api.serveWALReplayStatus)
+	r.Get("/status/config", humaWrap(wrap(api.serveConfig)))
+	r.Get("/status/runtimeinfo", humaWrap(wrap(api.serveRuntimeInfo)))
+	r.Get("/status/buildinfo", humaWrap(wrap(api.serveBuildInfo)))
+	r.Get("/status/flags", humaWrap(wrap(api.serveFlags)))
+	r.Get("/status/tsdb", humaWrap(wrapAgent(api.serveTSDBStatus)))
+	r.Get("/status/tsdb/blocks", humaWrap(wrapAgent(api.serveTSDBBlocks)))
+	r.Get("/status/walreplay", humaWrap(api.serveWALReplayStatus))
 	r.Get("/notifications", api.notifications)
 	r.Get("/notifications/live", api.notificationsSSE)
 	r.Post("/read", api.ready(api.remoteRead))
@@ -1426,8 +1452,6 @@ func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
 }
 
 func (api *API) metricMetadata(r *http.Request) apiFuncResult {
-	metrics := map[string]map[metadata.Metadata]struct{}{}
-
 	limit := -1
 	if s := r.FormValue("limit"); s != "" {
 		var err error
@@ -1444,7 +1468,13 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	}
 
 	metric := r.FormValue("metric")
-	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
+	metrics := api.getMetricMetadata(r.Context(), limit, limitPerMetric, metric)
+	return apiFuncResult{metrics, nil, nil, nil}
+}
+
+func (api *API) getMetricMetadata(ctx context.Context, limit int, limitPerMetric int, metric string) map[string][]metadata.Metadata {
+	metrics := map[string]map[metadata.Metadata]struct{}{}
+	for _, tt := range api.targetRetriever(ctx).TargetsActive() {
 		for _, t := range tt {
 			if metric == "" {
 				for _, mm := range t.ListMetadata() {
@@ -1495,7 +1525,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 		res[name] = s
 	}
 
-	return apiFuncResult{res, nil, nil, nil}
+	return res
 }
 
 // RuleDiscovery has info for all rules.
