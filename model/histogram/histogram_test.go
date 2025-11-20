@@ -1719,14 +1719,16 @@ func BenchmarkHistogramValidation(b *testing.B) {
 
 func TestHistogramReduceResolution(t *testing.T) {
 	tcs := map[string]struct {
-		origin *Histogram
-		target *Histogram
+		origin       *Histogram
+		targetSchema int32
+		target       *Histogram
+		errorMsg     string
 	}{
 		"valid histogram": {
 			origin: &Histogram{
 				Schema: 0,
 				PositiveSpans: []Span{
-					{Offset: 0, Length: 4},
+					{Offset: -2, Length: 4},
 					{Offset: 0, Length: 0},
 					{Offset: 3, Length: 2},
 				},
@@ -1738,10 +1740,11 @@ func TestHistogramReduceResolution(t *testing.T) {
 				},
 				NegativeBuckets: []int64{1, 2, -2, 1, -1, 0},
 			},
+			targetSchema: -1,
 			target: &Histogram{
 				Schema: -1,
 				PositiveSpans: []Span{
-					{Offset: 0, Length: 3},
+					{Offset: -1, Length: 3},
 					{Offset: 1, Length: 1},
 				},
 				PositiveBuckets: []int64{1, 3, -2, 0},
@@ -1752,12 +1755,58 @@ func TestHistogramReduceResolution(t *testing.T) {
 				NegativeBuckets: []int64{1, 3, -2, 0},
 			},
 		},
+		"not enough buckets": {
+			origin: &Histogram{
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: -2, Length: 4},
+					{Offset: 0, Length: 0},
+					{Offset: 3, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 2, -2, 1, -1},
+			},
+			targetSchema: -1,
+			errorMsg:     "have 5 buckets but spans need more: histogram spans specify different number of buckets than provided",
+		},
+		"too many buckets": {
+			origin: &Histogram{
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: -2, Length: 4},
+					{Offset: 0, Length: 0},
+					{Offset: 3, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 3},
+			},
+			targetSchema: -1,
+			errorMsg:     "spans need 6 buckets, have 7 buckets: histogram spans specify different number of buckets than provided",
+		},
+		"negative offset": {
+			origin: &Histogram{
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: -2, Length: 4},
+					{Offset: -1, Length: 0},
+					{Offset: 3, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 2, -2, 1, -1, 0},
+			},
+			targetSchema: -1,
+			errorMsg:     "span number 2 with offset -1: histogram has a span whose offset is negative",
+		},
 	}
 
-	for _, tc := range tcs {
-		target := tc.origin.ReduceResolution(tc.target.Schema)
-		require.Equal(t, tc.target, target)
-		// Check that receiver histogram was mutated:
-		require.Equal(t, tc.target, tc.origin)
+	for tn, tc := range tcs {
+		t.Run(tn, func(t *testing.T) {
+			err := tc.origin.ReduceResolution(tc.targetSchema)
+			if tc.errorMsg != "" {
+				require.Equal(t, tc.errorMsg, err.Error())
+				// The returned error should be a histogram.Error.
+				require.ErrorAs(t, err, &Error{})
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.target, tc.origin)
+		})
 	}
 }

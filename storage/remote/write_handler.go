@@ -697,19 +697,23 @@ func (app *remoteWriteAppender) Append(ref storage.SeriesRef, lset labels.Labels
 }
 
 func (app *remoteWriteAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	var err error
 	if t > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}
 
 	if h != nil && histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > histogram.ExponentialSchemaMax {
-		h = h.ReduceResolution(histogram.ExponentialSchemaMax)
+		if err = h.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+			return 0, err
+		}
 	}
 	if fh != nil && histogram.IsExponentialSchemaReserved(fh.Schema) && fh.Schema > histogram.ExponentialSchemaMax {
-		fh = fh.ReduceResolution(histogram.ExponentialSchemaMax)
+		if err = fh.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+			return 0, err
+		}
 	}
 
-	ref, err := app.Appender.AppendHistogram(ref, l, t, h, fh)
-	if err != nil {
+	if ref, err = app.Appender.AppendHistogram(ref, l, t, h, fh); err != nil {
 		return 0, err
 	}
 	return ref, nil

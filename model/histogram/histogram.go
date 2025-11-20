@@ -14,6 +14,7 @@
 package histogram
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -617,26 +618,37 @@ func (c *cumulativeBucketIterator) At() Bucket[uint64] {
 }
 
 // ReduceResolution reduces the histogram's spans, buckets into target schema.
-// The target schema must be smaller than the current histogram's schema.
-// This will panic if the histogram has custom buckets or if the target schema is
-// a custom buckets schema.
-func (h *Histogram) ReduceResolution(targetSchema int32) *Histogram {
+// An error is returned in the following cases:
+//   - The target schema is not smaller than the current histogram's schema.
+//   - The histogram has custom buckets.
+//   - The target schema is a custom buckets schema.
+//   - Any spans have an invalid offset.
+//   - The spans are inconsistent with the number of buckets.
+func (h *Histogram) ReduceResolution(targetSchema int32) error {
+	// Note that the follow three returns are not returning a
+	// histogram.Error because they are programming errors.
 	if h.UsesCustomBuckets() {
-		panic("cannot reduce resolution when there are custom buckets")
+		return errors.New("cannot reduce resolution when there are custom buckets")
 	}
 	if IsCustomBucketsSchema(targetSchema) {
-		panic("cannot reduce resolution to custom buckets schema")
+		return errors.New("cannot reduce resolution to custom buckets schema")
 	}
 	if targetSchema >= h.Schema {
-		panic(fmt.Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema))
+		return fmt.Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema)
 	}
 
-	h.PositiveSpans, h.PositiveBuckets = reduceResolution(
+	var err error
+
+	if h.PositiveSpans, h.PositiveBuckets, err = reduceResolution(
 		h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, true, true,
-	)
-	h.NegativeSpans, h.NegativeBuckets = reduceResolution(
+	); err != nil {
+		return err
+	}
+	if h.NegativeSpans, h.NegativeBuckets, err = reduceResolution(
 		h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, true, true,
-	)
+	); err != nil {
+		return err
+	}
 	h.Schema = targetSchema
-	return h
+	return nil
 }
