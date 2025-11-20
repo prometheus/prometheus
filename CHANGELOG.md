@@ -2,6 +2,10 @@
 
 ## main / unreleased
 
+## 3.8.0-rc.1 / 2025-11-20
+
+* [CHANGE] Remote-write (receiving): Updated experimental Remote Write implementation to [2.0-rc.4 spec](https://github.com/prometheus/docs/blob/60c24e450010df38cfcb4f65df874f6f9b26dbcb/docs/specs/prw/remote_write_spec_2_0.md); notably "created timestamp" (CT) is now called "start timestamp" (ST) and it's moved from TimeSeries message to Sample message. #17411
+* 
 ## 3.8.0-rc.0 / 2025-11-07
 
 * [CHANGE] TSDB: Native Histogram Custom Bounds with a NaN threshold are now rejected. #17287
