@@ -355,7 +355,7 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 	}
 	counterResetCollision = h.adjustCounterReset(other)
 	if !h.UsesCustomBuckets() {
-		otherZeroCount := h.reconcileZeroBuckets(other, nil)
+		otherZeroCount, _ := h.reconcileZeroBuckets(other, nil)
 		h.ZeroCount += otherZeroCount
 	}
 	h.Count += other.Count
@@ -425,8 +425,9 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (updatedC *FloatHist
 		c = h.newCompensationHistogram()
 	}
 	if !h.UsesCustomBuckets() {
-		otherZeroCount := h.reconcileZeroBuckets(other, c)
+		otherZeroCount, otherCZeroCount := h.reconcileZeroBuckets(other, c)
 		h.ZeroCount, c.ZeroCount = kahansum.Inc(otherZeroCount, h.ZeroCount, c.ZeroCount)
+		h.ZeroCount, c.ZeroCount = kahansum.Inc(otherCZeroCount, h.ZeroCount, c.ZeroCount)
 	}
 	h.Count, c.Count = kahansum.Inc(other.Count, h.Count, c.Count)
 	h.Sum, c.Sum = kahansum.Inc(other.Sum, h.Sum, c.Sum)
@@ -535,7 +536,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 	}
 	counterResetCollision = h.adjustCounterReset(other)
 	if !h.UsesCustomBuckets() {
-		otherZeroCount := h.reconcileZeroBuckets(other, nil)
+		otherZeroCount, _ := h.reconcileZeroBuckets(other, nil)
 		h.ZeroCount -= otherZeroCount
 	}
 	h.Count -= other.Count
@@ -605,8 +606,9 @@ func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (updatedC *FloatHist
 	}
 
 	if !h.UsesCustomBuckets() {
-		otherZeroCount := h.reconcileZeroBuckets(other, c)
+		otherZeroCount, otherCZeroCount := h.reconcileZeroBuckets(other, c)
 		h.ZeroCount, c.ZeroCount = kahansum.Dec(otherZeroCount, h.ZeroCount, c.ZeroCount)
+		h.ZeroCount, c.ZeroCount = kahansum.Dec(otherCZeroCount, h.ZeroCount, c.ZeroCount)
 	}
 	h.Count, c.Count = kahansum.Dec(other.Count, h.Count, c.Count)
 	h.Sum, c.Sum = kahansum.Dec(other.Sum, h.Sum, c.Sum)
@@ -1215,14 +1217,14 @@ func (h *FloatHistogram) trimBucketsInZeroBucket(c *FloatHistogram) {
 // histogram. This method modifies the receiving histogram accordingly, and
 // also modifies the compensation histogram `c` (used for Kahan summation) if provided,
 // but leaves the other histogram as is. Instead, it returns the zero count the
-// other histogram would have if it were modified.
-func (h *FloatHistogram) reconcileZeroBuckets(other, c *FloatHistogram) float64 {
-	otherZeroCount := other.ZeroCount
+// other histogram would have if it were modified, as well as its Kahan compensation term.
+func (h *FloatHistogram) reconcileZeroBuckets(other, c *FloatHistogram) (otherZeroCount, otherCZeroCount float64) {
+	otherZeroCount = other.ZeroCount
 	otherZeroThreshold := other.ZeroThreshold
 
 	for otherZeroThreshold != h.ZeroThreshold {
 		if h.ZeroThreshold > otherZeroThreshold {
-			otherZeroCount, otherZeroThreshold, _ = other.zeroCountForLargerThreshold(h.ZeroThreshold, nil)
+			otherZeroCount, otherZeroThreshold, otherCZeroCount = other.zeroCountForLargerThreshold(h.ZeroThreshold, nil)
 		}
 		if otherZeroThreshold > h.ZeroThreshold {
 			var cZeroCount float64
@@ -1233,7 +1235,7 @@ func (h *FloatHistogram) reconcileZeroBuckets(other, c *FloatHistogram) float64 
 			h.trimBucketsInZeroBucket(c)
 		}
 	}
-	return otherZeroCount
+	return otherZeroCount, otherCZeroCount
 }
 
 // floatBucketIterator is a low-level constructor for bucket iterators.
