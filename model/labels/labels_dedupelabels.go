@@ -22,7 +22,12 @@ import (
 	"sync"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/prometheus/prometheus/util/features"
 )
+
+func init() {
+	features.Enable(features.Prometheus, "dedupelabels")
+}
 
 // Labels is implemented by a SymbolTable and string holding name/value
 // pairs encoded as indexes into the table in varint encoding.
