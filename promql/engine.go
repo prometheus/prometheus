@@ -1290,7 +1290,9 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 	biggestLen := 1
 	for i := range exprs {
 		vectors[i] = make(Vector, 0, len(matrixes[i]))
-		biggestLen = max(biggestLen, len(matrixes[i]))
+		if len(matrixes[i]) > biggestLen {
+			biggestLen = len(matrixes[i])
+		}
 	}
 	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
 	type seriesAndTimestamp struct {
