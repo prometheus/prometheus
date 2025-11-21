@@ -1850,7 +1850,6 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			matrixArg      bool
 			warnings       annotations.Annotations
 		)
-
 		for i := range e.Args {
 			a := e.Args[i]
 			if _, ok := a.(*parser.MatrixSelector); ok {
