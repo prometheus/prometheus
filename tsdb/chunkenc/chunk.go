@@ -30,7 +30,8 @@ const (
 	EncXOR
 	EncHistogram
 	EncFloatHistogram
-	EncXOROptST = 4
+	EncXOROptST
+	EncXORCST
 )
 
 func (e Encoding) String() string {
@@ -45,6 +46,8 @@ func (e Encoding) String() string {
 		return "floathistogram"
 	case EncXOROptST:
 		return "XOROptST"
+	case EncXORCST:
+		return "XORCST"
 	}
 	return fmt.Sprintf("<unknown>%d", uint8(e))
 }

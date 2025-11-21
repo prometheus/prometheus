@@ -34,6 +34,7 @@ func TestChunk(t *testing.T) {
 		EncXOR: func() Chunk { return NewXORChunk() },
 
 		// Most tempting one.
+		EncXORCST:   func() Chunk { return NewXORCSTChunk() },
 		EncXOROptST: func() Chunk { return NewXOROptSTChunk() },
 		199:         func() Chunk { return NewXOROptST2Chunk() },
 
@@ -114,7 +115,7 @@ func TestChunk(t *testing.T) {
 						sts = 0
 					} else if i%6 == 4 {
 						// Every 6th we reset.
-						sts += ts - 15000
+						sts = ts - 15000
 					}
 
 					if i%2 == 0 {
@@ -149,6 +150,10 @@ func TestChunk(t *testing.T) {
 					}
 					data = append(data, triple{st: sts, t: ts, v: v})
 				}
+				testChunk(t, c, data, floatEquals)
+			})
+			t.Run("data=custom", func(t *testing.T) {
+				c := nc()
 				testChunk(t, c, []triple{
 					{st: 1762250480001, t: 1762250481000, v: 1.243535123e+06},
 					{st: 1762250481001, t: 1762250482000, v: 1.243535123e+06},
@@ -209,8 +214,8 @@ func testChunk(t *testing.T, c Chunk, data []triple, floatEquals func(a, b float
 	}
 	require.NoError(t, it1.Err())
 	if diff := cmp.Diff(data, res1, cmp.AllowUnexported(triple{}), cmp.Comparer(floatEquals)); diff != "" {
-		fmt.Println(data[:10])
-		fmt.Println(res1[:10])
+		fmt.Println(data[:7])
+		fmt.Println(res1[:7])
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 

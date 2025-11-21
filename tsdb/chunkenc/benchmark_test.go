@@ -220,6 +220,7 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 
 		// Most tempting one.
 		{name: "XOROptST", newChunkFn: func() Chunk { return NewXOROptSTChunk() }},
+		{name: "XORCST", newChunkFn: func() Chunk { return NewXORCSTChunk() }},
 		// Experiment with custom varbit again (easy to get things smaller, but not easy to get things fast)
 		//{name: "XOROptST2", newChunkFn: func() Chunk { return NewXOROptST2Chunk() }},
 
