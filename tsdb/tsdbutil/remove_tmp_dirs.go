@@ -22,6 +22,8 @@ import (
 )
 
 // RemoveTmpDirs attempts to remove directories in the specified directory which match the isTmpDir predicate.
+// Errors encountered during reading the directory that other than non-existence are returned. All other errors
+// encountered during removal of tmp directories are logged but do not cause early termination.
 func RemoveTmpDirs(l *slog.Logger, dir string, isTmpDir func(fi fs.DirEntry) bool) error {
 	files, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
