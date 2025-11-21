@@ -13,6 +13,7 @@ The documentation is available alongside all the project documentation at
 
 - [Getting started](getting_started.md)
 - [Installation](installation.md)
+- [Agent Mode](prometheus_agent.md)
 - [Configuration](configuration/configuration.md)
 - [Querying](querying/basics.md)
 - [Storage](storage.md)
