@@ -11,85 +11,48 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The code in this file was largely written by Damian Gryski as part of
-// https://github.com/dgryski/go-tsz and published under the license below.
-// It was modified to accommodate reading from byte slices without modifying
-// the underlying bytes, which would panic when reading from mmapped
-// read-only byte slices.
-
-// Copyright (c) 2015,2016 Damian Gryski <damian@gryski.com>
-// All rights reserved.
-
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-
-// * Redistributions of source code must retain the above copyright notice,
-// this list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-// this list of conditions and the following disclaimer in the documentation
-// and/or other materials provided with the distribution.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-// ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 package chunkenc
 
 import (
 	"encoding/binary"
 	"math"
-	"math/bits"
 
 	"github.com/prometheus/prometheus/model/histogram"
 )
 
-const (
-	chunkHeaderSize               = 2
-	chunkAllocationSize           = 128
-	chunkCompactCapacityThreshold = 32
-)
-
-// XORChunk holds XOR encoded sample data.
+// XORVarbitChunk holds XOR encoded sample data.
 // 2B(numSamples), varint(t), xor(v), varuint(tDelta), xor(v), varint(tDod), xor(v), ...
-type XORChunk struct {
+type XORVarbitChunk struct {
 	b bstream
 }
 
-// NewXORChunk returns a new chunk with XOR encoding.
-func NewXORChunk() *XORChunk {
+// NewXORVarbitChunk returns a new chunk with XOR encoding.
+func NewXORVarbitChunk() *XORVarbitChunk {
 	b := make([]byte, chunkHeaderSize, chunkAllocationSize)
-	return &XORChunk{b: bstream{stream: b, count: 0}}
+	return &XORVarbitChunk{b: bstream{stream: b, count: 0}}
 }
 
-func (c *XORChunk) Reset(stream []byte) {
+func (c *XORVarbitChunk) Reset(stream []byte) {
 	c.b.Reset(stream)
 }
 
 // Encoding returns the encoding type.
-func (*XORChunk) Encoding() Encoding {
+func (*XORVarbitChunk) Encoding() Encoding {
 	return EncXOR
 }
 
 // Bytes returns the underlying byte slice of the chunk.
-func (c *XORChunk) Bytes() []byte {
+func (c *XORVarbitChunk) Bytes() []byte {
 	return c.b.bytes()
 }
 
 // NumSamples returns the number of samples in the chunk.
-func (c *XORChunk) NumSamples() int {
+func (c *XORVarbitChunk) NumSamples() int {
 	return int(binary.BigEndian.Uint16(c.Bytes()))
 }
 
 // Compact implements the Chunk interface.
-func (c *XORChunk) Compact() {
+func (c *XORVarbitChunk) Compact() {
 	if l := len(c.b.stream); cap(c.b.stream) > l+chunkCompactCapacityThreshold {
 		buf := make([]byte, l)
 		copy(buf, c.b.stream)
@@ -100,9 +63,9 @@ func (c *XORChunk) Compact() {
 // Appender implements the Chunk interface.
 // It is not valid to call Appender() multiple times concurrently or to use multiple
 // Appenders on the same chunk.
-func (c *XORChunk) Appender() (Appender, error) {
+func (c *XORVarbitChunk) Appender() (Appender, error) {
 	if len(c.b.stream) == chunkHeaderSize { // Avoid allocating an Iterator when chunk is empty.
-		return &xorAppender{b: &c.b, t: math.MinInt64, leading: 0xff}, nil
+		return &xorVarbitAppender{b: &c.b, t: math.MinInt64, leading: 0xff}, nil
 	}
 	it := c.iterator(nil)
 
@@ -115,7 +78,7 @@ func (c *XORChunk) Appender() (Appender, error) {
 		return nil, err
 	}
 
-	a := &xorAppender{
+	a := &xorVarbitAppender{
 		b:        &c.b,
 		t:        it.t,
 		v:        it.val,
@@ -126,12 +89,12 @@ func (c *XORChunk) Appender() (Appender, error) {
 	return a, nil
 }
 
-func (c *XORChunk) iterator(it Iterator) *xorIterator {
-	if xorIter, ok := it.(*xorIterator); ok {
+func (c *XORVarbitChunk) iterator(it Iterator) *xorVarintIterator {
+	if xorIter, ok := it.(*xorVarintIterator); ok {
 		xorIter.Reset(c.b.bytes())
 		return xorIter
 	}
-	return &xorIterator{
+	return &xorVarintIterator{
 		// The first 2 bytes contain chunk headers.
 		// We skip that for actual samples.
 		br:       newBReader(c.b.bytes()[chunkHeaderSize:]),
@@ -144,11 +107,11 @@ func (c *XORChunk) iterator(it Iterator) *xorIterator {
 // Iterator() must not be called concurrently with any modifications to the chunk,
 // but after it returns you can use an Iterator concurrently with an Appender or
 // other Iterators.
-func (c *XORChunk) Iterator(it Iterator) Iterator {
+func (c *XORVarbitChunk) Iterator(it Iterator) Iterator {
 	return c.iterator(it)
 }
 
-type xorAppender struct {
+type xorVarbitAppender struct {
 	b *bstream
 
 	t      int64
@@ -159,24 +122,16 @@ type xorAppender struct {
 	trailing uint8
 }
 
-func (a *xorAppender) Append(t int64, v float64) {
+func (a *xorVarbitAppender) Append(t int64, v float64) {
 	var tDelta uint64
 	num := binary.BigEndian.Uint16(a.b.bytes())
 	switch num {
 	case 0:
-		buf := make([]byte, binary.MaxVarintLen64)
-		for _, b := range buf[:binary.PutVarint(buf, t)] {
-			a.b.writeByte(b)
-		}
+		putVarbitInt(a.b, t)
 		a.b.writeBits(math.Float64bits(v), 64)
 	case 1:
 		tDelta = uint64(t - a.t)
-
-		buf := make([]byte, binary.MaxVarintLen64)
-		for _, b := range buf[:binary.PutUvarint(buf, tDelta)] {
-			a.b.writeByte(b)
-		}
-
+		putVarbitUint(a.b, tDelta)
 		a.writeVDelta(v)
 	default:
 		tDelta = uint64(t - a.t)
@@ -216,17 +171,14 @@ func (a *xorAppender) Append(t int64, v float64) {
 	a.tDelta = tDelta
 }
 
-func (a *xorAppender) BitProfiledAppend(p *bitProfiler[any], _, t int64, v float64) {
+func (a *xorVarbitAppender) BitProfiledAppend(p *bitProfiler[any], _, t int64, v float64) {
 	var tDelta uint64
 	num := binary.BigEndian.Uint16(a.b.bytes())
 
 	switch num {
 	case 0:
 		p.Write(a.b, t, "t", func() {
-			buf := make([]byte, binary.MaxVarintLen64)
-			for _, b := range buf[:binary.PutVarint(buf, t)] {
-				a.b.writeByte(b)
-			}
+			putVarbitInt(a.b, t)
 		})
 		p.Write(a.b, v, "v", func() {
 			a.b.writeBits(math.Float64bits(v), 64)
@@ -234,10 +186,7 @@ func (a *xorAppender) BitProfiledAppend(p *bitProfiler[any], _, t int64, v float
 	case 1:
 		tDelta = uint64(t - a.t)
 		p.Write(a.b, t, "tDelta", func() {
-			buf := make([]byte, binary.MaxVarintLen64)
-			for _, b := range buf[:binary.PutUvarint(buf, tDelta)] {
-				a.b.writeByte(b)
-			}
+			putVarbitUint(a.b, tDelta)
 		})
 		p.Write(a.b, v, "v", func() {
 			a.writeVDelta(v)
@@ -283,25 +232,19 @@ func (a *xorAppender) BitProfiledAppend(p *bitProfiler[any], _, t int64, v float
 	a.tDelta = tDelta
 }
 
-// bitRange returns whether the given integer can be represented by nbits.
-// See docs/bstream.md.
-func bitRange(x int64, nbits uint8) bool {
-	return -((1<<(nbits-1))-1) <= x && x <= 1<<(nbits-1)
-}
-
-func (a *xorAppender) writeVDelta(v float64) {
+func (a *xorVarbitAppender) writeVDelta(v float64) {
 	xorWrite(a.b, v, a.v, &a.leading, &a.trailing)
 }
 
-func (*xorAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
+func (*xorVarbitAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float chunk")
 }
 
-func (*xorAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
+func (*xorVarbitAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a float histogram sample to a float chunk")
 }
 
-type xorIterator struct {
+type xorVarintIterator struct {
 	br       bstreamReader
 	numTotal uint16
 	numRead  uint16
@@ -316,7 +259,7 @@ type xorIterator struct {
 	err    error
 }
 
-func (it *xorIterator) Seek(t int64) ValueType {
+func (it *xorVarintIterator) Seek(t int64) ValueType {
 	if it.err != nil {
 		return ValNone
 	}
@@ -329,31 +272,31 @@ func (it *xorIterator) Seek(t int64) ValueType {
 	return ValFloat
 }
 
-func (it *xorIterator) At() (int64, float64) {
+func (it *xorVarintIterator) At() (int64, float64) {
 	return it.t, it.val
 }
 
-func (*xorIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
-	panic("cannot call xorIterator.AtHistogram")
+func (*xorVarintIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+	panic("cannot call xorVarintIterator.AtHistogram")
 }
 
-func (*xorIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	panic("cannot call xorIterator.AtFloatHistogram")
+func (*xorVarintIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	panic("cannot call xorVarintIterator.AtFloatHistogram")
 }
 
-func (it *xorIterator) AtT() int64 {
+func (it *xorVarintIterator) AtT() int64 {
 	return it.t
 }
 
-func (it *xorIterator) AtST() int64 {
+func (it *xorVarintIterator) AtST() int64 {
 	return 0 // This version of XOR format does not support start timestamp.
 }
 
-func (it *xorIterator) Err() error {
+func (it *xorVarintIterator) Err() error {
 	return it.err
 }
 
-func (it *xorIterator) Reset(b []byte) {
+func (it *xorVarintIterator) Reset(b []byte) {
 	// The first 2 bytes contain chunk headers.
 	// We skip that for actual samples.
 	it.br = newBReader(b[chunkHeaderSize:])
@@ -368,13 +311,13 @@ func (it *xorIterator) Reset(b []byte) {
 	it.err = nil
 }
 
-func (it *xorIterator) Next() ValueType {
+func (it *xorVarintIterator) Next() ValueType {
 	if it.err != nil || it.numRead == it.numTotal {
 		return ValNone
 	}
 
 	if it.numRead == 0 {
-		t, err := binary.ReadVarint(&it.br)
+		t, err := readVarbitInt(&it.br)
 		if err != nil {
 			it.err = err
 			return ValNone
@@ -391,7 +334,7 @@ func (it *xorIterator) Next() ValueType {
 		return ValFloat
 	}
 	if it.numRead == 1 {
-		tDelta, err := binary.ReadUvarint(&it.br)
+		tDelta, err := readVarbitUint(&it.br)
 		if err != nil {
 			it.err = err
 			return ValNone
@@ -465,7 +408,7 @@ func (it *xorIterator) Next() ValueType {
 	return it.readValue()
 }
 
-func (it *xorIterator) readValue() ValueType {
+func (it *xorVarintIterator) readValue() ValueType {
 	err := xorRead(&it.br, &it.val, &it.leading, &it.trailing)
 	if err != nil {
 		it.err = err
@@ -473,112 +416,4 @@ func (it *xorIterator) readValue() ValueType {
 	}
 	it.numRead++
 	return ValFloat
-}
-
-func xorWrite(b *bstream, newValue, currentValue float64, leading, trailing *uint8) {
-	delta := math.Float64bits(newValue) ^ math.Float64bits(currentValue)
-
-	if delta == 0 {
-		b.writeBit(zero)
-		return
-	}
-	b.writeBit(one)
-
-	newLeading := uint8(bits.LeadingZeros64(delta))
-	newTrailing := uint8(bits.TrailingZeros64(delta))
-
-	// Clamp number of leading zeros to avoid overflow when encoding.
-	if newLeading >= 32 {
-		newLeading = 31
-	}
-
-	if *leading != 0xff && newLeading >= *leading && newTrailing >= *trailing {
-		// In this case, we stick with the current leading/trailing.
-		b.writeBit(zero)
-		b.writeBits(delta>>*trailing, 64-int(*leading)-int(*trailing))
-		return
-	}
-
-	// Update leading/trailing for the caller.
-	*leading, *trailing = newLeading, newTrailing
-
-	b.writeBit(one)
-	b.writeBits(uint64(newLeading), 5)
-
-	// Note that if newLeading == newTrailing == 0, then sigbits == 64. But
-	// that value doesn't actually fit into the 6 bits we have.  Luckily, we
-	// never need to encode 0 significant bits, since that would put us in
-	// the other case (vdelta == 0).  So instead we write out a 0 and adjust
-	// it back to 64 on unpacking.
-	sigbits := 64 - newLeading - newTrailing
-	b.writeBits(uint64(sigbits), 6)
-	b.writeBits(delta>>newTrailing, int(sigbits))
-}
-
-func xorRead(br *bstreamReader, value *float64, leading, trailing *uint8) error {
-	bit, err := br.readBitFast()
-	if err != nil {
-		bit, err = br.readBit()
-	}
-	if err != nil {
-		return err
-	}
-	if bit == zero {
-		return nil
-	}
-	bit, err = br.readBitFast()
-	if err != nil {
-		bit, err = br.readBit()
-	}
-	if err != nil {
-		return err
-	}
-
-	var (
-		bits                           uint64
-		newLeading, newTrailing, mbits uint8
-	)
-
-	if bit == zero {
-		// Reuse leading/trailing zero bits.
-		newLeading, newTrailing = *leading, *trailing
-		mbits = 64 - newLeading - newTrailing
-	} else {
-		bits, err = br.readBitsFast(5)
-		if err != nil {
-			bits, err = br.readBits(5)
-		}
-		if err != nil {
-			return err
-		}
-		newLeading = uint8(bits)
-
-		bits, err = br.readBitsFast(6)
-		if err != nil {
-			bits, err = br.readBits(6)
-		}
-		if err != nil {
-			return err
-		}
-		mbits = uint8(bits)
-		// 0 significant bits here means we overflowed and we actually
-		// need 64; see comment in xrWrite.
-		if mbits == 0 {
-			mbits = 64
-		}
-		newTrailing = 64 - newLeading - mbits
-		// Update leading/trailing zero bits for the caller.
-		*leading, *trailing = newLeading, newTrailing
-	}
-	bits, err = br.readBitsFast(mbits)
-	if err != nil {
-		bits, err = br.readBits(mbits)
-	}
-	if err != nil {
-		return err
-	}
-	vbits := math.Float64bits(*value)
-	vbits ^= bits << newTrailing
-	*value = math.Float64frombits(vbits)
-	return nil
 }
