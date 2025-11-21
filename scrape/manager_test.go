@@ -1169,13 +1169,15 @@ func runManagers(t *testing.T, ctx context.Context, opts *Options, app storage.A
 	opts.DiscoveryReloadInterval = model.Duration(100 * time.Millisecond)
 
 	reg := prometheus.NewRegistry()
-	sdMetrics, err := discovery.RegisterSDMetrics(reg, discovery.NewRefreshMetrics(reg))
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	sdMetrics, err := discovery.RegisterSDMetrics(reg, refreshMetrics)
 	require.NoError(t, err)
 	discoveryManager := discovery.NewManager(
 		ctx,
 		promslog.NewNopLogger(),
 		reg,
 		sdMetrics,
+		refreshMetrics,
 		discovery.Updatert(100*time.Millisecond),
 	)
 	scrapeManager, err := NewManager(
