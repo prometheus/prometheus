@@ -35,6 +35,7 @@ func TestChunk(t *testing.T) {
 
 		// Most tempting one.
 		EncXOROptST: func() Chunk { return NewXOROptSTChunk() },
+		199:         func() Chunk { return NewXOROptST2Chunk() },
 
 		// Slow naive ST implementation.
 		102: func() Chunk { return NewXORSTNaiveChunk() },

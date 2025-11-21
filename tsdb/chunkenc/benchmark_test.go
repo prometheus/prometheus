@@ -216,10 +216,11 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 
 	for _, f := range []fmtCase{
 		// Reference.
-		{name: "XOR (ST ignored)", newChunkFn: func() Chunk { return NewXORChunk() }},
+		//{name: "XOR (ST ignored)", newChunkFn: func() Chunk { return NewXORChunk() }},
 
 		// Most tempting one.
-		{name: "XOROptST", newChunkFn: func() Chunk { return NewXOROptSTChunk() }},
+		{name: "XOROptST(v3)", newChunkFn: func() Chunk { return NewXOROptSTChunk() }},
+		//{name: "XOROptST2", newChunkFn: func() Chunk { return NewXOROptST2Chunk() }},
 
 		// Slow naive ST implementation.
 		//{name: "XORSTNaive", newChunkFn: func() Chunk { return NewXORSTNaiveChunk() }},
@@ -230,10 +231,14 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 
 		// Fun, buffered ones! Very fast, but require more mem.
 		//{name: "ALPBuffered", newChunkFn: func() Chunk { return NewALPBufferedChunk() }},
-		{name: "XORBuffered", newChunkFn: func() Chunk { return NewXORBufferedChunk() }},
+		//{name: "XORBuffered", newChunkFn: func() Chunk { return NewXORBufferedChunk() }},
 		//{name: "XORClassicBuffered", newChunkFn: func() Chunk { return NewXORClassicBufferedChunk() }},
 	} {
 		for _, s := range sampleCases {
+			if s.name != "vt=constant/st=0" {
+				continue // PROFILE DEBUG KILL
+			}
+
 			b.Run(fmt.Sprintf("fmt=%s/%s", f.name, s.name), func(b *testing.B) {
 				fn(b, f, s)
 			})
@@ -284,15 +289,21 @@ type supportsAppenderV2 interface {
 }
 
 /*
-	export bench=bw.bench/iter.all && go test \
+	export bench=bw.bench/iter.all3 && go test \
 	  -run '^$' -bench '^BenchmarkIterator' \
 	  -benchtime 1s -count 6 -cpu 2 -timeout 999m \
 	  | tee ${bench}.txt
 
 	 export bench=bw.bench/iter.xoroptst && go test \
 		  -run '^$' -bench '^BenchmarkIterator' \
-		  -benchtime 1s -count 1 -cpu 2 -timeout 999m \
+		  -benchtime 1000000x -count 1 -cpu 2 -timeout 999m \
 	  -cpuprofile=${bench}.cpu.pprof \
+		  | tee ${bench}.txt
+
+	 export bench=bw.bench/iter.xoroptst && go test \
+		  -run '^$' -bench '^BenchmarkIterator' \
+		  -benchtime 1000000x -count 1 -cpu 2 -timeout 999m \
+	  -memprofile=${bench}.cpu.pprof \
 		  | tee ${bench}.txt
 */
 func BenchmarkIterator(b *testing.B) {
@@ -306,7 +317,6 @@ func BenchmarkIterator(b *testing.B) {
 				return math.Abs(a-b) < 1e-6
 			}
 		}
-
 		b.ReportAllocs()
 
 		c := f.newChunkFn()

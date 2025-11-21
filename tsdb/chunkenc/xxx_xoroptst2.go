@@ -20,76 +20,40 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 )
 
-const (
-	chunkSTHeaderSize  = 1
-	maxFirstSTChangeOn = 0x7F
-)
-
-func writeHeaderFirstSTKnown(b []byte) {
-	b[0] = 0x80
-}
-
-func writeHeaderFirstSTChangeOn(b []byte, firstSTChangeOn uint16) {
-	// First bit indicates the initial ST value.
-	// Here we save the sample number from where the first change occurs in the
-	// rest of the byte (7 bits)
-
-	if firstSTChangeOn > maxFirstSTChangeOn {
-		// This should never happen, would cause corruption (ST already skipped but shouldn't).
-		return
-	}
-	b[0] |= uint8(firstSTChangeOn)
-}
-
-func readSTHeader(b []byte) (firstSTKnown bool, firstSTChangeOn uint16) {
-	if b[0] == 0x00 {
-		return false, 0
-	}
-	if b[0] == 0x80 {
-		return true, 0
-	}
-	mask := byte(0x80)
-	if b[0]&mask != 0 {
-		firstSTKnown = true
-	}
-	mask = 0x7F
-	return firstSTKnown, uint16(b[0] & mask)
-}
-
-// xorOptSTChunk holds encoded sample data:
-// 2B(numSamples), 1B(stHeader), ?varint(st), varint(t), xor(v), ?varuint(stDelta), varuint(tDelta), xor(v), ?classicvarbitint(stDod), classicvarbitint(tDod), xor(v), ...
+// xorOptST2Chunk holds encoded sample data:
+// 2B(numSamples), 1B(stHeader), ?st(st), varint(t), xor(v), ?varuint(stDelta), varuint(tDelta), xor(v), ?stvarbitint(stDod), classicvarbitint(tDod), xor(v), ...
 // stHeader: 1b(firstSTKnown), 7b(firstSTChangeOn)
-type xorOptSTChunk struct {
+type xorOptST2Chunk struct {
 	b bstream
 }
 
-// NewXOROptSTChunk returns a new chunk with XORv2 encoding.
-func NewXOROptSTChunk() *xorOptSTChunk {
+// NewXOROptST2Chunk returns a new chunk with XORv2 encoding.
+func NewXOROptST2Chunk() *xorOptST2Chunk {
 	b := make([]byte, chunkHeaderSize+chunkSTHeaderSize, chunkAllocationSize)
-	return &xorOptSTChunk{b: bstream{stream: b, count: 0}}
+	return &xorOptST2Chunk{b: bstream{stream: b, count: 0}}
 }
 
-func (c *xorOptSTChunk) Reset(stream []byte) {
+func (c *xorOptST2Chunk) Reset(stream []byte) {
 	c.b.Reset(stream)
 }
 
 // Encoding returns the encoding type.
-func (*xorOptSTChunk) Encoding() Encoding {
-	return EncXOROptST
+func (*xorOptST2Chunk) Encoding() Encoding {
+	return 199
 }
 
 // Bytes returns the underlying byte slice of the chunk.
-func (c *xorOptSTChunk) Bytes() []byte {
+func (c *xorOptST2Chunk) Bytes() []byte {
 	return c.b.bytes()
 }
 
 // NumSamples returns the number of samples in the chunk.
-func (c *xorOptSTChunk) NumSamples() int {
+func (c *xorOptST2Chunk) NumSamples() int {
 	return int(binary.BigEndian.Uint16(c.Bytes()))
 }
 
 // Compact implements the Chunk interface.
-func (c *xorOptSTChunk) Compact() {
+func (c *xorOptST2Chunk) Compact() {
 	if l := len(c.b.stream); cap(c.b.stream) > l+chunkCompactCapacityThreshold {
 		buf := make([]byte, l)
 		copy(buf, c.b.stream)
@@ -97,7 +61,7 @@ func (c *xorOptSTChunk) Compact() {
 	}
 }
 
-func (c *xorOptSTChunk) Appender() (Appender, error) {
+func (c *xorOptST2Chunk) Appender() (Appender, error) {
 	a, err := c.AppenderV2()
 	return &compactAppender{AppenderV2: a}, err
 }
@@ -105,9 +69,9 @@ func (c *xorOptSTChunk) Appender() (Appender, error) {
 // AppenderV2 implements the Chunk interface.
 // It is not valid to call AppenderV2() multiple times concurrently or to use multiple
 // Appenders on the same chunk.
-func (c *xorOptSTChunk) AppenderV2() (AppenderV2, error) {
+func (c *xorOptST2Chunk) AppenderV2() (AppenderV2, error) {
 	if len(c.b.stream) == chunkHeaderSize+chunkSTHeaderSize { // Avoid allocating an Iterator when chunk is empty.
-		return &xorOptSTAppender{b: &c.b, t: math.MinInt64, leading: 0xff}, nil
+		return &xorOptST2Appender{b: &c.b, t: math.MinInt64, leading: 0xff}, nil
 	}
 	it := c.iterator(nil)
 
@@ -120,7 +84,7 @@ func (c *xorOptSTChunk) AppenderV2() (AppenderV2, error) {
 		return nil, err
 	}
 
-	a := &xorOptSTAppender{
+	a := &xorOptST2Appender{
 		b:        &c.b,
 		st:       it.st,
 		t:        it.t,
@@ -136,10 +100,10 @@ func (c *xorOptSTChunk) AppenderV2() (AppenderV2, error) {
 	return a, nil
 }
 
-func (c *xorOptSTChunk) iterator(it Iterator) *xorOptSTtIterator {
-	xorIter, ok := it.(*xorOptSTtIterator)
+func (c *xorOptST2Chunk) iterator(it Iterator) *xorOptST2tIterator {
+	xorIter, ok := it.(*xorOptST2tIterator)
 	if !ok {
-		xorIter = &xorOptSTtIterator{}
+		xorIter = &xorOptST2tIterator{}
 	}
 
 	xorIter.Reset(c.b.bytes())
@@ -150,11 +114,11 @@ func (c *xorOptSTChunk) iterator(it Iterator) *xorOptSTtIterator {
 // Iterator() must not be called concurrently with any modifications to the chunk,
 // but after it returns you can use an Iterator concurrently with an Appender or
 // other Iterators.
-func (c *xorOptSTChunk) Iterator(it Iterator) Iterator {
+func (c *xorOptST2Chunk) Iterator(it Iterator) Iterator {
 	return c.iterator(it)
 }
 
-type xorOptSTAppender struct {
+type xorOptST2Appender struct {
 	b        *bstream
 	numTotal uint16
 
@@ -169,36 +133,25 @@ type xorOptSTAppender struct {
 	trailing uint8
 }
 
-func (a *xorOptSTAppender) writeVDelta(v float64) {
+func (a *xorOptST2Appender) writeVDelta(v float64) {
 	xorWrite(a.b, v, a.v, &a.leading, &a.trailing)
 }
 
-func (*xorOptSTAppender) AppendHistogram(*HistogramAppender, int64, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
+func (*xorOptST2Appender) AppendHistogram(*HistogramAppender, int64, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float chunk")
 }
 
-func (*xorOptSTAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
+func (*xorOptST2Appender) AppendFloatHistogram(*FloatHistogramAppender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a float histogram sample to a float chunk")
 }
 
-const (
-	read0State uint8 = iota
-	read1State
-	readDoDMaybeSTState
-	readDoDNoSTState
-	readDoDState
-
-	eofState uint8 = 1<<8 - 1
-)
-
-type xorOptSTtIterator struct {
+type xorOptST2tIterator struct {
 	br       bstreamReader
 	numTotal uint16
 
 	firstSTKnown    bool
 	firstSTChangeOn uint16
 
-	state   uint8
 	numRead uint16
 
 	st, t int64
@@ -210,14 +163,16 @@ type xorOptSTtIterator struct {
 	stDelta int64
 	tDelta  uint64
 	err     error
+
+	nextFn func() ValueType
 }
 
-func (it *xorOptSTtIterator) Seek(t int64) ValueType {
-	if it.state == eofState {
+func (it *xorOptST2tIterator) Seek(t int64) ValueType {
+	if it.err != nil {
 		return ValNone
 	}
 
-	for t > it.t || it.state == read0State {
+	for t > it.t || it.numRead == 0 {
 		if it.Next() == ValNone {
 			return ValNone
 		}
@@ -225,31 +180,31 @@ func (it *xorOptSTtIterator) Seek(t int64) ValueType {
 	return ValFloat
 }
 
-func (it *xorOptSTtIterator) At() (int64, float64) {
+func (it *xorOptST2tIterator) At() (int64, float64) {
 	return it.t, it.val
 }
 
-func (*xorOptSTtIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+func (*xorOptST2tIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	panic("cannot call xorIterator.AtHistogram")
 }
 
-func (*xorOptSTtIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+func (*xorOptST2tIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	panic("cannot call xorIterator.AtFloatHistogram")
 }
 
-func (it *xorOptSTtIterator) AtT() int64 {
+func (it *xorOptST2tIterator) AtT() int64 {
 	return it.t
 }
 
-func (it *xorOptSTtIterator) AtST() int64 {
+func (it *xorOptST2tIterator) AtST() int64 {
 	return it.st
 }
 
-func (it *xorOptSTtIterator) Err() error {
+func (it *xorOptST2tIterator) Err() error {
 	return it.err
 }
 
-func (it *xorOptSTtIterator) Reset(b []byte) {
+func (it *xorOptST2tIterator) Reset(b []byte) {
 	// We skip initial headers for actual samples.
 	it.br = newBReader(b[chunkHeaderSize+chunkSTHeaderSize:])
 	it.numTotal = binary.BigEndian.Uint16(b)
@@ -263,13 +218,10 @@ func (it *xorOptSTtIterator) Reset(b []byte) {
 	it.stDelta = 0
 	it.tDelta = 0
 	it.err = nil
-	it.state = read0State
-	if it.numRead >= it.numTotal {
-		it.state = eofState
-	}
+	it.nextFn = it.initNext
 }
 
-func (a *xorOptSTAppender) Append(st, t int64, v float64) {
+func (a *xorOptST2Appender) Append(st, t int64, v float64) {
 	var (
 		stDelta   int64
 		tDelta    uint64
@@ -344,7 +296,7 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 	}
 }
 
-func (a *xorOptSTAppender) BitProfiledAppend(p *bitProfiler[any], st, t int64, v float64) {
+func (a *xorOptST2Appender) BitProfiledAppend(p *bitProfiler[any], st, t int64, v float64) {
 	var (
 		stDelta   int64
 		tDelta    uint64
@@ -431,239 +383,102 @@ func (a *xorOptSTAppender) BitProfiledAppend(p *bitProfiler[any], st, t int64, v
 	}
 }
 
-func (it *xorOptSTtIterator) retErr(err error) ValueType {
-	it.err = err
-	it.state = eofState
-	return ValNone
+func (it *xorOptST2tIterator) Next() ValueType {
+	if it.err != nil || it.numRead == it.numTotal {
+		return ValNone
+	}
+	return it.nextFn()
 }
 
-func (it *xorOptSTtIterator) Next() ValueType {
-	switch it.state {
-	case eofState:
-		return ValNone
-	case read0State:
-		it.state++
-
-		// Optional ST read.
+func (it *xorOptST2tIterator) initNext() ValueType {
+	switch it.numRead {
+	case 0:
 		if it.firstSTKnown {
 			st, err := binary.ReadVarint(&it.br)
 			if err != nil {
-				return it.retErr(err)
+				it.err = err
+				return ValNone
 			}
 			it.st = st
 		}
-
-		// TS.
 		t, err := binary.ReadVarint(&it.br)
 		if err != nil {
-			return it.retErr(err)
+			it.err = err
+			return ValNone
 		}
-		// Value.
 		v, err := it.br.readBits(64)
 		if err != nil {
-			return it.retErr(err)
+			it.err = err
+			return ValNone
 		}
-
 		it.t = t
 		it.val = math.Float64frombits(v)
 
-		// State EOF check.
 		it.numRead++
-		if it.numRead >= it.numTotal {
-			it.state = eofState
-		}
 		return ValFloat
-	case read1State:
-		it.state++
+	case 1:
 		if it.firstSTChangeOn == 0 {
 			// This means we have same (zero or non-zero) ST value for the rest of
-			// chunk. We can simply use ~classic XOR chunk iterations.
-			it.state = readDoDNoSTState
+			// chunk. We can set rest of next functions to use ~classic XOR chunk iterations.
+			it.nextFn = it.stAgnosticDoDNext
 		} else if it.firstSTChangeOn == 1 {
-			// We got early ST change on the second sample, likely delta.
-			// Continue ST rich flow from the next iteration.
-			it.state = readDoDState
-
 			stDelta, err := binary.ReadVarint(&it.br)
 			if err != nil {
-				return it.retErr(err)
+				it.err = err
+				return ValNone
 			}
 			it.stDelta = stDelta
 			it.st += it.stDelta
+
+			// We got early ST change on the second sample, likely delta.
+			// Continue ST rich flow from the next iteration.
+			it.nextFn = it.stDoDNext
 		}
-		// TS.
 		tDelta, err := binary.ReadUvarint(&it.br)
 		if err != nil {
-			return it.retErr(err)
+			it.err = err
+			return ValNone
 		}
 		it.tDelta = tDelta
 		it.t += int64(it.tDelta)
-
-		// Value.
-		if err := xorRead(&it.br, &it.val, &it.leading, &it.trailing); err != nil {
-			return it.retErr(err)
-		}
-
-		// State EOF check.
-		it.numRead++
-		if it.numRead >= it.numTotal {
-			it.state = eofState
-		}
-		return ValFloat
-	case readDoDMaybeSTState:
-		if it.firstSTChangeOn == it.numRead {
-			// ST changes from this iteration, change state for future.
-			it.state = readDoDState
-			return it.dodNext()
-		}
-		return it.dodNoSTNext()
-	case readDoDState:
-		return it.dodNext()
-	case readDoDNoSTState:
-		return it.dodNoSTNext()
+		return it.readValue()
 	default:
-		panic("xorOptSTtIterator: broken machine state")
+		if it.firstSTChangeOn == it.numRead {
+			it.nextFn = it.stDoDNext
+			return it.stDoDNext()
+		}
+		return it.stAgnosticDoDNext()
 	}
 }
 
-func (it *xorOptSTtIterator) dodNext() ValueType {
-	// Inlined readClassicVarbitInt(&it.br)
-	var d byte
-	// read delta-of-delta
-	for range 4 {
-		d <<= 1
-		bit, err := it.br.readBitFast()
-		if err != nil {
-			bit, err = it.br.readBit()
-			if err != nil {
-				return it.retErr(err)
-			}
-		}
-		if bit == zero {
-			break
-		}
-		d |= 1
+func (it *xorOptST2tIterator) stDoDNext() ValueType {
+	sdod, err := readClassicVarbitInt(&it.br)
+	if err != nil {
+		it.err = err
+		return ValNone
 	}
-	var sz uint8
-	var sdod int64
-	switch d {
-	case 0b0:
-		// dod == 0
-	case 0b10:
-		sz = 14
-	case 0b110:
-		sz = 17
-	case 0b1110:
-		sz = 20
-	case 0b1111:
-		// Do not use fast because it's very unlikely it will succeed.
-		bits, err := it.br.readBits(64)
-		if err != nil {
-			return it.retErr(err)
-		}
-
-		sdod = int64(bits)
-	}
-
-	if sz != 0 {
-		bits, err := it.br.readBitsFast(sz)
-		if err != nil {
-			bits, err = it.br.readBits(sz)
-			if err != nil {
-				return it.retErr(err)
-			}
-		}
-
-		// Account for negative numbers, which come back as high unsigned numbers.
-		// See docs/bstream.md.
-		if bits > (1 << (sz - 1)) {
-			bits -= 1 << sz
-		}
-		sdod = int64(bits)
-	}
-
-	//sdod, err := readClassicVarbitInt(&it.br)
-	//if err != nil {
-	//	it.err = err
-	//	return ValNone
-	//}
 	it.stDelta = it.stDelta + sdod
 	it.st += it.stDelta
-	return it.dodNoSTNext()
+	return it.stAgnosticDoDNext()
 }
 
-func (it *xorOptSTtIterator) dodNoSTNext() ValueType {
-	// Inlined readClassicVarbitInt(&it.br)
-	var d byte
-	// read delta-of-delta
-	for range 4 {
-		d <<= 1
-		bit, err := it.br.readBitFast()
-		if err != nil {
-			bit, err = it.br.readBit()
-			if err != nil {
-				return it.retErr(err)
-			}
-		}
-		if bit == zero {
-			break
-		}
-		d |= 1
+func (it *xorOptST2tIterator) stAgnosticDoDNext() ValueType {
+	dod, err := readClassicVarbitInt(&it.br)
+	if err != nil {
+		it.err = err
+		return ValNone
 	}
-	var sz uint8
-	var dod int64
-	switch d {
-	case 0b0:
-		// dod == 0
-	case 0b10:
-		sz = 14
-	case 0b110:
-		sz = 17
-	case 0b1110:
-		sz = 20
-	case 0b1111:
-		// Do not use fast because it's very unlikely it will succeed.
-		bits, err := it.br.readBits(64)
-		if err != nil {
-			return it.retErr(err)
-		}
-
-		dod = int64(bits)
-	}
-
-	if sz != 0 {
-		bits, err := it.br.readBitsFast(sz)
-		if err != nil {
-			bits, err = it.br.readBits(sz)
-			if err != nil {
-				return it.retErr(err)
-			}
-		}
-
-		// Account for negative numbers, which come back as high unsigned numbers.
-		// See docs/bstream.md.
-		if bits > (1 << (sz - 1)) {
-			bits -= 1 << sz
-		}
-		dod = int64(bits)
-	}
-
-	//dod, err := readClassicVarbitInt(&it.br)
-	//if err != nil {
-	//	it.err = err
-	//	return ValNone
-	//}
 	it.tDelta = uint64(int64(it.tDelta) + dod)
 	it.t += int64(it.tDelta)
-	// Value.
-	if err := xorRead(&it.br, &it.val, &it.leading, &it.trailing); err != nil {
-		return it.retErr(err)
-	}
+	return it.readValue()
+}
 
-	// State EOF check.
-	it.numRead++
-	if it.numRead >= it.numTotal {
-		it.state = eofState
+func (it *xorOptST2tIterator) readValue() ValueType {
+	err := xorRead(&it.br, &it.val, &it.leading, &it.trailing)
+	if err != nil {
+		it.err = err
+		return ValNone
 	}
+	it.numRead++
 	return ValFloat
 }
