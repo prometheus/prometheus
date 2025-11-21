@@ -453,7 +453,7 @@ func TestCheckpointDeletesTemporaryCheckpoints(t *testing.T) {
 			defer w.Close()
 
 			require.NoError(t, err)
-			_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(_ chunks.HeadSeriesRef, _ int) bool { return true }, 1000)
+			_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(_ chunks.HeadSeriesRef) bool { return true }, 1000)
 			require.NoError(t, err)
 
 			files, err := os.ReadDir(dir)

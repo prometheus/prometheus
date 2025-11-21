@@ -1,3 +1,17 @@
+// Copyright 2018 The Prometheus Authors
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package tsdbutil
 
 import (
@@ -24,9 +38,9 @@ func TestRemoveTmpDirs(t *testing.T) {
 				return fi.IsDir() && strings.HasPrefix(fi.Name(), "tmp")
 			},
 			setup: func(t *testing.T, dir string) {
-				require.NoError(t, os.Mkdir(filepath.Join(dir, "tmpdir1"), 0755))
-				require.NoError(t, os.Mkdir(filepath.Join(dir, "tmpdir2"), 0755))
-				require.NoError(t, os.Mkdir(filepath.Join(dir, "normaldir"), 0755))
+				require.NoError(t, os.Mkdir(filepath.Join(dir, "tmpdir1"), 0o755))
+				require.NoError(t, os.Mkdir(filepath.Join(dir, "tmpdir2"), 0o755))
+				require.NoError(t, os.Mkdir(filepath.Join(dir, "normaldir"), 0o755))
 			},
 			expectedDirs: []string{"normaldir"},
 		},
@@ -36,9 +50,9 @@ func TestRemoveTmpDirs(t *testing.T) {
 				return fi.IsDir() && strings.HasSuffix(fi.Name(), ".tmp")
 			},
 			setup: func(t *testing.T, dir string) {
-				require.NoError(t, os.Mkdir(filepath.Join(dir, "data.tmp"), 0755))
-				require.NoError(t, os.Mkdir(filepath.Join(dir, "cache.tmp"), 0755))
-				require.NoError(t, os.Mkdir(filepath.Join(dir, "permanent"), 0755))
+				require.NoError(t, os.Mkdir(filepath.Join(dir, "data.tmp"), 0o755))
+				require.NoError(t, os.Mkdir(filepath.Join(dir, "cache.tmp"), 0o755))
+				require.NoError(t, os.Mkdir(filepath.Join(dir, "permanent"), 0o755))
 			},
 			expectedDirs: []string{"permanent"},
 		},
@@ -48,8 +62,8 @@ func TestRemoveTmpDirs(t *testing.T) {
 				return fi.IsDir() && strings.HasPrefix(fi.Name(), "tmp")
 			},
 			setup: func(t *testing.T, dir string) {
-				require.NoError(t, os.Mkdir(filepath.Join(dir, "normaldir1"), 0755))
-				require.NoError(t, os.Mkdir(filepath.Join(dir, "normaldir2"), 0755))
+				require.NoError(t, os.Mkdir(filepath.Join(dir, "normaldir1"), 0o755))
+				require.NoError(t, os.Mkdir(filepath.Join(dir, "normaldir2"), 0o755))
 			},
 			expectedDirs: []string{"normaldir1", "normaldir2"},
 		},
@@ -58,7 +72,7 @@ func TestRemoveTmpDirs(t *testing.T) {
 			isTmpDir: func(fi fs.DirEntry) bool {
 				return fi.IsDir() && strings.HasPrefix(fi.Name(), "tmp")
 			},
-			setup:        func(t *testing.T, dir string) {}, // No setup needed - directory is empty
+			setup:        func(_ *testing.T, _ string) {}, // No setup needed - directory is empty
 			expectedDirs: []string{},
 		},
 		{
@@ -67,8 +81,8 @@ func TestRemoveTmpDirs(t *testing.T) {
 				return fi.IsDir() && strings.HasPrefix(fi.Name(), "tmp")
 			},
 			setup: func(t *testing.T, dir string) {
-				require.NoError(t, os.WriteFile(filepath.Join(dir, "tmpfile1.txt"), []byte("test"), 0644))
-				require.NoError(t, os.WriteFile(filepath.Join(dir, "tmpfile2.txt"), []byte("test"), 0644))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "tmpfile1.txt"), []byte("test"), 0o644))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "tmpfile2.txt"), []byte("test"), 0o644))
 			},
 			expectedDirs: []string{},
 		},
@@ -104,7 +118,7 @@ func TestRemoveTmpDirs_NonExistentDirectory(t *testing.T) {
 	testDir := t.TempDir()
 	nonExistent := filepath.Join(testDir, "does_not_exist")
 
-	require.NoError(t, RemoveTmpDirs(promslog.NewNopLogger(), nonExistent, func(fi fs.DirEntry) bool {
+	require.NoError(t, RemoveTmpDirs(promslog.NewNopLogger(), nonExistent, func(_ fs.DirEntry) bool {
 		return true
 	}))
 }
