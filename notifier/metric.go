@@ -24,6 +24,7 @@ type alertMetrics struct {
 	latencyHistogram        *prometheus.HistogramVec
 	errors                  *prometheus.CounterVec
 	sent                    *prometheus.CounterVec
+	delivered               prometheus.Counter
 	dropped                 prometheus.Counter
 	queueLength             prometheus.GaugeFunc
 	queueCapacity           prometheus.Gauge
@@ -74,6 +75,12 @@ func newAlertMetrics(
 		},
 			[]string{alertmanagerLabel},
 		),
+		delivered: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "delivered_total",
+			Help:      "Total number of alerts successfully delivered to at least one Alertmanager.",
+		}),
 		dropped: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -106,6 +113,7 @@ func newAlertMetrics(
 			m.latencyHistogram,
 			m.errors,
 			m.sent,
+			m.delivered,
 			m.dropped,
 			m.queueLength,
 			m.queueCapacity,
