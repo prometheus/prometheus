@@ -102,6 +102,14 @@ metadata changes as WAL records on a per-series basis.
 
 This must be used if you would like to send metadata using the new remote write 2.0.
 
+## Metadata Series Cache
+
+`--enable-feature=metadata-series-cache`
+
+When enabled, Prometheus will populate series-level metadata cache in TSDB head
+without writing metadata to WAL records. This feature is designed for Remote Write 2.0, where metadata can be looked up
+efficiently from the series reference.
+
 ## Delay compaction start time
 
 `--enable-feature=delayed-compaction`

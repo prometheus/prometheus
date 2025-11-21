@@ -219,6 +219,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			options.EnableTypeAndUnitLabels,
 			options.ExtraMetrics,
 			options.AppendMetadata,
+			options.EnableMetadataSeriesCache,
 			opts.target,
 			options.PassMetadataInContext,
 			metrics,
@@ -970,8 +971,9 @@ type scrapeLoop struct {
 
 	disabledEndOfRunStalenessMarkers atomic.Bool
 
-	reportExtraMetrics  bool
-	appendMetadataToWAL bool
+	reportExtraMetrics        bool
+	appendMetadataToWAL       bool
+	enableMetadataSeriesCache bool
 
 	metrics *scrapeMetrics
 
@@ -1262,6 +1264,7 @@ func newScrapeLoop(ctx context.Context,
 	enableTypeAndUnitLabels bool,
 	reportExtraMetrics bool,
 	appendMetadataToWAL bool,
+	enableMetadataSeriesCache bool,
 	target *Target,
 	passMetadataInContext bool,
 	metrics *scrapeMetrics,
@@ -1321,6 +1324,7 @@ func newScrapeLoop(ctx context.Context,
 		enableNativeHistogramScraping: enableNativeHistogramScraping,
 		reportExtraMetrics:            reportExtraMetrics,
 		appendMetadataToWAL:           appendMetadataToWAL,
+		enableMetadataSeriesCache:     enableMetadataSeriesCache,
 		metrics:                       metrics,
 		skipOffsetting:                skipOffsetting,
 		validationScheme:              validationScheme,
@@ -1902,7 +1906,7 @@ loop:
 			sl.metrics.targetScrapeExemplarOutOfOrder.Add(float64(outOfOrderExemplars))
 		}
 
-		if sl.appendMetadataToWAL && lastMeta != nil {
+		if (sl.appendMetadataToWAL || sl.enableMetadataSeriesCache) && lastMeta != nil {
 			// Is it new series OR did metadata change for this family?
 			if !seriesCached || lastMeta.lastIterChange == sl.cache.iter {
 				// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
@@ -2229,7 +2233,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s reportSample, t in
 		if !ok {
 			sl.cache.addRef(s.name, ref, lset, lset.Hash())
 			// We only need to add metadata once a scrape target appears.
-			if sl.appendMetadataToWAL {
+			if sl.appendMetadataToWAL || sl.enableMetadataSeriesCache {
 				if _, merr := app.UpdateMetadata(ref, lset, s.Metadata); merr != nil {
 					sl.l.Debug("Error when appending metadata in addReportSample", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", s.Metadata), "err", merr)
 				}

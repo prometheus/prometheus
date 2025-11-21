@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -44,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -3795,7 +3797,7 @@ func TestIteratorSeekIntoBuffer(t *testing.T) {
 // Tests https://github.com/prometheus/prometheus/issues/8221.
 func TestChunkNotFoundHeadGCRace(t *testing.T) {
 	t.Parallel()
-	db := newTestDB(t)
+	db := newTestDB(t, DefaultOptions())
 	db.DisableCompactions()
 	ctx := context.Background()
 
@@ -3862,7 +3864,7 @@ func TestChunkNotFoundHeadGCRace(t *testing.T) {
 // Tests https://github.com/prometheus/prometheus/issues/9079.
 func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 	t.Parallel()
-	db := newTestDB(t)
+	db := newTestDB(t, DefaultOptions())
 	db.DisableCompactions()
 	ctx := context.Background()
 
@@ -3910,7 +3912,7 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 }
 
 func TestIsQuerierCollidingWithTruncation(t *testing.T) {
-	db := newTestDB(t)
+	db := newTestDB(t, DefaultOptions())
 	db.DisableCompactions()
 
 	var (
@@ -3956,7 +3958,7 @@ func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 
 func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 	t.Parallel()
-	db := newTestDB(t)
+	db := newTestDB(t, DefaultOptions())
 	db.DisableCompactions()
 
 	sampleTs := func(i int64) int64 { return i * DefaultBlockDuration / (4 * 120) }
@@ -7329,4 +7331,35 @@ func TestHistogramStalenessConversionMetrics(t *testing.T) {
 				"Histogram counter should match actual histogram samples stored")
 		})
 	}
+}
+
+func TestHead_GetMetadataByRef(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	lbls := labels.FromStrings("__name__", "http_requests_total", "job", "api")
+	meta := metadata.Metadata{
+		Type: "counter",
+		Unit: "bytes",
+		Help: "Total bytes processed",
+	}
+
+	app := head.Appender(context.Background())
+	ref, err := app.Append(0, lbls, 1000, 1.0)
+	require.NoError(t, err)
+	_, err = app.UpdateMetadata(0, lbls, meta)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Test successful lookup.
+	gotMeta := head.GetMetadataByRef(chunks.HeadSeriesRef(ref))
+	require.Equal(t, meta.Type, gotMeta.Type)
+	require.Equal(t, meta.Unit, gotMeta.Unit)
+	require.Equal(t, meta.Help, gotMeta.Help)
+
+	// Test missing series.
+	missingMeta := head.GetMetadataByRef(chunks.HeadSeriesRef(999999))
+	require.Equal(t, model.MetricTypeUnknown, missingMeta.Type)
 }
