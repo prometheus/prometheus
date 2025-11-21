@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -458,6 +459,7 @@ func main() {
 	var (
 		tsdbWALCompression     bool
 		tsdbWALCompressionType string
+		tsdbUploadMetaPath     string
 	)
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL. If false, the --storage.tsdb.wal-compression-type flag is ignored.").
 		Hidden().Default("true").BoolVar(&tsdbWALCompression)
@@ -473,6 +475,9 @@ func main() {
 
 	serverOnlyFlag(a, "storage.tsdb.delayed-compaction.max-percent", "Sets the upper limit for the random compaction delay, specified as a percentage of the head chunk range. 100 means the compaction can be delayed by up to the entire head chunk range. Only effective when the delayed-compaction feature flag is enabled.").
 		Default("10").Hidden().IntVar(&cfg.tsdb.CompactionDelayMaxPercent)
+
+	serverOnlyFlag(a, "storage.tsdb.upload-meta-file", "Path to a JSON file with uploaded TSDB blocks e.g. Thanos shipper meta file. If set TSDB will only compact blocks that are marked as uploaded in that file, improving external storage integrations e.g. with Thanos sidecar").
+		Default("").StringVar(&tsdbUploadMetaPath)
 
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
@@ -701,6 +706,11 @@ func main() {
 		); err != nil {
 			logger.Warn("automemlimit", "msg", "Failed to set GOMEMLIMIT automatically", "err", err)
 		}
+	}
+
+	if tsdbUploadMetaPath != "" {
+		logger.Info("Compactions will be delayed for blocks not marked as uploaded in the file tracking uploads", "path", tsdbUploadMetaPath)
+		cfg.tsdb.BlockCompactionExcludeFunc = exludeBlocksPendingUpload(logger, tsdbUploadMetaPath)
 	}
 
 	// Now that the validity of the config is established, set the config
@@ -1883,6 +1893,7 @@ type tsdbOptions struct {
 	CompactionDelayMaxPercent      int
 	EnableOverlappingCompaction    bool
 	UseUncachedIO                  bool
+	BlockCompactionExcludeFunc     tsdb.BlockExcludeFilterFunc
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1906,6 +1917,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
 		UseUncachedIO:                  opts.UseUncachedIO,
+		BlockCompactionExcludeFunc:     opts.BlockCompactionExcludeFunc,
 	}
 }
 
@@ -1969,4 +1981,44 @@ func (p *rwProtoMsgFlagParser) Set(opt string) error {
 	}
 	*p.msgs = append(*p.msgs, t)
 	return nil
+}
+
+type UploadMetaFile struct {
+	Uploaded []string `json:"uploaded"`
+}
+
+// isBlockUploaded returns true if given TSDB block is marked as uploaded in the JSON file
+// passed to Prometheus using the --storage.tsdb.upload-meta-file=... flag.
+// If the file does not exist or there's an error while reading it then we assume it is uploaded
+// so we don't block compactions of TSDB blocks by Prometheus.
+func isBlockUploaded(logger *slog.Logger, uploadMetaPath string, meta *tsdb.BlockMeta) bool {
+	data, err := os.ReadFile(uploadMetaPath)
+	if err != nil {
+		logger.Warn("cannot open TSDB upload meta file", slog.String("path", uploadMetaPath), slog.Any("err", err))
+		return true
+	}
+
+	var shipper UploadMetaFile
+	err = json.Unmarshal(data, &shipper)
+	if err != nil {
+		logger.Warn("cannot parse TSDB upload meta file", slog.String("path", uploadMetaPath), slog.Any("err", err))
+		return true
+	}
+
+	return slices.Contains(shipper.Uploaded, meta.ULID.String())
+}
+
+func exludeBlocksPendingUpload(logger *slog.Logger, uploadMetaPath string) tsdb.BlockExcludeFilterFunc {
+	return func(meta *tsdb.BlockMeta) bool {
+		if meta.Compaction.Level > 1 {
+			// Blocks with level > 1 are compacted, sidecars like Thanos don't upload these normally,
+			// so we never exlude them.
+			return false
+		}
+		uploaded := isBlockUploaded(logger, uploadMetaPath, meta)
+		if !uploaded {
+			logger.Info("Block still pending upload, excluding it from compactions", slog.String("ulid", meta.ULID.String()))
+		}
+		return !uploaded
+	}
 }

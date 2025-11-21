@@ -87,6 +87,7 @@ type LeveledCompactor struct {
 	maxBlockChunkSegmentSize    int64
 	useUncachedIO               bool
 	mergeFunc                   storage.VerticalChunkSeriesMergeFunc
+	blockExcludeFunc            BlockExcludeFilterFunc
 	postingsEncoder             index.PostingsEncoder
 	postingsDecoderFactory      PostingsDecoderFactory
 	enableOverlappingCompaction bool
@@ -160,16 +161,24 @@ type LeveledCompactorOptions struct {
 	// PE specifies the postings encoder. It is called when compactor is writing out the postings for a label name/value pair during compaction.
 	// If it is nil then the default encoder is used. At the moment that is the "raw" encoder. See index.EncodePostingsRaw for more.
 	PE index.PostingsEncoder
+
 	// PD specifies the postings decoder factory to return different postings decoder based on BlockMeta. It is called when opening a block or opening the index file.
 	// If it is nil then a default decoder is used, compatible with Prometheus v2.
 	PD PostingsDecoderFactory
+
 	// MaxBlockChunkSegmentSize is the max block chunk segment size. If it is 0 then the default chunks.DefaultChunkSegmentSize is used.
 	MaxBlockChunkSegmentSize int64
+
 	// MergeFunc is used for merging series together in vertical compaction. By default storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge) is used.
 	MergeFunc storage.VerticalChunkSeriesMergeFunc
+
+	// BlockExcludeFilter is used to decide which blocks are exluded from compactions.
+	BlockExcludeFilter BlockExcludeFilterFunc
+
 	// EnableOverlappingCompaction enables compaction of overlapping blocks. In Prometheus it is always enabled.
 	// It is useful for downstream projects like Mimir, Cortex, Thanos where they have a separate component that does compaction.
 	EnableOverlappingCompaction bool
+
 	// Metrics is set of metrics for Compactor. By default, NewCompactorMetrics would be called to initialize metrics unless it is provided.
 	Metrics *CompactorMetrics
 	// UseUncachedIO allows bypassing the page cache when appropriate.
@@ -178,7 +187,9 @@ type LeveledCompactorOptions struct {
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
 
-func DefaultPostingsDecoderFactory(*BlockMeta) index.PostingsDecoder {
+type BlockExcludeFilterFunc func(meta *BlockMeta) bool
+
+func DefaultPostingsDecoderFactory(_ *BlockMeta) index.PostingsDecoder {
 	return index.DecodePostingsRaw
 }
 
@@ -226,6 +237,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		postingsEncoder:             pe,
 		postingsDecoderFactory:      opts.PD,
 		enableOverlappingCompaction: opts.EnableOverlappingCompaction,
+		blockExcludeFunc:            opts.BlockExcludeFilter,
 	}, nil
 }
 
@@ -250,12 +262,19 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		if c.blockExcludeFunc != nil && c.blockExcludeFunc(meta) {
+			break
+		}
 		dms = append(dms, dirMeta{dir, meta})
 	}
 	return c.plan(dms)
 }
 
 func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
+	if len(dms) == 0 {
+		return nil, nil
+	}
+
 	slices.SortFunc(dms, func(a, b dirMeta) int {
 		switch {
 		case a.meta.MinTime < b.meta.MinTime:
