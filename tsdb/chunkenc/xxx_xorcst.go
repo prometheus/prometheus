@@ -267,7 +267,7 @@ func (a *xorCSTAppender) Append(st, t int64, v float64) {
 		}
 		stChanged = st != a.st
 		if stChanged || a.firstSTChangeOn != 0 {
-			putSTDiff(a.b, !stChanged, t-st)
+			putSTDiff(a.b, !stChanged, int64(tDelta)-(t-st))
 		}
 		a.writeVDelta(v)
 	}
@@ -519,12 +519,13 @@ func (it *xorCSTtIterator) dodNext() ValueType {
 	it.t += int64(it.tDelta)
 
 	// ST.
-	noChange, stDiff, err := readSTDiff(&it.br)
+	noChange, stDoDDiff, err := readSTDiff(&it.br)
 	if err != nil {
 		return it.retErr(err)
 	}
 	if !noChange {
-		it.st = it.t - stDiff
+		// Our value is the delta of tDelta (Dod).
+		it.st = it.t + (stDoDDiff - int64(it.tDelta))
 	}
 
 	// Value.

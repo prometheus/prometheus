@@ -216,11 +216,11 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 
 	for _, f := range []fmtCase{
 		// Reference.
-		{name: "XOR (ST ignored)", newChunkFn: func() Chunk { return NewXORChunk() }},
+		//{name: "XOR (ST ignored)", newChunkFn: func() Chunk { return NewXORChunk() }},
 
 		// Most tempting one.
-		{name: "XOROptST", newChunkFn: func() Chunk { return NewXOROptSTChunk() }},
-		{name: "XORCST", newChunkFn: func() Chunk { return NewXORCSTChunk() }},
+		//{name: "XOROptST", newChunkFn: func() Chunk { return NewXOROptSTChunk() }},
+		{name: "XORCST(v2)", newChunkFn: func() Chunk { return NewXORCSTChunk() }},
 		// Experiment with custom varbit again (easy to get things smaller, but not easy to get things fast)
 		//{name: "XOROptST2", newChunkFn: func() Chunk { return NewXOROptST2Chunk() }},
 
@@ -233,7 +233,7 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 
 		// Fun, buffered ones! Very fast, but require more mem.
 		//{name: "ALPBuffered", newChunkFn: func() Chunk { return NewALPBufferedChunk() }},
-		{name: "XORBuffered", newChunkFn: func() Chunk { return NewXORBufferedChunk() }},
+		//{name: "XORBuffered", newChunkFn: func() Chunk { return NewXORBufferedChunk() }},
 		//{name: "XORClassicBuffered", newChunkFn: func() Chunk { return NewXORClassicBufferedChunk() }},
 	} {
 		for _, s := range sampleCases {
@@ -245,7 +245,7 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 }
 
 /*
-	export bench=bw.bench/append && go test \
+	export bench=bw.bench/append.v2 && go test \
 	  -run '^$' -bench '^BenchmarkAppender' \
 	  -benchtime 1s -count 6 -cpu 2 -timeout 999m \
 	  | tee ${bench}.txt
