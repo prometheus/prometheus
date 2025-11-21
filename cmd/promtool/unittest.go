@@ -22,6 +22,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,7 +33,7 @@ import (
 	"github.com/nsf/jsondiff"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -225,7 +226,7 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 		QueryFunc:  rules.EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
 		Appendable: suite.Storage(),
 		Context:    context.Background(),
-		NotifyFunc: func(_ context.Context, _ string, _ ...*rules.Alert) {},
+		NotifyFunc: func(context.Context, string, ...*rules.Alert) {},
 		Logger:     promslog.NewNopLogger(),
 	}
 	m := rules.NewManager(opts)
@@ -278,9 +279,7 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 	for k := range alertEvalTimesMap {
 		alertEvalTimes = append(alertEvalTimes, k)
 	}
-	sort.Slice(alertEvalTimes, func(i, j int) bool {
-		return alertEvalTimes[i] < alertEvalTimes[j]
-	})
+	slices.Sort(alertEvalTimes)
 
 	// Current index in alertEvalTimes what we are looking at.
 	curr := 0
@@ -528,11 +527,12 @@ Outer:
 
 // seriesLoadingString returns the input series in PromQL notation.
 func (tg *testGroup) seriesLoadingString() string {
-	result := fmt.Sprintf("load %v\n", shortDuration(tg.Interval))
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("load %v\n", shortDuration(tg.Interval)))
 	for _, is := range tg.InputSeries {
-		result += fmt.Sprintf("  %v %v\n", is.Series, is.Values)
+		result.WriteString(fmt.Sprintf("  %v %v\n", is.Series, is.Values))
 	}
-	return result
+	return result.String()
 }
 
 func shortDuration(d model.Duration) string {

@@ -45,7 +45,7 @@ func (s String) String() string {
 }
 
 func (s String) MarshalJSON() ([]byte, error) {
-	return json.Marshal([...]interface{}{float64(s.T) / 1000, s.V})
+	return json.Marshal([...]any{float64(s.T) / 1000, s.V})
 }
 
 // Scalar is a data point that's explicitly not associated with a metric.
@@ -61,7 +61,7 @@ func (s Scalar) String() string {
 
 func (s Scalar) MarshalJSON() ([]byte, error) {
 	v := strconv.FormatFloat(s.V, 'f', -1, 64)
-	return json.Marshal([...]interface{}{float64(s.T) / 1000, v})
+	return json.Marshal([...]any{float64(s.T) / 1000, v})
 }
 
 // Series is a stream of data points belonging to a metric.
@@ -111,7 +111,7 @@ func (p FPoint) String() string {
 // timestamp.
 func (p FPoint) MarshalJSON() ([]byte, error) {
 	v := strconv.FormatFloat(p.F, 'f', -1, 64)
-	return json.Marshal([...]interface{}{float64(p.T) / 1000, v})
+	return json.Marshal([...]any{float64(p.T) / 1000, v})
 }
 
 // HPoint represents a single histogram data point for a given timestamp.
@@ -136,9 +136,9 @@ func (p HPoint) String() string {
 // timestamp.
 func (p HPoint) MarshalJSON() ([]byte, error) {
 	h := struct {
-		Count   string          `json:"count"`
-		Sum     string          `json:"sum"`
-		Buckets [][]interface{} `json:"buckets,omitempty"`
+		Count   string  `json:"count"`
+		Sum     string  `json:"sum"`
+		Buckets [][]any `json:"buckets,omitempty"`
 	}{
 		Count: strconv.FormatFloat(p.H.Count, 'f', -1, 64),
 		Sum:   strconv.FormatFloat(p.H.Sum, 'f', -1, 64),
@@ -161,7 +161,7 @@ func (p HPoint) MarshalJSON() ([]byte, error) {
 				boundaries = 0 // Inclusive only on upper end AKA left open.
 			}
 		}
-		bucketToMarshal := []interface{}{
+		bucketToMarshal := []any{
 			boundaries,
 			strconv.FormatFloat(bucket.Lower, 'f', -1, 64),
 			strconv.FormatFloat(bucket.Upper, 'f', -1, 64),
@@ -169,7 +169,7 @@ func (p HPoint) MarshalJSON() ([]byte, error) {
 		}
 		h.Buckets = append(h.Buckets, bucketToMarshal)
 	}
-	return json.Marshal([...]interface{}{float64(p.T) / 1000, h})
+	return json.Marshal([...]any{float64(p.T) / 1000, h})
 }
 
 // size returns the size of the HPoint compared to the size of an FPoint.
@@ -471,12 +471,16 @@ func (ssi *storageSeriesIterator) At() (t int64, v float64) {
 	return ssi.currT, ssi.currF
 }
 
-func (ssi *storageSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+func (*storageSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	panic(errors.New("storageSeriesIterator: AtHistogram not supported"))
 }
 
-func (ssi *storageSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	return ssi.currT, ssi.currH
+func (ssi *storageSeriesIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	if fh == nil {
+		return ssi.currT, ssi.currH.Copy()
+	}
+	ssi.currH.CopyTo(fh)
+	return ssi.currT, fh
 }
 
 func (ssi *storageSeriesIterator) AtT() int64 {
@@ -531,7 +535,7 @@ func (ssi *storageSeriesIterator) Next() chunkenc.ValueType {
 	}
 }
 
-func (ssi *storageSeriesIterator) Err() error {
+func (*storageSeriesIterator) Err() error {
 	return nil
 }
 

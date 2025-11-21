@@ -9,7 +9,7 @@ You can use `promtool` to test your rules.
 # For a single test file.
 ./promtool test rules test.yml
 
-# If you have multiple test files, say test1.yml,test2.yml,test2.yml
+# If you have multiple test files, say test1.yml,test2.yml,test3.yml
 ./promtool test rules test1.yml test2.yml test3.yml
 ```
 

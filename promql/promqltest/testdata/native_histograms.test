@@ -101,54 +101,56 @@ clear
 # with an upper limit of 1 and offset:1 is the bucket which follows to the right. Negative offsets represent bucket
 # positions for upper limits <1 (tending toward zero), where offset:-1 is the bucket to the left of offset:0.
 load 5m
-	incr_histogram	{{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{sum:2 count:1 buckets:[1] offset:1}}x10
+    incr_histogram {{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{sum:2 count:1 buckets:[1] offset:1}}x10
 
 eval instant at 5m histogram_count(incr_histogram)
-	{} 5
+    {} 5
 
 eval instant at 5m histogram_sum(incr_histogram)
-	{} 6
+    {} 6
 
 eval instant at 5m histogram_avg(incr_histogram)
-	{} 1.2
+    {} 1.2
 
 # We expect 3/5ths of the values to fall in the range 1 < x <= 2.
 eval instant at 5m histogram_fraction(1, 2, incr_histogram)
-	{} 0.6
+    {} 0.6
 
 # See explanation for exponential interpolation above.
 eval instant at 5m histogram_quantile(0.5, incr_histogram)
-	{} 1.414213562373095
+    {} 1.414213562373095
 
 
 eval instant at 50m incr_histogram
-	{__name__="incr_histogram"} {{count:14 sum:24 buckets:[1 12 1]}}
+    {__name__="incr_histogram"} {{count:14 sum:24 buckets:[1 12 1]}}
 
 eval instant at 50m histogram_count(incr_histogram)
-	{} 14
+    {} 14
 
 eval instant at 50m histogram_sum(incr_histogram)
-	{} 24
+    {} 24
 
 eval instant at 50m histogram_avg(incr_histogram)
     {} 1.7142857142857142
 
 # We expect 12/14ths of the values to fall in the range 1 < x <= 2.
 eval instant at 50m histogram_fraction(1, 2, incr_histogram)
-	{} 0.8571428571428571
+     {} 0.8571428571428571
 
 # See explanation for exponential interpolation above.
 eval instant at 50m histogram_quantile(0.5, incr_histogram)
-	{} 1.414213562373095
+     {} 1.414213562373095
 
 # Per-second average rate of increase should be 1/(5*60) for count and buckets, then 2/(5*60) for sum.
 eval instant at 50m rate(incr_histogram[10m])
+    expect no_warn
     {} {{count:0.0033333333333333335 sum:0.006666666666666667 offset:1 buckets:[0.0033333333333333335]}}
 
 # Calculate the 50th percentile of observations over the last 10m.
 # See explanation for exponential interpolation above.
 eval instant at 50m histogram_quantile(0.5, rate(incr_histogram[10m]))
-	{} 1.414213562373095
+    expect no_warn
+    {} 1.414213562373095
 
 clear
 
@@ -291,9 +293,11 @@ load 15s
     histogram_rate {{schema:1 count:12 sum:18.4 z_bucket:2 z_bucket_w:0.001 buckets:[1 2 0 1 1] n_buckets:[1 2 0 1 1]}}+{{schema:1 count:9 sum:18.4 z_bucket:1 z_bucket_w:0.001 buckets:[1 1 0 1 1] n_buckets:[1 1 0 1 1]}}x100
 
 eval instant at 5m rate(histogram_rate[45s])
+    expect no_warn
     {} {{schema:1 count:0.6 sum:1.2266666666666652 z_bucket:0.06666666666666667 z_bucket_w:0.001 buckets:[0.06666666666666667 0.06666666666666667 0 0.06666666666666667 0.06666666666666667] n_buckets:[0.06666666666666667 0.06666666666666667 0 0.06666666666666667 0.06666666666666667]}}
 
 eval range from 5m to 5m30s step 30s rate(histogram_rate[45s])
+    expect no_warn
     {} {{schema:1 count:0.6 sum:1.2266666666666652 z_bucket:0.06666666666666667 z_bucket_w:0.001 buckets:[0.06666666666666667 0.06666666666666667 0 0.06666666666666667 0.06666666666666667] n_buckets:[0.06666666666666667 0.06666666666666667 0 0.06666666666666667 0.06666666666666667]}}x1
 
 clear
@@ -398,35 +402,44 @@ clear
 load 10m
     histogram_quantile_1 {{schema:0 count:12 sum:100 z_bucket:2 z_bucket_w:0.001 buckets:[2 3 0 1 4]}}x1
 
-eval_warn instant at 10m histogram_quantile(1.001, histogram_quantile_1)
+eval instant at 10m histogram_quantile(1.001, histogram_quantile_1)
+    expect warn
     {} Inf
 
 eval instant at 10m histogram_quantile(1, histogram_quantile_1)
+    expect no_warn
     {} 16
 
 # The following quantiles are within a bucket. Exponential
 # interpolation is applied (rather than linear, as it is done for
 # classic histograms), leading to slightly different quantile values.
 eval instant at 10m histogram_quantile(0.99, histogram_quantile_1)
+    expect no_warn
     {} 15.67072476139083
 
 eval instant at 10m histogram_quantile(0.9, histogram_quantile_1)
+    expect no_warn
     {} 12.99603834169977
 
 eval instant at 10m histogram_quantile(0.6, histogram_quantile_1)
+    expect no_warn
     {} 4.594793419988138
 
 eval instant at 10m histogram_quantile(0.5, histogram_quantile_1)
+    expect no_warn
     {} 1.5874010519681994
 
 # Linear interpolation within the zero bucket after all.
 eval instant at 10m histogram_quantile(0.1, histogram_quantile_1)
+    expect no_warn
     {} 0.0006
 
 eval instant at 10m histogram_quantile(0, histogram_quantile_1)
+    expect no_warn
     {} 0
 
-eval_warn instant at 10m histogram_quantile(-1, histogram_quantile_1)
+eval instant at 10m histogram_quantile(-1, histogram_quantile_1)
+    expect warn
     {} -Inf
 
 clear
@@ -435,31 +448,39 @@ clear
 load 10m
     histogram_quantile_2 {{schema:0 count:12 sum:100 z_bucket:2 z_bucket_w:0.001 n_buckets:[2 3 0 1 4]}}x1
 
-eval_warn instant at 10m histogram_quantile(1.001, histogram_quantile_2)
+eval instant at 10m histogram_quantile(1.001, histogram_quantile_2)
+    expect warn
     {} Inf
 
 eval instant at 10m histogram_quantile(1, histogram_quantile_2)
+    expect no_warn
     {} 0
 
 # Again, the quantile values here are slightly different from what
 # they would be with linear interpolation. Note that quantiles
 # ending up in the zero bucket are linearly interpolated after all.
 eval instant at 10m histogram_quantile(0.99, histogram_quantile_2)
+    expect no_warn
     {} -0.00006
 
 eval instant at 10m histogram_quantile(0.9, histogram_quantile_2)
+    expect no_warn
     {} -0.0006
 
 eval instant at 10m histogram_quantile(0.5, histogram_quantile_2)
+    expect no_warn
     {} -1.5874010519681996
 
 eval instant at 10m histogram_quantile(0.1, histogram_quantile_2)
+    expect no_warn
     {} -12.996038341699768
 
 eval instant at 10m histogram_quantile(0, histogram_quantile_2)
+    expect no_warn
     {} -16
 
-eval_warn instant at 10m histogram_quantile(-1, histogram_quantile_2)
+eval instant at 10m histogram_quantile(-1, histogram_quantile_2)
+    expect warn
     {} -Inf
 
 clear
@@ -470,46 +491,59 @@ clear
 load 10m
     histogram_quantile_3 {{schema:0 count:24 sum:100 z_bucket:4 z_bucket_w:0.001 buckets:[2 3 0 1 4] n_buckets:[2 3 0 1 4]}}x1
 
-eval_warn instant at 10m histogram_quantile(1.001, histogram_quantile_3)
+eval instant at 10m histogram_quantile(1.001, histogram_quantile_3)
+    expect warn
     {} Inf
 
 eval instant at 10m histogram_quantile(1, histogram_quantile_3)
+    expect no_warn
     {} 16
 
 eval instant at 10m histogram_quantile(0.99, histogram_quantile_3)
+    expect no_warn
     {} 15.34822590920423
 
 eval instant at 10m histogram_quantile(0.9, histogram_quantile_3)
+    expect no_warn
     {} 10.556063286183155
 
 eval instant at 10m histogram_quantile(0.7, histogram_quantile_3)
+    expect no_warn
     {} 1.2030250360821164
 
 # Linear interpolation in the zero bucket, symmetrically centered around
 # the zero point.
 eval instant at 10m histogram_quantile(0.55, histogram_quantile_3)
+    expect no_warn
     {} 0.0006
 
 eval instant at 10m histogram_quantile(0.5, histogram_quantile_3)
+    expect no_warn
     {} 0
 
 eval instant at 10m histogram_quantile(0.45, histogram_quantile_3)
+    expect no_warn
     {} -0.0006
 
 # Finally negative buckets with mirrored exponential interpolation.
 eval instant at 10m histogram_quantile(0.3, histogram_quantile_3)
+    expect no_warn
     {} -1.2030250360821169
 
 eval instant at 10m histogram_quantile(0.1, histogram_quantile_3)
+    expect no_warn
     {} -10.556063286183155
 
 eval instant at 10m histogram_quantile(0.01, histogram_quantile_3)
+    expect no_warn
     {} -15.34822590920423
 
 eval instant at 10m histogram_quantile(0, histogram_quantile_3)
+    expect no_warn
     {} -16
 
-eval_warn instant at 10m histogram_quantile(-1, histogram_quantile_3)
+eval instant at 10m histogram_quantile(-1, histogram_quantile_3)
+    expect warn
     {} -Inf
 
 clear
@@ -909,63 +943,84 @@ load 10m
     float_series_0 0+0x1
 
 eval instant at 10m histogram_mul_div*3
+    expect no_info
     {} {{schema:0 count:90 sum:99 z_bucket:9 z_bucket_w:0.001 buckets:[9 9 9] n_buckets:[18 18 18]}}
 
 eval instant at 10m histogram_mul_div*-1
+    expect no_info
     {} {{schema:0 count:-30 sum:-33 z_bucket:-3 z_bucket_w:0.001 buckets:[-3 -3 -3] n_buckets:[-6 -6 -6]}}
 
 eval instant at 10m -histogram_mul_div
+    expect no_info
     {} {{schema:0 count:-30 sum:-33 z_bucket:-3 z_bucket_w:0.001 buckets:[-3 -3 -3] n_buckets:[-6 -6 -6]}}
 
 eval instant at 10m histogram_mul_div*-3
+    expect no_info
     {} {{schema:0 count:-90 sum:-99 z_bucket:-9 z_bucket_w:0.001 buckets:[-9 -9 -9] n_buckets:[-18 -18 -18]}}
 
 eval instant at 10m 3*histogram_mul_div
+    expect no_info
     {} {{schema:0 count:90 sum:99 z_bucket:9 z_bucket_w:0.001 buckets:[9 9 9] n_buckets:[18 18 18]}}
 
 eval instant at 10m histogram_mul_div*float_series_3
+    expect no_info
     {} {{schema:0 count:90 sum:99 z_bucket:9 z_bucket_w:0.001 buckets:[9 9 9] n_buckets:[18 18 18]}}
 
 eval instant at 10m float_series_3*histogram_mul_div
+    expect no_info
     {} {{schema:0 count:90 sum:99 z_bucket:9 z_bucket_w:0.001 buckets:[9 9 9] n_buckets:[18 18 18]}}
 
 eval instant at 10m histogram_mul_div/3
+    expect no_info
     {} {{schema:0 count:10 sum:11 z_bucket:1 z_bucket_w:0.001 buckets:[1 1 1] n_buckets:[2 2 2]}}
 
 eval instant at 10m histogram_mul_div/-3
+    expect no_info
     {} {{schema:0 count:-10 sum:-11 z_bucket:-1 z_bucket_w:0.001 buckets:[-1 -1 -1] n_buckets:[-2 -2 -2]}}
 
 eval instant at 10m histogram_mul_div/float_series_3
+    expect no_info
     {} {{schema:0 count:10 sum:11 z_bucket:1 z_bucket_w:0.001 buckets:[1 1 1] n_buckets:[2 2 2]}}
 
 eval instant at 10m histogram_mul_div*0
+    expect no_info
     {} {{schema:0 count:0 sum:0 z_bucket:0 z_bucket_w:0.001 buckets:[0 0 0] n_buckets:[0 0 0]}}
 
 eval instant at 10m 0*histogram_mul_div
+    expect no_info
     {} {{schema:0 count:0 sum:0 z_bucket:0 z_bucket_w:0.001 buckets:[0 0 0] n_buckets:[0 0 0]}}
 
 eval instant at 10m histogram_mul_div*float_series_0
+    expect no_info
     {} {{schema:0 count:0 sum:0 z_bucket:0 z_bucket_w:0.001 buckets:[0 0 0] n_buckets:[0 0 0]}}
 
 eval instant at 10m float_series_0*histogram_mul_div
+    expect no_info
     {} {{schema:0 count:0 sum:0 z_bucket:0 z_bucket_w:0.001 buckets:[0 0 0] n_buckets:[0 0 0]}}
 
 eval instant at 10m histogram_mul_div/0
+    expect no_info
     {} {{schema:0 count:Inf sum:Inf z_bucket_w:0.001 z_bucket:Inf}}
 
 eval instant at 10m histogram_mul_div/float_series_0
+    expect no_info
     {} {{schema:0 count:Inf sum:Inf z_bucket_w:0.001 z_bucket:Inf}}
 
 eval instant at 10m histogram_mul_div*0/0
+    expect no_info
     {} {{schema:0 count:NaN sum:NaN z_bucket_w:0.001 z_bucket:NaN}}
 
-eval_info instant at 10m histogram_mul_div*histogram_mul_div
+eval instant at 10m histogram_mul_div*histogram_mul_div
+  expect info
 
-eval_info instant at 10m histogram_mul_div/histogram_mul_div
+eval instant at 10m histogram_mul_div/histogram_mul_div
+  expect info
 
-eval_info instant at 10m float_series_3/histogram_mul_div
+eval instant at 10m float_series_3/histogram_mul_div
+  expect info
 
-eval_info instant at 10m 0/histogram_mul_div
+eval instant at 10m 0/histogram_mul_div
+    expect info
 
 clear
 
@@ -976,26 +1031,33 @@ load 10m
     histogram_sample {{schema:0 count:24 sum:100 z_bucket:4 z_bucket_w:0.001 buckets:[2 3 0 1 4] n_buckets:[2 3 0 1 4]}}x1
     float_sample 0x1
 
-eval_info instant at 10m float_sample+histogram_sample
+eval instant at 10m float_sample+histogram_sample
+  expect info
 
-eval_info instant at 10m histogram_sample+float_sample
+eval instant at 10m histogram_sample+float_sample
+  expect info
 
-eval_info instant at 10m float_sample-histogram_sample
+eval instant at 10m float_sample-histogram_sample
+  expect info
 
-eval_info instant at 10m histogram_sample-float_sample
+eval instant at 10m histogram_sample-float_sample
+     expect info
 
 # Counter reset only noticeable in a single bucket.
 load 5m
      reset_in_bucket {{schema:0 count:4 sum:5 buckets:[1 2 1]}} {{schema:0 count:5 sum:6 buckets:[1 1 3]}} {{schema:0 count:6 sum:7 buckets:[1 2 3]}}
 
 eval instant at 10m increase(reset_in_bucket[15m])
+     expect no_warn
      {} {{count:9 sum:10.5 buckets:[1.5 3 4.5]}}
 
 # The following two test the "fast path" where only sum and count is decoded.
 eval instant at 10m histogram_count(increase(reset_in_bucket[15m]))
+     expect no_warn
      {} 9
 
 eval instant at 10m histogram_sum(increase(reset_in_bucket[15m]))
+     expect no_warn
      {} 10.5
 
 clear
@@ -1020,11 +1082,13 @@ load 30s
     some_metric {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}} {{schema:0 sum:3 count:3 buckets:[3] counter_reset_hint:gauge}}
 
 # Test the case where we only have two points for rate
-eval_warn instant at 30s rate(some_metric[1m])
+eval instant at 30s rate(some_metric[1m])
+    expect warn msg: PromQL warning: this native histogram metric is not a counter: "some_metric"
     {} {{count:0.03333333333333333 sum:0.03333333333333333 buckets:[0.03333333333333333]}}
 
 # Test the case where we have more than two points for rate
-eval_warn instant at 1m rate(some_metric[1m30s])
+eval instant at 1m rate(some_metric[1m30s])
+    expect warn msg: PromQL warning: this native histogram metric is not a counter: "some_metric"
     {} {{count:0.03333333333333333 sum:0.03333333333333333 buckets:[0.03333333333333333]}}
 
 clear
@@ -1034,19 +1098,27 @@ load 30s
     some_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
 # Start and end with exponential, with custom in the middle.
-eval_warn instant at 1m rate(some_metric[1m30s])
+eval instant at 1m rate(some_metric[1m30s])
+    expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "some_metric"
     # Should produce no results.
 
 # Start and end with custom, with exponential in the middle.
-eval_warn instant at 1m30s rate(some_metric[1m30s])
+eval instant at 1m30s rate(some_metric[1m30s])
+    expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "some_metric"
     # Should produce no results.
 
-# Start with custom, end with exponential. Return the exponential histogram divided by 30.
+# Start with custom, end with exponential. Return the exponential histogram divided by 48.
+# (The 1st sample is the NHCB with count:1. It is mostly ignored with the exception of the
+# count, which means the rate calculation extrapolates until the count hits 0.)
 eval instant at 1m rate(some_metric[1m])
-    {} {{schema:0 sum:0.16666666666666666 count:0.13333333333333333 buckets:[0.03333333333333333 0.06666666666666667 0.03333333333333333]}}
+    expect no_warn
+    {} {{count:0.08333333333333333 sum:0.10416666666666666 counter_reset_hint:gauge buckets:[0.020833333333333332 0.041666666666666664 0.020833333333333332]}}
 
 # Start with exponential, end with custom. Return the custom buckets histogram divided by 30.
+# (With the 2nd sample having a count of 1, the extrapolation to zero lands exactly at the
+# left boundary of the range, so no extrapolation limitation needed.)
 eval instant at 30s rate(some_metric[1m])
+    expect no_warn
     {} {{schema:-53 sum:0.03333333333333333 count:0.03333333333333333 custom_values:[5 10] buckets:[0.03333333333333333]}}
 
 clear
@@ -1058,41 +1130,50 @@ load 1m
 # There is no change to the bucket count over time, thus rate is 0 in each bucket.
 # However native histograms do not represent empty buckets, so here the zeros are implicit.
 eval instant at 5m rate(const_histogram[5m])
+    expect no_warn
     {} {{schema:0 sum:0 count:0}}
 
 # Zero buckets mean no observations, thus the denominator in the average is 0
 # leading to 0/0, which is NaN.
 eval instant at 5m histogram_avg(rate(const_histogram[5m]))
+    expect no_warn
     {} NaN
 
 # Zero buckets mean no observations, so count is 0.
 eval instant at 5m histogram_count(rate(const_histogram[5m]))
+    expect no_warn
     {} 0.0
 
 # Zero buckets mean no observations and empty histogram has a sum of 0 by definition.
 eval instant at 5m histogram_sum(rate(const_histogram[5m]))
+    expect no_warn
     {} 0.0
 
 # Zero buckets mean no observations, thus the denominator in the fraction is 0,
 # leading to 0/0, which is NaN.
 eval instant at 5m histogram_fraction(0.0, 1.0, rate(const_histogram[5m]))
+    expect no_warn
     {} NaN
 
 # Workaround to calculate the observation count corresponding to NaN fraction.
 eval instant at 5m histogram_count(rate(const_histogram[5m])) == 0.0 or histogram_fraction(0.0, 1.0, rate(const_histogram[5m])) * histogram_count(rate(const_histogram[5m]))
+    expect no_warn
     {} 0.0
 
 # Zero buckets mean no observations, so there is no value that observations fall below,
 # which means that any quantile is a NaN.
 eval instant at 5m histogram_quantile(1.0, rate(const_histogram[5m]))
+    expect no_warn
     {} NaN
 
 # Zero buckets mean no observations, so there is no standard deviation.
 eval instant at 5m histogram_stddev(rate(const_histogram[5m]))
+    expect no_warn
     {} NaN
 
 # Zero buckets mean no observations, so there is no standard variance.
 eval instant at 5m histogram_stdvar(rate(const_histogram[5m]))
+    expect no_warn
     {} NaN
 
 clear
@@ -1107,30 +1188,31 @@ load 6m
 # T=0: only exponential
 # T=6: only custom
 # T=12: mixed, should be ignored and emit a warning
-eval_warn range from 0 to 12m step 6m sum(metric)
+eval range from 0 to 12m step 6m sum(metric)
+  expect warn
   {} {{sum:7 count:5 buckets:[2 3 2]}} {{schema:-53 sum:16 count:3 custom_values:[5 10] buckets:[1 2]}} _
 
-eval_warn range from 0 to 12m step 6m avg(metric)
+eval range from 0 to 12m step 6m avg(metric)
+  expect warn
   {} {{sum:3.5 count:2.5 buckets:[1 1.5 1]}} {{schema:-53 sum:8 count:1.5 custom_values:[5 10] buckets:[0.5 1]}} _
 
 clear
 
-# Test incompatible custom bucket schemas.
+# Test mismatched custom bucket boundaries.
 load 6m
   metric{series="1"} _                                                             {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
-  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}    _                                                             {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}
-  metric{series="3"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[10] buckets:[1]}}   _                                                             {{schema:-53 sum:1 count:1 custom_values:[5] buckets:[1]}}
+  metric{series="3"} {{schema:-53 sum:1 count:1 custom_values:[2 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
-# T=0: incompatible, should be ignored and emit a warning
-# T=6: compatible
-# T=12: incompatible followed by compatible, should be ignored and emit a warning
-eval_warn range from 0 to 12m step 6m sum(metric)
-  {} _ {{schema:-53 sum:2 count:2 custom_values:[5 10] buckets:[2]}} _
+eval range from 0 to 12m step 6m sum(metric)
+  expect no_warn
+  {} {{schema:-53 count:2 sum:2 custom_values:[10] buckets:[2]}} {{schema:-53 sum:2 count:2 custom_values:[5 10] buckets:[2]}} {{schema:-53 count:3 sum:3 custom_values:[5] buckets:[3]}}
 
-eval_warn range from 0 to 12m step 6m avg(metric)
-  {} _ {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} _
+eval range from 0 to 12m step 6m avg(metric)
+  expect no_warn
+  {} {{schema:-53 count:1 sum:1 custom_values:[10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 count:1 sum:1 custom_values:[5] buckets:[1]}}
 
-# Test incompatible schemas with additional aggregation operators
+# Test mismatched boundaries with additional aggregation operators
 eval range from 0 to 12m step 6m count(metric)
   {} 2 2 3
 
@@ -1142,106 +1224,142 @@ eval range from 0 to 12m step 6m count(limitk(1, metric))
 
 eval range from 0 to 12m step 6m limitk(3, metric)
   metric{series="1"} _                                                             {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
-  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}    _                                                             {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}
-  metric{series="3"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[10] buckets:[1]}}   _                                                             {{schema:-53 sum:1 count:1 custom_values:[5] buckets:[1]}}
+  metric{series="3"} {{schema:-53 sum:1 count:1 custom_values:[2 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
 eval range from 0 to 12m step 6m limit_ratio(1, metric)
   metric{series="1"} _                                                             {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
-  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}    _                                                             {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}
-  metric{series="3"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[10] buckets:[1]}}   _                                                             {{schema:-53 sum:1 count:1 custom_values:[5] buckets:[1]}}
+  metric{series="3"} {{schema:-53 sum:1 count:1 custom_values:[2 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
-# Test incompatible schemas with and/or
+# Test mismatched schemas with and/or
 eval range from 0 to 12m step 6m metric{series="1"} and ignoring(series) metric{series="2"}
   metric{series="1"} _ _ {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
 eval range from 0 to 12m step 6m metric{series="1"} or ignoring(series) metric{series="2"}
   metric{series="1"} _                                                          {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
-  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} _                                                             _
+  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[10] buckets:[1]}} _                                                             _
 
-# Test incompatible schemas with arithmetic binary operators
-eval_warn range from 0 to 12m step 6m metric{series="2"} + ignoring (series) metric{series="3"}
+# Test mismatched boundaries with arithmetic binary operators
+eval range from 0 to 12m step 6m metric{series="2"} + ignoring (series) metric{series="3"}
+  expect info msg:PromQL info: mismatched custom buckets were reconciled during addition
+  {} {{schema:-53 count:2 sum:2 custom_values:[10] buckets:[2]}} _ {{schema:-53 count:2 sum:2 custom_values:[5] buckets:[2]}}
 
-eval_warn range from 0 to 12m step 6m metric{series="2"} - ignoring (series) metric{series="3"}
+eval range from 0 to 12m step 6m metric{series="2"} - ignoring (series) metric{series="3"}
+  expect info msg:PromQL info: mismatched custom buckets were reconciled during subtraction
+  {} {{schema:-53 custom_values:[10] counter_reset_hint:gauge}} _ {{schema:-53 custom_values:[5] counter_reset_hint:gauge}}
 
 clear
 
-# Test incompatible schemas with comparison binary operators
+# Test mismatched boundaries with comparison binary operators
 load 6m
   metric1 {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
   metric2 {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
 eval range from 0 to 6m step 6m metric1 == metric2
-metric1{} _ {{schema:-53 count:1 sum:1 custom_values:[5 10] buckets:[1]}}
+    expect no_info
+    metric1{} _ {{schema:-53 count:1 sum:1 custom_values:[5 10] buckets:[1]}}
 
 eval range from 0 to 6m step 6m metric1 != metric2
-metric1{} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} _
+    expect no_info
+    metric1{} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} _
 
-eval_info range from 0 to 6m step 6m metric2 > metric2
+eval range from 0 to 6m step 6m metric2 > metric2
+  expect info
 
 clear
 
 load 6m
-  nhcb_metric {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  nhcb_metric {{schema:-53 sum:1 count:1 custom_values:[5] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
 # If evaluating at 12m, the first two NHCBs have the same custom values
 # while the 3rd one has different ones.
 
-eval_warn instant at 12m sum_over_time(nhcb_metric[13m])
+eval instant at 12m sum_over_time(nhcb_metric[13m])
+  expect no_warn
+  expect info msg: PromQL info: mismatched custom buckets were reconciled during aggregation
+  {} {{schema:-53 count:3 sum:3 custom_values:[5] buckets:[3]}}
 
-eval_warn instant at 12m avg_over_time(nhcb_metric[13m])
+eval instant at 12m avg_over_time(nhcb_metric[13m])
+  expect no_warn
+  expect info msg: PromQL info: mismatched custom buckets were reconciled during aggregation
+  {} {{schema:-53 count:1 sum:1 custom_values:[5] counter_reset_hint:gauge buckets:[1]}}
 
 eval instant at 12m last_over_time(nhcb_metric[13m])
-nhcb_metric{} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  expect no_warn
+  nhcb_metric{} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
 eval instant at 12m count_over_time(nhcb_metric[13m])
-{} 3
+  expect no_warn
+  {} 3
 
 eval instant at 12m present_over_time(nhcb_metric[13m])
-{} 1
+  expect no_warn
+  {} 1
 
 eval instant at 12m changes(nhcb_metric[13m])
-{} 1
+  expect no_warn
+  {} 1
 
-eval_warn instant at 12m delta(nhcb_metric[13m])
+eval instant at 12m delta(nhcb_metric[13m])
+  expect warn msg: PromQL warning: this native histogram metric is not a gauge: "nhcb_metric"
+  {} {{schema:-53 custom_values:[5]}}
 
-eval_warn instant at 12m increase(nhcb_metric[13m])
+eval instant at 12m increase(nhcb_metric[13m])
+  expect no_warn
+  {} {{schema:-53 custom_values:[5]}}
 
-eval_warn instant at 12m rate(nhcb_metric[13m])
+eval instant at 12m rate(nhcb_metric[13m])
+  expect no_warn
+  {} {{schema:-53 custom_values:[5] }}
 
 eval instant at 12m resets(nhcb_metric[13m])
-{} 1
+  expect no_warn
+  {} 0
 
 # Now doing the same again, but at 18m, where the first NHCB has
-# different custom_values compared to the other two. This now
-# works with no warning for increase() and rate(). No change
-# otherwise.
+# different custom_values compared to the other two.
 
-eval_warn instant at 18m sum_over_time(nhcb_metric[13m])
+eval instant at 18m sum_over_time(nhcb_metric[13m])
+  expect no_warn
+  {} {{schema:-53 count:3 sum:3 custom_values:[5] buckets:[3]}}
 
-eval_warn instant at 18m avg_over_time(nhcb_metric[13m])
+eval instant at 18m avg_over_time(nhcb_metric[13m])
+  expect no_warn
+  {} {{schema:-53 count:1 sum:1 custom_values:[5] buckets:[1]}}
 
 eval instant at 18m last_over_time(nhcb_metric[13m])
-nhcb_metric{} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  expect no_warn
+  nhcb_metric{} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
 eval instant at 18m count_over_time(nhcb_metric[13m])
-{} 3
+  expect no_warn
+  {} 3
 
 eval instant at 18m present_over_time(nhcb_metric[13m])
-{} 1
+  expect no_warn
+  {} 1
 
 eval instant at 18m changes(nhcb_metric[13m])
-{} 1
+  expect no_warn
+  {} 1
 
-eval_warn instant at 18m delta(nhcb_metric[13m])
+eval instant at 18m delta(nhcb_metric[13m])
+  expect warn msg: PromQL warning: this native histogram metric is not a gauge: "nhcb_metric"
+  expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction
+  {} {{schema:-53 custom_values:[5]}}
 
 eval instant at 18m increase(nhcb_metric[13m])
-{} {{schema:-53 count:1.0833333333333333 sum:1.0833333333333333 custom_values:[5 10] buckets:[1.0833333333333333]}}
+  expect no_warn
+  {} {{schema:-53 custom_values:[5]}}
 
 eval instant at 18m rate(nhcb_metric[13m])
-{} {{schema:-53 count:0.0013888888888888887 sum:0.0013888888888888887 custom_values:[5 10] buckets:[0.0013888888888888887]}}
+  expect no_warn
+  {} {{schema:-53 custom_values:[5]}}
 
 eval instant at 18m resets(nhcb_metric[13m])
-{} 1
+  expect no_warn
+  {} 0
 
 clear
 
@@ -1256,13 +1374,15 @@ load 1m
   metric{group="floats-and-histograms", series="2"} {{sum:2 count:3 buckets:[1 1 1]}}
   metric{group="exponential-and-custom-histograms", series="1"} {{sum:2 count:3 buckets:[1 1 1]}}
   metric{group="exponential-and-custom-histograms", series="2"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
-  metric{group="incompatible-custom-histograms", series="1"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
-  metric{group="incompatible-custom-histograms", series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}
+  metric{group="mismatched-custom-histograms", series="1"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  metric{group="mismatched-custom-histograms", series="2"} {{schema:-53 sum:1 count:1 custom_values:[10] buckets:[1]}}
 
-eval_warn instant at 0 sum by (group) (metric)
+eval instant at 0 sum by (group) (metric)
+  expect warn
   {group="just-floats"} 5
   {group="just-exponential-histograms"} {{sum:5 count:7 buckets:[2 3 2]}}
   {group="just-custom-histograms"} {{schema:-53 sum:4 count:5 custom_values:[2] buckets:[8]}}
+  {group="mismatched-custom-histograms"} {{schema:-53 count:2 sum:2 custom_values:[10] buckets:[2]}}
 
 clear
 
@@ -1275,17 +1395,22 @@ load 10m
     histogram_sum_float{idx="0"} 42.0x1
 
 eval instant at 10m sum(histogram_sum)
+    expect no_warn
     {} {{schema:0 count:107 sum:4691.2 z_bucket:14 z_bucket_w:0.001 buckets:[3 8 2 5 3 2 2] n_buckets:[2 6 8 4 15 9 0 0 0 10 10 4]}}
 
-eval_warn instant at 10m sum({idx="0"})
+eval instant at 10m sum({idx="0"})
+  expect warn
 
 eval instant at 10m sum(histogram_sum{idx="0"} + ignoring(idx) histogram_sum{idx="1"} + ignoring(idx) histogram_sum{idx="2"} + ignoring(idx) histogram_sum{idx="3"})
+    expect no_warn
     {} {{schema:0 count:107 sum:4691.2 z_bucket:14 z_bucket_w:0.001 buckets:[3 8 2 5 3 2 2] n_buckets:[2 6 8 4 15 9 0 0 0 10 10 4]}}
 
 eval instant at 10m count(histogram_sum)
+    expect no_warn
     {} 4
 
 eval instant at 10m avg(histogram_sum)
+    expect no_warn
     {} {{schema:0 count:26.75 sum:1172.8 z_bucket:3.5 z_bucket_w:0.001 buckets:[0.75 2 0.5 1.25 0.75 0.5 0.5] n_buckets:[0.5 1.5 2 1 3.75 2.25 0 0 0 2.5 2.5 1]}}
 
 clear
@@ -1373,3 +1498,377 @@ eval instant at 1m histogram_fraction(-Inf, +Inf, histogram_nan)
     expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name "histogram_nan"
     {case="100% NaNs"} 0.0
     {case="20% NaNs"} 0.8
+
+clear
+
+# Tests to demonstrate how an extrapolation below zero is prevented for both float counters and native counter histograms.
+# Note that the float counter behaves the same as the histogram count after `increase`.
+
+load 1m
+  metric{type="histogram"} {{schema:0 count:15 sum:25 buckets:[5 10]}} {{schema:0 count:2490 sum:75 buckets:[15 2475]}}x55
+  metric{type="counter"} 15 2490x55
+
+# End of range coincides with sample. Zero point of count is reached within the range.
+# Note that the 2nd bucket has an exaggerated increase of 2479.939393939394 (although
+# it has a value of only 2475 at the end of the range).
+eval instant at 55m increase(metric[90m])
+    expect no_warn
+    {type="histogram"} {{count:2490 sum:50.303030303030305 counter_reset_hint:gauge buckets:[10.06060606060606 2479.939393939394]}}
+    {type="counter"} 2490
+
+# End of range does not coincide with sample. Zero point of count is reached within the range.
+# The 2nd bucket again has an exaggerated increase, but it is less obvious because of the
+# right-side extrapolation.
+eval instant at 54m30s increase(metric[90m])
+    expect no_warn
+    {type="histogram"} {{count:2512.9166666666665 sum:50.76599326599326 counter_reset_hint:gauge buckets:[10.153198653198652 2502.7634680134674]}}
+    {type="counter"} 2512.9166666666665
+
+# End of range coincides with sample. Zero point of count is reached outside of (i.e. before) the range.
+# This means no change of extrapolation is required for the histogram count (and neither for the float counter),
+# however, the 2nd bucket's extrapolation will reach zero within the range. The overestimation is visible
+# easily here because the last sample in the range coincides with the boundary, where the 2nd bucket has
+# a value of 2475 but has increased by 2476.2045454545455 according to the returned result.
+eval instant at 55m increase(metric[55m15s])
+    expect no_warn
+    {type="histogram"} {{count:2486.25 sum:50.227272727272734 counter_reset_hint:gauge buckets:[10.045454545454547 2476.2045454545455]}}
+    {type="counter"} 2486.25
+
+# End of range does not coincide with sample. Zero point of count is reached outside of (i.e. before) the range.
+# This means no change of extrapolation is required for the histogram count (and neither for the float counter),
+# however, the 2nd bucket's extrapolation will reach zero within the range.
+eval instant at 54m30s increase(metric[54m45s])
+    expect no_warn
+    {type="histogram"} {{count:2509.375 sum:50.69444444444444 counter_reset_hint:gauge buckets:[10.13888888888889 2499.236111111111]}}
+    {type="counter"} 2509.375
+
+# Try the same, but now extract just the histogram count via `histogram_count`.
+eval instant at 55m histogram_count(increase(metric[90m]))
+    expect no_warn
+    {type="histogram"} 2490
+
+eval instant at 54m30s histogram_count(increase(metric[90m]))
+    expect no_warn
+    {type="histogram"} 2512.9166666666665
+
+eval instant at 55m histogram_count(increase(metric[55m15s]))
+    expect no_warn
+    {type="histogram"} 2486.25
+
+eval instant at 54m30s histogram_count(increase(metric[54m45s]))
+    expect no_warn
+    {type="histogram"} 2509.375
+
+clear
+
+# Test counter reset hint adjustment in subtraction and aggregation, including _over_time.
+load 5m
+  metric{id="1"} {{schema:0 sum:4 count:4 buckets:[1 2 1]}}x10
+  metric{id="2"} {{schema:0 sum:4 count:4 buckets:[1 2 1]}}x10
+  
+# Unary minus turns counters into gauges.
+eval instant at 5m -metric
+  expect no_warn
+  expect no_info
+  {id="1"} {{count:-4 sum:-4 counter_reset_hint:gauge buckets:[-1 -2 -1]}}
+  {id="2"} {{count:-4 sum:-4 counter_reset_hint:gauge buckets:[-1 -2 -1]}}
+
+# Subtraction results in gauges, even if the result is not negative.
+eval instant at 5m metric - 0.5 * metric
+  expect no_warn
+  expect no_info
+  {id="1"} {{count:2 sum:2 counter_reset_hint:gauge buckets:[0.5 1 0.5]}}
+  {id="2"} {{count:2 sum:2 counter_reset_hint:gauge buckets:[0.5 1 0.5]}}
+
+# Subtraction results in gauges, now with actually negative result.
+eval instant at 5m metric - 2 * metric
+  expect no_warn
+  expect no_info
+  {id="1"} {{count:-4 sum:-4 counter_reset_hint:gauge buckets:[-1 -2 -1]}}
+  {id="2"} {{count:-4 sum:-4 counter_reset_hint:gauge buckets:[-1 -2 -1]}}
+
+# sum and avg of counters yield a counter.
+eval instant at 5m sum(metric)
+  expect no_warn
+  expect no_info
+  {} {{count:8 sum:8 counter_reset_hint:not_reset buckets:[2 4 2]}}
+
+eval instant at 5m avg(metric)
+  expect no_warn
+  expect no_info
+  {} {{count:4 sum:4 counter_reset_hint:not_reset buckets:[1 2 1]}}
+
+clear
+
+# Note that with all the series below, we never get counter_reset_hint:reset
+# as a result because of of https://github.com/prometheus/prometheus/issues/15346 .
+# Therefore, all the tests only look at the hints gauge, not_reset, and unknown.
+load 1m
+  metric{type="gauge"} {{sum:4 count:4 counter_reset_hint:gauge buckets:[1 2 1]}}+{{sum:2 count:3 counter_reset_hint:gauge buckets:[1 1 1]}}x10
+  metric{type="counter"} {{sum:6 count:5 buckets:[2 2 1]}}+{{sum:2 count:3 buckets:[1 1 1]}}x10
+  metric{type="counter_with_reset"} {{sum:6 count:5 buckets:[2 2 1]}}+{{sum:2 count:3 buckets:[1 1 1]}}x5 {{sum:4 count:4 buckets:[1 2 1]}}+{{sum:2 count:3 buckets:[1 1 1]}}x5
+  mixed {{sum:6 count:5 buckets:[2 2 1]}}+{{sum:2 count:3 buckets:[1 1 1]}}x4 {{sum:4 count:4 counter_reset_hint:gauge buckets:[1 2 1]}} {{sum:6 count:5 buckets:[2 2 1]}}+{{sum:2 count:3 buckets:[1 1 1]}}x4 {{sum:4 count:4 buckets:[1 2 1]}}+{{sum:2 count:3 buckets:[1 1 1]}}x5
+
+# Mix of gauge and not_reset results in gauge.
+eval instant at 3m sum(metric)
+  expect no_warn
+  expect no_info
+  {} {{count:41 sum:34 counter_reset_hint:gauge buckets:[14 15 12]}}
+
+eval instant at 3m avg(metric)
+  expect no_warn
+  expect no_info
+  {} {{count:13.666666666666668 sum:11.333333333333334 counter_reset_hint:gauge buckets:[4.666666666666667 5 4]}}
+
+eval instant at 5m sum_over_time(mixed[3m])
+  expect no_warn
+  expect no_info
+  {} {{count:35 sum:30 counter_reset_hint:gauge buckets:[12 13 10]}}
+
+eval instant at 5m avg_over_time(mixed[3m])
+  expect no_warn
+  expect no_info
+  {} {{count:11.666666666666666 sum:10 counter_reset_hint:gauge buckets:[4 4.333333333333334 3.333333333333333]}}
+
+# Mix of gauge, not_reset, and unknown results in gauge.
+eval instant at 6m sum(metric)
+  expect no_warn
+  expect no_info
+  {} {{count:49 sum:38 counter_reset_hint:gauge buckets:[16 18 15]}}
+
+eval instant at 6m avg(metric)
+  expect no_warn
+  expect no_info
+  {} {{count:16.333333333333332 sum:12.666666666666666 counter_reset_hint:gauge buckets:[5.333333333333334 6 5]}}
+
+eval instant at 14m sum_over_time(mixed[10m])
+  expect no_warn
+  expect no_info
+  {} {{count:93 sum:82 counter_reset_hint:gauge buckets:[31 36 26]}}
+
+eval instant at 14m avg_over_time(mixed[10m])
+  expect no_warn
+  expect no_info
+  {} {{count:9.3 sum:8.2 counter_reset_hint:gauge buckets:[3.1 3.6 2.6]}}
+
+# Only not_reset results in not_reset.
+eval instant at 3m sum(metric{type=~"counter.*"})
+  expect no_warn
+  expect no_info
+  {} {{count:28 sum:24 counter_reset_hint:not_reset buckets:[10 10 8]}}
+
+eval instant at 3m avg(metric{type=~"counter.*"})
+  expect no_warn
+  expect no_info
+  {} {{count:14 sum:12 counter_reset_hint:not_reset buckets:[5 5 4]}}
+
+eval instant at 3m sum_over_time(mixed[3m])
+  expect no_warn
+  expect no_info
+  {} {{count:33 sum:30 counter_reset_hint:not_reset buckets:[12 12 9]}}
+
+eval instant at 3m avg_over_time(mixed[3m])
+  expect no_warn
+  expect no_info
+  {} {{count:11 sum:10 counter_reset_hint:not_reset buckets:[4 4 3]}}
+
+# Mix of not_reset and unknown results in unknown.
+eval instant at 6m sum(metric{type=~"counter.*"})
+  expect no_warn
+  expect no_info
+  {} {{count:27 sum:22 counter_reset_hint:unknown buckets:[9 10 8]}}
+
+eval instant at 6m avg(metric{type=~"counter.*"})
+  expect no_warn
+  expect no_info
+  {} {{count:13.5 sum:11 counter_reset_hint:unknown buckets:[4.5 5 4]}}
+
+eval instant at 15m sum_over_time(mixed[10m])
+  expect no_warn
+  expect no_info
+  {} {{count:105 sum:90 counter_reset_hint:unknown buckets:[35 40 30]}}
+
+eval instant at 15m avg_over_time(mixed[10m])
+  expect no_warn
+  expect no_info
+  {} {{count:10.5 sum:9 counter_reset_hint:unknown buckets:[3.5 4 3]}}
+
+# To finally test the warning about a direct counter reset collisions, we can
+# utilize the HistogramStatsIterator (by calling histogram_count()). This
+# special iterator does counter reset detection on the fly and therefore
+# is able to create the counter reset hint "reset", which we can then mix
+# with the "not_reset" hint in the test and provoke the warning.
+eval instant at 6m histogram_count(sum(metric))
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} 49
+
+eval instant at 6m histogram_count(avg(metric))
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} 16.333333333333332
+
+eval instant at 14m histogram_count(sum_over_time(mixed[10m]))
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} 93
+
+eval instant at 14m histogram_count(avg_over_time(mixed[10m]))
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} 9.3
+
+# In the following two tests, the first sample has hint "not_reset"
+# and the second has "reset". This tests if the conflict is detected
+# between the first two samples, too.
+eval instant at 11m histogram_count(sum_over_time(mixed[2m]))
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} 21
+
+eval instant at 11m histogram_count(avg_over_time(mixed[2m]))
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} 10.5
+
+# Test histogram_quantile annotations.
+load 1m
+	nonmonotonic_bucket{le="0.1"}   0+2x10
+	nonmonotonic_bucket{le="1"}     0+1x10
+	nonmonotonic_bucket{le="10"}    0+5x10
+	nonmonotonic_bucket{le="100"}   0+4x10
+	nonmonotonic_bucket{le="1000"}  0+9x10
+	nonmonotonic_bucket{le="+Inf"}  0+8x10
+	myHistogram1{abe="0.1"}   0+2x10
+	myHistogram2{le="Hello World"}   0+2x10
+	mixedHistogram{le="0.1"}   0+2x10
+	mixedHistogram{le="1"}     0+3x10
+	mixedHistogram{}           {{schema:0 count:10 sum:50 buckets:[1 2 3]}}
+
+eval instant at 1m histogram_quantile(0.5, nonmonotonic_bucket)
+	expect info msg: PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "nonmonotonic_bucket"
+	{} 8.5
+
+eval instant at 1m histogram_quantile(0.5, myHistogram1)
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "myHistogram1"
+
+eval instant at 1m histogram_quantile(0.5, myHistogram2)
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World" for metric name "myHistogram2"
+
+eval instant at 1m histogram_quantile(0.5, mixedHistogram)
+	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "mixedHistogram"
+
+clear
+
+# A counter reset only in a bucket. Sub-queries still need to detect
+# it via explicit counter reset detection. This test also runs it with
+# histogram_count in the expression to make sure that the
+# HistogramStatsIterator is not used. (The latter fails to correctly
+# do the counter resets because Seek is used with sub-queries. And the
+# explicit counter reset detection done with sub-queries cannot access
+# the buckets anymore, if HistogramStatsIterator is used.)
+load 1m
+     h{} {{schema:0 count:1 sum:10 buckets:[1]}}+{{}}x20 {{schema:0 count:1 sum:10 buckets:[0 1]}}+{{}}x20
+
+# Both evals below should yield the same value for the count.
+eval instant at 41m histogram_count(increase(h[40m:9m]))
+    {} 1.4814814814814814
+
+eval instant at 41m increase(h[40m:9m])
+    {} {{count:1.4814814814814814 sum:14.814814814814813 counter_reset_hint:gauge offset:1 buckets:[1.4814814814814814]}}
+
+clear
+
+load 1m
+    reset{timing="late"} {{schema:0 sum:1 count:0 buckets:[1 1 1]}} {{schema:0 sum:1 count:2 buckets:[1 1 1]}} {{schema:0 sum:1 count:3 buckets:[1 1 1]}}  {{schema:0 sum:1 count:2 buckets:[1 1 1]}}
+    reset{timing="early"} {{schema:0 sum:1 count:3 buckets:[1 1 1]}}  {{schema:0 sum:1 count:2 buckets:[1 1 1]}} {{schema:0 sum:1 count:2 buckets:[1 1 1]}} {{schema:0 sum:1 count:3 buckets:[1 1 1]}} 
+
+# Trigger an annotation about conflicting counter resets by going through the
+# HistogramStatsIterator, which creates counter reset hints on the fly.
+eval instant at 5m histogram_count(sum_over_time(reset{timing="late"}[5m]))
+    expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation
+    {timing="late"} 7
+
+eval instant at 5m histogram_count(sum(reset))
+    expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation
+    {} 5
+
+eval instant at 5m histogram_count(avg(reset))
+    expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation
+    {} 2.5
+
+# No annotation with the right timing.
+eval instant at 30s histogram_count(sum(reset))
+    expect no_warn
+    {} 3
+
+eval instant at 30s histogram_count(avg(reset))
+    expect no_warn
+    {} 1.5
+
+# Ensure that the annotation does not happen with rate.
+eval instant at 5m histogram_count(rate(reset{timing="late"}[5m]))
+    expect no_warn
+    {timing="late"} 0.0175
+
+clear
+
+# Test edge cases of HistogramStatsIterator detection.
+# We access the same series multiple times within the same expression,
+# once with and once without HistogramStatsIterator. The results here
+# at least prove that we do not use HistogramStatsIterator where we
+# should not.
+load 1m
+     histogram {{schema:0 count:10 sum:50 counter_reset_hint:gauge buckets:[1 2 3 4]}}
+
+eval instant at 1m histogram_count(histogram unless histogram_quantile(0.5, histogram) < 3)
+     {} 10
+
+eval instant at 1m histogram_quantile(0.5, histogram unless histogram_count(histogram) == 0)
+     {} 3.1748021039363987
+
+clear
+
+# Regression test for:
+# https://github.com/prometheus/prometheus/issues/14172
+# https://github.com/prometheus/prometheus/issues/15177
+load 1m
+	mixed_metric1 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}} 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+    mixed_metric2 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}}
+
+# The order of the float vs native histograms is preserved.
+eval range from 0 to 8m step 1m mixed_metric1
+	mixed_metric1{} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+
+eval range from 0 to 5m step 1m mixed_metric2
+	mixed_metric2 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} {{count:6 sum:8 buckets:[1 4 1]}}
+
+clear
+
+# Test native histograms with custom buckets, reconciling mismatched bounds.
+load 1m
+	nhcb_add_buckets {{schema:-53 sum:55 count:15 custom_values:[2 4 6] buckets:[1 2 5 7]}} {{schema:-53 sum:555 count:450 custom_values:[1 2 3 4 5 6 7 8] buckets:[10 20 30 40 50 60 70 80 90]}}
+
+eval instant at 1m irate(nhcb_add_buckets[2m]) * 60
+    expect no_warn
+    expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction
+    {} {{schema:-53 sum:500 count:435 custom_values:[2 4 6] buckets:[29 68 105 233]}}
+
+load 1m
+	nhcb_remove_buckets {{schema:-53 sum:55 count:45 custom_values:[1 2 3 4 5 6 7 8] buckets:[1 2 3 4 5 6 7 8 9]}} {{schema:-53 sum:5560 count:1000 custom_values:[3 5 7] buckets:[100 200 300 400]}}
+
+eval instant at 1m irate(nhcb_remove_buckets[2m]) * 60
+    expect no_warn
+    expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction
+    {} {{schema:-53 sum:5505 count:955 custom_values:[3 5 7] buckets:[94 191 287 383]}}
+
+clear
+
+# Test native histograms with custom buckets, reconciling mismatched bounds, with counter reset in one bucket.
+load 1m
+	nhcb_add_bucket {{schema:-53 sum:55 count:15 custom_values:[2 4 6] buckets:[1 2 5 7]}} {{schema:-53 sum:56 count:15 custom_values:[2 3 4 6] buckets:[1 0 1 5 8]}}
+
+eval instant at 1m irate(nhcb_add_bucket[2m]) * 60
+    expect no_warn
+    expect no_info
+    {} {{schema:-53 sum:56 count:15 custom_values:[2 3 4 6] buckets:[1 0 1 5 8] counter_reset_hint:gauge}}

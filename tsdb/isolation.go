@@ -87,7 +87,7 @@ func newIsolation(disabled bool) *isolation {
 		appendsOpenList: appender,
 		readsOpen:       isoState,
 		disabled:        disabled,
-		appendersPool:   sync.Pool{New: func() interface{} { return &isolationAppender{} }},
+		appendersPool:   sync.Pool{New: func() any { return &isolationAppender{} }},
 	}
 }
 

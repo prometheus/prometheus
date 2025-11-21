@@ -24,9 +24,9 @@ type eurekaMetrics struct {
 }
 
 // Register implements discovery.DiscovererMetrics.
-func (m *eurekaMetrics) Register() error {
+func (*eurekaMetrics) Register() error {
 	return nil
 }
 
 // Unregister implements discovery.DiscovererMetrics.
-func (m *eurekaMetrics) Unregister() {}
+func (*eurekaMetrics) Unregister() {}

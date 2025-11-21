@@ -14,6 +14,7 @@
 package scrape
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -34,6 +35,8 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/storage"
 )
 
 const (
@@ -489,7 +492,7 @@ scrape_configs:
 	for _, nTargets := range []int{1, 10, 100} {
 		b.Run(fmt.Sprintf("%d_targets", nTargets), func(b *testing.B) {
 			targets := []model.LabelSet{}
-			for i := 0; i < nTargets; i++ {
+			for i := range nTargets {
 				labels := model.LabelSet{
 					model.AddressLabel:                            model.LabelValue(fmt.Sprintf("localhost:%d", i)),
 					"__meta_kubernetes_namespace":                 "some_namespace",
@@ -501,7 +504,7 @@ scrape_configs:
 					"__meta_kubernetes_pod_phase":                 "Running",
 				}
 				// Add some more labels, because Kubernetes SD generates a lot
-				for i := 0; i < 10; i++ {
+				for i := range 10 {
 					labels[model.LabelName(fmt.Sprintf("__meta_kubernetes_pod_label_extra%d", i))] = "a_label_abcdefgh"
 					labels[model.LabelName(fmt.Sprintf("__meta_kubernetes_pod_labelpresent_extra%d", i))] = "true"
 				}
@@ -510,7 +513,7 @@ scrape_configs:
 			var tgets []*Target
 			lb := labels.NewBuilder(labels.EmptyLabels())
 			group := &targetgroup.Group{Targets: targets}
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				tgets, _ = TargetsFromGroup(group, config.ScrapeConfigs[0], tgets, lb)
 				if len(targets) != nTargets {
 					b.Fatalf("Expected %d targets, got %d", nTargets, len(targets))
@@ -718,4 +721,41 @@ func TestMaxSchemaAppender(t *testing.T) {
 			})
 		}
 	}
+}
+
+// Test sample_limit when a scrape containst Native Histograms.
+func TestAppendWithSampleLimitAndNativeHistogram(t *testing.T) {
+	const sampleLimit = 2
+	resApp := &collectResultAppender{}
+	sl := newBasicScrapeLoop(t, context.Background(), nil, func(_ context.Context) storage.Appender {
+		return resApp
+	}, 0)
+	sl.sampleLimit = sampleLimit
+
+	now := time.Now()
+	app := appender(sl.appender(context.Background()), sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
+
+	// sample_limit is set to 2, so first two scrapes should work
+	_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "foo"), timestamp.FromTime(now), 1)
+	require.NoError(t, err)
+
+	// Second sample, should be ok.
+	_, err = app.AppendHistogram(
+		0,
+		labels.FromStrings(model.MetricNameLabel, "my_histogram1"),
+		timestamp.FromTime(now),
+		&histogram.Histogram{},
+		nil,
+	)
+	require.NoError(t, err)
+
+	// This is third sample with sample_limit=2, it should trigger errSampleLimit.
+	_, err = app.AppendHistogram(
+		0,
+		labels.FromStrings(model.MetricNameLabel, "my_histogram2"),
+		timestamp.FromTime(now),
+		&histogram.Histogram{},
+		nil,
+	)
+	require.ErrorIs(t, err, errSampleLimit)
 }

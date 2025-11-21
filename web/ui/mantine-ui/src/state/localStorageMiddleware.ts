@@ -63,6 +63,8 @@ startAppListening({
         case "enableSyntaxHighlighting":
         case "enableLinter":
         case "showAnnotations":
+        case "showQueryWarnings":
+        case "showQueryInfoNotices":
         case "alertGroupsPerPage":
         case "ruleGroupsPerPage":
           return persistToLocalStorage(`settings.${key}`, value);

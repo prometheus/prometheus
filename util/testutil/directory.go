@@ -72,12 +72,12 @@ type (
 	// the test flags, which we do not want in non-test binaries even if
 	// they make use of these utilities for some reason).
 	T interface {
-		Errorf(format string, args ...interface{})
+		Errorf(format string, args ...any)
 		FailNow()
 	}
 )
 
-func (c nilCloser) Close() {
+func (nilCloser) Close() {
 }
 
 func (c callbackCloser) Close() {
@@ -127,7 +127,7 @@ func NewTemporaryDirectory(name string, t T) (handler TemporaryDirectory) {
 		tester: t,
 	}
 
-	return
+	return handler
 }
 
 // DirHash returns a hash of all files attributes and their content within a directory.

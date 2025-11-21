@@ -23,7 +23,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery"
 )
@@ -48,7 +48,11 @@ host: %s
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	d, err := NewDockerDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDockerDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:  promslog.NewNopLogger(),
+		Metrics: metrics,
+		SetName: "docker_swarm",
+	})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -226,7 +230,11 @@ host: %s
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
-	d, err := NewDockerDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDockerDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:  promslog.NewNopLogger(),
+		Metrics: metrics,
+		SetName: "docker_swarm",
+	})
 	require.NoError(t, err)
 
 	ctx := context.Background()

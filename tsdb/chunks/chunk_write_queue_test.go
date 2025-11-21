@@ -31,7 +31,7 @@ func TestChunkWriteQueue_GettingChunkFromQueue(t *testing.T) {
 	blockWriterWg.Add(1)
 
 	// blockingChunkWriter blocks until blockWriterWg is done.
-	blockingChunkWriter := func(_ HeadSeriesRef, _, _ int64, _ chunkenc.Chunk, _ ChunkDiskMapperRef, _, _ bool) error {
+	blockingChunkWriter := func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool, bool) error {
 		blockWriterWg.Wait()
 		return nil
 	}
@@ -82,7 +82,7 @@ func TestChunkWriteQueue_WritingThroughQueue(t *testing.T) {
 	ref := newChunkDiskMapperRef(321, 123)
 	cutFile := true
 	awaitCb := make(chan struct{})
-	require.NoError(t, q.addJob(chunkWriteJob{seriesRef: seriesRef, mint: mint, maxt: maxt, chk: chunk, ref: ref, cutFile: cutFile, callback: func(_ error) {
+	require.NoError(t, q.addJob(chunkWriteJob{seriesRef: seriesRef, mint: mint, maxt: maxt, chk: chunk, ref: ref, cutFile: cutFile, callback: func(error) {
 		close(awaitCb)
 	}}))
 	<-awaitCb
@@ -101,7 +101,7 @@ func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
 	unblockChunkWriterCh := make(chan struct{}, sizeLimit)
 
 	// blockingChunkWriter blocks until the unblockChunkWriterCh channel returns a value.
-	blockingChunkWriter := func(_ HeadSeriesRef, _, _ int64, _ chunkenc.Chunk, _ ChunkDiskMapperRef, _, _ bool) error {
+	blockingChunkWriter := func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool, bool) error {
 		<-unblockChunkWriterCh
 		return nil
 	}
@@ -117,7 +117,7 @@ func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
 		callbackWg.Add(1)
 		require.NoError(t, q.addJob(chunkWriteJob{
 			ref: chunkRef,
-			callback: func(_ error) {
+			callback: func(error) {
 				callbackWg.Done()
 			},
 		}))
@@ -184,7 +184,7 @@ func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
 
 func TestChunkWriteQueue_HandlerErrorViaCallback(t *testing.T) {
 	testError := errors.New("test error")
-	chunkWriter := func(_ HeadSeriesRef, _, _ int64, _ chunkenc.Chunk, _ ChunkDiskMapperRef, _, _ bool) error {
+	chunkWriter := func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool, bool) error {
 		return testError
 	}
 
@@ -212,7 +212,7 @@ func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
 			for _, concurrentWrites := range []int{1, 10, 100, 1000} {
 				b.Run(fmt.Sprintf("%d concurrent writes", concurrentWrites), func(b *testing.B) {
 					issueReadSignal := make(chan struct{})
-					q := newChunkWriteQueue(nil, 1000, func(_ HeadSeriesRef, _, _ int64, _ chunkenc.Chunk, _ ChunkDiskMapperRef, _, _ bool) error {
+					q := newChunkWriteQueue(nil, 1000, func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool, bool) error {
 						if withReads {
 							select {
 							case issueReadSignal <- struct{}{}:
@@ -232,7 +232,7 @@ func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
 					start.Add(1)
 
 					jobs := make(chan chunkWriteJob, b.N)
-					for i := 0; i < b.N; i++ {
+					for i := 0; b.Loop(); i++ {
 						jobs <- chunkWriteJob{
 							seriesRef: HeadSeriesRef(i),
 							ref:       ChunkDiskMapperRef(i),
@@ -249,7 +249,7 @@ func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
 
 					done := sync.WaitGroup{}
 					done.Add(concurrentWrites)
-					for w := 0; w < concurrentWrites; w++ {
+					for range concurrentWrites {
 						go func() {
 							start.Wait()
 							for j := range jobs {

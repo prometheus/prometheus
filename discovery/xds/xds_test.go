@@ -85,7 +85,7 @@ func createTestHTTPServer(t *testing.T, responder discoveryResponder) *httptest.
 }
 
 func constantResourceParser(targets []model.LabelSet, err error) resourceParser {
-	return func(_ []*anypb.Any, _ string) ([]model.LabelSet, error) {
+	return func([]*anypb.Any, string) ([]model.LabelSet, error) {
 		return targets, err
 	}
 }
@@ -111,16 +111,18 @@ func (rc testResourceClient) Fetch(ctx context.Context) (*v3.DiscoveryResponse, 
 	return rc.fetch(ctx)
 }
 
-func (rc testResourceClient) ID() string {
+func (testResourceClient) ID() string {
 	return "test-client"
 }
 
-func (rc testResourceClient) Close() {
+func (testResourceClient) Close() {
 }
 
 func TestPollingRefreshSkipUpdate(t *testing.T) {
+	t.Parallel()
+
 	rc := &testResourceClient{
-		fetch: func(_ context.Context) (*v3.DiscoveryResponse, error) {
+		fetch: func(context.Context) (*v3.DiscoveryResponse, error) {
 			return nil, nil
 		},
 	}
@@ -162,12 +164,14 @@ func TestPollingRefreshSkipUpdate(t *testing.T) {
 }
 
 func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
+	t.Parallel()
+
 	server := "http://198.161.2.0"
 	source := "test"
 	rc := &testResourceClient{
 		server:          server,
 		protocolVersion: ProtocolV3,
-		fetch: func(_ context.Context) (*v3.DiscoveryResponse, error) {
+		fetch: func(context.Context) (*v3.DiscoveryResponse, error) {
 			return &v3.DiscoveryResponse{}, nil
 		},
 	}
@@ -218,19 +222,21 @@ func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
 }
 
 func TestPollingDisappearingTargets(t *testing.T) {
+	t.Parallel()
+
 	server := "http://198.161.2.0"
 	source := "test"
 	rc := &testResourceClient{
 		server:          server,
 		protocolVersion: ProtocolV3,
-		fetch: func(_ context.Context) (*v3.DiscoveryResponse, error) {
+		fetch: func(context.Context) (*v3.DiscoveryResponse, error) {
 			return &v3.DiscoveryResponse{}, nil
 		},
 	}
 
 	// On the first poll, send back two targets. On the next, send just one.
 	counter := 0
-	parser := func(_ []*anypb.Any, _ string) ([]model.LabelSet, error) {
+	parser := func([]*anypb.Any, string) ([]model.LabelSet, error) {
 		counter++
 		if counter == 1 {
 			return []model.LabelSet{

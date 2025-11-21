@@ -39,19 +39,19 @@ var (
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "samples_in_total",
-		Help:      "Samples in to remote storage, compare to samples out for queue managers.",
+		Help:      "Samples in to remote storage, compare to samples out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_samples_dropped_total",
 	})
 	exemplarsIn = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "exemplars_in_total",
-		Help:      "Exemplars in to remote storage, compare to exemplars out for queue managers.",
+		Help:      "Exemplars in to remote storage, compare to exemplars out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_exemplars_dropped_total",
 	})
 	histogramsIn = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "histograms_in_total",
-		Help:      "HistogramSamples in to remote storage, compare to histograms out for queue managers.",
+		Help:      "HistogramSamples in to remote storage, compare to histograms out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_histograms_dropped_total",
 	})
 )
 
@@ -73,11 +73,12 @@ type WriteStorage struct {
 	quit              chan struct{}
 
 	// For timestampTracker.
-	highestTimestamp *maxTimestamp
+	highestTimestamp        *maxTimestamp
+	enableTypeAndUnitLabels bool
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager) *WriteStorage {
+func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels bool) *WriteStorage {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
@@ -98,9 +99,10 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 				Namespace: namespace,
 				Subsystem: subsystem,
 				Name:      "highest_timestamp_in_seconds",
-				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch. Initialized to 0 when no data has been received yet.",
+				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch. Initialized to 0 when no data has been received yet. Deprecated, check prometheus_remote_storage_queue_highest_timestamp_seconds which is more accurate.",
 			}),
 		},
+		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 	}
 	if reg != nil {
 		reg.MustRegister(rws.highestTimestamp)
@@ -211,6 +213,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.scraper,
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
+			rws.enableTypeAndUnitLabels,
 			rwConf.ProtobufMessage,
 		)
 		// Keep track of which queues are new so we know which to start.
@@ -233,7 +236,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 }
 
 // Appender implements storage.Storage.
-func (rws *WriteStorage) Appender(_ context.Context) storage.Appender {
+func (rws *WriteStorage) Appender(context.Context) storage.Appender {
 	return &timestampTracker{
 		writeStorage:         rws,
 		highestRecvTimestamp: rws.highestTimestamp,
@@ -268,6 +271,14 @@ func (rws *WriteStorage) Close() error {
 		q.Stop()
 	}
 	close(rws.quit)
+
+	rws.watcherMetrics.Unregister()
+	rws.liveReaderMetrics.Unregister()
+
+	if rws.reg != nil {
+		rws.reg.Unregister(rws.highestTimestamp.Gauge)
+	}
+
 	return nil
 }
 
@@ -294,7 +305,7 @@ func (t *timestampTracker) Append(_ storage.SeriesRef, _ labels.Labels, ts int64
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
+func (t *timestampTracker) AppendExemplar(storage.SeriesRef, labels.Labels, exemplar.Exemplar) (storage.SeriesRef, error) {
 	t.exemplars++
 	return 0, nil
 }
@@ -307,27 +318,27 @@ func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels,
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, ct int64) (storage.SeriesRef, error) {
+func (t *timestampTracker) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, st int64) (storage.SeriesRef, error) {
 	t.samples++
-	if ct > t.highestTimestamp {
-		// Theoretically, we should never see a CT zero sample with a timestamp higher than the highest timestamp we've seen so far.
+	if st > t.highestTimestamp {
+		// Theoretically, we should never see a ST zero sample with a timestamp higher than the highest timestamp we've seen so far.
 		// However, we're not going to enforce that here, as it is not the responsibility of the tracker to enforce this.
-		t.highestTimestamp = ct
+		t.highestTimestamp = st
 	}
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendHistogramCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, ct int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (t *timestampTracker) AppendHistogramSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, st int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	t.histograms++
-	if ct > t.highestTimestamp {
-		// Theoretically, we should never see a CT zero sample with a timestamp higher than the highest timestamp we've seen so far.
+	if st > t.highestTimestamp {
+		// Theoretically, we should never see a ST zero sample with a timestamp higher than the highest timestamp we've seen so far.
 		// However, we're not going to enforce that here, as it is not the responsibility of the tracker to enforce this.
-		t.highestTimestamp = ct
+		t.highestTimestamp = st
 	}
 	return 0, nil
 }
 
-func (t *timestampTracker) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+func (*timestampTracker) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
 	// TODO: Add and increment a `metadata` field when we get around to wiring metadata in remote_write.
 	// UpdateMetadata is no-op for remote write (where timestampTracker is being used) for now.
 	return 0, nil

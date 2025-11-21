@@ -78,8 +78,8 @@ func BenchmarkNewCompressionHandler_MaliciousAcceptEncoding(b *testing.B) {
 	req := httptest.NewRequest(http.MethodGet, "/whatever", nil)
 	req.Header.Set("Accept-Encoding", strings.Repeat(",", http.DefaultMaxHeaderBytes))
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
+
+	for b.Loop() {
 		newCompressedResponseWriter(rec, req)
 	}
 }

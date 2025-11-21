@@ -81,7 +81,7 @@ ui-lint:
 
 .PHONY: assets
 ifndef SKIP_UI_BUILD
-assets: ui-install ui-build
+assets: check-node-version ui-install ui-build
 
 .PHONY: npm_licenses
 npm_licenses: ui-install
@@ -143,7 +143,7 @@ install-goyacc:
 ifeq ($(GO_ONLY),1)
 test: common-test check-go-mod-version
 else
-test: check-generated-parser common-test ui-build-module ui-test ui-lint check-go-mod-version
+test: check-generated-parser common-test check-node-version ui-build-module ui-test ui-lint check-go-mod-version
 endif
 
 .PHONY: tarball
@@ -189,6 +189,15 @@ update-all-go-deps:
 	@$(MAKE) update-go-deps
 	@echo ">> updating Go dependencies in ./documentation/examples/remote_storage/"
 	@cd ./documentation/examples/remote_storage/ && for m in $$($(GO) list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
-		$(GO) get -d $$m; \
+		$(GO) get $$m; \
 	done
 	@cd ./documentation/examples/remote_storage/ && $(GO) mod tidy
+
+.PHONY: check-node-version
+check-node-version:
+	@./scripts/check-node-version.sh
+
+.PHONY: bump-go-version
+bump-go-version:
+	@echo ">> bumping Go minor version"
+	@./scripts/bump_go_version.sh

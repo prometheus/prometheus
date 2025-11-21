@@ -47,7 +47,7 @@ const ensureOrderBatchSize = 1024
 
 // ensureOrderBatchPool is a pool used to recycle batches passed to workers in MemPostings.EnsureOrder().
 var ensureOrderBatchPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		x := make([][]storage.SeriesRef, 0, ensureOrderBatchSize)
 		return &x // Return pointer type as preferred by Pool.
 	},
@@ -564,10 +564,10 @@ type errPostings struct {
 	err error
 }
 
-func (e errPostings) Next() bool                  { return false }
-func (e errPostings) Seek(storage.SeriesRef) bool { return false }
-func (e errPostings) At() storage.SeriesRef       { return 0 }
-func (e errPostings) Err() error                  { return e.err }
+func (errPostings) Next() bool                  { return false }
+func (errPostings) Seek(storage.SeriesRef) bool { return false }
+func (errPostings) At() storage.SeriesRef       { return 0 }
+func (e errPostings) Err() error                { return e.err }
 
 var emptyPostings = errPostings{}
 
@@ -607,53 +607,67 @@ func Intersect(its ...Postings) Postings {
 }
 
 type intersectPostings struct {
-	arr []Postings
-	cur storage.SeriesRef
+	postings []Postings        // These are the postings we will be intersecting.
+	current  storage.SeriesRef // The current intersection, if Seek() or Next() has returned true.
 }
 
 func newIntersectPostings(its ...Postings) *intersectPostings {
-	return &intersectPostings{arr: its}
+	return &intersectPostings{postings: its}
 }
 
 func (it *intersectPostings) At() storage.SeriesRef {
-	return it.cur
+	return it.current
 }
 
-func (it *intersectPostings) doNext() bool {
-Loop:
+func (it *intersectPostings) Seek(target storage.SeriesRef) bool {
 	for {
-		for _, p := range it.arr {
-			if !p.Seek(it.cur) {
+		allEqual := true
+		for _, p := range it.postings {
+			if !p.Seek(target) {
 				return false
 			}
-			if p.At() > it.cur {
-				it.cur = p.At()
-				continue Loop
+			if p.At() > target {
+				target = p.At()
+				allEqual = false
 			}
 		}
-		return true
+
+		// if all p.At() are all equal, we found an intersection.
+		if allEqual {
+			it.current = target
+			return true
+		}
 	}
 }
 
 func (it *intersectPostings) Next() bool {
-	for _, p := range it.arr {
+	// Move forward the first Postings and take its value as the target to match.
+	if !it.postings[0].Next() {
+		return false
+	}
+	target := it.postings[0].At()
+	allEqual := true
+	for _, p := range it.postings[1:] { // Now move forward all the other ones and check if they match.
 		if !p.Next() {
 			return false
 		}
-		if p.At() > it.cur {
-			it.cur = p.At()
+		at := p.At()
+		if at > target { // This one is past the target, so pick up a new target to Seek at the end.
+			target = at
+			allEqual = false
+		} else if at < target { // This one needs to Seek to the target, but carry on with other postings in case they have an even higher target.
+			allEqual = false
 		}
 	}
-	return it.doNext()
-}
-
-func (it *intersectPostings) Seek(id storage.SeriesRef) bool {
-	it.cur = id
-	return it.doNext()
+	if allEqual {
+		it.current = target
+		return true
+	}
+	return it.Seek(target)
 }
 
 func (it *intersectPostings) Err() error {
-	for _, p := range it.arr {
+	for _, p := range it.postings {
 		if p.Err() != nil {
 			return p.Err()
 		}
@@ -850,18 +864,20 @@ func (it *ListPostings) Seek(x storage.SeriesRef) bool {
 		return false
 	}
 
-	// Do binary search between current position and end.
-	i, _ := slices.BinarySearch(it.list, x)
-	if i < len(it.list) {
-		it.cur = it.list[i]
-		it.list = it.list[i+1:]
-		return true
+	i := 0 // Check the next item in the list, otherwise binary search between current position and end.
+	if it.list[0] < x {
+		i, _ = slices.BinarySearch(it.list, x)
+		if i >= len(it.list) { // Off the end - terminate the iterator.
+			it.list = nil
+			return false
+		}
 	}
-	it.list = nil
-	return false
+	it.cur = it.list[i]
+	it.list = it.list[i+1:]
+	return true
 }
 
-func (it *ListPostings) Err() error {
+func (*ListPostings) Err() error {
 	return nil
 }
 
@@ -914,7 +930,7 @@ func (it *bigEndianPostings) Seek(x storage.SeriesRef) bool {
 	return false
 }
 
-func (it *bigEndianPostings) Err() error {
+func (*bigEndianPostings) Err() error {
 	return nil
 }
 
@@ -1022,14 +1038,14 @@ func (h postingsWithIndexHeap) Less(i, j int) bool {
 func (h *postingsWithIndexHeap) Swap(i, j int) { (*h)[i], (*h)[j] = (*h)[j], (*h)[i] }
 
 // Push implements heap.Interface.
-func (h *postingsWithIndexHeap) Push(x interface{}) {
+func (h *postingsWithIndexHeap) Push(x any) {
 	*h = append(*h, x.(postingsWithIndex))
 }
 
 // Pop implements heap.Interface and pops the last element, which is NOT the min element,
 // so this doesn't return the same heap.Pop()
 // Although this method is implemented for correctness, we don't expect it to be used, see popIndex() method for details.
-func (h *postingsWithIndexHeap) Pop() interface{} {
+func (h *postingsWithIndexHeap) Pop() any {
 	old := *h
 	n := len(old)
 	x := old[n-1]

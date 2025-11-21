@@ -65,7 +65,7 @@ func (*KumaSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discove
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *KumaSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *KumaSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultKumaSDConfig
 	type plainKumaConf KumaSDConfig
 	err := unmarshal((*plainKumaConf)(c))
@@ -88,7 +88,7 @@ func (c *KumaSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return c.HTTPClientConfig.Validate()
 }
 
-func (c *KumaSDConfig) Name() string {
+func (*KumaSDConfig) Name() string {
 	return "kuma"
 }
 

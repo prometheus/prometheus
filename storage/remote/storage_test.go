@@ -29,7 +29,7 @@ import (
 func TestStorageLifecycle(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -56,7 +56,7 @@ func TestStorageLifecycle(t *testing.T) {
 func TestUpdateRemoteReadConfigs(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
@@ -77,7 +77,7 @@ func TestUpdateRemoteReadConfigs(t *testing.T) {
 func TestFilterExternalLabels(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{
@@ -102,7 +102,7 @@ func TestFilterExternalLabels(t *testing.T) {
 func TestIgnoreExternalLabels(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{
@@ -126,14 +126,21 @@ func TestIgnoreExternalLabels(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// mustURLParse parses a URL and panics on error.
+func mustURLParse(rawURL string) *url.URL {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse URL %q: %v", rawURL, err))
+	}
+	return u
+}
+
 // baseRemoteWriteConfig copy values from global Default Write config
 // to avoid change global state and cross impact test execution.
 func baseRemoteWriteConfig(host string) *config.RemoteWriteConfig {
 	cfg := config.DefaultRemoteWriteConfig
 	cfg.URL = &common_config.URL{
-		URL: &url.URL{
-			Host: host,
-		},
+		URL: mustURLParse(host),
 	}
 	return &cfg
 }
@@ -143,9 +150,7 @@ func baseRemoteWriteConfig(host string) *config.RemoteWriteConfig {
 func baseRemoteReadConfig(host string) *config.RemoteReadConfig {
 	cfg := config.DefaultRemoteReadConfig
 	cfg.URL = &common_config.URL{
-		URL: &url.URL{
-			Host: host,
-		},
+		URL: mustURLParse(host),
 	}
 	return &cfg
 }
@@ -154,13 +159,13 @@ func baseRemoteReadConfig(host string) *config.RemoteReadConfig {
 // ApplyConfig runs concurrently with Notify
 // See https://github.com/prometheus/prometheus/issues/12747
 func TestWriteStorageApplyConfigsDuringCommit(t *testing.T) {
-	s := NewStorage(nil, nil, nil, t.TempDir(), defaultFlushDeadline, nil)
+	s := NewStorage(nil, nil, nil, t.TempDir(), defaultFlushDeadline, nil, false)
 
 	var wg sync.WaitGroup
 	wg.Add(2000)
 
 	start := make(chan struct{})
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		go func(i int) {
 			<-start
 			conf := &config.Config{
@@ -174,7 +179,7 @@ func TestWriteStorageApplyConfigsDuringCommit(t *testing.T) {
 		}(i)
 	}
 
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		go func() {
 			<-start
 			s.Notify()

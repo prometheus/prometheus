@@ -62,10 +62,15 @@ global:
 
   # The protocols to negotiate during a scrape with the client.
   # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
-  # OpenMetricsText1.0.0, PrometheusText0.0.4.
-  # The default value changes to [ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ]
-  # when native_histogram feature flag is set.
-  [ scrape_protocols: [<string>, ...] | default = [ OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ] ]
+  # OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
+  # If left unset both here and in an individual scrape config, the
+  # negotiation order used in that scrape config depends on the effective
+  # value of scrape_native_histograms for that scrape config.
+  # If scrape_native_histograms is false, the order is
+  # [ OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText1.0.0, PrometheusText0.0.4 ].
+  # If scrape_native_histograms is true, the order is
+  # [ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText1.0.0, PrometheusText0.0.4 ].
+  [ scrape_protocols: [<string>, ...] ]
 
   # How frequently to evaluate rules.
   [ evaluation_interval: <duration> | default = 1m ]
@@ -138,14 +143,57 @@ global:
   # and underscores.
   [ metric_name_validation_scheme: <string> | default "utf8" ]
 
-  # Specifies whether to convert all scraped classic histograms into native
-  # histograms with custom buckets.
-  [ convert_classic_histograms_to_nhcb: <bool> | default = false]
+  # If true, native histograms exposed by a target are recognized during
+  # scraping and ingested as such. If false, any native parts of histograms
+  # are ignored and only the classic parts are recognized (possibly as
+  # a classic histogram with only the +Inf buckets if no explicit classic
+  # buckets are part of the histogram).
+  [ scrape_native_histograms: <bool> | default = false ]
 
-  # Specifies whether to scrape a classic histogram, even if it is also exposed as a native
-  # histogram (has no effect without --enable-feature=native-histograms).
+  # Specifies whether to convert scraped classic histograms into native
+  # histograms with custom buckets.
+  [ convert_classic_histograms_to_nhcb: <bool> | default = false ]
+
+  # Specifies whether to additionally scrape the classic parts of a histogram,
+  # even if it is also exposed with native parts or it is converted into a
+  # native histogram with custom buckets.
   [ always_scrape_classic_histograms: <boolean> | default = false ]
 
+  # The following explains the various combinations of the last three options
+  # in various exposition cases.
+  #
+  # CASE 1: A histogram is solely exposed as a classic histogram. (Note that
+  # this also applies if the used scrape protocol (also see the
+  # scrape_protocols setting) does not support native histograms.) In this
+  # case, the scrape_native_histograms setting has no effect. If
+  # convert_classic_histograms_to_nhcb is false, the histogram is ingested as
+  # a classic histograms. If convert_classic_histograms_to_nhcb is true, the
+  # histograms is converted to an NHCB. In this case, 
+  # always_scrape_classic_histograms determines whether it is also ingested
+  # as a classic histograms or not.
+  #
+  # CASE 2: A histogram is solely exposed as a native histogram, i.e. it has
+  # no classic buckets except the optional +Inf bucket but it is marked as a
+  # native histogram (by some "native parts", at the very least by a no-op
+  # span). If scrape_native_histograms is false, this case is handled like case
+  # 1, but the resulting classic histogram or NHCB only has a sole bucket, the
+  # +Inf bucket. If scrape_native_histograms is true, however, the histogram is
+  # recognized as a pure native histogram and ingested as such. There will be
+  # no classic histogram ingested, no matter what 
+  # always_scrape_classic_histograms is set to, and there will be no
+  # conversion to an NHCB, no matter what convert_classic_histograms_to_nhcb
+  # is set to.
+  #
+  # CASE 3: A histogram is exposed as both a native and a classic histogram,
+  # i.e. it has "native parts" (at the very least a no-op span) and it has at
+  # least one classic bucket that is not the +Inf bucket. If
+  # scrape_native_histograms is false, this case is handled like case 1. The
+  # native parts are ignored, and there will be either a classic histogram, an
+  # NHCB, or both. If scrape_native_histograms is true, the histogram is
+  # ingested as a native histogram. There will be no NHCB, no matter what
+  # convert_classic_histograms_to_nhcb is set to (it would collide with the
+  # actual native histogram). However, there will be a classic histogram if (and
+  # only if) always_scrape_classic_histograms is set to true.
 
 runtime:
   # Configure the Go garbage collector GOGC parameter
@@ -197,6 +245,11 @@ otlp:
   # - "NoUTF8EscapingWithSuffixes" is a mode that relies on UTF-8 support in Prometheus.
   #   It preserves all special characters like dots, but still adds required metric name suffixes
   #   for units and _total, as UnderscoreEscapingWithSuffixes does.
+  # - "UnderscoreEscapingWithoutSuffixes" translates metric name characters that
+  #   are not alphanumerics/underscores/colons to underscores, and label name
+  #   characters that are not alphanumerics/underscores to underscores, but
+  #   unlike UnderscoreEscapingWithSuffixes it does not append any suffixes to
+  #   the names.
   # - (EXPERIMENTAL) "NoTranslation" is a mode that relies on UTF-8 support in Prometheus.
   #   It preserves all special character like dots and won't append special suffixes for metric
   #   unit and type.
@@ -217,6 +270,15 @@ otlp:
   # Enables promotion of OTel scope metadata (i.e. name, version, schema URL, and attributes) to metric labels.
   # This is disabled by default for backwards compatibility, but according to OTel spec, scope metadata _should_ be identifying, i.e. translated to metric labels.
   [ promote_scope_metadata: <boolean> | default = false ]
+  # Controls whether to enable prepending of 'key_' to labels starting with '_'.
+  # Reserved labels starting with '__' are not modified.
+  # This is only relevant when translation_strategy uses underscore escaping
+  # (e.g., "UnderscoreEscapingWithSuffixes" or "UnderscoreEscapingWithoutSuffixes").
+  [ label_name_underscore_sanitization: <boolean> | default = true ]
+  # Enables preserving of multiple consecutive underscores in label names when
+  # translation_strategy uses underscore escaping. When true (default), multiple
+  # consecutive underscores are preserved during label name sanitization.
+  [ label_name_preserve_multiple_underscores: <boolean> | default = true ]
 
 # Settings related to the remote read feature.
 remote_read:
@@ -258,18 +320,18 @@ job_name: <job_name>
 # The protocols to negotiate during a scrape with the client.
 # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
 # OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
-[ scrape_protocols: [<string>, ...] | default = <global_config.scrape_protocols> ]
+# If not set in the global config, the default value depends on the 
+# setting of scrape_native_histograms. If false, it is
+# [ OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText1.0.0, PrometheusText0.0.4 ].
+# If true, it is
+# [ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText1.0.0, PrometheusText0.0.4 ].
+[ scrape_protocols: [<string>, ...] | default = <dynamic> ]
 
-# Fallback protocol to use if a scrape returns blank, unparseable, or otherwise
+# Fallback protocol to use if a scrape returns blank, unparsable, or otherwise
 # invalid Content-Type.
 # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
 # OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
 [ fallback_scrape_protocol: <string> ]
-
-# Whether to scrape a classic histogram, even if it is also exposed as a native
-# histogram (has no effect without --enable-feature=native-histograms).
-[ always_scrape_classic_histograms: <boolean> |
-default = <global.always_scrape_classic_hisotgrams> ]
 
 # The HTTP resource path on which to fetch metrics from targets.
 [ metrics_path: <path> | default = /metrics ]
@@ -332,6 +394,10 @@ params:
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
 [ <http_config> ]
+
+# List of AWS service discovery configurations.
+aws_sd_configs:
+  [ - <aws_sd_config> ... ]
 
 # List of Azure service discovery configurations.
 azure_sd_configs:
@@ -565,10 +631,25 @@ metric_relabel_configs:
 # schema 8, but might change in the future).
 [ native_histogram_min_bucket_factor: <float> | default = 0 ]
 
+# If true, native histograms exposed by a target are recognized during
+# scraping and ingested as such. If false, any native parts of histograms
+# are ignored and only the classic parts are recognized (possibly as
+# a classic histogram with only the +Inf buckets if no explicit classic
+# buckets are part of the histogram).
+[ scrape_native_histograms: <bool> | default = <global.scrape_native_histograms> ]
+
 # Specifies whether to convert classic histograms into native histograms with
-# custom buckets (has no effect without --enable-feature=native-histograms).
-[ convert_classic_histograms_to_nhcb: <bool> | default =
-<global.convert_classic_histograms_to_nhcb>]
+# custom buckets.
+[ convert_classic_histograms_to_nhcb: <bool> | default = <global.convert_classic_histograms_to_nhcb>]
+
+# Specifies whether to additionally scrape the classic parts of a histogram,
+# even if it is also exposed with native parts or it is converted into a
+# native histogram with custom buckets.
+[ always_scrape_classic_histograms: <boolean> | default = <global.always_scrape_classic_histograms> ]
+
+# See global configuration above for further explanations of how the last three
+# options combine their effects.
+
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.
@@ -733,6 +814,155 @@ http_headers:
     [ secrets: [<secret>, ...] ]
     # Files to read header values from.
     [ files: [<string>, ...] ] ]
+```
+
+### `<aws_sd_config>`
+
+AWS SD configurations allow retrieving scrape targets from AWS services.
+This is a unified service discovery that supports multiple AWS service types through the `role` parameter.
+
+One of the following `role` types can be configured to discover targets:
+
+#### `ec2`
+
+The `ec2` role discovers targets from AWS EC2 instances. The private IP address is used by default, but may be changed to
+the public IP address with relabeling.
+
+The IAM credentials used must have the `ec2:DescribeInstances` permission to
+discover scrape targets, and may optionally have the
+`ec2:DescribeAvailabilityZones` permission if you want the availability zone ID
+available as a label (see below).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_ec2_ami`: the EC2 Amazon Machine Image
+* `__meta_ec2_architecture`: the architecture of the instance
+* `__meta_ec2_availability_zone`: the availability zone in which the instance is running
+* `__meta_ec2_availability_zone_id`: the [availability zone ID](https://docs.aws.amazon.com/ram/latest/userguide/working-with-az-ids.html) in which the instance is running (requires `ec2:DescribeAvailabilityZones`)
+* `__meta_ec2_instance_id`: the EC2 instance ID
+* `__meta_ec2_instance_lifecycle`: the lifecycle of the EC2 instance, set only for 'spot' or 'scheduled' instances, absent otherwise
+* `__meta_ec2_instance_state`: the state of the EC2 instance
+* `__meta_ec2_instance_type`: the type of the EC2 instance
+* `__meta_ec2_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
+* `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
+* `__meta_ec2_platform`: the Operating System platform, set to 'windows' on Windows servers, absent otherwise
+* `__meta_ec2_primary_ipv6_addresses`: comma separated list of the Primary IPv6 addresses of the instance, if present. The list is ordered based on the position of each corresponding network interface in the attachment order.
+* `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
+* `__meta_ec2_private_dns_name`: the private DNS name of the instance, if available
+* `__meta_ec2_private_ip`: the private IP address of the instance, if present
+* `__meta_ec2_public_dns_name`: the public DNS name of the instance, if available
+* `__meta_ec2_public_ip`: the public IP address of the instance, if available
+* `__meta_ec2_region`: the region of the instance
+* `__meta_ec2_subnet_id`: comma separated list of subnets IDs in which the instance is running, if available
+* `__meta_ec2_tag_<tagkey>`: each tag value of the instance
+* `__meta_ec2_vpc_id`: the ID of the VPC in which the instance is running, if available
+
+#### `lightsail`
+
+The `lightsail` role discovers targets from [AWS Lightsail](https://aws.amazon.com/lightsail/)
+instances. The private IP address is used by default, but may be changed to
+the public IP address with relabeling.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_lightsail_availability_zone`: the availability zone in which the instance is running
+* `__meta_lightsail_blueprint_id`: the Lightsail blueprint ID
+* `__meta_lightsail_bundle_id`: the Lightsail bundle ID
+* `__meta_lightsail_instance_name`: the name of the Lightsail instance
+* `__meta_lightsail_instance_state`: the state of the Lightsail instance
+* `__meta_lightsail_instance_support_code`: the support code of the Lightsail instance
+* `__meta_lightsail_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
+* `__meta_lightsail_private_ip`: the private IP address of the instance
+* `__meta_lightsail_public_ip`: the public IP address of the instance, if available
+* `__meta_lightsail_region`: the region of the instance
+* `__meta_lightsail_tag_<tagkey>`: each tag value of the instance
+
+#### `ecs`
+
+The `ecs` role discovers targets from AWS ECS containers. The private IP address is used by default, but may be changed to
+the public IP address with relabeling.
+
+The IAM credentials used must have the following permissions to discover
+scrape targets:
+
+- `ecs:ListClusters`
+- `ecs:DescribeClusters`
+- `ecs:ListServices`
+- `ecs:DescribeServices`
+- `ecs:ListTasks`
+- `ecs:DescribeTasks`
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_ecs_cluster`: the name of the ECS cluster
+* `__meta_ecs_cluster_arn`: the ARN of the ECS cluster
+* `__meta_ecs_service`: the name of the ECS service
+* `__meta_ecs_service_arn`: the ARN of the ECS service
+* `__meta_ecs_service_status`: the status of the ECS service
+* `__meta_ecs_task_group`: the ECS task group (typically service:service-name)
+* `__meta_ecs_task_arn`: the ARN of the ECS task
+* `__meta_ecs_task_definition`: the ARN of the ECS task definition
+* `__meta_ecs_ip_address`: the private IP address of the task
+* `__meta_ecs_launch_type`: the launch type of the task (EC2 or Fargate)
+* `__meta_ecs_desired_status`: the desired status of the task
+* `__meta_ecs_last_status`: the last known status of the task
+* `__meta_ecs_health_status`: the health status of the task
+* `__meta_ecs_platform_family`: the platform family (e.g., Linux, Windows)
+* `__meta_ecs_platform_version`: the platform version
+* `__meta_ecs_subnet_id`: the subnet ID where the task is running
+* `__meta_ecs_availability_zone`: the availability zone where the task is running
+* `__meta_ecs_region`: the AWS region
+* `__meta_ecs_tag_cluster_<tagkey>`: each cluster tag value, keyed by tag name
+* `__meta_ecs_tag_service_<tagkey>`: each service tag value, keyed by tag name
+* `__meta_ecs_tag_task_<tagkey>`: each task tag value, keyed by tag name
+
+See below for the configuration options for AWS discovery:
+
+```yaml
+# The AWS role to use for service discovery.
+# Must be one of: ec2, lightsail, or ecs.
+role: <string>
+
+# The AWS region. If blank, the region from the instance metadata is used.
+[ region: <string> ]
+
+# Custom endpoint to be used.
+[ endpoint: <string> ]
+
+# AWS access key ID. If blank, the environment variable AWS_ACCESS_KEY_ID is used.
+[ access_key: <string> ]
+
+# AWS secret access key. If blank, the environment variable AWS_SECRET_ACCESS_KEY is used.
+[ secret_key: <secret> ]
+
+# Named AWS profile used to authenticate.
+[ profile: <string> ]
+
+# AWS Role ARN, an alternative to using AWS API keys.
+[ role_arn: <string> ]
+
+# Refresh interval to re-read the targets list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# The port to scrape metrics from. If using the public IP address, this must
+# instead be specified in the relabeling rule.
+[ port: <int> | default = 80 ]
+
+# Filters can be used optionally to filter the instance list by other criteria (ec2 role only).
+# Available filter criteria can be found here:
+# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
+# Filter API documentation: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Filter.html
+filters:
+  [ - name: <string>
+      values: <string>, [...] ]
+
+# List of ECS cluster ARNs to discover (ecs role only). If empty, all clusters in the region are discovered.
+# This can significantly improve performance when you only need to monitor specific clusters.
+[ clusters: [<string>, ...] ]
+
+# HTTP client settings, including authentication methods (such as basic auth and
+# authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+[ <http_config> ]
 ```
 
 ### `<azure_sd_config>`
@@ -1965,8 +2195,11 @@ namespaces:
 # Optional metadata to attach to discovered targets. If omitted, no additional metadata is attached.
 attach_metadata:
 # Attaches node metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice.
-# When set to true, Prometheus must have permissions to get Nodes.
+# When set to true, Prometheus must have permissions to list/watch Nodes.
   [ node: <boolean> | default = false ]
+# Attaches namespace metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice, service, ingress.
+# When set to true, Prometheus must have permissions to list/watch Namespaces.
+  [ namespace: <boolean> | default = false ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
@@ -2286,7 +2519,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 See below for the configuration options for STACKIT discovery:
 
 ```yaml
-# The STACKIT project 
+# The STACKIT project
 project: <string>
 
 # STACKIT region to use. No automatic discovery of the region is done.
@@ -2801,9 +3034,18 @@ sigv4:
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
 
+  # Defines the FIPS mode for the AWS STS endpoint.
+  # Requires Prometheus >= 2.54.0
+  # Note: FIPS STS selection should be configured via use_fips_sts_endpoint rather than environment variables. (The problem report that motivated this: AWS_USE_FIPS_ENDPOINT no longer works.)
+  [ use_fips_sts_endpoint: <boolean> | default = false ]
+
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
 [ <http_config> ]
+
+# List of AWS service discovery configurations.
+aws_sd_configs:
+  [ - <aws_sd_config> ... ]
 
 # List of Azure service discovery configurations.
 azure_sd_configs:
@@ -3003,6 +3245,11 @@ sigv4:
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
 
+  # Defines the FIPS mode for the AWS STS endpoint.
+  # Requires Prometheus >= 2.54.0
+  # Note: FIPS STS selection should be configured via use_fips_sts_endpoint rather than environment variables. (The problem report that motivated this: AWS_USE_FIPS_ENDPOINT no longer works.)
+  [ use_fips_sts_endpoint: <boolean> | default = false ]
+
 # Optional AzureAD configuration.
 # Cannot be used at the same time as basic_auth, authorization, oauth2, sigv4 or google_iam.
 azuread:
@@ -3012,6 +3259,12 @@ azuread:
   # Azure Managed Identity.  Leave 'client_id' blank to use the default managed identity.
   [ managed_identity:
       [ client_id: <string> ] ]
+
+  # Azure Workload Identity.
+  [ workload_identity:
+     client_id: <string>
+     tenant_id: <string>
+     [ token_file_path: <string> | default = "/var/run/secrets/azure/tokens/azure-identity-token" ] ]
 
   # Azure OAuth.
   [ oauth:
@@ -3143,6 +3396,26 @@ with this feature.
 # the agent's WAL to accept out-of-order samples that fall within the specified time window relative
 # to the timestamp of the last appended sample for the same series.
 [ out_of_order_time_window: <duration> | default = 0s ]
+
+
+# Configures data retention settings for TSDB.
+#
+# Note: When retention is changed at runtime, the retention
+# settings are updated immediately, but block deletion based on the new retention policy
+# occurs during the next block reload cycle. This happens automatically within 1 minute
+# or when a compaction completes, whichever comes first.
+[ retention: <retention> ] :
+  # How long to retain samples in storage. If neither this option nor the size option
+  # is set, the retention time defaults to 15d. Units Supported: y, w, d, h, m, s, ms.
+  # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.time.
+  [ time: <duration> | default = 15d ]
+
+  # Maximum number of bytes that can be stored for blocks. A unit is required,
+  # supported units: B, KB, MB, GB, TB, PB, EB. Ex: "512MB". Based on powers-of-2, so 1KB is 1024B.
+  # If set to 0 or not set, size-based retention is disabled.
+  # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.size.
+  [ size: <size> | default = 0 ]
+
 ```
 
 ### `<exemplars>`

@@ -130,12 +130,16 @@ const TreeNode: FC<{
   // more cheaply. E.g. 'foo[7w]' can be expensive to fully fetch, but wrapping it
   // in 'last_over_time(foo[7w])' is cheaper and also gives us all the info we
   // need (number of series and labels).
+  // Strip anchored/smoothed modifiers when wrapping, as last_over_time doesn't support them.
   let queryNode = node;
   if (queryNode.type === nodeType.matrixSelector) {
+    const matrixNode = { ...queryNode };
+    matrixNode.anchored = false;
+    matrixNode.smoothed = false;
     queryNode = {
       type: nodeType.call,
       func: functionSignatures["last_over_time"],
-      args: [node],
+      args: [matrixNode],
     };
   }
 

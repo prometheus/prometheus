@@ -22,7 +22,7 @@ import (
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/sigv4"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -111,7 +111,8 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 		if _, ok := seen[us]; ok {
 			continue
 		}
-		s.metrics.latency.DeleteLabelValues(us)
+		s.metrics.latencySummary.DeleteLabelValues(us)
+		s.metrics.latencyHistogram.DeleteLabelValues(us)
 		s.metrics.sent.DeleteLabelValues(us)
 		s.metrics.errors.DeleteLabelValues(us)
 		seen[us] = struct{}{}

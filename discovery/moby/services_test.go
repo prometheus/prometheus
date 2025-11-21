@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery"
 )
@@ -48,7 +48,11 @@ host: %s
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:  promslog.NewNopLogger(),
+		Metrics: metrics,
+		SetName: "moby",
+	})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -349,7 +353,11 @@ filters:
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:  promslog.NewNopLogger(),
+		Metrics: metrics,
+		SetName: "moby",
+	})
 	require.NoError(t, err)
 
 	ctx := context.Background()

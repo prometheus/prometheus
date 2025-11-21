@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -172,7 +173,7 @@ func (f *chunkPos) shouldCutNewFile(bytesToWrite uint64) bool {
 // bytesToWriteForChunk returns the number of bytes that will need to be written for the given chunk size,
 // including all meta data before and after the chunk data.
 // Head chunk format: https://github.com/prometheus/prometheus/blob/main/tsdb/docs/format/head_chunks.md#chunk
-func (f *chunkPos) bytesToWriteForChunk(chkLen uint64) uint64 {
+func (*chunkPos) bytesToWriteForChunk(chkLen uint64) uint64 {
 	// Headers.
 	bytes := uint64(SeriesRefSize) + 2*MintMaxtSize + ChunkEncodingSize
 
@@ -283,16 +284,16 @@ const (
 	OutOfOrderMask = uint8(0b10000000)
 )
 
-func (cdm *ChunkDiskMapper) ApplyOutOfOrderMask(sourceEncoding chunkenc.Encoding) chunkenc.Encoding {
+func (*ChunkDiskMapper) ApplyOutOfOrderMask(sourceEncoding chunkenc.Encoding) chunkenc.Encoding {
 	enc := uint8(sourceEncoding) | OutOfOrderMask
 	return chunkenc.Encoding(enc)
 }
 
-func (cdm *ChunkDiskMapper) IsOutOfOrderChunk(e chunkenc.Encoding) bool {
+func (*ChunkDiskMapper) IsOutOfOrderChunk(e chunkenc.Encoding) bool {
 	return (uint8(e) & OutOfOrderMask) != 0
 }
 
-func (cdm *ChunkDiskMapper) RemoveMasks(sourceEncoding chunkenc.Encoding) chunkenc.Encoding {
+func (*ChunkDiskMapper) RemoveMasks(sourceEncoding chunkenc.Encoding) chunkenc.Encoding {
 	restored := uint8(sourceEncoding) & (^OutOfOrderMask)
 	return chunkenc.Encoding(restored)
 }
@@ -768,8 +769,25 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 		}
 	}
 
+	if chkDataLen > uint64(math.MaxInt) {
+		return nil, &CorruptionErr{
+			Dir:       cdm.dir.Name(),
+			FileIndex: sgmIndex,
+			Err:       fmt.Errorf("chunk length %d exceeds supported size", chkDataLen),
+		}
+	}
+
+	chkDataLenInt := int(chkDataLen)
+	if chkDataLenStart > math.MaxInt-n-chkDataLenInt {
+		return nil, &CorruptionErr{
+			Dir:       cdm.dir.Name(),
+			FileIndex: sgmIndex,
+			Err:       fmt.Errorf("chunk data end overflows supported size (start=%d, len=%d, n=%d)", chkDataLenStart, chkDataLenInt, n),
+		}
+	}
+
 	// Verify the chunk data end.
-	chkDataEnd := chkDataLenStart + n + int(chkDataLen)
+	chkDataEnd := chkDataLenStart + n + chkDataLenInt
 	if chkDataEnd > mmapFile.byteSlice.Len() {
 		return nil, &CorruptionErr{
 			Dir:       cdm.dir.Name(),
@@ -1109,7 +1127,7 @@ type chunkBuffer struct {
 
 func newChunkBuffer() *chunkBuffer {
 	cb := &chunkBuffer{}
-	for i := 0; i < inBufferShards; i++ {
+	for i := range inBufferShards {
 		cb.inBufferChunks[i] = make(map[ChunkDiskMapperRef]chunkenc.Chunk)
 	}
 	return cb
@@ -1133,7 +1151,7 @@ func (cb *chunkBuffer) get(ref ChunkDiskMapperRef) chunkenc.Chunk {
 }
 
 func (cb *chunkBuffer) clear() {
-	for i := 0; i < inBufferShards; i++ {
+	for i := range inBufferShards {
 		cb.inBufferChunksMtxs[i].Lock()
 		cb.inBufferChunks[i] = make(map[ChunkDiskMapperRef]chunkenc.Chunk)
 		cb.inBufferChunksMtxs[i].Unlock()

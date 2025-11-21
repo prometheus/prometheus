@@ -29,7 +29,7 @@ import (
 type Parser interface {
 	// Series returns the bytes of a series with a simple float64 as a
 	// value, the timestamp if set, and the value of the current sample.
-	// TODO(bwplotka): Similar to CreatedTimestamp, have ts == 0 meaning no timestamp provided.
+	// TODO(bwplotka): Similar to StartTimestamp, have ts == 0 meaning no timestamp provided.
 	// We already accepted in many places (PRW, proto parsing histograms) that 0 timestamp is not a
 	// a valid timestamp. If needed it can be represented as 0+1ms.
 	Series() ([]byte, *int64, float64)
@@ -38,7 +38,7 @@ type Parser interface {
 	// value, the timestamp if set, and the histogram in the current sample.
 	// Depending on the parsed input, the function returns an (integer) Histogram
 	// or a FloatHistogram, with the respective other return value being nil.
-	// TODO(bwplotka): Similar to CreatedTimestamp, have ts == 0 meaning no timestamp provided.
+	// TODO(bwplotka): Similar to StartTimestamp, have ts == 0 meaning no timestamp provided.
 	// We already accepted in many places (PRW, proto parsing histograms) that 0 timestamp is not a
 	// a valid timestamp. If needed it can be represented as 0+1ms.
 	Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram)
@@ -76,10 +76,10 @@ type Parser interface {
 	// retrieved (including the case where no exemplars exist at all).
 	Exemplar(l *exemplar.Exemplar) bool
 
-	// CreatedTimestamp returns the created timestamp (in milliseconds) for the
+	// StartTimestamp returns the created timestamp (in milliseconds) for the
 	// current sample. It returns 0 if it is unknown e.g. if it wasn't set or
 	// if the scrape protocol or metric type does not support created timestamps.
-	CreatedTimestamp() int64
+	StartTimestamp() int64
 
 	// Next advances the parser to the next sample.
 	// It returns (EntryInvalid, io.EOF) if no samples were read.
@@ -122,6 +122,39 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 	return fallbackType, fmt.Errorf("received unsupported Content-Type %q, using fallback_scrape_protocol %q", contentType, fallbackType)
 }
 
+type ParserOptions struct {
+	// EnableTypeAndUnitLabels enables parsing and inclusion of type and unit labels
+	// in the parsed metrics.
+	EnableTypeAndUnitLabels bool
+
+	// IgnoreNativeHistograms causes the parser to completely ignore all
+	// parts of native histograms, but to keep the ability to convert
+	// classic histograms to NHCB. This has the implication that even a
+	// histogram that has some native parts but not a single classic bucket
+	// will be parsed as a classic histogram (with only the +Inf bucket and
+	// count and sum). Setting this also allows converting a classic
+	// histogram that already has a native representation to an NHCB. This
+	// option has no effect on parsers for formats that do not support
+	// native histograms.
+	IgnoreNativeHistograms bool
+
+	// ConvertClassicHistogramsToNHCB enables conversion of classic histograms
+	// to native histogram custom buckets (NHCB) format.
+	ConvertClassicHistogramsToNHCB bool
+
+	// KeepClassicOnClassicAndNativeHistograms causes parser to output classic histogram
+	// that is also present as a native histogram. (Proto parsing only).
+	KeepClassicOnClassicAndNativeHistograms bool
+
+	// OpenMetricsSkipSTSeries determines whether to skip `_created` timestamp series
+	// during (OpenMetrics parsing only).
+	OpenMetricsSkipSTSeries bool
+
+	// FallbackContentType specifies the fallback content type to use when the provided
+	// Content-Type header cannot be parsed or is not supported.
+	FallbackContentType string
+}
+
 // New returns a new parser of the byte slice.
 //
 // This function no longer guarantees to return a valid parser.
@@ -130,23 +163,41 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 // An error may also be returned if fallbackType had to be used or there was some
 // other error parsing the supplied Content-Type.
 // If the returned parser is nil then the scrape must fail.
-func New(b []byte, contentType, fallbackType string, parseClassicHistograms, skipOMCTSeries, enableTypeAndUnitLabels bool, st *labels.SymbolTable) (Parser, error) {
-	mediaType, err := extractMediaType(contentType, fallbackType)
+func New(b []byte, contentType string, st *labels.SymbolTable, opts ParserOptions) (Parser, error) {
+	if st == nil {
+		st = labels.NewSymbolTable()
+	}
+
+	mediaType, err := extractMediaType(contentType, opts.FallbackContentType)
 	// err may be nil or something we want to warn about.
 
+	var baseParser Parser
 	switch mediaType {
 	case "application/openmetrics-text":
-		return NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
-			o.skipCTSeries = skipOMCTSeries
-			o.enableTypeAndUnitLabels = enableTypeAndUnitLabels
-		}), err
+		baseParser = NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
+			o.skipSTSeries = opts.OpenMetricsSkipSTSeries
+			o.enableTypeAndUnitLabels = opts.EnableTypeAndUnitLabels
+		})
 	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b, parseClassicHistograms, enableTypeAndUnitLabels, st), err
+		return NewProtobufParser(
+			b,
+			opts.IgnoreNativeHistograms,
+			opts.KeepClassicOnClassicAndNativeHistograms,
+			opts.ConvertClassicHistogramsToNHCB,
+			opts.EnableTypeAndUnitLabels,
+			st,
+		), err
 	case "text/plain":
-		return NewPromParser(b, st, enableTypeAndUnitLabels), err
+		baseParser = NewPromParser(b, st, opts.EnableTypeAndUnitLabels)
 	default:
 		return nil, err
 	}
+
+	if baseParser != nil && opts.ConvertClassicHistogramsToNHCB {
+		baseParser = NewNHCBParser(baseParser, st, opts.KeepClassicOnClassicAndNativeHistograms)
+	}
+
+	return baseParser, err
 }
 
 // Entry represents the type of a parsed entry.

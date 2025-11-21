@@ -197,7 +197,7 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 // Used in tests to compare the content of chunks.
 func ChunkMetasToSamples(chunks []Meta) (result []Sample) {
 	if len(chunks) == 0 {
-		return
+		return result
 	}
 
 	for _, chunk := range chunks {
@@ -218,7 +218,7 @@ func ChunkMetasToSamples(chunks []Meta) (result []Sample) {
 			}
 		}
 	}
-	return
+	return result
 }
 
 // Iterator iterates over the chunks of a single time series.
@@ -408,7 +408,7 @@ func (w *Writer) cut() error {
 			// Uncached IO is implemented using direct I/O for now.
 			wbuf, err = fileutil.NewDirectIOWriter(f, size)
 		} else {
-			wbuf, err = fileutil.NewBufioWriterWithSeek(f, size)
+			wbuf, err = fileutil.NewBufioWriterWithSize(f, size)
 		}
 		if err != nil {
 			return err

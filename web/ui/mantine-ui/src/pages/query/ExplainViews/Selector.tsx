@@ -128,12 +128,27 @@ const matchingCriteriaList = (
 const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
   const baseMetricName = node.name.replace(/(_count|_sum|_bucket)$/, "");
   const { lookbackDelta } = useSettings();
-  const { data: metricMeta } = useSuspenseAPIQuery<MetadataResult>({
+
+  // Try to get metadata for the full unchanged metric name first.
+  const { data: fullMetricMeta } = useSuspenseAPIQuery<MetadataResult>({
+    path: `/metadata`,
+    params: {
+      metric: node.name,
+    },
+  });
+
+  // Also get prefix-stripped metric metadata in case the metadata only exists for
+  // the histogram / summary base metric name.
+  const { data: baseMetricMeta } = useSuspenseAPIQuery<MetadataResult>({
     path: `/metadata`,
     params: {
       metric: baseMetricName,
     },
   });
+
+  // Determine which metadata to use.
+  const metricMeta =
+    fullMetricMeta.data[node.name] ?? baseMetricMeta.data[baseMetricName];
 
   return (
     <Card withBorder>
@@ -142,17 +157,13 @@ const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
         selector
       </Text>
       <Text fz="sm">
-        {metricMeta.data === undefined ||
-        metricMeta.data[baseMetricName] === undefined ||
-        metricMeta.data[baseMetricName].length < 1 ? (
+        {metricMeta === undefined || metricMeta.length < 1 ? (
           <>No metric metadata found.</>
         ) : (
           <>
-            <strong>Metric help</strong>:{" "}
-            {metricMeta.data[baseMetricName][0].help}
+            <strong>Metric help</strong>: {metricMeta[0].help}
             <br />
-            <strong>Metric type</strong>:{" "}
-            {metricMeta.data[baseMetricName][0].type}
+            <strong>Metric type</strong>: {metricMeta[0].type}
           </>
         )}
       </Text>
@@ -160,8 +171,22 @@ const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
       <Text fz="sm">
         {node.type === nodeType.vectorSelector ? (
           <>
-            This node selects the latest (non-stale) sample value within the
-            last <span className="promql-code promql-duration">{lookbackDelta}</span>
+            This node {node.smoothed ? "smooths the value" : "selects the latest"}{" "}
+            {node.anchored || node.smoothed ? "" : "non-stale "}
+            {!node.smoothed && (
+              <>
+                sample value within the last{" "}
+                <span className="promql-code promql-duration">{lookbackDelta}</span>
+              </>
+            )}
+            {node.smoothed && (
+              <>
+                using <code>smoothed</code> mode (linear interpolation with nearest
+                points within{" "}
+                <span className="promql-code promql-duration">{lookbackDelta}</span>{" "}
+                before and after execution timestamp, ignoring staleness markers)
+              </>
+            )}
           </>
         ) : (
           <>
@@ -170,6 +195,21 @@ const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
               {formatPrometheusDuration(node.range)}
             </span>{" "}
             of data going backward from the evaluation timestamp
+            {node.anchored && (
+              <>
+                {" "}
+                using <code>anchored</code> mode (includes first sample before or at
+                start boundary, and last sample of the range at end boundary, ignoring staleness markers)
+              </>
+            )}
+            {node.smoothed && (
+              <>
+                {" "}
+                using <code>smoothed</code> mode (applies linear
+                interpolation at the boundaries using nearest samples
+                before and after boundaries, ignoring staleness markers)
+              </>
+            )}
           </>
         )}
         {node.timestamp !== null ? (

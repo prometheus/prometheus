@@ -23,7 +23,7 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -42,8 +42,8 @@ var (
 	configTypesMu sync.Mutex
 	configTypes   = make(map[reflect.Type]reflect.Type)
 
-	emptyStructType = reflect.TypeOf(struct{}{})
-	configsType     = reflect.TypeOf(Configs{})
+	emptyStructType = reflect.TypeFor[struct{}]()
+	configsType     = reflect.TypeFor[Configs]()
 )
 
 // RegisterConfig registers the given Config type for YAML marshaling and unmarshaling.
@@ -54,7 +54,7 @@ func RegisterConfig(config Config) {
 func init() {
 	// N.B.: static_configs is the only Config type implemented by default.
 	// All other types are registered at init by their implementing packages.
-	elemTyp := reflect.TypeOf(&targetgroup.Group{})
+	elemTyp := reflect.TypeFor[*targetgroup.Group]()
 	registerConfig(staticConfigsKey, elemTyp, StaticConfig{})
 }
 
@@ -110,7 +110,7 @@ func getConfigType(out reflect.Type) reflect.Type {
 
 // UnmarshalYAMLWithInlineConfigs helps implement yaml.Unmarshal for structs
 // that have a Configs field that should be inlined.
-func UnmarshalYAMLWithInlineConfigs(out interface{}, unmarshal func(interface{}) error) error {
+func UnmarshalYAMLWithInlineConfigs(out any, unmarshal func(any) error) error {
 	outVal := reflect.ValueOf(out)
 	if outVal.Kind() != reflect.Ptr {
 		return fmt.Errorf("discovery: can only unmarshal into a struct pointer: %T", out)
@@ -198,7 +198,7 @@ func readConfigs(structVal reflect.Value, startField int) (Configs, error) {
 
 // MarshalYAMLWithInlineConfigs helps implement yaml.Marshal for structs
 // that have a Configs field that should be inlined.
-func MarshalYAMLWithInlineConfigs(in interface{}) (interface{}, error) {
+func MarshalYAMLWithInlineConfigs(in any) (any, error) {
 	inVal := reflect.ValueOf(in)
 	for inVal.Kind() == reflect.Ptr {
 		inVal = inVal.Elem()
@@ -266,7 +266,7 @@ func replaceYAMLTypeError(err error, oldTyp, newTyp reflect.Type) error {
 func RegisterSDMetrics(registerer prometheus.Registerer, rmm RefreshMetricsManager) (map[string]DiscovererMetrics, error) {
 	err := rmm.Register()
 	if err != nil {
-		return nil, errors.New("failed to create service discovery refresh metrics")
+		return nil, fmt.Errorf("failed to create service discovery refresh metrics: %w", err)
 	}
 
 	metrics := make(map[string]DiscovererMetrics)
@@ -274,7 +274,7 @@ func RegisterSDMetrics(registerer prometheus.Registerer, rmm RefreshMetricsManag
 		currentSdMetrics := conf.NewDiscovererMetrics(registerer, rmm)
 		err = currentSdMetrics.Register()
 		if err != nil {
-			return nil, errors.New("failed to create service discovery metrics")
+			return nil, fmt.Errorf("failed to create service discovery metrics: %w", err)
 		}
 		metrics[conf.Name()] = currentSdMetrics
 	}

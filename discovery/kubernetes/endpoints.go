@@ -32,25 +32,30 @@ import (
 )
 
 // Endpoints discovers new endpoint targets.
+//
+// Deprecated: The Endpoints API is deprecated starting in K8s v1.33+. Use EndpointSlice.
 type Endpoints struct {
 	logger *slog.Logger
 
-	endpointsInf     cache.SharedIndexInformer
-	serviceInf       cache.SharedInformer
-	podInf           cache.SharedInformer
-	nodeInf          cache.SharedInformer
-	withNodeMetadata bool
+	endpointsInf          cache.SharedIndexInformer
+	serviceInf            cache.SharedInformer
+	podInf                cache.SharedInformer
+	nodeInf               cache.SharedInformer
+	withNodeMetadata      bool
+	namespaceInf          cache.SharedInformer
+	withNamespaceMetadata bool
 
 	podStore       cache.Store
 	endpointsStore cache.Store
 	serviceStore   cache.Store
 
-	queue *workqueue.Type
+	queue *workqueue.Typed[string]
 }
 
 // NewEndpoints returns a new endpoints discovery.
-// Endpoints API is deprecated in k8s v1.33+, but we should still support it.
-func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer, eventCount *prometheus.CounterVec) *Endpoints {
+//
+// Deprecated: The Endpoints API is deprecated starting in K8s v1.33+. Use NewEndpointSlice.
+func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node, namespace cache.SharedInformer, eventCount *prometheus.CounterVec) *Endpoints {
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
@@ -66,28 +71,32 @@ func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node 
 	podUpdateCount := eventCount.WithLabelValues(RolePod.String(), MetricLabelRoleUpdate)
 
 	e := &Endpoints{
-		logger:           l,
-		endpointsInf:     eps,
-		endpointsStore:   eps.GetStore(),
-		serviceInf:       svc,
-		serviceStore:     svc.GetStore(),
-		podInf:           pod,
-		podStore:         pod.GetStore(),
-		nodeInf:          node,
-		withNodeMetadata: node != nil,
-		queue:            workqueue.NewNamed(RoleEndpoint.String()),
+		logger:                l,
+		endpointsInf:          eps,
+		endpointsStore:        eps.GetStore(),
+		serviceInf:            svc,
+		serviceStore:          svc.GetStore(),
+		podInf:                pod,
+		podStore:              pod.GetStore(),
+		nodeInf:               node,
+		withNodeMetadata:      node != nil,
+		namespaceInf:          namespace,
+		withNamespaceMetadata: namespace != nil,
+		queue: workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{
+			Name: RoleEndpoint.String(),
+		}),
 	}
 
 	_, err := e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(o interface{}) {
+		AddFunc: func(o any) {
 			epAddCount.Inc()
 			e.enqueue(o)
 		},
-		UpdateFunc: func(_, o interface{}) {
+		UpdateFunc: func(_, o any) {
 			epUpdateCount.Inc()
 			e.enqueue(o)
 		},
-		DeleteFunc: func(o interface{}) {
+		DeleteFunc: func(o any) {
 			epDeleteCount.Inc()
 			e.enqueue(o)
 		},
@@ -96,7 +105,7 @@ func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node 
 		l.Error("Error adding endpoints event handler.", "err", err)
 	}
 
-	serviceUpdate := func(o interface{}) {
+	serviceUpdate := func(o any) {
 		svc, err := convertToService(o)
 		if err != nil {
 			e.logger.Error("converting to Service object failed", "err", err)
@@ -115,15 +124,15 @@ func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node 
 	_, err = e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		// TODO(fabxc): potentially remove add and delete event handlers. Those should
 		// be triggered via the endpoint handlers already.
-		AddFunc: func(o interface{}) {
+		AddFunc: func(o any) {
 			svcAddCount.Inc()
 			serviceUpdate(o)
 		},
-		UpdateFunc: func(_, o interface{}) {
+		UpdateFunc: func(_, o any) {
 			svcUpdateCount.Inc()
 			serviceUpdate(o)
 		},
-		DeleteFunc: func(o interface{}) {
+		DeleteFunc: func(o any) {
 			svcDeleteCount.Inc()
 			serviceUpdate(o)
 		},
@@ -132,7 +141,7 @@ func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node 
 		l.Error("Error adding services event handler.", "err", err)
 	}
 	_, err = e.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		UpdateFunc: func(old, cur interface{}) {
+		UpdateFunc: func(old, cur any) {
 			podUpdateCount.Inc()
 			oldPod, ok := old.(*apiv1.Pod)
 			if !ok {
@@ -156,15 +165,15 @@ func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node 
 	}
 	if e.withNodeMetadata {
 		_, err = e.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(o interface{}) {
+			AddFunc: func(o any) {
 				node := o.(*apiv1.Node)
 				e.enqueueNode(node.Name)
 			},
-			UpdateFunc: func(_, o interface{}) {
+			UpdateFunc: func(_, o any) {
 				node := o.(*apiv1.Node)
 				e.enqueueNode(node.Name)
 			},
-			DeleteFunc: func(o interface{}) {
+			DeleteFunc: func(o any) {
 				nodeName, err := nodeName(o)
 				if err != nil {
 					l.Error("Error getting Node name", "err", err)
@@ -177,6 +186,20 @@ func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node 
 		}
 	}
 
+	if e.withNamespaceMetadata {
+		_, err = e.namespaceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(_, o any) {
+				namespace := o.(*apiv1.Namespace)
+				e.enqueueNamespace(namespace.Name)
+			},
+			// Creation and deletion will trigger events for the change handlers of the resources within the namespace.
+			// No need to have additional handlers for them here.
+		})
+		if err != nil {
+			l.Error("Error adding namespaces event handler.", "err", err)
+		}
+	}
+
 	return e
 }
 
@@ -184,6 +207,18 @@ func (e *Endpoints) enqueueNode(nodeName string) {
 	endpoints, err := e.endpointsInf.GetIndexer().ByIndex(nodeIndex, nodeName)
 	if err != nil {
 		e.logger.Error("Error getting endpoints for node", "node", nodeName, "err", err)
+		return
+	}
+
+	for _, endpoint := range endpoints {
+		e.enqueue(endpoint)
+	}
+}
+
+func (e *Endpoints) enqueueNamespace(namespace string) {
+	endpoints, err := e.endpointsInf.GetIndexer().ByIndex(cache.NamespaceIndex, namespace)
+	if err != nil {
+		e.logger.Error("Error getting endpoints in namespace", "namespace", namespace, "err", err)
 		return
 	}
 
@@ -204,7 +239,7 @@ func (e *Endpoints) enqueuePod(podNamespacedName string) {
 	}
 }
 
-func (e *Endpoints) enqueue(obj interface{}) {
+func (e *Endpoints) enqueue(obj any) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		return
@@ -220,6 +255,9 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	cacheSyncs := []cache.InformerSynced{e.endpointsInf.HasSynced, e.serviceInf.HasSynced, e.podInf.HasSynced}
 	if e.withNodeMetadata {
 		cacheSyncs = append(cacheSyncs, e.nodeInf.HasSynced)
+	}
+	if e.withNamespaceMetadata {
+		cacheSyncs = append(cacheSyncs, e.namespaceInf.HasSynced)
 	}
 
 	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
@@ -239,12 +277,11 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 }
 
 func (e *Endpoints) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
-	keyObj, quit := e.queue.Get()
+	key, quit := e.queue.Get()
 	if quit {
 		return false
 	}
-	defer e.queue.Done(keyObj)
-	key := keyObj.(string)
+	defer e.queue.Done(key)
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -270,7 +307,7 @@ func (e *Endpoints) process(ctx context.Context, ch chan<- []*targetgroup.Group)
 	return true
 }
 
-func convertToEndpoints(o interface{}) (*apiv1.Endpoints, error) {
+func convertToEndpoints(o any) (*apiv1.Endpoints, error) {
 	endpoints, ok := o.(*apiv1.Endpoints)
 	if ok {
 		return endpoints, nil
@@ -307,6 +344,10 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 	e.addServiceLabels(eps.Namespace, eps.Name, tg)
 	// Add endpoints labels metadata.
 	addObjectMetaLabels(tg.Labels, eps.ObjectMeta, RoleEndpoint)
+
+	if e.withNamespaceMetadata {
+		tg.Labels = addNamespaceLabels(tg.Labels, e.namespaceInf, e.logger, eps.Namespace)
+	}
 
 	type podEntry struct {
 		pod          *apiv1.Pod
@@ -501,4 +542,21 @@ func addNodeLabels(tg model.LabelSet, nodeInf cache.SharedInformer, logger *slog
 	nodeLabelset := make(model.LabelSet)
 	addObjectMetaLabels(nodeLabelset, node.ObjectMeta, RoleNode)
 	return tg.Merge(nodeLabelset)
+}
+
+func addNamespaceLabels(tg model.LabelSet, namespaceInf cache.SharedInformer, logger *slog.Logger, namespace string) model.LabelSet {
+	obj, exists, err := namespaceInf.GetStore().GetByKey(namespace)
+	if err != nil {
+		logger.Error("Error getting namespace", "namespace", namespace, "err", err)
+		return tg
+	}
+
+	if !exists {
+		return tg
+	}
+
+	n := obj.(*apiv1.Namespace)
+	namespaceLabelset := make(model.LabelSet)
+	addNamespaceMetaLabels(namespaceLabelset, n.ObjectMeta)
+	return tg.Merge(namespaceLabelset)
 }

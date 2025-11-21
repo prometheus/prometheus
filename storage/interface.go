@@ -44,13 +44,13 @@ var (
 	ErrExemplarsDisabled           = errors.New("exemplar storage is disabled or max exemplars is less than or equal to 0")
 	ErrNativeHistogramsDisabled    = errors.New("native histograms are disabled")
 
-	// ErrOutOfOrderCT indicates failed append of CT to the storage
-	// due to CT being older the then newer sample.
+	// ErrOutOfOrderST indicates failed append of ST to the storage
+	// due to ST being older the then newer sample.
 	// NOTE(bwplotka): This can be both an instrumentation failure or commonly expected
 	// behaviour, and we currently don't have a way to determine this. As a result
 	// it's recommended to ignore this error for now.
-	ErrOutOfOrderCT      = errors.New("created timestamp out of order, ignoring")
-	ErrCTNewerThanSample = errors.New("CT is newer or the same as sample's timestamp, ignoring")
+	ErrOutOfOrderST      = errors.New("start timestamp out of order, ignoring")
+	ErrSTNewerThanSample = errors.New("ST is newer or the same as sample's timestamp, ignoring")
 )
 
 // SeriesRef is a generic series reference. In prometheus it is either a
@@ -125,15 +125,15 @@ type MockQuerier struct {
 	SelectMockFunction func(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
 }
 
-func (q *MockQuerier) LabelValues(context.Context, string, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*MockQuerier) LabelValues(context.Context, string, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (q *MockQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*MockQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (q *MockQuerier) Close() error {
+func (*MockQuerier) Close() error {
 	return nil
 }
 
@@ -223,6 +223,19 @@ type SelectHints struct {
 	// When disabled, the result may contain samples outside the queried time range but Select() performances
 	// may be improved.
 	DisableTrimming bool
+
+	// Projection hints. They are currently unused in the Prometheus promql engine but can be used by different
+	// implementations of the Queryable interface and engines.
+	// These hints are useful for queries like `sum by (label) (rate(metric[5m]))` - we can safely evaluate it
+	// even if we only fetch the `label` label. For some storage implementations this is beneficial.
+
+	// ProjectionLabels are the minimum amount of labels required to be fetched for this Select call
+	// When honored it is required to add an __series_hash__ label containing the hash of all labels
+	// of a particular series so that the engine can still perform horizontal joins.
+	ProjectionLabels []string
+
+	// ProjectionInclude defines if we have to include or exclude the labels from the ProjectLabels field.
+	ProjectionInclude bool
 }
 
 // LabelHints specifies hints passed for label reads.
@@ -281,7 +294,7 @@ type Appender interface {
 	ExemplarAppender
 	HistogramAppender
 	MetadataUpdater
-	CreatedTimestampAppender
+	StartTimestampAppender
 }
 
 // GetRef is an extra interface on Appenders used by downstream projects
@@ -325,20 +338,20 @@ type HistogramAppender interface {
 	// pointer. AppendHistogram won't mutate the histogram, but in turn
 	// depends on the caller to not mutate it either.
 	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
-	// AppendHistogramCTZeroSample adds synthetic zero sample for the given ct timestamp,
+	// AppendHistogramSTZeroSample adds synthetic zero sample for the given st timestamp,
 	// which will be associated with given series, labels and the incoming
-	// sample's t (timestamp). AppendHistogramCTZeroSample returns error if zero sample can't be
-	// appended, for example when ct is too old, or when it would collide with
+	// sample's t (timestamp). AppendHistogramSTZeroSample returns error if zero sample can't be
+	// appended, for example when st is too old, or when it would collide with
 	// incoming sample (sample has priority).
 	//
-	// AppendHistogramCTZeroSample has to be called before the corresponding histogram AppendHistogram.
+	// AppendHistogramSTZeroSample has to be called before the corresponding histogram AppendHistogram.
 	// A series reference number is returned which can be used to modify the
-	// CT for the given series in the same or later transactions.
+	// ST for the given series in the same or later transactions.
 	// Returned reference numbers are ephemeral and may be rejected in calls
-	// to AppendHistogramCTZeroSample() at any point.
+	// to AppendHistogramSTZeroSample() at any point.
 	//
 	// If the reference is 0 it must not be used for caching.
-	AppendHistogramCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
+	AppendHistogramSTZeroSample(ref SeriesRef, l labels.Labels, t, st int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
 }
 
 // MetadataUpdater provides an interface for associating metadata to stored series.
@@ -353,22 +366,22 @@ type MetadataUpdater interface {
 	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
 }
 
-// CreatedTimestampAppender provides an interface for appending CT to storage.
-type CreatedTimestampAppender interface {
-	// AppendCTZeroSample adds synthetic zero sample for the given ct timestamp,
+// StartTimestampAppender provides an interface for appending ST to storage.
+type StartTimestampAppender interface {
+	// AppendSTZeroSample adds synthetic zero sample for the given st timestamp,
 	// which will be associated with given series, labels and the incoming
-	// sample's t (timestamp). AppendCTZeroSample returns error if zero sample can't be
-	// appended, for example when ct is too old, or when it would collide with
+	// sample's t (timestamp). AppendSTZeroSample returns error if zero sample can't be
+	// appended, for example when st is too old, or when it would collide with
 	// incoming sample (sample has priority).
 	//
-	// AppendCTZeroSample has to be called before the corresponding sample Append.
+	// AppendSTZeroSample has to be called before the corresponding sample Append.
 	// A series reference number is returned which can be used to modify the
-	// CT for the given series in the same or later transactions.
+	// ST for the given series in the same or later transactions.
 	// Returned reference numbers are ephemeral and may be rejected in calls
-	// to AppendCTZeroSample() at any point.
+	// to AppendSTZeroSample() at any point.
 	//
 	// If the reference is 0 it must not be used for caching.
-	AppendCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64) (SeriesRef, error)
+	AppendSTZeroSample(ref SeriesRef, l labels.Labels, t, st int64) (SeriesRef, error)
 }
 
 // SeriesSet contains a set of series.
@@ -376,7 +389,7 @@ type SeriesSet interface {
 	Next() bool
 	// At returns full series. Returned series should be iterable even after Next is called.
 	At() Series
-	// The error that iteration as failed with.
+	// The error that iteration has failed with.
 	// When an error occurs, set cannot continue to iterate.
 	Err() error
 	// A collection of warnings for the whole set.
@@ -395,10 +408,10 @@ type testSeriesSet struct {
 	series Series
 }
 
-func (s testSeriesSet) Next() bool                        { return true }
-func (s testSeriesSet) At() Series                        { return s.series }
-func (s testSeriesSet) Err() error                        { return nil }
-func (s testSeriesSet) Warnings() annotations.Annotations { return nil }
+func (testSeriesSet) Next() bool                        { return true }
+func (s testSeriesSet) At() Series                      { return s.series }
+func (testSeriesSet) Err() error                        { return nil }
+func (testSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // TestSeriesSet returns a mock series set.
 func TestSeriesSet(series Series) SeriesSet {
@@ -409,10 +422,10 @@ type errSeriesSet struct {
 	err error
 }
 
-func (s errSeriesSet) Next() bool                        { return false }
-func (s errSeriesSet) At() Series                        { return nil }
-func (s errSeriesSet) Err() error                        { return s.err }
-func (s errSeriesSet) Warnings() annotations.Annotations { return nil }
+func (errSeriesSet) Next() bool                        { return false }
+func (errSeriesSet) At() Series                        { return nil }
+func (s errSeriesSet) Err() error                      { return s.err }
+func (errSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // ErrSeriesSet returns a series set that wraps an error.
 func ErrSeriesSet(err error) SeriesSet {
@@ -430,10 +443,10 @@ type errChunkSeriesSet struct {
 	err error
 }
 
-func (s errChunkSeriesSet) Next() bool                        { return false }
-func (s errChunkSeriesSet) At() ChunkSeries                   { return nil }
-func (s errChunkSeriesSet) Err() error                        { return s.err }
-func (s errChunkSeriesSet) Warnings() annotations.Annotations { return nil }
+func (errChunkSeriesSet) Next() bool                        { return false }
+func (errChunkSeriesSet) At() ChunkSeries                   { return nil }
+func (s errChunkSeriesSet) Err() error                      { return s.err }
+func (errChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // ErrChunkSeriesSet returns a chunk series set that wraps an error.
 func ErrChunkSeriesSet(err error) ChunkSeriesSet {

@@ -62,8 +62,7 @@ func ReadLabels(fn string, n int) ([]Labels, error) {
 		r := strings.NewReplacer("\"", "", "{", "", "}", "")
 		s := r.Replace(scanner.Text())
 
-		labelChunks := strings.Split(s, ",")
-		for _, labelChunk := range labelChunks {
+		for labelChunk := range strings.SplitSeq(s, ",") {
 			split := strings.Split(labelChunk, ":")
 			b.Add(split[0], split[1])
 		}

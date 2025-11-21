@@ -16,15 +16,18 @@ package promql_test
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -43,24 +46,24 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, in
 	// These metrics will have data for all test time range
 	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
 	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
-	for j := 0; j < 10; j++ {
+	for j := range 10 {
 		metrics = append(metrics, labels.FromStrings("__name__", "h_one", "le", strconv.Itoa(j)))
 	}
 	metrics = append(metrics, labels.FromStrings("__name__", "h_one", "le", "+Inf"))
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		metrics = append(metrics, labels.FromStrings("__name__", "a_ten", "l", strconv.Itoa(i)))
 		metrics = append(metrics, labels.FromStrings("__name__", "b_ten", "l", strconv.Itoa(i)))
-		for j := 0; j < 10; j++ {
+		for j := range 10 {
 			metrics = append(metrics, labels.FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
 		}
 		metrics = append(metrics, labels.FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", "+Inf"))
 	}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		metrics = append(metrics, labels.FromStrings("__name__", "a_hundred", "l", strconv.Itoa(i)))
 		metrics = append(metrics, labels.FromStrings("__name__", "b_hundred", "l", strconv.Itoa(i)))
-		for j := 0; j < 10; j++ {
+		for j := range 10 {
 			metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
 		}
 		metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", "+Inf"))
@@ -70,7 +73,7 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, in
 	// Number points for each different label value of "l" for the sparse series
 	pointsPerSparseSeries := numIntervals / 50
 
-	for s := 0; s < numIntervals; s++ {
+	for s := range numIntervals {
 		a := stor.Appender(context.Background())
 		ts := int64(s * interval)
 		for i, metric := range metrics {
@@ -83,6 +86,57 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, in
 		_, err := a.Append(0, metric, ts, float64(s)/float64(len(metrics)))
 		if err != nil {
 			return err
+		}
+		if err := a.Commit(); err != nil {
+			return err
+		}
+	}
+
+	stor.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
+	stor.Compact(ctx)
+	return nil
+}
+
+// setupJoinQueryTestData creates numInstances series for two metrics ("rpc_request_success_total" and
+// "rpc_request_error_total") that can be joined on "instance" label for benchmarking join performance.
+func setupJoinQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, interval, numIntervals, numInstances int) error {
+	ctx := context.Background()
+
+	commonLabels := labels.FromStrings(
+		"environment", "staging",
+		"cluster", "test-kubernetes-cluster",
+		"namespace", "test-kubernetes-namespace",
+		"job", "worker",
+		"rpc_method", "fetch-my-data-from-this-service",
+		"domain", "test-domain",
+	)
+	builder := labels.NewBuilder(commonLabels)
+
+	rnd := rand.New(rand.NewSource(0)) // Fixed seed for deterministic results.
+
+	var metrics []labels.Labels
+	for range numInstances {
+		instance, err := uuid.NewRandomFromReader(rnd)
+		if err != nil {
+			return err
+		}
+		builder.Set("instance", instance.String())
+
+		builder.Set("__name__", "rpc_request_success_total")
+		metrics = append(metrics, builder.Labels())
+
+		builder.Set("__name__", "rpc_request_error_total")
+		metrics = append(metrics, builder.Labels())
+	}
+
+	refs := make([]storage.SeriesRef, len(metrics))
+
+	for s := range numIntervals {
+		a := stor.Appender(context.Background())
+		ts := int64(s * interval)
+		for i, metric := range metrics {
+			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
+			refs[i] = ref
 		}
 		if err := a.Commit(); err != nil {
 			return err
@@ -115,6 +169,18 @@ func rangeQueryCases() []benchCase {
 		},
 		{
 			expr:  "rate(sparse[1m])",
+			steps: 10000,
+		},
+		// Smoothed rate.
+		{
+			expr: "rate(a_X[1m] smoothed)",
+		},
+		{
+			expr:  "rate(a_X[1m] smoothed)",
+			steps: 10000,
+		},
+		{
+			expr:  "rate(sparse[1m] smoothed)",
 			steps: 10000,
 		},
 		// Holt-Winters and long ranges.
@@ -247,7 +313,6 @@ func rangeQueryCases() []benchCase {
 			tmp = append(tmp, c)
 		} else {
 			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "one"), steps: c.steps})
-			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "ten"), steps: c.steps})
 			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "hundred"), steps: c.steps})
 		}
 	}
@@ -260,7 +325,6 @@ func rangeQueryCases() []benchCase {
 			tmp = append(tmp, c)
 		} else {
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 1})
-			tmp = append(tmp, benchCase{expr: c.expr, steps: 100})
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 1000})
 		}
 	}
@@ -268,6 +332,10 @@ func rangeQueryCases() []benchCase {
 }
 
 func BenchmarkRangeQuery(b *testing.B) {
+	parser.EnableExtendedRangeSelectors = true
+	b.Cleanup(func() {
+		parser.EnableExtendedRangeSelectors = false
+	})
 	stor := teststorage.New(b)
 	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
 	defer stor.Close()
@@ -294,7 +362,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			ctx := context.Background()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				qry, err := engine.NewRangeQuery(
 					ctx, stor, nil, c.expr,
 					time.Unix(int64((numIntervals-c.steps)*10), 0),
@@ -306,6 +374,69 @@ func BenchmarkRangeQuery(b *testing.B) {
 				if res.Err != nil {
 					b.Fatal(res.Err)
 				}
+				qry.Close()
+			}
+		})
+	}
+}
+
+func BenchmarkJoinQuery(b *testing.B) {
+	stor := teststorage.New(b)
+	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
+	defer stor.Close()
+
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 50000000,
+		Timeout:    100 * time.Second,
+	}
+	engine := promqltest.NewTestEngineWithOpts(b, opts)
+
+	const interval = 10000 // 10s interval.
+
+	// A day of data plus 10k steps.
+	numIntervals := 8640 + 10000
+
+	require.NoError(b, setupJoinQueryTestData(stor, engine, interval, numIntervals, 1000))
+
+	for _, c := range []benchCase{
+		{
+			expr:  `rpc_request_success_total + rpc_request_error_total`,
+			steps: 10000,
+		},
+		{
+			expr:  `rpc_request_success_total + ON (job, instance) GROUP_LEFT rpc_request_error_total`,
+			steps: 10000,
+		},
+		{
+			expr:  `rpc_request_success_total AND rpc_request_error_total{instance=~"0.*"}`, // 0.* keeps 1/16 of UUID values
+			steps: 10000,
+		},
+		{
+			expr:  `rpc_request_success_total OR rpc_request_error_total{instance=~"0.*"}`, // 0.* keeps 1/16 of UUID values
+			steps: 10000,
+		},
+		{
+			expr:  `rpc_request_success_total UNLESS rpc_request_error_total{instance=~"0.*"}`, // 0.* keeps 1/16 of UUID values
+			steps: 10000,
+		},
+	} {
+		name := fmt.Sprintf("expr=%s/steps=%d", c.expr, c.steps)
+		b.Run(name, func(b *testing.B) {
+			ctx := context.Background()
+			b.ReportAllocs()
+			for b.Loop() {
+				qry, err := engine.NewRangeQuery(
+					ctx, stor, nil, c.expr,
+					timestamp.Time(int64((numIntervals-c.steps)*10_000)),
+					timestamp.Time(int64(numIntervals*10_000)),
+					time.Second*10)
+				require.NoError(b, err)
+
+				res := qry.Exec(ctx)
+				require.NoError(b, res.Err)
+
 				qry.Close()
 			}
 		})
@@ -352,6 +483,14 @@ func BenchmarkNativeHistograms(b *testing.B) {
 			name:  "histogram_count with long rate interval",
 			query: "histogram_count(sum(rate(native_histogram_series[20m])))",
 		},
+		{
+			name:  "two-legged histogram_count/sum with short rate interval",
+			query: "histogram_count(sum(rate(native_histogram_series[2m]))) + histogram_sum(sum(rate(native_histogram_series[2m])))",
+		},
+		{
+			name:  "two-legged histogram_count/sum with long rate interval",
+			query: "histogram_count(sum(rate(native_histogram_series[20m]))) + histogram_sum(sum(rate(native_histogram_series[20m])))",
+		},
 	}
 
 	opts := promql.EngineOpts{
@@ -369,7 +508,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
 			ng := promqltest.NewTestEngineWithOpts(b, opts)
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
 				if err != nil {
 					b.Fatal(err)
@@ -439,7 +578,7 @@ func BenchmarkNativeHistogramsCustomBuckets(b *testing.B) {
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
 			ng := promqltest.NewTestEngineWithOpts(b, opts)
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
 				if err != nil {
 					b.Fatal(err)
@@ -501,7 +640,7 @@ func BenchmarkInfoFunction(b *testing.B) {
 		engine := promql.NewEngine(opts)
 		b.Run(tc.name, func(b *testing.B) {
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				b.StopTimer() // Stop the timer to exclude setup time.
 				qry, err := engine.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
 				require.NoError(b, err)
@@ -527,7 +666,7 @@ func generateInfoFunctionTestSeries(tb testing.TB, stor *teststorage.TestStorage
 	// Generate http_server_request_duration_seconds_count metrics with instance and job labels, and http_status_code label.
 	// the classic target_info metrics is gauge type.
 	metrics := make([]labels.Labels, 0, infoSeriesNum+len(statusCodes))
-	for i := 0; i < infoSeriesNum; i++ {
+	for i := range infoSeriesNum {
 		clusterName := "us-east"
 		if i >= infoSeriesNum/2 {
 			clusterName = "eu-south"
@@ -552,7 +691,7 @@ func generateInfoFunctionTestSeries(tb testing.TB, stor *teststorage.TestStorage
 	// Append the generated metrics and samples to the storage.
 	refs := make([]storage.SeriesRef, len(metrics))
 
-	for i := 0; i < numIntervals; i++ {
+	for i := range numIntervals {
 		a := stor.Appender(context.Background())
 		ts := int64(i * interval)
 		for j, metric := range metrics[:infoSeriesNum] {
@@ -642,6 +781,7 @@ func BenchmarkParser(b *testing.B) {
 		`foo{a="b", foo!="bar", test=~"test", bar!~"baz"}`,
 		`min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
 		"sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
+		`sort_by_label(metric, "foo", "bar")`,
 	}
 	errCases := []string{
 		"(",
@@ -655,8 +795,17 @@ func BenchmarkParser(b *testing.B) {
 	for _, c := range cases {
 		b.Run(c, func(b *testing.B) {
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				parser.ParseExpr(c)
+			}
+		})
+	}
+	for _, c := range cases {
+		b.Run("preprocess "+c, func(b *testing.B) {
+			expr, _ := parser.ParseExpr(c)
+			start, end := time.Now().Add(-time.Hour), time.Now()
+			for b.Loop() {
+				promql.PreprocessExpr(expr, start, end, 0)
 			}
 		})
 	}
@@ -664,7 +813,7 @@ func BenchmarkParser(b *testing.B) {
 		name := fmt.Sprintf("%s (should fail)", c)
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				parser.ParseExpr(c)
 			}
 		})

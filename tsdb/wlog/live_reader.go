@@ -29,6 +29,7 @@ import (
 
 // LiveReaderMetrics holds all metrics exposed by the LiveReader.
 type LiveReaderMetrics struct {
+	reg                    prometheus.Registerer
 	readerCorruptionErrors *prometheus.CounterVec
 }
 
@@ -36,6 +37,7 @@ type LiveReaderMetrics struct {
 // at LiveReader instantiation.
 func NewLiveReaderMetrics(reg prometheus.Registerer) *LiveReaderMetrics {
 	m := &LiveReaderMetrics{
+		reg: reg,
 		readerCorruptionErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_wal_reader_corruption_errors_total",
 			Help: "Errors encountered when reading the WAL.",
@@ -47,6 +49,15 @@ func NewLiveReaderMetrics(reg prometheus.Registerer) *LiveReaderMetrics {
 	}
 
 	return m
+}
+
+// Unregister unregisters metrics emitted by this instance.
+func (m *LiveReaderMetrics) Unregister() {
+	if m.reg == nil {
+		return
+	}
+
+	m.reg.Unregister(m.readerCorruptionErrors)
 }
 
 // NewLiveReader returns a new live reader.

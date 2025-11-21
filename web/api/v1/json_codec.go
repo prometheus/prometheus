@@ -38,20 +38,20 @@ func init() {
 // JSONCodec is a Codec that encodes API responses as JSON.
 type JSONCodec struct{}
 
-func (j JSONCodec) ContentType() MIMEType {
+func (JSONCodec) ContentType() MIMEType {
 	return MIMEType{Type: "application", SubType: "json"}
 }
 
-func (j JSONCodec) CanEncode(_ *Response) bool {
+func (JSONCodec) CanEncode(*Response) bool {
 	return true
 }
 
-func (j JSONCodec) Encode(resp *Response) ([]byte, error) {
+func (JSONCodec) Encode(resp *Response) ([]byte, error) {
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	return json.Marshal(resp)
 }
 
-// marshalSeriesJSON writes something like the following:
+// unsafeMarshalSeriesJSON writes something like the following:
 //
 //	{
 //	   "metric" : {
@@ -108,7 +108,7 @@ func neverEmpty(unsafe.Pointer) bool {
 	return false
 }
 
-// marshalSampleJSON writes something like the following for normal value samples:
+// unsafeMarshalSampleJSON writes something like the following for normal value samples:
 //
 //	{
 //	   "metric" : {
@@ -156,7 +156,7 @@ func marshalSampleJSON(s promql.Sample, stream *jsoniter.Stream) {
 	stream.WriteObjectEnd()
 }
 
-// marshalFPointJSON writes `[ts, "1.234"]`.
+// unsafeMarshalFPointJSON writes `[ts, "1.234"]`.
 func unsafeMarshalFPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	p := *((*promql.FPoint)(ptr))
 	marshalFPointJSON(p, stream)
@@ -170,7 +170,7 @@ func marshalFPointJSON(p promql.FPoint, stream *jsoniter.Stream) {
 	stream.WriteArrayEnd()
 }
 
-// marshalHPointJSON writes `[ts, { < histogram, see jsonutil.MarshalHistogram > } ]`.
+// unsafeMarshalHPointJSON writes `[ts, { < histogram, see jsonutil.MarshalHistogram > } ]`.
 func unsafeMarshalHPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	p := *((*promql.HPoint)(ptr))
 	marshalHPointJSON(p, stream)

@@ -14,6 +14,7 @@
 package chunkenc
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -206,7 +207,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	require.Equal(t, ValNone, it4.Seek(exp[len(exp)-1].t+1))
 }
 
-// Mimics the scenario described for expandSpansForward.
+// Mimics the scenario described for expandIntSpansAndBuckets.
 func TestHistogramChunkBucketChanges(t *testing.T) {
 	c := Chunk(NewHistogramChunk())
 
@@ -1736,10 +1737,10 @@ func BenchmarkAppendable(b *testing.B) {
 		ZeroThreshold: 0.001,
 		ZeroCount:     5,
 	}
-	for i := 0; i < numSpans; i++ {
+	for range numSpans {
 		h.PositiveSpans = append(h.PositiveSpans, histogram.Span{Offset: 5, Length: spanLength})
 		h.NegativeSpans = append(h.NegativeSpans, histogram.Span{Offset: 5, Length: spanLength})
-		for j := 0; j < spanLength; j++ {
+		for j := range spanLength {
 			h.PositiveBuckets = append(h.PositiveBuckets, int64(j))
 			h.NegativeBuckets = append(h.NegativeBuckets, int64(j))
 		}
@@ -1761,7 +1762,7 @@ func BenchmarkAppendable(b *testing.B) {
 	hApp := app.(*HistogramAppender)
 
 	isAppendable := true
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _, _, _, ok, _ := hApp.appendable(h)
 		isAppendable = isAppendable && ok
 	}
@@ -1775,4 +1776,108 @@ func assertFirstIntHistogramSampleHint(t *testing.T, chunk Chunk, expected histo
 	require.Equal(t, ValHistogram, it.Next())
 	_, v := it.AtHistogram(nil)
 	require.Equal(t, expected, v.CounterResetHint)
+}
+
+func TestIntHistogramEmptyBucketsWithGaps(t *testing.T) {
+	h1 := &histogram.Histogram{
+		PositiveSpans: []histogram.Span{
+			{Offset: -19, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{0, 0, 0, 0},
+	}
+	require.NoError(t, h1.Validate())
+
+	c := NewHistogramChunk()
+	app, err := c.Appender()
+	require.NoError(t, err)
+	_, _, _, err = app.AppendHistogram(nil, 1, h1, false)
+	require.NoError(t, err)
+
+	h2 := &histogram.Histogram{
+		PositiveSpans: []histogram.Span{
+			{Offset: -19, Length: 1},
+			{Offset: 4, Length: 1},
+			{Offset: 3, Length: 1},
+		},
+		PositiveBuckets: []int64{0, 0, 0},
+	}
+	require.NoError(t, h2.Validate())
+
+	newC, recoded, _, err := app.AppendHistogram(nil, 2, h2, false)
+	require.NoError(t, err)
+	require.True(t, recoded)
+	require.NotNil(t, newC)
+
+	it := newC.Iterator(nil)
+	require.Equal(t, ValHistogram, it.Next())
+	_, h := it.AtFloatHistogram(nil)
+	require.NoError(t, h.Validate())
+	require.Equal(t, ValHistogram, it.Next())
+	_, h = it.AtFloatHistogram(nil)
+	require.NoError(t, h.Validate())
+	require.Equal(t, ValNone, it.Next())
+	require.NoError(t, it.Err())
+}
+
+func TestHistogramIteratorFailIfSchemaInValid(t *testing.T) {
+	for _, schema := range []int32{-101, 101} {
+		t.Run(fmt.Sprintf("schema %d", schema), func(t *testing.T) {
+			h := &histogram.Histogram{
+				Schema:        schema,
+				Count:         10,
+				Sum:           15.0,
+				ZeroThreshold: 1e-100,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 2, 3, 4},
+			}
+
+			c := NewHistogramChunk()
+			app, err := c.Appender()
+			require.NoError(t, err)
+
+			_, _, _, err = app.AppendHistogram(nil, 1, h, false)
+			require.NoError(t, err)
+
+			it := c.Iterator(nil)
+			require.Equal(t, ValNone, it.Next())
+			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
+		})
+	}
+}
+
+func TestHistogramIteratorReduceSchema(t *testing.T) {
+	for _, schema := range []int32{9, 52} {
+		t.Run(fmt.Sprintf("schema %d", schema), func(t *testing.T) {
+			h := &histogram.Histogram{
+				Schema:        schema,
+				Count:         10,
+				Sum:           15.0,
+				ZeroThreshold: 1e-100,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 2, 3, 4},
+			}
+
+			c := NewHistogramChunk()
+			app, err := c.Appender()
+			require.NoError(t, err)
+
+			_, _, _, err = app.AppendHistogram(nil, 1, h, false)
+			require.NoError(t, err)
+
+			it := c.Iterator(nil)
+			require.Equal(t, ValHistogram, it.Next())
+			_, rh := it.AtHistogram(nil)
+			require.Equal(t, histogram.ExponentialSchemaMax, rh.Schema)
+
+			_, rfh := it.AtFloatHistogram(nil)
+			require.Equal(t, histogram.ExponentialSchemaMax, rfh.Schema)
+		})
+	}
 }

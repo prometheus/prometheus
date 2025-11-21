@@ -228,38 +228,49 @@ load 5m
 	http_requests_histogram{path="/g"} 0 0 {{schema:-53 sum:3 count:3 custom_values:[1] buckets:[3]}} {{schema:-53 sum:3 count:3 custom_values:[5 10] buckets:[3]}}
 
 eval instant at 50m irate(http_requests_total[50m])
+  	expect no_warn
 	{path="/foo"} .03333333333333333333
 	{path="/bar"} .03333333333333333333
 
 # Counter reset.
 eval instant at 30m irate(http_requests_total[50m])
+  	expect no_warn
 	{path="/foo"} .03333333333333333333
 	{path="/bar"} 0
 
 eval range from 0 to 20m step 5m irate(http_requests_nan[15m1s])
+  	expect no_warn
 	{} _ NaN NaN NaN 0.02
 
 eval instant at 20m irate(http_requests_histogram{path="/a"}[20m])
+  	expect no_warn
 	{path="/a"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
 eval instant at 20m irate(http_requests_histogram{path="/b"}[20m])
+  	expect no_warn
 	{path="/b"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
 eval instant at 20m irate(http_requests_histogram{path="/b"}[6m])
+  	expect no_warn
 
-eval_warn instant at 20m irate(http_requests_histogram{path="/c"}[20m])
+eval instant at 20m irate(http_requests_histogram{path="/c"}[20m])
+	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram"
 	{path="/c"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
-eval_warn instant at 20m irate(http_requests_histogram{path="/d"}[20m])
+eval instant at 20m irate(http_requests_histogram{path="/d"}[20m])
+	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram"
 	{path="/d"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
-eval_warn instant at 20m irate(http_requests_histogram{path="/e"}[20m])
+eval instant at 20m irate(http_requests_histogram{path="/e"}[20m])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram"
 
 eval instant at 20m irate(http_requests_histogram{path="/f"}[20m])
+  	expect no_warn
 	{path="/f"} {{schema:-53 sum:0.01 count:0.01 custom_values:[5 10] buckets:[0.01]}}
 
 eval instant at 20m irate(http_requests_histogram{path="/g"}[20m])
-	{path="/g"} {{schema:-53 sum:0.01 count:0.01 custom_values:[5 10] buckets:[0.01]}}
+  	expect no_warn
+	{path="/g"} {{schema:-53 counter_reset_hint:gauge}}
 
 clear
 
@@ -272,18 +283,22 @@ load 5m
 	http_requests_mix{path="/foo"} 0 50 100 {{schema:0 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:0 sum:1 count:2 buckets:[1 1 1] counter_reset_hint:gauge}}
 
 eval instant at 20m delta(http_requests[20m])
+	expect no_warn
 	{path="/foo"} 200
 	{path="/bar"} -200
 
 eval instant at 20m delta(http_requests_gauge[20m])
+	expect no_warn
 	{path="/foo"} {{schema:0 sum:4 count:8 buckets:[4 4 4]}}
 
 # delta emits warn annotation for non-gauge histogram types.
-eval_warn instant at 20m delta(http_requests_counter[20m])
+eval instant at 20m delta(http_requests_counter[20m])
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_counter"
 	{path="/foo"} {{schema:0 sum:4 count:8 buckets:[4 4 4]}}
 
 # delta emits warn annotation for mix of histogram and floats.
-eval_warn instant at 20m delta(http_requests_mix[20m])
+eval instant at 20m delta(http_requests_mix[20m])
+	expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_mix"
 	#empty
 
 clear
@@ -299,34 +314,46 @@ load 5m
 	http_requests_histogram{path="/d"} 0 0 {{sum:1 count:1 counter_reset_hint:gauge}} {{sum:2 count:2}}
 	http_requests_histogram{path="/e"} 0 1 2 {{sum:1 count:2 counter_reset_hint:gauge}}
 	http_requests_histogram{path="/f"} 0 0 {{sum:1 count:1 counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}}
-	http_requests_histogram{path="/g"} 0 0 {{schema:-53 sum:1 count:1 custom_values:[1] buckets:[2] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}}
+	http_requests_histogram{path="/g"} 0 0 {{schema:-53 sum:1 count:1 custom_values:[1] buckets:[2] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[1 10] buckets:[1] counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests[20m])
+	expect no_warn
 	{path="/foo"} 50
 	{path="/bar"} -50
 
 eval range from 0 to 20m step 5m idelta(http_requests_nan[15m1s])
+	expect no_warn
 	{} _ NaN NaN NaN 6
 
 eval instant at 20m idelta(http_requests_histogram{path="/a"}[20m])
+	expect no_warn
 	{path="/a"} {{sum:1 count:3 counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests_histogram{path="/b"}[20m])
+	expect no_warn
 	{path="/b"} {{sum:1 count:1 counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests_histogram{path="/b"}[6m])
+	expect no_warn
 
-eval_warn instant at 20m idelta(http_requests_histogram{path="/c"}[20m])
+eval instant at 20m idelta(http_requests_histogram{path="/c"}[20m])
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram"
 	{path="/c"} {{sum:1 count:1 counter_reset_hint:gauge}}
 
-eval_warn instant at 20m idelta(http_requests_histogram{path="/d"}[20m])
+eval instant at 20m idelta(http_requests_histogram{path="/d"}[20m])
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram"
 	{path="/d"} {{sum:1 count:1 counter_reset_hint:gauge}}
 
-eval_warn instant at 20m idelta(http_requests_histogram{path="/e"}[20m])
+eval instant at 20m idelta(http_requests_histogram{path="/e"}[20m])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram"
 
-eval_warn instant at 20m idelta(http_requests_histogram{path="/f"}[20m])
+eval instant at 20m idelta(http_requests_histogram{path="/f"}[20m])
+  expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "http_requests_histogram"
 
-eval_warn instant at 20m idelta(http_requests_histogram{path="/g"}[20m])
+eval instant at 20m idelta(http_requests_histogram{path="/g"}[20m])
+	expect no_warn
+	expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction
+	{path="/g"} {{schema:-53 custom_values:[1] counter_reset_hint:gauge buckets:[-1]}}
 
 clear
 
@@ -341,28 +368,36 @@ load 5m
 
 # deriv should return the same as rate in simple cases.
 eval instant at 50m rate(http_requests_total{group="canary", instance="1", job="app-server"}[50m])
+	expect no_info
 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
 eval instant at 50m deriv(http_requests_total{group="canary", instance="1", job="app-server"}[50m])
+	expect no_info
 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
 # deriv should return correct result.
 eval instant at 50m deriv(testcounter_reset_middle_total[100m])
+	expect no_info
 	{} 0.010606060606060607
 
 # deriv should ignore histograms in a mixed range of floats and histograms, flagged by an info annotation.
-eval_info instant at 110m deriv(http_requests_mix{group="canary", instance="1", job="app-server"}[110m])
+eval instant at 110m deriv(http_requests_mix{group="canary", instance="1", job="app-server"}[110m])
+	expect info
 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
-eval_info instant at 100m deriv(testcounter_reset_middle_mix[110m])
+eval instant at 100m deriv(testcounter_reset_middle_mix[110m])
+	expect info
 	{} 0.010606060606060607
 
 # deriv should silently ignore ranges consisting only of histograms.
 eval instant at 50m deriv(http_requests_histogram[60m])
+	expect no_info
+	expect no_warn
 	#empty
 
 # deriv should return NaN in case of +Inf or -Inf found.
 eval instant at 100m deriv(http_requests_inf[100m])
+	expect no_info
 	{job="app-server", instance="1", group="canary"} NaN
 
 # predict_linear should return correct result.
@@ -380,35 +415,45 @@ eval instant at 100m deriv(http_requests_inf[100m])
 # intercept at t=3000: 38.63636363636364
 # intercept at t=3000+3600: 76.81818181818181
 eval instant at 50m predict_linear(testcounter_reset_middle_total[50m], 3600)
+	expect no_info
 	{} 70
 
 eval instant at 50m predict_linear(testcounter_reset_middle_total[50m], 1h)
+	expect no_info
 	{} 70
 
 # intercept at t = 3000+3600 = 6600
 eval instant at 50m predict_linear(testcounter_reset_middle_total[55m] @ 3000, 3600)
+	expect no_info
 	{} 76.81818181818181
 
 eval instant at 50m predict_linear(testcounter_reset_middle_total[55m] @ 3000, 1h)
+	expect no_info
 	{} 76.81818181818181
 
 # intercept at t = 600+3600 = 4200
 eval instant at 10m predict_linear(testcounter_reset_middle_total[55m] @ 3000, 3600)
+	expect no_info
 	{} 51.36363636363637
 
 # intercept at t = 4200+3600 = 7800
 eval instant at 70m predict_linear(testcounter_reset_middle_total[55m] @ 3000, 3600)
+	expect no_info
 	{} 89.54545454545455
 
 # predict_linear should ignore histograms in a mixed range of floats and histograms, flagged by an info annotation.
-eval_info instant at 60m predict_linear(testcounter_reset_middle_mix[60m], 3000)
+eval instant at 60m predict_linear(testcounter_reset_middle_mix[60m], 3000)
+	expect info
 	{} 70
 
-eval_info instant at 60m predict_linear(testcounter_reset_middle_mix[60m], 50m)
+eval instant at 60m predict_linear(testcounter_reset_middle_mix[60m], 50m)
+	expect info
 	{} 70
 
 # predict_linear should silently ignore ranges consisting only of histograms.
 eval instant at 60m predict_linear(http_requests_histogram[60m], 50m)
+	expect no_info
+	expect no_warn
 	#empty
 
 # predict_linear should return NaN in case of +Inf or -Inf found.
@@ -471,13 +516,16 @@ eval instant at 0m label_replace(testmetric, "dst", "", "dst", ".*")
   testmetric{src="source-value-20"} 1
 
 # label_replace fails when the regex is invalid.
-eval_fail instant at 0m label_replace(testmetric, "dst", "value-$1", "src", "(.*")
+eval instant at 0m label_replace(testmetric, "dst", "value-$1", "src", "(.*")
+  expect fail
 
 # label_replace fails when the destination label name is not a valid Prometheus label name.
-eval_fail instant at 0m label_replace(testmetric, "\xff", "", "src", "(.*)")
+eval instant at 0m label_replace(testmetric, "\xff", "", "src", "(.*)")
+  expect fail
 
 # label_replace fails when there would be duplicated identical output label sets.
-eval_fail instant at 0m label_replace(testmetric, "src", "", "", "")
+eval instant at 0m label_replace(testmetric, "src", "", "", "")
+  expect fail
 
 clear
 
@@ -540,8 +588,8 @@ eval instant at 0m label_join(testmetric1, "dst", ", ", "src", "src1", "src2")
   testmetric1{src="foo",src1="bar",src2="foobar",dst="foo, bar, foobar"} 0
   testmetric1{src="fizz",src1="buzz",src2="fizzbuzz",dst="fizz, buzz, fizzbuzz"} 1
 
-eval_fail instant at 0m label_join(dup, "label", "", "this")
-  expected_fail_message vector cannot contain metrics with the same labelset
+eval instant at 0m label_join(dup, "label", "", "this")
+  expect fail msg:vector cannot contain metrics with the same labelset
 
 clear
 
@@ -652,7 +700,8 @@ load 5m
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
 	http_requests{job="app-server", instance="2", group="canary"}		{{schema:0 sum:1 count:1}}x15
 
-eval_ordered instant at 50m sort(http_requests)
+eval instant at 50m sort(http_requests)
+	expect ordered
 	http_requests{group="production", instance="0", job="api-server"} 100
 	http_requests{group="production", instance="1", job="api-server"} 200
 	http_requests{group="canary", instance="0", job="api-server"} 300
@@ -663,7 +712,8 @@ eval_ordered instant at 50m sort(http_requests)
 	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="canary", instance="2", job="api-server"} NaN
 
-eval_ordered instant at 50m sort_desc(http_requests)
+eval instant at 50m sort_desc(http_requests)
+	expect ordered
 	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="production", instance="1", job="app-server"} 600
@@ -701,7 +751,8 @@ load 5m
 	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 0+10x10
 	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 0+10x10
 
-eval_ordered instant at 50m sort_by_label(http_requests, "instance")
+eval instant at 50m sort_by_label(http_requests, "instance")
+	expect ordered
 	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="production", instance="0", job="api-server"} 100
@@ -713,7 +764,8 @@ eval_ordered instant at 50m sort_by_label(http_requests, "instance")
 	http_requests{group="canary", instance="2", job="api-server"} NaN
 	http_requests{group="production", instance="2", job="api-server"} 100
 
-eval_ordered instant at 50m sort_by_label(http_requests, "instance", "group")
+eval instant at 50m sort_by_label(http_requests, "instance", "group")
+	expect ordered
 	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="production", instance="0", job="api-server"} 100
@@ -725,7 +777,8 @@ eval_ordered instant at 50m sort_by_label(http_requests, "instance", "group")
 	http_requests{group="canary", instance="2", job="api-server"} NaN
 	http_requests{group="production", instance="2", job="api-server"} 100
 
-eval_ordered instant at 50m sort_by_label(http_requests, "instance", "group")
+eval instant at 50m sort_by_label(http_requests, "instance", "group")
+	expect ordered
 	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="production", instance="0", job="api-server"} 100
@@ -737,7 +790,8 @@ eval_ordered instant at 50m sort_by_label(http_requests, "instance", "group")
 	http_requests{group="canary", instance="2", job="api-server"} NaN
 	http_requests{group="production", instance="2", job="api-server"} 100
 
-eval_ordered instant at 50m sort_by_label(http_requests, "group", "instance", "job")
+eval instant at 50m sort_by_label(http_requests, "group", "instance", "job")
+	expect ordered
 	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="canary", instance="1", job="api-server"} 400
@@ -749,7 +803,8 @@ eval_ordered instant at 50m sort_by_label(http_requests, "group", "instance", "j
 	http_requests{group="production", instance="1", job="app-server"} 600
 	http_requests{group="production", instance="2", job="api-server"} 100
 
-eval_ordered instant at 50m sort_by_label(http_requests, "job", "instance", "group")
+eval instant at 50m sort_by_label(http_requests, "job", "instance", "group")
+	expect ordered
 	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="production", instance="0", job="api-server"} 100
 	http_requests{group="canary", instance="1", job="api-server"} 400
@@ -761,7 +816,8 @@ eval_ordered instant at 50m sort_by_label(http_requests, "job", "instance", "gro
 	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="production", instance="1", job="app-server"} 600
 
-eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance")
+eval instant at 50m sort_by_label_desc(http_requests, "instance")
+	expect ordered
 	http_requests{group="production", instance="2", job="api-server"} 100
 	http_requests{group="canary", instance="2", job="api-server"} NaN
 	http_requests{group="production", instance="1", job="app-server"} 600
@@ -773,7 +829,8 @@ eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance")
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="canary", instance="0", job="api-server"} 300
 
-eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance", "group")
+eval instant at 50m sort_by_label_desc(http_requests, "instance", "group")
+	expect ordered
 	http_requests{group="production", instance="2", job="api-server"} 100
 	http_requests{group="canary", instance="2", job="api-server"} NaN
 	http_requests{group="production", instance="1", job="app-server"} 600
@@ -785,7 +842,8 @@ eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance", "group
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="canary", instance="0", job="api-server"} 300
 
-eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance", "group", "job")
+eval instant at 50m sort_by_label_desc(http_requests, "instance", "group", "job")
+	expect ordered
 	http_requests{group="production", instance="2", job="api-server"} 100
 	http_requests{group="canary", instance="2", job="api-server"} NaN
 	http_requests{group="production", instance="1", job="app-server"} 600
@@ -797,7 +855,8 @@ eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance", "group
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="canary", instance="0", job="api-server"} 300
 
-eval_ordered instant at 50m sort_by_label(cpu_time_total, "cpu")
+eval instant at 50m sort_by_label(cpu_time_total, "cpu")
+	expect ordered
 	cpu_time_total{job="cpu", cpu="0"} 100
 	cpu_time_total{job="cpu", cpu="1"} 100
 	cpu_time_total{job="cpu", cpu="2"} 100
@@ -809,12 +868,14 @@ eval_ordered instant at 50m sort_by_label(cpu_time_total, "cpu")
 	cpu_time_total{job="cpu", cpu="21"} 100
 	cpu_time_total{job="cpu", cpu="100"} 100
 
-eval_ordered instant at 50m sort_by_label(node_uname_info, "instance")
+eval instant at 50m sort_by_label(node_uname_info, "instance")
+	expect ordered
 	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 100
 	node_uname_info{job="node_exporter", instance="4m600", release="1.2.3"} 100
 	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 100
 
-eval_ordered instant at 50m sort_by_label(node_uname_info, "release")
+eval instant at 50m sort_by_label(node_uname_info, "release")
+	expect ordered
 	node_uname_info{job="node_exporter", instance="4m600", release="1.2.3"} 100
 	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 100
 	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 100
@@ -835,13 +896,15 @@ load 10s
 	http_requests_histogram{job="api-server", instance="1", group="canary"}	{{schema:0 count:1 sum:2}}x1000
 
 eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
+	expect no_info
 	{job="api-server", instance="0", group="production"} 8000
 	{job="api-server", instance="1", group="production"} 16000
 	{job="api-server", instance="0", group="canary"} 24000
 	{job="api-server", instance="1", group="canary"} 32000
 
 # double_exponential_smoothing should ignore histograms in a mixed range of floats and histograms, flagged by an info annotation.
-eval_info instant at 20010s double_exponential_smoothing(http_requests_mix[1m], 0.01, 0.1)
+eval instant at 20010s double_exponential_smoothing(http_requests_mix[1m], 0.01, 0.1)
+	expect info
 	{job="api-server", instance="0", group="production"} 30100
 	{job="api-server", instance="1", group="production"} 30200
 	{job="api-server", instance="0", group="canary"} 80300
@@ -849,6 +912,7 @@ eval_info instant at 20010s double_exponential_smoothing(http_requests_mix[1m], 
 
 # double_exponential_smoothing should silently ignore ranges consisting only of histograms.
 eval instant at 10000s double_exponential_smoothing(http_requests_histogram[1m], 0.01, 0.1)
+	expect no_info
 	#empty
 
 # negative trends
@@ -886,6 +950,14 @@ load 10s
   metric12 1 2 3 {{schema:0 sum:1 count:1}} {{schema:0 sum:3 count:3}}
   metric13 {{schema:0 sum:1 count:1}}x5
 
+# No samples in the range.
+eval instant at 55s avg_over_time(metric[10s])
+
+# One sample in the range.
+eval instant at 55s avg_over_time(metric[20s])
+  {} 5
+
+# All samples in the range.
 eval instant at 55s avg_over_time(metric[1m])
   {} 3
 
@@ -986,10 +1058,12 @@ eval instant at 55s sum_over_time(metric11[1m])/count_over_time(metric11[1m])
   {} NaN
 
 # Tests for samples with mix of floats and histograms.
-eval_warn instant at 55s sum_over_time(metric12[1m])
+eval instant at 55s sum_over_time(metric12[1m])
+	expect warn
 	# no result.
 
-eval_warn instant at 55s avg_over_time(metric12[1m])
+eval instant at 55s avg_over_time(metric12[1m])
+	expect warn
 	# no result.
 
 # Tests for samples with only histograms.
@@ -1010,10 +1084,8 @@ load 10s
 eval instant at 1m sum_over_time(metric[2m])
   {} 2
 
-# This test fails on darwin/arm64.
-# Deactivated until issue #16714 is fixed.
-# eval instant at 1m avg_over_time(metric[2m])
-#  {} 0.5
+eval instant at 1m avg_over_time(metric[2m])
+  {} 0.5
 
 # More tests for extreme values.
 clear
@@ -1060,11 +1132,6 @@ eval instant at 55s avg_over_time(metric8[1m])
 eval instant at 55s avg_over_time(metric9[1m])
   {} 3.225714285714286e+219
 
-# Interestingly, before PR #16569, this test failed with a result of
-# 3.225714285714286e+219, so the incremental calculation combined with
-# Kahan summation (in the improved way as introduced by PR #16569)
-# seems to be more accurate than the simple mean calculation with
-# Kahan summation.
 eval instant at 55s avg_over_time(metric10[1m])
   {} 2.5088888888888888e+219
 
@@ -1075,19 +1142,52 @@ eval instant at 55s avg_over_time(metric10[1m])
 load 5s
   metric11 -2.258E+220 -1.78264E+219 0.76342771 1.9592258 2.3757689E+217 -2.3757689E+217 2.258E+220 7.69805412 1.78264E+219 -458.90154
 
-# Thus, the result here is very far off! With the different orders of
-# magnitudes involved, even Kahan summation cannot cope.
-# Interestingly, with the simple mean calculation (still including
-# Kahan summation) prior to PR #16569, the result is 0. That's
-# arguably more accurate, but it still shows that Kahan summation
-# doesn't work well in this situation. To solve this properly, we
-# needed to do something like sorting the values (which is hard given
-# how the PromQL engine works). The question is how practically
-# relevant this scenario is.
-# eval instant at 55s avg_over_time(metric11[1m])
-#   {} -44.848083237000004 <- This is the correct value.
-#   {} -1.881783551706252e+203 <- This is the result on linux/amd64.
-#   {} 2.303079268822384e+202 <- This is the result on darwin/arm64.
+# Even Kahan summation cannot cope with values from a number of different
+# orders of magnitude and comes up with a result of zero here.
+# (Note that incremental mean calculation comes up with different but still
+# wrong values that also depend on the used hardware architecture.)
+eval instant at 55s avg_over_time(metric11[1m])
+  {} 0
+#   {} -44.848083237000004 <- This would be the correct value.
+
+# Demonstrate robustness of direct mean calculation vs. incremental mean calculation.
+# The tests below are prone to small inaccuracies with incremental mean calculation.
+# The exact number of aggregated values that trigger an inaccuracy depends on the
+# hardware.
+# See also discussion in https://github.com/prometheus/prometheus/issues/16714
+clear
+load 10s
+  foo 52+0x100
+
+eval instant at 10m avg_over_time(foo[100s]) - 52
+  {} 0
+
+eval instant at 10m avg_over_time(foo[110s]) - 52
+  {} 0
+
+eval instant at 10m avg_over_time(foo[120s]) - 52
+  {} 0
+
+eval instant at 10m avg_over_time(foo[130s]) - 52
+  {} 0
+
+# The following tests do not utilize the tolerance built into the
+# testing framework but rely on the exact equality implemented in
+# PromQL. They currently pass, but we should keep in mind that this is
+# not a hard requirement, and generally it is a bad idea in practice
+# to rely on exact equality like this in alerting rules etc.
+
+eval instant at 10m avg_over_time(foo[100s]) == 52
+  {} 52
+
+eval instant at 10m avg_over_time(foo[110s]) == 52
+  {} 52
+
+eval instant at 10m avg_over_time(foo[120s]) == 52
+  {} 52
+
+eval instant at 10m avg_over_time(foo[130s]) == 52
+  {} 52
 
 # Test per-series aggregation on dense samples.
 clear
@@ -1150,13 +1250,16 @@ eval instant at 1m stddev_over_time((metric[2m]))
 eval instant at 1m stddev_over_time(metric_histogram{type="only_histogram"}[2m])
 	#empty
 
-eval_info instant at 1m stddev_over_time(metric_histogram{type="mix"}[2m])
+eval instant at 1m stddev_over_time(metric_histogram{type="mix"}[2m])
+	expect info
 	{type="mix"} 0
 
 eval instant at 1m stdvar_over_time(metric_histogram{type="only_histogram"}[2m])
+	expect no_info
 	#empty
 
-eval_info instant at 1m stdvar_over_time(metric_histogram{type="mix"}[2m])
+eval instant at 1m stdvar_over_time(metric_histogram{type="mix"}[2m])
+	expect info
 	{type="mix"} 0
 
 # Tests for stddev_over_time and stdvar_over_time #4927.
@@ -1178,12 +1281,15 @@ load 10s
 	metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
 
 eval instant at 70s mad_over_time(metric[70s])
+	expect no_info
 	{} 1
 
 eval instant at 70s mad_over_time(metric_histogram{type="only_histogram"}[70s])
+	expect no_info
 	#empty
 
-eval_info instant at 70s mad_over_time(metric_histogram{type="mix"}[70s])
+eval instant at 70s mad_over_time(metric_histogram{type="mix"}[70s])
+	expect info
 	{type="mix"} 0
 
 # Tests for ts_of_max_over_time and ts_of_min_over_time. Using odd scrape interval to test for rounding bugs.
@@ -1216,6 +1322,28 @@ eval instant at 95s ts_of_last_over_time(metric_histogram{type="only_histogram"}
 eval instant at 95s ts_of_last_over_time(metric_histogram{type="mix"}[90s])
 	{type="mix"} 50.265
 
+# Tests for ts_of_first_over_time
+clear
+load 10s53ms
+	metric _ _ 1 2 3 _ _
+	metric_histogram{type="only_histogram"} {{schema:1 sum:2 count:3}}x4
+	metric_histogram{type="mix"} _ 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} 1
+
+eval instant at 90s ts_of_first_over_time(metric[90s])
+	{} 20.106
+
+eval instant at 95s ts_of_first_over_time(metric[90s])
+	{} 20.106
+
+eval instant at 15s ts_of_first_over_time(metric[90s])
+	#empty
+
+eval instant at 95s ts_of_first_over_time(metric_histogram{type="only_histogram"}[90s])
+	{type="only_histogram"} 10.053
+
+eval instant at 95s ts_of_first_over_time(metric_histogram{type="mix"}[90s])
+	{type="mix"} 10.053
+
 # Tests for quantile_over_time
 clear
 
@@ -1227,49 +1355,69 @@ load 10s
 	data_histogram{test="mix samples"} 0 1 2 {{schema:0 sum:1 count:2}}x2
 
 eval instant at 1m quantile_over_time(0, data[2m])
+	expect no_info
+	expect no_warn
 	{test="two samples"} 0
 	{test="three samples"} 0
 	{test="uneven samples"} 0
 
 eval instant at 1m quantile_over_time(0.5, data[2m])
+	expect no_info
+	expect no_warn
 	{test="two samples"} 0.5
 	{test="three samples"} 1
 	{test="uneven samples"} 1
 
 eval instant at 1m quantile_over_time(0.75, data[2m])
+	expect no_info
+	expect no_warn
 	{test="two samples"} 0.75
 	{test="three samples"} 1.5
 	{test="uneven samples"} 2.5
 
 eval instant at 1m quantile_over_time(0.8, data[2m])
+	expect no_info
+	expect no_warn
 	{test="two samples"} 0.8
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
 
 eval instant at 1m quantile_over_time(1, data[2m])
+	expect no_info
+	expect no_warn
 	{test="two samples"} 1
 	{test="three samples"} 2
 	{test="uneven samples"} 4
 
-eval_warn instant at 1m quantile_over_time(-1, data[2m])
+eval instant at 1m quantile_over_time(-1, data[2m])
+	expect no_info
+	expect warn
 	{test="two samples"} -Inf
 	{test="three samples"} -Inf
 	{test="uneven samples"} -Inf
 
-eval_warn instant at 1m quantile_over_time(2, data[2m])
+eval instant at 1m quantile_over_time(2, data[2m])
+	expect no_info
+	expect warn
 	{test="two samples"} +Inf
 	{test="three samples"} +Inf
 	{test="uneven samples"} +Inf
 
-eval_warn instant at 1m (quantile_over_time(2, (data[2m])))
+eval instant at 1m (quantile_over_time(2, (data[2m])))
+	expect no_info
+	expect warn
 	{test="two samples"} +Inf
 	{test="three samples"} +Inf
 	{test="uneven samples"} +Inf
 
 eval instant at 1m quantile_over_time(0.5, data_histogram{test="only histogram samples"}[2m])
+	expect no_info
+	expect no_warn
 	#empty
 
-eval_info instant at 1m quantile_over_time(0.5, data_histogram{test="mix samples"}[2m])
+eval instant at 1m quantile_over_time(0.5, data_histogram{test="mix samples"}[2m])
+	expect info
+	expect no_warn
 	{test="mix samples"} 1
 
 clear
@@ -1383,7 +1531,8 @@ load 5m
   testmetric1{src="a",dst="b"} 0
   testmetric2{src="a",dst="b"} 1
 
-eval_fail instant at 0m changes({__name__=~'testmetric1|testmetric2'}[5m])
+eval instant at 0m changes({__name__=~'testmetric1|testmetric2'}[5m])
+	expect fail
 
 clear
 
@@ -1395,9 +1544,22 @@ load 10s
 	data{type="some_nan3"} NaN 0 1
 	data{type="only_nan"} NaN NaN NaN
 	data_histogram{type="only_histogram"} {{schema:0 sum:1 count:2}} {{schema:0 sum:2 count:3}} {{schema:0 sum:3 count:4}}
-	data_histogram{type="mix_samples"} 0 1 {{schema:0 sum:1 count:2}} {{schema:0 sum:2 count:3}}
+	data_histogram{type="mix_samples_hlast"} 0 1 {{schema:0 sum:1 count:2}} {{schema:0 sum:2 count:3}}
+	data_sparse{type="sparse_numbers"} _ 5 2 _ 4 _
+	data_empty{type="empty_series"} _ _ _ _ _ _ _ _ _ _ _ _ _
+
+# workaround for https://github.com/prometheus/prometheus/issues/17025 causing histogram samples
+# before float samples in a load directive to be silently dropped as (incorrectly) out-of-order.
+# By splitting the vector across two loads, a commit is forced inbetween so the
+# ordering will be handled correctly.
+load 10s
+	data_histogram{type="mix_samples_hfirst"} {{schema:0 sum:1 count:2}} {{schema:0 sum:9 count:3}}
+
+load 10s
+	data_histogram{type="mix_samples_hfirst"} _ _ 4 1
 
 eval instant at 1m min_over_time(data[2m])
+	expect no_info
 	{type="numbers"} 0
 	{type="some_nan"} 0
 	{type="some_nan2"} 1
@@ -1405,12 +1567,19 @@ eval instant at 1m min_over_time(data[2m])
 	{type="only_nan"} NaN
 
 eval instant at 1m min_over_time(data_histogram{type="only_histogram"}[2m])
+	expect no_info
 	#empty
 
-eval_info instant at 1m min_over_time(data_histogram{type="mix_samples"}[2m])
-	{type="mix_samples"} 0
+eval instant at 1m min_over_time(data_histogram{type=~"mix_samples.*"}[2m])
+	expect info
+	{type="mix_samples_hlast"} 0
+	{type="mix_samples_hfirst"} 1
+
+eval instant at 1m min_over_time(data_sparse[2m])
+	{type="sparse_numbers"} 2
 
 eval instant at 1m max_over_time(data[2m])
+	expect no_info
 	{type="numbers"} 3
 	{type="some_nan"} 2
 	{type="some_nan2"} 2
@@ -1418,28 +1587,52 @@ eval instant at 1m max_over_time(data[2m])
 	{type="only_nan"} NaN
 
 eval instant at 1m max_over_time(data_histogram{type="only_histogram"}[2m])
+	expect no_info
 	#empty
 
-eval_info instant at 1m max_over_time(data_histogram{type="mix_samples"}[2m])
-	{type="mix_samples"} 1
+eval instant at 1m max_over_time(data_histogram{type=~"mix_samples.*"}[2m])
+	expect info
+	{type="mix_samples_hlast"} 1
+	{type="mix_samples_hfirst"} 4
 
-eval instant at 1m last_over_time({__name__=~"data(_histogram)?"}[2m])
+eval instant at 1m max_over_time(data_sparse[2m])
+	{type="sparse_numbers"} 5
+
+eval instant at 1m last_over_time({__name__=~"data(_histogram|_sparse|_empty)?"}[2m])
+	expect no_info
 	data{type="numbers"} 3
 	data{type="some_nan"} NaN
 	data{type="some_nan2"} 1
 	data{type="some_nan3"} 1
 	data{type="only_nan"} NaN
 	data_histogram{type="only_histogram"} {{schema:0 sum:3 count:4}}
-	data_histogram{type="mix_samples"} {{schema:0 sum:2 count:3}}
+	data_histogram{type="mix_samples_hlast"} {{schema:0 sum:2 count:3}}
+	data_histogram{type="mix_samples_hfirst"} 1
+	data_sparse{type="sparse_numbers"} 4
 
-eval instant at 1m count_over_time({__name__=~"data(_histogram)?"}[2m])
+eval instant at 1m first_over_time({__name__=~"data(_histogram|_sparse|_empty)?"}[2m])
+	expect no_info
+	data{type="numbers"} 2
+	data{type="some_nan"} 2
+	data{type="some_nan2"} 2
+	data{type="some_nan3"} NaN
+	data{type="only_nan"} NaN
+	data_histogram{type="only_histogram"} {{schema:0 sum:1 count:2}}
+	data_histogram{type="mix_samples_hlast"} 0
+	data_histogram{type="mix_samples_hfirst"} {{schema:0 sum:1 count:2}}
+	data_sparse{type="sparse_numbers"} 5
+
+eval instant at 1m count_over_time({__name__=~"data(_histogram|_sparse|_empty)?"}[2m])
+	expect no_info
 	{type="numbers"} 3
 	{type="some_nan"} 3
 	{type="some_nan2"} 3
 	{type="some_nan3"} 3
 	{type="only_nan"} 3
 	{type="only_histogram"} 3
-	{type="mix_samples"} 4
+	{type="mix_samples_hlast"} 4
+	{type="mix_samples_hfirst"} 4
+	{type="sparse_numbers"} 3
 
 clear
 

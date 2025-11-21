@@ -15,7 +15,6 @@ package ionos
 
 import (
 	"errors"
-	"log/slog"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -42,8 +41,8 @@ func init() {
 type Discovery struct{}
 
 // NewDiscovery returns a new refresh.Discovery for IONOS Cloud.
-func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
-	m, ok := metrics.(*ionosMetrics)
+func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*refresh.Discovery, error) {
+	m, ok := opts.Metrics.(*ionosMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
 	}
@@ -52,15 +51,16 @@ func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.Discove
 		conf.ionosEndpoint = "https://api.ionos.com"
 	}
 
-	d, err := newServerDiscovery(conf, logger)
+	d, err := newServerDiscovery(conf, opts.Logger)
 	if err != nil {
 		return nil, err
 	}
 
 	return refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "ionos",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,
@@ -96,17 +96,17 @@ func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.Ref
 }
 
 // Name returns the name of the IONOS Cloud service discovery.
-func (c SDConfig) Name() string {
+func (SDConfig) Name() string {
 	return "ionos"
 }
 
 // NewDiscoverer returns a new discovery.Discoverer for IONOS Cloud.
-func (c SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(&c, options.Logger, options.Metrics)
+func (c SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewDiscovery(&c, opts)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))

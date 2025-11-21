@@ -11,13 +11,13 @@ Prometheus's local time series database stores data in a custom, highly efficien
 
 ### On-disk layout
 
-Ingested samples are grouped into blocks of two hours. Each two-hour block consists
-of a directory containing a chunks subdirectory containing all the time series samples
-for that window of time, a metadata file, and an index file (which indexes metric names
-and labels to time series in the chunks directory). The samples in the chunks directory
-are grouped together into one or more segment files of up to 512MB each by default. When
-series are deleted via the API, deletion records are stored in separate tombstone files
-(instead of deleting the data immediately from the chunk segments).
+Ingested samples are grouped into two-hour blocks. Each block consists of a directory that 
+contains a chunks subdirectory with all the time series samples for that time window, 
+a metadata file,  and an index file (which maps metric names and labels to the time series 
+in the chunks directory). The samples in the chunks directory are organized into one 
+or more segment files, each up to 512 MB by default. When series are deleted via the API, 
+the deletion records are stored in separate tombstone files rather than being immediately 
+removed from the chunk segments.
 
 The current block for incoming samples is kept in memory and is not fully
 persisted. It is secured against crashes by a write-ahead log (WAL) that can be
@@ -97,7 +97,7 @@ Prometheus has several flags that configure local storage. The most important ar
   (m-mapped Head chunks) directory combined (peaks every 2 hours).
 - `--storage.tsdb.wal-compression`: Enables compression of the write-ahead log (WAL).
   Depending on your data, you can expect the WAL size to be halved with little extra
-  cpu load. This flag was introduced in 2.11.0 and enabled by default in 2.20.0.
+  CPU load. This flag was introduced in 2.11.0 and enabled by default in 2.20.0.
   Note that once enabled, downgrading Prometheus to a version below 2.11.0 will
   require deleting the WAL.
 
@@ -117,8 +117,8 @@ If your local storage becomes corrupted to the point where Prometheus will not
 start it is recommended to backup the storage directory and restore the
 corrupted block directories from your backups. If you do not have backups the
 last resort is to remove the corrupted files. For example you can try removing
-individual block directories or the write-ahead-log (wal) files. Note that this
-means losing the data for the time range those blocks or wal covers.
+individual block directories or the write-ahead-log (WAL) files. Note that this
+means losing the data for the time range those blocks or WAL covers.
 
 CAUTION: Non-POSIX compliant filesystems are not supported for Prometheus'
 local storage as unrecoverable corruptions may happen. NFS filesystems
@@ -213,7 +213,7 @@ procedure, as they cannot be represented in the OpenMetrics format.
 
 ### Usage
 
-Backfilling can be used via the Promtool command line. Promtool will write the blocks
+Backfilling can be used via the `promtool` command line. `promtool` will write the blocks
 to a directory. By default this output directory is ./data/, you can change it by
 using the name of the desired output directory as an optional argument in the sub-command.
 

@@ -28,10 +28,9 @@ func BenchmarkXorRead(b *testing.B) {
 	}
 
 	b.ReportAllocs()
-	b.ResetTimer()
 
 	var it Iterator
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		var ts int64
 		var v float64
 		it = c.Iterator(it)

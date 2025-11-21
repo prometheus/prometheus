@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"slices"
 	"strings"
+	"unique"
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
@@ -248,6 +249,17 @@ func (ls Labels) WithoutEmpty() Labels {
 	return ls
 }
 
+// ByteSize returns the approximate size of the labels in bytes including
+// the two string headers size for name and value.
+// Slice header size is ignored because it should be amortized to zero.
+func (ls Labels) ByteSize() uint64 {
+	var size uint64
+	for _, l := range ls {
+		size += uint64(len(l.Name)+len(l.Value)) + 2*uint64(unsafe.Sizeof(""))
+	}
+	return size
+}
+
 // Equal returns whether the two label sets are equal.
 func Equal(ls, o Labels) bool {
 	return slices.Equal(ls, o)
@@ -337,6 +349,7 @@ func (ls Labels) Validate(f func(l Label) error) error {
 }
 
 // DropMetricName returns Labels with the "__name__" removed.
+//
 // Deprecated: Use DropReserved instead.
 func (ls Labels) DropMetricName() Labels {
 	return ls.DropReserved(func(n string) bool { return n == MetricName })
@@ -426,7 +439,8 @@ func (b *Builder) Labels() Labels {
 
 // ScratchBuilder allows efficient construction of a Labels from scratch.
 type ScratchBuilder struct {
-	add Labels
+	add       Labels
+	unsafeAdd bool
 }
 
 // SymbolTable is no-op, just for api parity with dedupelabels.
@@ -434,7 +448,7 @@ type SymbolTable struct{}
 
 func NewSymbolTable() *SymbolTable { return nil }
 
-func (t *SymbolTable) Len() int { return 0 }
+func (*SymbolTable) Len() int { return 0 }
 
 // NewScratchBuilder creates a ScratchBuilder initialized for Labels with n entries.
 func NewScratchBuilder(n int) ScratchBuilder {
@@ -442,7 +456,7 @@ func NewScratchBuilder(n int) ScratchBuilder {
 }
 
 // NewBuilderWithSymbolTable creates a Builder, for api parity with dedupelabels.
-func NewBuilderWithSymbolTable(_ *SymbolTable) *Builder {
+func NewBuilderWithSymbolTable(*SymbolTable) *Builder {
 	return NewBuilder(EmptyLabels())
 }
 
@@ -451,8 +465,17 @@ func NewScratchBuilderWithSymbolTable(_ *SymbolTable, n int) ScratchBuilder {
 	return NewScratchBuilder(n)
 }
 
-func (b *ScratchBuilder) SetSymbolTable(_ *SymbolTable) {
+func (*ScratchBuilder) SetSymbolTable(*SymbolTable) {
 	// no-op
+}
+
+// SetUnsafeAdd allows turning on/off the assumptions that added strings are unsafe
+// for reuse. ScratchBuilder implementations that do reuse strings, must clone
+// the strings.
+//
+// SliceLabels will clone all added strings when this option is true.
+func (b *ScratchBuilder) SetUnsafeAdd(unsafeAdd bool) {
+	b.unsafeAdd = unsafeAdd
 }
 
 func (b *ScratchBuilder) Reset() {
@@ -461,15 +484,15 @@ func (b *ScratchBuilder) Reset() {
 
 // Add a name/value pair.
 // Note if you Add the same name twice you will get a duplicate label, which is invalid.
+// If SetUnsafeAdd was set to false, the values must remain live until Labels() is called.
 func (b *ScratchBuilder) Add(name, value string) {
+	if b.unsafeAdd {
+		// Underlying label structure for slicelabels shares memory, so we need to
+		// copy it if the input is unsafe.
+		name = unique.Make(name).Value()
+		value = unique.Make(value).Value()
+	}
 	b.add = append(b.add, Label{Name: name, Value: value})
-}
-
-// UnsafeAddBytes adds a name/value pair, using []byte instead of string.
-// The default version of this function is unsafe, hence the name.
-// This version is safe - it copies the strings immediately - but we keep the same name so everything compiles.
-func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
-	b.add = append(b.add, Label{Name: string(name), Value: string(value)})
 }
 
 // Sort the labels added so far by name.

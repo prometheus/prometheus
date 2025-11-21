@@ -104,6 +104,6 @@ func (c *Client) Write(samples model.Samples) error {
 }
 
 // Name identifies the client as a Graphite client.
-func (c Client) Name() string {
+func (Client) Name() string {
 	return "graphite"
 }
