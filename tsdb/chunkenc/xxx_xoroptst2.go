@@ -152,6 +152,7 @@ type xorOptST2tIterator struct {
 	firstSTKnown    bool
 	firstSTChangeOn uint16
 
+	state   uint8
 	numRead uint16
 
 	st, t int64
@@ -168,11 +169,11 @@ type xorOptST2tIterator struct {
 }
 
 func (it *xorOptST2tIterator) Seek(t int64) ValueType {
-	if it.err != nil {
+	if it.state == eofState {
 		return ValNone
 	}
 
-	for t > it.t || it.numRead == 0 {
+	for t > it.t || it.state == read0State {
 		if it.Next() == ValNone {
 			return ValNone
 		}
@@ -218,7 +219,10 @@ func (it *xorOptST2tIterator) Reset(b []byte) {
 	it.stDelta = 0
 	it.tDelta = 0
 	it.err = nil
-	it.nextFn = it.initNext
+	it.state = read0State
+	if it.numRead >= it.numTotal {
+		it.state = eofState
+	}
 }
 
 func (a *xorOptST2Appender) Append(st, t int64, v float64) {
@@ -269,12 +273,12 @@ func (a *xorOptST2Appender) Append(st, t int64, v float64) {
 		sdod := stDelta - a.stDelta
 		if sdod != 0 || a.firstSTChangeOn != 0 {
 			stChanged = true
-			putClassicVarbitInt(a.b, sdod)
+			putSTVarbitInt(a.b, sdod)
 		}
 
 		tDelta = uint64(t - a.t)
 		dod := int64(tDelta - a.tDelta)
-		putClassicVarbitInt(a.b, dod)
+		putSTVarbitInt(a.b, dod)
 		a.writeVDelta(v)
 	}
 
@@ -344,19 +348,27 @@ func (a *xorOptST2Appender) BitProfiledAppend(p *bitProfiler[any], st, t int64, 
 			a.writeVDelta(v)
 		})
 	default:
+		if a.firstSTChangeOn == 0 && a.numTotal == maxFirstSTChangeOn {
+			// We are at the 127th sample. firstSTChangeOn can only fit 7 bits due to a
+			// single byte header constrain, which is fine, given typical 120 sample size.
+			a.firstSTChangeOn = a.numTotal
+			writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], a.firstSTChangeOn)
+		}
+
 		stDelta = st - a.st
 		sdod := stDelta - a.stDelta
 		if sdod != 0 || a.firstSTChangeOn != 0 {
-			p.Write(a.b, dodSample{t: t, tDelta: tDelta, dod: sdod}, "tDod", func() {
+			stChanged = true
+			p.Write(a.b, dodSample{t: t, tDelta: tDelta, dod: sdod}, "stDod", func() {
 				stChanged = true
-				putClassicVarbitInt(a.b, sdod)
+				putSTVarbitInt(a.b, sdod)
 			})
 		}
 
 		tDelta = uint64(t - a.t)
 		dod := int64(tDelta - a.tDelta)
 		p.Write(a.b, dodSample{t: t, tDelta: tDelta, dod: sdod}, "tDod", func() {
-			putClassicVarbitInt(a.b, dod)
+			putSTVarbitInt(a.b, dod)
 		})
 		p.Write(a.b, v, "v", func() {
 			a.writeVDelta(v)
@@ -383,102 +395,229 @@ func (a *xorOptST2Appender) BitProfiledAppend(p *bitProfiler[any], st, t int64, 
 	}
 }
 
-func (it *xorOptST2tIterator) Next() ValueType {
-	if it.err != nil || it.numRead == it.numTotal {
-		return ValNone
-	}
-	return it.nextFn()
+func (it *xorOptST2tIterator) retErr(err error) ValueType {
+	it.err = err
+	it.state = eofState
+	return ValNone
 }
 
-func (it *xorOptST2tIterator) initNext() ValueType {
-	switch it.numRead {
-	case 0:
+func (it *xorOptST2tIterator) Next() ValueType {
+	switch it.state {
+	case eofState:
+		return ValNone
+	case read0State:
+		it.state++
+
+		// Optional ST read.
 		if it.firstSTKnown {
 			st, err := binary.ReadVarint(&it.br)
 			if err != nil {
-				it.err = err
-				return ValNone
+				return it.retErr(err)
 			}
 			it.st = st
 		}
+
+		// TS.
 		t, err := binary.ReadVarint(&it.br)
 		if err != nil {
-			it.err = err
-			return ValNone
+			return it.retErr(err)
 		}
+		// Value.
 		v, err := it.br.readBits(64)
 		if err != nil {
-			it.err = err
-			return ValNone
+			return it.retErr(err)
 		}
+
 		it.t = t
 		it.val = math.Float64frombits(v)
 
+		// State EOF check.
 		it.numRead++
+		if it.numRead >= it.numTotal {
+			it.state = eofState
+		}
 		return ValFloat
-	case 1:
+	case read1State:
+		it.state++
 		if it.firstSTChangeOn == 0 {
 			// This means we have same (zero or non-zero) ST value for the rest of
-			// chunk. We can set rest of next functions to use ~classic XOR chunk iterations.
-			it.nextFn = it.stAgnosticDoDNext
+			// chunk. We can simply use ~classic XOR chunk iterations.
+			it.state = readDoDNoSTState
 		} else if it.firstSTChangeOn == 1 {
+			// We got early ST change on the second sample, likely delta.
+			// Continue ST rich flow from the next iteration.
+			it.state = readDoDState
+
 			stDelta, err := binary.ReadVarint(&it.br)
 			if err != nil {
-				it.err = err
-				return ValNone
+				return it.retErr(err)
 			}
 			it.stDelta = stDelta
 			it.st += it.stDelta
-
-			// We got early ST change on the second sample, likely delta.
-			// Continue ST rich flow from the next iteration.
-			it.nextFn = it.stDoDNext
 		}
+		// TS.
 		tDelta, err := binary.ReadUvarint(&it.br)
 		if err != nil {
-			it.err = err
-			return ValNone
+			return it.retErr(err)
 		}
 		it.tDelta = tDelta
 		it.t += int64(it.tDelta)
-		return it.readValue()
-	default:
-		if it.firstSTChangeOn == it.numRead {
-			it.nextFn = it.stDoDNext
-			return it.stDoDNext()
+
+		// Value.
+		if err := xorRead(&it.br, &it.val, &it.leading, &it.trailing); err != nil {
+			return it.retErr(err)
 		}
-		return it.stAgnosticDoDNext()
+
+		// State EOF check.
+		it.numRead++
+		if it.numRead >= it.numTotal {
+			it.state = eofState
+		}
+		return ValFloat
+	case readDoDMaybeSTState:
+		if it.firstSTChangeOn == it.numRead {
+			// ST changes from this iteration, change state for future.
+			it.state = readDoDState
+			return it.dodNext()
+		}
+		return it.dodNoSTNext()
+	case readDoDState:
+		return it.dodNext()
+	case readDoDNoSTState:
+		return it.dodNoSTNext()
+	default:
+		panic("xorOptST2tIterator: broken machine state")
 	}
 }
 
-func (it *xorOptST2tIterator) stDoDNext() ValueType {
-	sdod, err := readClassicVarbitInt(&it.br)
-	if err != nil {
-		it.err = err
-		return ValNone
+func (it *xorOptST2tIterator) dodNext() ValueType {
+	// Inlined readClassicVarbitInt(&it.br)
+	var d byte
+	// read delta-of-delta
+	for range 4 {
+		d <<= 1
+		bit, err := it.br.readBitFast()
+		if err != nil {
+			bit, err = it.br.readBit()
+			if err != nil {
+				return it.retErr(err)
+			}
+		}
+		if bit == zero {
+			break
+		}
+		d |= 1
 	}
+	var sz uint8
+	var sdod int64
+	switch d {
+	case 0b0:
+		// dod == 0
+	case 0b10:
+		sz = 6
+	case 0b110:
+		sz = 13
+	case 0b1110:
+		sz = 20
+	case 0b1111:
+		// Do not use fast because it's very unlikely it will succeed.
+		bits, err := it.br.readBits(64)
+		if err != nil {
+			return it.retErr(err)
+		}
+
+		sdod = int64(bits)
+	}
+
+	if sz != 0 {
+		bits, err := it.br.readBitsFast(sz)
+		if err != nil {
+			bits, err = it.br.readBits(sz)
+			if err != nil {
+				return it.retErr(err)
+			}
+		}
+
+		// Account for negative numbers, which come back as high unsigned numbers.
+		// See docs/bstream.md.
+		if bits > (1 << (sz - 1)) {
+			bits -= 1 << sz
+		}
+		sdod = int64(bits)
+	}
+
 	it.stDelta = it.stDelta + sdod
 	it.st += it.stDelta
-	return it.stAgnosticDoDNext()
+	return it.dodNoSTNext()
 }
 
-func (it *xorOptST2tIterator) stAgnosticDoDNext() ValueType {
-	dod, err := readClassicVarbitInt(&it.br)
-	if err != nil {
-		it.err = err
-		return ValNone
+func (it *xorOptST2tIterator) dodNoSTNext() ValueType {
+	// Inlined readClassicVarbitInt(&it.br)
+	var d byte
+	// read delta-of-delta
+	for range 4 {
+		d <<= 1
+		bit, err := it.br.readBitFast()
+		if err != nil {
+			bit, err = it.br.readBit()
+			if err != nil {
+				return it.retErr(err)
+			}
+		}
+		if bit == zero {
+			break
+		}
+		d |= 1
 	}
+	var sz uint8
+	var dod int64
+	switch d {
+	case 0b0:
+		// dod == 0
+	case 0b10:
+		sz = 6
+	case 0b110:
+		sz = 13
+	case 0b1110:
+		sz = 20
+	case 0b1111:
+		// Do not use fast because it's very unlikely it will succeed.
+		bits, err := it.br.readBits(64)
+		if err != nil {
+			return it.retErr(err)
+		}
+
+		dod = int64(bits)
+	}
+
+	if sz != 0 {
+		bits, err := it.br.readBitsFast(sz)
+		if err != nil {
+			bits, err = it.br.readBits(sz)
+			if err != nil {
+				return it.retErr(err)
+			}
+		}
+
+		// Account for negative numbers, which come back as high unsigned numbers.
+		// See docs/bstream.md.
+		if bits > (1 << (sz - 1)) {
+			bits -= 1 << sz
+		}
+		dod = int64(bits)
+	}
+
 	it.tDelta = uint64(int64(it.tDelta) + dod)
 	it.t += int64(it.tDelta)
-	return it.readValue()
-}
-
-func (it *xorOptST2tIterator) readValue() ValueType {
-	err := xorRead(&it.br, &it.val, &it.leading, &it.trailing)
-	if err != nil {
-		it.err = err
-		return ValNone
+	// Value.
+	if err := xorRead(&it.br, &it.val, &it.leading, &it.trailing); err != nil {
+		return it.retErr(err)
 	}
+
+	// State EOF check.
 	it.numRead++
+	if it.numRead >= it.numTotal {
+		it.state = eofState
+	}
 	return ValFloat
 }

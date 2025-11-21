@@ -392,12 +392,20 @@ func (a *xorOptSTAppender) BitProfiledAppend(p *bitProfiler[any], st, t int64, v
 			a.writeVDelta(v)
 		})
 	default:
+		if a.firstSTChangeOn == 0 && a.numTotal == maxFirstSTChangeOn {
+			// We are at the 127th sample. firstSTChangeOn can only fit 7 bits due to a
+			// single byte header constrain, which is fine, given typical 120 sample size.
+			a.firstSTChangeOn = a.numTotal
+			writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], a.firstSTChangeOn)
+		}
+
 		stDelta = st - a.st
 		sdod := stDelta - a.stDelta
 		if sdod != 0 || a.firstSTChangeOn != 0 {
-			p.Write(a.b, dodSample{t: t, tDelta: tDelta, dod: sdod}, "tDod", func() {
+			stChanged = true
+			p.Write(a.b, dodSample{t: t, tDelta: tDelta, dod: sdod}, "stDod", func() {
 				stChanged = true
-				putClassicVarbitInt(a.b, sdod)
+				putSTVarbitInt(a.b, sdod)
 			})
 		}
 
@@ -582,11 +590,6 @@ func (it *xorOptSTtIterator) dodNext() ValueType {
 		sdod = int64(bits)
 	}
 
-	//sdod, err := readClassicVarbitInt(&it.br)
-	//if err != nil {
-	//	it.err = err
-	//	return ValNone
-	//}
 	it.stDelta = it.stDelta + sdod
 	it.st += it.stDelta
 	return it.dodNoSTNext()
@@ -648,11 +651,6 @@ func (it *xorOptSTtIterator) dodNoSTNext() ValueType {
 		dod = int64(bits)
 	}
 
-	//dod, err := readClassicVarbitInt(&it.br)
-	//if err != nil {
-	//	it.err = err
-	//	return ValNone
-	//}
 	it.tDelta = uint64(int64(it.tDelta) + dod)
 	it.t += int64(it.tDelta)
 	// Value.

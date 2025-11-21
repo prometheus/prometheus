@@ -44,26 +44,24 @@ func putClassicVarbitInt(b *bstream, val int64) {
 
 // readClassicVarbitInt reads an int64 encoded with putClassicVarbitInt.
 func readClassicVarbitInt(b *bstreamReader) (int64, error) {
-	var (
-		d   byte
-		sz  uint8
-		val int64
-	)
+	var d byte
+	// read delta-of-delta
 	for range 4 {
 		d <<= 1
 		bit, err := b.readBitFast()
 		if err != nil {
 			bit, err = b.readBit()
-		}
-		if err != nil {
-			return 0, err
+			if err != nil {
+				return 0, err
+			}
 		}
 		if bit == zero {
 			break
 		}
 		d |= 1
 	}
-
+	var sz uint8
+	var val int64
 	switch d {
 	case 0b0:
 		// dod == 0
@@ -87,9 +85,9 @@ func readClassicVarbitInt(b *bstreamReader) (int64, error) {
 		bits, err := b.readBitsFast(sz)
 		if err != nil {
 			bits, err = b.readBits(sz)
-		}
-		if err != nil {
-			return 0, err
+			if err != nil {
+				return 0, err
+			}
 		}
 
 		// Account for negative numbers, which come back as high unsigned numbers.
@@ -99,5 +97,6 @@ func readClassicVarbitInt(b *bstreamReader) (int64, error) {
 		}
 		val = int64(bits)
 	}
+
 	return val, nil
 }

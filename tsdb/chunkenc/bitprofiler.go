@@ -32,6 +32,9 @@ func (p *bitProfiler[T]) PrintBitSizes(trim int) string {
 	if len(p.samples) == 0 {
 		return "total(0b)"
 	}
+	if trim > len(p.samples) {
+		trim = len(p.samples)
+	}
 
 	var total int64
 	for _, p := range p.samples {

@@ -13,80 +13,56 @@
 
 package chunkenc
 
-import "fmt"
-
 // putSTVarbitInt writes an int64 using varbit encoding with a bit bucketing
 // optimized for ST.
 func putSTVarbitInt(b *bstream, val int64) {
 	switch {
 	case val == 0:
 		b.writeBit(zero)
-	case bitRange(val, 6): // -31 <= val <= 32, needs 6+2 bits (1B).
+	case bitRange(val, 6):
 		b.writeByte(0b10<<6 | (uint8(val) & (1<<6 - 1))) // 0b10 size code combined with 6 bits of dod.
-		// Below simpler form is somehow 10-20% slower!
-		// b.writeBits(0b10, 2)
-		// b.writeBits(uint64(val), 6)
-	case bitRange(val, 8): // -127 <= val <= 128, needs 8+3 bits (1B 3b).
-		b.writeByte(0b110<<5 | (uint8(val>>3) & (1<<5 - 1))) // 0b1110 size code combined with 5 bits of dod.
-		b.writeBits(uint64(val), 3)                          // Bottom 3 bits.
-		// Below simpler form is somehow 10-20% slower!
-		// b.writeBits(0b110, 3)
-		// b.writeBits(uint64(val), 8)
-	case bitRange(val, 14):
-		b.writeBits(0b1110, 4)
-		b.writeBits(uint64(val), 14)
-
-		// TODO(bwplotka): In previous form it would be as follows, is there any difference?
-		// b.writeByte(0b1110<<4 | (uint8(val>>10) & (1<<4 - 1))) // 0b1110 size code combined with 4 bits of dod.
-		// b.writeBits(uint64(val), 10)                           // Bottom 10 bits of dod.
-	case bitRange(val, 17):
-		b.writeBits(0b11110, 5)
-		b.writeBits(uint64(val), 17)
+	case bitRange(val, 13):
+		b.writeByte(0b110<<5 | (uint8(val>>8) & (1<<5 - 1))) // 0b110 size code combined with 5 bits of dod.
+		b.writeByte(uint8(val))                              // Bottom 8 bits of dod.
 	case bitRange(val, 20):
-		b.writeBits(0b111110, 6)
+		b.writeBits(0b1110, 4)
 		b.writeBits(uint64(val), 20)
 	default:
-		b.writeBits(0b111111, 6)
+		b.writeBits(0b1111, 4)
 		b.writeBits(uint64(val), 64)
 	}
 }
 
 // readSTVarbitInt reads an int64 encoded with putSTVarbitInt.
 func readSTVarbitInt(b *bstreamReader) (int64, error) {
-	var (
-		d   byte
-		sz  uint8
-		val int64
-	)
-	for range 6 {
+	var d byte
+	// read delta-of-delta
+	for range 4 {
 		d <<= 1
 		bit, err := b.readBitFast()
 		if err != nil {
 			bit, err = b.readBit()
-		}
-		if err != nil {
-			return 0, err
+			if err != nil {
+				return 0, err
+			}
 		}
 		if bit == zero {
 			break
 		}
 		d |= 1
 	}
-
+	var sz uint8
+	var val int64
 	switch d {
 	case 0b0:
 		// dod == 0
 	case 0b10:
 		sz = 6
 	case 0b110:
-		sz = 8
+		sz = 13
 	case 0b1110:
-		sz = 14
-	case 0b11110:
-		sz = 17
-	case 0b111110:
 		sz = 20
-	case 0b111111:
+	case 0b1111:
 		// Do not use fast because it's very unlikely it will succeed.
 		bits, err := b.readBits(64)
 		if err != nil {
@@ -94,17 +70,15 @@ func readSTVarbitInt(b *bstreamReader) (int64, error) {
 		}
 
 		val = int64(bits)
-	default:
-		return 0, fmt.Errorf("invalid bit pattern %b", d)
 	}
 
 	if sz != 0 {
 		bits, err := b.readBitsFast(sz)
 		if err != nil {
 			bits, err = b.readBits(sz)
-		}
-		if err != nil {
-			return 0, err
+			if err != nil {
+				return 0, err
+			}
 		}
 
 		// Account for negative numbers, which come back as high unsigned numbers.

@@ -216,10 +216,11 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 
 	for _, f := range []fmtCase{
 		// Reference.
-		//{name: "XOR (ST ignored)", newChunkFn: func() Chunk { return NewXORChunk() }},
+		{name: "XOR (ST ignored)", newChunkFn: func() Chunk { return NewXORChunk() }},
 
 		// Most tempting one.
-		{name: "XOROptST(v3)", newChunkFn: func() Chunk { return NewXOROptSTChunk() }},
+		{name: "XOROptST", newChunkFn: func() Chunk { return NewXOROptSTChunk() }},
+		// Experiment with custom varbit again (easy to get things smaller, but not easy to get things fast)
 		//{name: "XOROptST2", newChunkFn: func() Chunk { return NewXOROptST2Chunk() }},
 
 		// Slow naive ST implementation.
@@ -231,14 +232,10 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 
 		// Fun, buffered ones! Very fast, but require more mem.
 		//{name: "ALPBuffered", newChunkFn: func() Chunk { return NewALPBufferedChunk() }},
-		//{name: "XORBuffered", newChunkFn: func() Chunk { return NewXORBufferedChunk() }},
+		{name: "XORBuffered", newChunkFn: func() Chunk { return NewXORBufferedChunk() }},
 		//{name: "XORClassicBuffered", newChunkFn: func() Chunk { return NewXORClassicBufferedChunk() }},
 	} {
 		for _, s := range sampleCases {
-			if s.name != "vt=constant/st=0" {
-				continue // PROFILE DEBUG KILL
-			}
-
 			b.Run(fmt.Sprintf("fmt=%s/%s", f.name, s.name), func(b *testing.B) {
 				fn(b, f, s)
 			})
@@ -247,14 +244,14 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 }
 
 /*
-	export bench=bw.bench/append.all && go test \
+	export bench=bw.bench/append && go test \
 	  -run '^$' -bench '^BenchmarkAppender' \
 	  -benchtime 1s -count 6 -cpu 2 -timeout 999m \
 	  | tee ${bench}.txt
 
 For profiles:
 
-	 export bench=bw.bench/appendprof.xoroptstv2 && go test \
+	 export bench=bw.bench/appendprof && go test \
 		  -run '^$' -bench '^BenchmarkAppender' \
 		  -benchtime 1s -count 1 -cpu 2 -timeout 999m \
 		  -cpuprofile=${bench}.cpu.pprof \
@@ -289,21 +286,22 @@ type supportsAppenderV2 interface {
 }
 
 /*
-	export bench=bw.bench/iter.all3 && go test \
+	export bench=bw.bench/iter && go test \
 	  -run '^$' -bench '^BenchmarkIterator' \
 	  -benchtime 1s -count 6 -cpu 2 -timeout 999m \
 	  | tee ${bench}.txt
 
-	 export bench=bw.bench/iter.xoroptst && go test \
+For profiles:
+
+	 export bench=bw.bench/iterprof && go test \
 		  -run '^$' -bench '^BenchmarkIterator' \
 		  -benchtime 1000000x -count 1 -cpu 2 -timeout 999m \
 	  -cpuprofile=${bench}.cpu.pprof \
 		  | tee ${bench}.txt
-
-	 export bench=bw.bench/iter.xoroptst && go test \
+	 export bench=bw.bench/iterprof && go test \
 		  -run '^$' -bench '^BenchmarkIterator' \
 		  -benchtime 1000000x -count 1 -cpu 2 -timeout 999m \
-	  -memprofile=${bench}.cpu.pprof \
+	  -memprofile=${bench}.mem.pprof \
 		  | tee ${bench}.txt
 */
 func BenchmarkIterator(b *testing.B) {
@@ -383,10 +381,6 @@ func BenchmarkProfileBits(b *testing.B) {
 	diffs := map[string]*bitProfiler[any]{}
 
 	foreachFmtSampleCase(b, func(b *testing.B, f fmtCase, s sampleCase) {
-		//if s.name != "vt=random steps/st=delta" {
-		//	return
-		//}
-
 		c := f.newChunkFn()
 
 		profile := &bitProfiler[any]{}
@@ -414,7 +408,7 @@ func BenchmarkProfileBits(b *testing.B) {
 		if !ok {
 			diffs[s.name] = profile
 		} else {
-			fmt.Fprintf(profileFile, "%s\n\n", profile.Diff(diff).PrintBitSizes(240))
+			fmt.Fprintf(profileFile, "%s\n\n", profile.Diff(diff).PrintBitSizes(1000))
 		}
 
 		// Totally ignore b.Loop, does not matter.
