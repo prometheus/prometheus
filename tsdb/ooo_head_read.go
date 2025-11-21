@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/util/annotations"
 )
 
 var _ IndexReader = &HeadAndOOOIndexReader{}
@@ -508,118 +507,41 @@ func (*OOOCompactionHeadIndexReader) LabelNamesFor(context.Context, index.Postin
 	return nil, errors.New("not implemented")
 }
 
-type oooRangeHead struct {
+func (*OOOCompactionHeadIndexReader) Close() error {
+	return nil
+}
+
+type headAndOOORangeHead struct {
 	*RangeHead
 	inoMint, mint, maxt int64
 	oooIsoState         *oooIsolationState
 }
 
-func newOOORangeHead(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState) *oooRangeHead {
-	return &oooRangeHead{
+func newHeadAndOOORangeHead(inoMint, mint, maxt int64, head *Head, isolationState *oooIsolationState) *headAndOOORangeHead {
+	return &headAndOOORangeHead{
 		RangeHead:   NewRangeHead(head, mint, maxt),
 		inoMint:     inoMint,
 		mint:        mint,
 		maxt:        maxt,
-		oooIsoState: oooIsoState,
+		oooIsoState: isolationState,
 	}
 }
 
-func (h *oooRangeHead) Index() (IndexReader, error) {
+func (h *headAndOOORangeHead) Index() (IndexReader, error) {
 	return NewHeadAndOOOIndexReader(h.head, h.inoMint, h.mint, h.maxt, h.oooIsoState.minRef), nil
 }
 
-func (h *oooRangeHead) Chunks() (ChunkReader, error) {
+func (h *headAndOOORangeHead) Chunks() (ChunkReader, error) {
 	cr := &headChunkReader{
 		head:     h.head,
 		mint:     h.mint,
 		maxt:     h.maxt,
-		isoState: h.head.iso.State(h.mint, h.maxt),
+		isoState: h.head.iso.State(h.inoMint, h.maxt),
 	}
 	return NewHeadAndOOOChunkReader(h.head, h.mint, h.maxt, cr, h.oooIsoState, 0), nil
 }
 
-func (*OOOCompactionHeadIndexReader) Close() error {
-	return nil
-}
-
-// HeadAndOOOQuerier queries both the head and the out-of-order head.
-type HeadAndOOOQuerier struct {
-	oooHeadQuerier storage.Querier
-	querier        storage.Querier // Used for LabelNames, LabelValues, but may be nil if head was truncated in the mean time, in which case we ignore it and not close it in the end.
-}
-
-func NewHeadAndOOOQuerier(oooHeadQuerier, headQuerier storage.Querier) storage.Querier {
-	return &HeadAndOOOQuerier{
-		oooHeadQuerier: oooHeadQuerier,
-		querier:        headQuerier,
-	}
-}
-
-func (q *HeadAndOOOQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	if q.querier == nil {
-		return nil, nil, nil
-	}
-	return q.querier.LabelValues(ctx, name, hints, matchers...)
-}
-
-func (q *HeadAndOOOQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	if q.querier == nil {
-		return nil, nil, nil
-	}
-	return q.querier.LabelNames(ctx, hints, matchers...)
-}
-
-func (q *HeadAndOOOQuerier) Close() error {
-	if err := q.oooHeadQuerier.Close(); err != nil {
-		return err
-	}
-	if q.querier == nil {
-		return nil
-	}
-	return q.querier.Close()
-}
-
-func (q *HeadAndOOOQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	return q.oooHeadQuerier.Select(ctx, sortSeries, hints, matchers...)
-}
-
-// HeadAndOOOChunkQuerier queries both the head and the out-of-order head.
-type HeadAndOOOChunkQuerier struct {
-	oooHeadQuerier storage.ChunkQuerier
-	querier        storage.ChunkQuerier
-}
-
-func NewHeadAndOOOChunkQuerier(oooHeadQuerier, headQuerier storage.ChunkQuerier) storage.ChunkQuerier {
-	return &HeadAndOOOChunkQuerier{
-		oooHeadQuerier: oooHeadQuerier,
-		querier:        headQuerier,
-	}
-}
-
-func (q *HeadAndOOOChunkQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	if q.querier == nil {
-		return nil, nil, nil
-	}
-	return q.querier.LabelValues(ctx, name, hints, matchers...)
-}
-
-func (q *HeadAndOOOChunkQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	if q.querier == nil {
-		return nil, nil, nil
-	}
-	return q.querier.LabelNames(ctx, hints, matchers...)
-}
-
-func (q *HeadAndOOOChunkQuerier) Close() error {
-	if err := q.oooHeadQuerier.Close(); err != nil {
-		return err
-	}
-	if q.querier == nil {
-		return nil
-	}
-	return q.querier.Close()
-}
-
-func (q *HeadAndOOOChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
-	return q.oooHeadQuerier.Select(ctx, sortSeries, hints, matchers...)
+// String returns an human readable representation of the in-order and out-of-order range head.
+func (h *headAndOOORangeHead) String() string {
+	return fmt.Sprintf("in-order and out-of-order range head (mint: %d, inoMint: %d, maxt: %d)", h.mint, h.inoMint, h.maxt)
 }

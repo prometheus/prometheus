@@ -3253,14 +3253,10 @@ func BenchmarkQueries(b *testing.B) {
 					chunkDir := b.TempDir()
 					totalOOOSamples := oooPercentage * int(nSamples) / 100
 					oooSampleFrequency := int(nSamples) / totalOOOSamples
-					head := createHeadWithOOOSamples(b, nil, series, chunkDir, oooSampleFrequency)
-
-					qHead, err := NewBlockQuerier(NewRangeHead(head, 1, nSamples), 1, nSamples)
-					require.NoError(b, err)
+					headWithOOO := createHeadWithOOOSamples(b, nil, series, chunkDir, oooSampleFrequency)
 					isoState := head.oooIso.TrackReadAfter(0)
-					oooQHead, err := NewBlockQuerier(newOOORangeHead(1, 1, nSamples, head, isoState), 1, nSamples)
+					qOOOHead, err := NewBlockQuerier(newHeadAndOOORangeHead(1, 1, nSamples, headWithOOO, isoState), 1, nSamples)
 					require.NoError(b, err)
-					qOOOHead := NewHeadAndOOOQuerier(oooQHead, qHead)
 
 					queryTypes = append(queryTypes, qt{
 						fmt.Sprintf("_Head_oooPercent:%d", oooPercentage), qOOOHead,
