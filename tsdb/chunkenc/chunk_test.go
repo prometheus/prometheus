@@ -41,7 +41,8 @@ func TestChunk(t *testing.T) {
 
 		// Fun, buffered ones! Very fast, but require more mem.
 		103: func() Chunk { return NewALPBufferedChunk() },
-		133: func() Chunk { return NewXORBufferedChunk() },
+		134: func() Chunk { return NewXORBufferedChunk() },
+		133: func() Chunk { return NewXORClassicBufferedChunk() },
 
 		// Non-ST varbit fun attempts (less space, but a bit slower).
 		101: func() Chunk { return NewXORVarbitChunk() },

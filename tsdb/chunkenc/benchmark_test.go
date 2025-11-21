@@ -231,6 +231,7 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 		// Fun, buffered ones! Very fast, but require more mem.
 		//{name: "ALPBuffered", newChunkFn: func() Chunk { return NewALPBufferedChunk() }},
 		{name: "XORBuffered", newChunkFn: func() Chunk { return NewXORBufferedChunk() }},
+		//{name: "XORClassicBuffered", newChunkFn: func() Chunk { return NewXORClassicBufferedChunk() }},
 	} {
 		for _, s := range sampleCases {
 			b.Run(fmt.Sprintf("fmt=%s/%s", f.name, s.name), func(b *testing.B) {
