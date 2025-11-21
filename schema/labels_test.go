@@ -50,17 +50,17 @@ func TestMetadata(t *testing.T) {
 			lb.Add("foo", "bar")
 
 			if !tcase.emptyName {
-				lb.Add(metricName, testMeta.Name)
+				lb.Add(model.MetricNameLabel, testMeta.Name)
 				expectedMeta.Name = testMeta.Name
 			}
 			if !tcase.emptyType {
-				lb.Add(metricType, string(testMeta.Type))
+				lb.Add(model.MetricTypeLabel, string(testMeta.Type))
 				expectedMeta.Type = testMeta.Type
 			} else {
 				expectedMeta.Type = model.MetricTypeUnknown
 			}
 			if !tcase.emptyUnit {
-				lb.Add(metricUnit, testMeta.Unit)
+				lb.Add(model.MetricUnitLabel, testMeta.Unit)
 				expectedMeta.Unit = testMeta.Unit
 			}
 			lb.Sort()
@@ -75,10 +75,10 @@ func TestMetadata(t *testing.T) {
 			}
 			{
 				// Empty methods.
-				require.Equal(t, tcase.emptyName, expectedMeta.IsEmptyFor(metricName))
-				require.Equal(t, tcase.emptyType, expectedMeta.IsEmptyFor(metricType))
+				require.Equal(t, tcase.emptyName, expectedMeta.IsEmptyFor(model.MetricNameLabel))
+				require.Equal(t, tcase.emptyType, expectedMeta.IsEmptyFor(model.MetricTypeLabel))
 				require.Equal(t, tcase.emptyType, expectedMeta.IsTypeEmpty())
-				require.Equal(t, tcase.emptyUnit, expectedMeta.IsEmptyFor(metricUnit))
+				require.Equal(t, tcase.emptyUnit, expectedMeta.IsEmptyFor(model.MetricUnitLabel))
 			}
 			{
 				// From Metadata to labels for various builders.
@@ -100,7 +100,7 @@ func TestIgnoreOverriddenMetadataLabelsScratchBuilder(t *testing.T) {
 	// PROM-39 specifies that metadata labels should be sourced primarily from the metadata structures.
 	// However, the original labels should be preserved IF the metadata structure does not set or support certain information.
 	// Test those cases with common label interactions.
-	incomingLabels := labels.FromStrings(metricName, "different_name", metricType, string(model.MetricTypeSummary), metricUnit, "MB", "foo", "bar")
+	incomingLabels := labels.FromStrings(model.MetricNameLabel, "different_name", model.MetricTypeLabel, string(model.MetricTypeSummary), model.MetricUnitLabel, "MB", "foo", "bar")
 	for _, tcase := range []struct {
 		highPrioMeta   Metadata
 		expectedLabels labels.Labels
@@ -114,21 +114,21 @@ func TestIgnoreOverriddenMetadataLabelsScratchBuilder(t *testing.T) {
 				Type: model.MetricTypeCounter,
 				Unit: "seconds",
 			},
-			expectedLabels: labels.FromStrings(metricName, "metric_total", metricType, string(model.MetricTypeCounter), metricUnit, "seconds", "foo", "bar"),
+			expectedLabels: labels.FromStrings(model.MetricNameLabel, "metric_total", model.MetricTypeLabel, string(model.MetricTypeCounter), model.MetricUnitLabel, "seconds", "foo", "bar"),
 		},
 		{
 			highPrioMeta: Metadata{
 				Name: "metric_total",
 				Type: model.MetricTypeCounter,
 			},
-			expectedLabels: labels.FromStrings(metricName, "metric_total", metricType, string(model.MetricTypeCounter), metricUnit, "MB", "foo", "bar"),
+			expectedLabels: labels.FromStrings(model.MetricNameLabel, "metric_total", model.MetricTypeLabel, string(model.MetricTypeCounter), model.MetricUnitLabel, "MB", "foo", "bar"),
 		},
 		{
 			highPrioMeta: Metadata{
 				Type: model.MetricTypeCounter,
 				Unit: "seconds",
 			},
-			expectedLabels: labels.FromStrings(metricName, "different_name", metricType, string(model.MetricTypeCounter), metricUnit, "seconds", "foo", "bar"),
+			expectedLabels: labels.FromStrings(model.MetricNameLabel, "different_name", model.MetricTypeLabel, string(model.MetricTypeCounter), model.MetricUnitLabel, "seconds", "foo", "bar"),
 		},
 		{
 			highPrioMeta: Metadata{
@@ -136,7 +136,7 @@ func TestIgnoreOverriddenMetadataLabelsScratchBuilder(t *testing.T) {
 				Type: model.MetricTypeUnknown,
 				Unit: "seconds",
 			},
-			expectedLabels: labels.FromStrings(metricName, "metric_total", metricType, string(model.MetricTypeSummary), metricUnit, "seconds", "foo", "bar"),
+			expectedLabels: labels.FromStrings(model.MetricNameLabel, "metric_total", model.MetricTypeLabel, string(model.MetricTypeSummary), model.MetricUnitLabel, "seconds", "foo", "bar"),
 		},
 	} {
 		t.Run(fmt.Sprintf("meta=%#v", tcase.highPrioMeta), func(t *testing.T) {

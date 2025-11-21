@@ -26,7 +26,9 @@ import (
 const (
 	// MetricName is a special label name that represent a metric name.
 	//
-	// Deprecated: Use schema.Metadata structure and its methods.
+	// Deprecated: Instead, consider using schema.Metadata structure and its methods for consistent metadata behaviour with the newly added __type__ and __unit__ labels. Alternatively use github.com/prometheus/common/model.MetricNameLabel for the direct replacement.
+	//
+	// labels package is providing label transport, agnostic to semantic meaning of each label.
 	MetricName = "__name__"
 
 	AlertName   = "alertname"
