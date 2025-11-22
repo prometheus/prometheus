@@ -3281,8 +3281,8 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 			}
 
 			contentTypes := strings.SplitSeq(accept, ",")
-			for ct := range contentTypes {
-				match := qValuePattern.FindStringSubmatch(ct)
+			for st := range contentTypes {
+				match := qValuePattern.FindStringSubmatch(st)
 				require.Len(t, match, 3)
 				qValue, err := strconv.ParseFloat(match[1], 64)
 				require.NoError(t, err, "Error parsing q value")

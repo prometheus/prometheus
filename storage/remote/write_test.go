@@ -921,6 +921,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			otlpOpts := OTLPOptions{
 				EnableTypeAndUnitLabels: testCase.typeAndUnitLabels,
+				AppendMetadata:          true,
 			}
 			appendable := handleOTLP(t, exportRequest, testCase.otlpCfg, otlpOpts)
 			for _, sample := range testCase.expectedSamples {
@@ -937,7 +938,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 	}
 }
 
-// Check that start time is ingested if ingestCTZeroSample is enabled
+// Check that start time is ingested if ingestSTZeroSample is enabled
 // and the start time is actually set (non-zero).
 func TestOTLPWriteHandler_StartTime(t *testing.T) {
 	timestamp := time.Now()
@@ -1022,72 +1023,72 @@ func TestOTLPWriteHandler_StartTime(t *testing.T) {
 		},
 	}
 
-	expectedSamplesWithCTZero := make([]mockSample, 0, len(expectedSamples)*2-1) // All samples will get CT zero, except target_info.
+	expectedSamplesWithSTZero := make([]mockSample, 0, len(expectedSamples)*2-1) // All samples will get ST zero, except target_info.
 	for _, s := range expectedSamples {
 		if s.l.Get(model.MetricNameLabel) != "target_info" {
-			expectedSamplesWithCTZero = append(expectedSamplesWithCTZero, mockSample{
+			expectedSamplesWithSTZero = append(expectedSamplesWithSTZero, mockSample{
 				l: s.l.Copy(),
 				t: startTime.UnixMilli(),
 				v: 0,
 			})
 		}
-		expectedSamplesWithCTZero = append(expectedSamplesWithCTZero, s)
+		expectedSamplesWithSTZero = append(expectedSamplesWithSTZero, s)
 	}
-	expectedHistogramsWithCTZero := make([]mockHistogram, 0, len(expectedHistograms)*2)
+	expectedHistogramsWithSTZero := make([]mockHistogram, 0, len(expectedHistograms)*2)
 	for _, s := range expectedHistograms {
 		if s.l.Get(model.MetricNameLabel) != "target_info" {
-			expectedHistogramsWithCTZero = append(expectedHistogramsWithCTZero, mockHistogram{
+			expectedHistogramsWithSTZero = append(expectedHistogramsWithSTZero, mockHistogram{
 				l: s.l.Copy(),
 				t: startTime.UnixMilli(),
 				h: &histogram.Histogram{},
 			})
 		}
-		expectedHistogramsWithCTZero = append(expectedHistogramsWithCTZero, s)
+		expectedHistogramsWithSTZero = append(expectedHistogramsWithSTZero, s)
 	}
 
 	for _, testCase := range []struct {
 		name               string
 		otlpOpts           OTLPOptions
 		startTime          time.Time
-		expectCTZero       bool
+		expectSTZero       bool
 		expectedSamples    []mockSample
 		expectedHistograms []mockHistogram
 	}{
 		{
-			name: "IngestCTZero=false/startTime=0",
+			name: "IngestSTZero=false/startTime=0",
 			otlpOpts: OTLPOptions{
-				IngestCTZeroSample: false,
+				IngestSTZeroSample: false,
 			},
 			startTime:          zeroTime,
 			expectedSamples:    expectedSamples,
 			expectedHistograms: expectedHistograms,
 		},
 		{
-			name: "IngestCTZero=true/startTime=0",
+			name: "IngestSTZero=true/startTime=0",
 			otlpOpts: OTLPOptions{
-				IngestCTZeroSample: true,
+				IngestSTZeroSample: true,
 			},
 			startTime:          zeroTime,
 			expectedSamples:    expectedSamples,
 			expectedHistograms: expectedHistograms,
 		},
 		{
-			name: "IngestCTZero=false/startTime=ts-1ms",
+			name: "IngestSTZero=false/startTime=ts-1ms",
 			otlpOpts: OTLPOptions{
-				IngestCTZeroSample: false,
+				IngestSTZeroSample: false,
 			},
 			startTime:          startTime,
 			expectedSamples:    expectedSamples,
 			expectedHistograms: expectedHistograms,
 		},
 		{
-			name: "IngestCTZero=true/startTime=ts-1ms",
+			name: "IngestSTZero=true/startTime=ts-1ms",
 			otlpOpts: OTLPOptions{
-				IngestCTZeroSample: true,
+				IngestSTZeroSample: true,
 			},
 			startTime:          startTime,
-			expectedSamples:    expectedSamplesWithCTZero,
-			expectedHistograms: expectedHistogramsWithCTZero,
+			expectedSamples:    expectedSamplesWithSTZero,
+			expectedHistograms: expectedHistogramsWithSTZero,
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {

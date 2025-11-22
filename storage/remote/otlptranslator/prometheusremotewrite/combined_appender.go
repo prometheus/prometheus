@@ -49,10 +49,10 @@ type Metadata struct {
 type CombinedAppender interface {
 	// AppendSample appends a sample and related exemplars, metadata, and
 	// created timestamp to the storage.
-	AppendSample(ls labels.Labels, meta Metadata, ct, t int64, v float64, es []exemplar.Exemplar) error
+	AppendSample(ls labels.Labels, meta Metadata, st, t int64, v float64, es []exemplar.Exemplar) error
 	// AppendHistogram appends a histogram and related exemplars, metadata, and
 	// created timestamp to the storage.
-	AppendHistogram(ls labels.Labels, meta Metadata, ct, t int64, h *histogram.Histogram, es []exemplar.Exemplar) error
+	AppendHistogram(ls labels.Labels, meta Metadata, st, t int64, h *histogram.Histogram, es []exemplar.Exemplar) error
 }
 
 // CombinedAppenderMetrics is for the metrics observed by the
@@ -82,11 +82,12 @@ func NewCombinedAppenderMetrics(reg prometheus.Registerer) CombinedAppenderMetri
 // NewCombinedAppender creates a combined appender that sets start times and
 // updates metadata for each series only once, and appends samples and
 // exemplars for each call.
-func NewCombinedAppender(app storage.Appender, logger *slog.Logger, ingestCTZeroSample bool, metrics CombinedAppenderMetrics) CombinedAppender {
+func NewCombinedAppender(app storage.Appender, logger *slog.Logger, ingestSTZeroSample, appendMetadata bool, metrics CombinedAppenderMetrics) CombinedAppender {
 	return &combinedAppender{
 		app:                            app,
 		logger:                         logger,
-		ingestCTZeroSample:             ingestCTZeroSample,
+		ingestSTZeroSample:             ingestSTZeroSample,
+		appendMetadata:                 appendMetadata,
 		refs:                           make(map[uint64]seriesRef),
 		samplesAppendedWithoutMetadata: metrics.samplesAppendedWithoutMetadata,
 		outOfOrderExemplars:            metrics.outOfOrderExemplars,
@@ -95,7 +96,7 @@ func NewCombinedAppender(app storage.Appender, logger *slog.Logger, ingestCTZero
 
 type seriesRef struct {
 	ref  storage.SeriesRef
-	ct   int64
+	st   int64
 	ls   labels.Labels
 	meta metadata.Metadata
 }
@@ -105,27 +106,28 @@ type combinedAppender struct {
 	logger                         *slog.Logger
 	samplesAppendedWithoutMetadata prometheus.Counter
 	outOfOrderExemplars            prometheus.Counter
-	ingestCTZeroSample             bool
+	ingestSTZeroSample             bool
+	appendMetadata                 bool
 	// Used to ensure we only update metadata and created timestamps once, and to share storage.SeriesRefs.
 	// To detect hash collision it also stores the labels.
 	// There is no overflow/conflict list, the TSDB will handle that part.
 	refs map[uint64]seriesRef
 }
 
-func (b *combinedAppender) AppendSample(ls labels.Labels, meta Metadata, ct, t int64, v float64, es []exemplar.Exemplar) (err error) {
-	return b.appendFloatOrHistogram(ls, meta.Metadata, ct, t, v, nil, es)
+func (b *combinedAppender) AppendSample(ls labels.Labels, meta Metadata, st, t int64, v float64, es []exemplar.Exemplar) (err error) {
+	return b.appendFloatOrHistogram(ls, meta.Metadata, st, t, v, nil, es)
 }
 
-func (b *combinedAppender) AppendHistogram(ls labels.Labels, meta Metadata, ct, t int64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
+func (b *combinedAppender) AppendHistogram(ls labels.Labels, meta Metadata, st, t int64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
 	if h == nil {
 		// Sanity check, we should never get here with a nil histogram.
 		b.logger.Error("Received nil histogram in CombinedAppender.AppendHistogram", "series", ls.String())
 		return errors.New("internal error, attempted to append nil histogram")
 	}
-	return b.appendFloatOrHistogram(ls, meta.Metadata, ct, t, 0, h, es)
+	return b.appendFloatOrHistogram(ls, meta.Metadata, st, t, 0, h, es)
 }
 
-func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadata.Metadata, ct, t int64, v float64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
+func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadata.Metadata, st, t int64, v float64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
 	hash := ls.Hash()
 	series, exists := b.refs[hash]
 	ref := series.ref
@@ -138,28 +140,28 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 		exists = false
 		ref = 0
 	}
-	updateRefs := !exists || series.ct != ct
-	if updateRefs && ct != 0 && ct < t && b.ingestCTZeroSample {
+	updateRefs := !exists || series.st != st
+	if updateRefs && st != 0 && st < t && b.ingestSTZeroSample {
 		var newRef storage.SeriesRef
 		if h != nil {
-			newRef, err = b.app.AppendHistogramCTZeroSample(ref, ls, t, ct, h, nil)
+			newRef, err = b.app.AppendHistogramSTZeroSample(ref, ls, t, st, h, nil)
 		} else {
-			newRef, err = b.app.AppendCTZeroSample(ref, ls, t, ct)
+			newRef, err = b.app.AppendSTZeroSample(ref, ls, t, st)
 		}
 		if err != nil {
-			if !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
+			if !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
 				// Even for the first sample OOO is a common scenario because
-				// we can't tell if a CT was already ingested in a previous request.
+				// we can't tell if a ST was already ingested in a previous request.
 				// We ignore the error.
 				// ErrDuplicateSampleForTimestamp is also a common scenario because
 				// unknown start times in Opentelemetry are indicated by setting
 				// the start time to the same as the first sample time.
 				// https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
-				b.logger.Warn("Error when appending CT from OTLP", "err", err, "series", ls.String(), "created_timestamp", ct, "timestamp", t, "sample_type", sampleType(h))
+				b.logger.Warn("Error when appending ST from OTLP", "err", err, "series", ls.String(), "start_timestamp", st, "timestamp", t, "sample_type", sampleType(h))
 			}
 		} else {
 			// We only use the returned reference on success as otherwise an
-			// error of CT append could invalidate the series reference.
+			// error of ST append could invalidate the series reference.
 			ref = newRef
 		}
 	}
@@ -189,22 +191,26 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 		return err
 	}
 
-	if !exists || series.meta.Help != meta.Help || series.meta.Type != meta.Type || series.meta.Unit != meta.Unit {
-		updateRefs = true
-		// If this is the first time we see this series, set the metadata.
+	metadataChanged := exists && (series.meta.Help != meta.Help || series.meta.Type != meta.Type || series.meta.Unit != meta.Unit)
+
+	// Update cache if references changed or metadata changed.
+	if updateRefs || metadataChanged {
+		b.refs[hash] = seriesRef{
+			ref:  ref,
+			st:   st,
+			ls:   ls,
+			meta: meta,
+		}
+	}
+
+	// Update metadata in storage if enabled and needed.
+	if b.appendMetadata && (!exists || metadataChanged) {
+		// Only update metadata in WAL if the metadata-wal-records feature is enabled.
+		// Without this feature, metadata is not persisted to WAL.
 		_, err := b.app.UpdateMetadata(ref, ls, meta)
 		if err != nil {
 			b.samplesAppendedWithoutMetadata.Add(1)
 			b.logger.Warn("Error while updating metadata from OTLP", "err", err)
-		}
-	}
-
-	if updateRefs {
-		b.refs[hash] = seriesRef{
-			ref:  ref,
-			ct:   ct,
-			ls:   ls,
-			meta: meta,
 		}
 	}
 

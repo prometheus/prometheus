@@ -997,7 +997,7 @@ func (*appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metad
 	return 0, nil
 }
 
-func (a *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *appender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.Labels, t, st int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if h != nil {
 		if err := h.Validate(); err != nil {
 			return 0, err
@@ -1008,8 +1008,8 @@ func (a *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.L
 			return 0, err
 		}
 	}
-	if ct >= t {
-		return 0, storage.ErrCTNewerThanSample
+	if st >= t {
+		return 0, storage.ErrSTNewerThanSample
 	}
 
 	series := a.series.GetByID(chunks.HeadSeriesRef(ref))
@@ -1038,29 +1038,29 @@ func (a *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.L
 	series.Lock()
 	defer series.Unlock()
 
-	if ct <= a.minValidTime(series.lastTs) {
-		return 0, storage.ErrOutOfOrderCT
+	if st <= a.minValidTime(series.lastTs) {
+		return 0, storage.ErrOutOfOrderST
 	}
 
-	if ct <= series.lastTs {
+	if st <= series.lastTs {
 		// discard the sample if it's out of order.
-		return 0, storage.ErrOutOfOrderCT
+		return 0, storage.ErrOutOfOrderST
 	}
-	series.lastTs = ct
+	series.lastTs = st
 
 	switch {
 	case h != nil:
 		zeroHistogram := &histogram.Histogram{}
 		a.pendingHistograms = append(a.pendingHistograms, record.RefHistogramSample{
 			Ref: series.ref,
-			T:   ct,
+			T:   st,
 			H:   zeroHistogram,
 		})
 		a.histogramSeries = append(a.histogramSeries, series)
 	case fh != nil:
 		a.pendingFloatHistograms = append(a.pendingFloatHistograms, record.RefFloatHistogramSample{
 			Ref: series.ref,
-			T:   ct,
+			T:   st,
 			FH:  &histogram.FloatHistogram{},
 		})
 		a.floatHistogramSeries = append(a.floatHistogramSeries, series)
@@ -1070,9 +1070,9 @@ func (a *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.L
 	return storage.SeriesRef(series.ref), nil
 }
 
-func (a *appender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
-	if ct >= t {
-		return 0, storage.ErrCTNewerThanSample
+func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t, st int64) (storage.SeriesRef, error) {
+	if st >= t {
+		return 0, storage.ErrSTNewerThanSample
 	}
 
 	series := a.series.GetByID(chunks.HeadSeriesRef(ref))
@@ -1106,16 +1106,16 @@ func (a *appender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 		return 0, storage.ErrOutOfOrderSample
 	}
 
-	if ct <= series.lastTs {
+	if st <= series.lastTs {
 		// discard the sample if it's out of order.
-		return 0, storage.ErrOutOfOrderCT
+		return 0, storage.ErrOutOfOrderST
 	}
-	series.lastTs = ct
+	series.lastTs = st
 
 	// NOTE: always modify pendingSamples and sampleSeries together.
 	a.pendingSamples = append(a.pendingSamples, record.RefSample{
 		Ref: series.ref,
-		T:   ct,
+		T:   st,
 		V:   0,
 	})
 	a.sampleSeries = append(a.sampleSeries, series)

@@ -67,13 +67,13 @@ ss{A="a"} 0
 _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
 testmetric{label="\"bar\""} 1
-# HELP foo Counter with and without labels to certify CT is parsed for both cases
+# HELP foo Counter with and without labels to certify ST is parsed for both cases
 # TYPE foo counter
 foo_total 17.0 1520879607.789 # {id="counter-test"} 5
 foo_created 1520872607.123
 foo_total{a="b"} 17.0 1520879607.789 # {id="counter-test"} 5
 foo_created{a="b"} 1520872607.123
-# HELP bar Summary with CT at the end, making sure we find CT even if it's multiple lines a far
+# HELP bar Summary with ST at the end, making sure we find ST even if it's multiple lines a far
 # TYPE bar summary
 bar_count 17.0
 bar_sum 324789.3
@@ -87,7 +87,7 @@ baz_bucket{le="+Inf"} 17
 baz_count 17
 baz_sum 324789.3
 baz_created 1520872609.125
-# HELP fizz_created Gauge which shouldn't be parsed as CT
+# HELP fizz_created Gauge which shouldn't be parsed as ST
 # TYPE fizz_created gauge
 fizz_created 17.0
 # HELP something Histogram with _created between buckets and summary
@@ -279,7 +279,7 @@ foobar{quantile="0.99"} 150.1`
 			lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
 		}, {
 			m:    "foo",
-			help: "Counter with and without labels to certify CT is parsed for both cases",
+			help: "Counter with and without labels to certify ST is parsed for both cases",
 		}, {
 			m:   "foo",
 			typ: model.MetricTypeCounter,
@@ -289,17 +289,17 @@ foobar{quantile="0.99"} 150.1`
 			lset: labels.FromStrings("__name__", "foo_total"),
 			t:    int64p(1520879607789),
 			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
-			ct:   1520872607123,
+			st:   1520872607123,
 		}, {
 			m:    `foo_total{a="b"}`,
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "foo_total", "a", "b"),
 			t:    int64p(1520879607789),
 			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
-			ct:   1520872607123,
+			st:   1520872607123,
 		}, {
 			m:    "bar",
-			help: "Summary with CT at the end, making sure we find CT even if it's multiple lines a far",
+			help: "Summary with ST at the end, making sure we find ST even if it's multiple lines a far",
 		}, {
 			m:   "bar",
 			typ: model.MetricTypeSummary,
@@ -307,22 +307,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    "bar_count",
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "bar_count"),
-			ct:   1520872608124,
+			st:   1520872608124,
 		}, {
 			m:    "bar_sum",
 			v:    324789.3,
 			lset: labels.FromStrings("__name__", "bar_sum"),
-			ct:   1520872608124,
+			st:   1520872608124,
 		}, {
 			m:    `bar{quantile="0.95"}`,
 			v:    123.7,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.95"),
-			ct:   1520872608124,
+			st:   1520872608124,
 		}, {
 			m:    `bar{quantile="0.99"}`,
 			v:    150.0,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.99"),
-			ct:   1520872608124,
+			st:   1520872608124,
 		}, {
 			m:    "baz",
 			help: "Histogram with the same objective as above's summary",
@@ -340,10 +340,10 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "baz"),
-			ct:   1520872609125,
+			st:   1520872609125,
 		}, {
 			m:    "fizz_created",
-			help: "Gauge which shouldn't be parsed as CT",
+			help: "Gauge which shouldn't be parsed as ST",
 		}, {
 			m:   "fizz_created",
 			typ: model.MetricTypeGauge,
@@ -368,7 +368,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something"),
-			ct:   1520430001000,
+			st:   1520430001000,
 		}, {
 			m: `something{a="b"}`,
 			shs: &histogram.Histogram{
@@ -380,7 +380,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something", "a", "b"),
-			ct:   1520430002000,
+			st:   1520430002000,
 		}, {
 			m:    "yum",
 			help: "Summary with _created between sum and quantiles",
@@ -391,22 +391,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `yum_count`,
 			v:    20,
 			lset: labels.FromStrings("__name__", "yum_count"),
-			ct:   1520430003000,
+			st:   1520430003000,
 		}, {
 			m:    `yum_sum`,
 			v:    324789.5,
 			lset: labels.FromStrings("__name__", "yum_sum"),
-			ct:   1520430003000,
+			st:   1520430003000,
 		}, {
 			m:    `yum{quantile="0.95"}`,
 			v:    123.7,
 			lset: labels.FromStrings("__name__", "yum", "quantile", "0.95"),
-			ct:   1520430003000,
+			st:   1520430003000,
 		}, {
 			m:    `yum{quantile="0.99"}`,
 			v:    150.0,
 			lset: labels.FromStrings("__name__", "yum", "quantile", "0.99"),
-			ct:   1520430003000,
+			st:   1520430003000,
 		}, {
 			m:    "foobar",
 			help: "Summary with _created as the first line",
@@ -417,22 +417,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `foobar_count`,
 			v:    21,
 			lset: labels.FromStrings("__name__", "foobar_count"),
-			ct:   1520430004000,
+			st:   1520430004000,
 		}, {
 			m:    `foobar_sum`,
 			v:    324789.6,
 			lset: labels.FromStrings("__name__", "foobar_sum"),
-			ct:   1520430004000,
+			st:   1520430004000,
 		}, {
 			m:    `foobar{quantile="0.95"}`,
 			v:    123.8,
 			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.95"),
-			ct:   1520430004000,
+			st:   1520430004000,
 		}, {
 			m:    `foobar{quantile="0.99"}`,
 			v:    150.1,
 			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.99"),
-			ct:   1520430004000,
+			st:   1520430004000,
 		}, {
 			m:    "metric",
 			help: "foo\x00bar",
@@ -587,8 +587,8 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 	}
 
 	type parserOptions struct {
-		useUTF8sep          bool
-		hasCreatedTimeStamp bool
+		useUTF8sep        bool
+		hasStartTimestamp bool
 	}
 	// Defines the parser name, the Parser factory and the test cases
 	// supported by the parser and parser options.
@@ -598,14 +598,14 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 				inputBuf := createTestProtoBufHistogram(t)
 				return New(inputBuf.Bytes(), "application/vnd.google.protobuf", labels.NewSymbolTable(), ParserOptions{KeepClassicOnClassicAndNativeHistograms: keepClassic, ConvertClassicHistogramsToNHCB: nhcb})
 			}
-			return "ProtoBuf", factory, []int{1, 2, 3}, parserOptions{useUTF8sep: true, hasCreatedTimeStamp: true}
+			return "ProtoBuf", factory, []int{1, 2, 3}, parserOptions{useUTF8sep: true, hasStartTimestamp: true}
 		},
 		func() (string, parserFactory, []int, parserOptions) {
 			factory := func(keepClassic, nhcb bool) (Parser, error) {
 				input := createTestOpenMetricsHistogram()
 				return New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{KeepClassicOnClassicAndNativeHistograms: keepClassic, ConvertClassicHistogramsToNHCB: nhcb})
 			}
-			return "OpenMetrics", factory, []int{1}, parserOptions{hasCreatedTimeStamp: true}
+			return "OpenMetrics", factory, []int{1}, parserOptions{hasStartTimestamp: true}
 		},
 		func() (string, parserFactory, []int, parserOptions) {
 			factory := func(keepClassic, nhcb bool) (Parser, error) {
@@ -643,9 +643,9 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 						typ: model.MetricTypeHistogram,
 					})
 
-					var ct int64
-					if options.hasCreatedTimeStamp {
-						ct = 1000
+					var st int64
+					if options.hasStartTimestamp {
+						st = 1000
 					}
 
 					var bucketForMetric func(string) string
@@ -677,7 +677,7 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 								},
 								lset: labels.FromStrings("__name__", metric),
 								t:    int64p(1234568),
-								ct:   ct,
+								st:   st,
 							},
 						}
 						tc.exp = append(tc.exp, exponentialSeries...)
@@ -690,42 +690,42 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 								v:    175,
 								lset: labels.FromStrings("__name__", metric+"_count"),
 								t:    int64p(1234568),
-								ct:   ct,
+								st:   st,
 							},
 							{
 								m:    metric + "_sum",
 								v:    0.0008280461746287094,
 								lset: labels.FromStrings("__name__", metric+"_sum"),
 								t:    int64p(1234568),
-								ct:   ct,
+								st:   st,
 							},
 							{
 								m:    metric + bucketForMetric("-0.0004899999999999998"),
 								v:    2,
 								lset: labels.FromStrings("__name__", metric+"_bucket", "le", "-0.0004899999999999998"),
 								t:    int64p(1234568),
-								ct:   ct,
+								st:   st,
 							},
 							{
 								m:    metric + bucketForMetric("-0.0003899999999999998"),
 								v:    4,
 								lset: labels.FromStrings("__name__", metric+"_bucket", "le", "-0.0003899999999999998"),
 								t:    int64p(1234568),
-								ct:   ct,
+								st:   st,
 							},
 							{
 								m:    metric + bucketForMetric("-0.0002899999999999998"),
 								v:    16,
 								lset: labels.FromStrings("__name__", metric+"_bucket", "le", "-0.0002899999999999998"),
 								t:    int64p(1234568),
-								ct:   ct,
+								st:   st,
 							},
 							{
 								m:    metric + bucketForMetric("+Inf"),
 								v:    175,
 								lset: labels.FromStrings("__name__", metric+"_bucket", "le", "+Inf"),
 								t:    int64p(1234568),
-								ct:   ct,
+								st:   st,
 							},
 						}
 						tc.exp = append(tc.exp, classicSeries...)
@@ -745,7 +745,7 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 								},
 								lset: labels.FromStrings("__name__", metric),
 								t:    int64p(1234568),
-								ct:   ct,
+								st:   st,
 							},
 						}
 						tc.exp = append(tc.exp, nhcbSeries...)
@@ -952,7 +952,7 @@ something_bucket{a="b",le="+Inf"} 9
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something", "a", "b"),
-			ct:   1520430002000,
+			st:   1520430002000,
 		},
 	}
 
@@ -1061,7 +1061,7 @@ metric: <
 			},
 			lset: labels.FromStrings("__name__", "test_histogram1"),
 			t:    int64p(1234568),
-			ct:   1000,
+			st:   1000,
 		},
 		{
 			m:    "test_histogram2",
@@ -1083,7 +1083,7 @@ metric: <
 			},
 			lset: labels.FromStrings("__name__", "test_histogram2"),
 			t:    int64p(1234568),
-			ct:   1000,
+			st:   1000,
 		},
 	}
 

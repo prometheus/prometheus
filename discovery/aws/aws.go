@@ -215,11 +215,14 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 
 	switch c.Role {
 	case RoleEC2:
-		return NewEC2Discovery(c.EC2SDConfig, opts.Logger, &ec2Metrics{refreshMetrics: awsMetrics.refreshMetrics})
+		opts.Metrics = &ec2Metrics{refreshMetrics: awsMetrics.refreshMetrics}
+		return NewEC2Discovery(c.EC2SDConfig, opts)
 	case RoleECS:
-		return NewECSDiscovery(c.ECSSDConfig, opts.Logger, &ecsMetrics{refreshMetrics: awsMetrics.refreshMetrics})
+		opts.Metrics = &ecsMetrics{refreshMetrics: awsMetrics.refreshMetrics}
+		return NewECSDiscovery(c.ECSSDConfig, opts)
 	case RoleLightsail:
-		return NewLightsailDiscovery(c.LightsailSDConfig, opts.Logger, &lightsailMetrics{refreshMetrics: awsMetrics.refreshMetrics})
+		opts.Metrics = &lightsailMetrics{refreshMetrics: awsMetrics.refreshMetrics}
+		return NewLightsailDiscovery(c.LightsailSDConfig, opts)
 	default:
 		return nil, fmt.Errorf("unknown AWS SD role %q", c.Role)
 	}

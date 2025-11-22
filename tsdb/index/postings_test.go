@@ -285,92 +285,78 @@ func consumePostings(p Postings) error {
 	return p.Err()
 }
 
+// Create ListPostings for a benchmark, collecting the original sets of references
+// so they can be reset without additional memory allocations.
+func createPostings(lps *[]*ListPostings, refs *[][]storage.SeriesRef, params ...storage.SeriesRef) {
+	var temp []storage.SeriesRef
+	for i := 0; i < len(params); i += 3 {
+		for j := params[i]; j < params[i+1]; j += params[i+2] {
+			temp = append(temp, j)
+		}
+	}
+	*lps = append(*lps, newListPostings(temp...))
+	*refs = append(*refs, temp)
+}
+
+// Reset the ListPostings to their original values each time round the benchmark loop.
+func resetPostings(its []Postings, lps []*ListPostings, refs [][]storage.SeriesRef) {
+	for j := range refs {
+		lps[j].list = refs[j]
+		its[j] = lps[j]
+	}
+}
+
 func BenchmarkIntersect(t *testing.B) {
 	t.Run("LongPostings1", func(bench *testing.B) {
-		var a, b, c, d []storage.SeriesRef
-
-		for i := 0; i < 10000000; i += 2 {
-			a = append(a, storage.SeriesRef(i))
-		}
-		for i := 5000000; i < 5000100; i += 4 {
-			b = append(b, storage.SeriesRef(i))
-		}
-		for i := 5090000; i < 5090600; i += 4 {
-			b = append(b, storage.SeriesRef(i))
-		}
-		for i := 4990000; i < 5100000; i++ {
-			c = append(c, storage.SeriesRef(i))
-		}
-		for i := 4000000; i < 6000000; i++ {
-			d = append(d, storage.SeriesRef(i))
-		}
+		var lps []*ListPostings
+		var refs [][]storage.SeriesRef
+		createPostings(&lps, &refs, 0, 10000000, 2)
+		createPostings(&lps, &refs, 5000000, 5000100, 4, 5090000, 5090600, 4)
+		createPostings(&lps, &refs, 4990000, 5100000, 1)
+		createPostings(&lps, &refs, 4000000, 6000000, 1)
+		its := make([]Postings, len(refs))
 
 		bench.ResetTimer()
 		bench.ReportAllocs()
 		for bench.Loop() {
-			i1 := newListPostings(a...)
-			i2 := newListPostings(b...)
-			i3 := newListPostings(c...)
-			i4 := newListPostings(d...)
-			if err := consumePostings(Intersect(i1, i2, i3, i4)); err != nil {
+			resetPostings(its, lps, refs)
+			if err := consumePostings(Intersect(its...)); err != nil {
 				bench.Fatal(err)
 			}
 		}
 	})
 
 	t.Run("LongPostings2", func(bench *testing.B) {
-		var a, b, c, d []storage.SeriesRef
-
-		for i := range 12500000 {
-			a = append(a, storage.SeriesRef(i))
-		}
-		for i := 7500000; i < 12500000; i++ {
-			b = append(b, storage.SeriesRef(i))
-		}
-		for i := 9000000; i < 20000000; i++ {
-			c = append(c, storage.SeriesRef(i))
-		}
-		for i := 10000000; i < 12000000; i++ {
-			d = append(d, storage.SeriesRef(i))
-		}
+		var lps []*ListPostings
+		var refs [][]storage.SeriesRef
+		createPostings(&lps, &refs, 0, 12500000, 1)
+		createPostings(&lps, &refs, 7500000, 12500000, 1)
+		createPostings(&lps, &refs, 9000000, 20000000, 1)
+		createPostings(&lps, &refs, 10000000, 12000000, 1)
+		its := make([]Postings, len(refs))
 
 		bench.ResetTimer()
 		bench.ReportAllocs()
 		for bench.Loop() {
-			i1 := newListPostings(a...)
-			i2 := newListPostings(b...)
-			i3 := newListPostings(c...)
-			i4 := newListPostings(d...)
-			if err := consumePostings(Intersect(i1, i2, i3, i4)); err != nil {
+			resetPostings(its, lps, refs)
+			if err := consumePostings(Intersect(its...)); err != nil {
 				bench.Fatal(err)
 			}
 		}
 	})
 
-	// Many matchers(k >> n).
 	t.Run("ManyPostings", func(bench *testing.B) {
 		var lps []*ListPostings
 		var refs [][]storage.SeriesRef
-
-		// Create 100000 matchers(k=100000), making sure all memory allocation is done before starting the loop.
-		for range 100000 {
-			var temp []storage.SeriesRef
-			for j := storage.SeriesRef(1); j < 100; j++ {
-				temp = append(temp, j)
-			}
-			lps = append(lps, newListPostings(temp...))
-			refs = append(refs, temp)
+		for range 100 {
+			createPostings(&lps, &refs, 1, 100, 1)
 		}
 
 		its := make([]Postings, len(refs))
 		bench.ResetTimer()
 		bench.ReportAllocs()
 		for bench.Loop() {
-			// Reset the ListPostings to their original values each time round the loop.
-			for j := range refs {
-				lps[j].list = refs[j]
-				its[j] = lps[j]
-			}
+			resetPostings(its, lps, refs)
 			if err := consumePostings(Intersect(its...)); err != nil {
 				bench.Fatal(err)
 			}

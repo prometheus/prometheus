@@ -2351,12 +2351,12 @@ func TestBuildTimeSeries(t *testing.T) {
 	// Run the test cases
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			highest, lowest, result, droppedSamples, _, _ := buildTimeSeries(tc.ts, tc.filter)
+			result, stats := buildTimeSeries(tc.ts, tc.filter)
 			require.NotNil(t, result)
 			require.Len(t, result, tc.responseLen)
-			require.Equal(t, tc.highestTs, highest)
-			require.Equal(t, tc.lowestTs, lowest)
-			require.Equal(t, tc.droppedSamples, droppedSamples)
+			require.Equal(t, tc.highestTs, stats.highest)
+			require.Equal(t, tc.lowestTs, stats.lowest)
+			require.Equal(t, tc.droppedSamples, stats.droppedSamples)
 		})
 	}
 }
@@ -2367,7 +2367,7 @@ func BenchmarkBuildTimeSeries(b *testing.B) {
 	filter := func(ts prompb.TimeSeries) bool { return filterTsLimit(99, ts) }
 	for b.Loop() {
 		samples := createProtoTimeseriesWithOld(numSamples, 100, extraLabels...)
-		_, _, result, _, _, _ := buildTimeSeries(samples, filter)
+		result, _ := buildTimeSeries(samples, filter)
 		require.NotNil(b, result)
 	}
 }

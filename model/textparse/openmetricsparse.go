@@ -103,34 +103,34 @@ type OpenMetricsParser struct {
 	hasExemplarTs bool
 
 	// Created timestamp parsing state.
-	ct        int64
-	ctHashSet uint64
+	st        int64
+	stHashSet uint64
 	// ignoreExemplar instructs the parser to not overwrite exemplars (to keep them while peeking ahead).
 	ignoreExemplar bool
 	// visitedMFName is the metric family name of the last visited metric when peeking ahead
-	// for _created series during the execution of the CreatedTimestamp method.
+	// for _created series during the execution of the StartTimestamp method.
 	visitedMFName           []byte
-	skipCTSeries            bool
+	skipSTSeries            bool
 	enableTypeAndUnitLabels bool
 }
 
 type openMetricsParserOptions struct {
-	skipCTSeries            bool
+	skipSTSeries            bool
 	enableTypeAndUnitLabels bool
 }
 
 type OpenMetricsOption func(*openMetricsParserOptions)
 
-// WithOMParserCTSeriesSkipped turns off exposing _created lines
+// WithOMParserSTSeriesSkipped turns off exposing _created lines
 // as series, which makes those only used for parsing created timestamp
-// for `CreatedTimestamp` method purposes.
+// for `StartTimestamp` method purposes.
 //
 // It's recommended to use this option to avoid using _created lines for other
 // purposes than created timestamp, but leave false by default for the
 // best-effort compatibility.
-func WithOMParserCTSeriesSkipped() OpenMetricsOption {
+func WithOMParserSTSeriesSkipped() OpenMetricsOption {
 	return func(o *openMetricsParserOptions) {
-		o.skipCTSeries = true
+		o.skipSTSeries = true
 	}
 }
 
@@ -142,7 +142,7 @@ func WithOMParserTypeAndUnitLabels() OpenMetricsOption {
 	}
 }
 
-// NewOpenMetricsParser returns a new parser for the byte slice with option to skip CT series parsing.
+// NewOpenMetricsParser returns a new parser for the byte slice with option to skip ST series parsing.
 func NewOpenMetricsParser(b []byte, st *labels.SymbolTable, opts ...OpenMetricsOption) Parser {
 	options := &openMetricsParserOptions{}
 
@@ -153,7 +153,7 @@ func NewOpenMetricsParser(b []byte, st *labels.SymbolTable, opts ...OpenMetricsO
 	parser := &OpenMetricsParser{
 		l:                       &openMetricsLexer{b: b},
 		builder:                 labels.NewScratchBuilderWithSymbolTable(st, 16),
-		skipCTSeries:            options.skipCTSeries,
+		skipSTSeries:            options.skipSTSeries,
 		enableTypeAndUnitLabels: options.enableTypeAndUnitLabels,
 	}
 
@@ -285,12 +285,12 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 	return true
 }
 
-// CreatedTimestamp returns the created timestamp for a current Metric if exists or nil.
+// StartTimestamp returns the created timestamp for a current Metric if exists or nil.
 // NOTE(Maniktherana): Might use additional CPU/mem resources due to deep copy of parser required for peeking given 1.0 OM specification on _created series.
-func (p *OpenMetricsParser) CreatedTimestamp() int64 {
-	if !typeRequiresCT(p.mtype) {
-		// Not a CT supported metric type, fast path.
-		p.ctHashSet = 0 // Use ctHashSet as a single way of telling "empty cache"
+func (p *OpenMetricsParser) StartTimestamp() int64 {
+	if !typeRequiresST(p.mtype) {
+		// Not a ST supported metric type, fast path.
+		p.stHashSet = 0 // Use stHashSet as a single way of telling "empty cache"
 		return 0
 	}
 
@@ -307,8 +307,8 @@ func (p *OpenMetricsParser) CreatedTimestamp() int64 {
 
 	currHash := p.seriesHash(&buf, currName)
 	// Check cache, perhaps we fetched something already.
-	if currHash == p.ctHashSet && p.ct > 0 {
-		return p.ct
+	if currHash == p.stHashSet && p.st > 0 {
+		return p.st
 	}
 
 	// Create a new lexer and other core state details to reset the parser once this function is done executing.
@@ -322,7 +322,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() int64 {
 	resetStart := p.start
 	resetMType := p.mtype
 
-	p.skipCTSeries = false
+	p.skipSTSeries = false
 	p.ignoreExemplar = true
 	defer func() {
 		p.l = resetLexer
@@ -334,38 +334,38 @@ func (p *OpenMetricsParser) CreatedTimestamp() int64 {
 	for {
 		eType, err := p.Next()
 		if err != nil {
-			// This means p.Next() will give error too later on, so def no CT line found.
-			// This might result in partial scrape with wrong/missing CT, but only
+			// This means p.Next() will give error too later on, so def no ST line found.
+			// This might result in partial scrape with wrong/missing ST, but only
 			// spec improvement would help.
-			// TODO: Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
-			p.resetCTParseValues()
+			// TODO: Make sure OM 1.1/2.0 pass ST via metadata or exemplar-like to avoid this.
+			p.resetSTParseValues()
 			return 0
 		}
 		if eType != EntrySeries {
-			// Assume we hit different family, no CT line found.
-			p.resetCTParseValues()
+			// Assume we hit different family, no ST line found.
+			p.resetSTParseValues()
 			return 0
 		}
 
 		peekedName := p.series[p.offsets[0]-p.start : p.offsets[1]-p.start]
 		if len(peekedName) < 8 || string(peekedName[len(peekedName)-8:]) != "_created" {
-			// Not a CT line, search more.
+			// Not a ST line, search more.
 			continue
 		}
 
 		// Remove _created suffix.
 		peekedHash := p.seriesHash(&buf, peekedName[:len(peekedName)-8])
 		if peekedHash != currHash {
-			// Found CT line for a different series, for our series no CT.
-			p.resetCTParseValues()
+			// Found ST line for a different series, for our series no ST.
+			p.resetSTParseValues()
 			return 0
 		}
 
 		// All timestamps in OpenMetrics are Unix Epoch in seconds. Convert to milliseconds.
 		// https://github.com/prometheus/OpenMetrics/blob/v1.0.0/specification/OpenMetrics.md#timestamps
-		ct := int64(p.val * 1000.0)
-		p.setCTParseValues(ct, currHash, currName, true)
-		return ct
+		st := int64(p.val * 1000.0)
+		p.setSTParseValues(st, currHash, currName, true)
+		return st
 	}
 }
 
@@ -404,23 +404,23 @@ func (p *OpenMetricsParser) seriesHash(offsetsArr *[]byte, metricFamilyName []by
 	return hashedOffsets
 }
 
-// setCTParseValues sets the parser to the state after CreatedTimestamp method was called and CT was found.
-// This is useful to prevent re-parsing the same series again and early return the CT value.
-func (p *OpenMetricsParser) setCTParseValues(ct int64, ctHashSet uint64, mfName []byte, skipCTSeries bool) {
-	p.ct = ct
-	p.ctHashSet = ctHashSet
+// setSTParseValues sets the parser to the state after StartTimestamp method was called and ST was found.
+// This is useful to prevent re-parsing the same series again and early return the ST value.
+func (p *OpenMetricsParser) setSTParseValues(st int64, stHashSet uint64, mfName []byte, skipSTSeries bool) {
+	p.st = st
+	p.stHashSet = stHashSet
 	p.visitedMFName = mfName
-	p.skipCTSeries = skipCTSeries // Do we need to set it?
+	p.skipSTSeries = skipSTSeries // Do we need to set it?
 }
 
-// resetCTParseValues resets the parser to the state before CreatedTimestamp method was called.
-func (p *OpenMetricsParser) resetCTParseValues() {
-	p.ctHashSet = 0
-	p.skipCTSeries = true
+// resetSTParseValues resets the parser to the state before StartTimestamp method was called.
+func (p *OpenMetricsParser) resetSTParseValues() {
+	p.stHashSet = 0
+	p.skipSTSeries = true
 }
 
-// typeRequiresCT returns true if the metric type requires a _created timestamp.
-func typeRequiresCT(t model.MetricType) bool {
+// typeRequiresST returns true if the metric type requires a _created timestamp.
+func typeRequiresST(t model.MetricType) bool {
 	switch t {
 	case model.MetricTypeCounter, model.MetricTypeSummary, model.MetricTypeHistogram:
 		return true
@@ -544,7 +544,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		if err := p.parseSeriesEndOfLine(p.nextToken()); err != nil {
 			return EntryInvalid, err
 		}
-		if p.skipCTSeries && p.isCreatedSeries() {
+		if p.skipSTSeries && p.isCreatedSeries() {
 			return p.Next()
 		}
 		return EntrySeries, nil
@@ -565,7 +565,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		if err := p.parseSeriesEndOfLine(t2); err != nil {
 			return EntryInvalid, err
 		}
-		if p.skipCTSeries && p.isCreatedSeries() {
+		if p.skipSTSeries && p.isCreatedSeries() {
 			return p.Next()
 		}
 		return EntrySeries, nil
@@ -697,7 +697,7 @@ func (p *OpenMetricsParser) parseLVals(offsets []int, isExemplar bool) ([]int, e
 func (p *OpenMetricsParser) isCreatedSeries() bool {
 	metricName := p.series[p.offsets[0]-p.start : p.offsets[1]-p.start]
 	// check length so the metric is longer than len("_created")
-	if typeRequiresCT(p.mtype) && len(metricName) >= 8 && string(metricName[len(metricName)-8:]) == "_created" {
+	if typeRequiresST(p.mtype) && len(metricName) >= 8 && string(metricName[len(metricName)-8:]) == "_created" {
 		return true
 	}
 	return false
