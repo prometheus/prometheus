@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
-func makeNode(name, address, providerID string, labels, annotations map[string]string) *v1.Node {
+func makeNode(name, address, providerID string, labels, annotations map[string]string, conditions []v1.NodeCondition) *v1.Node {
 	return &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
@@ -47,12 +47,13 @@ func makeNode(name, address, providerID string, labels, annotations map[string]s
 					Port: 10250,
 				},
 			},
+			Conditions: conditions,
 		},
 	}
 }
 
 func makeEnumeratedNode(i int) *v1.Node {
-	return makeNode(fmt.Sprintf("test%d", i), "1.2.3.4", fmt.Sprintf("aws:///de-west-3a/i-%d", i), map[string]string{}, map[string]string{})
+	return makeNode(fmt.Sprintf("test%d", i), "1.2.3.4", fmt.Sprintf("aws:///de-west-3a/i-%d", i), map[string]string{}, map[string]string{}, nil)
 }
 
 func TestNodeDiscoveryBeforeStart(t *testing.T) {
@@ -68,6 +69,7 @@ func TestNodeDiscoveryBeforeStart(t *testing.T) {
 				"aws:///nl-north-7b/i-03149834983492827",
 				map[string]string{"test-label": "testvalue"},
 				map[string]string{"test-annotation": "testannotationvalue"},
+				nil,
 			)
 			c.CoreV1().Nodes().Create(context.Background(), obj, metav1.CreateOptions{})
 		},
@@ -159,6 +161,7 @@ func TestNodeDiscoveryUpdate(t *testing.T) {
 				"aws:///fr-south-1c/i-49508290343823952",
 				map[string]string{"Unschedulable": "true"},
 				map[string]string{},
+				nil,
 			)
 			c.CoreV1().Nodes().Update(context.Background(), obj2, metav1.UpdateOptions{})
 		},
@@ -182,4 +185,123 @@ func TestNodeDiscoveryUpdate(t *testing.T) {
 			},
 		},
 	}.Run(t)
+}
+
+func TestNodeDiscoveryConditions(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		conditions []v1.NodeCondition
+		expected   model.LabelSet
+	}{
+		{
+			name: "node ready true",
+			conditions: []v1.NodeCondition{
+				{
+					Type:   v1.NodeReady,
+					Status: v1.ConditionTrue,
+				},
+			},
+			expected: model.LabelSet{
+				"__meta_kubernetes_node_name":            "test",
+				"__meta_kubernetes_node_provider_id":     "aws:///test-zone/i-test",
+				"__meta_kubernetes_node_condition_ready": "true",
+			},
+		},
+		{
+			name: "node ready false",
+			conditions: []v1.NodeCondition{
+				{
+					Type:   v1.NodeReady,
+					Status: v1.ConditionFalse,
+				},
+			},
+			expected: model.LabelSet{
+				"__meta_kubernetes_node_name":            "test",
+				"__meta_kubernetes_node_provider_id":     "aws:///test-zone/i-test",
+				"__meta_kubernetes_node_condition_ready": "false",
+			},
+		},
+		{
+			name: "node ready unknown",
+			conditions: []v1.NodeCondition{
+				{
+					Type:   v1.NodeReady,
+					Status: v1.ConditionUnknown,
+				},
+			},
+			expected: model.LabelSet{
+				"__meta_kubernetes_node_name":            "test",
+				"__meta_kubernetes_node_provider_id":     "aws:///test-zone/i-test",
+				"__meta_kubernetes_node_condition_ready": "unknown",
+			},
+		},
+		{
+			name:       "node no conditions",
+			conditions: nil,
+			expected: model.LabelSet{
+				"__meta_kubernetes_node_name":        "test",
+				"__meta_kubernetes_node_provider_id": "aws:///test-zone/i-test",
+			},
+		},
+		{
+			name: "node multiple conditions",
+			conditions: []v1.NodeCondition{
+				{
+					Type:   v1.NodeMemoryPressure,
+					Status: v1.ConditionFalse,
+				},
+				{
+					Type:   v1.NodeReady,
+					Status: v1.ConditionTrue,
+				},
+				{
+					Type:   v1.NodeDiskPressure,
+					Status: v1.ConditionFalse,
+				},
+			},
+			expected: model.LabelSet{
+				"__meta_kubernetes_node_name":                     "test",
+				"__meta_kubernetes_node_provider_id":              "aws:///test-zone/i-test",
+				"__meta_kubernetes_node_condition_memorypressure": "false",
+				"__meta_kubernetes_node_condition_ready":          "true",
+				"__meta_kubernetes_node_condition_diskpressure":   "false",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n, c := makeDiscovery(RoleNode, NamespaceDiscovery{})
+
+			k8sDiscoveryTest{
+				discovery: n,
+				beforeRun: func() {
+					obj := makeNode(
+						"test",
+						"1.2.3.4",
+						"aws:///test-zone/i-test",
+						map[string]string{},
+						map[string]string{},
+						tt.conditions,
+					)
+					c.CoreV1().Nodes().Create(context.Background(), obj, metav1.CreateOptions{})
+				},
+				expectedMaxItems: 1,
+				expectedRes: map[string]*targetgroup.Group{
+					"node/test": {
+						Targets: []model.LabelSet{
+							{
+								"__address__": "1.2.3.4:10250",
+								"instance":    "test",
+								"__meta_kubernetes_node_address_InternalIP": "1.2.3.4",
+							},
+						},
+						Labels: tt.expected,
+						Source: "node/test",
+					},
+				},
+			}.Run(t)
+		})
+	}
 }
