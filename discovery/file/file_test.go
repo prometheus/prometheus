@@ -16,10 +16,8 @@ package file
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"sync"
 	"testing"
@@ -65,47 +63,31 @@ func newTestRunner(t *testing.T) *testRunner {
 	}
 }
 
-// copyFile atomically copies a file to the runner's directory.
+// copyFile copies a file to the runner's directory.
 func (t *testRunner) copyFile(src string) string {
 	t.Helper()
 	return t.copyFileTo(src, filepath.Base(src))
 }
 
-// copyFileTo atomically copies a file with a different name to the runner's directory.
+// copyFileTo copies a file with a different name to the runner's directory.
 func (t *testRunner) copyFileTo(src, name string) string {
 	t.Helper()
 
-	newf, err := os.CreateTemp(t.dir, "")
+	newf, err := os.ReadFile(src)
 	require.NoError(t, err)
-
-	f, err := os.Open(src)
-	require.NoError(t, err)
-
-	_, err = io.Copy(newf, f)
-	require.NoError(t, err)
-	require.NoError(t, f.Close())
-	require.NoError(t, newf.Close())
 
 	dst := filepath.Join(t.dir, name)
-	err = os.Rename(newf.Name(), dst)
-	require.NoError(t, err)
+	// Use os.WriteFile to avoid an os.Rename race condition on Windows.
+	require.NoError(t, os.WriteFile(dst, newf, 0o644))
 
 	return dst
 }
 
-// writeString writes atomically a string to a file.
+// writeString writes a string to a file.
 func (t *testRunner) writeString(file, data string) {
 	t.Helper()
-
-	newf, err := os.CreateTemp(t.dir, "")
-	require.NoError(t, err)
-
-	_, err = newf.WriteString(data)
-	require.NoError(t, err)
-	require.NoError(t, newf.Close())
-
-	err = os.Rename(newf.Name(), file)
-	require.NoError(t, err)
+	// Use os.WriteFile to avoid an os.Rename race condition on Windows.
+	require.NoError(t, os.WriteFile(file, []byte(data), 0o644))
 }
 
 // appendString appends a string to a file.
@@ -320,9 +302,6 @@ func valid2Tg(file string) []*targetgroup.Group {
 }
 
 func TestInitialUpdate(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
-	}
 	for _, tc := range []string{
 		"fixtures/valid.yml",
 		"fixtures/valid.json",
@@ -365,9 +344,6 @@ func TestInvalidFile(t *testing.T) {
 }
 
 func TestNoopFileUpdate(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
-	}
 	t.Parallel()
 
 	runner := newTestRunner(t)
@@ -386,9 +362,6 @@ func TestNoopFileUpdate(t *testing.T) {
 }
 
 func TestFileUpdate(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
-	}
 	t.Parallel()
 
 	runner := newTestRunner(t)
@@ -407,9 +380,6 @@ func TestFileUpdate(t *testing.T) {
 }
 
 func TestInvalidFileUpdate(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
-	}
 	t.Parallel()
 
 	runner := newTestRunner(t)
@@ -432,9 +402,6 @@ func TestInvalidFileUpdate(t *testing.T) {
 }
 
 func TestUpdateFileWithPartialWrites(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
-	}
 	t.Parallel()
 
 	runner := newTestRunner(t)
