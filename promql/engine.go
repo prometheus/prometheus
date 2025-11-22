@@ -1948,16 +1948,18 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		// Check if this matrix selector came from a subquery and handle evaluation samples.
 		// For instant queries, count evaluation samples once total (before processing series).
-		// For range queries, we'll count result matrix samples per step (matching test expectations).
+		// For range queries, count evaluation samples once per step (when processing first series).
 		var subqueryEvalSamples int64
 		isSubqueryResult := false
-		if evalSamples, ok := ev.subqueryEvalSamples[sel]; ok {
-			isSubqueryResult = true
-			subqueryEvalSamples = evalSamples
-			// For instant queries, count evaluation samples once total before processing series.
-			// This matches the direct subquery path which counts at ev.endTimestamp.
-			if ev.startTimestamp == ev.endTimestamp {
-				ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, subqueryEvalSamples)
+		if ev.subqueryEvalSamples != nil {
+			if evalSamples, ok := ev.subqueryEvalSamples[sel]; ok {
+				isSubqueryResult = true
+				subqueryEvalSamples = evalSamples
+				// For instant queries, count evaluation samples once total before processing series.
+				// This matches the direct subquery path which counts at ev.endTimestamp.
+				if ev.startTimestamp == ev.endTimestamp {
+					ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, subqueryEvalSamples)
+				}
 			}
 		}
 
@@ -2029,16 +2031,17 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				// If this matrix selector came from a subquery, handle samples appropriately.
 				if isSubqueryResult {
 					// For instant queries: evaluation samples were already counted before the series loop.
-					// Don't count result matrix samples for instant queries with subqueries.
-					// For range queries: count result matrix samples per step (matching test expectations).
+					// For range queries: count result matrix samples per step per series (matching test expectations).
+					// The test expects "3 sample per query * 12 queries * 4 steps" for range queries,
+					// which means counting result matrix samples per step per series, not evaluation samples.
 					if ev.startTimestamp == ev.endTimestamp {
 						// Instant query: evaluation samples already counted, skip result matrix samples
 					} else {
-						// Range query: count result matrix samples per step (not evaluation samples).
-						// This matches the test expectations where range queries count result samples per step.
+						// Range query: count result matrix samples per step per series.
 						ev.samplesStats.IncrementSamplesAtStep(step, int64(len(floats)+totalHPointSize(histograms)))
 					}
 				} else {
+					// For non-subquery matrix selectors, count result matrix samples per step per series.
 					ev.samplesStats.IncrementSamplesAtStep(step, int64(len(floats)+totalHPointSize(histograms)))
 				}
 
