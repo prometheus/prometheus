@@ -570,7 +570,7 @@ List tsdb blocks.
 
 ##### `promtool tsdb dump`
 
-Dump samples from a TSDB.
+Dump data (series+samples or optionally just series) from a TSDB.
 
 
 
@@ -582,6 +582,7 @@ Dump samples from a TSDB.
 | <code class="text-nowrap">--min-time</code> | Minimum timestamp to dump, in milliseconds since the Unix epoch. | `-9223372036854775808` |
 | <code class="text-nowrap">--max-time</code> | Maximum timestamp to dump, in milliseconds since the Unix epoch. | `9223372036854775807` |
 | <code class="text-nowrap">--match</code> <code class="text-nowrap">...<code class="text-nowrap"> | Series selector. Can be specified multiple times. | `{__name__=~'(?s:.*)'}` |
+| <code class="text-nowrap">--format</code> | Output format of the dump (prom (default) or seriesjson). | `prom` |
 
 
 
