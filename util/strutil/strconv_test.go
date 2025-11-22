@@ -77,3 +77,28 @@ func TestSanitizeFullLabelName(t *testing.T) {
 	expected = "_"
 	require.Equal(t, expected, actual, "SanitizeFullLabelName failed for the empty label")
 }
+
+func TestCamelToSnakeCase(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"Ready", "ready"},
+		{"MemoryPressure", "memory_pressure"},
+		{"DiskPressure", "disk_pressure"},
+		{"PIDPressure", "pid_pressure"},
+		{"NetworkUnavailable", "network_unavailable"},
+		{"NodeReady", "node_ready"},
+		{"alreadyLowerCase", "already_lower_case"},
+		{"", ""},
+		{"A", "a"},
+		{"AB", "ab"},
+		{"ABCd", "ab_cd"},
+		{"SimpleCase", "simple_case"},
+	}
+
+	for _, tt := range tests {
+		actual := CamelToSnakeCase(tt.input)
+		require.Equal(t, tt.expected, actual, "CamelToSnakeCase failed for input (%s)", tt.input)
+	}
+}

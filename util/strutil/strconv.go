@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"unicode"
 
 	"github.com/grafana/regexp"
 )
@@ -61,4 +62,39 @@ func SanitizeFullLabelName(name string) string {
 		}
 	}
 	return validSb.String()
+}
+
+// CamelToSnakeCase converts CamelCase strings to snake_case.
+// e.g., "MemoryPressure" becomes "memory_pressure".
+func CamelToSnakeCase(s string) string {
+	if s == "" {
+		return s
+	}
+
+	var result strings.Builder
+	runes := []rune(s)
+	n := len(runes)
+
+	for i := 0; i < n; i++ {
+		r := runes[i]
+
+		if unicode.IsUpper(r) {
+			if i > 0 {
+				prev := runes[i-1]
+
+				if unicode.IsLower(prev) {
+					result.WriteRune('_')
+				}
+
+				if unicode.IsUpper(prev) && i+1 < n && unicode.IsLower(runes[i+1]) {
+					result.WriteRune('_')
+				}
+			}
+			result.WriteRune(unicode.ToLower(r))
+		} else {
+			result.WriteRune(r)
+		}
+	}
+
+	return result.String()
 }
