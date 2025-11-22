@@ -71,6 +71,8 @@ github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.3 h1:x2Ibm/A
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.3/go.mod h1:IW1jwyrQgMdhisceG8fQLmQIydcT/jWY21rFhzgaKwo=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.13 h1:kDqdFvMY4AtKoACfzIGD8A0+hbT41KTKF//gq7jITfM=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.13/go.mod h1:lmKuogqSU3HzQCwZ9ZtcqOc5XGMqtDK7OIc2+DxiUEg=
+github.com/aws/aws-sdk-go-v2/service/kafka v1.45.2 h1:+h9k2C0aNDHttULtVkFlWyuQxE8ILi23gLDUDApJDGU=
+github.com/aws/aws-sdk-go-v2/service/kafka v1.45.2/go.mod h1:Duj0BV8XyPzvoVF2LYtLDTCoQkIJ+NU1ui7QyMyCM/Y=
 github.com/aws/aws-sdk-go-v2/service/lightsail v1.50.4 h1:/1o2AYwHJojUDeMvQNyJiKZwcWCc3e4kQuTXqRLuThc=
 github.com/aws/aws-sdk-go-v2/service/lightsail v1.50.4/go.mod h1:Nn2xx6HojGuNMtUFxxz/nyNLSS+tHMRsMhe3+W3wB5k=
 github.com/aws/aws-sdk-go-v2/service/sso v1.30.1 h1:0JPwLz1J+5lEOfy/g0SURC9cxhbQ1lIMHMa+AHZSzz0=
