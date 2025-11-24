@@ -110,6 +110,7 @@ func NewGroup(o GroupOptions) *Group {
 	metrics.IterationsMissed.WithLabelValues(key)
 	metrics.IterationsScheduled.WithLabelValues(key)
 	metrics.EvalTotal.WithLabelValues(key)
+	metrics.EvalMissed.WithLabelValues(key)
 	metrics.EvalFailures.WithLabelValues(key)
 	metrics.GroupLastEvalTime.WithLabelValues(key)
 	metrics.GroupLastDuration.WithLabelValues(key)
@@ -266,6 +267,10 @@ func (g *Group) run(ctx context.Context) {
 			if missed > 0 {
 				g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
 				g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
+				numRulesInGroup := uint64(len(g.rules))
+				if numRulesInGroup > 0 {
+					g.metrics.EvalMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(uint64(missed) * numRulesInGroup))
+				}
 			}
 			evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 			g.evalIterationFunc(ctx, g, evalTimestamp)
@@ -287,6 +292,10 @@ func (g *Group) run(ctx context.Context) {
 				if missed > 0 {
 					g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
 					g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
+					numRulesInGroup := uint64(len(g.rules))
+					if numRulesInGroup > 0 {
+						g.metrics.EvalMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(uint64(missed) * numRulesInGroup))
+					}
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 
@@ -915,6 +924,7 @@ type Metrics struct {
 	IterationsMissed         *prometheus.CounterVec
 	IterationsScheduled      *prometheus.CounterVec
 	EvalTotal                *prometheus.CounterVec
+	EvalMissed               *prometheus.CounterVec
 	EvalFailures             *prometheus.CounterVec
 	GroupInterval            *prometheus.GaugeVec
 	GroupLastEvalTime        *prometheus.GaugeVec
@@ -963,6 +973,14 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 				Namespace: namespace,
 				Name:      "rule_evaluations_total",
 				Help:      "The total number of rule evaluations.",
+			},
+			[]string{"rule_group"},
+		),
+		EvalMissed: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "rule_evaluations_missed_total",
+				Help:      "The total number of rule evaluations missed across all rules in a group.",
 			},
 			[]string{"rule_group"},
 		),
@@ -1039,6 +1057,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			m.IterationsMissed,
 			m.IterationsScheduled,
 			m.EvalTotal,
+			m.EvalMissed,
 			m.EvalFailures,
 			m.GroupInterval,
 			m.GroupLastEvalTime,
