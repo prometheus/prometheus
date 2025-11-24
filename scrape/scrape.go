@@ -1217,7 +1217,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		// scrape.Options.
 		enableSTZeroIngestion:   opts.sp.options.EnableStartTimestampZeroIngestion,
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
-		reportExtraMetrics:      opts.sp.options.ExtraMetrics,
+		reportExtraMetrics:      opts.sp.options.ExtraMetrics || opts.sp.config.ExtraScrapeMetricsEnabled(),
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
 		skipOffsetting:          opts.sp.options.skipOffsetting,
