@@ -176,6 +176,7 @@ var (
 		ScrapeNativeHistograms:         &f,
 		ConvertClassicHistogramsToNHCB: false,
 		AlwaysScrapeClassicHistograms:  false,
+		ExtraScrapeMetrics:             false,
 		MetricNameValidationScheme:     model.UTF8Validation,
 		MetricNameEscapingScheme:       model.AllowUTF8,
 	}
@@ -513,6 +514,10 @@ type GlobalConfig struct {
 	ConvertClassicHistogramsToNHCB bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
 	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
 	AlwaysScrapeClassicHistograms bool `yaml:"always_scrape_classic_histograms,omitempty"`
+	// Whether to enable additional scrape metrics.
+	// When enabled, Prometheus stores samples for scrape_timeout_seconds,
+	// scrape_sample_limit, and scrape_body_size_bytes.
+	ExtraScrapeMetrics bool `yaml:"extra_scrape_metrics,omitempty"`
 }
 
 // ScrapeProtocol represents supported protocol for scraping metrics.
@@ -687,7 +692,8 @@ func (c *GlobalConfig) isZero() bool {
 		c.ScrapeProtocols == nil &&
 		c.ScrapeNativeHistograms == nil &&
 		!c.ConvertClassicHistogramsToNHCB &&
-		!c.AlwaysScrapeClassicHistograms
+		!c.AlwaysScrapeClassicHistograms &&
+		!c.ExtraScrapeMetrics
 }
 
 const DefaultGoGCPercentage = 75
@@ -796,6 +802,11 @@ type ScrapeConfig struct {
 	// blank in config files but must have a value if a ScrapeConfig is created
 	// programmatically.
 	MetricNameEscapingScheme string `yaml:"metric_name_escaping_scheme,omitempty"`
+	// Whether to enable additional scrape metrics.
+	// When enabled, Prometheus stores samples for scrape_timeout_seconds,
+	// scrape_sample_limit, and scrape_body_size_bytes.
+	// If not set (nil), inherits the value from the global configuration.
+	ExtraScrapeMetrics *bool `yaml:"extra_scrape_metrics,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -896,6 +907,9 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 	if c.ScrapeNativeHistograms == nil {
 		c.ScrapeNativeHistograms = globalConfig.ScrapeNativeHistograms
+	}
+	if c.ExtraScrapeMetrics == nil {
+		c.ExtraScrapeMetrics = &globalConfig.ExtraScrapeMetrics
 	}
 
 	if c.ScrapeProtocols == nil {
@@ -1043,6 +1057,11 @@ func (c *ScrapeConfig) ConvertClassicHistogramsToNHCBEnabled() bool {
 // AlwaysScrapeClassicHistogramsEnabled returns whether to always scrape classic histograms.
 func (c *ScrapeConfig) AlwaysScrapeClassicHistogramsEnabled() bool {
 	return c.AlwaysScrapeClassicHistograms != nil && *c.AlwaysScrapeClassicHistograms
+}
+
+// ExtraScrapeMetricsEnabled returns whether to enable extra scrape metrics.
+func (c *ScrapeConfig) ExtraScrapeMetricsEnabled() bool {
+	return c.ExtraScrapeMetrics != nil && *c.ExtraScrapeMetrics
 }
 
 // StorageConfig configures runtime reloadable configuration options.
