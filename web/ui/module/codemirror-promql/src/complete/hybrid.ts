@@ -166,6 +166,25 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
   } as CompletionResult;
 }
 
+const durationUnitLabels = durationTerms
+  .map((term) => term.label)
+  .filter((label): label is string => typeof label === 'string')
+  .sort((a, b) => b.length - a.length);
+
+const durationWithUnitRegexp = new RegExp(`^\\d+(?:${durationUnitLabels.map((label) => escapeRegExp(label)).join('|')})$`);
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function hasCompleteDurationUnit(state: EditorState, node: SyntaxNode): boolean {
+  if (node.from >= node.to) {
+    return false;
+  }
+  const nodeContent = state.sliceDoc(node.from, node.to);
+  return durationWithUnitRegexp.test(nodeContent);
+}
+
 // computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel calculates the start position only when the node is a LabelMatchers or a GroupingLabels
 function computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel(node: SyntaxNode, pos: number): number {
   // Here we can have two different situations:
@@ -477,12 +496,18 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         //   Duration, Duration, ⚠(NumberLiteral)
         // )
         // So we should continue to autocomplete a duration
-        result.push({ kind: ContextKind.Duration });
+        if (!hasCompleteDurationUnit(state, node)) {
+          result.push({ kind: ContextKind.Duration });
+        }
       } else {
         result.push({ kind: ContextKind.Number });
       }
       break;
     case NumberDurationLiteralInDurationContext:
+      if (!hasCompleteDurationUnit(state, node)) {
+        result.push({ kind: ContextKind.Duration });
+      }
+      break;
     case OffsetExpr:
       result.push({ kind: ContextKind.Duration });
       break;

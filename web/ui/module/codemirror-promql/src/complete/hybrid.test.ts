@@ -560,6 +560,18 @@ describe('analyzeCompletion test', () => {
       expectedContext: [{ kind: ContextKind.Duration }],
     },
     {
+      title: 'do not autocomplete duration when unit already present in matrixSelector',
+      expr: 'rate(foo[5m])',
+      pos: 10,
+      expectedContext: [],
+    },
+    {
+      title: 'do not autocomplete duration when multi char unit already present in matrixSelector',
+      expr: 'rate(foo[5ms])',
+      pos: 10,
+      expectedContext: [],
+    },
+    {
       title: 'autocomplete duration for a subQuery',
       expr: 'go[5d:5]',
       pos: 7,
@@ -1227,6 +1239,28 @@ describe('autocomplete promQL test', () => {
         from: 28,
         to: 28,
         validFor: undefined,
+      },
+    },
+    {
+      title: 'offline do not autocomplete duration when unit already present in matrixSelector',
+      expr: 'rate(foo[5m])',
+      pos: 10,
+      expectedResult: {
+        options: [],
+        from: 10,
+        to: 10,
+        validFor: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
+      title: 'offline do not autocomplete duration when multi char unit already present in matrixSelector',
+      expr: 'rate(foo[5ms])',
+      pos: 10,
+      expectedResult: {
+        options: [],
+        from: 10,
+        to: 10,
+        validFor: /^[a-zA-Z0-9_:]+$/,
       },
     },
     {
