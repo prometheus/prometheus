@@ -351,6 +351,9 @@ func main() {
 		promslogConfig: promslog.Config{},
 	}
 
+	// Enable metadata-series-cache temporarily for benchmarking.
+	cfg.scrape.EnableMetadataSeriesCache = true
+
 	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server").UsageWriter(os.Stdout)
 
 	a.Version(version.Print(appName))
@@ -598,6 +601,11 @@ func main() {
 	if err := cfg.setFeatureListOptions(logger); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing feature list: %s\n", err)
 		os.Exit(1)
+	}
+
+	// Log that metadata-series-cache is enabled by default for benchmarking.
+	if cfg.scrape.EnableMetadataSeriesCache {
+		logger.Info("TEMPORARY: Metadata series cache enabled by default for benchmarking (PR 17436)")
 	}
 
 	if agentMode && len(serverOnlyFlags) > 0 {
