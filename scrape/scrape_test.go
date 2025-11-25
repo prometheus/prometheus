@@ -51,6 +51,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/atomic"
+	"k8s.io/utils/clock"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -969,6 +970,12 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 }
 
 func newBasicScrapeLoopWithFallback(t testing.TB, ctx context.Context, scraper scraper, app func(ctx context.Context) storage.Appender, interval time.Duration, fallback string) *scrapeLoop {
+	return newBasicScrapeLoopWithClock(t, ctx, scraper, app, interval, fallback, clock.RealClock{})
+}
+
+// newBasicScrapeLoopWithClock creates a scrape loop with a custom clock for testing.
+// Use newTestFakeClock() to create a fake clock that can be controlled in tests.
+func newBasicScrapeLoopWithClock(t testing.TB, ctx context.Context, scraper scraper, app func(ctx context.Context) storage.Appender, interval time.Duration, fallback string, clk clock.WithTicker) *scrapeLoop {
 	return newScrapeLoop(ctx,
 		scraper,
 		nil, nil,
@@ -999,6 +1006,7 @@ func newBasicScrapeLoopWithFallback(t testing.TB, ctx context.Context, scraper s
 		model.UTF8Validation,
 		model.NoEscaping,
 		fallback,
+		clk,
 	)
 }
 
@@ -1054,14 +1062,15 @@ func nopMutator(l labels.Labels) labels.Labels { return l }
 
 func TestScrapeLoopStop(t *testing.T) {
 	var (
-		signal   = make(chan struct{}, 1)
-		appender = &collectResultAppender{}
-		scraper  = &testScraper{}
-		app      = func(context.Context) storage.Appender { return appender }
+		signal    = make(chan struct{}, 1)
+		appender  = &collectResultAppender{}
+		scraper   = &testScraper{}
+		app       = func(context.Context) storage.Appender { return appender }
+		fakeClock = newTestFakeClock()
 	)
 
 	// Since we're writing samples directly below we need to provide a protocol fallback.
-	sl := newBasicScrapeLoopWithFallback(t, context.Background(), scraper, app, 10*time.Millisecond, "text/plain")
+	sl := newBasicScrapeLoopWithClock(t, context.Background(), scraper, app, 10*time.Millisecond, "text/plain", fakeClock)
 
 	// Terminate loop after 2 scrapes.
 	numScrapes := 0
@@ -1081,11 +1090,24 @@ func TestScrapeLoopStop(t *testing.T) {
 		signal <- struct{}{}
 	}()
 
-	select {
-	case <-signal:
-	case <-time.After(5 * time.Second):
-		require.FailNow(t, "Scrape wasn't stopped.")
+	// Wait for scrape loop to be waiting on clock, then advance time to trigger scrapes.
+	// We need at least 2 scrapes to trigger the stop, plus additional time for shutdown.
+	for {
+		// Check if the loop has exited
+		select {
+		case <-signal:
+			goto done
+		default:
+		}
+
+		// Wait for the loop to be waiting on the clock
+		require.Eventually(t, func() bool {
+			return fakeClock.HasWaiters()
+		}, 100*time.Millisecond, 5*time.Millisecond, "Scrape loop should be waiting on clock")
+
+		fakeClock.Step(10 * time.Millisecond)
 	}
+done:
 
 	// We expected 1 actual sample for each scrape plus 5 for report samples.
 	// At least 2 scrapes were made, plus the final stale markers.
@@ -1116,6 +1138,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		scraper       = &testScraper{}
 		app           = func(context.Context) storage.Appender { return &nopAppender{} }
 		scrapeMetrics = newTestScrapeMetrics(t)
+		fakeClock     = newTestFakeClock()
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1149,6 +1172,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		model.UTF8Validation,
 		model.NoEscaping,
 		"",
+		fakeClock,
 	)
 
 	// The loop must terminate during the initial offset if the context
@@ -1160,13 +1184,15 @@ func TestScrapeLoopRun(t *testing.T) {
 		signal <- struct{}{}
 	}()
 
-	// Wait to make sure we are actually waiting on the offset.
-	time.Sleep(1 * time.Second)
+	// Wait for the scrape loop to be waiting on the offset timer.
+	require.Eventually(t, func() bool {
+		return fakeClock.HasWaiters()
+	}, 100*time.Millisecond, 5*time.Millisecond, "Scrape loop should be waiting on offset timer")
 
 	cancel()
 	select {
 	case <-signal:
-	case <-time.After(5 * time.Second):
+	case <-time.After(100 * time.Millisecond):
 		require.FailNow(t, "Cancellation during initial offset failed.")
 	case err := <-errc:
 		require.FailNow(t, "Unexpected error", "err: %s", err)
@@ -1186,6 +1212,8 @@ func TestScrapeLoopRun(t *testing.T) {
 		return nil
 	}
 
+	// For timeout testing, we use real clock since context.WithTimeout
+	// uses real time internally.
 	ctx, cancel = context.WithCancel(context.Background())
 	sl = newBasicScrapeLoop(t, ctx, scraper, app, time.Second)
 	sl.timeout = 100 * time.Millisecond
@@ -1298,6 +1326,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		model.UTF8Validation,
 		model.NoEscaping,
 		"",
+		clock.RealClock{},
 	)
 	defer cancel()
 

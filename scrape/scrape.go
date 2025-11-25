@@ -42,6 +42,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
+	"k8s.io/utils/clock"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -226,6 +227,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			sp.validationScheme,
 			sp.escapingScheme,
 			opts.fallbackScrapeProtocol,
+			options.clock(),
 		)
 	}
 	sp.metrics.targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
@@ -976,6 +978,8 @@ type scrapeLoop struct {
 	metrics *scrapeMetrics
 
 	skipOffsetting bool // For testability.
+
+	clock clock.WithTicker // Clock for time-related operations (testing).
 }
 
 // scrapeCache tracks mappings of exposed metric strings to label sets and
@@ -1269,6 +1273,7 @@ func newScrapeLoop(ctx context.Context,
 	validationScheme model.ValidationScheme,
 	escapingScheme model.EscapingScheme,
 	fallbackScrapeProtocol string,
+	clk clock.WithTicker,
 ) *scrapeLoop {
 	if l == nil {
 		l = promslog.NewNopLogger()
@@ -1325,6 +1330,7 @@ func newScrapeLoop(ctx context.Context,
 		skipOffsetting:                skipOffsetting,
 		validationScheme:              validationScheme,
 		escapingScheme:                escapingScheme,
+		clock:                         clk,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1343,7 +1349,7 @@ func (sl *scrapeLoop) setScrapeFailureLogger(l FailureLogger) {
 func (sl *scrapeLoop) run(errc chan<- error) {
 	if !sl.skipOffsetting {
 		select {
-		case <-time.After(sl.scraper.offset(sl.interval, sl.offsetSeed)):
+		case <-sl.clock.After(sl.scraper.offset(sl.interval, sl.offsetSeed)):
 			// Continue after a scraping offset.
 		case <-sl.ctx.Done():
 			close(sl.stopped)
@@ -1353,8 +1359,8 @@ func (sl *scrapeLoop) run(errc chan<- error) {
 
 	var last time.Time
 
-	alignedScrapeTime := time.Now().Round(0)
-	ticker := time.NewTicker(sl.interval)
+	alignedScrapeTime := sl.clock.Now().Round(0)
+	ticker := sl.clock.NewTicker(sl.interval)
 	defer ticker.Stop()
 
 mainLoop:
@@ -1373,7 +1379,7 @@ mainLoop:
 		// See https://github.com/prometheus/prometheus/issues/7846
 		// Calling Round ensures the time used is the wall clock, as otherwise .Sub
 		// and .Add on time.Time behave differently (see time package docs).
-		scrapeTime := time.Now().Round(0)
+		scrapeTime := sl.clock.Now().Round(0)
 		if AlignScrapeTimestamps {
 			// Tolerance is clamped to maximum 1% of the scrape interval.
 			tolerance := min(sl.interval/100, ScrapeTimestampTolerance)
@@ -1396,7 +1402,7 @@ mainLoop:
 			return
 		case <-sl.ctx.Done():
 			break mainLoop
-		case <-ticker.C:
+		case <-ticker.C():
 		}
 	}
 
@@ -1531,7 +1537,7 @@ func (sl *scrapeLoop) getForcedError() error {
 	return sl.forcedErr
 }
 
-func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, interval time.Duration) {
+func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker clock.Ticker, interval time.Duration) {
 	// Scraping has stopped. We want to write stale markers but
 	// the target may be recreated, so we wait just over 2 scrape intervals
 	// before creating them.
@@ -1549,8 +1555,8 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	select {
 	case <-sl.parentCtx.Done():
 		return
-	case <-ticker.C:
-		staleTime = time.Now()
+	case <-ticker.C():
+		staleTime = sl.clock.Now()
 	}
 
 	// Wait for when the next scrape would have been, if the target was recreated
@@ -1558,14 +1564,14 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	select {
 	case <-sl.parentCtx.Done():
 		return
-	case <-ticker.C:
+	case <-ticker.C():
 	}
 
 	// Wait for an extra 10% of the interval, just to be safe.
 	select {
 	case <-sl.parentCtx.Done():
 		return
-	case <-time.After(interval / 10):
+	case <-sl.clock.After(interval / 10):
 	}
 
 	// Check if end-of-run staleness markers have been disabled while we were waiting.

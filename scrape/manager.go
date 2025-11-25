@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"go.uber.org/atomic"
+	"k8s.io/utils/clock"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -93,8 +94,20 @@ type Options struct {
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
 
+	// Clock is used for time-related operations. If nil, the real clock is used.
+	// This is primarily useful for testing to control time progression.
+	Clock clock.WithTicker
+
 	// private option for testability.
 	skipOffsetting bool
+}
+
+// clock returns the clock from Options, or a real clock if not set.
+func (o *Options) clock() clock.WithTicker {
+	if o.Clock != nil {
+		return o.Clock
+	}
+	return clock.RealClock{}
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles

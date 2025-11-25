@@ -39,6 +39,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"k8s.io/utils/clock"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -1204,6 +1205,11 @@ func runManagers(t *testing.T, ctx context.Context, opts *Options, app storage.A
 	opts.DiscoveryReloadInterval = model.Duration(100 * time.Millisecond)
 	if app == nil {
 		app = nopAppendable{}
+	}
+
+	// Tests can pass a fake clock via opts.Clock to control time.
+	if opts.Clock == nil {
+		opts.Clock = clock.RealClock{}
 	}
 
 	reg := prometheus.NewRegistry()

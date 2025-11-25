@@ -22,10 +22,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
+	testingclock "k8s.io/utils/clock/testing"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -270,4 +272,10 @@ func protoMarshalDelimited(t *testing.T, mf *dto.MetricFamily) []byte {
 	buf.Write(varintBuf[:varintLength])
 	buf.Write(protoBuf)
 	return buf.Bytes()
+}
+
+// newTestFakeClock creates a new fake clock for testing.
+// The fake clock starts at the current time and can be advanced manually.
+func newTestFakeClock() *testingclock.FakeClock {
+	return testingclock.NewFakeClock(time.Now())
 }
