@@ -166,17 +166,14 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
   } as CompletionResult;
 }
 
-const durationUnitLabels = durationTerms
-  .map((term) => term.label)
-  .filter((label): label is string => typeof label === 'string')
-  .sort((a, b) => b.length - a.length);
-
-const durationWithUnitRegexp = new RegExp(`^\\d+(?:${durationUnitLabels.map((label) => escapeRegExp(label)).join('|')})$`);
+// Matches complete duration with units (e.g., 5m, 30s, 1h, 500ms)
+const durationWithUnitRegexp = new RegExp(`^\\d+(?:${durationTerms.map((term) => escapeRegExp(term.label)).join('|')})$`);
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Determines if a duration already has a complete time unit to prevent autocomplete insertion (issue #15452)
 function hasCompleteDurationUnit(state: EditorState, node: SyntaxNode): boolean {
   if (node.from >= node.to) {
     return false;
