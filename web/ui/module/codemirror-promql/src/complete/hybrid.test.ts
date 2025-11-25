@@ -667,12 +667,11 @@ describe('durationWithUnitRegexp test', () => {
     ];
     testCases.forEach(({ input, expected }) => {
       expect(durationWithUnitRegexp.test(input)).toBe(expected);
-    });        
+    });
   });
 
   it('should not match durations without units or partial units', () => {
     const testCases = ['5', '30', '100', '5m5', 'm', 'd'];
-
     testCases.forEach((input) => {
       expect(durationWithUnitRegexp.test(input)).toBe(false);
     });

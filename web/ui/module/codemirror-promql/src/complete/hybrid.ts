@@ -175,15 +175,13 @@ declare global {
 }
 
 if (!RegExp.escape) {
-  RegExp.escape = function(s: string): string {
+  RegExp.escape = function (s: string): string {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   };
 }
 
 // Matches complete PromQL durations, including compound units (e.g., 5m, 1d2h, 1h30m, etc.)
-export const durationWithUnitRegexp = new RegExp(
-  `^(\\d+(${durationTerms.map(term => RegExp.escape!(term.label)).join('|')}))+$`
-);
+export const durationWithUnitRegexp = new RegExp(`^(\\d+(${durationTerms.map((term) => RegExp.escape!(term.label)).join('|')}))+$`);
 
 // Determines if a duration already has a complete time unit to prevent autocomplete insertion (issue #15452)
 function hasCompleteDurationUnit(state: EditorState, node: SyntaxNode): boolean {
