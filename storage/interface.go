@@ -264,8 +264,9 @@ type AppendOptions struct {
 //
 // Operations on the Appender interface are not goroutine-safe.
 //
-// The type of samples (float64, histogram, etc) appended for a given series must remain same within an Appender.
-// The behaviour is undefined if samples of different types are appended to the same series in a single Commit().
+// The order of samples appended via the Appender is preserved within each
+// series. I.e. samples are not reordered per timestamp, or by float/histogram
+// type.
 type Appender interface {
 	// Append adds a sample pair for the given series.
 	// An optional series reference can be provided to accelerate calls.
