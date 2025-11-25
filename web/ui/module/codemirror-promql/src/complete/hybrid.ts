@@ -167,7 +167,7 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
 }
 
 // Matches complete duration with units (e.g., 5m, 30s, 1h, 500ms)
-const durationWithUnitRegexp = new RegExp(`^\\d+(?:${durationTerms.map((term) => escapeRegExp(term.label)).join('|')})$`);
+export const durationWithUnitRegexp = new RegExp(`^\\d+(?:${durationTerms.map((term) => escapeRegExp(term.label)).join('|')})$`);
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
