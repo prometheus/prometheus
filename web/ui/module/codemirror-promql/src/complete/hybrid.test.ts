@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { analyzeCompletion, computeStartCompletePosition, ContextKind } from './hybrid';
+import { analyzeCompletion, computeStartCompletePosition, ContextKind, durationWithUnitRegexp } from './hybrid';
 import { createEditorState, mockedMetricsTerms, mockPrometheusServer } from '../test/utils-test';
 import { Completion, CompletionContext } from '@codemirror/autocomplete';
 import {
@@ -638,6 +638,32 @@ describe('analyzeCompletion test', () => {
       const node = syntaxTree(state).resolve(value.pos, -1);
       const result = analyzeCompletion(state, node, value.pos);
       expect(value.expectedContext).toEqual(result);
+    });
+  });
+});
+
+describe('durationWithUnitRegexp test', () => {
+  it('should match complete durations with units', () => {
+    const testCases = [
+      { input: '5m', expected: true },
+      { input: '30s', expected: true },
+      { input: '1h', expected: true },
+      { input: '500ms', expected: true },
+      { input: '2d', expected: true },
+      { input: '1w', expected: true },
+      { input: '1y', expected: true },
+    ];
+
+    testCases.forEach(({ input, expected }) => {
+      expect(durationWithUnitRegexp.test(input)).toBe(expected);
+    });
+  });
+
+  it('should not match durations without units or partial units', () => {
+    const testCases = ['5', '30', '100', '5m5', 'm', 'd'];
+
+    testCases.forEach((input) => {
+      expect(durationWithUnitRegexp.test(input)).toBe(false);
     });
   });
 });
