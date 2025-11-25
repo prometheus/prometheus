@@ -652,11 +652,22 @@ describe('durationWithUnitRegexp test', () => {
       { input: '2d', expected: true },
       { input: '1w', expected: true },
       { input: '1y', expected: true },
+      { input: '1d2h', expected: true },
+      { input: '2h30m', expected: true },
+      { input: '1h2m3s', expected: true },
+      { input: '250ms2s', expected: true },
+      { input: '2h3m4s5ms', expected: true },
+      { input: '5', expected: false },
+      { input: '5m5', expected: false },
+      { input: 'm', expected: false },
+      { input: 'd', expected: false },
+      { input: '', expected: false },
+      { input: '1hms', expected: false },
+      { input: '2x', expected: false },
     ];
-
     testCases.forEach(({ input, expected }) => {
       expect(durationWithUnitRegexp.test(input)).toBe(expected);
-    });
+    });        
   });
 
   it('should not match durations without units or partial units', () => {
