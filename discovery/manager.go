@@ -280,7 +280,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 			// Remove obsolete subs' targets.
 			if _, ok := prov.newSubs[s]; !ok {
 				delete(m.targets, poolKey{s, prov.name})
-				m.metrics.DiscoveredTargets.DeleteLabelValues(m.name, s)
+				m.metrics.DiscoveredTargets.DeleteLabelValues(s)
 
 				// TODO - okay to calculate this again down here? better method?
 				// Clean up refresh metrics again for subs that are being removed from a provider that is still running.
