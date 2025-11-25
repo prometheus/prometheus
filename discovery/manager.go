@@ -254,8 +254,9 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 			prov.mu.RUnlock()
 
 			// Clear up refresh metrics associated with this cancelled provider (sub means scrape job name).
+			m.targetsMtx.Lock()
 			for s := range prov.subs {
-				// Also clean up discovered targets metric.
+				// Also clean up discovered targets metric. targetsMtx lock needed for safe access to m.targets.
 				delete(m.targets, poolKey{s, prov.name})
 				m.metrics.DiscoveredTargets.DeleteLabelValues(s)
 
@@ -265,6 +266,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 					}
 				}
 			}
+			m.targetsMtx.Unlock()
 			continue
 		}
 		prov.mu.RUnlock()
@@ -282,7 +284,6 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 				delete(m.targets, poolKey{s, prov.name})
 				m.metrics.DiscoveredTargets.DeleteLabelValues(s)
 
-				// TODO - okay to calculate this again down here? better method?
 				// Clean up refresh metrics again for subs that are being removed from a provider that is still running.
 				if m.refreshMetrics != nil {
 					cfg, ok := prov.config.(Config)
