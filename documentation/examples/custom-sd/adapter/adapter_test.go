@@ -235,6 +235,6 @@ func TestWriteOutput(t *testing.T) {
 	sdMetrics, err := discovery.RegisterSDMetrics(reg, refreshMetrics)
 	require.NoError(t, err)
 
-	adapter := NewAdapter(ctx, tmpfile.Name(), "test_sd", nil, nil, sdMetrics, reg)
+	adapter := NewAdapter(ctx, tmpfile.Name(), "test_sd", nil, nil, sdMetrics, refreshMetrics, reg)
 	require.NoError(t, adapter.writeOutput())
 }

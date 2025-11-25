@@ -281,7 +281,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	sdAdapter := adapter.NewAdapter(ctx, *outputFile, "exampleSD", disc, logger, metrics, reg)
+	sdAdapter := adapter.NewAdapter(ctx, *outputFile, "exampleSD", disc, logger, metrics, refreshMetrics, reg)
 	sdAdapter.Run()
 
 	<-ctx.Done()
