@@ -143,6 +143,7 @@ var (
 	NativeHistogramNotGaugeWarning          = fmt.Errorf("%w: this native histogram metric is not a gauge:", PromQLWarning)
 	MixedExponentialCustomHistogramsWarning = fmt.Errorf("%w: vector contains a mix of histograms with exponential and custom buckets schemas for metric name", PromQLWarning)
 	IncompatibleBucketLayoutInBinOpWarning  = fmt.Errorf("%w: incompatible bucket layout encountered for binary operator", PromQLWarning)
+	SortInRangeQueryWarning                 = fmt.Errorf("%w: sort is ineffective for range queries since results are always ordered by labels", PromQLWarning)
 	
 	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
 	PossibleNonCounterLabelInfo             = fmt.Errorf("%w: metric might not be a counter, __type__ label is not set to %q or %q", PromQLInfo, model.MetricTypeCounter, model.MetricTypeHistogram)
@@ -155,7 +156,6 @@ var (
 	NativeHistogramFractionNaNsInfo         = fmt.Errorf("%w: input to histogram_fraction has NaN observations, which are excluded from all fractions", PromQLInfo)
 	HistogramCounterResetCollisionWarning   = fmt.Errorf("%w: conflicting counter resets during histogram", PromQLWarning)
 	MismatchedCustomBucketsHistogramsInfo   = fmt.Errorf("%w: mismatched custom buckets were reconciled during", PromQLInfo)
-	SortInRangeQueryWarning                 = fmt.Errorf("%w: sort is ineffective for range queries since results are always ordered by labels", PromQLWarning)
 )
 
 type annoErr struct {
