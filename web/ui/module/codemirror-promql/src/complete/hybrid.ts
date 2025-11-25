@@ -215,6 +215,19 @@ export function computeStartCompletePosition(state: EditorState, node: SyntaxNod
   return start;
 }
 
+function computeEndCompleteMetricPosition(state: EditorState, pos: number): number {
+  const metricCharRegex = /[a-zA-Z0-9_:]/;
+  let end = pos;
+  while (end < state.doc.length) {
+    const char = state.doc.sliceString(end, end + 1);
+    if (!char || !metricCharRegex.test(char)) {
+      break;
+    }
+    end++;
+  }
+  return end;
+}
+
 function isAggregatorWithParam(functionCallBody: SyntaxNode): boolean {
   const parent = functionCallBody.parent;
   if (parent !== null && parent.firstChild?.type.id === AggregateOp) {
@@ -644,7 +657,10 @@ export class HybridComplete implements CompleteStrategy {
       }
     }
     return asyncResult.then((result) => {
-      return arrayToCompletionResult(result, computeStartCompletePosition(state, tree, pos), pos, completeSnippet, span);
+      const from = computeStartCompletePosition(state, tree, pos);
+      const hasMetricContext = contexts.some((ctx) => ctx.kind === ContextKind.MetricName);
+      const to = hasMetricContext ? computeEndCompleteMetricPosition(state, pos) : pos;
+      return arrayToCompletionResult(result, from, to, completeSnippet, span);
     });
   }
 
