@@ -15,12 +15,13 @@ package promql
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
 func TestHistogramRateCounterResetHint(t *testing.T) {
