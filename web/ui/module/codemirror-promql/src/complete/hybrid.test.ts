@@ -1297,6 +1297,18 @@ describe('autocomplete promQL test', () => {
       },
     },
     {
+      title: 'online autocomplete replaces full metric when cursor mid-identifier',
+      expr: 'alertmanager_config_last__timestamp_seconds',
+      pos: 25,
+      conf: { remote: { url: 'http://localhost:8080' } },
+      expectedResult: {
+        options: ([] as Completion[]).concat(mockedMetricsTerms, functionIdentifierTerms, aggregateOpTerms, numberTerms, snippets),
+        from: 0,
+        to: 43,
+        validFor: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
       title: 'online autocomplete of label name corresponding to a metric',
       expr: 'alertmanager_alerts{}',
       pos: 20,
