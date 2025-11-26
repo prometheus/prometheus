@@ -668,9 +668,7 @@ func main() {
 	}
 	if cfgFile.StorageConfig.TSDBConfig != nil {
 		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
-		cfg.tsdb.StaleSeriesCompactionInterval = time.Duration(cfgFile.StorageConfig.TSDBConfig.StaleSeriesCompactionInterval)
 		cfg.tsdb.StaleSeriesCompactionThreshold = cfgFile.StorageConfig.TSDBConfig.StaleSeriesCompactionThreshold
-		cfg.tsdb.StaleSeriesImmediateCompactionThreshold = cfgFile.StorageConfig.TSDBConfig.StaleSeriesImmediateCompactionThreshold
 	}
 
 	// Set Go runtime parameters before we get too far into initialization.
@@ -1860,56 +1858,52 @@ func (rm *readyScrapeManager) Get() (*scrape.Manager, error) {
 // tsdbOptions is tsdb.Option version with defined units.
 // This is required as tsdb.Option fields are unit agnostic (time).
 type tsdbOptions struct {
-	WALSegmentSize                          units.Base2Bytes
-	MaxBlockChunkSegmentSize                units.Base2Bytes
-	RetentionDuration                       model.Duration
-	MaxBytes                                units.Base2Bytes
-	NoLockfile                              bool
-	WALCompressionType                      compression.Type
-	HeadChunksWriteQueueSize                int
-	SamplesPerChunk                         int
-	StripeSize                              int
-	MinBlockDuration                        model.Duration
-	MaxBlockDuration                        model.Duration
-	OutOfOrderTimeWindow                    int64
-	EnableExemplarStorage                   bool
-	MaxExemplars                            int64
-	EnableMemorySnapshotOnShutdown          bool
-	EnableNativeHistograms                  bool
-	EnableDelayedCompaction                 bool
-	CompactionDelayMaxPercent               int
-	EnableOverlappingCompaction             bool
-	UseUncachedIO                           bool
-	StaleSeriesCompactionInterval           time.Duration
-	StaleSeriesCompactionThreshold          float64
-	StaleSeriesImmediateCompactionThreshold float64
+	WALSegmentSize                 units.Base2Bytes
+	MaxBlockChunkSegmentSize       units.Base2Bytes
+	RetentionDuration              model.Duration
+	MaxBytes                       units.Base2Bytes
+	NoLockfile                     bool
+	WALCompressionType             compression.Type
+	HeadChunksWriteQueueSize       int
+	SamplesPerChunk                int
+	StripeSize                     int
+	MinBlockDuration               model.Duration
+	MaxBlockDuration               model.Duration
+	OutOfOrderTimeWindow           int64
+	EnableExemplarStorage          bool
+	MaxExemplars                   int64
+	EnableMemorySnapshotOnShutdown bool
+	EnableNativeHistograms         bool
+	EnableDelayedCompaction        bool
+	CompactionDelayMaxPercent      int
+	EnableOverlappingCompaction    bool
+	UseUncachedIO                  bool
+	StaleSeriesCompactionThreshold float64
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 	return tsdb.Options{
-		WALSegmentSize:                          int(opts.WALSegmentSize),
-		MaxBlockChunkSegmentSize:                int64(opts.MaxBlockChunkSegmentSize),
-		RetentionDuration:                       int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
-		MaxBytes:                                int64(opts.MaxBytes),
-		NoLockfile:                              opts.NoLockfile,
-		WALCompression:                          opts.WALCompressionType,
-		HeadChunksWriteQueueSize:                opts.HeadChunksWriteQueueSize,
-		SamplesPerChunk:                         opts.SamplesPerChunk,
-		StripeSize:                              opts.StripeSize,
-		MinBlockDuration:                        int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
-		MaxBlockDuration:                        int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
-		EnableExemplarStorage:                   opts.EnableExemplarStorage,
-		MaxExemplars:                            opts.MaxExemplars,
-		EnableMemorySnapshotOnShutdown:          opts.EnableMemorySnapshotOnShutdown,
-		EnableNativeHistograms:                  opts.EnableNativeHistograms,
-		OutOfOrderTimeWindow:                    opts.OutOfOrderTimeWindow,
-		EnableDelayedCompaction:                 opts.EnableDelayedCompaction,
-		CompactionDelayMaxPercent:               opts.CompactionDelayMaxPercent,
-		EnableOverlappingCompaction:             opts.EnableOverlappingCompaction,
-		UseUncachedIO:                           opts.UseUncachedIO,
-		StaleSeriesCompactionInterval:           opts.StaleSeriesCompactionInterval,
-		StaleSeriesCompactionThreshold:          opts.StaleSeriesCompactionThreshold,
-		StaleSeriesImmediateCompactionThreshold: opts.StaleSeriesImmediateCompactionThreshold,
+		WALSegmentSize:                 int(opts.WALSegmentSize),
+		MaxBlockChunkSegmentSize:       int64(opts.MaxBlockChunkSegmentSize),
+		RetentionDuration:              int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
+		MaxBytes:                       int64(opts.MaxBytes),
+		NoLockfile:                     opts.NoLockfile,
+		WALCompression:                 opts.WALCompressionType,
+		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
+		SamplesPerChunk:                opts.SamplesPerChunk,
+		StripeSize:                     opts.StripeSize,
+		MinBlockDuration:               int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
+		MaxBlockDuration:               int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
+		EnableExemplarStorage:          opts.EnableExemplarStorage,
+		MaxExemplars:                   opts.MaxExemplars,
+		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
+		EnableNativeHistograms:         opts.EnableNativeHistograms,
+		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
+		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
+		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
+		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
+		UseUncachedIO:                  opts.UseUncachedIO,
+		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 	}
 }
 

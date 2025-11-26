@@ -1022,18 +1022,9 @@ type TSDBConfig struct {
 	// This should not be used directly and must be converted into OutOfOrderTimeWindow.
 	OutOfOrderTimeWindowFlag model.Duration `yaml:"out_of_order_time_window,omitempty"`
 
-	// StaleSeriesCompactionInterval tells at what interval to attempt stale series compaction
-	// if the number of stale series crosses the given threshold.
-	StaleSeriesCompactionInterval model.Duration `yaml:"stale_series_compaction_interval,omitempty"`
-
 	// StaleSeriesCompactionThreshold is a number between 0.0-1.0 indicating the % of stale series in
-	// the in-memory Head block. If the % of stale series crosses this threshold, stale series
-	// compaction will be run in the next stale series compaction interval.
+	// the in-memory Head block. If the % of stale series crosses this threshold, stale series compaction is run immediately.
 	StaleSeriesCompactionThreshold float64 `yaml:"stale_series_compaction_threshold,omitempty"`
-
-	// StaleSeriesImmediateCompactionThreshold is a number between 0.0-1.0 indicating the % of stale series in
-	// the in-memory Head block. If the % of stale series crosses this threshold, stale series is run immediately.
-	StaleSeriesImmediateCompactionThreshold float64 `yaml:"stale_series_immediate_compaction_threshold,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
