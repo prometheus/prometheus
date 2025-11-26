@@ -25,7 +25,10 @@ import (
 
 const (
 	// MetricName is a special label name that represent a metric name.
-	// Deprecated: Use schema.Metadata structure and its methods.
+	//
+	// Deprecated: Instead, consider using schema.Metadata structure and its methods for consistent metadata behaviour with the newly added __type__ and __unit__ labels. Alternatively use github.com/prometheus/common/model.MetricNameLabel for the direct replacement.
+	//
+	// labels package is providing label transport, agnostic to semantic meaning of each label.
 	MetricName = "__name__"
 
 	AlertName   = "alertname"
@@ -43,6 +46,15 @@ type Label struct {
 }
 
 func (ls Labels) String() string {
+	return ls.stringImpl(true)
+}
+
+// StringNoSpace is like String but does not add a space after commas.
+func (ls Labels) StringNoSpace() string {
+	return ls.stringImpl(false)
+}
+
+func (ls Labels) stringImpl(addSpace bool) string {
 	var bytea [1024]byte // On stack to avoid memory allocation while building the output.
 	b := bytes.NewBuffer(bytea[:0])
 
@@ -51,7 +63,9 @@ func (ls Labels) String() string {
 	ls.Range(func(l Label) {
 		if i > 0 {
 			b.WriteByte(',')
-			b.WriteByte(' ')
+			if addSpace {
+				b.WriteByte(' ')
+			}
 		}
 		if !model.LegacyValidation.IsValidLabelName(l.Name) {
 			b.Write(strconv.AppendQuote(b.AvailableBuffer(), l.Name))
@@ -84,12 +98,12 @@ func (ls *Labels) UnmarshalJSON(b []byte) error {
 }
 
 // MarshalYAML implements yaml.Marshaler.
-func (ls Labels) MarshalYAML() (interface{}, error) {
+func (ls Labels) MarshalYAML() (any, error) {
 	return ls.Map(), nil
 }
 
 // UnmarshalYAML implements yaml.Unmarshaler.
-func (ls *Labels) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (ls *Labels) UnmarshalYAML(unmarshal func(any) error) error {
 	var m map[string]string
 
 	if err := unmarshal(&m); err != nil {

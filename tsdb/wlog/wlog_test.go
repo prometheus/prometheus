@@ -226,7 +226,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		w, err := NewSize(logger, nil, dir, segmentSize, compression.None)
 		require.NoError(t, err)
 
-		for i := 0; i < 18; i++ {
+		for range 18 {
 			buf := make([]byte, recordSize)
 			_, err := rand.Read(buf)
 			require.NoError(t, err)
@@ -304,7 +304,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		require.Equal(t, 1, w.segment.Index()) // We corrupted segment 0.
 		require.Equal(t, 0, w.donePages)
 
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			buf := make([]byte, recordSize)
 			_, err := rand.Read(buf)
 			require.NoError(t, err)
@@ -356,7 +356,7 @@ func TestSegmentMetric(t *testing.T) {
 	initialSegment := client_testutil.ToFloat64(w.metrics.currentSegment)
 
 	// Write 3 records, each of which is half the segment size, meaning we should rotate to the next segment.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		buf := make([]byte, recordSize)
 		_, err := rand.Read(buf)
 		require.NoError(t, err)
@@ -383,7 +383,7 @@ func TestCompression(t *testing.T) {
 		require.NoError(t, err)
 
 		buf := make([]byte, recordSize)
-		for i := 0; i < records; i++ {
+		for range records {
 			require.NoError(t, w.Log(buf))
 		}
 		require.NoError(t, w.Close())
@@ -524,7 +524,7 @@ func BenchmarkWAL_LogBatched(b *testing.B) {
 			var recs [][]byte
 			b.SetBytes(2048)
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				recs = append(recs, buf[:])
 				if len(recs) < 1000 {
 					continue
@@ -553,7 +553,7 @@ func BenchmarkWAL_Log(b *testing.B) {
 			var buf [2048]byte
 			b.SetBytes(2048)
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				err := w.Log(buf[:])
 				require.NoError(b, err)
 			}
@@ -568,7 +568,7 @@ func BenchmarkWAL_Log(b *testing.B) {
 func TestUnregisterMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		wl, err := New(promslog.NewNopLogger(), reg, t.TempDir(), compression.None)
 		require.NoError(t, err)
 		require.NoError(t, wl.Close())

@@ -28,6 +28,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -38,16 +39,19 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 const defaultFlushDeadline = 1 * time.Minute
@@ -82,57 +86,57 @@ func TestBasicContentNegotiation(t *testing.T) {
 
 	for _, tc := range []struct {
 		name             string
-		senderProtoMsg   config.RemoteWriteProtoMsg
-		receiverProtoMsg config.RemoteWriteProtoMsg
+		senderProtoMsg   remoteapi.WriteMessageType
+		receiverProtoMsg remoteapi.WriteMessageType
 		injectErrs       []error
 		expectFail       bool
 	}{
 		{
 			name:           "v2 happy path",
-			senderProtoMsg: config.RemoteWriteProtoMsgV2, receiverProtoMsg: config.RemoteWriteProtoMsgV2,
+			senderProtoMsg: remoteapi.WriteV2MessageType, receiverProtoMsg: remoteapi.WriteV2MessageType,
 			injectErrs: []error{nil},
 		},
 		{
 			name:           "v1 happy path",
-			senderProtoMsg: config.RemoteWriteProtoMsgV1, receiverProtoMsg: config.RemoteWriteProtoMsgV1,
+			senderProtoMsg: remoteapi.WriteV1MessageType, receiverProtoMsg: remoteapi.WriteV1MessageType,
 			injectErrs: []error{nil},
 		},
 		// Test a case where the v1 request has a temporary delay but goes through on retry.
 		{
 			name:           "v1 happy path with one 5xx retry",
-			senderProtoMsg: config.RemoteWriteProtoMsgV1, receiverProtoMsg: config.RemoteWriteProtoMsgV1,
+			senderProtoMsg: remoteapi.WriteV1MessageType, receiverProtoMsg: remoteapi.WriteV1MessageType,
 			injectErrs: []error{RecoverableError{errors.New("pretend 500"), 1}, nil},
 		},
 		// Repeat the above test but with v2. The request has a temporary delay but goes through on retry.
 		{
 			name:           "v2 happy path with one 5xx retry",
-			senderProtoMsg: config.RemoteWriteProtoMsgV2, receiverProtoMsg: config.RemoteWriteProtoMsgV2,
+			senderProtoMsg: remoteapi.WriteV2MessageType, receiverProtoMsg: remoteapi.WriteV2MessageType,
 			injectErrs: []error{RecoverableError{errors.New("pretend 500"), 1}, nil},
 		},
 		// A few error cases of v2 talking to v1.
 		{
 			name:           "v2 talks to v1 that gives 400 or 415",
-			senderProtoMsg: config.RemoteWriteProtoMsgV2, receiverProtoMsg: config.RemoteWriteProtoMsgV1,
+			senderProtoMsg: remoteapi.WriteV2MessageType, receiverProtoMsg: remoteapi.WriteV1MessageType,
 			injectErrs: []error{errors.New("pretend unrecoverable err")},
 			expectFail: true,
 		},
 		{
 			name:           "v2 talks to (broken) v1 that tries to unmarshal v2 payload with v1 proto",
-			senderProtoMsg: config.RemoteWriteProtoMsgV2, receiverProtoMsg: config.RemoteWriteProtoMsgV1,
+			senderProtoMsg: remoteapi.WriteV2MessageType, receiverProtoMsg: remoteapi.WriteV1MessageType,
 			injectErrs: []error{nil},
 			expectFail: true, // We detect this thanks to https://github.com/prometheus/prometheus/issues/14359
 		},
 		// Opposite, v1 talking to v2 only server.
 		{
 			name:           "v1 talks to v2 that gives 400 or 415",
-			senderProtoMsg: config.RemoteWriteProtoMsgV1, receiverProtoMsg: config.RemoteWriteProtoMsgV2,
+			senderProtoMsg: remoteapi.WriteV1MessageType, receiverProtoMsg: remoteapi.WriteV2MessageType,
 			injectErrs: []error{errors.New("pretend unrecoverable err")},
 			expectFail: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 			defer s.Close()
 
 			var (
@@ -218,7 +222,7 @@ func TestSampleDelivery(t *testing.T) {
 		},
 	}
 	for _, tc := range []struct {
-		protoMsg config.RemoteWriteProtoMsg
+		protoMsg remoteapi.WriteMessageType
 
 		name            string
 		samples         bool
@@ -226,22 +230,21 @@ func TestSampleDelivery(t *testing.T) {
 		histograms      bool
 		floatHistograms bool
 	}{
-		{protoMsg: config.RemoteWriteProtoMsgV1, samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
-		{protoMsg: config.RemoteWriteProtoMsgV1, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
-		{protoMsg: config.RemoteWriteProtoMsgV1, samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
-		{protoMsg: config.RemoteWriteProtoMsgV1, samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
-		{protoMsg: config.RemoteWriteProtoMsgV1, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
+		{protoMsg: remoteapi.WriteV1MessageType, samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
+		{protoMsg: remoteapi.WriteV1MessageType, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
+		{protoMsg: remoteapi.WriteV1MessageType, samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
+		{protoMsg: remoteapi.WriteV1MessageType, samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
+		{protoMsg: remoteapi.WriteV1MessageType, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
 
-		// TODO(alexg): update some portion of this test to check for the 2.0 metadata
-		{protoMsg: config.RemoteWriteProtoMsgV2, samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
-		{protoMsg: config.RemoteWriteProtoMsgV2, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
-		{protoMsg: config.RemoteWriteProtoMsgV2, samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
-		{protoMsg: config.RemoteWriteProtoMsgV2, samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
-		{protoMsg: config.RemoteWriteProtoMsgV2, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
+		{protoMsg: remoteapi.WriteV2MessageType, samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
+		{protoMsg: remoteapi.WriteV2MessageType, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
+		{protoMsg: remoteapi.WriteV2MessageType, samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
+		{protoMsg: remoteapi.WriteV2MessageType, samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
+		{protoMsg: remoteapi.WriteV2MessageType, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
 	} {
 		t.Run(fmt.Sprintf("%s-%s", tc.protoMsg, tc.name), func(t *testing.T) {
 			dir := t.TempDir()
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 			defer s.Close()
 
 			var (
@@ -289,7 +292,7 @@ func TestSampleDelivery(t *testing.T) {
 			c.expectExemplars(exemplars[:len(exemplars)/2], series)
 			c.expectHistograms(histograms[:len(histograms)/2], series)
 			c.expectFloatHistograms(floatHistograms[:len(floatHistograms)/2], series)
-			if tc.protoMsg == config.RemoteWriteProtoMsgV2 && len(metadata) > 0 {
+			if tc.protoMsg == remoteapi.WriteV2MessageType && len(metadata) > 0 {
 				c.expectMetadataForBatch(metadata, series, samples[:len(samples)/2], exemplars[:len(exemplars)/2], histograms[:len(histograms)/2], floatHistograms[:len(floatHistograms)/2])
 			}
 			qm.Append(samples[:len(samples)/2])
@@ -303,6 +306,9 @@ func TestSampleDelivery(t *testing.T) {
 			c.expectExemplars(exemplars[len(exemplars)/2:], series)
 			c.expectHistograms(histograms[len(histograms)/2:], series)
 			c.expectFloatHistograms(floatHistograms[len(floatHistograms)/2:], series)
+			if tc.protoMsg == remoteapi.WriteV2MessageType && len(metadata) > 0 {
+				c.expectMetadataForBatch(metadata, series, samples[len(samples)/2:], exemplars[len(exemplars)/2:], histograms[len(histograms)/2:], floatHistograms[len(floatHistograms)/2:])
+			}
 			qm.Append(samples[len(samples)/2:])
 			qm.AppendExemplars(exemplars[len(exemplars)/2:])
 			qm.AppendHistograms(histograms[len(histograms)/2:])
@@ -312,17 +318,17 @@ func TestSampleDelivery(t *testing.T) {
 	}
 }
 
-func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, protoMsg config.RemoteWriteProtoMsg) (*TestWriteClient, *QueueManager) {
+func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, protoMsg remoteapi.WriteMessageType) (*TestWriteClient, *QueueManager) {
 	c := NewTestWriteClient(protoMsg)
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
 	return c, newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg)
 }
 
-func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg config.RemoteWriteProtoMsg) *QueueManager {
+func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType) *QueueManager {
 	dir := t.TempDir()
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, protoMsg)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg)
 
 	return m
 }
@@ -335,13 +341,13 @@ func testDefaultQueueConfig() config.QueueConfig {
 }
 
 func TestMetadataDelivery(t *testing.T) {
-	c, m := newTestClientAndQueueManager(t, defaultFlushDeadline, config.RemoteWriteProtoMsgV1)
+	c, m := newTestClientAndQueueManager(t, defaultFlushDeadline, remoteapi.WriteV1MessageType)
 	m.Start()
 	defer m.Stop()
 
 	metadata := []scrape.MetricMetadata{}
 	numMetadata := 1532
-	for i := 0; i < numMetadata; i++ {
+	for i := range numMetadata {
 		metadata = append(metadata, scrape.MetricMetadata{
 			MetricFamily: "prometheus_remote_storage_sent_metadata_bytes_" + strconv.Itoa(i),
 			Type:         model.MetricTypeCounter,
@@ -363,7 +369,7 @@ func TestMetadataDelivery(t *testing.T) {
 
 func TestWALMetadataDelivery(t *testing.T) {
 	dir := t.TempDir()
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 	defer s.Close()
 
 	cfg := config.DefaultQueueConfig
@@ -372,7 +378,7 @@ func TestWALMetadataDelivery(t *testing.T) {
 
 	writeConfig := baseRemoteWriteConfig("http://test-storage.com")
 	writeConfig.QueueConfig = cfg
-	writeConfig.ProtobufMessage = config.RemoteWriteProtoMsgV2
+	writeConfig.ProtobufMessage = remoteapi.WriteV2MessageType
 
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
@@ -390,7 +396,7 @@ func TestWALMetadataDelivery(t *testing.T) {
 	require.NoError(t, err)
 	qm := s.rws.queues[hash]
 
-	c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
+	c := NewTestWriteClient(remoteapi.WriteV1MessageType)
 	qm.SetClient(c)
 
 	qm.StoreSeries(series, 0)
@@ -404,7 +410,7 @@ func TestWALMetadataDelivery(t *testing.T) {
 
 func TestSampleDeliveryTimeout(t *testing.T) {
 	t.Parallel()
-	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			// Let's send one less sample than batch size, and wait the timeout duration
 			n := 9
@@ -433,13 +439,13 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 
 func TestSampleDeliveryOrder(t *testing.T) {
 	t.Parallel()
-	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			ts := 10
 			n := config.DefaultQueueConfig.MaxSamplesPerSend * ts
 			samples := make([]record.RefSample, 0, n)
 			series := make([]record.RefSeries, 0, n)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				name := fmt.Sprintf("test_metric_%d", i%ts)
 				samples = append(samples, record.RefSample{
 					Ref: chunks.HeadSeriesRef(i),
@@ -466,64 +472,82 @@ func TestSampleDeliveryOrder(t *testing.T) {
 }
 
 func TestShutdown(t *testing.T) {
-	// Not t.Parallel() because the test became flaky; see https://github.com/prometheus/prometheus/issues/17045
-	deadline := 1 * time.Second
-	c := NewTestBlockedWriteClient()
+	t.Parallel()
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				deadline := 15 * time.Second
+				c := NewTestBlockedWriteClient()
 
-	cfg := config.DefaultQueueConfig
-	mcfg := config.DefaultMetadataConfig
+				cfg := config.DefaultQueueConfig
+				mcfg := config.DefaultMetadataConfig
 
-	m := newTestQueueManager(t, cfg, mcfg, deadline, c, config.RemoteWriteProtoMsgV1)
-	n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
-	samples, series := createTimeseries(n, n)
-	m.StoreSeries(series, 0)
-	m.Start()
+				m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg)
+				n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
+				samples, series := createTimeseries(n, n)
+				m.StoreSeries(series, 0)
+				m.Start()
 
-	// Append blocks to guarantee delivery, so we do it in the background.
-	go func() {
-		m.Append(samples)
-	}()
-	time.Sleep(100 * time.Millisecond)
+				// Append blocks to guarantee delivery, so we do it in the background.
+				go func() {
+					m.Append(samples)
+				}()
+				synctest.Wait()
 
-	// Test to ensure that Stop doesn't block.
-	start := time.Now()
-	m.Stop()
-	// The samples will never be delivered, so duration should
-	// be at least equal to deadline, otherwise the flush deadline
-	// was not respected.
-	duration := time.Since(start)
-	if duration > deadline+(deadline/10) {
-		t.Errorf("Took too long to shutdown: %s > %s", duration, deadline)
-	}
-	if duration < deadline {
-		t.Errorf("Shutdown occurred before flush deadline: %s < %s", duration, deadline)
+				// Test to ensure that Stop doesn't block.
+				start := time.Now()
+				m.Stop()
+				// The samples will never be delivered, so duration should
+				// be at least equal to deadline, otherwise the flush deadline
+				// was not respected.
+				require.Equal(t, time.Since(start), deadline)
+			})
+		})
 	}
 }
 
 func TestSeriesReset(t *testing.T) {
-	c := NewTestBlockedWriteClient()
-	deadline := 5 * time.Second
-	numSegments := 4
-	numSeries := 25
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			c := NewTestBlockedWriteClient()
+			deadline := 5 * time.Second
+			numSegments := 4
+			numSeries := 25
 
-	cfg := config.DefaultQueueConfig
-	mcfg := config.DefaultMetadataConfig
-	m := newTestQueueManager(t, cfg, mcfg, deadline, c, config.RemoteWriteProtoMsgV1)
-	for i := 0; i < numSegments; i++ {
-		series := []record.RefSeries{}
-		for j := 0; j < numSeries; j++ {
-			series = append(series, record.RefSeries{Ref: chunks.HeadSeriesRef((i * 100) + j), Labels: labels.FromStrings("a", "a")})
-		}
-		m.StoreSeries(series, i)
+			cfg := config.DefaultQueueConfig
+			mcfg := config.DefaultMetadataConfig
+			m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg)
+			for i := range numSegments {
+				series := []record.RefSeries{}
+				metadata := []record.RefMetadata{}
+				for j := range numSeries {
+					ref := chunks.HeadSeriesRef((i * 100) + j)
+					series = append(series, record.RefSeries{Ref: ref, Labels: labels.FromStrings("a", "a")})
+					metadata = append(metadata, record.RefMetadata{Ref: ref, Type: 1, Unit: "", Help: "test"})
+				}
+				m.StoreSeries(series, i)
+				m.StoreMetadata(metadata)
+			}
+			require.Len(t, m.seriesLabels, numSegments*numSeries)
+			// V2 stores metadata in seriesMetadata map for inline sending.
+			// V1 sends metadata separately via MetadataWatcher, so seriesMetadata is not populated.
+			if protoMsg == remoteapi.WriteV2MessageType {
+				require.Len(t, m.seriesMetadata, numSegments*numSeries)
+			}
+
+			m.SeriesReset(2)
+			require.Len(t, m.seriesLabels, numSegments*numSeries/2)
+			// Verify metadata is also reset for V2
+			if protoMsg == remoteapi.WriteV2MessageType {
+				require.Len(t, m.seriesMetadata, numSegments*numSeries/2)
+			}
+		})
 	}
-	require.Len(t, m.seriesLabels, numSegments*numSeries)
-	m.SeriesReset(2)
-	require.Len(t, m.seriesLabels, numSegments*numSeries/2)
 }
 
 func TestReshard(t *testing.T) {
 	t.Parallel()
-	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			size := 10 // Make bigger to find more races.
 			nSeries := 6
@@ -562,7 +586,7 @@ func TestReshard(t *testing.T) {
 
 func TestReshardRaceWithStop(t *testing.T) {
 	t.Parallel()
-	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			c := NewTestWriteClient(protoMsg)
 			var m *QueueManager
@@ -601,7 +625,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 
 func TestReshardPartialBatch(t *testing.T) {
 	t.Parallel()
-	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			samples, series := createTimeseries(1, 10)
 
@@ -619,7 +643,7 @@ func TestReshardPartialBatch(t *testing.T) {
 
 			m.Start()
 
-			for i := 0; i < 100; i++ {
+			for range 100 {
 				done := make(chan struct{})
 				go func() {
 					m.Append(samples)
@@ -646,7 +670,7 @@ func TestReshardPartialBatch(t *testing.T) {
 // where a large scrape (> capacity + max samples per send) is appended at the
 // same time as a batch times out according to the batch send deadline.
 func TestQueueFilledDeadlock(t *testing.T) {
-	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			samples, series := createTimeseries(50, 1)
 
@@ -666,7 +690,7 @@ func TestQueueFilledDeadlock(t *testing.T) {
 			m.Start()
 			defer m.Stop()
 
-			for i := 0; i < 100; i++ {
+			for range 100 {
 				done := make(chan struct{})
 				go func() {
 					time.Sleep(batchSendDeadline)
@@ -686,7 +710,7 @@ func TestQueueFilledDeadlock(t *testing.T) {
 }
 
 func TestReleaseNoninternedString(t *testing.T) {
-	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			_, m := newTestClientAndQueueManager(t, defaultFlushDeadline, protoMsg)
 			m.Start()
@@ -736,7 +760,7 @@ func TestShouldReshard(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		_, m := newTestClientAndQueueManager(t, time.Duration(c.sendDeadline), config.RemoteWriteProtoMsgV1)
+		_, m := newTestClientAndQueueManager(t, time.Duration(c.sendDeadline), remoteapi.WriteV1MessageType)
 		m.numShards = c.startingShards
 		m.dataIn.incr(c.samplesIn)
 		m.dataOut.incr(c.samplesOut)
@@ -782,7 +806,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		}
 	)
 
-	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType)
 	m.StoreSeries(fakeSeries, 0)
 
 	// Attempt to samples while the manager is running. We immediately stop the
@@ -820,9 +844,9 @@ func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([
 	samples := make([]record.RefSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
 	lb := labels.NewScratchBuilder(1 + len(extraLabels))
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		name := fmt.Sprintf("test_metric_%d", i)
-		for j := 0; j < numSamples; j++ {
+		for j := range numSamples {
 			samples = append(samples, record.RefSample{
 				Ref: chunks.HeadSeriesRef(i),
 				T:   int64(j),
@@ -851,7 +875,7 @@ func createProtoTimeseriesWithOld(numSamples, baseTs int64, _ ...labels.Label) [
 	samples := make([]prompb.TimeSeries, numSamples)
 	// use a fixed rand source so tests are consistent
 	r := rand.New(rand.NewSource(99))
-	for j := int64(0); j < numSamples; j++ {
+	for j := range numSamples {
 		name := fmt.Sprintf("test_metric_%d", j)
 
 		samples[j] = prompb.TimeSeries{
@@ -874,9 +898,9 @@ func createProtoTimeseriesWithOld(numSamples, baseTs int64, _ ...labels.Label) [
 func createExemplars(numExemplars, numSeries int) ([]record.RefExemplar, []record.RefSeries) {
 	exemplars := make([]record.RefExemplar, 0, numExemplars)
 	series := make([]record.RefSeries, 0, numSeries)
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		name := fmt.Sprintf("test_metric_%d", i)
-		for j := 0; j < numExemplars; j++ {
+		for j := range numExemplars {
 			e := record.RefExemplar{
 				Ref:    chunks.HeadSeriesRef(i),
 				T:      int64(j),
@@ -897,9 +921,9 @@ func createHistograms(numSamples, numSeries int, floatHistogram bool) ([]record.
 	histograms := make([]record.RefHistogramSample, 0, numSamples)
 	floatHistograms := make([]record.RefFloatHistogramSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		name := fmt.Sprintf("test_metric_%d", i)
-		for j := 0; j < numSamples; j++ {
+		for j := range numSamples {
 			hist := &histogram.Histogram{
 				Schema:          2,
 				ZeroThreshold:   1e-128,
@@ -972,7 +996,7 @@ type TestWriteClient struct {
 	expectedMetadata        map[string][]prompb.MetricMetadata
 	writesReceived          int
 	mtx                     sync.Mutex
-	protoMsg                config.RemoteWriteProtoMsg
+	protoMsg                remoteapi.WriteMessageType
 	injectedErrs            []error
 	currErr                 int
 	retry                   bool
@@ -983,7 +1007,7 @@ type TestWriteClient struct {
 }
 
 // NewTestWriteClient creates a new testing write client.
-func NewTestWriteClient(protoMsg config.RemoteWriteProtoMsg) *TestWriteClient {
+func NewTestWriteClient(protoMsg remoteapi.WriteMessageType) *TestWriteClient {
 	return &TestWriteClient{
 		receivedSamples:  map[string][]prompb.Sample{},
 		expectedSamples:  map[string][]prompb.Sample{},
@@ -1192,10 +1216,10 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) (WriteResp
 
 	var reqProto *prompb.WriteRequest
 	switch c.protoMsg {
-	case config.RemoteWriteProtoMsgV1:
+	case remoteapi.WriteV1MessageType:
 		reqProto = &prompb.WriteRequest{}
 		err = proto.Unmarshal(reqBuf, reqProto)
-	case config.RemoteWriteProtoMsgV2:
+	case remoteapi.WriteV2MessageType:
 		// NOTE(bwplotka): v1 msg can be unmarshaled to v2 sometimes, without
 		// errors.
 		var reqProtoV2 writev2.Request
@@ -1255,7 +1279,11 @@ func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, erro
 	}
 	b := labels.NewScratchBuilder(0)
 	for i, rts := range v2Req.Timeseries {
-		rts.ToLabels(&b, v2Req.Symbols).Range(func(l labels.Label) {
+		lbls, err := rts.ToLabels(&b, v2Req.Symbols)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert labels: %w", err)
+		}
+		lbls.Range(func(l labels.Label) {
 			req.Timeseries[i].Labels = append(req.Timeseries[i].Labels, prompb.Label{
 				Name:  l.Name,
 				Value: l.Value,
@@ -1266,7 +1294,11 @@ func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, erro
 		for j, e := range rts.Exemplars {
 			exemplars[j].Value = e.Value
 			exemplars[j].Timestamp = e.Timestamp
-			e.ToExemplar(&b, v2Req.Symbols).Labels.Range(func(l labels.Label) {
+			ex, err := e.ToExemplar(&b, v2Req.Symbols)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert exemplar: %w", err)
+			}
+			ex.Labels.Range(func(l labels.Label) {
 				exemplars[j].Labels = append(exemplars[j].Labels, prompb.Label{
 					Name:  l.Name,
 					Value: l.Value,
@@ -1292,7 +1324,10 @@ func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, erro
 
 		// Convert v2 metadata to v1 format.
 		if rts.Metadata.Type != writev2.Metadata_METRIC_TYPE_UNSPECIFIED {
-			labels := rts.ToLabels(&b, v2Req.Symbols)
+			labels, err := rts.ToLabels(&b, v2Req.Symbols)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert metadata labels: %w", err)
+			}
 			metadata := rts.ToMetadata(v2Req.Symbols)
 
 			metricFamilyName := labels.String()
@@ -1395,7 +1430,7 @@ func BenchmarkSampleSend(b *testing.B) {
 	cfg.MaxShards = 20
 
 	// todo: test with new proto type(s)
-	for _, format := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+	for _, format := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		b.Run(string(format), func(b *testing.B) {
 			m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, format)
 			m.StoreSeries(series, 0)
@@ -1405,7 +1440,7 @@ func BenchmarkSampleSend(b *testing.B) {
 			defer m.Stop()
 
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for i := 0; b.Loop(); i++ {
 				m.Append(samples)
 				m.UpdateSeriesSegment(series, i+1) // simulate what wlog.Watcher.garbageCollectSeries does
 				m.SeriesReset(i + 1)
@@ -1453,13 +1488,14 @@ func BenchmarkStoreSeries(b *testing.B) {
 
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
+			for b.Loop() {
+				c := NewTestWriteClient(remoteapi.WriteV1MessageType)
 				dir := b.TempDir()
 				cfg := config.DefaultQueueConfig
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
-				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
+
+				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType)
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -1540,7 +1576,7 @@ func TestProcessExternalLabels(t *testing.T) {
 
 func TestCalculateDesiredShards(t *testing.T) {
 	cfg := config.DefaultQueueConfig
-	_, m := newTestClientAndQueueManager(t, defaultFlushDeadline, config.RemoteWriteProtoMsgV1)
+	_, m := newTestClientAndQueueManager(t, defaultFlushDeadline, remoteapi.WriteV1MessageType)
 	samplesIn := m.dataIn
 
 	// Need to start the queue manager so the proper metrics are initialized.
@@ -1594,11 +1630,11 @@ func TestCalculateDesiredShards(t *testing.T) {
 		sin := inputRate * int64(shardUpdateDuration/time.Second)
 		addSamples(sin, ts)
 
-		sout := int64(m.numShards*cfg.MaxSamplesPerSend) * int64(shardUpdateDuration/(100*time.Millisecond))
-		// You can't send samples that don't exist so cap at the number of pending samples.
-		if sout > pendingSamples {
-			sout = pendingSamples
-		}
+		sout := min(
+			// You can't send samples that don't exist so cap at the number of pending samples.
+			int64(m.numShards*cfg.MaxSamplesPerSend)*int64(shardUpdateDuration/(100*time.Millisecond)),
+			pendingSamples,
+		)
 		sendSamples(sout, ts)
 
 		t.Log("desiredShards", m.numShards, "pendingSamples", pendingSamples)
@@ -1610,7 +1646,7 @@ func TestCalculateDesiredShards(t *testing.T) {
 }
 
 func TestCalculateDesiredShardsDetail(t *testing.T) {
-	_, m := newTestClientAndQueueManager(t, defaultFlushDeadline, config.RemoteWriteProtoMsgV1)
+	_, m := newTestClientAndQueueManager(t, defaultFlushDeadline, remoteapi.WriteV1MessageType)
 	samplesIn := m.dataIn
 
 	for _, tc := range []struct {
@@ -1868,7 +1904,7 @@ func createDummyTimeSeries(instances int) []timeSeries {
 
 	var result []timeSeries
 	r := rand.New(rand.NewSource(0))
-	for i := 0; i < instances; i++ {
+	for i := range instances {
 		b := labels.NewBuilder(commonLabels)
 		b.Set("pod", "prometheus-"+strconv.Itoa(i))
 		for _, lbls := range metrics {
@@ -1896,7 +1932,7 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 		pBuf := proto.NewBuffer(nil)
 
 		totalSize := 0
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			populateTimeSeries(batch, seriesBuff, true, true)
 			req, _, _, err := buildWriteRequest(noopLogger, seriesBuff, nil, pBuf, nil, cEnc, compression.Snappy)
 			if err != nil {
@@ -1937,8 +1973,8 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 		pBuf := []byte{}
 
 		totalSize := 0
-		for i := 0; i < b.N; i++ {
-			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true)
+		for b.Loop() {
+			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false)
 			req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, nil, cEnc, "snappy")
 			if err != nil {
 				b.Fatal(err)
@@ -1968,7 +2004,7 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 func TestDropOldTimeSeries(t *testing.T) {
 	t.Parallel()
 	// Test both v1 and v2 remote write protocols
-	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			size := 10
 			nSeries := 6
@@ -2003,65 +2039,69 @@ func TestIsSampleOld(t *testing.T) {
 // Simulates scenario in which remote write endpoint is down and a subset of samples is dropped due to age limit while backoffing.
 func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 	t.Parallel()
-	maxSamplesPerSend := 10
-	sampleAgeLimit := time.Second * 2
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			maxSamplesPerSend := 10
+			sampleAgeLimit := time.Second * 2
 
-	cfg := config.DefaultQueueConfig
-	cfg.MaxShards = 1
-	cfg.SampleAgeLimit = model.Duration(sampleAgeLimit)
-	// Set the batch send deadline to 5 minutes to effectively disable it.
-	cfg.BatchSendDeadline = model.Duration(time.Minute * 5)
-	cfg.Capacity = 10 * maxSamplesPerSend // more than the amount of data we append in the test
-	cfg.MaxBackoff = model.Duration(time.Millisecond * 100)
-	cfg.MinBackoff = model.Duration(time.Millisecond * 100)
-	cfg.MaxSamplesPerSend = maxSamplesPerSend
-	metadataCfg := config.DefaultMetadataConfig
-	metadataCfg.Send = true
-	metadataCfg.SendInterval = model.Duration(time.Second * 60)
-	metadataCfg.MaxSamplesPerSend = maxSamplesPerSend
-	c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
-	m := newTestQueueManager(t, cfg, metadataCfg, time.Second, c, config.RemoteWriteProtoMsgV1)
+			cfg := config.DefaultQueueConfig
+			cfg.MaxShards = 1
+			cfg.SampleAgeLimit = model.Duration(sampleAgeLimit)
+			// Set the batch send deadline to 5 minutes to effectively disable it.
+			cfg.BatchSendDeadline = model.Duration(time.Minute * 5)
+			cfg.Capacity = 10 * maxSamplesPerSend // more than the amount of data we append in the test
+			cfg.MaxBackoff = model.Duration(time.Millisecond * 100)
+			cfg.MinBackoff = model.Duration(time.Millisecond * 100)
+			cfg.MaxSamplesPerSend = maxSamplesPerSend
+			metadataCfg := config.DefaultMetadataConfig
+			metadataCfg.Send = true
+			metadataCfg.SendInterval = model.Duration(time.Second * 60)
+			metadataCfg.MaxSamplesPerSend = maxSamplesPerSend
+			c := NewTestWriteClient(protoMsg)
+			m := newTestQueueManager(t, cfg, metadataCfg, time.Second, c, protoMsg)
 
-	m.Start()
+			m.Start()
 
-	batchID := 0
-	expectedSamples := map[string][]prompb.Sample{}
+			batchID := 0
+			expectedSamples := map[string][]prompb.Sample{}
 
-	appendData := func(numberOfSeries int, timeAdd time.Duration, shouldBeDropped bool) {
-		t.Log(">>>>  Appending series ", numberOfSeries, " as batch ID ", batchID, " with timeAdd ", timeAdd, " and should be dropped ", shouldBeDropped)
-		samples, series := createTimeseriesWithRandomLabelCount(strconv.Itoa(batchID), numberOfSeries, timeAdd, 9)
-		m.StoreSeries(series, batchID)
-		sent := m.Append(samples)
-		require.True(t, sent, "samples not sent")
-		if !shouldBeDropped {
-			for _, s := range samples {
-				tsID := getSeriesIDFromRef(series[s.Ref])
-				expectedSamples[tsID] = append(c.expectedSamples[tsID], prompb.Sample{
-					Timestamp: s.T,
-					Value:     s.V,
-				})
+			appendData := func(numberOfSeries int, timeAdd time.Duration, shouldBeDropped bool) {
+				t.Log(">>>>  Appending series ", numberOfSeries, " as batch ID ", batchID, " with timeAdd ", timeAdd, " and should be dropped ", shouldBeDropped)
+				samples, series := createTimeseriesWithRandomLabelCount(strconv.Itoa(batchID), numberOfSeries, timeAdd, 9)
+				m.StoreSeries(series, batchID)
+				sent := m.Append(samples)
+				require.True(t, sent, "samples not sent")
+				if !shouldBeDropped {
+					for _, s := range samples {
+						tsID := getSeriesIDFromRef(series[s.Ref])
+						expectedSamples[tsID] = append(c.expectedSamples[tsID], prompb.Sample{
+							Timestamp: s.T,
+							Value:     s.V,
+						})
+					}
+				}
+				batchID++
 			}
-		}
-		batchID++
-	}
-	timeShift := -time.Millisecond * 5
+			timeShift := -time.Millisecond * 5
 
-	c.SetReturnError(RecoverableError{context.DeadlineExceeded, defaultBackoff})
+			c.SetReturnError(RecoverableError{context.DeadlineExceeded, defaultBackoff})
 
-	appendData(maxSamplesPerSend/2, timeShift, true)
-	time.Sleep(sampleAgeLimit)
-	appendData(maxSamplesPerSend/2, timeShift, true)
-	time.Sleep(sampleAgeLimit / 10)
-	appendData(maxSamplesPerSend/2, timeShift, true)
-	time.Sleep(2 * sampleAgeLimit)
-	appendData(2*maxSamplesPerSend, timeShift, false)
-	time.Sleep(sampleAgeLimit / 2)
-	c.SetReturnError(nil)
-	appendData(5, timeShift, false)
-	m.Stop()
+			appendData(maxSamplesPerSend/2, timeShift, true)
+			time.Sleep(sampleAgeLimit)
+			appendData(maxSamplesPerSend/2, timeShift, true)
+			time.Sleep(sampleAgeLimit / 10)
+			appendData(maxSamplesPerSend/2, timeShift, true)
+			time.Sleep(2 * sampleAgeLimit)
+			appendData(2*maxSamplesPerSend, timeShift, false)
+			time.Sleep(sampleAgeLimit / 2)
+			c.SetReturnError(nil)
+			appendData(5, timeShift, false)
+			m.Stop()
 
-	if diff := cmp.Diff(expectedSamples, c.receivedSamples); diff != "" {
-		t.Errorf("mismatch (-want +got):\n%s", diff)
+			if diff := cmp.Diff(expectedSamples, c.receivedSamples); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -2070,7 +2110,7 @@ func createTimeseriesWithRandomLabelCount(id string, seriesCount int, timeAdd ti
 	series := []record.RefSeries{}
 	// use a fixed rand source so tests are consistent
 	r := rand.New(rand.NewSource(99))
-	for i := 0; i < seriesCount; i++ {
+	for i := range seriesCount {
 		s := record.RefSample{
 			Ref: chunks.HeadSeriesRef(i),
 			T:   time.Now().Add(timeAdd).UnixMilli(),
@@ -2098,7 +2138,7 @@ func createTimeseriesWithOldSamples(numSamples, numSeries int, extraLabels ...la
 	samples := make([]record.RefSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
 	lb := labels.NewScratchBuilder(1 + len(extraLabels))
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		name := fmt.Sprintf("test_metric_%d", i)
 		// We create half of the samples in the past.
 		past := timestamp.FromTime(time.Now().Add(-5 * time.Minute))
@@ -2311,12 +2351,12 @@ func TestBuildTimeSeries(t *testing.T) {
 	// Run the test cases
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			highest, lowest, result, droppedSamples, _, _ := buildTimeSeries(tc.ts, tc.filter)
+			result, stats := buildTimeSeries(tc.ts, tc.filter)
 			require.NotNil(t, result)
 			require.Len(t, result, tc.responseLen)
-			require.Equal(t, tc.highestTs, highest)
-			require.Equal(t, tc.lowestTs, lowest)
-			require.Equal(t, tc.droppedSamples, droppedSamples)
+			require.Equal(t, tc.highestTs, stats.highest)
+			require.Equal(t, tc.lowestTs, stats.lowest)
+			require.Equal(t, tc.droppedSamples, stats.droppedSamples)
 		})
 	}
 }
@@ -2325,9 +2365,9 @@ func BenchmarkBuildTimeSeries(b *testing.B) {
 	// Send one sample per series, which is the typical remote_write case
 	const numSamples = 10000
 	filter := func(ts prompb.TimeSeries) bool { return filterTsLimit(99, ts) }
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		samples := createProtoTimeseriesWithOld(numSamples, 100, extraLabels...)
-		_, _, result, _, _, _ := buildTimeSeries(samples, filter)
+		result, _ := buildTimeSeries(samples, filter)
 		require.NotNil(b, result)
 	}
 }
@@ -2344,12 +2384,443 @@ func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
 	}
 
 	nSamples, nExemplars, nHistograms, nMetadata, nUnexpected := populateV2TimeSeries(
-		&symbolTable, batch, pendingData, false, false,
-	)
+		&symbolTable, batch, pendingData, false, false, false)
 
 	require.Equal(t, 2, nSamples, "Should count 2 samples")
 	require.Equal(t, 0, nExemplars, "Should count 0 exemplars")
 	require.Equal(t, 0, nHistograms, "Should count 0 histograms")
 	require.Equal(t, 0, nMetadata, "Should count 0 processed metadata")
 	require.Equal(t, 2, nUnexpected, "Should count 2 unexpected metadata")
+}
+
+func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
+	symbolTable := writev2.NewSymbolTable()
+
+	testCases := []struct {
+		name         string
+		typeLabel    string
+		unitLabel    string
+		expectedType writev2.Metadata_MetricType
+		description  string
+	}{
+		{
+			name:         "counter_with_unit",
+			typeLabel:    "counter",
+			unitLabel:    "operations",
+			expectedType: writev2.Metadata_METRIC_TYPE_COUNTER,
+			description:  "Counter metric with operations unit",
+		},
+		{
+			name:         "gauge_with_bytes",
+			typeLabel:    "gauge",
+			unitLabel:    "bytes",
+			expectedType: writev2.Metadata_METRIC_TYPE_GAUGE,
+			description:  "Gauge metric with bytes unit",
+		},
+		{
+			name:         "histogram_with_seconds",
+			typeLabel:    "histogram",
+			unitLabel:    "seconds",
+			expectedType: writev2.Metadata_METRIC_TYPE_HISTOGRAM,
+			description:  "Histogram metric with seconds unit",
+		},
+		{
+			name:         "summary_with_ratio",
+			typeLabel:    "summary",
+			unitLabel:    "ratio",
+			expectedType: writev2.Metadata_METRIC_TYPE_SUMMARY,
+			description:  "Summary metric with ratio unit",
+		},
+		{
+			name:         "info_no_unit",
+			typeLabel:    "info",
+			unitLabel:    "",
+			expectedType: writev2.Metadata_METRIC_TYPE_INFO,
+			description:  "Info metric without unit",
+		},
+		{
+			name:         "stateset_no_unit",
+			typeLabel:    "stateset",
+			unitLabel:    "",
+			expectedType: writev2.Metadata_METRIC_TYPE_STATESET,
+			description:  "Stateset metric without unit",
+		},
+		{
+			name:         "unknown_type",
+			typeLabel:    "unknown_type",
+			unitLabel:    "meters",
+			expectedType: writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			description:  "Unknown type defaults to unspecified",
+		},
+		{
+			name:         "empty_type_with_unit",
+			typeLabel:    "",
+			unitLabel:    "watts",
+			expectedType: writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			description:  "Empty type with unit",
+		},
+		{
+			name:         "type_no_unit",
+			typeLabel:    "gauge",
+			unitLabel:    "",
+			expectedType: writev2.Metadata_METRIC_TYPE_GAUGE,
+			description:  "Type without unit",
+		},
+		{
+			name:         "no_type_no_unit",
+			typeLabel:    "",
+			unitLabel:    "",
+			expectedType: writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			description:  "No type and no unit",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			batch := make([]timeSeries, 1)
+			builder := labels.NewScratchBuilder(2)
+			metadata := schema.Metadata{
+				Name: "test_metric_" + tc.name,
+				Type: model.MetricType(tc.typeLabel),
+				Unit: tc.unitLabel,
+			}
+
+			metadata.AddToLabels(&builder)
+
+			batch[0] = timeSeries{
+				seriesLabels: builder.Labels(),
+				value:        123.45,
+				timestamp:    time.Now().UnixMilli(),
+				sType:        tSample,
+			}
+
+			pendingData := make([]writev2.TimeSeries, 1)
+
+			symbolTable.Reset()
+			nSamples, nExemplars, nHistograms, _, _ := populateV2TimeSeries(
+				&symbolTable,
+				batch,
+				pendingData,
+				false, // sendExemplars
+				false, // sendNativeHistograms
+				true,  // enableTypeAndUnitLabels
+			)
+
+			require.Equal(t, 1, nSamples, "Should have 1 sample")
+			require.Equal(t, 0, nExemplars, "Should have 0 exemplars")
+			require.Equal(t, 0, nHistograms, "Should have 0 histograms")
+
+			require.Equal(t, tc.expectedType, pendingData[0].Metadata.Type,
+				"Type should match expected for %s", tc.description)
+
+			unitRef := pendingData[0].Metadata.UnitRef
+
+			symbols := symbolTable.Symbols()
+			require.Equal(t, tc.unitLabel, symbols[unitRef], "Unit should match")
+		})
+	}
+}
+
+// TestPopulateV2TimeSeries_MetadataAndTypeAndUnit verifies that type and unit labels are properly
+// extracted from labels even when d.metadata is not nil (agent mode scenario).
+// Regression test for https://github.com/prometheus/prometheus/issues/17381.
+func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
+	symbolTable := writev2.NewSymbolTable()
+
+	testCases := []struct {
+		name              string
+		typeLabel         string
+		unitLabel         string
+		metadata          *metadata.Metadata
+		expectedType      writev2.Metadata_MetricType
+		expectedUnit      string
+		enableTypeAndUnit bool
+	}{
+		{
+			name:              "type_and_unit_no_meta",
+			typeLabel:         "gauge",
+			unitLabel:         "bytes",
+			metadata:          nil,
+			expectedType:      writev2.Metadata_METRIC_TYPE_GAUGE,
+			expectedUnit:      "bytes",
+			enableTypeAndUnit: true,
+		},
+		{
+			name:              "type_no_unit_no_meta",
+			typeLabel:         "counter",
+			unitLabel:         "",
+			metadata:          nil,
+			expectedType:      writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit:      "",
+			enableTypeAndUnit: true,
+		},
+		{
+			name:              "no_type_and_unit_no_meta",
+			typeLabel:         "gauge",
+			unitLabel:         "bytes",
+			metadata:          nil,
+			expectedType:      writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			expectedUnit:      "",
+			enableTypeAndUnit: false,
+		},
+		{
+			name:      "type_and_unit_and_meta",
+			typeLabel: "gauge",
+			unitLabel: "bytes",
+			metadata: &metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "bytes",
+				Help: "Test metric",
+			},
+			expectedType:      writev2.Metadata_METRIC_TYPE_GAUGE,
+			expectedUnit:      "bytes",
+			enableTypeAndUnit: true,
+		},
+		{
+			name:      "type-and-unit-overrides-meta",
+			typeLabel: "counter",
+			unitLabel: "requests",
+			metadata: &metadata.Metadata{
+				Type: model.MetricTypeGauge,
+				Unit: "bytes",
+				Help: "Test metric",
+			},
+			expectedType:      writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit:      "requests",
+			enableTypeAndUnit: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			batch := make([]timeSeries, 1)
+			builder := labels.NewScratchBuilder(3)
+
+			// Simulate labels with __type__ and __unit__ as scraped with type-and-unit-labels feature.
+			builder.Add(labels.MetricName, "test_metric")
+			if tc.typeLabel != "" {
+				builder.Add("__type__", tc.typeLabel)
+			}
+			if tc.unitLabel != "" {
+				builder.Add("__unit__", tc.unitLabel)
+			}
+			builder.Sort()
+
+			batch[0] = timeSeries{
+				seriesLabels: builder.Labels(),
+				value:        123.45,
+				timestamp:    time.Now().UnixMilli(),
+				sType:        tSample,
+				metadata:     tc.metadata,
+			}
+
+			pendingData := make([]writev2.TimeSeries, 1)
+
+			symbolTable.Reset()
+			nSamples, nExemplars, nHistograms, nMetadata, _ := populateV2TimeSeries(
+				&symbolTable,
+				batch,
+				pendingData,
+				false,
+				false,
+				tc.enableTypeAndUnit,
+			)
+
+			require.Equal(t, 1, nSamples, "Should have 1 sample")
+			require.Equal(t, 0, nExemplars, "Should have 0 exemplars")
+			require.Equal(t, 0, nHistograms, "Should have 0 histograms")
+
+			// Verify type is correctly extracted.
+			require.Equal(t, tc.expectedType, pendingData[0].Metadata.Type,
+				"Type should match expected for %s", tc.name)
+
+			// Verify unit is correctly extracted.
+			unitRef := pendingData[0].Metadata.UnitRef
+			symbols := symbolTable.Symbols()
+			var actualUnit string
+			if unitRef > 0 && unitRef < uint32(len(symbols)) {
+				actualUnit = symbols[unitRef]
+			}
+			require.Equal(t, tc.expectedUnit, actualUnit, "Unit should match for %s", tc.name)
+
+			// Verify metadata count.
+			if tc.metadata != nil && tc.enableTypeAndUnit {
+				require.Equal(t, 1, nMetadata, "Should count metadata when d.metadata is provided")
+			}
+		})
+	}
+}
+
+func TestHighestTimestampOnAppend(t *testing.T) {
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			nSamples := 11 * config.DefaultQueueConfig.Capacity
+			nSeries := 3
+			samples, series := createTimeseries(nSamples, nSeries)
+
+			_, m := newTestClientAndQueueManager(t, defaultFlushDeadline, protoMsg)
+			m.Start()
+			defer m.Stop()
+
+			require.Equal(t, 0.0, m.metrics.highestTimestamp.Get())
+
+			m.StoreSeries(series, 0)
+			require.True(t, m.Append(samples))
+
+			// Check that Append sets the highest timestamp correctly.
+			highestTs := float64((nSamples - 1) / 1000)
+			require.Greater(t, highestTs, 0.0)
+			require.Equal(t, highestTs, m.metrics.highestTimestamp.Get())
+		})
+	}
+}
+
+func TestAppendHistogramSchemaValidation(t *testing.T) {
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		t.Run(string(protoMsg), func(t *testing.T) {
+			c := NewTestWriteClient(protoMsg)
+			cfg := testDefaultQueueConfig()
+			mcfg := config.DefaultMetadataConfig
+			cfg.MaxShards = 1
+
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m.sendNativeHistograms = true
+
+			// Create series for the histograms
+			series := []record.RefSeries{
+				{
+					Ref:    chunks.HeadSeriesRef(0),
+					Labels: labels.FromStrings("__name__", "test_histogram"),
+				},
+			}
+			m.StoreSeries(series, 0)
+
+			// Create histograms with different schemas
+			histograms := []record.RefHistogramSample{
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567890,
+					H: &histogram.Histogram{
+						Schema:          0, // Valid schema.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           2,
+						Sum:             5.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []int64{2},
+						NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						NegativeBuckets: []int64{1},
+					},
+				},
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567891,
+					H: &histogram.Histogram{
+						Schema:          histogram.CustomBucketsSchema, // Not valid for version 1.0.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           1,
+						Sum:             3.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []int64{1},
+						CustomValues:    []float64{2.0},
+					},
+				},
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567892,
+					H: &histogram.Histogram{
+						Schema:          0, // Valid schema.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           2,
+						Sum:             5.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []int64{2},
+						NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						NegativeBuckets: []int64{1},
+					},
+				},
+			}
+
+			floatHistograms := []record.RefFloatHistogramSample{
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567890,
+					FH: &histogram.FloatHistogram{
+						Schema:          0, // Valid schema.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           2,
+						Sum:             5.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []float64{2.0},
+						NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						NegativeBuckets: []float64{1.0},
+					},
+				},
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567891,
+					FH: &histogram.FloatHistogram{
+						Schema:          histogram.CustomBucketsSchema, // Not valid for version 1.0.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           1,
+						Sum:             3.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []float64{1.0},
+						CustomValues:    []float64{2.0},
+					},
+				},
+				{
+					Ref: chunks.HeadSeriesRef(0),
+					T:   1234567892,
+					FH: &histogram.FloatHistogram{
+						Schema:          0, // Valid schema.
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           2,
+						Sum:             5.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []float64{2.0},
+						NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						NegativeBuckets: []float64{1.0},
+					},
+				},
+			}
+
+			if protoMsg == remoteapi.WriteV1MessageType {
+				c.expectHistograms([]record.RefHistogramSample{histograms[0], histograms[2]}, series)
+				c.expectFloatHistograms([]record.RefFloatHistogramSample{floatHistograms[0], floatHistograms[2]}, series)
+			} else {
+				c.expectHistograms(histograms, series)
+				c.expectFloatHistograms(floatHistograms, series)
+			}
+
+			m.Start()
+			defer m.Stop()
+
+			// Get initial dropped histograms count
+			initialDropped := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported))
+
+			require.True(t, m.AppendHistograms(histograms))
+			require.True(t, m.AppendFloatHistograms(floatHistograms))
+
+			// Wait for the valid histogram to be received
+			c.waitForExpectedData(t, 30*time.Second)
+
+			// Verify that one histogram was dropped due to invalid schema
+			finalDropped := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported))
+
+			if protoMsg == remoteapi.WriteV1MessageType {
+				require.Equal(t, initialDropped+2.0, finalDropped, "Expected exactly two histograms to be dropped due to invalid schema")
+			} else {
+				require.Equal(t, initialDropped, finalDropped, "No histograms should be dropped")
+			}
+
+			// Verify no failed histograms (this would indicate a different type of error)
+			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal))
+		})
+	}
 }

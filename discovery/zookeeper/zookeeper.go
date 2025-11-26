@@ -72,7 +72,7 @@ func (c *ServersetSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (dis
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultServersetSDConfig
 	type plain ServersetSDConfig
 	err := unmarshal((*plain)(c))
@@ -114,7 +114,7 @@ func (c *NerveSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discove
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultNerveSDConfig
 	type plain NerveSDConfig
 	err := unmarshal((*plain)(c))

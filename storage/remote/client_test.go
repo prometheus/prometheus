@@ -1017,7 +1017,7 @@ func createSampledResponseHandler(t *testing.T, queries []*prompb.Query) http.Ha
 			var timeseries []*prompb.TimeSeries
 
 			// Create 2 series per query
-			for seriesIndex := 0; seriesIndex < 2; seriesIndex++ {
+			for seriesIndex := range 2 {
 				var labels []prompb.Label
 				if queryIndex == 0 {
 					labels = []prompb.Label{

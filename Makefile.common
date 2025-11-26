@@ -61,7 +61,7 @@ PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_
 SKIP_GOLANGCI_LINT :=
 GOLANGCI_LINT :=
 GOLANGCI_LINT_OPTS ?=
-GOLANGCI_LINT_VERSION ?= v2.2.1
+GOLANGCI_LINT_VERSION ?= v2.6.0
 GOLANGCI_FMT_OPTS ?=
 # golangci-lint only supports linux, darwin and windows platforms on i386/amd64/arm64.
 # windows isn't included here because of the path separator being different.
@@ -112,7 +112,7 @@ common-all: precheck style check_license lint yamllint unused build test
 .PHONY: common-style
 common-style:
 	@echo ">> checking code style"
-	@fmtRes=$$($(GOFMT) -d $$(find . -path ./vendor -prune -o -name '*.go' -print)); \
+	@fmtRes=$$($(GOFMT) -d $$(git ls-files '*.go' ':!:vendor/*' || find . -path ./vendor -prune -o -name '*.go' -print)); \
 	if [ -n "$${fmtRes}" ]; then \
 		echo "gofmt checking failed!"; echo "$${fmtRes}"; echo; \
 		echo "Please ensure you are using $$($(GO) version) for formatting code."; \
@@ -122,7 +122,7 @@ common-style:
 .PHONY: common-check_license
 common-check_license:
 	@echo ">> checking license header"
-	@licRes=$$(for file in $$(find . -type f -iname '*.go' ! -path './vendor/*') ; do \
+	@licRes=$$(for file in $$(git ls-files '*.go' ':!:vendor/*' || find . -path ./vendor -prune -o -type f -iname '*.go' -print) ; do \
                awk 'NR<=3' $$file | grep -Eq "(Copyright|generated|GENERATED)" || echo $$file; \
        done); \
        if [ -n "$${licRes}" ]; then \
@@ -265,6 +265,10 @@ $(GOLANGCI_LINT):
 		| sed -e '/install -d/d' \
 		| sh -s -- -b $(FIRST_GOPATH)/bin $(GOLANGCI_LINT_VERSION)
 endif
+
+.PHONY: common-print-golangci-lint-version
+common-print-golangci-lint-version:
+	@echo $(GOLANGCI_LINT_VERSION)
 
 .PHONY: precheck
 precheck::

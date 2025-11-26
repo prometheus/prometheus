@@ -15,11 +15,13 @@
 package record
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -32,7 +34,7 @@ import (
 
 func TestRecord_EncodeDecode(t *testing.T) {
 	var enc Encoder
-	dec := NewDecoder(labels.NewSymbolTable())
+	dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
 
 	series := []RefSeries{
 		{
@@ -224,11 +226,151 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.Equal(t, floatHistograms, decGaugeFloatHistograms)
 }
 
+func TestRecord_DecodeInvalidHistogramSchema(t *testing.T) {
+	for _, schema := range []int32{-100, 100} {
+		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
+			var enc Encoder
+
+			var output bytes.Buffer
+			logger := promslog.New(&promslog.Config{Writer: &output})
+			dec := NewDecoder(labels.NewSymbolTable(), logger)
+			histograms := []RefHistogramSample{
+				{
+					Ref: 56,
+					T:   1234,
+					H: &histogram.Histogram{
+						Count:         5,
+						ZeroCount:     2,
+						ZeroThreshold: 0.001,
+						Sum:           18.4 * rand.Float64(),
+						Schema:        schema,
+						PositiveSpans: []histogram.Span{
+							{Offset: 0, Length: 2},
+							{Offset: 1, Length: 2},
+						},
+						PositiveBuckets: []int64{1, 1, -1, 0},
+					},
+				},
+			}
+			histSamples, _ := enc.HistogramSamples(histograms, nil)
+			decHistograms, err := dec.HistogramSamples(histSamples, nil)
+			require.NoError(t, err)
+			require.Empty(t, decHistograms)
+			require.Contains(t, output.String(), "skipping histogram with unknown schema in WAL record")
+		})
+	}
+}
+
+func TestRecord_DecodeInvalidFloatHistogramSchema(t *testing.T) {
+	for _, schema := range []int32{-100, 100} {
+		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
+			var enc Encoder
+
+			var output bytes.Buffer
+			logger := promslog.New(&promslog.Config{Writer: &output})
+			dec := NewDecoder(labels.NewSymbolTable(), logger)
+			histograms := []RefFloatHistogramSample{
+				{
+					Ref: 56,
+					T:   1234,
+					FH: &histogram.FloatHistogram{
+						Count:         5,
+						ZeroCount:     2,
+						ZeroThreshold: 0.001,
+						Sum:           18.4 * rand.Float64(),
+						Schema:        schema,
+						PositiveSpans: []histogram.Span{
+							{Offset: 0, Length: 2},
+							{Offset: 1, Length: 2},
+						},
+						PositiveBuckets: []float64{1, 1, -1, 0},
+					},
+				},
+			}
+			histSamples, _ := enc.FloatHistogramSamples(histograms, nil)
+			decHistograms, err := dec.FloatHistogramSamples(histSamples, nil)
+			require.NoError(t, err)
+			require.Empty(t, decHistograms)
+			require.Contains(t, output.String(), "skipping histogram with unknown schema in WAL record")
+		})
+	}
+}
+
+func TestRecord_DecodeTooHighResolutionHistogramSchema(t *testing.T) {
+	for _, schema := range []int32{9, 52} {
+		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
+			var enc Encoder
+
+			var output bytes.Buffer
+			logger := promslog.New(&promslog.Config{Writer: &output})
+			dec := NewDecoder(labels.NewSymbolTable(), logger)
+			histograms := []RefHistogramSample{
+				{
+					Ref: 56,
+					T:   1234,
+					H: &histogram.Histogram{
+						Count:         5,
+						ZeroCount:     2,
+						ZeroThreshold: 0.001,
+						Sum:           18.4 * rand.Float64(),
+						Schema:        schema,
+						PositiveSpans: []histogram.Span{
+							{Offset: 0, Length: 2},
+							{Offset: 1, Length: 2},
+						},
+						PositiveBuckets: []int64{1, 1, -1, 0},
+					},
+				},
+			}
+			histSamples, _ := enc.HistogramSamples(histograms, nil)
+			decHistograms, err := dec.HistogramSamples(histSamples, nil)
+			require.NoError(t, err)
+			require.Len(t, decHistograms, 1)
+			require.Equal(t, histogram.ExponentialSchemaMax, decHistograms[0].H.Schema)
+		})
+	}
+}
+
+func TestRecord_DecodeTooHighResolutionFloatHistogramSchema(t *testing.T) {
+	for _, schema := range []int32{9, 52} {
+		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
+			var enc Encoder
+
+			var output bytes.Buffer
+			logger := promslog.New(&promslog.Config{Writer: &output})
+			dec := NewDecoder(labels.NewSymbolTable(), logger)
+			histograms := []RefFloatHistogramSample{
+				{
+					Ref: 56,
+					T:   1234,
+					FH: &histogram.FloatHistogram{
+						Count:         5,
+						ZeroCount:     2,
+						ZeroThreshold: 0.001,
+						Sum:           18.4 * rand.Float64(),
+						Schema:        schema,
+						PositiveSpans: []histogram.Span{
+							{Offset: 0, Length: 2},
+							{Offset: 1, Length: 2},
+						},
+						PositiveBuckets: []float64{1, 1, -1, 0},
+					},
+				},
+			}
+			histSamples, _ := enc.FloatHistogramSamples(histograms, nil)
+			decHistograms, err := dec.FloatHistogramSamples(histSamples, nil)
+			require.NoError(t, err)
+			require.Len(t, decHistograms, 1)
+			require.Equal(t, histogram.ExponentialSchemaMax, decHistograms[0].FH.Schema)
+		})
+	}
+}
+
 // TestRecord_Corrupted ensures that corrupted records return the correct error.
 // Bugfix check for pull/521 and pull/523.
 func TestRecord_Corrupted(t *testing.T) {
 	var enc Encoder
-	dec := NewDecoder(labels.NewSymbolTable())
+	dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
 
 	t.Run("Test corrupted series record", func(t *testing.T) {
 		series := []RefSeries{
@@ -528,7 +670,7 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 			}
 			delete(lbls, model.BucketLabel)
 		}
-		return
+		return series, floatSamples, histSamples
 	}
 
 	initNHCBRefs := func(labelCount, histograms, buckets int) (series []RefSeries, floatSamples []RefSample, histSamples []RefHistogramSample) {
@@ -561,7 +703,7 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 			})
 			ref++
 		}
-		return
+		return series, floatSamples, histSamples
 	}
 
 	for _, maker := range []recordsMaker{
@@ -580,7 +722,7 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 					b.Run(fmt.Sprintf("type=%s/labels=%d/histograms=%d/buckets=%d", maker.name, labelCount, histograms, buckets), func(b *testing.B) {
 						series, samples, nhcbs := maker.make(labelCount, histograms, buckets)
 						enc := Encoder{}
-						for range b.N {
+						for b.Loop() {
 							var buf []byte
 							enc.Series(series, buf)
 							enc.Samples(samples, buf)

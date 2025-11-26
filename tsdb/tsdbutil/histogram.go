@@ -20,7 +20,7 @@ import (
 )
 
 func GenerateTestHistograms(n int) (r []*histogram.Histogram) {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		h := GenerateTestHistogram(int64(i))
 		if i > 0 {
 			h.CounterResetHint = histogram.NotCounterReset
@@ -58,7 +58,7 @@ func GenerateTestHistogram(i int64) *histogram.Histogram {
 }
 
 func GenerateTestCustomBucketsHistograms(n int) (r []*histogram.Histogram) {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		h := GenerateTestCustomBucketsHistogram(int64(i))
 		if i > 0 {
 			h.CounterResetHint = histogram.NotCounterReset
@@ -83,7 +83,7 @@ func GenerateTestCustomBucketsHistogram(i int64) *histogram.Histogram {
 }
 
 func GenerateTestGaugeHistograms(n int) (r []*histogram.Histogram) {
-	for x := 0; x < n; x++ {
+	for x := range n {
 		i := int64(math.Sin(float64(x))*100) + 100
 		r = append(r, GenerateTestGaugeHistogram(i))
 	}
@@ -97,7 +97,7 @@ func GenerateTestGaugeHistogram(i int64) *histogram.Histogram {
 }
 
 func GenerateTestFloatHistograms(n int) (r []*histogram.FloatHistogram) {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		h := GenerateTestFloatHistogram(int64(i))
 		if i > 0 {
 			h.CounterResetHint = histogram.NotCounterReset
@@ -129,7 +129,7 @@ func GenerateTestFloatHistogram(i int64) *histogram.FloatHistogram {
 }
 
 func GenerateTestCustomBucketsFloatHistograms(n int) (r []*histogram.FloatHistogram) {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		h := GenerateTestCustomBucketsFloatHistogram(int64(i))
 		if i > 0 {
 			h.CounterResetHint = histogram.NotCounterReset
@@ -154,7 +154,7 @@ func GenerateTestCustomBucketsFloatHistogram(i int64) *histogram.FloatHistogram 
 }
 
 func GenerateTestGaugeFloatHistograms(n int) (r []*histogram.FloatHistogram) {
-	for x := 0; x < n; x++ {
+	for x := range n {
 		i := int64(math.Sin(float64(x))*100) + 100
 		r = append(r, GenerateTestGaugeFloatHistogram(i))
 	}

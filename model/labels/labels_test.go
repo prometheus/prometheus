@@ -23,7 +23,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 )
 
 var (
@@ -58,7 +58,7 @@ func TestLabels_String(t *testing.T) {
 
 func BenchmarkString(b *testing.B) {
 	ls := New(benchmarkLabels...)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = ls.String()
 	}
 }
@@ -67,17 +67,19 @@ func TestSizeOfLabels(t *testing.T) {
 	require.Len(t, expectedSizeOfLabels, len(testCaseLabels))
 	for i, c := range expectedSizeOfLabels { // Declared in build-tag-specific files, e.g. labels_slicelabels_test.go.
 		var total uint64
-		testCaseLabels[i].Range(func(l Label) {
+		labels := testCaseLabels[i]
+		labels.Range(func(l Label) {
 			total += SizeOfLabels(l.Name, l.Value, 1)
 		})
-		require.Equal(t, c, total)
+		require.Equalf(t, c, total, "unexpected size for test case %d: %v", i, labels)
 	}
 }
 
 func TestByteSize(t *testing.T) {
 	require.Len(t, expectedByteSize, len(testCaseLabels))
 	for i, c := range expectedByteSize { // Declared in build-tag-specific files, e.g. labels_slicelabels_test.go.
-		require.Equal(t, c, testCaseLabels[i].ByteSize())
+		labels := testCaseLabels[i]
+		require.Equalf(t, c, labels.ByteSize(), "unexpected size for test case %d: %v", i, labels)
 	}
 }
 
@@ -86,7 +88,7 @@ var GlobalTotal uint64 // Encourage the compiler not to elide the benchmark comp
 func BenchmarkSize(b *testing.B) {
 	lb := New(benchmarkLabels...)
 	b.Run("SizeOfLabels", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			var total uint64
 			lb.Range(func(l Label) {
 				total += SizeOfLabels(l.Name, l.Value, 1)
@@ -95,7 +97,7 @@ func BenchmarkSize(b *testing.B) {
 		}
 	})
 	b.Run("ByteSize", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			GlobalTotal = lb.ByteSize()
 		}
 	})
@@ -579,7 +581,7 @@ func TestLabels_DropReserved(t *testing.T) {
 func ScratchBuilderForBenchmark() ScratchBuilder {
 	// (Only relevant to -tags dedupelabels: stuff the symbol table before adding the real labels, to avoid having everything fitting into 1 byte.)
 	b := NewScratchBuilder(256)
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		b.Add(fmt.Sprintf("name%d", i), fmt.Sprintf("value%d", i))
 	}
 	b.Labels()
@@ -625,7 +627,7 @@ func FromStringsForBenchmark(ss ...string) Labels {
 func BenchmarkLabels_Get(b *testing.B) {
 	maxLabels := 30
 	allLabels := make([]Label, maxLabels)
-	for i := 0; i < maxLabels; i++ {
+	for i := range maxLabels {
 		allLabels[i] = Label{Name: strings.Repeat(string('a'+byte(i)), 5+(i%5))}
 	}
 	for _, size := range []int{5, 10, maxLabels} {
@@ -641,12 +643,12 @@ func BenchmarkLabels_Get(b *testing.B) {
 			} {
 				b.Run(scenario.desc, func(b *testing.B) {
 					b.Run("get", func(b *testing.B) {
-						for i := 0; i < b.N; i++ {
+						for b.Loop() {
 							_ = labels.Get(scenario.label)
 						}
 					})
 					b.Run("has", func(b *testing.B) {
-						for i := 0; i < b.N; i++ {
+						for b.Loop() {
 							_ = labels.Has(scenario.label)
 						}
 					})
@@ -696,7 +698,7 @@ func BenchmarkLabels_Equals(b *testing.B) {
 	for _, scenario := range comparisonBenchmarkScenarios {
 		b.Run(scenario.desc, func(b *testing.B) {
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				_ = Equal(scenario.base, scenario.other)
 			}
 		})
@@ -707,7 +709,7 @@ func BenchmarkLabels_Compare(b *testing.B) {
 	for _, scenario := range comparisonBenchmarkScenarios {
 		b.Run(scenario.desc, func(b *testing.B) {
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				_ = Compare(scenario.base, scenario.other)
 			}
 		})
@@ -906,7 +908,7 @@ func BenchmarkLabels_Hash(b *testing.B) {
 			name: "typical labels under 1KB",
 			lbls: func() Labels {
 				b := NewBuilder(EmptyLabels())
-				for i := 0; i < 10; i++ {
+				for i := range 10 {
 					// Label ~20B name, 50B value.
 					b.Set(fmt.Sprintf("abcdefghijabcdefghijabcdefghij%d", i), fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i))
 				}
@@ -917,7 +919,7 @@ func BenchmarkLabels_Hash(b *testing.B) {
 			name: "bigger labels over 1KB",
 			lbls: func() Labels {
 				b := NewBuilder(EmptyLabels())
-				for i := 0; i < 10; i++ {
+				for i := range 10 {
 					// Label ~50B name, 50B value.
 					b.Set(fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i), fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i))
 				}
@@ -942,7 +944,7 @@ func BenchmarkLabels_Hash(b *testing.B) {
 
 			b.ReportAllocs()
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				h = tcase.lbls.Hash()
 			}
 			benchmarkLabelsResult = h
@@ -965,7 +967,7 @@ var benchmarkLabels = []Label{
 func BenchmarkBuilder(b *testing.B) {
 	var l Labels
 	builder := NewBuilder(EmptyLabels())
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		builder.Reset(EmptyLabels())
 		for _, l := range benchmarkLabels {
 			builder.Set(l.Name, l.Value)
@@ -978,7 +980,7 @@ func BenchmarkBuilder(b *testing.B) {
 func BenchmarkLabels_Copy(b *testing.B) {
 	l := NewForBenchmark(benchmarkLabels...)
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		l = l.Copy()
 	}
 }

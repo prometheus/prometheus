@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"slices"
 	"strings"
+	"unique"
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
@@ -348,6 +349,7 @@ func (ls Labels) Validate(f func(l Label) error) error {
 }
 
 // DropMetricName returns Labels with the "__name__" removed.
+//
 // Deprecated: Use DropReserved instead.
 func (ls Labels) DropMetricName() Labels {
 	return ls.DropReserved(func(n string) bool { return n == MetricName })
@@ -437,7 +439,8 @@ func (b *Builder) Labels() Labels {
 
 // ScratchBuilder allows efficient construction of a Labels from scratch.
 type ScratchBuilder struct {
-	add Labels
+	add       Labels
+	unsafeAdd bool
 }
 
 // SymbolTable is no-op, just for api parity with dedupelabels.
@@ -466,21 +469,30 @@ func (*ScratchBuilder) SetSymbolTable(*SymbolTable) {
 	// no-op
 }
 
+// SetUnsafeAdd allows turning on/off the assumptions that added strings are unsafe
+// for reuse. ScratchBuilder implementations that do reuse strings, must clone
+// the strings.
+//
+// SliceLabels will clone all added strings when this option is true.
+func (b *ScratchBuilder) SetUnsafeAdd(unsafeAdd bool) {
+	b.unsafeAdd = unsafeAdd
+}
+
 func (b *ScratchBuilder) Reset() {
 	b.add = b.add[:0]
 }
 
 // Add a name/value pair.
 // Note if you Add the same name twice you will get a duplicate label, which is invalid.
+// If SetUnsafeAdd was set to false, the values must remain live until Labels() is called.
 func (b *ScratchBuilder) Add(name, value string) {
+	if b.unsafeAdd {
+		// Underlying label structure for slicelabels shares memory, so we need to
+		// copy it if the input is unsafe.
+		name = unique.Make(name).Value()
+		value = unique.Make(value).Value()
+	}
 	b.add = append(b.add, Label{Name: name, Value: value})
-}
-
-// UnsafeAddBytes adds a name/value pair, using []byte instead of string.
-// The default version of this function is unsafe, hence the name.
-// This version is safe - it copies the strings immediately - but we keep the same name so everything compiles.
-func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
-	b.add = append(b.add, Label{Name: string(name), Value: string(value)})
 }
 
 // Sort the labels added so far by name.

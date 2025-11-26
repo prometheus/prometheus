@@ -527,7 +527,7 @@ local row = panel.row;
       ;
 
       local timestampComparison =
-        panel.timeSeries.new('Highest Timestamp In vs. Highest Timestamp Sent')
+        panel.timeSeries.new('Highest Enqueued Timestamp vs. Highest Timestamp Sent')
         + panelTimeSeriesStdOptions
         + panel.timeSeries.standardOptions.withUnit('short')
         + panel.timeSeries.queryOptions.withTargets([
@@ -535,9 +535,9 @@ local row = panel.row;
             '$datasource',
             |||
               (
-                prometheus_remote_storage_highest_timestamp_in_seconds{%(clusterLabel)s=~"$cluster", instance=~"$instance"}
+                prometheus_remote_storage_queue_highest_timestamp_seconds{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}
               -
-                ignoring(remote_name, url) group_right(instance) (prometheus_remote_storage_queue_highest_sent_timestamp_seconds{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"} != 0)
+                prometheus_remote_storage_queue_highest_sent_timestamp_seconds{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}
               )
             ||| % $._config
           )
@@ -555,9 +555,9 @@ local row = panel.row;
             '$datasource',
             |||
               clamp_min(
-                rate(prometheus_remote_storage_highest_timestamp_in_seconds{%(clusterLabel)s=~"$cluster", instance=~"$instance"}[5m])
+                rate(prometheus_remote_storage_queue_highest_timestamp_seconds{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m])
               -
-                ignoring (remote_name, url) group_right(instance) rate(prometheus_remote_storage_queue_highest_sent_timestamp_seconds{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m])
+                rate(prometheus_remote_storage_queue_highest_sent_timestamp_seconds{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m])
               , 0)
             ||| % $._config
           )
@@ -766,6 +766,7 @@ local row = panel.row;
       dashboard.new('%(prefix)sRemote Write' % $._config.grafanaPrometheus)
       + dashboard.time.withFrom('now-1h')
       + dashboard.withTags($._config.grafanaPrometheus.tags)
+      + dashboard.withUid('cb079f93-fde4-41f0-862b-d4301d7c1c56')
       + dashboard.timepicker.withRefreshIntervals($._config.grafanaPrometheus.refresh)
       + dashboard.withVariables([
         datasourceVariable,

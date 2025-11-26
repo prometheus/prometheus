@@ -562,6 +562,7 @@ func (Labels) ReleaseStrings(func(string)) {
 }
 
 // DropMetricName returns Labels with the "__name__" removed.
+//
 // Deprecated: Use DropReserved instead.
 func (ls Labels) DropMetricName() Labels {
 	return ls.DropReserved(func(n string) bool { return n == MetricName })
@@ -775,6 +776,14 @@ func (b *ScratchBuilder) SetSymbolTable(s *SymbolTable) {
 	b.syms = s
 }
 
+// SetUnsafeAdd allows turning on/off the assumptions that added strings are unsafe
+// for reuse. ScratchBuilder implementations that do reuse strings, must clone
+// the strings.
+//
+// DedupeLabels implementation copies any new strings to the symbolTable when
+// Labels() is called, so this operation is noop.
+func (ScratchBuilder) SetUnsafeAdd(bool) {}
+
 func (b *ScratchBuilder) Reset() {
 	b.add = b.add[:0]
 	b.output = EmptyLabels()
@@ -782,14 +791,9 @@ func (b *ScratchBuilder) Reset() {
 
 // Add a name/value pair.
 // Note if you Add the same name twice you will get a duplicate label, which is invalid.
+// The values must remain live until Labels() is called.
 func (b *ScratchBuilder) Add(name, value string) {
 	b.add = append(b.add, Label{Name: name, Value: value})
-}
-
-// UnsafeAddBytes adds a name/value pair, using []byte instead of string to reduce memory allocations.
-// The values must remain live until Labels() is called.
-func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
-	b.add = append(b.add, Label{Name: yoloString(name), Value: yoloString(value)})
 }
 
 // Sort the labels added so far by name.

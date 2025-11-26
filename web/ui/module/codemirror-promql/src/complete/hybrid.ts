@@ -376,7 +376,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
           { kind: ContextKind.Aggregation }
         );
         if (parent.type.id !== FunctionCallBody && parent.type.id !== MatrixSelector) {
-          // it's too avoid to autocomplete a number in situation where it shouldn't.
+          // it's to avoid to autocomplete a number in situation where it shouldn't.
           // Like with `sum by(rat)`
           result.push({ kind: ContextKind.Number });
         }
@@ -400,12 +400,18 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       // so we have or to autocomplete any kind of labelName or to autocomplete only the labelName associated to the metric
       result.push({ kind: ContextKind.LabelName, metricName: getMetricNameInGroupBy(node, state) });
       break;
-    case LabelMatchers:
+    case LabelMatchers: {
+      if (pos >= node.to) {
+        // Cursor is outside of the label matcher block (e.g. right after `}`),
+        // so don't offer label-related completions anymore.
+        break;
+      }
       // In that case we are in the given situation:
       //       metric_name{} or {}
       // so we have or to autocomplete any kind of labelName or to autocomplete only the labelName associated to the metric
       result.push({ kind: ContextKind.LabelName, metricName: getMetricNameInVectorSelector(node, state) });
       break;
+    }
     case LabelName:
       if (node.parent?.type.id === GroupingLabels) {
         // In this case we are in the given situation:

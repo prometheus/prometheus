@@ -1,9 +1,11 @@
 import {
-  Accordion,
   Alert,
   Anchor,
+  Box,
   Group,
+  Modal,
   RingProgress,
+  Skeleton,
   Stack,
   Table,
   Text,
@@ -17,7 +19,7 @@ import {
   Target,
   TargetsResult,
 } from "../../api/responseTypes/targets";
-import { FC, useMemo } from "react";
+import { FC, Suspense, useMemo, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
   setCollapsedPools,
@@ -28,6 +30,9 @@ import CustomInfiniteScroll from "../../components/CustomInfiniteScroll";
 import { useDebouncedValue, useLocalStorage } from "@mantine/hooks";
 import { targetPoolDisplayLimit } from "./ServiceDiscoveryPage";
 import { LabelBadges } from "../../components/LabelBadges";
+import ErrorBoundary from "../../components/ErrorBoundary";
+import RelabelSteps from "./RelabelSteps";
+import { Accordion } from "../../components/Accordion";
 
 type TargetLabels = {
   discoveredLabels: Labels;
@@ -162,6 +167,10 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
     key: "serviceDiscoveryPage.showEmptyPools",
     defaultValue: false,
   });
+  const [showRelabelingSteps, setShowRelabelingSteps] = useState<{
+    labels: Labels;
+    pool: string;
+  } | null>(null);
 
   // Based on the selected pool (if any), load the list of targets.
   const {
@@ -333,16 +342,29 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                 py="lg"
                                 valign={target.isDropped ? "middle" : "top"}
                               >
-                                {target.isDropped ? (
-                                  <Text c="blue.6" fw="bold">
-                                    dropped due to relabeling rules
-                                  </Text>
-                                ) : (
-                                  <LabelBadges
-                                    labels={target.labels}
-                                    wrapper={Stack}
-                                  />
-                                )}
+                                <Stack>
+                                  {target.isDropped ? (
+                                    <Text c="dimmed" fw="bold">
+                                      dropped
+                                    </Text>
+                                  ) : (
+                                    <LabelBadges
+                                      labels={target.labels}
+                                      wrapper={Stack}
+                                    />
+                                  )}
+                                  <Anchor
+                                    inherit
+                                    onClick={() => {
+                                      setShowRelabelingSteps({
+                                        labels: target.discoveredLabels,
+                                        pool: poolName,
+                                      });
+                                    }}
+                                  >
+                                    show relabeling
+                                  </Anchor>
+                                </Stack>
                               </Table.Td>
                             </Table.Tr>
                           ))}
@@ -356,6 +378,32 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
           );
         })}
       </Accordion>
+      <Modal
+        size="95%"
+        opened={showRelabelingSteps !== null}
+        onClose={() => setShowRelabelingSteps(null)}
+        title="Relabeling steps for target"
+      >
+        <ErrorBoundary
+          key={location.pathname}
+          title="Error showing relabeling steps"
+        >
+          <Suspense
+            fallback={
+              <Box mt="lg">
+                {Array.from(Array(20), (_, i) => (
+                  <Skeleton key={i} height={30} mb={15} width="100%" />
+                ))}
+              </Box>
+            }
+          >
+            <RelabelSteps
+              pool={showRelabelingSteps?.pool || ""}
+              labels={showRelabelingSteps?.labels || {}}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      </Modal>
     </Stack>
   );
 };

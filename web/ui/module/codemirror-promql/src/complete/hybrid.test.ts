@@ -300,6 +300,12 @@ describe('analyzeCompletion test', () => {
       expectedContext: [{ kind: ContextKind.LabelName, metricName: 'metric_name' }],
     },
     {
+      title: 'no label suggestions after closing matcher',
+      expr: 'up{job="prometheus"}',
+      pos: 20, // cursor is right after the closing curly bracket
+      expectedContext: [],
+    },
+    {
       title: 'continue autocomplete labelName that defined a metric',
       expr: '{myL}',
       pos: 4, // cursor is between the bracket after the string myL

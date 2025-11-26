@@ -36,7 +36,7 @@ import (
 // and allows comparison with expfmt decoders if applicable.
 //
 // NOTE(bwplotka): Previous iterations of this benchmark had different cases for isolated
-// Series, Series+Metrics with and without reuse, Series+CT. Those cases are sometimes
+// Series, Series+Metrics with and without reuse, Series+ST. Those cases are sometimes
 // good to know if you are working on a certain optimization, but it does not
 // make sense to persist such cases for everybody (e.g. for CI one day).
 // For local iteration, feel free to adjust cases/comment out code etc.
@@ -149,16 +149,17 @@ func benchParse(b *testing.B, data []byte, parser string) {
 		}
 	case "promproto":
 		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
-			return NewProtobufParser(b, true, false, st)
+			return NewProtobufParser(b, false, true, false, false, st)
 		}
 	case "omtext":
 		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
-			return NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
+			return NewOpenMetricsParser(b, st, WithOMParserSTSeriesSkipped())
 		}
 	case "omtext_with_nhcb":
-		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
-			p := NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
-			return NewNHCBParser(p, st, false)
+		newParserFn = func(buf []byte, st *labels.SymbolTable) Parser {
+			p, err := New(buf, "application/openmetrics-text", st, ParserOptions{ConvertClassicHistogramsToNHCB: true})
+			require.NoError(b, err)
+			return p
 		}
 	default:
 		b.Fatal("unknown parser", parser)
@@ -171,10 +172,9 @@ func benchParse(b *testing.B, data []byte, parser string) {
 
 	b.SetBytes(int64(len(data)))
 	b.ReportAllocs()
-	b.ResetTimer()
 
 	st := labels.NewSymbolTable()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		p := newParserFn(data, st)
 
 	Inner:
@@ -206,7 +206,7 @@ func benchParse(b *testing.B, data []byte, parser string) {
 			}
 
 			p.Labels(&res)
-			_ = p.CreatedTimestamp()
+			_ = p.StartTimestamp()
 			for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
 			}
 		}
@@ -228,9 +228,8 @@ func benchExpFmt(b *testing.B, data []byte, expFormatTypeStr string) {
 
 	b.SetBytes(int64(len(data)))
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		decSamples := make(model.Vector, 0, 50)
 		sdec := expfmt.SampleDecoder{
 			Dec: expfmt.NewDecoder(bytes.NewReader(data), expfmt.NewFormat(expfmtFormatType)),
@@ -267,15 +266,15 @@ func readTestdataFile(tb testing.TB, file string) []byte {
 
 /*
 	export bench=v1 && go test ./model/textparse/... \
-		 -run '^$' -bench '^BenchmarkCreatedTimestampPromProto' \
+		 -run '^$' -bench '^BenchmarkStartTimestampPromProto' \
 		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
 	 | tee ${bench}.txt
 */
-func BenchmarkCreatedTimestampPromProto(b *testing.B) {
+func BenchmarkStartTimestampPromProto(b *testing.B) {
 	data := createTestProtoBuf(b).Bytes()
 
 	st := labels.NewSymbolTable()
-	p := NewProtobufParser(data, true, false, st)
+	p := NewProtobufParser(data, false, true, false, false, st)
 
 	found := false
 Inner:
@@ -301,8 +300,8 @@ Inner:
 	b.Run("case=no-ct", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			if p.CreatedTimestamp() != 0 {
+		for b.Loop() {
+			if p.StartTimestamp() != 0 {
 				b.Fatal("should be nil")
 			}
 		}
@@ -331,8 +330,8 @@ Inner2:
 	b.Run("case=ct", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			if p.CreatedTimestamp() == 0 {
+		for b.Loop() {
+			if p.StartTimestamp() == 0 {
 				b.Fatal("should be not nil")
 			}
 		}

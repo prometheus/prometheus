@@ -39,7 +39,7 @@ type Pool[T any] struct {
 func New[T any](item func() T) Pool[T] {
 	return Pool[T]{
 		items: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				val := item()
 				return &val
 			},

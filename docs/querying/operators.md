@@ -14,6 +14,13 @@ sign for each element. The sign of a histogram sample is inverted by inverting
 the sign of all bucket populations and the count and the sum of observations.
 The resulting histogram sample is always considered a gauge histogram.
 
+NOTE: A histogram with any negative bucket population or a negative count of
+observations should only be used as an intermediate result. If such a negative
+histogram is the final outcome of a recording rule, the rule evaluation will
+fail. Negative histograms cannot be represented by any of the exchange formats
+(exposition, remote-write, OTLP), so they cannot ingested into Prometheus in
+any way and are only created by PromQL expressions.
+
 ## Binary operators
 
 Binary operators cover basic logical and arithmetic operations. For operations
@@ -101,6 +108,9 @@ operands and all subtractions result in a gauge histogram.
 **In any arithmetic binary operation involving vectors**, the metric name is
 dropped. This occurs even if `__name__` is explicitly mentioned in `on` 
 (see https://github.com/prometheus/prometheus/issues/16631 for further discussion).
+
+**For any arithmetic binary operation that may result in a negative
+histogram**, take into account the [respective note above](#unary-operator).
 
 ### Trigonometric binary operators
 
@@ -415,7 +425,7 @@ To get the 5 instances with the highest memory consumption across all instances 
 
     topk(5, memory_consumption_bytes)
 
-#### `limitk` and `limit_ratio`
+#### `limitk`
 
 `limitk(k, v)` returns a subset of `k` input samples, including
 the original labels in the result vector. 

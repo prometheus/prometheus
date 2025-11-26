@@ -240,7 +240,7 @@ const fuzzLen = 500
 
 func generateRandomEntries(w *WL, records chan []byte) error {
 	var recs [][]byte
-	for i := 0; i < fuzzLen; i++ {
+	for i := range fuzzLen {
 		var sz int64
 		switch i % 5 {
 		case 0, 1:

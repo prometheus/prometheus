@@ -26,7 +26,7 @@ import (
 
 func TestJsonCodec_Encode(t *testing.T) {
 	cases := []struct {
-		response interface{}
+		response any
 		expected string
 	}{
 		{

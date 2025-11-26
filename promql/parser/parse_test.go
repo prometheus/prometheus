@@ -32,7 +32,7 @@ import (
 )
 
 func repeatError(query string, err error, start, startStep, end, endStep, count int) (errs ParseErrors) {
-	for i := 0; i < count; i++ {
+	for i := range count {
 		errs = append(errs, ParseErr{
 			PositionRange: posrange.PositionRange{
 				Start: posrange.Pos(start + (i * startStep)),
@@ -735,6 +735,17 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `@@`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 1},
+				Err:           errors.New(`unexpected <op:@>`),
+				Query:         `@@`,
+			},
+		},
+	},
+	{
 		input: "1 offset 1d",
 		fail:  true,
 		errors: ParseErrors{
@@ -796,6 +807,28 @@ var testExpr = []struct {
 			},
 			Range:  5 * time.Minute,
 			EndPos: 21,
+		},
+	},
+	{
+		input: `anchored{job="test"}`,
+		expected: &VectorSelector{
+			Name: "anchored",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, "job", "test"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "anchored"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 20},
+		},
+	},
+	{
+		input: `smoothed{job="test"}`,
+		expected: &VectorSelector{
+			Name: "smoothed",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, "job", "test"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "smoothed"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 20},
 		},
 	},
 	// Vector binary operations.
@@ -2774,6 +2807,36 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: "sum by (anchored)(some_metric)",
+		expected: &AggregateExpr{
+			Op: SUM,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+				},
+				PosRange: posrange.PositionRange{Start: 18, End: 29},
+			},
+			Grouping: []string{"anchored"},
+			PosRange: posrange.PositionRange{Start: 0, End: 30},
+		},
+	},
+	{
+		input: "sum by (smoothed)(some_metric)",
+		expected: &AggregateExpr{
+			Op: SUM,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+				},
+				PosRange: posrange.PositionRange{Start: 18, End: 29},
+			},
+			Grouping: []string{"smoothed"},
+			PosRange: posrange.PositionRange{Start: 0, End: 30},
+		},
+	},
+	{
 		input: `sum by ("foo bar")({"some.metric"})`,
 		expected: &AggregateExpr{
 			Op: SUM,
@@ -4323,6 +4386,17 @@ var testExpr = []struct {
 			PosRange: posrange.PositionRange{Start: 0, End: 73},
 		},
 	},
+	{
+		input: `info(http_request_counter_total{namespace="zzz"}, {foo="bar"} == 1)`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 50, End: 66},
+				Err:           errors.New("expected label selectors only"),
+				Query:         `info(http_request_counter_total{namespace="zzz"}, {foo="bar"} == 1)`,
+			},
+		},
+	},
 	// Test that nested parentheses result in the correct position range.
 	{
 		input: `foo[11s+10s-5*2^2]`,
@@ -5603,7 +5677,6 @@ func TestParseHistogramSeries(t *testing.T) {
 						Offset: 0,
 						Length: 3,
 					}},
-					CounterResetHint: histogram.GaugeType,
 				},
 				{
 					Schema:          1,
@@ -5612,7 +5685,6 @@ func TestParseHistogramSeries(t *testing.T) {
 						Offset: 0,
 						Length: 3,
 					}},
-					CounterResetHint: histogram.GaugeType,
 				},
 			},
 		},

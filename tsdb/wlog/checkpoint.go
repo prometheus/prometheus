@@ -156,7 +156,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		exemplars             []record.RefExemplar
 		metadata              []record.RefMetadata
 		st                    = labels.NewSymbolTable() // Needed for decoding; labels do not outlive this function.
-		dec                   = record.NewDecoder(st)
+		dec                   = record.NewDecoder(st, logger)
 		enc                   record.Encoder
 		buf                   []byte
 		recs                  [][]byte
@@ -410,7 +410,7 @@ func listCheckpoints(dir string) (refs []checkpointRef, err error) {
 		return nil, err
 	}
 
-	for i := 0; i < len(files); i++ {
+	for i := range files {
 		fi := files[i]
 		if !strings.HasPrefix(fi.Name(), CheckpointPrefix) {
 			continue

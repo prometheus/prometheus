@@ -41,7 +41,7 @@ func ContextFromRequest(ctx context.Context, r *http.Request) context.Context {
 	if v := ctx.Value(pathParam{}); v != nil {
 		path = v.(string)
 	}
-	return promql.NewOriginContext(ctx, map[string]interface{}{
+	return promql.NewOriginContext(ctx, map[string]any{
 		"httpRequest": map[string]string{
 			"clientIP": ip,
 			"method":   r.Method,

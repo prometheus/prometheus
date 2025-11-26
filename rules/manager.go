@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	maps0 "maps"
 	"net/url"
 	"path/filepath"
 	"slices"
@@ -144,6 +145,10 @@ func NewManager(o *ManagerOptions) *Manager {
 	default:
 		panic(fmt.Errorf("unrecognized name validation scheme: %s", o.NameValidationScheme))
 	}
+	if o.Context == nil {
+		o.Context = context.Background()
+	}
+
 	if o.Metrics == nil {
 		o.Metrics = NewGroupMetrics(o.Registerer)
 	}
@@ -582,9 +587,7 @@ func FromMaps(maps ...map[string]string) labels.Labels {
 	mLables := make(map[string]string)
 
 	for _, m := range maps {
-		for k, v := range m {
-			mLables[k] = v
-		}
+		maps0.Copy(mLables, m)
 	}
 
 	return labels.FromMap(mLables)

@@ -21,6 +21,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,13 +34,13 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
@@ -202,7 +203,6 @@ func TestSendAlerts(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		tc := tc
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			senderFunc := senderFunc(func(alerts ...*notifier.Alert) {
 				require.NotEmpty(t, tc.in, "sender called with 0 alert")
@@ -589,13 +589,13 @@ func TestDocumentation(t *testing.T) {
 func TestRwProtoMsgFlagParser(t *testing.T) {
 	t.Parallel()
 
-	defaultOpts := config.RemoteWriteProtoMsgs{
-		config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2,
+	defaultOpts := remoteapi.MessageTypes{
+		remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType,
 	}
 
 	for _, tcase := range []struct {
 		args        []string
-		expected    []config.RemoteWriteProtoMsg
+		expected    remoteapi.MessageTypes
 		expectedErr error
 	}{
 		{
@@ -604,38 +604,38 @@ func TestRwProtoMsgFlagParser(t *testing.T) {
 		},
 		{
 			args:        []string{"--test-proto-msgs", "test"},
-			expectedErr: errors.New("unknown remote write protobuf message test, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request"),
+			expectedErr: errors.New("unknown type for remote write protobuf message test, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request"),
 		},
 		{
 			args:     []string{"--test-proto-msgs", "io.prometheus.write.v2.Request"},
-			expected: config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV2},
+			expected: remoteapi.MessageTypes{remoteapi.WriteV2MessageType},
 		},
 		{
 			args: []string{
 				"--test-proto-msgs", "io.prometheus.write.v2.Request",
 				"--test-proto-msgs", "io.prometheus.write.v2.Request",
 			},
-			expectedErr: errors.New("duplicated io.prometheus.write.v2.Request flag value, got [io.prometheus.write.v2.Request] already"),
-		},
-		{
-			args: []string{
-				"--test-proto-msgs", "io.prometheus.write.v2.Request",
-				"--test-proto-msgs", "prometheus.WriteRequest",
-			},
-			expected: config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV2, config.RemoteWriteProtoMsgV1},
+			expectedErr: errors.New("duplicated io.prometheus.write.v2.Request flag value, got io.prometheus.write.v2.Request already"),
 		},
 		{
 			args: []string{
 				"--test-proto-msgs", "io.prometheus.write.v2.Request",
 				"--test-proto-msgs", "prometheus.WriteRequest",
+			},
+			expected: remoteapi.MessageTypes{remoteapi.WriteV2MessageType, remoteapi.WriteV1MessageType},
+		},
+		{
+			args: []string{
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+				"--test-proto-msgs", "prometheus.WriteRequest",
 				"--test-proto-msgs", "io.prometheus.write.v2.Request",
 			},
-			expectedErr: errors.New("duplicated io.prometheus.write.v2.Request flag value, got [io.prometheus.write.v2.Request prometheus.WriteRequest] already"),
+			expectedErr: errors.New("duplicated io.prometheus.write.v2.Request flag value, got io.prometheus.write.v2.Request, prometheus.WriteRequest already"),
 		},
 	} {
 		t.Run(strings.Join(tcase.args, ","), func(t *testing.T) {
 			a := kingpin.New("test", "")
-			var opt []config.RemoteWriteProtoMsg
+			var opt remoteapi.MessageTypes
 			a.Flag("test-proto-msgs", "").Default(defaultOpts.Strings()...).SetValue(rwProtoMsgFlagValue(&opt))
 
 			_, err := a.Parse(tcase.args)
@@ -663,7 +663,7 @@ func reloadPrometheusConfig(t *testing.T, reloadURL string) {
 func getMetricValue(t *testing.T, body io.Reader, metricType model.MetricType, metricName string) (float64, error) {
 	t.Helper()
 
-	p := expfmt.TextParser{}
+	p := expfmt.NewTextParser(model.UTF8Validation)
 	metricFamilies, err := p.TextToMetricFamilies(body)
 	if err != nil {
 		return 0, err
@@ -881,4 +881,186 @@ scrape_configs:
 			}, 15*time.Second, 500*time.Millisecond)
 		})
 	}
+}
+
+// This test verifies that metrics for the highest timestamps per queue account for relabelling.
+// See: https://github.com/prometheus/prometheus/pull/17065.
+func TestRemoteWrite_PerQueueMetricsAfterRelabeling(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "prometheus.yml")
+
+	port := testutil.RandomUnprivilegedPort(t)
+	targetPort := testutil.RandomUnprivilegedPort(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("should never be reached")
+	}))
+	t.Cleanup(server.Close)
+
+	// Simulate a remote write relabeling that doesn't yield any series.
+	config := fmt.Sprintf(`
+global:
+  scrape_interval: 1s
+scrape_configs:
+  - job_name: 'self'
+    static_configs:
+      - targets: ['localhost:%d']
+  - job_name: 'target'
+    static_configs:
+      - targets: ['localhost:%d']
+
+remote_write:
+  - url: %s
+    write_relabel_configs:
+      - source_labels: [job,__name__]
+        regex: 'target,special_metric'
+        action: keep
+`, port, targetPort, server.URL)
+	require.NoError(t, os.WriteFile(configFile, []byte(config), 0o777))
+
+	prom := prometheusCommandWithLogging(
+		t,
+		configFile,
+		port,
+		fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
+	)
+	require.NoError(t, prom.Start())
+
+	require.Eventually(t, func() bool {
+		r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+		if err != nil {
+			return false
+		}
+		defer r.Body.Close()
+		if r.StatusCode != http.StatusOK {
+			return false
+		}
+
+		metrics, err := io.ReadAll(r.Body)
+		if err != nil {
+			return false
+		}
+
+		gHighestTimestamp, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_highest_timestamp_in_seconds")
+		// The highest timestamp at storage level sees all samples, it should also consider the ones that are filtered out by relabeling.
+		if err != nil || gHighestTimestamp == 0 {
+			return false
+		}
+
+		// The queue shouldn't see and send any sample, all samples are dropped due to relabeling, the metrics should reflect that.
+		droppedSamples, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeCounter, "prometheus_remote_storage_samples_dropped_total")
+		if err != nil || droppedSamples == 0 {
+			return false
+		}
+
+		highestTimestamp, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_queue_highest_timestamp_seconds")
+		require.NoError(t, err)
+		require.Zero(t, highestTimestamp)
+
+		highestSentTimestamp, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_queue_highest_sent_timestamp_seconds")
+		require.NoError(t, err)
+		require.Zero(t, highestSentTimestamp)
+		return true
+	}, 10*time.Second, 100*time.Millisecond)
+}
+
+// TestRemoteWrite_ReshardingWithoutDeadlock ensures that resharding (scaling up) doesn't block when the shards are full.
+// See: https://github.com/prometheus/prometheus/issues/17384.
+//
+// The following shows key resharding metrics before and after the fix.
+// In v3.7.0, the deadlock prevented the resharding logic from observing the true incoming data rate.
+//
+// | Metric              | v3.7.0        | after the fix       |
+// |---------------------|---------------|---------------------|
+// | dataInRate          | 0.6           | 307.2               |
+// | dataPendingRate     | 0.2           | 306.8               |
+// | dataPending         | 0             | 1228.8              |
+// | desiredShards       | 0.6           | 369.2               |.
+func TestRemoteWrite_ReshardingWithoutDeadlock(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "prometheus.yml")
+
+	port := testutil.RandomUnprivilegedPort(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		time.Sleep(time.Second)
+	}))
+	t.Cleanup(server.Close)
+
+	config := fmt.Sprintf(`
+global:
+  # Using a smaller interval may cause the scrape to time out.
+  scrape_interval: 1s  
+scrape_configs:
+  - job_name: 'self'
+    static_configs:
+      - targets: ['localhost:%d']
+
+remote_write:
+  - url: %s
+    queue_config:
+      # Speed up the queue being full.
+      capacity: 1
+      # Helps keep the “time to send one sample” low so it doesn’t influence the resharding logic.
+      max_samples_per_send: 1
+`, port, server.URL)
+	require.NoError(t, os.WriteFile(configFile, []byte(config), 0o777))
+
+	prom := prometheusCommandWithLogging(
+		t,
+		configFile,
+		port,
+		fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
+		"--log.level=debug",
+	)
+	require.NoError(t, prom.Start())
+
+	const desiredShardsMetric = "prometheus_remote_storage_shards_desired"
+	getMetrics := func() ([]byte, error) {
+		r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+		if err != nil {
+			return nil, err
+		}
+		defer r.Body.Close()
+		if r.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("unexpected status code: %d", r.StatusCode)
+		}
+
+		metrics, err := io.ReadAll(r.Body)
+		if err != nil {
+			return nil, err
+		}
+		return metrics, nil
+	}
+
+	// Ensure the initial desired shards is 1.
+	require.Eventually(t, func() bool {
+		metrics, err := getMetrics()
+		if err != nil {
+			return false
+		}
+		initialDesiredShards, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, desiredShardsMetric)
+		if err != nil {
+			return false
+		}
+		return initialDesiredShards == 1.0
+	}, 10*time.Second, 100*time.Millisecond)
+
+	// Ensure scaling up is triggered after some time.
+	require.Eventually(t, func() bool {
+		metrics, err := getMetrics()
+		if err != nil {
+			return false
+		}
+		desiredShards, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, desiredShardsMetric)
+		if err != nil || desiredShards <= 1.0 {
+			return false
+		}
+		return true
+		// 3*shardUpdateDuration to allow for the resharding logic to run.
+	}, 30*time.Second, time.Second)
 }

@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/regexp"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/munnerz/goautoneg"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
@@ -44,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -129,6 +131,7 @@ type TargetRetriever interface {
 	TargetsActive() map[string][]*scrape.Target
 	TargetsDropped() map[string][]*scrape.Target
 	TargetsDroppedCounts() map[string]int
+	ScrapePoolConfig(string) (*config.ScrapeConfig, error)
 }
 
 // AlertmanagerRetriever provides a list of all/dropped AlertManager URLs.
@@ -183,16 +186,16 @@ type RuntimeInfo struct {
 
 // Response contains a response to a HTTP API request.
 type Response struct {
-	Status    status      `json:"status"`
-	Data      interface{} `json:"data,omitempty"`
-	ErrorType string      `json:"errorType,omitempty"`
-	Error     string      `json:"error,omitempty"`
-	Warnings  []string    `json:"warnings,omitempty"`
-	Infos     []string    `json:"infos,omitempty"`
+	Status    status   `json:"status"`
+	Data      any      `json:"data,omitempty"`
+	ErrorType string   `json:"errorType,omitempty"`
+	Error     string   `json:"error,omitempty"`
+	Warnings  []string `json:"warnings,omitempty"`
+	Infos     []string `json:"infos,omitempty"`
 }
 
 type apiFuncResult struct {
-	data      interface{}
+	data      any
 	err       *apiError
 	warnings  annotations.Annotations
 	finalizer func()
@@ -285,11 +288,12 @@ func NewAPI(
 	registerer prometheus.Registerer,
 	statsRenderer StatsRenderer,
 	rwEnabled bool,
-	acceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg,
+	acceptRemoteWriteProtoMsgs remoteapi.MessageTypes,
 	otlpEnabled, otlpDeltaToCumulative, otlpNativeDeltaIngestion bool,
-	ctZeroIngestionEnabled bool,
+	stZeroIngestionEnabled bool,
 	lookbackDelta time.Duration,
 	enableTypeAndUnitLabels bool,
+	appendMetadata bool,
 	overrideErrorCode OverrideErrorCode,
 ) *API {
 	a := &API{
@@ -335,14 +339,16 @@ func NewAPI(
 	}
 
 	if rwEnabled {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs, ctZeroIngestionEnabled)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs, stZeroIngestionEnabled, enableTypeAndUnitLabels, appendMetadata)
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, ap, configFunc, remote.OTLPOptions{
 			ConvertDelta:            otlpDeltaToCumulative,
 			NativeDelta:             otlpNativeDeltaIngestion,
 			LookbackDelta:           lookbackDelta,
+			IngestSTZeroSample:      stZeroIngestionEnabled,
 			EnableTypeAndUnitLabels: enableTypeAndUnitLabels,
+			AppendMetadata:          appendMetadata,
 		})
 	}
 
@@ -428,6 +434,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/scrape_pools", wrap(api.scrapePools))
 	r.Get("/targets", wrap(api.targets))
 	r.Get("/targets/metadata", wrap(api.targetMetadata))
+	r.Get("/targets/relabel_steps", wrap(api.targetRelabelSteps))
 	r.Get("/alertmanagers", wrapAgent(api.alertmanagers))
 
 	r.Get("/metadata", wrap(api.metricMetadata))
@@ -1302,6 +1309,49 @@ type metricMetadata struct {
 	Unit         string           `json:"unit"`
 }
 
+type RelabelStep struct {
+	Rule   *relabel.Config `json:"rule"`
+	Output labels.Labels   `json:"output"`
+	Keep   bool            `json:"keep"`
+}
+
+type RelabelStepsResponse struct {
+	Steps []RelabelStep `json:"steps"`
+}
+
+func (api *API) targetRelabelSteps(r *http.Request) apiFuncResult {
+	scrapePool := r.FormValue("scrapePool")
+	if scrapePool == "" {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no scrapePool parameter provided")}, nil, nil}
+	}
+	labelsJSON := r.FormValue("labels")
+	if labelsJSON == "" {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no labels parameter provided")}, nil, nil}
+	}
+	var lbls labels.Labels
+	if err := json.Unmarshal([]byte(labelsJSON), &lbls); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing labels: %w", err)}, nil, nil}
+	}
+
+	scrapeConfig, err := api.targetRetriever(r.Context()).ScrapePoolConfig(scrapePool)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error retrieving scrape config: %w", err)}, nil, nil}
+	}
+
+	rules := scrapeConfig.RelabelConfigs
+	steps := make([]RelabelStep, len(rules))
+	for i, rule := range rules {
+		outLabels, keep := relabel.Process(lbls, rules[:i+1]...)
+		steps[i] = RelabelStep{
+			Rule:   rule,
+			Output: outLabels,
+			Keep:   keep,
+		}
+	}
+
+	return apiFuncResult{&RelabelStepsResponse{Steps: steps}, nil, nil, nil}
+}
+
 // AlertmanagerDiscovery has all the active Alertmanagers.
 type AlertmanagerDiscovery struct {
 	ActiveAlertmanagers  []*AlertmanagerTarget `json:"activeAlertmanagers"`
@@ -1468,7 +1518,7 @@ type RuleGroup struct {
 	LastEvaluation time.Time `json:"lastEvaluation"`
 }
 
-type Rule interface{}
+type Rule any
 
 type AlertingRule struct {
 	// State can be "pending", "firing", "inactive".
@@ -1491,7 +1541,7 @@ type AlertingRule struct {
 type RecordingRule struct {
 	Name           string           `json:"name"`
 	Query          string           `json:"query"`
-	Labels         labels.Labels    `json:"labels,omitempty"`
+	Labels         labels.Labels    `json:"labels"`
 	Health         rules.RuleHealth `json:"health"`
 	LastError      string           `json:"lastError,omitempty"`
 	EvaluationTime float64          `json:"evaluationTime"`
@@ -2002,7 +2052,7 @@ func (api *API) cleanTombstones(*http.Request) apiFuncResult {
 
 // Query string is needed to get the position information for the annotations, and it
 // can be empty if the position information isn't needed.
-func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings annotations.Annotations, query string) {
+func (api *API) respond(w http.ResponseWriter, req *http.Request, data any, warnings annotations.Annotations, query string) {
 	statusMessage := statusSuccess
 	warn, info := warnings.AsStrings(query, 10, 10)
 
@@ -2050,7 +2100,7 @@ func (api *API) negotiateCodec(req *http.Request, resp *Response) (Codec, error)
 	return defaultCodec, nil
 }
 
-func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
+func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data any) {
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	b, err := json.Marshal(&Response{
 		Status:    statusError,

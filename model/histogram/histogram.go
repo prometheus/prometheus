@@ -256,7 +256,7 @@ func (h *Histogram) Equals(h2 *Histogram) bool {
 	}
 
 	if h.UsesCustomBuckets() {
-		if !FloatBucketsMatch(h.CustomValues, h2.CustomValues) {
+		if !CustomBucketBoundsMatch(h.CustomValues, h2.CustomValues) {
 			return false
 		}
 	}
@@ -425,23 +425,24 @@ func resize[T any](items []T, n int) []T {
 // the total h.Count).
 func (h *Histogram) Validate() error {
 	var nCount, pCount uint64
-	if h.UsesCustomBuckets() {
+	switch {
+	case IsCustomBucketsSchema(h.Schema):
 		if err := checkHistogramCustomBounds(h.CustomValues, h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
 			return fmt.Errorf("custom buckets: %w", err)
 		}
 		if h.ZeroCount != 0 {
-			return errors.New("custom buckets: must have zero count of 0")
+			return ErrHistogramCustomBucketsZeroCount
 		}
 		if h.ZeroThreshold != 0 {
-			return errors.New("custom buckets: must have zero threshold of 0")
+			return ErrHistogramCustomBucketsZeroThresh
 		}
 		if len(h.NegativeSpans) > 0 {
-			return errors.New("custom buckets: must not have negative spans")
+			return ErrHistogramCustomBucketsNegSpans
 		}
 		if len(h.NegativeBuckets) > 0 {
-			return errors.New("custom buckets: must not have negative buckets")
+			return ErrHistogramCustomBucketsNegBuckets
 		}
-	} else {
+	case IsExponentialSchema(h.Schema):
 		if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
 			return fmt.Errorf("positive side: %w", err)
 		}
@@ -453,8 +454,10 @@ func (h *Histogram) Validate() error {
 			return fmt.Errorf("negative side: %w", err)
 		}
 		if h.CustomValues != nil {
-			return errors.New("histogram with exponential schema must not have custom bounds")
+			return ErrHistogramExpSchemaCustomBounds
 		}
+	default:
+		return InvalidSchemaError(h.Schema)
 	}
 	err := checkHistogramBuckets(h.PositiveBuckets, &pCount, true)
 	if err != nil {
@@ -513,6 +516,11 @@ func (r *regularBucketIterator) Next() bool {
 		r.currIdx += span.Offset
 	}
 
+	// This protects against index out of range panic, which
+	// can only happen with an invalid histogram.
+	if r.bucketsIdx >= len(r.buckets) {
+		return false
+	}
 	r.currCount += r.buckets[r.bucketsIdx]
 	r.idxInSpan++
 	r.bucketsIdx++
@@ -574,6 +582,11 @@ func (c *cumulativeBucketIterator) Next() bool {
 		c.initialized = true
 	}
 
+	// This protects against index out of range panic, which
+	// can only happen with an invalid histogram.
+	if c.posBucketsIdx >= len(c.h.PositiveBuckets) {
+		return false
+	}
 	c.currCount += c.h.PositiveBuckets[c.posBucketsIdx]
 	c.currCumulativeCount += uint64(c.currCount)
 	c.currUpper = getBound(c.currIdx, c.h.Schema, c.h.CustomValues)
@@ -605,26 +618,37 @@ func (c *cumulativeBucketIterator) At() Bucket[uint64] {
 }
 
 // ReduceResolution reduces the histogram's spans, buckets into target schema.
-// The target schema must be smaller than the current histogram's schema.
-// This will panic if the histogram has custom buckets or if the target schema is
-// a custom buckets schema.
-func (h *Histogram) ReduceResolution(targetSchema int32) *Histogram {
+// An error is returned in the following cases:
+//   - The target schema is not smaller than the current histogram's schema.
+//   - The histogram has custom buckets.
+//   - The target schema is a custom buckets schema.
+//   - Any spans have an invalid offset.
+//   - The spans are inconsistent with the number of buckets.
+func (h *Histogram) ReduceResolution(targetSchema int32) error {
+	// Note that the follow three returns are not returning a
+	// histogram.Error because they are programming errors.
 	if h.UsesCustomBuckets() {
-		panic("cannot reduce resolution when there are custom buckets")
+		return errors.New("cannot reduce resolution when there are custom buckets")
 	}
 	if IsCustomBucketsSchema(targetSchema) {
-		panic("cannot reduce resolution to custom buckets schema")
+		return errors.New("cannot reduce resolution to custom buckets schema")
 	}
 	if targetSchema >= h.Schema {
-		panic(fmt.Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema))
+		return fmt.Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema)
 	}
 
-	h.PositiveSpans, h.PositiveBuckets = reduceResolution(
+	var err error
+
+	if h.PositiveSpans, h.PositiveBuckets, err = reduceResolution(
 		h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, true, true,
-	)
-	h.NegativeSpans, h.NegativeBuckets = reduceResolution(
+	); err != nil {
+		return err
+	}
+	if h.NegativeSpans, h.NegativeBuckets, err = reduceResolution(
 		h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, true, true,
-	)
+	); err != nil {
+		return err
+	}
 	h.Schema = targetSchema
-	return h
+	return nil
 }

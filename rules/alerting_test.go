@@ -85,6 +85,8 @@ func TestAlertingRuleState(t *testing.T) {
 	for i, test := range tests {
 		rule := NewAlertingRule(test.name, nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
 		rule.active = test.active
+		// Set evaluation timestamp to simulate that the rule has been evaluated
+		rule.SetEvaluationTimestamp(time.Now())
 		got := rule.State()
 		require.Equal(t, test.want, got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
 	}
@@ -567,7 +569,7 @@ func BenchmarkAlertingRuleAtomicField(b *testing.B) {
 	rule := NewAlertingRule("bench", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
 	done := make(chan struct{})
 	go func() {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			rule.GetEvaluationTimestamp()
 		}
 		close(done)
@@ -592,8 +594,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 	}
 
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
-	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
+	ctx := t.Context()
 
 	now := time.Now()
 

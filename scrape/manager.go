@@ -62,7 +62,7 @@ func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(str
 		graceShut:              make(chan struct{}),
 		triggerReload:          make(chan struct{}, 1),
 		metrics:                sm,
-		buffers:                pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) }),
+		buffers:                pool.New(1e3, 100e6, 3, func(sz int) any { return make([]byte, 0, sz) }),
 	}
 
 	m.metrics.setTargetMetadataCacheGatherer(m)
@@ -85,9 +85,7 @@ type Options struct {
 	DiscoveryReloadInterval model.Duration
 	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
 	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
-	EnableCreatedTimestampZeroIngestion bool
-	// Option to enable the ingestion of native histograms.
-	EnableNativeHistogramsIngestion bool
+	EnableStartTimestampZeroIngestion bool
 
 	// EnableTypeAndUnitLabels
 	EnableTypeAndUnitLabels bool
@@ -182,11 +180,6 @@ func (m *Manager) reload() {
 			scrapeConfig, ok := m.scrapeConfigs[setName]
 			if !ok {
 				m.logger.Error("error reloading target set", "err", "invalid config id:"+setName)
-				continue
-			}
-			if scrapeConfig.ConvertClassicHistogramsToNHCBEnabled() && m.opts.EnableCreatedTimestampZeroIngestion {
-				// TODO(krajorama): fix https://github.com/prometheus/prometheus/issues/15137
-				m.logger.Error("error reloading target set", "err", "cannot convert classic histograms to native histograms with custom buckets and ingest created timestamp zero samples at the same time due to https://github.com/prometheus/prometheus/issues/15137")
 				continue
 			}
 			m.metrics.targetScrapePools.Inc()
@@ -403,4 +396,35 @@ func (m *Manager) TargetsDroppedCounts() map[string]int {
 		counts[tset] = sp.droppedTargetsCount
 	}
 	return counts
+}
+
+func (m *Manager) ScrapePoolConfig(scrapePool string) (*config.ScrapeConfig, error) {
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+
+	sp, ok := m.scrapePools[scrapePool]
+	if !ok {
+		return nil, fmt.Errorf("scrape pool %q not found", scrapePool)
+	}
+
+	return sp.config, nil
+}
+
+// DisableEndOfRunStalenessMarkers disables the end-of-run staleness markers for the provided targets in the given
+// targetSet. When the end-of-run staleness is disabled for a target, when it goes away, there will be no staleness
+// markers written for its series.
+func (m *Manager) DisableEndOfRunStalenessMarkers(targetSet string, targets []*Target) {
+	// This avoids mutex lock contention.
+	if len(targets) == 0 {
+		return
+	}
+
+	// Only hold the lock to find the scrape pool
+	m.mtxScrape.Lock()
+	sp, ok := m.scrapePools[targetSet]
+	m.mtxScrape.Unlock()
+
+	if ok {
+		sp.disableEndOfRunStalenessMarkers(targets)
+	}
 }

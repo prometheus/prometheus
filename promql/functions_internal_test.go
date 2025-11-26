@@ -19,10 +19,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/util/annotations"
 )
 
 func TestKahanSumInc(t *testing.T) {
@@ -84,50 +80,23 @@ func TestKahanSumInc(t *testing.T) {
 	}
 }
 
-func newAnnotations(errs ...error) annotations.Annotations {
-	var annos annotations.Annotations
-	for _, err := range errs {
-		annos.Add(err)
-	}
-	return annos
-}
-
-// TODO(juliusmh): this test ensures histogramRate sets correct annotations.
-// This test can be removed in favor of a user facing promqltest when
-// https://github.com/prometheus/prometheus/issues/15346 is resolved.
-func TestHistogramRate_Annotations(t *testing.T) {
-	const metricName = "test"
-	pos := posrange.PositionRange{}
-	for _, tc := range []struct {
-		name            string
-		points          []HPoint
-		wantAnnotations annotations.Annotations
+func TestInterpolate(t *testing.T) {
+	tests := []struct {
+		p1, p2    FPoint
+		t         int64
+		isCounter bool
+		expected  float64
 	}{
-		{
-			name: "empty histograms",
-			points: []HPoint{
-				{H: &histogram.FloatHistogram{}},
-				{H: &histogram.FloatHistogram{}},
-			},
-			wantAnnotations: newAnnotations(
-				annotations.NewNativeHistogramNotGaugeWarning(metricName, pos),
-			),
-		},
-		{
-			name: "counter reset hint collision",
-			points: []HPoint{
-				{H: &histogram.FloatHistogram{CounterResetHint: histogram.NotCounterReset}},
-				{H: &histogram.FloatHistogram{CounterResetHint: histogram.CounterReset}},
-			},
-			wantAnnotations: newAnnotations(
-				annotations.NewNativeHistogramNotGaugeWarning(metricName, pos),
-				annotations.NewHistogramCounterResetCollisionWarning(pos, annotations.HistogramSub),
-			),
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, annos := histogramRate(tc.points, false, metricName, pos)
-			require.Equal(t, tc.wantAnnotations, annos)
-		})
+		{FPoint{T: 1, F: 100}, FPoint{T: 2, F: 200}, 1, false, 100},
+		{FPoint{T: 0, F: 100}, FPoint{T: 2, F: 200}, 1, false, 150},
+		{FPoint{T: 0, F: 200}, FPoint{T: 2, F: 100}, 1, false, 150},
+		{FPoint{T: 0, F: 200}, FPoint{T: 2, F: 0}, 1, true, 200},
+		{FPoint{T: 0, F: 200}, FPoint{T: 2, F: 100}, 1, true, 250},
+		{FPoint{T: 0, F: 500}, FPoint{T: 2, F: 100}, 1, true, 550},
+		{FPoint{T: 0, F: 500}, FPoint{T: 10, F: 0}, 1, true, 500},
+	}
+	for _, test := range tests {
+		result := interpolate(test.p1, test.p2, test.t, test.isCounter, false)
+		require.Equal(t, test.expected, result)
 	}
 }

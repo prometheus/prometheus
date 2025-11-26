@@ -155,10 +155,7 @@ func (b *writeBenchmark) ingestScrapes(lbls []labels.Labels, scrapeCount int) (u
 		var wg sync.WaitGroup
 		lbls := lbls
 		for len(lbls) > 0 {
-			l := 1000
-			if len(lbls) < 1000 {
-				l = len(lbls)
-			}
+			l := min(len(lbls), 1000)
 			batch := lbls[:l]
 			lbls = lbls[l:]
 
@@ -200,7 +197,7 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 	}
 	total := uint64(0)
 
-	for i := 0; i < scrapeCount; i++ {
+	for range scrapeCount {
 		app := b.storage.Appender(context.TODO())
 		ts += timeDelta
 
@@ -802,7 +799,7 @@ func formatSeriesSetOpenMetrics(ss storage.SeriesSet) error {
 		series := ss.At()
 		lbs := series.Labels()
 		metricName := lbs.Get(labels.MetricName)
-		lbs = lbs.DropMetricName()
+		lbs = lbs.DropReserved(func(n string) bool { return n == labels.MetricName })
 		it := series.Iterator(nil)
 		for it.Next() == chunkenc.ValFloat {
 			ts, val := it.At()
@@ -892,5 +889,5 @@ func generateBucket(minVal, maxVal int) (start, end, step int) {
 	start = minVal - minVal%step
 	end = maxVal - maxVal%step + step
 
-	return
+	return start, end, step
 }

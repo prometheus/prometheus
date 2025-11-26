@@ -1174,7 +1174,7 @@ func BenchmarkCompaction(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				_, err = c.Compact(dir, blockDirs, blocks)
 				require.NoError(b, err)
 			}
@@ -1196,7 +1196,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 			require.NoError(b, err)
 			for ln := 0; ln < labelNames; ln++ {
 				app := h.Appender(context.Background())
-				for lv := 0; lv < labelValues; lv++ {
+				for lv := range labelValues {
 					app.Append(0, labels.FromStrings(strconv.Itoa(ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln)), 0, 0)
 				}
 				require.NoError(b, app.Commit())
@@ -1204,7 +1204,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for i := 0; b.Loop(); i++ {
 				createBlockFromHead(b, filepath.Join(dir, fmt.Sprintf("%d-%d", i, labelNames)), h)
 			}
 			h.Close()
@@ -1228,11 +1228,11 @@ func BenchmarkCompactionFromOOOHead(b *testing.B) {
 			require.NoError(b, err)
 			for ln := 0; ln < labelNames; ln++ {
 				app := h.Appender(context.Background())
-				for lv := 0; lv < labelValues; lv++ {
+				for lv := range labelValues {
 					lbls := labels.FromStrings(strconv.Itoa(ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln))
 					_, err = app.Append(0, lbls, int64(totalSamples), 0)
 					require.NoError(b, err)
-					for ts := 0; ts < totalSamples; ts++ {
+					for ts := range totalSamples {
 						_, err = app.Append(0, lbls, int64(ts), float64(ts))
 						require.NoError(b, err)
 					}
@@ -1242,7 +1242,7 @@ func BenchmarkCompactionFromOOOHead(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for i := 0; b.Loop(); i++ {
 				oooHead, err := NewOOOCompactionHead(context.TODO(), h)
 				require.NoError(b, err)
 				createBlockFromOOOHead(b, filepath.Join(dir, fmt.Sprintf("%d-%d", i, labelNames)), oooHead)
@@ -1269,7 +1269,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 	// no new blocks were created when compaction is disabled.
 	db.DisableCompactions()
 	app := db.Appender(context.Background())
-	for i := int64(0); i < 3; i++ {
+	for i := range int64(3) {
 		_, err := app.Append(0, label, i*blockRange, 0)
 		require.NoError(t, err)
 		_, err = app.Append(0, label, i*blockRange+1000, 0)
@@ -1282,7 +1282,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 	default:
 	}
 
-	for x := 0; x < 10; x++ {
+	for range 10 {
 		if prom_testutil.ToFloat64(db.metrics.compactionsSkipped) > 0.0 {
 			break
 		}
@@ -1298,7 +1298,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 	case db.compactc <- struct{}{}:
 	default:
 	}
-	for x := 0; x < 100; x++ {
+	for range 100 {
 		if len(db.Blocks()) > 0 {
 			break
 		}
@@ -1683,7 +1683,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 							ref storage.SeriesRef
 							err error
 						)
-						for i := 0; i < numHistograms; i++ {
+						for i := range numHistograms {
 							ts := int64(i) * timeStep
 							ref, err = sparseApp.AppendHistogram(ref, ah.baseLabels, ts, ah.hists[i], nil)
 							require.NoError(t, err)
@@ -1708,7 +1708,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					// Ingest histograms the old way.
 					for _, ah := range allSparseSeries {
 						refs := make([]storage.SeriesRef, c.numBuckets+((c.numSpans-1)*c.gapBetweenSpans))
-						for i := 0; i < numHistograms; i++ {
+						for i := range numHistograms {
 							ts := int64(i) * timeStep
 
 							h := ah.hists[i]
@@ -1988,7 +1988,7 @@ func TestDelayedCompaction(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if c.compactionDelay > 0 && runtime.GOOS == "windows" {
+			if runtime.GOOS == "windows" {
 				t.Skip("Time imprecision on windows makes the test flaky, see https://github.com/prometheus/prometheus/issues/16450")
 			}
 			t.Parallel()
@@ -2117,7 +2117,6 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 

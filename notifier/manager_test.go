@@ -32,7 +32,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -752,8 +752,7 @@ func TestHangingNotifier(t *testing.T) {
 	// Initialize the discovery manager
 	// This is relevant as the updates aren't sent continually in real life, but only each updatert.
 	// The old implementation of TestHangingNotifier didn't take that into account.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	reg := prometheus.NewRegistry()
 	sdMetrics, err := discovery.RegisterSDMetrics(reg, discovery.NewRefreshMetrics(reg))
 	require.NoError(t, err)
@@ -1131,4 +1130,89 @@ alerting:
 
 	require.NoError(t, n.ApplyConfig(cfg))
 	require.Empty(t, n.Alertmanagers())
+}
+
+// TestAlerstRelabelingIsIsolated ensures that a mutation alerts relabeling in an
+// alertmanagerSet doesn't affect others.
+// See https://github.com/prometheus/prometheus/pull/17063.
+func TestAlerstRelabelingIsIsolated(t *testing.T) {
+	var (
+		errc      = make(chan error, 1)
+		expected1 = make([]*Alert, 0)
+		expected2 = make([]*Alert, 0)
+
+		status1, status2 atomic.Int32
+	)
+	status1.Store(int32(http.StatusOK))
+	status2.Store(int32(http.StatusOK))
+
+	server1 := newTestHTTPServerBuilder(&expected1, errc, "", "", &status1)
+	server2 := newTestHTTPServerBuilder(&expected2, errc, "", "", &status2)
+
+	defer server1.Close()
+	defer server2.Close()
+
+	h := NewManager(&Options{}, model.UTF8Validation, nil)
+	h.alertmanagers = make(map[string]*alertmanagerSet)
+
+	am1Cfg := config.DefaultAlertmanagerConfig
+	am1Cfg.Timeout = model.Duration(time.Second)
+	am1Cfg.AlertRelabelConfigs = []*relabel.Config{
+		{
+			SourceLabels:         model.LabelNames{"alertname"},
+			Regex:                relabel.MustNewRegexp("(.*)"),
+			TargetLabel:          "parasite",
+			Action:               relabel.Replace,
+			Replacement:          "yes",
+			NameValidationScheme: model.UTF8Validation,
+		},
+	}
+
+	am2Cfg := config.DefaultAlertmanagerConfig
+	am2Cfg.Timeout = model.Duration(time.Second)
+
+	h.alertmanagers = map[string]*alertmanagerSet{
+		"am1": {
+			ams: []alertmanager{
+				alertmanagerMock{
+					urlf: func() string { return server1.URL },
+				},
+			},
+			cfg: &am1Cfg,
+		},
+		"am2": {
+			ams: []alertmanager{
+				alertmanagerMock{
+					urlf: func() string { return server2.URL },
+				},
+			},
+			cfg: &am2Cfg,
+		},
+	}
+
+	testAlert := &Alert{
+		Labels: labels.FromStrings("alertname", "test"),
+	}
+	h.queue = []*Alert{testAlert}
+
+	expected1 = append(expected1, &Alert{
+		Labels: labels.FromStrings("alertname", "test", "parasite", "yes"),
+	})
+
+	// am2 shouldn't get the parasite label.
+	expected2 = append(expected2, &Alert{
+		Labels: labels.FromStrings("alertname", "test"),
+	})
+
+	checkNoErr := func() {
+		t.Helper()
+		select {
+		case err := <-errc:
+			require.NoError(t, err)
+		default:
+		}
+	}
+
+	require.True(t, h.sendAll(h.queue...))
+	checkNoErr()
 }

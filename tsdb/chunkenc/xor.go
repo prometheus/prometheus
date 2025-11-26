@@ -52,6 +52,8 @@ import (
 )
 
 const (
+	chunkHeaderSize               = 2
+	chunkAllocationSize           = 128
 	chunkCompactCapacityThreshold = 32
 )
 
@@ -62,7 +64,7 @@ type XORChunk struct {
 
 // NewXORChunk returns a new chunk with XOR encoding.
 func NewXORChunk() *XORChunk {
-	b := make([]byte, 2, 128)
+	b := make([]byte, chunkHeaderSize, chunkAllocationSize)
 	return &XORChunk{b: bstream{stream: b, count: 0}}
 }
 
@@ -98,6 +100,9 @@ func (c *XORChunk) Compact() {
 // It is not valid to call Appender() multiple times concurrently or to use multiple
 // Appenders on the same chunk.
 func (c *XORChunk) Appender() (Appender, error) {
+	if len(c.b.stream) == chunkHeaderSize { // Avoid allocating an Iterator when chunk is empty.
+		return &xorAppender{b: &c.b, t: math.MinInt64, leading: 0xff}, nil
+	}
 	it := c.iterator(nil)
 
 	// To get an appender we must know the state it would have if we had
@@ -117,9 +122,6 @@ func (c *XORChunk) Appender() (Appender, error) {
 		leading:  it.leading,
 		trailing: it.trailing,
 	}
-	if it.numTotal == 0 {
-		a.leading = 0xff
-	}
 	return a, nil
 }
 
@@ -131,7 +133,7 @@ func (c *XORChunk) iterator(it Iterator) *xorIterator {
 	return &xorIterator{
 		// The first 2 bytes contain chunk headers.
 		// We skip that for actual samples.
-		br:       newBReader(c.b.bytes()[2:]),
+		br:       newBReader(c.b.bytes()[chunkHeaderSize:]),
 		numTotal: binary.BigEndian.Uint16(c.b.bytes()),
 		t:        math.MinInt64,
 	}
@@ -282,7 +284,7 @@ func (it *xorIterator) Err() error {
 func (it *xorIterator) Reset(b []byte) {
 	// The first 2 bytes contain chunk headers.
 	// We skip that for actual samples.
-	it.br = newBReader(b[2:])
+	it.br = newBReader(b[chunkHeaderSize:])
 	it.numTotal = binary.BigEndian.Uint16(b)
 
 	it.numRead = 0
@@ -330,7 +332,7 @@ func (it *xorIterator) Next() ValueType {
 
 	var d byte
 	// read delta-of-delta
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		d <<= 1
 		bit, err := it.br.readBitFast()
 		if err != nil {

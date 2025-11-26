@@ -129,6 +129,8 @@ var key = map[string]ItemType{
 
 	// Keywords.
 	"offset":      OFFSET,
+	"smoothed":    SMOOTHED,
+	"anchored":    ANCHORED,
 	"by":          BY,
 	"without":     WITHOUT,
 	"on":          ON,
@@ -197,6 +199,7 @@ var ItemTypeStr = map[ItemType]string{
 	EQL_REGEX: "=~",
 	NEQ_REGEX: "!~",
 	POW:       "^",
+	AT:        "@",
 }
 
 func init() {
@@ -347,7 +350,7 @@ func (l *Lexer) acceptRun(valid string) {
 
 // errorf returns an error token and terminates the scan by passing
 // back a nil pointer that will be the next state, terminating l.NextItem.
-func (l *Lexer) errorf(format string, args ...interface{}) stateFn {
+func (l *Lexer) errorf(format string, args ...any) stateFn {
 	*l.itemp = Item{ERROR, l.start, fmt.Sprintf(format, args...)}
 	l.scannedItem = true
 

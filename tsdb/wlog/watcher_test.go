@@ -161,7 +161,7 @@ func TestTailSamples(t *testing.T) {
 			}()
 
 			// Write to the initial segment then checkpoint.
-			for i := 0; i < seriesCount; i++ {
+			for i := range seriesCount {
 				ref := i + 100
 				series := enc.Series([]record.RefSeries{
 					{
@@ -171,7 +171,7 @@ func TestTailSamples(t *testing.T) {
 				}, nil)
 				require.NoError(t, w.Log(series))
 
-				for j := 0; j < samplesCount; j++ {
+				for range samplesCount {
 					inner := rand.Intn(ref + 1)
 					sample := enc.Samples([]record.RefSample{
 						{
@@ -183,7 +183,7 @@ func TestTailSamples(t *testing.T) {
 					require.NoError(t, w.Log(sample))
 				}
 
-				for j := 0; j < exemplarsCount; j++ {
+				for range exemplarsCount {
 					inner := rand.Intn(ref + 1)
 					exemplar := enc.Exemplars([]record.RefExemplar{
 						{
@@ -196,7 +196,7 @@ func TestTailSamples(t *testing.T) {
 					require.NoError(t, w.Log(exemplar))
 				}
 
-				for j := 0; j < histogramsCount; j++ {
+				for range histogramsCount {
 					inner := rand.Intn(ref + 1)
 					hist := &histogram.Histogram{
 						Schema:          2,
@@ -308,7 +308,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 
 			enc := record.Encoder{}
 
-			for i := 0; i < seriesCount; i++ {
+			for i := range seriesCount {
 				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    chunks.HeadSeriesRef(i),
@@ -316,7 +316,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 					},
 				}, nil)
 				recs = append(recs, series)
-				for j := 0; j < samplesCount; j++ {
+				for j := range samplesCount {
 					sample := enc.Samples([]record.RefSample{
 						{
 							Ref: chunks.HeadSeriesRef(j),
@@ -375,7 +375,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			}()
 
 			// Write to the initial segment then checkpoint.
-			for i := 0; i < seriesCount; i++ {
+			for i := range seriesCount {
 				ref := i + 100
 				series := enc.Series([]record.RefSeries{
 					{
@@ -387,7 +387,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				// Add in an unknown record type, which should be ignored.
 				require.NoError(t, w.Log([]byte{255}))
 
-				for j := 0; j < samplesCount; j++ {
+				for range samplesCount {
 					inner := rand.Intn(ref + 1)
 					sample := enc.Samples([]record.RefSample{
 						{
@@ -404,7 +404,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			w.Truncate(1)
 
 			// Write more records after checkpointing.
-			for i := 0; i < seriesCount; i++ {
+			for i := range seriesCount {
 				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    chunks.HeadSeriesRef(i),
@@ -413,7 +413,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				}, nil)
 				require.NoError(t, w.Log(series))
 
-				for j := 0; j < samplesCount; j++ {
+				for j := range samplesCount {
 					sample := enc.Samples([]record.RefSample{
 						{
 							Ref: chunks.HeadSeriesRef(j),
@@ -468,7 +468,7 @@ func TestReadCheckpoint(t *testing.T) {
 			})
 
 			// Write to the initial segment then checkpoint.
-			for i := 0; i < seriesCount; i++ {
+			for i := range seriesCount {
 				ref := i + 100
 				series := enc.Series([]record.RefSeries{
 					{
@@ -478,7 +478,7 @@ func TestReadCheckpoint(t *testing.T) {
 				}, nil)
 				require.NoError(t, w.Log(series))
 
-				for j := 0; j < samplesCount; j++ {
+				for range samplesCount {
 					inner := rand.Intn(ref + 1)
 					sample := enc.Samples([]record.RefSample{
 						{
@@ -534,8 +534,8 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			require.NoError(t, err)
 
 			// Write a bunch of data.
-			for i := 0; i < segments; i++ {
-				for j := 0; j < seriesCount; j++ {
+			for i := range segments {
+				for j := range seriesCount {
 					ref := j + (i * 100)
 					series := enc.Series([]record.RefSeries{
 						{
@@ -545,7 +545,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 					}, nil)
 					require.NoError(t, w.Log(series))
 
-					for k := 0; k < samplesCount; k++ {
+					for range samplesCount {
 						inner := rand.Intn(ref + 1)
 						sample := enc.Samples([]record.RefSample{
 							{
@@ -615,7 +615,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			}()
 
 			// Write to the initial segment, then checkpoint later.
-			for i := 0; i < seriesCount; i++ {
+			for i := range seriesCount {
 				ref := i + 100
 				series := enc.Series([]record.RefSeries{
 					{
@@ -625,7 +625,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 				}, nil)
 				require.NoError(t, w.Log(series))
 
-				for j := 0; j < samplesCount; j++ {
+				for range samplesCount {
 					inner := rand.Intn(ref + 1)
 					sample := enc.Samples([]record.RefSample{
 						{
@@ -696,8 +696,8 @@ func TestRun_StartupTime(t *testing.T) {
 			w, err := NewSize(nil, nil, wdir, pageSize, compress)
 			require.NoError(t, err)
 
-			for i := 0; i < segments; i++ {
-				for j := 0; j < seriesCount; j++ {
+			for i := range segments {
+				for j := range seriesCount {
 					ref := j + (i * 100)
 					series := enc.Series([]record.RefSeries{
 						{
@@ -707,7 +707,7 @@ func TestRun_StartupTime(t *testing.T) {
 					}, nil)
 					require.NoError(t, w.Log(series))
 
-					for k := 0; k < samplesCount; k++ {
+					for range samplesCount {
 						inner := rand.Intn(ref + 1)
 						sample := enc.Samples([]record.RefSample{
 							{
@@ -738,7 +738,7 @@ func TestRun_StartupTime(t *testing.T) {
 
 func generateWALRecords(w *WL, segment, seriesCount, samplesCount int) error {
 	enc := record.Encoder{}
-	for j := 0; j < seriesCount; j++ {
+	for j := range seriesCount {
 		ref := j + (segment * 100)
 		series := enc.Series([]record.RefSeries{
 			{
@@ -750,7 +750,7 @@ func generateWALRecords(w *WL, segment, seriesCount, samplesCount int) error {
 			return err
 		}
 
-		for k := 0; k < samplesCount; k++ {
+		for range samplesCount {
 			inner := rand.Intn(ref + 1)
 			sample := enc.Samples([]record.RefSample{
 				{

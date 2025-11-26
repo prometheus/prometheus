@@ -388,6 +388,12 @@ type concreteSeriesIterator struct {
 	histogramsCur int
 	curValType    chunkenc.ValueType
 	series        *concreteSeries
+	err           error
+
+	// These are pre-filled with the current model histogram if curValType
+	// is ValHistogram or ValFloatHistogram, respectively.
+	curH  *histogram.Histogram
+	curFH *histogram.FloatHistogram
 }
 
 func newConcreteSeriesIterator(series *concreteSeries) chunkenc.Iterator {
@@ -404,10 +410,14 @@ func (c *concreteSeriesIterator) reset(series *concreteSeries) {
 	c.histogramsCur = -1
 	c.curValType = chunkenc.ValNone
 	c.series = series
+	c.err = nil
 }
 
 // Seek implements storage.SeriesIterator.
 func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
+	if c.err != nil {
+		return chunkenc.ValNone
+	}
 	if c.floatsCur == -1 {
 		c.floatsCur = 0
 	}
@@ -439,7 +449,7 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 		if c.series.floats[c.floatsCur].Timestamp <= c.series.histograms[c.histogramsCur].Timestamp {
 			c.curValType = chunkenc.ValFloat
 		} else {
-			c.curValType = getHistogramValType(&c.series.histograms[c.histogramsCur])
+			c.curValType = chunkenc.ValHistogram
 		}
 		// When the timestamps do not overlap the cursor for the non-selected sample type has advanced too
 		// far; we decrement it back down here.
@@ -453,16 +463,68 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	case c.floatsCur < len(c.series.floats):
 		c.curValType = chunkenc.ValFloat
 	case c.histogramsCur < len(c.series.histograms):
-		c.curValType = getHistogramValType(&c.series.histograms[c.histogramsCur])
+		c.curValType = chunkenc.ValHistogram
+	}
+	if c.curValType == chunkenc.ValHistogram {
+		c.setCurrentHistogram()
+	}
+	if c.err != nil {
+		c.curValType = chunkenc.ValNone
 	}
 	return c.curValType
 }
 
-func getHistogramValType(h *prompb.Histogram) chunkenc.ValueType {
-	if h.IsFloatHistogram() {
-		return chunkenc.ValFloatHistogram
+// setCurrentHistogram pre-fills either the curH or the curFH field with a
+// converted model histogram and sets c.curValType accordingly. It validates the
+// histogram and sets c.err accordingly. This all has to be done in Seek() and
+// Next() already so that we know if the histogram we got from the remote-read
+// source is valid or not before we allow the AtHistogram()/AtFloatHistogram()
+// call.
+func (c *concreteSeriesIterator) setCurrentHistogram() {
+	pbH := c.series.histograms[c.histogramsCur]
+
+	// Basic schema check first.
+	schema := pbH.Schema
+	if !histogram.IsKnownSchema(schema) {
+		c.err = histogram.UnknownSchemaError(schema)
+		return
 	}
-	return chunkenc.ValHistogram
+
+	if pbH.IsFloatHistogram() {
+		c.curValType = chunkenc.ValFloatHistogram
+		mFH := pbH.ToFloatHistogram()
+		if mFH.Schema > histogram.ExponentialSchemaMax && mFH.Schema <= histogram.ExponentialSchemaMaxReserved {
+			// This is a very slow path, but it should only happen if the
+			// sample is from a newer Prometheus version that supports higher
+			// resolution.
+			if err := mFH.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+				c.err = err
+				return
+			}
+		}
+		if err := mFH.Validate(); err != nil {
+			c.err = err
+			return
+		}
+		c.curFH = mFH
+		return
+	}
+	c.curValType = chunkenc.ValHistogram
+	mH := pbH.ToIntHistogram()
+	if mH.Schema > histogram.ExponentialSchemaMax && mH.Schema <= histogram.ExponentialSchemaMaxReserved {
+		// This is a very slow path, but it should only happen if the
+		// sample is from a newer Prometheus version that supports higher
+		// resolution.
+		if err := mH.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+			c.err = err
+			return
+		}
+	}
+	if err := mH.Validate(); err != nil {
+		c.err = err
+		return
+	}
+	c.curH = mH
 }
 
 // At implements chunkenc.Iterator.
@@ -479,17 +541,19 @@ func (c *concreteSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *hist
 	if c.curValType != chunkenc.ValHistogram {
 		panic("iterator is not on an integer histogram sample")
 	}
-	h := c.series.histograms[c.histogramsCur]
-	return h.Timestamp, h.ToIntHistogram()
+	return c.series.histograms[c.histogramsCur].Timestamp, c.curH
 }
 
 // AtFloatHistogram implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	if c.curValType == chunkenc.ValHistogram || c.curValType == chunkenc.ValFloatHistogram {
-		fh := c.series.histograms[c.histogramsCur]
-		return fh.Timestamp, fh.ToFloatHistogram() // integer will be auto-converted.
+	switch c.curValType {
+	case chunkenc.ValFloatHistogram:
+		return c.series.histograms[c.histogramsCur].Timestamp, c.curFH
+	case chunkenc.ValHistogram:
+		return c.series.histograms[c.histogramsCur].Timestamp, c.curH.ToFloat(nil)
+	default:
+		panic("iterator is not on a histogram sample")
 	}
-	panic("iterator is not on a histogram sample")
 }
 
 // AtT implements chunkenc.Iterator.
@@ -504,6 +568,9 @@ const noTS = int64(math.MaxInt64)
 
 // Next implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
+	if c.err != nil {
+		return chunkenc.ValNone
+	}
 	peekFloatTS := noTS
 	if c.floatsCur+1 < len(c.series.floats) {
 		peekFloatTS = c.series.floats[c.floatsCur+1].Timestamp
@@ -532,12 +599,19 @@ func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 		c.histogramsCur++
 		c.curValType = chunkenc.ValFloat
 	}
+
+	if c.curValType == chunkenc.ValHistogram {
+		c.setCurrentHistogram()
+	}
+	if c.err != nil {
+		c.curValType = chunkenc.ValNone
+	}
 	return c.curValType
 }
 
 // Err implements chunkenc.Iterator.
-func (*concreteSeriesIterator) Err() error {
-	return nil
+func (c *concreteSeriesIterator) Err() error {
+	return c.err
 }
 
 // chunkedSeriesSet implements storage.SeriesSet.

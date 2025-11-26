@@ -311,7 +311,7 @@ func TestCheckpoint(t *testing.T) {
 			require.NoError(t, err)
 			defer sr.Close()
 
-			dec := record.NewDecoder(labels.NewSymbolTable())
+			dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
 			var series []record.RefSeries
 			var metadata []record.RefMetadata
 			r := NewReader(sr)

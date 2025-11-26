@@ -50,7 +50,7 @@ func testChunk(t *testing.T, c Chunk) {
 		ts = int64(1234123324)
 		v  = 1243535.123
 	)
-	for i := 0; i < 300; i++ {
+	for i := range 300 {
 		ts += int64(rand.Intn(10000) + 1)
 		if i%2 == 0 {
 			v += float64(rand.Intn(1000000))
@@ -207,7 +207,7 @@ func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 		v   = 1243535.123
 		exp []pair
 	)
-	for i := 0; i < samplesPerChunk; i++ {
+	for range samplesPerChunk {
 		// t += int64(rand.Intn(10000) + 1)
 		t += int64(1000)
 		// v = rand.Float64()
@@ -232,11 +232,10 @@ func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 	}
 
 	b.ReportAllocs()
-	b.ResetTimer()
 
 	var res float64
 	var it Iterator
-	for i := 0; i < b.N; {
+	for i := 0; b.Loop(); {
 		it := chunk.Iterator(it)
 
 		for it.Next() == ValFloat {
@@ -287,7 +286,7 @@ func benchmarkAppender(b *testing.B, deltas func() (int64, float64), newChunk fu
 	)
 	const nSamples = 120 // Same as tsdb.DefaultSamplesPerChunk.
 	var exp []pair
-	for i := 0; i < nSamples; i++ {
+	for range nSamples {
 		dt, dv := deltas()
 		t += dt
 		v += dv
@@ -295,9 +294,8 @@ func benchmarkAppender(b *testing.B, deltas func() (int64, float64), newChunk fu
 	}
 
 	b.ReportAllocs()
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		c := newChunk()
 
 		a, err := c.Appender()

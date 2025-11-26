@@ -210,7 +210,7 @@ func TestIndexRW_Postings(t *testing.T) {
 		actualShards := make(map[uint64][]storage.SeriesRef)
 		actualPostings := make([]storage.SeriesRef, 0, len(expected))
 
-		for shardIndex := uint64(0); shardIndex < shardCount; shardIndex++ {
+		for shardIndex := range shardCount {
 			p, err = ir.Postings(ctx, "a", "1")
 			require.NoError(t, err)
 
@@ -394,7 +394,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Len(t, res, len(v))
-		for i := 0; i < len(v); i++ {
+		for i := range v {
 			require.Equal(t, v[i], res[i])
 		}
 	}
@@ -466,7 +466,7 @@ func TestSymbols(t *testing.T) {
 	symbolsStart := buf.Len()
 	buf.PutBE32int(204) // Length of symbols table.
 	buf.PutBE32int(100) // Number of symbols.
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// i represents index in unicode characters table.
 		buf.PutUvarintStr(string(rune(i))) // Symbol.
 	}
@@ -518,9 +518,8 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 		})
 	}
 	ir, _, _ := createFileReader(ctx, b, input)
-	b.ResetTimer()
 
-	for n := 0; n < b.N; n++ {
+	for n := 0; b.Loop(); n++ {
 		allPostings, err := ir.Postings(ctx, "const", fmt.Sprintf("%10d", 1))
 		require.NoError(b, err)
 
