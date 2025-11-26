@@ -894,8 +894,10 @@ func TestRemoteWrite_PerQueueMetricsAfterRelabeling(t *testing.T) {
 	port := testutil.RandomUnprivilegedPort(t)
 	targetPort := testutil.RandomUnprivilegedPort(t)
 
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		panic("should never be reached")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		require.Fail(t, "should never be reached because the remote write relabeling shouldn't yield anything", "header: %v, body: %s", w.Header(), body)
 	}))
 	t.Cleanup(server.Close)
 
