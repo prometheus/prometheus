@@ -166,22 +166,9 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
   } as CompletionResult;
 }
 
-// Polyfill RegExp.escape for compatibility with ES2024 and TypeScript.
-// Ensures safe, standards-based regex escaping in all environments.
-declare global {
-  interface RegExpConstructor {
-    escape?: (s: string) => string;
-  }
-}
-
-if (!RegExp.escape) {
-  RegExp.escape = function (s: string): string {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  };
-}
-
-// Matches complete PromQL durations, including compound units (e.g., 5m, 1d2h, 1h30m, etc.)
-export const durationWithUnitRegexp = new RegExp(`^(\\d+(${durationTerms.map((term) => RegExp.escape!(term.label)).join('|')}))+$`);
+// Matches complete PromQL durations, including compound units (e.g., 5m, 1d2h, 1h30m, etc.).
+// Duration units are a fixed, safe set (no regex metacharacters), so no escaping is needed.
+export const durationWithUnitRegexp = new RegExp(`^(\\d+(${durationTerms.map((term) => term.label).join('|')}))+$`);
 
 // Determines if a duration already has a complete time unit to prevent autocomplete insertion (issue #15452)
 function hasCompleteDurationUnit(state: EditorState, node: SyntaxNode): boolean {
