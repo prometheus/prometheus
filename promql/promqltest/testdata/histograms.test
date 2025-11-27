@@ -708,3 +708,36 @@ eval instant at 0 histogram_fraction(-Inf, 1, series)
   expect no_info
   expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series"
   # Should return no results.
+
+clear
+
+# Test what happens if NHCB has more buckets at the end of the `rate` interval
+# than the beginning of the interval. In the test data, two new buckets show up
+# after each other around midway through.
+load_with_nhcb 15s
+	testhistogram_bucket{le="0.01"} 0x10 1x10
+	testhistogram_bucket{le="0.02"} 0x9 1 2x10
+	testhistogram_bucket{le="0.05"} 1x9 2 3x10
+	testhistogram_bucket{le="0.1"} 3x9 4 5x10
+	testhistogram_bucket{le="+Inf"} 3x9 4 5x10
+	testhistogram_count 3x9 4 5x10
+	testhistogram_sum 10x20
+
+eval instant at 5m histogram_quantile(0.99, rate(testhistogram_bucket[5m]))
+	{} 0.043999999999999984
+
+# Should result in the same value as the classic quantile.
+eval instant at 5m histogram_quantile(0.99, rate(testhistogram[5m]))
+	{} 0.019799999999999998
+
+eval instant at 5m rate(testhistogram_bucket[5m])
+	{le="0.01"} 0.0033333333333333335
+	{le="0.02"} 0.006666666666666667
+	{le="0.05"} 0.007017543859649122
+	{le="0.1"} 0.007017543859649122
+	{le="+Inf"} 0.007017543859649122
+
+# Should have the same value projected from cumulative buckets to
+# absolute buckets.
+eval instant at 5m rate(testhistogram[5m])
+	{} {{schema:-53 count:0.007017543859649122 custom_values:[0.01 0.02 0.05 0.1] counter_reset_hint:gauge buckets:[0.003508771929824561 0.003508771929824561]}}
