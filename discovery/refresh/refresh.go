@@ -108,6 +108,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	now := time.Now()
 	defer func() {
 		d.metrics.Duration.Observe(time.Since(now).Seconds())
+		d.metrics.DurationHistogram.Observe(time.Since(now).Seconds())
 	}()
 
 	tgs, err := d.refreshf(ctx)
