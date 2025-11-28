@@ -2,6 +2,7 @@
 
 ## main / unreleased
 
+* [BUGFIX] Discovery/Consul: Fix filter parameter not being applied to health service endpoint, causing Node and Node.Meta filters to be ignored. #16087
 * [FEATURE] Templates: Add urlQueryEscape to template functions. #17403
 * [BUGFIX] TSDB: Register `prometheus_tsdb_sample_ooo_delta` metric properly. #17477
 
