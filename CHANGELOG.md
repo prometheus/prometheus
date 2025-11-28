@@ -2,14 +2,11 @@
 
 ## main / unreleased
 
-## 3.8.0-rc.1 / 2025-11-21
+## 3.8.0 / 2025-11-28
 
 * [CHANGE] Remote-write 2 (receiving): Update to [2.0-rc.4 spec](https://github.com/prometheus/docs/blob/60c24e450010df38cfcb4f65df874f6f9b26dbcb/docs/specs/prw/remote_write_spec_2_0.md). "created timestamp" (CT) is now called "start timestamp" (ST). #17411
-* [FEATURE] OAuth2: support jwt-bearer grant-type (RFC7523 3.1). #17592
-
-## 3.8.0-rc.0 / 2025-11-07
-
 * [CHANGE] TSDB: Native Histogram Custom Bounds with a NaN threshold are now rejected. #17287
+* [FEATURE] OAuth2: support jwt-bearer grant-type (RFC7523 3.1). #17592
 * [FEATURE] Dockerfile: Add OpenContainers spec labels to Dockerfile. #16483
 * [FEATURE] SD: Add unified AWS service discovery for ec2, lightsail and ecs services. #17046
 * [FEATURE] Native histograms are now a stable, but optional feature, use the `scrape_native_histogram` config setting. #17232 #17315
