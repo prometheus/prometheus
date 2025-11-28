@@ -18,6 +18,7 @@ import (
 	"os"
 	"path"
 	"testing"
+	"time"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/common/promslog"
@@ -82,6 +83,38 @@ func TestBlockExcludeFilter(t *testing.T) {
 			meta:       tsdb.BlockMeta{ULID: ulid.MustNew(2, nil)},
 			isExcluded: false,
 		},
+		{
+			summary: "don't read the file if there's valid cache",
+			setupFn: func(path string) {
+				// Remove the shipper file, cache should be used instead.
+				require.NoError(t, os.Remove(path))
+				// Set cached values
+				tsdbDelayCompactLastMeta = &UploadMeta{
+					Uploaded: []string{
+						ulid.MustNew(1, nil).String(),
+						ulid.MustNew(2, nil).String(),
+						ulid.MustNew(3, nil).String(),
+					},
+				}
+				tsdbDelayCompactLastMetaTime = time.Now().UTC().Add(time.Second * -1)
+			},
+			uploaded:   []ulid.ULID{},
+			meta:       tsdb.BlockMeta{ULID: ulid.MustNew(2, nil)},
+			isExcluded: false,
+		},
+		{
+			summary: "read the file if there's cache but expired",
+			setupFn: func(_ string) {
+				// Set the cache but make it too old
+				tsdbDelayCompactLastMeta = &UploadMeta{
+					Uploaded: []string{},
+				}
+				tsdbDelayCompactLastMetaTime = time.Now().UTC().Add(time.Second * -61)
+			},
+			uploaded:   []ulid.ULID{ulid.MustNew(1, nil), ulid.MustNew(2, nil), ulid.MustNew(3, nil)},
+			meta:       tsdb.BlockMeta{ULID: ulid.MustNew(2, nil)},
+			isExcluded: false,
+		},
 	} {
 		t.Run(test.summary, func(t *testing.T) {
 			dir := t.TempDir()
@@ -95,6 +128,9 @@ func TestBlockExcludeFilter(t *testing.T) {
 			data, err := json.Marshal(ts)
 			require.NoError(t, err, "failed to marshall upload meta file")
 			require.NoError(t, os.WriteFile(shipperPath, data, 0o644), "failed to write upload meta file")
+
+			tsdbDelayCompactLastMeta = nil
+			tsdbDelayCompactLastMetaTime = time.Time{}
 
 			if test.setupFn != nil {
 				test.setupFn(shipperPath)
