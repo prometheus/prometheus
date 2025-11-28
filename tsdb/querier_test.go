@@ -2417,6 +2417,10 @@ func (m mockIndex) LabelNames(_ context.Context, matchers ...*labels.Matcher) ([
 	return l, nil
 }
 
+func (m mockIndex) IndexLookupPlanner() index.LookupPlanner {
+	return &index.ScanEmptyMatchersLookupPlanner{}
+}
+
 func BenchmarkQueryIterator(b *testing.B) {
 	cases := []struct {
 		numBlocks                   int
@@ -3353,6 +3357,10 @@ func (mockMatcherIndex) PostingsForAllLabelValues(context.Context, string) index
 	return index.ErrPostings(errors.New("PostingsForAllLabelValues called"))
 }
 
+func (m mockMatcherIndex) IndexLookupPlanner() index.LookupPlanner {
+	return &index.ScanEmptyMatchersLookupPlanner{}
+}
+
 func TestPostingsForMatcher(t *testing.T) {
 	ctx := context.Background()
 
@@ -3803,6 +3811,10 @@ func (mockReaderOfLabels) Series(storage.SeriesRef, *labels.ScratchBuilder, *[]c
 
 func (mockReaderOfLabels) Symbols() index.StringIter {
 	panic("Series called")
+}
+
+func (m mockReaderOfLabels) IndexLookupPlanner() index.LookupPlanner {
+	return &index.ScanEmptyMatchersLookupPlanner{}
 }
 
 // TestMergeQuerierConcurrentSelectMatchers reproduces the data race bug from
