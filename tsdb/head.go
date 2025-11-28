@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
@@ -113,6 +114,7 @@ type Head struct {
 
 	walExpiriesMtx sync.Mutex
 	walExpiries    map[chunks.HeadSeriesRef]int64 // Series no longer in the head, and what time they must be kept until.
+	// shardWalExpiries map[uint16]map[chunks.HeadSeriesRef]int
 
 	// TODO(codesome): Extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
 	postings *index.MemPostings // Postings lists for terms.
@@ -143,6 +145,12 @@ type Head struct {
 
 	memTruncationInProcess atomic.Bool
 	memTruncationCallBack  func() // For testing purposes.
+
+	shardWALs  []*wlog.WL                      // new: one per shard
+	refToShard map[chunks.HeadSeriesRef]uint16 // new: ref → shard mapping
+	shardCount int
+	// nil if not using sharded WAL.
+	shardedWAL *wlog.Sharded
 }
 
 type ExemplarStorage interface {
@@ -213,6 +221,28 @@ func DefaultHeadOptions() *HeadOptions {
 	return ho
 }
 
+type SafeMultiRef struct {
+	mu sync.RWMutex
+	m  map[chunks.HeadSeriesRef]chunks.HeadSeriesRef
+}
+
+func NewSafeMultiRef() *SafeMultiRef {
+	return &SafeMultiRef{m: make(map[chunks.HeadSeriesRef]chunks.HeadSeriesRef)}
+}
+
+func (s *SafeMultiRef) Get(k chunks.HeadSeriesRef) (chunks.HeadSeriesRef, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	v, ok := s.m[k]
+	return v, ok
+}
+
+func (s *SafeMultiRef) Set(k, v chunks.HeadSeriesRef) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.m[k] = v
+}
+
 // SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
 // It is always a no-op in Prometheus and mainly meant for external users who import TSDB.
 // All the callbacks should be safe to be called concurrently.
@@ -226,6 +256,19 @@ type SeriesLifecycleCallback interface {
 	PostCreation(labels.Labels)
 	// PostDeletion is called after deletion of series.
 	PostDeletion(map[chunks.HeadSeriesRef]labels.Labels)
+}
+
+func NewHeadWithShards(r prometheus.Registerer, l *slog.Logger, legacyWAL *wlog.WL, shardedWAL *wlog.Sharded, wbl *wlog.WL, opts *HeadOptions, stats *HeadStats) (*Head, error) {
+	h, err := NewHead(r, l, legacyWAL, wbl, opts, stats)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("in newHeadwith shards: ", len(h.shardWALs))
+	h.shardWALs = shardedWAL.Shards()
+	h.shardCount = len(h.shardWALs)
+	h.shardedWAL = shardedWAL
+	h.refToShard = make(map[chunks.HeadSeriesRef]uint16, 1<<16)
+	return h, nil
 }
 
 // NewHead opens the head block in dir.
@@ -337,6 +380,7 @@ func (h *Head) resetInMemoryState() error {
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
 	h.walExpiries = map[chunks.HeadSeriesRef]int64{}
+	// h.shardWalExpiries = map[uint16]map[chunks.HeadSeriesRef]int{}
 	h.chunkRange.Store(h.opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
 	h.maxTime.Store(math.MinInt64)
@@ -672,7 +716,8 @@ func (h *Head) Init(minValidTime int64) error {
 
 	snapshotLoaded := false
 	var chunkSnapshotLoadDuration time.Duration
-	if h.opts.EnableMemorySnapshotOnShutdown {
+	// Snapshots are not supported with sharded WAL in fanout mode. Startup always replays all WAL shards.
+	if h.opts.EnableMemorySnapshotOnShutdown && h.shardedWAL == nil {
 		h.logger.Info("Chunk snapshot is enabled, replaying from the snapshot")
 		// If there are any WAL files, there should be at least one WAL file with an index that is current or newer
 		// than the snapshot index. If the WAL index is behind the snapshot index somehow, the snapshot is assumed
@@ -761,6 +806,13 @@ func (h *Head) Init(minValidTime int64) error {
 	h.logger.Info("Replaying WAL, this may take a while")
 
 	checkpointReplayStart := time.Now()
+
+	if h.shardedWAL != nil {
+		if err := h.loadShardedWAL(mmappedChunks, oooMmappedChunks); err != nil {
+			return err
+		}
+	}
+
 	// Backfill the checkpoint first if it exists.
 	dir, startFrom, err := wlog.LastCheckpoint(h.wal.Dir())
 	if err != nil && !errors.Is(err, record.ErrNotFound) {
@@ -1006,6 +1058,14 @@ func (h *Head) removeCorruptedMmappedChunks(err error) (map[chunks.HeadSeriesRef
 	}
 
 	return mmappedChunks, oooMmappedChunks, lastRef, nil
+}
+
+func (h *Head) pickShardForNewSeries(lset labels.Labels, ref chunks.HeadSeriesRef) int {
+	var buf []byte
+	fmt.Println("shardCOUNT IN PICKfn: ", h.shardCount)
+	shard := int(xxhash.Sum64(lset.Bytes(buf)) % uint64(h.shardCount))
+	h.refToShard[ref] = uint16(shard)
+	return shard
 }
 
 func (h *Head) ApplyConfig(cfg *config.Config, wbl *wlog.WL) {
@@ -1302,6 +1362,31 @@ func (h *Head) keepSeriesInWALCheckpointFn(mint int64) func(id chunks.HeadSeries
 	}
 }
 
+func calculateCheckpointSegments(w *wlog.WL, dir string) (first, last int, err error) {
+	first, last, err = wlog.Segments(dir)
+	if err != nil {
+		return first, last, fmt.Errorf("get segment range: %w", err)
+	}
+	// Start a new segment, so low ingestion volume TSDB don't have more WAL than
+	// needed.
+	if _, err := w.NextSegment(); err != nil {
+		return first, last, fmt.Errorf("next segment: %w", err)
+	}
+	last-- // Never consider last segment for checkpoint.
+	if last < 0 {
+		return first, last, nil // no segments yet.
+	}
+	// The lower two thirds of segments should contain mostly obsolete samples.
+	// If we have less than two segments, it's not worth checkpointing yet.
+	// With the default 2h blocks, this will keeping up to around 3h worth
+	// of WAL segments.
+	last = first + (last-first)*2/3
+	if last <= first {
+		return first, last, nil
+	}
+	return first, last, nil
+}
+
 // truncateWAL removes old data before mint from the WAL.
 func (h *Head) truncateWAL(mint int64) error {
 	h.chunkSnapshotMtx.Lock()
@@ -1313,26 +1398,10 @@ func (h *Head) truncateWAL(mint int64) error {
 	start := time.Now()
 	h.lastWALTruncationTime.Store(mint)
 
-	first, last, err := wlog.Segments(h.wal.Dir())
+	first, last, err := calculateCheckpointSegments(h.wal, h.wal.Dir())
+
 	if err != nil {
-		return fmt.Errorf("get segment range: %w", err)
-	}
-	// Start a new segment, so low ingestion volume TSDB don't have more WAL than
-	// needed.
-	if _, err := h.wal.NextSegment(); err != nil {
-		return fmt.Errorf("next segment: %w", err)
-	}
-	last-- // Never consider last segment for checkpoint.
-	if last < 0 {
-		return nil // no segments yet.
-	}
-	// The lower two thirds of segments should contain mostly obsolete samples.
-	// If we have less than two segments, it's not worth checkpointing yet.
-	// With the default 2h blocks, this will keeping up to around 3h worth
-	// of WAL segments.
-	last = first + (last-first)*2/3
-	if last <= first {
-		return nil
+		return err
 	}
 
 	h.metrics.checkpointCreationTotal.Inc()
@@ -1343,6 +1412,54 @@ func (h *Head) truncateWAL(mint int64) error {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
+	}
+	if h.shardedWAL != nil {
+		wals := h.shardedWAL.Shards()
+		for _, w := range wals {
+			shardedFirst, shardedLast, err := calculateCheckpointSegments(w, w.Dir())
+			if err != nil {
+				return err
+			}
+			if _, err = wlog.Checkpoint(h.logger, w, shardedFirst, shardedLast, h.keepSeriesInWALCheckpointFn(mint), mint); err != nil {
+				h.metrics.checkpointCreationFail.Inc()
+				var cerr *chunks.CorruptionErr
+				if errors.As(err, &cerr) {
+					h.metrics.walCorruptionsTotal.Inc()
+				}
+				return fmt.Errorf("create checkpoint: %w", err)
+			}
+
+			if err := w.Truncate(shardedLast + 1); err != nil {
+				// If truncating fails, we'll just try again at the next checkpoint.
+				// Leftover segments will just be ignored in the future if there's a checkpoint
+				// that supersedes them.
+				h.logger.Error("truncating segments failed", "err", err)
+			}
+
+			// The checkpoint is written and segments before it is truncated, so stop
+			// tracking expired series.
+			// h.walExpiriesMtx.Lock()
+			// walExpiries := h.walExpiries[uint16(shardID)]
+			// for ref, segment := range walExpiries {
+			// 	if segment <= shardedLast {
+			// 		delete(walExpiries, ref)
+			// 	}
+			// }
+			// h.walExpiriesMtx.Unlock()
+
+			// h.metrics.checkpointDeleteTotal.Inc()
+			if err := wlog.DeleteCheckpoints(w.Dir(), shardedLast); err != nil {
+				// Leftover old checkpoints do not cause problems down the line beyond
+				// occupying disk space.
+				// They will just be ignored since a higher checkpoint exists.
+				h.logger.Error("delete old checkpoints", "err", err)
+				// h.metrics.checkpointDeleteFail.Inc()
+			}
+			// h.metrics.walTruncateDuration.Observe(time.Since(start).Seconds())
+
+			h.logger.Info("sharded WAL checkpoint complete",
+				"shardedFirst", shardedFirst, "shardedLast", shardedLast)
+		}
 	}
 	if err := h.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.
@@ -1724,6 +1841,9 @@ func (h *Head) Close() error {
 	}
 	if h.wbl != nil {
 		errs.Add(h.wbl.Close())
+	}
+	if h.shardedWAL != nil {
+		errs.Add(h.shardedWAL.Close())
 	}
 	if errs.Err() == nil && h.opts.EnableMemorySnapshotOnShutdown {
 		errs.Add(h.performChunkSnapshot())
