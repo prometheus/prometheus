@@ -91,7 +91,7 @@ func TestBlockExcludeFilter(t *testing.T) {
 			for _, ul := range test.uploaded {
 				uploaded = append(uploaded, ul.String())
 			}
-			ts := UploadMetaFile{Uploaded: uploaded}
+			ts := UploadMeta{Uploaded: uploaded}
 			data, err := json.Marshal(ts)
 			require.NoError(t, err, "failed to marshall upload meta file")
 			require.NoError(t, os.WriteFile(shipperPath, data, 0o644), "failed to write upload meta file")
