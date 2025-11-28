@@ -1131,9 +1131,14 @@ func (db *DB) run(ctx context.Context) {
 	}
 }
 
-// Appender opens a new appender against the database.
+// Appender opens a new Appender against the database.
 func (db *DB) Appender(ctx context.Context) storage.Appender {
 	return dbAppender{db: db, Appender: db.head.Appender(ctx)}
+}
+
+// AppenderV2 opens a new AppenderV2 against the database.
+func (db *DB) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return dbAppenderV2{db: db, AppenderV2: db.head.AppenderV2(ctx)}
 }
 
 // ApplyConfig applies a new config to the DB.
@@ -1237,6 +1242,36 @@ func (a dbAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, 
 
 func (a dbAppender) Commit() error {
 	err := a.Appender.Commit()
+
+	// We could just run this check every few minutes practically. But for benchmarks
+	// and high frequency use cases this is the safer way.
+	if a.db.head.compactable() {
+		select {
+		case a.db.compactc <- struct{}{}:
+		default:
+		}
+	}
+	return err
+}
+
+// dbAppenderV2 wraps the DB's head appender and triggers compactions on commit
+// if necessary.
+type dbAppenderV2 struct {
+	storage.AppenderV2
+	db *DB
+}
+
+var _ storage.GetRef = dbAppenderV2{}
+
+func (a dbAppenderV2) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
+	if g, ok := a.AppenderV2.(storage.GetRef); ok {
+		return g.GetRef(lset, hash)
+	}
+	return 0, labels.EmptyLabels()
+}
+
+func (a dbAppenderV2) Commit() error {
+	err := a.AppenderV2.Commit()
 
 	// We could just run this check every few minutes practically. But for benchmarks
 	// and high frequency use cases this is the safer way.
