@@ -1163,6 +1163,14 @@ func compareNativeHistogram(exp, cur *histogram.FloatHistogram) bool {
 		return false
 	}
 
+	// Compare CounterResetHint only if explicitly specified in expected histogram.
+	// UnknownCounterReset (the default) means "don't care about the hint".
+	if exp.CounterResetHint != histogram.UnknownCounterReset {
+		if exp.CounterResetHint != cur.CounterResetHint {
+			return false
+		}
+	}
+
 	return true
 }
 
