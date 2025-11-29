@@ -129,6 +129,16 @@ func TestRulesUnitTest(t *testing.T) {
 			},
 			want: 0,
 		},
+		{
+			name: "MaxSamples limit respected",
+			args: args{
+				files: []string{"./testdata/max-samples-test.yml"},
+			},
+			queryOpts: promqltest.LazyLoaderOpts{
+				MaxSamples: 100,
+			},
+			want: 0,
+		},
 	}
 	reuseFiles := []string{}
 	reuseCount := [2]int{}
