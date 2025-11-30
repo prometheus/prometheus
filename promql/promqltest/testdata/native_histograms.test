@@ -1283,7 +1283,7 @@ eval instant at 12m sum_over_time(nhcb_metric[13m])
 eval instant at 12m avg_over_time(nhcb_metric[13m])
   expect no_warn
   expect info msg: PromQL info: mismatched custom buckets were reconciled during aggregation
-  {} {{schema:-53 count:1 sum:1 custom_values:[5] counter_reset_hint:gauge buckets:[1]}}
+  {} {{schema:-53 count:1 sum:1 custom_values:[5] buckets:[1]}}
 
 eval instant at 12m last_over_time(nhcb_metric[13m])
   expect no_warn
