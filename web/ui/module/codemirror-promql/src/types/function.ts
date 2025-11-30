@@ -17,6 +17,7 @@ import {
   AbsentOverTime,
   Acos,
   Acosh,
+  ASAPSmoothing,
   Asin,
   Asinh,
   Atan,
@@ -141,6 +142,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   [Acosh]: {
     name: 'acosh',
     argTypes: [ValueType.vector],
+    variadic: 0,
+    returnType: ValueType.vector,
+  },
+  [ASAPSmoothing]: {
+    name: 'asap_smoothing',
+    argTypes: [ValueType.matrix, ValueType.scalar],
     variadic: 0,
     returnType: ValueType.vector,
   },

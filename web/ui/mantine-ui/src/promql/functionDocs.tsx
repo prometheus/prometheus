@@ -201,6 +201,19 @@ const funcDocs: Record<string, React.ReactNode> = {
       </ul>
     </>
   ),
+  asap_smoothing: (
+    <>
+      <p>
+        <code>asap_smoothing(v range-vector, resolution scalar)</code> produces a smoothed value for time series based on
+        Automatic Time Series Smoothing with ASAP. Please consult <a href="https://dawn.cs.stanford.edu/news/automatic-time-series-smoothing-asap">ASAP Smoothing algorithm</a> or <a href="https://arxiv.org/pdf/1703.00983">VLDB 2017 paper</a> for details.
+      </p>
+
+      <p>
+        <code>asap_smoothing</code> should only be used with gauges and only works
+        for float samples.
+      </p>
+    </>
+  ),
   asin: (
     <>
       <p>The trigonometric functions work in radians:</p>
@@ -1255,7 +1268,7 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
-        
+
         <code>histogram_stddev(v instant-vector)</code> returns the estimated standard deviation of observations in a native
         histogram. For this estimation, all observations in a bucket are assumed to have the value of the mean of the bucket boundaries.
         For the zero bucket and for buckets with custom boundaries, the arithmetic mean is used. For the usual exponential buckets,

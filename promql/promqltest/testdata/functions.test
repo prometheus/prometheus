@@ -880,6 +880,33 @@ eval instant at 50m sort_by_label(node_uname_info, "release")
 	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 100
 	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 100
 
+# Tests for asap_smoothing
+clear
+load 10s
+	metric1 10 11 12 13 14 15 16 17 18 19 20 21 22
+	metric2 _  _  _  _  _  _  _  _  _  _  _  _  _
+	metric3 10 11 _  13 14 15 16 17 _  19 20 21 22
+	metric4 10 _  _  _  _  _  16 _  _  _  _  _  22
+
+eval instant at 120s asap_smoothing(metric1[2m], 10)
+	{} 20.75
+
+eval instant at 120s asap_smoothing(metric2[2m], 10)
+	expect no_info
+	#empty
+
+eval instant at 60s asap_smoothing(metric3[2m], 10)
+	{} 12.157142857142857
+
+eval instant at 120s asap_smoothing(metric3[2m], 10)
+	{} 20.75
+
+eval instant at 60s asap_smoothing(metric4[2m], 10)
+	{} 11
+
+eval instant at 120s asap_smoothing(metric4[2m], 10)
+	{} 17
+
 # Tests for double_exponential_smoothing
 clear
 

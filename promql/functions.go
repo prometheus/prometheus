@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/errx/go-asap"
 	"github.com/facette/natsort"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
@@ -553,6 +554,31 @@ func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
 	y := (1 - tf) * b
 
 	return x + y
+}
+
+// === asap_smoothing(Vector parser.ValueTypeMatrix) Vector ===
+// Implements Automatic Time Series Smoothing with ASAP.
+// https://dawn.cs.stanford.edu/news/automatic-time-series-smoothing-asap
+func funcASAPSmoothing(vectorVals []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	samples := matrixVal[0]
+	// The resolution argument.
+	resolution := int(vectorVals[0][0].F)
+
+	if resolution < 1 {
+		panic(fmt.Errorf("invalid resolution. Expected: resolution > 1, got: %d", resolution))
+	}
+
+	input := []float64{}
+	for _, i := range samples.Floats {
+		input = append(input, i.F)
+	}
+	smoothed := asap.Smooth(input, resolution)
+	if len(smoothed) == 0 {
+		return enh.Out, nil
+	}
+
+	return append(enh.Out,
+		Sample{F: smoothed[len(smoothed)-1]}), nil
 }
 
 // Double exponential smoothing is similar to a weighted moving average, where
@@ -2011,6 +2037,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"absent_over_time":             funcAbsentOverTime,
 	"acos":                         funcAcos,
 	"acosh":                        funcAcosh,
+	"asap_smoothing":               funcASAPSmoothing,
 	"asin":                         funcAsin,
 	"asinh":                        funcAsinh,
 	"atan":                         funcAtan,
