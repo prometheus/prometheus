@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -112,10 +113,10 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := tt.metric()
-			mockAppender := &mockCombinedAppender{}
-			converter := NewPrometheusConverter(mockAppender)
+			mApp := &mockAppender{}
+			converter := NewPrometheusConverter(mApp)
 
-			converter.addGaugeNumberDataPoints(
+			require.NoError(t, converter.addGaugeNumberDataPoints(
 				context.Background(),
 				metric.Gauge().DataPoints(),
 				pcommon.NewResource(),
@@ -123,13 +124,13 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 					PromoteScopeMetadata: tt.promoteScope,
 				},
 				tt.scope,
-				Metadata{
+				storage.AOptions{
 					MetricFamilyName: metric.Name(),
 				},
-			)
-			require.NoError(t, mockAppender.Commit())
+			))
+			require.NoError(t, mApp.Commit())
 
-			requireEqual(t, tt.want(), mockAppender.samples)
+			requireEqual(t, tt.want(), mApp.samples)
 		})
 	}
 }
@@ -342,10 +343,10 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := tt.metric()
-			mockAppender := &mockCombinedAppender{}
+			mockAppender := &mockAppender{}
 			converter := NewPrometheusConverter(mockAppender)
 
-			converter.addSumNumberDataPoints(
+			require.NoError(t, converter.addSumNumberDataPoints(
 				context.Background(),
 				metric.Sum().DataPoints(),
 				pcommon.NewResource(),
@@ -353,10 +354,10 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 					PromoteScopeMetadata: tt.promoteScope,
 				},
 				tt.scope,
-				Metadata{
+				storage.AOptions{
 					MetricFamilyName: metric.Name(),
 				},
-			)
+			))
 			require.NoError(t, mockAppender.Commit())
 
 			requireEqual(t, tt.want(), mockAppender.samples)

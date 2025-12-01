@@ -24,6 +24,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -854,8 +855,8 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := tt.metric()
 
-			mockAppender := &mockCombinedAppender{}
-			converter := NewPrometheusConverter(mockAppender)
+			mApp := &mockAppender{}
+			converter := NewPrometheusConverter(mApp)
 			namer := otlptranslator.MetricNamer{
 				WithMetricSuffixes: true,
 			}
@@ -870,16 +871,16 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				},
 				pmetric.AggregationTemporalityCumulative,
 				tt.scope,
-				Metadata{
+				storage.AOptions{
 					MetricFamilyName: name,
 				},
 			)
 			require.NoError(t, err)
 			require.Empty(t, annots)
 
-			require.NoError(t, mockAppender.Commit())
+			require.NoError(t, mApp.Commit())
 
-			requireEqual(t, tt.wantSeries(), mockAppender.histograms)
+			requireEqual(t, tt.wantSeries(), mApp.histograms)
 		})
 	}
 }
@@ -1327,8 +1328,8 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := tt.metric()
 
-			mockAppender := &mockCombinedAppender{}
-			converter := NewPrometheusConverter(mockAppender)
+			mApp := &mockAppender{}
+			converter := NewPrometheusConverter(mApp)
 			namer := otlptranslator.MetricNamer{
 				WithMetricSuffixes: true,
 			}
@@ -1344,7 +1345,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 				},
 				pmetric.AggregationTemporalityCumulative,
 				tt.scope,
-				Metadata{
+				storage.AOptions{
 					MetricFamilyName: name,
 				},
 			)
@@ -1352,9 +1353,9 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, annots)
 
-			require.NoError(t, mockAppender.Commit())
+			require.NoError(t, mApp.Commit())
 
-			requireEqual(t, tt.wantSeries(), mockAppender.histograms)
+			requireEqual(t, tt.wantSeries(), mApp.histograms)
 		})
 	}
 }

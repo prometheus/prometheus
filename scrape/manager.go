@@ -38,8 +38,10 @@ import (
 	"github.com/prometheus/prometheus/util/pool"
 )
 
-// NewManager is the Manager constructor.
-func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error), app storage.Appendable, registerer prometheus.Registerer) (*Manager, error) {
+// NewManager is the Manager constructor using deprecated Appendable.
+//
+// Deprecated: Use NewManagerV2 instead. NewManager will be removed (or replaced with NewManagerV2) soon (ETA: Q2 2026).
+func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error), appendableV1 storage.Appendable, registerer prometheus.Registerer) (*Manager, error) {
 	if o == nil {
 		o = &Options{}
 	}
@@ -53,7 +55,39 @@ func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(str
 	}
 
 	m := &Manager{
-		append:                 app,
+		appendableV1:           appendableV1,
+		opts:                   o,
+		logger:                 logger,
+		newScrapeFailureLogger: newScrapeFailureLogger,
+		scrapeConfigs:          make(map[string]*config.ScrapeConfig),
+		scrapePools:            make(map[string]*scrapePool),
+		graceShut:              make(chan struct{}),
+		triggerReload:          make(chan struct{}, 1),
+		metrics:                sm,
+		buffers:                pool.New(1e3, 100e6, 3, func(sz int) any { return make([]byte, 0, sz) }),
+	}
+
+	m.metrics.setTargetMetadataCacheGatherer(m)
+
+	return m, nil
+}
+
+// NewManagerWithAppendableV2 is the Manager constructor using AppendableV2.
+func NewManagerWithAppendableV2(o *Options, logger *slog.Logger, newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error), appendableV2 storage.AppendableV2, registerer prometheus.Registerer) (*Manager, error) {
+	if o == nil {
+		o = &Options{}
+	}
+	if logger == nil {
+		logger = promslog.NewNopLogger()
+	}
+
+	sm, err := newScrapeMetrics(registerer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create scrape manager due to error: %w", err)
+	}
+
+	m := &Manager{
+		appendableV2:           appendableV2,
 		opts:                   o,
 		logger:                 logger,
 		newScrapeFailureLogger: newScrapeFailureLogger,
@@ -75,19 +109,22 @@ type Options struct {
 	ExtraMetrics bool
 	// Option used by downstream scraper users like OpenTelemetry Collector
 	// to help lookup metric metadata. Should be false for Prometheus.
+	// TODO(bwplotka): Remove once appender v1 flow is removed, collector can use AppenderV2
+	// which is capable of passing metadata on every Append.
 	PassMetadataInContext bool
 	// Option to enable appending of scraped Metadata to the TSDB/other appenders. Individual appenders
 	// can decide what to do with metadata, but for practical purposes this flag exists so that metadata
 	// can be written to the WAL and thus read for remote write.
-	// TODO: implement some form of metadata storage
 	AppendMetadata bool
 	// Option to increase the interval used by scrape manager to throttle target groups updates.
 	DiscoveryReloadInterval model.Duration
+
 	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
 	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
+	// TODO(bwplotka): Remove once appender v1 flow is removed.
 	EnableStartTimestampZeroIngestion bool
 
-	// EnableTypeAndUnitLabels
+	// EnableTypeAndUnitLabels represents type-and-unit-labels feature flag.
 	EnableTypeAndUnitLabels bool
 
 	// Optional HTTP client options to use when scraping.
@@ -100,9 +137,12 @@ type Options struct {
 // Manager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups from the discovery manager.
 type Manager struct {
-	opts      *Options
-	logger    *slog.Logger
-	append    storage.Appendable
+	opts   *Options
+	logger *slog.Logger
+
+	appendableV1 storage.Appendable
+	appendableV2 storage.AppendableV2
+
 	graceShut chan struct{}
 
 	offsetSeed             uint64     // Global offsetSeed seed is used to spread scrape workload across HA setup.
@@ -183,7 +223,7 @@ func (m *Manager) reload() {
 				continue
 			}
 			m.metrics.targetScrapePools.Inc()
-			sp, err := newScrapePool(scrapeConfig, m.append, m.offsetSeed, m.logger.With("scrape_pool", setName), m.buffers, m.opts, m.metrics)
+			sp, err := newScrapePool(scrapeConfig, m.appendableV1, m.appendableV2, m.offsetSeed, m.logger.With("scrape_pool", setName), m.buffers, m.opts, m.metrics)
 			if err != nil {
 				m.metrics.targetScrapePoolsFailed.Inc()
 				m.logger.Error("error creating new scrape pool", "err", err, "scrape_pool", setName)

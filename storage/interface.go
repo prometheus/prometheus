@@ -80,7 +80,7 @@ type SampleAndChunkQueryable interface {
 // are goroutine-safe. Storage implements storage.Appender.
 type Storage interface {
 	SampleAndChunkQueryable
-	Appendable
+	AppendableV2
 
 	// StartTime returns the oldest timestamp stored in the storage.
 	StartTime() (int64, error)

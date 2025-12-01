@@ -18,6 +18,7 @@ package prometheusremotewrite
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -25,15 +26,53 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+type statsAppender struct {
+	samples    int
+	histograms int
+	metadata   int
+}
+
+func (a *statsAppender) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+	if fh != nil {
+		return 0, errors.New("mockAppender.Append: mock appender is not nil")
+	}
+	if h != nil {
+		a.histograms++
+	} else {
+		a.samples++
+	}
+
+	if !opts.Metadata.IsEmpty() {
+		a.metadata++
+	}
+
+	if ref == 0 {
+		// Use labels hash as a stand-in for unique series reference, to avoid having to track all series.
+		ref = storage.SeriesRef(ls.Hash())
+	}
+	return ref, nil
+}
+
+func (a *statsAppender) Commit() error {
+	return nil
+}
+
+func (a *statsAppender) Rollback() error {
+	return nil
+}
 
 func TestCreateAttributes(t *testing.T) {
 	resourceAttrs := map[string]string{
@@ -389,7 +428,7 @@ func TestCreateAttributes(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := NewPrometheusConverter(&mockCombinedAppender{})
+			c := NewPrometheusConverter(&mockAppender{})
 			settings := Settings{
 				PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
 					PromoteAllResourceAttributes: tc.promoteAllResourceAttributes,
@@ -413,7 +452,7 @@ func TestCreateAttributes(t *testing.T) {
 			if tc.attrs != (pcommon.Map{}) {
 				testAttrs = tc.attrs
 			}
-			lbls, err := c.createAttributes(testResource, testAttrs, tc.scope, settings, tc.ignoreAttrs, false, Metadata{}, model.MetricNameLabel, "test_metric")
+			lbls, err := c.createAttributes(testResource, testAttrs, tc.scope, settings, tc.ignoreAttrs, false, metadata.Metadata{}, model.MetricNameLabel, "test_metric")
 			require.NoError(t, err)
 
 			testutil.RequireEqual(t, tc.expectedLabels, lbls)
@@ -641,10 +680,10 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := tt.metric()
-			mockAppender := &mockCombinedAppender{}
-			converter := NewPrometheusConverter(mockAppender)
+			mApp := &mockAppender{}
+			converter := NewPrometheusConverter(mApp)
 
-			converter.addSummaryDataPoints(
+			require.NoError(t, converter.addSummaryDataPoints(
 				context.Background(),
 				metric.Summary().DataPoints(),
 				pcommon.NewResource(),
@@ -652,13 +691,13 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 					PromoteScopeMetadata: tt.promoteScope,
 				},
 				tt.scope,
-				Metadata{
+				storage.AOptions{
 					MetricFamilyName: metric.Name(),
 				},
-			)
-			require.NoError(t, mockAppender.Commit())
+			))
+			require.NoError(t, mApp.Commit())
 
-			requireEqual(t, tt.want(), mockAppender.samples)
+			requireEqual(t, tt.want(), mApp.samples)
 		})
 	}
 }
@@ -804,10 +843,10 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := tt.metric()
-			mockAppender := &mockCombinedAppender{}
-			converter := NewPrometheusConverter(mockAppender)
+			mApp := &mockAppender{}
+			converter := NewPrometheusConverter(mApp)
 
-			converter.addHistogramDataPoints(
+			require.NoError(t, converter.addHistogramDataPoints(
 				context.Background(),
 				metric.Histogram().DataPoints(),
 				pcommon.NewResource(),
@@ -815,20 +854,20 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 					PromoteScopeMetadata: tt.promoteScope,
 				},
 				tt.scope,
-				Metadata{
+				storage.AOptions{
 					MetricFamilyName: metric.Name(),
 				},
-			)
-			require.NoError(t, mockAppender.Commit())
+			))
+			require.NoError(t, mApp.Commit())
 
-			requireEqual(t, tt.want(), mockAppender.samples)
+			requireEqual(t, tt.want(), mApp.samples)
 		})
 	}
 }
 
 func TestGetPromExemplars(t *testing.T) {
 	ctx := context.Background()
-	c := NewPrometheusConverter(&mockCombinedAppender{})
+	c := NewPrometheusConverter(&mockAppender{})
 
 	t.Run("Exemplars with int value", func(t *testing.T) {
 		es := pmetric.NewExemplarSlice()
