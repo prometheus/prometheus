@@ -247,7 +247,7 @@ func (h *Histogram) CumulativeBucketIterator() BucketIterator[uint64] {
 // supposed to be used according to the schema.
 func (h *Histogram) Equals(h2 *Histogram) bool {
 	if h2 == nil {
-		return false
+		return h == nil
 	}
 
 	if h.Schema != h2.Schema || h.Count != h2.Count ||
