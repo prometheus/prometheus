@@ -46,6 +46,7 @@ import (
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/compression"
@@ -328,7 +329,7 @@ func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, pro
 func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType) *QueueManager {
 	dir := t.TempDir()
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg, nil)
 
 	return m
 }
@@ -806,7 +807,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		}
 	)
 
-	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType)
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, nil)
 	m.StoreSeries(fakeSeries, 0)
 
 	// Attempt to samples while the manager is running. We immediately stop the
@@ -1395,6 +1396,20 @@ func (c *MockWriteClient) Store(ctx context.Context, bb []byte, n int) (WriteRes
 func (c *MockWriteClient) Name() string     { return c.NameFunc() }
 func (c *MockWriteClient) Endpoint() string { return c.EndpointFunc() }
 
+func addSeriesWithMetadata(t *testing.T, h *tsdb.Head, lbls labels.Labels, meta metadata.Metadata) chunks.HeadSeriesRef {
+	app := h.Appender(context.Background())
+
+	ref, err := app.Append(0, lbls, 1000, 1.0)
+	require.NoError(t, err)
+
+	_, err = app.UpdateMetadata(0, lbls, meta)
+	require.NoError(t, err)
+
+	require.NoError(t, app.Commit())
+
+	return chunks.HeadSeriesRef(ref)
+}
+
 // Extra labels to make a more realistic workload - taken from Kubernetes' embedded cAdvisor metrics.
 var extraLabels []labels.Label = []labels.Label{
 	{Name: "kubernetes_io_arch", Value: "amd64"},
@@ -1495,7 +1510,7 @@ func BenchmarkStoreSeries(b *testing.B) {
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
 
-				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType)
+				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, nil)
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -1974,7 +1989,7 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 
 		totalSize := 0
 		for b.Loop() {
-			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false)
+			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true, false, nil)
 			req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, nil, cEnc, "snappy")
 			if err != nil {
 				b.Fatal(err)
@@ -2384,7 +2399,7 @@ func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
 	}
 
 	nSamples, nExemplars, nHistograms, nMetadata, nUnexpected := populateV2TimeSeries(
-		&symbolTable, batch, pendingData, false, false, false)
+		&symbolTable, batch, pendingData, false, false, false, nil)
 
 	require.Equal(t, 2, nSamples, "Should count 2 samples")
 	require.Equal(t, 0, nExemplars, "Should count 0 exemplars")
@@ -2504,6 +2519,7 @@ func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
 				false, // sendExemplars
 				false, // sendNativeHistograms
 				true,  // enableTypeAndUnitLabels
+				nil,   // head
 			)
 
 			require.Equal(t, 1, nSamples, "Should have 1 sample")
@@ -2624,6 +2640,7 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 				false,
 				false,
 				tc.enableTypeAndUnit,
+				nil, // head
 			)
 
 			require.Equal(t, 1, nSamples, "Should have 1 sample")
@@ -2649,6 +2666,84 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPopulateV2TimeSeriesWithHeadMetadata tests metadata lookup from TSDB head.
+func TestPopulateV2TimeSeriesWithHeadMetadata(t *testing.T) {
+	dir := t.TempDir()
+
+	opts := tsdb.DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = dir
+
+	head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	// Setup test data.
+	lbls1 := labels.FromStrings("__name__", "metric1", "job", "test")
+	lbls2 := labels.FromStrings("__name__", "metric2", "job", "test")
+
+	meta1 := metadata.Metadata{
+		Type: "counter",
+		Unit: "seconds",
+		Help: "Metric 1 help text",
+	}
+	meta2 := metadata.Metadata{
+		Type: "gauge",
+		Unit: "bytes",
+		Help: "Metric 2 help text",
+	}
+
+	ref1 := addSeriesWithMetadata(t, head, lbls1, meta1)
+	ref2 := addSeriesWithMetadata(t, head, lbls2, meta2)
+
+	batch := []timeSeries{
+		{
+			seriesLabels: lbls1,
+			seriesRef:    ref1,
+			metadata:     nil,
+			timestamp:    1000,
+			value:        42.0,
+			sType:        tSample,
+		},
+		{
+			seriesLabels: lbls2,
+			seriesRef:    ref2,
+			metadata:     nil,
+			timestamp:    1000,
+			value:        100.0,
+			sType:        tSample,
+		},
+	}
+
+	symbolTable := writev2.NewSymbolTable()
+	pendingData := make([]writev2.TimeSeries, len(batch))
+
+	nSamples, nExemplars, nHistograms, nMetadata, nUnexpected := populateV2TimeSeries(
+		&symbolTable, batch, pendingData,
+		false,
+		false,
+		false,
+		head,
+	)
+
+	require.Equal(t, 2, nSamples, "Should have 2 samples")
+	require.Equal(t, 0, nExemplars, "Should have 0 exemplars")
+	require.Equal(t, 0, nHistograms, "Should have 0 histograms")
+	require.Equal(t, 2, nMetadata, "Should have 2 metadata from head")
+	require.Equal(t, 0, nUnexpected, "Should have 0 unexpected metadata")
+
+	// Verify metadata was populated from head.
+	require.Equal(t, writev2.FromMetadataType(meta1.Type), pendingData[0].Metadata.Type)
+	require.NotZero(t, pendingData[0].Metadata.HelpRef, "Help should be populated from head")
+
+	require.Equal(t, writev2.FromMetadataType(meta2.Type), pendingData[1].Metadata.Type)
+	require.NotZero(t, pendingData[1].Metadata.HelpRef, "Help should be populated from head")
 }
 
 func TestHighestTimestampOnAppend(t *testing.T) {

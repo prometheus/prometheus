@@ -236,7 +236,11 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "metadata-wal-records":
 				c.scrape.AppendMetadata = true
 				c.web.AppendMetadata = true
+				c.tsdb.AppendMetadata = true
 				logger.Info("Experimental metadata records in WAL enabled")
+			case "metadata-series-cache":
+				c.scrape.EnableMetadataSeriesCache = true
+				logger.Info("Experimental series-level metadata cache enabled (without WAL records)")
 			case "promql-per-step-stats":
 				c.enablePerStepStats = true
 				logger.Info("Experimental per-step statistics reporting")
@@ -347,6 +351,9 @@ func main() {
 		},
 		promslogConfig: promslog.Config{},
 	}
+
+	// Enable metadata-series-cache temporarily for benchmarking.
+	cfg.scrape.EnableMetadataSeriesCache = true
 
 	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server").UsageWriter(os.Stdout)
 
@@ -599,6 +606,11 @@ func main() {
 	if err := cfg.setFeatureListOptions(logger); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing feature list: %s\n", err)
 		os.Exit(1)
+	}
+
+	// Log that metadata-series-cache is enabled by default for benchmarking.
+	if cfg.scrape.EnableMetadataSeriesCache {
+		logger.Info("TEMPORARY: Metadata series cache enabled by default for benchmarking (PR 17436)")
 	}
 
 	if agentMode && len(serverOnlyFlags) > 0 {
@@ -1890,6 +1902,7 @@ type tsdbOptions struct {
 	EnableExemplarStorage          bool
 	MaxExemplars                   int64
 	EnableMemorySnapshotOnShutdown bool
+	AppendMetadata                 bool
 	EnableDelayedCompaction        bool
 	CompactionDelayMaxPercent      int
 	EnableOverlappingCompaction    bool
@@ -1913,6 +1926,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableExemplarStorage:          opts.EnableExemplarStorage,
 		MaxExemplars:                   opts.MaxExemplars,
 		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
+		AppendMetadata:                 opts.AppendMetadata,
 		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
 		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
