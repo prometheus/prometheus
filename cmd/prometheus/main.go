@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -456,8 +457,9 @@ func main() {
 		Default("true").Hidden().BoolVar(&cfg.tsdb.EnableOverlappingCompaction)
 
 	var (
-		tsdbWALCompression     bool
-		tsdbWALCompressionType string
+		tsdbWALCompression       bool
+		tsdbWALCompressionType   string
+		tsdbDelayCompactFilePath string
 	)
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL. If false, the --storage.tsdb.wal-compression-type flag is ignored.").
 		Hidden().Default("true").BoolVar(&tsdbWALCompression)
@@ -473,6 +475,9 @@ func main() {
 
 	serverOnlyFlag(a, "storage.tsdb.delayed-compaction.max-percent", "Sets the upper limit for the random compaction delay, specified as a percentage of the head chunk range. 100 means the compaction can be delayed by up to the entire head chunk range. Only effective when the delayed-compaction feature flag is enabled.").
 		Default("10").Hidden().IntVar(&cfg.tsdb.CompactionDelayMaxPercent)
+
+	serverOnlyFlag(a, "storage.tsdb.delay-compact-file.path", "Path to a JSON file with uploaded TSDB blocks e.g. Thanos shipper meta file. If set TSDB will only compact 1 level blocks that are marked as uploaded in that file, improving external storage integrations e.g. with Thanos sidecar. 1+ level compactions won't be delayed.").
+		Default("").StringVar(&tsdbDelayCompactFilePath)
 
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
@@ -701,6 +706,12 @@ func main() {
 		); err != nil {
 			logger.Warn("automemlimit", "msg", "Failed to set GOMEMLIMIT automatically", "err", err)
 		}
+	}
+
+	if tsdbDelayCompactFilePath != "" {
+		logger.Info("Compactions will be delayed for blocks not marked as uploaded in the file tracking uploads", "path", tsdbDelayCompactFilePath)
+		cfg.tsdb.BlockCompactionExcludeFunc = exludeBlocksPendingUpload(
+			logger, tsdbDelayCompactFilePath)
 	}
 
 	// Now that the validity of the config is established, set the config
@@ -1883,6 +1894,7 @@ type tsdbOptions struct {
 	CompactionDelayMaxPercent      int
 	EnableOverlappingCompaction    bool
 	UseUncachedIO                  bool
+	BlockCompactionExcludeFunc     tsdb.BlockExcludeFilterFunc
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1906,6 +1918,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
 		UseUncachedIO:                  opts.UseUncachedIO,
+		BlockCompactionExcludeFunc:     opts.BlockCompactionExcludeFunc,
 	}
 }
 
@@ -1969,4 +1982,49 @@ func (p *rwProtoMsgFlagParser) Set(opt string) error {
 	}
 	*p.msgs = append(*p.msgs, t)
 	return nil
+}
+
+type UploadMeta struct {
+	Uploaded []string `json:"uploaded"`
+}
+
+// Cache the last read UploadMeta.
+var (
+	tsdbDelayCompactLastMeta     *UploadMeta // The content of uploadMetaPath from the last time we've opened it.
+	tsdbDelayCompactLastMetaTime time.Time   // The timestamp at which we stored tsdbDelayCompactLastMeta last time.
+)
+
+func exludeBlocksPendingUpload(logger *slog.Logger, uploadMetaPath string) tsdb.BlockExcludeFilterFunc {
+	return func(meta *tsdb.BlockMeta) bool {
+		if meta.Compaction.Level > 1 {
+			// Blocks with level > 1 are assumed to be not uploaded, thus no need to delay those.
+			// See `storage.tsdb.delay-compact-file.path` flag for detail.
+			return false
+		}
+
+		// If we have cached uploadMetaPath content that was stored in the last minute the use it.
+		if tsdbDelayCompactLastMeta != nil &&
+			tsdbDelayCompactLastMetaTime.After(time.Now().UTC().Add(time.Minute*-1)) {
+			return !slices.Contains(tsdbDelayCompactLastMeta.Uploaded, meta.ULID.String())
+		}
+
+		// We don't have anything cached or it's older than a minute. Try to open and parse the uploadMetaPath path.
+		data, err := os.ReadFile(uploadMetaPath)
+		if err != nil {
+			logger.Warn("cannot open TSDB upload meta file", slog.String("path", uploadMetaPath), slog.Any("err", err))
+			return false
+		}
+
+		var uploadMeta UploadMeta
+		if err = json.Unmarshal(data, &uploadMeta); err != nil {
+			logger.Warn("cannot parse TSDB upload meta file", slog.String("path", uploadMetaPath), slog.Any("err", err))
+			return false
+		}
+
+		// We have parsed the uploadMetaPath file, cache it.
+		tsdbDelayCompactLastMeta = &uploadMeta
+		tsdbDelayCompactLastMetaTime = time.Now().UTC()
+
+		return !slices.Contains(uploadMeta.Uploaded, meta.ULID.String())
+	}
 }
