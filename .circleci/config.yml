@@ -5,163 +5,176 @@ orbs:
   prometheus: prometheus/prometheus@0.4.0
   go: circleci/go@0.2.0
   win: circleci/windows@2.3.0
-
-executors:
-  # Whenever the Go version is updated here, .promu.yml
-  # should also be updated.
-  golang:
-    docker:
-    - image: circleci/golang:1.15-node
-
-  fuzzit:
-    docker:
-      - image: fuzzitdev/golang:1.12.7-buster
+  pca-bes: accedian/pca-bes@1
 
 jobs:
   test:
-    executor: golang
+    machine: true
+    resource_class: accedian/staging_bes-ubuntu-medium
+
+    working_directory: ~/repo
 
     steps:
-    - prometheus/setup_environment
-    - go/load-cache:
-        key: v1
-    - restore_cache:
-        keys:
-        - v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
-        - v3-npm-deps-
-    - run:
-        command: make
-        environment:
-          # Run garbage collection more aggressively to avoid getting OOMed during the lint phase.
-          GOGC: "20"
-          # By default Go uses GOMAXPROCS but a Circle CI executor has many
-          # cores (> 30) while the CPU and RAM resources are throttled. If we
-          # don't limit this to the number of allocated cores, the job is
-          # likely to get OOMed and killed.
-          GOOPTS: "-p 2"
-          GOMAXPROCS: "2"
-    - prometheus/check_proto:
-        version: "3.12.3"
-    - prometheus/store_artifact:
-        file: prometheus
-    - prometheus/store_artifact:
-        file: promtool
-    - go/save-cache:
-        key: v1
-    - save_cache:
-        key: v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
-        paths:
-        - /home/circleci/.cache/yarn
-    - store_test_results:
-        path: test-results
+      - pca-bes/workspacesetup
+	  - prometheus/setup_environment
+	  - go/load-cache:
+		  key: v1
+	  - restore_cache:
+		  keys:
+		  - v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
+		  - v3-npm-deps-
+	  - run:
+		  command: make
+		  environment:
+			# Run garbage collection more aggressively to avoid getting OOMed during the lint phase.
+			GOGC: "20"
+			# By default Go uses GOMAXPROCS but a Circle CI executor has many
+			# cores (> 30) while the CPU and RAM resources are throttled. If we
+			# don't limit this to the number of allocated cores, the job is
+			# likely to get OOMed and killed.
+			GOOPTS: "-p 2"
+			GOMAXPROCS: "2"
+	  - prometheus/check_proto:
+		  version: "3.12.3"
+	  - prometheus/store_artifact:
+		  file: prometheus
+	  - prometheus/store_artifact:
+		  file: promtool
+	  - go/save-cache:
+		  key: v1
+	  - save_cache:
+		  key: v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
+		  paths:
+		  - /home/circleci/.cache/yarn
+	  - store_test_results:
+		  path: test-results
 
   test_windows:
-    executor: win/default
-    working_directory: /go/src/github.com/prometheus/prometheus
+    machine: true
+    resource_class: accedian/staging_bes-ubuntu-medium
+
+    working_directory: ~/repo
+
     steps:
-    - checkout
-    - run:
-        # Temporary workaround until circleci updates go.
-        shell: bash
-        command: |
-          choco upgrade -y golang
-    - run:
-        shell: bash
-        command: |
-          (cd web/ui && GOOS= GOARCH= go generate -mod=vendor)
-          go test -mod=vendor -vet=off -test.v `go list ./...|grep -Exv "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"`
-        environment:
-          GOGC: "20"
-          GOOPTS: "-p 2 -mod=vendor"
+      - pca-bes/workspacesetup
+	  - run:
+		  # Temporary workaround until circleci updates go.
+		  shell: bash
+		  command: |
+			choco upgrade -y golang
+	  - run:
+		  shell: bash
+		  command: |
+			(cd web/ui && GOOS= GOARCH= go generate -mod=vendor)
+			go test -mod=vendor -vet=off -test.v `go list ./...|grep -Exv "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"`
+		  environment:
+			GOGC: "20"
+			GOOPTS: "-p 2 -mod=vendor"
 
   test_mixins:
-    executor: golang
+    machine: true
+    resource_class: accedian/staging_bes-ubuntu-medium
+
+    working_directory: ~/repo
+
     steps:
-    - checkout
-    - run: go install -mod=vendor ./cmd/promtool/.
-    - run:
-        command: go install -mod=readonly github.com/google/go-jsonnet/cmd/jsonnet github.com/google/go-jsonnet/cmd/jsonnetfmt github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb
-        working_directory: ~/project/documentation/prometheus-mixin
-    - run:
-        command: make clean
-        working_directory: ~/project/documentation/prometheus-mixin
-    - run:
-        command: jb install
-        working_directory: ~/project/documentation/prometheus-mixin
-    - run:
-        command: make
-        working_directory: ~/project/documentation/prometheus-mixin
-    - run:
-        command: git diff --exit-code
-        working_directory: ~/project/documentation/prometheus-mixin
+      - pca-bes/workspacesetup
+	  - run: go install -mod=vendor ./cmd/promtool/.
+	  - run:
+		  command: go install -mod=readonly github.com/google/go-jsonnet/cmd/jsonnet github.com/google/go-jsonnet/cmd/jsonnetfmt github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb
+		  working_directory: ~/project/documentation/prometheus-mixin
+	  - run:
+		  command: make clean
+		  working_directory: ~/project/documentation/prometheus-mixin
+	  - run:
+		  command: jb install
+		  working_directory: ~/project/documentation/prometheus-mixin
+	  - run:
+		  command: make
+		  working_directory: ~/project/documentation/prometheus-mixin
+	  - run:
+		  command: git diff --exit-code
+		  working_directory: ~/project/documentation/prometheus-mixin
 
   fuzzit_regression:
-    executor: fuzzit
-    working_directory: /go/src/github.com/prometheus/prometheus
+    machine: true
+    resource_class: accedian/staging_bes-ubuntu-medium
+
+    working_directory: ~/repo
+
     steps:
-      - checkout
-      - setup_remote_docker
+      - pca-bes/workspacesetup
       - run: ./fuzzit.sh local-regression
 
   fuzzit_fuzzing:
-    executor: fuzzit
-    working_directory: /go/src/github.com/prometheus/prometheus
+    machine: true
+    resource_class: accedian/staging_bes-ubuntu-medium
+
+    working_directory: ~/repo
+
     steps:
-      - checkout
-      - setup_remote_docker
+      - pca-bes/workspacesetup
       - run: ./fuzzit.sh fuzzing
 
   repo_sync:
-    executor: golang
+    machine: true
+    resource_class: accedian/staging_bes-ubuntu-medium
+
+    working_directory: ~/repo
+
     steps:
-    - checkout
-    - run: ./scripts/sync_repo_files.sh
+      - pca-bes/workspacesetup
+      - run: ./scripts/sync_repo_files.sh
 
 workflows:
   version: 2
   prometheus:
     jobs:
-    - test:
-        filters:
-          tags:
-            only: /.*/
-    - test_mixins:
-        filters:
-          tags:
-            only: /.*/
-    - test_windows:
-        filters:
-          tags:
-            only: /.*/
-    - fuzzit_regression:
-        filters:
-          tags:
-            only: /.*/
-    - prometheus/build:
-        name: build
-        filters:
-          tags:
-            only: /.*/
-    - prometheus/publish_master:
-        context: org-context
-        requires:
-        - test
-        - build
-        filters:
-          branches:
-            only: master
-        image: circleci/golang:1-node
-    - prometheus/publish_release:
-        context: org-context
-        requires:
-        - test
-        - build
-        filters:
-          tags:
-            only: /^v[0-9]+(\.[0-9]+){2}(-.+|[^-.]*)$/
-          branches:
-            ignore: /.*/
-        image: circleci/golang:1-node
+	  - test:
+		  context: bes-builder-gcp-skybuilder-prd-51843
+		  filters:
+			tags:
+			  only: /.*/
+	  - test_mixins:
+		  context: bes-builder-gcp-skybuilder-prd-51843
+		  filters:
+			tags:
+			  only: /.*/
+	  - test_windows:
+		  context: bes-builder-gcp-skybuilder-prd-51843
+		  filters:
+			tags:
+			  only: /.*/
+	  - fuzzit_regression:
+		  context: bes-builder-gcp-skybuilder-prd-51843
+		  filters:
+			tags:
+			  only: /.*/
+	  - prometheus/build:
+		  name: build
+		  filters:
+			tags:
+			  only: /.*/
+	  - prometheus/publish_master:
+		  context: bes-builder-gcp-skybuilder-prd-51843
+		  requires:
+			- test
+			- build
+		  filters:
+			branches:
+			  only: master
+		  image: circleci/golang:1-node
+	  - prometheus/publish_release:
+		  image: circleci/golang:1-node
+		  context: bes-builder-gcp-skybuilder-prd-51843
+		  requires:
+			- test
+			- build
+		  filters:
+			tags:
+			  only: /^v[0-9]+(\.[0-9]+){2}(-.+|[^-.]*)$/
+			branches:
+			  ignore: /.*/
   nightly:
     triggers:
       - schedule:
@@ -171,7 +184,7 @@ workflows:
               only:
                 - master
     jobs:
-    - repo_sync:
-        context: org-context
-    - fuzzit_fuzzing:
-        context: org-context
+	  - repo_sync:
+		  context: bes-builder-gcp-skybuilder-prd-51843
+	  - fuzzit_fuzzing:
+		  context: bes-builder-gcp-skybuilder-prd-51843
