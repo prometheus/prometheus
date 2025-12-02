@@ -86,6 +86,12 @@ func (w *BlockWriter) Appender(ctx context.Context) storage.Appender {
 	return w.head.Appender(ctx)
 }
 
+// AppenderV2 returns a new appender on the database.
+// AppenderV2 can't be called concurrently. However, the returned AppenderV2 can safely be used concurrently.
+func (w *BlockWriter) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return w.head.AppenderV2(ctx)
+}
+
 // Flush implements the Writer interface. This is where actual block writing
 // happens. After flush completes, no writes can be done.
 func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
