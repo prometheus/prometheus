@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -94,7 +93,7 @@ func (*DockerSDConfig) Name() string { return "docker" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *DockerSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDockerDiscovery(c, opts.Logger, opts.Metrics)
+	return NewDockerDiscovery(c, opts)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -129,8 +128,8 @@ type DockerDiscovery struct {
 }
 
 // NewDockerDiscovery returns a new DockerDiscovery which periodically refreshes its targets.
-func NewDockerDiscovery(conf *DockerSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*DockerDiscovery, error) {
-	m, ok := metrics.(*dockerMetrics)
+func NewDockerDiscovery(conf *DockerSDConfig, opts discovery.DiscovererOptions) (*DockerDiscovery, error) {
+	m, ok := opts.Metrics.(*dockerMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
 	}
@@ -146,7 +145,7 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger *slog.Logger, metrics disco
 		return nil, err
 	}
 
-	opts := []client.Opt{
+	clientOpts := []client.Opt{
 		client.WithHost(conf.Host),
 		client.WithAPIVersionNegotiation(),
 	}
@@ -166,7 +165,7 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger *slog.Logger, metrics disco
 		if err != nil {
 			return nil, err
 		}
-		opts = append(opts,
+		clientOpts = append(clientOpts,
 			client.WithHTTPClient(&http.Client{
 				Transport: rt,
 				Timeout:   time.Duration(conf.RefreshInterval),
@@ -178,15 +177,16 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger *slog.Logger, metrics disco
 		)
 	}
 
-	d.client, err = client.NewClientWithOpts(opts...)
+	d.client, err = client.NewClientWithOpts(clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("error setting up docker client: %w", err)
 	}
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "docker",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,

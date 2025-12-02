@@ -425,7 +425,7 @@ To get the 5 instances with the highest memory consumption across all instances 
 
     topk(5, memory_consumption_bytes)
 
-#### `limitk` and `limit_ratio`
+#### `limitk`
 
 `limitk(k, v)` returns a subset of `k` input samples, including
 the original labels in the result vector. 

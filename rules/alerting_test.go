@@ -612,7 +612,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 	)
 	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
-	require.EqualError(t, err, "vector contains metrics with the same labelset after applying alert labels")
+	require.ErrorIs(t, err, ErrDuplicateAlertLabelSet)
 }
 
 func TestAlertingRuleLimit(t *testing.T) {

@@ -1,5 +1,4 @@
 import {
-  Accordion,
   Alert,
   Anchor,
   Badge,
@@ -46,6 +45,7 @@ import classes from "./RulesPage.module.css";
 import { useDebouncedValue, useLocalStorage } from "@mantine/hooks";
 import { KVSearch } from "@nexucis/kvsearch";
 import { StateMultiSelect } from "../components/StateMultiSelect";
+import { Accordion } from "../components/Accordion";
 
 const kvSearch = new KVSearch<Rule>({
   shouldSort: true,

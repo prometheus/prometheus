@@ -221,6 +221,10 @@ type Options struct {
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
 
+	// BlockCompactionExcludeFunc is a function which returns true for blocks that should NOT be compacted.
+	// It's passed down to the TSDB compactor.
+	BlockCompactionExcludeFunc BlockExcludeFilterFunc
+
 	// BlockReloadInterval is the interval at which blocks are reloaded.
 	BlockReloadInterval time.Duration
 }
@@ -915,6 +919,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			EnableOverlappingCompaction: opts.EnableOverlappingCompaction,
 			PD:                          opts.PostingsDecoderFactory,
 			UseUncachedIO:               opts.UseUncachedIO,
+			BlockExcludeFilter:          opts.BlockCompactionExcludeFunc,
 		})
 	}
 	if err != nil {
@@ -1775,7 +1780,7 @@ func BeyondTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 	// Time retention is disabled or no blocks to work with.
 	retentionDuration := db.getRetentionDuration()
 	if len(blocks) == 0 || retentionDuration == 0 {
-		return
+		return deletable
 	}
 
 	deletable = make(map[ulid.ULID]struct{})
@@ -1799,7 +1804,7 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 	// Size retention is disabled or no blocks to work with.
 	maxBytes := db.getMaxBytes()
 	if len(blocks) == 0 || maxBytes <= 0 {
-		return
+		return deletable
 	}
 
 	deletable = make(map[ulid.ULID]struct{})

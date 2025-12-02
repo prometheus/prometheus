@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -51,7 +52,7 @@ type combinedSample struct {
 	ls               labels.Labels
 	meta             metadata.Metadata
 	t                int64
-	ct               int64
+	st               int64
 	v                float64
 	es               []exemplar.Exemplar
 }
@@ -61,31 +62,31 @@ type combinedHistogram struct {
 	ls               labels.Labels
 	meta             metadata.Metadata
 	t                int64
-	ct               int64
+	st               int64
 	h                *histogram.Histogram
 	es               []exemplar.Exemplar
 }
 
-func (m *mockCombinedAppender) AppendSample(ls labels.Labels, meta Metadata, ct, t int64, v float64, es []exemplar.Exemplar) error {
+func (m *mockCombinedAppender) AppendSample(ls labels.Labels, meta Metadata, st, t int64, v float64, es []exemplar.Exemplar) error {
 	m.pendingSamples = append(m.pendingSamples, combinedSample{
 		metricFamilyName: meta.MetricFamilyName,
 		ls:               ls,
 		meta:             meta.Metadata,
 		t:                t,
-		ct:               ct,
+		st:               st,
 		v:                v,
 		es:               es,
 	})
 	return nil
 }
 
-func (m *mockCombinedAppender) AppendHistogram(ls labels.Labels, meta Metadata, ct, t int64, h *histogram.Histogram, es []exemplar.Exemplar) error {
+func (m *mockCombinedAppender) AppendHistogram(ls labels.Labels, meta Metadata, st, t int64, h *histogram.Histogram, es []exemplar.Exemplar) error {
 	m.pendingHistograms = append(m.pendingHistograms, combinedHistogram{
 		metricFamilyName: meta.MetricFamilyName,
 		ls:               ls,
 		meta:             meta.Metadata,
 		t:                t,
-		ct:               ct,
+		st:               st,
 		h:                h,
 		es:               es,
 	})
@@ -107,12 +108,12 @@ func requireEqual(t testing.TB, expected, actual any, msgAndArgs ...any) {
 // TestCombinedAppenderOnTSDB runs some basic tests on a real TSDB to check
 // that the combinedAppender works on a real TSDB.
 func TestCombinedAppenderOnTSDB(t *testing.T) {
-	t.Run("ingestCTZeroSample=false", func(t *testing.T) { testCombinedAppenderOnTSDB(t, false) })
+	t.Run("ingestSTZeroSample=false", func(t *testing.T) { testCombinedAppenderOnTSDB(t, false) })
 
-	t.Run("ingestCTZeroSample=true", func(t *testing.T) { testCombinedAppenderOnTSDB(t, true) })
+	t.Run("ingestSTZeroSample=true", func(t *testing.T) { testCombinedAppenderOnTSDB(t, true) })
 }
 
-func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
+func testCombinedAppenderOnTSDB(t *testing.T, ingestSTZeroSample bool) {
 	t.Helper()
 
 	now := time.Now()
@@ -164,9 +165,9 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 		extraAppendFunc   func(*testing.T, CombinedAppender)
 		expectedSamples   []sample
 		expectedExemplars []exemplar.QueryResult
-		expectedLogsForCT []string
+		expectedLogsForST []string
 	}{
-		"single float sample, zero CT": {
+		"single float sample, zero ST": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
 				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, 0, now.UnixMilli(), 42.0, testExemplars))
 			},
@@ -178,7 +179,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 			},
 			expectedExemplars: expectedExemplars,
 		},
-		"single float sample, very old CT": {
+		"single float sample, very old ST": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
 				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, 1, now.UnixMilli(), 42.0, nil))
 			},
@@ -188,18 +189,18 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					f: 42.0,
 				},
 			},
-			expectedLogsForCT: []string{
-				"Error when appending CT from OTLP",
+			expectedLogsForST: []string{
+				"Error when appending ST from OTLP",
 				"out of bound",
 			},
 		},
-		"single float sample, normal CT": {
+		"single float sample, normal ST": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
 				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, now.Add(-2*time.Minute).UnixMilli(), now.UnixMilli(), 42.0, nil))
 			},
 			expectedSamples: []sample{
 				{
-					ctZero: true,
+					stZero: true,
 					t:      now.Add(-2 * time.Minute).UnixMilli(),
 				},
 				{
@@ -208,7 +209,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 				},
 			},
 		},
-		"single float sample, CT same time as sample": {
+		"single float sample, ST same time as sample": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
 				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, now.UnixMilli(), now.UnixMilli(), 42.0, nil))
 			},
@@ -219,7 +220,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 				},
 			},
 		},
-		"two float samples in different messages, CT same time as first sample": {
+		"two float samples in different messages, ST same time as first sample": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
 				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, now.UnixMilli(), now.UnixMilli(), 42.0, nil))
 			},
@@ -237,7 +238,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 				},
 			},
 		},
-		"single float sample, CT in the future of the sample": {
+		"single float sample, ST in the future of the sample": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
 				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, now.Add(time.Minute).UnixMilli(), now.UnixMilli(), 42.0, nil))
 			},
@@ -248,7 +249,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 				},
 			},
 		},
-		"single histogram sample, zero CT": {
+		"single histogram sample, zero ST": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
 				require.NoError(t, app.AppendHistogram(seriesLabels.Copy(), histogramMetadata, 0, now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), testExemplars))
 			},
@@ -260,7 +261,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 			},
 			expectedExemplars: expectedExemplars,
 		},
-		"single histogram sample, very old CT": {
+		"single histogram sample, very old ST": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
 				require.NoError(t, app.AppendHistogram(seriesLabels.Copy(), histogramMetadata, 1, now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
 			},
@@ -270,18 +271,18 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					h: tsdbutil.GenerateTestHistogram(42),
 				},
 			},
-			expectedLogsForCT: []string{
-				"Error when appending CT from OTLP",
+			expectedLogsForST: []string{
+				"Error when appending ST from OTLP",
 				"out of bound",
 			},
 		},
-		"single histogram sample, normal CT": {
+		"single histogram sample, normal ST": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
 				require.NoError(t, app.AppendHistogram(seriesLabels.Copy(), histogramMetadata, now.Add(-2*time.Minute).UnixMilli(), now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
 			},
 			expectedSamples: []sample{
 				{
-					ctZero: true,
+					stZero: true,
 					t:      now.Add(-2 * time.Minute).UnixMilli(),
 					h:      &histogram.Histogram{},
 				},
@@ -291,7 +292,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 				},
 			},
 		},
-		"single histogram sample, CT same time as sample": {
+		"single histogram sample, ST same time as sample": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
 				require.NoError(t, app.AppendHistogram(seriesLabels.Copy(), histogramMetadata, now.UnixMilli(), now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
 			},
@@ -302,7 +303,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 				},
 			},
 		},
-		"two histogram samples in different messages, CT same time as first sample": {
+		"two histogram samples in different messages, ST same time as first sample": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
 				require.NoError(t, app.AppendHistogram(seriesLabels.Copy(), floatMetadata, now.UnixMilli(), now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
 			},
@@ -320,7 +321,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 				},
 			},
 		},
-		"single histogram sample, CT in the future of the sample": {
+		"single histogram sample, ST in the future of the sample": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
 				require.NoError(t, app.AppendHistogram(seriesLabels.Copy(), histogramMetadata, now.Add(time.Minute).UnixMilli(), now.UnixMilli(), tsdbutil.GenerateTestHistogram(42), nil))
 			},
@@ -363,14 +364,14 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 				},
 			},
 		},
-		"float samples with CT changing": {
+		"float samples with ST changing": {
 			appendFunc: func(t *testing.T, app CombinedAppender) {
 				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, now.Add(-4*time.Second).UnixMilli(), now.Add(-3*time.Second).UnixMilli(), 42.0, nil))
 				require.NoError(t, app.AppendSample(seriesLabels.Copy(), floatMetadata, now.Add(-1*time.Second).UnixMilli(), now.UnixMilli(), 62.0, nil))
 			},
 			expectedSamples: []sample{
 				{
-					ctZero: true,
+					stZero: true,
 					t:      now.Add(-4 * time.Second).UnixMilli(),
 				},
 				{
@@ -378,7 +379,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 					f: 42.0,
 				},
 				{
-					ctZero: true,
+					stZero: true,
 					t:      now.Add(-1 * time.Second).UnixMilli(),
 				},
 				{
@@ -392,8 +393,8 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			var expectedLogs []string
-			if ingestCTZeroSample {
-				expectedLogs = append(expectedLogs, tc.expectedLogsForCT...)
+			if ingestSTZeroSample {
+				expectedLogs = append(expectedLogs, tc.expectedLogsForST...)
 			}
 
 			dir := t.TempDir()
@@ -412,13 +413,13 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 			reg := prometheus.NewRegistry()
 			cappMetrics := NewCombinedAppenderMetrics(reg)
 			app := db.Appender(ctx)
-			capp := NewCombinedAppender(app, logger, ingestCTZeroSample, cappMetrics)
+			capp := NewCombinedAppender(app, logger, ingestSTZeroSample, false, cappMetrics)
 			tc.appendFunc(t, capp)
 			require.NoError(t, app.Commit())
 
 			if tc.extraAppendFunc != nil {
 				app = db.Appender(ctx)
-				capp = NewCombinedAppender(app, logger, ingestCTZeroSample, cappMetrics)
+				capp = NewCombinedAppender(app, logger, ingestSTZeroSample, false, cappMetrics)
 				tc.extraAppendFunc(t, capp)
 				require.NoError(t, app.Commit())
 			}
@@ -445,7 +446,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 			series := ss.At()
 			it := series.Iterator(nil)
 			for i, sample := range tc.expectedSamples {
-				if !ingestCTZeroSample && sample.ctZero {
+				if !ingestSTZeroSample && sample.stZero {
 					continue
 				}
 				if sample.h == nil {
@@ -475,7 +476,7 @@ func testCombinedAppenderOnTSDB(t *testing.T, ingestCTZeroSample bool) {
 }
 
 type sample struct {
-	ctZero bool
+	stZero bool
 
 	t int64
 	f float64
@@ -499,9 +500,9 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 		MetricFamilyName: "test_bytes_total",
 	}
 
-	t.Run("happy case with CT zero, reference is passed and reused", func(t *testing.T) {
+	t.Run("happy case with ST zero, reference is passed and reused", func(t *testing.T) {
 		app := &appenderRecorder{}
-		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
+		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, false, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
 
 		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 1, 2, 42.0, nil))
 
@@ -512,109 +513,38 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			},
 		}))
 
-		require.Len(t, app.records, 6)
-		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
+		require.Len(t, app.records, 5)
+		requireEqualOpAndRef(t, "AppendSTZeroSample", 0, app.records[0])
 		ref := app.records[0].outRef
 		require.NotZero(t, ref)
 		requireEqualOpAndRef(t, "Append", ref, app.records[1])
-		requireEqualOpAndRef(t, "UpdateMetadata", ref, app.records[2])
-		requireEqualOpAndRef(t, "AppendCTZeroSample", ref, app.records[3])
-		requireEqualOpAndRef(t, "Append", ref, app.records[4])
-		requireEqualOpAndRef(t, "AppendExemplar", ref, app.records[5])
+		requireEqualOpAndRef(t, "AppendSTZeroSample", ref, app.records[2])
+		requireEqualOpAndRef(t, "Append", ref, app.records[3])
+		requireEqualOpAndRef(t, "AppendExemplar", ref, app.records[4])
 	})
 
-	t.Run("error on second CT ingest doesn't update the reference", func(t *testing.T) {
+	t.Run("error on second ST ingest doesn't update the reference", func(t *testing.T) {
 		app := &appenderRecorder{}
-		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
+		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, false, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
 
 		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 1, 2, 42.0, nil))
 
-		app.appendCTZeroSampleError = errors.New("test error")
+		app.appendSTZeroSampleError = errors.New("test error")
 		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 3, 4, 62.0, nil))
 
-		require.Len(t, app.records, 5)
-		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
+		require.Len(t, app.records, 4)
+		requireEqualOpAndRef(t, "AppendSTZeroSample", 0, app.records[0])
 		ref := app.records[0].outRef
 		require.NotZero(t, ref)
 		requireEqualOpAndRef(t, "Append", ref, app.records[1])
-		requireEqualOpAndRef(t, "UpdateMetadata", ref, app.records[2])
-		requireEqualOpAndRef(t, "AppendCTZeroSample", ref, app.records[3])
-		require.Zero(t, app.records[3].outRef, "the second AppendCTZeroSample returned 0")
-		requireEqualOpAndRef(t, "Append", ref, app.records[4])
-	})
-
-	t.Run("updateMetadata called when meta help changes", func(t *testing.T) {
-		app := &appenderRecorder{}
-		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
-
-		newMetadata := floatMetadata
-		newMetadata.Help = "some other help"
-
-		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 1, 2, 42.0, nil))
-		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), newMetadata, 3, 4, 62.0, nil))
-		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), newMetadata, 3, 5, 162.0, nil))
-
-		require.Len(t, app.records, 7)
-		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
-		ref := app.records[0].outRef
-		require.NotZero(t, ref)
-		requireEqualOpAndRef(t, "Append", ref, app.records[1])
-		requireEqualOpAndRef(t, "UpdateMetadata", ref, app.records[2])
-		requireEqualOpAndRef(t, "AppendCTZeroSample", ref, app.records[3])
-		requireEqualOpAndRef(t, "Append", ref, app.records[4])
-		requireEqualOpAndRef(t, "UpdateMetadata", ref, app.records[5])
-		requireEqualOpAndRef(t, "Append", ref, app.records[6])
-	})
-
-	t.Run("updateMetadata called when meta unit changes", func(t *testing.T) {
-		app := &appenderRecorder{}
-		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
-
-		newMetadata := floatMetadata
-		newMetadata.Unit = "seconds"
-
-		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 1, 2, 42.0, nil))
-		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), newMetadata, 3, 4, 62.0, nil))
-		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), newMetadata, 3, 5, 162.0, nil))
-
-		require.Len(t, app.records, 7)
-		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
-		ref := app.records[0].outRef
-		require.NotZero(t, ref)
-		requireEqualOpAndRef(t, "Append", ref, app.records[1])
-		requireEqualOpAndRef(t, "UpdateMetadata", ref, app.records[2])
-		requireEqualOpAndRef(t, "AppendCTZeroSample", ref, app.records[3])
-		requireEqualOpAndRef(t, "Append", ref, app.records[4])
-		requireEqualOpAndRef(t, "UpdateMetadata", ref, app.records[5])
-		requireEqualOpAndRef(t, "Append", ref, app.records[6])
-	})
-
-	t.Run("updateMetadata called when meta type changes", func(t *testing.T) {
-		app := &appenderRecorder{}
-		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
-
-		newMetadata := floatMetadata
-		newMetadata.Type = model.MetricTypeGauge
-
-		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 1, 2, 42.0, nil))
-		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), newMetadata, 3, 4, 62.0, nil))
-		require.NoError(t, capp.AppendSample(seriesLabels.Copy(), newMetadata, 3, 5, 162.0, nil))
-
-		require.Len(t, app.records, 7)
-		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
-		ref := app.records[0].outRef
-		require.NotZero(t, ref)
-		requireEqualOpAndRef(t, "Append", ref, app.records[1])
-		requireEqualOpAndRef(t, "UpdateMetadata", ref, app.records[2])
-		requireEqualOpAndRef(t, "AppendCTZeroSample", ref, app.records[3])
-		requireEqualOpAndRef(t, "Append", ref, app.records[4])
-		requireEqualOpAndRef(t, "UpdateMetadata", ref, app.records[5])
-		requireEqualOpAndRef(t, "Append", ref, app.records[6])
+		requireEqualOpAndRef(t, "AppendSTZeroSample", ref, app.records[2])
+		require.Zero(t, app.records[2].outRef, "the second AppendSTZeroSample returned 0")
+		requireEqualOpAndRef(t, "Append", ref, app.records[3])
 	})
 
 	t.Run("metadata, exemplars are not updated if append failed", func(t *testing.T) {
 		app := &appenderRecorder{}
-		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
+		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, false, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
 		app.appendError = errors.New("test error")
 		require.Error(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 0, 1, 42.0, []exemplar.Exemplar{
 			{
@@ -632,7 +562,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 
 	t.Run("metadata, exemplars are updated if append failed but reference is valid", func(t *testing.T) {
 		app := &appenderRecorder{}
-		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
+		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
 
 		newMetadata := floatMetadata
 		newMetadata.Help = "some other help"
@@ -647,12 +577,12 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 		}))
 
 		require.Len(t, app.records, 7)
-		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
+		requireEqualOpAndRef(t, "AppendSTZeroSample", 0, app.records[0])
 		ref := app.records[0].outRef
 		require.NotZero(t, ref)
 		requireEqualOpAndRef(t, "Append", ref, app.records[1])
 		requireEqualOpAndRef(t, "UpdateMetadata", ref, app.records[2])
-		requireEqualOpAndRef(t, "AppendCTZeroSample", ref, app.records[3])
+		requireEqualOpAndRef(t, "AppendSTZeroSample", ref, app.records[3])
 		requireEqualOpAndRef(t, "Append", ref, app.records[4])
 		require.Zero(t, app.records[4].outRef, "the second Append returned 0")
 		requireEqualOpAndRef(t, "UpdateMetadata", ref, app.records[5])
@@ -661,7 +591,7 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 
 	t.Run("simulate conflict with existing series", func(t *testing.T) {
 		app := &appenderRecorder{}
-		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
+		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, false, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
 
 		ls := labels.FromStrings(
 			model.MetricNameLabel, "test_bytes_total",
@@ -688,23 +618,21 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 			},
 		}))
 
-		require.Len(t, app.records, 7)
-		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[0])
+		require.Len(t, app.records, 5)
+		requireEqualOpAndRef(t, "AppendSTZeroSample", 0, app.records[0])
 		ref := app.records[0].outRef
 		require.NotZero(t, ref)
 		requireEqualOpAndRef(t, "Append", ref, app.records[1])
-		requireEqualOpAndRef(t, "UpdateMetadata", ref, app.records[2])
-		requireEqualOpAndRef(t, "AppendCTZeroSample", 0, app.records[3])
-		newRef := app.records[3].outRef
-		require.NotEqual(t, ref, newRef, "the second AppendCTZeroSample returned a different reference")
-		requireEqualOpAndRef(t, "Append", newRef, app.records[4])
-		requireEqualOpAndRef(t, "UpdateMetadata", newRef, app.records[5])
-		requireEqualOpAndRef(t, "AppendExemplar", newRef, app.records[6])
+		requireEqualOpAndRef(t, "AppendSTZeroSample", 0, app.records[2])
+		newRef := app.records[2].outRef
+		require.NotEqual(t, ref, newRef, "the second AppendSTZeroSample returned a different reference")
+		requireEqualOpAndRef(t, "Append", newRef, app.records[3])
+		requireEqualOpAndRef(t, "AppendExemplar", newRef, app.records[4])
 	})
 
 	t.Run("check that invoking AppendHistogram returns an error for nil histogram", func(t *testing.T) {
 		app := &appenderRecorder{}
-		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
+		capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, false, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
 
 		ls := labels.FromStrings(
 			model.MetricNameLabel, "test_bytes_total",
@@ -713,6 +641,101 @@ func TestCombinedAppenderSeriesRefs(t *testing.T) {
 		err := capp.AppendHistogram(ls, Metadata{}, 4, 2, nil, nil)
 		require.Error(t, err)
 	})
+
+	for _, appendMetadata := range []bool{false, true} {
+		t.Run(fmt.Sprintf("appendMetadata=%t", appendMetadata), func(t *testing.T) {
+			app := &appenderRecorder{}
+			capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, appendMetadata, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
+
+			require.NoError(t, capp.AppendSample(seriesLabels.Copy(), floatMetadata, 1, 2, 42.0, nil))
+
+			if appendMetadata {
+				require.Len(t, app.records, 3)
+				requireEqualOp(t, "AppendSTZeroSample", app.records[0])
+				requireEqualOp(t, "Append", app.records[1])
+				requireEqualOp(t, "UpdateMetadata", app.records[2])
+			} else {
+				require.Len(t, app.records, 2)
+				requireEqualOp(t, "AppendSTZeroSample", app.records[0])
+				requireEqualOp(t, "Append", app.records[1])
+			}
+		})
+	}
+}
+
+// TestCombinedAppenderMetadataChanges verifies that UpdateMetadata is called
+// when metadata fields change (help, unit, or type).
+func TestCombinedAppenderMetadataChanges(t *testing.T) {
+	seriesLabels := labels.FromStrings(
+		model.MetricNameLabel, "test_metric",
+		"foo", "bar",
+	)
+
+	baseMetadata := Metadata{
+		Metadata: metadata.Metadata{
+			Type: model.MetricTypeCounter,
+			Unit: "bytes",
+			Help: "original help",
+		},
+		MetricFamilyName: "test_metric",
+	}
+
+	tests := []struct {
+		name           string
+		modifyMetadata func(Metadata) Metadata
+	}{
+		{
+			name: "help changes",
+			modifyMetadata: func(m Metadata) Metadata {
+				m.Help = "new help text"
+				return m
+			},
+		},
+		{
+			name: "unit changes",
+			modifyMetadata: func(m Metadata) Metadata {
+				m.Unit = "seconds"
+				return m
+			},
+		},
+		{
+			name: "type changes",
+			modifyMetadata: func(m Metadata) Metadata {
+				m.Type = model.MetricTypeGauge
+				return m
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := &appenderRecorder{}
+			capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, true, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
+
+			newMetadata := tt.modifyMetadata(baseMetadata)
+
+			require.NoError(t, capp.AppendSample(seriesLabels.Copy(), baseMetadata, 1, 2, 42.0, nil))
+			require.NoError(t, capp.AppendSample(seriesLabels.Copy(), newMetadata, 3, 4, 62.0, nil))
+			require.NoError(t, capp.AppendSample(seriesLabels.Copy(), newMetadata, 3, 5, 162.0, nil))
+
+			// Verify expected operations.
+			require.Len(t, app.records, 7)
+			requireEqualOpAndRef(t, "AppendSTZeroSample", 0, app.records[0])
+			ref := app.records[0].outRef
+			require.NotZero(t, ref)
+			requireEqualOpAndRef(t, "Append", ref, app.records[1])
+			requireEqualOpAndRef(t, "UpdateMetadata", ref, app.records[2])
+			requireEqualOpAndRef(t, "AppendSTZeroSample", ref, app.records[3])
+			requireEqualOpAndRef(t, "Append", ref, app.records[4])
+			requireEqualOpAndRef(t, "UpdateMetadata", ref, app.records[5])
+			requireEqualOpAndRef(t, "Append", ref, app.records[6])
+		})
+	}
+}
+
+func requireEqualOp(t *testing.T, expectedOp string, actual appenderRecord) {
+	t.Helper()
+	require.Equal(t, expectedOp, actual.op)
 }
 
 func requireEqualOpAndRef(t *testing.T, expectedOp string, expectedRef storage.SeriesRef, actual appenderRecord) {
@@ -733,9 +756,9 @@ type appenderRecorder struct {
 	records  []appenderRecord
 
 	appendError                      error
-	appendCTZeroSampleError          error
+	appendSTZeroSampleError          error
 	appendHistogramError             error
-	appendHistogramCTZeroSampleError error
+	appendHistogramSTZeroSampleError error
 	updateMetadataError              error
 	appendExemplarError              error
 }
@@ -766,10 +789,10 @@ func (a *appenderRecorder) Append(ref storage.SeriesRef, ls labels.Labels, _ int
 	return ref, nil
 }
 
-func (a *appenderRecorder) AppendCTZeroSample(ref storage.SeriesRef, ls labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	a.records = append(a.records, appenderRecord{op: "AppendCTZeroSample", ref: ref, ls: ls})
-	if a.appendCTZeroSampleError != nil {
-		return 0, a.appendCTZeroSampleError
+func (a *appenderRecorder) AppendSTZeroSample(ref storage.SeriesRef, ls labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	a.records = append(a.records, appenderRecord{op: "AppendSTZeroSample", ref: ref, ls: ls})
+	if a.appendSTZeroSampleError != nil {
+		return 0, a.appendSTZeroSampleError
 	}
 	if ref == 0 {
 		ref = a.newRef()
@@ -790,10 +813,10 @@ func (a *appenderRecorder) AppendHistogram(ref storage.SeriesRef, ls labels.Labe
 	return ref, nil
 }
 
-func (a *appenderRecorder) AppendHistogramCTZeroSample(ref storage.SeriesRef, ls labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	a.records = append(a.records, appenderRecord{op: "AppendHistogramCTZeroSample", ref: ref, ls: ls})
-	if a.appendHistogramCTZeroSampleError != nil {
-		return 0, a.appendHistogramCTZeroSampleError
+func (a *appenderRecorder) AppendHistogramSTZeroSample(ref storage.SeriesRef, ls labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	a.records = append(a.records, appenderRecord{op: "AppendHistogramSTZeroSample", ref: ref, ls: ls})
+	if a.appendHistogramSTZeroSampleError != nil {
+		return 0, a.appendHistogramSTZeroSampleError
 	}
 	if ref == 0 {
 		ref = a.newRef()
@@ -832,4 +855,83 @@ func (a *appenderRecorder) Rollback() error {
 
 func (*appenderRecorder) SetOptions(_ *storage.AppendOptions) {
 	panic("not implemented")
+}
+
+func TestMetadataChangedLogic(t *testing.T) {
+	seriesLabels := labels.FromStrings(model.MetricNameLabel, "test_metric", "foo", "bar")
+	baseMetadata := Metadata{
+		Metadata:         metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "original"},
+		MetricFamilyName: "test_metric",
+	}
+
+	tests := []struct {
+		name           string
+		appendMetadata bool
+		modifyMetadata func(Metadata) Metadata
+		expectWALCall  bool
+		verifyCached   func(*testing.T, metadata.Metadata)
+	}{
+		{
+			name:           "appendMetadata=false, no change",
+			appendMetadata: false,
+			modifyMetadata: func(m Metadata) Metadata { return m },
+			expectWALCall:  false,
+			verifyCached:   func(t *testing.T, m metadata.Metadata) { require.Equal(t, "original", m.Help) },
+		},
+		{
+			name:           "appendMetadata=false, help changes - cache updated, no WAL",
+			appendMetadata: false,
+			modifyMetadata: func(m Metadata) Metadata { m.Help = "changed"; return m },
+			expectWALCall:  false,
+			verifyCached:   func(t *testing.T, m metadata.Metadata) { require.Equal(t, "changed", m.Help) },
+		},
+		{
+			name:           "appendMetadata=true, help changes - cache and WAL updated",
+			appendMetadata: true,
+			modifyMetadata: func(m Metadata) Metadata { m.Help = "changed"; return m },
+			expectWALCall:  true,
+			verifyCached:   func(t *testing.T, m metadata.Metadata) { require.Equal(t, "changed", m.Help) },
+		},
+		{
+			name:           "appendMetadata=true, unit changes",
+			appendMetadata: true,
+			modifyMetadata: func(m Metadata) Metadata { m.Unit = "seconds"; return m },
+			expectWALCall:  true,
+			verifyCached:   func(t *testing.T, m metadata.Metadata) { require.Equal(t, "seconds", m.Unit) },
+		},
+		{
+			name:           "appendMetadata=true, type changes",
+			appendMetadata: true,
+			modifyMetadata: func(m Metadata) Metadata { m.Type = model.MetricTypeGauge; return m },
+			expectWALCall:  true,
+			verifyCached:   func(t *testing.T, m metadata.Metadata) { require.Equal(t, model.MetricTypeGauge, m.Type) },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := &appenderRecorder{}
+			capp := NewCombinedAppender(app, promslog.NewNopLogger(), true, tt.appendMetadata, NewCombinedAppenderMetrics(prometheus.NewRegistry()))
+
+			require.NoError(t, capp.AppendSample(seriesLabels.Copy(), baseMetadata, 1, 2, 42.0, nil))
+
+			modifiedMetadata := tt.modifyMetadata(baseMetadata)
+			app.records = nil
+			require.NoError(t, capp.AppendSample(seriesLabels.Copy(), modifiedMetadata, 1, 3, 43.0, nil))
+
+			hash := seriesLabels.Hash()
+			cached, exists := capp.(*combinedAppender).refs[hash]
+			require.True(t, exists)
+			tt.verifyCached(t, cached.meta)
+
+			updateMetadataCalled := false
+			for _, record := range app.records {
+				if record.op == "UpdateMetadata" {
+					updateMetadataCalled = true
+					break
+				}
+			}
+			require.Equal(t, tt.expectWALCall, updateMetadataCalled)
+		})
+	}
 }

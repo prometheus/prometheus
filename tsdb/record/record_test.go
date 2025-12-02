@@ -670,7 +670,7 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 			}
 			delete(lbls, model.BucketLabel)
 		}
-		return
+		return series, floatSamples, histSamples
 	}
 
 	initNHCBRefs := func(labelCount, histograms, buckets int) (series []RefSeries, floatSamples []RefSample, histSamples []RefHistogramSample) {
@@ -703,7 +703,7 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 			})
 			ref++
 		}
-		return
+		return series, floatSamples, histSamples
 	}
 
 	for _, maker := range []recordsMaker{

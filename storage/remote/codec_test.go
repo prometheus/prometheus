@@ -114,7 +114,7 @@ var (
 					HelpRef: 15, // Symbolized writeV2RequestSeries1Metadata.Help.
 					UnitRef: 16, // Symbolized writeV2RequestSeries1Metadata.Unit.
 				},
-				Samples:   []writev2.Sample{{Value: 1, Timestamp: 10}},
+				Samples:   []writev2.Sample{{Value: 1, Timestamp: 10, StartTimestamp: 1}}, // ST needs to be lower than the sample's timestamp.
 				Exemplars: []writev2.Exemplar{{LabelsRefs: []uint32{11, 12}, Value: 1, Timestamp: 10}},
 				Histograms: []writev2.Histogram{
 					writev2.FromIntHistogram(10, &testHistogram),
@@ -122,7 +122,6 @@ var (
 					writev2.FromIntHistogram(30, &testHistogramCustomBuckets),
 					writev2.FromFloatHistogram(40, testHistogramCustomBuckets.ToFloat(nil)),
 				},
-				CreatedTimestamp: 1, // CT needs to be lower than the sample's timestamp.
 			},
 			{
 				LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, // Same series as first.
@@ -182,7 +181,7 @@ func TestWriteV2RequestFixture(t *testing.T) {
 					HelpRef: st.Symbolize(writeV2RequestSeries1Metadata.Help),
 					UnitRef: st.Symbolize(writeV2RequestSeries1Metadata.Unit),
 				},
-				Samples:   []writev2.Sample{{Value: 1, Timestamp: 10}},
+				Samples:   []writev2.Sample{{Value: 1, Timestamp: 10, StartTimestamp: 1}},
 				Exemplars: []writev2.Exemplar{{LabelsRefs: exemplar1LabelRefs, Value: 1, Timestamp: 10}},
 				Histograms: []writev2.Histogram{
 					writev2.FromIntHistogram(10, &testHistogram),
@@ -190,7 +189,6 @@ func TestWriteV2RequestFixture(t *testing.T) {
 					writev2.FromIntHistogram(30, &testHistogramCustomBuckets),
 					writev2.FromFloatHistogram(40, testHistogramCustomBuckets.ToFloat(nil)),
 				},
-				CreatedTimestamp: 1,
 			},
 			{
 				LabelsRefs: labelRefs,
@@ -548,7 +546,7 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 	require.Equal(t, chunkenc.ValNone, it.Seek(1))
 }
 
-func TestConcreteSeriesIterator_InvalidHistogramSamples(t *testing.T) {
+func TestConcreteSeriesIterator_HistogramSamplesWithInvalidSchema(t *testing.T) {
 	for _, schema := range []int32{-100, 100} {
 		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
 			h := prompb.FromIntHistogram(2, &testHistogram)
@@ -591,6 +589,47 @@ func TestConcreteSeriesIterator_InvalidHistogramSamples(t *testing.T) {
 			require.ErrorIs(t, it.Err(), histogram.ErrHistogramsUnknownSchema)
 		})
 	}
+}
+
+func TestConcreteSeriesIterator_HistogramSamplesWithMissingBucket(t *testing.T) {
+	mh := testHistogram.Copy()
+	mh.PositiveSpans = []histogram.Span{{Offset: 0, Length: 2}}
+	h := prompb.FromIntHistogram(2, mh)
+	fh := prompb.FromFloatHistogram(4, mh.ToFloat(nil))
+	series := &concreteSeries{
+		labels: labels.FromStrings("foo", "bar"),
+		floats: []prompb.Sample{
+			{Value: 1, Timestamp: 0},
+			{Value: 2, Timestamp: 3},
+		},
+		histograms: []prompb.Histogram{
+			h,
+			fh,
+		},
+	}
+	it := series.Iterator(nil)
+	require.Equal(t, chunkenc.ValFloat, it.Next())
+	require.Equal(t, chunkenc.ValNone, it.Next())
+	require.Error(t, it.Err())
+	require.ErrorIs(t, it.Err(), histogram.ErrHistogramSpansBucketsMismatch)
+
+	it = series.Iterator(it)
+	require.Equal(t, chunkenc.ValFloat, it.Next())
+	require.Equal(t, chunkenc.ValNone, it.Next())
+	require.ErrorIs(t, it.Err(), histogram.ErrHistogramSpansBucketsMismatch)
+
+	it = series.Iterator(it)
+	require.Equal(t, chunkenc.ValNone, it.Seek(1))
+	require.ErrorIs(t, it.Err(), histogram.ErrHistogramSpansBucketsMismatch)
+
+	it = series.Iterator(it)
+	require.Equal(t, chunkenc.ValFloat, it.Seek(3))
+	require.Equal(t, chunkenc.ValNone, it.Next())
+	require.ErrorIs(t, it.Err(), histogram.ErrHistogramSpansBucketsMismatch)
+
+	it = series.Iterator(it)
+	require.Equal(t, chunkenc.ValNone, it.Seek(4))
+	require.ErrorIs(t, it.Err(), histogram.ErrHistogramSpansBucketsMismatch)
 }
 
 func TestConcreteSeriesIterator_ReducesHighResolutionHistograms(t *testing.T) {

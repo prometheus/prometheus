@@ -389,6 +389,7 @@ type bucketLimitAppender struct {
 }
 
 func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	var err error
 	if h != nil {
 		// Return with an early error if the histogram has too many buckets and the
 		// schema is not exponential, in which case we can't reduce the resolution.
@@ -399,7 +400,9 @@ func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labe
 			if h.Schema <= histogram.ExponentialSchemaMin {
 				return 0, errBucketLimit
 			}
-			h = h.ReduceResolution(h.Schema - 1)
+			if err = h.ReduceResolution(h.Schema - 1); err != nil {
+				return 0, err
+			}
 		}
 	}
 	if fh != nil {
@@ -412,11 +415,12 @@ func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labe
 			if fh.Schema <= histogram.ExponentialSchemaMin {
 				return 0, errBucketLimit
 			}
-			fh = fh.ReduceResolution(fh.Schema - 1)
+			if err = fh.ReduceResolution(fh.Schema - 1); err != nil {
+				return 0, err
+			}
 		}
 	}
-	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
-	if err != nil {
+	if ref, err = app.Appender.AppendHistogram(ref, lset, t, h, fh); err != nil {
 		return 0, err
 	}
 	return ref, nil
@@ -429,18 +433,22 @@ type maxSchemaAppender struct {
 }
 
 func (app *maxSchemaAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	var err error
 	if h != nil {
 		if histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > app.maxSchema {
-			h = h.ReduceResolution(app.maxSchema)
+			if err = h.ReduceResolution(app.maxSchema); err != nil {
+				return 0, err
+			}
 		}
 	}
 	if fh != nil {
 		if histogram.IsExponentialSchemaReserved(fh.Schema) && fh.Schema > app.maxSchema {
-			fh = fh.ReduceResolution(app.maxSchema)
+			if err = fh.ReduceResolution(app.maxSchema); err != nil {
+				return 0, err
+			}
 		}
 	}
-	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
-	if err != nil {
+	if ref, err = app.Appender.AppendHistogram(ref, lset, t, h, fh); err != nil {
 		return 0, err
 	}
 	return ref, nil

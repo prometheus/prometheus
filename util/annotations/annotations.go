@@ -107,7 +107,7 @@ func (a Annotations) AsStrings(query string, maxWarnings, maxInfos int) (warning
 	if infoSkipped > 0 {
 		infos = append(infos, fmt.Sprintf("%d more info annotations omitted", infoSkipped))
 	}
-	return
+	return warnings, infos
 }
 
 // CountWarningsAndInfo counts and returns the number of warnings and infos in the
@@ -121,7 +121,7 @@ func (a Annotations) CountWarningsAndInfo() (countWarnings, countInfo int) {
 			countInfo++
 		}
 	}
-	return
+	return countWarnings, countInfo
 }
 
 //nolint:staticcheck,revive // error-naming.

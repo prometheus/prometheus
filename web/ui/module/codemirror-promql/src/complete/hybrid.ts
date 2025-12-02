@@ -166,6 +166,19 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
   } as CompletionResult;
 }
 
+// Matches complete PromQL durations, including compound units (e.g., 5m, 1d2h, 1h30m, etc.).
+// Duration units are a fixed, safe set (no regex metacharacters), so no escaping is needed.
+export const durationWithUnitRegexp = new RegExp(`^(\\d+(${durationTerms.map((term) => term.label).join('|')}))+$`);
+
+// Determines if a duration already has a complete time unit to prevent autocomplete insertion (issue #15452)
+function hasCompleteDurationUnit(state: EditorState, node: SyntaxNode): boolean {
+  if (node.from >= node.to) {
+    return false;
+  }
+  const nodeContent = state.sliceDoc(node.from, node.to);
+  return durationWithUnitRegexp.test(nodeContent);
+}
+
 // computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel calculates the start position only when the node is a LabelMatchers or a GroupingLabels
 function computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel(node: SyntaxNode, pos: number): number {
   // Here we can have two different situations:
@@ -400,12 +413,18 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       // so we have or to autocomplete any kind of labelName or to autocomplete only the labelName associated to the metric
       result.push({ kind: ContextKind.LabelName, metricName: getMetricNameInGroupBy(node, state) });
       break;
-    case LabelMatchers:
+    case LabelMatchers: {
+      if (pos >= node.to) {
+        // Cursor is outside of the label matcher block (e.g. right after `}`),
+        // so don't offer label-related completions anymore.
+        break;
+      }
       // In that case we are in the given situation:
       //       metric_name{} or {}
       // so we have or to autocomplete any kind of labelName or to autocomplete only the labelName associated to the metric
       result.push({ kind: ContextKind.LabelName, metricName: getMetricNameInVectorSelector(node, state) });
       break;
+    }
     case LabelName:
       if (node.parent?.type.id === GroupingLabels) {
         // In this case we are in the given situation:
@@ -471,12 +490,18 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         //   Duration, Duration, ⚠(NumberLiteral)
         // )
         // So we should continue to autocomplete a duration
-        result.push({ kind: ContextKind.Duration });
+        if (!hasCompleteDurationUnit(state, node)) {
+          result.push({ kind: ContextKind.Duration });
+        }
       } else {
         result.push({ kind: ContextKind.Number });
       }
       break;
     case NumberDurationLiteralInDurationContext:
+      if (!hasCompleteDurationUnit(state, node)) {
+        result.push({ kind: ContextKind.Duration });
+      }
+      break;
     case OffsetExpr:
       result.push({ kind: ContextKind.Duration });
       break;

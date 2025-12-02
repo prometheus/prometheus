@@ -1430,6 +1430,11 @@ func (t *test) execEval(cmd *evalCmd, engine promql.QueryEngine) error {
 func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	q, err := engine.NewRangeQuery(t.context, t.storage, nil, cmd.expr, cmd.start, cmd.end, cmd.step)
 	if err != nil {
+		if cmd.isFail() {
+			if err := cmd.checkExpectedFailure(err); err == nil {
+				return nil
+			}
+		}
 		return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
 	defer q.Close()
@@ -1473,6 +1478,11 @@ func (t *test) execInstantEval(cmd *evalCmd, engine promql.QueryEngine) error {
 func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promql.QueryEngine) error {
 	q, err := engine.NewInstantQuery(t.context, t.storage, nil, iq.expr, iq.evalTime)
 	if err != nil {
+		if cmd.isFail() {
+			if err := cmd.checkExpectedFailure(err); err == nil {
+				return nil
+			}
+		}
 		return fmt.Errorf("error creating instant query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
 	defer q.Close()

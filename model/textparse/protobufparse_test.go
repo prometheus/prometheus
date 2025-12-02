@@ -1334,7 +1334,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_counter_with_createdtimestamp",
 					v:  42,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_counter_with_createdtimestamp",
 					),
@@ -1350,7 +1350,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_summary_with_createdtimestamp_count",
 					v:  42,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_count",
 					),
@@ -1358,7 +1358,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_summary_with_createdtimestamp_sum",
 					v:  1.234,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_sum",
 					),
@@ -1373,7 +1373,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:  "test_histogram_with_createdtimestamp",
-					ct: 1625851153146,
+					st: 1625851153146,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.UnknownCounterReset,
 						PositiveSpans:    []histogram.Span{},
@@ -1393,7 +1393,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:  "test_gaugehistogram_with_createdtimestamp",
-					ct: 1625851153146,
+					st: 1625851153146,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.GaugeType,
 						PositiveSpans:    []histogram.Span{},
@@ -1999,7 +1999,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_counter_with_createdtimestamp\xff__type__\xffcounter",
 					v:  42,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_counter_with_createdtimestamp",
 						"__type__", string(model.MetricTypeCounter),
@@ -2016,7 +2016,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_summary_with_createdtimestamp_count\xff__type__\xffsummary",
 					v:  42,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_count",
 						"__type__", string(model.MetricTypeSummary),
@@ -2025,7 +2025,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_summary_with_createdtimestamp_sum\xff__type__\xffsummary",
 					v:  1.234,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_sum",
 						"__type__", string(model.MetricTypeSummary),
@@ -2041,7 +2041,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:  "test_histogram_with_createdtimestamp\xff__type__\xffhistogram",
-					ct: 1625851153146,
+					st: 1625851153146,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.UnknownCounterReset,
 						PositiveSpans:    []histogram.Span{},
@@ -2062,7 +2062,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:  "test_gaugehistogram_with_createdtimestamp\xff__type__\xffgaugehistogram",
-					ct: 1625851153146,
+					st: 1625851153146,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.GaugeType,
 						PositiveSpans:    []histogram.Span{},
@@ -2959,7 +2959,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_counter_with_createdtimestamp",
 					v:  42,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_counter_with_createdtimestamp",
 					),
@@ -2975,7 +2975,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_summary_with_createdtimestamp_count",
 					v:  42,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_count",
 					),
@@ -2983,7 +2983,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_summary_with_createdtimestamp_sum",
 					v:  1.234,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_sum",
 					),
@@ -2998,7 +2998,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:  "test_histogram_with_createdtimestamp",
-					ct: 1625851153146,
+					st: 1625851153146,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.UnknownCounterReset,
 						PositiveSpans:    []histogram.Span{},
@@ -3018,7 +3018,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:  "test_gaugehistogram_with_createdtimestamp",
-					ct: 1625851153146,
+					st: 1625851153146,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.GaugeType,
 						PositiveSpans:    []histogram.Span{},
@@ -3893,7 +3893,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_counter_with_createdtimestamp",
 					v:  42,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_counter_with_createdtimestamp",
 					),
@@ -3909,7 +3909,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_summary_with_createdtimestamp_count",
 					v:  42,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_count",
 					),
@@ -3917,7 +3917,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_summary_with_createdtimestamp_sum",
 					v:  1.234,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_sum",
 					),
@@ -3933,7 +3933,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_histogram_with_createdtimestamp_count",
 					v:  0,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_histogram_with_createdtimestamp_count",
 					),
@@ -3941,7 +3941,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_histogram_with_createdtimestamp_sum",
 					v:  0,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_histogram_with_createdtimestamp_sum",
 					),
@@ -3949,7 +3949,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_histogram_with_createdtimestamp_bucket\xffle\xff+Inf",
 					v:  0,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_histogram_with_createdtimestamp_bucket",
 						"le", "+Inf",
@@ -3966,7 +3966,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_gaugehistogram_with_createdtimestamp_count",
 					v:  0,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_gaugehistogram_with_createdtimestamp_count",
 					),
@@ -3974,7 +3974,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_gaugehistogram_with_createdtimestamp_sum",
 					v:  0,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_gaugehistogram_with_createdtimestamp_sum",
 					),
@@ -3982,7 +3982,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_gaugehistogram_with_createdtimestamp_bucket\xffle\xff+Inf",
 					v:  0,
-					ct: 1625851153146,
+					st: 1625851153146,
 					lset: labels.FromStrings(
 						"__name__", "test_gaugehistogram_with_createdtimestamp_bucket",
 						"le", "+Inf",

@@ -103,6 +103,9 @@ type AzureADConfig struct { //nolint:revive // exported.
 
 	// Cloud is the Azure cloud in which the service is running. Example: AzurePublic/AzureGovernment/AzureChina.
 	Cloud string `yaml:"cloud,omitempty"`
+
+	// Scope is the custom OAuth 2.0 scope to request when acquiring tokens.
+	Scope string `yaml:"scope,omitempty"`
 }
 
 // azureADRoundTripper is used to store the roundtripper and the tokenprovider.
@@ -208,6 +211,12 @@ func (c *AzureADConfig) Validate() error {
 			if _, err := regexp.MatchString("^[0-9a-zA-Z-.]+$", c.SDK.TenantID); err != nil {
 				return errors.New("the provided Azure SDK tenant_id is invalid")
 			}
+		}
+	}
+
+	if c.Scope != "" {
+		if matched, err := regexp.MatchString("^[\\w\\s:/.\\-]+$", c.Scope); err != nil || !matched {
+			return errors.New("the provided scope contains invalid characters")
 		}
 	}
 
@@ -360,14 +369,22 @@ func newSDKTokenCredential(clientOpts *azcore.ClientOptions, sdkConfig *SDKConfi
 // newTokenProvider helps to fetch accessToken for different types of credential. This also takes care of
 // refreshing the accessToken before expiry. This accessToken is attached to the Authorization header while making requests.
 func newTokenProvider(cfg *AzureADConfig, cred azcore.TokenCredential) (*tokenProvider, error) {
-	audience, err := getAudience(cfg.Cloud)
-	if err != nil {
-		return nil, err
+	var scopes []string
+
+	// Use custom scope if provided, otherwise fallback to cloud-specific audience
+	if cfg.Scope != "" {
+		scopes = []string{cfg.Scope}
+	} else {
+		audience, err := getAudience(cfg.Cloud)
+		if err != nil {
+			return nil, err
+		}
+		scopes = []string{audience}
 	}
 
 	tokenProvider := &tokenProvider{
 		credentialClient: cred,
-		options:          &policy.TokenRequestOptions{Scopes: []string{audience}},
+		options:          &policy.TokenRequestOptions{Scopes: scopes},
 	}
 
 	return tokenProvider, nil
