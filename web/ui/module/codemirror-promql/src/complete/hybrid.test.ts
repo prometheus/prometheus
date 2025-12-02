@@ -1316,19 +1316,19 @@ describe('autocomplete promQL test', () => {
       expectedResult: {
         options: ([] as Completion[]).concat(mockedMetricsTerms, functionIdentifierTerms, aggregateOpTerms, numberTerms, snippets),
         from: 0,
-        to: 37,
+        to: 36,
         validFor: /^[a-zA-Z0-9_:]+$/,
       },
     },
     {
       title: 'online autocomplete replaces full metric inside rate() when cursor mid-identifier',
       expr: 'rate(prometheus_http_requests_total[5m])',
-      pos: 31,
+      pos: 25,
       conf: { remote: { url: 'http://localhost:8080' } },
       expectedResult: {
         options: ([] as Completion[]).concat(mockedMetricsTerms, functionIdentifierTerms, aggregateOpTerms, numberTerms, snippets),
         from: 5,
-        to: 36,
+        to: 35,
         validFor: /^[a-zA-Z0-9_:]+$/,
       },
     },

@@ -215,18 +215,6 @@ export function computeStartCompletePosition(state: EditorState, node: SyntaxNod
   return start;
 }
 
-function isInsideMetricIdentifier(state: EditorState, pos: number): boolean {
-  const line = state.doc.lineAt(pos);
-  const lineText = line.text;
-  const localPos = pos - line.from;
-  const metricCharRegex = /[a-zA-Z0-9_:]/;
-
-  const beforeCursor = localPos > 0 && metricCharRegex.test(lineText[localPos - 1]);
-  const afterCursor = localPos < lineText.length && metricCharRegex.test(lineText[localPos]);
-
-  return beforeCursor || afterCursor;
-}
-
 function computeEndCompleteMetricPosition(state: EditorState, pos: number): number {
   const metricCharRegex = /[a-zA-Z0-9_:]/;
   let end = pos;
@@ -238,6 +226,20 @@ function computeEndCompleteMetricPosition(state: EditorState, pos: number): numb
     end++;
   }
   return end;
+}
+
+function isMetricIdentifierNode(node: SyntaxNode): boolean {
+  // We only want to treat identifiers that are the metric part of a vector
+  // selector as metrics, not arbitrary identifiers (functions, labels, etc.).
+  const vectorSelectorNode = walkBackward(node, VectorSelector);
+  if (!vectorSelectorNode) {
+    return false;
+  }
+  const identifierNode = vectorSelectorNode.getChild(Identifier);
+  if (!identifierNode) {
+    return false;
+  }
+  return node.from >= identifierNode.from && node.to <= identifierNode.to;
 }
 
 function isAggregatorWithParam(functionCallBody: SyntaxNode): boolean {
@@ -671,8 +673,7 @@ export class HybridComplete implements CompleteStrategy {
     return asyncResult.then((result) => {
       const from = computeStartCompletePosition(state, tree, pos);
       const hasMetricContext = contexts.some((ctx) => ctx.kind === ContextKind.MetricName);
-      const isIdentifierNode = tree.type.id === Identifier;
-      const shouldComputeEnd = hasMetricContext || (isIdentifierNode && isInsideMetricIdentifier(state, pos));
+      const shouldComputeEnd = hasMetricContext || isMetricIdentifierNode(tree);
       const to = shouldComputeEnd ? computeEndCompleteMetricPosition(state, pos) : pos;
       return arrayToCompletionResult(result, from, to, completeSnippet, span);
     });
