@@ -1309,6 +1309,30 @@ describe('autocomplete promQL test', () => {
       },
     },
     {
+      title: 'online autocomplete replaces full standalone metric when cursor mid-identifier',
+      expr: 'process_network_transmit_bytes_total',
+      pos: 20,
+      conf: { remote: { url: 'http://localhost:8080' } },
+      expectedResult: {
+        options: ([] as Completion[]).concat(mockedMetricsTerms, functionIdentifierTerms, aggregateOpTerms, numberTerms, snippets),
+        from: 0,
+        to: 37,
+        validFor: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
+      title: 'online autocomplete replaces full metric inside rate() when cursor mid-identifier',
+      expr: 'rate(prometheus_http_requests_total[5m])',
+      pos: 31,
+      conf: { remote: { url: 'http://localhost:8080' } },
+      expectedResult: {
+        options: ([] as Completion[]).concat(mockedMetricsTerms, functionIdentifierTerms, aggregateOpTerms, numberTerms, snippets),
+        from: 5,
+        to: 36,
+        validFor: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
       title: 'online autocomplete of label name corresponding to a metric',
       expr: 'alertmanager_alerts{}',
       pos: 20,

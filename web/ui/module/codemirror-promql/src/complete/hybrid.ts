@@ -215,6 +215,18 @@ export function computeStartCompletePosition(state: EditorState, node: SyntaxNod
   return start;
 }
 
+function isInsideMetricIdentifier(state: EditorState, pos: number): boolean {
+  const line = state.doc.lineAt(pos);
+  const lineText = line.text;
+  const localPos = pos - line.from;
+  const metricCharRegex = /[a-zA-Z0-9_:]/;
+
+  const beforeCursor = localPos > 0 && metricCharRegex.test(lineText[localPos - 1]);
+  const afterCursor = localPos < lineText.length && metricCharRegex.test(lineText[localPos]);
+
+  return beforeCursor || afterCursor;
+}
+
 function computeEndCompleteMetricPosition(state: EditorState, pos: number): number {
   const metricCharRegex = /[a-zA-Z0-9_:]/;
   let end = pos;
@@ -659,7 +671,9 @@ export class HybridComplete implements CompleteStrategy {
     return asyncResult.then((result) => {
       const from = computeStartCompletePosition(state, tree, pos);
       const hasMetricContext = contexts.some((ctx) => ctx.kind === ContextKind.MetricName);
-      const to = hasMetricContext ? computeEndCompleteMetricPosition(state, pos) : pos;
+      const isIdentifierNode = tree.type.id === Identifier;
+      const shouldComputeEnd = hasMetricContext || (isIdentifierNode && isInsideMetricIdentifier(state, pos));
+      const to = shouldComputeEnd ? computeEndCompleteMetricPosition(state, pos) : pos;
       return arrayToCompletionResult(result, from, to, completeSnippet, span);
     });
   }
