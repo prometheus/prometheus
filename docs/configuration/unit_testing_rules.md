@@ -48,6 +48,18 @@ input_series:
 # Name of the test group
 [ name: <string> ]
 
+# Start timestamp for the test group. This sets the base time for all samples
+# and evaluations in this test group.
+# Accepts either a Unix timestamp (e.g., 1609459200) or an RFC3339 formatted
+# timestamp (e.g., "2021-01-01T00:00:00Z").
+# Default: 0 (Unix epoch: 1970-01-01 00:00:00 UTC)
+#
+# When set:
+# - All input_series samples are timestamped starting from start_timestamp
+# - The eval_time in test cases is relative to start_timestamp
+# - The time() function returns start_timestamp + eval_time
+[ start_timestamp: <int> | <rfc3339_string> | default = 0 ]
+
 # Unit tests for the above data.
 
 # Unit tests for alerting rules. We consider the alerting rules from the input file.
@@ -137,7 +149,8 @@ values: <string>
 Prometheus allows you to have same alertname for different alerting rules. Hence in this unit testing, you have to list the union of all the firing alerts for the alertname under a single `<alert_test_case>`.
 
 ``` yaml
-# The time elapsed from time=0s when the alerts have to be checked.
+# The time elapsed from start_timestamp when the alerts have to be checked.
+# This is a duration relative to start_timestamp (which defaults to 0).
 eval_time: <duration>
 
 # Name of the alert to be tested.
@@ -168,7 +181,8 @@ exp_annotations:
 # Expression to evaluate
 expr: <string>
 
-# The time elapsed from time=0s when the expression has to be evaluated.
+# The time elapsed from start_timestamp when the expression has to be evaluated.
+# This is a duration relative to start_timestamp (which defaults to 0).
 eval_time: <duration>
 
 # Expected samples at the given evaluation time.
@@ -283,22 +297,16 @@ It should be noted that in all tests, either in `alert_test_case` or
 for example the `time()` and `day_of_*()` functions, will output a consistent value
 for tests.
 
-At the start of the test evaluation, `time()` returns 0 and therefore when under test
-`time()` will return a value of `0 + eval_time`.
+By default, at the start of the test evaluation, `time()` returns 0 (Unix epoch:
+January 1, 1970 00:00:00 UTC). The `eval_time` field specifies a duration relative
+to `start_timestamp`, so by default `time()` will return a value of `0 + eval_time`.
 
-If you need to write tests for alerts that use functions relating to the current
-time, make sure that the values given to your `input_series` are placed far
-enough in the past, relative to the evaluation time described above. The values
-can for example be negative timestamps so that with a very small `eval_time` the
-alert can be expected to trigger.
+You can configure a custom start timestamp for your tests by setting the `start_timestamp`
+field in your test group. This field accepts either:
+- A Unix timestamp (e.g., `1609459200` for January 1, 2021 00:00:00 UTC)
+- An RFC3339 formatted timestamp (e.g., `"2021-01-01T00:00:00Z"`)
 
-Another method that's known to work is to instead bump `eval_time` in the future
-so that the timestamp output by `time()` will be a higher value and the values
-in `input_series` will be far enough apart from that point in time so that the
-alerts will trigger. This method has the downside of making promtool generate a
-timeseries database that contains a value for each `input_series` for each
-`interval` for the given test. This can become very slow relatively easily and
-can end up consuming a lot of RAM for running your test. By instead using values
-for `input_series` relative to the timestamp described above even though the
-values go into negative numbers, you can keep `eval_time` fairly lower and avoid
-making your tests run very slowly.
+When you set `start_timestamp`:
+- All `input_series` samples will be timestamped starting from `start_timestamp`
+- The `eval_time` field in test cases is interpreted as a duration relative to `start_timestamp`
+- The `time()` function will return `start_timestamp + eval_time`

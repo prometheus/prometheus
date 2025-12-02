@@ -188,15 +188,37 @@ func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
 	return nil
 }
 
+// testStartTimestamp wraps time.Time to support custom YAML unmarshaling.
+// It can parse both RFC3339 timestamps and Unix timestamps.
+type testStartTimestamp struct {
+	time.Time
+}
+
+// UnmarshalYAML implements custom YAML unmarshaling for testStartTimestamp.
+// It accepts both RFC3339 formatted strings and numeric Unix timestamps.
+func (t *testStartTimestamp) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+	parsed, err := parseTime(s)
+	if err != nil {
+		return err
+	}
+	t.Time = parsed
+	return nil
+}
+
 // testGroup is a group of input series and tests associated with it.
 type testGroup struct {
-	Interval        model.Duration   `yaml:"interval"`
-	InputSeries     []series         `yaml:"input_series"`
-	AlertRuleTests  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
-	PromqlExprTests []promqlTestCase `yaml:"promql_expr_test,omitempty"`
-	ExternalLabels  labels.Labels    `yaml:"external_labels,omitempty"`
-	ExternalURL     string           `yaml:"external_url,omitempty"`
-	TestGroupName   string           `yaml:"name,omitempty"`
+	Interval        model.Duration     `yaml:"interval"`
+	InputSeries     []series           `yaml:"input_series"`
+	AlertRuleTests  []alertTestCase    `yaml:"alert_rule_test,omitempty"`
+	PromqlExprTests []promqlTestCase   `yaml:"promql_expr_test,omitempty"`
+	ExternalLabels  labels.Labels      `yaml:"external_labels,omitempty"`
+	ExternalURL     string             `yaml:"external_url,omitempty"`
+	TestGroupName   string             `yaml:"name,omitempty"`
+	StartTimestamp  testStartTimestamp `yaml:"start_timestamp,omitempty"`
 }
 
 // test performs the unit tests.
@@ -209,6 +231,12 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 		}()
 	}
 	// Setup testing suite.
+	// Set the start time from the test group.
+	if tg.StartTimestamp.IsZero() {
+		queryOpts.StartTime = time.Unix(0, 0).UTC()
+	} else {
+		queryOpts.StartTime = tg.StartTimestamp.Time
+	}
 	suite, err := promqltest.NewLazyLoader(tg.seriesLoadingString(), queryOpts)
 	if err != nil {
 		return []error{err}
@@ -237,7 +265,12 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 	groups := orderedGroups(groupsMap, groupOrderMap)
 
 	// Bounds for evaluating the rules.
-	mint := time.Unix(0, 0).UTC()
+	var mint time.Time
+	if tg.StartTimestamp.IsZero() {
+		mint = time.Unix(0, 0).UTC()
+	} else {
+		mint = tg.StartTimestamp.Time
+	}
 	maxt := mint.Add(tg.maxEvalTime())
 
 	// Optional floating point compare fuzzing.
