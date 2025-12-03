@@ -2299,7 +2299,7 @@ func (b *batchMetricsUpdater) recordRetry(sc sendBatchContext) {
 	b.metrics.retriedHistogramsTotal.Add(float64(sc.histogramCount))
 }
 
-// createSpan creates and configures an OpenTelemetry span for batch sending.
+// createBatchSpan creates and configures an OpenTelemetry span for batch sending.
 func createBatchSpan(ctx context.Context, sc sendBatchContext, remoteName, remoteURL string, try int) (context.Context, trace.Span) {
 	ctx, span := otel.Tracer("").Start(ctx, "Remote Send Batch")
 	span.SetAttributes(
