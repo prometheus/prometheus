@@ -136,11 +136,14 @@ const serializeNode = (
       let matching = "";
       let grouping = "";
       const vm = node.matching;
-      if (vm !== null && (vm.labels.length > 0 || vm.on)) {
-        if (vm.on) {
-          matching = ` on(${labelNameList(vm.labels)})`;
-        } else {
-          matching = ` ignoring(${labelNameList(vm.labels)})`;
+      if (vm !== null) {
+        if (
+          vm.labels.length > 0 ||
+          vm.on ||
+          vm.card === vectorMatchCardinality.manyToOne ||
+          vm.card === vectorMatchCardinality.oneToMany
+        ) {
+          matching = ` ${vm.on ? "on" : "ignoring"}(${labelNameList(vm.labels)})`;
         }
 
         if (
