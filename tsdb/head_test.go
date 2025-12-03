@@ -6525,19 +6525,19 @@ func TestWALSampleAndExemplarOrder(t *testing.T) {
 			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
 				return app.Append(0, lbls, ts, 1.0)
 			},
-			expectedType: reflect.TypeOf([]record.RefSample{}),
+			expectedType: reflect.TypeFor[[]record.RefSample](),
 		},
 		"histogram sample": {
 			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
 				return app.AppendHistogram(0, lbls, ts, tsdbutil.GenerateTestHistogram(1), nil)
 			},
-			expectedType: reflect.TypeOf([]record.RefHistogramSample{}),
+			expectedType: reflect.TypeFor[[]record.RefHistogramSample](),
 		},
 		"float histogram sample": {
 			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
 				return app.AppendHistogram(0, lbls, ts, nil, tsdbutil.GenerateTestFloatHistogram(1))
 			},
-			expectedType: reflect.TypeOf([]record.RefFloatHistogramSample{}),
+			expectedType: reflect.TypeFor[[]record.RefFloatHistogramSample](),
 		},
 	}
 
