@@ -2190,7 +2190,8 @@ func TestNoEmptyBlocks(t *testing.T) {
 	}()
 	db.DisableCompactions()
 
-	rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 - 1
+	// rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 - 1
+	rangeToTriggerCompaction := int64(float64(db.compactor.(*LeveledCompactor).ranges[0])*compactibleRatio) - 1
 	defaultLabel := labels.FromStrings("foo", "bar")
 	defaultMatcher := labels.MustNewMatcher(labels.MatchRegexp, "", ".*")
 
@@ -2455,7 +2456,8 @@ func TestBlockRanges(t *testing.T) {
 	db, err := open(dir, logger, nil, DefaultOptions(), []int64{10000}, nil)
 	require.NoError(t, err)
 
-	rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 + 1
+	// rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 + 1
+	rangeToTriggerCompaction := int64(float64(db.compactor.(*LeveledCompactor).ranges[0])*compactibleRatio) + 1
 
 	app := db.Appender(ctx)
 	lbl := labels.FromStrings("a", "b")
