@@ -232,11 +232,7 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 	}
 	// Setup testing suite.
 	// Set the start time from the test group.
-	if tg.StartTimestamp.IsZero() {
-		queryOpts.StartTime = time.Unix(0, 0).UTC()
-	} else {
-		queryOpts.StartTime = tg.StartTimestamp.Time
-	}
+	queryOpts.StartTime = tg.StartTimestamp.Time
 	suite, err := promqltest.NewLazyLoader(tg.seriesLoadingString(), queryOpts)
 	if err != nil {
 		return []error{err}
