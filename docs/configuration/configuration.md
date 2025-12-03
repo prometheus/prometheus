@@ -2554,8 +2554,7 @@ project: <string>
 [ <http_config> ]
 ```
 
-A [Service Account Key](https://docs.stackit.cloud/platform/access-and-identity/service-accounts/how-tos/manage-service-account-keys/) can be set through `http_config`. This can be done mapping
-values from STACKIT Service Account json into oauth2 configuration.
+A [Service Account Key](https://docs.stackit.cloud/platform/access-and-identity/service-accounts/how-tos/manage-service-account-keys/) can be set through `http_config`. This can be done mapping values from STACKIT Service Account json into oauth2 configuration.
 
 From a given Service Account json
 ```json
