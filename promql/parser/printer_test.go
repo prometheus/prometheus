@@ -114,6 +114,26 @@ func TestExprString(t *testing.T) {
 			out: `a - ignoring () group_left () c`,
 		},
 		{
+			in:  `a + fill(-23) b`,
+			out: `a + fill (-23) b`,
+		},
+		{
+			in:  `a + fill_left(-23) b`,
+			out: `a + fill_left (-23) b`,
+		},
+		{
+			in:  `a + fill_right(42) b`,
+			out: `a + fill_right (42) b`,
+		},
+		{
+			in:  `a + fill_left(-23) fill_right(42) b`,
+			out: `a + fill_left (-23) fill_right (42) b`,
+		},
+		{
+			in:  `a + on(b) group_left fill(-23) c`,
+			out: `a + on (b) group_left () fill (-23) c`,
+		},
+		{
 			in: `up > bool 0`,
 		},
 		{

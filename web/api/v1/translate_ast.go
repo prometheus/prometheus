@@ -47,6 +47,10 @@ func translateAST(node parser.Expr) any {
 				"labels":  sanitizeList(m.MatchingLabels),
 				"on":      m.On,
 				"include": sanitizeList(m.Include),
+				"fillValues": map[string]*float64{
+					"lhs": m.FillValues.LHS,
+					"rhs": m.FillValues.RHS,
+				},
 			}
 		}
 

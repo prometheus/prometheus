@@ -768,6 +768,9 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			if len(n.VectorMatching.MatchingLabels) > 0 {
 				p.addParseErrf(n.PositionRange(), "vector matching only allowed between instant vectors")
 			}
+			if n.VectorMatching.FillValues.LHS != nil || n.VectorMatching.FillValues.RHS != nil {
+				p.addParseErrf(n.PositionRange(), "filling in missing series only allowed between instant vectors")
+			}
 			n.VectorMatching = nil
 		case n.Op.IsSetOperator(): // Both operands are Vectors.
 			if n.VectorMatching.Card == CardOneToMany || n.VectorMatching.Card == CardManyToOne {
@@ -775,6 +778,9 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			}
 			if n.VectorMatching.Card != CardManyToMany {
 				p.addParseErrf(n.PositionRange(), "set operations must always be many-to-many")
+			}
+			if n.VectorMatching.FillValues.LHS != nil || n.VectorMatching.FillValues.RHS != nil {
+				p.addParseErrf(n.PositionRange(), "filling in missing series not allowed for set operators")
 			}
 		}
 
