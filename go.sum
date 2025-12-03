@@ -482,8 +482,8 @@ github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVs
 github.com/spf13/pflag v1.0.3/go.mod h1:DYY7MBk1bdzusC3SYhjObp+wFpr4gzcvqqNjLnInEg4=
 github.com/spf13/pflag v1.0.6 h1:jFzHGLGAlb3ruxLB8MhbI6A8+AQX/2eW4qeyNZXNp2o=
 github.com/spf13/pflag v1.0.6/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
-github.com/stackitcloud/stackit-sdk-go/core v0.17.3 h1:GsZGmRRc/3GJLmCUnsZswirr5wfLRrwavbnL/renOqg=
-github.com/stackitcloud/stackit-sdk-go/core v0.17.3/go.mod h1:HBCXJGPgdRulplDzhrmwC+Dak9B/x0nzNtmOpu+1Ahg=
+github.com/stackitcloud/stackit-sdk-go/core v0.20.0 h1:4rrUk6uT1g4nOn5/g1uXukP07Tux/o5xbMz/f/qE1rY=
+github.com/stackitcloud/stackit-sdk-go/core v0.20.0/go.mod h1:fqto7M82ynGhEnpZU6VkQKYWYoFG5goC076JWXTUPRQ=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.4.0/go.mod h1:YvHI0jy2hoMjB+UWwv71VJQ9isScKT/TqJzVSSt89Yw=
