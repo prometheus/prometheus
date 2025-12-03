@@ -63,6 +63,8 @@ var (
 	defaultIsolationDisabled = false
 
 	defaultWALReplayConcurrency = runtime.GOMAXPROCS(0)
+
+	compactibleRatio = 1.1
 )
 
 // Head handles reads and writes of time series data within a time window.
@@ -1704,7 +1706,7 @@ func (h *Head) compactable() bool {
 		return false
 	}
 
-	return h.MaxTime()-h.MinTime() > h.chunkRange.Load()/2*3
+	return h.MaxTime()-h.MinTime() > int64(float64(h.chunkRange.Load())*compactibleRatio)
 }
 
 // Close flushes the WAL and closes the head.
