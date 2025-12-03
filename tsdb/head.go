@@ -1330,7 +1330,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	// If we have less than two segments, it's not worth checkpointing yet.
 	// With the default 2h blocks, this will keeping up to around 3h worth
 	// of WAL segments.
-	last = first + (last-first)*2/3
+	last = first + (last-first)*2/4
 	if last <= first {
 		return nil
 	}
