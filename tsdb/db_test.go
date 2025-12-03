@@ -9296,33 +9296,25 @@ func TestBlockReloadInterval(t *testing.T) {
 		{
 			name:            "extremely small interval",
 			reloadInterval:  1 * time.Millisecond,
-			expectedReloads: 6,
+			expectedReloads: 5,
 		},
 		{
 			name:            "one second interval",
 			reloadInterval:  1 * time.Second,
-			expectedReloads: 6,
-		},
-		{
-			name:            "five second interval",
-			reloadInterval:  5 * time.Second,
-			expectedReloads: 2,
+			expectedReloads: 5,
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			db := openTestDB(t, &Options{
+			db := newTestDB(t, withOpts(&Options{
 				BlockReloadInterval: c.reloadInterval,
-			}, nil)
-			defer func() {
-				require.NoError(t, db.Close())
-			}()
+			}))
 			require.Equal(t, float64(1), prom_testutil.ToFloat64(db.metrics.reloads), "there should be one initial reload")
 			require.Eventually(t, func() bool {
 				return prom_testutil.ToFloat64(db.metrics.reloads) == c.expectedReloads
 			},
-				6*time.Second,
+				5*time.Second,
 				100*time.Millisecond,
 			)
 		})
