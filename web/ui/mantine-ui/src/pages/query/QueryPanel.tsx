@@ -14,6 +14,7 @@ import {
 import {
   IconAdjustmentsHorizontal,
   IconChartAreaFilled,
+  IconChartGridDots,
   IconChartLine,
   IconGraph,
   IconInfoCircle,
@@ -284,15 +285,15 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
                       </Center>
                     ),
                   },
-                  // {
-                  //   value: GraphDisplayMode.Heatmap,
-                  //   label: (
-                  //     <Center>
-                  //       <IconChartGridDots style={iconStyle} />
-                  //       <Box ml={10}>Heatmap</Box>
-                  //     </Center>
-                  //   ),
-                  // },
+                  {
+                    value: GraphDisplayMode.Heatmap,
+                    label: (
+                      <Center>
+                        <IconChartGridDots style={iconStyle} />
+                        <Box ml={10}>Heatmap</Box>
+                      </Center>
+                    ),
+                  },
                 ]}
               />
               <Popover position="bottom" withArrow shadow="md">
