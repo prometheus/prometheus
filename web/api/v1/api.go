@@ -28,12 +28,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/grafana/regexp"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/munnerz/goautoneg"
@@ -80,6 +82,17 @@ type errorNum int
 type errorType struct {
 	num errorNum
 	str string
+}
+
+func (e errorType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.str)
+}
+
+func (e errorType) Schema(r huma.Registry) *huma.Schema {
+	return &huma.Schema{
+		Type:   huma.TypeString,
+		Format: "",
+	}
 }
 
 const (
@@ -255,6 +268,8 @@ type API struct {
 	otlpWriteHandler   http.Handler
 
 	codecs []Codec
+
+	humaAPI huma.API
 }
 
 // NewAPI returns an initialized API type.
@@ -376,6 +391,11 @@ func setUnavailStatusOnTSDBNotReady(r apiFuncResult) apiFuncResult {
 
 // Register the API's endpoints in the given router.
 func (api *API) Register(r *route.Router) {
+	api.RegisterWithHuma(r, &HumaOptions{Enabled: false})
+}
+
+// RegisterWithHuma registers the API's endpoints in the given router with optional Huma support.
+func (api *API) RegisterWithHuma(r *route.Router, opts *HumaOptions) {
 	wrap := func(f apiFunc) http.HandlerFunc {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			httputil.SetCORS(w, api.CORSOrigin, r)
@@ -408,61 +428,68 @@ func (api *API) Register(r *route.Router) {
 		})
 	}
 
+	humaWrap := api.initiateHuma(opts)
+
+	if opts.Enabled {
+		r.Get("/openapi.json", humaWrap(nil))
+		r.Get("/openapi.yaml", humaWrap(nil))
+	}
+
 	r.Options("/*path", wrap(api.options))
 
-	r.Get("/query", wrapAgent(api.query))
-	r.Post("/query", wrapAgent(api.query))
-	r.Get("/query_range", wrapAgent(api.queryRange))
-	r.Post("/query_range", wrapAgent(api.queryRange))
-	r.Get("/query_exemplars", wrapAgent(api.queryExemplars))
-	r.Post("/query_exemplars", wrapAgent(api.queryExemplars))
+	r.Get("/query", humaWrap(wrapAgent(api.query)))
+	r.Post("/query", humaWrap(wrapAgent(api.query)))
+	r.Get("/query_range", humaWrap(wrapAgent(api.queryRange)))
+	r.Post("/query_range", humaWrap(wrapAgent(api.queryRange)))
+	r.Get("/query_exemplars", humaWrap(wrapAgent(api.queryExemplars)))
+	r.Post("/query_exemplars", humaWrap(wrapAgent(api.queryExemplars)))
 
-	r.Get("/format_query", wrapAgent(api.formatQuery))
-	r.Post("/format_query", wrapAgent(api.formatQuery))
+	r.Get("/format_query", humaWrap(wrapAgent(api.formatQuery)))
+	r.Post("/format_query", humaWrap(wrapAgent(api.formatQuery)))
 
-	r.Get("/parse_query", wrapAgent(api.parseQuery))
-	r.Post("/parse_query", wrapAgent(api.parseQuery))
+	r.Get("/parse_query", humaWrap(wrapAgent(api.parseQuery)))
+	r.Post("/parse_query", humaWrap(wrapAgent(api.parseQuery)))
 
-	r.Get("/labels", wrapAgent(api.labelNames))
-	r.Post("/labels", wrapAgent(api.labelNames))
-	r.Get("/label/:name/values", wrapAgent(api.labelValues))
+	r.Get("/labels", humaWrap(wrapAgent(api.labelNames)))
+	r.Post("/labels", humaWrap(wrapAgent(api.labelNames)))
+	r.Get("/label/:name/values", humaWrap(wrapAgent(api.labelValues)))
 
-	r.Get("/series", wrapAgent(api.series))
-	r.Post("/series", wrapAgent(api.series))
-	r.Del("/series", wrapAgent(api.dropSeries))
+	r.Get("/series", humaWrap(wrapAgent(api.series)))
+	r.Post("/series", humaWrap(wrapAgent(api.series)))
+	r.Del("/series", humaWrap(wrapAgent(api.dropSeries)))
 
-	r.Get("/scrape_pools", wrap(api.scrapePools))
-	r.Get("/targets", wrap(api.targets))
-	r.Get("/targets/metadata", wrap(api.targetMetadata))
-	r.Get("/targets/relabel_steps", wrap(api.targetRelabelSteps))
-	r.Get("/alertmanagers", wrapAgent(api.alertmanagers))
+	r.Get("/scrape_pools", humaWrap(wrap(api.scrapePools)))
+	r.Get("/targets", humaWrap(wrap(api.targets)))
+	r.Get("/targets/metadata", humaWrap(wrap(api.targetMetadata)))
+	r.Get("/targets/relabel_steps", humaWrap(wrap(api.targetRelabelSteps)))
+	r.Get("/alertmanagers", humaWrap(wrapAgent(api.alertmanagers)))
 
-	r.Get("/metadata", wrap(api.metricMetadata))
+	r.Get("/metadata", humaWrap(wrap(api.metricMetadata)))
 
-	r.Get("/status/config", wrap(api.serveConfig))
-	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
-	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
-	r.Get("/status/flags", wrap(api.serveFlags))
-	r.Get("/status/tsdb", wrapAgent(api.serveTSDBStatus))
-	r.Get("/status/tsdb/blocks", wrapAgent(api.serveTSDBBlocks))
-	r.Get("/status/walreplay", api.serveWALReplayStatus)
-	r.Get("/notifications", api.notifications)
-	r.Get("/notifications/live", api.notificationsSSE)
-	r.Post("/read", api.ready(api.remoteRead))
-	r.Post("/write", api.ready(api.remoteWrite))
-	r.Post("/otlp/v1/metrics", api.ready(api.otlpWrite))
+	r.Get("/status/config", humaWrap(wrap(api.serveConfig)))
+	r.Get("/status/runtimeinfo", humaWrap(wrap(api.serveRuntimeInfo)))
+	r.Get("/status/buildinfo", humaWrap(wrap(api.serveBuildInfo)))
+	r.Get("/status/flags", humaWrap(wrap(api.serveFlags)))
+	r.Get("/status/tsdb", humaWrap(wrapAgent(api.serveTSDBStatus)))
+	r.Get("/status/tsdb/blocks", humaWrap(wrapAgent(api.serveTSDBBlocks)))
+	r.Get("/status/walreplay", humaWrap(api.serveWALReplayStatus))
+	r.Get("/notifications", humaWrap(api.notifications))
+	r.Get("/notifications/live", humaWrap(api.notificationsSSE))
+	r.Post("/read", humaWrap(api.ready(api.remoteRead)))
+	r.Post("/write", humaWrap(api.ready(api.remoteWrite)))
+	r.Post("/otlp/v1/metrics", humaWrap(api.ready(api.otlpWrite)))
 
-	r.Get("/alerts", wrapAgent(api.alerts))
-	r.Get("/rules", wrapAgent(api.rules))
+	r.Get("/alerts", humaWrap(wrapAgent(api.alerts)))
+	r.Get("/rules", humaWrap(wrapAgent(api.rules)))
 
 	// Admin APIs
-	r.Post("/admin/tsdb/delete_series", wrapAgent(api.deleteSeries))
-	r.Post("/admin/tsdb/clean_tombstones", wrapAgent(api.cleanTombstones))
-	r.Post("/admin/tsdb/snapshot", wrapAgent(api.snapshot))
+	r.Post("/admin/tsdb/delete_series", humaWrap(wrapAgent(api.deleteSeries)))
+	r.Post("/admin/tsdb/clean_tombstones", humaWrap(wrapAgent(api.cleanTombstones)))
+	r.Post("/admin/tsdb/snapshot", humaWrap(wrapAgent(api.snapshot)))
 
-	r.Put("/admin/tsdb/delete_series", wrapAgent(api.deleteSeries))
-	r.Put("/admin/tsdb/clean_tombstones", wrapAgent(api.cleanTombstones))
-	r.Put("/admin/tsdb/snapshot", wrapAgent(api.snapshot))
+	r.Put("/admin/tsdb/delete_series", humaWrap(wrapAgent(api.deleteSeries)))
+	r.Put("/admin/tsdb/clean_tombstones", humaWrap(wrapAgent(api.cleanTombstones)))
+	r.Put("/admin/tsdb/snapshot", humaWrap(wrapAgent(api.snapshot)))
 }
 
 type QueryData struct {
@@ -1064,11 +1091,25 @@ type DroppedTarget struct {
 	ScrapePool       string        `json:"scrapePool"`
 }
 
+// NullableMap is a wrapper for map[string]int that can be null in JSON.
+type NullableMap map[string]int
+
+// Schema implements huma.SchemaProvider to mark this as nullable.
+func (NullableMap) Schema(r huma.Registry) *huma.Schema {
+	s := r.Schema(reflect.TypeOf(map[string]int{}), true, "")
+	// Make the type nullable by using an array of types.
+	s.Type = ""
+	s.Extensions = map[string]any{
+		"type": []string{"object", "null"},
+	}
+	return s
+}
+
 // TargetDiscovery has all the active targets.
 type TargetDiscovery struct {
 	ActiveTargets       []*Target        `json:"activeTargets"`
 	DroppedTargets      []*DroppedTarget `json:"droppedTargets"`
-	DroppedTargetCounts map[string]int   `json:"droppedTargetCounts"`
+	DroppedTargetCounts NullableMap      `json:"droppedTargetCounts"`
 }
 
 // GlobalURLOptions contains fields used for deriving the global URL for local targets.
@@ -1210,7 +1251,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		res.ActiveTargets = []*Target{}
 	}
 	if showDropped {
-		res.DroppedTargetCounts = api.targetRetriever(r.Context()).TargetsDroppedCounts()
+		res.DroppedTargetCounts = NullableMap(api.targetRetriever(r.Context()).TargetsDroppedCounts())
 
 		targetsDropped := api.targetRetriever(r.Context()).TargetsDropped()
 		droppedPools, numTargets := getSortedPools(targetsDropped)
@@ -1426,8 +1467,6 @@ func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
 }
 
 func (api *API) metricMetadata(r *http.Request) apiFuncResult {
-	metrics := map[string]map[metadata.Metadata]struct{}{}
-
 	limit := -1
 	if s := r.FormValue("limit"); s != "" {
 		var err error
@@ -1444,7 +1483,13 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	}
 
 	metric := r.FormValue("metric")
-	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
+	metrics := api.getMetricMetadata(r.Context(), limit, limitPerMetric, metric)
+	return apiFuncResult{metrics, nil, nil, nil}
+}
+
+func (api *API) getMetricMetadata(ctx context.Context, limit int, limitPerMetric int, metric string) map[string][]metadata.Metadata {
+	metrics := map[string]map[metadata.Metadata]struct{}{}
+	for _, tt := range api.targetRetriever(ctx).TargetsActive() {
 		for _, t := range tt {
 			if metric == "" {
 				for _, mm := range t.ListMetadata() {
@@ -1495,7 +1540,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 		res[name] = s
 	}
 
-	return apiFuncResult{res, nil, nil, nil}
+	return res
 }
 
 // RuleDiscovery has info for all rules.

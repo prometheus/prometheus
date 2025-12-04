@@ -297,6 +297,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "use-uncached-io":
 				c.tsdb.UseUncachedIO = true
 				logger.Info("Experimental Uncached IO is enabled.")
+			case "openapi-huma":
+				c.web.HumaEnabled = true
+				logger.Info("Huma API enabled")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}

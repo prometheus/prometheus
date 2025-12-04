@@ -270,6 +270,7 @@ type Options struct {
 	NotificationsGetter   func() []notifications.Notification
 	NotificationsSub      func() (<-chan notifications.Notification, func(), bool)
 	Flags                 map[string]string
+	HumaEnabled           bool
 
 	ListenAddresses            []string
 	CORSOrigin                 *regexp.Regexp
@@ -697,7 +698,16 @@ func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig s
 	av1 := route.New().
 		WithInstrumentation(h.metrics.instrumentHandlerWithPrefix("/api/v1")).
 		WithInstrumentation(setPathWithPrefix(apiPath + "/v1"))
-	h.apiV1.Register(av1)
+
+	humaOpts := &api_v1.HumaOptions{
+		Enabled:     h.options.HumaEnabled,
+		ExternalURL: h.options.ExternalURL,
+	}
+	h.apiV1.RegisterWithHuma(av1, humaOpts)
+	if humaOpts.Enabled {
+		mux.Handle("/openapi.json", av1)
+		mux.Handle("/openapi.yaml", av1)
+	}
 
 	mux.Handle(apiPath+"/v1/", http.StripPrefix(apiPath+"/v1", av1))
 

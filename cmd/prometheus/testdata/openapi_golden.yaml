@@ -1,0 +1,2779 @@
+components:
+  schemas:
+    Alert:
+      additionalProperties: false
+      properties:
+        activeAt:
+          format: date-time
+          type: string
+        annotations:
+          $ref: "#/components/schemas/Labels"
+        keepFiringSince:
+          format: date-time
+          type: string
+        labels:
+          $ref: "#/components/schemas/Labels"
+        state:
+          type: string
+        value:
+          type: string
+      required:
+        - labels
+        - annotations
+        - state
+        - value
+      type: object
+    AlertDiscovery:
+      additionalProperties: false
+      properties:
+        alerts:
+          items:
+            $ref: "#/components/schemas/Alert"
+          type:
+            - array
+            - "null"
+      required:
+        - alerts
+      type: object
+    AlertmanagerDiscovery:
+      additionalProperties: false
+      properties:
+        activeAlertmanagers:
+          items:
+            $ref: "#/components/schemas/AlertmanagerTarget"
+          type:
+            - array
+            - "null"
+        droppedAlertmanagers:
+          items:
+            $ref: "#/components/schemas/AlertmanagerTarget"
+          type:
+            - array
+            - "null"
+      required:
+        - activeAlertmanagers
+        - droppedAlertmanagers
+      type: object
+    AlertmanagerTarget:
+      additionalProperties: false
+      properties:
+        url:
+          type: string
+      required:
+        - url
+      type: object
+    AlertmanagersOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: "#/components/schemas/AlertmanagerDiscovery"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    AlertsOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: "#/components/schemas/AlertDiscovery"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    BlockDesc:
+      additionalProperties: false
+      properties:
+        maxTime:
+          format: int64
+          type: integer
+        minTime:
+          format: int64
+          type: integer
+        ulid:
+          type: string
+      required:
+        - ulid
+        - minTime
+        - maxTime
+      type: object
+    BlockMeta:
+      additionalProperties: false
+      properties:
+        compaction:
+          $ref: "#/components/schemas/BlockMetaCompaction"
+        maxTime:
+          format: int64
+          type: integer
+        minTime:
+          format: int64
+          type: integer
+        stats:
+          $ref: "#/components/schemas/BlockStats"
+        ulid:
+          type: string
+        version:
+          format: int64
+          type: integer
+      required:
+        - ulid
+        - minTime
+        - maxTime
+        - compaction
+        - version
+      type: object
+    BlockMetaCompaction:
+      additionalProperties: false
+      properties:
+        deletable:
+          type: boolean
+        failed:
+          type: boolean
+        hints:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        level:
+          format: int64
+          type: integer
+        parents:
+          items:
+            $ref: "#/components/schemas/BlockDesc"
+          type:
+            - array
+            - "null"
+        sources:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - level
+      type: object
+    BlockStats:
+      additionalProperties: false
+      properties:
+        numChunks:
+          format: int64
+          minimum: 0
+          type: integer
+        numFloatSamples:
+          format: int64
+          minimum: 0
+          type: integer
+        numHistogramSamples:
+          format: int64
+          minimum: 0
+          type: integer
+        numSamples:
+          format: int64
+          minimum: 0
+          type: integer
+        numSeries:
+          format: int64
+          minimum: 0
+          type: integer
+        numTombstones:
+          format: int64
+          minimum: 0
+          type: integer
+      type: object
+    CleanTombstonesOutputBody:
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+      required:
+        - status
+      type: object
+    Config:
+      additionalProperties: false
+      properties:
+        action:
+          type: string
+        modulus:
+          format: int64
+          minimum: 0
+          type: integer
+        regex:
+          type: string
+        replacement:
+          type: string
+        separator:
+          type: string
+        source_labels:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        target_label:
+          type: string
+      type: object
+    DataStruct:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+      required:
+        - name
+      type: object
+    DeleteSeriesOutputBody:
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+      required:
+        - status
+      type: object
+    DroppedTarget:
+      additionalProperties: false
+      properties:
+        discoveredLabels:
+          $ref: "#/components/schemas/Labels"
+        scrapePool:
+          type: string
+      required:
+        - discoveredLabels
+        - scrapePool
+      type: object
+    Error:
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+        errorType:
+          type: string
+        status:
+          type: string
+      required:
+        - status
+        - errorType
+        - error
+      type: object
+    FormatQueryOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          type: string
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    FormatQueryPostInputBody:
+      additionalProperties: false
+      properties:
+        query:
+          description: PromQL expression to format.
+          examples:
+            - sum(rate(http_requests_total[5m]))
+          minLength: 1
+          type: string
+      required:
+        - query
+      type: object
+    HeadStats:
+      additionalProperties: false
+      properties:
+        chunkCount:
+          format: int64
+          type: integer
+        maxTime:
+          format: int64
+          type: integer
+        minTime:
+          format: int64
+          type: integer
+        numLabelPairs:
+          format: int64
+          type: integer
+        numSeries:
+          format: int64
+          minimum: 0
+          type: integer
+      required:
+        - numSeries
+        - numLabelPairs
+        - chunkCount
+        - minTime
+        - maxTime
+      type: object
+    LabelValuesOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    Labels:
+      additionalProperties: false
+      type: object
+    LabelsOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    LabelsPostInputBody:
+      additionalProperties: false
+      properties:
+        end:
+          description: End timestamp for label names query.
+          examples:
+            - "2021-01-02T00:00:00Z"
+          format: prometheus-time
+          type: string
+        limit:
+          default: 0
+          description: Maximum number of label names to return (0 means no limit).
+          examples:
+            - 1000
+          format: int64
+          type: integer
+        match[]:
+          description: Series selector argument that selects the series from which to read the label names.
+          examples:
+            - - up
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        start:
+          description: Start timestamp for label names query.
+          examples:
+            - "2021-01-01T00:00:00Z"
+          format: prometheus-time
+          type: string
+      type: object
+    Metadata:
+      additionalProperties: false
+      properties:
+        help:
+          type: string
+        type:
+          type: string
+        unit:
+          type: string
+      required:
+        - type
+        - unit
+        - help
+      type: object
+    MetadataOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          additionalProperties:
+            items:
+              $ref: "#/components/schemas/Metadata"
+            type:
+              - array
+              - "null"
+          type: object
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    MetricMetadata:
+      additionalProperties: false
+      properties:
+        help:
+          type: string
+        metric:
+          type: string
+        target:
+          $ref: "#/components/schemas/Labels"
+        type:
+          type: string
+        unit:
+          type: string
+      required:
+        - target
+        - type
+        - help
+        - unit
+      type: object
+    Notification:
+      additionalProperties: false
+      properties:
+        active:
+          type: boolean
+        date:
+          format: date-time
+          type: string
+        text:
+          type: string
+      required:
+        - text
+        - date
+        - active
+      type: object
+    NotificationsOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          items:
+            $ref: "#/components/schemas/Notification"
+          type:
+            - array
+            - "null"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    ParseQueryOutputBody:
+      additionalProperties: false
+      properties:
+        data: {}
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    ParseQueryPostInputBody:
+      additionalProperties: false
+      properties:
+        query:
+          description: PromQL expression to parse.
+          examples:
+            - sum(rate(http_requests_total[5m]))
+          minLength: 1
+          type: string
+      required:
+        - query
+      type: object
+    PrometheusVersion:
+      additionalProperties: false
+      properties:
+        branch:
+          type: string
+        buildDate:
+          type: string
+        buildUser:
+          type: string
+        goVersion:
+          type: string
+        revision:
+          type: string
+        version:
+          type: string
+      required:
+        - version
+        - revision
+        - branch
+        - buildUser
+        - buildDate
+        - goVersion
+      type: object
+    QueryExemplarsOutputBody:
+      additionalProperties: false
+      properties:
+        data: {}
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    QueryExemplarsPostInputBody:
+      additionalProperties: false
+      properties:
+        end:
+          description: End timestamp for exemplars query.
+          examples:
+            - "2021-01-02T00:00:00Z"
+          format: prometheus-time
+          type: string
+        query:
+          description: PromQL query to extract exemplars for.
+          examples:
+            - http_requests_total
+          minLength: 1
+          type: string
+        start:
+          description: Start timestamp for exemplars query.
+          examples:
+            - "2021-01-01T00:00:00Z"
+          format: prometheus-time
+          type: string
+      required:
+        - query
+      type: object
+    QueryOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          discriminator:
+            mapping:
+              matrix: "#/components/schemas/QueryData/oneOf/0"
+              scalar: "#/components/schemas/QueryData/oneOf/2"
+              string: "#/components/schemas/QueryData/oneOf/3"
+              vector: "#/components/schemas/QueryData/oneOf/1"
+            propertyName: resultType
+          oneOf:
+            - additionalProperties: false
+              description: "Matrix result: array of time series with values or histograms"
+              properties:
+                result:
+                  description: Array of time series, each with a metric and either values or histograms
+                  items:
+                    additionalProperties: false
+                    properties:
+                      histograms:
+                        description: Array of histogram data points
+                        type: array
+                      metric:
+                        description: Label set for this series
+                        type: object
+                      values:
+                        description: Array of [timestamp, value] pairs
+                        items:
+                          maxItems: 2
+                          minItems: 2
+                          type: array
+                        type: array
+                    required:
+                      - metric
+                    type: object
+                  type: array
+                resultType:
+                  description: The type of the result
+                  enum:
+                    - matrix
+                  type: string
+                stats:
+                  description: Query statistics (optional)
+                  type: object
+              required:
+                - resultType
+                - result
+              type: object
+            - additionalProperties: false
+              description: "Vector result: array of instant samples with value or histogram"
+              properties:
+                result:
+                  description: Array of instant samples, each with a metric and either a value or histogram
+                  items:
+                    additionalProperties: false
+                    properties:
+                      histogram:
+                        description: Histogram data
+                        type: object
+                      metric:
+                        description: Label set for this sample
+                        type: object
+                      value:
+                        description: Single [timestamp, value] pair
+                        maxItems: 2
+                        minItems: 2
+                        type: array
+                    required:
+                      - metric
+                    type: object
+                  type: array
+                resultType:
+                  description: The type of the result
+                  enum:
+                    - vector
+                  type: string
+                stats:
+                  description: Query statistics (optional)
+                  type: object
+              required:
+                - resultType
+                - result
+              type: object
+            - additionalProperties: false
+              description: "Scalar result: single [timestamp, value] pair"
+              properties:
+                result:
+                  description: "[timestamp, value] pair"
+                  items:
+                    oneOf:
+                      - type: number
+                      - type: string
+                  maxItems: 2
+                  minItems: 2
+                  type: array
+                resultType:
+                  description: The type of the result
+                  enum:
+                    - scalar
+                  type: string
+                stats:
+                  description: Query statistics (optional)
+                  type: object
+              required:
+                - resultType
+                - result
+              type: object
+            - additionalProperties: false
+              description: "String result: single [timestamp, string_value] pair"
+              properties:
+                result:
+                  description: "[timestamp, string_value] pair"
+                  items:
+                    oneOf:
+                      - type: number
+                      - type: string
+                  maxItems: 2
+                  minItems: 2
+                  type: array
+                resultType:
+                  description: The type of the result
+                  enum:
+                    - string
+                  type: string
+                stats:
+                  description: Query statistics (optional)
+                  type: object
+              required:
+                - resultType
+                - result
+              type: object
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    QueryPostInputBody:
+      additionalProperties: false
+      properties:
+        limit:
+          default: 0
+          description: The maximum number of metrics to return.
+          examples:
+            - 100
+          format: int64
+          minimum: 0
+          type: integer
+        query:
+          description: The PromQL query to execute.
+          examples:
+            - up
+          minLength: 1
+          type: string
+        stats:
+          description: Include query statistics in the response if not empty. Use 'all' for detailed per-step statistics.
+          examples:
+            - all
+          type: string
+        time:
+          description: The evaluation timestamp (optional, defaults to current time).
+          examples:
+            - "2021-01-01T00:00:00Z"
+          format: prometheus-time
+          type: string
+      required:
+        - query
+      type: object
+    QueryRangeOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          discriminator:
+            mapping:
+              matrix: "#/components/schemas/QueryData/oneOf/0"
+              scalar: "#/components/schemas/QueryData/oneOf/2"
+              string: "#/components/schemas/QueryData/oneOf/3"
+              vector: "#/components/schemas/QueryData/oneOf/1"
+            propertyName: resultType
+          oneOf:
+            - additionalProperties: false
+              description: "Matrix result: array of time series with values or histograms"
+              properties:
+                result:
+                  description: Array of time series, each with a metric and either values or histograms
+                  items:
+                    additionalProperties: false
+                    properties:
+                      histograms:
+                        description: Array of histogram data points
+                        type: array
+                      metric:
+                        description: Label set for this series
+                        type: object
+                      values:
+                        description: Array of [timestamp, value] pairs
+                        items:
+                          maxItems: 2
+                          minItems: 2
+                          type: array
+                        type: array
+                    required:
+                      - metric
+                    type: object
+                  type: array
+                resultType:
+                  description: The type of the result
+                  enum:
+                    - matrix
+                  type: string
+                stats:
+                  description: Query statistics (optional)
+                  type: object
+              required:
+                - resultType
+                - result
+              type: object
+            - additionalProperties: false
+              description: "Vector result: array of instant samples with value or histogram"
+              properties:
+                result:
+                  description: Array of instant samples, each with a metric and either a value or histogram
+                  items:
+                    additionalProperties: false
+                    properties:
+                      histogram:
+                        description: Histogram data
+                        type: object
+                      metric:
+                        description: Label set for this sample
+                        type: object
+                      value:
+                        description: Single [timestamp, value] pair
+                        maxItems: 2
+                        minItems: 2
+                        type: array
+                    required:
+                      - metric
+                    type: object
+                  type: array
+                resultType:
+                  description: The type of the result
+                  enum:
+                    - vector
+                  type: string
+                stats:
+                  description: Query statistics (optional)
+                  type: object
+              required:
+                - resultType
+                - result
+              type: object
+            - additionalProperties: false
+              description: "Scalar result: single [timestamp, value] pair"
+              properties:
+                result:
+                  description: "[timestamp, value] pair"
+                  items:
+                    oneOf:
+                      - type: number
+                      - type: string
+                  maxItems: 2
+                  minItems: 2
+                  type: array
+                resultType:
+                  description: The type of the result
+                  enum:
+                    - scalar
+                  type: string
+                stats:
+                  description: Query statistics (optional)
+                  type: object
+              required:
+                - resultType
+                - result
+              type: object
+            - additionalProperties: false
+              description: "String result: single [timestamp, string_value] pair"
+              properties:
+                result:
+                  description: "[timestamp, string_value] pair"
+                  items:
+                    oneOf:
+                      - type: number
+                      - type: string
+                  maxItems: 2
+                  minItems: 2
+                  type: array
+                resultType:
+                  description: The type of the result
+                  enum:
+                    - string
+                  type: string
+                stats:
+                  description: Query statistics (optional)
+                  type: object
+              required:
+                - resultType
+                - result
+              type: object
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    QueryRangePostInputBody:
+      additionalProperties: false
+      properties:
+        end:
+          description: The end time of the query.
+          examples:
+            - "2021-01-01T00:00:00Z"
+          format: prometheus-time
+          minLength: 1
+          type: string
+        limit:
+          default: 0
+          description: The maximum number of metrics to return.
+          examples:
+            - 100
+          format: int64
+          minimum: 0
+          type: integer
+        query:
+          description: The query to execute.
+          examples:
+            - up
+          minLength: 1
+          type: string
+        start:
+          description: The start time of the query.
+          examples:
+            - "2021-01-01T00:00:00Z"
+          format: prometheus-time
+          minLength: 1
+          type: string
+        step:
+          description: The step size of the query.
+          examples:
+            - 1h
+          format: duration
+          minLength: 1
+          type: string
+      required:
+        - start
+        - end
+        - step
+        - query
+      type: object
+    RelabelStep:
+      additionalProperties: false
+      properties:
+        keep:
+          type: boolean
+        output:
+          $ref: "#/components/schemas/Labels"
+        rule:
+          $ref: "#/components/schemas/Config"
+      required:
+        - rule
+        - output
+        - keep
+      type: object
+    RelabelStepsResponse:
+      additionalProperties: false
+      properties:
+        steps:
+          items:
+            $ref: "#/components/schemas/RelabelStep"
+          type:
+            - array
+            - "null"
+      required:
+        - steps
+      type: object
+    RuleDiscovery:
+      additionalProperties: false
+      properties:
+        groupNextToken:
+          type: string
+        groups:
+          items:
+            $ref: "#/components/schemas/RuleGroup"
+          type:
+            - array
+            - "null"
+      required:
+        - groups
+      type: object
+    RuleGroup:
+      additionalProperties: false
+      properties:
+        evaluationTime:
+          format: double
+          type: number
+        file:
+          type: string
+        interval:
+          format: double
+          type: number
+        lastEvaluation:
+          format: date-time
+          type: string
+        limit:
+          format: int64
+          type: integer
+        name:
+          type: string
+        rules:
+          items: {}
+          type:
+            - array
+            - "null"
+      required:
+        - name
+        - file
+        - rules
+        - interval
+        - limit
+        - evaluationTime
+        - lastEvaluation
+      type: object
+    RulesOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: "#/components/schemas/RuleDiscovery"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    RuntimeInfo:
+      additionalProperties: false
+      properties:
+        CWD:
+          type: string
+        GODEBUG:
+          type: string
+        GOGC:
+          type: string
+        GOMAXPROCS:
+          format: int64
+          type: integer
+        GOMEMLIMIT:
+          format: int64
+          type: integer
+        corruptionCount:
+          format: int64
+          type: integer
+        goroutineCount:
+          format: int64
+          type: integer
+        hostname:
+          type: string
+        lastConfigTime:
+          format: date-time
+          type: string
+        reloadConfigSuccess:
+          type: boolean
+        serverTime:
+          format: date-time
+          type: string
+        startTime:
+          format: date-time
+          type: string
+        storageRetention:
+          type: string
+      required:
+        - startTime
+        - CWD
+        - hostname
+        - serverTime
+        - reloadConfigSuccess
+        - lastConfigTime
+        - corruptionCount
+        - goroutineCount
+        - GOMAXPROCS
+        - GOMEMLIMIT
+        - GOGC
+        - GODEBUG
+        - storageRetention
+      type: object
+    ScrapePoolsDiscovery:
+      additionalProperties: false
+      properties:
+        scrapePools:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - scrapePools
+      type: object
+    ScrapePoolsOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: "#/components/schemas/ScrapePoolsDiscovery"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    SeriesOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          items:
+            $ref: "#/components/schemas/Labels"
+          type:
+            - array
+            - "null"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    SeriesPostInputBody:
+      additionalProperties: false
+      properties:
+        end:
+          description: End timestamp for series query.
+          examples:
+            - "2021-01-02T00:00:00Z"
+          format: prometheus-time
+          type: string
+        limit:
+          default: 0
+          description: Maximum number of series to return (0 means no limit).
+          examples:
+            - 1000
+          format: int64
+          type: integer
+        match[]:
+          description: Series selector argument that selects the series to return. At least one match[] argument is required.
+          examples:
+            - - up
+          items:
+            type: string
+          minLength: 1
+          type:
+            - array
+            - "null"
+        start:
+          description: Start timestamp for series query.
+          examples:
+            - "2021-01-01T00:00:00Z"
+          format: prometheus-time
+          type: string
+      required:
+        - match[]
+      type: object
+    SnapshotOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: "#/components/schemas/DataStruct"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    StatusBuildInfoOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: "#/components/schemas/PrometheusVersion"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    StatusConfigData:
+      additionalProperties: false
+      properties:
+        yaml:
+          description: The YAML configuration of the Prometheus server.
+          type: string
+      required:
+        - yaml
+      type: object
+    StatusConfigOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: "#/components/schemas/StatusConfigData"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    StatusFlagsOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          additionalProperties:
+            type: string
+          type: object
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    StatusRuntimeInfoOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: "#/components/schemas/RuntimeInfo"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    StatusTSDBBlocksData:
+      additionalProperties: false
+      properties:
+        blocks:
+          items:
+            $ref: "#/components/schemas/BlockMeta"
+          type:
+            - array
+            - "null"
+      required:
+        - blocks
+      type: object
+    StatusTSDBBlocksOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: "#/components/schemas/StatusTSDBBlocksData"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    StatusTSDBOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: "#/components/schemas/TSDBStatus"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    StatusWALReplayData:
+      additionalProperties: false
+      properties:
+        current:
+          description: Current segment number being replayed.
+          format: int64
+          type: integer
+        max:
+          description: Maximum segment number.
+          format: int64
+          type: integer
+        min:
+          description: Minimum segment number.
+          format: int64
+          type: integer
+      required:
+        - min
+        - max
+        - current
+      type: object
+    StatusWALReplayOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: "#/components/schemas/StatusWALReplayData"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    TSDBStat:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        value:
+          format: int64
+          minimum: 0
+          type: integer
+      required:
+        - name
+        - value
+      type: object
+    TSDBStatus:
+      additionalProperties: false
+      properties:
+        headStats:
+          $ref: "#/components/schemas/HeadStats"
+        labelValueCountByLabelName:
+          items:
+            $ref: "#/components/schemas/TSDBStat"
+          type:
+            - array
+            - "null"
+        memoryInBytesByLabelName:
+          items:
+            $ref: "#/components/schemas/TSDBStat"
+          type:
+            - array
+            - "null"
+        seriesCountByLabelValuePair:
+          items:
+            $ref: "#/components/schemas/TSDBStat"
+          type:
+            - array
+            - "null"
+        seriesCountByMetricName:
+          items:
+            $ref: "#/components/schemas/TSDBStat"
+          type:
+            - array
+            - "null"
+      required:
+        - headStats
+        - seriesCountByMetricName
+        - labelValueCountByLabelName
+        - memoryInBytesByLabelName
+        - seriesCountByLabelValuePair
+      type: object
+    Target:
+      additionalProperties: false
+      properties:
+        discoveredLabels:
+          $ref: "#/components/schemas/Labels"
+        globalUrl:
+          type: string
+        health:
+          type: string
+        labels:
+          $ref: "#/components/schemas/Labels"
+        lastError:
+          type: string
+        lastScrape:
+          format: date-time
+          type: string
+        lastScrapeDuration:
+          format: double
+          type: number
+        scrapeInterval:
+          type: string
+        scrapePool:
+          type: string
+        scrapeTimeout:
+          type: string
+        scrapeUrl:
+          type: string
+      required:
+        - discoveredLabels
+        - labels
+        - scrapePool
+        - scrapeUrl
+        - globalUrl
+        - lastError
+        - lastScrape
+        - lastScrapeDuration
+        - health
+        - scrapeInterval
+        - scrapeTimeout
+      type: object
+    TargetDiscovery:
+      additionalProperties: false
+      properties:
+        activeTargets:
+          items:
+            $ref: "#/components/schemas/Target"
+          type:
+            - array
+            - "null"
+        droppedTargetCounts:
+          additionalProperties:
+            format: int64
+            type: integer
+          type:
+            - object
+            - "null"
+        droppedTargets:
+          items:
+            $ref: "#/components/schemas/DroppedTarget"
+          type:
+            - array
+            - "null"
+      required:
+        - activeTargets
+        - droppedTargets
+        - droppedTargetCounts
+      type: object
+    TargetMetadataOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          items:
+            $ref: "#/components/schemas/MetricMetadata"
+          type:
+            - array
+            - "null"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    TargetRelabelStepsOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: "#/components/schemas/RelabelStepsResponse"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+    TargetsOutputBody:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: "#/components/schemas/TargetDiscovery"
+        status:
+          type: string
+      required:
+        - status
+        - data
+      type: object
+info:
+  contact:
+    name: Prometheus Community
+    url: https://prometheus.io/community/
+  description: Prometheus is an Open-Source monitoring system with a dimensional data model, flexible query language, efficient time series database and modern alerting approach.
+  title: Prometheus API
+  version: ""
+openapi: 3.1.0
+paths:
+  /admin/tsdb/clean_tombstones:
+    post:
+      description: Removes deleted data from disk and cleans up the existing tombstones. Triggered via POST request.
+      operationId: cleanTombstonesPost
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CleanTombstonesOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Clean tombstones in the TSDB
+      tags:
+        - admin
+    put:
+      description: Removes deleted data from disk and cleans up the existing tombstones. Triggered via PUT request.
+      operationId: cleanTombstonesPut
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CleanTombstonesOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Clean tombstones in the TSDB
+      tags:
+        - admin
+  /admin/tsdb/delete_series:
+    post:
+      description: Deletes data for a selection of series in a time range. Accepts form parameters via POST request body.
+      operationId: deleteSeriesPost
+      parameters:
+        - description: Series selectors to identify series to delete.
+          explode: false
+          in: query
+          name: match[]
+          required: true
+          schema:
+            description: Series selectors to identify series to delete.
+            items:
+              type: string
+            type:
+              - array
+              - "null"
+        - description: Start timestamp for deletion.
+          explode: false
+          in: query
+          name: start
+          schema:
+            description: Start timestamp for deletion.
+            format: prometheus-time
+            type: string
+        - description: End timestamp for deletion.
+          explode: false
+          in: query
+          name: end
+          schema:
+            description: End timestamp for deletion.
+            format: prometheus-time
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteSeriesOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Delete series matching selectors
+      tags:
+        - admin
+    put:
+      description: Deletes data for a selection of series in a time range. Accepts query parameters via PUT request.
+      operationId: deleteSeriesPut
+      parameters:
+        - description: Series selectors to identify series to delete.
+          explode: false
+          in: query
+          name: match[]
+          required: true
+          schema:
+            description: Series selectors to identify series to delete.
+            items:
+              type: string
+            type:
+              - array
+              - "null"
+        - description: Start timestamp for deletion.
+          explode: false
+          in: query
+          name: start
+          schema:
+            description: Start timestamp for deletion.
+            format: prometheus-time
+            type: string
+        - description: End timestamp for deletion.
+          explode: false
+          in: query
+          name: end
+          schema:
+            description: End timestamp for deletion.
+            format: prometheus-time
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteSeriesOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Delete series matching selectors
+      tags:
+        - admin
+  /admin/tsdb/snapshot:
+    post:
+      description: Creates a snapshot of all current data into snapshots/<datetime>-<rand> under the TSDB's data directory and returns the directory name. Accepts form parameters via POST request body.
+      operationId: snapshotPost
+      parameters:
+        - description: If true, do not snapshot data in the head block.
+          explode: false
+          in: query
+          name: skip_head
+          schema:
+            description: If true, do not snapshot data in the head block.
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Create a snapshot of the TSDB
+      tags:
+        - admin
+    put:
+      description: Creates a snapshot of all current data into snapshots/<datetime>-<rand> under the TSDB's data directory and returns the directory name. Accepts query parameters via PUT request.
+      operationId: snapshotPut
+      parameters:
+        - description: If true, do not snapshot data in the head block.
+          explode: false
+          in: query
+          name: skip_head
+          schema:
+            description: If true, do not snapshot data in the head block.
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Create a snapshot of the TSDB
+      tags:
+        - admin
+  /alertmanagers:
+    get:
+      operationId: alertmanagers
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertmanagersOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+  /alerts:
+    get:
+      operationId: alerts
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertsOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+  /format_query:
+    get:
+      operationId: format-query
+      parameters:
+        - description: PromQL expression to format.
+          example: sum(rate(http_requests_total[5m]))
+          explode: false
+          in: query
+          name: query
+          required: true
+          schema:
+            description: PromQL expression to format.
+            examples:
+              - sum(rate(http_requests_total[5m]))
+            minLength: 1
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FormatQueryOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+    post:
+      operationId: format-query-post
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/FormatQueryPostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FormatQueryOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+  /label/{name}/values:
+    get:
+      operationId: label-values
+      parameters:
+        - description: Label name.
+          example: job
+          in: path
+          name: name
+          required: true
+          schema:
+            description: Label name.
+            examples:
+              - job
+            type: string
+        - description: Start timestamp for label values query.
+          example: "2021-01-01T00:00:00Z"
+          explode: false
+          in: query
+          name: start
+          schema:
+            description: Start timestamp for label values query.
+            examples:
+              - "2021-01-01T00:00:00Z"
+            format: prometheus-time
+            type: string
+        - description: End timestamp for label values query.
+          example: "2021-01-02T00:00:00Z"
+          explode: false
+          in: query
+          name: end
+          schema:
+            description: End timestamp for label values query.
+            examples:
+              - "2021-01-02T00:00:00Z"
+            format: prometheus-time
+            type: string
+        - description: Series selector argument that selects the series from which to read the label values.
+          example:
+            - up
+          explode: false
+          in: query
+          name: match[]
+          schema:
+            description: Series selector argument that selects the series from which to read the label values.
+            examples:
+              - - up
+            items:
+              type: string
+            type:
+              - array
+              - "null"
+        - description: Maximum number of label values to return (0 means no limit).
+          example: 1000
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 0
+            description: Maximum number of label values to return (0 means no limit).
+            examples:
+              - 1000
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabelValuesOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+  /labels:
+    get:
+      operationId: labels
+      parameters:
+        - description: Start timestamp for label names query.
+          example: "2021-01-01T00:00:00Z"
+          explode: false
+          in: query
+          name: start
+          schema:
+            description: Start timestamp for label names query.
+            examples:
+              - "2021-01-01T00:00:00Z"
+            format: prometheus-time
+            type: string
+        - description: End timestamp for label names query.
+          example: "2021-01-02T00:00:00Z"
+          explode: false
+          in: query
+          name: end
+          schema:
+            description: End timestamp for label names query.
+            examples:
+              - "2021-01-02T00:00:00Z"
+            format: prometheus-time
+            type: string
+        - description: Series selector argument that selects the series from which to read the label names.
+          example:
+            - up
+          explode: false
+          in: query
+          name: match[]
+          schema:
+            description: Series selector argument that selects the series from which to read the label names.
+            examples:
+              - - up
+            items:
+              type: string
+            type:
+              - array
+              - "null"
+        - description: Maximum number of label names to return (0 means no limit).
+          example: 1000
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 0
+            description: Maximum number of label names to return (0 means no limit).
+            examples:
+              - 1000
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabelsOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+    post:
+      operationId: labels-post
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/LabelsPostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabelsOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+  /metadata:
+    get:
+      operationId: get-metadata
+      parameters:
+        - description: The maximum number of metrics to return.
+          example: 100
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: -1
+            description: The maximum number of metrics to return.
+            examples:
+              - 100
+            format: int64
+            type: integer
+        - description: The maximum number of metadata entries per metric to return.
+          example: 10
+          explode: false
+          in: query
+          name: limitPerMetric
+          schema:
+            default: -1
+            description: The maximum number of metadata entries per metric to return.
+            examples:
+              - 10
+            format: int64
+            type: integer
+        - description: A metric name to filter metadata for. All metric metadata is retrieved if left empty.
+          example: go_goroutines
+          explode: false
+          in: query
+          name: metric
+          schema:
+            description: A metric name to filter metadata for. All metric metadata is retrieved if left empty.
+            examples:
+              - go_goroutines
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetadataOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Get metadata
+  /notifications:
+    get:
+      operationId: get-notifications
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationsOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Get notifications
+  /notifications/live:
+    get:
+      description: Subscribe to real-time server notifications using Server-Sent Events (SSE). The connection remains open and sends notification events as they occur.
+      operationId: notifications-live
+      responses:
+        "200":
+          content:
+            text/event-stream:
+              schema:
+                description: Each oneOf object in the array represents one possible Server Sent Events (SSE) message, serialized as UTF-8 text according to the SSE specification.
+                items:
+                  oneOf:
+                    - properties:
+                        data:
+                          $ref: "#/components/schemas/Notification"
+                        event:
+                          const: message
+                          description: The event name.
+                          type: string
+                        id:
+                          description: The event ID.
+                          type: integer
+                        retry:
+                          description: The retry time in milliseconds.
+                          type: integer
+                      required:
+                        - data
+                      title: Event message
+                      type: object
+                title: Server Sent Events
+                type: array
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Stream live notifications via Server-Sent Events
+      tags:
+        - notifications
+  /otlp/v1/metrics:
+    post:
+      description: OpenTelemetry Protocol (OTLP) metrics ingestion endpoint. Uses Protocol Buffers encoding.
+      operationId: otlpWrite
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: OTLP metrics write endpoint
+      tags:
+        - otlp
+  /parse_query:
+    get:
+      operationId: parse-query
+      parameters:
+        - description: PromQL expression to parse.
+          example: sum(rate(http_requests_total[5m]))
+          explode: false
+          in: query
+          name: query
+          required: true
+          schema:
+            description: PromQL expression to parse.
+            examples:
+              - sum(rate(http_requests_total[5m]))
+            minLength: 1
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParseQueryOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+    post:
+      operationId: parse-query-post
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/ParseQueryPostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParseQueryOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+  /query:
+    get:
+      operationId: query
+      parameters:
+        - description: The maximum number of metrics to return.
+          example: 100
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 0
+            description: The maximum number of metrics to return.
+            examples:
+              - 100
+            format: int64
+            minimum: 0
+            type: integer
+        - description: The evaluation timestamp (optional, defaults to current time).
+          example: "2021-01-01T00:00:00Z"
+          explode: false
+          in: query
+          name: time
+          schema:
+            description: The evaluation timestamp (optional, defaults to current time).
+            examples:
+              - "2021-01-01T00:00:00Z"
+            format: prometheus-time
+            type: string
+        - description: The PromQL query to execute.
+          example: up
+          explode: false
+          in: query
+          name: query
+          required: true
+          schema:
+            description: The PromQL query to execute.
+            examples:
+              - up
+            minLength: 1
+            type: string
+        - description: Include query statistics in the response if not empty. Use 'all' for detailed per-step statistics.
+          example: all
+          explode: false
+          in: query
+          name: stats
+          schema:
+            description: Include query statistics in the response if not empty. Use 'all' for detailed per-step statistics.
+            examples:
+              - all
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+    post:
+      operationId: query-post
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/QueryPostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+  /query_exemplars:
+    get:
+      operationId: query-exemplars
+      parameters:
+        - description: Start timestamp for exemplars query.
+          example: "2021-01-01T00:00:00Z"
+          explode: false
+          in: query
+          name: start
+          schema:
+            description: Start timestamp for exemplars query.
+            examples:
+              - "2021-01-01T00:00:00Z"
+            format: prometheus-time
+            type: string
+        - description: End timestamp for exemplars query.
+          example: "2021-01-02T00:00:00Z"
+          explode: false
+          in: query
+          name: end
+          schema:
+            description: End timestamp for exemplars query.
+            examples:
+              - "2021-01-02T00:00:00Z"
+            format: prometheus-time
+            type: string
+        - description: PromQL query to extract exemplars for.
+          example: http_requests_total
+          explode: false
+          in: query
+          name: query
+          required: true
+          schema:
+            description: PromQL query to extract exemplars for.
+            examples:
+              - http_requests_total
+            minLength: 1
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryExemplarsOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+    post:
+      operationId: query-exemplars-post
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/QueryExemplarsPostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryExemplarsOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+  /query_range:
+    get:
+      operationId: query-range
+      parameters:
+        - description: The maximum number of metrics to return.
+          example: 100
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 0
+            description: The maximum number of metrics to return.
+            examples:
+              - 100
+            format: int64
+            minimum: 0
+            type: integer
+        - description: The start time of the query.
+          example: "2021-01-01T00:00:00Z"
+          explode: false
+          in: query
+          name: start
+          required: true
+          schema:
+            description: The start time of the query.
+            examples:
+              - "2021-01-01T00:00:00Z"
+            format: prometheus-time
+            minLength: 1
+            type: string
+        - description: The end time of the query.
+          example: "2021-01-01T00:00:00Z"
+          explode: false
+          in: query
+          name: end
+          required: true
+          schema:
+            description: The end time of the query.
+            examples:
+              - "2021-01-01T00:00:00Z"
+            format: prometheus-time
+            minLength: 1
+            type: string
+        - description: The step size of the query.
+          example: 1h
+          explode: false
+          in: query
+          name: step
+          required: true
+          schema:
+            description: The step size of the query.
+            examples:
+              - 1h
+            format: duration
+            minLength: 1
+            type: string
+        - description: The query to execute.
+          example: up
+          explode: false
+          in: query
+          name: query
+          required: true
+          schema:
+            description: The query to execute.
+            examples:
+              - up
+            minLength: 1
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryRangeOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+    post:
+      operationId: query-range-post
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/QueryRangePostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryRangeOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+  /read:
+    post:
+      description: Prometheus remote read endpoint for federated queries and remote storage. Uses Protocol Buffers encoding.
+      operationId: remoteRead
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Remote read endpoint
+      tags:
+        - remote
+  /rules:
+    get:
+      operationId: rules
+      parameters:
+        - description: "Filter by rule type: alert or record."
+          example: alert
+          explode: false
+          in: query
+          name: type
+          schema:
+            description: "Filter by rule type: alert or record."
+            examples:
+              - alert
+            type: string
+        - description: Filter by rule name.
+          example:
+            - HighRequestLatency
+          explode: false
+          in: query
+          name: rule_name[]
+          schema:
+            description: Filter by rule name.
+            examples:
+              - - HighRequestLatency
+            items:
+              type: string
+            type:
+              - array
+              - "null"
+        - description: Filter by rule group name.
+          example:
+            - prometheus
+          explode: false
+          in: query
+          name: rule_group[]
+          schema:
+            description: Filter by rule group name.
+            examples:
+              - - prometheus
+            items:
+              type: string
+            type:
+              - array
+              - "null"
+        - description: Filter by file path.
+          example:
+            - /etc/prometheus/rules.yml
+          explode: false
+          in: query
+          name: file[]
+          schema:
+            description: Filter by file path.
+            examples:
+              - - /etc/prometheus/rules.yml
+            items:
+              type: string
+            type:
+              - array
+              - "null"
+        - description: Label matchers to filter rules.
+          example:
+            - "{job=\"prometheus\"}"
+          explode: false
+          in: query
+          name: match[]
+          schema:
+            description: Label matchers to filter rules.
+            examples:
+              - - "{job=\"prometheus\"}"
+            items:
+              type: string
+            type:
+              - array
+              - "null"
+        - description: Exclude active alerts from response (true or false).
+          example: "false"
+          explode: false
+          in: query
+          name: exclude_alerts
+          schema:
+            description: Exclude active alerts from response (true or false).
+            examples:
+              - "false"
+            type: string
+        - description: Maximum number of rule groups to return (-1 for unlimited).
+          example: 10
+          explode: false
+          in: query
+          name: group_limit
+          schema:
+            default: -1
+            description: Maximum number of rule groups to return (-1 for unlimited).
+            examples:
+              - 10
+            format: int64
+            type: integer
+        - description: Pagination token for next page of rule groups.
+          example: abc123
+          explode: false
+          in: query
+          name: group_next_token
+          schema:
+            description: Pagination token for next page of rule groups.
+            examples:
+              - abc123
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RulesOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+  /scrape_pools:
+    get:
+      operationId: get-scrape-pools
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapePoolsOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Get scrape pools
+  /series:
+    delete:
+      operationId: delete-series
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Delete series
+    get:
+      operationId: series
+      parameters:
+        - description: Start timestamp for series query.
+          example: "2021-01-01T00:00:00Z"
+          explode: false
+          in: query
+          name: start
+          schema:
+            description: Start timestamp for series query.
+            examples:
+              - "2021-01-01T00:00:00Z"
+            format: prometheus-time
+            type: string
+        - description: End timestamp for series query.
+          example: "2021-01-02T00:00:00Z"
+          explode: false
+          in: query
+          name: end
+          schema:
+            description: End timestamp for series query.
+            examples:
+              - "2021-01-02T00:00:00Z"
+            format: prometheus-time
+            type: string
+        - description: Series selector argument that selects the series to return. At least one match[] argument is required.
+          example:
+            - up
+          explode: false
+          in: query
+          name: match[]
+          required: true
+          schema:
+            description: Series selector argument that selects the series to return. At least one match[] argument is required.
+            examples:
+              - - up
+            items:
+              type: string
+            minLength: 1
+            type:
+              - array
+              - "null"
+        - description: Maximum number of series to return (0 means no limit).
+          example: 1000
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 0
+            description: Maximum number of series to return (0 means no limit).
+            examples:
+              - 1000
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeriesOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+    post:
+      operationId: series-post
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/SeriesPostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeriesOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+  /status/buildinfo:
+    get:
+      operationId: get-status-buildinfo
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusBuildInfoOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Get status buildinfo
+  /status/config:
+    get:
+      operationId: get-status-config
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusConfigOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Get status config
+  /status/flags:
+    get:
+      operationId: get-status-flags
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusFlagsOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Get status flags
+  /status/runtimeinfo:
+    get:
+      operationId: get-status-runtimeinfo
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusRuntimeInfoOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Get status runtimeinfo
+  /status/tsdb:
+    get:
+      operationId: status-tsdb
+      parameters:
+        - description: The maximum number of items to return per category.
+          example: 10
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 10
+            description: The maximum number of items to return per category.
+            examples:
+              - 10
+            format: int64
+            maximum: 10000
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusTSDBOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+  /status/tsdb/blocks:
+    get:
+      operationId: status-tsdb-blocks
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusTSDBBlocksOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+  /status/walreplay:
+    get:
+      operationId: get-status-walreplay
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusWALReplayOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Get status walreplay
+  /targets:
+    get:
+      operationId: get-targets
+      parameters:
+        - description: Filter targets by scrape pool name.
+          example: prometheus
+          explode: false
+          in: query
+          name: scrapePool
+          schema:
+            description: Filter targets by scrape pool name.
+            examples:
+              - prometheus
+            type: string
+        - description: "Filter by state: active, dropped, or any (default: any)."
+          example: active
+          explode: false
+          in: query
+          name: state
+          schema:
+            description: "Filter by state: active, dropped, or any (default: any)."
+            examples:
+              - active
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TargetsOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Get targets
+  /targets/metadata:
+    get:
+      operationId: get-targets-metadata
+      parameters:
+        - description: Label selector to filter targets.
+          example: "{job=\"prometheus\"}"
+          explode: false
+          in: query
+          name: match_target
+          schema:
+            description: Label selector to filter targets.
+            examples:
+              - "{job=\"prometheus\"}"
+            type: string
+        - description: Metric name to retrieve metadata for.
+          example: http_requests_total
+          explode: false
+          in: query
+          name: metric
+          schema:
+            description: Metric name to retrieve metadata for.
+            examples:
+              - http_requests_total
+            type: string
+        - description: "Maximum number of targets to match (default: no limit)."
+          example: 10
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: -1
+            description: "Maximum number of targets to match (default: no limit)."
+            examples:
+              - 10
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TargetMetadataOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Get targets metadata
+  /targets/relabel_steps:
+    get:
+      operationId: get-targets-relabel-steps
+      parameters:
+        - description: Name of the scrape pool.
+          explode: false
+          in: query
+          name: scrapePool
+          required: true
+          schema:
+            description: Name of the scrape pool.
+            type: string
+        - description: JSON-encoded labels to apply relabel rules to.
+          explode: false
+          in: query
+          name: labels
+          required: true
+          schema:
+            description: JSON-encoded labels to apply relabel rules to.
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TargetRelabelStepsOutputBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Get targets relabel steps
+  /write:
+    post:
+      description: Prometheus remote write endpoint for sending metrics to Prometheus. Uses Protocol Buffers encoding.
+      operationId: remoteWrite
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Error
+      summary: Remote write endpoint
+      tags:
+        - remote
+servers:
+  - url: http://localhost:9090/api/v1
