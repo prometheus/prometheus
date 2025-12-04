@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/common/secrets"
 	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v2"
@@ -795,7 +796,7 @@ var expectedConf = &Config{
 				&aws.EC2SDConfig{
 					Region:          "us-east-1",
 					AccessKey:       "access",
-					SecretKey:       "mysecret",
+					SecretKey:       secrets.MockInline("mysecret"),
 					Profile:         "profile",
 					RefreshInterval: model.Duration(60 * time.Second),
 					Port:            80,
@@ -843,7 +844,7 @@ var expectedConf = &Config{
 				&aws.LightsailSDConfig{
 					Region:           "us-east-1",
 					AccessKey:        "access",
-					SecretKey:        "mysecret",
+					SecretKey:        secrets.MockInline("mysecret"),
 					Profile:          "profile",
 					RefreshInterval:  model.Duration(60 * time.Second),
 					Port:             80,
@@ -884,7 +885,7 @@ var expectedConf = &Config{
 					ResourceGroup:        "my-resource-group",
 					TenantID:             "BBBB222B-B2B2-2B22-B222-2BB2222BB2B2",
 					ClientID:             "333333CC-3C33-3333-CCC3-33C3CCCCC33C",
-					ClientSecret:         "mysecret",
+					ClientSecret:         secrets.MockInline("mysecret"),
 					AuthenticationMethod: "OAuth",
 					RefreshInterval:      model.Duration(5 * time.Minute),
 					Port:                 9100,
@@ -1442,16 +1443,16 @@ var expectedConf = &Config{
 				&ovhcloud.SDConfig{
 					Endpoint:          "ovh-eu",
 					ApplicationKey:    "testAppKey",
-					ApplicationSecret: "testAppSecret",
-					ConsumerKey:       "testConsumerKey",
+					ApplicationSecret: secrets.MockInline("testAppSecret"),
+					ConsumerKey:       secrets.MockInline("testConsumerKey"),
 					RefreshInterval:   model.Duration(60 * time.Second),
 					Service:           "vps",
 				},
 				&ovhcloud.SDConfig{
 					Endpoint:          "ovh-eu",
 					ApplicationKey:    "testAppKey",
-					ApplicationSecret: "testAppSecret",
-					ConsumerKey:       "testConsumerKey",
+					ApplicationSecret: secrets.MockInline("testAppSecret"),
+					ConsumerKey:       secrets.MockInline("testConsumerKey"),
 					RefreshInterval:   model.Duration(60 * time.Second),
 					Service:           "dedicated_server",
 				},
@@ -1620,7 +1621,7 @@ var expectedConf = &Config{
 				&uyuni.SDConfig{
 					Server:           "https://localhost:1234",
 					Username:         "gopher",
-					Password:         "hole",
+					Password:         secrets.MockInline("hole"),
 					Entitlement:      "monitoring_entitled",
 					Separator:        ",",
 					RefreshInterval:  model.Duration(60 * time.Second),

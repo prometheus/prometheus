@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/secrets"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -34,7 +35,8 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 	defer ts.Close()
 
 	conf := SDConfig{
-		Server: ts.URL,
+		Server:   ts.URL,
+		Password: secrets.MockInline(""),
 	}
 
 	reg := prometheus.NewRegistry()
@@ -121,7 +123,8 @@ func TestUyuniSDSkipLogin(t *testing.T) {
 	defer ts.Close()
 
 	conf := SDConfig{
-		Server: ts.URL,
+		Server:   ts.URL,
+		Password: secrets.MockInline(""),
 	}
 
 	reg := prometheus.NewRegistry()

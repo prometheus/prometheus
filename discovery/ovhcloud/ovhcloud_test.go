@@ -19,8 +19,8 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/common/secrets"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v2"
 
@@ -29,15 +29,15 @@ import (
 
 var (
 	ovhcloudApplicationKeyTest    = "TDPKJdwZwAQPwKX2"
-	ovhcloudApplicationSecretTest = config.Secret("9ufkBmLaTQ9nz5yMUlg79taH0GNnzDjk")
-	ovhcloudConsumerKeyTest       = config.Secret("5mBuy6SUQcRw2ZUxg0cG68BoDKpED4KY")
+	ovhcloudApplicationSecretTest = "9ufkBmLaTQ9nz5yMUlg79taH0GNnzDjk"
+	ovhcloudConsumerKeyTest       = "5mBuy6SUQcRw2ZUxg0cG68BoDKpED4KY"
 )
 
 const (
 	mockURL = "https://localhost:1234"
 )
 
-func getMockConf(service string) (SDConfig, error) {
+func getMockConfRaw(service string) string {
 	confString := fmt.Sprintf(`
 endpoint: %s
 application_key: %s
@@ -47,22 +47,17 @@ refresh_interval: 1m
 service: %s
 `, mockURL, ovhcloudApplicationKeyTest, ovhcloudApplicationSecretTest, ovhcloudConsumerKeyTest, service)
 
-	return getMockConfFromString(confString)
-}
-
-func getMockConfFromString(confString string) (SDConfig, error) {
-	var conf SDConfig
-	err := yaml.UnmarshalStrict([]byte(confString), &conf)
-	return conf, err
+	return confString
 }
 
 func TestErrorInitClient(t *testing.T) {
 	confString := fmt.Sprintf(`
-endpoint: %s
+endpoint: %s`, mockURL)
 
-`, mockURL)
-
-	conf, _ := getMockConfFromString(confString)
+	var conf SDConfig
+	yaml.UnmarshalStrict([]byte(confString), &conf)
+	conf.ApplicationSecret = secrets.MockInline("")
+	conf.ConsumerKey = secrets.MockInline("")
 
 	_, err := createClient(&conf)
 
@@ -120,7 +115,8 @@ func TestParseIPs(t *testing.T) {
 }
 
 func TestDiscoverer(t *testing.T) {
-	conf, _ := getMockConf("vps")
+	confString := getMockConfRaw("vps")
+	_, conf, _ := secrets.SetupManagerForTest[SDConfig](t, confString, &secrets.MockProvider{})
 	logger := promslog.NewNopLogger()
 
 	reg := prometheus.NewRegistry()

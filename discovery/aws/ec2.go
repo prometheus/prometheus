@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/common/secrets"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -91,7 +92,7 @@ type EC2SDConfig struct {
 	Endpoint        string         `yaml:"endpoint"`
 	Region          string         `yaml:"region"`
 	AccessKey       string         `yaml:"access_key,omitempty"`
-	SecretKey       config.Secret  `yaml:"secret_key,omitempty"`
+	SecretKey       secrets.Field  `yaml:"secret_key,omitempty"`
 	Profile         string         `yaml:"profile,omitempty"`
 	RoleARN         string         `yaml:"role_arn,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
@@ -225,8 +226,8 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (ec2Client, error) {
 
 	// Only set static credentials if both access key and secret key are provided.
 	// Otherwise, let the AWS SDK use its default credential chain (environment variables, IAM role, etc.).
-	if d.cfg.AccessKey != "" && d.cfg.SecretKey != "" {
-		credProvider := credentials.NewStaticCredentialsProvider(d.cfg.AccessKey, string(d.cfg.SecretKey), "")
+	if d.cfg.AccessKey != "" && !d.cfg.SecretKey.IsNil() {
+		credProvider := credentials.NewStaticCredentialsProvider(d.cfg.AccessKey, d.cfg.SecretKey.Value(), "")
 		configOptions = append(configOptions, awsConfig.WithCredentialsProvider(credProvider))
 	}
 

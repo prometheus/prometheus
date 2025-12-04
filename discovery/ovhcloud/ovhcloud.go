@@ -23,8 +23,8 @@ import (
 
 	"github.com/ovh/go-ovh/ovh"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/secrets"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -47,8 +47,8 @@ var DefaultSDConfig = SDConfig{
 type SDConfig struct {
 	Endpoint          string         `yaml:"endpoint"`
 	ApplicationKey    string         `yaml:"application_key"`
-	ApplicationSecret config.Secret  `yaml:"application_secret"`
-	ConsumerKey       config.Secret  `yaml:"consumer_key"`
+	ApplicationSecret secrets.Field  `yaml:"application_secret"`
+	ConsumerKey       secrets.Field  `yaml:"consumer_key"`
 	RefreshInterval   model.Duration `yaml:"refresh_interval"`
 	Service           string         `yaml:"service"`
 }
@@ -77,15 +77,17 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if c.Endpoint == "" {
 		return errors.New("endpoint can not be empty")
 	}
+
 	if c.ApplicationKey == "" {
 		return errors.New("application key can not be empty")
 	}
-	if c.ApplicationSecret == "" {
+	if c.ApplicationSecret.IsNil() {
 		return errors.New("application secret can not be empty")
 	}
-	if c.ConsumerKey == "" {
+	if c.ConsumerKey.IsNil() {
 		return errors.New("consumer key can not be empty")
 	}
+
 	switch c.Service {
 	case "dedicated_server", "vps":
 		return nil
@@ -96,7 +98,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 
 // CreateClient creates a new ovh client configured with given credentials.
 func createClient(config *SDConfig) (*ovh.Client, error) {
-	return ovh.NewClient(config.Endpoint, config.ApplicationKey, string(config.ApplicationSecret), string(config.ConsumerKey))
+	return ovh.NewClient(config.Endpoint, config.ApplicationKey, config.ApplicationSecret.Value(), config.ConsumerKey.Value())
 }
 
 // NewDiscoverer returns a Discoverer for the Config.

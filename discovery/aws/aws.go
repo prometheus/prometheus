@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/secrets"
 
 	"github.com/prometheus/prometheus/discovery"
 )
@@ -68,7 +69,7 @@ type SDConfig struct {
 	Region           string                  `yaml:"region,omitempty"`
 	Endpoint         string                  `yaml:"endpoint,omitempty"`
 	AccessKey        string                  `yaml:"access_key,omitempty"`
-	SecretKey        config.Secret           `yaml:"secret_key,omitempty"`
+	SecretKey        secrets.Field           `yaml:"secret_key,omitempty"`
 	Profile          string                  `yaml:"profile,omitempty"`
 	RoleARN          string                  `yaml:"role_arn,omitempty"`
 	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
@@ -113,7 +114,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		if c.AccessKey != "" {
 			c.EC2SDConfig.AccessKey = c.AccessKey
 		}
-		if c.SecretKey != "" {
+		if !c.SecretKey.IsNil() {
 			c.EC2SDConfig.SecretKey = c.SecretKey
 		}
 		if c.Profile != "" {
@@ -145,7 +146,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		if c.AccessKey != "" {
 			c.ECSSDConfig.AccessKey = c.AccessKey
 		}
-		if c.SecretKey != "" {
+		if !c.SecretKey.IsNil() {
 			c.ECSSDConfig.SecretKey = c.SecretKey
 		}
 		if c.Profile != "" {
@@ -177,7 +178,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		if c.AccessKey != "" {
 			c.LightsailSDConfig.AccessKey = c.AccessKey
 		}
-		if c.SecretKey != "" {
+		if !c.SecretKey.IsNil() {
 			c.LightsailSDConfig.SecretKey = c.SecretKey
 		}
 		if c.Profile != "" {
