@@ -779,11 +779,11 @@ client_id: <string>
 # It is mutually exclusive with `client_secret`.
 [ client_secret_file: <filename> ]
 
-# RSA key to sign JWT with. Only used if
+# Secret key to sign JWT with. Only used if
 # GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
 [ client_certificate_key: <secret> ]
 
-# Read the RSA key from a file.
+# Read the secret key from a file.
 # It is mutually exclusive with `client_certificate_key`.
 [ client_certificate_key_file: <filename> ]
 
@@ -791,7 +791,7 @@ client_id: <string>
 # GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
 [ client_certificate_key_id: <string> ]
 
-# RSA algorithm used to sign JWT token. Only used if
+# Signature algorithm used to sign JWT token. Only used if
 # GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
 # Default value is RS256 and valid values RS256, RS384, RS512
 [ signature_algorithm: <string> ]
