@@ -1837,11 +1837,15 @@ func (api *API) serveTSDBBlocks(*http.Request) apiFuncResult {
 }
 
 func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
+	const maxTSDBLimit = 10000
 	limit := 10
 	if s := r.FormValue("limit"); s != "" {
 		var err error
 		if limit, err = strconv.Atoi(s); err != nil || limit < 1 {
 			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a positive number")}, nil, nil}
+		}
+		if limit > maxTSDBLimit {
+			return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("limit must not exceed %d", maxTSDBLimit)}, nil, nil}
 		}
 	}
 	s, err := api.db.Stats(labels.MetricName, limit)
