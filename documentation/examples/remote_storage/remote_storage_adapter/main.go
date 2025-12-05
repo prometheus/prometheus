@@ -203,6 +203,8 @@ func buildClients(logger *slog.Logger, cfg *config) ([]writer, []reader) {
 }
 
 func serve(logger *slog.Logger, addr string, writers []writer, readers []reader) error {
+	bodyLimit := int64(32 * 1024 * 1024)
+
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
 		req, err := remote.DecodeWriteRequest(r.Body)
 		if err != nil {
@@ -226,10 +228,21 @@ func serve(logger *slog.Logger, addr string, writers []writer, readers []reader)
 	})
 
 	http.HandleFunc("/read", func(w http.ResponseWriter, r *http.Request) {
-		compressed, err := io.ReadAll(r.Body)
+		compressed, err := io.ReadAll(io.LimitReader(r.Body, bodyLimit))
 		if err != nil {
 			logger.Error("Read error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if decodedLen, err := snappy.DecodedLen(compressed); err != nil {
+			logger.Error("Decode error", "err", err.Error())
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		} else if int64(decodedLen) > bodyLimit {
+			err := fmt.Errorf("decoded read request too large (>%d bytes)", bodyLimit)
+			logger.Error("Decode error", "err", err.Error())
+			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
 			return
 		}
 
