@@ -51,6 +51,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/atomic"
+	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -1255,6 +1256,45 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 	case <-signal:
 	case <-time.After(5 * time.Second):
 		require.FailNow(t, "Scrape not stopped.")
+	}
+}
+
+func TestScrapeLoopRun_ContextCancelTerminatesBlockedSend(t *testing.T) {
+	// Regression test for issue #17553
+	defer goleak.VerifyNone(t)
+
+	var (
+		signal  = make(chan struct{})
+		errc    = make(chan error)
+		scraper = &testScraper{}
+		app     = func(context.Context) storage.Appender { return &nopAppender{} }
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sl := newBasicScrapeLoop(t, ctx, scraper, app, 100*time.Millisecond)
+
+	forcedErr := errors.New("forced err")
+	sl.setForcedError(forcedErr)
+
+	scraper.scrapeFunc = func(context.Context, io.Writer) error {
+		return nil
+	}
+
+	go func() {
+		sl.run(errc)
+		close(signal)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	cancel()
+
+	select {
+	case <-signal:
+		// success case
+	case <-time.After(3 * time.Second):
+		require.FailNow(t, "Scrape loop failed to exit on context cancellation (goroutine leak detected)")
 	}
 }
 
