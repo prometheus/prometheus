@@ -23,6 +23,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -3037,14 +3038,14 @@ func TestPostingsForMatchers(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, c := range cases {
-		name := ""
+		var name strings.Builder
 		for i, matcher := range c.matchers {
 			if i > 0 {
-				name += ","
+				name.WriteString(",")
 			}
-			name += matcher.String()
+			name.WriteString(matcher.String())
 		}
-		t.Run(name, func(t *testing.T) {
+		t.Run(name.String(), func(t *testing.T) {
 			exp := map[string]struct{}{}
 			for _, l := range c.exp {
 				exp[l.String()] = struct{}{}

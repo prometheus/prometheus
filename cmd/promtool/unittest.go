@@ -196,7 +196,7 @@ type testStartTimestamp struct {
 
 // UnmarshalYAML implements custom YAML unmarshaling for testStartTimestamp.
 // It accepts both RFC3339 formatted strings and numeric Unix timestamps.
-func (t *testStartTimestamp) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (t *testStartTimestamp) UnmarshalYAML(unmarshal func(any) error) error {
 	var s string
 	if err := unmarshal(&s); err != nil {
 		return err
@@ -660,13 +660,14 @@ func (la labelsAndAnnotations) String() string {
 	if len(la) == 0 {
 		return "[]"
 	}
-	s := "[\n0:" + indentLines("\n"+la[0].String(), "  ")
+	var s strings.Builder
+	s.WriteString("[\n0:" + indentLines("\n"+la[0].String(), "  "))
 	for i, l := range la[1:] {
-		s += ",\n" + strconv.Itoa(i+1) + ":" + indentLines("\n"+l.String(), "  ")
+		s.WriteString(",\n" + strconv.Itoa(i+1) + ":" + indentLines("\n"+l.String(), "  "))
 	}
-	s += "\n]"
+	s.WriteString("\n]")
 
-	return s
+	return s.String()
 }
 
 type labelAndAnnotation struct {
@@ -717,11 +718,12 @@ func parsedSamplesString(pss []parsedSample) string {
 	if len(pss) == 0 {
 		return "nil"
 	}
-	s := pss[0].String()
+	var s strings.Builder
+	s.WriteString(pss[0].String())
 	for _, ps := range pss[1:] {
-		s += ", " + ps.String()
+		s.WriteString(", " + ps.String())
 	}
-	return s
+	return s.String()
 }
 
 func (ps *parsedSample) String() string {
