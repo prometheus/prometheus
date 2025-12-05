@@ -17,7 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
+	"slices"
 
 	"github.com/prometheus/common/model"
 
@@ -91,7 +91,7 @@ func (q *awareQuerier) Select(ctx context.Context, sort bool, hints *storage.Sel
 		if m.Type != labels.MatchEqual {
 			return annotateSeriesSet(
 				q.Querier.Select(ctx, sort, hints, matchers...),
-				fmt.Sprintf("schema: __schema_url__ matcher is ambigious (not equal type), schematization logic is skipped for %v", matchers),
+				fmt.Sprintf("schema: __schema_url__ matcher is ambiguous (not equal type), schematization logic is skipped for %v", matchers),
 			)
 		}
 		schemaURL = m.Value
@@ -104,7 +104,7 @@ func (q *awareQuerier) Select(ctx context.Context, sort bool, hints *storage.Sel
 	if err != nil {
 		return annotateSeriesSet(
 			q.Querier.Select(ctx, sort, hints, matchers...),
-			fmt.Errorf("schema: failed to find variants %w, schematization logic is skipped for %v", err, matchers).Error(),
+			fmt.Errorf("schema: failed to find variants schematization logic is skipped for %v: %w", matchers, err).Error(),
 		)
 	}
 
@@ -113,34 +113,23 @@ func (q *awareQuerier) Select(ctx context.Context, sort bool, hints *storage.Sel
 		return q.Querier.Select(ctx, sort, hints, matchers...)
 	}
 
-	var (
-		wg            sync.WaitGroup
-		seriesSetChan = make(chan storage.SeriesSet)
-		seriesSet     = make([]storage.SeriesSet, 0, len(variants))
-	)
+	seriesSetChan := make(chan storage.SeriesSet, len(variants))
+	seriesSet := make([]storage.SeriesSet, 0, len(variants))
 
 	// TODO(bwplotka): Async limit?
 	// Lookup alternative variants.
 	for _, m := range variants {
-		wg.Add(1)
-		go func(m []*labels.Matcher) {
-			defer wg.Done()
-
+		go func() {
 			// We need to sort for NewMergeSeriesSet to work.
 			seriesSetChan <- AwareSeriesSet(
 				q.Querier.Select(ctx, true, hints, m...),
 				q.engine,
 				qCtx,
 			)
-		}(m)
+		}()
 	}
-	go func() {
-		wg.Wait()
-		close(seriesSetChan)
-	}()
-
-	for r := range seriesSetChan {
-		seriesSet = append(seriesSet, r)
+	for range len(variants) {
+		seriesSet = append(seriesSet, <-seriesSetChan)
 	}
 	return storage.NewMergeSeriesSet(seriesSet, 0, storage.ChainedSeriesMerge)
 }
@@ -155,7 +144,7 @@ type awareSeriesSet struct {
 	err error
 }
 
-// AwareSeriesSet returns semconv aware SeriesSet that transforms data on the fly
+// AwareSeriesSet returns a semconv aware SeriesSet that transforms data on the fly
 // based on the __schema_url__ and the requested version.
 func AwareSeriesSet(s storage.SeriesSet, engine *schemaEngine, qCtx queryContext) storage.SeriesSet {
 	return &awareSeriesSet{SeriesSet: s, engine: engine, qCtx: qCtx}
@@ -172,19 +161,11 @@ func (s *awareSeriesSet) At() storage.Series {
 	return s.at
 }
 
-type awareSeries struct {
-	storage.Series
-
-	lbls        labels.Labels
-	vt          valueTransformer
-	magicSuffix string
-}
-
 func (s *awareSeriesSet) Next() bool {
-	if !s.SeriesSet.Next() {
+	if s.Err() != nil {
 		return false
 	}
-	if s.err != nil {
+	if !s.SeriesSet.Next() {
 		return false
 	}
 
@@ -194,8 +175,17 @@ func (s *awareSeriesSet) Next() bool {
 		s.err = err
 		return false
 	}
+
 	s.at = &awareSeries{Series: at, lbls: lbls, vt: vt, magicSuffix: s.qCtx.magicSuffix}
 	return true
+}
+
+type awareSeries struct {
+	storage.Series
+
+	lbls        labels.Labels
+	vt          valueTransformer
+	magicSuffix string
 }
 
 func (s *awareSeries) Labels() labels.Labels {
@@ -228,9 +218,11 @@ func (i *awareIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.H
 	t, hist := i.Iterator.AtHistogram(h)
 	// TODO: You can't really scale native histograms with exponential scheme. Handle this (error, approx, validation).
 
-	if hist.UsesCustomBuckets() {
+	if hist.UsesCustomBuckets() && len(i.vt.expr) > 0 {
 		hist = hist.Copy()
 		hist.Sum = i.vt.Transform(hist.Sum)
+		// Copy CustomValues since histogram.Copy() shares it by reference.
+		hist.CustomValues = slices.Clone(hist.CustomValues)
 		for cvi := range hist.CustomValues {
 			hist.CustomValues[cvi] = i.vt.Transform(hist.CustomValues[cvi])
 		}
@@ -242,9 +234,11 @@ func (i *awareIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *
 	t, hist := i.Iterator.AtFloatHistogram(fh)
 	// TODO: You can't really scale native histograms with exponential scheme. Handle this (error, approx, validation).
 
-	if hist.UsesCustomBuckets() {
+	if hist.UsesCustomBuckets() && len(i.vt.expr) > 0 {
 		hist = hist.Copy()
 		hist.Sum = i.vt.Transform(hist.Sum)
+		// Copy CustomValues since histogram.Copy() shares it by reference.
+		hist.CustomValues = slices.Clone(hist.CustomValues)
 		for cvi := range hist.CustomValues {
 			hist.CustomValues[cvi] = i.vt.Transform(hist.CustomValues[cvi])
 		}

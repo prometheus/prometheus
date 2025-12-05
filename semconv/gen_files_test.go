@@ -14,6 +14,8 @@
 package semconv
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -70,16 +72,12 @@ func TestFetchChangelog(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expected, got)
 	})
-	// TODO(bwplotka): Move to something Prometheus owns e.g. internal Prometheus repo path.
 	t.Run("http", func(t *testing.T) {
+		srv := httptest.NewServer(http.FileServer(http.Dir("./testdata")))
+		t.Cleanup(srv.Close)
+
 		e := newSchemaEngine()
-		got, err := e.fetchChangelog("https://raw.githubusercontent.com/bwplotka/metric-rename-demo/refs/heads/diff/my-org/semconv/1.1.0")
-		require.NoError(t, err)
-		require.Equal(t, expected, got)
-	})
-	t.Run("http-custom", func(t *testing.T) {
-		e := newSchemaEngine()
-		got, err := e.fetchChangelog("https://bwplotka.dev/semconv/1.0.0")
+		got, err := e.fetchChangelog(srv.URL + "/1.1.0")
 		require.NoError(t, err)
 		require.Equal(t, expected, got)
 	})
@@ -155,14 +153,11 @@ func TestSchemaEngine_FetchIDs(t *testing.T) {
 		require.Equal(t, expected, got)
 	})
 	t.Run("http", func(t *testing.T) {
+		srv := httptest.NewServer(http.FileServer(http.Dir("./testdata")))
+		t.Cleanup(srv.Close)
+
 		e := newSchemaEngine()
-		got, err := e.fetchIDs("https://raw.githubusercontent.com/bwplotka/metric-rename-demo/refs/heads/diff/my-org/semconv/1.1.0")
-		require.NoError(t, err)
-		require.Equal(t, expected, got)
-	})
-	t.Run("http-custom", func(t *testing.T) {
-		e := newSchemaEngine()
-		got, err := e.fetchIDs("https://bwplotka.dev/semconv/1.1.0")
+		got, err := e.fetchIDs(srv.URL + "/1.1.0")
 		require.NoError(t, err)
 		require.Equal(t, expected, got)
 	})

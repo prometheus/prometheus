@@ -59,23 +59,23 @@ type matcherBuilder struct {
 func newMatcherBuilder(matchers []*labels.Matcher) (matcherBuilder, error) {
 	var b matcherBuilder
 	for _, m := range matchers {
-		switch {
-		case schema.IsMetricName(m.Name):
+		switch m.Name {
+		case model.MetricNameLabel:
 			if m.Type != labels.MatchEqual {
 				return b, errors.New("__name__ matcher must be equal")
 			}
 			b.metadata.Name = m.Value
-		case schema.IsMetricType(m.Name):
+		case model.MetricTypeLabel:
 			if m.Type != labels.MatchEqual {
 				return b, errors.New("__type__ matcher must be equal")
 			}
 			b.metadata.Type = model.MetricType(m.Value)
-		case schema.IsMetricUnit(m.Name):
+		case model.MetricUnitLabel:
 			if m.Type != labels.MatchEqual {
 				return b, errors.New("__unit__ matcher must be equal")
 			}
 			b.metadata.Unit = m.Value
-		case m.Name == schemaURLLabel:
+		case schemaURLLabel:
 			// Skip it as we will be querying to different versions? We could
 			// make regex for registry dir at least, if that helps.
 		default:
@@ -92,7 +92,7 @@ func (b matcherBuilder) Clone() matcherBuilder {
 	}
 }
 
-// ToMatchers returns a copy of matchers based on builder details.
+// ToMatchers converts b into label matchers.
 func (b matcherBuilder) ToMatchers(extraNameSuffix string) []*labels.Matcher {
 	ret := make([]*labels.Matcher, 0, len(b.other)+3)
 
@@ -139,37 +139,37 @@ func (e *schemaEngine) getSchemaBase(schemaURL string) string {
 	return schemaBase
 }
 
-func (e *schemaEngine) fetchIDs(schemaURL string) (_ *ids, err error) {
+func (e *schemaEngine) fetchIDs(schemaURL string) (*ids, error) {
 	e.cacheMu.RLock()
-	schemaBase := e.getSchemaBase(schemaURL)
-	schemaIDsURL := fmt.Sprintf("%s/ids.yaml", schemaBase)
+	schemaIDsURL := fmt.Sprintf("%s/ids.yaml", e.getSchemaBase(schemaURL))
 	ids := e.cachedIDs[schemaIDsURL]
 	e.cacheMu.RUnlock()
 	if ids != nil && time.Since(ids.fetchTime) < cacheTTL {
 		return ids, nil
 	}
+
 	// Expired or missing.
-	ids, err = fetchIDs(schemaIDsURL)
+	ids, err := fetchIDs(schemaIDsURL)
 	if err != nil {
 		return nil, err
 	}
+
 	e.cacheMu.Lock()
 	e.cachedIDs[schemaIDsURL] = ids
 	e.cacheMu.Unlock()
 	return ids, nil
 }
 
-func (e *schemaEngine) fetchChangelog(schemaURL string) (_ *changelog, err error) {
+func (e *schemaEngine) fetchChangelog(schemaURL string) (*changelog, error) {
 	e.cacheMu.RLock()
-	schemaBase := e.getSchemaBase(schemaURL)
-	schemaChangelogURL := fmt.Sprintf("%s/changelog.yaml", schemaBase)
+	schemaChangelogURL := fmt.Sprintf("%s/changelog.yaml", e.getSchemaBase(schemaURL))
 	ch := e.cachedChangelog[schemaChangelogURL]
 	e.cacheMu.RUnlock()
 	if ch != nil && time.Since(ch.fetchTime) < cacheTTL {
 		return ch, nil
 	}
 	// Expired or missing.
-	ch, err = fetchChangelog(schemaChangelogURL)
+	ch, err := fetchChangelog(schemaChangelogURL)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +265,7 @@ func (e *schemaEngine) FindMatcherVariants(schemaURL string, originalMatchers []
 	variants = append(variants, matchers.ToMatchers(""))
 
 	sID, rev := q.mID.semanticID()
-	q.changes = ch.MetricsChangelog[sID]
+	q.changes = slices.Clone(ch.MetricsChangelog[sID])
 	if len(q.changes) == 0 {
 		// Unfortunately this (!ok) might also mean the malformed schema or cache.
 		// __schema__id__ idea would be more robust here.
@@ -288,14 +288,14 @@ func (e *schemaEngine) FindMatcherVariants(schemaURL string, originalMatchers []
 		magicSuffix: q.magicSuffix,
 	}
 
-	// Changelog contains changes across revisions, traverse backward forward.
+	// Changelog contains changes across revisions, traverse backwards and forwards.
 	variants, err = t.traverseForMatchers(rev, false, matchers.Clone(), variants)
 	if err != nil {
-		return nil, q, fmt.Errorf("can't traverse changes for semantic ID %s backward: %w", sID, err)
+		return nil, q, fmt.Errorf("can't traverse changes for semantic ID %s backwards: %w", sID, err)
 	}
 	variants, err = t.traverseForMatchers(rev, true, matchers, variants)
 	if err != nil {
-		return nil, q, fmt.Errorf("can't traverse changes for semantic ID %s forward: %w", sID, err)
+		return nil, q, fmt.Errorf("can't traverse changes for semantic ID %s forwards: %w", sID, err)
 	}
 	return variants, q, nil
 }
@@ -310,7 +310,7 @@ type changeTraverser struct {
 // This allows handling multi-version variants.
 func (t *changeTraverser) traverseForMatchers(revision int, newer bool, b matcherBuilder, v [][]*labels.Matcher) ([][]*labels.Matcher, error) {
 	var to, from metricGroupChange
-	// Changes are sorted from the oldest to the newest.
+	// Changes are sorted from oldest to newest.
 	if newer {
 		if len(t.changes) <= revision {
 			return v, nil
@@ -341,6 +341,9 @@ func (t *changeTraverser) traverseForMatchers(revision int, newer bool, b matche
 	}
 
 	for a := range to.Attributes {
+		if a >= len(from.Attributes) {
+			break
+		}
 		aTo := to.Attributes[a]
 		aFrom := from.Attributes[a]
 		// TODO(bwplotka): In current logic, tag MUST be specified,
@@ -355,6 +358,9 @@ func (t *changeTraverser) traverseForMatchers(revision int, newer bool, b matche
 			old := b.other[m]
 			value := b.other[m].Value
 			for member := range aTo.Members {
+				if member >= len(aFrom.Members) {
+					break
+				}
 				if old.Matches(aFrom.Members[member].Value) {
 					// TODO(bwplotka): Pretty yolo e.g. should we also replace partial use in regex?
 					value = strings.ReplaceAll(value, aFrom.Members[member].Value, aTo.Members[member].Value)
@@ -456,13 +462,14 @@ func (t *changeTraverser) traverseForLabels(fromRev, toRev int, mTyp model.Metri
 		}
 	}
 
+	var err error
 	b.Range(func(l labels.Label) {
 	nameswitch:
 		switch {
-		case schema.IsMetricName(l.Name) && to.MetricName != "":
+		case l.Name == model.MetricNameLabel && to.MetricName != "":
 			b.Set(l.Name, to.MetricName+magicSuffix)
-		case schema.IsMetricType(l.Name):
-		case schema.IsMetricUnit(l.Name) && to.Unit != "":
+		case l.Name == model.MetricTypeLabel:
+		case l.Name == model.MetricUnitLabel && to.Unit != "":
 			b.Set(l.Name, to.DirectUnit())
 		case l.Name == "le":
 			// NOTE(bwplotka): le renames are not possible.
@@ -470,19 +477,27 @@ func (t *changeTraverser) traverseForLabels(fromRev, toRev int, mTyp model.Metri
 				break nameswitch
 			}
 			if mTyp == model.MetricTypeHistogram {
-				val, err := strconv.ParseFloat(l.Value, 64)
+				var val float64
+				val, err = strconv.ParseFloat(l.Value, 64)
 				if err != nil {
-					fmt.Println("ERROR", err)
+					err = fmt.Errorf("parse floating point value %q: %w", l.Value, err)
+					return
 				}
 				b.Set(l.Name, model.FloatString(vt.Transform(val)).String())
 			}
 		default:
 			for a := range to.Attributes {
+				if a >= len(from.Attributes) {
+					break
+				}
 				if l.Name != from.Attributes[a].Tag {
 					continue
 				}
 				b.Del(l.Name)
 				for m := range from.Attributes[a].Members {
+					if m >= len(to.Attributes[a].Members) {
+						break
+					}
 					if l.Value != from.Attributes[a].Members[m].Value {
 						continue
 					}
@@ -494,5 +509,8 @@ func (t *changeTraverser) traverseForLabels(fromRev, toRev int, mTyp model.Metri
 			}
 		}
 	})
+	if err != nil {
+		return vt, err
+	}
 	return t.traverseForLabels(fromRev, toRev, mTyp, magicSuffix, b, vt)
 }

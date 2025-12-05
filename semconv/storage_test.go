@@ -16,6 +16,7 @@ package semconv
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -207,6 +208,8 @@ func scaleSamples(samples []chunks.Sample, up bool, value float64) []chunks.Samp
 				panic("can't scale native histograms ")
 			}
 			fh = fh.Copy()
+			// Clone CustomValues since histogram.Copy() shares it by reference.
+			fh.CustomValues = slices.Clone(fh.CustomValues)
 			if up {
 				fh.Sum *= value
 				for cvi := range fh.CustomValues {
@@ -226,6 +229,8 @@ func scaleSamples(samples []chunks.Sample, up bool, value float64) []chunks.Samp
 				panic("can't scale native histograms ")
 			}
 			h = h.Copy()
+			// Clone CustomValues since histogram.Copy() shares it by reference.
+			h.CustomValues = slices.Clone(h.CustomValues)
 			if up {
 				h.Sum *= value
 				for cvi := range h.CustomValues {

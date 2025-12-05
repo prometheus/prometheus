@@ -81,21 +81,6 @@ func NewMetadataFromLabels(ls labels.Labels) Metadata {
 	}
 }
 
-// IsMetricName returns whether labelName is the metric name label.
-func IsMetricName(labelName string) bool {
-	return labelName == model.MetricNameLabel
-}
-
-// IsMetricType returns whether labelName is the metric type label.
-func IsMetricType(labelName string) bool {
-	return labelName == model.MetricTypeLabel
-}
-
-// IsMetricUnit returns whether labelName is the metric unit label.
-func IsMetricUnit(labelName string) bool {
-	return labelName == model.MetricUnitLabel
-}
-
 // IsTypeEmpty returns true if the metric type is empty (not set).
 func (m Metadata) IsTypeEmpty() bool {
 	return m.Type == "" || m.Type == model.MetricTypeUnknown

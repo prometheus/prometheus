@@ -29,14 +29,14 @@ type metricID string
 
 type semanticMetricID string
 
-func (id metricID) semanticID() (_ semanticMetricID, revision int) {
+func (id metricID) semanticID() (semanticMetricID, int) {
 	parts := strings.Split(string(id), ".")
 	if len(parts) == 1 {
 		return semanticMetricID(id), 0
 	}
 
 	var err error
-	revision, err = strconv.Atoi(parts[len(parts)-1])
+	revision, err := strconv.Atoi(parts[len(parts)-1])
 	if err != nil {
 		return semanticMetricID(id), 0
 	}
@@ -84,7 +84,7 @@ type attributeMember struct {
 	Value string `yaml:"value"`
 }
 
-func fetchChangelog(schemaChangelogURL string) (_ *changelog, err error) {
+func fetchChangelog(schemaChangelogURL string) (*changelog, error) {
 	ch := &changelog{}
 	if err := fetchAndUnmarshal(schemaChangelogURL, ch); err != nil {
 		return nil, fmt.Errorf("fetch changelog for __schema_url__=%q: %w", schemaChangelogURL, err)
@@ -102,7 +102,7 @@ type ids struct {
 	fetchTime time.Time
 }
 
-func fetchIDs(schemaIDsURL string) (_ *ids, err error) {
+func fetchIDs(schemaIDsURL string) (*ids, error) {
 	i := &ids{
 		uniqueNameTypeToIdentity: make(map[string]string),
 		uniqueNameToIdentity:     make(map[string]string),
@@ -149,7 +149,7 @@ type versionedID struct {
 	IntroVersion string   `yaml:"intro_version"`
 }
 
-func fetchAndUnmarshal[T any](url string, out *T) (err error) {
+func fetchAndUnmarshal[T any](url string, out *T) error {
 	var b []byte
 	if strings.HasPrefix(url, "http") {
 		resp, err := http.Get(url)
@@ -168,6 +168,7 @@ func fetchAndUnmarshal[T any](url string, out *T) (err error) {
 			return fmt.Errorf("read all from http %s: %w", url, err)
 		}
 	} else {
+		var err error
 		b, err = os.ReadFile(url)
 		if err != nil {
 			return fmt.Errorf("read all from file %s: %w", url, err)
