@@ -148,12 +148,14 @@ func (node *BinaryExpr) ShortString() string {
 func (node *BinaryExpr) getMatchingStr() string {
 	matching := ""
 	vm := node.VectorMatching
-	if vm != nil && (len(vm.MatchingLabels) > 0 || vm.On) {
-		vmTag := "ignoring"
-		if vm.On {
-			vmTag = "on"
+	if vm != nil {
+		if len(vm.MatchingLabels) > 0 || vm.On || vm.Card == CardManyToOne || vm.Card == CardOneToMany {
+			vmTag := "ignoring"
+			if vm.On {
+				vmTag = "on"
+			}
+			matching = fmt.Sprintf(" %s (%s)", vmTag, strings.Join(vm.MatchingLabels, ", "))
 		}
-		matching = fmt.Sprintf(" %s (%s)", vmTag, strings.Join(vm.MatchingLabels, ", "))
 
 		if vm.Card == CardManyToOne || vm.Card == CardOneToMany {
 			vmCard := "right"

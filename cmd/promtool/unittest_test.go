@@ -129,6 +129,16 @@ func TestRulesUnitTest(t *testing.T) {
 			},
 			want: 0,
 		},
+		{
+			name: "Start time tests",
+			args: args{
+				files: []string{"./testdata/start-time-test.yml"},
+			},
+			queryOpts: promqltest.LazyLoaderOpts{
+				EnableAtModifier: true,
+			},
+			want: 0,
+		},
 	}
 	reuseFiles := []string{}
 	reuseCount := [2]int{}
