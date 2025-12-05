@@ -104,11 +104,16 @@ export interface LabelMatcher {
   value: string;
 }
 
+export interface FillValues {
+  lhs: number | null;
+  rhs: number | null;
+}
 export interface VectorMatching {
   card: vectorMatchCardinality;
   labels: string[];
   on: boolean;
   include: string[];
+  fillValues: FillValues;
 }
 
 export type StartOrEnd = "start" | "end" | null;

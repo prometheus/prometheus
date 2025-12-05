@@ -2846,7 +2846,8 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	if matching.Card == parser.CardManyToMany {
 		panic("many-to-many only allowed for set operators")
 	}
-	if len(lhs) == 0 || len(rhs) == 0 {
+	if (len(lhs) == 0 && len(rhs) == 0) ||
+		((len(lhs) == 0 || len(rhs) == 0) && matching.FillValues.RHS == nil && matching.FillValues.LHS == nil) {
 		return nil, nil // Short-circuit: nothing is going to match.
 	}
 
@@ -2894,17 +2895,9 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	}
 	matchedSigs := enh.matchedSigs
 
-	// For all lhs samples find a respective rhs sample and perform
-	// the binary operation.
 	var lastErr error
-	for i, ls := range lhs {
-		sigOrd := lhsh[i].sigOrdinal
 
-		rs, found := rightSigs[sigOrd] // Look for a match in the rhs Vector.
-		if !found {
-			continue
-		}
-
+	doBinOp := func(ls, rs Sample, sigOrd int) {
 		// Account for potentially swapped sidedness.
 		fl, fr := ls.F, rs.F
 		hl, hr := ls.H, rs.H
@@ -2915,7 +2908,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		floatValue, histogramValue, keep, info, err := vectorElemBinop(op, fl, fr, hl, hr, pos)
 		if err != nil {
 			lastErr = err
-			continue
+			return
 		}
 		if info != nil {
 			lastErr = info
@@ -2929,7 +2922,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 				floatValue = 0.0
 			}
 		case !keep:
-			continue
+			return
 		}
 		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
 		if !ev.enableDelayedNameRemoval && returnBool {
@@ -2963,6 +2956,43 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			DropName: returnBool,
 		})
 	}
+
+	// For all lhs samples, find a respective rhs sample and perform
+	// the binary operation.
+	for i, ls := range lhs {
+		sigOrd := lhsh[i].sigOrdinal
+
+		rs, found := rightSigs[sigOrd] // Look for a match in the rhs Vector.
+		if !found {
+			fill := matching.FillValues.RHS
+			if fill == nil {
+				continue
+			}
+			rs = Sample{
+				Metric: ls.Metric.MatchLabels(matching.On, matching.MatchingLabels...),
+				F:      *fill,
+			}
+		}
+
+		doBinOp(ls, rs, sigOrd)
+	}
+
+	// For any rhs samples which have not been matched, check if we need to
+	// perform the operation with a fill value from the lhs.
+	if fill := matching.FillValues.LHS; fill != nil {
+		for sigOrd, rs := range rightSigs {
+			if _, matched := matchedSigs[sigOrd]; matched {
+				continue // Already matched.
+			}
+			ls := Sample{
+				Metric: rs.Metric.MatchLabels(matching.On, matching.MatchingLabels...),
+				F:      *fill,
+			}
+
+			doBinOp(ls, rs, sigOrd)
+		}
+	}
+
 	return enh.Out, lastErr
 }
 
