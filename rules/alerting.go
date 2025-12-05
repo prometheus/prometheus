@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v2"
@@ -619,6 +620,8 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 	notifyFunc(ctx, r.vector.String(), alerts...)
 }
 
+// Note that changing format of String() changes value of GetFingerprint() leading to loss of persisted state
+// when the `alert-state-persistence` feature is enabled.
 func (r *AlertingRule) String() string {
 	ar := rulefmt.Rule{
 		Alert:         r.name,
@@ -635,4 +638,17 @@ func (r *AlertingRule) String() string {
 	}
 
 	return string(byt)
+}
+
+// GetFingerprint returns a hash to uniquely identify an alerting rule,
+// using a combination of rule config and the groupKey.
+func (r *AlertingRule) GetFingerprint(groupKey string) uint64 {
+	return xxhash.Sum64(append([]byte(r.String()), []byte(groupKey)...))
+}
+
+// SetActiveAlerts updates the active alerts of the alerting rule.
+func (r *AlertingRule) SetActiveAlerts(alerts map[uint64]*Alert) {
+	r.activeMtx.Lock()
+	defer r.activeMtx.Unlock()
+	r.active = alerts
 }

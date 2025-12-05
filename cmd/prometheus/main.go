@@ -208,11 +208,13 @@ type flagConfig struct {
 	featureList []string
 	// These options are extracted from featureList
 	// for ease of use.
-	enablePerStepStats       bool
-	enableConcurrentRuleEval bool
+	enablePerStepStats          bool
+	enableConcurrentRuleEval    bool
+	enableAlertStatePersistence bool
 
-	prometheusURL   string
-	corsRegexString string
+	prometheusURL    string
+	corsRegexString  string
+	alertStoragePath string
 
 	promqlEnableDelayedNameRemoval bool
 
@@ -249,6 +251,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "concurrent-rule-eval":
 				c.enableConcurrentRuleEval = true
 				logger.Info("Experimental concurrent rule evaluation enabled.")
+			case "alert-state-persistence":
+				c.enableAlertStatePersistence = true
+				logger.Info("Experimental alert state persistence storage enabled for alerting rules using keep_firing_for.")
 			case "promql-experimental-functions":
 				parser.EnableExperimentalFunctions = true
 				logger.Info("Experimental PromQL functions enabled.")
@@ -531,6 +536,8 @@ func main() {
 
 	serverOnlyFlag(a, "rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
+	serverOnlyFlag(a, "rules.alert.state-storage-path", "Path for alert state storage.").
+		Default("data/alerts").StringVar(&cfg.alertStoragePath)
 
 	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently. When set, \"query.max-concurrency\" may need to be adjusted accordingly.").
 		Default("4").Int64Var(&cfg.maxConcurrentEvals)
@@ -883,6 +890,10 @@ func main() {
 		}
 
 		queryEngine = promql.NewEngine(opts)
+		var alertStore rules.AlertStore
+		if cfg.enableAlertStatePersistence {
+			alertStore = rules.NewFileStore(logger.With("component", "alertStore"), cfg.alertStoragePath, prometheus.DefaultRegisterer)
+		}
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
 			NameValidationScheme:   cfgFile.GlobalConfig.MetricNameValidationScheme,
@@ -902,6 +913,7 @@ func main() {
 			DefaultRuleQueryOffset: func() time.Duration {
 				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
 			},
+			AlertStore: alertStore,
 		})
 	}
 

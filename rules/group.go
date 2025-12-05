@@ -72,6 +72,7 @@ type Group struct {
 	// Rule group evaluation iteration function,
 	// defaults to DefaultEvalIterationFunc.
 	evalIterationFunc GroupEvalIterationFunc
+	alertStore        AlertStore
 
 	appOpts *storage.AppendOptions
 }
@@ -93,6 +94,7 @@ type GroupOptions struct {
 	QueryOffset       *time.Duration
 	done              chan struct{}
 	EvalIterationFunc GroupEvalIterationFunc
+	AlertStore        AlertStore
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -143,6 +145,7 @@ func NewGroup(o GroupOptions) *Group {
 		logger:               opts.Logger.With("file", o.File, "group", o.Name),
 		metrics:              metrics,
 		evalIterationFunc:    evalIterationFunc,
+		alertStore:           o.AlertStore,
 		appOpts:              &storage.AppendOptions{DiscardOutOfOrder: true},
 	}
 }
@@ -529,6 +532,17 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}
 
 		g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
+
+		if g.alertStore != nil && g.lastEvalTimestamp.IsZero() {
+			// Restore alerts when feature is enabled and it is the first evaluation for the group
+			if ar, ok := rule.(*AlertingRule); ok {
+				restoredAlerts, _ := g.alertStore.GetAlerts(ar.GetFingerprint(GroupKey(g.File(), g.Name())))
+				if len(restoredAlerts) > 0 {
+					ar.SetActiveAlerts(restoredAlerts)
+					g.logger.Info("Restored alerts from store", "rule", ar.name, "alerts", len(restoredAlerts))
+				}
+			}
+		}
 
 		vector, err := rule.Eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
 		if err != nil {
@@ -1208,4 +1222,36 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 	}
 
 	return dependencies
+}
+
+// AlertStore provides persistent storage of alert state.
+type AlertStore interface {
+	// SetAlerts stores the provided list of alerts for a rule.
+	SetAlerts(key uint64, groupKey string, alerts []*Alert) error
+	// GetAlerts returns a list of alerts for each alerting rule,
+	// alerting rule is identified by a fingerprint of its config.
+	GetAlerts(key uint64) (map[uint64]*Alert, error)
+}
+
+// StoreKeepFiringForState is periodically invoked to store the state of alerting rules using 'keep_firing_for'.
+func (g *Group) StoreKeepFiringForState() {
+	for _, rule := range g.rules {
+		ar, ok := rule.(*AlertingRule)
+		if !ok {
+			continue
+		}
+		if ar.KeepFiringFor() != 0 {
+			alertsToStore := make([]*Alert, 0)
+			ar.ForEachActiveAlert(func(alert *Alert) {
+				if !alert.KeepFiringSince.IsZero() {
+					alertsToStore = append(alertsToStore, alert)
+				}
+			})
+			groupKey := GroupKey(g.File(), g.Name())
+			err := g.alertStore.SetAlerts(ar.GetFingerprint(groupKey), groupKey, alertsToStore)
+			if err != nil {
+				g.logger.Error("Failed to store alerting rule state", "rule", ar.Name(), "err", err)
+			}
+		}
+	}
 }
