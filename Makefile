@@ -184,6 +184,11 @@ check-go-mod-version:
 	@echo ">> checking go.mod version matching"
 	@./scripts/check-go-mod-version.sh
 
+.PHONY: update-features-testdata
+update-features-testdata:
+	@echo ">> updating features testdata"
+	@$(GO) test ./cmd/prometheus -run TestFeaturesAPI -update-features
+
 .PHONY: update-all-go-deps
 update-all-go-deps:
 	@$(MAKE) update-go-deps
