@@ -78,6 +78,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'asap_smoothing',
+    detail: 'function',
+    info: 'Calculate smoothed value of input series using ASAP Smoothing',
+    type: 'function',
+  },
+  {
     label: 'asin',
     detail: 'function',
     info: 'Calculate the arcsine, in radians, for input series',
