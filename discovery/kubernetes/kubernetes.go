@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/common/secrets"
 	"github.com/prometheus/common/version"
 	apiv1 "k8s.io/api/core/v1"
 	disv1 "k8s.io/api/discovery/v1"
@@ -111,6 +112,7 @@ type SDConfig struct {
 	NamespaceDiscovery NamespaceDiscovery      `yaml:"namespaces,omitempty"`
 	Selectors          []SelectorConfig        `yaml:"selectors,omitempty"`
 	AttachMetadata     AttachMetadataConfig    `yaml:"attach_metadata,omitempty"`
+	ExampleSecret      secrets.Field           `yaml:"example_secret"`
 }
 
 // NewDiscovererMetrics implements discovery.Config.
