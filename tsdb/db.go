@@ -1791,7 +1791,7 @@ func deletableBlocks(db *DB, blocks []*Block, filterFuncs ...DeletableFilterFunc
 // set in the db options. This uses absolute wall clock time, not relative time between blocks.
 func BeyondStartupTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struct{}) {
 	if len(blocks) == 0 || db.opts.StartupMinRetentionTime == 0 {
-		return
+		return deletable
 	}
 
 	deletable = make(map[ulid.ULID]struct{})
