@@ -1801,7 +1801,7 @@ func BeyondStartupTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULI
 			db.metrics.timeRetentionCount.Inc()
 		}
 	}
-	return
+	return deletable
 }
 
 // BeyondTimeRetention returns those blocks which are beyond the time retention
