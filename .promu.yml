@@ -17,6 +17,7 @@ build:
         windows:
             - builtinassets
     ldflags: |
+        -s -w
         -X github.com/prometheus/common/version.Version={{.Version}}
         -X github.com/prometheus/common/version.Revision={{.Revision}}
         -X github.com/prometheus/common/version.Branch={{.Branch}}
