@@ -93,7 +93,7 @@ func DefaultOptions() *Options {
 		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
 		CompactionDelay:             time.Duration(0),
 		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
-		StartupMinRetentionTime:     time.Now().Add(-15 * 24 * time.Hour / time.Millisecond).UnixMilli(),
+		StartupMinRetentionTime:     0,
 	}
 }
 
@@ -1004,8 +1004,9 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	originalBlocksToDelete := db.blocksToDelete
 
 	// Using a custom deletableBlocks so we can delete blocks that are beyond the startup time retention.
+	// We include both startup retention (absolute time) and normal retention (relative time).
 	db.blocksToDelete = func(blocks []*Block) map[ulid.ULID]struct{} {
-		return deletableBlocks(db, blocks, BeyondStartupTimeRetention, BeyondSizeRetention)
+		return deletableBlocks(db, blocks, BeyondStartupTimeRetention, BeyondTimeRetention, BeyondSizeRetention)
 	}
 
 	// Calling db.reload() calls db.reloadBlocks() which requires cmtx to be locked.
@@ -1793,7 +1794,7 @@ func BeyondStartupTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULI
 
 	deletable = make(map[ulid.ULID]struct{})
 	for _, block := range blocks {
-		if block.Meta().MaxTime < db.opts.StartupMinRetentionTime {
+		if block.Meta().MaxTime <= db.opts.StartupMinRetentionTime {
 			deletable[block.meta.ULID] = struct{}{}
 			db.metrics.timeRetentionCount.Inc()
 		}
