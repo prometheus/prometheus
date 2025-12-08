@@ -143,6 +143,25 @@ func TestDBClose_AfterClose(t *testing.T) {
 	require.NoError(t, db.Close())
 }
 
+func openTestDBWithDir(t testing.TB, dir string, opts *Options, rngs []int64) (db *DB) {
+	var err error
+
+	if opts == nil {
+		opts = DefaultOptions()
+	}
+
+	if len(rngs) == 0 {
+		db, err = Open(dir, nil, nil, opts, nil)
+	} else {
+		opts, rngs = validateOpts(opts, rngs)
+		db, err = open(dir, nil, nil, opts, rngs, nil)
+	}
+	require.NoError(t, err)
+
+	// Do not Close() the test database by default as it will deadlock on test failures.
+	return db
+}
+
 // query runs a matcher query against the querier and fully expands its data.
 func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]chunks.Sample {
 	ss := q.Select(context.Background(), false, nil, matchers...)
@@ -225,7 +244,9 @@ func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Match
 // Ensure that blocks are held in memory in their time order
 // and not in ULID order as they are read from the directory.
 func TestDB_reloadOrder(t *testing.T) {
-	db := newTestDB(t)
+	db := newTestDB(t, withOpts(&Options{
+		StartupMinRetentionTime: 0,
+	}))
 
 	metas := []BlockMeta{
 		{MinTime: 90, MaxTime: 100},
@@ -1045,7 +1066,9 @@ func TestDB_e2e(t *testing.T) {
 }
 
 func TestWALFlushedOnDBClose(t *testing.T) {
-	db := newTestDB(t)
+	db := newTestDB(t, withOpts(&Options{
+		StartupMinRetentionTime: 0,
+	}))
 
 	lbls := labels.FromStrings("labelname", "labelvalue")
 
@@ -1055,9 +1078,13 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
+	dbDir := db.Dir()
+	dbOpts := db.opts
 	require.NoError(t, db.Close())
 
-	db = newTestDB(t, withDir(db.Dir()))
+	db, err = Open(dbDir, nil, nil, dbOpts, nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, db.Close()) }()
 
 	q, err := db.Querier(0, 1)
 	require.NoError(t, err)
@@ -1164,7 +1191,9 @@ func TestWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T) {
 func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation int) {
 	const numSeries = 1000
 
-	db := newTestDB(t)
+	db := newTestDB(t, withOpts(&Options{
+		StartupMinRetentionTime: 0,
+	}))
 	db.DisableCompactions()
 
 	for seriesRef := 1; seriesRef <= numSeries; seriesRef++ {
@@ -1194,10 +1223,17 @@ func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBefore
 		require.NoError(t, app.Commit())
 	}
 
+	dbDir := db.Dir()
+	dbOpts := db.opts
 	require.NoError(t, db.Close())
 
 	// Reopen the DB, replaying the WAL.
-	db = newTestDB(t, withDir(db.Dir()))
+	var err error
+	db, err = Open(dbDir, promslog.New(&promslog.Config{}), nil, dbOpts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
 
 	// Query back chunks for all series.
 	q, err := db.ChunkQuerier(math.MinInt64, math.MaxInt64)
@@ -1531,6 +1567,69 @@ func TestRetentionDurationMetric(t *testing.T) {
 	require.Equal(t, expRetentionDuration, actRetentionDuration, "metric retention duration mismatch")
 }
 
+func TestTsdbOpenTimeRetention(t *testing.T) {
+	testCases := []struct {
+		name              string
+		blocks            []*BlockMeta
+		expBlocks         []*BlockMeta
+		retentionDuration int64
+	}{
+		{
+			name: "Block max time delta greater than retention duration",
+			blocks: []*BlockMeta{
+				{MinTime: 500, MaxTime: 900}, // Oldest block, beyond retention
+				{MinTime: 1000, MaxTime: 1500},
+				{MinTime: 1500, MaxTime: 2000}, // Newest block
+			},
+			expBlocks: []*BlockMeta{
+				{MinTime: 1000, MaxTime: 1500},
+				{MinTime: 1500, MaxTime: 2000},
+			},
+			retentionDuration: 1000,
+		},
+		{
+			name: "Block max time delta equal to retention duration",
+			blocks: []*BlockMeta{
+				{MinTime: 500, MaxTime: 900},   // Oldest block
+				{MinTime: 1000, MaxTime: 1500}, // Coinciding exactly with the retention duration.
+				{MinTime: 1500, MaxTime: 2000}, // Newest block
+			},
+			expBlocks: []*BlockMeta{
+				{MinTime: 1500, MaxTime: 2000},
+			},
+			retentionDuration: 500,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			db := openTestDBWithDir(t, dir, nil, []int64{1000})
+			for _, m := range tc.blocks {
+				createBlock(t, db.Dir(), genSeries(10, 10, m.MinTime, m.MaxTime))
+			}
+
+			require.NoError(t, db.reloadBlocks())       // Reload the db to register the new blocks.
+			require.Len(t, db.Blocks(), len(tc.blocks)) // Ensure all blocks are registered.
+
+			db.Close()
+
+			db = openTestDBWithDir(t, dir, &Options{RetentionDuration: tc.retentionDuration}, []int64{1000})
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
+
+			actBlocks := db.Blocks()
+			require.Equal(t, 1, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "metric retention count mismatch")
+			require.Len(t, actBlocks, len(tc.expBlocks))
+
+			for i, eb := range tc.expBlocks {
+				require.Equal(t, eb.MinTime, actBlocks[i].meta.MinTime)
+				require.Equal(t, eb.MaxTime, actBlocks[i].meta.MaxTime)
+			}
+		})
+	}
+}
+
 func TestSizeRetention(t *testing.T) {
 	t.Parallel()
 	opts := DefaultOptions()
@@ -1752,6 +1851,31 @@ func TestRuntimeRetentionConfigChange(t *testing.T) {
 	require.Equal(t, nineAndHalfHoursMs, actBlocks[1].meta.MinTime, "last remaining block should be the newest")
 
 	require.Positive(t, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "time retention count should be incremented")
+}
+
+func TestStartupMinRetentionTime(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create blocks and verify initial load
+	blocks := []*BlockMeta{
+		{MinTime: 100, MaxTime: 200},
+		{MinTime: 200, MaxTime: 300},
+		{MinTime: 300, MaxTime: 400},
+	}
+
+	for _, m := range blocks {
+		createBlock(t, dir, genSeries(100, 10, m.MinTime, m.MaxTime))
+	}
+
+	// Open DB with retention and verify only one block remains
+	opts := DefaultOptions()
+	opts.StartupMinRetentionTime = 300
+	db, err := Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+	defer db.Close()
+
+	require.NoError(t, db.reloadBlocks())
+	require.Len(t, db.Blocks(), 1)
 }
 
 func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
@@ -2075,7 +2199,9 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, w.Close())
 
-		db := newTestDB(t, withDir(dir))
+		db := newTestDB(t, withDir(dir), withOpts(&Options{
+			StartupMinRetentionTime: 0,
+		}))
 
 		require.Equal(t, int64(5000), db.head.MinTime())
 		require.Equal(t, int64(15000), db.head.MaxTime())
@@ -2115,7 +2241,14 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, w.Close())
 
-		db := newTestDB(t, withDir(dir))
+		r := prometheus.NewRegistry()
+		opts := DefaultOptions()
+		opts.StartupMinRetentionTime = 0
+		db, err := Open(dir, nil, r, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, db.Close())
+		})
 
 		require.Equal(t, int64(6000), db.head.MinTime())
 		require.Equal(t, int64(15000), db.head.MaxTime())
@@ -2388,7 +2521,9 @@ func TestBlockRanges(t *testing.T) {
 	// when a non standard block already exists.
 	firstBlockMaxT := int64(3)
 	createBlock(t, dir, genSeries(1, 1, 0, firstBlockMaxT))
-	db, err := open(dir, logger, nil, DefaultOptions(), []int64{10000}, nil)
+	opts := DefaultOptions()
+	opts.StartupMinRetentionTime = 0
+	db, err := open(dir, logger, nil, opts, []int64{10000}, nil)
 	require.NoError(t, err)
 
 	rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 + 1
@@ -2435,7 +2570,7 @@ func TestBlockRanges(t *testing.T) {
 	thirdBlockMaxt := secondBlockMaxt + 2
 	createBlock(t, dir, genSeries(1, 1, secondBlockMaxt+1, thirdBlockMaxt))
 
-	db, err = open(dir, logger, nil, DefaultOptions(), []int64{10000}, nil)
+	db, err = open(dir, logger, nil, db.opts, []int64{10000}, nil)
 	require.NoError(t, err)
 
 	defer db.Close()
@@ -2496,7 +2631,9 @@ func TestDBReadOnly(t *testing.T) {
 
 	// Open a normal db to use for a comparison.
 	{
-		dbWritable := newTestDB(t, withDir(dbDir))
+		dbWritable := newTestDB(t, withDir(dbDir), withOpts(&Options{
+			StartupMinRetentionTime: 0,
+		}))
 		dbWritable.DisableCompactions()
 
 		dbSizeBeforeAppend, err := fileutil.DirSize(dbWritable.Dir())
@@ -4778,7 +4915,9 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	db := newTestDB(t)
+	db := newTestDB(t, withOpts(&Options{
+		StartupMinRetentionTime: 0,
+	}))
 	ctx := context.Background()
 
 	// Add some series so we can append metadata to them.
@@ -4835,12 +4974,20 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	require.Equal(t, *series3.meta, m3)
 	require.Equal(t, *series4.meta, m4)
 
+	dbDir := db.Dir()
+	dbOpts := db.opts
 	require.NoError(t, db.Close())
 
 	// Reopen the DB, replaying the WAL. The Head must have been replayed
 	// correctly in memory.
-	db = newTestDB(t, withDir(db.Dir()))
-	_, err := db.head.wal.Size()
+	var err error
+	db, err = Open(dbDir, nil, nil, dbOpts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	_, err = db.head.wal.Size()
 	require.NoError(t, err)
 
 	require.Equal(t, *db.head.series.getByHash(s1.Hash(), s1).meta, m1)
@@ -6806,6 +6953,7 @@ func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
+	opts.StartupMinRetentionTime = 0
 
 	db := newTestDB(t, withOpts(opts))
 	db.DisableCompactions()
@@ -7576,6 +7724,7 @@ func TestWBLCorruption(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+	opts.StartupMinRetentionTime = 0
 
 	db := newTestDB(t, withOpts(opts))
 
@@ -7723,6 +7872,7 @@ func testOOOMmapCorruption(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 10
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+	opts.StartupMinRetentionTime = 0
 
 	db := newTestDB(t, withOpts(opts))
 
@@ -8137,6 +8287,8 @@ func testNoGapAfterRestartWithOOO(t *testing.T, scenario sampleTypeScenario) {
 
 			opts := DefaultOptions()
 			opts.OutOfOrderTimeWindow = 30 * time.Minute.Milliseconds()
+			opts.StartupMinRetentionTime = 0
+
 			db := newTestDB(t, withOpts(opts))
 			db.DisableCompactions()
 
@@ -8187,6 +8339,7 @@ func TestWblReplayAfterOOODisableAndRestart(t *testing.T) {
 func testWblReplayAfterOOODisableAndRestart(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
+	opts.StartupMinRetentionTime = 0
 
 	db := newTestDB(t, withOpts(opts))
 
