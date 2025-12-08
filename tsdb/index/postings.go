@@ -391,7 +391,7 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 
 	for n, e := range p.m {
 		for v, p := range e {
-			if err := f(labels.Label{Name: n, Value: v}, newListPostings(p...)); err != nil {
+			if err := f(labels.Label{Name: n, Value: v}, NewListPostings(p)); err != nil {
 				return err
 			}
 		}
@@ -834,10 +834,6 @@ type ListPostings struct {
 }
 
 func NewListPostings(list []storage.SeriesRef) Postings {
-	return newListPostings(list...)
-}
-
-func newListPostings(list ...storage.SeriesRef) *ListPostings {
 	return &ListPostings{list: list}
 }
 

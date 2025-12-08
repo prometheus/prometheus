@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,9 +63,7 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 
 	for _, e := range p.m {
 		for _, l := range e {
-			ok := sort.SliceIsSorted(l, func(i, j int) bool {
-				return l[i] < l[j]
-			})
+			ok := slices.IsSorted(l)
 			require.True(t, ok, "postings list %v is not sorted", l)
 		}
 	}
@@ -283,6 +282,13 @@ func consumePostings(p Postings) error {
 		p.At()
 	}
 	return p.Err()
+}
+
+func newListPostings(list ...storage.SeriesRef) *ListPostings {
+	if !slices.IsSorted(list) {
+		panic("newListPostings: list is not sorted")
+	}
+	return &ListPostings{list: list}
 }
 
 // Create ListPostings for a benchmark, collecting the original sets of references
