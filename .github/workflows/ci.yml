@@ -1,7 +1,7 @@
 ---
 name: CI
 on:
-  # pull_request:
+  pull_request:
   push:
 
 permissions:
@@ -50,8 +50,6 @@ jobs:
   test_go_oldest:
     name: Go tests with previous Go version
     runs-on: ubuntu-latest
-    if: |
-      false
     env:
       # Enforce the Go version.
       GOTOOLCHAIN: local
@@ -74,8 +72,6 @@ jobs:
   test_ui:
     name: UI tests
     runs-on: ubuntu-latest
-    if: |
-      false
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
@@ -100,8 +96,6 @@ jobs:
   test_windows:
     name: Go tests on Windows
     runs-on: windows-latest
-    if: |
-      false
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -117,8 +111,6 @@ jobs:
   test_mixins:
     name: Mixins tests
     runs-on: ubuntu-latest
-    if: |
-      false
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
@@ -140,8 +132,6 @@ jobs:
     name: Build Prometheus for common architectures
     runs-on: ubuntu-latest
     if: |
-      false
-      &&
       !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
       &&
       !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
@@ -166,8 +156,6 @@ jobs:
     name: Build Prometheus for all architectures
     runs-on: ubuntu-latest
     if: |
-      false
-      &&
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
       ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
@@ -264,14 +252,9 @@ jobs:
           version: ${{ steps.golangci-lint-version.outputs.version }}
   fuzzing:
     uses: ./.github/workflows/fuzzing.yml
-    if: |
-      false
-      &&
-      github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request'
   codeql:
     uses: ./.github/workflows/codeql-analysis.yml
-    if: |
-      false
     permissions:
       contents: read
       security-events: write
@@ -280,10 +263,7 @@ jobs:
     name: Publish main branch artifacts
     runs-on: ubuntu-latest
     needs: [test_ui, test_go, test_go_more, test_go_oldest, test_windows, golangci, codeql, build_all]
-    if: |
-      false
-      &&
-      github.event_name == 'push' && github.event.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.event.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -300,8 +280,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test_ui, test_go, test_go_more, test_go_oldest, test_windows, golangci, codeql, build_all]
     if: |
-      false
-      &&
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
       ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
@@ -320,8 +298,6 @@ jobs:
   publish_ui_release:
     name: Publish UI on npm Registry
     runs-on: ubuntu-latest
-    if: |
-      false
     needs: [test_ui, codeql]
     steps:
       - name: Checkout
