@@ -39,7 +39,6 @@ type CircularExemplarStorage struct {
 	lock                sync.RWMutex
 	exemplars           []circularBufferEntry
 	nextIndex           int
-	storedExemplars     int
 	metrics             *ExemplarMetrics
 	oooTimeWindowMillis int64
 
@@ -297,7 +296,8 @@ func (ce *CircularExemplarStorage) SetOutOfOrderTimeWindow(d int64) {
 
 // Resize changes the size of exemplar buffer by allocating a new buffer and
 // migrating data to it. Exemplars are kept when possible. Shrinking will discard
-// old data (in order of ingestion) as needed.
+// old data (in order of ingestion) as needed. Returns the number of migrated
+// exemplars.
 func (ce *CircularExemplarStorage) Resize(l int64) int {
 	// Accept negative values as just 0 size.
 	if l <= 0 {
@@ -331,7 +331,7 @@ func (ce *CircularExemplarStorage) grow(l int64) int {
 	oldSize := len(ce.exemplars)
 	newSlice := make([]circularBufferEntry, l)
 	ranges := []intRange{
-		{from: ce.nextIndex, to: ce.storedExemplars},
+		{from: ce.nextIndex, to: oldSize},
 		{from: 0, to: ce.nextIndex},
 	}
 	ce.nextIndex = copyExemplarRanges(ce.index, newSlice, ce.exemplars, ranges)
@@ -343,24 +343,15 @@ func (ce *CircularExemplarStorage) grow(l int64) int {
 // oldest samples to accommodate the new size l. This function must be called
 // with the lock acquired.
 func (ce *CircularExemplarStorage) shrink(l int64) (migrated int) {
-	// If the buffer has enough empty space to shrink, trim it.
-	if ce.storedExemplars < int(l) {
-		newSlice := make([]circularBufferEntry, int(l))
-		copy(newSlice, ce.exemplars[:ce.storedExemplars])
-		ce.exemplars = newSlice
-		return ce.storedExemplars
-	}
-
-	// Otherwise, calculate a range to delete.
-	oldSize := int64(len(ce.exemplars))
-	diff := int(oldSize - l)
+	oldSize := len(ce.exemplars)
+	diff := int(int64(oldSize) - l)
 	deleteStart := ce.nextIndex
-	deleteEnd := (deleteStart + diff) % int(oldSize)
+	deleteEnd := (deleteStart + diff) % oldSize
 
 	// Remove items from the buffer starting from c.nextIndex. This drops older
 	// entries first in the order of ingestion.
 	for i := range diff {
-		idx := (deleteStart + i) % int(oldSize)
+		idx := (deleteStart + i) % oldSize
 		ce.removeExemplar(&ce.exemplars[idx], nil)
 	}
 
@@ -372,12 +363,12 @@ func (ce *CircularExemplarStorage) shrink(l int64) (migrated int) {
 		// delete the index since removeExemplar already did. Simply remove all elements
 		// and reset tracking pointers.
 		ce.exemplars = newSlice
-		ce.nextIndex, ce.storedExemplars = 0, 0
+		ce.nextIndex = 0
 		return 0
 	case deleteStart < deleteEnd:
 		// We delete an "inner" section of the circular buffer.
 		migrated = copyExemplarRanges(ce.index, newSlice, ce.exemplars, []intRange{
-			{from: deleteEnd, to: ce.storedExemplars},
+			{from: deleteEnd, to: oldSize},
 			{from: 0, to: deleteStart},
 		})
 	case deleteStart > deleteEnd:
@@ -388,7 +379,6 @@ func (ce *CircularExemplarStorage) shrink(l int64) (migrated int) {
 	}
 
 	ce.nextIndex = migrated % int(l)
-	ce.storedExemplars = min(ce.storedExemplars, int(l))
 	ce.exemplars = newSlice
 	return migrated
 }
@@ -466,7 +456,6 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 		}
 	}
 
-	ce.storedExemplars = min(ce.storedExemplars+1, len(ce.exemplars))
 	ce.nextIndex = (ce.nextIndex + 1) % len(ce.exemplars)
 
 	ce.metrics.exemplarsAppended.Inc()
@@ -590,6 +579,9 @@ func copyExemplarRanges(
 	for di := range n {
 		e := &dest[di]
 		if e.ref == nil {
+			// We potentially copied empty entries. Subtract them now to correctly show the
+			// number of "migrated" items.
+			n--
 			continue
 		}
 		for i, rng := range ranges {
