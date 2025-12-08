@@ -108,31 +108,25 @@ func getKumaMadsV1DiscoveryResponse(resources ...*MonitoringAssignment) (*v3.Dis
 	}, nil
 }
 
-func newKumaTestHTTPDiscovery(c KumaSDConfig) (*fetchDiscovery, func(), error) {
+func newKumaTestHTTPDiscovery(c KumaSDConfig) (*fetchDiscovery, error) {
 	reg := prometheus.NewRegistry()
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
 	metrics := c.NewDiscovererMetrics(reg, refreshMetrics)
 	err := metrics.Register()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	kd, err := NewKumaHTTPDiscovery(&c, nopLogger, metrics)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	pd, ok := kd.(*fetchDiscovery)
 	if !ok {
-		return nil, nil, errors.New("not a fetchDiscovery")
+		return nil, errors.New("not a fetchDiscovery")
 	}
-
-	cleanup := func() {
-		metrics.Unregister()
-		refreshMetrics.Unregister()
-	}
-
-	return pd, cleanup, nil
+	return pd, nil
 }
 
 func TestKumaMadsV1ResourceParserInvalidTypeURL(t *testing.T) {
@@ -221,10 +215,9 @@ func TestKumaMadsV1ResourceParserInvalidResources(t *testing.T) {
 func TestNewKumaHTTPDiscovery(t *testing.T) {
 	t.Parallel()
 
-	kd, cleanup, err := newKumaTestHTTPDiscovery(kumaConf)
+	kd, err := newKumaTestHTTPDiscovery(kumaConf)
 	require.NoError(t, err)
 	require.NotNil(t, kd)
-	defer cleanup()
 
 	resClient, ok := kd.client.(*HTTPResourceClient)
 	require.True(t, ok)
@@ -232,6 +225,8 @@ func TestNewKumaHTTPDiscovery(t *testing.T) {
 	require.Equal(t, KumaMadsV1ResourceTypeURL, resClient.ResourceTypeURL())
 	require.Equal(t, kumaConf.ClientID, resClient.ID())
 	require.Equal(t, KumaMadsV1ResourceType, resClient.config.ResourceType)
+
+	kd.metrics.Unregister()
 }
 
 func TestKumaHTTPDiscoveryRefresh(t *testing.T) {
@@ -263,10 +258,9 @@ tls_config:
 	var cfg KumaSDConfig
 	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
 
-	kd, cleanup, err := newKumaTestHTTPDiscovery(cfg)
+	kd, err := newKumaTestHTTPDiscovery(cfg)
 	require.NoError(t, err)
 	require.NotNil(t, kd)
-	defer cleanup()
 
 	ch := make(chan []*targetgroup.Group, 1)
 	kd.poll(context.Background(), ch)
@@ -329,4 +323,6 @@ tls_config:
 	case <-ch:
 		require.Fail(t, "no update expected")
 	}
+
+	kd.metrics.Unregister()
 }
