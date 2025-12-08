@@ -1226,6 +1226,5 @@ func debugCircularBuffer(ce *CircularExemplarStorage) string {
 		sb.WriteString("\n")
 	}
 	sb.WriteString(fmt.Sprintf("Next index: %d\n", ce.nextIndex))
-	sb.WriteString(fmt.Sprintf("Buffer size: %d/%d\n", ce.storedExemplars, len(ce.exemplars)))
 	return sb.String()
 }
