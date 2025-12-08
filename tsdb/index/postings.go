@@ -542,7 +542,7 @@ func ExpandPostings(p Postings) (res []storage.SeriesRef, err error) {
 	return res, p.Err()
 }
 
-// Postings provides iterative access over a postings list.
+// Postings provides iterative access over an ordered list of SeriesRef.
 type Postings interface {
 	// Next advances the iterator and returns true if another value was found.
 	Next() bool
@@ -833,6 +833,8 @@ type ListPostings struct {
 	cur  storage.SeriesRef
 }
 
+// NewListPostings creates a Postings from the supplied SeriesRefs, which must be in order.
+// The list slice passed in is retained.
 func NewListPostings(list []storage.SeriesRef) Postings {
 	return &ListPostings{list: list}
 }
