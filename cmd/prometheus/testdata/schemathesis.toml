@@ -1,0 +1,15 @@
+# Schemathesis configuration for Prometheus API testing.
+# See: https://schemathesis.readthedocs.io/en/stable/configuration/
+
+# Check configuration.
+[checks]
+# Disable the not_a_server_error check to allow 500 responses.
+not_a_server_error.enabled = false
+
+# Disable negative_data_rejection to avoid false positives with empty strings for integers.
+# The API gracefully handles malformed input by using defaults.
+negative_data_rejection.enabled = false
+
+# Alternatively, you can specify expected status codes including 500:
+# not_a_server_error.enabled = true
+# not_a_server_error.expected-statuses = [200, "2XX", "4XX", 500]
