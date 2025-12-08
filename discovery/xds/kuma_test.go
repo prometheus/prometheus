@@ -320,6 +320,7 @@ tls_config:
 	kd.poll(ctx, ch)
 	select {
 	case <-ctx.Done():
+		kd.metrics.Unregister()
 		rm.Unregister()
 		return
 	case <-ch:

@@ -80,13 +80,13 @@ var (
 	}
 )
 
-func newTritonDiscovery(c SDConfig) (*Discovery, discovery.DiscovererMetrics, discovery.RefreshMetricsManager, error) {
+func newTritonDiscovery(c SDConfig) (*Discovery, func(), error) {
 	reg := prometheus.NewRegistry()
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
 	metrics := c.NewDiscovererMetrics(reg, refreshMetrics)
 	err := metrics.Register()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	d, err := New(&c, discovery.DiscovererOptions{
@@ -95,14 +95,19 @@ func newTritonDiscovery(c SDConfig) (*Discovery, discovery.DiscovererMetrics, di
 		SetName: "triton",
 	})
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
-	return d, metrics, refreshMetrics, nil
+	cleanup := func() {
+		metrics.Unregister()
+		refreshMetrics.Unregister()
+	}
+
+	return d, cleanup, nil
 }
 
 func TestTritonSDNew(t *testing.T) {
-	td, m, rm, err := newTritonDiscovery(conf)
+	td, cleanup, err := newTritonDiscovery(conf)
 	require.NoError(t, err)
 	require.NotNil(t, td)
 	require.NotNil(t, td.client)
@@ -112,18 +117,20 @@ func TestTritonSDNew(t *testing.T) {
 	require.Equal(t, conf.DNSSuffix, td.sdConfig.DNSSuffix)
 	require.Equal(t, conf.Endpoint, td.sdConfig.Endpoint)
 	require.Equal(t, conf.Port, td.sdConfig.Port)
-	m.Unregister()
-	rm.Unregister()
+	defer cleanup()
 }
 
 func TestTritonSDNewBadConfig(t *testing.T) {
-	td, _, _, err := newTritonDiscovery(badconf)
+	td, cleanup, err := newTritonDiscovery(badconf)
 	require.Error(t, err)
 	require.Nil(t, td)
+	if cleanup != nil {
+		defer cleanup()
+	}
 }
 
 func TestTritonSDNewGroupsConfig(t *testing.T) {
-	td, m, rm, err := newTritonDiscovery(groupsconf)
+	td, cleanup, err := newTritonDiscovery(groupsconf)
 	require.NoError(t, err)
 	require.NotNil(t, td)
 	require.NotNil(t, td.client)
@@ -134,12 +141,11 @@ func TestTritonSDNewGroupsConfig(t *testing.T) {
 	require.Equal(t, groupsconf.Endpoint, td.sdConfig.Endpoint)
 	require.Equal(t, groupsconf.Groups, td.sdConfig.Groups)
 	require.Equal(t, groupsconf.Port, td.sdConfig.Port)
-	m.Unregister()
-	rm.Unregister()
+	defer cleanup()
 }
 
 func TestTritonSDNewCNConfig(t *testing.T) {
-	td, m, rm, err := newTritonDiscovery(cnconf)
+	td, cleanup, err := newTritonDiscovery(cnconf)
 	require.NoError(t, err)
 	require.NotNil(t, td)
 	require.NotNil(t, td.client)
@@ -150,8 +156,7 @@ func TestTritonSDNewCNConfig(t *testing.T) {
 	require.Equal(t, cnconf.DNSSuffix, td.sdConfig.DNSSuffix)
 	require.Equal(t, cnconf.Endpoint, td.sdConfig.Endpoint)
 	require.Equal(t, cnconf.Port, td.sdConfig.Port)
-	m.Unregister()
-	rm.Unregister()
+	defer cleanup()
 }
 
 func TestTritonSDRefreshNoTargets(t *testing.T) {
@@ -184,23 +189,21 @@ func TestTritonSDRefreshMultipleTargets(t *testing.T) {
 }
 
 func TestTritonSDRefreshNoServer(t *testing.T) {
-	td, m, rm, _ := newTritonDiscovery(conf)
+	td, cleanup, _ := newTritonDiscovery(conf)
+	defer cleanup()
 
 	_, err := td.refresh(context.Background())
 	require.ErrorContains(t, err, "an error occurred when requesting targets from the discovery endpoint")
-	m.Unregister()
-	rm.Unregister()
 }
 
 func TestTritonSDRefreshCancelled(t *testing.T) {
-	td, m, rm, _ := newTritonDiscovery(conf)
+	td, cleanup, _ := newTritonDiscovery(conf)
+	defer cleanup()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := td.refresh(ctx)
 	require.ErrorContains(t, err, context.Canceled.Error())
-	m.Unregister()
-	rm.Unregister()
 }
 
 func TestTritonSDRefreshCNsUUIDOnly(t *testing.T) {
@@ -236,12 +239,12 @@ func TestTritonSDRefreshCNsWithHostname(t *testing.T) {
 }
 
 func testTritonSDRefresh(t *testing.T, c SDConfig, dstr string) []model.LabelSet {
-	var (
-		td, m, rm, _ = newTritonDiscovery(c)
-		s            = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			fmt.Fprintln(w, dstr)
-		}))
-	)
+	td, cleanup, _ := newTritonDiscovery(c)
+	defer cleanup()
+
+	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, dstr)
+	}))
 
 	defer s.Close()
 
@@ -265,9 +268,6 @@ func testTritonSDRefresh(t *testing.T, c SDConfig, dstr string) []model.LabelSet
 	require.Len(t, tgs, 1)
 	tg := tgs[0]
 	require.NotNil(t, tg)
-
-	m.Unregister()
-	rm.Unregister()
 
 	return tg.Targets
 }
