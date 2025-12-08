@@ -808,7 +808,7 @@ func main() {
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
 
-		notifierManager = notifier.NewManager(&cfg.notifier, cfgFile.GlobalConfig.MetricNameValidationScheme, logger.With("component", "notifier"))
+		notifierManager *notifier.Manager
 
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
 		ctxNotify, cancelNotify = context.WithCancel(context.Background())
@@ -816,33 +816,37 @@ func main() {
 		discoveryManagerNotify  *discovery.Manager
 	)
 
-	// Kubernetes client metrics are used by Kubernetes SD.
-	// They are registered here in the main function, because SD mechanisms
-	// can only register metrics specific to a SD instance.
-	// Kubernetes client metrics are the same for the whole process -
-	// they are not specific to an SD instance.
-	err = discovery.RegisterK8sClientMetricsWithPrometheus(prometheus.DefaultRegisterer)
-	if err != nil {
-		logger.Error("failed to register Kubernetes client metrics", "err", err)
-		os.Exit(1)
-	}
+	if !agentMode {
+		notifierManager = notifier.NewManager(&cfg.notifier, cfgFile.GlobalConfig.MetricNameValidationScheme, logger.With("component", "notifier"))
 
-	sdMetrics, err := discovery.CreateAndRegisterSDMetrics(prometheus.DefaultRegisterer)
-	if err != nil {
-		logger.Error("failed to register service discovery metrics", "err", err)
-		os.Exit(1)
-	}
+		// Kubernetes client metrics are used by Kubernetes SD.
+		// They are registered here in the main function, because SD mechanisms
+		// can only register metrics specific to a SD instance.
+		// Kubernetes client metrics are the same for the whole process -
+		// they are not specific to an SD instance.
+		err = discovery.RegisterK8sClientMetricsWithPrometheus(prometheus.DefaultRegisterer)
+		if err != nil {
+			logger.Error("failed to register Kubernetes client metrics", "err", err)
+			os.Exit(1)
+		}
 
-	discoveryManagerScrape = discovery.NewManager(ctxScrape, logger.With("component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("scrape"))
-	if discoveryManagerScrape == nil {
-		logger.Error("failed to create a discovery manager scrape")
-		os.Exit(1)
-	}
+		sdMetrics, err := discovery.CreateAndRegisterSDMetrics(prometheus.DefaultRegisterer)
+		if err != nil {
+			logger.Error("failed to register service discovery metrics", "err", err)
+			os.Exit(1)
+		}
 
-	discoveryManagerNotify = discovery.NewManager(ctxNotify, logger.With("component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"))
-	if discoveryManagerNotify == nil {
-		logger.Error("failed to create a discovery manager notify")
-		os.Exit(1)
+		discoveryManagerScrape = discovery.NewManager(ctxScrape, logger.With("component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("scrape"))
+		if discoveryManagerScrape == nil {
+			logger.Error("failed to create a discovery manager scrape")
+			os.Exit(1)
+		}
+
+		discoveryManagerNotify = discovery.NewManager(ctxNotify, logger.With("component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"))
+		if discoveryManagerNotify == nil {
+			logger.Error("failed to create a discovery manager notify")
+			os.Exit(1)
+		}
 	}
 
 	scrapeManager, err := scrape.NewManager(
@@ -965,85 +969,87 @@ func main() {
 			name:     "web_handler",
 			reloader: webHandler.ApplyConfig,
 		}, {
-			name: "query_engine",
-			reloader: func(cfg *config.Config) error {
-				if agentMode {
-					// No-op in Agent mode.
-					return nil
-				}
-
-				if cfg.GlobalConfig.QueryLogFile == "" {
-					queryEngine.SetQueryLogger(nil)
-					return nil
-				}
-
-				l, err := logging.NewJSONFileLogger(cfg.GlobalConfig.QueryLogFile)
-				if err != nil {
-					return err
-				}
-				queryEngine.SetQueryLogger(l)
-				return nil
-			},
-		}, {
 			// The Scrape and notifier managers need to reload before the Discovery manager as
 			// they need to read the most updated config when receiving the new targets list.
 			name:     "scrape",
 			reloader: scrapeManager.ApplyConfig,
 		}, {
-			name: "scrape_sd",
-			reloader: func(cfg *config.Config) error {
-				c := make(map[string]discovery.Configs)
-				scfgs, err := cfg.GetScrapeConfigs()
-				if err != nil {
-					return err
-				}
-				for _, v := range scfgs {
-					c[v.JobName] = v.ServiceDiscoveryConfigs
-				}
-				return discoveryManagerScrape.ApplyConfig(c)
-			},
-		}, {
-			name:     "notify",
-			reloader: notifierManager.ApplyConfig,
-		}, {
-			name: "notify_sd",
-			reloader: func(cfg *config.Config) error {
-				c := make(map[string]discovery.Configs)
-				for k, v := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
-					c[k] = v.ServiceDiscoveryConfigs
-				}
-				return discoveryManagerNotify.ApplyConfig(c)
-			},
-		}, {
-			name: "rules",
-			reloader: func(cfg *config.Config) error {
-				if agentMode {
-					// No-op in Agent mode
-					return nil
-				}
-
-				// Get all rule files matching the configuration paths.
-				var files []string
-				for _, pat := range cfg.RuleFiles {
-					fs, err := filepath.Glob(pat)
-					if err != nil {
-						// The only error can be a bad pattern.
-						return fmt.Errorf("error retrieving rule files for %s: %w", pat, err)
-					}
-					files = append(files, fs...)
-				}
-				return ruleManager.Update(
-					time.Duration(cfg.GlobalConfig.EvaluationInterval),
-					files,
-					cfg.GlobalConfig.ExternalLabels,
-					externalURL,
-					nil,
-				)
-			},
-		}, {
 			name:     "tracing",
 			reloader: tracingManager.ApplyConfig,
 		},
+	}
+	if !agentMode {
+		nonAgentReloaders := []reloader{
+			{
+				name: "query_engine",
+				reloader: func(cfg *config.Config) error {
+					if cfg.GlobalConfig.QueryLogFile == "" {
+						queryEngine.SetQueryLogger(nil)
+						return nil
+					}
+
+					l, err := logging.NewJSONFileLogger(cfg.GlobalConfig.QueryLogFile)
+					if err != nil {
+						return err
+					}
+					queryEngine.SetQueryLogger(l)
+					return nil
+				},
+			},
+			{
+				name: "scrape_sd",
+				reloader: func(cfg *config.Config) error {
+					c := make(map[string]discovery.Configs)
+					scfgs, err := cfg.GetScrapeConfigs()
+					if err != nil {
+						return err
+					}
+					for _, v := range scfgs {
+						c[v.JobName] = v.ServiceDiscoveryConfigs
+					}
+					return discoveryManagerScrape.ApplyConfig(c)
+				},
+			},
+			{
+				name: "notify",
+				reloader: func(cfg *config.Config) error {
+					return notifierManager.ApplyConfig(cfg)
+				},
+			},
+			{
+				name: "notify_sd",
+				reloader: func(cfg *config.Config) error {
+					c := make(map[string]discovery.Configs)
+					for k, v := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
+						c[k] = v.ServiceDiscoveryConfigs
+					}
+					return discoveryManagerNotify.ApplyConfig(c)
+				},
+			},
+			{
+				name: "rules",
+				reloader: func(cfg *config.Config) error {
+					// Get all rule files matching the configuration paths.
+					var files []string
+					for _, pat := range cfg.RuleFiles {
+						fs, err := filepath.Glob(pat)
+						if err != nil {
+							// The only error can be a bad pattern.
+							return fmt.Errorf("error retrieving rule files for %s: %w", pat, err)
+						}
+						files = append(files, fs...)
+					}
+					return ruleManager.Update(
+						time.Duration(cfg.GlobalConfig.EvaluationInterval),
+						files,
+						cfg.GlobalConfig.ExternalLabels,
+						externalURL,
+						nil,
+					)
+				},
+			},
+		}
+		reloaders = append(reloaders, nonAgentReloaders...)
 	}
 
 	prometheus.MustRegister(configSuccess)
@@ -1108,7 +1114,7 @@ func main() {
 			},
 		)
 	}
-	{
+	if !agentMode {
 		// Scrape discovery manager.
 		g.Add(
 			func() error {
@@ -1122,7 +1128,7 @@ func main() {
 			},
 		)
 	}
-	{
+	if !agentMode {
 		// Notify discovery manager.
 		g.Add(
 			func() error {
@@ -1149,7 +1155,7 @@ func main() {
 			},
 		)
 	}
-	{
+	if !agentMode {
 		// Scrape manager.
 		g.Add(
 			func() error {
@@ -1163,7 +1169,7 @@ func main() {
 				logger.Info("Scrape manager stopped")
 				return err
 			},
-			func(error) {
+			func(_ error) {
 				// Scrape manager needs to be stopped before closing the local TSDB
 				// so that it doesn't try to write samples to a closed storage.
 				// We should also wait for rule manager to be fully stopped to ensure
@@ -1424,7 +1430,7 @@ func main() {
 			},
 		)
 	}
-	{
+	if !agentMode {
 		// Notifier.
 
 		// Calling notifier.Stop() before ruleManager.Stop() will cause a panic if the ruleManager isn't running,
