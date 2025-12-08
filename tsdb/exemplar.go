@@ -326,7 +326,7 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 
 // grow the circular buffer to have size l by allocating a new slice and copying
 // the old data to it. After growing, ce.nextIndex points to the next free entry
-// in the buffer.
+// in the buffer. This function must be called with the lock acquired.
 func (ce *CircularExemplarStorage) grow(l int64) int {
 	oldSize := len(ce.exemplars)
 	newSlice := make([]circularBufferEntry, l)
@@ -340,7 +340,8 @@ func (ce *CircularExemplarStorage) grow(l int64) int {
 }
 
 // shrink the circular buffer by either trimming from the right or deleting the
-// oldest samples to accommodate the new size l.
+// oldest samples to accommodate the new size l. This function must be called
+// with the lock acquired.
 func (ce *CircularExemplarStorage) shrink(l int64) (migrated int) {
 	// If the buffer has enough empty space to shrink, trim it.
 	if ce.storedExemplars < int(l) {
@@ -437,29 +438,24 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 
 	switch {
 	case !indexExists:
-		// We just created the index, so this is the first exemplar. Set prev and next
-		// values to -1 to indicate that this is the first and last entry of the linked
-		// list. Iteration (up or down) terminates on -1.
+		// Add the first and only exemplar to the list.
 		ce.exemplars[ce.nextIndex].prev = noExemplar
 		ce.exemplars[ce.nextIndex].next = noExemplar
 	case e.Ts >= ce.exemplars[idx.newest].exemplar.Ts:
-		// If we add the exemplar at the tip (after newest) we set the next value to -1
-		// (which we use to detect that we've iterated through all exemplars for a series
-		// in Select).
+		// Add the exemplar at the tip (after newest).
 		ce.exemplars[idx.newest].next = ce.nextIndex
 		ce.exemplars[ce.nextIndex].prev = idx.newest
 		ce.exemplars[ce.nextIndex].next = noExemplar
 		idx.newest = ce.nextIndex
 	case e.Ts < ce.exemplars[idx.oldest].exemplar.Ts:
-		// If we add the exemplar at the tail (before oldest) we set the prev value to -1, and
-		// next value to oldest.
+		// Add the exemplar at the tail (before oldest).
 		ce.exemplars[idx.oldest].prev = ce.nextIndex
 		ce.exemplars[ce.nextIndex].prev = noExemplar
 		ce.exemplars[ce.nextIndex].next = idx.oldest
 		idx.oldest = ce.nextIndex
 	default:
-		// If we add the exemplar in between existing exemplars, we find the latest
-		// in-order exemplar, insert the new exemplar and restore ordering.
+		// Insert the exemplar into the list by finding the most recent
+		// in-order exemplar that precedes it, and placing it after.
 		insertAt := ce.findInsertionIndex(e, idx)
 		nextExemplar := ce.exemplars[insertAt].next
 		ce.exemplars[ce.nextIndex].prev = insertAt
