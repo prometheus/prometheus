@@ -2,9 +2,23 @@
 # They are code owners by default for the whole repo.
 * @prometheus/default-maintainers
 
-# Example adding a dedicated maintainer for AWS SD, and also "default
-# maintainers" so that they do not need to bypass codeowners check to merge
-# something.
-# Example comes from
+# Subsystems
+/Makefile @simonpasquier @SuperQ @prometheus/default-maintainers
+/cmd/promtool @dgl @prometheus/default-maintainers
+/documentation/prometheus-mixin @metalmatze @prometheus/default-maintainers
+/model/histogram @beorn7 @krajorama @prometheus/default-maintainers
+/web/ui @juliusv @prometheus/default-maintainers
+/web/ui/module @juliusv @nexucis @prometheus/default-maintainers
+/promql @roidelapluie @prometheus/default-maintainers
+/storage/remote @cstyan @bwplotka @tomwilkie @npazosmendez @alexgreenbank @prometheus/default-maintainers
+/storage/remote/otlptranslator @aknuds1 @jesusvazquez @ArthurSens @prometheus/default-maintainers
+/tsdb @jesusvazquez @codesome @bwplotka @prometheus/default-maintainers
+
+# Service discovery
+/discovery/kubernetes @brancz @prometheus/default-maintainers
+/discovery/stackit @jkroepke @prometheus/default-maintainers
+# Pending
 # https://github.com/prometheus/prometheus/pull/17105#issuecomment-3248209452
 # /discovery/aws/ @matt-gp @prometheus/default-maintainers
+# https://github.com/prometheus/prometheus/pull/15212#issuecomment-3575225179
+# /discovery/aliyun @KeyOfSpectator @prometheus/default-maintainers
