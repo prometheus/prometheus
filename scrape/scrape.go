@@ -1332,7 +1332,15 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 			_ = app.Rollback()
 			return
 		}
+		commitStart := time.Now()
 		err = app.Commit()
+		commitDuration := time.Since(commitStart)
+		totalDuration := time.Since(start)
+
+		// Record commit duration and total duration metrics.
+		sl.metrics.targetScrapeCommitDuration.Observe(commitDuration.Seconds())
+		sl.metrics.targetScrapeTotalDuration.Observe(totalDuration.Seconds())
+
 		if err != nil {
 			sl.l.Error("Scrape commit failed", "err", err)
 		}
