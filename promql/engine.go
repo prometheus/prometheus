@@ -3199,7 +3199,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 
 // HandleInfitBuckets handles the special case of infinite buckets.
 // This function is following a conservative approach, as we don't know the exact distribution of values that belongs to an infinite bucket, the approach is to remove the entire bucket, otherwise we keep the entire bucket.
-func HandleInfitBuckets(h *histogram.Bucket[float64], le float64, isUpperTrim bool) (keptCount float64, removedCount float64) {
+func HandleInfitBuckets(h *histogram.Bucket[float64], le float64, isUpperTrim bool) (keptCount, removedCount float64) {
 	// Case 1: Bucket with lower bound (-Inf, upper]
 	if math.IsInf(h.Lower, -1) {
 		// TRIM_UPPER (</) - remove values greater than le
@@ -3207,20 +3207,17 @@ func HandleInfitBuckets(h *histogram.Bucket[float64], le float64, isUpperTrim bo
 			if le >= h.Upper {
 				// As the le is greater than the upper bound(invalid trim), we just return the entire current bucket.
 				return h.Count, 0
-			} else {
-				// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
-				return 0, h.Count
 			}
-		} else {
-			// TRIM_LOWER (>/) - remove values less than le
-			if le <= h.Lower {
-				// Impossible to happen because the lower bound is -Inf. Returning the entire current bucket.
-				return h.Count, 0
-			} else {
-				// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
-				return 0, h.Count
-			}
+			// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
+			return 0, h.Count
 		}
+		// TRIM_LOWER (>/) - remove values less than le
+		if le <= h.Lower {
+			// Impossible to happen because the lower bound is -Inf. Returning the entire current bucket.
+			return h.Count, 0
+		}
+		// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
+		return 0, h.Count
 	}
 
 	// Case 2: Bucket with upper bound [lower, +Inf)
@@ -3230,20 +3227,17 @@ func HandleInfitBuckets(h *histogram.Bucket[float64], le float64, isUpperTrim bo
 			if le >= h.Lower {
 				// As the le is greater than the lower bound(invalid trim), we just return the entire current bucket.
 				return 0, h.Count
-			} else {
-				// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
-				return h.Count, 0
 			}
-		} else {
-			// TRIM_LOWER (>/) - remove values less than le.
-			if le <= h.Lower {
-				// As the le is less than the lower bound(invalid trim), we just return the entire current bucket.
-				return 0, h.Count
-			} else {
-				// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
-				return h.Count, 0
-			}
+			// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
+			return h.Count, 0
 		}
+		// TRIM_LOWER (>/) - remove values less than le.
+		if le <= h.Lower {
+			// As the le is less than the lower bound(invalid trim), we just return the entire current bucket.
+			return 0, h.Count
+		}
+		// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
+		return h.Count, 0
 	}
 
 	// Case 3: Bucket with finite bounds
