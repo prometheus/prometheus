@@ -76,15 +76,19 @@ const (
 )
 
 type engineMetrics struct {
-	currentQueries       prometheus.Gauge
-	maxConcurrentQueries prometheus.Gauge
-	queryLogEnabled      prometheus.Gauge
-	queryLogFailures     prometheus.Counter
-	queryQueueTime       prometheus.Observer
-	queryPrepareTime     prometheus.Observer
-	queryInnerEval       prometheus.Observer
-	queryResultSort      prometheus.Observer
-	querySamples         prometheus.Counter
+	currentQueries            prometheus.Gauge
+	maxConcurrentQueries      prometheus.Gauge
+	queryLogEnabled           prometheus.Gauge
+	queryLogFailures          prometheus.Counter
+	queryQueueTime            prometheus.Observer
+	queryQueueTimeHistogram   prometheus.Observer
+	queryPrepareTime          prometheus.Observer
+	queryPrepareTimeHistogram prometheus.Observer
+	queryInnerEval            prometheus.Observer
+	queryInnerEvalHistogram   prometheus.Observer
+	queryResultSort           prometheus.Observer
+	queryResultSortHistogram  prometheus.Observer
+	querySamples              prometheus.Counter
 }
 
 type (
@@ -363,6 +367,19 @@ func NewEngine(opts EngineOpts) *Engine {
 		[]string{"slice"},
 	)
 
+	queryResultHistogram := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace:                       namespace,
+		Subsystem:                       subsystem,
+		Name:                            "query_duration_histogram_seconds",
+		Help:                            "The duration of various parts of PromQL query execution.",
+		Buckets:                         []float64{.01, .1, 1, 10},
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+	},
+		[]string{"slice"},
+	)
+
 	metrics := &engineMetrics{
 		currentQueries: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
@@ -394,10 +411,14 @@ func NewEngine(opts EngineOpts) *Engine {
 			Name:      "query_samples_total",
 			Help:      "The total number of samples loaded by all queries.",
 		}),
-		queryQueueTime:   queryResultSummary.WithLabelValues("queue_time"),
-		queryPrepareTime: queryResultSummary.WithLabelValues("prepare_time"),
-		queryInnerEval:   queryResultSummary.WithLabelValues("inner_eval"),
-		queryResultSort:  queryResultSummary.WithLabelValues("result_sort"),
+		queryQueueTime:            queryResultSummary.WithLabelValues("queue_time"),
+		queryQueueTimeHistogram:   queryResultHistogram.WithLabelValues("queue_time"),
+		queryPrepareTime:          queryResultSummary.WithLabelValues("prepare_time"),
+		queryPrepareTimeHistogram: queryResultHistogram.WithLabelValues("prepare_time"),
+		queryInnerEval:            queryResultSummary.WithLabelValues("inner_eval"),
+		queryInnerEvalHistogram:   queryResultHistogram.WithLabelValues("inner_eval"),
+		queryResultSort:           queryResultSummary.WithLabelValues("result_sort"),
+		queryResultSortHistogram:  queryResultHistogram.WithLabelValues("result_sort"),
 	}
 
 	if t := opts.ActiveQueryTracker; t != nil {
@@ -421,6 +442,7 @@ func NewEngine(opts EngineOpts) *Engine {
 			metrics.queryLogFailures,
 			metrics.querySamples,
 			queryResultSummary,
+			queryResultHistogram,
 		)
 	}
 
@@ -701,7 +723,7 @@ func (ng *Engine) queueActive(ctx context.Context, q *query) (func(), error) {
 	if ng.activeQueryTracker == nil {
 		return func() {}, nil
 	}
-	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime)
+	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime, ng.metrics.queryQueueTimeHistogram)
 	queryIndex, err := ng.activeQueryTracker.Insert(ctx, q.q)
 	queueSpanTimer.Finish()
 	return func() { ng.activeQueryTracker.Delete(queryIndex) }, err
@@ -717,7 +739,7 @@ func durationMilliseconds(d time.Duration) int64 {
 
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.EvalStmt) (parser.Value, annotations.Annotations, error) {
-	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime)
+	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime, ng.metrics.queryPrepareTimeHistogram)
 	mint, maxt := FindMinMaxTime(s)
 	querier, err := query.queryable.Querier(mint, maxt)
 	if err != nil {
@@ -732,7 +754,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	// Modify the offset of vector and matrix selectors for the @ modifier
 	// w.r.t. the start time since only 1 evaluation will be done on them.
 	setOffsetForAtModifier(timeMilliseconds(s.Start), s.Expr)
-	evalSpanTimer, ctxInnerEval := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval)
+	evalSpanTimer, ctxInnerEval := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval, ng.metrics.queryInnerEvalHistogram)
 	// Instant evaluation. This is executed as a range evaluation with one step.
 	if s.Start.Equal(s.End) && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
@@ -835,7 +857,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 }
 
 func (ng *Engine) sortMatrixResult(ctx context.Context, query *query, mat Matrix) {
-	sortSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.ResultSortTime, ng.metrics.queryResultSort)
+	sortSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.ResultSortTime, ng.metrics.queryResultSort, ng.metrics.queryResultSortHistogram)
 	sort.Sort(mat)
 	sortSpanTimer.Finish()
 }
@@ -1259,7 +1281,7 @@ func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annota
 // the given funcCall with the values computed for each expression at that
 // step. The return value is the combination into time series of all the
 // function call results.
-// The prepSeries function (if provided) can be used to prepare the helper
+// The matching (if provided) can be used to prepare the helper
 // for each series, then passed to each call funcCall.
 func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatching, funcCall func([]Vector, Matrix, [][]EvalSeriesHelper, *EvalNodeHelper) (Vector, annotations.Annotations), exprs ...parser.Expr) (Matrix, annotations.Annotations) {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
@@ -4216,13 +4238,17 @@ func makeInt64Pointer(val int64) *int64 {
 
 // RatioSampler allows unit-testing (previously: Randomizer).
 type RatioSampler interface {
-	// Return this sample "offset" between [0.0, 1.0]
-	sampleOffset(ts int64, sample *Sample) float64
-	AddRatioSample(r float64, sample *Sample) bool
+	// SampleOffset returns this sample "offset" between [0.0, 1.0].
+	SampleOffset(metric *labels.Labels) float64
+	// AddRatioSample reports whether the sampling offset for the given sample falls within the specified ratio limit.
+	AddRatioSample(ratioLimit float64, sample *Sample) bool
+	// AddRatioSampleWithOffset reports whether the given sampling offset falls within the specified ratio limit.
+	AddRatioSampleWithOffset(ratioLimit, sampleOffset float64) bool
 }
 
 // HashRatioSampler uses Hash(labels.String()) / maxUint64 as a "deterministic"
 // value in [0.0, 1.0].
+// It is a utility used for limit_ratio aggregations.
 type HashRatioSampler struct{}
 
 var ratiosampler RatioSampler = NewHashRatioSampler()
@@ -4231,14 +4257,42 @@ func NewHashRatioSampler() *HashRatioSampler {
 	return &HashRatioSampler{}
 }
 
-func (*HashRatioSampler) sampleOffset(_ int64, sample *Sample) float64 {
+// SampleOffset returns a deterministic sampling offset in the range [0, 1)
+// derived from the hash of the provided metric labels.
+//
+// The offset is computed by normalizing the 64-bit hash value of the label set
+// to a float64 fraction of math.MaxUint64. This ensures that metrics with the
+// same label set always produce the same offset, while different label sets
+// produce uniformly distributed offsets suitable for sampling decisions.
+func (*HashRatioSampler) SampleOffset(metric *labels.Labels) float64 {
 	const (
 		float64MaxUint64 = float64(math.MaxUint64)
 	)
-	return float64(sample.Metric.Hash()) / float64MaxUint64
+	return float64(metric.Hash()) / float64MaxUint64
 }
 
+// AddRatioSample returns a bool indicating if the sampling offset for the given sample is
+// within the given ratio limit.
+//
+// See SampleOffset() for further details on the sample offset.
+// See AddRatioSampleWithOffset() for further details on the ratioLimit and sampling offset comparison.
 func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, sample *Sample) bool {
+	sampleOffset := s.SampleOffset(&sample.Metric)
+	return s.AddRatioSampleWithOffset(ratioLimit, sampleOffset)
+}
+
+// AddRatioSampleWithOffset reports whether the given sampling offset falls within
+// the specified ratio limit.
+//
+// The ratioLimit must be in the range [-1, 1]. The sampleOffset should be derived
+// using SampleOffset().
+//
+// When ratioLimit >= 0, the function returns true if sampleOffset < ratioLimit.
+// When ratioLimit < 0, the function returns true if sampleOffset >= 1 + ratioLimit.
+//
+// Note that this method could be moved into AddRatioSample and removed from the Prometheus codebase,
+// but it is useful for downstream projects using this code as a library.
+func (*HashRatioSampler) AddRatioSampleWithOffset(ratioLimit, sampleOffset float64) bool {
 	// If ratioLimit >= 0: add sample if sampleOffset is lesser than ratioLimit
 	//
 	// 0.0        ratioLimit                1.0
@@ -4259,7 +4313,6 @@ func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, sample *Sample) bo
 	// e.g.:
 	//   sampleOffset==0.3 && ratioLimit==-0.6
 	//     0.3 >= 0.4 ? --> don't add sample
-	sampleOffset := s.sampleOffset(sample.T, sample)
 	return (ratioLimit >= 0 && sampleOffset < ratioLimit) ||
 		(ratioLimit < 0 && sampleOffset >= (1.0+ratioLimit))
 }

@@ -106,7 +106,7 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, tempo
 	// Sending a sample that triggers counter reset but with ResetHint==NO
 	// would lead to Prometheus panic as it does not double check the hint.
 	// Thus we're explicitly saying UNKNOWN here, which is always safe.
-	// TODO: using created time stamp should be accurate, but we
+	// TODO: using start timestamp should be accurate, but we
 	// need to know here if it was used for the detection.
 	// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
 	// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
@@ -312,7 +312,7 @@ func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint, tem
 	// Sending a sample that triggers counter reset but with ResetHint==NO
 	// would lead to Prometheus panic as it does not double check the hint.
 	// Thus we're explicitly saying UNKNOWN here, which is always safe.
-	// TODO: using created time stamp should be accurate, but we
+	// TODO: using start timestamp should be accurate, but we
 	// need to know here if it was used for the detection.
 	// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
 	// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232

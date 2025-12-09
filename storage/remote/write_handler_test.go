@@ -752,14 +752,12 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				i, j, k, m int
 			)
 			for _, ts := range writeV2RequestFixture.Timeseries {
-				zeroHistogramIngested := false
-				zeroFloatHistogramIngested := false
 				ls, err := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
 				require.NoError(t, err)
 
 				for _, s := range ts.Samples {
-					if ts.CreatedTimestamp != 0 && tc.ingestSTZeroSample {
-						requireEqual(t, mockSample{ls, ts.CreatedTimestamp, 0}, appendable.samples[i])
+					if s.StartTimestamp != 0 && tc.ingestSTZeroSample {
+						requireEqual(t, mockSample{ls, s.StartTimestamp, 0}, appendable.samples[i])
 						i++
 					}
 					requireEqual(t, mockSample{ls, s.Timestamp, s.Value}, appendable.samples[i])
@@ -768,26 +766,20 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				for _, hp := range ts.Histograms {
 					if hp.IsFloatHistogram() {
 						fh := hp.ToFloatHistogram()
-						if !zeroFloatHistogramIngested && ts.CreatedTimestamp != 0 && tc.ingestSTZeroSample {
-							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, nil, &histogram.FloatHistogram{}}, appendable.histograms[k])
+						if hp.StartTimestamp != 0 && tc.ingestSTZeroSample {
+							requireEqual(t, mockHistogram{ls, hp.StartTimestamp, nil, &histogram.FloatHistogram{}}, appendable.histograms[k])
 							k++
-							zeroFloatHistogramIngested = true
 						}
 						requireEqual(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
 					} else {
 						h := hp.ToIntHistogram()
-						if !zeroHistogramIngested && ts.CreatedTimestamp != 0 && tc.ingestSTZeroSample {
-							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, &histogram.Histogram{}, nil}, appendable.histograms[k])
+						if hp.StartTimestamp != 0 && tc.ingestSTZeroSample {
+							requireEqual(t, mockHistogram{ls, hp.StartTimestamp, &histogram.Histogram{}, nil}, appendable.histograms[k])
 							k++
-							zeroHistogramIngested = true
 						}
 						requireEqual(t, mockHistogram{ls, hp.Timestamp, h, nil}, appendable.histograms[k])
 					}
 					k++
-				}
-				if ts.CreatedTimestamp != 0 && tc.ingestSTZeroSample {
-					require.True(t, zeroHistogramIngested)
-					require.True(t, zeroFloatHistogramIngested)
 				}
 				if tc.appendExemplarErr == nil {
 					for _, e := range ts.Exemplars {
@@ -808,6 +800,104 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			// Verify that when the feature flag is disabled, no metadata is stored in WAL.
 			if !tc.appendMetadata {
 				require.Empty(t, appendable.metadata, "metadata should not be stored when appendMetadata (metadata-wal-records) is false")
+			}
+		})
+	}
+}
+
+// TestRemoteWriteHandler_V2Message_NoDuplicateTypeAndUnitLabels verifies that when
+// type-and-unit-labels feature is enabled, the receiver correctly handles cases where
+// __type__ and __unit__ labels are already present in the incoming labels.
+// Regression test for https://github.com/prometheus/prometheus/issues/17480.
+func TestRemoteWriteHandler_V2Message_NoDuplicateTypeAndUnitLabels(t *testing.T) {
+	for _, tc := range []struct {
+		desc           string
+		labelsToSend   labels.Labels
+		metadataToSend writev2.Metadata
+		expectedLabels labels.Labels
+	}{
+		{
+			desc:         "Labels with __type__ and __unit__ should not be duplicated",
+			labelsToSend: labels.FromStrings("__name__", "node_cpu_seconds_total", "__type__", "counter", "__unit__", "seconds", "cpu", "0", "mode", "idle"),
+			metadataToSend: writev2.Metadata{
+				Type: writev2.Metadata_METRIC_TYPE_COUNTER,
+			},
+			expectedLabels: labels.FromStrings("__name__", "node_cpu_seconds_total", "__type__", "counter", "__unit__", "seconds", "cpu", "0", "mode", "idle"),
+		},
+		{
+			desc:         "Labels with __type__ only should not be duplicated",
+			labelsToSend: labels.FromStrings("__name__", "test_gauge", "__type__", "gauge", "instance", "localhost"),
+			metadataToSend: writev2.Metadata{
+				Type: writev2.Metadata_METRIC_TYPE_GAUGE,
+			},
+			expectedLabels: labels.FromStrings("__name__", "test_gauge", "__type__", "gauge", "instance", "localhost"),
+		},
+		{
+			desc:         "Labels with __unit__ only should not be duplicated when metadata has unit",
+			labelsToSend: labels.FromStrings("__name__", "test_metric", "__unit__", "bytes", "job", "test"),
+			metadataToSend: writev2.Metadata{
+				Type: writev2.Metadata_METRIC_TYPE_GAUGE,
+			},
+			expectedLabels: labels.FromStrings("__name__", "test_metric", "__type__", "gauge", "__unit__", "bytes", "job", "test"),
+		},
+		{
+			desc:         "Metadata type and unit override labels",
+			labelsToSend: labels.FromStrings("__name__", "test_metric", "__type__", "counter", "__unit__", "seconds", "job", "test"),
+			metadataToSend: writev2.Metadata{
+				Type: writev2.Metadata_METRIC_TYPE_GAUGE,
+			},
+			expectedLabels: labels.FromStrings("__name__", "test_metric", "__type__", "gauge", "__unit__", "seconds", "job", "test"),
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			symbolTable := writev2.NewSymbolTable()
+			labelRefs := symbolTable.SymbolizeLabels(tc.labelsToSend, nil)
+
+			var unitRef uint32
+			if unit := tc.labelsToSend.Get("__unit__"); unit != "" {
+				unitRef = symbolTable.Symbolize(unit)
+			}
+
+			ts := []writev2.TimeSeries{
+				{
+					LabelsRefs: labelRefs,
+					Metadata: writev2.Metadata{
+						Type:    tc.metadataToSend.Type,
+						UnitRef: unitRef,
+					},
+					Samples: []writev2.Sample{{Value: 42.0, Timestamp: 1000}},
+				},
+			}
+
+			payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), ts, symbolTable.Symbols(), nil, nil, nil, "snappy")
+			require.NoError(t, err)
+
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+			require.NoError(t, err)
+
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+			req.Header.Set("Content-Encoding", compression.Snappy)
+			req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+
+			appendable := &mockAppendable{}
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, true, false)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			resp := recorder.Result()
+			require.Equal(t, http.StatusNoContent, resp.StatusCode)
+
+			require.Len(t, appendable.samples, 1)
+			receivedLabels := appendable.samples[0].l
+
+			duplicateLabel, hasDuplicate := receivedLabels.HasDuplicateLabelNames()
+			require.False(t, hasDuplicate, "Labels should NOT contain duplicates, but found duplicate label: %s\nReceived labels: %s", duplicateLabel, receivedLabels.String())
+
+			require.Equal(t, tc.expectedLabels.String(), receivedLabels.String(), "Labels should match expected")
+
+			if tc.expectedLabels.Get("__type__") != "" {
+				require.NotEmpty(t, receivedLabels.Get("__type__"), "__type__ should be present in labels")
 			}
 		})
 	}

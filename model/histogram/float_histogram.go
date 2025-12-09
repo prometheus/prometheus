@@ -164,8 +164,8 @@ func (h *FloatHistogram) CopyToSchema(targetSchema int32) *FloatHistogram {
 		Sum:           h.Sum,
 	}
 
-	c.PositiveSpans, c.PositiveBuckets = reduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false, false)
-	c.NegativeSpans, c.NegativeBuckets = reduceResolution(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false, false)
+	c.PositiveSpans, c.PositiveBuckets = mustReduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false, false)
+	c.NegativeSpans, c.NegativeBuckets = mustReduceResolution(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false, false)
 
 	return &c
 }
@@ -393,13 +393,13 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 
 	switch {
 	case other.Schema < h.Schema:
-		hPositiveSpans, hPositiveBuckets = reduceResolution(hPositiveSpans, hPositiveBuckets, h.Schema, other.Schema, false, true)
-		hNegativeSpans, hNegativeBuckets = reduceResolution(hNegativeSpans, hNegativeBuckets, h.Schema, other.Schema, false, true)
+		hPositiveSpans, hPositiveBuckets = mustReduceResolution(hPositiveSpans, hPositiveBuckets, h.Schema, other.Schema, false, true)
+		hNegativeSpans, hNegativeBuckets = mustReduceResolution(hNegativeSpans, hNegativeBuckets, h.Schema, other.Schema, false, true)
 		h.Schema = other.Schema
 
 	case other.Schema > h.Schema:
-		otherPositiveSpans, otherPositiveBuckets = reduceResolution(otherPositiveSpans, otherPositiveBuckets, other.Schema, h.Schema, false, false)
-		otherNegativeSpans, otherNegativeBuckets = reduceResolution(otherNegativeSpans, otherNegativeBuckets, other.Schema, h.Schema, false, false)
+		otherPositiveSpans, otherPositiveBuckets = mustReduceResolution(otherPositiveSpans, otherPositiveBuckets, other.Schema, h.Schema, false, false)
+		otherNegativeSpans, otherNegativeBuckets = mustReduceResolution(otherNegativeSpans, otherNegativeBuckets, other.Schema, h.Schema, false, false)
 	}
 
 	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
@@ -459,12 +459,12 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 
 	switch {
 	case other.Schema < h.Schema:
-		hPositiveSpans, hPositiveBuckets = reduceResolution(hPositiveSpans, hPositiveBuckets, h.Schema, other.Schema, false, true)
-		hNegativeSpans, hNegativeBuckets = reduceResolution(hNegativeSpans, hNegativeBuckets, h.Schema, other.Schema, false, true)
+		hPositiveSpans, hPositiveBuckets = mustReduceResolution(hPositiveSpans, hPositiveBuckets, h.Schema, other.Schema, false, true)
+		hNegativeSpans, hNegativeBuckets = mustReduceResolution(hNegativeSpans, hNegativeBuckets, h.Schema, other.Schema, false, true)
 		h.Schema = other.Schema
 	case other.Schema > h.Schema:
-		otherPositiveSpans, otherPositiveBuckets = reduceResolution(otherPositiveSpans, otherPositiveBuckets, other.Schema, h.Schema, false, false)
-		otherNegativeSpans, otherNegativeBuckets = reduceResolution(otherNegativeSpans, otherNegativeBuckets, other.Schema, h.Schema, false, false)
+		otherPositiveSpans, otherPositiveBuckets = mustReduceResolution(otherPositiveSpans, otherPositiveBuckets, other.Schema, h.Schema, false, false)
+		otherNegativeSpans, otherNegativeBuckets = mustReduceResolution(otherNegativeSpans, otherNegativeBuckets, other.Schema, h.Schema, false, false)
 	}
 
 	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
@@ -1050,15 +1050,20 @@ func (i *floatBucketIterator) Next() bool {
 	if i.spansIdx >= len(i.spans) {
 		return false
 	}
+	span := i.spans[i.spansIdx]
 
 	if i.schema == i.targetSchema {
 		// Fast path for the common case.
-		span := i.spans[i.spansIdx]
 		if i.bucketsIdx == 0 {
 			// Seed origIdx for the first bucket.
 			i.currIdx = span.Offset
 		} else {
 			i.currIdx++
+		}
+		if i.bucketsIdx >= len(i.buckets) {
+			// This protects against index out of range panic, which
+			// can only happen with an invalid histogram.
+			return false
 		}
 
 		for i.idxInSpan >= span.Length {
@@ -1080,7 +1085,6 @@ func (i *floatBucketIterator) Next() bool {
 		// Copy all of these into local variables so that we can forward to the
 		// next bucket and then roll back if needed.
 		origIdx, spansIdx, idxInSpan := i.origIdx, i.spansIdx, i.idxInSpan
-		span := i.spans[spansIdx]
 		firstPass := true
 		i.currCount = 0
 
@@ -1091,6 +1095,14 @@ func (i *floatBucketIterator) Next() bool {
 				origIdx = span.Offset
 			} else {
 				origIdx++
+			}
+			if i.bucketsIdx >= len(i.buckets) {
+				// This protects against index out of range panic, which
+				// can only happen with an invalid histogram.
+				if firstPass {
+					return false
+				}
+				break mergeLoop
 			}
 			for idxInSpan >= span.Length {
 				// We have exhausted the current span and have to find a new
@@ -1152,6 +1164,11 @@ func (i *reverseFloatBucketIterator) Next() bool {
 		// We have exhausted the current span and have to find a new
 		// one. We'll even handle pathologic spans of length 0.
 		i.spansIdx--
+		if i.spansIdx < 0 {
+			// This protects against index out of range panic, which
+			// can only happen with an invalid histogram.
+			return false
+		}
 		i.idxInSpan = int32(i.spans[i.spansIdx].Length) - 1
 		i.currIdx -= i.spans[i.spansIdx+1].Offset
 	}
@@ -1565,25 +1582,40 @@ func addCustomBucketsWithMismatches(
 }
 
 // ReduceResolution reduces the float histogram's spans, buckets into target schema.
-// The target schema must be smaller than the current float histogram's schema.
-// This will panic if the histogram has custom buckets or if the target schema is
-// a custom buckets schema.
-func (h *FloatHistogram) ReduceResolution(targetSchema int32) *FloatHistogram {
+// An error is returned in the following cases:
+//   - The target schema is not smaller than the current histogram's schema.
+//   - The histogram has custom buckets.
+//   - The target schema is a custom buckets schema.
+//   - Any spans have an invalid offset.
+//   - The spans are inconsistent with the number of buckets.
+func (h *FloatHistogram) ReduceResolution(targetSchema int32) error {
+	// Note that the follow three returns are not returning a
+	// histogram.Error because they are programming errors.
 	if h.UsesCustomBuckets() {
-		panic("cannot reduce resolution when there are custom buckets")
+		return errors.New("cannot reduce resolution when there are custom buckets")
 	}
 	if IsCustomBucketsSchema(targetSchema) {
-		panic("cannot reduce resolution to custom buckets schema")
+		return errors.New("cannot reduce resolution to custom buckets schema")
 	}
 	if targetSchema >= h.Schema {
-		panic(fmt.Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema))
+		return fmt.Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema)
 	}
 
-	h.PositiveSpans, h.PositiveBuckets = reduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false, true)
-	h.NegativeSpans, h.NegativeBuckets = reduceResolution(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false, true)
+	var err error
+
+	if h.PositiveSpans, h.PositiveBuckets, err = reduceResolution(
+		h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false, true,
+	); err != nil {
+		return err
+	}
+	if h.NegativeSpans, h.NegativeBuckets, err = reduceResolution(
+		h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false, true,
+	); err != nil {
+		return err
+	}
 
 	h.Schema = targetSchema
-	return h
+	return nil
 }
 
 // checkSchemaAndBounds checks if two histograms are compatible because they

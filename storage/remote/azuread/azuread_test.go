@@ -198,6 +198,11 @@ func TestAzureAdConfig(t *testing.T) {
 			filename: "testdata/azuread_bad_workloadidentity_missingtenantid.yaml",
 			err:      "must provide an Azure Workload Identity tenant_id in the Azure AD config",
 		},
+		// Invalid scope validation.
+		{
+			filename: "testdata/azuread_bad_scope_invalid.yaml",
+			err:      "the provided scope contains invalid characters",
+		},
 		// Valid config with missing  optionally cloud field.
 		{
 			filename: "testdata/azuread_good_cloudmissing.yaml",
@@ -221,6 +226,10 @@ func TestAzureAdConfig(t *testing.T) {
 		// Valid workload identity config.
 		{
 			filename: "testdata/azuread_good_workloadidentity.yaml",
+		},
+		// Valid OAuth config with custom scope.
+		{
+			filename: "testdata/azuread_good_oauth_customscope.yaml",
 		},
 	}
 	for _, c := range cases {
@@ -385,5 +394,89 @@ func getToken() azcore.AccessToken {
 	return azcore.AccessToken{
 		Token:     uuid.New().String(),
 		ExpiresOn: time.Now().Add(10 * time.Second),
+	}
+}
+
+func TestCustomScopeSupport(t *testing.T) {
+	mockCredential := new(mockCredential)
+	testToken := &azcore.AccessToken{
+		Token:     testTokenString,
+		ExpiresOn: testTokenExpiry(),
+	}
+
+	cases := []struct {
+		name          string
+		cfg           *AzureADConfig
+		expectedScope string
+	}{
+		{
+			name: "Custom scope with OAuth",
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				OAuth: &OAuthConfig{
+					ClientID:     dummyClientID,
+					ClientSecret: dummyClientSecret,
+					TenantID:     dummyTenantID,
+				},
+				Scope: "https://custom-app.com/.default",
+			},
+			expectedScope: "https://custom-app.com/.default",
+		},
+		{
+			name: "Custom scope with Managed Identity",
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				ManagedIdentity: &ManagedIdentityConfig{
+					ClientID: dummyClientID,
+				},
+				Scope: "https://monitor.azure.com//.default",
+			},
+			expectedScope: "https://monitor.azure.com//.default",
+		},
+		{
+			name: "Default scope fallback with OAuth",
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				OAuth: &OAuthConfig{
+					ClientID:     dummyClientID,
+					ClientSecret: dummyClientSecret,
+					TenantID:     dummyTenantID,
+				},
+			},
+			expectedScope: IngestionPublicAudience,
+		},
+		{
+			name: "Default scope fallback with China cloud",
+			cfg: &AzureADConfig{
+				Cloud: "AzureChina",
+				OAuth: &OAuthConfig{
+					ClientID:     dummyClientID,
+					ClientSecret: dummyClientSecret,
+					TenantID:     dummyTenantID,
+				},
+			},
+			expectedScope: IngestionChinaAudience,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// Set up mock to capture the actual scopes used
+			mockCredential.On("GetToken", mock.Anything, mock.MatchedBy(func(options policy.TokenRequestOptions) bool {
+				return len(options.Scopes) == 1 && options.Scopes[0] == c.expectedScope
+			})).Return(*testToken, nil).Once()
+
+			tokenProvider, err := newTokenProvider(c.cfg, mockCredential)
+			require.NoError(t, err)
+			require.NotNil(t, tokenProvider)
+
+			// Verify that the token provider uses the expected scope
+			token, err := tokenProvider.getAccessToken(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, testTokenString, token)
+
+			// Reset mock for next test
+			mockCredential.ExpectedCalls = nil
+		})
 	}
 }

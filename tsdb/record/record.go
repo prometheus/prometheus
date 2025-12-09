@@ -475,7 +475,9 @@ func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) 
 			// This is a very slow path, but it should only happen if the
 			// record is from a newer Prometheus version that supports higher
 			// resolution.
-			rh.H.ReduceResolution(histogram.ExponentialSchemaMax)
+			if err := rh.H.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+				return nil, fmt.Errorf("error reducing resolution of histogram #%d: %w", len(histograms)+1, err)
+			}
 		}
 
 		histograms = append(histograms, rh)
@@ -579,7 +581,9 @@ func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogr
 			// This is a very slow path, but it should only happen if the
 			// record is from a newer Prometheus version that supports higher
 			// resolution.
-			rh.FH.ReduceResolution(histogram.ExponentialSchemaMax)
+			if err := rh.FH.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+				return nil, fmt.Errorf("error reducing resolution of histogram #%d: %w", len(histograms)+1, err)
+			}
 		}
 
 		histograms = append(histograms, rh)

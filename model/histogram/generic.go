@@ -738,6 +738,8 @@ var exponentialBounds = [][]float64{
 // deltas. Set it to false if the buckets contain absolute counts.
 // Set inplace to true to reuse input slices and avoid allocations (otherwise
 // new slices will be allocated for result).
+// The functions returns an error if there are too many or too few buckets for the spans
+// or if any span except the first has a negative offset.
 func reduceResolution[IBC InternalBucketCount](
 	originSpans []Span,
 	originBuckets []IBC,
@@ -745,7 +747,7 @@ func reduceResolution[IBC InternalBucketCount](
 	targetSchema int32,
 	deltaBuckets bool,
 	inplace bool,
-) ([]Span, []IBC) {
+) ([]Span, []IBC, error) {
 	var (
 		targetSpans           []Span // The spans in the target schema.
 		targetBuckets         []IBC  // The bucket counts in the target schema.
@@ -764,10 +766,18 @@ func reduceResolution[IBC InternalBucketCount](
 		targetBuckets = originBuckets[:0]
 	}
 
-	for _, span := range originSpans {
+	for n, span := range originSpans {
+		if n > 0 && span.Offset < 0 {
+			return nil, nil, fmt.Errorf("span number %d with offset %d: %w", n+1, span.Offset, ErrHistogramSpanNegativeOffset)
+		}
 		// Determine the index of the first bucket in this span.
 		bucketIdx += span.Offset
 		for j := 0; j < int(span.Length); j++ {
+			// Protect against too few buckets in the origin.
+			if bucketCountIdx >= len(originBuckets) {
+				return nil, nil, fmt.Errorf("have %d buckets but spans need more: %w", len(originBuckets), ErrHistogramSpansBucketsMismatch)
+			}
+
 			// Determine the index of the bucket in the target schema from the index in the original schema.
 			targetBucketIdx = targetIdx(bucketIdx, originSchema, targetSchema)
 
@@ -826,12 +836,33 @@ func reduceResolution[IBC InternalBucketCount](
 					targetBuckets = append(targetBuckets, originBuckets[bucketCountIdx])
 				}
 			}
-
 			bucketIdx++
 			bucketCountIdx++
 		}
 	}
+	if bucketCountIdx != len(originBuckets) {
+		return nil, nil, fmt.Errorf("spans need %d buckets, have %d buckets: %w", bucketCountIdx, len(originBuckets), ErrHistogramSpansBucketsMismatch)
+	}
+	return targetSpans, targetBuckets, nil
+}
 
+// mustReduceResolution works like reduceResolution, but panics instead of
+// returning an error. Use mustReduceResolution if you are sure that the spans
+// and buckets are valid.
+func mustReduceResolution[IBC InternalBucketCount](
+	originSpans []Span,
+	originBuckets []IBC,
+	originSchema,
+	targetSchema int32,
+	deltaBuckets bool,
+	inplace bool,
+) ([]Span, []IBC) {
+	targetSpans, targetBuckets, err := reduceResolution(
+		originSpans, originBuckets, originSchema, targetSchema, deltaBuckets, inplace,
+	)
+	if err != nil {
+		panic(err)
+	}
 	return targetSpans, targetBuckets
 }
 
