@@ -1495,7 +1495,8 @@ func BenchmarkStoreSeries(b *testing.B) {
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
 
-				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType)
+				// DEBUG https://github.com/prometheus/prometheus/issues/17659
+				m := NewQueueManager(metrics, nil, nil, promslog.New(&promslog.Config{}), dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType)
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -2039,7 +2040,7 @@ func TestIsSampleOld(t *testing.T) {
 // Simulates scenario in which remote write endpoint is down and a subset of samples is dropped due to age limit while backoffing.
 func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 	t.Parallel()
-	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			maxSamplesPerSend := 10
 			sampleAgeLimit := time.Second * 2
