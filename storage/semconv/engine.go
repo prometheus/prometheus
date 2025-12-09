@@ -246,6 +246,11 @@ type queryContext struct {
 // It returns an error if the given matchers does not point to a single metric or if schema or variants couldn't
 // be detected.
 func (e *schemaEngine) FindMatcherVariants(schemaURL string, originalMatchers []*labels.Matcher) (variants [][]*labels.Matcher, q queryContext, err error) {
+	// Check for intrinsic OTLP schema first.
+	if isOTLPSchema(schemaURL) {
+		return findOTLPMatcherVariants(schemaURL, originalMatchers)
+	}
+
 	matchers, err := newMatcherBuilder(originalMatchers)
 	if err != nil {
 		return nil, q, err
@@ -379,6 +384,14 @@ func (e *schemaEngine) TransformSeries(q queryContext, originalLabels labels.Lab
 	schemaURL := originalLabels.Get(schemaURLLabel)
 	if schemaURL == "" {
 		return originalLabels, vt, fmt.Errorf("selected series %v does not contain __schema_url__", originalLabels)
+	}
+
+	// For OTLP schema, just remove the __schema_url__ label and return as-is.
+	// OTLP translations don't change values, only metric/label names.
+	if isOTLPSchema(schemaURL) {
+		builder := labels.NewBuilder(originalLabels)
+		builder.Del(schemaURLLabel)
+		return builder.Labels(), vt, nil
 	}
 
 	identity := schema.NewMetadataFromLabels(originalLabels)
