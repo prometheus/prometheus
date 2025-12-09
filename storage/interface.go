@@ -49,6 +49,7 @@ var (
 	// NOTE(bwplotka): This can be both an instrumentation failure or commonly expected
 	// behaviour, and we currently don't have a way to determine this. As a result
 	// it's recommended to ignore this error for now.
+	// TODO(bwplotka): Remove with appender v1 flow; not used in v2.
 	ErrOutOfOrderST      = errors.New("start timestamp out of order, ignoring")
 	ErrSTNewerThanSample = errors.New("ST is newer or the same as sample's timestamp, ignoring")
 )
@@ -58,11 +59,14 @@ var (
 // their own reference types.
 type SeriesRef uint64
 
-// Appendable allows creating appenders.
+// Appendable allows creating Appender.
+//
+// WARNING: Work AppendableV2 is in progress. Appendable will be removed soon (ETA: Q2 2026).
 type Appendable interface {
-	// Appender returns a new appender for the storage. The implementation
-	// can choose whether or not to use the context, for deadlines or to check
-	// for errors.
+	// Appender returns a new appender for the storage.
+	//
+	// Implementations CAN choose whether to use the context e.g. for deadlines,
+	// but it's not mandatory.
 	Appender(ctx context.Context) Appender
 }
 
@@ -255,7 +259,13 @@ func (f QueryableFunc) Querier(mint, maxt int64) (Querier, error) {
 	return f(mint, maxt)
 }
 
+// AppendOptions provides options for implementations of the Appender interface.
+//
+// WARNING: Work AppendableV2 is in progress. Appendable will be removed soon (ETA: Q2 2026).
 type AppendOptions struct {
+	// DiscardOutOfOrder tells implementation that this append should not be out
+	// of order. An OOO append MUST be rejected with storage.ErrOutOfOrderSample
+	// error.
 	DiscardOutOfOrder bool
 }
 
@@ -267,7 +277,11 @@ type AppendOptions struct {
 // The order of samples appended via the Appender is preserved within each
 // series. I.e. samples are not reordered per timestamp, or by float/histogram
 // type.
+//
+// WARNING: Work AppendableV2 is in progress. Appendable will be removed soon (ETA: Q2 2026).
 type Appender interface {
+	AppenderTransaction
+
 	// Append adds a sample pair for the given series.
 	// An optional series reference can be provided to accelerate calls.
 	// A series reference number is returned which can be used to add further
@@ -277,16 +291,6 @@ type Appender interface {
 	// reference number.
 	// If the reference is 0 it must not be used for caching.
 	Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error)
-
-	// Commit submits the collected samples and purges the batch. If Commit
-	// returns a non-nil error, it also rolls back all modifications made in
-	// the appender so far, as Rollback would do. In any case, an Appender
-	// must not be used anymore after Commit has been called.
-	Commit() error
-
-	// Rollback rolls back all modifications made in the appender so far.
-	// Appender has to be discarded after rollback.
-	Rollback() error
 
 	// SetOptions configures the appender with specific append options such as
 	// discarding out-of-order samples even if out-of-order is enabled in the TSDB.
@@ -301,8 +305,8 @@ type Appender interface {
 // GetRef is an extra interface on Appenders used by downstream projects
 // (e.g. Cortex) to avoid maintaining a parallel set of references.
 type GetRef interface {
-	// Returns reference number that can be used to pass to Appender.Append(),
-	// and a set of labels that will not cause another copy when passed to Appender.Append().
+	// GetRef returns a reference number that can be used to pass to AppenderV2.Append(),
+	// and a set of labels that will not cause another copy when passed to AppenderV2.Append().
 	// 0 means the appender does not have a reference to this series.
 	// hash should be a hash of lset.
 	GetRef(lset labels.Labels, hash uint64) (SeriesRef, labels.Labels)
@@ -310,6 +314,8 @@ type GetRef interface {
 
 // ExemplarAppender provides an interface for adding samples to exemplar storage, which
 // within Prometheus is in-memory only.
+//
+// WARNING: Work AppendableV2 is in progress. Appendable will be removed soon (ETA: Q2 2026).
 type ExemplarAppender interface {
 	// AppendExemplar adds an exemplar for the given series labels.
 	// An optional reference number can be provided to accelerate calls.
@@ -326,6 +332,8 @@ type ExemplarAppender interface {
 }
 
 // HistogramAppender provides an interface for appending histograms to the storage.
+//
+// WARNING: Work AppendableV2 is in progress. Appendable will be removed soon (ETA: Q2 2026).
 type HistogramAppender interface {
 	// AppendHistogram adds a histogram for the given series labels. An
 	// optional reference number can be provided to accelerate calls. A
@@ -356,6 +364,8 @@ type HistogramAppender interface {
 }
 
 // MetadataUpdater provides an interface for associating metadata to stored series.
+//
+// WARNING: Work AppendableV2 is in progress. Appendable will be removed soon (ETA: Q2 2026).
 type MetadataUpdater interface {
 	// UpdateMetadata updates a metadata entry for the given series and labels.
 	// A series reference number is returned which can be used to modify the
@@ -368,6 +378,8 @@ type MetadataUpdater interface {
 }
 
 // StartTimestampAppender provides an interface for appending ST to storage.
+//
+// WARNING: Work AppendableV2 is in progress. Appendable will be removed soon (ETA: Q2 2026).
 type StartTimestampAppender interface {
 	// AppendSTZeroSample adds synthetic zero sample for the given st timestamp,
 	// which will be associated with given series, labels and the incoming
@@ -390,10 +402,10 @@ type SeriesSet interface {
 	Next() bool
 	// At returns full series. Returned series should be iterable even after Next is called.
 	At() Series
-	// The error that iteration has failed with.
+	// Err returns the error that iteration has failed with.
 	// When an error occurs, set cannot continue to iterate.
 	Err() error
-	// A collection of warnings for the whole set.
+	// Warnings returns a collection of warnings for the whole set.
 	// Warnings could be return even iteration has not failed with error.
 	Warnings() annotations.Annotations
 }
