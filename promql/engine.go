@@ -3102,6 +3102,9 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 				return lhs, nil, lhs <= rhs, nil, nil
 			case parser.ATAN2:
 				return math.Atan2(lhs, rhs), nil, true, nil, nil
+			// Trim operators are not allowed when vector elements are nil.
+			case parser.TRIM_UPPER, parser.TRIM_LOWER:
+				return lhs, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("float", parser.ItemTypeStr[op], "float", pos)
 			}
 		}
 	case hlhs == nil && hrhs != nil:
@@ -3109,7 +3112,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			switch op {
 			case parser.MUL:
 				return 0, hrhs.Copy().Mul(lhs).Compact(0), true, nil, nil
-			case parser.ADD, parser.SUB, parser.DIV, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
+			case parser.ADD, parser.SUB, parser.DIV, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2, parser.TRIM_UPPER, parser.TRIM_LOWER:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("float", parser.ItemTypeStr[op], "histogram", pos)
 			}
 		}
@@ -3120,7 +3123,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 				return 0, hlhs.Copy().Mul(rhs).Compact(0), true, nil, nil
 			case parser.DIV:
 				return 0, hlhs.Copy().Div(rhs).Compact(0), true, nil, nil
-			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
+			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2, parser.TRIM_UPPER, parser.TRIM_LOWER:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", parser.ItemTypeStr[op], "float", pos)
 			}
 		}
@@ -3160,12 +3163,74 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			case parser.NEQ:
 				// This operation expects that both histograms are compacted.
 				return 0, hlhs, !hlhs.Equals(hrhs), nil, nil
+			case parser.TRIM_UPPER:
+				// TODO: Implement this
+			case parser.TRIM_LOWER:
+				// TODO: Implement this
 			case parser.MUL, parser.DIV, parser.POW, parser.MOD, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", parser.ItemTypeStr[op], "histogram", pos)
 			}
 		}
 	}
 	panic(fmt.Errorf("operator %q not allowed for operations between Vectors", op))
+}
+
+// HandleInfitBuckets handles the special case of infinite buckets.
+// This function is following a conservative approach, as we don't know the exact distribution of values that belongs to an infinite bucket, the approach is to remove the entire bucket, otherwise we keep the entire bucket.
+func HandleInfitBuckets(h *histogram.Bucket[float64], le float64, isUpperTrim bool) (keptCount float64, removedCount float64) {
+	// Case 1: Bucket with lower bound (-Inf, upper]
+	if math.IsInf(h.Lower, -1) {
+		// TRIM_UPPER (</) - remove values greater than le
+		if isUpperTrim {
+			if le >= h.Upper {
+				// As the le is greater than the upper bound(invalid trim), we just return the entire current bucket.
+				return h.Count, 0
+			} else {
+				// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
+				return 0, h.Count
+			}
+		} else {
+			// TRIM_LOWER (>/) - remove values less than le
+			if le <= h.Lower {
+				// Impossible to happen because the lower bound is -Inf. Returning the entire current bucket.
+				return h.Count, 0
+			} else {
+				// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
+				return 0, h.Count
+			}
+		}
+	}
+
+	// Case 2: Bucket with upper bound [lower, +Inf)
+	if math.IsInf(h.Upper, 1) {
+		if isUpperTrim {
+			// TRIM_UPPER (</) - remove values greater than le.
+			if le >= h.Lower {
+				// As the le is greater than the lower bound(invalid trim), we just return the entire current bucket.
+				return 0, h.Count
+			} else {
+				// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
+				return h.Count, 0
+			}
+		} else {
+			// TRIM_LOWER (>/) - remove values less than le.
+			if le <= h.Lower {
+				// As the le is less than the lower bound(invalid trim), we just return the entire current bucket.
+				return 0, h.Count
+			} else {
+				// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
+				return h.Count, 0
+			}
+		}
+	}
+
+	// Case 3: Bucket with finite bounds
+	return interpolateBucket(h, le, isUpperTrim)
+}
+
+// interpolateBucket deal with the case where the bucket is finite, so we can find the exact count of the bucket that needs to be removed or kept based on the le(trim) value.
+func interpolateBucket(_ *histogram.Bucket[float64], _ float64, _ bool) (float64, float64) {
+	return 0, 0
 }
 
 type groupedAggregation struct {
