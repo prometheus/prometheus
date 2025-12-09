@@ -1346,7 +1346,7 @@ GET /api/v1/status/tsdb
 ```
 URL query parameters:
 
-- `limit=<number>`: Limit the number of returned items to a given number for each set of statistics. By default, 10 items are returned.
+- `limit=<number>`: Limit the number of returned items to a given number for each set of statistics. By default, 10 items are returned. The maximum allowed limit is 10000.
 
 The `data` section of the query result consists of:
 

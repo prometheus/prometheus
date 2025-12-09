@@ -4465,6 +4465,18 @@ func TestTSDBStatus(t *testing.T) {
 			values:   map[string][]string{"limit": {"0"}},
 			errType:  errorBadData,
 		},
+		{
+			db:       tsdb,
+			endpoint: tsdbStatusAPI,
+			values:   map[string][]string{"limit": {"10000"}},
+			errType:  errorNone,
+		},
+		{
+			db:       tsdb,
+			endpoint: tsdbStatusAPI,
+			values:   map[string][]string{"limit": {"10001"}},
+			errType:  errorBadData,
+		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			api := &API{db: tc.db, gatherer: prometheus.DefaultGatherer}
