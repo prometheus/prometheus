@@ -23,7 +23,7 @@ import (
 // buckets for large numbers.
 //
 // For optimal space utilization, each branch didn't need to support any values
-// of any of the prior branches. So we could expand the range of each branch. Do
+// of the prior branches. So we could expand the range of each branch. Do
 // more with fewer bits. It would come at the price of more expensive encoding
 // and decoding (cutting out and later adding back that center-piece we
 // skip). With the distributions of values we see in practice, we would reduce

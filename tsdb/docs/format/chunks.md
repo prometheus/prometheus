@@ -42,6 +42,10 @@ Notes:
 
 ## XOR chunk data
 
+This chunk format allows storing streams of samples as (timestamp, value) pairs.
+
+NOTE: See [`XORv2` variation that is capable for storing start timestamps](#xorv2-chunk-data).
+
 ```
 ┌──────────────────────┬───────────────┬───────────────┬──────────────────────┬──────────────────────┬──────────────────────┬──────────────────────┬─────┬──────────────────────┬──────────────────────┬──────────────────┐
 │ num_samples <uint16> │ ts_0 <varint> │ v_0 <float64> │ ts_1_delta <uvarint> │ v_1_xor <varbit_xor> │ ts_2_dod <varbit_ts> │ v_2_xor <varbit_xor> │ ... │ ts_n_dod <varbit_ts> │ v_n_xor <varbit_xor> │ padding <x bits> │
@@ -51,6 +55,35 @@ Notes:
 ### Notes:
 
 * `ts` is the timestamp, `v` is the value.
+* `...` means to repeat the previous two fields as needed, with `n` starting at 2 and going up to `num_samples` – 1.
+* `<uint16>` has 2 bytes in big-endian order.
+* `<varint>` and `<uvarint>` have 1 to 10 bytes each.
+* `ts_1_delta` is `ts_1` – `ts_0`.
+* `ts_n_dod` is the “delta of deltas” of timestamps, i.e. (`ts_n` – `ts_n-1`) – (`ts_n-1` – `ts_n-2`).
+* `v_n_xor` is the result of `v_n` XOR `v_n-1`.
+* `<varbit_xor>` is a specific variable bitwidth encoding of the result of XORing the current and the previous value. It has between 1 bit and 77 bits.
+  See [code for details](https://github.com/prometheus/prometheus/blob/7309c20e7e5774e7838f183ec97c65baa4362edc/tsdb/chunkenc/xor.go#L220-L253).
+* `<varbit_ts>` is a specific variable bitwidth encoding for the “delta of deltas” of timestamps (signed integers that are ideally small).
+  It has between 1 and 68 bits.
+  see [code for details](https://github.com/prometheus/prometheus/blob/7309c20e7e5774e7838f183ec97c65baa4362edc/tsdb/chunkenc/xor.go#L179-L205).
+* `padding` of 0 to 7 bits so that the whole chunk data is byte-aligned.
+* The chunk can have as few as one sample, i.e. `ts_1`, `v_1`, etc. are optional.
+
+## XORv2 chunk data
+
+This chunk format allows storing streams of samples as (start timestamp, timestamp, value) triples.
+
+TODO: This PR benchmarks various formats, update to the proposed ones.
+
+```
+┌──────────────────────┬────────────────┬───────────────┬───────────────┬───────────────────────┬──────────────────────┬──────────────────────┬─────────────────────┬──────────────────────┬──────────────────────┬─────┬─────────────────────┬──────────────────────┬──────────────────────┬──────────────────┐
+│ num_samples <uint16> │ sts_0 <varint> │ ts_0 <varint> │ v_0 <float64> │ sts_1_delta <uvarint> │ ts_1_delta <uvarint> │ v_1_xor <varbit_xor> │ sts_2_dod <uvarint> │ ts_2_dod <varbit_ts> │ v_2_xor <varbit_xor> │ ... │ sts_n_dod <uvarint> │ ts_n_dod <varbit_ts> │ v_n_xor <varbit_xor> │ padding <x bits> │
+└──────────────────────┴────────────────┴───────────────┴───────────────┴───────────────────────┴──────────────────────┴──────────────────────┴─────────────────────┴──────────────────────┴──────────────────────┴─────┴─────────────────────┴──────────────────────┴──────────────────────┴──────────────────┘
+```
+
+### Notes:
+
+* `sts` is the start timestamp, `ts` is the timestamp, `v` is the value.
 * `...` means to repeat the previous two fields as needed, with `n` starting at 2 and going up to `num_samples` – 1.
 * `<uint16>` has 2 bytes in big-endian order.
 * `<varint>` and `<uvarint>` have 1 to 10 bytes each.
