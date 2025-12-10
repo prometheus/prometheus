@@ -2936,17 +2936,15 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		if info != nil {
 			lastErr = info
 		}
-		switch {
-		case returnBool:
+		if returnBool {
 			histogramValue = nil
 			if keep {
 				floatValue = 1.0
 			} else {
 				floatValue = 0.0
 			}
-		case !keep:
-			continue
 		}
+
 		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
 		if !ev.enableDelayedNameRemoval && returnBool {
 			metric = metric.DropReserved(schema.IsMetadataLabel)
@@ -2970,6 +2968,10 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 				ev.errorf("multiple matches for labels: grouping labels must ensure unique matches")
 			}
 			insertedSigs[insertSig] = struct{}{}
+		}
+
+		if !keep && !returnBool {
+			continue
 		}
 
 		enh.Out = append(enh.Out, Sample{
