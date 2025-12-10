@@ -441,7 +441,6 @@ testMetric_CamelCase{label="value1"} 1
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			r, w, err := os.Pipe()
 			require.NoError(t, err)
