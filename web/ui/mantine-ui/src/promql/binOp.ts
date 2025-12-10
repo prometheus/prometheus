@@ -347,7 +347,7 @@ export const computeVectorVectorBinOp = (
   Object.values(groups).forEach((mg) => {
     if (mg.lhs.length === 0 && matching.fillValues.lhs !== null) {
       mg.lhs.push({
-        metric: {},
+        metric: mg.groupLabels,
         value: [0, formatPrometheusFloat(matching.fillValues.lhs as number)],
         filled: true,
       });
@@ -355,7 +355,7 @@ export const computeVectorVectorBinOp = (
     }
     if (mg.rhs.length === 0 && matching.fillValues.rhs !== null) {
       mg.rhs.push({
-        metric: {},
+        metric: mg.groupLabels,
         value: [0, formatPrometheusFloat(matching.fillValues.rhs as number)],
         filled: true,
       });
