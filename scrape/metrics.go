@@ -56,8 +56,7 @@ type scrapeMetrics struct {
 	targetScrapeExemplarOutOfOrder         prometheus.Counter
 	targetScrapePoolExceededLabelLimits    prometheus.Counter
 	targetScrapeNativeHistogramBucketLimit prometheus.Counter
-	targetScrapeCommitDuration             prometheus.Histogram
-	targetScrapeTotalDuration              prometheus.Histogram
+	targetScrapeDuration                   prometheus.Histogram
 }
 
 func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
@@ -254,21 +253,10 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 			Help: "Total number of exemplar rejected due to not being out of the expected order.",
 		},
 	)
-	sm.targetScrapeCommitDuration = prometheus.NewHistogram(
+	sm.targetScrapeDuration = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
-			Name:                            "prometheus_scrape_commit_duration_seconds",
-			Help:                            "Duration of the commit phase of the scrape in seconds.",
-			Buckets:                         []float64{.001, .005, .01, .05, .1, .5, 1},
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
-		},
-	)
-	sm.targetScrapeTotalDuration = prometheus.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:                            "prometheus_scrape_total_duration_seconds",
+			Name:                            "prometheus_target_scrape_duration_seconds",
 			Help:                            "Total duration of the scrape from start to commit completion in seconds.",
-			Buckets:                         []float64{.01, .1, 1, 10, 60},
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
@@ -306,8 +294,7 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		sm.targetScrapeExemplarOutOfOrder,
 		sm.targetScrapePoolExceededLabelLimits,
 		sm.targetScrapeNativeHistogramBucketLimit,
-		sm.targetScrapeCommitDuration,
-		sm.targetScrapeTotalDuration,
+		sm.targetScrapeDuration,
 	} {
 		err := reg.Register(collector)
 		if err != nil {
@@ -348,8 +335,7 @@ func (sm *scrapeMetrics) Unregister() {
 	sm.reg.Unregister(sm.targetScrapeExemplarOutOfOrder)
 	sm.reg.Unregister(sm.targetScrapePoolExceededLabelLimits)
 	sm.reg.Unregister(sm.targetScrapeNativeHistogramBucketLimit)
-	sm.reg.Unregister(sm.targetScrapeCommitDuration)
-	sm.reg.Unregister(sm.targetScrapeTotalDuration)
+	sm.reg.Unregister(sm.targetScrapeDuration)
 }
 
 type TargetsGatherer interface {
