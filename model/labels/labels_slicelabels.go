@@ -25,6 +25,9 @@ import (
 	"github.com/cespare/xxhash/v2"
 )
 
+// ImplementationName is the name of the labels implementation.
+const ImplementationName = "slicelabels"
+
 // Labels is a sorted set of labels. Order has to be guaranteed upon
 // instantiation.
 type Labels []Label
