@@ -1030,13 +1030,13 @@ $ curl -s http://localhost:9100/metrics | promtool check metrics --extended --li
 // CheckMetrics performs a linting pass on input metrics.
 func CheckMetrics(extended bool, lint string) int {
 	var buf bytes.Buffer
-	tee := io.TeeReader(os.Stdin, &buf)
 	var (
 		problems []promlint.Problem
 		err      error
 	)
 
 	if lint != lintOptionNone {
+		tee := io.TeeReader(os.Stdin, &buf)
 		l := promlint.New(tee)
 		problems, err = l.Lint()
 		if err != nil {
@@ -1047,7 +1047,7 @@ func CheckMetrics(extended bool, lint string) int {
 			fmt.Fprintln(os.Stderr, p.Metric, p.Text)
 		}
 	} else {
-		if _, err = io.Copy(io.Discard, tee); err != nil {
+		if _, err = io.Copy(&buf, os.Stdin); err != nil {
 			fmt.Fprintln(os.Stderr, "error reading metrics:", err)
 			return failureExitCode
 		}
