@@ -11,7 +11,7 @@
 * [CHANGE] TSDB: Native Histogram Custom Bounds with a NaN threshold are now rejected. #17287
 * [FEATURE] OAuth2: support jwt-bearer grant-type (RFC7523 3.1). #17592
 * [FEATURE] Dockerfile: Add OpenContainers spec labels to Dockerfile. #16483
-* [FEATURE] SD: Add unified AWS service discovery for ec2, lightsail and ecs services. #17046
+* [FEATURE] SD: Add unified AWS service discovery for ec2, lightsail and ecs services. #17406
 * [FEATURE] Native histograms are now a stable, but optional feature, use the `scrape_native_histogram` config setting. #17232 #17315
 * [FEATURE] UI: Support anchored and smoothed keyword in promql editor. #17239
 * [FEATURE] UI: Show detailed relabeling steps for each discovered target. #17337
