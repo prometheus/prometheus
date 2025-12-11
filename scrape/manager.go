@@ -70,7 +70,8 @@ func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(str
 
 	// Register scrape features.
 	if r := o.FeatureRegistry; r != nil {
-		r.Set(features.Scrape, "extra_scrape_metrics", o.ExtraMetrics)
+		extraScrapeMetrics := config.DefaultGlobalConfig.ExtraScrapeMetrics != nil && *config.DefaultGlobalConfig.ExtraScrapeMetrics
+		r.Set(features.Scrape, "extra_scrape_metrics", extraScrapeMetrics)
 		r.Set(features.Scrape, "start_timestamp_zero_ingestion", o.EnableStartTimestampZeroIngestion)
 		r.Set(features.Scrape, "type_and_unit_labels", o.EnableTypeAndUnitLabels)
 	}
