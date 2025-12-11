@@ -2,7 +2,7 @@
 # They are code owners by default for the whole repo.
 * @prometheus/default-maintainers
 
-# Subsystems
+# Subsystems.
 /Makefile @simonpasquier @SuperQ @prometheus/default-maintainers
 /cmd/promtool @dgl @prometheus/default-maintainers
 /documentation/prometheus-mixin @metalmatze @prometheus/default-maintainers
@@ -14,7 +14,7 @@
 /storage/remote/otlptranslator @aknuds1 @jesusvazquez @ArthurSens @prometheus/default-maintainers
 /tsdb @jesusvazquez @codesome @bwplotka @prometheus/default-maintainers
 
-# Service discovery
+# Service discovery.
 /discovery/kubernetes @brancz @prometheus/default-maintainers
 /discovery/stackit @jkroepke @prometheus/default-maintainers
 # Pending
