@@ -109,7 +109,7 @@ var expectedConf = &Config{
 		ScrapeNativeHistograms:         boolPtr(false),
 		AlwaysScrapeClassicHistograms:  false,
 		ConvertClassicHistogramsToNHCB: false,
-		ExtraScrapeMetrics:             false,
+		ExtraScrapeMetrics:             &f,
 		MetricNameValidationScheme:     model.UTF8Validation,
 	},
 
@@ -3023,8 +3023,7 @@ func TestExtraScrapeMetrics(t *testing.T) {
 	tests := []struct {
 		name          string
 		config        string
-		expectGlobal  bool
-		expectScrape  bool
+		expectGlobal  *bool
 		expectEnabled bool
 	}{
 		{
@@ -3035,8 +3034,7 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 `,
-			expectGlobal:  false,
-			expectScrape:  false,
+			expectGlobal:  boolPtr(false), // inherits from DefaultGlobalConfig
 			expectEnabled: false,
 		},
 		{
@@ -3049,8 +3047,7 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 `,
-			expectGlobal:  true,
-			expectScrape:  true, // inherits
+			expectGlobal:  boolPtr(true),
 			expectEnabled: true,
 		},
 		{
@@ -3063,8 +3060,7 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 `,
-			expectGlobal:  false,
-			expectScrape:  false, // inherits
+			expectGlobal:  boolPtr(false),
 			expectEnabled: false,
 		},
 		{
@@ -3078,8 +3074,7 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 `,
-			expectGlobal:  false,
-			expectScrape:  true, // overrides global
+			expectGlobal:  boolPtr(false),
 			expectEnabled: true,
 		},
 		{
@@ -3093,8 +3088,7 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 `,
-			expectGlobal:  true,
-			expectScrape:  false, // overrides global
+			expectGlobal:  boolPtr(true),
 			expectEnabled: false,
 		},
 	}
