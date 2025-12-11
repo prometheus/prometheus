@@ -80,7 +80,6 @@ func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(str
 
 // Options are the configuration parameters to the scrape manager.
 type Options struct {
-	ExtraMetrics bool
 	// Option used by downstream scraper users like OpenTelemetry Collector
 	// to help lookup metric metadata. Should be false for Prometheus.
 	PassMetadataInContext bool

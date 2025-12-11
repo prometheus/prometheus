@@ -233,8 +233,10 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.tsdb.EnableMemorySnapshotOnShutdown = true
 				logger.Info("Experimental memory snapshot on shutdown enabled")
 			case "extra-scrape-metrics":
-				c.scrape.ExtraMetrics = true
-				logger.Info("Experimental additional scrape metrics enabled")
+				t := true
+				config.DefaultConfig.GlobalConfig.ExtraScrapeMetrics = &t
+				config.DefaultGlobalConfig.ExtraScrapeMetrics = &t
+				logger.Warn("This option for --enable-feature is being phased out. It currently changes the default for the extra_scrape_metrics config setting to true, but will become a no-op in a future version. Stop using this option and set extra_scrape_metrics in the config instead.", "option", o)
 			case "metadata-wal-records":
 				c.scrape.AppendMetadata = true
 				c.web.AppendMetadata = true

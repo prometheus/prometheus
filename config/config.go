@@ -176,7 +176,7 @@ var (
 		ScrapeNativeHistograms:         &f,
 		ConvertClassicHistogramsToNHCB: false,
 		AlwaysScrapeClassicHistograms:  false,
-		ExtraScrapeMetrics:             false,
+		ExtraScrapeMetrics:             &f,
 		MetricNameValidationScheme:     model.UTF8Validation,
 		MetricNameEscapingScheme:       model.AllowUTF8,
 	}
@@ -517,7 +517,7 @@ type GlobalConfig struct {
 	// Whether to enable additional scrape metrics.
 	// When enabled, Prometheus stores samples for scrape_timeout_seconds,
 	// scrape_sample_limit, and scrape_body_size_bytes.
-	ExtraScrapeMetrics bool `yaml:"extra_scrape_metrics,omitempty"`
+	ExtraScrapeMetrics *bool `yaml:"extra_scrape_metrics,omitempty"`
 }
 
 // ScrapeProtocol represents supported protocol for scraping metrics.
@@ -657,6 +657,9 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if gc.ScrapeNativeHistograms == nil {
 		gc.ScrapeNativeHistograms = DefaultGlobalConfig.ScrapeNativeHistograms
 	}
+	if gc.ExtraScrapeMetrics == nil {
+		gc.ExtraScrapeMetrics = DefaultGlobalConfig.ExtraScrapeMetrics
+	}
 	if gc.ScrapeProtocols == nil {
 		if DefaultGlobalConfig.ScrapeProtocols != nil {
 			// This is the case where the defaults are set due to a feature flag.
@@ -702,7 +705,7 @@ func (c *GlobalConfig) isZero() bool {
 		c.KeepDroppedTargets == 0 &&
 		c.MetricNameValidationScheme == model.UnsetValidation &&
 		c.MetricNameEscapingScheme == "" &&
-		!c.ExtraScrapeMetrics
+		c.ExtraScrapeMetrics == nil
 }
 
 const DefaultGoGCPercentage = 75
@@ -918,7 +921,7 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		c.ScrapeNativeHistograms = globalConfig.ScrapeNativeHistograms
 	}
 	if c.ExtraScrapeMetrics == nil {
-		c.ExtraScrapeMetrics = &globalConfig.ExtraScrapeMetrics
+		c.ExtraScrapeMetrics = globalConfig.ExtraScrapeMetrics
 	}
 
 	if c.ScrapeProtocols == nil {
