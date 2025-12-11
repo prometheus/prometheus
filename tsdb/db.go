@@ -242,7 +242,7 @@ type Options struct {
 
 	// BlockReloadInterval is the interval at which blocks are reloaded.
 	BlockReloadInterval time.Duration
-  
+
 	// FeatureRegistry is used to register TSDB features.
 	FeatureRegistry features.Collector
 }
