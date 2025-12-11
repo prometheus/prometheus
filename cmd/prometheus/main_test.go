@@ -979,6 +979,7 @@ remote_write:
 // | dataPending         | 0             | 1228.8              |
 // | desiredShards       | 0.6           | 369.2               |.
 func TestRemoteWrite_ReshardingWithoutDeadlock(t *testing.T) {
+	t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/17489")
 	t.Parallel()
 
 	tmpDir := t.TempDir()

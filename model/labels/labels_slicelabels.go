@@ -25,6 +25,9 @@ import (
 	"github.com/cespare/xxhash/v2"
 )
 
+// ImplementationName is the name of the labels implementation.
+const ImplementationName = "slicelabels"
+
 // Labels is a sorted set of labels. Order has to be guaranteed upon
 // instantiation.
 type Labels []Label
@@ -297,12 +300,9 @@ func FromStrings(ss ...string) Labels {
 // Compare compares the two label sets.
 // The result will be 0 if a==b, <0 if a < b, and >0 if a > b.
 func Compare(a, b Labels) int {
-	l := len(a)
-	if len(b) < l {
-		l = len(b)
-	}
+	l := min(len(b), len(a))
 
-	for i := 0; i < l; i++ {
+	for i := range l {
 		if a[i].Name != b[i].Name {
 			if a[i].Name < b[i].Name {
 				return -1
@@ -419,10 +419,7 @@ func (b *Builder) Labels() Labels {
 		return b.base
 	}
 
-	expectedSize := len(b.base) + len(b.add) - len(b.del)
-	if expectedSize < 1 {
-		expectedSize = 1
-	}
+	expectedSize := max(len(b.base)+len(b.add)-len(b.del), 1)
 	res := make(Labels, 0, expectedSize)
 	for _, l := range b.base {
 		if slices.Contains(b.del, l.Name) || contains(b.add, l.Name) {

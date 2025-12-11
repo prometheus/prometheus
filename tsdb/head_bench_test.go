@@ -14,7 +14,6 @@
 package tsdb
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -31,6 +30,228 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/compression"
 )
+
+type benchAppendFunc func(b *testing.B, h *Head, ts int64, series []storage.Series, samplesPerAppend int64) storage.AppenderTransaction
+
+func appendV1Float(b *testing.B, h *Head, ts int64, series []storage.Series, samplesPerAppend int64) storage.AppenderTransaction {
+	var err error
+	app := h.Appender(b.Context())
+	for _, s := range series {
+		var ref storage.SeriesRef
+		for sampleIndex := range samplesPerAppend {
+			ref, err = app.Append(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex))
+			require.NoError(b, err)
+		}
+	}
+	return app
+}
+
+func appendV2Float(b *testing.B, h *Head, ts int64, series []storage.Series, samplesPerAppend int64) storage.AppenderTransaction {
+	var err error
+	app := h.AppenderV2(b.Context())
+	for _, s := range series {
+		var ref storage.SeriesRef
+		for sampleIndex := range samplesPerAppend {
+			ref, err = app.Append(ref, s.Labels(), 0, ts+sampleIndex, float64(ts+sampleIndex), nil, nil, storage.AOptions{})
+			require.NoError(b, err)
+		}
+	}
+	return app
+}
+
+func appendV1FloatOrHistogramWithExemplars(b *testing.B, h *Head, ts int64, series []storage.Series, samplesPerAppend int64) storage.AppenderTransaction {
+	var err error
+	app := h.Appender(b.Context())
+	for i, s := range series {
+		var ref storage.SeriesRef
+		for sampleIndex := range samplesPerAppend {
+			// if i is even, append a sample, else append a histogram.
+			if i%2 == 0 {
+				ref, err = app.Append(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex))
+				require.NoError(b, err)
+				// Every sample also has an exemplar attached.
+				_, err = app.AppendExemplar(ref, s.Labels(), exemplar.Exemplar{
+					Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
+					Value:  rand.Float64(),
+					Ts:     ts + sampleIndex,
+				})
+				require.NoError(b, err)
+				continue
+			}
+
+			h := &histogram.Histogram{
+				Count:         7 + uint64(ts*5),
+				ZeroCount:     2 + uint64(ts),
+				ZeroThreshold: 0.001,
+				Sum:           18.4 * rand.Float64(),
+				Schema:        1,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{ts + 1, 1, -1, 0},
+			}
+			ref, err = app.AppendHistogram(ref, s.Labels(), ts, h, nil)
+			require.NoError(b, err)
+			// Every histogram sample also has 3 exemplars attached.
+			_, err = app.AppendExemplar(ref, s.Labels(), exemplar.Exemplar{
+				Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
+				Value:  rand.Float64(),
+				Ts:     ts + sampleIndex,
+			})
+			require.NoError(b, err)
+			_, err = app.AppendExemplar(ref, s.Labels(), exemplar.Exemplar{
+				Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
+				Value:  rand.Float64(),
+				Ts:     ts + sampleIndex,
+			})
+			require.NoError(b, err)
+			_, err = app.AppendExemplar(ref, s.Labels(), exemplar.Exemplar{
+				Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
+				Value:  rand.Float64(),
+				Ts:     ts + sampleIndex,
+			})
+			require.NoError(b, err)
+		}
+	}
+	return app
+}
+
+func appendV2FloatOrHistogramWithExemplars(b *testing.B, h *Head, ts int64, series []storage.Series, samplesPerAppend int64) storage.AppenderTransaction {
+	var (
+		err error
+		ex  = make([]exemplar.Exemplar, 3)
+	)
+
+	app := h.AppenderV2(b.Context())
+	for i, s := range series {
+		var ref storage.SeriesRef
+		for sampleIndex := range samplesPerAppend {
+			aOpts := storage.AOptions{Exemplars: ex[:0]}
+
+			// if i is even, append a sample, else append a histogram.
+			if i%2 == 0 {
+				// Every sample also has an exemplar attached.
+				aOpts.Exemplars = append(aOpts.Exemplars, exemplar.Exemplar{
+					Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
+					Value:  rand.Float64(),
+					Ts:     ts + sampleIndex,
+				})
+				ref, err = app.Append(ref, s.Labels(), 0, ts, float64(ts), nil, nil, aOpts)
+				require.NoError(b, err)
+				continue
+			}
+			h := &histogram.Histogram{
+				Count:         7 + uint64(ts*5),
+				ZeroCount:     2 + uint64(ts),
+				ZeroThreshold: 0.001,
+				Sum:           18.4 * rand.Float64(),
+				Schema:        1,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{ts + 1, 1, -1, 0},
+			}
+
+			// Every histogram sample also has 3 exemplars attached.
+			aOpts.Exemplars = append(aOpts.Exemplars,
+				exemplar.Exemplar{
+					Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
+					Value:  rand.Float64(),
+					Ts:     ts + sampleIndex,
+				},
+				exemplar.Exemplar{
+					Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
+					Value:  rand.Float64(),
+					Ts:     ts + sampleIndex,
+				},
+				exemplar.Exemplar{
+					Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
+					Value:  rand.Float64(),
+					Ts:     ts + sampleIndex,
+				},
+			)
+			ref, err = app.Append(ref, s.Labels(), 0, ts, 0, h, nil, aOpts)
+			require.NoError(b, err)
+		}
+	}
+	return app
+}
+
+type appendCase struct {
+	name       string
+	appendFunc benchAppendFunc
+}
+
+func appendCases() []appendCase {
+	return []appendCase{
+		{
+			name:       "appender=v1/case=floats",
+			appendFunc: appendV1Float,
+		},
+		{
+			name:       "appender=v2/case=floats",
+			appendFunc: appendV2Float,
+		},
+		{
+			name:       "appender=v1/case=floatsHistogramsExemplars",
+			appendFunc: appendV1FloatOrHistogramWithExemplars,
+		},
+		{
+			name:       "appender=v2/case=floatsHistogramsExemplars",
+			appendFunc: appendV2FloatOrHistogramWithExemplars,
+		},
+	}
+}
+
+/*
+	export bench=append && go test \
+	  -run '^$' -bench '^BenchmarkHeadAppender_AppendCommit$' \
+	  -benchtime 5s -count 6 -cpu 2 -timeout 999m \
+	  | tee ${bench}.txt
+*/
+func BenchmarkHeadAppender_AppendCommit(b *testing.B) {
+	// NOTE(bwplotka): Previously we also had 1k and 10k series case. There is nothing
+	// special happening in 100 vs 1k vs 10k, so let's save considerable amount of benchmark time
+	// for quicker feedback. In return, we add more sample type cases.
+	// Similarly, we removed the 2 sample in append case.
+	//
+	// TODO(bwplotka): This still takes ~6500s (~2h) for -benchtime 5s -count 6 to complete.
+	// We might want to reduce the time bit more. 5s is really important as the slowest
+	// case (appender=v1/case=floatsHistogramsExemplars/series=100/samples_per_append=100-2)
+	// in 5s yields only 255 iters 23184892 ns/op. Perhaps -benchtime=300x would be better?
+	seriesCounts := []int{10, 100}
+	series := genSeries(100, 10, 0, 0) // Only using the generated labels.
+	for _, appendCase := range appendCases() {
+		for _, seriesCount := range seriesCounts {
+			for _, samplesPerAppend := range []int64{1, 5, 100} {
+				b.Run(fmt.Sprintf("%s/series=%d/samples_per_append=%d", appendCase.name, seriesCount, samplesPerAppend), func(b *testing.B) {
+					opts := newTestHeadDefaultOptions(10000, false)
+					opts.EnableExemplarStorage = true // We benchmark with exemplars, benchmark with them.
+					h, _ := newTestHeadWithOptions(b, compression.None, opts)
+					b.Cleanup(func() { require.NoError(b, h.Close()) })
+
+					ts := int64(1000)
+
+					// Init series, that's not what we're benchmarking here.
+					app := appendCase.appendFunc(b, h, ts, series[:seriesCount], samplesPerAppend)
+					require.NoError(b, app.Commit())
+					ts += 1000 // should increment more than highest samplesPerAppend
+
+					b.ReportAllocs()
+					b.ResetTimer()
+
+					for b.Loop() {
+						app := appendCase.appendFunc(b, h, ts, series[:seriesCount], samplesPerAppend)
+						require.NoError(b, app.Commit())
+						ts += 1000 // should increment more than highest samplesPerAppend
+					}
+				})
+			}
+		}
+	}
+}
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 	chunkDir := b.TempDir()
@@ -83,86 +304,6 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 
 	for i := 0; b.Loop(); i++ {
 		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)), false)
-	}
-}
-
-func BenchmarkHead_WalCommit(b *testing.B) {
-	seriesCounts := []int{100, 1000, 10000}
-	series := genSeries(10000, 10, 0, 0) // Only using the generated labels.
-
-	appendSamples := func(b *testing.B, app storage.Appender, seriesCount int, ts int64) {
-		var err error
-		for i, s := range series[:seriesCount] {
-			var ref storage.SeriesRef
-			// if i is even, append a sample, else append a histogram.
-			if i%2 == 0 {
-				ref, err = app.Append(ref, s.Labels(), ts, float64(ts))
-			} else {
-				h := &histogram.Histogram{
-					Count:         7 + uint64(ts*5),
-					ZeroCount:     2 + uint64(ts),
-					ZeroThreshold: 0.001,
-					Sum:           18.4 * rand.Float64(),
-					Schema:        1,
-					PositiveSpans: []histogram.Span{
-						{Offset: 0, Length: 2},
-						{Offset: 1, Length: 2},
-					},
-					PositiveBuckets: []int64{ts + 1, 1, -1, 0},
-				}
-				ref, err = app.AppendHistogram(ref, s.Labels(), ts, h, nil)
-			}
-			require.NoError(b, err)
-
-			_, err = app.AppendExemplar(ref, s.Labels(), exemplar.Exemplar{
-				Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
-				Value:  rand.Float64(),
-				Ts:     ts,
-			})
-			require.NoError(b, err)
-		}
-	}
-
-	for _, seriesCount := range seriesCounts {
-		b.Run(fmt.Sprintf("%d series", seriesCount), func(b *testing.B) {
-			for _, commits := range []int64{1, 2} { // To test commits that create new series and when the series already exists.
-				b.Run(fmt.Sprintf("%d commits", commits), func(b *testing.B) {
-					b.ReportAllocs()
-					b.ResetTimer()
-
-					for b.Loop() {
-						b.StopTimer()
-						h, w := newTestHead(b, 10000, compression.None, false)
-						b.Cleanup(func() {
-							if h != nil {
-								h.Close()
-							}
-							if w != nil {
-								w.Close()
-							}
-						})
-						app := h.Appender(context.Background())
-
-						appendSamples(b, app, seriesCount, 0)
-
-						b.StartTimer()
-						require.NoError(b, app.Commit())
-						if commits == 2 {
-							b.StopTimer()
-							app = h.Appender(context.Background())
-							appendSamples(b, app, seriesCount, 1)
-							b.StartTimer()
-							require.NoError(b, app.Commit())
-						}
-						b.StopTimer()
-						h.Close()
-						h = nil
-						w.Close()
-						w = nil
-					}
-				})
-			}
-		})
 	}
 }
 

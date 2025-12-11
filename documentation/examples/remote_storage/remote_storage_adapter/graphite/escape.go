@@ -82,7 +82,7 @@ const (
 func escape(tv model.LabelValue) string {
 	length := len(tv)
 	result := bytes.NewBuffer(make([]byte, 0, length))
-	for i := 0; i < length; i++ {
+	for i := range length {
 		b := tv[i]
 		switch {
 		// . is reserved by graphite, % is used to escape other bytes.

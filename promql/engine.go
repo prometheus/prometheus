@@ -49,6 +49,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/zeropool"
@@ -330,6 +331,9 @@ type EngineOpts struct {
 	EnableDelayedNameRemoval bool
 	// EnableTypeAndUnitLabels will allow PromQL Engine to make decisions based on the type and unit labels.
 	EnableTypeAndUnitLabels bool
+
+	// FeatureRegistry is the registry for tracking enabled/disabled features.
+	FeatureRegistry features.Collector
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -444,6 +448,18 @@ func NewEngine(opts EngineOpts) *Engine {
 			queryResultSummary,
 			queryResultHistogram,
 		)
+	}
+
+	if r := opts.FeatureRegistry; r != nil {
+		r.Set(features.PromQL, "at_modifier", opts.EnableAtModifier)
+		r.Set(features.PromQL, "negative_offset", opts.EnableNegativeOffset)
+		r.Set(features.PromQL, "per_step_stats", opts.EnablePerStepStats)
+		r.Set(features.PromQL, "delayed_name_removal", opts.EnableDelayedNameRemoval)
+		r.Set(features.PromQL, "type_and_unit_labels", opts.EnableTypeAndUnitLabels)
+		r.Enable(features.PromQL, "per_query_lookback_delta")
+		r.Enable(features.PromQL, "subqueries")
+
+		parser.RegisterFeatures(r)
 	}
 
 	return &Engine{
@@ -2920,17 +2936,15 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		if info != nil {
 			lastErr = info
 		}
-		switch {
-		case returnBool:
+		if returnBool {
 			histogramValue = nil
 			if keep {
 				floatValue = 1.0
 			} else {
 				floatValue = 0.0
 			}
-		case !keep:
-			continue
 		}
+
 		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
 		if !ev.enableDelayedNameRemoval && returnBool {
 			metric = metric.DropReserved(schema.IsMetadataLabel)
@@ -2954,6 +2968,10 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 				ev.errorf("multiple matches for labels: grouping labels must ensure unique matches")
 			}
 			insertedSigs[insertSig] = struct{}{}
+		}
+
+		if !keep && !returnBool {
+			continue
 		}
 
 		enh.Out = append(enh.Out, Sample{

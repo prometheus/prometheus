@@ -316,6 +316,27 @@ eval instant at 5m http_requests_histogram == http_requests_histogram
 eval instant at 5m http_requests_histogram != http_requests_histogram
     expect no_info
 
+clear
+
+# Check that we track many-to-one vector matching errors even when all but 0 or 1
+# series on the "many" side are filtered away.
+load 5m
+  many_side{label="foo",job="test"} 0
+  many_side{label="bar",job="test"} 1
+  one_side{job="test"} 1
+
+# Check 0 series surviving the filtering producing an error.
+eval instant at 0m many_side > on(job) one_side
+  expect fail
+
+# Check 1 series surviving the filtering producing an error.
+eval instant at 0m many_side >= on(job) one_side
+  expect fail
+
+# Check 2 series surviving the filtering producing an error.
+eval instant at 0m many_side <= on(job) one_side
+  expect fail
+
 # group_left/group_right.
 
 clear

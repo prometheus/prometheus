@@ -77,8 +77,8 @@ func BenchmarkScratchBuilderUnsafeAdd(b *testing.B) {
 	l.SetUnsafeAdd(true)
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		l.Add("__name__", "metric1")
 		l.add = l.add[:0] // Reset slice so add can be repeated without side effects.
 	}

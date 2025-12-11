@@ -73,11 +73,13 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/documentcli"
+	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/notifications"
 	prom_runtime "github.com/prometheus/prometheus/util/runtime"
@@ -236,6 +238,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "metadata-wal-records":
 				c.scrape.AppendMetadata = true
 				c.web.AppendMetadata = true
+				features.Enable(features.TSDB, "metadata_wal_records")
 				logger.Info("Experimental metadata records in WAL enabled")
 			case "promql-per-step-stats":
 				c.enablePerStepStats = true
@@ -342,10 +345,14 @@ func main() {
 			Registerer: prometheus.DefaultRegisterer,
 		},
 		web: web.Options{
-			Registerer: prometheus.DefaultRegisterer,
-			Gatherer:   prometheus.DefaultGatherer,
+			Registerer:      prometheus.DefaultRegisterer,
+			Gatherer:        prometheus.DefaultGatherer,
+			FeatureRegistry: features.DefaultRegistry,
 		},
 		promslogConfig: promslog.Config{},
+		scrape: scrape.Options{
+			FeatureRegistry: features.DefaultRegistry,
+		},
 	}
 
 	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server").UsageWriter(os.Stdout)
@@ -804,6 +811,12 @@ func main() {
 		"vm_limits", prom_runtime.VMLimits(),
 	)
 
+	features.Set(features.Prometheus, "agent_mode", agentMode)
+	features.Set(features.Prometheus, "server_mode", !agentMode)
+	features.Set(features.Prometheus, "auto_reload_config", cfg.enableAutoReload)
+	features.Enable(features.Prometheus, labels.ImplementationName)
+	template.RegisterFeatures(features.DefaultRegistry)
+
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
@@ -840,13 +853,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	discoveryManagerScrape = discovery.NewManager(ctxScrape, logger.With("component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("scrape"))
+	discoveryManagerScrape = discovery.NewManager(ctxScrape, logger.With("component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("scrape"), discovery.FeatureRegistry(features.DefaultRegistry))
 	if discoveryManagerScrape == nil {
 		logger.Error("failed to create a discovery manager scrape")
 		os.Exit(1)
 	}
 
-	discoveryManagerNotify = discovery.NewManager(ctxNotify, logger.With("component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"))
+	discoveryManagerNotify = discovery.NewManager(ctxNotify, logger.With("component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"), discovery.FeatureRegistry(features.DefaultRegistry))
 	if discoveryManagerNotify == nil {
 		logger.Error("failed to create a discovery manager notify")
 		os.Exit(1)
@@ -887,6 +900,7 @@ func main() {
 			EnablePerStepStats:       cfg.enablePerStepStats,
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
+			FeatureRegistry:          features.DefaultRegistry,
 		}
 
 		queryEngine = promql.NewEngine(opts)
@@ -909,6 +923,7 @@ func main() {
 			DefaultRuleQueryOffset: func() time.Duration {
 				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
 			},
+			FeatureRegistry: features.DefaultRegistry,
 		})
 	}
 
@@ -1929,6 +1944,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		UseUncachedIO:                  opts.UseUncachedIO,
 		BlockCompactionExcludeFunc:     opts.BlockCompactionExcludeFunc,
 		BlockReloadInterval:            time.Duration(opts.BlockReloadInterval),
+		FeatureRegistry:                features.DefaultRegistry,
 	}
 }
 

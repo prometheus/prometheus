@@ -280,3 +280,13 @@ func RegisterSDMetrics(registerer prometheus.Registerer, rmm RefreshMetricsManag
 	}
 	return metrics, nil
 }
+
+// RegisteredConfigNames returns the names of all registered service discovery providers.
+func RegisteredConfigNames() []string {
+	names := make([]string, 0, len(configNames))
+	for name := range configNames {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}

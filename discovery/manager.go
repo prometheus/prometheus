@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/features"
 )
 
 type poolKey struct {
@@ -111,6 +112,13 @@ func NewManager(ctx context.Context, logger *slog.Logger, registerer prometheus.
 	}
 	mgr.metrics = metrics
 
+	// Register all available service discovery providers with the feature registry.
+	if mgr.featureRegistry != nil {
+		for _, sdName := range RegisteredConfigNames() {
+			mgr.featureRegistry.Enable(features.ServiceDiscoveryProviders, sdName)
+		}
+	}
+
 	return mgr
 }
 
@@ -138,6 +146,15 @@ func Updatert(u time.Duration) func(*Manager) {
 func HTTPClientOptions(opts ...config.HTTPClientOption) func(*Manager) {
 	return func(m *Manager) {
 		m.httpOpts = opts
+	}
+}
+
+// FeatureRegistry sets the feature registry for the manager.
+func FeatureRegistry(fr features.Collector) func(*Manager) {
+	return func(m *Manager) {
+		m.mtx.Lock()
+		defer m.mtx.Unlock()
+		m.featureRegistry = fr
 	}
 }
 
@@ -175,6 +192,9 @@ type Manager struct {
 
 	metrics   *Metrics
 	sdMetrics map[string]DiscovererMetrics
+
+	// featureRegistry is used to track which service discovery providers are configured.
+	featureRegistry features.Collector
 }
 
 // Providers returns the currently configured SD providers.
