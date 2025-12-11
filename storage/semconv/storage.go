@@ -77,7 +77,6 @@ func (s *annotatedSeriesSet) Warnings() annotations.Annotations {
 
 func (q *awareQuerier) Select(ctx context.Context, sort bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	var schemaURL string
-
 	for _, m := range matchers {
 		if m.Name != schemaURLLabel {
 			continue
@@ -100,6 +99,7 @@ func (q *awareQuerier) Select(ctx context.Context, sort bool, hints *storage.Sel
 		return q.Querier.Select(ctx, sort, hints, matchers...)
 	}
 
+	fmt.Printf("awareQuerier.Select - schemaURL: %s\n", schemaURL)
 	variants, qCtx, err := q.engine.FindMatcherVariants(schemaURL, matchers)
 	if err != nil {
 		return annotateSeriesSet(
@@ -108,8 +108,10 @@ func (q *awareQuerier) Select(ctx context.Context, sort bool, hints *storage.Sel
 		)
 	}
 
+	fmt.Printf("%d variants\n", len(variants))
 	if len(qCtx.changes) == 0 {
 		// No changes detected, fast path without transformations.
+		fmt.Printf("no changes detected\n")
 		return q.Querier.Select(ctx, sort, hints, matchers...)
 	}
 
@@ -118,11 +120,16 @@ func (q *awareQuerier) Select(ctx context.Context, sort bool, hints *storage.Sel
 
 	// TODO(bwplotka): Async limit?
 	// Lookup alternative variants.
-	for _, m := range variants {
+	for _, ms := range variants {
 		go func() {
 			// We need to sort for NewMergeSeriesSet to work.
+			var matchers []string
+			for _, m := range ms {
+				matchers = append(matchers, m.String())
+			}
+			fmt.Printf("Adding awareSeriesSet for variants: %#v\n", matchers)
 			seriesSetChan <- &awareSeriesSet{
-				SeriesSet: q.Querier.Select(ctx, true, hints, m...),
+				SeriesSet: q.Querier.Select(ctx, true, hints, ms...),
 				engine:    q.engine,
 				qCtx:      qCtx,
 			}

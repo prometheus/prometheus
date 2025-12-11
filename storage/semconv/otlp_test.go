@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -108,6 +109,7 @@ func TestOTLPSchemaVariants(t *testing.T) {
 		matchers := []*labels.Matcher{
 			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http.server.duration"),
 			labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, "https://prometheus.io/schema/otlp/untranslated"),
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricTypeLabel, "gauge"),
 			labels.MustNewMatcher(labels.MatchEqual, "http.method", "GET"),
 		}
 
@@ -129,6 +131,41 @@ func TestOTLPSchemaVariants(t *testing.T) {
 			require.True(t, hasMethodMatcher, "expected http.method or http_method matcher")
 		}
 	})
+
+	t.Run("unknown type and unit generates suffix variants", func(t *testing.T) {
+		e := newSchemaEngine()
+
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http.server.requests"),
+			labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, "https://prometheus.io/schema/otlp/untranslated"),
+		}
+
+		variants, _, err := e.FindMatcherVariants("https://prometheus.io/schema/otlp/untranslated", matchers)
+		require.NoError(t, err)
+		// When both type and unit are unknown:
+		// - 2 suffix strategies × 3 types × 5 units = 30 variants
+		// - 1 no-suffix strategy × 1 type × 1 unit = 1 variant
+		// Total = 31 variants
+		require.Len(t, variants, 31)
+
+		names := make([]string, 0, len(variants))
+		for _, v := range variants {
+			for _, m := range v {
+				if m.Name == model.MetricNameLabel {
+					names = append(names, m.Value)
+				}
+			}
+		}
+
+		// Check that we got variants with different suffixes.
+		require.Contains(t, names, "http_server_requests")              // UnderscoreEscapingWithoutSuffixes
+		require.Contains(t, names, "http_server_requests_total")        // UnderscoreEscapingWithSuffixes + counter
+		require.Contains(t, names, "http_server_requests_seconds")      // UnderscoreEscapingWithSuffixes + unit "s"
+		require.Contains(t, names, "http_server_requests_bytes")        // UnderscoreEscapingWithSuffixes + unit "By"
+		require.Contains(t, names, "http.server.requests_total")        // NoUTF8EscapingWithSuffixes + counter
+		require.Contains(t, names, "http.server.requests_seconds")      // NoUTF8EscapingWithSuffixes + unit "s"
+		require.Contains(t, names, "http.server.requests_seconds_total") // NoUTF8EscapingWithSuffixes + counter + unit "s"
+	})
 }
 
 func TestOTLPSchemaUnsupportedVersion(t *testing.T) {
@@ -147,27 +184,73 @@ func TestOTLPSchemaUnsupportedVersion(t *testing.T) {
 func TestOTLPTransformSeries(t *testing.T) {
 	e := newSchemaEngine()
 
-	// Create labels as if returned from storage.
-	lbls := labels.FromStrings(
-		model.MetricNameLabel, "http_server_duration_seconds",
-		schemaURLLabel, "https://prometheus.io/schema/otlp/untranslated",
-		"http_method", "GET",
-	)
+	t.Run("series without __schema_url__ (translated OTLP)", func(t *testing.T) {
+		// Translated OTLP metrics don't have __schema_url__ stored.
+		lbls := labels.FromStrings(
+			model.MetricNameLabel, "http_server_duration_seconds",
+			"http_method", "GET",
+		)
 
-	qCtx := queryContext{changes: []change{{}}} // Sentinel
+		qCtx := queryContext{isOTLP: true}
 
-	result, vt, err := e.TransformSeries(qCtx, lbls)
-	require.NoError(t, err)
+		result, vt, err := e.TransformSeries(qCtx, lbls)
+		require.NoError(t, err)
 
-	// __schema_url__ should be removed.
-	require.Empty(t, result.Get(schemaURLLabel))
+		// Labels should remain unchanged.
+		require.Equal(t, "http_server_duration_seconds", result.Get(model.MetricNameLabel))
+		require.Equal(t, "GET", result.Get("http_method"))
 
-	// Other labels should remain.
-	require.Equal(t, "http_server_duration_seconds", result.Get(model.MetricNameLabel))
-	require.Equal(t, "GET", result.Get("http_method"))
+		// No value transformation for OTLP schema.
+		require.Empty(t, vt.expr)
+	})
 
-	// No value transformation for OTLP schema.
-	require.Empty(t, vt.expr)
+	t.Run("series with __schema_url__ (OTLP query context)", func(t *testing.T) {
+		// If series has __schema_url__ but query is OTLP, remove it.
+		lbls := labels.FromStrings(
+			model.MetricNameLabel, "http_server_duration_seconds",
+			schemaURLLabel, "https://prometheus.io/schema/otlp/untranslated",
+			"http_method", "GET",
+		)
+
+		qCtx := queryContext{isOTLP: true}
+
+		result, vt, err := e.TransformSeries(qCtx, lbls)
+		require.NoError(t, err)
+
+		// __schema_url__ should be removed.
+		require.Empty(t, result.Get(schemaURLLabel))
+
+		// Other labels should remain.
+		require.Equal(t, "http_server_duration_seconds", result.Get(model.MetricNameLabel))
+		require.Equal(t, "GET", result.Get("http_method"))
+
+		// No value transformation for OTLP schema.
+		require.Empty(t, vt.expr)
+	})
+
+	t.Run("legacy test with __schema_url__", func(t *testing.T) {
+		// Create labels as if returned from storage.
+		lbls := labels.FromStrings(
+			model.MetricNameLabel, "http_server_duration_seconds",
+			schemaURLLabel, "https://prometheus.io/schema/otlp/untranslated",
+			"http_method", "GET",
+		)
+
+		qCtx := queryContext{changes: []change{{}}} // Sentinel (non-OTLP context)
+
+		result, vt, err := e.TransformSeries(qCtx, lbls)
+		require.NoError(t, err)
+
+		// __schema_url__ should be removed.
+		require.Empty(t, result.Get(schemaURLLabel))
+
+		// Other labels should remain.
+		require.Equal(t, "http_server_duration_seconds", result.Get(model.MetricNameLabel))
+		require.Equal(t, "GET", result.Get("http_method"))
+
+		// No value transformation for OTLP schema.
+		require.Empty(t, vt.expr)
+	})
 }
 
 func TestPromTypeToOTelType(t *testing.T) {
@@ -191,4 +274,110 @@ func TestPromTypeToOTelType(t *testing.T) {
 			require.Equal(t, tc.expected, int(result))
 		})
 	}
+}
+
+func TestGenerateOTLPVariants(t *testing.T) {
+	t.Run("known type generates 3 variants", func(t *testing.T) {
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http.server.duration"),
+		}
+		metric := otlptranslator.Metric{
+			Name: "http.server.duration",
+			Unit: "s",
+			Type: otlptranslator.MetricTypeHistogram,
+		}
+
+		variants, err := generateOTLPVariants(matchers, metric)
+		require.NoError(t, err)
+		require.Len(t, variants, 3)
+
+		names := collectMetricNames(variants)
+		require.Contains(t, names, "http_server_duration_seconds") // UnderscoreEscapingWithSuffixes
+		require.Contains(t, names, "http_server_duration")         // UnderscoreEscapingWithoutSuffixes
+		require.Contains(t, names, "http.server.duration_seconds") // NoUTF8EscapingWithSuffixes
+	})
+
+	t.Run("unknown type and unit generates suffix variants", func(t *testing.T) {
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http.server.requests"),
+		}
+		metric := otlptranslator.Metric{
+			Name: "http.server.requests",
+			Type: otlptranslator.MetricTypeUnknown,
+			Unit: "", // Unknown unit
+		}
+
+		variants, err := generateOTLPVariants(matchers, metric)
+		require.NoError(t, err)
+		// When both type and unit are unknown:
+		// - 2 suffix strategies × 3 types × 5 units = 30 variants
+		// - 1 no-suffix strategy × 1 type × 1 unit = 1 variant
+		// Total = 31 variants
+		require.Len(t, variants, 31)
+
+		names := collectMetricNames(variants)
+		require.Contains(t, names, "http_server_requests")              // UnderscoreEscapingWithoutSuffixes
+		require.Contains(t, names, "http_server_requests_total")        // UnderscoreEscapingWithSuffixes + counter
+		require.Contains(t, names, "http_server_requests_seconds")      // UnderscoreEscapingWithSuffixes + unit "s"
+		require.Contains(t, names, "http_server_requests_bytes")        // UnderscoreEscapingWithSuffixes + unit "By"
+		require.Contains(t, names, "http.server.requests")              // NoUTF8EscapingWithSuffixes + unknown
+		require.Contains(t, names, "http.server.requests_total")        // NoUTF8EscapingWithSuffixes + counter
+		require.Contains(t, names, "http.server.requests_seconds")      // NoUTF8EscapingWithSuffixes + unit "s"
+		require.Contains(t, names, "http.server.requests_seconds_total") // NoUTF8EscapingWithSuffixes + counter + unit "s"
+	})
+
+	t.Run("counter type with known unit generates _total suffix", func(t *testing.T) {
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http.server.requests"),
+		}
+		metric := otlptranslator.Metric{
+			Name: "http.server.requests",
+			Type: otlptranslator.MetricTypeMonotonicCounter,
+			Unit: "1", // Known unit
+		}
+
+		variants, err := generateOTLPVariants(matchers, metric)
+		require.NoError(t, err)
+		require.Len(t, variants, 3)
+
+		names := collectMetricNames(variants)
+		require.Contains(t, names, "http_server_requests_total") // UnderscoreEscapingWithSuffixes
+		require.Contains(t, names, "http_server_requests")       // UnderscoreEscapingWithoutSuffixes
+		require.Contains(t, names, "http.server.requests_total") // NoUTF8EscapingWithSuffixes
+	})
+
+	t.Run("counter type with unknown unit generates unit variants", func(t *testing.T) {
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http.server.requests"),
+		}
+		metric := otlptranslator.Metric{
+			Name: "http.server.requests",
+			Type: otlptranslator.MetricTypeMonotonicCounter,
+			Unit: "", // Unknown unit
+		}
+
+		variants, err := generateOTLPVariants(matchers, metric)
+		require.NoError(t, err)
+		// 2 suffix strategies × 1 type × 5 units + 1 no-suffix strategy = 11 variants
+		require.Len(t, variants, 11)
+
+		names := collectMetricNames(variants)
+		require.Contains(t, names, "http_server_requests_total")         // UnderscoreEscapingWithSuffixes + no unit
+		require.Contains(t, names, "http_server_requests_seconds_total") // UnderscoreEscapingWithSuffixes + unit "s"
+		require.Contains(t, names, "http_server_requests_bytes_total")   // UnderscoreEscapingWithSuffixes + unit "By"
+		require.Contains(t, names, "http_server_requests")               // UnderscoreEscapingWithoutSuffixes
+		require.Contains(t, names, "http.server.requests_total")         // NoUTF8EscapingWithSuffixes + no unit
+	})
+}
+
+func collectMetricNames(variants [][]*labels.Matcher) []string {
+	names := make([]string, 0, len(variants))
+	for _, v := range variants {
+		for _, m := range v {
+			if m.Name == model.MetricNameLabel {
+				names = append(names, m.Value)
+			}
+		}
+	}
+	return names
 }

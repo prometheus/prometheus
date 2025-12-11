@@ -239,6 +239,7 @@ type queryContext struct {
 	mID         metricID
 	magicSuffix string
 	changes     []change
+	isOTLP      bool // True when querying with OTLP schema (series won't have __schema_url__)
 }
 
 // FindMatcherVariants returns all variants to match for a single schematized (referenced by schema_url) metric selection.
@@ -382,6 +383,19 @@ func (t *changeTraverser) traverseForMatchers(revision int, newer bool, b matche
 // TODO(bwplotka): Decide what to do if non schematized series are returned, currently we error.
 func (e *schemaEngine) TransformSeries(q queryContext, originalLabels labels.Labels) (lbls labels.Labels, vt valueTransformer, _ error) {
 	schemaURL := originalLabels.Get(schemaURLLabel)
+
+	// For OTLP queries, the matched series won't have __schema_url__ stored
+	// (they were translated on ingestion). Just return as-is.
+	if q.isOTLP {
+		if schemaURL == "" {
+			return originalLabels, vt, nil
+		}
+		// If __schema_url__ is present, remove it.
+		builder := labels.NewBuilder(originalLabels)
+		builder.Del(schemaURLLabel)
+		return builder.Labels(), vt, nil
+	}
+
 	if schemaURL == "" {
 		return originalLabels, vt, fmt.Errorf("selected series %v does not contain __schema_url__", originalLabels)
 	}
