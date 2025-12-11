@@ -12,7 +12,7 @@
 /promql @roidelapluie @prometheus/default-maintainers
 /storage/remote @cstyan @bwplotka @tomwilkie @npazosmendez @alexgreenbank @prometheus/default-maintainers
 /storage/remote/otlptranslator @aknuds1 @jesusvazquez @ArthurSens @prometheus/default-maintainers
-/tsdb @jesusvazquez @codesome @bwplotka @prometheus/default-maintainers
+/tsdb @jesusvazquez @codesome @bwplotka @krajorama @prometheus/default-maintainers
 
 # Service discovery.
 /discovery/kubernetes @brancz @prometheus/default-maintainers
