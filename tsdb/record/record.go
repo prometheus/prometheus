@@ -58,6 +58,8 @@ const (
 	CustomBucketsHistogramSamples Type = 9
 	// CustomBucketsFloatHistogramSamples is used to match WAL records of type Float Histogram with custom buckets.
 	CustomBucketsFloatHistogramSamples Type = 10
+	// SamplesWithST is an enhanced sample record that allows storing an optional ST per sample.
+	SamplesWithST Type = 11
 )
 
 func (rt Type) String() string {
@@ -66,6 +68,8 @@ func (rt Type) String() string {
 		return "series"
 	case Samples:
 		return "samples"
+	case SamplesWithST:
+		return "samples-with-st"
 	case Tombstones:
 		return "tombstones"
 	case Exemplars:
@@ -157,12 +161,12 @@ type RefSeries struct {
 	Labels labels.Labels
 }
 
-// RefSample is a timestamp/value pair associated with a reference to a series.
+// RefSample is a timestamp/st/value struct associated with a reference to a series.
 // TODO(beorn7): Perhaps make this "polymorphic", including histogram and float-histogram pointers? Then get rid of RefHistogramSample.
 type RefSample struct {
-	Ref chunks.HeadSeriesRef
-	T   int64
-	V   float64
+	Ref   chunks.HeadSeriesRef
+	ST, T int64
+	V     float64
 }
 
 // RefMetadata is the metadata associated with a series ID.
@@ -182,6 +186,7 @@ type RefExemplar struct {
 }
 
 // RefHistogramSample is a histogram.
+// TODO(bwplotka): Add support for ST.
 type RefHistogramSample struct {
 	Ref chunks.HeadSeriesRef
 	T   int64
@@ -189,6 +194,7 @@ type RefHistogramSample struct {
 }
 
 // RefFloatHistogramSample is a float histogram.
+// TODO(bwplotka): Add support for ST.
 type RefFloatHistogramSample struct {
 	Ref chunks.HeadSeriesRef
 	T   int64
@@ -220,7 +226,7 @@ func (*Decoder) Type(rec []byte) Type {
 		return Unknown
 	}
 	switch t := Type(rec[0]); t {
-	case Series, Samples, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples, CustomBucketsHistogramSamples, CustomBucketsFloatHistogramSamples:
+	case Series, Samples, SamplesWithST, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples, CustomBucketsHistogramSamples, CustomBucketsFloatHistogramSamples:
 		return t
 	}
 	return Unknown
@@ -311,12 +317,19 @@ func (d *Decoder) DecodeLabels(dec *encoding.Decbuf) labels.Labels {
 }
 
 // Samples appends samples in rec to the given slice.
-func (*Decoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) {
+func (d *Decoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) {
 	dec := encoding.Decbuf{B: rec}
-
-	if Type(dec.Byte()) != Samples {
-		return nil, errors.New("invalid record type")
+	switch typ := dec.Byte(); Type(typ) {
+	case Samples:
+		return d.samples(&dec, samples)
+	case SamplesWithST:
+		return d.samplesWithST(&dec, samples)
+	default:
+		return nil, fmt.Errorf("invalid record type %v, expected Samples(2) or SamplesWithST(11)", typ)
 	}
+}
+
+func (*Decoder) samples(dec *encoding.Decbuf, samples []RefSample) ([]RefSample, error) {
 	if dec.Len() == 0 {
 		return samples, nil
 	}
@@ -335,6 +348,42 @@ func (*Decoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) {
 
 		samples = append(samples, RefSample{
 			Ref: chunks.HeadSeriesRef(int64(baseRef) + dref),
+			T:   baseTime + dtime,
+			V:   math.Float64frombits(val),
+		})
+	}
+
+	if dec.Err() != nil {
+		return nil, fmt.Errorf("decode error after %d samples: %w", len(samples), dec.Err())
+	}
+	if len(dec.B) > 0 {
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return samples, nil
+}
+
+func (*Decoder) samplesWithST(dec *encoding.Decbuf, samples []RefSample) ([]RefSample, error) {
+	if dec.Len() == 0 {
+		return samples, nil
+	}
+	var (
+		baseRef  = dec.Be64()
+		baseST   = dec.Be64int64()
+		baseTime = dec.Be64int64()
+	)
+	// Allow 1 byte for each varint and 8 for the value; the output slice must be at least that big.
+	if minSize := dec.Len() / (1 + 1 + 1 + 8); cap(samples) < minSize {
+		samples = make([]RefSample, 0, minSize)
+	}
+	for len(dec.B) > 0 && dec.Err() == nil {
+		dref := dec.Varint64()
+		dST := dec.Varint64()
+		dtime := dec.Varint64()
+		val := dec.Be64()
+
+		samples = append(samples, RefSample{
+			Ref: chunks.HeadSeriesRef(int64(baseRef) + dref),
+			ST:  baseST + dST,
 			T:   baseTime + dtime,
 			V:   math.Float64frombits(val),
 		})
@@ -702,7 +751,17 @@ func EncodeLabels(buf *encoding.Encbuf, lbls labels.Labels) {
 }
 
 // Samples appends the encoded samples to b and returns the resulting slice.
-func (*Encoder) Samples(samples []RefSample, b []byte) []byte {
+// Depending on the ST existence it either writes Samples or SamplesWithST record.
+func (e *Encoder) Samples(samples []RefSample, b []byte) []byte {
+	for _, s := range samples {
+		if s.ST != 0 {
+			return e.samplesWithST(samples, b)
+		}
+	}
+	return e.samples(samples, b)
+}
+
+func (*Encoder) samples(samples []RefSample, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(Samples))
 
@@ -719,6 +778,33 @@ func (*Encoder) Samples(samples []RefSample, b []byte) []byte {
 
 	for _, s := range samples {
 		buf.PutVarint64(int64(s.Ref) - int64(first.Ref))
+		buf.PutVarint64(s.T - first.T)
+		buf.PutBE64(math.Float64bits(s.V))
+	}
+	return buf.Get()
+}
+
+func (*Encoder) samplesWithST(samples []RefSample, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(SamplesWithST))
+
+	if len(samples) == 0 {
+		return buf.Get()
+	}
+
+	// Store base timestamp, base ST and base reference number of first sample.
+	// All samples encode their timestamp, ST and ref as delta to those.
+	// TODO(ridwanmsharif): Should the timestamp be encoded as a delta with the
+	// ST?
+	first := samples[0]
+
+	buf.PutBE64(uint64(first.Ref))
+	buf.PutBE64int64(first.ST)
+	buf.PutBE64int64(first.T)
+
+	for _, s := range samples {
+		buf.PutVarint64(int64(s.Ref) - int64(first.Ref))
+		buf.PutVarint64(s.ST - first.ST)
 		buf.PutVarint64(s.T - first.T)
 		buf.PutBE64(math.Float64bits(s.V))
 	}
