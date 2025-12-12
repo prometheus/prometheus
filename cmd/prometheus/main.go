@@ -51,6 +51,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	promslogflag "github.com/prometheus/common/promslog/flag"
+	"github.com/prometheus/common/secrets"
 	"github.com/prometheus/common/version"
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	"go.uber.org/atomic"
@@ -660,6 +661,20 @@ func main() {
 		logger.Error(fmt.Sprintf("Error loading dynamic scrape config files from config (--config.file=%q)", cfg.configFile), "file", absPath, "err", err)
 		os.Exit(2)
 	}
+	var (
+		secretsManager *secrets.Manager
+	)
+	// needs logger: logger.With("component", "secrets manager")
+	secretsManager, err = secrets.NewManager(context.Background(), prometheus.DefaultRegisterer, secrets.Providers, cfgFile)
+	if err != nil {
+		absPath, pathErr := filepath.Abs(cfg.configFile)
+		if pathErr != nil {
+			absPath = cfg.configFile
+		}
+		logger.Error(fmt.Sprintf("Error parsing secrets from config (--config.file=%q)", cfg.configFile), "file", absPath, "err", err)
+		os.Exit(2)
+
+	}
 
 	// Parse rule files to verify they exist and contain valid rules.
 	if err := rules.ParseFiles(cfgFile.RuleFiles, cfgFile.GlobalConfig.MetricNameValidationScheme); err != nil {
@@ -1124,6 +1139,20 @@ func main() {
 		)
 	}
 	{
+		// Secrets manager.
+		g.Add(
+			func() error {
+				secretsManager.Start(nil)
+				logger.Info("Secret manager stopped")
+				return nil
+			},
+			func(error) {
+				logger.Info("Stopping scrape discovery manager...")
+				cancelScrape()
+			},
+		)
+	}
+	{
 		// Scrape discovery manager.
 		g.Add(
 			func() error {
@@ -1233,7 +1262,7 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, secretsManager, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else if cfg.enableAutoReload {
 							checksum, err = config.GenerateChecksum(cfg.configFile)
@@ -1242,7 +1271,7 @@ func main() {
 							}
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, secretsManager, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -1267,7 +1296,7 @@ func main() {
 						}
 						logger.Info("Configuration file change detected, reloading the configuration.")
 
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, secretsManager, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else {
 							checksum = currentChecksum
@@ -1297,7 +1326,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, func(bool) {}, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, secretsManager, func(bool) {}, reloaders...); err != nil {
 					return fmt.Errorf("error loading config from %q: %w", cfg.configFile, err)
 				}
 
@@ -1526,7 +1555,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
+func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, secretsManager *secrets.Manager, callback func(bool), rls ...reloader) (err error) {
 	start := time.Now()
 	timingsLogger := logger
 	logger.Info("Loading configuration file", "filename", filename)
@@ -1551,6 +1580,10 @@ func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logg
 		if conf.StorageConfig.ExemplarsConfig == nil {
 			conf.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
 		}
+	}
+
+	if err := secretsManager.HydrateConfig(nil, conf); err != nil {
+		return err
 	}
 
 	failed := false
