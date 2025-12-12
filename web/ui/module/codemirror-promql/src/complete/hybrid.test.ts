@@ -29,6 +29,7 @@ import {
 import { EqlSingle, Neq } from '@prometheus-io/lezer-promql';
 import { syntaxTree } from '@codemirror/language';
 import { newCompleteStrategy } from './index';
+import nock from 'nock';
 
 describe('analyzeCompletion test', () => {
   const testCases = [
@@ -1452,5 +1453,45 @@ describe('autocomplete promQL test', () => {
       const result = await completion.promQL(context);
       expect(value.expectedResult).toEqual(result);
     });
+  });
+
+  it('online autocomplete of openmetrics counter', async () => {
+    const metricName = 'direct_notifications_total';
+    const baseMetricName = 'direct_notifications';
+    nock('http://localhost:8080')
+      .get('/api/v1/label/__name__/values')
+      .query(true)
+      .reply(200, { status: 'success', data: [metricName] });
+    nock('http://localhost:8080').get('/api/v1/metadata').query(true).reply(200, {
+      status: 'success',
+      data: {
+        [baseMetricName]: [
+          {
+            type: 'counter',
+            help: 'Number of direct notifications.',
+            unit: '',
+          },
+        ],
+      },
+    });
+    const state = createEditorState(metricName);
+    const context = new CompletionContext(state, metricName.length, true);
+    const completion = newCompleteStrategy({ remote: { url: 'http://localhost:8080' } });
+    const result = await completion.promQL(context);
+    const expected = {
+      options: [
+        {
+          label: metricName,
+          type: 'constant',
+          detail: 'counter',
+          info: 'Number of direct notifications.',
+        },
+      ].concat(functionIdentifierTerms, aggregateOpTerms, numberTerms, snippets),
+      from: 0,
+      to: metricName.length,
+      validFor: /^[a-zA-Z0-9_:]+$/,
+    };
+    // nock doesn't mock the entire functionality of the server, so we have to filter the result
+    expect(result.options.filter((c) => c.label === metricName)).toEqual(expected.options.filter((c) => c.label === metricName));
   });
 });

@@ -693,7 +693,13 @@ export class HybridComplete implements CompleteStrategy {
             // histogram/summary suffixes, it may be a metric that is not following naming
             // conventions, see https://github.com/prometheus/prometheus/issues/16907).
             // Then fall back to the base metric name if full metadata doesn't exist.
-            const metadata = metricMetadata[metricName] ?? metricMetadata[metricName.replace(/(_count|_sum|_bucket)$/, '')];
+            // For OpenMetrics counters, metadata is stored without the _total suffix,
+            // so we also check the base name for metrics ending in _total.
+            let metadata = metricMetadata[metricName] ?? metricMetadata[metricName.replace(/(_count|_sum|_bucket)$/, '')];
+            if (!metadata && metricName.endsWith('_total')) {
+              // OpenMetrics counters: metadata is stored under base name without _total
+              metadata = metricMetadata[metricName.slice(0, -6)];
+            }
             if (metadata) {
               if (metadata.length > 1) {
                 // it means the metricName has different possible helper and type
