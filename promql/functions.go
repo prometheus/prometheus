@@ -400,6 +400,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 		annos.Add(annotations.NewNativeHistogramNotGaugeWarning(metricName, pos))
 	}
 
+	h.CounterResetHint = histogram.GaugeType
 	return h.Compact(0), annos
 }
 

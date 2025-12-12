@@ -176,7 +176,7 @@ func TestRuleEvalDuplicate(t *testing.T) {
 	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
 	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
-	require.EqualError(t, err, "vector contains metrics with the same labelset after applying rule labels")
+	require.ErrorIs(t, err, ErrDuplicateRecordingLabelSet)
 }
 
 func TestRecordingRuleLimit(t *testing.T) {

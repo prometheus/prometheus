@@ -95,6 +95,25 @@ func TestExprString(t *testing.T) {
 			out: `a - c`,
 		},
 		{
+			// This is a bit of an odd case, but valid. If the user specifies ignoring() with
+			// no labels, it means that both label sets have to be exactly the same on both
+			// sides (except for the metric name). This is the same behavior as specifying
+			// no matching modifier at all, but if the user wants to include the metric name
+			// from either side in the output via group_x(__name__), they have to specify
+			// ignoring() explicitly to be able to do so, since the grammar does not allow
+			// grouping modifiers without either ignoring(...) or on(...). So we need to
+			// preserve the empty ignoring() clause in this case.
+			//
+			//   a - group_left(__name__) c             <--- Parse error
+			//   a - ignoring() group_left(__name__) c  <--- Valid
+			in:  `a - ignoring() group_left(__metric__) c`,
+			out: `a - ignoring () group_left (__metric__) c`,
+		},
+		{
+			in:  `a - ignoring() group_left c`,
+			out: `a - ignoring () group_left () c`,
+		},
+		{
 			in: `up > bool 0`,
 		},
 		{

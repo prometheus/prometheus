@@ -96,7 +96,7 @@ func (c *Client) Write(samples model.Samples) error {
 		p := influx.NewPoint(
 			string(s.Metric[model.MetricNameLabel]),
 			tagsFromMetric(s.Metric),
-			map[string]interface{}{"value": v},
+			map[string]any{"value": v},
 			s.Timestamp.Time(),
 		)
 		points = append(points, p)
@@ -158,16 +158,17 @@ func (c *Client) buildCommand(q *prompb.Query) (string, error) {
 
 	// If we don't find a metric name matcher, query all metrics
 	// (InfluxDB measurements) by default.
-	measurement := `r._measurement`
+	var measurement strings.Builder
+	measurement.WriteString(`r._measurement`)
 	matchers := make([]string, 0, len(q.Matchers))
 	var joinedMatchers string
 	for _, m := range q.Matchers {
 		if m.Name == model.MetricNameLabel {
 			switch m.Type {
 			case prompb.LabelMatcher_EQ:
-				measurement += fmt.Sprintf(" == \"%s\"", m.Value)
+				measurement.WriteString(fmt.Sprintf(" == \"%s\"", m.Value))
 			case prompb.LabelMatcher_RE:
-				measurement += fmt.Sprintf(" =~ /%s/", escapeSlashes(m.Value))
+				measurement.WriteString(fmt.Sprintf(" =~ /%s/", escapeSlashes(m.Value)))
 			default:
 				// TODO: Figure out how to support these efficiently.
 				return "", errors.New("non-equal or regex-non-equal matchers are not supported on the metric name yet")
@@ -195,7 +196,7 @@ func (c *Client) buildCommand(q *prompb.Query) (string, error) {
 	// _measurement must be retained, otherwise "invalid metric name" shall be thrown
 	command := fmt.Sprintf(
 		"from(bucket: \"%s\") |> range(%s) |> filter(fn: (r) => %s%s)",
-		c.bucket, rangeInNs, measurement, joinedMatchers,
+		c.bucket, rangeInNs, measurement.String(), joinedMatchers,
 	)
 
 	return command, nil
@@ -237,7 +238,7 @@ func mergeResult(labelsToSeries map[string]*prompb.TimeSeries, record *query.Flu
 	return nil
 }
 
-func filterOutBuiltInLabels(labels map[string]interface{}) {
+func filterOutBuiltInLabels(labels map[string]any) {
 	delete(labels, "table")
 	delete(labels, "_start")
 	delete(labels, "_stop")
@@ -248,7 +249,7 @@ func filterOutBuiltInLabels(labels map[string]interface{}) {
 	delete(labels, "_measurement")
 }
 
-func concatLabels(labels map[string]interface{}) string {
+func concatLabels(labels map[string]any) string {
 	// 0xff cannot occur in valid UTF-8 sequences, so use it
 	// as a separator here.
 	separator := "\xff"
@@ -259,7 +260,7 @@ func concatLabels(labels map[string]interface{}) string {
 	return strings.Join(pairs, separator)
 }
 
-func tagsToLabelPairs(name string, tags map[string]interface{}) []prompb.Label {
+func tagsToLabelPairs(name string, tags map[string]any) []prompb.Label {
 	pairs := make([]prompb.Label, 0, len(tags))
 	for k, v := range tags {
 		if v == nil {
@@ -283,7 +284,7 @@ func tagsToLabelPairs(name string, tags map[string]interface{}) []prompb.Label {
 	return pairs
 }
 
-func valuesToSamples(timestamp time.Time, value interface{}) (prompb.Sample, error) {
+func valuesToSamples(timestamp time.Time, value any) (prompb.Sample, error) {
 	var valueFloat64 float64
 	var valueInt64 int64
 	var ok bool

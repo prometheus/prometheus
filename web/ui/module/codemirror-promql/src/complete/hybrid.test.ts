@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { analyzeCompletion, computeStartCompletePosition, ContextKind } from './hybrid';
+import { analyzeCompletion, computeStartCompletePosition, ContextKind, durationWithUnitRegexp } from './hybrid';
 import { createEditorState, mockedMetricsTerms, mockPrometheusServer } from '../test/utils-test';
 import { Completion, CompletionContext } from '@codemirror/autocomplete';
 import {
@@ -560,6 +560,18 @@ describe('analyzeCompletion test', () => {
       expectedContext: [{ kind: ContextKind.Duration }],
     },
     {
+      title: 'do not autocomplete duration when unit already present in matrixSelector',
+      expr: 'rate(foo[5m])',
+      pos: 10,
+      expectedContext: [],
+    },
+    {
+      title: 'do not autocomplete duration when multi char unit already present in matrixSelector',
+      expr: 'rate(foo[5ms])',
+      pos: 10,
+      expectedContext: [],
+    },
+    {
       title: 'autocomplete duration for a subQuery',
       expr: 'go[5d:5]',
       pos: 7,
@@ -626,6 +638,42 @@ describe('analyzeCompletion test', () => {
       const node = syntaxTree(state).resolve(value.pos, -1);
       const result = analyzeCompletion(state, node, value.pos);
       expect(value.expectedContext).toEqual(result);
+    });
+  });
+});
+
+describe('durationWithUnitRegexp test', () => {
+  it('should match complete durations with units', () => {
+    const testCases = [
+      { input: '5m', expected: true },
+      { input: '30s', expected: true },
+      { input: '1h', expected: true },
+      { input: '500ms', expected: true },
+      { input: '2d', expected: true },
+      { input: '1w', expected: true },
+      { input: '1y', expected: true },
+      { input: '1d2h', expected: true },
+      { input: '2h30m', expected: true },
+      { input: '1h2m3s', expected: true },
+      { input: '250ms2s', expected: true },
+      { input: '2h3m4s5ms', expected: true },
+      { input: '5', expected: false },
+      { input: '5m5', expected: false },
+      { input: 'm', expected: false },
+      { input: 'd', expected: false },
+      { input: '', expected: false },
+      { input: '1hms', expected: false },
+      { input: '2x', expected: false },
+    ];
+    testCases.forEach(({ input, expected }) => {
+      expect(durationWithUnitRegexp.test(input)).toBe(expected);
+    });
+  });
+
+  it('should not match durations without units or partial units', () => {
+    const testCases = ['5', '30', '100', '5m5', 'm', 'd'];
+    testCases.forEach((input) => {
+      expect(durationWithUnitRegexp.test(input)).toBe(false);
     });
   });
 });
@@ -1227,6 +1275,28 @@ describe('autocomplete promQL test', () => {
         from: 28,
         to: 28,
         validFor: undefined,
+      },
+    },
+    {
+      title: 'offline do not autocomplete duration when unit already present in matrixSelector',
+      expr: 'rate(foo[5m])',
+      pos: 10,
+      expectedResult: {
+        options: [],
+        from: 10,
+        to: 10,
+        validFor: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
+      title: 'offline do not autocomplete duration when multi char unit already present in matrixSelector',
+      expr: 'rate(foo[5ms])',
+      pos: 10,
+      expectedResult: {
+        options: [],
+        from: 10,
+        to: 10,
+        validFor: /^[a-zA-Z0-9_:]+$/,
       },
     },
     {

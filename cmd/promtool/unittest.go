@@ -188,15 +188,37 @@ func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
 	return nil
 }
 
+// testStartTimestamp wraps time.Time to support custom YAML unmarshaling.
+// It can parse both RFC3339 timestamps and Unix timestamps.
+type testStartTimestamp struct {
+	time.Time
+}
+
+// UnmarshalYAML implements custom YAML unmarshaling for testStartTimestamp.
+// It accepts both RFC3339 formatted strings and numeric Unix timestamps.
+func (t *testStartTimestamp) UnmarshalYAML(unmarshal func(any) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+	parsed, err := parseTime(s)
+	if err != nil {
+		return err
+	}
+	t.Time = parsed
+	return nil
+}
+
 // testGroup is a group of input series and tests associated with it.
 type testGroup struct {
-	Interval        model.Duration   `yaml:"interval"`
-	InputSeries     []series         `yaml:"input_series"`
-	AlertRuleTests  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
-	PromqlExprTests []promqlTestCase `yaml:"promql_expr_test,omitempty"`
-	ExternalLabels  labels.Labels    `yaml:"external_labels,omitempty"`
-	ExternalURL     string           `yaml:"external_url,omitempty"`
-	TestGroupName   string           `yaml:"name,omitempty"`
+	Interval        model.Duration     `yaml:"interval"`
+	InputSeries     []series           `yaml:"input_series"`
+	AlertRuleTests  []alertTestCase    `yaml:"alert_rule_test,omitempty"`
+	PromqlExprTests []promqlTestCase   `yaml:"promql_expr_test,omitempty"`
+	ExternalLabels  labels.Labels      `yaml:"external_labels,omitempty"`
+	ExternalURL     string             `yaml:"external_url,omitempty"`
+	TestGroupName   string             `yaml:"name,omitempty"`
+	StartTimestamp  testStartTimestamp `yaml:"start_timestamp,omitempty"`
 }
 
 // test performs the unit tests.
@@ -209,6 +231,8 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 		}()
 	}
 	// Setup testing suite.
+	// Set the start time from the test group.
+	queryOpts.StartTime = tg.StartTimestamp.Time
 	suite, err := promqltest.NewLazyLoader(tg.seriesLoadingString(), queryOpts)
 	if err != nil {
 		return []error{err}
@@ -237,7 +261,12 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 	groups := orderedGroups(groupsMap, groupOrderMap)
 
 	// Bounds for evaluating the rules.
-	mint := time.Unix(0, 0).UTC()
+	var mint time.Time
+	if tg.StartTimestamp.IsZero() {
+		mint = time.Unix(0, 0).UTC()
+	} else {
+		mint = tg.StartTimestamp.Time
+	}
 	maxt := mint.Add(tg.maxEvalTime())
 
 	// Optional floating point compare fuzzing.
@@ -631,13 +660,14 @@ func (la labelsAndAnnotations) String() string {
 	if len(la) == 0 {
 		return "[]"
 	}
-	s := "[\n0:" + indentLines("\n"+la[0].String(), "  ")
+	var s strings.Builder
+	s.WriteString("[\n0:" + indentLines("\n"+la[0].String(), "  "))
 	for i, l := range la[1:] {
-		s += ",\n" + strconv.Itoa(i+1) + ":" + indentLines("\n"+l.String(), "  ")
+		s.WriteString(",\n" + strconv.Itoa(i+1) + ":" + indentLines("\n"+l.String(), "  "))
 	}
-	s += "\n]"
+	s.WriteString("\n]")
 
-	return s
+	return s.String()
 }
 
 type labelAndAnnotation struct {
@@ -688,11 +718,12 @@ func parsedSamplesString(pss []parsedSample) string {
 	if len(pss) == 0 {
 		return "nil"
 	}
-	s := pss[0].String()
+	var s strings.Builder
+	s.WriteString(pss[0].String())
 	for _, ps := range pss[1:] {
-		s += ", " + ps.String()
+		s.WriteString(", " + ps.String())
 	}
-	return s
+	return s.String()
 }
 
 func (ps *parsedSample) String() string {

@@ -406,6 +406,18 @@ func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram, metric
 		// consistent with the linear interpolation known from classic
 		// histograms. It is also used for the zero bucket.
 		interpolateLinearly := func(v float64) float64 {
+			// Note: `v` is a finite value.
+			// For buckets with infinite bounds, we cannot interpolate meaningfully.
+			// For +Inf upper bound, interpolation returns the cumulative count of the previous bucket
+			// as the second term in the interpolation formula yields 0 (finite/Inf).
+			// In other words, no observations from the last bucket are considered in the fraction calculation.
+			// For -Inf lower bound, however, the second term would be (v-(-Inf))/(upperBound-(-Inf)) = Inf/Inf = NaN.
+			// To achieve the same effect of no contribution as the +Inf bucket, handle the -Inf case by returning
+			// the cumulative count at the first bucket (which equals the bucket's count).
+			// In both cases, we effectively skip interpolation within the infinite-width bucket.
+			if b.Lower == math.Inf(-1) {
+				return b.Count
+			}
 			return rank + b.Count*(v-b.Lower)/(b.Upper-b.Lower)
 		}
 
@@ -531,14 +543,34 @@ func BucketFraction(lower, upper float64, buckets Buckets) float64 {
 		rank, lowerRank, upperRank float64
 		lowerSet, upperSet         bool
 	)
+
+	// If the upper bound of the first bucket is greater than 0, we assume
+	// we are dealing with positive buckets only and lowerBound for the
+	// first bucket is set to 0; otherwise it is set to -Inf.
+	lowerBound := 0.0
+	if buckets[0].UpperBound <= 0 {
+		lowerBound = math.Inf(-1)
+	}
+
 	for i, b := range buckets {
-		lowerBound := math.Inf(-1)
 		if i > 0 {
 			lowerBound = buckets[i-1].UpperBound
 		}
 		upperBound := b.UpperBound
 
 		interpolateLinearly := func(v float64) float64 {
+			// Note: `v` is a finite value.
+			// For buckets with infinite bounds, we cannot interpolate meaningfully.
+			// For +Inf upper bound, interpolation returns the cumulative count of the previous bucket
+			// as the second term in the interpolation formula yields 0 (finite/Inf).
+			// In other words, no observations from the last bucket are considered in the fraction calculation.
+			// For -Inf lower bound, however, the second term would be (v-(-Inf))/(upperBound-(-Inf)) = Inf/Inf = NaN.
+			// To achieve the same effect of no contribution as the +Inf bucket, handle the -Inf case by returning
+			// the cumulative count at the first bucket.
+			// In both cases, we effectively skip interpolation within the infinite-width bucket.
+			if lowerBound == math.Inf(-1) {
+				return b.Count
+			}
 			return rank + (b.Count-rank)*(v-lowerBound)/(upperBound-lowerBound)
 		}
 

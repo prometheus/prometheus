@@ -1257,10 +1257,7 @@ func BenchmarkCompactionFromOOOHead(b *testing.B) {
 // This is needed for unit tests that rely on
 // checking state before and after a compaction.
 func TestDisableAutoCompactions(t *testing.T) {
-	db := openTestDB(t, nil, nil)
-	defer func() {
-		require.NoError(t, db.Close())
-	}()
+	db := newTestDB(t)
 
 	blockRange := db.compactor.(*LeveledCompactor).ranges[0]
 	label := labels.FromStrings("foo", "bar")
@@ -1418,10 +1415,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 		t.Run(title, func(t *testing.T) {
 			ctx := context.Background()
 
-			db := openTestDB(t, nil, []int64{1, 100})
-			defer func() {
-				require.NoError(t, db.Close())
-			}()
+			db := newTestDB(t, withRngs(1, 100))
 			db.DisableCompactions()
 
 			expBlocks := bootStrap(db)
@@ -1993,14 +1987,11 @@ func TestDelayedCompaction(t *testing.T) {
 			}
 			t.Parallel()
 
-			var options *Options
+			var opts *Options
 			if c.compactionDelay > 0 {
-				options = &Options{CompactionDelay: c.compactionDelay}
+				opts = &Options{CompactionDelay: c.compactionDelay}
 			}
-			db := openTestDB(t, options, []int64{10})
-			defer func() {
-				require.NoError(t, db.Close())
-			}()
+			db := newTestDB(t, withOpts(opts), withRngs(10))
 
 			label := labels.FromStrings("foo", "bar")
 

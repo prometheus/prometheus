@@ -37,15 +37,16 @@ func tree(node Node, level string) string {
 	}
 	typs := strings.Split(fmt.Sprintf("%T", node), ".")[1]
 
-	t := fmt.Sprintf("%s |---- %s :: %s\n", level, typs, node)
+	var t strings.Builder
+	t.WriteString(fmt.Sprintf("%s |---- %s :: %s\n", level, typs, node))
 
 	level += " · · ·"
 
 	for e := range ChildrenIter(node) {
-		t += tree(e, level)
+		t.WriteString(tree(e, level))
 	}
 
-	return t
+	return t.String()
 }
 
 func (node *EvalStmt) String() string {
@@ -147,12 +148,14 @@ func (node *BinaryExpr) ShortString() string {
 func (node *BinaryExpr) getMatchingStr() string {
 	matching := ""
 	vm := node.VectorMatching
-	if vm != nil && (len(vm.MatchingLabels) > 0 || vm.On) {
-		vmTag := "ignoring"
-		if vm.On {
-			vmTag = "on"
+	if vm != nil {
+		if len(vm.MatchingLabels) > 0 || vm.On || vm.Card == CardManyToOne || vm.Card == CardOneToMany {
+			vmTag := "ignoring"
+			if vm.On {
+				vmTag = "on"
+			}
+			matching = fmt.Sprintf(" %s (%s)", vmTag, strings.Join(vm.MatchingLabels, ", "))
 		}
-		matching = fmt.Sprintf(" %s (%s)", vmTag, strings.Join(vm.MatchingLabels, ", "))
 
 		if vm.Card == CardManyToOne || vm.Card == CardOneToMany {
 			vmCard := "right"

@@ -83,7 +83,6 @@ var (
 func newTritonDiscovery(c SDConfig) (*Discovery, discovery.DiscovererMetrics, error) {
 	reg := prometheus.NewRegistry()
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
-	// TODO(ptodev): Add the ability to unregister refresh metrics.
 	metrics := c.NewDiscovererMetrics(reg, refreshMetrics)
 	err := metrics.Register()
 	if err != nil {

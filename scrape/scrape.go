@@ -309,6 +309,7 @@ func (sp *scrapePool) stop() {
 		sp.metrics.targetScrapePoolTargetsAdded.DeleteLabelValues(sp.config.JobName)
 		sp.metrics.targetScrapePoolSymbolTableItems.DeleteLabelValues(sp.config.JobName)
 		sp.metrics.targetSyncIntervalLength.DeleteLabelValues(sp.config.JobName)
+		sp.metrics.targetSyncIntervalLengthHistogram.DeleteLabelValues(sp.config.JobName)
 		sp.metrics.targetSyncFailed.DeleteLabelValues(sp.config.JobName)
 	}
 }
@@ -503,6 +504,9 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	sp.checkSymbolTable()
 
 	sp.metrics.targetSyncIntervalLength.WithLabelValues(sp.config.JobName).Observe(
+		time.Since(start).Seconds(),
+	)
+	sp.metrics.targetSyncIntervalLengthHistogram.WithLabelValues(sp.config.JobName).Observe(
 		time.Since(start).Seconds(),
 	)
 	sp.metrics.targetScrapePoolSyncsCounter.WithLabelValues(sp.config.JobName).Inc()
@@ -1420,6 +1424,9 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		sl.metrics.targetIntervalLength.WithLabelValues(sl.interval.String()).Observe(
 			time.Since(last).Seconds(),
 		)
+		sl.metrics.targetIntervalLengthHistogram.WithLabelValues(sl.interval.String()).Observe(
+			time.Since(last).Seconds(),
+		)
 	}
 
 	var total, added, seriesAdded, bytesRead int
@@ -1452,7 +1459,10 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 			sl.l.Warn("Append failed", "err", err)
 		}
 		if errc != nil {
-			errc <- forcedErr
+			select {
+			case errc <- forcedErr:
+			case <-sl.ctx.Done():
+			}
 		}
 
 		return start
@@ -1489,7 +1499,10 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		}
 		sl.scrapeFailureLoggerMtx.RUnlock()
 		if errc != nil {
-			errc <- scrapeErr
+			select {
+			case errc <- scrapeErr:
+			case <-sl.ctx.Done():
+			}
 		}
 		if errors.Is(scrapeErr, errBodySizeLimit) {
 			bytesRead = -1

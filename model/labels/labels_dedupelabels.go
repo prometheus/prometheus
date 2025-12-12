@@ -24,6 +24,9 @@ import (
 	"github.com/cespare/xxhash/v2"
 )
 
+// ImplementationName is the name of the labels implementation.
+const ImplementationName = "dedupelabels"
+
 // Labels is implemented by a SymbolTable and string holding name/value
 // pairs encoded as indexes into the table in varint encoding.
 // Names are in alphabetical order.

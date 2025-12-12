@@ -498,7 +498,7 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
 
 	t.Run("Getting a non existing chunk fails with not found error", func(t *testing.T) {
-		db := newTestDBWithOpts(t, opts)
+		db := newTestDB(t, withOpts(opts))
 
 		cr := NewHeadAndOOOChunkReader(db.head, 0, 1000, nil, nil, 0)
 		defer cr.Close()
@@ -837,7 +837,7 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
-			db := newTestDBWithOpts(t, opts)
+			db := newTestDB(t, withOpts(opts))
 
 			app := db.Appender(context.Background())
 			s1Ref, _, err := scenario.appendFunc(app, s1, tc.firstInOrderSampleAt, tc.firstInOrderSampleAt/1*time.Minute.Milliseconds())
@@ -1006,7 +1006,7 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
-			db := newTestDBWithOpts(t, opts)
+			db := newTestDB(t, withOpts(opts))
 
 			app := db.Appender(context.Background())
 			s1Ref, _, err := scenario.appendFunc(app, s1, tc.firstInOrderSampleAt, tc.firstInOrderSampleAt/1*time.Minute.Milliseconds())
@@ -1117,17 +1117,4 @@ func TestSortMetaByMinTimeAndMinRef(t *testing.T) {
 			require.Equal(t, tc.expMetas, tc.inputMetas)
 		})
 	}
-}
-
-func newTestDBWithOpts(t *testing.T, opts *Options) *DB {
-	dir := t.TempDir()
-
-	db, err := Open(dir, nil, nil, opts, nil)
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		require.NoError(t, db.Close())
-	})
-
-	return db
 }

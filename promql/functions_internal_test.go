@@ -19,7 +19,22 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
+
+func TestHistogramRateCounterResetHint(t *testing.T) {
+	points := []HPoint{
+		{T: 0, H: &histogram.FloatHistogram{CounterResetHint: histogram.CounterReset, Count: 5, Sum: 5}},
+		{T: 1, H: &histogram.FloatHistogram{CounterResetHint: histogram.UnknownCounterReset, Count: 10, Sum: 10}},
+	}
+	fh, _ := histogramRate(points, false, "foo", posrange.PositionRange{})
+	require.Equal(t, histogram.GaugeType, fh.CounterResetHint)
+
+	fh, _ = histogramRate(points, true, "foo", posrange.PositionRange{})
+	require.Equal(t, histogram.GaugeType, fh.CounterResetHint)
+}
 
 func TestKahanSumInc(t *testing.T) {
 	testCases := map[string]struct {

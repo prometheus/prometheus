@@ -391,7 +391,7 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 
 	for n, e := range p.m {
 		for v, p := range e {
-			if err := f(labels.Label{Name: n, Value: v}, newListPostings(p...)); err != nil {
+			if err := f(labels.Label{Name: n, Value: v}, NewListPostings(p)); err != nil {
 				return err
 			}
 		}
@@ -478,8 +478,8 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	}
 
 	// Now `vals` only contains the values that matched, get their postings.
-	its := make([]*ListPostings, 0, len(vals))
-	lps := make([]ListPostings, len(vals))
+	its := make([]*listPostings, 0, len(vals))
+	lps := make([]listPostings, len(vals))
 	p.mtx.RLock()
 	e := p.m[name]
 	for i, v := range vals {
@@ -488,7 +488,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 			// If we didn't let the mutex go, we'd have these postings here, but they would be pointing nowhere
 			// because there would be a `MemPostings.Delete()` call waiting for the lock to delete these labels,
 			// because the series were deleted already.
-			lps[i] = ListPostings{list: refs}
+			lps[i] = listPostings{list: refs}
 			its = append(its, &lps[i])
 		}
 	}
@@ -500,13 +500,13 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 
 // Postings returns a postings iterator for the given label values.
 func (p *MemPostings) Postings(ctx context.Context, name string, values ...string) Postings {
-	res := make([]*ListPostings, 0, len(values))
-	lps := make([]ListPostings, len(values))
+	res := make([]*listPostings, 0, len(values))
+	lps := make([]listPostings, len(values))
 	p.mtx.RLock()
 	postingsMapForName := p.m[name]
 	for i, value := range values {
 		if lp := postingsMapForName[value]; lp != nil {
-			lps[i] = ListPostings{list: lp}
+			lps[i] = listPostings{list: lp}
 			res = append(res, &lps[i])
 		}
 	}
@@ -518,12 +518,12 @@ func (p *MemPostings) PostingsForAllLabelValues(ctx context.Context, name string
 	p.mtx.RLock()
 
 	e := p.m[name]
-	its := make([]*ListPostings, 0, len(e))
-	lps := make([]ListPostings, len(e))
+	its := make([]*listPostings, 0, len(e))
+	lps := make([]listPostings, len(e))
 	i := 0
 	for _, refs := range e {
 		if len(refs) > 0 {
-			lps[i] = ListPostings{list: refs}
+			lps[i] = listPostings{list: refs}
 			its = append(its, &lps[i])
 		}
 		i++
@@ -542,7 +542,7 @@ func ExpandPostings(p Postings) (res []storage.SeriesRef, err error) {
 	return res, p.Err()
 }
 
-// Postings provides iterative access over a postings list.
+// Postings provides iterative access over an ordered list of SeriesRef.
 type Postings interface {
 	// Next advances the iterator and returns true if another value was found.
 	Next() bool
@@ -827,25 +827,23 @@ func (rp *removedPostings) Err() error {
 	return rp.remove.Err()
 }
 
-// ListPostings implements the Postings interface over a plain list.
-type ListPostings struct {
+// listPostings implements the Postings interface over a plain list.
+type listPostings struct {
 	list []storage.SeriesRef
 	cur  storage.SeriesRef
 }
 
+// NewListPostings creates a Postings from the supplied SeriesRefs, which must be in order.
+// The list slice passed in is retained.
 func NewListPostings(list []storage.SeriesRef) Postings {
-	return newListPostings(list...)
+	return &listPostings{list: list}
 }
 
-func newListPostings(list ...storage.SeriesRef) *ListPostings {
-	return &ListPostings{list: list}
-}
-
-func (it *ListPostings) At() storage.SeriesRef {
+func (it *listPostings) At() storage.SeriesRef {
 	return it.cur
 }
 
-func (it *ListPostings) Next() bool {
+func (it *listPostings) Next() bool {
 	if len(it.list) > 0 {
 		it.cur = it.list[0]
 		it.list = it.list[1:]
@@ -855,7 +853,7 @@ func (it *ListPostings) Next() bool {
 	return false
 }
 
-func (it *ListPostings) Seek(x storage.SeriesRef) bool {
+func (it *listPostings) Seek(x storage.SeriesRef) bool {
 	// If the current value satisfies, then return.
 	if it.cur >= x {
 		return true
@@ -877,12 +875,12 @@ func (it *ListPostings) Seek(x storage.SeriesRef) bool {
 	return true
 }
 
-func (*ListPostings) Err() error {
+func (*listPostings) Err() error {
 	return nil
 }
 
 // Len returns the remaining number of postings in the list.
-func (it *ListPostings) Len() int {
+func (it *listPostings) Len() int {
 	return len(it.list)
 }
 

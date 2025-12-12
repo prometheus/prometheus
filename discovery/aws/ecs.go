@@ -122,7 +122,7 @@ func (c *ECSSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the ECS Config.
-func (c *ECSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *ECSSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultECSSDConfig
 	type plain ECSSDConfig
 	err := unmarshal((*plain)(c))
@@ -461,10 +461,7 @@ func (d *ECSDiscovery) describeTasks(ctx context.Context, clusterARN string, tas
 func batchSlice[T any](a []T, size int) [][]T {
 	batches := make([][]T, 0, len(a)/size+1)
 	for i := 0; i < len(a); i += size {
-		end := i + size
-		if end > len(a) {
-			end = len(a)
-		}
+		end := min(i+size, len(a))
 		batches = append(batches, a[i:end])
 	}
 	return batches

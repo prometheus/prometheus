@@ -192,8 +192,7 @@ describe("serializeNode and formatNode", () => {
           anchored: false,
           smoothed: false,
         },
-        output:
-          '{label1="value1"}',
+        output: '{label1="value1"}',
       },
 
       // Anchored and smoothed modifiers.
@@ -722,6 +721,46 @@ describe("serializeNode and formatNode", () => {
         output: "… + ignoring(label1, label2) …",
         prettyOutput: `  …
 + ignoring(label1, label2)
+  …`,
+      },
+      {
+        // Empty ignoring() without group modifiers can be stripped away.
+        node: {
+          type: nodeType.binaryExpr,
+          op: binaryOperatorType.add,
+          lhs: { type: nodeType.placeholder, children: [] },
+          rhs: { type: nodeType.placeholder, children: [] },
+          matching: {
+            card: vectorMatchCardinality.oneToOne,
+            labels: [],
+            on: false,
+            include: [],
+          },
+          bool: false,
+        },
+        output: "… + …",
+        prettyOutput: `  …
++
+  …`,
+      },
+      {
+        // Empty ignoring() with group modifiers may not be stripped away.
+        node: {
+          type: nodeType.binaryExpr,
+          op: binaryOperatorType.add,
+          lhs: { type: nodeType.placeholder, children: [] },
+          rhs: { type: nodeType.placeholder, children: [] },
+          matching: {
+            card: vectorMatchCardinality.manyToOne,
+            labels: [],
+            on: false,
+            include: ["__name__"],
+          },
+          bool: false,
+        },
+        output: "… + ignoring() group_left(__name__) …",
+        prettyOutput: `  …
++ ignoring() group_left(__name__)
   …`,
       },
       {

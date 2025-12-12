@@ -266,22 +266,19 @@ const formatNodeInternal = (
       let matching = <></>;
       let grouping = <></>;
       const vm = node.matching;
-      if (vm !== null && (vm.labels.length > 0 || vm.on)) {
-        if (vm.on) {
+      if (vm !== null) {
+        if (
+          vm.labels.length > 0 ||
+          vm.on ||
+          vm.card === vectorMatchCardinality.manyToOne ||
+          vm.card === vectorMatchCardinality.oneToMany
+        ) {
           matching = (
             <>
               {" "}
-              <span className="promql-keyword">on</span>
-              <span className="promql-paren">(</span>
-              {labelNameList(vm.labels)}
-              <span className="promql-paren">)</span>
-            </>
-          );
-        } else {
-          matching = (
-            <>
-              {" "}
-              <span className="promql-keyword">ignoring</span>
+              <span className="promql-keyword">
+                {vm.on ? "on" : "ignoring"}
+              </span>
               <span className="promql-paren">(</span>
               {labelNameList(vm.labels)}
               <span className="promql-paren">)</span>

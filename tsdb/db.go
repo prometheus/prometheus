@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
+	"github.com/prometheus/prometheus/util/features"
 )
 
 const (
@@ -219,6 +220,27 @@ type Options struct {
 
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
+
+	// EnableSTAsZeroSample represents 'created-timestamp-zero-ingestion' feature flag.
+	// If true, ST, if non-zero and earlier than sample timestamp, will be stored
+	// as a zero sample before the actual sample.
+	//
+	// The zero sample is best-effort, only debug log on failure is emitted.
+	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
+	// is implemented.
+	EnableSTAsZeroSample bool
+
+	// EnableMetadataWALRecords represents 'metadata-wal-records' feature flag.
+	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
+	// is implemented.
+	EnableMetadataWALRecords bool
+
+	// BlockCompactionExcludeFunc is a function which returns true for blocks that should NOT be compacted.
+	// It's passed down to the TSDB compactor.
+	BlockCompactionExcludeFunc BlockExcludeFilterFunc
+
+	// FeatureRegistry is used to register TSDB features.
+	FeatureRegistry features.Collector
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -779,6 +801,15 @@ func Open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, st
 	var rngs []int64
 	opts, rngs = validateOpts(opts, nil)
 
+	// Register TSDB features if a registry is provided.
+	if opts.FeatureRegistry != nil {
+		opts.FeatureRegistry.Set(features.TSDB, "exemplar_storage", opts.EnableExemplarStorage)
+		opts.FeatureRegistry.Set(features.TSDB, "delayed_compaction", opts.EnableDelayedCompaction)
+		opts.FeatureRegistry.Set(features.TSDB, "isolation", !opts.IsolationDisabled)
+		opts.FeatureRegistry.Set(features.TSDB, "use_uncached_io", opts.UseUncachedIO)
+		opts.FeatureRegistry.Enable(features.TSDB, "native_histograms")
+	}
+
 	return open(dir, l, r, opts, rngs, stats)
 }
 
@@ -908,6 +939,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			EnableOverlappingCompaction: opts.EnableOverlappingCompaction,
 			PD:                          opts.PostingsDecoderFactory,
 			UseUncachedIO:               opts.UseUncachedIO,
+			BlockExcludeFilter:          opts.BlockCompactionExcludeFunc,
 		})
 	}
 	if err != nil {
@@ -968,6 +1000,8 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
+	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
+	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}
@@ -1131,9 +1165,14 @@ func (db *DB) run(ctx context.Context) {
 	}
 }
 
-// Appender opens a new appender against the database.
+// Appender opens a new Appender against the database.
 func (db *DB) Appender(ctx context.Context) storage.Appender {
 	return dbAppender{db: db, Appender: db.head.Appender(ctx)}
+}
+
+// AppenderV2 opens a new AppenderV2 against the database.
+func (db *DB) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return dbAppenderV2{db: db, AppenderV2: db.head.AppenderV2(ctx)}
 }
 
 // ApplyConfig applies a new config to the DB.
@@ -1237,6 +1276,36 @@ func (a dbAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, 
 
 func (a dbAppender) Commit() error {
 	err := a.Appender.Commit()
+
+	// We could just run this check every few minutes practically. But for benchmarks
+	// and high frequency use cases this is the safer way.
+	if a.db.head.compactable() {
+		select {
+		case a.db.compactc <- struct{}{}:
+		default:
+		}
+	}
+	return err
+}
+
+// dbAppenderV2 wraps the DB's head appender and triggers compactions on commit
+// if necessary.
+type dbAppenderV2 struct {
+	storage.AppenderV2
+	db *DB
+}
+
+var _ storage.GetRef = dbAppenderV2{}
+
+func (a dbAppenderV2) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
+	if g, ok := a.AppenderV2.(storage.GetRef); ok {
+		return g.GetRef(lset, hash)
+	}
+	return 0, labels.EmptyLabels()
+}
+
+func (a dbAppenderV2) Commit() error {
+	err := a.AppenderV2.Commit()
 
 	// We could just run this check every few minutes practically. But for benchmarks
 	// and high frequency use cases this is the safer way.
@@ -1981,6 +2050,13 @@ func (db *DB) Head() *Head {
 
 // Close the partition.
 func (db *DB) Close() error {
+	// Allow close-after-close operation for simpler use (e.g. tests).
+	select {
+	case <-db.donec:
+		return nil
+	default:
+	}
+
 	close(db.stopc)
 	if db.compactCancel != nil {
 		db.compactCancel()

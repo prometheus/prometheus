@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -72,11 +73,13 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/documentcli"
+	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/notifications"
 	prom_runtime "github.com/prometheus/prometheus/util/runtime"
@@ -235,6 +238,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "metadata-wal-records":
 				c.scrape.AppendMetadata = true
 				c.web.AppendMetadata = true
+				features.Enable(features.TSDB, "metadata_wal_records")
 				logger.Info("Experimental metadata records in WAL enabled")
 			case "promql-per-step-stats":
 				c.enablePerStepStats = true
@@ -341,10 +345,14 @@ func main() {
 			Registerer: prometheus.DefaultRegisterer,
 		},
 		web: web.Options{
-			Registerer: prometheus.DefaultRegisterer,
-			Gatherer:   prometheus.DefaultGatherer,
+			Registerer:      prometheus.DefaultRegisterer,
+			Gatherer:        prometheus.DefaultGatherer,
+			FeatureRegistry: features.DefaultRegistry,
 		},
 		promslogConfig: promslog.Config{},
+		scrape: scrape.Options{
+			FeatureRegistry: features.DefaultRegistry,
+		},
 	}
 
 	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server").UsageWriter(os.Stdout)
@@ -456,8 +464,9 @@ func main() {
 		Default("true").Hidden().BoolVar(&cfg.tsdb.EnableOverlappingCompaction)
 
 	var (
-		tsdbWALCompression     bool
-		tsdbWALCompressionType string
+		tsdbWALCompression       bool
+		tsdbWALCompressionType   string
+		tsdbDelayCompactFilePath string
 	)
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL. If false, the --storage.tsdb.wal-compression-type flag is ignored.").
 		Hidden().Default("true").BoolVar(&tsdbWALCompression)
@@ -473,6 +482,9 @@ func main() {
 
 	serverOnlyFlag(a, "storage.tsdb.delayed-compaction.max-percent", "Sets the upper limit for the random compaction delay, specified as a percentage of the head chunk range. 100 means the compaction can be delayed by up to the entire head chunk range. Only effective when the delayed-compaction feature flag is enabled.").
 		Default("10").Hidden().IntVar(&cfg.tsdb.CompactionDelayMaxPercent)
+
+	serverOnlyFlag(a, "storage.tsdb.delay-compact-file.path", "Path to a JSON file with uploaded TSDB blocks e.g. Thanos shipper meta file. If set TSDB will only compact 1 level blocks that are marked as uploaded in that file, improving external storage integrations e.g. with Thanos sidecar. 1+ level compactions won't be delayed.").
+		Default("").StringVar(&tsdbDelayCompactFilePath)
 
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
@@ -703,6 +715,12 @@ func main() {
 		}
 	}
 
+	if tsdbDelayCompactFilePath != "" {
+		logger.Info("Compactions will be delayed for blocks not marked as uploaded in the file tracking uploads", "path", tsdbDelayCompactFilePath)
+		cfg.tsdb.BlockCompactionExcludeFunc = exludeBlocksPendingUpload(
+			logger, tsdbDelayCompactFilePath)
+	}
+
 	// Now that the validity of the config is established, set the config
 	// success metrics accordingly, although the config isn't really loaded
 	// yet. This will happen later (including setting these metrics again),
@@ -786,6 +804,12 @@ func main() {
 		"vm_limits", prom_runtime.VMLimits(),
 	)
 
+	features.Set(features.Prometheus, "agent_mode", agentMode)
+	features.Set(features.Prometheus, "server_mode", !agentMode)
+	features.Set(features.Prometheus, "auto_reload_config", cfg.enableAutoReload)
+	features.Enable(features.Prometheus, labels.ImplementationName)
+	template.RegisterFeatures(features.DefaultRegistry)
+
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
@@ -822,13 +846,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	discoveryManagerScrape = discovery.NewManager(ctxScrape, logger.With("component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, refreshMetrics, discovery.Name("scrape"))
+	discoveryManagerScrape = discovery.NewManager(ctxScrape, logger.With("component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, refreshMetrics, discovery.Name("scrape"), discovery.FeatureRegistry(features.DefaultRegistry))
+
 	if discoveryManagerScrape == nil {
 		logger.Error("failed to create a discovery manager scrape")
 		os.Exit(1)
 	}
 
-	discoveryManagerNotify = discovery.NewManager(ctxNotify, logger.With("component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, refreshMetrics, discovery.Name("notify"))
+	discoveryManagerNotify = discovery.NewManager(ctxNotify, logger.With("component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, refreshMetrics, discovery.Name("notify"), discovery.FeatureRegistry(features.DefaultRegistry))
 	if discoveryManagerNotify == nil {
 		logger.Error("failed to create a discovery manager notify")
 		os.Exit(1)
@@ -869,6 +894,7 @@ func main() {
 			EnablePerStepStats:       cfg.enablePerStepStats,
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
+			FeatureRegistry:          features.DefaultRegistry,
 		}
 
 		queryEngine = promql.NewEngine(opts)
@@ -891,6 +917,7 @@ func main() {
 			DefaultRuleQueryOffset: func() time.Duration {
 				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
 			},
+			FeatureRegistry: features.DefaultRegistry,
 		})
 	}
 
@@ -1883,6 +1910,7 @@ type tsdbOptions struct {
 	CompactionDelayMaxPercent      int
 	EnableOverlappingCompaction    bool
 	UseUncachedIO                  bool
+	BlockCompactionExcludeFunc     tsdb.BlockExcludeFilterFunc
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1906,6 +1934,8 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
 		UseUncachedIO:                  opts.UseUncachedIO,
+		BlockCompactionExcludeFunc:     opts.BlockCompactionExcludeFunc,
+		FeatureRegistry:                features.DefaultRegistry,
 	}
 }
 
@@ -1969,4 +1999,49 @@ func (p *rwProtoMsgFlagParser) Set(opt string) error {
 	}
 	*p.msgs = append(*p.msgs, t)
 	return nil
+}
+
+type UploadMeta struct {
+	Uploaded []string `json:"uploaded"`
+}
+
+// Cache the last read UploadMeta.
+var (
+	tsdbDelayCompactLastMeta     *UploadMeta // The content of uploadMetaPath from the last time we've opened it.
+	tsdbDelayCompactLastMetaTime time.Time   // The timestamp at which we stored tsdbDelayCompactLastMeta last time.
+)
+
+func exludeBlocksPendingUpload(logger *slog.Logger, uploadMetaPath string) tsdb.BlockExcludeFilterFunc {
+	return func(meta *tsdb.BlockMeta) bool {
+		if meta.Compaction.Level > 1 {
+			// Blocks with level > 1 are assumed to be not uploaded, thus no need to delay those.
+			// See `storage.tsdb.delay-compact-file.path` flag for detail.
+			return false
+		}
+
+		// If we have cached uploadMetaPath content that was stored in the last minute the use it.
+		if tsdbDelayCompactLastMeta != nil &&
+			tsdbDelayCompactLastMetaTime.After(time.Now().UTC().Add(time.Minute*-1)) {
+			return !slices.Contains(tsdbDelayCompactLastMeta.Uploaded, meta.ULID.String())
+		}
+
+		// We don't have anything cached or it's older than a minute. Try to open and parse the uploadMetaPath path.
+		data, err := os.ReadFile(uploadMetaPath)
+		if err != nil {
+			logger.Warn("cannot open TSDB upload meta file", slog.String("path", uploadMetaPath), slog.Any("err", err))
+			return false
+		}
+
+		var uploadMeta UploadMeta
+		if err = json.Unmarshal(data, &uploadMeta); err != nil {
+			logger.Warn("cannot parse TSDB upload meta file", slog.String("path", uploadMetaPath), slog.Any("err", err))
+			return false
+		}
+
+		// We have parsed the uploadMetaPath file, cache it.
+		tsdbDelayCompactLastMeta = &uploadMeta
+		tsdbDelayCompactLastMetaTime = time.Now().UTC()
+
+		return !slices.Contains(uploadMeta.Uploaded, meta.ULID.String())
+	}
 }

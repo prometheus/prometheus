@@ -63,8 +63,9 @@ type DiscovererOptions struct {
 // We define them here in the "discovery" package in order to avoid a cyclic dependency between
 // "discovery" and "refresh".
 type RefreshMetrics struct {
-	Failures prometheus.Counter
-	Duration prometheus.Observer
+	Failures          prometheus.Counter
+	Duration          prometheus.Observer
+	DurationHistogram prometheus.Observer
 }
 
 // RefreshMetricsInstantiator instantiates the metrics used by the "refresh" package.

@@ -107,49 +107,6 @@ func BenchmarkCreateSeries(b *testing.B) {
 	}
 }
 
-func BenchmarkHeadAppender_Append_Commit_ExistingSeries(b *testing.B) {
-	seriesCounts := []int{100, 1000, 10000}
-	series := genSeries(10000, 10, 0, 0)
-
-	for _, seriesCount := range seriesCounts {
-		b.Run(fmt.Sprintf("%d series", seriesCount), func(b *testing.B) {
-			for _, samplesPerAppend := range []int64{1, 2, 5, 100} {
-				b.Run(fmt.Sprintf("%d samples per append", samplesPerAppend), func(b *testing.B) {
-					h, _ := newTestHead(b, 10000, compression.None, false)
-					b.Cleanup(func() { require.NoError(b, h.Close()) })
-
-					ts := int64(1000)
-					appendSamples := func() error {
-						var err error
-						app := h.Appender(context.Background())
-						for _, s := range series[:seriesCount] {
-							var ref storage.SeriesRef
-							for sampleIndex := range samplesPerAppend {
-								ref, err = app.Append(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex))
-								if err != nil {
-									return err
-								}
-							}
-						}
-						ts += 1000 // should increment more than highest samplesPerAppend
-						return app.Commit()
-					}
-
-					// Init series, that's not what we're benchmarking here.
-					require.NoError(b, appendSamples())
-
-					b.ReportAllocs()
-					b.ResetTimer()
-
-					for b.Loop() {
-						require.NoError(b, appendSamples())
-					}
-				})
-			}
-		})
-	}
-}
-
 func populateTestWL(t testing.TB, w *wlog.WL, recs []any, buf []byte) []byte {
 	var enc record.Encoder
 	for _, r := range recs {
@@ -5941,7 +5898,7 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 	}
 }
 
-func testOOOAppendWithNoSeries(t *testing.T, appendFunc func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error)) {
+func testOOOAppendWithNoSeries(t *testing.T, appendFunc func(appender storage.LimitedAppenderV1, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error)) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
 	require.NoError(t, err)
@@ -6284,6 +6241,7 @@ func TestSnapshotAheadOfWALError(t *testing.T) {
 	require.NoError(t, head.Close())
 }
 
+// TODO(bwplotka): Bad benchmark (no b.Loop/b.N), fix or remove.
 func BenchmarkCuttingHeadHistogramChunks(b *testing.B) {
 	const (
 		numSamples = 50000
@@ -6525,19 +6483,19 @@ func TestWALSampleAndExemplarOrder(t *testing.T) {
 			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
 				return app.Append(0, lbls, ts, 1.0)
 			},
-			expectedType: reflect.TypeOf([]record.RefSample{}),
+			expectedType: reflect.TypeFor[[]record.RefSample](),
 		},
 		"histogram sample": {
 			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
 				return app.AppendHistogram(0, lbls, ts, tsdbutil.GenerateTestHistogram(1), nil)
 			},
-			expectedType: reflect.TypeOf([]record.RefHistogramSample{}),
+			expectedType: reflect.TypeFor[[]record.RefHistogramSample](),
 		},
 		"float histogram sample": {
 			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
 				return app.AppendHistogram(0, lbls, ts, nil, tsdbutil.GenerateTestFloatHistogram(1))
 			},
-			expectedType: reflect.TypeOf([]record.RefFloatHistogramSample{}),
+			expectedType: reflect.TypeFor[[]record.RefFloatHistogramSample](),
 		},
 	}
 
@@ -6579,6 +6537,8 @@ func TestWALSampleAndExemplarOrder(t *testing.T) {
 // would trigger the
 // `signal SIGSEGV: segmentation violation code=0x1 addr=0x20 pc=0xbb03d1`
 // panic, that we have seen in the wild once.
+//
+// TODO(bwplotka): This no longer can happen in AppenderV2, remove once AppenderV1 is removed, see #17632.
 func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 	h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
 	app := h.Appender(context.Background())
