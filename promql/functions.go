@@ -200,8 +200,8 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 	// We need either at least two Histograms and no Floats, or at least two
 	// Floats and no Histograms to calculate a rate. Otherwise, drop this
 	// Vector element.
-	metricName := samples.Metric.Get(labels.MetricName)
 	if len(samples.Histograms) > 0 && len(samples.Floats) > 0 {
+		metricName := samples.Metric.Get(model.MetricNameLabel)
 		return enh.Out, annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
 	}
 
@@ -210,7 +210,10 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 		numSamplesMinusOne = len(samples.Histograms) - 1
 		firstT = samples.Histograms[0].T
 		lastT = samples.Histograms[numSamplesMinusOne].T
-		var newAnnos annotations.Annotations
+		var (
+			newAnnos   annotations.Annotations
+			metricName = samples.Metric.Get(model.MetricNameLabel)
+		)
 		resultHistogram, newAnnos = histogramRate(samples.Histograms, isCounter, metricName, args[0].PositionRange())
 		annos.Merge(newAnnos)
 		if resultHistogram == nil {
@@ -431,10 +434,9 @@ func funcIdelta(_ []Vector, matrixVals Matrix, args parser.Expressions, enh *Eva
 
 func instantValue(vals Matrix, args parser.Expressions, out Vector, isRate bool) (Vector, annotations.Annotations) {
 	var (
-		samples    = vals[0]
-		metricName = samples.Metric.Get(labels.MetricName)
-		ss         = make([]Sample, 0, 2)
-		annos      annotations.Annotations
+		samples = vals[0]
+		ss      = make([]Sample, 0, 2)
+		annos   annotations.Annotations
 	)
 
 	// No sense in trying to compute a rate without at least two points. Drop
@@ -497,6 +499,7 @@ func instantValue(vals Matrix, args parser.Expressions, out Vector, isRate bool)
 		// In case of a counter reset, we leave resultSample at
 		// its current value, which is already ss[1].
 	case ss[1].H != nil && ss[0].H != nil:
+		metricName := samples.Metric.Get(model.MetricNameLabel)
 		resultSample.H = ss[1].H.Copy()
 		// irate should only be applied to counters.
 		if isRate && (ss[1].H.CounterResetHint == histogram.GaugeType || ss[0].H.CounterResetHint == histogram.GaugeType) {
@@ -523,6 +526,7 @@ func instantValue(vals Matrix, args parser.Expressions, out Vector, isRate bool)
 		resultSample.H.Compact(0)
 	default:
 		// Mix of a float and a histogram.
+		metricName := samples.Metric.Get(model.MetricNameLabel)
 		return out, annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args.PositionRange()))
 	}
 
@@ -565,7 +569,6 @@ func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
 // https://en.wikipedia.org/wiki/Exponential_smoothing .
 func funcDoubleExponentialSmoothing(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := matrixVal[0]
-	metricName := samples.Metric.Get(labels.MetricName)
 	// The smoothing factor argument.
 	sf := vectorVals[0][0].F
 
@@ -586,6 +589,7 @@ func funcDoubleExponentialSmoothing(vectorVals []Vector, matrixVal Matrix, args 
 	if l < 2 {
 		// Annotate mix of float and histogram.
 		if l == 1 && len(samples.Histograms) > 0 {
+			metricName := samples.Metric.Get(model.MetricNameLabel)
 			return enh.Out, annotations.New().Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 		}
 		return enh.Out, nil
@@ -609,6 +613,7 @@ func funcDoubleExponentialSmoothing(vectorVals []Vector, matrixVal Matrix, args 
 		s0, s1 = s1, x+y
 	}
 	if len(samples.Histograms) > 0 {
+		metricName := samples.Metric.Get(model.MetricNameLabel)
 		return append(enh.Out, Sample{F: s1}), annotations.New().Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 	}
 	return append(enh.Out, Sample{F: s1}), nil
@@ -871,8 +876,8 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 			return mean, nil
 		})
 		if err != nil {
-			metricName := firstSeries.Metric.Get(labels.MetricName)
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+				metricName := firstSeries.Metric.Get(model.MetricNameLabel)
 				return enh.Out, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, args[0].PositionRange()))
 			}
 		}
@@ -1138,8 +1143,8 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 			return sum, nil
 		})
 		if err != nil {
-			metricName := firstSeries.Metric.Get(labels.MetricName)
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+				metricName := firstSeries.Metric.Get(model.MetricNameLabel)
 				return enh.Out, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, args[0].PositionRange()))
 			}
 		}
@@ -1478,13 +1483,13 @@ func linearRegression(samples []FPoint, interceptTime int64) (slope, intercept f
 // === deriv(node parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcDeriv(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := matrixVal[0]
-	metricName := samples.Metric.Get(labels.MetricName)
 
 	// No sense in trying to compute a derivative without at least two float points.
 	// Drop this Vector element.
 	if len(samples.Floats) < 2 {
 		// Annotate mix of float and histogram.
 		if len(samples.Floats) == 1 && len(samples.Histograms) > 0 {
+			metricName := samples.Metric.Get(model.MetricNameLabel)
 			return enh.Out, annotations.New().Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 		}
 		return enh.Out, nil
@@ -1495,6 +1500,7 @@ func funcDeriv(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalN
 	// https://github.com/prometheus/prometheus/issues/2674
 	slope, _ := linearRegression(samples.Floats, samples.Floats[0].T)
 	if len(samples.Histograms) > 0 {
+		metricName := samples.Metric.Get(model.MetricNameLabel)
 		return append(enh.Out, Sample{F: slope}), annotations.New().Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 	}
 	return append(enh.Out, Sample{F: slope}), nil
@@ -1504,13 +1510,13 @@ func funcDeriv(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalN
 func funcPredictLinear(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := matrixVal[0]
 	duration := vectorVals[0][0].F
-	metricName := samples.Metric.Get(labels.MetricName)
 
 	// No sense in trying to predict anything without at least two float points.
 	// Drop this Vector element.
 	if len(samples.Floats) < 2 {
 		// Annotate mix of float and histogram.
 		if len(samples.Floats) == 1 && len(samples.Histograms) > 0 {
+			metricName := samples.Metric.Get(model.MetricNameLabel)
 			return enh.Out, annotations.New().Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 		}
 		return enh.Out, nil
@@ -1518,6 +1524,7 @@ func funcPredictLinear(vectorVals []Vector, matrixVal Matrix, args parser.Expres
 
 	slope, intercept := linearRegression(samples.Floats, enh.Ts)
 	if len(samples.Histograms) > 0 {
+		metricName := samples.Metric.Get(model.MetricNameLabel)
 		return append(enh.Out, Sample{F: slope*duration + intercept}), annotations.New().Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 	}
 	return append(enh.Out, Sample{F: slope*duration + intercept}), nil
