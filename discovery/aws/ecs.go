@@ -28,6 +28,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -44,31 +45,37 @@ import (
 )
 
 const (
-	ecsLabel                 = model.MetaLabelPrefix + "ecs_"
-	ecsLabelCluster          = ecsLabel + "cluster"
-	ecsLabelClusterARN       = ecsLabel + "cluster_arn"
-	ecsLabelService          = ecsLabel + "service"
-	ecsLabelServiceARN       = ecsLabel + "service_arn"
-	ecsLabelServiceStatus    = ecsLabel + "service_status"
-	ecsLabelTaskGroup        = ecsLabel + "task_group"
-	ecsLabelTaskARN          = ecsLabel + "task_arn"
-	ecsLabelTaskDefinition   = ecsLabel + "task_definition"
-	ecsLabelRegion           = ecsLabel + "region"
-	ecsLabelAvailabilityZone = ecsLabel + "availability_zone"
-	ecsLabelAZID             = ecsLabel + "availability_zone_id"
-	ecsLabelSubnetID         = ecsLabel + "subnet_id"
-	ecsLabelIPAddress        = ecsLabel + "ip_address"
-	ecsLabelLaunchType       = ecsLabel + "launch_type"
-	ecsLabelDesiredStatus    = ecsLabel + "desired_status"
-	ecsLabelLastStatus       = ecsLabel + "last_status"
-	ecsLabelHealthStatus     = ecsLabel + "health_status"
-	ecsLabelPlatformFamily   = ecsLabel + "platform_family"
-	ecsLabelPlatformVersion  = ecsLabel + "platform_version"
-	ecsLabelTag              = ecsLabel + "tag_"
-	ecsLabelTagCluster       = ecsLabelTag + "cluster_"
-	ecsLabelTagService       = ecsLabelTag + "service_"
-	ecsLabelTagTask          = ecsLabelTag + "task_"
-	ecsLabelSeparator        = ","
+	ecsLabel                     = model.MetaLabelPrefix + "ecs_"
+	ecsLabelCluster              = ecsLabel + "cluster"
+	ecsLabelClusterARN           = ecsLabel + "cluster_arn"
+	ecsLabelService              = ecsLabel + "service"
+	ecsLabelServiceARN           = ecsLabel + "service_arn"
+	ecsLabelServiceStatus        = ecsLabel + "service_status"
+	ecsLabelTaskGroup            = ecsLabel + "task_group"
+	ecsLabelTaskARN              = ecsLabel + "task_arn"
+	ecsLabelTaskDefinition       = ecsLabel + "task_definition"
+	ecsLabelRegion               = ecsLabel + "region"
+	ecsLabelAvailabilityZone     = ecsLabel + "availability_zone"
+	ecsLabelSubnetID             = ecsLabel + "subnet_id"
+	ecsLabelIPAddress            = ecsLabel + "ip_address"
+	ecsLabelLaunchType           = ecsLabel + "launch_type"
+	ecsLabelDesiredStatus        = ecsLabel + "desired_status"
+	ecsLabelLastStatus           = ecsLabel + "last_status"
+	ecsLabelHealthStatus         = ecsLabel + "health_status"
+	ecsLabelPlatformFamily       = ecsLabel + "platform_family"
+	ecsLabelPlatformVersion      = ecsLabel + "platform_version"
+	ecsLabelTag                  = ecsLabel + "tag_"
+	ecsLabelTagCluster           = ecsLabelTag + "cluster_"
+	ecsLabelTagService           = ecsLabelTag + "service_"
+	ecsLabelTagTask              = ecsLabelTag + "task_"
+	ecsLabelTagEC2               = ecsLabelTag + "ec2_"
+	ecsLabelNetworkMode          = ecsLabel + "network_mode"
+	ecsLabelContainerInstanceARN = ecsLabel + "container_instance_arn"
+	ecsLabelEC2InstanceID        = ecsLabel + "ec2_instance_id"
+	ecsLabelEC2InstanceType      = ecsLabel + "ec2_instance_type"
+	ecsLabelEC2InstancePrivateIP = ecsLabel + "ec2_instance_private_ip"
+	ecsLabelEC2InstancePublicIP  = ecsLabel + "ec2_instance_public_ip"
+	ecsLabelPublicIP             = ecsLabel + "public_ip"
 )
 
 // DefaultECSSDConfig is the default ECS SD configuration.
@@ -153,6 +160,12 @@ type ecsClient interface {
 	DescribeServices(context.Context, *ecs.DescribeServicesInput, ...func(*ecs.Options)) (*ecs.DescribeServicesOutput, error)
 	ListTasks(context.Context, *ecs.ListTasksInput, ...func(*ecs.Options)) (*ecs.ListTasksOutput, error)
 	DescribeTasks(context.Context, *ecs.DescribeTasksInput, ...func(*ecs.Options)) (*ecs.DescribeTasksOutput, error)
+	DescribeContainerInstances(context.Context, *ecs.DescribeContainerInstancesInput, ...func(*ecs.Options)) (*ecs.DescribeContainerInstancesOutput, error)
+}
+
+type ecsEC2Client interface {
+	DescribeInstances(context.Context, *ec2.DescribeInstancesInput, ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+	DescribeNetworkInterfaces(context.Context, *ec2.DescribeNetworkInterfacesInput, ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error)
 }
 
 // ECSDiscovery periodically performs ECS-SD requests. It implements
@@ -162,6 +175,7 @@ type ECSDiscovery struct {
 	logger *slog.Logger
 	cfg    *ECSSDConfig
 	ecs    ecsClient
+	ec2    ecsEC2Client
 }
 
 // NewECSDiscovery returns a new ECSDiscovery which periodically refreshes its targets.
@@ -191,7 +205,7 @@ func NewECSDiscovery(conf *ECSSDConfig, opts discovery.DiscovererOptions) (*ECSD
 }
 
 func (d *ECSDiscovery) initEcsClient(ctx context.Context) error {
-	if d.ecs != nil {
+	if d.ecs != nil && d.ec2 != nil {
 		return nil
 	}
 
@@ -237,6 +251,10 @@ func (d *ECSDiscovery) initEcsClient(ctx context.Context) error {
 		if d.cfg.Endpoint != "" {
 			options.BaseEndpoint = &d.cfg.Endpoint
 		}
+		options.HTTPClient = client
+	})
+
+	d.ec2 = ec2.NewFromConfig(cfg, func(options *ec2.Options) {
 		options.HTTPClient = client
 	})
 
@@ -458,6 +476,113 @@ func (d *ECSDiscovery) describeTasks(ctx context.Context, clusterARN string, tas
 	return tasks, errg.Wait()
 }
 
+// describeContainerInstances returns a map of container instance ARN to EC2 instance ID
+// Uses batching to respect AWS API limits (100 container instances per request).
+func (d *ECSDiscovery) describeContainerInstances(ctx context.Context, clusterARN string, containerInstanceARNs []string) (map[string]string, error) {
+	if len(containerInstanceARNs) == 0 {
+		return make(map[string]string), nil
+	}
+
+	containerInstToEC2 := make(map[string]string)
+	batchSize := 100 // AWS API limit
+
+	for _, batch := range batchSlice(containerInstanceARNs, batchSize) {
+		resp, err := d.ecs.DescribeContainerInstances(ctx, &ecs.DescribeContainerInstancesInput{
+			Cluster:            aws.String(clusterARN),
+			ContainerInstances: batch,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("could not describe container instances: %w", err)
+		}
+
+		for _, ci := range resp.ContainerInstances {
+			if ci.ContainerInstanceArn != nil && ci.Ec2InstanceId != nil {
+				containerInstToEC2[*ci.ContainerInstanceArn] = *ci.Ec2InstanceId
+			}
+		}
+	}
+
+	return containerInstToEC2, nil
+}
+
+// ec2InstanceInfo holds information retrieved from EC2 DescribeInstances.
+type ec2InstanceInfo struct {
+	privateIP    string
+	publicIP     string
+	subnetID     string
+	instanceType string
+	tags         map[string]string
+}
+
+// describeEC2Instances returns a map of EC2 instance ID to instance information.
+func (d *ECSDiscovery) describeEC2Instances(ctx context.Context, instanceIDs []string) (map[string]ec2InstanceInfo, error) {
+	if len(instanceIDs) == 0 {
+		return make(map[string]ec2InstanceInfo), nil
+	}
+
+	instanceInfo := make(map[string]ec2InstanceInfo)
+
+	resp, err := d.ec2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+		InstanceIds: instanceIDs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("could not describe EC2 instances: %w", err)
+	}
+
+	for _, reservation := range resp.Reservations {
+		for _, instance := range reservation.Instances {
+			if instance.InstanceId != nil && instance.PrivateIpAddress != nil {
+				info := ec2InstanceInfo{
+					privateIP: *instance.PrivateIpAddress,
+					tags:      make(map[string]string),
+				}
+				if instance.PublicIpAddress != nil {
+					info.publicIP = *instance.PublicIpAddress
+				}
+				if instance.SubnetId != nil {
+					info.subnetID = *instance.SubnetId
+				}
+				if instance.InstanceType != "" {
+					info.instanceType = string(instance.InstanceType)
+				}
+				// Collect EC2 instance tags
+				for _, tag := range instance.Tags {
+					if tag.Key != nil && tag.Value != nil {
+						info.tags[*tag.Key] = *tag.Value
+					}
+				}
+				instanceInfo[*instance.InstanceId] = info
+			}
+		}
+	}
+
+	return instanceInfo, nil
+}
+
+// describeNetworkInterfaces returns a map of ENI ID to public IP address.
+func (d *ECSDiscovery) describeNetworkInterfaces(ctx context.Context, eniIDs []string) (map[string]string, error) {
+	if len(eniIDs) == 0 {
+		return make(map[string]string), nil
+	}
+
+	eniToPublicIP := make(map[string]string)
+
+	resp, err := d.ec2.DescribeNetworkInterfaces(ctx, &ec2.DescribeNetworkInterfacesInput{
+		NetworkInterfaceIds: eniIDs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("could not describe network interfaces: %w", err)
+	}
+
+	for _, eni := range resp.NetworkInterfaces {
+		if eni.NetworkInterfaceId != nil && eni.Association != nil && eni.Association.PublicIp != nil {
+			eniToPublicIP[*eni.NetworkInterfaceId] = *eni.Association.PublicIp
+		}
+	}
+
+	return eniToPublicIP, nil
+}
+
 func batchSlice[T any](a []T, size int) [][]T {
 	batches := make([][]T, 0, len(a)/size+1)
 	for i := 0; i < len(a); i += size {
@@ -554,8 +679,76 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					if tasks, exists := serviceTaskMap[serviceArn]; exists {
 						var serviceTargets []model.LabelSet
 
+						// Collect container instance ARNs for all EC2 tasks to get instance type
+						var containerInstanceARNs []string
+						taskToContainerInstance := make(map[string]string)
+						// Collect ENI IDs for awsvpc tasks to get public IPs
+						var eniIDs []string
+						taskToENI := make(map[string]string)
+
 						for _, task := range tasks {
-							// Find the ENI attachment to get the private IP address
+							// Collect container instance ARN for any task running on EC2
+							if task.ContainerInstanceArn != nil {
+								containerInstanceARNs = append(containerInstanceARNs, *task.ContainerInstanceArn)
+								taskToContainerInstance[*task.TaskArn] = *task.ContainerInstanceArn
+							}
+
+							// Collect ENI IDs from awsvpc tasks
+							for _, attachment := range task.Attachments {
+								if attachment.Type != nil && *attachment.Type == "ElasticNetworkInterface" {
+									for _, detail := range attachment.Details {
+										if detail.Name != nil && *detail.Name == "networkInterfaceId" && detail.Value != nil {
+											eniIDs = append(eniIDs, *detail.Value)
+											taskToENI[*task.TaskArn] = *detail.Value
+											break
+										}
+									}
+									break
+								}
+							}
+						}
+
+						// Batch describe container instances and EC2 instances to get instance type and other metadata
+						var containerInstToEC2 map[string]string
+						var ec2InstInfo map[string]ec2InstanceInfo
+						if len(containerInstanceARNs) > 0 {
+							var err error
+							containerInstToEC2, err = d.describeContainerInstances(ctx, clusterArn, containerInstanceARNs)
+							if err != nil {
+								d.logger.Error("Failed to describe container instances", "cluster", clusterArn, "error", err)
+								// Continue processing tasks
+							} else {
+								// Collect unique EC2 instance IDs
+								ec2InstanceIDs := make([]string, 0, len(containerInstToEC2))
+								for _, ec2ID := range containerInstToEC2 {
+									ec2InstanceIDs = append(ec2InstanceIDs, ec2ID)
+								}
+
+								// Batch describe EC2 instances
+								ec2InstInfo, err = d.describeEC2Instances(ctx, ec2InstanceIDs)
+								if err != nil {
+									d.logger.Error("Failed to describe EC2 instances", "cluster", clusterArn, "error", err)
+								}
+							}
+						}
+
+						// Batch describe ENIs to get public IPs for awsvpc tasks
+						var eniToPublicIP map[string]string
+						if len(eniIDs) > 0 {
+							var err error
+							eniToPublicIP, err = d.describeNetworkInterfaces(ctx, eniIDs)
+							if err != nil {
+								d.logger.Error("Failed to describe network interfaces", "cluster", clusterArn, "error", err)
+								// Continue processing without ENI public IPs
+							}
+						}
+
+						for _, task := range tasks {
+							var ipAddress, subnetID, publicIP string
+							var networkMode string
+							var ec2InstanceID, ec2InstanceType, ec2InstancePrivateIP, ec2InstancePublicIP string
+
+							// Try to get IP from ENI attachment (awsvpc mode)
 							var eniAttachment *types.Attachment
 							for _, attachment := range task.Attachments {
 								if attachment.Type != nil && *attachment.Type == "ElasticNetworkInterface" {
@@ -563,19 +756,65 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 									break
 								}
 							}
-							if eniAttachment == nil {
-								continue
-							}
 
-							var ipAddress, subnetID string
-							for _, detail := range eniAttachment.Details {
-								switch *detail.Name {
-								case "privateIPv4Address":
-									ipAddress = *detail.Value
-								case "subnetId":
-									subnetID = *detail.Value
+							if eniAttachment != nil {
+								// awsvpc networking mode - get IP from ENI
+								networkMode = "awsvpc"
+								for _, detail := range eniAttachment.Details {
+									switch *detail.Name {
+									case "privateIPv4Address":
+										ipAddress = *detail.Value
+									case "subnetId":
+										subnetID = *detail.Value
+									}
+								}
+								// Get public IP from ENI if available
+								if eniID, ok := taskToENI[*task.TaskArn]; ok {
+									if eniPublicIP, ok := eniToPublicIP[eniID]; ok {
+										publicIP = eniPublicIP
+									}
+								}
+							} else if task.ContainerInstanceArn != nil {
+								// bridge/host networking mode - need to get EC2 instance IP and subnet
+								networkMode = "bridge"
+								containerInstARN, ok := taskToContainerInstance[*task.TaskArn]
+								if ok {
+									ec2InstanceID, ok = containerInstToEC2[containerInstARN]
+									if ok {
+										info, ok := ec2InstInfo[ec2InstanceID]
+										if ok {
+											ipAddress = info.privateIP
+											publicIP = info.publicIP
+											subnetID = info.subnetID
+											ec2InstanceType = info.instanceType
+											ec2InstancePrivateIP = info.privateIP
+											ec2InstancePublicIP = info.publicIP
+										} else {
+											d.logger.Debug("EC2 instance info not found", "instance", ec2InstanceID, "task", *task.TaskArn)
+										}
+									} else {
+										d.logger.Debug("Container instance not found in map", "arn", containerInstARN, "task", *task.TaskArn)
+									}
 								}
 							}
+
+							// Get EC2 instance metadata for awsvpc tasks running on EC2
+							// We want the instance type and the host IPs for advanced use cases
+							if networkMode == "awsvpc" && task.ContainerInstanceArn != nil {
+								containerInstARN, ok := taskToContainerInstance[*task.TaskArn]
+								if ok {
+									ec2InstanceID, ok = containerInstToEC2[containerInstARN]
+									if ok {
+										info, ok := ec2InstInfo[ec2InstanceID]
+										if ok {
+											ec2InstanceType = info.instanceType
+											ec2InstancePrivateIP = info.privateIP
+											ec2InstancePublicIP = info.publicIP
+										}
+									}
+								}
+							}
+
 							if ipAddress == "" {
 								continue
 							}
@@ -589,13 +828,38 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 								ecsLabelTaskARN:          model.LabelValue(*task.TaskArn),
 								ecsLabelTaskDefinition:   model.LabelValue(*task.TaskDefinitionArn),
 								ecsLabelIPAddress:        model.LabelValue(ipAddress),
-								ecsLabelSubnetID:         model.LabelValue(subnetID),
 								ecsLabelRegion:           model.LabelValue(d.cfg.Region),
 								ecsLabelLaunchType:       model.LabelValue(task.LaunchType),
 								ecsLabelAvailabilityZone: model.LabelValue(*task.AvailabilityZone),
 								ecsLabelDesiredStatus:    model.LabelValue(*task.DesiredStatus),
 								ecsLabelLastStatus:       model.LabelValue(*task.LastStatus),
 								ecsLabelHealthStatus:     model.LabelValue(task.HealthStatus),
+								ecsLabelNetworkMode:      model.LabelValue(networkMode),
+							}
+
+							// Add subnet ID when available (awsvpc mode from ENI, bridge/host from EC2 instance)
+							if subnetID != "" {
+								labels[ecsLabelSubnetID] = model.LabelValue(subnetID)
+							}
+
+							// Add container instance and EC2 instance info for EC2 launch type
+							if task.ContainerInstanceArn != nil {
+								labels[ecsLabelContainerInstanceARN] = model.LabelValue(*task.ContainerInstanceArn)
+							}
+							if ec2InstanceID != "" {
+								labels[ecsLabelEC2InstanceID] = model.LabelValue(ec2InstanceID)
+							}
+							if ec2InstanceType != "" {
+								labels[ecsLabelEC2InstanceType] = model.LabelValue(ec2InstanceType)
+							}
+							if ec2InstancePrivateIP != "" {
+								labels[ecsLabelEC2InstancePrivateIP] = model.LabelValue(ec2InstancePrivateIP)
+							}
+							if ec2InstancePublicIP != "" {
+								labels[ecsLabelEC2InstancePublicIP] = model.LabelValue(ec2InstancePublicIP)
+							}
+							if publicIP != "" {
+								labels[ecsLabelPublicIP] = model.LabelValue(publicIP)
 							}
 
 							if task.PlatformFamily != nil {
@@ -631,6 +895,15 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 							for _, taskTag := range task.Tags {
 								if taskTag.Key != nil && taskTag.Value != nil {
 									labels[model.LabelName(ecsLabelTagTask+strutil.SanitizeLabelName(*taskTag.Key))] = model.LabelValue(*taskTag.Value)
+								}
+							}
+
+							// Add EC2 instance tags (if running on EC2)
+							if ec2InstanceID != "" {
+								if info, ok := ec2InstInfo[ec2InstanceID]; ok {
+									for tagKey, tagValue := range info.tags {
+										labels[model.LabelName(ecsLabelTagEC2+strutil.SanitizeLabelName(tagKey))] = model.LabelValue(tagValue)
+									}
 								}
 							}
 
