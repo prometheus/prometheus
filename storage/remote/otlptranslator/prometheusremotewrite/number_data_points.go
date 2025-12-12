@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -25,10 +25,16 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/storage"
 )
 
-func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, settings Settings, scope scope, meta Metadata,
+func (c *PrometheusConverter) addGaugeNumberDataPoints(
+	ctx context.Context,
+	dataPoints pmetric.NumberDataPointSlice,
+	resource pcommon.Resource,
+	settings Settings,
+	scope scope,
+	appOpts storage.AOptions,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -43,13 +49,14 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 			settings,
 			nil,
 			true,
-			meta,
+			appOpts.Metadata,
 			model.MetricNameLabel,
-			meta.MetricFamilyName,
+			appOpts.MetricFamilyName,
 		)
 		if err != nil {
 			return err
 		}
+
 		var val float64
 		switch pt.ValueType() {
 		case pmetric.NumberDataPointValueTypeInt:
@@ -57,21 +64,26 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		case pmetric.NumberDataPointValueTypeDouble:
 			val = pt.DoubleValue()
 		}
+
 		if pt.Flags().NoRecordedValue() {
 			val = math.Float64frombits(value.StaleNaN)
 		}
-		ts := convertTimeStamp(pt.Timestamp())
+		t := convertTimeStamp(pt.Timestamp())
 		st := convertTimeStamp(pt.StartTimestamp())
-		if err := c.appender.AppendSample(labels, meta, st, ts, val, nil); err != nil {
+		if _, err = c.appender.Append(0, labels, st, t, val, nil, nil, appOpts); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 
-func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, settings Settings, scope scope, meta Metadata,
+func (c *PrometheusConverter) addSumNumberDataPoints(
+	ctx context.Context,
+	dataPoints pmetric.NumberDataPointSlice,
+	resource pcommon.Resource,
+	settings Settings,
+	scope scope,
+	appOpts storage.AOptions,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -79,6 +91,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		}
 
 		pt := dataPoints.At(x)
+
 		lbls, err := c.createAttributes(
 			resource,
 			pt.Attributes(),
@@ -86,12 +99,12 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			settings,
 			nil,
 			true,
-			meta,
+			appOpts.Metadata,
 			model.MetricNameLabel,
-			meta.MetricFamilyName,
+			appOpts.MetricFamilyName,
 		)
 		if err != nil {
-			return nil
+			return err // NOTE: Previously it was nil, was it a bug?
 		}
 		var val float64
 		switch pt.ValueType() {
@@ -100,16 +113,19 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		case pmetric.NumberDataPointValueTypeDouble:
 			val = pt.DoubleValue()
 		}
+
 		if pt.Flags().NoRecordedValue() {
 			val = math.Float64frombits(value.StaleNaN)
 		}
-		ts := convertTimeStamp(pt.Timestamp())
+		t := convertTimeStamp(pt.Timestamp())
 		st := convertTimeStamp(pt.StartTimestamp())
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return err
 		}
-		if err := c.appender.AppendSample(lbls, meta, st, ts, val, exemplars); err != nil {
+
+		appOpts.Exemplars = exemplars
+		if _, err = c.appender.Append(0, lbls, st, t, val, nil, nil, appOpts); err != nil {
 			return err
 		}
 	}

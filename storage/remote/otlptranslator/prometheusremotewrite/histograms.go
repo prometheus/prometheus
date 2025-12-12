@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -27,6 +27,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -34,9 +35,14 @@ const defaultZeroThreshold = 1e-128
 
 // addExponentialHistogramDataPoints adds OTel exponential histogram data points to the corresponding time series
 // as native histogram samples.
-func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Context, dataPoints pmetric.ExponentialHistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, temporality pmetric.AggregationTemporality,
-	scope scope, meta Metadata,
+func (c *PrometheusConverter) addExponentialHistogramDataPoints(
+	ctx context.Context,
+	dataPoints pmetric.ExponentialHistogramDataPointSlice,
+	resource pcommon.Resource,
+	settings Settings,
+	temporality pmetric.AggregationTemporality,
+	scope scope,
+	appOpts storage.AOptions,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 	for x := 0; x < dataPoints.Len(); x++ {
@@ -59,21 +65,23 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			settings,
 			nil,
 			true,
-			meta,
+			appOpts.Metadata,
 			model.MetricNameLabel,
-			meta.MetricFamilyName,
+			appOpts.MetricFamilyName,
 		)
 		if err != nil {
 			return annots, err
 		}
-		ts := convertTimeStamp(pt.Timestamp())
+		t := convertTimeStamp(pt.Timestamp())
 		st := convertTimeStamp(pt.StartTimestamp())
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return annots, err
 		}
-		// OTel exponential histograms are always Int Histograms.
-		if err = c.appender.AppendHistogram(lbls, meta, st, ts, hp, exemplars); err != nil {
+		appOpts.Exemplars = exemplars
+
+		// OTel exponential histograms are always integer histograms.
+		if _, err = c.appender.Append(0, lbls, st, t, 0, hp, nil, appOpts); err != nil {
 			return annots, err
 		}
 	}
@@ -252,9 +260,14 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 	return spans, deltas
 }
 
-func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, temporality pmetric.AggregationTemporality,
-	scope scope, meta Metadata,
+func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(
+	ctx context.Context,
+	dataPoints pmetric.HistogramDataPointSlice,
+	resource pcommon.Resource,
+	settings Settings,
+	temporality pmetric.AggregationTemporality,
+	scope scope,
+	appOpts storage.AOptions,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 
@@ -278,20 +291,21 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 			settings,
 			nil,
 			true,
-			meta,
+			appOpts.Metadata,
 			model.MetricNameLabel,
-			meta.MetricFamilyName,
+			appOpts.MetricFamilyName,
 		)
 		if err != nil {
 			return annots, err
 		}
-		ts := convertTimeStamp(pt.Timestamp())
+		t := convertTimeStamp(pt.Timestamp())
 		st := convertTimeStamp(pt.StartTimestamp())
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return annots, err
 		}
-		if err = c.appender.AppendHistogram(lbls, meta, st, ts, hp, exemplars); err != nil {
+		appOpts.Exemplars = exemplars
+		if _, err = c.appender.Append(0, lbls, st, t, 0, hp, nil, appOpts); err != nil {
 			return annots, err
 		}
 	}
