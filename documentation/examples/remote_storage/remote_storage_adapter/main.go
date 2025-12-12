@@ -16,7 +16,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	_ "net/http/pprof"
@@ -203,8 +202,6 @@ func buildClients(logger *slog.Logger, cfg *config) ([]writer, []reader) {
 }
 
 func serve(logger *slog.Logger, addr string, writers []writer, readers []reader) error {
-	bodyLimit := int64(32 * 1024 * 1024)
-
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
 		req, err := remote.DecodeWriteRequest(r.Body)
 		if err != nil {
@@ -228,34 +225,9 @@ func serve(logger *slog.Logger, addr string, writers []writer, readers []reader)
 	})
 
 	http.HandleFunc("/read", func(w http.ResponseWriter, r *http.Request) {
-		compressed, err := io.ReadAll(io.LimitReader(r.Body, bodyLimit))
-		if err != nil {
-			logger.Error("Read error", "err", err.Error())
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		if decodedLen, err := snappy.DecodedLen(compressed); err != nil {
-			logger.Error("Decode error", "err", err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		} else if int64(decodedLen) > bodyLimit {
-			err := fmt.Errorf("decoded read request too large (>%d bytes)", bodyLimit)
-			logger.Error("Decode error", "err", err.Error())
-			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
-			return
-		}
-
-		reqBuf, err := snappy.Decode(nil, compressed)
+		req, err := remote.DecodeReadRequest(r)
 		if err != nil {
 			logger.Error("Decode error", "err", err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req prompb.ReadRequest
-		if err := proto.Unmarshal(reqBuf, &req); err != nil {
-			logger.Error("Unmarshal error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -267,8 +239,7 @@ func serve(logger *slog.Logger, addr string, writers []writer, readers []reader)
 		}
 		reader := readers[0]
 
-		var resp *prompb.ReadResponse
-		resp, err = reader.Read(&req)
+		resp, err := reader.Read(req)
 		if err != nil {
 			logger.Warn("Error executing query", "query", req, "storage", reader.Name(), "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -284,7 +255,7 @@ func serve(logger *slog.Logger, addr string, writers []writer, readers []reader)
 		w.Header().Set("Content-Type", "application/x-protobuf")
 		w.Header().Set("Content-Encoding", "snappy")
 
-		compressed = snappy.Encode(nil, data)
+		compressed := snappy.Encode(nil, data)
 		if _, err := w.Write(compressed); err != nil {
 			logger.Warn("Error writing response", "storage", reader.Name(), "err", err)
 		}

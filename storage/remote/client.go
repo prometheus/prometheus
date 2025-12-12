@@ -452,22 +452,12 @@ func (c *Client) handleReadResponse(httpResp *http.Response, req *prompb.ReadReq
 }
 
 func (*Client) handleSampledResponse(req *prompb.ReadRequest, httpResp *http.Response, sortSeries bool) (storage.SeriesSet, error) {
-	compressed, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error reading response. HTTP status code: %s: %w", httpResp.Status, err)
-	}
 	defer func() {
 		_, _ = io.Copy(io.Discard, httpResp.Body)
 		_ = httpResp.Body.Close()
 	}()
 
-	if decodedLen, err := snappy.DecodedLen(compressed); err != nil {
-		return nil, fmt.Errorf("error reading response: %w", err)
-	} else if decodedLen > decodeReadLimit {
-		return nil, fmt.Errorf("decoded remote read response too large (>%d bytes)", decodeReadLimit)
-	}
-
-	uncompressed, err := snappy.Decode(nil, compressed)
+	uncompressed, err := decodeSnappyWithLimit(httpResp.Body, decodeReadLimit, "remote read response")
 	if err != nil {
 		return nil, fmt.Errorf("error reading response: %w", err)
 	}
