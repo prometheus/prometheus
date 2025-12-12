@@ -1175,7 +1175,7 @@ func (ev *evaluator) Eval(ctx context.Context, expr parser.Expr) (v parser.Value
 
 	v, ws = ev.eval(ctx, expr)
 	if ev.enableDelayedNameRemoval {
-		ev.cleanupMetricLabels(v)
+		v = ev.cleanupMetricLabels(v)
 	}
 	return v, ws, nil
 }
@@ -3832,7 +3832,7 @@ func (*evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []str
 	return enh.Out, nil
 }
 
-func (ev *evaluator) cleanupMetricLabels(v parser.Value) {
+func (ev *evaluator) cleanupMetricLabels(v parser.Value) parser.Value {
 	if v.Type() == parser.ValueTypeMatrix {
 		mat := v.(Matrix)
 		for i := range mat {
@@ -3840,9 +3840,12 @@ func (ev *evaluator) cleanupMetricLabels(v parser.Value) {
 				mat[i].Metric = mat[i].Metric.DropReserved(schema.IsMetadataLabel)
 			}
 		}
-		if mat.ContainsSameLabelset() {
-			ev.errorf("vector cannot contain metrics with the same labelset")
+		mat, err := mat.MergeSeriesWithSameLabelset()
+		if err != nil {
+			ev.errorf("vector cannot contain metrics with the same labelset: %s", err)
 		}
+		return mat
+
 	} else if v.Type() == parser.ValueTypeVector {
 		vec := v.(Vector)
 		for i := range vec {
@@ -3854,6 +3857,8 @@ func (ev *evaluator) cleanupMetricLabels(v parser.Value) {
 			ev.errorf("vector cannot contain metrics with the same labelset")
 		}
 	}
+
+	return v
 }
 
 func addToSeries(ss *Series, ts int64, f float64, h *histogram.FloatHistogram, numSteps int) {

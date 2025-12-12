@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -338,6 +339,98 @@ func (m Matrix) ContainsSameLabelset() bool {
 		}
 		return false
 	}
+}
+
+// MergeSeriesWithSameLabelset merges series with the same labelset into a single series,
+// as long as they do not have samples at the same timestamp. If any series with the same
+// labelset have samples at the same timestamp (regardless of sample type), an error is returned.
+func (m Matrix) MergeSeriesWithSameLabelset() (Matrix, error) {
+	if len(m) <= 1 {
+		return m, nil
+	}
+
+	// Group series by their label hash.
+	groups := make(map[uint64][]int, len(m)) // hash -> indices into m
+	for i, ss := range m {
+		hash := ss.Metric.Hash()
+		groups[hash] = append(groups[hash], i)
+	}
+
+	// If no duplicates, return original matrix.
+	hasDuplicates := false
+	for _, indices := range groups {
+		if len(indices) > 1 {
+			hasDuplicates = true
+			break
+		}
+	}
+	if !hasDuplicates {
+		return m, nil
+	}
+
+	// Build merged matrix.
+	result := make(Matrix, 0, len(groups))
+	for _, indices := range groups {
+		if len(indices) == 1 {
+			result = append(result, m[indices[0]])
+			continue
+		}
+
+		// Merge multiple series with the same labelset.
+		merged := Series{
+			Metric:   m[indices[0]].Metric,
+			DropName: m[indices[0]].DropName,
+		}
+
+		// Use a single timestamp map for both floats and histograms.
+		timestamps := make(map[int64]struct{})
+
+		// Collect all float samples and check for timestamp conflicts.
+		for _, idx := range indices {
+			for _, fp := range m[idx].Floats {
+				if _, exists := timestamps[fp.T]; exists {
+					return nil, fmt.Errorf("duplicate sample timestamp %d for metric %s", fp.T, merged.Metric.String())
+				}
+				timestamps[fp.T] = struct{}{}
+				merged.Floats = append(merged.Floats, fp)
+			}
+		}
+
+		// Collect all histogram samples and check for timestamp conflicts.
+		for _, idx := range indices {
+			for _, hp := range m[idx].Histograms {
+				if _, exists := timestamps[hp.T]; exists {
+					return nil, fmt.Errorf("duplicate sample timestamp %d for metric %s", hp.T, merged.Metric.String())
+				}
+				timestamps[hp.T] = struct{}{}
+				merged.Histograms = append(merged.Histograms, hp)
+			}
+		}
+
+		// Sort samples by timestamp.
+		slices.SortFunc(merged.Floats, func(a, b FPoint) int {
+			if a.T < b.T {
+				return -1
+			}
+			if a.T > b.T {
+				return 1
+			}
+			return 0
+		})
+		slices.SortFunc(merged.Histograms, func(a, b HPoint) int {
+			if a.T < b.T {
+				return -1
+			}
+			if a.T > b.T {
+				return 1
+			}
+			return 0
+		})
+
+		result = append(result, merged)
+	}
+
+	return result, nil
 }
 
 // Result holds the resulting value of an execution or an error

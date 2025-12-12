@@ -18,6 +18,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 )
@@ -106,6 +107,156 @@ func TestMatrix_ContainsSameLabelset(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			require.Equal(t, tc.expected, tc.matrix.ContainsSameLabelset())
+		})
+	}
+}
+
+func TestMatrix_MergeSeriesWithSameLabelset(t *testing.T) {
+	for name, tc := range map[string]struct {
+		matrix         promql.Matrix
+		expectedMatrix promql.Matrix
+		expectError    bool
+	}{
+		"empty matrix": {
+			matrix:         promql.Matrix{},
+			expectedMatrix: promql.Matrix{},
+			expectError:    false,
+		},
+		"matrix with one series": {
+			matrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}}},
+			},
+			expectedMatrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}}},
+			},
+			expectError: false,
+		},
+		"matrix with two different series": {
+			matrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}}},
+				{Metric: labels.FromStrings("lbl", "b"), Floats: []promql.FPoint{{T: 1, F: 2.0}}},
+			},
+			expectedMatrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}}},
+				{Metric: labels.FromStrings("lbl", "b"), Floats: []promql.FPoint{{T: 1, F: 2.0}}},
+			},
+			expectError: false,
+		},
+		"matrix with two equal series, non-overlapping timestamps": {
+			matrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}}},
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 2, F: 2.0}}},
+			},
+			expectedMatrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}, {T: 2, F: 2.0}}},
+			},
+			expectError: false,
+		},
+		"matrix with two equal series, overlapping timestamps": {
+			matrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}}},
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 2.0}}},
+			},
+			expectedMatrix: nil,
+			expectError:    true,
+		},
+		"matrix with three series, two equal with non-overlapping timestamps": {
+			matrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}}},
+				{Metric: labels.FromStrings("lbl", "b"), Floats: []promql.FPoint{{T: 1, F: 3.0}}},
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 2, F: 2.0}}},
+			},
+			expectedMatrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}, {T: 2, F: 2.0}}},
+				{Metric: labels.FromStrings("lbl", "b"), Floats: []promql.FPoint{{T: 1, F: 3.0}}},
+			},
+			expectError: false,
+		},
+		"matrix with three series with same labelset, non-overlapping timestamps": {
+			matrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}}},
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 2, F: 2.0}}},
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 3, F: 3.0}}},
+			},
+			expectedMatrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}, {T: 2, F: 2.0}, {T: 3, F: 3.0}}},
+			},
+			expectError: false,
+		},
+		"matrix with unsorted timestamps after merge": {
+			matrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 3, F: 3.0}}},
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}}},
+			},
+			expectedMatrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}, {T: 3, F: 3.0}}},
+			},
+			expectError: false,
+		},
+		"matrix with multiple float samples per series": {
+			matrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}, {T: 2, F: 2.0}}},
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 3, F: 3.0}, {T: 4, F: 4.0}}},
+			},
+			expectedMatrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}, {T: 2, F: 2.0}, {T: 3, F: 3.0}, {T: 4, F: 4.0}}},
+			},
+			expectError: false,
+		},
+		"matrix with overlapping timestamps in multi-sample series": {
+			matrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}, {T: 2, F: 2.0}}},
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 2, F: 3.0}, {T: 3, F: 4.0}}},
+			},
+			expectedMatrix: nil,
+			expectError:    true,
+		},
+		"matrix with histogram samples, non-overlapping timestamps": {
+			matrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Histograms: []promql.HPoint{{T: 1, H: &histogram.FloatHistogram{Count: 1, Sum: 1}}}},
+				{Metric: labels.FromStrings("lbl", "a"), Histograms: []promql.HPoint{{T: 2, H: &histogram.FloatHistogram{Count: 2, Sum: 2}}}},
+			},
+			expectedMatrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Histograms: []promql.HPoint{{T: 1, H: &histogram.FloatHistogram{Count: 1, Sum: 1}}, {T: 2, H: &histogram.FloatHistogram{Count: 2, Sum: 2}}}},
+			},
+			expectError: false,
+		},
+		"matrix with histogram samples, overlapping timestamps": {
+			matrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Histograms: []promql.HPoint{{T: 1, H: &histogram.FloatHistogram{Count: 1, Sum: 1}}}},
+				{Metric: labels.FromStrings("lbl", "a"), Histograms: []promql.HPoint{{T: 1, H: &histogram.FloatHistogram{Count: 2, Sum: 2}}}},
+			},
+			expectedMatrix: nil,
+			expectError:    true,
+		},
+		"matrix with mixed float and histogram samples, non-overlapping timestamps": {
+			matrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}}},
+				{Metric: labels.FromStrings("lbl", "a"), Histograms: []promql.HPoint{{T: 2, H: &histogram.FloatHistogram{Count: 2, Sum: 2}}}},
+			},
+			expectedMatrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}}, Histograms: []promql.HPoint{{T: 2, H: &histogram.FloatHistogram{Count: 2, Sum: 2}}}},
+			},
+			expectError: false,
+		},
+		"matrix with mixed float and histogram samples, overlapping timestamps": {
+			matrix: promql.Matrix{
+				{Metric: labels.FromStrings("lbl", "a"), Floats: []promql.FPoint{{T: 1, F: 1.0}}},
+				{Metric: labels.FromStrings("lbl", "a"), Histograms: []promql.HPoint{{T: 1, H: &histogram.FloatHistogram{Count: 2, Sum: 2}}}},
+			},
+			expectedMatrix: nil,
+			expectError:    true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, err := tc.matrix.MergeSeriesWithSameLabelset()
+			if tc.expectError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			// Sort both matrices for comparison since map iteration order is not guaranteed
+			require.ElementsMatch(t, tc.expectedMatrix, result)
 		})
 	}
 }

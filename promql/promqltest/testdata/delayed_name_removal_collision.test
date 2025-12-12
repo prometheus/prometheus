@@ -1,0 +1,9 @@
+load 10m
+    metric_a   1  _
+    metric_b   _  4
+
+eval range from 0 to 20m step 10m -metric_a or -metric_b
+    {} -1  -4
+
+eval range from 0 to 20m step 10m -metric_a or on(__name__) -metric_b
+    {} -1  -4
