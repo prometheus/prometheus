@@ -1462,18 +1462,21 @@ describe('autocomplete promQL test', () => {
       .get('/api/v1/label/__name__/values')
       .query(true)
       .reply(200, { status: 'success', data: [metricName] });
-    nock('http://localhost:8080').get('/api/v1/metadata').query(true).reply(200, {
-      status: 'success',
-      data: {
-        [baseMetricName]: [
-          {
-            type: 'counter',
-            help: 'Number of direct notifications.',
-            unit: '',
-          },
-        ],
-      },
-    });
+    nock('http://localhost:8080')
+      .get('/api/v1/metadata')
+      .query(true)
+      .reply(200, {
+        status: 'success',
+        data: {
+          [baseMetricName]: [
+            {
+              type: 'counter',
+              help: 'Number of direct notifications.',
+              unit: '',
+            },
+          ],
+        },
+      });
     const state = createEditorState(metricName);
     const context = new CompletionContext(state, metricName.length, true);
     const completion = newCompleteStrategy({ remote: { url: 'http://localhost:8080' } });
