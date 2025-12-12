@@ -14,6 +14,8 @@
 package schema
 
 import (
+	"strings"
+
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -132,6 +134,21 @@ func (m Metadata) SetToLabels(b *labels.Builder) {
 // NewIgnoreOverriddenMetadataLabelScratchBuilder creates IgnoreOverriddenMetadataLabelScratchBuilder.
 func (m Metadata) NewIgnoreOverriddenMetadataLabelScratchBuilder(b *labels.ScratchBuilder) *IgnoreOverriddenMetadataLabelScratchBuilder {
 	return &IgnoreOverriddenMetadataLabelScratchBuilder{ScratchBuilder: b, overwrite: m}
+}
+
+// String returns a string representation of the Metadata.
+func (m Metadata) String() string {
+	var b strings.Builder
+	b.WriteString(m.Name)
+	if m.Unit != "" {
+		b.WriteString("~")
+		b.WriteString(m.Unit)
+	}
+	if m.Type != "" && m.Type != model.MetricTypeUnknown {
+		b.WriteString(".")
+		b.WriteString(string(m.Type))
+	}
+	return b.String()
 }
 
 // IgnoreOverriddenMetadataLabelScratchBuilder is a wrapper over labels.ScratchBuilder

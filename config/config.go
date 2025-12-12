@@ -288,8 +288,26 @@ type Config struct {
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
 	OTLPConfig         OTLPConfig           `yaml:"otlp,omitempty"`
+	SemConv            SemConvConfig        `yaml:"semconv,omitempty"`
 
 	loaded bool // Certain methods require configuration to use Load validation.
+}
+
+// SemConvConfig represents semconv package runtime configuration.
+type SemConvConfig struct {
+	// SchemaOverrides is a local mapping from the schema base URL (identifying schema
+	// registries) to an alternative schema base URL. URLs are considered local
+	// (within the process local filesystem) if they don't start with "http" prefix.
+	//
+	// This option is useful when manual adjustments to schema are needed or
+	// for when reaching the Internet is not an option (local cache).
+	//
+	// For example, imagine data that uses a schema URL like https://bwplotka.dev/semconv/1.1.0.
+	// Setting an override with "https://bwplotka.dev/semconv" -> "./semconv" will
+	// cause Prometheus to look for the schema artifacts (e.g.in the current implementation
+	// "./semconv/changelog.yaml" and "./semconv/ids.yaml" files) in the local
+	// filesystem.
+	SchemaOverrides map[string]string `yaml:"schema_overrides,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
