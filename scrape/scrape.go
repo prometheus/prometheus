@@ -217,7 +217,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			cfg.ScrapeNativeHistogramsEnabled(),
 			options.EnableStartTimestampZeroIngestion,
 			options.EnableTypeAndUnitLabels,
-			options.ExtraMetrics,
+			cfg.ExtraScrapeMetricsEnabled(),
 			options.AppendMetadata,
 			opts.target,
 			options.PassMetadataInContext,
