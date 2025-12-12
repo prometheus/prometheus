@@ -1510,3 +1510,75 @@ func TestHistogramsReduction(t *testing.T) {
 		})
 	}
 }
+
+// Regression test for https://github.com/prometheus/prometheus/issues/17659
+func TestRemoteWriteHandler_ResponseStats(t *testing.T) {
+	payloadV1, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+	payloadV2, _, _, err := buildV2WriteRequest(nil, writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	for _, tt := range []struct {
+		msgType            remoteapi.WriteMessageType
+		forceInjectHeaders bool
+		expectHeaders      bool
+	}{
+		{
+			msgType: remoteapi.WriteV1MessageType,
+		},
+		{
+			msgType:            remoteapi.WriteV1MessageType,
+			forceInjectHeaders: true,
+			expectHeaders:      true,
+		},
+		{
+			msgType:       remoteapi.WriteV2MessageType,
+			expectHeaders: true,
+		},
+	} {
+		t.Run(fmt.Sprintf("msg=%v/force-inject-headers=%v", tt.msgType, tt.forceInjectHeaders), func(t *testing.T) {
+			// Setup server side.
+			appendable := &mockAppendable{}
+			handler := NewWriteHandler(
+				promslog.NewNopLogger(),
+				nil,
+				appendable,
+				[]remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType},
+				false,
+				false,
+				false,
+			)
+
+			if tt.forceInjectHeaders {
+				base := handler
+				handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					base.ServeHTTP(w, r)
+
+					// Inject response header. This simulates PRWv1 server that uses PRWv2 response headers
+					// for confirmation of samples. This is not against spec and we support it.
+					w.Header().Set(rw20WrittenSamplesHeader, fmt.Sprintf("%d", len(appendable.samples)))
+				})
+			}
+
+			srv := httptest.NewServer(handler)
+
+			// Send message and do the parse response flow.
+			c := &Client{Client: srv.Client(), urlString: srv.URL, timeout: 5 * time.Minute, writeProtoMsg: tt.msgType}
+
+			payload := payloadV2
+			if tt.msgType == remoteapi.WriteV1MessageType {
+				payload = payloadV1
+			}
+			stats, err := c.Store(t.Context(), payload, 0)
+			require.NoError(t, err)
+
+			fmt.Println(stats)
+			if tt.expectHeaders {
+				require.True(t, stats.Confirmed)
+				require.Equal(t, len(appendable.samples), stats.Samples)
+			} else {
+				require.False(t, stats.Confirmed)
+			}
+		})
+	}
+}
