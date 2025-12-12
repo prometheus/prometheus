@@ -1,0 +1,49 @@
+ARG ARCH="amd64"
+ARG OS="linux"
+
+# Stage: get CA certs and tzdata from a small Debian image
+FROM debian:trixie-slim AS certs
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# Final minimal image based on distroless static
+FROM gcr.io/distroless/static:nonroot
+
+# Image metadata
+LABEL maintainer="The Prometheus Authors <prometheus-developers@googlegroups.com>"
+LABEL org.opencontainers.image.authors="The Prometheus Authors" \
+    org.opencontainers.image.vendor="Prometheus" \
+    org.opencontainers.image.title="Prometheus" \
+    org.opencontainers.image.description="The Prometheus monitoring system and time series database" \
+    org.opencontainers.image.source="https://github.com/prometheus/prometheus" \
+    org.opencontainers.image.url="https://github.com/prometheus/prometheus" \
+    org.opencontainers.image.documentation="https://prometheus.io/docs" \
+    org.opencontainers.image.licenses="Apache License 2.0"
+
+# Copy CA certs and timezone data from certs stage
+COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=certs /usr/share/zoneinfo /usr/share/zoneinfo
+
+# Copy the static Prometheus binaries and config
+COPY .build/${OS}-${ARCH}/prometheus        /bin/prometheus
+COPY .build/${OS}-${ARCH}/promtool          /bin/promtool
+COPY documentation/examples/prometheus.yml  /etc/prometheus/prometheus.yml
+COPY LICENSE                                /LICENSE
+COPY NOTICE                                 /NOTICE
+COPY npm_licenses.tar.bz2                   /npm_licenses.tar.bz2
+
+WORKDIR /prometheus
+RUN mkdir -p /etc/prometheus /prometheus \
+    && chown -R 65532:65532 /etc/prometheus /prometheus
+
+# distroless static:nonroot uses nonroot user (uid 65532)
+USER 65532
+
+EXPOSE 9090
+VOLUME [ "/prometheus" ]
+ENTRYPOINT [ "/bin/prometheus" ]
+CMD [ "--config.file=/etc/prometheus/prometheus.yml", \
+      "--storage.tsdb.path=/prometheus" ]
