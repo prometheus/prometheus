@@ -61,6 +61,18 @@ absent_over_time(sum(nonexistent{job="myjob"})[1h:])
 In the first two examples, `absent_over_time()` tries to be smart about deriving
 labels of the 1-element output vector from the input vector.
 
+## `asap_smoothing()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`asap_smoothing(v range-vector, resolution scalar)` produces a
+smoothed value for each float time series in the range in `v` using [ASAP Smoothing algorithm](https://dawn.cs.stanford.edu/news/automatic-time-series-smoothing-asap). For additional details, refer to [ASAP: Prioritizing Attention via Time Series Smoothing](https://arxiv.org/pdf/1703.00983) paper.
+
+`asap_smoothing` should only be used with gauges and only works
+for float samples.
+
 ## `ceil()`
 
 `ceil(v instant-vector)` returns a vector containing all float samples in the
