@@ -103,8 +103,8 @@ var _ error = &AppendPartialError{}
 //
 // Operations on the AppenderV2 interface are not goroutine-safe.
 //
-// The order of samples appended via the AppenderV2 is preserved within each
-// series. I.e. samples are not reordered per timestamp, or by float/histogram
+// The order of samples appended via the AppenderV2 is preserved within each series.
+// I.e. timestamp order within batch is not validated, samples are not reordered per timestamp or by float/histogram
 // type.
 type AppenderV2 interface {
 	AppenderTransaction

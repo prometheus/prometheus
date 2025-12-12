@@ -167,11 +167,11 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			// an optimization for the more likely case.
 			switch a.typesInBatch[s.ref] {
 			case stHistogram, stCustomBucketHistogram:
-				return a.Append(ref, ls, st, t, 0, &histogram.Histogram{Sum: v}, nil, storage.AOptions{
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, &histogram.Histogram{Sum: v}, nil, storage.AOptions{
 					RejectOutOfOrder: opts.RejectOutOfOrder,
 				})
 			case stFloatHistogram, stCustomBucketFloatHistogram:
-				return a.Append(ref, ls, st, t, 0, nil, &histogram.FloatHistogram{Sum: v}, storage.AOptions{
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, nil, &histogram.FloatHistogram{Sum: v}, storage.AOptions{
 					RejectOutOfOrder: opts.RejectOutOfOrder,
 				})
 			}
@@ -202,7 +202,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 
 	if isStale {
 		// For stale values we never attempt to process metadata/exemplars, claim the success.
-		return ref, nil
+		return storage.SeriesRef(s.ref), nil
 	}
 
 	// Append exemplars if any and if storage was configured for it.
@@ -324,6 +324,7 @@ func (a *headAppenderV2) appendExemplars(s *memSeries, exemplar []exemplar.Exemp
 			if !errors.Is(err, storage.ErrDuplicateExemplar) && !errors.Is(err, storage.ErrExemplarsDisabled) {
 				// Except duplicates, return partial errors.
 				errs = append(errs, err)
+				continue
 			}
 			if !errors.Is(err, storage.ErrOutOfOrderExemplar) {
 				a.head.logger.Debug("Error while adding an exemplar on AppendSample", "exemplars", fmt.Sprintf("%+v", e), "err", e)
