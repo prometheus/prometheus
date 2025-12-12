@@ -59,7 +59,6 @@ Check the resources for validity.
 | Flag | Description | Default |
 | --- | --- | --- |
 | <code class="text-nowrap">--query.lookback-delta</code> | The server's maximum query lookback duration. | `5m` |
-| <code class="text-nowrap">--extended</code> | Print extended information related to the cardinality of the metrics. |  |
 
 
 
@@ -192,13 +191,25 @@ Check if the rule files are valid or not.
 
 ##### `promtool check metrics`
 
-Pass Prometheus metrics over stdin to lint them for consistency and correctness.
+Pass Prometheus metrics over stdin to lint them for consistency and correctness, and optionally perform cardinality analysis.
 
 examples:
 
 $ cat metrics.prom | promtool check metrics
 
-$ curl -s http://localhost:9090/metrics | promtool check metrics
+$ curl -s http://localhost:9090/metrics | promtool check metrics `--extended`
+
+$ curl -s http://localhost:9100/metrics | promtool check metrics `--extended` `--lint`=none
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--extended</code> | Print extended information related to the cardinality of the metrics. |  |
+| <code class="text-nowrap">--lint</code> | Linting checks to apply for metrics. Available options are: all, none. Use --lint=none to disable metrics linting. | `all` |
+
 
 
 
