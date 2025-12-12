@@ -1481,7 +1481,7 @@ describe('autocomplete promQL test', () => {
     const context = new CompletionContext(state, metricName.length, true);
     const completion = newCompleteStrategy({ remote: { url: 'http://localhost:8080' } });
     const result = await completion.promQL(context);
-    // nock doesn't mock the entire functionality of the server, so we have to filter the result
+    // nock only mocks the HTTP endpoints; this test just ensures remote completion returns at least one option
     expect(result).not.toBeNull();
     expect((result as NonNullable<typeof result>).options.length).toBeGreaterThan(0);
   });
