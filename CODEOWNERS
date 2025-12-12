@@ -2,6 +2,10 @@
 # They are code owners by default for the whole repo.
 * @prometheus/default-maintainers
 
+#
+# Please keep this file in sync with the MAINTAINERS.md file!
+#
+
 # Subsystems.
 /Makefile @simonpasquier @SuperQ @prometheus/default-maintainers
 /cmd/promtool @dgl @prometheus/default-maintainers
