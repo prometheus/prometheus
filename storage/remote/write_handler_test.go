@@ -1552,11 +1552,11 @@ func TestRemoteWriteHandler_ResponseStats(t *testing.T) {
 			if tt.forceInjectHeaders {
 				base := handler
 				handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					base.ServeHTTP(w, r)
-
 					// Inject response header. This simulates PRWv1 server that uses PRWv2 response headers
 					// for confirmation of samples. This is not against spec and we support it.
-					w.Header().Set(rw20WrittenSamplesHeader, fmt.Sprintf("%d", len(appendable.samples)))
+					w.Header().Set(rw20WrittenSamplesHeader, "2")
+
+					base.ServeHTTP(w, r)
 				})
 			}
 
@@ -1572,7 +1572,6 @@ func TestRemoteWriteHandler_ResponseStats(t *testing.T) {
 			stats, err := c.Store(t.Context(), payload, 0)
 			require.NoError(t, err)
 
-			fmt.Println(stats)
 			if tt.expectHeaders {
 				require.True(t, stats.Confirmed)
 				require.Equal(t, len(appendable.samples), stats.Samples)
