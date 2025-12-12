@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type SeriesEntry struct {
@@ -224,6 +225,34 @@ func (it *listChunkSeriesIterator) Next() bool {
 }
 
 func (*listChunkSeriesIterator) Err() error { return nil }
+
+type listSeriesSet struct {
+	series []Series
+
+	curr int
+}
+
+// NewListSeriesSet lists []storage.Series as SeriesSet.
+func NewListSeriesSet(series []Series) SeriesSet {
+	return &listSeriesSet{series: series, curr: -1}
+}
+
+func (s *listSeriesSet) Next() bool {
+	if s.curr >= len(s.series)-1 {
+		return false
+	}
+	s.curr++
+	return true
+}
+
+func (s *listSeriesSet) At() Series {
+	// Series composed of same chunks for the same series.
+	return s.series[s.curr]
+}
+
+func (listSeriesSet) Err() error { return nil }
+
+func (listSeriesSet) Warnings() annotations.Annotations { return nil }
 
 type chunkSetToSeriesSet struct {
 	ChunkSeriesSet

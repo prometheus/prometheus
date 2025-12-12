@@ -484,7 +484,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 // supposed to be used according to the schema.
 func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 	if h2 == nil {
-		return false
+		return h == nil
 	}
 
 	if h.Schema != h2.Schema ||
