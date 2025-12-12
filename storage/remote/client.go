@@ -301,6 +301,9 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 		_ = httpResp.Body.Close()
 	}()
 
+	// NOTE(bwplotka): Only PRW2 spec defines response HTTP headers. However, spec does not block
+	// PRW1 from sending them too for reliability. Support this case.
+	//
 	// TODO(bwplotka): Pass logger and emit debug on error?
 	// Parsing error means there were some response header values we can't parse,
 	// we can continue handling.
