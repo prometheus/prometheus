@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -22,21 +22,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
-	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
-	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
+
+type sample = teststorage.Sample
 
 func TestFromMetrics(t *testing.T) {
 	t.Run("Successful", func(t *testing.T) {
@@ -81,8 +81,9 @@ func TestFromMetrics(t *testing.T) {
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				mockAppender := &mockCombinedAppender{}
-				converter := NewPrometheusConverter(mockAppender)
+				appTest := teststorage.NewAppendable()
+				app := appTest.AppenderV2(t.Context())
+				converter := NewPrometheusConverter(app)
 				payload, wantPromMetrics := createExportRequest(5, 128, 128, 2, 0, tc.settings, tc.temporality)
 				seenFamilyNames := map[string]struct{}{}
 				for _, wantMetric := range wantPromMetrics {
@@ -104,14 +105,14 @@ func TestFromMetrics(t *testing.T) {
 				require.NoError(t, err)
 				require.Empty(t, annots)
 
-				require.NoError(t, mockAppender.Commit())
+				require.NoError(t, app.Commit())
 
-				ts := mockAppender.samples
+				ts := appTest.ResultSamples()
 				require.Len(t, ts, 1536+1) // +1 for the target_info.
 
 				tgtInfoCount := 0
 				for _, s := range ts {
-					lbls := s.ls
+					lbls := s.L
 					if lbls.Get(labels.MetricName) == "target_info" {
 						tgtInfoCount++
 						require.Equal(t, "test-namespace/test-service", lbls.Get("job"))
@@ -153,8 +154,9 @@ func TestFromMetrics(t *testing.T) {
 
 			generateAttributes(h.Attributes(), "series", 1)
 
-			mockAppender := &mockCombinedAppender{}
-			converter := NewPrometheusConverter(mockAppender)
+			appTest := teststorage.NewAppendable()
+			app := appTest.AppenderV2(t.Context())
+			converter := NewPrometheusConverter(app)
 			annots, err := converter.FromMetrics(
 				context.Background(),
 				request.Metrics(),
@@ -162,21 +164,31 @@ func TestFromMetrics(t *testing.T) {
 			)
 			require.NoError(t, err)
 			require.Empty(t, annots)
-			require.NoError(t, mockAppender.Commit())
+			require.NoError(t, app.Commit())
+
+			got := appTest.ResultSamples()
+			var floats, histograms []sample
+			for _, s := range got {
+				if s.FH != nil || s.H != nil {
+					histograms = append(histograms, s)
+					continue
+				}
+				floats = append(floats, s)
+			}
 
 			if convertHistogramsToNHCB {
-				require.Len(t, mockAppender.histograms, 1)
-				require.Empty(t, mockAppender.samples)
+				require.Len(t, histograms, 1)
+				require.Empty(t, floats)
 			} else {
-				require.Empty(t, mockAppender.histograms)
-				require.Len(t, mockAppender.samples, 3)
+				require.Empty(t, histograms)
+				require.Len(t, floats, 3)
 			}
 		})
 	}
 
 	t.Run("context cancellation", func(t *testing.T) {
 		settings := Settings{}
-		converter := NewPrometheusConverter(&mockCombinedAppender{})
+		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
 		ctx, cancel := context.WithCancel(context.Background())
 		// Verify that converter.FromMetrics respects cancellation.
 		cancel()
@@ -189,7 +201,7 @@ func TestFromMetrics(t *testing.T) {
 
 	t.Run("context timeout", func(t *testing.T) {
 		settings := Settings{}
-		converter := NewPrometheusConverter(&mockCombinedAppender{})
+		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
 		// Verify that converter.FromMetrics respects timeout.
 		ctx, cancel := context.WithTimeout(context.Background(), 0)
 		t.Cleanup(cancel)
@@ -222,7 +234,7 @@ func TestFromMetrics(t *testing.T) {
 			generateAttributes(h.Attributes(), "series", 10)
 		}
 
-		converter := NewPrometheusConverter(&mockCombinedAppender{})
+		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
 		annots, err := converter.FromMetrics(context.Background(), request.Metrics(), Settings{})
 		require.NoError(t, err)
 		require.NotEmpty(t, annots)
@@ -255,7 +267,7 @@ func TestFromMetrics(t *testing.T) {
 			generateAttributes(h.Attributes(), "series", 10)
 		}
 
-		converter := NewPrometheusConverter(&mockCombinedAppender{})
+		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
 		annots, err := converter.FromMetrics(
 			context.Background(),
 			request.Metrics(),
@@ -303,8 +315,9 @@ func TestFromMetrics(t *testing.T) {
 			}
 		}
 
-		mockAppender := &mockCombinedAppender{}
-		converter := NewPrometheusConverter(mockAppender)
+		appTest := teststorage.NewAppendable()
+		app := appTest.AppenderV2(t.Context())
+		converter := NewPrometheusConverter(app)
 		annots, err := converter.FromMetrics(
 			context.Background(),
 			request.Metrics(),
@@ -314,8 +327,11 @@ func TestFromMetrics(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.Empty(t, annots)
-		require.NoError(t, mockAppender.Commit())
-		require.Len(t, mockAppender.samples, 22)
+		require.NoError(t, app.Commit())
+
+		got := appTest.ResultSamples()
+
+		require.Len(t, got, 22)
 		// There should be a target_info sample at the earliest metric timestamp, then two spaced lookback delta/2 apart,
 		// then one at the latest metric timestamp.
 		targetInfoLabels := labels.FromStrings(
@@ -332,36 +348,36 @@ func TestFromMetrics(t *testing.T) {
 			Type: model.MetricTypeGauge,
 			Help: "Target metadata",
 		}
-		requireEqual(t, []combinedSample{
+		testutil.RequireEqual(t, []sample{
 			{
-				metricFamilyName: "target_info",
-				v:                1,
-				t:                ts.AsTime().UnixMilli(),
-				ls:               targetInfoLabels,
-				meta:             targetInfoMeta,
+				MF: "target_info",
+				V:  1,
+				T:  ts.AsTime().UnixMilli(),
+				L:  targetInfoLabels,
+				M:  targetInfoMeta,
 			},
 			{
-				metricFamilyName: "target_info",
-				v:                1,
-				t:                ts.AsTime().Add(defaultLookbackDelta / 2).UnixMilli(),
-				ls:               targetInfoLabels,
-				meta:             targetInfoMeta,
+				MF: "target_info",
+				V:  1,
+				T:  ts.AsTime().Add(defaultLookbackDelta / 2).UnixMilli(),
+				L:  targetInfoLabels,
+				M:  targetInfoMeta,
 			},
 			{
-				metricFamilyName: "target_info",
-				v:                1,
-				t:                ts.AsTime().Add(defaultLookbackDelta).UnixMilli(),
-				ls:               targetInfoLabels,
-				meta:             targetInfoMeta,
+				MF: "target_info",
+				V:  1,
+				T:  ts.AsTime().Add(defaultLookbackDelta).UnixMilli(),
+				L:  targetInfoLabels,
+				M:  targetInfoMeta,
 			},
 			{
-				metricFamilyName: "target_info",
-				v:                1,
-				t:                ts.AsTime().Add(defaultLookbackDelta + defaultLookbackDelta/4).UnixMilli(),
-				ls:               targetInfoLabels,
-				meta:             targetInfoMeta,
+				MF: "target_info",
+				V:  1,
+				T:  ts.AsTime().Add(defaultLookbackDelta + defaultLookbackDelta/4).UnixMilli(),
+				L:  targetInfoLabels,
+				M:  targetInfoMeta,
 			},
-		}, mockAppender.samples[len(mockAppender.samples)-4:])
+		}, got[len(got)-4:])
 	})
 
 	t.Run("target_info deduplication across multiple resources with same labels", func(t *testing.T) {
@@ -403,8 +419,9 @@ func TestFromMetrics(t *testing.T) {
 			generateAttributes(point2.Attributes(), "series", 1)
 		}
 
-		mockAppender := &mockCombinedAppender{}
-		converter := NewPrometheusConverter(mockAppender)
+		appTest := teststorage.NewAppendable()
+		app := appTest.AppenderV2(t.Context())
+		converter := NewPrometheusConverter(app)
 		annots, err := converter.FromMetrics(
 			context.Background(),
 			request.Metrics(),
@@ -414,11 +431,11 @@ func TestFromMetrics(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.Empty(t, annots)
-		require.NoError(t, mockAppender.Commit())
+		require.NoError(t, app.Commit())
 
-		var targetInfoSamples []combinedSample
-		for _, s := range mockAppender.samples {
-			if s.ls.Get(labels.MetricName) == "target_info" {
+		var targetInfoSamples []sample
+		for _, s := range appTest.ResultSamples() {
+			if s.L.Get(model.MetricNameLabel) == "target_info" {
 				targetInfoSamples = append(targetInfoSamples, s)
 			}
 		}
@@ -439,20 +456,20 @@ func TestFromMetrics(t *testing.T) {
 			Type: model.MetricTypeGauge,
 			Help: "Target metadata",
 		}
-		requireEqual(t, []combinedSample{
+		testutil.RequireEqual(t, []sample{
 			{
-				metricFamilyName: "target_info",
-				v:                1,
-				t:                ts.AsTime().UnixMilli(),
-				ls:               targetInfoLabels,
-				meta:             targetInfoMeta,
+				MF: "target_info",
+				V:  1,
+				T:  ts.AsTime().UnixMilli(),
+				L:  targetInfoLabels,
+				M:  targetInfoMeta,
 			},
 			{
-				metricFamilyName: "target_info",
-				v:                1,
-				t:                ts.AsTime().Add(defaultLookbackDelta / 2).UnixMilli(),
-				ls:               targetInfoLabels,
-				meta:             targetInfoMeta,
+				MF: "target_info",
+				V:  1,
+				T:  ts.AsTime().Add(defaultLookbackDelta / 2).UnixMilli(),
+				L:  targetInfoLabels,
+				M:  targetInfoMeta,
 			},
 		}, targetInfoSamples)
 	})
@@ -462,13 +479,12 @@ func TestTemporality(t *testing.T) {
 	ts := time.Unix(100, 0)
 
 	tests := []struct {
-		name               string
-		allowDelta         bool
-		convertToNHCB      bool
-		inputSeries        []pmetric.Metric
-		expectedSamples    []combinedSample
-		expectedHistograms []combinedHistogram
-		expectedError      string
+		name            string
+		allowDelta      bool
+		convertToNHCB   bool
+		inputSeries     []pmetric.Metric
+		expectedSamples []sample
+		expectedError   string
 	}{
 		{
 			name:       "all cumulative when delta not allowed",
@@ -477,7 +493,7 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_1", pmetric.AggregationTemporalityCumulative, ts),
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
-			expectedSamples: []combinedSample{
+			expectedSamples: []sample{
 				createPromFloatSeries("test_metric_1", ts, model.MetricTypeCounter),
 				createPromFloatSeries("test_metric_2", ts, model.MetricTypeCounter),
 			},
@@ -489,7 +505,7 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_1", pmetric.AggregationTemporalityDelta, ts),
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityDelta, ts),
 			},
-			expectedSamples: []combinedSample{
+			expectedSamples: []sample{
 				createPromFloatSeries("test_metric_1", ts, model.MetricTypeUnknown),
 				createPromFloatSeries("test_metric_2", ts, model.MetricTypeUnknown),
 			},
@@ -501,7 +517,7 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_1", pmetric.AggregationTemporalityDelta, ts),
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
-			expectedSamples: []combinedSample{
+			expectedSamples: []sample{
 				createPromFloatSeries("test_metric_1", ts, model.MetricTypeUnknown),
 				createPromFloatSeries("test_metric_2", ts, model.MetricTypeCounter),
 			},
@@ -513,7 +529,7 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_1", pmetric.AggregationTemporalityCumulative, ts),
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityDelta, ts),
 			},
-			expectedSamples: []combinedSample{
+			expectedSamples: []sample{
 				createPromFloatSeries("test_metric_1", ts, model.MetricTypeCounter),
 			},
 			expectedError: `invalid temporality and type combination for metric "test_metric_2"`,
@@ -525,7 +541,7 @@ func TestTemporality(t *testing.T) {
 				createOtelSum("test_metric_1", pmetric.AggregationTemporalityCumulative, ts),
 				createOtelSum("test_metric_2", pmetric.AggregationTemporalityUnspecified, ts),
 			},
-			expectedSamples: []combinedSample{
+			expectedSamples: []sample{
 				createPromFloatSeries("test_metric_1", ts, model.MetricTypeCounter),
 			},
 			expectedError: `invalid temporality and type combination for metric "test_metric_2"`,
@@ -536,7 +552,7 @@ func TestTemporality(t *testing.T) {
 			inputSeries: []pmetric.Metric{
 				createOtelExponentialHistogram("test_histogram", pmetric.AggregationTemporalityCumulative, ts),
 			},
-			expectedHistograms: []combinedHistogram{
+			expectedSamples: []sample{
 				createPromNativeHistogramSeries("test_histogram", histogram.UnknownCounterReset, ts, model.MetricTypeHistogram),
 			},
 		},
@@ -547,7 +563,7 @@ func TestTemporality(t *testing.T) {
 				createOtelExponentialHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
 				createOtelExponentialHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
-			expectedHistograms: []combinedHistogram{
+			expectedSamples: []sample{
 				createPromNativeHistogramSeries("test_histogram_1", histogram.GaugeType, ts, model.MetricTypeUnknown),
 				createPromNativeHistogramSeries("test_histogram_2", histogram.UnknownCounterReset, ts, model.MetricTypeHistogram),
 			},
@@ -559,7 +575,7 @@ func TestTemporality(t *testing.T) {
 				createOtelExponentialHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
 				createOtelExponentialHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
-			expectedHistograms: []combinedHistogram{
+			expectedSamples: []sample{
 				createPromNativeHistogramSeries("test_histogram_2", histogram.UnknownCounterReset, ts, model.MetricTypeHistogram),
 			},
 			expectedError: `invalid temporality and type combination for metric "test_histogram_1"`,
@@ -571,7 +587,7 @@ func TestTemporality(t *testing.T) {
 			inputSeries: []pmetric.Metric{
 				createOtelExplicitHistogram("test_histogram", pmetric.AggregationTemporalityCumulative, ts),
 			},
-			expectedHistograms: []combinedHistogram{
+			expectedSamples: []sample{
 				createPromNHCBSeries("test_histogram", histogram.UnknownCounterReset, ts, model.MetricTypeHistogram),
 			},
 		},
@@ -583,7 +599,7 @@ func TestTemporality(t *testing.T) {
 				createOtelExplicitHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
 				createOtelExplicitHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
-			expectedHistograms: []combinedHistogram{
+			expectedSamples: []sample{
 				createPromNHCBSeries("test_histogram_1", histogram.GaugeType, ts, model.MetricTypeUnknown),
 				createPromNHCBSeries("test_histogram_2", histogram.UnknownCounterReset, ts, model.MetricTypeHistogram),
 			},
@@ -596,7 +612,7 @@ func TestTemporality(t *testing.T) {
 				createOtelExplicitHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
 				createOtelExplicitHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
-			expectedHistograms: []combinedHistogram{
+			expectedSamples: []sample{
 				createPromNHCBSeries("test_histogram_2", histogram.UnknownCounterReset, ts, model.MetricTypeHistogram),
 			},
 			expectedError: `invalid temporality and type combination for metric "test_histogram_1"`,
@@ -637,7 +653,7 @@ func TestTemporality(t *testing.T) {
 			inputSeries: []pmetric.Metric{
 				createOtelGauge("test_gauge_1", ts),
 			},
-			expectedSamples: []combinedSample{
+			expectedSamples: []sample{
 				createPromFloatSeries("test_gauge_1", ts, model.MetricTypeGauge),
 			},
 		},
@@ -660,25 +676,24 @@ func TestTemporality(t *testing.T) {
 				s.CopyTo(sm.Metrics().AppendEmpty())
 			}
 
-			mockAppender := &mockCombinedAppender{}
-			c := NewPrometheusConverter(mockAppender)
+			appTest := teststorage.NewAppendable()
+			app := appTest.AppenderV2(t.Context())
+			converter := NewPrometheusConverter(app)
 			settings := Settings{
 				AllowDeltaTemporality:   tc.allowDelta,
 				ConvertHistogramsToNHCB: tc.convertToNHCB,
 			}
 
-			_, err := c.FromMetrics(context.Background(), metrics, settings)
+			_, err := converter.FromMetrics(context.Background(), metrics, settings)
 
 			if tc.expectedError != "" {
 				require.EqualError(t, err, tc.expectedError)
 			} else {
 				require.NoError(t, err)
 			}
-			require.NoError(t, mockAppender.Commit())
-
+			require.NoError(t, app.Commit())
 			// Sort series to make the test deterministic.
-			requireEqual(t, tc.expectedSamples, mockAppender.samples)
-			requireEqual(t, tc.expectedHistograms, mockAppender.histograms)
+			testutil.RequireEqual(t, tc.expectedSamples, appTest.ResultSamples())
 		})
 	}
 }
@@ -697,13 +712,13 @@ func createOtelSum(name string, temporality pmetric.AggregationTemporality, ts t
 	return m
 }
 
-func createPromFloatSeries(name string, ts time.Time, typ model.MetricType) combinedSample {
-	return combinedSample{
-		metricFamilyName: name,
-		ls:               labels.FromStrings("__name__", name, "test_label", "test_value"),
-		t:                ts.UnixMilli(),
-		v:                5,
-		meta: metadata.Metadata{
+func createPromFloatSeries(name string, ts time.Time, typ model.MetricType) sample {
+	return sample{
+		MF: name,
+		L:  labels.FromStrings("__name__", name, "test_label", "test_value"),
+		T:  ts.UnixMilli(),
+		V:  5,
+		M: metadata.Metadata{
 			Type: typ,
 		},
 	}
@@ -735,15 +750,15 @@ func createOtelExponentialHistogram(name string, temporality pmetric.Aggregation
 	return m
 }
 
-func createPromNativeHistogramSeries(name string, hint histogram.CounterResetHint, ts time.Time, typ model.MetricType) combinedHistogram {
-	return combinedHistogram{
-		metricFamilyName: name,
-		ls:               labels.FromStrings("__name__", name, "test_label", "test_value"),
-		t:                ts.UnixMilli(),
-		meta: metadata.Metadata{
+func createPromNativeHistogramSeries(name string, hint histogram.CounterResetHint, ts time.Time, typ model.MetricType) sample {
+	return sample{
+		MF: name,
+		L:  labels.FromStrings("__name__", name, "test_label", "test_value"),
+		T:  ts.UnixMilli(),
+		M: metadata.Metadata{
 			Type: typ,
 		},
-		h: &histogram.Histogram{
+		H: &histogram.Histogram{
 			Count:            1,
 			Sum:              5,
 			Schema:           0,
@@ -770,15 +785,15 @@ func createOtelExplicitHistogram(name string, temporality pmetric.AggregationTem
 	return m
 }
 
-func createPromNHCBSeries(name string, hint histogram.CounterResetHint, ts time.Time, typ model.MetricType) combinedHistogram {
-	return combinedHistogram{
-		metricFamilyName: name,
-		ls:               labels.FromStrings("__name__", name, "test_label", "test_value"),
-		meta: metadata.Metadata{
+func createPromNHCBSeries(name string, hint histogram.CounterResetHint, ts time.Time, typ model.MetricType) sample {
+	return sample{
+		MF: name,
+		L:  labels.FromStrings("__name__", name, "test_label", "test_value"),
+		M: metadata.Metadata{
 			Type: typ,
 		},
-		t: ts.UnixMilli(),
-		h: &histogram.Histogram{
+		T: ts.UnixMilli(),
+		H: &histogram.Histogram{
 			Count:         20,
 			Sum:           30,
 			Schema:        -53,
@@ -795,50 +810,50 @@ func createPromNHCBSeries(name string, hint histogram.CounterResetHint, ts time.
 	}
 }
 
-func createPromClassicHistogramSeries(name string, ts time.Time, typ model.MetricType) []combinedSample {
-	return []combinedSample{
+func createPromClassicHistogramSeries(name string, ts time.Time, typ model.MetricType) []sample {
+	return []sample{
 		{
-			metricFamilyName: name,
-			ls:               labels.FromStrings("__name__", name+"_sum", "test_label", "test_value"),
-			t:                ts.UnixMilli(),
-			v:                30,
-			meta: metadata.Metadata{
+			MF: name,
+			L:  labels.FromStrings("__name__", name+"_sum", "test_label", "test_value"),
+			T:  ts.UnixMilli(),
+			V:  30,
+			M: metadata.Metadata{
 				Type: typ,
 			},
 		},
 		{
-			metricFamilyName: name,
-			ls:               labels.FromStrings("__name__", name+"_count", "test_label", "test_value"),
-			t:                ts.UnixMilli(),
-			v:                20,
-			meta: metadata.Metadata{
+			MF: name,
+			L:  labels.FromStrings("__name__", name+"_count", "test_label", "test_value"),
+			T:  ts.UnixMilli(),
+			V:  20,
+			M: metadata.Metadata{
 				Type: typ,
 			},
 		},
 		{
-			metricFamilyName: name,
-			ls:               labels.FromStrings("__name__", name+"_bucket", "le", "1", "test_label", "test_value"),
-			t:                ts.UnixMilli(),
-			v:                10,
-			meta: metadata.Metadata{
+			MF: name,
+			L:  labels.FromStrings("__name__", name+"_bucket", "le", "1", "test_label", "test_value"),
+			T:  ts.UnixMilli(),
+			V:  10,
+			M: metadata.Metadata{
 				Type: typ,
 			},
 		},
 		{
-			metricFamilyName: name,
-			ls:               labels.FromStrings("__name__", name+"_bucket", "le", "2", "test_label", "test_value"),
-			t:                ts.UnixMilli(),
-			v:                20,
-			meta: metadata.Metadata{
+			MF: name,
+			L:  labels.FromStrings("__name__", name+"_bucket", "le", "2", "test_label", "test_value"),
+			T:  ts.UnixMilli(),
+			V:  20,
+			M: metadata.Metadata{
 				Type: typ,
 			},
 		},
 		{
-			metricFamilyName: name,
-			ls:               labels.FromStrings("__name__", name+"_bucket", "le", "+Inf", "test_label", "test_value"),
-			t:                ts.UnixMilli(),
-			v:                20,
-			meta: metadata.Metadata{
+			MF: name,
+			L:  labels.FromStrings("__name__", name+"_bucket", "le", "+Inf", "test_label", "test_value"),
+			T:  ts.UnixMilli(),
+			V:  20,
+			M: metadata.Metadata{
 				Type: typ,
 			},
 		},
@@ -861,32 +876,32 @@ func createOtelSummary(name string, ts time.Time) pmetric.Metric {
 	return m
 }
 
-func createPromSummarySeries(name string, ts time.Time) []combinedSample {
-	return []combinedSample{
+func createPromSummarySeries(name string, ts time.Time) []sample {
+	return []sample{
 		{
-			metricFamilyName: name,
-			ls:               labels.FromStrings("__name__", name+"_sum", "test_label", "test_value"),
-			t:                ts.UnixMilli(),
-			v:                18,
-			meta: metadata.Metadata{
+			MF: name,
+			L:  labels.FromStrings("__name__", name+"_sum", "test_label", "test_value"),
+			T:  ts.UnixMilli(),
+			V:  18,
+			M: metadata.Metadata{
 				Type: model.MetricTypeSummary,
 			},
 		},
 		{
-			metricFamilyName: name,
-			ls:               labels.FromStrings("__name__", name+"_count", "test_label", "test_value"),
-			t:                ts.UnixMilli(),
-			v:                9,
-			meta: metadata.Metadata{
+			MF: name,
+			L:  labels.FromStrings("__name__", name+"_count", "test_label", "test_value"),
+			T:  ts.UnixMilli(),
+			V:  9,
+			M: metadata.Metadata{
 				Type: model.MetricTypeSummary,
 			},
 		},
 		{
-			metricFamilyName: name,
-			ls:               labels.FromStrings("__name__", name, "quantile", "0.5", "test_label", "test_value"),
-			t:                ts.UnixMilli(),
-			v:                2,
-			meta: metadata.Metadata{
+			MF: name,
+			L:  labels.FromStrings("__name__", name, "quantile", "0.5", "test_label", "test_value"),
+			T:  ts.UnixMilli(),
+			V:  2,
+			M: metadata.Metadata{
 				Type: model.MetricTypeSummary,
 			},
 		},
@@ -1061,23 +1076,19 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 												settings,
 												pmetric.AggregationTemporalityCumulative,
 											)
-											appMetrics := NewCombinedAppenderMetrics(prometheus.NewRegistry())
-											noOpLogger := promslog.NewNopLogger()
 											b.ResetTimer()
 
 											for b.Loop() {
-												app := &noOpAppender{}
-												mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
-												converter := NewPrometheusConverter(mockAppender)
+												appTest := teststorage.NewAppendable()
+												app := appTest.AppenderV2(b.Context())
+												converter := NewPrometheusConverter(app)
 												annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
 												require.NoError(b, err)
 												require.Empty(b, annots)
 												if histogramCount+nonHistogramCount > 0 {
-													require.Positive(b, app.samples+app.histograms)
-													require.Positive(b, app.metadata)
+													require.NotEmpty(b, appTest.PendingSamples())
 												} else {
-													require.Zero(b, app.samples+app.histograms)
-													require.Zero(b, app.metadata)
+													require.Empty(b, appTest.PendingSamples())
 												}
 											}
 										})
@@ -1090,53 +1101,6 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 			}
 		})
 	}
-}
-
-type noOpAppender struct {
-	samples    int
-	histograms int
-	metadata   int
-}
-
-var _ storage.Appender = &noOpAppender{}
-
-func (a *noOpAppender) Append(_ storage.SeriesRef, _ labels.Labels, _ int64, _ float64) (storage.SeriesRef, error) {
-	a.samples++
-	return 1, nil
-}
-
-func (*noOpAppender) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	return 1, nil
-}
-
-func (a *noOpAppender) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	a.histograms++
-	return 1, nil
-}
-
-func (*noOpAppender) AppendHistogramSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 1, nil
-}
-
-func (a *noOpAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
-	a.metadata++
-	return 1, nil
-}
-
-func (*noOpAppender) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
-	return 1, nil
-}
-
-func (*noOpAppender) Commit() error {
-	return nil
-}
-
-func (*noOpAppender) Rollback() error {
-	return nil
-}
-
-func (*noOpAppender) SetOptions(_ *storage.AppendOptions) {
-	panic("not implemented")
 }
 
 type wantPrometheusMetric struct {

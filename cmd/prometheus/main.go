@@ -237,7 +237,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Experimental additional scrape metrics enabled")
 			case "metadata-wal-records":
 				c.scrape.AppendMetadata = true
-				c.web.AppendMetadata = true
+				c.tsdb.EnableMetadataWALRecords = true
 				features.Enable(features.TSDB, "metadata_wal_records")
 				logger.Info("Experimental metadata records in WAL enabled")
 			case "promql-per-step-stats":
@@ -264,7 +264,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			case "created-timestamp-zero-ingestion":
 				c.scrape.EnableStartTimestampZeroIngestion = true
-				c.web.STZeroIngestionEnabled = true
+				c.tsdb.EnableSTAsZeroSample = true
 				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
@@ -1935,6 +1935,8 @@ type tsdbOptions struct {
 	EnableOverlappingCompaction    bool
 	UseUncachedIO                  bool
 	BlockCompactionExcludeFunc     tsdb.BlockExcludeFilterFunc
+	EnableSTAsZeroSample           bool
+	EnableMetadataWALRecords       bool
 	BlockReloadInterval            model.Duration
 }
 
@@ -1962,6 +1964,8 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		BlockCompactionExcludeFunc:     opts.BlockCompactionExcludeFunc,
 		BlockReloadInterval:            time.Duration(opts.BlockReloadInterval),
 		FeatureRegistry:                features.DefaultRegistry,
+		EnableSTAsZeroSample:           opts.EnableSTAsZeroSample,
+		EnableMetadataWALRecords:       opts.EnableMetadataWALRecords,
 	}
 }
 

@@ -764,6 +764,11 @@ func (db *DB) Appender(context.Context) storage.Appender {
 	return db.appenderPool.Get().(storage.Appender)
 }
 
+func (*DB) AppenderV2(context.Context) storage.AppenderV2 {
+	// TODO(bwplotka): Rebase once https://github.com/prometheus/prometheus/pull/17677 is merged.
+	panic("not implemented: https://github.com/prometheus/prometheus/pull/17677 is adding this")
+}
+
 // Close implements the Storage interface.
 func (db *DB) Close() error {
 	db.mtx.Lock()

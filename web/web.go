@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -294,9 +294,7 @@ type Options struct {
 	ConvertOTLPDelta           bool
 	NativeOTLPDeltaIngestion   bool
 	IsAgent                    bool
-	STZeroIngestionEnabled     bool
 	EnableTypeAndUnitLabels    bool
-	AppendMetadata             bool
 	AppName                    string
 
 	AcceptRemoteWriteProtoMsgs remoteapi.MessageTypes
@@ -356,7 +354,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	factoryAr := func(context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
 	FactoryRr := func(context.Context) api_v1.RulesRetriever { return h.ruleManager }
 
-	var app storage.Appendable
+	var app storage.AppendableV2
 	if o.EnableRemoteWriteReceiver || o.EnableOTLPWriteReceiver {
 		app = h.storage
 	}
@@ -396,10 +394,8 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.EnableOTLPWriteReceiver,
 		o.ConvertOTLPDelta,
 		o.NativeOTLPDeltaIngestion,
-		o.STZeroIngestionEnabled,
 		o.LookbackDelta,
 		o.EnableTypeAndUnitLabels,
-		o.AppendMetadata,
 		nil,
 		o.FeatureRegistry,
 	)
