@@ -1447,32 +1447,6 @@ func (r *Reader) LabelNamesFor(ctx context.Context, postings Postings) ([]string
 	return names, nil
 }
 
-// LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (r *Reader) LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error) {
-	offset := id
-	// In version 2 series IDs are no longer exact references but series are 16-byte padded
-	// and the ID is the multiple of 16 of the actual position.
-	if r.version != FormatV1 {
-		offset = id * seriesByteAlign
-	}
-	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
-	buf := d.Get()
-	if d.Err() != nil {
-		return "", fmt.Errorf("label values for: %w", d.Err())
-	}
-
-	value, err := r.dec.LabelValueFor(ctx, buf, label)
-	if err != nil {
-		return "", storage.ErrNotFound
-	}
-
-	if value == "" {
-		return "", storage.ErrNotFound
-	}
-
-	return value, nil
-}
-
 // Series reads the series with the given ID and writes its labels and chunks into builder and chks.
 func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	offset := id
@@ -1807,37 +1781,6 @@ func (*Decoder) LabelNamesOffsetsFor(b []byte) ([]uint32, error) {
 	}
 
 	return offsets, d.Err()
-}
-
-// LabelValueFor decodes a label for a given series.
-func (dec *Decoder) LabelValueFor(ctx context.Context, b []byte, label string) (string, error) {
-	d := encoding.Decbuf{B: b}
-	k := d.Uvarint()
-
-	for range k {
-		lno := uint32(d.Uvarint())
-		lvo := uint32(d.Uvarint())
-
-		if d.Err() != nil {
-			return "", fmt.Errorf("read series label offsets: %w", d.Err())
-		}
-
-		ln, err := dec.LookupSymbol(ctx, lno)
-		if err != nil {
-			return "", fmt.Errorf("lookup label name: %w", err)
-		}
-
-		if ln == label {
-			lv, err := dec.LookupSymbol(ctx, lvo)
-			if err != nil {
-				return "", fmt.Errorf("lookup label value: %w", err)
-			}
-
-			return lv, nil
-		}
-	}
-
-	return "", d.Err()
 }
 
 // Series decodes a series entry from the given byte slice into builder and chks.

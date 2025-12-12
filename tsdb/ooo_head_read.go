@@ -500,10 +500,6 @@ func (*OOOCompactionHeadIndexReader) LabelNames(context.Context, ...*labels.Matc
 	return nil, errors.New("not implemented")
 }
 
-func (*OOOCompactionHeadIndexReader) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {
-	return "", errors.New("not implemented")
-}
-
 func (*OOOCompactionHeadIndexReader) LabelNamesFor(context.Context, index.Postings) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
