@@ -1074,6 +1074,8 @@ type TSDBConfig struct {
 	OutOfOrderTimeWindowFlag model.Duration `yaml:"out_of_order_time_window,omitempty"`
 
 	Retention *TSDBRetentionConfig `yaml:"retention,omitempty"`
+
+	HeadCompactionRatio float64 `yaml:"head_compaction_ratio,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

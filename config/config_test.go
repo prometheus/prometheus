@@ -1710,6 +1710,7 @@ var expectedConf = &Config{
 				Time: model.Duration(24 * time.Hour),
 				Size: 1 * units.GiB,
 			},
+			HeadCompactionRatio: 1.2,
 		},
 	},
 	TracingConfig: TracingConfig{
