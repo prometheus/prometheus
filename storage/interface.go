@@ -274,8 +274,8 @@ type AppendOptions struct {
 //
 // Operations on the Appender interface are not goroutine-safe.
 //
-// The order of samples appended via the Appender is preserved within each
-// series. I.e. samples are not reordered per timestamp, or by float/histogram
+// The order of samples appended via the Appender is preserved within each series.
+// I.e. timestamp order within batch is not validated, samples are not reordered per timestamp or by float/histogram
 // type.
 //
 // WARNING: Work AppendableV2 is in progress. Appendable will be removed soon (ETA: Q2 2026).
