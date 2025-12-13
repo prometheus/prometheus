@@ -161,6 +161,7 @@ func FromIntHistogram(timestamp int64, h *histogram.Histogram) Histogram {
 		PositiveDeltas: h.PositiveBuckets,
 		ResetHint:      Histogram_ResetHint(h.CounterResetHint),
 		Timestamp:      timestamp,
+		CustomValues:   h.CustomValues,
 	}
 }
 
@@ -178,6 +179,7 @@ func FromFloatHistogram(timestamp int64, fh *histogram.FloatHistogram) Histogram
 		PositiveCounts: fh.PositiveBuckets,
 		ResetHint:      Histogram_ResetHint(fh.CounterResetHint),
 		Timestamp:      timestamp,
+		CustomValues:   fh.CustomValues,
 	}
 }
 
