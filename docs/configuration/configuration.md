@@ -2554,12 +2554,35 @@ project: <string>
 [ <http_config> ]
 ```
 
-A Service Account Token can be set through `http_config`.
+A [Service Account Key](https://docs.stackit.cloud/platform/access-and-identity/service-accounts/how-tos/manage-service-account-keys/) can be set through `http_config`. This can be done mapping values from STACKIT Service Account json into oauth2 configuration.
+
+From a given Service Account json
+```json
+{
+  //....
+  "credentials": {
+    "kid": "6a7c3b36-xxxxxxxx",
+    "iss": "xxxx@sa.stackit.cloud",
+    "sub": "af2c2336-xxxxxxxx",
+    "aud": "https://stackit-service-account-prod.apps.01.cf.eu01.stackit.cloud",
+    "privateKey": "-----BEGIN PRIVATE KEY-----xxxx"
+  }
+}
+```
+
+properties can be mapped as:
 
 ```yaml
 stackit_sd_config:
-- authorization:
-    credentials: <token>
+- oauth2:
+    client_id: <credentials.sub>
+    client_certificate_key: <credentials.privateKey>
+    client_certificate_key_id: <credentials.kid>
+    iss: <credentials.iss>
+    audience: <credentials.aud>
+    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer"
+    token_url: "https://service-account.api.stackit.cloud/token"
+    signature_algorithm: RS512
 ```
 
 ### `<triton_sd_config>`
