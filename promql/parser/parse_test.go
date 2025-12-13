@@ -2708,7 +2708,7 @@ var testExpr = []struct {
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 4, End: 5},
-				Err:           errors.New("unexpected \"]\" in subquery or range selector, expected number, duration, or step()"),
+				Err:           errors.New("unexpected \"]\" in subquery or range selector, expected number, duration, step(), or range()"),
 				Query:         `foo[]`,
 			},
 		},
@@ -2741,7 +2741,7 @@ var testExpr = []struct {
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 22, End: 22},
-				Err:           errors.New("unexpected end of input in offset, expected number, duration, or step()"),
+				Err:           errors.New("unexpected end of input in offset, expected number, duration, step(), or range()"),
 				Query:         `some_metric[5m] OFFSET`,
 			},
 		},
@@ -4699,6 +4699,100 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `foo[range()]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			RangeExpr: &DurationExpr{
+				Op:       RANGE,
+				StartPos: 4,
+				EndPos:   11,
+			},
+			EndPos: 12,
+		},
+	},
+	{
+		input: `foo[-range()]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			RangeExpr: &DurationExpr{
+				Op:       SUB,
+				StartPos: 4,
+				RHS:      &DurationExpr{Op: RANGE, StartPos: 5, EndPos: 12},
+			},
+			EndPos: 13,
+		},
+	},
+	{
+		input: `foo offset range()`,
+		expected: &VectorSelector{
+			Name: "foo",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 18},
+			OriginalOffsetExpr: &DurationExpr{
+				Op:       RANGE,
+				StartPos: 11,
+				EndPos:   18,
+			},
+		},
+	},
+	{
+		input: `foo offset -range()`,
+		expected: &VectorSelector{
+			Name: "foo",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 19},
+			OriginalOffsetExpr: &DurationExpr{
+				Op:       SUB,
+				RHS:      &DurationExpr{Op: RANGE, StartPos: 12, EndPos: 19},
+				StartPos: 11,
+			},
+		},
+	},
+	{
+		input: `foo[max(range(),5s)]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			RangeExpr: &DurationExpr{
+				Op: MAX,
+				LHS: &DurationExpr{
+					Op:       RANGE,
+					StartPos: 8,
+					EndPos:   15,
+				},
+				RHS: &NumberLiteral{
+					Val:      5,
+					Duration: true,
+					PosRange: posrange.PositionRange{Start: 16, End: 18},
+				},
+				StartPos: 4,
+				EndPos:   19,
+			},
+			EndPos: 20,
+		},
+	},
+	{
 		input: `foo[4s+4s:1s*2] offset (5s-8)`,
 		expected: &SubqueryExpr{
 			Expr: &VectorSelector{
@@ -4942,7 +5036,7 @@ var testExpr = []struct {
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 8, End: 9},
-				Err:           errors.New(`unexpected "]" in subquery or range selector, expected number, duration, or step()`),
+				Err:           errors.New(`unexpected "]" in subquery or range selector, expected number, duration, step(), or range()`),
 				Query:         `foo[step]`,
 			},
 		},

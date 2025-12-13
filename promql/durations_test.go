@@ -214,6 +214,37 @@ func TestCalculateDuration(t *testing.T) {
 			expected: 3 * time.Second,
 		},
 		{
+			name: "range",
+			expr: &parser.DurationExpr{
+				Op: parser.RANGE,
+			},
+			expected: 5 * time.Minute,
+		},
+		{
+			name: "range division",
+			expr: &parser.DurationExpr{
+				LHS: &parser.DurationExpr{
+					Op: parser.RANGE,
+				},
+				RHS: &parser.NumberLiteral{Val: 2},
+				Op:  parser.DIV,
+			},
+			expected: 150 * time.Second,
+		},
+		{
+			name: "max of step and range",
+			expr: &parser.DurationExpr{
+				LHS: &parser.DurationExpr{
+					Op: parser.STEP,
+				},
+				RHS: &parser.DurationExpr{
+					Op: parser.RANGE,
+				},
+				Op: parser.MAX,
+			},
+			expected: 5 * time.Minute,
+		},
+		{
 			name: "division by zero",
 			expr: &parser.DurationExpr{
 				LHS: &parser.NumberLiteral{Val: 5},
@@ -243,7 +274,7 @@ func TestCalculateDuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := &durationVisitor{step: 1 * time.Second}
+			v := &durationVisitor{step: 1 * time.Second, queryRange: 5 * time.Minute}
 			result, err := v.calculateDuration(tt.expr, tt.allowedNegative)
 			if tt.errorMessage != "" {
 				require.Error(t, err)

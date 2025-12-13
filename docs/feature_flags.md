@@ -197,7 +197,12 @@ the offset calculation.
 
 `step()` can be used in duration expressions.
 For a **range query**, it resolves to the step width of the range query.
-For an **instant query**, it resolves to `0s`. 
+For an **instant query**, it resolves to `0s`.
+
+`range()` can be used in duration expressions.
+For a **range query**, it resolves to the full range of the query (end time - start time).
+For an **instant query**, it resolves to `0s`.
+This is particularly useful in combination with `@end()` to look back over the entire query range, e.g., `max_over_time(metric[range()] @ end())`.
 
 `min(<duration>, <duration>)` and `max(<duration>, <duration>)` can be used to find the minimum or maximum of two duration expressions.
 

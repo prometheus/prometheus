@@ -182,6 +182,8 @@ func (node *DurationExpr) writeTo(b *bytes.Buffer) {
 	switch {
 	case node.Op == STEP:
 		b.WriteString("step()")
+	case node.Op == RANGE:
+		b.WriteString("range()")
 	case node.Op == MIN:
 		b.WriteString("min(")
 		b.WriteString(node.LHS.String())
