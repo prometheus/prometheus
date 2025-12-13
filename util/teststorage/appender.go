@@ -175,7 +175,8 @@ type Appendable struct {
 	rolledbackSamples []Sample
 
 	// Optional chain (Appender will collect samples, then run next).
-	next storage.Appendable
+	next   storage.Appendable
+	nextV2 storage.AppendableV2
 }
 
 // NewAppendable returns mock Appendable.
@@ -183,9 +184,15 @@ func NewAppendable() *Appendable {
 	return &Appendable{}
 }
 
-// Then chains another appender from the provided appendable for the Appender calls.
+// Then chains another appender from the provided Appendable for the Appender calls.
 func (a *Appendable) Then(appendable storage.Appendable) *Appendable {
 	a.next = appendable
+	return a
+}
+
+// ThenV2 chains another appenderV2 from the provided AppendableV2 for the AppenderV2 calls.
+func (a *Appendable) ThenV2(appendable storage.AppendableV2) *Appendable {
+	a.nextV2 = appendable
 	return a
 }
 
@@ -201,6 +208,9 @@ func (a *Appendable) WithErrs(appendErrFn func(ls labels.Labels) error, appendEx
 func (a *Appendable) PendingSamples() []Sample {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
+	if len(a.pendingSamples) == 0 {
+		return nil
+	}
 
 	ret := make([]Sample, len(a.pendingSamples))
 	copy(ret, a.pendingSamples)
@@ -211,6 +221,9 @@ func (a *Appendable) PendingSamples() []Sample {
 func (a *Appendable) ResultSamples() []Sample {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
+	if len(a.resultSamples) == 0 {
+		return nil
+	}
 
 	ret := make([]Sample, len(a.resultSamples))
 	copy(ret, a.resultSamples)
@@ -221,6 +234,9 @@ func (a *Appendable) ResultSamples() []Sample {
 func (a *Appendable) RolledbackSamples() []Sample {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
+	if len(a.rolledbackSamples) == 0 {
+		return nil
+	}
 
 	ret := make([]Sample, len(a.rolledbackSamples))
 	copy(ret, a.rolledbackSamples)
@@ -239,7 +255,7 @@ func (a *Appendable) ResultReset() {
 // TODO: Rewrite tests to test metadata on resultSamples instead.
 func (a *Appendable) ResultMetadata() []Sample {
 	var ret []Sample
-	for _, s := range a.resultSamples {
+	for _, s := range a.ResultSamples() {
 		ret = append(ret, Sample{L: s.L, M: s.M})
 	}
 	return ret
@@ -412,4 +428,58 @@ func (a *appender) Rollback() error {
 		return a.next.Rollback()
 	}
 	return nil
+}
+
+func (a *Appendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	ret := &appenderV2{appender: appender{a: a}}
+	if a.next != nil {
+		ret.next = a.nextV2.AppenderV2(ctx)
+	}
+	return ret
+}
+
+type appenderV2 struct {
+	appender
+
+	next storage.AppenderV2
+}
+
+func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+	if a.a.appendErrFn != nil {
+		if err := a.a.appendErrFn(ls); err != nil {
+			return 0, err
+		}
+	}
+
+	a.a.mtx.Lock()
+	a.a.pendingSamples = append(a.a.pendingSamples, Sample{
+		MF: opts.MetricFamilyName,
+		M:  opts.Metadata,
+		L:  ls,
+		ST: st, T: t,
+		V: v, H: h, FH: fh,
+		ES: opts.Exemplars,
+	})
+	a.a.mtx.Unlock()
+
+	var partialErr error
+	if a.a.appendExemplarsError != nil {
+		var exErrs []error
+		for range opts.Exemplars {
+			exErrs = append(exErrs, a.a.appendExemplarsError)
+		}
+		if len(exErrs) > 0 {
+			partialErr = &storage.AppendPartialError{ExemplarErrors: exErrs}
+		}
+	}
+
+	if a.next != nil && partialErr == nil {
+		return a.next.Append(ref, ls, st, t, v, h, fh, opts)
+	}
+
+	if ref == 0 {
+		// Use labels hash as a stand-in for unique series reference, to avoid having to track all series.
+		ref = storage.SeriesRef(ls.Hash())
+	}
+	return ref, partialErr
 }
