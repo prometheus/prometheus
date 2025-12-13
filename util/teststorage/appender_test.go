@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -91,7 +92,7 @@ func requireNotEqual(t testing.TB, a, b any) {
 		"b: %s", a, b))
 }
 
-func TestConcurrentAppender_Panic(t *testing.T) {
+func TestConcurrentAppender_ReturnsErrAppender(t *testing.T) {
 	a := NewAppendable()
 
 	// Non-concurrent multiple use if fine.
@@ -125,6 +126,43 @@ func TestConcurrentAppender_Panic(t *testing.T) {
 	_, err := app.Append(0, labels.EmptyLabels(), 0, 0)
 	require.Error(t, err)
 	_, err = app.AppendHistogram(0, labels.EmptyLabels(), 0, nil, nil)
+	require.Error(t, err)
+	require.Error(t, app.Commit())
+	require.Error(t, app.Rollback())
+}
+
+func TestConcurrentAppenderV2_ReturnsErrAppender(t *testing.T) {
+	a := NewAppendable()
+
+	// Non-concurrent multiple use if fine.
+	app := a.AppenderV2(t.Context())
+	require.Equal(t, int32(1), a.openAppenders.Load())
+	require.NoError(t, app.Commit())
+	// Repeated commit fails.
+	require.Error(t, app.Commit())
+
+	app = a.AppenderV2(t.Context())
+	require.NoError(t, app.Rollback())
+	// Commit after rollback fails.
+	require.Error(t, app.Commit())
+
+	a.WithErrs(
+		nil,
+		nil,
+		errors.New("commit err"),
+	)
+	app = a.AppenderV2(t.Context())
+	require.Error(t, app.Commit())
+
+	a.WithErrs(nil, nil, nil)
+	app = a.AppenderV2(t.Context())
+	require.NoError(t, app.Commit())
+	require.Equal(t, int32(0), a.openAppenders.Load())
+
+	// Concurrent use should return appender that errors.
+	_ = a.AppenderV2(t.Context())
+	app = a.AppenderV2(t.Context())
+	_, err := app.Append(0, labels.EmptyLabels(), 0, 0, 0, nil, nil, storage.AOptions{})
 	require.Error(t, err)
 	require.Error(t, app.Commit())
 	require.Error(t, app.Rollback())
