@@ -1,4 +1,4 @@
-// Copyright 2014 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -61,7 +61,8 @@ type SeriesRef uint64
 
 // Appendable allows creating Appender.
 //
-// WARNING: Work AppendableV2 is in progress. Appendable will be removed soon (ETA: Q2 2026).
+// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// Appendable will be removed soon (ETA: Q2 2026).
 type Appendable interface {
 	// Appender returns a new appender for the storage.
 	//
@@ -77,10 +78,15 @@ type SampleAndChunkQueryable interface {
 }
 
 // Storage ingests and manages samples, along with various indexes. All methods
-// are goroutine-safe. Storage implements storage.Appender.
+// are goroutine-safe.
 type Storage interface {
 	SampleAndChunkQueryable
+
+	// Appendable allows appending to storage.
+	// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+	// Appendable will be removed soon (ETA: Q2 2026).
 	Appendable
+	AppendableV2
 
 	// StartTime returns the oldest timestamp stored in the storage.
 	StartTime() (int64, error)
@@ -261,7 +267,8 @@ func (f QueryableFunc) Querier(mint, maxt int64) (Querier, error) {
 
 // AppendOptions provides options for implementations of the Appender interface.
 //
-// WARNING: Work AppendableV2 is in progress. Appendable will be removed soon (ETA: Q2 2026).
+// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// Appendable will be removed soon (ETA: Q2 2026).
 type AppendOptions struct {
 	// DiscardOutOfOrder tells implementation that this append should not be out
 	// of order. An OOO append MUST be rejected with storage.ErrOutOfOrderSample
@@ -278,7 +285,8 @@ type AppendOptions struct {
 // series. I.e. samples are not reordered per timestamp, or by float/histogram
 // type.
 //
-// WARNING: Work AppendableV2 is in progress. Appendable will be removed soon (ETA: Q2 2026).
+// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// Appendable will be removed soon (ETA: Q2 2026).
 type Appender interface {
 	AppenderTransaction
 
@@ -315,7 +323,8 @@ type GetRef interface {
 // ExemplarAppender provides an interface for adding samples to exemplar storage, which
 // within Prometheus is in-memory only.
 //
-// WARNING: Work AppendableV2 is in progress. Appendable will be removed soon (ETA: Q2 2026).
+// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// Appendable will be removed soon (ETA: Q2 2026).
 type ExemplarAppender interface {
 	// AppendExemplar adds an exemplar for the given series labels.
 	// An optional reference number can be provided to accelerate calls.
@@ -333,7 +342,8 @@ type ExemplarAppender interface {
 
 // HistogramAppender provides an interface for appending histograms to the storage.
 //
-// WARNING: Work AppendableV2 is in progress. Appendable will be removed soon (ETA: Q2 2026).
+// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// Appendable will be removed soon (ETA: Q2 2026).
 type HistogramAppender interface {
 	// AppendHistogram adds a histogram for the given series labels. An
 	// optional reference number can be provided to accelerate calls. A
@@ -365,7 +375,8 @@ type HistogramAppender interface {
 
 // MetadataUpdater provides an interface for associating metadata to stored series.
 //
-// WARNING: Work AppendableV2 is in progress. Appendable will be removed soon (ETA: Q2 2026).
+// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// Appendable will be removed soon (ETA: Q2 2026).
 type MetadataUpdater interface {
 	// UpdateMetadata updates a metadata entry for the given series and labels.
 	// A series reference number is returned which can be used to modify the
@@ -379,7 +390,8 @@ type MetadataUpdater interface {
 
 // StartTimestampAppender provides an interface for appending ST to storage.
 //
-// WARNING: Work AppendableV2 is in progress. Appendable will be removed soon (ETA: Q2 2026).
+// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// Appendable will be removed soon (ETA: Q2 2026).
 type StartTimestampAppender interface {
 	// AppendSTZeroSample adds synthetic zero sample for the given st timestamp,
 	// which will be associated with given series, labels and the incoming
