@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -706,7 +707,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 
 type SeriesSetFormatter func(series storage.SeriesSet) error
 
-func dumpSamples(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt int64, match []string, formatter SeriesSetFormatter) (err error) {
+func dumpTSDBData(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt int64, match []string, formatter SeriesSetFormatter) (err error) {
 	db, err := tsdb.OpenDBReadOnly(dbDir, sandboxDirRoot, nil)
 	if err != nil {
 		return err
@@ -792,6 +793,30 @@ func CondensedString(ls labels.Labels) string {
 	})
 	b.WriteByte('}')
 	return b.String()
+}
+
+func formatSeriesSetLabelsToJSON(ss storage.SeriesSet) error {
+	seriesCache := make(map[string]struct{})
+	for ss.Next() {
+		series := ss.At()
+		lbs := series.Labels()
+
+		b, err := json.Marshal(lbs)
+		if err != nil {
+			return err
+		}
+
+		if len(b) == 0 {
+			continue
+		}
+
+		s := string(b)
+		if _, ok := seriesCache[s]; !ok {
+			fmt.Println(s)
+			seriesCache[s] = struct{}{}
+		}
+	}
+	return nil
 }
 
 func formatSeriesSetOpenMetrics(ss storage.SeriesSet) error {
