@@ -211,6 +211,15 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		},
 		[]string{"interval"},
 	)
+	sm.targetScrapeDuration = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:                            "prometheus_target_scrape_duration_seconds",
+			Help:                            "Total duration of the scrape from start to commit completion in seconds.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		},
+	)
 	sm.targetScrapeSampleLimit = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_exceeded_sample_limit_total",
@@ -251,15 +260,6 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_exemplar_out_of_order_total",
 			Help: "Total number of exemplar rejected due to not being out of the expected order.",
-		},
-	)
-	sm.targetScrapeDuration = prometheus.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:                            "prometheus_target_scrape_duration_seconds",
-			Help:                            "Total duration of the scrape from start to commit completion in seconds.",
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
 		},
 	)
 
