@@ -689,7 +689,8 @@ export class HybridComplete implements CompleteStrategy {
       .then((metricMetadata) => {
         if (metricMetadata) {
           for (const [metricName, node] of metricCompletion) {
-            // First check if the full metric name has metadata (even if it has one of the histogram/summary/openmetrics suffixes, it may be a metric that is not following naming conventions)
+            // First check if the full metric name has metadata (even if it has one of the histogram/summary/openmetrics suffixes
+            // it may be a metric that is not following naming conventions)
             // Then fall back to the base metric name if full metadata doesn't exist
             const metadata = metricMetadata[metricName] ?? metricMetadata[metricName.replace(/(_count|_sum|_bucket|_total)$/, '')];
             if (metadata) {
