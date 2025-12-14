@@ -269,6 +269,10 @@ func TestExprString(t *testing.T) {
 		{
 			in: `predict_linear(foo[1h], 3000)`,
 		},
+		{
+			in:  `sum by("üüü") (foo)`,
+			out: `sum by ("üüü") (foo)`,
+		},
 	}
 
 	EnableExtendedRangeSelectors = true
@@ -391,6 +395,48 @@ func TestVectorSelector_String(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.expected, tc.vs.String())
+		})
+	}
+}
+
+func TestBinaryExprUTF8Labels(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "UTF-8 labels in on clause",
+			input:    `foo / on("äää") bar`,
+			expected: `foo / on ("äää") bar`,
+		},
+		{
+			name:     "UTF-8 labels in group_left clause",
+			input:    `foo / on("äää") group_left("ööö") bar`,
+			expected: `foo / on ("äää") group_left ("ööö") bar`,
+		},
+		{
+			name:     "Mixed legacy and UTF-8 labels",
+			input:    `foo / on(legacy, "üüü") bar`,
+			expected: `foo / on (legacy, "üüü") bar`,
+		},
+		{
+			name:     "Legacy labels only (should not quote)",
+			input:    `foo / on(job, instance) bar`,
+			expected: `foo / on (job, instance) bar`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			expr, err := ParseExpr(tc.input)
+			if err != nil {
+				t.Fatalf("Failed to parse: %v", err)
+			}
+			result := expr.String()
+			if result != tc.expected {
+				t.Errorf("Expected: %s\nGot: %s", tc.expected, result)
+			}
 		})
 	}
 }
