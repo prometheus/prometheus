@@ -131,16 +131,29 @@ func (c *ECSSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 
 	if c.Region == "" {
-		cfg, err := awsConfig.LoadDefaultConfig(context.TODO())
+		cfg, err := awsConfig.LoadDefaultConfig(context.Background())
 		if err != nil {
 			return err
 		}
-		client := imds.NewFromConfig(cfg)
-		result, err := client.GetRegion(context.Background(), &imds.GetRegionInput{})
-		if err != nil {
-			return fmt.Errorf("ECS SD configuration requires a region. Tried to fetch it from the instance metadata: %w", err)
+
+		if cfg.Region != "" {
+			// If the region is already set in the config, use it (env vars).
+			c.Region = cfg.Region
 		}
-		c.Region = result.Region
+
+		if c.Region == "" {
+			// Try to get the region from IMDS.
+			imdsClient := imds.NewFromConfig(cfg)
+			region, err := imdsClient.GetRegion(context.Background(), &imds.GetRegionInput{})
+			if err != nil {
+				return err
+			}
+			c.Region = region.Region
+		}
+	}
+
+	if c.Region == "" {
+		return errors.New("ECS SD configuration requires a region")
 	}
 
 	return c.HTTPClientConfig.Validate()
