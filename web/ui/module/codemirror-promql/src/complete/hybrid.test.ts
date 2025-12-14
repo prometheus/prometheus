@@ -1481,7 +1481,8 @@ describe('autocomplete promQL test', () => {
     const context = new CompletionContext(state, metricName.length, true);
     const completion = newCompleteStrategy({ remote: { url: 'http://localhost:8080' } });
     const result = await completion.promQL(context);
-    // nock only mocks the HTTP endpoints; this test just ensures remote completion returns at least one option
+    // nock only mocks the HTTP endpoints; this test just ensures remote completion works
+    // when metadata for an OpenMetrics _total counter is stored under its base metric name.
     expect(result).not.toBeNull();
     expect((result as NonNullable<typeof result>).options.length).toBeGreaterThan(0);
   });
