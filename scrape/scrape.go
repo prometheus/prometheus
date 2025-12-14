@@ -1335,7 +1335,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		err = app.Commit()
 		if sl.reportExtraMetrics {
 			totalDuration := time.Since(start)
-			// Record total scrape duration metric.	
+			// Record total scrape duration metric.
 			sl.metrics.targetScrapeDuration.Observe(totalDuration.Seconds())
 		}
 		if err != nil {
