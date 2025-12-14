@@ -689,11 +689,10 @@ export class HybridComplete implements CompleteStrategy {
       .then((metricMetadata) => {
         if (metricMetadata) {
           for (const [metricName, node] of metricCompletion) {
-            // First check if the full metric name has metadata (even if it has one of the
-            // histogram/summary suffixes, it may be a metric that is not following naming
-            // conventions, see https://github.com/prometheus/prometheus/issues/16907).
-            // Then fall back to the base metric name if full metadata doesn't exist.
-            const metadata = metricMetadata[metricName] ?? metricMetadata[metricName.replace(/(_count|_sum|_bucket)$/, '')];
+            // First check if the full metric name has metadata (even if it has one of the histogram/summary/openmetrics suffixes
+            // it may be a metric that is not following naming conventions)
+            // Then fall back to the base metric name if full metadata doesn't exist
+            const metadata = metricMetadata[metricName] ?? metricMetadata[metricName.replace(/(_count|_sum|_bucket|_total)$/, '')];
             if (metadata) {
               if (metadata.length > 1) {
                 // it means the metricName has different possible helper and type

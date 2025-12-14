@@ -73,7 +73,7 @@ const MetricsExplorer: FC<MetricsExplorerProps> = ({
       // histogram/summary suffixes, it may be a metric that is not following naming
       // conventions, see https://github.com/prometheus/prometheus/issues/16907).
       data.data[m] ??
-      data.data[m.replace(/(_count|_sum|_bucket)$/, "")] ?? [
+      data.data[m.replace(/(_count|_sum|_bucket|_total)$/, "")] ?? [
         { help: "unknown", type: "unknown", unit: "unknown" },
       ]
     );

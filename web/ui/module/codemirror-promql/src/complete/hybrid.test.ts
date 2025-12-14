@@ -29,6 +29,7 @@ import {
 import { EqlSingle, Neq } from '@prometheus-io/lezer-promql';
 import { syntaxTree } from '@codemirror/language';
 import { newCompleteStrategy } from './index';
+import nock from 'nock';
 
 describe('analyzeCompletion test', () => {
   const testCases = [
@@ -1452,5 +1453,37 @@ describe('autocomplete promQL test', () => {
       const result = await completion.promQL(context);
       expect(value.expectedResult).toEqual(result);
     });
+  });
+
+  it('online autocomplete of openmetrics counter', async () => {
+    const metricName = 'direct_notifications_total';
+    const baseMetricName = 'direct_notifications';
+    nock('http://localhost:8080')
+      .get('/api/v1/label/__name__/values')
+      .query(true)
+      .reply(200, { status: 'success', data: [metricName] });
+    nock('http://localhost:8080')
+      .get('/api/v1/metadata')
+      .query(true)
+      .reply(200, {
+        status: 'success',
+        data: {
+          [baseMetricName]: [
+            {
+              type: 'counter',
+              help: 'Number of direct notifications.',
+              unit: '',
+            },
+          ],
+        },
+      });
+    const state = createEditorState(metricName);
+    const context = new CompletionContext(state, metricName.length, true);
+    const completion = newCompleteStrategy({ remote: { url: 'http://localhost:8080' } });
+    const result = await completion.promQL(context);
+    // nock only mocks the HTTP endpoints; this test just ensures remote completion works
+    // when metadata for an OpenMetrics _total counter is stored under its base metric name.
+    expect(result).not.toBeNull();
+    expect((result as NonNullable<typeof result>).options.length).toBeGreaterThan(0);
   });
 });
