@@ -145,21 +145,9 @@ func (node *BinaryExpr) ShortString() string {
 	return node.Op.String() + node.returnBool() + node.getMatchingStr()
 }
 
-// joinLabels joins label names, quoting them if they are not valid legacy label names.
-func joinLabels(labels []string) string {
-	quoted := make([]string, 0, len(labels))
-	for _, label := range labels {
-		if model.LegacyValidation.IsValidLabelName(label) {
-			quoted = append(quoted, label)
-		} else {
-			quoted = append(quoted, strconv.Quote(label))
-		}
-	}
-	return strings.Join(quoted, ", ")
-}
-
 func (node *BinaryExpr) getMatchingStr() string {
 	matching := ""
+	var b bytes.Buffer
 	vm := node.VectorMatching
 	if vm != nil {
 		if len(vm.MatchingLabels) > 0 || vm.On || vm.Card == CardManyToOne || vm.Card == CardOneToMany {
@@ -167,7 +155,14 @@ func (node *BinaryExpr) getMatchingStr() string {
 			if vm.On {
 				vmTag = "on"
 			}
-			matching = fmt.Sprintf(" %s (%s)", vmTag, joinLabels(vm.MatchingLabels))
+			// Use writeLabels() instead of joinLabels()
+			b.Reset()
+			b.WriteString(" ")
+			b.WriteString(vmTag)
+			b.WriteString(" (")
+			writeLabels(&b, vm.MatchingLabels)
+			b.WriteString(")")
+			matching = b.String()
 		}
 
 		if vm.Card == CardManyToOne || vm.Card == CardOneToMany {
@@ -175,7 +170,14 @@ func (node *BinaryExpr) getMatchingStr() string {
 			if vm.Card == CardManyToOne {
 				vmCard = "left"
 			}
-			matching += fmt.Sprintf(" group_%s (%s)", vmCard, joinLabels(vm.Include))
+			// Use writeLabels() instead of joinLabels()
+			b.Reset()
+			b.WriteString(" group_")
+			b.WriteString(vmCard)
+			b.WriteString(" (")
+			writeLabels(&b, vm.Include)
+			b.WriteString(")")
+			matching += b.String()
 		}
 	}
 	return matching

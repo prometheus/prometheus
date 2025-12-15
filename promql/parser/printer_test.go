@@ -273,6 +273,14 @@ func TestExprString(t *testing.T) {
 			in:  `sum by("üüü") (foo)`,
 			out: `sum by ("üüü") (foo)`,
 		},
+		{
+			in:  `sum without("äää") (foo)`,
+			out: `sum without ("äää") (foo)`,
+		},
+		{
+			in:  `count by("ööö", job) (foo)`,
+			out: `count by ("ööö", job) (foo)`,
+		},
 	}
 
 	EnableExtendedRangeSelectors = true
@@ -411,9 +419,19 @@ func TestBinaryExprUTF8Labels(t *testing.T) {
 			expected: `foo / on ("äää") bar`,
 		},
 		{
+			name:     "UTF-8 labels in ignoring clause",
+			input:    `foo / ignoring("üüü") bar`,
+			expected: `foo / ignoring ("üüü") bar`,
+		},
+		{
 			name:     "UTF-8 labels in group_left clause",
 			input:    `foo / on("äää") group_left("ööö") bar`,
 			expected: `foo / on ("äää") group_left ("ööö") bar`,
+		},
+		{
+			name:     "UTF-8 labels in group_right clause",
+			input:    `foo / on("äää") group_right("ööö") bar`,
+			expected: `foo / on ("äää") group_right ("ööö") bar`,
 		},
 		{
 			name:     "Mixed legacy and UTF-8 labels",
