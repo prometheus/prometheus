@@ -9284,3 +9284,42 @@ func TestBlockClosingBlockedDuringRemoteRead(t *testing.T) {
 	case <-blockClosed:
 	}
 }
+
+func TestBlockReloadInterval(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name            string
+		reloadInterval  time.Duration
+		expectedReloads float64
+	}{
+		{
+			name:            "extremely small interval",
+			reloadInterval:  1 * time.Millisecond,
+			expectedReloads: 5,
+		},
+		{
+			name:            "one second interval",
+			reloadInterval:  1 * time.Second,
+			expectedReloads: 5,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			db := newTestDB(t, withOpts(&Options{
+				BlockReloadInterval: c.reloadInterval,
+			}))
+			if c.reloadInterval < 1*time.Second {
+				require.Equal(t, 1*time.Second, db.opts.BlockReloadInterval, "interval should be clamped to minimum of 1 second")
+			}
+			require.Equal(t, float64(1), prom_testutil.ToFloat64(db.metrics.reloads), "there should be one initial reload")
+			require.Eventually(t, func() bool {
+				return prom_testutil.ToFloat64(db.metrics.reloads) == c.expectedReloads
+			},
+				5*time.Second,
+				100*time.Millisecond,
+			)
+		})
+	}
+}

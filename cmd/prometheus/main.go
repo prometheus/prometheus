@@ -486,6 +486,9 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.delay-compact-file.path", "Path to a JSON file with uploaded TSDB blocks e.g. Thanos shipper meta file. If set TSDB will only compact 1 level blocks that are marked as uploaded in that file, improving external storage integrations e.g. with Thanos sidecar. 1+ level compactions won't be delayed.").
 		Default("").StringVar(&tsdbDelayCompactFilePath)
 
+	serverOnlyFlag(a, "storage.tsdb.block-reload-interval", "Interval at which to check for new or removed blocks in storage. Users who manually backfill or drop blocks must wait up to this duration before changes become available.").
+		Default("1m").Hidden().SetValue(&cfg.tsdb.BlockReloadInterval)
+
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
 
@@ -676,6 +679,10 @@ func main() {
 			cfgFile.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
 		}
 		cfg.tsdb.MaxExemplars = cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars
+	}
+	if cfg.tsdb.BlockReloadInterval < model.Duration(1*time.Second) {
+		logger.Warn("The option --storage.tsdb.block-reload-interval is set to a value less than 1s. Setting it to 1s to avoid overload.")
+		cfg.tsdb.BlockReloadInterval = model.Duration(1 * time.Second)
 	}
 	if cfgFile.StorageConfig.TSDBConfig != nil {
 		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
@@ -1353,6 +1360,7 @@ func main() {
 					"RetentionDuration", cfg.tsdb.RetentionDuration,
 					"WALSegmentSize", cfg.tsdb.WALSegmentSize,
 					"WALCompressionType", cfg.tsdb.WALCompressionType,
+					"BlockReloadInterval", cfg.tsdb.BlockReloadInterval,
 				)
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
@@ -1910,6 +1918,7 @@ type tsdbOptions struct {
 	EnableOverlappingCompaction    bool
 	UseUncachedIO                  bool
 	BlockCompactionExcludeFunc     tsdb.BlockExcludeFilterFunc
+	BlockReloadInterval            model.Duration
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1934,6 +1943,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
 		UseUncachedIO:                  opts.UseUncachedIO,
 		BlockCompactionExcludeFunc:     opts.BlockCompactionExcludeFunc,
+		BlockReloadInterval:            time.Duration(opts.BlockReloadInterval),
 		FeatureRegistry:                features.DefaultRegistry,
 	}
 }
