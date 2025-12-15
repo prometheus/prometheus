@@ -3866,6 +3866,13 @@ func (ev *evaluator) mergeSeriesWithSameLabelset(mat Matrix) Matrix {
 		return mat
 	}
 
+	// Fast path: check if there are any duplicate labelsets without allocating.
+	// This is the common case and we want to avoid allocations.
+	if !mat.ContainsSameLabelset() {
+		return mat
+	}
+
+	// Slow path: there are duplicates, so we need to merge series with non-overlapping timestamps.
 	// Group series by their labelset hash.
 	seriesByHash := make(map[uint64][]int)
 	for i := range mat {
@@ -3873,62 +3880,20 @@ func (ev *evaluator) mergeSeriesWithSameLabelset(mat Matrix) Matrix {
 		seriesByHash[hash] = append(seriesByHash[hash], i)
 	}
 
-	// Check if any merging is needed.
-	needsMerge := false
-	for _, indices := range seriesByHash {
-		if len(indices) > 1 {
-			needsMerge = true
-			break
-		}
-	}
-
-	if !needsMerge {
-		return mat
-	}
-
 	// Merge series with the same labelset.
 	merged := make(Matrix, 0, len(seriesByHash))
 	for _, indices := range seriesByHash {
-		base := mat[indices[0]]
-
 		if len(indices) == 1 {
 			// No collision, add as-is.
-			merged = append(merged, base)
+			merged = append(merged, mat[indices[0]])
 			continue
 		}
 
-		// Multiple series with the same labelset - check for overlaps and merge.
-		// Build a set of timestamps to detect overlaps.
-		timestamps := make(map[int64]struct{}, len(base.Floats)+len(base.Histograms))
-		for _, p := range base.Floats {
-			timestamps[p.T] = struct{}{}
-		}
-		for _, p := range base.Histograms {
-			timestamps[p.T] = struct{}{}
-		}
-
-		// Merge remaining series, checking for timestamp overlaps.
+		// Multiple series with the same labelset - merge all samples.
+		base := mat[indices[0]]
 		for _, idx := range indices[1:] {
-			series := mat[idx]
-
-			// Check floats for overlaps.
-			for _, p := range series.Floats {
-				if _, exists := timestamps[p.T]; exists {
-					ev.errorf("vector cannot contain metrics with the same labelset")
-				}
-				timestamps[p.T] = struct{}{}
-			}
-			// Check histograms for overlaps.
-			for _, p := range series.Histograms {
-				if _, exists := timestamps[p.T]; exists {
-					ev.errorf("vector cannot contain metrics with the same labelset")
-				}
-				timestamps[p.T] = struct{}{}
-			}
-
-			// No overlaps, merge the samples.
-			base.Floats = append(base.Floats, series.Floats...)
-			base.Histograms = append(base.Histograms, series.Histograms...)
+			base.Floats = append(base.Floats, mat[idx].Floats...)
+			base.Histograms = append(base.Histograms, mat[idx].Histograms...)
 		}
 
 		// Sort merged samples by timestamp.
@@ -3938,6 +3903,18 @@ func (ev *evaluator) mergeSeriesWithSameLabelset(mat Matrix) Matrix {
 		sort.Slice(base.Histograms, func(i, j int) bool {
 			return base.Histograms[i].T < base.Histograms[j].T
 		})
+
+		// Check for duplicate timestamps in sorted samples.
+		for i := 1; i < len(base.Floats); i++ {
+			if base.Floats[i].T == base.Floats[i-1].T {
+				ev.errorf("vector cannot contain metrics with the same labelset")
+			}
+		}
+		for i := 1; i < len(base.Histograms); i++ {
+			if base.Histograms[i].T == base.Histograms[i-1].T {
+				ev.errorf("vector cannot contain metrics with the same labelset")
+			}
+		}
 
 		merged = append(merged, base)
 	}
