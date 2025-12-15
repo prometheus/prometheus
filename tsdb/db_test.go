@@ -3929,10 +3929,27 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators(t *te
 	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier was closed")
 }
 
-func newTestDB(t *testing.T) *DB {
+type testDBOptions struct {
+	opts *Options
+}
+
+type testDBOpt func(*testDBOptions)
+
+func withOpts(opts *Options) testDBOpt {
+	return func(o *testDBOptions) {
+		o.opts = opts
+	}
+}
+
+func newTestDB(t *testing.T, fopts ...testDBOpt) *DB {
 	dir := t.TempDir()
 
-	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
+	o := &testDBOptions{opts: DefaultOptions()}
+	for _, fopt := range fopts {
+		fopt(o)
+	}
+
+	db, err := Open(dir, nil, nil, o.opts, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
@@ -9515,5 +9532,44 @@ func TestBlockClosingBlockedDuringRemoteRead(t *testing.T) {
 	case <-time.After(10 * time.Millisecond):
 		require.Fail(t, "Closing the block timed out.")
 	case <-blockClosed:
+	}
+}
+
+func TestBlockReloadInterval(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name            string
+		reloadInterval  time.Duration
+		expectedReloads float64
+	}{
+		{
+			name:            "extremely small interval",
+			reloadInterval:  1 * time.Millisecond,
+			expectedReloads: 5,
+		},
+		{
+			name:            "one second interval",
+			reloadInterval:  1 * time.Second,
+			expectedReloads: 5,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			db := newTestDB(t, withOpts(&Options{
+				BlockReloadInterval: c.reloadInterval,
+			}))
+			if c.reloadInterval < 1*time.Second {
+				require.Equal(t, 1*time.Second, db.opts.BlockReloadInterval, "interval should be clamped to minimum of 1 second")
+			}
+			require.Equal(t, float64(1), prom_testutil.ToFloat64(db.metrics.reloads), "there should be one initial reload")
+			require.Eventually(t, func() bool {
+				return prom_testutil.ToFloat64(db.metrics.reloads) == c.expectedReloads
+			},
+				5*time.Second,
+				100*time.Millisecond,
+			)
+		})
 	}
 }
