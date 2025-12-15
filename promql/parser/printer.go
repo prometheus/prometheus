@@ -155,7 +155,7 @@ func (node *BinaryExpr) getMatchingStr() string {
 			if vm.On {
 				vmTag = "on"
 			}
-			// Use writeLabels() instead of joinLabels()
+			// Format labels with proper UTF-8 quoting using writeLabels()
 			b.Reset()
 			b.WriteString(" ")
 			b.WriteString(vmTag)
@@ -170,7 +170,7 @@ func (node *BinaryExpr) getMatchingStr() string {
 			if vm.Card == CardManyToOne {
 				vmCard = "left"
 			}
-			// Use writeLabels() instead of joinLabels()
+			// Format labels with proper UTF-8 quoting using writeLabels()
 			b.Reset()
 			b.WriteString(" group_")
 			b.WriteString(vmCard)
