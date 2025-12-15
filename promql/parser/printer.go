@@ -155,11 +155,7 @@ func (node *BinaryExpr) getMatchingStr() string {
 			if vm.On {
 				vmTag = "on"
 			}
-			// Format labels with proper UTF-8 quoting using writeLabels()
-			b.Reset()
-			b.WriteString(" ")
-			b.WriteString(vmTag)
-			b.WriteString(" (")
+			b.WriteString(" " + vmTag + " (")
 			writeLabels(&b, vm.MatchingLabels)
 			b.WriteString(")")
 			matching = b.String()
@@ -170,11 +166,8 @@ func (node *BinaryExpr) getMatchingStr() string {
 			if vm.Card == CardManyToOne {
 				vmCard = "left"
 			}
-			// Format labels with proper UTF-8 quoting using writeLabels()
 			b.Reset()
-			b.WriteString(" group_")
-			b.WriteString(vmCard)
-			b.WriteString(" (")
+			b.WriteString(" group_" + vmCard + " (")
 			writeLabels(&b, vm.Include)
 			b.WriteString(")")
 			matching += b.String()
