@@ -1,5 +1,7 @@
 # Maintainers
 
+## Please keep this file in sync with the CODEOWNERS file!
+
 General maintainers:
 * Bryan Boreham (bjboreham@gmail.com / @bboreham)
 * Ayoub Mrini (ayoubmrini424@gmail.com / @machine424)
