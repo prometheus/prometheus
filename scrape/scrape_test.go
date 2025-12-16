@@ -1041,10 +1041,11 @@ func TestScrapeLoopRun(t *testing.T) {
 	// scraper. The scraper has to respect the context.
 	scraper.offsetDur = 0
 
-	block := make(chan struct{})
+	blockCtx, blockCancel := context.WithCancel(t.Context())
 	scraper.scrapeFunc = func(ctx context.Context, _ io.Writer) error {
 		select {
-		case <-block:
+		case <-blockCtx.Done():
+			cancel()
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -1066,9 +1067,7 @@ func TestScrapeLoopRun(t *testing.T) {
 	// We already caught the timeout error and are certainly in the loop.
 	// Let the scrapes returns immediately to cause no further timeout errors
 	// and check whether canceling the parent context terminates the loop.
-	close(block)
-	cancel()
-
+	blockCancel()
 	select {
 	case <-signal:
 		// Loop terminated as expected.
