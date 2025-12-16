@@ -1,28 +1,24 @@
-# Prometheus team members are members of the "default maintainers" github team.
-# They are code owners by default for the whole repo.
-* @prometheus/default-maintainers
-
 #
 # Please keep this file in sync with the MAINTAINERS.md file!
 #
 
 # Subsystems.
-/Makefile @simonpasquier @SuperQ @prometheus/default-maintainers
-/cmd/promtool @dgl @prometheus/default-maintainers
-/documentation/prometheus-mixin @metalmatze @prometheus/default-maintainers
-/model/histogram @beorn7 @krajorama @prometheus/default-maintainers
-/web/ui @juliusv @prometheus/default-maintainers
-/web/ui/module @juliusv @nexucis @prometheus/default-maintainers
-/promql @roidelapluie @prometheus/default-maintainers
-/storage/remote @cstyan @bwplotka @tomwilkie @npazosmendez @alexgreenbank @prometheus/default-maintainers
-/storage/remote/otlptranslator @aknuds1 @jesusvazquez @ArthurSens @prometheus/default-maintainers
-/tsdb @jesusvazquez @codesome @bwplotka @krajorama @prometheus/default-maintainers
+/Makefile @simonpasquier @SuperQ
+/cmd/promtool @dgl
+/documentation/prometheus-mixin @metalmatze
+/model/histogram @beorn7 @krajorama
+/web/ui @juliusv
+/web/ui/module @juliusv @nexucis
+/promql @roidelapluie
+/storage/remote @cstyan @bwplotka @tomwilkie @npazosmendez @alexgreenbank
+/storage/remote/otlptranslator @aknuds1 @jesusvazquez @ArthurSens
+/tsdb @jesusvazquez @codesome @bwplotka @krajorama
 
 # Service discovery.
-/discovery/kubernetes @brancz @prometheus/default-maintainers
-/discovery/stackit @jkroepke @prometheus/default-maintainers
+/discovery/kubernetes @brancz
+/discovery/stackit @jkroepke
 # Pending
 # https://github.com/prometheus/prometheus/pull/17105#issuecomment-3248209452
-# /discovery/aws/ @matt-gp @prometheus/default-maintainers
+# /discovery/aws/ @matt-gp
 # https://github.com/prometheus/prometheus/pull/15212#issuecomment-3575225179
-# /discovery/aliyun @KeyOfSpectator @prometheus/default-maintainers
+# /discovery/aliyun @KeyOfSpectator
