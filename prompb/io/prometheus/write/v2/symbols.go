@@ -16,6 +16,7 @@ package writev2
 import (
 	"fmt"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -80,18 +81,31 @@ func (t *SymbolsTable) Reset() {
 // This function requires labelRefs to have an even number of elements (name-value pairs) and
 // all references must be valid indices within the symbols table. It will return an error if
 // these invariants are violated.
-func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []string) (labels.Labels, error) {
+func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []string, typ model.MetricType, unit string) (labels.Labels, error) {
 	if len(labelRefs)%2 != 0 {
 		return labels.EmptyLabels(), fmt.Errorf("invalid labelRefs length %d", len(labelRefs))
 	}
 
 	b.Reset()
+	if typ != model.MetricTypeUnknown {
+		b.Add(model.MetricTypeLabel, string(typ))
+	}
+	if unit != "" {
+		b.Add(model.MetricUnitLabel, unit)
+	}
+
 	for i := 0; i < len(labelRefs); i += 2 {
 		nameRef, valueRef := labelRefs[i], labelRefs[i+1]
 		if int(nameRef) >= len(symbols) || int(valueRef) >= len(symbols) {
 			return labels.EmptyLabels(), fmt.Errorf("labelRefs %d (name) = %d (value) outside of symbols table (size %d)", nameRef, valueRef, len(symbols))
 		}
-		b.Add(symbols[nameRef], symbols[valueRef])
+		name := symbols[nameRef]
+		// Skip __type__ and __unit__ labels if they exist in the incoming labels
+		// and we are adding them from metadata.
+		if (typ != model.MetricTypeUnknown && name == model.MetricTypeLabel) || (unit != "" && name == model.MetricUnitLabel) {
+			continue
+		}
+		b.Add(name, symbols[valueRef])
 	}
 	b.Sort()
 	return b.Labels(), nil

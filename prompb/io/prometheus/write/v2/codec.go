@@ -23,7 +23,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
-	"github.com/prometheus/prometheus/schema"
 )
 
 // NOTE(bwplotka): This file's code is tested in /prompb/rwcommon.
@@ -31,57 +30,46 @@ import (
 // ToLabels return model labels.Labels from timeseries' remote labels.
 // If addTypeAndUnit is true, adds type and unit labels from the metadata.
 func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, symbols []string, addTypeAndUnit bool) (labels.Labels, error) {
-	lbls, err := desymbolizeLabels(b, m.GetLabelsRefs(), symbols)
-	if err != nil || !addTypeAndUnit {
+	typ := model.MetricTypeUnknown
+	var unit string
+
+	if addTypeAndUnit {
+		switch m.Metadata.Type {
+		case Metadata_METRIC_TYPE_COUNTER:
+			typ = model.MetricTypeCounter
+		case Metadata_METRIC_TYPE_GAUGE:
+			typ = model.MetricTypeGauge
+		case Metadata_METRIC_TYPE_HISTOGRAM:
+			typ = model.MetricTypeHistogram
+		case Metadata_METRIC_TYPE_GAUGEHISTOGRAM:
+			typ = model.MetricTypeGaugeHistogram
+		case Metadata_METRIC_TYPE_SUMMARY:
+			typ = model.MetricTypeSummary
+		case Metadata_METRIC_TYPE_INFO:
+			typ = model.MetricTypeInfo
+		case Metadata_METRIC_TYPE_STATESET:
+			typ = model.MetricTypeStateset
+		}
+
+		// Validate UnitRef is within bounds before accessing symbols slice.
+		// We return an error here (unlike ToMetadata) because type/unit labels affect
+		// metric identity and must be accurate. Invalid label references indicate
+		// corrupted data that should be rejected rather than silently ignored.
+		if m.Metadata.UnitRef >= uint32(len(symbols)) {
+			return labels.Labels{}, fmt.Errorf("unit reference %d out of bounds for symbols table of size %d", m.Metadata.UnitRef, len(symbols))
+		}
+		unit = symbols[m.Metadata.UnitRef]
+	}
+
+	lbls, err := desymbolizeLabels(b, m.GetLabelsRefs(), symbols, typ, unit)
+	if err != nil {
 		return lbls, err
 	}
 
-	// Add type and unit labels if requested.
-	typ := model.MetricTypeUnknown
-	switch m.Metadata.Type {
-	case Metadata_METRIC_TYPE_COUNTER:
-		typ = model.MetricTypeCounter
-	case Metadata_METRIC_TYPE_GAUGE:
-		typ = model.MetricTypeGauge
-	case Metadata_METRIC_TYPE_HISTOGRAM:
-		typ = model.MetricTypeHistogram
-	case Metadata_METRIC_TYPE_GAUGEHISTOGRAM:
-		typ = model.MetricTypeGaugeHistogram
-	case Metadata_METRIC_TYPE_SUMMARY:
-		typ = model.MetricTypeSummary
-	case Metadata_METRIC_TYPE_INFO:
-		typ = model.MetricTypeInfo
-	case Metadata_METRIC_TYPE_STATESET:
-		typ = model.MetricTypeStateset
-	}
-
-	// Validate UnitRef is within bounds before accessing symbols slice.
-	// We return an error here (unlike ToMetadata) because type/unit labels affect
-	// metric identity and must be accurate. Invalid label references indicate
-	// corrupted data that should be rejected rather than silently ignored.
-	if m.Metadata.UnitRef >= uint32(len(symbols)) {
-		return labels.Labels{}, fmt.Errorf("unit reference %d out of bounds for symbols table of size %d", m.Metadata.UnitRef, len(symbols))
-	}
-	unit := symbols[m.Metadata.UnitRef]
-
-	// Only rebuild labels if we have type or unit metadata to add.
-	if typ != model.MetricTypeUnknown || unit != "" {
-		metricName := lbls.Get(labels.MetricName)
-		if metricName == "" {
+	if addTypeAndUnit && (typ != model.MetricTypeUnknown || unit != "") {
+		if lbls.Get(labels.MetricName) == "" {
 			return labels.Labels{}, errors.New("missing required metric name label")
 		}
-
-		// Reuse the existing builder to avoid extra allocations.
-		b.Reset()
-		b.Add(labels.MetricName, metricName)
-		schema.Metadata{Type: typ, Unit: unit}.AddToLabels(b)
-		lbls.Range(func(l labels.Label) {
-			if l.Name != labels.MetricName {
-				b.Add(l.Name, l.Value)
-			}
-		})
-		b.Sort()
-		return b.Labels(), nil
 	}
 
 	return lbls, nil
@@ -280,7 +268,7 @@ func spansToSpansProto(s []histogram.Span) []BucketSpan {
 func (m Exemplar) ToExemplar(b *labels.ScratchBuilder, symbols []string) (exemplar.Exemplar, error) {
 	timestamp := m.Timestamp
 
-	lbls, err := desymbolizeLabels(b, m.LabelsRefs, symbols)
+	lbls, err := desymbolizeLabels(b, m.LabelsRefs, symbols, model.MetricTypeUnknown, "")
 	if err != nil {
 		return exemplar.Exemplar{}, err
 	}
