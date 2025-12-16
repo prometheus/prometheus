@@ -1315,20 +1315,20 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	var total, added, seriesAdded, bytesRead int
 	var err, appErr, scrapeErr error
 
-	sla := sl.appender()
+	app := sl.appender()
 	defer func() {
 		if err != nil {
-			_ = sla.Rollback()
+			_ = app.Rollback()
 			return
 		}
-		err = sla.Commit()
+		err = app.Commit()
 		if err != nil {
 			sl.l.Error("Scrape commit failed", "err", err)
 		}
 	}()
 
 	defer func() {
-		if err = sl.report(sla, appendTime, time.Since(start), total, added, seriesAdded, bytesRead, scrapeErr); err != nil {
+		if err = sl.report(app, appendTime, time.Since(start), total, added, seriesAdded, bytesRead, scrapeErr); err != nil {
 			sl.l.Warn("Appending scrape report failed", "err", err)
 		}
 	}()
@@ -1336,9 +1336,9 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	if forcedErr := sl.getForcedError(); forcedErr != nil {
 		scrapeErr = forcedErr
 		// Add stale markers.
-		if _, _, _, err := sla.append([]byte{}, "", appendTime); err != nil {
-			_ = sla.Rollback()
-			sla = sl.appender()
+		if _, _, _, err := app.append([]byte{}, "", appendTime); err != nil {
+			_ = app.Rollback()
+			app = sl.appender()
 			sl.l.Warn("Append failed", "err", err)
 		}
 		if errc != nil {
@@ -1394,16 +1394,16 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 
 	// A failed scrape is the same as an empty scrape,
 	// we still call sl.append to trigger stale markers.
-	total, added, seriesAdded, appErr = sla.append(b, contentType, appendTime)
+	total, added, seriesAdded, appErr = app.append(b, contentType, appendTime)
 	if appErr != nil {
-		_ = sla.Rollback()
-		sla = sl.appender()
+		_ = app.Rollback()
+		app = sl.appender()
 		sl.l.Debug("Append failed", "err", appErr)
 		// The append failed, probably due to a parse error or sample limit.
 		// Call sl.append again with an empty scrape to trigger stale markers.
-		if _, _, _, err := sla.append([]byte{}, "", appendTime); err != nil {
-			_ = sla.Rollback()
-			sla = sl.appender()
+		if _, _, _, err := app.append([]byte{}, "", appendTime); err != nil {
+			_ = app.Rollback()
+			app = sl.appender()
 			sl.l.Warn("Append failed", "err", err)
 		}
 	}
@@ -1473,24 +1473,24 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
 	// sl.context would have been cancelled, hence using sl.appenderCtx.
-	sla := sl.appender()
+	app := sl.appender()
 	var err error
 	defer func() {
 		if err != nil {
-			_ = sla.Rollback()
+			_ = app.Rollback()
 			return
 		}
-		err = sla.Commit()
+		err = app.Commit()
 		if err != nil {
 			sl.l.Warn("Stale commit failed", "err", err)
 		}
 	}()
-	if _, _, _, err = sla.append([]byte{}, "", staleTime); err != nil {
-		_ = sla.Rollback()
-		sla = sl.appender()
+	if _, _, _, err = app.append([]byte{}, "", staleTime); err != nil {
+		_ = app.Rollback()
+		app = sl.appender()
 		sl.l.Warn("Stale append failed", "err", err)
 	}
-	if err = sl.reportStale(sla, staleTime); err != nil {
+	if err = sl.reportStale(app, staleTime); err != nil {
 		sl.l.Warn("Stale report failed", "err", err)
 	}
 }
@@ -2036,7 +2036,7 @@ var (
 	}
 )
 
-func (sl *scrapeLoop) report(sla scrapeLoopAppendAdapter, start time.Time, duration time.Duration, scraped, added, seriesAdded, bytes int, scrapeErr error) (err error) {
+func (sl *scrapeLoop) report(app scrapeLoopAppendAdapter, start time.Time, duration time.Duration, scraped, added, seriesAdded, bytes int, scrapeErr error) (err error) {
 	sl.scraper.Report(start, duration, scrapeErr)
 
 	ts := timestamp.FromTime(start)
@@ -2047,63 +2047,63 @@ func (sl *scrapeLoop) report(sla scrapeLoopAppendAdapter, start time.Time, durat
 	}
 	b := labels.NewBuilderWithSymbolTable(sl.symbolTable)
 
-	if err = sla.addReportSample(scrapeHealthMetric, ts, health, b, false); err != nil {
+	if err = app.addReportSample(scrapeHealthMetric, ts, health, b, false); err != nil {
 		return err
 	}
-	if err = sla.addReportSample(scrapeDurationMetric, ts, duration.Seconds(), b, false); err != nil {
+	if err = app.addReportSample(scrapeDurationMetric, ts, duration.Seconds(), b, false); err != nil {
 		return err
 	}
-	if err = sla.addReportSample(scrapeSamplesMetric, ts, float64(scraped), b, false); err != nil {
+	if err = app.addReportSample(scrapeSamplesMetric, ts, float64(scraped), b, false); err != nil {
 		return err
 	}
-	if err = sla.addReportSample(samplesPostRelabelMetric, ts, float64(added), b, false); err != nil {
+	if err = app.addReportSample(samplesPostRelabelMetric, ts, float64(added), b, false); err != nil {
 		return err
 	}
-	if err = sla.addReportSample(scrapeSeriesAddedMetric, ts, float64(seriesAdded), b, false); err != nil {
+	if err = app.addReportSample(scrapeSeriesAddedMetric, ts, float64(seriesAdded), b, false); err != nil {
 		return err
 	}
 	if sl.reportExtraMetrics {
-		if err = sla.addReportSample(scrapeTimeoutMetric, ts, sl.timeout.Seconds(), b, false); err != nil {
+		if err = app.addReportSample(scrapeTimeoutMetric, ts, sl.timeout.Seconds(), b, false); err != nil {
 			return err
 		}
-		if err = sla.addReportSample(scrapeSampleLimitMetric, ts, float64(sl.sampleLimit), b, false); err != nil {
+		if err = app.addReportSample(scrapeSampleLimitMetric, ts, float64(sl.sampleLimit), b, false); err != nil {
 			return err
 		}
-		if err = sla.addReportSample(scrapeBodySizeBytesMetric, ts, float64(bytes), b, false); err != nil {
+		if err = app.addReportSample(scrapeBodySizeBytesMetric, ts, float64(bytes), b, false); err != nil {
 			return err
 		}
 	}
 	return err
 }
 
-func (sl *scrapeLoop) reportStale(sla scrapeLoopAppendAdapter, start time.Time) (err error) {
+func (sl *scrapeLoop) reportStale(app scrapeLoopAppendAdapter, start time.Time) (err error) {
 	ts := timestamp.FromTime(start)
 	stale := math.Float64frombits(value.StaleNaN)
 	b := labels.NewBuilder(labels.EmptyLabels())
 
-	if err = sla.addReportSample(scrapeHealthMetric, ts, stale, b, true); err != nil {
+	if err = app.addReportSample(scrapeHealthMetric, ts, stale, b, true); err != nil {
 		return err
 	}
-	if err = sla.addReportSample(scrapeDurationMetric, ts, stale, b, true); err != nil {
+	if err = app.addReportSample(scrapeDurationMetric, ts, stale, b, true); err != nil {
 		return err
 	}
-	if err = sla.addReportSample(scrapeSamplesMetric, ts, stale, b, true); err != nil {
+	if err = app.addReportSample(scrapeSamplesMetric, ts, stale, b, true); err != nil {
 		return err
 	}
-	if err = sla.addReportSample(samplesPostRelabelMetric, ts, stale, b, true); err != nil {
+	if err = app.addReportSample(samplesPostRelabelMetric, ts, stale, b, true); err != nil {
 		return err
 	}
-	if err = sla.addReportSample(scrapeSeriesAddedMetric, ts, stale, b, true); err != nil {
+	if err = app.addReportSample(scrapeSeriesAddedMetric, ts, stale, b, true); err != nil {
 		return err
 	}
 	if sl.reportExtraMetrics {
-		if err = sla.addReportSample(scrapeTimeoutMetric, ts, stale, b, true); err != nil {
+		if err = app.addReportSample(scrapeTimeoutMetric, ts, stale, b, true); err != nil {
 			return err
 		}
-		if err = sla.addReportSample(scrapeSampleLimitMetric, ts, stale, b, true); err != nil {
+		if err = app.addReportSample(scrapeSampleLimitMetric, ts, stale, b, true); err != nil {
 			return err
 		}
-		if err = sla.addReportSample(scrapeBodySizeBytesMetric, ts, stale, b, true); err != nil {
+		if err = app.addReportSample(scrapeBodySizeBytesMetric, ts, stale, b, true); err != nil {
 			return err
 		}
 	}
