@@ -248,7 +248,7 @@ func computeOrCheckRef(ref storage.SeriesRef, ls labels.Labels) (storage.SeriesR
 
 	if storage.SeriesRef(h) != ref {
 		// Check for buggy ref while we at it.
-		return 0, fmt.Errorf("teststorage.appender: found input ref not matching labels; potential bug in Appendable user")
+		return 0, errors.New("teststorage.appender: found input ref not matching labels; potential bug in Appendable user")
 	}
 	return ref, nil
 }
@@ -338,7 +338,7 @@ func (a *appender) Commit() error {
 	isClosed = a.closed
 	a.a.mtx.Unlock()
 	if isClosed {
-		return errors.New("appender was already commited/rolledback")
+		return errors.New("appender was already committed/rolledback")
 	}
 
 	defer a.a.openAppenders.Dec()
@@ -365,7 +365,7 @@ func (a *appender) Rollback() error {
 	isClosed = a.closed
 	a.a.mtx.Unlock()
 	if isClosed {
-		return errors.New("appender was already commited/rolledback")
+		return errors.New("appender was already committed/rolledback")
 	}
 
 	defer a.a.openAppenders.Dec()

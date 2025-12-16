@@ -120,7 +120,7 @@ func TestConcurrentAppender_Panic(t *testing.T) {
 	require.Equal(t, int32(0), a.openAppenders.Load())
 
 	// Concurrent use should panic.
-	app = a.Appender(t.Context())
+	_ = a.Appender(t.Context())
 	require.Panics(t, func() {
 		a.Appender(t.Context())
 	})

@@ -757,7 +757,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 func TestScrapePoolAppenderWithLimits(t *testing.T) {
 	// Create a unique value, to validate the correct chain of appenders.
 	baseAppender := struct{ storage.Appender }{}
-	appendable := appendableFunc(func(ctx context.Context) storage.Appender { return baseAppender })
+	appendable := appendableFunc(func(context.Context) storage.Appender { return baseAppender })
 
 	sl, _ := newTestScrapeLoop(t, withAppendable(appendable))
 	wrapped := appenderWithLimits(sl.appendable.Appender(context.Background()), 0, 0, histogram.ExponentialSchemaMax)
