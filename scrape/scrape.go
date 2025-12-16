@@ -716,13 +716,9 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 		}
 	}
 
-	res := lb.Labels()
+	relabel.ProcessBuilder(lb, rc...)
 
-	if len(rc) > 0 {
-		res, _ = relabel.Process(res, rc...)
-	}
-
-	return res
+	return lb.Labels()
 }
 
 func resolveConflictingExposedLabels(lb *labels.Builder, conflictingExposedLabels []labels.Label) {
