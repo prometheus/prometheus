@@ -13,6 +13,7 @@ The documentation is available alongside all the project documentation at
 
 - [Getting started](getting_started.md)
 - [Installation](installation.md)
+- [Production Best Practices](production_best_practices.md)
 - [Agent Mode](prometheus_agent.md)
 - [Configuration](configuration/configuration.md)
 - [Querying](querying/basics.md)
