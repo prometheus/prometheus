@@ -74,10 +74,6 @@ func mustParseURL(u string) *config.URL {
 	return &config.URL{URL: parsed}
 }
 
-func boolPtr(b bool) *bool {
-	return &b
-}
-
 const (
 	globBodySizeLimit         = 15 * units.MiB
 	globSampleLimit           = 1500
@@ -109,7 +105,7 @@ var expectedConf = &Config{
 		ScrapeNativeHistograms:         boolPtr(false),
 		AlwaysScrapeClassicHistograms:  false,
 		ConvertClassicHistogramsToNHCB: false,
-		ExtraScrapeMetrics:             &f,
+		ExtraScrapeMetrics:             boolPtr(false),
 		MetricNameValidationScheme:     model.UTF8Validation,
 	},
 

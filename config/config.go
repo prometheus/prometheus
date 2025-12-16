@@ -149,6 +149,10 @@ func LoadFile(filename string, agentMode bool, logger *slog.Logger) (*Config, er
 	return cfg, nil
 }
 
+func boolPtr(b bool) *bool {
+	return &b
+}
+
 // The defaults applied before parsing the respective config sections.
 var (
 	// DefaultConfig is the default top-level configuration.
@@ -158,7 +162,6 @@ var (
 		OTLPConfig:   DefaultOTLPConfig,
 	}
 
-	f bool
 	// DefaultGlobalConfig is the default global configuration.
 	DefaultGlobalConfig = GlobalConfig{
 		ScrapeInterval:     model.Duration(1 * time.Minute),
@@ -173,10 +176,10 @@ var (
 		ScrapeProtocols: nil,
 		// When the native histogram feature flag is enabled,
 		// ScrapeNativeHistograms default changes to true.
-		ScrapeNativeHistograms:         &f,
+		ScrapeNativeHistograms:         boolPtr(false),
 		ConvertClassicHistogramsToNHCB: false,
 		AlwaysScrapeClassicHistograms:  false,
-		ExtraScrapeMetrics:             &f,
+		ExtraScrapeMetrics:             boolPtr(false),
 		MetricNameValidationScheme:     model.UTF8Validation,
 		MetricNameEscapingScheme:       model.AllowUTF8,
 	}
