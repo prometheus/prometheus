@@ -326,7 +326,7 @@ func (a *headAppenderV2) appendExemplars(s *memSeries, exemplar []exemplar.Exemp
 				errs = append(errs, err)
 			}
 			if !errors.Is(err, storage.ErrOutOfOrderExemplar) {
-				a.head.logger.Debug("Error while adding an exemplar on AppendSample", "exemplars", fmt.Sprintf("%+v", e), "err", e)
+				a.head.logger.Debug("Error while adding an exemplar on AppendSample", "exemplars", fmt.Sprintf("%+v", e), "err", err)
 			}
 			continue
 		}
