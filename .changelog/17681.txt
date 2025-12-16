@@ -1,0 +1,1 @@
+* [DEPRECATION] TSDB: Deprecate V1 block format and add a warning log.
