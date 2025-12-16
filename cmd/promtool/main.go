@@ -257,12 +257,13 @@ func main() {
 	listHumanReadable := tsdbListCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
 	listPath := tsdbListCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
 
-	tsdbDumpCmd := tsdbCmd.Command("dump", "Dump samples from a TSDB.")
+	tsdbDumpCmd := tsdbCmd.Command("dump", "Dump data (series+samples or optionally just series) from a TSDB.")
 	dumpPath := tsdbDumpCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
 	dumpSandboxDirRoot := tsdbDumpCmd.Flag("sandbox-dir-root", "Root directory where a sandbox directory will be created, this sandbox is used in case WAL replay generates chunks (default is the database path). The sandbox is cleaned up at the end.").String()
 	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump, in milliseconds since the Unix epoch.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
 	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump, in milliseconds since the Unix epoch.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
 	dumpMatch := tsdbDumpCmd.Flag("match", "Series selector. Can be specified multiple times.").Default("{__name__=~'(?s:.*)'}").Strings()
+	dumpFormat := tsdbDumpCmd.Flag("format", "Output format of the dump (prom (default) or seriesjson).").Default("prom").Enum("prom", "seriesjson")
 
 	tsdbDumpOpenMetricsCmd := tsdbCmd.Command("dump-openmetrics", "[Experimental] Dump samples from a TSDB into OpenMetrics text format, excluding native histograms and staleness markers, which are not representable in OpenMetrics.")
 	dumpOpenMetricsPath := tsdbDumpOpenMetricsCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
@@ -428,9 +429,14 @@ func main() {
 		os.Exit(checkErr(listBlocks(*listPath, *listHumanReadable)))
 
 	case tsdbDumpCmd.FullCommand():
-		os.Exit(checkErr(dumpSamples(ctx, *dumpPath, *dumpSandboxDirRoot, *dumpMinTime, *dumpMaxTime, *dumpMatch, formatSeriesSet)))
+		format := formatSeriesSet
+		if *dumpFormat == "seriesjson" {
+			format = formatSeriesSetLabelsToJSON
+		}
+		os.Exit(checkErr(dumpTSDBData(ctx, *dumpPath, *dumpSandboxDirRoot, *dumpMinTime, *dumpMaxTime, *dumpMatch, format)))
+
 	case tsdbDumpOpenMetricsCmd.FullCommand():
-		os.Exit(checkErr(dumpSamples(ctx, *dumpOpenMetricsPath, *dumpOpenMetricsSandboxDirRoot, *dumpOpenMetricsMinTime, *dumpOpenMetricsMaxTime, *dumpOpenMetricsMatch, formatSeriesSetOpenMetrics)))
+		os.Exit(checkErr(dumpTSDBData(ctx, *dumpOpenMetricsPath, *dumpOpenMetricsSandboxDirRoot, *dumpOpenMetricsMinTime, *dumpOpenMetricsMaxTime, *dumpOpenMetricsMatch, formatSeriesSetOpenMetrics)))
 	// TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
 		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration, *openMetricsLabels))
