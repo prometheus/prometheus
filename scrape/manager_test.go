@@ -524,25 +524,16 @@ scrape_configs:
 	opts := Options{}
 	scrapeManager, err := NewManager(&opts, nil, nil, nil, testRegistry)
 	require.NoError(t, err)
-	newLoop := func(scrapeLoopOptions) loop {
+	newLoop := func(*scrapeLoop) loop {
 		ch <- struct{}{}
 		return noopLoop()
 	}
-	sp := &scrapePool{
-		appendable: teststorage.NewAppendable(),
-		activeTargets: map[uint64]*Target{
-			1: {},
-		},
-		loops: map[uint64]loop{
-			1: noopLoop(),
-		},
-		newLoop:     newLoop,
-		logger:      nil,
-		config:      cfg1.ScrapeConfigs[0],
-		client:      http.DefaultClient,
-		metrics:     scrapeManager.metrics,
-		symbolTable: labels.NewSymbolTable(),
-	}
+	sp := newTestScrapePool(t, newLoop)
+	sp.activeTargets[1] = &Target{}
+	sp.loops[1] = noopLoop()
+	sp.config = cfg1.ScrapeConfigs[0]
+	sp.metrics = scrapeManager.metrics
+
 	scrapeManager.scrapePools = map[string]*scrapePool{
 		"job1": sp,
 	}
@@ -685,25 +676,18 @@ scrape_configs:
 	)
 
 	reload := func(scrapeManager *Manager, cfg *config.Config) {
-		newLoop := func(scrapeLoopOptions) loop {
+		newLoop := func(*scrapeLoop) loop {
 			return noopLoop()
 		}
 		scrapeManager.scrapePools = map[string]*scrapePool{}
 		for _, sc := range cfg.ScrapeConfigs {
 			_, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			sp := &scrapePool{
-				appendable:    teststorage.NewAppendable(),
-				activeTargets: map[uint64]*Target{},
-				loops: map[uint64]loop{
-					1: noopLoop(),
-				},
-				newLoop: newLoop,
-				logger:  nil,
-				config:  sc,
-				client:  http.DefaultClient,
-				cancel:  cancel,
-			}
+
+			sp := newTestScrapePool(t, newLoop)
+			sp.loops[1] = noopLoop()
+			sp.config = cfg1.ScrapeConfigs[0]
+			sp.metrics = scrapeManager.metrics
 			for _, c := range sc.ServiceDiscoveryConfigs {
 				staticConfig := c.(discovery.StaticConfig)
 				for _, group := range staticConfig {

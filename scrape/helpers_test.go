@@ -17,17 +17,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/pool"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -69,42 +72,72 @@ func withAppendable(appendable storage.Appendable) func(sl *scrapeLoop) {
 // newTestScrapeLoop-like constructors. It should be flexible enough with scrapeLoop
 // used for initial options.
 func newTestScrapeLoop(t testing.TB, opts ...func(sl *scrapeLoop)) (_ *scrapeLoop, scraper *testScraper) {
-	scraper = &testScraper{}
-
-	ctx := t.Context()
+	metrics := newTestScrapeMetrics(t)
 	sl := &scrapeLoop{
-		appendable:          teststorage.NewAppendable(), // Serves as a nop appendable, unless replaced by option.
+		stopped: make(chan struct{}),
+
+		l:     promslog.NewNopLogger(),
+		cache: newScrapeCache(metrics),
+
+		interval:            10 * time.Millisecond,
+		timeout:             1 * time.Hour,
 		sampleMutator:       nopMutator,
 		reportSampleMutator: nopMutator,
-		validationScheme:    model.UTF8Validation,
-		symbolTable:         labels.NewSymbolTable(),
-		metrics:             newTestScrapeMetrics(t),
 		scrapeLoopOptions: scrapeLoopOptions{
-			interval:          10 * time.Millisecond,
-			maxSchema:         histogram.ExponentialSchemaMax,
-			timeout:           1 * time.Hour,
-			honorTimestamps:   true,
-			enableCompression: true,
+			appendable:          teststorage.NewAppendable(), // Serves as a nop appendable, unless replaced by option.
+			buffers:             pool.New(1e3, 1e6, 3, func(sz int) any { return make([]byte, 0, sz) }),
+			metrics:             metrics,
+			maxSchema:           histogram.ExponentialSchemaMax,
+			honorTimestamps:     true,
+			enableCompression:   true,
+			validationScheme:    model.UTF8Validation,
+			symbolTable:         labels.NewSymbolTable(),
+			appendMetadataToWAL: true, // Tests assumes it's enabled, unless explicitly turned off.
 		},
-		appendMetadataToWAL: true, // Tests assumes it's enabled, unless explicitly turned off.
 	}
 	for _, o := range opts {
 		o(sl)
 	}
-	// Use sl.ctx for context injection.
-	// True contexts (sl.appenderCtx, sl.parentCtx, sl.ctx) are populated in init.
-	if sl.ctx != nil {
-		ctx = sl.ctx
-	}
-
 	// Validate user opts for convenience.
 	require.Nil(t, sl.parentCtx, "newTestScrapeLoop does not support injecting non-nil parent context")
 	require.Nil(t, sl.appenderCtx, "newTestScrapeLoop does not support injecting non-nil appender context")
 	require.Nil(t, sl.cancel, "newTestScrapeLoop does not support injecting custom cancel function")
 	require.Nil(t, sl.scraper, "newTestScrapeLoop does not support injecting scraper, it's mocked, use the returned scraper")
+
+	rootCtx := t.Context()
+	// Use sl.ctx for context injection.
+	// True contexts (sl.appenderCtx, sl.parentCtx, sl.ctx) are populated from it
+	if sl.ctx != nil {
+		rootCtx = sl.ctx
+	}
+	ctx, cancel := context.WithCancel(rootCtx)
+	sl.ctx = ctx
+	sl.cancel = cancel
+	sl.appenderCtx = rootCtx
+	sl.parentCtx = rootCtx
+
+	scraper = &testScraper{}
 	sl.scraper = scraper
-	sl.init(ctx, true)
 	return sl, scraper
+}
+
+func newTestScrapePool(t *testing.T, injectNewLoop func(*scrapeLoop) loop) *scrapePool {
+	return &scrapePool{
+		ctx:    t.Context(),
+		cancel: func() {},
+		logger: promslog.NewNopLogger(),
+		client: http.DefaultClient,
+
+		activeTargets:     map[uint64]*Target{},
+		loops:             map[uint64]loop{},
+		injectTestNewLoop: injectNewLoop,
+
+		scrapeLoopOptions: scrapeLoopOptions{
+			appendable:  teststorage.NewAppendable(),
+			symbolTable: labels.NewSymbolTable(),
+			metrics:     newTestScrapeMetrics(t),
+		},
+	}
 }
 
 // protoMarshalDelimited marshals a MetricFamily into a delimited
