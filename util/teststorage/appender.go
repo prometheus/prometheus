@@ -200,19 +200,28 @@ func (a *Appendable) String() string {
 	return sb.String()
 }
 
+var errCloseAppender = errors.New("appender was already committed/rolledback")
+
 type appender struct {
-	closed bool
-	next   storage.Appender
+	err  error
+	next storage.Appender
 
 	a *Appendable
 }
 
+func (a *appender) checkErr() error {
+	a.a.mtx.Lock()
+	defer a.a.mtx.Unlock()
+
+	return a.err
+}
+
 func (a *Appendable) Appender(ctx context.Context) storage.Appender {
+	ret := &appender{a: a}
 	if a.openAppenders.Inc() > 1 {
-		panic("Appendable.Appender() concurrent use is not supported; attempted opening new Appender() without Commit/Rollback of the previous one. Extend the implementation if concurrent mock is needed.")
+		ret.err = errors.New("teststorage.Appendable.Appender() concurrent use is not supported; attempted opening new Appender() without Commit/Rollback of the previous one. Extend the implementation if concurrent mock is needed")
 	}
 
-	ret := &appender{a: a}
 	if a.next != nil {
 		ret.next = a.next.Appender(ctx)
 	}
@@ -222,6 +231,10 @@ func (a *Appendable) Appender(ctx context.Context) storage.Appender {
 func (*appender) SetOptions(*storage.AppendOptions) {}
 
 func (a *appender) Append(ref storage.SeriesRef, ls labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	if err := a.checkErr(); err != nil {
+		return 0, err
+	}
+
 	if a.a.appendErrFn != nil {
 		if err := a.a.appendErrFn(ls); err != nil {
 			return 0, err
@@ -254,6 +267,9 @@ func computeOrCheckRef(ref storage.SeriesRef, ls labels.Labels) (storage.SeriesR
 }
 
 func (a *appender) AppendHistogram(ref storage.SeriesRef, ls labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	if err := a.checkErr(); err != nil {
+		return 0, err
+	}
 	if a.a.appendErrFn != nil {
 		if err := a.a.appendErrFn(ls); err != nil {
 			return 0, err
@@ -272,6 +288,9 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, ls labels.Labels, t in
 }
 
 func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	if err := a.checkErr(); err != nil {
+		return 0, err
+	}
 	if a.a.appendExemplarsError != nil {
 		return 0, a.a.appendExemplarsError
 	}
@@ -310,6 +329,10 @@ func (a *appender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.L
 }
 
 func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+	if err := a.checkErr(); err != nil {
+		return 0, err
+	}
+
 	a.a.mtx.Lock()
 	// NOTE(bwplotka): Eventually metadata has to be attached to a series and soon
 	// the AppenderV2 will guarantee that for TSDB. Assume this from the mock perspective
@@ -333,14 +356,9 @@ func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m meta
 }
 
 func (a *appender) Commit() error {
-	var isClosed bool
-	a.a.mtx.Lock()
-	isClosed = a.closed
-	a.a.mtx.Unlock()
-	if isClosed {
-		return errors.New("appender was already committed/rolledback")
+	if err := a.checkErr(); err != nil {
+		return err
 	}
-
 	defer a.a.openAppenders.Dec()
 
 	if a.a.commitErr != nil {
@@ -350,7 +368,7 @@ func (a *appender) Commit() error {
 	a.a.mtx.Lock()
 	a.a.resultSamples = append(a.a.resultSamples, a.a.pendingSamples...)
 	a.a.pendingSamples = a.a.pendingSamples[:0]
-	a.closed = true
+	a.err = errCloseAppender
 	a.a.mtx.Unlock()
 
 	if a.a.next != nil {
@@ -360,20 +378,15 @@ func (a *appender) Commit() error {
 }
 
 func (a *appender) Rollback() error {
-	var isClosed bool
-	a.a.mtx.Lock()
-	isClosed = a.closed
-	a.a.mtx.Unlock()
-	if isClosed {
-		return errors.New("appender was already committed/rolledback")
+	if err := a.checkErr(); err != nil {
+		return err
 	}
-
 	defer a.a.openAppenders.Dec()
 
 	a.a.mtx.Lock()
 	a.a.rolledbackSamples = append(a.a.rolledbackSamples, a.a.pendingSamples...)
 	a.a.pendingSamples = a.a.pendingSamples[:0]
-	a.closed = true
+	a.err = errCloseAppender
 	a.a.mtx.Unlock()
 
 	if a.next != nil {

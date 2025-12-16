@@ -119,9 +119,13 @@ func TestConcurrentAppender_Panic(t *testing.T) {
 	require.NoError(t, app.Commit())
 	require.Equal(t, int32(0), a.openAppenders.Load())
 
-	// Concurrent use should panic.
+	// Concurrent use should return appender that errors.
 	_ = a.Appender(t.Context())
-	require.Panics(t, func() {
-		a.Appender(t.Context())
-	})
+	app = a.Appender(t.Context())
+	_, err := app.Append(0, labels.EmptyLabels(), 0, 0)
+	require.Error(t, err)
+	_, err = app.AppendHistogram(0, labels.EmptyLabels(), 0, nil, nil)
+	require.Error(t, err)
+	require.Error(t, app.Commit())
+	require.Error(t, app.Rollback())
 }
