@@ -373,7 +373,7 @@ func TestStringMatcherFromRegexp(t *testing.T) {
 		{`(?i:((foo1|foo2|bar)))`, orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO1", caseSensitive: false}, &equalStringMatcher{s: "FOO2", caseSensitive: false}}), &equalStringMatcher{s: "BAR", caseSensitive: false}})},
 		{"^((?i:foo|oo)|(bar))$", orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO", caseSensitive: false}, &equalStringMatcher{s: "OO", caseSensitive: false}, &equalStringMatcher{s: "bar", caseSensitive: true}})},
 		{"(?i:(foo1|foo2|bar))", orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO1", caseSensitive: false}, &equalStringMatcher{s: "FOO2", caseSensitive: false}}), &equalStringMatcher{s: "BAR", caseSensitive: false}})},
-		{".*foo.*", &containsStringMatcher{substrings: []string{"foo"}, left: trueMatcher{}, right: trueMatcher{}}},
+		{".*foo.*", trueMatcher{}}, // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
 		{"(.*)foo.*", &containsStringMatcher{substrings: []string{"foo"}, left: trueMatcher{}, right: trueMatcher{}}},
 		{"(.*)foo(.*)", &containsStringMatcher{substrings: []string{"foo"}, left: trueMatcher{}, right: trueMatcher{}}},
 		{"(.+)foo(.*)", &containsStringMatcher{substrings: []string{"foo"}, left: &anyNonEmptyStringMatcher{matchNL: true}, right: trueMatcher{}}},
@@ -397,7 +397,7 @@ func TestStringMatcherFromRegexp(t *testing.T) {
 		{"(api|rpc)_(v1|prom)_((?i)push|query)", nil},
 		{"[a-z][a-z]", nil},
 		{"[1^3]", nil},
-		{".*foo.*bar.*", nil},
+		{".*foo.*bar.*", trueMatcher{}}, // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
 		{`\d*`, nil},
 		{".", nil},
 		{"/|/bar.*", &literalPrefixSensitiveStringMatcher{prefix: "/", right: orStringMatcher{emptyStringMatcher{}, &literalPrefixSensitiveStringMatcher{prefix: "bar", right: trueMatcher{}}}}},
@@ -1396,6 +1396,25 @@ func TestToNormalisedLower(t *testing.T) {
 	}
 	for input, expectedOutput := range testCases {
 		require.Equal(t, expectedOutput, toNormalisedLower(input, nil))
+	}
+}
+
+func TestIsSimpleConcatenationPattern(t *testing.T) {
+	testCases := map[string]bool{
+		".*-.*-.*-.*-.*": true,
+		".+-.*-.*-.*-.+": false,
+		"-.*-.*-.*-.*":   false,
+		".*-.*-.*-.*-":   false,
+		"-":              false,
+		".*":             false,
+	}
+
+	for testCase, expected := range testCases {
+		t.Run(testCase, func(t *testing.T) {
+			re, err := syntax.Parse(testCase, syntax.Perl|syntax.DotNL)
+			require.NoError(t, err)
+			require.Equal(t, expected, isSimpleConcatenationPattern(re))
+		})
 	}
 }
 

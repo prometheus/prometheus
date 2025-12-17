@@ -404,6 +404,15 @@ type StringMatcher interface {
 func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 	clearBeginEndText(re)
 
+	// Check if we have a pattern like .*-.*-.*.
+	// If so, then we can rely on the containsInOrder check in compileMatchStringFunction,
+	// so no further inspection of the string is required.
+	// We can't do this in stringMatcherFromRegexpInternal as we only want to apply this
+	// if the top-level pattern satisfies this requirement.
+	if isSimpleConcatenationPattern(re) {
+		return trueMatcher{}
+	}
+
 	m := stringMatcherFromRegexpInternal(re)
 	m = optimizeEqualOrPrefixStringMatchers(m, minEqualMultiStringMatcherMapThreshold)
 
@@ -564,6 +573,40 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 		}
 	}
 	return nil
+}
+
+// isSimpleConcatenationPattern returns true if re contains only literals or wildcard matchers,
+// and starts and ends with a wildcard matcher (eg. .*-.*-.*).
+func isSimpleConcatenationPattern(re *syntax.Regexp) bool {
+	if re.Op != syntax.OpConcat {
+		return false
+	}
+
+	if len(re.Sub) < 2 {
+		return false
+	}
+
+	first := re.Sub[0]
+	last := re.Sub[len(re.Sub)-1]
+	if !isMatchAny(first) || !isMatchAny(last) {
+		return false
+	}
+
+	for _, re := range re.Sub[1 : len(re.Sub)-1] {
+		if !isMatchAny(re) && !isCaseSensitiveLiteral(re) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func isMatchAny(re *syntax.Regexp) bool {
+	return re.Op == syntax.OpStar && re.Sub[0].Op == syntax.OpAnyChar
+}
+
+func isCaseSensitiveLiteral(re *syntax.Regexp) bool {
+	return re.Op == syntax.OpLiteral && isCaseSensitive(re)
 }
 
 // containsStringMatcher matches a string if it contains any of the substrings.
