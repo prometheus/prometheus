@@ -4706,9 +4706,8 @@ metric: <
 				s := teststorage.New(t)
 				t.Cleanup(func() { _ = s.Close() })
 
-				appTest := teststorage.NewAppendable().Then(s)
 				sl, _ := newTestScrapeLoop(t, func(sl *scrapeLoop) {
-					sl.appendable = appTest
+					sl.appendable = s
 					sl.alwaysScrapeClassicHist = tc.alwaysScrapeClassicHistograms
 					sl.convertClassicHistToNHCB = tc.convertClassicHistToNHCB
 					sl.enableNativeHistogramScraping = true
@@ -4750,7 +4749,6 @@ metric: <
 				}
 
 				// Validated what was appended can be queried.
-				// TODO(bwplotka): Instead of testing TSDB+Querying, compute expected []samples and do a simple equal check.
 				ctx := t.Context()
 				q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
 				require.NoError(t, err)
