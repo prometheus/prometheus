@@ -84,6 +84,15 @@ type Options struct {
 
 	// OutOfOrderTimeWindow specifies how much out of order is allowed, if any.
 	OutOfOrderTimeWindow int64
+
+	// EnableSTAsZeroSample represents 'created-timestamp-zero-ingestion' feature flag.
+	// If true, ST, if non-empty and earlier than sample timestamp, will be stored
+	// as a zero sample before the actual sample.
+	//
+	// The zero sample is best-effort, only debug log on failure is emitted.
+	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
+	// is implemented.
+	EnableSTAsZeroSample bool
 }
 
 // DefaultOptions used for the WAL storage. They are reasonable for setups using
@@ -233,8 +242,9 @@ type DB struct {
 	wal    *wlog.WL
 	locker *tsdbutil.DirLocker
 
-	appenderPool sync.Pool
-	bufPool      sync.Pool
+	appenderPool   sync.Pool
+	appenderV2Pool sync.Pool
+	bufPool        sync.Pool
 
 	// These pools are only used during WAL replay and are reset at the end.
 	// NOTE: Adjust resetWALReplayResources() upon changes to the pools.
@@ -303,12 +313,26 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 
 	db.appenderPool.New = func() any {
 		return &appender{
-			DB:                     db,
-			pendingSeries:          make([]record.RefSeries, 0, 100),
-			pendingSamples:         make([]record.RefSample, 0, 100),
-			pendingHistograms:      make([]record.RefHistogramSample, 0, 100),
-			pendingFloatHistograms: make([]record.RefFloatHistogramSample, 0, 100),
-			pendingExamplars:       make([]record.RefExemplar, 0, 10),
+			appenderBase: appenderBase{
+				DB:                     db,
+				pendingSeries:          make([]record.RefSeries, 0, 100),
+				pendingSamples:         make([]record.RefSample, 0, 100),
+				pendingHistograms:      make([]record.RefHistogramSample, 0, 100),
+				pendingFloatHistograms: make([]record.RefFloatHistogramSample, 0, 100),
+				pendingExamplars:       make([]record.RefExemplar, 0, 10),
+			},
+		}
+	}
+	db.appenderV2Pool.New = func() any {
+		return &appenderV2{
+			appenderBase: appenderBase{
+				DB:                     db,
+				pendingSeries:          make([]record.RefSeries, 0, 100),
+				pendingSamples:         make([]record.RefSample, 0, 100),
+				pendingHistograms:      make([]record.RefHistogramSample, 0, 100),
+				pendingFloatHistograms: make([]record.RefFloatHistogramSample, 0, 100),
+				pendingExamplars:       make([]record.RefExemplar, 0, 10),
+			},
 		}
 	}
 
@@ -777,9 +801,8 @@ func (db *DB) Close() error {
 	return tsdb_errors.NewMulti(db.locker.Release(), db.wal.Close()).Err()
 }
 
-type appender struct {
+type appenderBase struct {
 	*DB
-	hints *storage.AppendOptions
 
 	pendingSeries          []record.RefSeries
 	pendingSamples         []record.RefSample
@@ -800,6 +823,12 @@ type appender struct {
 	floatHistogramSeries []*memSeries
 }
 
+type appender struct {
+	appenderBase
+
+	hints *storage.AppendOptions
+}
+
 func (a *appender) SetOptions(opts *storage.AppendOptions) {
 	a.hints = opts
 }
@@ -810,26 +839,10 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 
 	series := a.series.GetByID(headRef)
 	if series == nil {
-		// Ensure no empty or duplicate labels have gotten through. This mirrors the
-		// equivalent validation code in the TSDB's headAppender.
-		l = l.WithoutEmpty()
-		if l.IsEmpty() {
-			return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
-		}
-
-		if lbl, dup := l.HasDuplicateLabelNames(); dup {
-			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
-		}
-
-		var created bool
-		series, created = a.getOrCreate(l)
-		if created {
-			a.pendingSeries = append(a.pendingSeries, record.RefSeries{
-				Ref:    series.ref,
-				Labels: l,
-			})
-
-			a.metrics.numActiveSeries.Inc()
+		var err error
+		series, err = a.getOrCreate(l)
+		if err != nil {
+			return 0, err
 		}
 	}
 
@@ -853,18 +866,35 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	return storage.SeriesRef(series.ref), nil
 }
 
-func (a *appender) getOrCreate(l labels.Labels) (series *memSeries, created bool) {
+func (a *appenderBase) getOrCreate(l labels.Labels) (series *memSeries, err error) {
+	// Ensure no empty or duplicate labels have gotten through. This mirrors the
+	// equivalent validation code in the TSDB's headAppender.
+	l = l.WithoutEmpty()
+	if l.IsEmpty() {
+		return nil, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
+	}
+
+	if lbl, dup := l.HasDuplicateLabelNames(); dup {
+		return nil, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
+	}
+
 	hash := l.Hash()
 
 	series = a.series.GetByHash(hash, l)
 	if series != nil {
-		return series, false
+		return series, nil
 	}
 
 	ref := chunks.HeadSeriesRef(a.nextRef.Inc())
 	series = &memSeries{ref: ref, lset: l, lastTs: math.MinInt64}
 	a.series.Set(hash, series)
-	return series, true
+
+	a.pendingSeries = append(a.pendingSeries, record.RefSeries{
+		Ref:    series.ref,
+		Labels: l,
+	})
+	a.metrics.numActiveSeries.Inc()
+	return series, nil
 }
 
 func (a *appender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
@@ -879,45 +909,51 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exem
 	// Ensure no empty labels have gotten through.
 	e.Labels = e.Labels.WithoutEmpty()
 
-	if lbl, dup := e.Labels.HasDuplicateLabelNames(); dup {
-		return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidExemplar)
-	}
-
-	// Exemplar label length does not include chars involved in text rendering such as quotes
-	// equals sign, or commas. See definition of const ExemplarMaxLabelLength.
-	labelSetLen := 0
-	err := e.Labels.Validate(func(l labels.Label) error {
-		labelSetLen += utf8.RuneCountInString(l.Name)
-		labelSetLen += utf8.RuneCountInString(l.Value)
-
-		if labelSetLen > exemplar.ExemplarMaxLabelSetLength {
-			return storage.ErrExemplarLabelLength
+	if err := a.validateExemplar(s.ref, e); err != nil {
+		if errors.Is(err, storage.ErrDuplicateExemplar) {
+			// Duplicate, don't return an error but don't accept the exemplar.
+			return 0, nil
 		}
-		return nil
-	})
-	if err != nil {
 		return 0, err
 	}
 
-	// Check for duplicate vs last stored exemplar for this series, and discard those.
-	// Otherwise, record the current exemplar as the latest.
-	// Prometheus' TSDB returns 0 when encountering duplicates, so we do the same here.
-	prevExemplar := a.series.GetLatestExemplar(s.ref)
-	if prevExemplar != nil && prevExemplar.Equals(e) {
-		// Duplicate, don't return an error but don't accept the exemplar.
-		return 0, nil
-	}
 	a.series.SetLatestExemplar(s.ref, &e)
-
 	a.pendingExamplars = append(a.pendingExamplars, record.RefExemplar{
 		Ref:    s.ref,
 		T:      e.Ts,
 		V:      e.Value,
 		Labels: e.Labels,
 	})
-
 	a.metrics.totalAppendedExemplars.Inc()
 	return storage.SeriesRef(s.ref), nil
+}
+
+func (a *appenderBase) validateExemplar(ref chunks.HeadSeriesRef, e exemplar.Exemplar) error {
+	if lbl, dup := e.Labels.HasDuplicateLabelNames(); dup {
+		return fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidExemplar)
+	}
+
+	// Exemplar label length does not include chars involved in text rendering such as quotes
+	// equals sign, or commas. See definition of const ExemplarMaxLabelLength.
+	labelSetLen := 0
+	if err := e.Labels.Validate(func(l labels.Label) error {
+		labelSetLen += utf8.RuneCountInString(l.Name)
+		labelSetLen += utf8.RuneCountInString(l.Value)
+		if labelSetLen > exemplar.ExemplarMaxLabelSetLength {
+			return storage.ErrExemplarLabelLength
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	// Check for duplicate vs last stored exemplar for this series, and discard those.
+	// Otherwise, record the current exemplar as the latest.
+	// Prometheus' TSDB returns 0 when encountering duplicates, so we do the same here.
+	prevExemplar := a.series.GetLatestExemplar(ref)
+	if prevExemplar != nil && prevExemplar.Equals(e) {
+		return storage.ErrDuplicateExemplar
+	}
+	return nil
 }
 
 func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
@@ -938,26 +974,10 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 
 	series := a.series.GetByID(headRef)
 	if series == nil {
-		// Ensure no empty or duplicate labels have gotten through. This mirrors the
-		// equivalent validation code in the TSDB's headAppender.
-		l = l.WithoutEmpty()
-		if l.IsEmpty() {
-			return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
-		}
-
-		if lbl, dup := l.HasDuplicateLabelNames(); dup {
-			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
-		}
-
-		var created bool
-		series, created = a.getOrCreate(l)
-		if created {
-			a.pendingSeries = append(a.pendingSeries, record.RefSeries{
-				Ref:    series.ref,
-				Labels: l,
-			})
-
-			a.metrics.numActiveSeries.Inc()
+		var err error
+		series, err = a.getOrCreate(l)
+		if err != nil {
+			return 0, err
 		}
 	}
 
@@ -1014,24 +1034,10 @@ func (a *appender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.L
 
 	series := a.series.GetByID(chunks.HeadSeriesRef(ref))
 	if series == nil {
-		// Ensure no empty labels have gotten through.
-		l = l.WithoutEmpty()
-		if l.IsEmpty() {
-			return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
-		}
-
-		if lbl, dup := l.HasDuplicateLabelNames(); dup {
-			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
-		}
-
-		var created bool
-		series, created = a.getOrCreate(l)
-		if created {
-			a.pendingSeries = append(a.pendingSeries, record.RefSeries{
-				Ref:    series.ref,
-				Labels: l,
-			})
-			a.metrics.numActiveSeries.Inc()
+		var err error
+		series, err = a.getOrCreate(l)
+		if err != nil {
+			return 0, err
 		}
 	}
 
@@ -1046,6 +1052,9 @@ func (a *appender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.L
 		// discard the sample if it's out of order.
 		return 0, storage.ErrOutOfOrderST
 	}
+	// NOTE(bwplotka): This is a bug, as we "commit" pending sample TS as the WAL last TS. It was likely done
+	// to satisfy incorrect TestDBStartTimestampSamplesIngestion test. We are leaving it as-is given the planned removal
+	// of AppenderV1 as per https://github.com/prometheus/prometheus/issues/17632.
 	series.lastTs = st
 
 	switch {
@@ -1077,25 +1086,11 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 
 	series := a.series.GetByID(chunks.HeadSeriesRef(ref))
 	if series == nil {
-		l = l.WithoutEmpty()
-		if l.IsEmpty() {
-			return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
+		var err error
+		series, err = a.getOrCreate(l)
+		if err != nil {
+			return 0, err
 		}
-
-		if lbl, dup := l.HasDuplicateLabelNames(); dup {
-			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
-		}
-
-		newSeries, created := a.getOrCreate(l)
-		if created {
-			a.pendingSeries = append(a.pendingSeries, record.RefSeries{
-				Ref:    newSeries.ref,
-				Labels: l,
-			})
-			a.metrics.numActiveSeries.Inc()
-		}
-
-		series = newSeries
 	}
 
 	series.Lock()
@@ -1110,6 +1105,9 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 		// discard the sample if it's out of order.
 		return 0, storage.ErrOutOfOrderST
 	}
+	// NOTE(bwplotka): This is a bug, as we "commit" pending sample TS as the WAL last TS. It was likely done
+	// to satisfy incorrect TestDBStartTimestampSamplesIngestion test. We are leaving it as-is given the planned removal
+	// of AppenderV1 as per https://github.com/prometheus/prometheus/issues/17632.
 	series.lastTs = st
 
 	// NOTE: always modify pendingSamples and sampleSeries together.
@@ -1126,7 +1124,7 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 }
 
 // Commit submits the collected samples and purges the batch.
-func (a *appender) Commit() error {
+func (a *appenderBase) Commit() error {
 	if err := a.log(); err != nil {
 		return err
 	}
@@ -1141,7 +1139,7 @@ func (a *appender) Commit() error {
 }
 
 // log logs all pending data to the WAL.
-func (a *appender) log() error {
+func (a *appenderBase) log() error {
 	a.mtx.RLock()
 	defer a.mtx.RUnlock()
 
@@ -1235,7 +1233,7 @@ func (a *appender) log() error {
 }
 
 // clearData clears all pending data.
-func (a *appender) clearData() {
+func (a *appenderBase) clearData() {
 	a.pendingSeries = a.pendingSeries[:0]
 	a.pendingSamples = a.pendingSamples[:0]
 	a.pendingHistograms = a.pendingHistograms[:0]
@@ -1246,7 +1244,7 @@ func (a *appender) clearData() {
 	a.floatHistogramSeries = a.floatHistogramSeries[:0]
 }
 
-func (a *appender) Rollback() error {
+func (a *appenderBase) Rollback() error {
 	// Series are created in-memory regardless of rollback. This means we must
 	// log them to the WAL, otherwise subsequent commits may reference a series
 	// which was never written to the WAL.
@@ -1260,7 +1258,7 @@ func (a *appender) Rollback() error {
 }
 
 // logSeries logs only pending series records to the WAL.
-func (a *appender) logSeries() error {
+func (a *appenderBase) logSeries() error {
 	a.mtx.RLock()
 	defer a.mtx.RUnlock()
 
@@ -1283,7 +1281,7 @@ func (a *appender) logSeries() error {
 
 // minValidTime returns the minimum timestamp that a sample can have
 // and is needed for preventing underflow.
-func (a *appender) minValidTime(lastTs int64) int64 {
+func (a *appenderBase) minValidTime(lastTs int64) int64 {
 	if lastTs < math.MinInt64+a.opts.OutOfOrderTimeWindow {
 		return math.MinInt64
 	}

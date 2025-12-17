@@ -265,6 +265,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "created-timestamp-zero-ingestion":
 				c.scrape.EnableStartTimestampZeroIngestion = true
 				c.web.STZeroIngestionEnabled = true
+				c.agent.EnableSTAsZeroSample = true
 				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
@@ -1417,6 +1418,7 @@ func main() {
 					"MinWALTime", cfg.agent.MinWALTime,
 					"MaxWALTime", cfg.agent.MaxWALTime,
 					"OutOfOrderTimeWindow", cfg.agent.OutOfOrderTimeWindow,
+					"EnableSTAsZeroSample", cfg.agent.EnableSTAsZeroSample,
 				)
 
 				localStorage.Set(db, 0)
@@ -1957,7 +1959,8 @@ type agentOptions struct {
 	TruncateFrequency      model.Duration
 	MinWALTime, MaxWALTime model.Duration
 	NoLockfile             bool
-	OutOfOrderTimeWindow   int64
+	OutOfOrderTimeWindow   int64 // TODO(bwplotka): Unused option, fix it or remove.
+	EnableSTAsZeroSample   bool
 }
 
 func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Options {
@@ -1973,6 +1976,7 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 		MaxWALTime:           durationToInt64Millis(time.Duration(opts.MaxWALTime)),
 		NoLockfile:           opts.NoLockfile,
 		OutOfOrderTimeWindow: outOfOrderTimeWindow,
+		EnableSTAsZeroSample: opts.EnableSTAsZeroSample,
 	}
 }
 
