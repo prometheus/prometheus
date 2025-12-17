@@ -2014,3 +2014,38 @@ eval instant at 0m scalar({type="histogram"})
 # One float in the vector.
 eval instant at 0m scalar({l="x"})
 	1
+
+clear
+load 20m
+  series{label="a", idx="1"} 2 _
+  series{label="a", idx="2"} _ 4
+
+eval instant at 0 label_replace(series, "idx", "replaced", "idx", ".*")
+  series{label="a", idx="replaced"} 2
+
+eval instant at 20m label_replace(series, "idx", "replaced", "idx", ".*")
+  series{label="a", idx="replaced"} 4
+
+eval range from 0 to 20m step 20m label_replace(series, "idx", "replaced", "idx", ".*")
+  series{label="a", idx="replaced"} 2 4
+
+# Test label_join with non-overlapping series.
+eval instant at 0 label_join(series, "idx", ",", "label", "label")
+  series{label="a", idx="a,a"} 2
+
+eval instant at 20m label_join(series, "idx", ",", "label", "label")
+  series{label="a", idx="a,a"} 4
+
+eval range from 0 to 20m step 20m label_join(series, "idx", ",", "label", "label")
+  series{label="a", idx="a,a"} 2 4
+
+# Test label_replace failure with overlapping timestamps (same labelset at same time).
+clear
+load 1m
+  overlap{label="a", idx="1"} 1
+  overlap{label="a", idx="2"} 2
+
+eval_fail instant at 0 label_replace(overlap, "idx", "same", "idx", ".*")
+
+# Test label_join failure with overlapping timestamps (same labelset at same time).
+eval_fail instant at 0 label_join(overlap, "idx", ",", "label", "label")
