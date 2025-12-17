@@ -91,7 +91,7 @@ func requireNotEqual(t testing.TB, a, b any) {
 		"b: %s", a, b))
 }
 
-func TestConcurrentAppender_Panic(t *testing.T) {
+func TestConcurrentAppender_ReturnsErrAppender(t *testing.T) {
 	a := NewAppendable()
 
 	// Non-concurrent multiple use if fine.
