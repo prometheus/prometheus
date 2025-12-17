@@ -326,7 +326,6 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 		m := ts.ToMetadata(req.Symbols)
 
-
 		// Validate series labels early.
 		// NOTE(bwplotka): While spec allows UTF-8, Prometheus Receiver may impose
 		// specific limits and follow https://prometheus.io/docs/specs/remote_write_spec_2_0/#invalid-samples case.
