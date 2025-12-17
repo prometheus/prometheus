@@ -203,7 +203,7 @@ func (a *Appendable) String() string {
 	return sb.String()
 }
 
-var errCloseAppender = errors.New("appender was already committed/rolledback")
+var errClosedAppender = errors.New("appender was already committed/rolledback")
 
 type appender struct {
 	err  error
@@ -317,7 +317,7 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 	if a.next != nil {
 		return a.next.AppendExemplar(ref, l, e)
 	}
-	return ref, nil
+	return computeOrCheckRef(ref, l)
 }
 
 func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, _, st int64) (storage.SeriesRef, error) {
@@ -355,7 +355,7 @@ func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m meta
 	if a.next != nil {
 		return a.next.UpdateMetadata(ref, l, m)
 	}
-	return ref, nil
+	return computeOrCheckRef(ref, l)
 }
 
 func (a *appender) Commit() error {
@@ -371,7 +371,7 @@ func (a *appender) Commit() error {
 	a.a.mtx.Lock()
 	a.a.resultSamples = append(a.a.resultSamples, a.a.pendingSamples...)
 	a.a.pendingSamples = a.a.pendingSamples[:0]
-	a.err = errCloseAppender
+	a.err = errClosedAppender
 	a.a.mtx.Unlock()
 
 	if a.a.next != nil {
@@ -389,7 +389,7 @@ func (a *appender) Rollback() error {
 	a.a.mtx.Lock()
 	a.a.rolledbackSamples = append(a.a.rolledbackSamples, a.a.pendingSamples...)
 	a.a.pendingSamples = a.a.pendingSamples[:0]
-	a.err = errCloseAppender
+	a.err = errClosedAppender
 	a.a.mtx.Unlock()
 
 	if a.next != nil {

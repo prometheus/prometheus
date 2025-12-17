@@ -84,7 +84,7 @@ func newTestScrapeLoop(t testing.TB, opts ...func(sl *scrapeLoop)) (_ *scrapeLoo
 		sampleMutator:       nopMutator,
 		reportSampleMutator: nopMutator,
 		scrapeLoopOptions: scrapeLoopOptions{
-			appendable:          teststorage.NewAppendable(), // Serves as a nop appendable, unless replaced by option.
+			appendable:          teststorage.NewAppendable(),
 			buffers:             pool.New(1e3, 1e6, 3, func(sz int) any { return make([]byte, 0, sz) }),
 			metrics:             metrics,
 			maxSchema:           histogram.ExponentialSchemaMax,
