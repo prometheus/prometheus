@@ -87,6 +87,9 @@ var (
 		"ſſs",
 		// Concat of literals and wildcards.
 		".*-.*-.*-.*-.*",
+		".+-.*-.*-.*-.+",
+		"-.*-.*-.*-.*",
+		".*-.*-.*-.*-",
 		"(.+)-(.+)-(.+)-(.+)-(.+)",
 		"((.*))(?i:f)((.*))o((.*))o((.*))",
 		"((.*))f((.*))(?i:o)((.*))o((.*))",
@@ -96,6 +99,11 @@ var (
 		"FOO", "Foo", "fOo", "foO", "OO", "Oo", "\nfoo\n", strings.Repeat("f", 20), "prometheus", "prometheus_api_v1", "prometheus_api_v1_foo",
 		"10.0.1.20", "10.0.2.10", "10.0.3.30", "10.0.4.40",
 		"foofoo0", "foofoo", "😀foo0", "ſſs", "ſſS", "AAAAAAAAAAAAAAAAAAAAAAAA", "BBBBBBBBBBBBBBBBBBBBBBBB", "cccccccccccccccccccccccC", "ſſſſſſſſſſſſſſſſſſſſſſſſS", "SSSSSSSSSSSSSSSSSSSSSSSSſ",
+		"a-b-c-d-e",
+		"aaaaaa-bbbbbb-cccccc-dddddd-eeeeee",
+		"aaaaaa----eeeeee",
+		"----",
+		"-a-a-a-",
 
 		// Values matching / not matching the test regexps on long alternations.
 		"zQPbMkNO", "zQPbMkNo", "jyyfj00j0061", "jyyfj00j006", "jyyfj00j00612", "NNSPdvMi", "NNSPdvMiXXX", "NNSPdvMixxx", "nnSPdvMi", "nnSPdvMiXXX",
@@ -162,6 +170,7 @@ func TestOptimizeConcatRegex(t *testing.T) {
 		{regex: "^5..$", prefix: "5", suffix: "", contains: nil},
 		{regex: "^release.*", prefix: "release", suffix: "", contains: nil},
 		{regex: "^env-[0-9]+laio[1]?[^0-9].*", prefix: "env-", suffix: "", contains: []string{"laio"}},
+		{regex: ".*-.*-.*-.*-.*", prefix: "", suffix: "", contains: []string{"-", "-", "-", "-"}},
 	}
 
 	for _, c := range cases {
