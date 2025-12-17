@@ -839,26 +839,10 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 
 	series := a.series.GetByID(headRef)
 	if series == nil {
-		// Ensure no empty or duplicate labels have gotten through. This mirrors the
-		// equivalent validation code in the TSDB's headAppender.
-		l = l.WithoutEmpty()
-		if l.IsEmpty() {
-			return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
-		}
-
-		if lbl, dup := l.HasDuplicateLabelNames(); dup {
-			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
-		}
-
-		var created bool
-		series, created = a.getOrCreate(l)
-		if created {
-			a.pendingSeries = append(a.pendingSeries, record.RefSeries{
-				Ref:    series.ref,
-				Labels: l,
-			})
-
-			a.metrics.numActiveSeries.Inc()
+		var err error
+		series, err = a.getOrCreate(l)
+		if err != nil {
+			return 0, err
 		}
 	}
 
@@ -882,18 +866,35 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	return storage.SeriesRef(series.ref), nil
 }
 
-func (a *appenderBase) getOrCreate(l labels.Labels) (series *memSeries, created bool) {
+func (a *appenderBase) getOrCreate(l labels.Labels) (series *memSeries, err error) {
+	// Ensure no empty or duplicate labels have gotten through. This mirrors the
+	// equivalent validation code in the TSDB's headAppender.
+	l = l.WithoutEmpty()
+	if l.IsEmpty() {
+		return nil, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
+	}
+
+	if lbl, dup := l.HasDuplicateLabelNames(); dup {
+		return nil, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
+	}
+
 	hash := l.Hash()
 
 	series = a.series.GetByHash(hash, l)
 	if series != nil {
-		return series, false
+		return series, nil
 	}
 
 	ref := chunks.HeadSeriesRef(a.nextRef.Inc())
 	series = &memSeries{ref: ref, lset: l, lastTs: math.MinInt64}
 	a.series.Set(hash, series)
-	return series, true
+
+	a.pendingSeries = append(a.pendingSeries, record.RefSeries{
+		Ref:    series.ref,
+		Labels: l,
+	})
+	a.metrics.numActiveSeries.Inc()
+	return series, nil
 }
 
 func (a *appender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
@@ -973,26 +974,10 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 
 	series := a.series.GetByID(headRef)
 	if series == nil {
-		// Ensure no empty or duplicate labels have gotten through. This mirrors the
-		// equivalent validation code in the TSDB's headAppender.
-		l = l.WithoutEmpty()
-		if l.IsEmpty() {
-			return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
-		}
-
-		if lbl, dup := l.HasDuplicateLabelNames(); dup {
-			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
-		}
-
-		var created bool
-		series, created = a.getOrCreate(l)
-		if created {
-			a.pendingSeries = append(a.pendingSeries, record.RefSeries{
-				Ref:    series.ref,
-				Labels: l,
-			})
-
-			a.metrics.numActiveSeries.Inc()
+		var err error
+		series, err = a.getOrCreate(l)
+		if err != nil {
+			return 0, err
 		}
 	}
 
@@ -1049,24 +1034,10 @@ func (a *appender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.L
 
 	series := a.series.GetByID(chunks.HeadSeriesRef(ref))
 	if series == nil {
-		// Ensure no empty labels have gotten through.
-		l = l.WithoutEmpty()
-		if l.IsEmpty() {
-			return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
-		}
-
-		if lbl, dup := l.HasDuplicateLabelNames(); dup {
-			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
-		}
-
-		var created bool
-		series, created = a.getOrCreate(l)
-		if created {
-			a.pendingSeries = append(a.pendingSeries, record.RefSeries{
-				Ref:    series.ref,
-				Labels: l,
-			})
-			a.metrics.numActiveSeries.Inc()
+		var err error
+		series, err = a.getOrCreate(l)
+		if err != nil {
+			return 0, err
 		}
 	}
 
@@ -1115,25 +1086,11 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 
 	series := a.series.GetByID(chunks.HeadSeriesRef(ref))
 	if series == nil {
-		l = l.WithoutEmpty()
-		if l.IsEmpty() {
-			return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
+		var err error
+		series, err = a.getOrCreate(l)
+		if err != nil {
+			return 0, err
 		}
-
-		if lbl, dup := l.HasDuplicateLabelNames(); dup {
-			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
-		}
-
-		newSeries, created := a.getOrCreate(l)
-		if created {
-			a.pendingSeries = append(a.pendingSeries, record.RefSeries{
-				Ref:    newSeries.ref,
-				Labels: l,
-			})
-			a.metrics.numActiveSeries.Inc()
-		}
-
-		series = newSeries
 	}
 
 	series.Lock()

@@ -23,7 +23,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 )
@@ -62,26 +61,10 @@ func (a *appenderV2) Append(ref storage.SeriesRef, l labels.Labels, st, t int64,
 	// series references and chunk references are identical for agent mode.
 	s := a.series.GetByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
-		// Ensure no empty or duplicate labels have gotten through. This mirrors the
-		// equivalent validation code in the TSDB's headAppender.
-		l = l.WithoutEmpty()
-		if l.IsEmpty() {
-			return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
-		}
-
-		if lbl, dup := l.HasDuplicateLabelNames(); dup {
-			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
-		}
-
-		var created bool
-		s, created = a.getOrCreate(l)
-		if created {
-			a.pendingSeries = append(a.pendingSeries, record.RefSeries{
-				Ref:    s.ref,
-				Labels: l,
-			})
-
-			a.metrics.numActiveSeries.Inc()
+		var err error
+		s, err = a.getOrCreate(l)
+		if err != nil {
+			return 0, err
 		}
 	}
 
