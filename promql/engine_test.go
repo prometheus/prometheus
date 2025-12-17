@@ -3946,6 +3946,41 @@ eval instant at 1m histogram_fraction(-Inf, 0.7071067811865475, histogram_nan)
     {case="100% NaNs"} 0.0
     {case="20% NaNs"} 0.4
 
+# Test unary negation with non-overlapping series that have different metric names.
+# After negation, the __name__ label is dropped, so series with different names
+# but same other labels should merge if they don't overlap in time.
+clear
+load 20m
+  http_requests{job="api"} 2 _
+  http_errors{job="api"} _ 4
+
+eval instant at 0 -{job="api"}
+  {job="api"} -2
+
+eval instant at 20m -{job="api"}
+  {job="api"} -4
+
+eval range from 0 to 20m step 20m -{job="api"}
+  {job="api"} -2 -4
+
+# Test unary negation failure with overlapping timestamps (same labelset at same time).
+clear
+load 1m
+  http_requests{job="api"} 1
+  http_errors{job="api"} 2
+
+eval_fail instant at 0 -{job="api"}
+
+# Test unary negation with "or" operator combining metrics with removed names.
+clear
+load 10m
+    metric_a   1  _
+    metric_b   3  4
+
+# Use "-" unary operator as a simple way to remove the metric name.
+eval range from 0 to 20m step 10m -metric_a or -metric_b
+    {} -1  -4
+
 `, engine)
 }
 
