@@ -1394,6 +1394,61 @@ func BenchmarkScrapeLoopAppend(b *testing.B) {
 	}
 }
 
+func TestScrapeLoopScrapeAndReport(t *testing.T) {
+	parsableText := readTextParseTestMetrics(t)
+
+	appTest := teststorage.NewAppendable()
+	sl, scraper := newTestScrapeLoop(t, func(sl *scrapeLoop) {
+		sl.appendable = appTest
+		sl.fallbackScrapeProtocol = "application/openmetrics-text"
+	})
+	scraper.scrapeFunc = func(ctx context.Context, writer io.Writer) error {
+		_, err := writer.Write(parsableText)
+		return err
+	}
+
+	ts := time.Time{}
+
+	sl.scrapeAndReport(time.Time{}, ts, nil)
+	require.NoError(t, scraper.lastError)
+
+	require.Len(t, appTest.ResultSamples(), 1862)
+	require.Len(t, appTest.ResultMetadata(), 1862)
+}
+
+// Recommended CLI invocation:
+/*
+	export bench=scrapeAndReport-scrapeloop-ref && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeLoopScrapeAndReport' \
+		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
+		| tee ${bench}.txt
+*/
+func BenchmarkScrapeLoopScrapeAndReport(b *testing.B) {
+	parsableText := readTextParseTestMetrics(b)
+
+	s := teststorage.New(b)
+	b.Cleanup(func() { _ = s.Close() })
+
+	sl, scraper := newTestScrapeLoop(b, func(sl *scrapeLoop) {
+		sl.appendable = s
+		sl.fallbackScrapeProtocol = "application/openmetrics-text"
+	})
+	scraper.scrapeFunc = func(ctx context.Context, writer io.Writer) error {
+		_, err := writer.Write(parsableText)
+		return err
+	}
+
+	ts := time.Time{}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		ts = ts.Add(time.Second)
+		sl.scrapeAndReport(time.Time{}, ts, nil)
+		require.NoError(b, scraper.lastError)
+	}
+}
+
 func TestSetOptionsHandlingStaleness(t *testing.T) {
 	s := teststorage.New(t, 600000)
 	t.Cleanup(func() { _ = s.Close() })
@@ -2146,9 +2201,6 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 	// This is a regression test for the scrape loop cache not properly maintaining
 	// IDs when the string representation of a metric changes across a scrape. Thus,
 	// we use a real storage appender here.
-	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
-
 	appTest := teststorage.NewAppendable()
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest))
 

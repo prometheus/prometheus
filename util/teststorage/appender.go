@@ -175,6 +175,9 @@ func (a *Appendable) ResultMetadata() []Sample {
 
 	var ret []Sample
 	for _, s := range a.resultSamples {
+		if s.M.IsEmpty() {
+			continue
+		}
 		ret = append(ret, Sample{L: s.L, M: s.M})
 	}
 	return ret
