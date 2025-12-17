@@ -524,7 +524,7 @@ scrape_configs:
 	opts := Options{}
 	scrapeManager, err := NewManager(&opts, nil, nil, nil, testRegistry)
 	require.NoError(t, err)
-	newLoop := func(*scrapeLoop) loop {
+	newLoop := func(scrapeLoopOptions) loop {
 		ch <- struct{}{}
 		return noopLoop()
 	}
@@ -676,7 +676,7 @@ scrape_configs:
 	)
 
 	reload := func(scrapeManager *Manager, cfg *config.Config) {
-		newLoop := func(*scrapeLoop) loop {
+		newLoop := func(scrapeLoopOptions) loop {
 			return noopLoop()
 		}
 		scrapeManager.scrapePools = map[string]*scrapePool{}

@@ -484,52 +484,66 @@ func TestScrapePoolStop(t *testing.T) {
 	require.Empty(t, sp.loops, "Loops were not cleared on stopping: %d left", len(sp.loops))
 }
 
+// TestScrapePoolReload tests reloading logic, so:
+// * all loops are reloaded, reusing cache if scrape config changed.
+// * reloaded loops are stopped before new ones are started.
+// * new scrapeLoops are configured with the updated scrape config.
 func TestScrapePoolReload(t *testing.T) {
 	t.Parallel()
-	var mtx sync.Mutex
-	numTargets := 20
 
-	stopped := map[uint64]bool{}
+	var (
+		mtx        sync.Mutex
+		numTargets = 20
+		stopped    = map[uint64]bool{}
+	)
 
-	reloadCfg := &config.ScrapeConfig{
+	cfg0 := &config.ScrapeConfig{}
+	cfg1 := &config.ScrapeConfig{
 		ScrapeInterval:             model.Duration(3 * time.Second),
 		ScrapeTimeout:              model.Duration(2 * time.Second),
 		MetricNameValidationScheme: model.UTF8Validation,
 		MetricNameEscapingScheme:   model.AllowUTF8,
+
+		// Test a few example options.
+		SampleLimit:            123,
+		ScrapeFallbackProtocol: "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited",
 	}
-	// On starting to run, new loops created on reload check whether their preceding
-	// equivalents have been stopped.
-	newLoop := func(old *scrapeLoop) loop {
-		l := &testLoop{interval: time.Duration(reloadCfg.ScrapeInterval), timeout: time.Duration(reloadCfg.ScrapeTimeout)}
+	newLoopCfg1 := func(opts scrapeLoopOptions) loop {
+		// Test cfg1 is being used.
+		require.Equal(t, cfg1, opts.sp.config)
+
+		// Inject out testLoop that allows mocking start and stop.
+		l := &testLoop{interval: opts.interval, timeout: opts.timeout}
+
+		// On start, expect previous loop instances for the same target to be stopped.
 		l.startFunc = func(interval, timeout time.Duration, _ chan<- error) {
-			require.Equal(t, 3*time.Second, interval, "Unexpected scrape interval")
-			require.Equal(t, 2*time.Second, timeout, "Unexpected scrape timeout")
+			// Ensure cfg1 interval and timeout are correctly configured.
+			require.Equal(t, time.Duration(cfg1.ScrapeInterval), interval, "Unexpected scrape interval")
+			require.Equal(t, time.Duration(cfg1.ScrapeTimeout), timeout, "Unexpected scrape timeout")
 
 			mtx.Lock()
-			targetScraper := old.scraper.(*targetScraper)
+			targetScraper := opts.scraper.(*targetScraper)
 			require.True(t, stopped[targetScraper.hash()], "Scrape loop for %v not stopped yet", targetScraper)
 			mtx.Unlock()
 		}
 		return l
 	}
 
+	// Create test pool.
 	reg, metrics := newTestRegistryAndScrapeMetrics(t)
-	sp := newTestScrapePool(t, newLoop)
+	sp := newTestScrapePool(t, newLoopCfg1)
 	sp.metrics = metrics
 
-	// Reloading a scrape pool with a new scrape configuration must stop all scrape
-	// loops and start new ones. A new loop must not be started before the preceding
-	// one terminated.
-
+	// Prefill pool with 20 loops, simulating 20 scrape targets.
 	for i := range numTargets {
 		t := &Target{
 			labels:       labels.FromStrings(model.AddressLabel, fmt.Sprintf("example.com:%d", i)),
-			scrapeConfig: &config.ScrapeConfig{},
+			scrapeConfig: cfg0,
 		}
 		l := &testLoop{}
 		d := time.Duration((i+1)*20) * time.Millisecond
 		l.stopFunc = func() {
-			time.Sleep(d)
+			time.Sleep(d) // Sleep uneven time on stop.
 
 			mtx.Lock()
 			stopped[t.hash()] = true
@@ -539,36 +553,26 @@ func TestScrapePoolReload(t *testing.T) {
 		sp.activeTargets[t.hash()] = t
 		sp.loops[t.hash()] = l
 	}
-	done := make(chan struct{})
 
 	beforeTargets := map[uint64]*Target{}
 	maps.Copy(beforeTargets, sp.activeTargets)
 
-	reloadTime := time.Now()
-
-	go func() {
-		_ = sp.reload(reloadCfg)
-		close(done)
-	}()
-
-	select {
-	case <-time.After(5 * time.Second):
-		require.FailNow(t, "scrapeLoop.reload() did not return as expected")
-	case <-done:
-		// This should have taken at least as long as the last target slept.
-		require.GreaterOrEqual(t, time.Since(reloadTime), time.Duration(numTargets*20)*time.Millisecond, "scrapeLoop.stop() exited before all targets stopped")
-	}
-
+	// Reloading a scrape pool with a new scrape configuration must stop all scrape
+	// loops and start new ones. A new loop must not be started before the preceding
+	// one terminated.
+	require.NoError(t, sp.reload(cfg1))
+	var stoppedCount int
 	mtx.Lock()
-	require.Len(t, stopped, numTargets, "Unexpected number of stopped loops")
+	stoppedCount = len(stopped)
 	mtx.Unlock()
-
+	require.Equal(t, numTargets, stoppedCount, "Unexpected number of stopped loops")
 	require.Equal(t, sp.activeTargets, beforeTargets, "Reloading affected target states unexpectedly")
-	require.Len(t, sp.loops, numTargets, "Unexpected number of stopped loops after reload")
+	require.Len(t, sp.loops, numTargets, "Unexpected number of loops after reload")
 
+	// Check if prometheus_target_reload_length_seconds points to cfg1.ScrapeInterval.
 	got, err := gatherLabels(reg, "prometheus_target_reload_length_seconds")
 	require.NoError(t, err)
-	expectedName, expectedValue := "interval", "3s"
+	expectedName, expectedValue := "interval", cfg1.ScrapeInterval.String()
 	require.Equal(t, [][]*dto.LabelPair{{{Name: &expectedName, Value: &expectedValue}}}, got)
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(sp.metrics.targetScrapePoolReloads))
 }
@@ -580,8 +584,8 @@ func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
 		MetricNameValidationScheme: model.UTF8Validation,
 		MetricNameEscapingScheme:   model.AllowUTF8,
 	}
-	newLoop := func(old *scrapeLoop) loop {
-		l := &testLoop{interval: old.interval, timeout: old.timeout}
+	newLoop := func(opts scrapeLoopOptions) loop {
+		l := &testLoop{interval: opts.interval, timeout: opts.timeout}
 		l.startFunc = func(interval, timeout time.Duration, _ chan<- error) {
 			require.Equal(t, 5*time.Second, interval, "Unexpected scrape interval")
 			require.Equal(t, 3*time.Second, timeout, "Unexpected scrape timeout")
@@ -630,7 +634,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 	var wg sync.WaitGroup
 	// On starting to run, new loops created on reload check whether their preceding
 	// equivalents have been stopped.
-	newLoop := func(*scrapeLoop) loop {
+	newLoop := func(scrapeLoopOptions) loop {
 		wg.Add(1)
 		l := &testLoop{
 			startFunc: func(_, _ time.Duration, _ chan<- error) {
@@ -851,7 +855,7 @@ func TestScrapePoolRaces(t *testing.T) {
 
 func TestScrapePoolScrapeLoopsStarted(t *testing.T) {
 	var wg sync.WaitGroup
-	newLoop := func(*scrapeLoop) loop {
+	newLoop := func(scrapeLoopOptions) loop {
 		wg.Add(1)
 		l := &testLoop{
 			startFunc: func(_, _ time.Duration, _ chan<- error) {

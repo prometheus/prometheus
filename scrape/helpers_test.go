@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -83,17 +84,16 @@ func newTestScrapeLoop(t testing.TB, opts ...func(sl *scrapeLoop)) (_ *scrapeLoo
 		timeout:             1 * time.Hour,
 		sampleMutator:       nopMutator,
 		reportSampleMutator: nopMutator,
-		scrapeLoopOptions: scrapeLoopOptions{
-			appendable:          teststorage.NewAppendable(),
-			buffers:             pool.New(1e3, 1e6, 3, func(sz int) any { return make([]byte, 0, sz) }),
-			metrics:             metrics,
-			maxSchema:           histogram.ExponentialSchemaMax,
-			honorTimestamps:     true,
-			enableCompression:   true,
-			validationScheme:    model.UTF8Validation,
-			symbolTable:         labels.NewSymbolTable(),
-			appendMetadataToWAL: true, // Tests assumes it's enabled, unless explicitly turned off.
-		},
+
+		appendable:          teststorage.NewAppendable(),
+		buffers:             pool.New(1e3, 1e6, 3, func(sz int) any { return make([]byte, 0, sz) }),
+		metrics:             metrics,
+		maxSchema:           histogram.ExponentialSchemaMax,
+		honorTimestamps:     true,
+		enableCompression:   true,
+		validationScheme:    model.UTF8Validation,
+		symbolTable:         labels.NewSymbolTable(),
+		appendMetadataToWAL: true, // Tests assumes it's enabled, unless explicitly turned off.
 	}
 	for _, o := range opts {
 		o(sl)
@@ -121,22 +121,22 @@ func newTestScrapeLoop(t testing.TB, opts ...func(sl *scrapeLoop)) (_ *scrapeLoo
 	return sl, scraper
 }
 
-func newTestScrapePool(t *testing.T, injectNewLoop func(*scrapeLoop) loop) *scrapePool {
+func newTestScrapePool(t *testing.T, injectNewLoop func(options scrapeLoopOptions) loop) *scrapePool {
 	return &scrapePool{
-		ctx:    t.Context(),
-		cancel: func() {},
-		logger: promslog.NewNopLogger(),
-		client: http.DefaultClient,
+		ctx:     t.Context(),
+		cancel:  func() {},
+		logger:  promslog.NewNopLogger(),
+		config:  &config.ScrapeConfig{},
+		options: &Options{},
+		client:  http.DefaultClient,
 
 		activeTargets:     map[uint64]*Target{},
 		loops:             map[uint64]loop{},
 		injectTestNewLoop: injectNewLoop,
 
-		scrapeLoopOptions: scrapeLoopOptions{
-			appendable:  teststorage.NewAppendable(),
-			symbolTable: labels.NewSymbolTable(),
-			metrics:     newTestScrapeMetrics(t),
-		},
+		appendable:  teststorage.NewAppendable(),
+		symbolTable: labels.NewSymbolTable(),
+		metrics:     newTestScrapeMetrics(t),
 	}
 }
 
