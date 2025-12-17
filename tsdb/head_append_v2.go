@@ -145,7 +145,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 
 	// TODO(bwplotka): Handle ST natively (as per PROM-60).
 	if a.head.opts.EnableSTAsZeroSample && st != 0 {
-		a.bestEffortAppendSTZeroSample(s, st, t, h, fh)
+		a.bestEffortAppendSTZeroSample(s, ls, st, t, h, fh)
 	}
 
 	switch {
@@ -344,13 +344,14 @@ func (a *headAppenderV2) appendExemplars(s *memSeries, exemplar []exemplar.Exemp
 // is implemented.
 //
 // ST is an experimental feature, we don't fail the append on errors, just debug log.
-func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, st, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) {
+func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.Labels, st, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) {
+	// NOTE: Use lset instead of s.lset to avoid locking memSeries. Using s.ref is acceptable without locking.
 	if st >= t {
-		a.head.logger.Debug("Error when appending ST", "series", s.lset.String(), "st", st, "t", t, "err", storage.ErrSTNewerThanSample)
+		a.head.logger.Debug("Error when appending ST", "series", ls.String(), "st", st, "t", t, "err", storage.ErrSTNewerThanSample)
 		return
 	}
 	if st < a.minValidTime {
-		a.head.logger.Debug("Error when appending ST", "series", s.lset.String(), "st", st, "t", t, "err", storage.ErrOutOfBounds)
+		a.head.logger.Debug("Error when appending ST", "series", ls.String(), "st", st, "t", t, "err", storage.ErrOutOfBounds)
 		return
 	}
 

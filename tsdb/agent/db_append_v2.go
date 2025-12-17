@@ -38,7 +38,7 @@ type appenderV2 struct {
 
 // Append appends pending sample to agent's DB.
 // TODO: Wire metadata in the Agent's appender.
-func (a *appenderV2) Append(ref storage.SeriesRef, l labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	var (
 		// Avoid shadowing err variables for reliability.
 		valErr, partialErr error
@@ -62,7 +62,7 @@ func (a *appenderV2) Append(ref storage.SeriesRef, l labels.Labels, st, t int64,
 	s := a.series.GetByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
 		var err error
-		s, err = a.getOrCreate(l)
+		s, err = a.getOrCreate(ls)
 		if err != nil {
 			return 0, err
 		}
@@ -74,7 +74,7 @@ func (a *appenderV2) Append(ref storage.SeriesRef, l labels.Labels, st, t int64,
 
 	// TODO(bwplotka): Handle ST natively (as per PROM-60).
 	if a.opts.EnableSTAsZeroSample && st != 0 {
-		a.bestEffortAppendSTZeroSample(s, lastTS, st, t, h, fh)
+		a.bestEffortAppendSTZeroSample(s, ls, lastTS, st, t, h, fh)
 	}
 
 	if t <= a.minValidTime(lastTS) {
@@ -164,13 +164,14 @@ func (a *appenderV2) appendExemplars(s *memSeries, exemplar []exemplar.Exemplar)
 // is implemented.
 //
 // ST is an experimental feature, we don't fail the append on errors, just debug log.
-func (a *appenderV2) bestEffortAppendSTZeroSample(s *memSeries, lastTS, st, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) {
+func (a *appenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.Labels, lastTS, st, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) {
+	// NOTE: Use lset instead of s.lset to avoid locking memSeries. Using s.ref is acceptable without locking.
 	if st >= t {
-		a.logger.Debug("Error when appending ST", "series", s.lset.String(), "st", st, "t", t, "err", storage.ErrSTNewerThanSample)
+		a.logger.Debug("Error when appending ST", "series", ls.String(), "st", st, "t", t, "err", storage.ErrSTNewerThanSample)
 		return
 	}
 	if st <= lastTS {
-		a.logger.Debug("Error when appending ST", "series", s.lset.String(), "st", st, "t", t, "err", storage.ErrOutOfOrderST)
+		a.logger.Debug("Error when appending ST", "series", ls.String(), "st", st, "t", t, "err", storage.ErrOutOfOrderST)
 		return
 	}
 
