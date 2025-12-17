@@ -226,7 +226,6 @@ test_metric2{foo="bar"} 22
 	testutil.RequireEqual(t, []sample{
 		{L: labels.FromStrings("__name__", "test_metric_total"), M: metadata.Metadata{Type: "counter", Unit: "metric", Help: "some help text"}},
 		{L: labels.FromStrings("__name__", "test_metric2", "foo", "bar"), M: metadata.Metadata{Type: "gauge", Unit: "", Help: "other help text"}},
-		{L: labels.FromStrings("__name__", "test_metric3_metric4", "foo", "bar")},
 	}, appTest.ResultMetadata())
 	appTest.ResultReset()
 
@@ -235,11 +234,7 @@ test_metric2{foo="bar"} 22
 	_, _, _, err = app.append([]byte(scrape1), "application/openmetrics-text", now.Add(15*time.Second))
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	testutil.RequireEqual(t, []sample{
-		{L: labels.FromStrings("__name__", "test_metric_total")},
-		{L: labels.FromStrings("__name__", "test_metric2", "foo", "bar")},
-		{L: labels.FromStrings("__name__", "test_metric3_metric4", "foo", "bar")},
-	}, appTest.ResultMetadata())
+	require.Empty(t, appTest.ResultMetadata())
 	appTest.ResultReset()
 
 	app = sl.appender()
@@ -249,7 +244,6 @@ test_metric2{foo="bar"} 22
 	testutil.RequireEqual(t, []sample{
 		{L: labels.FromStrings("__name__", "test_metric_total"), M: metadata.Metadata{Type: "counter", Unit: "metric", Help: "different help text"}}, // Here, technically we should have no unit, but it's a known limitation of the current implementation.
 		{L: labels.FromStrings("__name__", "test_metric2", "foo", "bar"), M: metadata.Metadata{Type: "gauge", Unit: "metric2", Help: "other help text"}},
-		{L: labels.FromStrings("__name__", "test_metric3_metric4", "foo", "bar")}, // Stale marker.
 	}, appTest.ResultMetadata())
 	appTest.ResultReset()
 }
@@ -1345,7 +1339,7 @@ func TestPromTextToProto(t *testing.T) {
 //
 // Recommended CLI invocation:
 /*
-	export bench=append-v1 && go test ./scrape/... \
+	export bench=append && go test ./scrape/... \
 		-run '^$' -bench '^BenchmarkScrapeLoopAppend' \
 		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
 		| tee ${bench}.txt
@@ -1396,13 +1390,15 @@ func BenchmarkScrapeLoopAppend(b *testing.B) {
 
 func TestScrapeLoopScrapeAndReport(t *testing.T) {
 	parsableText := readTextParseTestMetrics(t)
+	// On windows \r is added when reading, but parsers do not support this. Kill it.
+	parsableText = bytes.ReplaceAll(parsableText, []byte("\r"), nil)
 
 	appTest := teststorage.NewAppendable()
 	sl, scraper := newTestScrapeLoop(t, func(sl *scrapeLoop) {
 		sl.appendable = appTest
 		sl.fallbackScrapeProtocol = "application/openmetrics-text"
 	})
-	scraper.scrapeFunc = func(ctx context.Context, writer io.Writer) error {
+	scraper.scrapeFunc = func(_ context.Context, writer io.Writer) error {
 		_, err := writer.Write(parsableText)
 		return err
 	}
@@ -1418,7 +1414,7 @@ func TestScrapeLoopScrapeAndReport(t *testing.T) {
 
 // Recommended CLI invocation:
 /*
-	export bench=scrapeAndReport-scrapeloop-ref && go test ./scrape/... \
+	export bench=scrapeAndReport && go test ./scrape/... \
 		-run '^$' -bench '^BenchmarkScrapeLoopScrapeAndReport' \
 		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
 		| tee ${bench}.txt
@@ -1433,7 +1429,7 @@ func BenchmarkScrapeLoopScrapeAndReport(b *testing.B) {
 		sl.appendable = s
 		sl.fallbackScrapeProtocol = "application/openmetrics-text"
 	})
-	scraper.scrapeFunc = func(ctx context.Context, writer io.Writer) error {
+	scraper.scrapeFunc = func(_ context.Context, writer io.Writer) error {
 		_, err := writer.Write(parsableText)
 		return err
 	}
@@ -5817,5 +5813,42 @@ func TestScrapeLoopDisableStalenessMarkerInjection(t *testing.T) {
 		if value.IsStaleNaN(s.V) {
 			t.Fatalf("Got stale NaN samples while end of run staleness is disabled: %x", math.Float64bits(s.V))
 		}
+	}
+}
+
+// Recommended CLI invocation:
+/*
+	export bench=restartLoops && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapePoolRestartLoops' \
+		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
+		| tee ${bench}.txt
+*/
+func BenchmarkScrapePoolRestartLoops(b *testing.B) {
+	sp, err := newScrapePool(
+		&config.ScrapeConfig{
+			MetricNameValidationScheme: model.UTF8Validation,
+			ScrapeInterval:             model.Duration(1 * time.Hour),
+			ScrapeTimeout:              model.Duration(1 * time.Hour),
+		},
+		nil,
+		0,
+		nil,
+		nil,
+		&Options{},
+		newTestScrapeMetrics(b),
+	)
+	require.NoError(b, err)
+	b.Cleanup(sp.stop)
+
+	for i := range 1000 {
+		sp.activeTargets[uint64(i)] = &Target{scrapeConfig: &config.ScrapeConfig{}}
+		sp.loops[uint64(i)] = noopLoop() // First restart will supplement those with proper scrapeLoops.
+	}
+	sp.restartLoops(true)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		sp.restartLoops(true)
 	}
 }
