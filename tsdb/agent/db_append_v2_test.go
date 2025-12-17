@@ -1007,6 +1007,7 @@ func TestDBOutOfOrderTimeWindow_AppendV2(t *testing.T) {
 	}
 }
 
+// TestDB_EnableSTZeroInjection_AppendV2 replaces TestDBStartTimestampSamplesIngestion.
 func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 	t.Parallel()
 
