@@ -1398,3 +1398,23 @@ func TestToNormalisedLower(t *testing.T) {
 		require.Equal(t, expectedOutput, toNormalisedLower(input, nil))
 	}
 }
+
+func BenchmarkFastRegexMatcher_ConcatenatedPattern(b *testing.B) {
+	pattern, err := NewFastRegexMatcher(".*-.*-.*-.*-.*")
+	require.NoError(b, err)
+
+	testCases := []string{
+		"a-b-c-d-e",
+		"aaaaaa-bbbbbb-cccccc-dddddd-eeeeee",
+		"aaaaaa----eeeeee",
+		"----",
+		"-a-a-a-",
+		"abcd",
+	}
+
+	for b.Loop() {
+		for _, s := range testCases {
+			pattern.MatchString(s)
+		}
+	}
+}
