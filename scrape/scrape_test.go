@@ -1596,6 +1596,60 @@ func BenchmarkScrapeLoopAppend(b *testing.B) {
 	}
 }
 
+func TestScrapeLoopScrapeAndReport(t *testing.T) {
+	parsableText := readTextParseTestMetrics(t)
+
+	capp := &collectResultAppender{}
+	scraper := &testScraper{
+		scrapeFunc: func(ctx context.Context, writer io.Writer) error {
+			_, err := writer.Write(parsableText)
+			return err
+		},
+	}
+
+	sl := newBasicScrapeLoop(t, context.Background(), scraper, func(context.Context) storage.Appender { return capp }, 0)
+	sl.fallbackScrapeProtocol = "application/openmetrics-text"
+
+	ts := time.Time{}
+
+	sl.scrapeAndReport(time.Time{}, ts, nil)
+	require.NoError(t, scraper.lastError)
+
+	require.Len(t, capp.resultFloats, 1862)
+	require.Len(t, capp.resultHistograms, 0)
+	require.Len(t, capp.resultMetadata, 1862)
+	require.Len(t, capp.resultExemplars, 0)
+}
+
+// Recommended CLI invocation:
+/*
+	export bench=scrapeAndReport-v1 && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeLoopScrapeAndReport' \
+		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
+		| tee ${bench}.txt
+*/
+func BenchmarkScrapeLoopScrapeAndReport(b *testing.B) {
+	parsableText := readTextParseTestMetrics(b)
+
+	_, sl := simpleTestScrapeLoop(b)
+	sl.fallbackScrapeProtocol = "application/openmetrics-text"
+	scraper := &testScraper{scrapeFunc: func(ctx context.Context, writer io.Writer) error {
+		_, err := writer.Write(parsableText)
+		return err
+	}}
+	sl.scraper = scraper
+
+	ts := time.Time{}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		ts = ts.Add(time.Second)
+		sl.scrapeAndReport(time.Time{}, ts, nil)
+		require.NoError(b, scraper.lastError)
+	}
+}
+
 func TestSetOptionsHandlingStaleness(t *testing.T) {
 	s := teststorage.New(t, 600000)
 	defer s.Close()
