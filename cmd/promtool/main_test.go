@@ -438,6 +438,14 @@ testMetric_CamelCase{label="value1"} 1
 			wantLint:    false,
 			wantCard:    true,
 		},
+		{
+			name:        "both_disabled_fails",
+			lint:        lintOptionNone,
+			extended:    false,
+			wantErrCode: failureExitCode,
+			wantLint:    false,
+			wantCard:    false,
+		},
 	}
 
 	for _, tt := range tests {

@@ -1029,9 +1029,17 @@ $ curl -s http://localhost:9100/metrics | promtool check metrics --extended --li
 
 // CheckMetrics performs a linting pass on input metrics.
 func CheckMetrics(extended bool, lint string) int {
+	// Validate that at least one feature is enabled.
+	if !extended && lint == lintOptionNone {
+		fmt.Fprintln(os.Stderr, "error: at least one of --extended or linting must be enabled")
+		fmt.Fprintln(os.Stderr, "Use --extended for cardinality analysis, or remove --lint=none to enable linting")
+		return failureExitCode
+	}
+
 	var buf bytes.Buffer
 	var (
 		problems []promlint.Problem
+		reader   io.Reader
 		err      error
 	)
 
@@ -1046,17 +1054,15 @@ func CheckMetrics(extended bool, lint string) int {
 		for _, p := range problems {
 			fmt.Fprintln(os.Stderr, p.Metric, p.Text)
 		}
+		reader = &buf
 	} else {
-		if _, err = io.Copy(&buf, os.Stdin); err != nil {
-			fmt.Fprintln(os.Stderr, "error reading metrics:", err)
-			return failureExitCode
-		}
+		reader = os.Stdin
 	}
 
 	hasLintProblems := len(problems) > 0
 
 	if extended {
-		stats, total, err := checkMetricsExtended(&buf)
+		stats, total, err := checkMetricsExtended(reader)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return failureExitCode
