@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -400,6 +401,99 @@ func TestCheckMetricsExtended(t *testing.T) {
 			percentage:  float64(1) / float64(27),
 		},
 	}, stats)
+}
+
+func TestCheckMetricsLintOptions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on windows")
+	}
+
+	const testMetrics = `
+# HELP testMetric_CamelCase A test metric with camelCase
+# TYPE testMetric_CamelCase gauge
+testMetric_CamelCase{label="value1"} 1
+`
+
+	tests := []struct {
+		name        string
+		lint        string
+		extended    bool
+		wantErrCode int
+		wantLint    bool
+		wantCard    bool
+	}{
+		{
+			name:        "default_all_with_extended",
+			lint:        lintOptionAll,
+			extended:    true,
+			wantErrCode: lintErrExitCode,
+			wantLint:    true,
+			wantCard:    true,
+		},
+		{
+			name:        "lint_none_with_extended",
+			lint:        lintOptionNone,
+			extended:    true,
+			wantErrCode: successExitCode,
+			wantLint:    false,
+			wantCard:    true,
+		},
+		{
+			name:        "both_disabled_fails",
+			lint:        lintOptionNone,
+			extended:    false,
+			wantErrCode: failureExitCode,
+			wantLint:    false,
+			wantCard:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, w, err := os.Pipe()
+			require.NoError(t, err)
+			_, err = w.WriteString(testMetrics)
+			require.NoError(t, err)
+			w.Close()
+
+			oldStdin := os.Stdin
+			os.Stdin = r
+			defer func() { os.Stdin = oldStdin }()
+
+			oldStdout := os.Stdout
+			oldStderr := os.Stderr
+			rOut, wOut, err := os.Pipe()
+			require.NoError(t, err)
+			rErr, wErr, err := os.Pipe()
+			require.NoError(t, err)
+			os.Stdout = wOut
+			os.Stderr = wErr
+
+			code := CheckMetrics(tt.extended, tt.lint)
+
+			wOut.Close()
+			wErr.Close()
+			os.Stdout = oldStdout
+			os.Stderr = oldStderr
+
+			var outBuf, errBuf bytes.Buffer
+			_, _ = io.Copy(&outBuf, rOut)
+			_, _ = io.Copy(&errBuf, rErr)
+
+			require.Equal(t, tt.wantErrCode, code)
+			if tt.wantLint {
+				require.Contains(t, errBuf.String(), "testMetric_CamelCase")
+			} else {
+				require.NotContains(t, errBuf.String(), "testMetric_CamelCase")
+			}
+
+			if tt.wantCard {
+				require.Contains(t, outBuf.String(), "Cardinality")
+			} else {
+				require.NotContains(t, outBuf.String(), "Cardinality")
+			}
+		})
+	}
 }
 
 func TestExitCodes(t *testing.T) {

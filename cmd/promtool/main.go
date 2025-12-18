@@ -162,7 +162,11 @@ func main() {
 	checkRulesIgnoreUnknownFields := checkRulesCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the rule files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
-	checkMetricsExtended := checkCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
+	checkMetricsExtended := checkMetricsCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
+	checkMetricsLint := checkMetricsCmd.Flag(
+		"lint",
+		"Linting checks to apply for metrics. Available options are: all, none. Use --lint=none to disable metrics linting.",
+	).Default(lintOptionAll).String()
 	agentMode := checkConfigCmd.Flag("agent", "Check config file for Prometheus in Agent mode.").Bool()
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
@@ -375,7 +379,7 @@ func main() {
 		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesIgnoreUnknownFields, model.UTF8Validation), *ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
-		os.Exit(CheckMetrics(*checkMetricsExtended))
+		os.Exit(CheckMetrics(*checkMetricsExtended, *checkMetricsLint))
 
 	case pushMetricsCmd.FullCommand():
 		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsProtoMsg, *pushMetricsLabels, *metricFiles...))
@@ -1018,36 +1022,53 @@ func ruleMetric(rule rulefmt.Rule) string {
 }
 
 var checkMetricsUsage = strings.TrimSpace(`
-Pass Prometheus metrics over stdin to lint them for consistency and correctness.
+Pass Prometheus metrics over stdin to lint them for consistency and correctness, and optionally perform cardinality analysis.
 
 examples:
 
 $ cat metrics.prom | promtool check metrics
 
-$ curl -s http://localhost:9090/metrics | promtool check metrics
+$ curl -s http://localhost:9090/metrics | promtool check metrics --extended
+
+$ curl -s http://localhost:9100/metrics | promtool check metrics --extended --lint=none
 `)
 
 // CheckMetrics performs a linting pass on input metrics.
-func CheckMetrics(extended bool) int {
-	var buf bytes.Buffer
-	tee := io.TeeReader(os.Stdin, &buf)
-	l := promlint.New(tee)
-	problems, err := l.Lint()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error while linting:", err)
+func CheckMetrics(extended bool, lint string) int {
+	// Validate that at least one feature is enabled.
+	if !extended && lint == lintOptionNone {
+		fmt.Fprintln(os.Stderr, "error: at least one of --extended or linting must be enabled")
+		fmt.Fprintln(os.Stderr, "Use --extended for cardinality analysis, or remove --lint=none to enable linting")
 		return failureExitCode
 	}
 
-	for _, p := range problems {
-		fmt.Fprintln(os.Stderr, p.Metric, p.Text)
+	var buf bytes.Buffer
+	var (
+		problems []promlint.Problem
+		reader   io.Reader
+		err      error
+	)
+
+	if lint != lintOptionNone {
+		tee := io.TeeReader(os.Stdin, &buf)
+		l := promlint.New(tee)
+		problems, err = l.Lint()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error while linting:", err)
+			return failureExitCode
+		}
+		for _, p := range problems {
+			fmt.Fprintln(os.Stderr, p.Metric, p.Text)
+		}
+		reader = &buf
+	} else {
+		reader = os.Stdin
 	}
 
-	if len(problems) > 0 {
-		return lintErrExitCode
-	}
+	hasLintProblems := len(problems) > 0
 
 	if extended {
-		stats, total, err := checkMetricsExtended(&buf)
+		stats, total, err := checkMetricsExtended(reader)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return failureExitCode
@@ -1059,6 +1080,10 @@ func CheckMetrics(extended bool) int {
 		}
 		fmt.Fprintf(w, "Total\t%d\t%.f%%\t\n", total, 100.)
 		w.Flush()
+	}
+
+	if hasLintProblems {
+		return lintErrExitCode
 	}
 
 	return successExitCode
