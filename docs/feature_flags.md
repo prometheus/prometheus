@@ -28,6 +28,8 @@ and m-mapped chunks, while a WAL replay from disk is only needed for the parts o
 
 `--enable-feature=extra-scrape-metrics`
 
+> **Note:** This feature flag is deprecated. Please use the `extra_scrape_metrics` configuration option instead (available at both global and scrape-config level). The feature flag will be removed in a future major version. See the [configuration documentation](configuration/configuration.md) for more details.
+
 When enabled, for each instance scrape, Prometheus stores a sample in the following additional time series:
 
 - `scrape_timeout_seconds`. The configured `scrape_timeout` for a target. This allows you to measure each target to find out how close they are to timing out with `scrape_duration_seconds / scrape_timeout_seconds`.
