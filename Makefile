@@ -194,6 +194,8 @@ GO_SUBMODULE_DIRS := documentation/examples/remote_storage internal/tools web/ui
 .PHONY: update-all-go-deps
 update-all-go-deps: update-go-deps
 	$(foreach dir,$(GO_SUBMODULE_DIRS),$(MAKE) update-go-deps-in-dir DIR=$(dir);)
+	@echo ">> syncing Go workspace"
+	@$(GO) work sync
 
 .PHONY: update-go-deps-in-dir
 update-go-deps-in-dir:
