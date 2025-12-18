@@ -27,6 +27,7 @@ require (
 	github.com/edsrzf/mmap-go v1.2.0
 	github.com/envoyproxy/go-control-plane/envoy v1.35.0
 	github.com/envoyproxy/protoc-gen-validate v1.2.1
+	github.com/errx/go-asap v0.0.0-20170908235707-ec3fbcbe0b33
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-openapi/strfmt v0.24.0
@@ -103,6 +104,7 @@ require (
 )
 
 require (
+	github.com/mjibson/go-dsp v0.0.0-20180508042940-11479a337f12 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect

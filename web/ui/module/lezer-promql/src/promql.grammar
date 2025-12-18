@@ -122,6 +122,7 @@ FunctionIdentifier {
   Abs |
   Acos |
   Acosh |
+  ASAPSmoothing |
   Asin |
   Asinh |
   Atan |
@@ -377,6 +378,7 @@ NumberDurationLiteralInDurationContext {
   AbsentOverTime { condFn<"absent_over_time"> }
   Acos { condFn<"acos"> }
   Acosh { condFn<"acosh"> }
+  ASAPSmoothing { condFn<"asap_smoothing"> }
   Asin { condFn<"asin"> }
   Asinh { condFn<"asinh">}
   Atan { condFn<"atan"> }

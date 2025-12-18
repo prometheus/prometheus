@@ -6,6 +6,12 @@ export const functionSignatures: Record<string, Func> = {
   absent_over_time: { name: 'absent_over_time', argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   acos: { name: 'acos', argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   acosh: { name: 'acosh', argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
+  asap_smoothing: {
+    name: 'asap_smoothing',
+    argTypes: [valueType.matrix, valueType.scalar],
+    variadic: 0,
+    returnType: valueType.vector,
+  },
   asin: { name: 'asin', argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   asinh: { name: 'asinh', argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   atan: { name: 'atan', argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
