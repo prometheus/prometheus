@@ -576,12 +576,13 @@ func copyExemplarRanges(
 		offsets[i] = n - rng.from
 		n += copy(dest[n:], src[rng.from:rng.to])
 	}
+	migratedEntries := n
 	for di := range n {
 		e := &dest[di]
 		if e.ref == nil {
 			// We potentially copied empty entries. Subtract them now to correctly show the
 			// number of "migrated" items.
-			n--
+			migratedEntries--
 			continue
 		}
 		for i, rng := range ranges {
@@ -611,5 +612,5 @@ func copyExemplarRanges(
 			}
 		}
 	}
-	return n
+	return migratedEntries
 }

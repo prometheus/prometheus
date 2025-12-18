@@ -77,49 +77,6 @@ func TestValidateExemplar(t *testing.T) {
 	require.Equal(t, storage.ErrExemplarLabelLength, es.ValidateExemplar(l, e4))
 }
 
-func TestAddExemplar(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(2, eMetrics, 0)
-	require.NoError(t, err)
-	es := exs.(*CircularExemplarStorage)
-
-	l := labels.FromStrings("service", "asdf")
-	e := exemplar.Exemplar{
-		Labels: labels.FromStrings("trace_id", "qwerty"),
-		Value:  0.1,
-		Ts:     1,
-	}
-
-	require.NoError(t, es.AddExemplar(l, e))
-	require.Equal(t, 0, es.index[string(l.Bytes(nil))].newest, "exemplar was not stored correctly")
-
-	e2 := exemplar.Exemplar{
-		Labels: labels.FromStrings("trace_id", "zxcvb"),
-		Value:  0.1,
-		Ts:     2,
-	}
-
-	require.NoError(t, es.AddExemplar(l, e2))
-	require.Equal(t, 1, es.index[string(l.Bytes(nil))].newest, "exemplar was not stored correctly, location of newest exemplar for series in index did not update")
-	require.True(t, es.exemplars[es.index[string(l.Bytes(nil))].newest].exemplar.Equals(e2), "exemplar was not stored correctly, expected %+v got: %+v", e2, es.exemplars[es.index[string(l.Bytes(nil))].newest].exemplar)
-
-	require.NoError(t, es.AddExemplar(l, e2), "no error is expected attempting to add duplicate exemplar")
-
-	e3 := e2
-	e3.Ts = 3
-	require.NoError(t, es.AddExemplar(l, e3), "no error is expected when attempting to add duplicate exemplar, even with different timestamp")
-
-	e3.Ts = 1
-	e3.Value = 0.3
-	require.Equal(t, storage.ErrOutOfOrderExemplar, es.AddExemplar(l, e3))
-
-	e4 := exemplar.Exemplar{
-		Labels: labels.FromStrings("a", strings.Repeat("b", exemplar.ExemplarMaxLabelSetLength)),
-		Value:  0.1,
-		Ts:     2,
-	}
-	require.Equal(t, storage.ErrExemplarLabelLength, es.AddExemplar(l, e4))
-}
-
 func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 	series1 := labels.FromStrings("trace_id", "foo")
 	series2 := labels.FromStrings("trace_id", "bar")
@@ -314,7 +271,7 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 			},
 		},
 		{
-			name: "empty timestamps",
+			name: "empty timestamps are valid",
 			exemplars: []exemplar.Exemplar{
 				{Labels: series1, Value: 0.1, Ts: 0},
 				{Labels: series1, Value: 0.2, Ts: 0},
@@ -324,6 +281,13 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 				{Labels: series1, Value: 0.1, Ts: 0},
 				{Labels: series1, Value: 0.2, Ts: 0},
 			},
+		},
+		{
+			name: "exemplar label length exceeds maximum",
+			exemplars: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("a", strings.Repeat("b", exemplar.ExemplarMaxLabelSetLength)), Value: 0.1, Ts: 2},
+			},
+			wantError: storage.ErrExemplarLabelLength,
 		},
 	}
 	for _, tc := range testCases {
