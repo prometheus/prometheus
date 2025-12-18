@@ -65,7 +65,7 @@ func (s Sample) String() string {
 	// Print all value types on purpose, to catch bugs for appending multiple sample types at once.
 	h := ""
 	if s.H != nil {
-		h = "" + s.H.String()
+		h = " " + s.H.String()
 	}
 	fh := ""
 	if s.FH != nil {
