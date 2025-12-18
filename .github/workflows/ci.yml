@@ -202,7 +202,8 @@ jobs:
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
   check_generated_parser:
-    name: Check generated parser and functions
+    # Checks generated parser and UI functions list. Not renaming as it is a required check.
+    name: Check generated parser
     runs-on: ubuntu-latest
     container:
       image: quay.io/prometheus/golang-builder:1.25-base
