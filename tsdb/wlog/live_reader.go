@@ -65,7 +65,6 @@ func NewLiveReader(logger *slog.Logger, metrics *LiveReaderMetrics, r io.Reader)
 	lr := &LiveReader{
 		logger:  logger,
 		rdr:     r,
-		decBuf:  compression.NewSyncDecodeBuffer(),
 		metrics: metrics,
 
 		// Until we understand how they come about, make readers permissive
@@ -86,7 +85,6 @@ type LiveReader struct {
 	rec    []byte
 
 	precomprBuf []byte
-	decBuf      compression.DecodeBuffer
 	hdr         [recordHeaderSize]byte
 	buf         [pageSize]byte
 	readIndex   int   // Index in buf to start at for next read.
@@ -184,6 +182,8 @@ func (r *LiveReader) Record() []byte {
 // Returns true if we read a full record. Any record data is appended to
 // LiveReader.rec.
 func (r *LiveReader) buildRecord() (bool, error) {
+	decBuf := compression.GetDecodeBuffer()
+	defer compression.PutDecodeBuffer(decBuf)
 	for {
 		// Check that we have data in the internal buffer to read.
 		if r.writeIndex <= r.readIndex {
@@ -224,7 +224,7 @@ func (r *LiveReader) buildRecord() (bool, error) {
 		}
 		if rt == recLast || rt == recFull {
 			r.index = 0
-			r.rec, err = compression.Decode(compr, r.precomprBuf, r.decBuf)
+			r.rec, err = compression.Decode(compr, r.precomprBuf, decBuf)
 			if err != nil {
 				return false, err
 			}
