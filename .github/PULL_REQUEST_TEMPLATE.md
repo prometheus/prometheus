@@ -28,6 +28,7 @@ If no, just write "NONE" in the release-notes block below.
 Otherwise, please describe what should be mentioned in the CHANGELOG. Use the following prefixes:
 [FEATURE] [ENHANCEMENT] [PERF] [BUGFIX] [SECURITY] [CHANGE]
 Refer to the existing CHANGELOG for inspiration:  https://github.com/prometheus/prometheus/blob/main/CHANGELOG.md
+A concrete example may look as follows (be sure to leave out the surrounding quotes): "[FEATURE] OAuth2: support jwt-bearer grant-type (RFC7523 3.1)".
 If you need help formulating your entries, consult the reviewer(s).
 -->
 ```release-notes
