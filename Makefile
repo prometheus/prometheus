@@ -189,14 +189,19 @@ update-features-testdata:
 	@echo ">> updating features testdata"
 	@$(GO) test ./cmd/prometheus -run TestFeaturesAPI -update-features
 
+GO_SUBMODULE_DIRS := documentation/examples/remote_storage internal/tools web/ui/mantine-ui/src/promql/tools
+
 .PHONY: update-all-go-deps
-update-all-go-deps:
-	@$(MAKE) update-go-deps
-	@echo ">> updating Go dependencies in ./documentation/examples/remote_storage/"
-	@cd ./documentation/examples/remote_storage/ && for m in $$($(GO) list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
+update-all-go-deps: update-go-deps
+	$(foreach dir,$(GO_SUBMODULE_DIRS),$(MAKE) update-go-deps-in-dir DIR=$(dir);)
+
+.PHONY: update-go-deps-in-dir
+update-go-deps-in-dir:
+	@echo ">> updating Go dependencies in ./$(DIR)/"
+	@cd ./$(DIR) && for m in $$($(GO) list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
 		$(GO) get $$m; \
 	done
-	@cd ./documentation/examples/remote_storage/ && $(GO) mod tidy
+	@cd ./$(DIR) && $(GO) mod tidy
 
 .PHONY: check-node-version
 check-node-version:
