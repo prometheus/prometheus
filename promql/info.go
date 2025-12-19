@@ -305,7 +305,7 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 			} else {
 				ss = seriesAndTimestamp{Series{Metric: sample.Metric}, ts}
 			}
-			addToSeries(&ss.Series, enh.Ts, sample.F, sample.H, numSteps)
+			addToSeries(ev.logger, &ss.Series, enh.Ts, sample.F, sample.H, numSteps)
 			seriess[h] = ss
 		}
 	}
@@ -313,7 +313,7 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 	// Reuse the original point slices.
 	for _, m := range origMatrices {
 		for _, s := range m {
-			putFPointSlice(s.Floats)
+			putFPointSlice(ev.logger, s.Floats)
 			putHPointSlice(s.Histograms)
 		}
 	}
