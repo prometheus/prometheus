@@ -96,6 +96,10 @@ func isHistogramValidationError(err error) bool {
 }
 
 // Store implements remoteapi.writeStorage interface.
+// TODO(bwplotka): Improve remoteapi.Store API. Right now it's confusing if PRWv1 flows should use WriteResponse or not.
+// If it's not filled, it will be "confirmed zero" which caused partial error reporting on client side in the past.
+// Temporary fix was done to only care about WriteResponse stats for PRW2 (see https://github.com/prometheus/client_golang/pull/1927
+// but better approach would be to only confirm if explicit stats were injected.
 func (h *writeHandler) Store(r *http.Request, msgType remoteapi.WriteMessageType) (*remoteapi.WriteResponse, error) {
 	// Store receives request with decompressed content in body.
 	body, err := io.ReadAll(r.Body)

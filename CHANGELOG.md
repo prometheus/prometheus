@@ -2,12 +2,15 @@
 
 ## main / unreleased
 
-* [FEATURE] Templates: Add urlQueryEscape to template functions. #17403
 * [BUGFIX] TSDB: Register `prometheus_tsdb_sample_ooo_delta` metric properly. #17477
+
+## 3.8.1 / 2025-12-16
+
+* [BUGFIX] remote: Fix Remote Write receiver, so it does not send wrong response headers for v1 flow and cause Prometheus senders to emit false partial error log and metrics. #17683
 
 ## 3.8.0 / 2025-11-28
 
-* [CHANGE] Remote-write 2 (receiving): Update to [2.0-rc.4 spec](https://github.com/prometheus/docs/blob/60c24e450010df38cfcb4f65df874f6f9b26dbcb/docs/specs/prw/remote_write_spec_2_0.md). "created timestamp" (CT) is now called "start timestamp" (ST). #17411
+* [CHANGE] Remote-write: Update receiving to [2.0-rc.4 spec](https://github.com/prometheus/docs/blob/60c24e450010df38cfcb4f65df874f6f9b26dbcb/docs/specs/prw/remote_write_spec_2_0.md). "created timestamp" (CT) is now called "start timestamp" (ST). #17411
 * [CHANGE] TSDB: Native Histogram Custom Bounds with a NaN threshold are now rejected. #17287
 * [FEATURE] OAuth2: support jwt-bearer grant-type (RFC7523 3.1). #17592
 * [FEATURE] Dockerfile: Add OpenContainers spec labels to Dockerfile. #16483
