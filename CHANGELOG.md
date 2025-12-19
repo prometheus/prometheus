@@ -76,7 +76,6 @@ Example configuration with Native Histograms enabled globally but disabled for o
 ```yaml
 global:
   scrape_interval: 15s
-  scrape_protocols: ['http1', 'http2']
   scrape_native_histograms: true
 
 scrape_configs:
