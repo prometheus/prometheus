@@ -1475,6 +1475,11 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		defer sl.buffers.Put(b)
 		buf = bytes.NewBuffer(b)
 		contentType, scrapeErr = sl.scraper.readResponse(scrapeCtx, resp, buf)
+	} else if resp != nil {
+		// Ensure response body is closed even when scrape() returns an error.
+		// This can happen in edge cases (e.g., context cancellation during request).
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
 	}
 	cancel()
 
