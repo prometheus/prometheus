@@ -4,13 +4,13 @@
 
 - [CHANGE] Native Histograms are no longer experimental! Make the `native-histogram` feature flag a no-op. Use `scrape_native_histograms` config option instead. #17528
 - [CHANGE] API: Add maximum limit of 10,000 sets of statistics to TSDB status endpoint. #17647
-[ENHANCEMENT]: TSDB: add flag --storage.tsdb.block-reload-interval to configure TSDB Block Reload Interval. #16728
 - [FEATURE] API: Add /api/v1/features for clients to understand which features are supported. #17427
-- [FEATURE] Promtool: Add start_timestamp field for unit tests. #17636
+- [FEATURE] Promtool: Add `start_timestamp` field for unit tests. #17636
 - [FEATURE] Promtool: Add `--format seriesjson` option to `tsdb dump` to output just series labels in JSON format. #13409
-- [FEATURE] Add --storage.tsdb.delay-compact-file.path flag. #17435
+- [FEATURE] Add `--storage.tsdb.delay-compact-file.path` flag for better interoperability with Thanos. #17435
 - [FEATURE] UI: Add an option on the query drop-down menu to duplicate that query panel. #17714
-- [ENHANCEMENT] UI: Add graph option to start the chart's Y axis at zero #17565
+- [ENHANCEMENT]: TSDB: add flag `--storage.tsdb.block-reload-interval` to configure TSDB Block Reload Interval. #16728
+- [ENHANCEMENT] UI: Add graph option to start the chart's Y axis at zero. #17565
 - [ENHANCEMENT] Scraping: Classic protobuf format no longer requires the unit in the metric name. #16834
 - [ENHANCEMENT] PromQL, Rules, SD, Scraping: Add native histograms to complement existing summaries. #17374
 - [ENHANCEMENT] Notifications: Add a histogram `prometheus_notifications_latency_histogram_seconds` to complement the existing summary. #16637
