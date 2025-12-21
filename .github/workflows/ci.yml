@@ -16,7 +16,7 @@ jobs:
       # should also be updated.
       image: quay.io/prometheus/golang-builder:1.25-base
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
       - uses: prometheus/promci@c0916f0a41f13444612a8f0f5e700ea34edd7c19 # v0.5.3
@@ -34,7 +34,7 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.25-base
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
       - uses: prometheus/promci@c0916f0a41f13444612a8f0f5e700ea34edd7c19 # v0.5.3
@@ -59,7 +59,7 @@ jobs:
       # The go version in this image should be N-1 wrt test_go.
       image: quay.io/prometheus/golang-builder:1.24-base
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
       - run: make build
@@ -78,7 +78,7 @@ jobs:
       image: quay.io/prometheus/golang-builder:1.25-base
 
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
       - uses: prometheus/promci@c0916f0a41f13444612a8f0f5e700ea34edd7c19 # v0.5.3
@@ -97,7 +97,7 @@ jobs:
     name: Go tests on Windows
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
@@ -116,7 +116,7 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.25-base
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
       - run: go install ./cmd/promtool/.
@@ -143,7 +143,7 @@ jobs:
       matrix:
         thread: [ 0, 1, 2 ]
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
       - uses: prometheus/promci@c0916f0a41f13444612a8f0f5e700ea34edd7c19 # v0.5.3
@@ -170,7 +170,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
       - uses: prometheus/promci@c0916f0a41f13444612a8f0f5e700ea34edd7c19 # v0.5.3
@@ -206,7 +206,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
       - name: Install Go
@@ -221,7 +221,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
       - name: Install Go
@@ -265,7 +265,7 @@ jobs:
     needs: [test_ui, test_go, test_go_more, test_go_oldest, test_windows, golangci, codeql, build_all]
     if: github.event_name == 'push' && github.event.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
       - uses: prometheus/promci@c0916f0a41f13444612a8f0f5e700ea34edd7c19 # v0.5.3
@@ -284,7 +284,7 @@ jobs:
       ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
       - uses: prometheus/promci@c0916f0a41f13444612a8f0f5e700ea34edd7c19 # v0.5.3
@@ -301,7 +301,7 @@ jobs:
     needs: [test_ui, codeql]
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
       - uses: prometheus/promci@c0916f0a41f13444612a8f0f5e700ea34edd7c19 # v0.5.3
