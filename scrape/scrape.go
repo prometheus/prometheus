@@ -1182,7 +1182,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		interval: opts.interval,
 		timeout:  opts.timeout,
 		sampleMutator: func(l labels.Labels) labels.Labels {
-			return mutateSampleLabels(l, opts.target, opts.sp.config.HonorTimestamps, opts.sp.config.MetricRelabelConfigs)
+			return mutateSampleLabels(l, opts.target, opts.sp.config.HonorLabels, opts.sp.config.MetricRelabelConfigs)
 		},
 		reportSampleMutator: func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
 		scraper:             opts.scraper,

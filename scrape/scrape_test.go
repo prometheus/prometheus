@@ -5853,3 +5853,58 @@ func BenchmarkScrapePoolRestartLoops(b *testing.B) {
 		sp.restartLoops(true)
 	}
 }
+
+// TestNewScrapeLoopHonorLabelsWiring verifies that newScrapeLoop correctly wires
+// HonorLabels (not HonorTimestamps) to the sampleMutator.
+func TestNewScrapeLoopHonorLabelsWiring(t *testing.T) {
+	// Scraped metric has label "lbl" with value "scraped".
+	// Discovery target has label "lbl" with value "discovery".
+	// With honor_labels=true, the scraped value should win.
+	ts, scrapedTwice := newScrapableServer(`metric{lbl="scraped"} 1`)
+	defer ts.Close()
+
+	testURL, err := url.Parse(ts.URL)
+	require.NoError(t, err)
+
+	s := teststorage.New(t)
+	defer s.Close()
+
+	cfg := &config.ScrapeConfig{
+		JobName:                    "test",
+		Scheme:                     "http",
+		HonorLabels:                true,
+		HonorTimestamps:            false, // Opposite of HonorLabels to catch wiring bugs
+		ScrapeInterval:             model.Duration(1 * time.Second),
+		ScrapeTimeout:              model.Duration(100 * time.Millisecond),
+		MetricNameValidationScheme: model.UTF8Validation,
+	}
+
+	sp, err := newScrapePool(cfg, s, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+	require.NoError(t, err)
+	defer sp.stop()
+
+	// Sync with a target that has a conflicting label.
+	sp.Sync([]*targetgroup.Group{{
+		Targets: []model.LabelSet{{
+			model.AddressLabel: model.LabelValue(testURL.Host),
+			"lbl":              "discovery",
+		}},
+	}})
+	require.Len(t, sp.ActiveTargets(), 1)
+
+	// Wait for scrape to complete.
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatal("scrape did not complete in time")
+	case <-scrapedTwice:
+	}
+
+	// Query the storage to verify label values.
+	q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
+	require.NoError(t, err)
+	defer q.Close()
+
+	series := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "metric"))
+	require.True(t, series.Next(), "metric series not found")
+	require.Equal(t, "scraped", series.At().Labels().Get("lbl"))
+}
