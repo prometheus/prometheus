@@ -453,6 +453,7 @@ alerting:
 storage:
   tsdb:
     out_of_order_time_window: 30m
+    head_compaction_ratio: 1.2
     retention:
       time: 1d
       size: 1GB
