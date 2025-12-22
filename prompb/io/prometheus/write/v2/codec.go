@@ -141,6 +141,10 @@ func (h Histogram) ToFloatHistogram() *histogram.FloatHistogram {
 }
 
 func spansProtoToSpans(s []BucketSpan) []histogram.Span {
+	if len(s) == 0 {
+		return nil
+	}
+
 	spans := make([]histogram.Span, len(s))
 	for i := range s {
 		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}

@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
@@ -53,31 +54,61 @@ var (
 	}
 
 	writeRequestFixture = &prompb.WriteRequest{
+		// NOTE: This represents an unrealistic timeseries message for test purposes (multiple mixed sample types per timeseries, two series with same labels).
 		Timeseries: []prompb.TimeSeries{
 			{
 				Labels: []prompb.Label{
-					{Name: "__name__", Value: "test_metric1"},
+					{Name: model.MetricNameLabel, Value: "test_metric1"},
 					{Name: "b", Value: "c"},
 					{Name: "baz", Value: "qux"},
 					{Name: "d", Value: "e"},
 					{Name: "foo", Value: "bar"},
 				},
-				Samples:    []prompb.Sample{{Value: 1, Timestamp: 1}},
-				Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 1}},
-				Histograms: []prompb.Histogram{prompb.FromIntHistogram(1, &testHistogram), prompb.FromFloatHistogram(2, testHistogram.ToFloat(nil))},
+				Samples:   []prompb.Sample{{Value: 1, Timestamp: 1}},
+				Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 1}},
+				// TODO: For RW1 can you send both sample and histogram? (not allowed for RW2).
+				Histograms: []prompb.Histogram{prompb.FromIntHistogram(2, &testHistogram), prompb.FromFloatHistogram(3, testHistogram.ToFloat(nil))},
 			},
 			{
 				Labels: []prompb.Label{
-					{Name: "__name__", Value: "test_metric1"},
+					{Name: model.MetricNameLabel, Value: "test_metric1"},
 					{Name: "b", Value: "c"},
 					{Name: "baz", Value: "qux"},
 					{Name: "d", Value: "e"},
 					{Name: "foo", Value: "bar"},
 				},
-				Samples:    []prompb.Sample{{Value: 2, Timestamp: 2}},
-				Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 2}},
-				Histograms: []prompb.Histogram{prompb.FromIntHistogram(3, &testHistogram), prompb.FromFloatHistogram(4, testHistogram.ToFloat(nil))},
+				Samples:   []prompb.Sample{{Value: 2, Timestamp: 4}},
+				Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 2}},
+				// TODO: For RW1 can you send both sample and histogram? (not allowed for RW2).
+				Histograms: []prompb.Histogram{prompb.FromIntHistogram(5, &testHistogram), prompb.FromFloatHistogram(6, testHistogram.ToFloat(nil))},
 			},
+		},
+	}
+	// writeRequestFixture represented as teststorage.Sample for appender expectations.
+	writeRequestFixtureSamples = []sample{
+		{
+			L: labels.FromStrings(model.MetricNameLabel, "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar"), V: 1, T: 1,
+			ES: []exemplar.Exemplar{{Labels: labels.FromStrings("f", "g"), Value: 1, Ts: 1, HasTs: true}},
+		},
+		{
+			L: labels.FromStrings(model.MetricNameLabel, "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar"), T: 2, H: &testHistogram,
+			ES: []exemplar.Exemplar{{Labels: labels.FromStrings("f", "g"), Value: 1, Ts: 1, HasTs: true}},
+		},
+		{
+			L: labels.FromStrings(model.MetricNameLabel, "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar"), T: 3, FH: testHistogram.ToFloat(nil),
+			ES: []exemplar.Exemplar{{Labels: labels.FromStrings("f", "g"), Value: 1, Ts: 1, HasTs: true}},
+		},
+		{
+			L: labels.FromStrings(model.MetricNameLabel, "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar"), V: 2, T: 4,
+			ES: []exemplar.Exemplar{{Labels: labels.FromStrings("h", "i"), Value: 2, Ts: 2, HasTs: true}},
+		},
+		{
+			L: labels.FromStrings(model.MetricNameLabel, "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar"), T: 5, H: &testHistogram,
+			ES: []exemplar.Exemplar{{Labels: labels.FromStrings("h", "i"), Value: 2, Ts: 2, HasTs: true}},
+		},
+		{
+			L: labels.FromStrings(model.MetricNameLabel, "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar"), T: 6, FH: testHistogram.ToFloat(nil),
+			ES: []exemplar.Exemplar{{Labels: labels.FromStrings("h", "i"), Value: 2, Ts: 2, HasTs: true}},
 		},
 	}
 
@@ -90,6 +121,9 @@ var (
 		Type: model.MetricTypeCounter,
 		Help: "Test counter for test purposes",
 	}
+	writeV2RequestSeries3Metadata = metadata.Metadata{
+		Type: model.MetricTypeHistogram,
+	}
 
 	testHistogramCustomBuckets = histogram.Histogram{
 		Schema:          histogram.CustomBucketsSchema,
@@ -101,10 +135,10 @@ var (
 	}
 
 	// writeV2RequestFixture represents the same request as writeRequestFixture,
-	// but using the v2 representation, plus includes writeV2RequestSeries1Metadata and writeV2RequestSeries2Metadata.
+	// but using the v2 representation, plus includes writeV2RequestSeries1Metadata, writeV2RequestSeries2Metadata and writeV2RequestSeries3Metadata.
 	// NOTE: Use TestWriteV2RequestFixture and copy the diff to regenerate if needed.
 	writeV2RequestFixture = &writev2.Request{
-		Symbols: []string{"", "__name__", "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar", "f", "g", "h", "i", "Test gauge for test purposes", "Maybe op/sec who knows (:", "Test counter for test purposes"},
+		Symbols: []string{"", model.MetricNameLabel, "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar", "f", "g", "h", "i", "Test gauge for test purposes", "Maybe op/sec who knows (:", "Test counter for test purposes"},
 		Timeseries: []writev2.TimeSeries{
 			{
 				LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, // Symbolized writeRequestFixture.Timeseries[0].Labels
@@ -116,12 +150,6 @@ var (
 				},
 				Samples:   []writev2.Sample{{Value: 1, Timestamp: 10, StartTimestamp: 1}}, // ST needs to be lower than the sample's timestamp.
 				Exemplars: []writev2.Exemplar{{LabelsRefs: []uint32{11, 12}, Value: 1, Timestamp: 10}},
-				Histograms: []writev2.Histogram{
-					writev2.FromIntHistogram(10, &testHistogram),
-					writev2.FromFloatHistogram(20, testHistogram.ToFloat(nil)),
-					writev2.FromIntHistogram(30, &testHistogramCustomBuckets),
-					writev2.FromFloatHistogram(40, testHistogramCustomBuckets.ToFloat(nil)),
-				},
 			},
 			{
 				LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, // Same series as first.
@@ -133,12 +161,71 @@ var (
 				},
 				Samples:   []writev2.Sample{{Value: 2, Timestamp: 20}},
 				Exemplars: []writev2.Exemplar{{LabelsRefs: []uint32{13, 14}, Value: 2, Timestamp: 20}},
-				Histograms: []writev2.Histogram{
-					writev2.FromIntHistogram(50, &testHistogram),
-					writev2.FromFloatHistogram(60, testHistogram.ToFloat(nil)),
-					writev2.FromIntHistogram(70, &testHistogramCustomBuckets),
-					writev2.FromFloatHistogram(80, testHistogramCustomBuckets.ToFloat(nil)),
+			},
+			{
+				LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, // Same series as first two.
+				Metadata: writev2.Metadata{
+					Type: writev2.Metadata_METRIC_TYPE_HISTOGRAM, // writeV2RequestSeries3Metadata.Type.
+					// Missing help and unit.
 				},
+				Exemplars: []writev2.Exemplar{
+					{LabelsRefs: []uint32{11, 12}, Value: 3, Timestamp: 30},
+					{LabelsRefs: []uint32{11, 12}, Value: 4, Timestamp: 40},
+				},
+				Histograms: []writev2.Histogram{
+					writev2.FromIntHistogram(30, &testHistogram),
+					writev2.FromFloatHistogram(40, testHistogram.ToFloat(nil)),
+					writev2.FromIntHistogram(50, &testHistogramCustomBuckets),
+					writev2.FromFloatHistogram(60, testHistogramCustomBuckets.ToFloat(nil)),
+				},
+			},
+		},
+	}
+	// writeV2RequestFixture represented as teststorage.Sample for appender expectations.
+	writeV2RequestFixtureSamples = []sample{
+		{
+			M: writeV2RequestSeries1Metadata,
+			L: labels.FromStrings(model.MetricNameLabel, "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar"), V: 1, ST: 1, T: 10,
+			ES: []exemplar.Exemplar{{Labels: labels.FromStrings("f", "g"), Value: 1, Ts: 10, HasTs: true}},
+		},
+		{
+			M: writeV2RequestSeries2Metadata,
+			L: labels.FromStrings(model.MetricNameLabel, "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar"), V: 2, ST: 0, T: 20,
+			ES: []exemplar.Exemplar{{Labels: labels.FromStrings("h", "i"), Value: 2, Ts: 20, HasTs: true}},
+		},
+		{
+			M: writeV2RequestSeries3Metadata,
+			L: labels.FromStrings(model.MetricNameLabel, "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar"), T: 30, H: &testHistogram,
+			ES: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("f", "g"), Value: 3, Ts: 30, HasTs: true},
+				{Labels: labels.FromStrings("f", "g"), Value: 4, Ts: 40, HasTs: true},
+			},
+		},
+		{
+			M: writeV2RequestSeries3Metadata,
+			L: labels.FromStrings(model.MetricNameLabel, "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar"), T: 40, FH: testHistogram.ToFloat(nil),
+			// Technically duplicated exemplars, but mock doesn't care.
+			ES: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("f", "g"), Value: 3, Ts: 30, HasTs: true},
+				{Labels: labels.FromStrings("f", "g"), Value: 4, Ts: 40, HasTs: true},
+			},
+		},
+		{
+			M: writeV2RequestSeries3Metadata,
+			L: labels.FromStrings(model.MetricNameLabel, "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar"), T: 50, H: &testHistogramCustomBuckets,
+			// Technically duplicated exemplars, but mock doesn't care.
+			ES: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("f", "g"), Value: 3, Ts: 30, HasTs: true},
+				{Labels: labels.FromStrings("f", "g"), Value: 4, Ts: 40, HasTs: true},
+			},
+		},
+		{
+			M: writeV2RequestSeries3Metadata,
+			L: labels.FromStrings(model.MetricNameLabel, "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar"), T: 60, FH: testHistogramCustomBuckets.ToFloat(nil),
+			// Technically duplicated exemplars, but mock doesn't care.
+			ES: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("f", "g"), Value: 3, Ts: 30, HasTs: true},
+				{Labels: labels.FromStrings("f", "g"), Value: 4, Ts: 40, HasTs: true},
 			},
 		},
 	}
@@ -183,12 +270,6 @@ func TestWriteV2RequestFixture(t *testing.T) {
 				},
 				Samples:   []writev2.Sample{{Value: 1, Timestamp: 10, StartTimestamp: 1}},
 				Exemplars: []writev2.Exemplar{{LabelsRefs: exemplar1LabelRefs, Value: 1, Timestamp: 10}},
-				Histograms: []writev2.Histogram{
-					writev2.FromIntHistogram(10, &testHistogram),
-					writev2.FromFloatHistogram(20, testHistogram.ToFloat(nil)),
-					writev2.FromIntHistogram(30, &testHistogramCustomBuckets),
-					writev2.FromFloatHistogram(40, testHistogramCustomBuckets.ToFloat(nil)),
-				},
 			},
 			{
 				LabelsRefs: labelRefs,
@@ -199,11 +280,22 @@ func TestWriteV2RequestFixture(t *testing.T) {
 				},
 				Samples:   []writev2.Sample{{Value: 2, Timestamp: 20}},
 				Exemplars: []writev2.Exemplar{{LabelsRefs: exemplar2LabelRefs, Value: 2, Timestamp: 20}},
+			},
+			{
+				LabelsRefs: labelRefs,
+				Metadata: writev2.Metadata{
+					Type: writev2.Metadata_METRIC_TYPE_HISTOGRAM,
+					// No unit, no help.
+				},
+				Exemplars: []writev2.Exemplar{
+					{LabelsRefs: exemplar1LabelRefs, Value: 3, Timestamp: 30},
+					{LabelsRefs: exemplar1LabelRefs, Value: 4, Timestamp: 40},
+				},
 				Histograms: []writev2.Histogram{
-					writev2.FromIntHistogram(50, &testHistogram),
-					writev2.FromFloatHistogram(60, testHistogram.ToFloat(nil)),
-					writev2.FromIntHistogram(70, &testHistogramCustomBuckets),
-					writev2.FromFloatHistogram(80, testHistogramCustomBuckets.ToFloat(nil)),
+					writev2.FromIntHistogram(30, &testHistogram),
+					writev2.FromFloatHistogram(40, testHistogram.ToFloat(nil)),
+					writev2.FromIntHistogram(50, &testHistogramCustomBuckets),
+					writev2.FromFloatHistogram(60, testHistogramCustomBuckets.ToFloat(nil)),
 				},
 			},
 		},
@@ -221,7 +313,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 	}{
 		{
 			input: []prompb.Label{
-				{Name: "__name__", Value: "name"},
+				{Name: model.MetricNameLabel, Value: "name"},
 				{Name: "labelName", Value: "labelValue"},
 			},
 			expectedErr: "",
@@ -229,7 +321,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 		},
 		{
 			input: []prompb.Label{
-				{Name: "__name__", Value: "name"},
+				{Name: model.MetricNameLabel, Value: "name"},
 				{Name: "_labelName", Value: "labelValue"},
 			},
 			expectedErr: "",
@@ -237,7 +329,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 		},
 		{
 			input: []prompb.Label{
-				{Name: "__name__", Value: "name"},
+				{Name: model.MetricNameLabel, Value: "name"},
 				{Name: "@labelName\xff", Value: "labelValue"},
 			},
 			expectedErr: "invalid label name: @labelName\xff",
@@ -245,7 +337,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 		},
 		{
 			input: []prompb.Label{
-				{Name: "__name__", Value: "name"},
+				{Name: model.MetricNameLabel, Value: "name"},
 				{Name: "", Value: "labelValue"},
 			},
 			expectedErr: "invalid label name: ",
@@ -253,7 +345,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 		},
 		{
 			input: []prompb.Label{
-				{Name: "__name__", Value: "name"},
+				{Name: model.MetricNameLabel, Value: "name"},
 				{Name: "labelName", Value: string([]byte{0xff})},
 			},
 			expectedErr: "invalid label value: " + string([]byte{0xff}),
@@ -261,15 +353,15 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 		},
 		{
 			input: []prompb.Label{
-				{Name: "__name__", Value: "invalid_name\xff"},
+				{Name: model.MetricNameLabel, Value: "invalid_name\xff"},
 			},
 			expectedErr: "invalid metric name: invalid_name\xff",
 			description: "metric name has invalid utf8",
 		},
 		{
 			input: []prompb.Label{
-				{Name: "__name__", Value: "name1"},
-				{Name: "__name__", Value: "name2"},
+				{Name: model.MetricNameLabel, Value: "name1"},
+				{Name: model.MetricNameLabel, Value: "name2"},
 			},
 			expectedErr: "duplicate label with name: __name__",
 			description: "duplicate label names",

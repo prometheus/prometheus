@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -224,9 +224,10 @@ type errChunkQuerier struct{ errQuerier }
 func (errStorage) ChunkQuerier(_, _ int64) (storage.ChunkQuerier, error) {
 	return errChunkQuerier{}, nil
 }
-func (errStorage) Appender(context.Context) storage.Appender { return nil }
-func (errStorage) StartTime() (int64, error)                 { return 0, nil }
-func (errStorage) Close() error                              { return nil }
+func (errStorage) Appender(context.Context) storage.Appender     { return nil }
+func (errStorage) AppenderV2(context.Context) storage.AppenderV2 { return nil }
+func (errStorage) StartTime() (int64, error)                     { return 0, nil }
+func (errStorage) Close() error                                  { return nil }
 
 func (errQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 	return storage.ErrSeriesSet(errSelect)
