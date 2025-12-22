@@ -5879,7 +5879,7 @@ func TestNewScrapeLoopHonorLabelsWiring(t *testing.T) {
 		MetricNameValidationScheme: model.UTF8Validation,
 	}
 
-	sp, err := newScrapePool(cfg, s, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+	sp, err := newScrapePool(cfg, s, 0, nil, nil, &Options{skipOffsetting: true}, newTestScrapeMetrics(t))
 	require.NoError(t, err)
 	defer sp.stop()
 
