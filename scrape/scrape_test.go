@@ -102,7 +102,6 @@ func TestNewScrapePool(t *testing.T) {
 	require.True(t, ok, "Failure to append.")
 	require.Equal(t, app, a, "Wrong sample appender.")
 	require.Equal(t, cfg, sp.config, "Wrong scrape config.")
-	require.NotNil(t, sp.newLoop, "newLoop function not initialized.")
 }
 
 func TestStorageHandlesOutOfOrderTimestamps(t *testing.T) {

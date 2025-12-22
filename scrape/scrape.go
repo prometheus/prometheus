@@ -1145,8 +1145,7 @@ func (c *scrapeCache) LengthMetadata() int {
 	return len(c.metadata)
 }
 
-// scrapeLoopOptions contains static options that do not change per scrapePool lifecycle and are the same
-// across all scrapeLoops.
+// scrapeLoopOptions contains static options that do not change per scrapePool lifecycle.
 type scrapeLoopOptions struct {
 	target            *Target
 	scraper           scraper
