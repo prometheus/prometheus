@@ -226,6 +226,18 @@ $(BUILD_DOCKER_ARCHS): common-docker-%:
 		--build-arg OS="linux" \
 		$(DOCKERBUILD_CONTEXT)
 
+# Distroless image build target. Builds a minimal image containing only the
+# statically-linked binary and CA/TZ data. Usage: `make common-docker-distroless`
+DOCKERFILE_DISTROLESS_PATH ?= ./Dockerfile.distroless
+.PHONY: common-docker-distroless
+common-docker-distroless: $(addprefix common-docker-distroless-,$(DOCKER_ARCHS))
+$(addprefix common-docker-distroless-,$(DOCKER_ARCHS)): common-docker-distroless-%:
+	docker build -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)" \
+		-f $(DOCKERFILE_DISTROLESS_PATH) \
+		--build-arg ARCH="$*" \
+		--build-arg OS="linux" \
+		$(DOCKERBUILD_CONTEXT)
+
 .PHONY: common-docker-publish $(PUBLISH_DOCKER_ARCHS)
 common-docker-publish: $(PUBLISH_DOCKER_ARCHS)
 $(PUBLISH_DOCKER_ARCHS): common-docker-publish-%:
