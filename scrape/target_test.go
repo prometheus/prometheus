@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,7 +14,6 @@
 package scrape
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -36,7 +35,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/teststorage"
 )
 
 const (
@@ -611,12 +610,12 @@ func TestBucketLimitAppender(t *testing.T) {
 		},
 	}
 
-	resApp := &collectResultAppender{}
+	appTest := teststorage.NewAppendable()
 
 	for _, c := range cases {
 		for _, floatHisto := range []bool{true, false} {
 			t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
-				app := &bucketLimitAppender{Appender: resApp, limit: c.limit}
+				app := &bucketLimitAppender{Appender: appTest.Appender(t.Context()), limit: c.limit}
 				ts := int64(10 * time.Minute / time.Millisecond)
 				lbls := labels.FromStrings("__name__", "sparse_histogram_series")
 				var err error
@@ -697,12 +696,12 @@ func TestMaxSchemaAppender(t *testing.T) {
 		},
 	}
 
-	resApp := &collectResultAppender{}
+	appTest := teststorage.NewAppendable()
 
 	for _, c := range cases {
 		for _, floatHisto := range []bool{true, false} {
 			t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
-				app := &maxSchemaAppender{Appender: resApp, maxSchema: c.maxSchema}
+				app := &maxSchemaAppender{Appender: appTest.Appender(t.Context()), maxSchema: c.maxSchema}
 				ts := int64(10 * time.Minute / time.Millisecond)
 				lbls := labels.FromStrings("__name__", "sparse_histogram_series")
 				var err error
@@ -723,17 +722,12 @@ func TestMaxSchemaAppender(t *testing.T) {
 	}
 }
 
-// Test sample_limit when a scrape containst Native Histograms.
+// Test sample_limit when a scrape contains Native Histograms.
 func TestAppendWithSampleLimitAndNativeHistogram(t *testing.T) {
-	const sampleLimit = 2
-	resApp := &collectResultAppender{}
-	sl := newBasicScrapeLoop(t, context.Background(), nil, func(_ context.Context) storage.Appender {
-		return resApp
-	}, 0)
-	sl.sampleLimit = sampleLimit
+	appTest := teststorage.NewAppendable()
 
 	now := time.Now()
-	app := appender(sl.appender(context.Background()), sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
+	app := appenderWithLimits(appTest.Appender(t.Context()), 2, 0, histogram.ExponentialSchemaMax)
 
 	// sample_limit is set to 2, so first two scrapes should work
 	_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "foo"), timestamp.FromTime(now), 1)
