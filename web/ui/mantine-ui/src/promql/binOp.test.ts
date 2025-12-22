@@ -81,6 +81,7 @@ const testCases: TestCase[] = [
       on: false,
       include: [],
       labels: [],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricA,
     rhs: testMetricB,
@@ -247,6 +248,7 @@ const testCases: TestCase[] = [
       on: true,
       include: [],
       labels: ["label1", "label2"],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricA,
     rhs: testMetricB,
@@ -413,6 +415,7 @@ const testCases: TestCase[] = [
       on: false,
       include: [],
       labels: ["same"],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricA,
     rhs: testMetricB,
@@ -579,6 +582,7 @@ const testCases: TestCase[] = [
       on: false,
       include: [],
       labels: [],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricB,
     rhs: testMetricC,
@@ -701,6 +705,7 @@ const testCases: TestCase[] = [
       on: true,
       include: [],
       labels: ["label1"],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricB,
     rhs: testMetricC,
@@ -791,6 +796,7 @@ const testCases: TestCase[] = [
       on: true,
       include: [],
       labels: ["label1"],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricB,
     rhs: testMetricC,
@@ -905,6 +911,7 @@ const testCases: TestCase[] = [
       on: true,
       include: [],
       labels: ["label1"],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricC,
     rhs: testMetricB,
@@ -1019,6 +1026,7 @@ const testCases: TestCase[] = [
       on: true,
       include: [],
       labels: ["label1"],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricC,
     rhs: testMetricB,
@@ -1107,6 +1115,7 @@ const testCases: TestCase[] = [
       on: true,
       include: [],
       labels: ["label1"],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricA,
     rhs: testMetricB,
@@ -1223,6 +1232,7 @@ const testCases: TestCase[] = [
       on: false,
       include: [],
       labels: [],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricA,
     rhs: testMetricB,
@@ -1409,6 +1419,7 @@ const testCases: TestCase[] = [
       on: false,
       include: [],
       labels: [],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricA,
     rhs: testMetricB,
@@ -1596,6 +1607,7 @@ const testCases: TestCase[] = [
       on: false,
       include: [],
       labels: [],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricA,
     rhs: testMetricB,
@@ -1763,6 +1775,7 @@ const testCases: TestCase[] = [
       on: false,
       include: [],
       labels: [],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricA,
     rhs: testMetricB,
@@ -1929,6 +1942,7 @@ const testCases: TestCase[] = [
       on: false,
       include: [],
       labels: [],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricA,
     rhs: testMetricB,
@@ -2022,6 +2036,7 @@ const testCases: TestCase[] = [
       on: true,
       include: [],
       labels: ["label1"],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricB,
     rhs: testMetricC,
@@ -2105,6 +2120,7 @@ const testCases: TestCase[] = [
       on: true,
       include: [],
       labels: ["label1"],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricB,
     rhs: testMetricC,
@@ -2148,6 +2164,437 @@ const testCases: TestCase[] = [
     },
   },
   {
+    // metric_a - fill(0) metric_b
+    desc: "subtraction with fill(0) but no missing series",
+    op: binaryOperatorType.sub,
+    matching: {
+      card: vectorMatchCardinality.oneToOne,
+      on: false,
+      include: [],
+      labels: [],
+      fillValues: { lhs: 0, rhs: 0 },
+    },
+    lhs: testMetricA,
+    rhs: testMetricB,
+    result: {
+      groups: {
+        [fnv1a(["a", "x", "same"])]: {
+          groupLabels: { label1: "a", label2: "x", same: "same" },
+          lhs: [
+            {
+              metric: {
+                __name__: "metric_a",
+                label1: "a",
+                label2: "x",
+                same: "same",
+              },
+              value: [0, "1"],
+            },
+          ],
+          lhsCount: 1,
+          rhs: [
+            {
+              metric: {
+                __name__: "metric_b",
+                label1: "a",
+                label2: "x",
+                same: "same",
+              },
+              value: [0, "10"],
+            },
+          ],
+          rhsCount: 1,
+          result: [
+            {
+              sample: {
+                metric: { label1: "a", label2: "x", same: "same" },
+                value: [0, "-9"],
+              },
+              manySideIdx: 0,
+            },
+          ],
+          error: null,
+        },
+        [fnv1a(["a", "y", "same"])]: {
+          groupLabels: { label1: "a", label2: "y", same: "same" },
+          lhs: [
+            {
+              metric: {
+                __name__: "metric_a",
+                label1: "a",
+                label2: "y",
+                same: "same",
+              },
+              value: [0, "2"],
+            },
+          ],
+          lhsCount: 1,
+          rhs: [
+            {
+              metric: {
+                __name__: "metric_b",
+                label1: "a",
+                label2: "y",
+                same: "same",
+              },
+              value: [0, "20"],
+            },
+          ],
+          rhsCount: 1,
+          result: [
+            {
+              sample: {
+                metric: { label1: "a", label2: "y", same: "same" },
+                value: [0, "-18"],
+              },
+              manySideIdx: 0,
+            },
+          ],
+          error: null,
+        },
+        [fnv1a(["b", "x", "same"])]: {
+          groupLabels: { label1: "b", label2: "x", same: "same" },
+          lhs: [
+            {
+              metric: {
+                __name__: "metric_a",
+                label1: "b",
+                label2: "x",
+                same: "same",
+              },
+              value: [0, "3"],
+            },
+          ],
+          lhsCount: 1,
+          rhs: [
+            {
+              metric: {
+                __name__: "metric_b",
+                label1: "b",
+                label2: "x",
+                same: "same",
+              },
+              value: [0, "30"],
+            },
+          ],
+          rhsCount: 1,
+          result: [
+            {
+              sample: {
+                metric: { label1: "b", label2: "x", same: "same" },
+                value: [0, "-27"],
+              },
+              manySideIdx: 0,
+            },
+          ],
+          error: null,
+        },
+        [fnv1a(["b", "y", "same"])]: {
+          groupLabels: { label1: "b", label2: "y", same: "same" },
+          lhs: [
+            {
+              metric: {
+                __name__: "metric_a",
+                label1: "b",
+                label2: "y",
+                same: "same",
+              },
+              value: [0, "4"],
+            },
+          ],
+          lhsCount: 1,
+          rhs: [
+            {
+              metric: {
+                __name__: "metric_b",
+                label1: "b",
+                label2: "y",
+                same: "same",
+              },
+              value: [0, "40"],
+            },
+          ],
+          rhsCount: 1,
+          result: [
+            {
+              sample: {
+                metric: { label1: "b", label2: "y", same: "same" },
+                value: [0, "-36"],
+              },
+              manySideIdx: 0,
+            },
+          ],
+          error: null,
+        },
+      },
+      numGroups: 4,
+    },
+  },
+  {
+    // metric_a[0..2] - fill_left(23) fill_right(42) metric_b[1...3]
+    desc: "subtraction with different fill values and missing series on each side",
+    op: binaryOperatorType.sub,
+    matching: {
+      card: vectorMatchCardinality.oneToOne,
+      on: false,
+      include: [],
+      labels: [],
+      fillValues: { lhs: 23, rhs: 42 },
+    },
+    lhs: testMetricA.slice(0, 3),
+    rhs: testMetricB.slice(1, 4),
+    result: {
+      groups: {
+        [fnv1a(["a", "x", "same"])]: {
+          groupLabels: { label1: "a", label2: "x", same: "same" },
+          lhs: [
+            {
+              metric: {
+                __name__: "metric_a",
+                label1: "a",
+                label2: "x",
+                same: "same",
+              },
+              value: [0, "1"],
+            },
+          ],
+          lhsCount: 1,
+          rhs: [
+            {
+              metric: {
+                label1: "a",
+                label2: "x",
+                same: "same",
+              },
+              value: [0, "42"],
+              filled: true,
+            },
+          ],
+          rhsCount: 1,
+          result: [
+            {
+              sample: {
+                metric: { label1: "a", label2: "x", same: "same" },
+                value: [0, "-41"],
+              },
+              manySideIdx: 0,
+            },
+          ],
+          error: null,
+        },
+        [fnv1a(["a", "y", "same"])]: {
+          groupLabels: { label1: "a", label2: "y", same: "same" },
+          lhs: [
+            {
+              metric: {
+                __name__: "metric_a",
+                label1: "a",
+                label2: "y",
+                same: "same",
+              },
+              value: [0, "2"],
+            },
+          ],
+          lhsCount: 1,
+          rhs: [
+            {
+              metric: {
+                __name__: "metric_b",
+                label1: "a",
+                label2: "y",
+                same: "same",
+              },
+              value: [0, "20"],
+            },
+          ],
+          rhsCount: 1,
+          result: [
+            {
+              sample: {
+                metric: { label1: "a", label2: "y", same: "same" },
+                value: [0, "-18"],
+              },
+              manySideIdx: 0,
+            },
+          ],
+          error: null,
+        },
+        [fnv1a(["b", "x", "same"])]: {
+          groupLabels: { label1: "b", label2: "x", same: "same" },
+          lhs: [
+            {
+              metric: {
+                __name__: "metric_a",
+                label1: "b",
+                label2: "x",
+                same: "same",
+              },
+              value: [0, "3"],
+            },
+          ],
+          lhsCount: 1,
+          rhs: [
+            {
+              metric: {
+                __name__: "metric_b",
+                label1: "b",
+                label2: "x",
+                same: "same",
+              },
+              value: [0, "30"],
+            },
+          ],
+          rhsCount: 1,
+          result: [
+            {
+              sample: {
+                metric: { label1: "b", label2: "x", same: "same" },
+                value: [0, "-27"],
+              },
+              manySideIdx: 0,
+            },
+          ],
+          error: null,
+        },
+        [fnv1a(["b", "y", "same"])]: {
+          groupLabels: { label1: "b", label2: "y", same: "same" },
+          lhs: [
+            {
+              metric: {
+                label1: "b",
+                label2: "y",
+                same: "same",
+              },
+              filled: true,
+              value: [0, "23"],
+            },
+          ],
+          lhsCount: 1,
+          rhs: [
+            {
+              metric: {
+                __name__: "metric_b",
+                label1: "b",
+                label2: "y",
+                same: "same",
+              },
+              value: [0, "40"],
+            },
+          ],
+          rhsCount: 1,
+          result: [
+            {
+              sample: {
+                metric: { label1: "b", label2: "y", same: "same" },
+                value: [0, "-17"],
+              },
+              manySideIdx: 0,
+            },
+          ],
+          error: null,
+        },
+      },
+      numGroups: 4,
+    },
+  },
+  {
+    // metric_b[0...1] - on(label1) group_left fill(0) metric_c
+    desc: "many-to-one matching with matching labels specified, group_left, and fill specified",
+    op: binaryOperatorType.sub,
+    matching: {
+      card: vectorMatchCardinality.manyToOne,
+      on: true,
+      include: [],
+      labels: ["label1"],
+      fillValues: { lhs: 0, rhs: 0 },
+    },
+    lhs: testMetricB.slice(0, 2),
+    rhs: testMetricC,
+    result: {
+      groups: {
+        [fnv1a(["a"])]: {
+          groupLabels: { label1: "a" },
+          lhs: [
+            {
+              metric: {
+                __name__: "metric_b",
+                label1: "a",
+                label2: "x",
+                same: "same",
+              },
+              value: [0, "10"],
+            },
+            {
+              metric: {
+                __name__: "metric_b",
+                label1: "a",
+                label2: "y",
+                same: "same",
+              },
+              value: [0, "20"],
+            },
+          ],
+          lhsCount: 2,
+          rhs: [
+            {
+              metric: { __name__: "metric_c", label1: "a" },
+              value: [0, "100"],
+            },
+          ],
+          rhsCount: 1,
+          result: [
+            {
+              sample: {
+                metric: { label1: "a", label2: "x", same: "same" },
+                value: [0, "-90"],
+              },
+              manySideIdx: 0,
+            },
+            {
+              sample: {
+                metric: { label1: "a", label2: "y", same: "same" },
+                value: [0, "-80"],
+              },
+              manySideIdx: 1,
+            },
+          ],
+          error: null,
+        },
+        [fnv1a(["b"])]: {
+          groupLabels: { label1: "b" },
+          lhs: [
+            {
+              metric: {
+                label1: "b",
+              },
+              filled: true,
+              value: [0, "0"],
+            },
+          ],
+          lhsCount: 1,
+          rhs: [
+            {
+              metric: { __name__: "metric_c", label1: "b" },
+              value: [0, "200"],
+            },
+          ],
+          rhsCount: 1,
+          result: [
+            {
+              sample: {
+                metric: { label1: "b" },
+                value: [0, "-200"],
+              },
+              manySideIdx: 0,
+            },
+          ],
+          error: null,
+        },
+      },
+      numGroups: 2,
+    },
+  },
+  {
     // metric_a and metric b
     desc: "and operator with no matching labels and matching groups",
     op: binaryOperatorType.and,
@@ -2156,6 +2603,7 @@ const testCases: TestCase[] = [
       on: false,
       include: [],
       labels: [],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricA,
     rhs: testMetricB,
@@ -2342,6 +2790,7 @@ const testCases: TestCase[] = [
       on: true,
       include: [],
       labels: ["label1"],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricA.slice(0, 3),
     rhs: testMetricB.slice(1, 4),
@@ -2474,6 +2923,7 @@ const testCases: TestCase[] = [
       on: true,
       include: [],
       labels: ["label1"],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricA.slice(0, 3),
     rhs: testMetricB.slice(1, 4),
@@ -2568,6 +3018,7 @@ const testCases: TestCase[] = [
       on: true,
       include: [],
       labels: ["label1"],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricA.slice(0, 3),
     rhs: testMetricB.slice(1, 4),
@@ -2700,6 +3151,7 @@ const testCases: TestCase[] = [
       on: false,
       include: [],
       labels: [],
+      fillValues: { lhs: null, rhs: null },
     },
     lhs: testMetricA.slice(0, 3),
     rhs: testMetricB.slice(1, 4),
@@ -2886,6 +3338,7 @@ describe("binOp", () => {
         on: true,
         labels: ["label1"],
         include: [],
+        fillValues: { lhs: null, rhs: null },
       };
 
       const result = resultMetric(lhs, rhs, op, matching);
@@ -2911,6 +3364,7 @@ describe("binOp", () => {
         on: true,
         labels: ["label1"],
         include: [],
+        fillValues: { lhs: null, rhs: null },
       };
 
       const result = resultMetric(lhs, rhs, op, matching);
@@ -2931,6 +3385,7 @@ describe("binOp", () => {
         on: true,
         labels: ["label1"],
         include: ["label2"],
+        fillValues: { lhs: null, rhs: null },
       };
 
       const result = resultMetric(lhs, rhs, op, matching);
