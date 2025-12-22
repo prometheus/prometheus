@@ -32,7 +32,7 @@ func TestToLabels(t *testing.T) {
 	t.Run("v1", func(t *testing.T) {
 		ts := prompb.TimeSeries{Labels: []prompb.Label{{Name: "__name__", Value: "metric1"}, {Name: "foo", Value: "bar"}}}
 		b := labels.NewScratchBuilder(2)
-		require.Equal(t, expected, ts.ToLabels(&b, nil))
+		require.Equal(t, expected, ts.ToLabels(&b, nil, false))
 		require.Equal(t, ts.Labels, prompb.FromLabels(expected, nil))
 		require.Equal(t, ts.Labels, prompb.FromLabels(expected, ts.Labels))
 	})
@@ -40,7 +40,7 @@ func TestToLabels(t *testing.T) {
 		v2Symbols := []string{"", "__name__", "metric1", "foo", "bar"}
 		ts := writev2.TimeSeries{LabelsRefs: []uint32{1, 2, 3, 4}}
 		b := labels.NewScratchBuilder(2)
-		result, err := ts.ToLabels(&b, v2Symbols)
+		result, err := ts.ToLabels(&b, v2Symbols, false)
 		require.NoError(t, err)
 		require.Equal(t, expected, result)
 		// No need for FromLabels in our prod code as we use symbol table to do so.

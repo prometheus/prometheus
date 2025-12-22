@@ -76,7 +76,7 @@ func main() {
 func printV1(req *prompb.WriteRequest) {
 	b := labels.NewScratchBuilder(0)
 	for _, ts := range req.Timeseries {
-		fmt.Println(ts.ToLabels(&b, nil))
+		fmt.Println(ts.ToLabels(&b, nil, false))
 
 		for _, s := range ts.Samples {
 			fmt.Printf("\tSample:  %f %d\n", s.Value, s.Timestamp)
@@ -100,7 +100,7 @@ func printV1(req *prompb.WriteRequest) {
 func printV2(req *writev2.Request) error {
 	b := labels.NewScratchBuilder(0)
 	for _, ts := range req.Timeseries {
-		l, err := ts.ToLabels(&b, req.Symbols)
+		l, err := ts.ToLabels(&b, req.Symbols, false)
 		if err != nil {
 			return err
 		}

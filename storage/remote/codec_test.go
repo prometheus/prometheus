@@ -169,7 +169,7 @@ func TestWriteV2RequestFixture(t *testing.T) {
 	// Generate dynamically writeV2RequestFixture, reusing v1 fixture elements.
 	st := writev2.NewSymbolTable()
 	b := labels.NewScratchBuilder(0)
-	labelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[0].ToLabels(&b, nil), nil)
+	labelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[0].ToLabels(&b, nil, false), nil)
 	exemplar1LabelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[0].Exemplars[0].ToExemplar(&b, nil).Labels, nil)
 	exemplar2LabelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[1].Exemplars[0].ToExemplar(&b, nil).Labels, nil)
 	expected := &writev2.Request{
@@ -821,7 +821,7 @@ func (c *mockChunkSeriesSet) Next() bool {
 
 func (c *mockChunkSeriesSet) At() storage.ChunkSeries {
 	return &storage.ChunkSeriesEntry{
-		Lset: c.chunkedSeries[c.index].ToLabels(&c.builder, nil),
+		Lset: c.chunkedSeries[c.index].ToLabels(&c.builder, nil, false),
 		ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
 			return &mockChunkIterator{
 				chunks: c.chunkedSeries[c.index].Chunks,
