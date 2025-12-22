@@ -36,7 +36,7 @@ func TestOpenMmapFile(t *testing.T) {
 	content := []byte("lorem impsum, this content is mmapped")
 
 	file := filepath.Join(dir.Path(), "mmap_target")
-	err := os.WriteFile(file, content, 0666)
+	err := os.WriteFile(file, content, 0o666)
 	require.NoError(t, err, "Failed to write test target file %q.", file)
 
 	mmap, err := OpenMmapFile(file)
@@ -55,7 +55,7 @@ func TestOpenMmapFileWithSize(t *testing.T) {
 
 	for idx, size := range sizes {
 		file := filepath.Join(dir.Path(), fmt.Sprintf("mmap_target_%d", idx))
-		err := os.WriteFile(file, content, 0666)
+		err := os.WriteFile(file, content, 0o666)
 		require.NoError(t, err, "Failed to write test target file %q.", file)
 
 		mmap, err := OpenMmapFileWithSize(file, size)
@@ -73,7 +73,7 @@ func TestClose(t *testing.T) {
 	content := []byte("lorem impsum, this content is mmapped")
 
 	file := filepath.Join(dir.Path(), "mmap_target")
-	err := os.WriteFile(file, content, 0666)
+	err := os.WriteFile(file, content, 0o666)
 	require.NoError(t, err, "Failed to write test target file %q.", file)
 
 	mmap, err := OpenMmapFile(file)
@@ -102,7 +102,7 @@ func TestGCCleanup(t *testing.T) {
 	content := []byte("lorem impsum, this content is mmapped")
 
 	file := filepath.Join(dir.Path(), "mmap_leak_target")
-	err = os.WriteFile(file, content, 0666)
+	err = os.WriteFile(file, content, 0o666)
 	require.NoError(t, err, "Failed to write test target file %q.", file)
 
 	mmap, err := OpenMmapFile(file)
@@ -118,7 +118,7 @@ func TestGCCleanup(t *testing.T) {
 	_ = mmap
 
 	// run GC to run cleanup. This is undeterministic so let's run it a few times
-	for retry := 0; retry < 3; retry++ {
+	for range 3 {
 		runtime.GC()
 		mmapped, err = isPathMmapped(file)
 		require.NoError(t, err, "Failed to determine if file is mapped %q.", file)
@@ -133,11 +133,10 @@ func TestGCCleanup(t *testing.T) {
 	}
 
 	// ensure the mmap was cleaned up, and we cannot find the mapping in /proc/self/maps
-	mmapped, err = isPathMmapped(file)
 	require.False(t, mmapped, "mmap memory map was unexpectedly leaked")
 }
 
-// Determines if this process has the given file in a file-backed memory map
+// Determines if this process has the given file in a file-backed memory map.
 func isPathMmapped(file string) (bool, error) {
 	maps, err := os.ReadFile("/proc/self/maps")
 	if err != nil {
