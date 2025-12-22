@@ -1872,3 +1872,4 @@ eval instant at 1m irate(nhcb_add_bucket[2m]) * 60
     expect no_warn
     expect no_info
     {} {{schema:-53 sum:56 count:15 custom_values:[2 3 4 6] buckets:[1 0 1 5 8] counter_reset_hint:gauge}}
+
