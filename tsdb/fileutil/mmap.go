@@ -14,6 +14,7 @@
 package fileutil
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -25,7 +26,7 @@ type mmapRef struct {
 
 func (m *mmapRef) close() error {
 	if m.b == nil {
-		return fmt.Errorf("mmap already closed")
+		return errors.New("mmap already closed")
 	}
 	err := munmap(m.b)
 	m.b = nil
