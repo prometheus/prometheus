@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/common/route"
 
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/web/api/testhelpers"
 )
 
@@ -102,6 +103,7 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 		false,                              // enableTypeAndUnitLabels
 		false,                              // appendMetadata
 		nil,                                // overrideErrorCode
+		false,                              // enableNativeMetadata
 		nil,                                // featureRegistry
 		OpenAPIOptions{},                   // openAPIOptions
 		parser.NewParser(parser.Options{}), // promqlParser
@@ -156,4 +158,8 @@ type tsdbAdminStatsAdapter struct {
 
 func adaptTSDBAdminStats(t testhelpers.TSDBAdminStats) TSDBAdminStats {
 	return &tsdbAdminStatsAdapter{t}
+}
+
+func (*tsdbAdminStatsAdapter) SeriesMetadata() (seriesmetadata.Reader, error) {
+	return nil, nil
 }
