@@ -35,13 +35,13 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/zeropool"
@@ -91,6 +91,8 @@ type Head struct {
 	histogramsPool      zeropool.Pool[[]record.RefHistogramSample]
 	floatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
 	metadataPool        zeropool.Pool[[]record.RefMetadata]
+	resourcesPool       zeropool.Pool[[]record.RefResource]
+	scopesPool          zeropool.Pool[[]record.RefScope]
 	seriesPool          zeropool.Pool[[]*memSeries]
 	typeMapPool         zeropool.Pool[map[chunks.HeadSeriesRef]sampleType]
 	bytesPool           zeropool.Pool[[]byte]
@@ -106,6 +108,8 @@ type Head struct {
 	wlReplayFloatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
 	wlReplayMetadataPool        zeropool.Pool[[]record.RefMetadata]
 	wlReplayMmapMarkersPool     zeropool.Pool[[]record.RefMmapMarker]
+	wlReplayResourcesPool       zeropool.Pool[[]record.RefResource]
+	wlReplayScopesPool          zeropool.Pool[[]record.RefScope]
 
 	// All series addressable by their ID or hash.
 	series *stripeSeries
@@ -200,6 +204,10 @@ type HeadOptions struct {
 	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
 	// is implemented.
 	EnableMetadataWALRecords bool
+
+	// EnableNativeMetadata represents 'native-metadata' feature flag.
+	// When enabled, OTel resource/scope attributes are persisted per time series.
+	EnableNativeMetadata bool
 }
 
 const (
@@ -369,6 +377,8 @@ func (h *Head) resetWLReplayResources() {
 	h.wlReplayFloatHistogramsPool = zeropool.Pool[[]record.RefFloatHistogramSample]{}
 	h.wlReplayMetadataPool = zeropool.Pool[[]record.RefMetadata]{}
 	h.wlReplayMmapMarkersPool = zeropool.Pool[[]record.RefMmapMarker]{}
+	h.wlReplayResourcesPool = zeropool.Pool[[]record.RefResource]{}
+	h.wlReplayScopesPool = zeropool.Pool[[]record.RefScope]{}
 }
 
 type headMetrics struct {
@@ -400,6 +410,8 @@ type headMetrics struct {
 	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
 	oooHistogram              prometheus.Histogram
 	mmapChunksTotal           prometheus.Counter
+	resourceUpdatesCommitted  prometheus.Counter
+	scopeUpdatesCommitted     prometheus.Counter
 	walReplayUnknownRefsTotal *prometheus.CounterVec
 	wblReplayUnknownRefsTotal *prometheus.CounterVec
 }
@@ -539,6 +551,14 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_mmap_chunks_total",
 			Help: "Total number of chunks that were memory-mapped.",
 		}),
+		resourceUpdatesCommitted: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_resource_updates_committed_total",
+			Help: "Total number of resource attribute updates committed to the head block.",
+		}),
+		scopeUpdatesCommitted: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_scope_updates_committed_total",
+			Help: "Total number of scope updates committed to the head block.",
+		}),
 		walReplayUnknownRefsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_wal_replay_unknown_refs_total",
 			Help: "Total number of unknown series references encountered during WAL replay.",
@@ -577,6 +597,8 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.checkpointCreationTotal,
 			m.oooHistogram,
 			m.mmapChunksTotal,
+			m.resourceUpdatesCommitted,
+			m.scopeUpdatesCommitted,
 			m.mmapChunkCorruptionTotal,
 			m.snapshotReplayErrorTotal,
 			// Metrics bound to functions and not needed in tests
@@ -1544,6 +1566,12 @@ func (h *RangeHead) Tombstones() (tombstones.Reader, error) {
 	return h.head.tombstones, nil
 }
 
+// SeriesMetadata returns series metadata for the head.
+// Delegates to the underlying head to extract metadata from memSeries.
+func (h *RangeHead) SeriesMetadata() (seriesmetadata.Reader, error) {
+	return h.head.SeriesMetadata()
+}
+
 func (h *RangeHead) MinTime() int64 {
 	return h.mint
 }
@@ -1735,6 +1763,114 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 // Tombstones returns a new reader over the head's tombstones.
 func (h *Head) Tombstones() (tombstones.Reader, error) {
 	return h.tombstones, nil
+}
+
+// SeriesMetadata returns series metadata for the head.
+// It extracts metadata and resource attributes from all memSeries.
+func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
+	mem := seriesmetadata.NewMemSeriesMetadata()
+
+	// Iterate over all series shards and collect metadata and resource attributes
+	for i := 0; i < h.series.size; i++ {
+		h.series.locks[i].RLock()
+		for _, s := range h.series.series[i] {
+			// Lock the series to safely read and deep-copy mutable fields
+			// which can be written concurrently by the scrape loop.
+			s.Lock()
+			var vmCopy *seriesmetadata.VersionedMetadata
+			if s.meta != nil {
+				vmCopy = s.meta.Copy()
+			}
+			// Deep-copy resource and scope to avoid data races: the scrape loop
+			// can call AddOrExtend() on these objects concurrently.
+			var resource *seriesmetadata.VersionedResource
+			if s.resource != nil {
+				resource = s.resource.Copy()
+			}
+			var scope *seriesmetadata.VersionedScope
+			if s.scope != nil {
+				scope = s.scope.Copy()
+			}
+			lsetCopy := s.lset.Copy()
+			s.Unlock()
+
+			// Skip series with nothing to collect.
+			if vmCopy == nil && resource == nil && scope == nil {
+				continue
+			}
+
+			// Use StableHash of labels as the key for consistent identification.
+			hash := labels.StableHash(lsetCopy)
+
+			// Collect versioned metadata if present.
+			if vmCopy != nil {
+				metricName := lsetCopy.Get(labels.MetricName)
+				if metricName != "" {
+					mem.SetVersionedMetadataWithLabels(uint64(s.ref), lsetCopy, vmCopy)
+				}
+			}
+
+			// Collect resource if present.
+			if resource != nil {
+				mem.SetVersionedResource(hash, resource)
+			}
+
+			// Collect scope if present.
+			if scope != nil {
+				mem.SetVersionedScope(hash, scope)
+			}
+		}
+		h.series.locks[i].RUnlock()
+	}
+
+	return mem, nil
+}
+
+// SeriesMetadataForMatchers returns metadata for series matching the given label matchers.
+// It queries the head's postings index and reads memSeries.meta for matching series.
+// Multiple unique metadata entries per metric name are collected (set semantics).
+func (h *Head) SeriesMetadataForMatchers(ctx context.Context, matchers ...*labels.Matcher) (seriesmetadata.Reader, error) {
+	ir := h.indexRange(math.MinInt64, math.MaxInt64)
+
+	p, err := PostingsForMatchers(ctx, ir, matchers...)
+	if err != nil {
+		return nil, fmt.Errorf("select series for metadata: %w", err)
+	}
+
+	mem := seriesmetadata.NewMemSeriesMetadata()
+	for p.Next() {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("context cancelled during metadata collection: %w", err)
+		}
+
+		s := h.series.getByID(chunks.HeadSeriesRef(p.At()))
+		if s == nil {
+			continue
+		}
+
+		s.Lock()
+		var vmCopy *seriesmetadata.VersionedMetadata
+		if s.meta != nil {
+			vmCopy = s.meta.Copy()
+		}
+		lsetCopy := s.lset.Copy()
+		metricName := lsetCopy.Get(labels.MetricName)
+		s.Unlock()
+		if vmCopy == nil {
+			continue
+		}
+
+		if metricName == "" {
+			continue
+		}
+
+		mem.SetVersionedMetadataWithLabels(uint64(s.ref), lsetCopy, vmCopy)
+	}
+	if p.Err() != nil {
+		return nil, p.Err()
+	}
+
+	return mem, nil
 }
 
 // NumSeries returns the number of series tracked in the head.
@@ -2384,8 +2520,7 @@ func (s sample) Copy() chunks.Sample {
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
 	// Members up to the Mutex are not changed after construction, so can be accessed without a lock.
-	ref  chunks.HeadSeriesRef
-	meta *metadata.Metadata
+	ref chunks.HeadSeriesRef
 
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.
@@ -2393,6 +2528,17 @@ type memSeries struct {
 
 	// Everything after here should only be accessed with the lock held.
 	sync.Mutex
+
+	meta *seriesmetadata.VersionedMetadata // Time-varying metadata for this series.
+
+	// resource stores unified OTel resource data (attributes + entities) for this series.
+	// nil if no resource has been set. Supports multiple versions
+	// to track resource changes over time.
+	resource *seriesmetadata.VersionedResource
+
+	// scope stores OTel InstrumentationScope data for this series.
+	// nil if no scope has been set. Supports multiple versions.
+	scope *seriesmetadata.VersionedScope
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
 

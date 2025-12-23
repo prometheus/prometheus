@@ -1,4 +1,4 @@
-import React, { FC, useContext } from 'react';
+import React, { FC } from 'react';
 import { useToastContext } from '../../contexts/ToastContext';
 import { metricToSeriesName } from '../../utils';
 

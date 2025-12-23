@@ -212,6 +212,7 @@ func (*OpenAPIBuilder) buildTags(version string) []*base.Tag {
 		description string
 	}{
 		{"query", "Query", "Query and evaluate PromQL expressions."},
+		{"resources", "Resources", "Query OTel resource attributes associated with time series."},
 		{"metadata", "Metadata", "Retrieve metric metadata such as type and unit."},
 		{"labels", "Labels", "Query label names and values."},
 		{"series", "Series", "Query and manage time series."},
@@ -276,8 +277,13 @@ func (b *OpenAPIBuilder) getAllPathDefinitions() *orderedmap.Map[string, *v3.Pat
 	// Series endpoints.
 	paths.Set("/series", b.seriesPath())
 
+	// Resources endpoints.
+	paths.Set("/resources", b.resourcesPath())
+
 	// Metadata endpoints.
 	paths.Set("/metadata", b.metadataPath())
+	paths.Set("/metadata/versions", b.metadataVersionsPath())
+	paths.Set("/metadata/series", b.metadataSeriesPath())
 
 	// Target endpoints.
 	paths.Set("/scrape_pools", b.scrapePoolsPath())

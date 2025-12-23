@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"sync"
 
 	"github.com/oklog/ulid/v2"
 
@@ -28,9 +29,12 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/annotations"
 )
+
+var _ storage.ResourceQuerier = &blockQuerier{}
 
 // checkContextEveryNIterations is used in some tight loops to check if the context is done.
 const checkContextEveryNIterations = 100
@@ -102,6 +106,10 @@ func (q *blockBaseQuerier) Close() error {
 
 type blockQuerier struct {
 	*blockBaseQuerier
+	block          BlockReader           // stored for lazy metadata reader access
+	metadataReader seriesmetadata.Reader // for resource attribute lookups (lazily loaded)
+	metadataErr    error                 // error from loading metadata reader (if any)
+	metadataOnce   sync.Once             // ensures metadata reader is loaded only once
 }
 
 // NewBlockQuerier returns a querier against the block reader and requested min and max time range.
@@ -110,11 +118,77 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &blockQuerier{blockBaseQuerier: q}, nil
+	// Store block reference for lazy metadata reader loading
+	return &blockQuerier{blockBaseQuerier: q, block: b}, nil
+}
+
+// getMetadataReader lazily loads the metadata reader on first access.
+func (q *blockQuerier) getMetadataReader() (seriesmetadata.Reader, error) {
+	q.metadataOnce.Do(func() {
+		if q.block != nil {
+			q.metadataReader, q.metadataErr = q.block.SeriesMetadata()
+		}
+	})
+	return q.metadataReader, q.metadataErr
 }
 
 func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
 	return selectSeriesSet(ctx, sortSeries, hints, ms, q.index, q.chunks, q.tombstones, q.mint, q.maxt)
+}
+
+// GetResourceAt implements storage.ResourceQuerier.
+func (q *blockQuerier) GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool) {
+	reader, err := q.getMetadataReader()
+	if reader == nil || err != nil {
+		return nil, false
+	}
+	return reader.GetResourceAt(labelsHash, timestamp)
+}
+
+// IterUniqueAttributeNames implements storage.ResourceQuerier.
+func (q *blockQuerier) IterUniqueAttributeNames(fn func(name string)) error {
+	reader, err := q.getMetadataReader()
+	if err != nil {
+		return err
+	}
+	if reader == nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	return reader.IterResources(func(_ uint64, resource *seriesmetadata.ResourceVersion) error {
+		if resource == nil {
+			return nil
+		}
+		for name := range resource.Identifying {
+			if _, ok := seen[name]; !ok {
+				seen[name] = struct{}{}
+				fn(name)
+			}
+		}
+		for name := range resource.Descriptive {
+			if _, ok := seen[name]; !ok {
+				seen[name] = struct{}{}
+				fn(name)
+			}
+		}
+		return nil
+	})
+}
+
+// Close closes the querier and releases resources.
+func (q *blockQuerier) Close() error {
+	// Check if already closed to avoid double-closing the metadata reader
+	// which would cause a negative WaitGroup counter.
+	if q.closed {
+		return errors.New("block querier already closed")
+	}
+	err := q.blockBaseQuerier.Close()
+	if q.metadataReader != nil {
+		if closeErr := q.metadataReader.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}
+	return err
 }
 
 func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms []*labels.Matcher,

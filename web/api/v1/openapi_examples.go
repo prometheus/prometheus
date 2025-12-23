@@ -534,6 +534,68 @@ func labelValuesResponseExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+// resourcesResponseExamples returns examples for /resources response.
+func resourcesResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("defaultFormat", &base.Example{
+		Summary: "Full resource data with labels and versions",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": []map[string]any{
+				{
+					"labels": map[string]string{
+						"__name__": "http_requests_total",
+						"instance": "localhost:8080",
+						"job":      "myservice",
+					},
+					"versions": []map[string]any{
+						{
+							"resource_attributes": map[string]any{
+								"identifying": map[string]string{
+									"service.name":      "myservice",
+									"service.namespace": "production",
+								},
+								"descriptive": map[string]string{
+									"service.version": "1.0.0",
+									"host.name":       "server-01",
+								},
+							},
+							"entities": []map[string]any{
+								{
+									"type": "service",
+									"identifying": map[string]string{
+										"service.name": "myservice",
+									},
+									"descriptive": map[string]string{
+										"service.version": "1.0.0",
+									},
+								},
+							},
+							"min_time_ms": int64(1767357420000),
+							"max_time_ms": int64(1767361020000),
+						},
+					},
+				},
+			},
+		}),
+	})
+
+	examples.Set("attributesFormat", &base.Example{
+		Summary: "Simplified attribute name to values map (format=attributes)",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string][]string{
+				"service.name":      {"myservice", "otherservice"},
+				"service.namespace": {"production", "staging"},
+				"host.name":         {"server-01", "server-02"},
+			},
+		}),
+	})
+
+	return examples
+}
+
 // metadataResponseExamples returns examples for /metadata response.
 func metadataResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
@@ -562,6 +624,93 @@ func metadataResponseExamples() *orderedmap.Map[string, *base.Example] {
 						"type": "gauge",
 						"help": "The stack size of new goroutines. Sourced from /gc/stack/starting-size:bytes.",
 						"unit": "",
+					},
+				},
+			},
+		}),
+	})
+
+	return examples
+}
+
+// metadataVersionsResponseExamples returns examples for /metadata/versions response.
+func metadataVersionsResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("metadataVersions", &base.Example{
+		Summary: "Time-varying metadata versions per series",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": []map[string]any{
+				{
+					"labels": map[string]string{
+						"__name__": "http_requests_total",
+						"job":      "api",
+						"instance": "localhost:9090",
+					},
+					"versions": []map[string]any{
+						{
+							"type":    "counter",
+							"help":    "Total HTTP requests",
+							"unit":    "",
+							"minTime": int64(1700000000000),
+							"maxTime": int64(1700100000000),
+						},
+						{
+							"type":    "counter",
+							"help":    "Total HTTP requests processed",
+							"unit":    "",
+							"minTime": int64(1700100000001),
+							"maxTime": int64(1700200000000),
+						},
+					},
+				},
+			},
+		}),
+	})
+
+	return examples
+}
+
+// metadataSeriesResponseExamples returns examples for /metadata/series response.
+func metadataSeriesResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("metadataSeries", &base.Example{
+		Summary: "Series matching metadata criteria",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": []map[string]any{
+				{
+					"labels": map[string]string{
+						"__name__": "http_request_duration_seconds",
+						"job":      "api",
+						"instance": "localhost:9090",
+					},
+					"versions": []map[string]any{
+						{
+							"type":    "histogram",
+							"help":    "HTTP request duration in seconds",
+							"unit":    "seconds",
+							"minTime": int64(1700000000000),
+							"maxTime": int64(1700200000000),
+						},
+					},
+				},
+				{
+					"labels": map[string]string{
+						"__name__": "http_requests_total",
+						"job":      "api",
+						"instance": "localhost:9090",
+					},
+					"versions": []map[string]any{
+						{
+							"type":    "counter",
+							"help":    "Total HTTP requests",
+							"unit":    "",
+							"minTime": int64(1700000000000),
+							"maxTime": int64(1700200000000),
+						},
 					},
 				},
 			},

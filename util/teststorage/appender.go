@@ -538,6 +538,17 @@ func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m meta
 	return computeOrCheckRef(ref, l)
 }
 
+// UpdateResource is a no-op for the test appender.
+func (a *appender) UpdateResource(ref storage.SeriesRef, l labels.Labels, _, _ map[string]string, _ []storage.EntityData, _ int64) (storage.SeriesRef, error) {
+	if err := a.checkErr(); err != nil {
+		return 0, err
+	}
+	if a.next != nil {
+		return a.next.UpdateResource(ref, l, nil, nil, nil, 0)
+	}
+	return computeOrCheckRef(ref, l)
+}
+
 type appenderV2 struct {
 	baseAppender
 

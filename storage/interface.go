@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -200,6 +201,22 @@ type ExemplarQuerier interface {
 	Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error)
 }
 
+// ResourceQuerier provides access to OTel resource attributes for series.
+// This is an optional interface that queriers may implement to support
+// the info() PromQL function with resource attributes.
+type ResourceQuerier interface {
+	// GetResourceAt returns the resource version active at the given timestamp for the series.
+	// The labelsHash is the stable hash of the series labels (from labels.StableHash()).
+	// Returns nil, false if no resource is found for the series.
+	GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool)
+
+	// IterUniqueAttributeNames iterates over all unique resource attribute names
+	// across all stored resources. The function is called once for each unique
+	// attribute name (both identifying and descriptive attributes).
+	// This is used to build reverse mappings from translated names to original names.
+	IterUniqueAttributeNames(fn func(name string)) error
+}
+
 // SelectHints specifies hints passed for data selections.
 // This is used only as an option for implementation to use.
 type SelectHints struct {
@@ -308,6 +325,7 @@ type Appender interface {
 	ExemplarAppender
 	HistogramAppender
 	MetadataUpdater
+	ResourceUpdater
 	StartTimestampAppender
 }
 
@@ -387,6 +405,37 @@ type MetadataUpdater interface {
 	// UpdateMetadata returns an error.
 	// If the reference is 0 it must not be used for caching.
 	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
+}
+
+// EntityData represents an OTel entity with its type and attributes.
+// Used for passing entity information through the storage interface.
+type EntityData struct {
+	// Type defines the entity type (e.g., "service", "host", "container", "resource").
+	Type string
+	// ID contains identifying attributes that uniquely identify the entity.
+	ID map[string]string
+	// Description contains descriptive (non-identifying) attributes.
+	Description map[string]string
+}
+
+// ResourceUpdater provides an interface for associating OTel resources to stored series.
+// A resource contains both resource-level attributes and typed entities.
+type ResourceUpdater interface {
+	// UpdateResource updates the resource for the given series.
+	// The identifying map contains resource-level attributes that uniquely identify the resource
+	// (by default: service.name, service.namespace, service.instance.id).
+	// The descriptive map contains all other resource-level attributes.
+	// The entities slice contains typed entities (e.g., service, container, host).
+	// The timestamp t is used to track when this resource version was observed.
+	// If the resource differs from the current version, a new version is created.
+	// If it matches, the existing version's time range is extended.
+	// A series reference number is returned which can be used to modify the
+	// resource of the given series in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to UpdateResource() at any point. If the series does not exist,
+	// UpdateResource returns an error.
+	// If the reference is 0 it must not be used for caching.
+	UpdateResource(ref SeriesRef, l labels.Labels, identifying, descriptive map[string]string, entities []EntityData, t int64) (SeriesRef, error)
 }
 
 // StartTimestampAppender provides an interface for appending ST to storage.
