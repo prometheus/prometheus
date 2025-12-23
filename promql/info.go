@@ -15,12 +15,9 @@ package promql
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"slices"
-	"strings"
+	"maps"
 
-	"github.com/grafana/regexp"
+	"github.com/prometheus/otlptranslator"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -30,258 +27,132 @@ import (
 
 const targetInfo = "target_info"
 
-// identifyingLabels are the labels we consider as identifying for info metrics.
-// Currently hard coded, so we don't need knowledge of individual info metrics.
-var identifyingLabels = []string{"instance", "job"}
-
 // evalInfo implements the info PromQL function.
+// It enriches series with resource attributes stored in the TSDB.
+// When the second argument specifies __name__="target_info" (or is omitted),
+// resource attributes are looked up and added to the series labels.
 func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
 	val, annots := ev.eval(ctx, args[0])
 	mat := val.(Matrix)
-	// Map from data label name to matchers.
+
+	// Check if the querier supports ResourceQuerier first
+	rq, ok := ev.querier.(storage.ResourceQuerier)
+	if !ok {
+		// Querier doesn't support resource lookups, return unchanged
+		return mat, annots
+	}
+
+	// Build bidirectional mappings between OTel and Prometheus attribute names
+	mappings := ev.buildAttrNameMappings(rq)
+
+	// Parse the second argument to get data label matchers.
 	dataLabelMatchers := map[string][]*labels.Matcher{}
-	var infoNameMatchers []*labels.Matcher
+	useResourceAttrs := true // Default to using resource attributes (target_info)
+
 	if len(args) > 1 {
-		// TODO: Introduce a dedicated LabelSelector type.
 		labelSelector := args[1].(*parser.VectorSelector)
 		for _, m := range labelSelector.LabelMatchers {
-			dataLabelMatchers[m.Name] = append(dataLabelMatchers[m.Name], m)
+			// Translate Prometheus-compatible names back to OTel names using the mapping.
+			// This correctly handles the LabelNamer transformation that was applied when
+			// the API translated OTel names to Prometheus names.
+			attrName := m.Name
+			if mappings != nil {
+				if original, ok := mappings.toOTel[m.Name]; ok {
+					attrName = original
+				}
+			}
+			dataLabelMatchers[attrName] = append(dataLabelMatchers[attrName], m)
+			// Check if __name__ is specified and whether it's target_info
 			if m.Name == labels.MetricName {
-				infoNameMatchers = append(infoNameMatchers, m)
-			}
-		}
-	} else {
-		infoNameMatchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, targetInfo)}
-	}
-
-	// Don't try to enrich info series.
-	ignoreSeries := map[uint64]struct{}{}
-loop:
-	for _, s := range mat {
-		name := s.Metric.Get(labels.MetricName)
-		for _, m := range infoNameMatchers {
-			if m.Matches(name) {
-				ignoreSeries[s.Metric.Hash()] = struct{}{}
-				continue loop
+				// Only use resource attributes if the name matcher matches "target_info"
+				if !m.Matches(targetInfo) {
+					// Other __name__ values are not supported yet, skip enrichment
+					useResourceAttrs = false
+				}
 			}
 		}
 	}
 
-	selectHints := ev.infoSelectHints(args[0])
-	infoSeries, ws, err := ev.fetchInfoSeries(ctx, mat, ignoreSeries, dataLabelMatchers, selectHints)
-	if err != nil {
-		ev.error(err)
-	}
-	annots.Merge(ws)
+	// Remove __name__ from dataLabelMatchers since it's only used to select the mode
+	delete(dataLabelMatchers, labels.MetricName)
 
-	res, ws := ev.combineWithInfoSeries(ctx, mat, infoSeries, ignoreSeries, dataLabelMatchers)
-	annots.Merge(ws)
+	if !useResourceAttrs {
+		// If not using resource attributes, return the original matrix unchanged
+		return mat, annots
+	}
+
+	// Enrich series with resource attributes
+	res := ev.enrichWithResourceAttrs(ctx, mat, rq, dataLabelMatchers, mappings)
 	return res, annots
 }
 
-// infoSelectHints calculates the storage.SelectHints for selecting info series, given expr (first argument to info call).
-func (ev *evaluator) infoSelectHints(expr parser.Expr) storage.SelectHints {
-	var nodeTimestamp *int64
-	var offset int64
-	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
-		switch n := node.(type) {
-		case *parser.VectorSelector:
-			if n.Timestamp != nil {
-				nodeTimestamp = n.Timestamp
-			}
-			offset = durationMilliseconds(n.OriginalOffset)
-			return errors.New("end traversal")
-		default:
-			return nil
+// attrNameMappings contains bidirectional mappings between OTel and Prometheus attribute names.
+type attrNameMappings struct {
+	// toOTel maps Prometheus label names to original OTel attribute names (for filtering)
+	toOTel map[string]string
+	// toPrometheus maps OTel attribute names to Prometheus label names (for output)
+	toPrometheus map[string]string
+}
+
+// buildAttrNameMappings builds bidirectional mappings between OTel and Prometheus attribute names.
+// This uses the same LabelNamer configuration as the API to ensure consistent name translation.
+func (ev *evaluator) buildAttrNameMappings(rq storage.ResourceQuerier) *attrNameMappings {
+	if ev.labelNamerConfig == nil {
+		// No LabelNamer config, can't build mappings
+		return nil
+	}
+
+	labelNamer := &otlptranslator.LabelNamer{
+		UTF8Allowed:                 ev.labelNamerConfig.UTF8Allowed,
+		UnderscoreLabelSanitization: ev.labelNamerConfig.UnderscoreLabelSanitization,
+		PreserveMultipleUnderscores: ev.labelNamerConfig.PreserveMultipleUnderscores,
+	}
+
+	mappings := &attrNameMappings{
+		toOTel:       make(map[string]string),
+		toPrometheus: make(map[string]string),
+	}
+
+	// Iterate all unique attribute names and build both mappings
+	err := rq.IterUniqueAttributeNames(func(originalName string) {
+		// Translate the original OTel name to Prometheus format
+		translatedName, err := labelNamer.Build(originalName)
+		if err != nil {
+			// Skip attributes that can't be translated
+			return
 		}
+		mappings.toOTel[translatedName] = originalName
+		mappings.toPrometheus[originalName] = translatedName
 	})
-
-	start := ev.startTimestamp
-	end := ev.endTimestamp
-	if nodeTimestamp != nil {
-		// The timestamp on the selector overrides everything.
-		start = *nodeTimestamp
-		end = *nodeTimestamp
-	}
-	// Reduce the start by one fewer ms than the lookback delta
-	// because wo want to exclude samples that are precisely the
-	// lookback delta before the eval time.
-	start -= durationMilliseconds(ev.lookbackDelta) - 1
-	start -= offset
-	end -= offset
-
-	return storage.SelectHints{
-		Start: start,
-		End:   end,
-		Step:  ev.interval,
-		Func:  "info",
-	}
-}
-
-// fetchInfoSeries fetches info series given matching identifying labels in mat.
-// Series in ignoreSeries are not fetched.
-// dataLabelMatchers may be mutated.
-func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeries map[uint64]struct{}, dataLabelMatchers map[string][]*labels.Matcher, selectHints storage.SelectHints) (Matrix, annotations.Annotations, error) {
-	// A map of values for all identifying labels we are interested in.
-	idLblValues := map[string]map[string]struct{}{}
-	for _, s := range mat {
-		if _, exists := ignoreSeries[s.Metric.Hash()]; exists {
-			continue
-		}
-
-		// Register relevant values per identifying label for this series.
-		for _, l := range identifyingLabels {
-			val := s.Metric.Get(l)
-			if val == "" {
-				continue
-			}
-
-			if idLblValues[l] == nil {
-				idLblValues[l] = map[string]struct{}{}
-			}
-			idLblValues[l][val] = struct{}{}
-		}
-	}
-	if len(idLblValues) == 0 {
-		// Even when returning early, we need to remove __name__ from dataLabelMatchers
-		// since it's not a data label selector (it's used to select which info metrics
-		// to consider). Without this, combineWithInfoVector would incorrectly exclude
-		// series when only __name__ is specified in the selector.
-		for name, ms := range dataLabelMatchers {
-			for i, m := range ms {
-				if m.Name == labels.MetricName {
-					ms = slices.Delete(ms, i, i+1)
-					break
-				}
-			}
-			if len(ms) > 0 {
-				dataLabelMatchers[name] = ms
-			} else {
-				delete(dataLabelMatchers, name)
-			}
-		}
-		return nil, nil, nil
-	}
-
-	// Generate regexps for every interesting value per identifying label.
-	var sb strings.Builder
-	idLblRegexps := make(map[string]string, len(idLblValues))
-	for name, vals := range idLblValues {
-		sb.Reset()
-		i := 0
-		for v := range vals {
-			if i > 0 {
-				sb.WriteRune('|')
-			}
-			sb.WriteString(regexp.QuoteMeta(v))
-			i++
-		}
-		idLblRegexps[name] = sb.String()
-	}
-
-	var infoLabelMatchers []*labels.Matcher
-	for name, re := range idLblRegexps {
-		infoLabelMatchers = append(infoLabelMatchers, labels.MustNewMatcher(labels.MatchRegexp, name, re))
-	}
-	var nameMatcher *labels.Matcher
-	for name, ms := range dataLabelMatchers {
-		for i, m := range ms {
-			if m.Name == labels.MetricName {
-				nameMatcher = m
-				ms = slices.Delete(ms, i, i+1)
-			}
-			infoLabelMatchers = append(infoLabelMatchers, m)
-		}
-		if len(ms) > 0 {
-			dataLabelMatchers[name] = ms
-		} else {
-			delete(dataLabelMatchers, name)
-		}
-	}
-	if nameMatcher == nil {
-		// Default to using the target_info metric.
-		infoLabelMatchers = append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, targetInfo)}, infoLabelMatchers...)
-	}
-
-	infoIt := ev.querier.Select(ctx, false, &selectHints, infoLabelMatchers...)
-	infoSeries, ws, err := expandSeriesSet(ctx, infoIt)
 	if err != nil {
-		return nil, ws, err
+		// On error, return nil to fall back to no translation
+		return nil
 	}
 
-	infoMat := ev.evalSeries(ctx, infoSeries, 0, true)
-	return infoMat, ws, nil
+	return mappings
 }
 
-// combineWithInfoSeries combines mat with select data labels from infoMat.
-func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Matrix, ignoreSeries map[uint64]struct{}, dataLabelMatchers map[string][]*labels.Matcher) (Matrix, annotations.Annotations) {
-	buf := make([]byte, 0, 1024)
-	lb := labels.NewScratchBuilder(0)
-	sigFunction := func(name string) func(labels.Labels) string {
-		return func(lset labels.Labels) string {
-			lb.Reset()
-			lb.Add(labels.MetricName, name)
-			lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
-				lb.Add(l.Name, l.Value)
-			})
-			lb.Sort()
-			return string(lb.Labels().Bytes(buf))
-		}
-	}
-
-	infoMetrics := map[string]struct{}{}
-	for _, is := range infoMat {
-		lblMap := is.Metric.Map()
-		infoMetrics[lblMap[labels.MetricName]] = struct{}{}
-	}
-	sigfs := make(map[string]func(labels.Labels) string, len(infoMetrics))
-	for name := range infoMetrics {
-		sigfs[name] = sigFunction(name)
-	}
-
-	// Keep a copy of the original point slices so they can be returned to the pool.
-	origMatrices := []Matrix{
-		make(Matrix, len(mat)),
-		make(Matrix, len(infoMat)),
-	}
-	copy(origMatrices[0], mat)
-	copy(origMatrices[1], infoMat)
-
+// enrichWithResourceAttrs enriches each series in mat with resource attributes.
+func (ev *evaluator) enrichWithResourceAttrs(ctx context.Context, mat Matrix, rq storage.ResourceQuerier, dataLabelMatchers map[string][]*labels.Matcher, mappings *attrNameMappings) Matrix {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 	originalNumSamples := ev.currentSamples
 
-	// Create an output vector that is as big as the input matrix with
-	// the most time series.
-	biggestLen := max(len(mat), len(infoMat))
-	baseVector := make(Vector, 0, len(mat))
-	infoVector := make(Vector, 0, len(infoMat))
-	enh := &EvalNodeHelper{
-		Out: make(Vector, 0, biggestLen),
-	}
+	// Keep a copy of the original point slices so they can be returned to the pool.
+	origMatrix := make(Matrix, len(mat))
+	copy(origMatrix, mat)
+
 	type seriesAndTimestamp struct {
 		Series
 		ts int64
 	}
-	seriess := make(map[uint64]seriesAndTimestamp, biggestLen) // Output series by series hash.
+	seriess := make(map[uint64]seriesAndTimestamp, len(mat))
 	tempNumSamples := ev.currentSamples
 
-	// For every base series, compute signature per info metric.
-	baseSigs := make(map[uint64]map[string]string, len(mat))
-	for _, s := range mat {
-		sigs := make(map[string]string, len(infoMetrics))
-		for infoName := range infoMetrics {
-			sigs[infoName] = sigfs[infoName](s.Metric)
-		}
-		baseSigs[s.Metric.Hash()] = sigs
+	baseVector := make(Vector, 0, len(mat))
+	enh := &EvalNodeHelper{
+		Out: make(Vector, 0, len(mat)),
 	}
 
-	infoSigs := make(map[uint64]string, len(infoMat))
-	for _, s := range infoMat {
-		name := s.Metric.Map()[labels.MetricName]
-		infoSigs[s.Metric.Hash()] = sigfs[name](s.Metric)
-	}
-
-	var warnings annotations.Annotations
 	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
 		if err := contextDone(ctx, "expression evaluation"); err != nil {
 			ev.error(err)
@@ -291,19 +162,13 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 		ev.currentSamples = tempNumSamples
 		// Gather input vectors for this timestamp.
 		baseVector, _ = ev.gatherVector(ts, mat, baseVector, nil, nil)
-		infoVector, _ = ev.gatherVector(ts, infoMat, infoVector, nil, nil)
 
 		enh.Ts = ts
-		result, err := ev.combineWithInfoVector(baseVector, infoVector, ignoreSeries, baseSigs, infoSigs, enh, dataLabelMatchers)
-		if err != nil {
-			ev.error(err)
-		}
+		result := ev.enrichVectorWithResourceAttrs(baseVector, rq, ts, enh, dataLabelMatchers, mappings)
 		enh.Out = result[:0] // Reuse result vector.
 
 		vecNumSamples := result.TotalSamples()
 		ev.currentSamples += vecNumSamples
-		// When we reset currentSamples to tempNumSamples during the next iteration of the loop it also
-		// needs to include the samples from the result here, as they're still in memory.
 		tempNumSamples += vecNumSamples
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 		if ev.currentSamples > ev.maxSamples {
@@ -315,7 +180,7 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 			h := sample.Metric.Hash()
 			ss, exists := seriess[h]
 			if exists {
-				if ss.ts == ts { // If we've seen this output series before at this timestamp, it's a duplicate.
+				if ss.ts == ts {
 					ev.errorf("vector cannot contain metrics with the same labelset")
 				}
 				ss.ts = ts
@@ -328,13 +193,12 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 	}
 
 	// Reuse the original point slices.
-	for _, m := range origMatrices {
-		for _, s := range m {
-			putFPointSlice(s.Floats)
-			putHPointSlice(s.Histograms)
-		}
+	for _, s := range origMatrix {
+		putFPointSlice(s.Floats)
+		putHPointSlice(s.Histograms)
 	}
-	// Assemble the output matrix. By the time we get here we know we don't have too many samples.
+
+	// Assemble the output matrix.
 	numSamples := 0
 	output := make(Matrix, 0, len(seriess))
 	for _, ss := range seriess {
@@ -343,55 +207,29 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 	}
 	ev.currentSamples = originalNumSamples + numSamples
 	ev.samplesStats.UpdatePeak(ev.currentSamples)
-	return output, warnings
+	return output
 }
 
-// combineWithInfoVector combines base and info Vectors.
-// Base series in ignoreSeries are not combined.
-func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[uint64]struct{}, baseSigs map[uint64]map[string]string, infoSigs map[uint64]string, enh *EvalNodeHelper, dataLabelMatchers map[string][]*labels.Matcher) (Vector, error) {
+// enrichVectorWithResourceAttrs enriches each sample in the vector with resource attributes.
+func (*evaluator) enrichVectorWithResourceAttrs(base Vector, rq storage.ResourceQuerier, timestamp int64, enh *EvalNodeHelper, dataLabelMatchers map[string][]*labels.Matcher, mappings *attrNameMappings) Vector {
 	if len(base) == 0 {
-		return nil, nil // Short-circuit: nothing is going to match.
-	}
-
-	// All samples from the info Vector hashed by the matching label/values.
-	if enh.rightStrSigs == nil {
-		enh.rightStrSigs = make(map[string]Sample, len(enh.Out))
-	} else {
-		clear(enh.rightStrSigs)
-	}
-
-	for _, s := range info {
-		if s.H != nil {
-			ev.error(errors.New("info sample should be float"))
-		}
-		// We encode original info sample timestamps via the float value.
-		origT := int64(s.F)
-
-		sig := infoSigs[s.Metric.Hash()]
-		if existing, exists := enh.rightStrSigs[sig]; exists {
-			// We encode original info sample timestamps via the float value.
-			existingOrigT := int64(existing.F)
-			switch {
-			case existingOrigT > origT:
-				// Keep the other info sample, since it's newer.
-			case existingOrigT < origT:
-				// Keep this info sample, since it's newer.
-				enh.rightStrSigs[sig] = s
-			default:
-				// The two info samples have the same timestamp - conflict.
-				ev.errorf("found duplicate series for info metric: existing %s @ %d, new %s @ %d",
-					existing.Metric.String(), existingOrigT, s.Metric.String(), origT)
-			}
-		} else {
-			enh.rightStrSigs[sig] = s
-		}
+		return nil
 	}
 
 	for _, bs := range base {
-		hash := bs.Metric.Hash()
+		// Use StableHash because resource attributes are keyed by StableHash (not Hash)
+		hash := labels.StableHash(bs.Metric)
 
-		if _, exists := ignoreSeries[hash]; exists {
-			// This series should not be enriched with info metric data labels.
+		// Look up resource attributes for this series at this timestamp
+		rv, found := rq.GetResourceAt(hash, timestamp)
+		if !found || rv == nil {
+			// No resource attributes found.
+			// Check if filters reference labels that don't exist on base metric.
+			// If a filter requires non-empty value for a non-existent label, skip this series.
+			if hasUnmatchedFilter(bs.Metric, dataLabelMatchers) {
+				continue
+			}
+			// Otherwise return the original sample unchanged
 			enh.Out = append(enh.Out, Sample{
 				Metric: bs.Metric,
 				F:      bs.F,
@@ -400,69 +238,26 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[u
 			continue
 		}
 
+		// Combine all resource attributes for matching
+		allAttrs := make(map[string]string, len(rv.Identifying)+len(rv.Descriptive))
+		maps.Copy(allAttrs, rv.Identifying)
+		maps.Copy(allAttrs, rv.Descriptive)
+
+		// If filters are specified, check that ALL matchers are satisfied
+		if len(dataLabelMatchers) > 0 {
+			if !allMatchersSatisfied(allAttrs, dataLabelMatchers) {
+				// At least one matcher didn't match, skip this series entirely
+				continue
+			}
+		}
+
+		// Build the set of labels from the base metric
 		baseLabels := bs.Metric.Map()
-		enh.resetBuilder(labels.Labels{})
-
-		// For every info metric name, try to find an info series with the same signature.
-		seenInfoMetrics := map[string]struct{}{}
-		for infoName, sig := range baseSigs[hash] {
-			is, exists := enh.rightStrSigs[sig]
-			if !exists {
-				continue
-			}
-			if _, exists := seenInfoMetrics[infoName]; exists {
-				continue
-			}
-
-			err := is.Metric.Validate(func(l labels.Label) error {
-				if l.Name == labels.MetricName {
-					return nil
-				}
-				if _, exists := dataLabelMatchers[l.Name]; len(dataLabelMatchers) > 0 && !exists {
-					// Not among the specified data label matchers.
-					return nil
-				}
-
-				if v := enh.lb.Get(l.Name); v != "" && v != l.Value {
-					return fmt.Errorf("conflicting label: %s", l.Name)
-				}
-				if _, exists := baseLabels[l.Name]; exists {
-					// Skip labels already on the base metric.
-					return nil
-				}
-
-				enh.lb.Set(l.Name, l.Value)
-				return nil
-			})
-			if err != nil {
-				return nil, err
-			}
-			seenInfoMetrics[infoName] = struct{}{}
-		}
-
-		infoLbls := enh.lb.Labels()
-		if len(seenInfoMetrics) == 0 {
-			// No info series matched this base series. If there's at least one data
-			// label matcher not matching the empty string, we have to ignore this
-			// series as there are no matching info series.
-			allMatchersMatchEmpty := true
-			for _, ms := range dataLabelMatchers {
-				for _, m := range ms {
-					if !m.Matches("") {
-						allMatchersMatchEmpty = false
-						break
-					}
-				}
-			}
-			if !allMatchersMatchEmpty {
-				continue
-			}
-		}
-
 		enh.resetBuilder(bs.Metric)
-		infoLbls.Range(func(l labels.Label) {
-			enh.lb.Set(l.Name, l.Value)
-		})
+
+		// Add resource attributes (both identifying and descriptive)
+		// Skip attributes that clash with existing labels
+		addAttrsToBuilder(allAttrs, baseLabels, dataLabelMatchers, mappings, enh)
 
 		enh.Out = append(enh.Out, Sample{
 			Metric: enh.lb.Labels(),
@@ -470,5 +265,93 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[u
 			H:      bs.H,
 		})
 	}
-	return enh.Out, nil
+
+	return enh.Out
+}
+
+// allMatchersSatisfied checks if all matchers in dataLabelMatchers are satisfied by the attributes.
+func allMatchersSatisfied(attrs map[string]string, dataLabelMatchers map[string][]*labels.Matcher) bool {
+	for attrName, matchers := range dataLabelMatchers {
+		value, exists := attrs[attrName]
+		if !exists {
+			// Attribute doesn't exist - check if matchers accept empty string
+			for _, m := range matchers {
+				if !m.Matches("") {
+					return false
+				}
+			}
+			continue
+		}
+		// Check if the value matches all matchers for this attribute
+		for _, m := range matchers {
+			if !m.Matches(value) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// hasUnmatchedFilter returns true if any filter references a label that doesn't exist
+// on the base metric and requires a non-empty value.
+// This is used when no resource attributes are found to decide if the series should be skipped.
+func hasUnmatchedFilter(metric labels.Labels, dataLabelMatchers map[string][]*labels.Matcher) bool {
+	metricMap := metric.Map()
+	for attrName, matchers := range dataLabelMatchers {
+		// Check if this attribute exists on the base metric (either by original or translated name)
+		if _, exists := metricMap[attrName]; exists {
+			// Label exists on base metric, filter is satisfied
+			continue
+		}
+		// Label doesn't exist on base metric, check if matchers require non-empty value
+		for _, m := range matchers {
+			if !m.Matches("") {
+				// This matcher requires non-empty value for a non-existent label
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// addAttrsToBuilder adds attributes from attrs to the label builder,
+// filtering by dataLabelMatchers and skipping attributes that clash with baseLabels.
+// If mappings is provided, attribute names are translated to Prometheus-compatible names.
+// Note: This function assumes allMatchersSatisfied() has already verified the matchers.
+func addAttrsToBuilder(
+	attrs map[string]string,
+	baseLabels map[string]string,
+	dataLabelMatchers map[string][]*labels.Matcher,
+	mappings *attrNameMappings,
+	enh *EvalNodeHelper,
+) {
+	for name, value := range attrs {
+		// Determine the output label name (translated if mappings available)
+		outputName := name
+		if mappings != nil {
+			if translated, ok := mappings.toPrometheus[name]; ok {
+				outputName = translated
+			}
+		}
+
+		// Skip if this attribute already exists as a label on the base metric
+		// Check both the original and translated names
+		if _, exists := baseLabels[name]; exists {
+			continue
+		}
+		if _, exists := baseLabels[outputName]; exists {
+			continue
+		}
+
+		// If dataLabelMatchers is specified (non-empty), only add attributes that are in the filter
+		if len(dataLabelMatchers) > 0 {
+			if _, hasMatchers := dataLabelMatchers[name]; !hasMatchers {
+				// This attribute name is not in the filter, skip it
+				continue
+			}
+		}
+
+		// Add the attribute to the label builder using the translated name
+		enh.lb.Set(outputName, value)
+	}
 }

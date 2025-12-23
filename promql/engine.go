@@ -334,6 +334,20 @@ type EngineOpts struct {
 
 	// FeatureRegistry is the registry for tracking enabled/disabled features.
 	FeatureRegistry features.Collector
+
+	// LabelNamerConfig holds configuration for translating OTel attribute names to Prometheus label names.
+	// This is used by the info() function to reverse-translate Prometheus label matchers back to OTel names.
+	LabelNamerConfig *LabelNamerConfig
+}
+
+// LabelNamerConfig holds configuration for translating OTel attribute names to Prometheus label names.
+type LabelNamerConfig struct {
+	// UTF8Allowed indicates whether UTF-8 characters are allowed in label names.
+	UTF8Allowed bool
+	// UnderscoreLabelSanitization enables prepending 'key' to labels starting with '_'.
+	UnderscoreLabelSanitization bool
+	// PreserveMultipleUnderscores enables preserving multiple consecutive underscores.
+	PreserveMultipleUnderscores bool
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -353,6 +367,7 @@ type Engine struct {
 	enablePerStepStats       bool
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
+	labelNamerConfig         *LabelNamerConfig
 }
 
 // NewEngine returns a new engine.
@@ -475,6 +490,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		enablePerStepStats:       opts.EnablePerStepStats,
 		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
 		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
+		labelNamerConfig:         opts.LabelNamerConfig,
 	}
 }
 
@@ -786,6 +802,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 			querier:                  querier,
+			labelNamerConfig:         ng.labelNamerConfig,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
 
@@ -846,6 +863,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 		enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 		querier:                  querier,
+		labelNamerConfig:         ng.labelNamerConfig,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
 	val, warnings, err := evaluator.Eval(ctxInnerEval, s.Expr)
@@ -1133,6 +1151,7 @@ type evaluator struct {
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
 	querier                  storage.Querier
+	labelNamerConfig         *LabelNamerConfig
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1212,9 +1231,6 @@ type EvalNodeHelper struct {
 	matchedSigs  map[int]map[uint64]struct{}
 	resultMetric map[string]labels.Labels
 	numSigs      int
-
-	// For info series matching.
-	rightStrSigs map[string]Sample
 
 	// Additional options for the evaluation.
 	enableDelayedNameRemoval bool
@@ -2280,6 +2296,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			querier:                  ev.querier,
+			labelNamerConfig:         ev.labelNamerConfig,
 		}
 
 		if e.Step != 0 {
@@ -2321,6 +2338,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			querier:                  ev.querier,
+			labelNamerConfig:         ev.labelNamerConfig,
 		}
 		res, ws := newEv.eval(ctx, e.Expr)
 		ev.currentSamples = newEv.currentSamples

@@ -20,6 +20,7 @@ import (
 
 	"github.com/prometheus/common/route"
 
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/web/api/testhelpers"
 )
 
@@ -154,4 +155,8 @@ type tsdbAdminStatsAdapter struct {
 
 func adaptTSDBAdminStats(t testhelpers.TSDBAdminStats) TSDBAdminStats {
 	return &tsdbAdminStatsAdapter{t}
+}
+
+func (*tsdbAdminStatsAdapter) SeriesMetadata() (seriesmetadata.Reader, error) {
+	return nil, nil
 }
