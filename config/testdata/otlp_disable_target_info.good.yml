@@ -1,0 +1,2 @@
+otlp:
+  disable_target_info: true

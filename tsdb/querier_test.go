@@ -3111,6 +3111,7 @@ func TestQuerierIndexQueriesRace(t *testing.T) {
 				values, _, err := q.LabelValues(ctx, "seq", nil, c.matchers...)
 				require.NoError(t, err)
 				require.Emptyf(t, values, `label values for label "seq" should be empty`)
+				require.NoError(t, q.Close())
 
 				// Sleep to give the appends some change to run.
 				time.Sleep(time.Millisecond)
