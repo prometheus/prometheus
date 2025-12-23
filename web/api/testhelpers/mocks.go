@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -470,6 +471,14 @@ func (*FakeTSDBAdminStats) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 
 func (*FakeTSDBAdminStats) BlockMetas() ([]tsdb.BlockMeta, error) {
 	return []tsdb.BlockMeta{}, nil
+}
+
+func (*FakeTSDBAdminStats) SeriesMetadata() (seriesmetadata.Reader, error) {
+	return seriesmetadata.NewMemSeriesMetadata(), nil
+}
+
+func (*FakeTSDBAdminStats) SeriesMetadataForMatchers(_ context.Context, _ ...*labels.Matcher) (seriesmetadata.Reader, error) {
+	return seriesmetadata.NewMemSeriesMetadata(), nil
 }
 
 // NewEmptyQueryable returns a queryable with no series.
