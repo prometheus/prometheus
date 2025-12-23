@@ -38,12 +38,14 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minimum Go version is met.
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
@@ -1142,6 +1144,66 @@ func (db *DB) BlockMetas() []BlockMeta {
 		metas = append(metas, b.Meta())
 	}
 	return metas
+}
+
+// SeriesMetadata returns a merged reader of series metadata from all blocks and the head.
+// It includes both metric metadata and resource attributes.
+func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
+	merged := seriesmetadata.NewMemSeriesMetadata()
+
+	// Collect metadata and resource attributes from all blocks
+	for _, b := range db.Blocks() {
+		mr, err := b.SeriesMetadata()
+		if err != nil {
+			return nil, fmt.Errorf("get block series metadata: %w", err)
+		}
+		// Collect metric metadata
+		err = mr.IterByMetricName(func(name string, meta metadata.Metadata) error {
+			merged.Set(name, 0, meta)
+			return nil
+		})
+		if err != nil {
+			mr.Close()
+			return nil, fmt.Errorf("iterate block series metadata: %w", err)
+		}
+		// Collect versioned resources (unified attributes + entities)
+		err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+			// SetVersionedResource merges versions automatically
+			merged.SetVersionedResource(labelsHash, resources)
+			return nil
+		})
+		mr.Close()
+		if err != nil {
+			return nil, fmt.Errorf("iterate block resources: %w", err)
+		}
+	}
+
+	// Collect metadata and resources from head (most recent data, overwrites block metadata)
+	headMeta, err := db.head.SeriesMetadata()
+	if err != nil {
+		return nil, fmt.Errorf("get head series metadata: %w", err)
+	}
+	// Collect metric metadata from head
+	err = headMeta.IterByMetricName(func(name string, meta metadata.Metadata) error {
+		merged.Set(name, 0, meta)
+		return nil
+	})
+	if err != nil {
+		headMeta.Close()
+		return nil, fmt.Errorf("iterate head series metadata: %w", err)
+	}
+	// Collect versioned resources from head (unified attributes + entities)
+	err = headMeta.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+		// SetVersionedResource merges versions automatically
+		merged.SetVersionedResource(labelsHash, resources)
+		return nil
+	})
+	headMeta.Close()
+	if err != nil {
+		return nil, fmt.Errorf("iterate head resources: %w", err)
+	}
+
+	return merged, nil
 }
 
 func (db *DB) run(ctx context.Context) {

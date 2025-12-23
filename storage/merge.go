@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -276,6 +277,25 @@ func (q *mergeGenericQuerier) Close() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// GetResourceAt implements ResourceQuerier by trying each underlying querier.
+// Returns the first non-nil result from any querier that supports ResourceQuerier.
+func (q *mergeGenericQuerier) GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool) {
+	for _, gq := range q.queriers {
+		// Try to get the underlying querier that implements ResourceQuerier.
+		// The genericQuerierAdapter wraps the actual Querier.
+		if gqa, ok := gq.(*genericQuerierAdapter); ok {
+			if gqa.q != nil {
+				if rq, ok := gqa.q.(ResourceQuerier); ok {
+					if rv, found := rq.GetResourceAt(labelsHash, timestamp); found {
+						return rv, true
+					}
+				}
+			}
+		}
+	}
+	return nil, false
 }
 
 func truncateToLimit(s []string, hints *LabelHints) []string {

@@ -9502,19 +9502,19 @@ func TestStaleSeriesCompaction(t *testing.T) {
 			}
 		}
 
-		querier, err := NewBlockQuerier(db.Blocks()[0], 0, 1000)
+		querier1, err := NewBlockQuerier(db.Blocks()[0], 0, 1000)
 		require.NoError(t, err)
 		t.Cleanup(func() {
-			querier.Close()
+			querier1.Close()
 		})
-		seriesSet := queryWithoutReplacingNaNs(t, querier, labels.MustNewMatcher(labels.MatchRegexp, "name", "series.*"))
+		seriesSet := queryWithoutReplacingNaNs(t, querier1, labels.MustNewMatcher(labels.MatchRegexp, "name", "series.*"))
 
-		querier, err = NewBlockQuerier(db.Blocks()[1], 1000, 2000)
+		querier2, err := NewBlockQuerier(db.Blocks()[1], 1000, 2000)
 		require.NoError(t, err)
 		t.Cleanup(func() {
-			querier.Close()
+			querier2.Close()
 		})
-		seriesSet2 := queryWithoutReplacingNaNs(t, querier, labels.MustNewMatcher(labels.MatchRegexp, "name", "series.*"))
+		seriesSet2 := queryWithoutReplacingNaNs(t, querier2, labels.MustNewMatcher(labels.MatchRegexp, "name", "series.*"))
 		for k, v := range seriesSet2 {
 			seriesSet[k] = append(seriesSet[k], v...)
 		}

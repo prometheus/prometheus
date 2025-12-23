@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -390,6 +391,12 @@ func (*OOOCompactionHead) Tombstones() (tombstones.Reader, error) {
 	return tombstones.NewMemTombstones(), nil
 }
 
+// SeriesMetadata returns series metadata for the OOO compaction head.
+// Returns an empty reader as OOO head does not persist metadata.
+func (*OOOCompactionHead) SeriesMetadata() (seriesmetadata.Reader, error) {
+	return seriesmetadata.NewMemSeriesMetadata(), nil
+}
+
 var oooCompactionHeadULID = ulid.MustParse("0000000000XX000COMPACTHEAD")
 
 func (ch *OOOCompactionHead) Meta() BlockMeta {
@@ -558,6 +565,46 @@ func (q *HeadAndOOOQuerier) Close() error {
 
 func (q *HeadAndOOOQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	return selectSeriesSet(ctx, sortSeries, hints, matchers, q.index, q.chunkr, q.head.tombstones, q.mint, q.maxt)
+}
+
+// GetResourceAt implements storage.ResourceQuerier.
+func (q *HeadAndOOOQuerier) GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool) {
+	reader, err := q.head.SeriesMetadata()
+	if err != nil {
+		return nil, false
+	}
+	// Note: we don't close the reader here as it's the head's reader
+	// which is managed by the head itself.
+	return reader.GetResourceAt(labelsHash, timestamp)
+}
+
+// IterUniqueAttributeNames implements storage.ResourceQuerier.
+func (q *HeadAndOOOQuerier) IterUniqueAttributeNames(fn func(name string)) error {
+	reader, err := q.head.SeriesMetadata()
+	if err != nil {
+		return nil
+	}
+	// Note: we don't close the reader here as it's the head's reader
+	// which is managed by the head itself.
+	seen := make(map[string]struct{})
+	return reader.IterResources(func(_ uint64, resource *seriesmetadata.ResourceVersion) error {
+		if resource == nil {
+			return nil
+		}
+		for name := range resource.Identifying {
+			if _, ok := seen[name]; !ok {
+				seen[name] = struct{}{}
+				fn(name)
+			}
+		}
+		for name := range resource.Descriptive {
+			if _, ok := seen[name]; !ok {
+				seen[name] = struct{}{}
+				fn(name)
+			}
+		}
+		return nil
+	})
 }
 
 // HeadAndOOOChunkQuerier queries both the head and the out-of-order head.

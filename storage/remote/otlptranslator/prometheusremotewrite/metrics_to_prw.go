@@ -191,6 +191,9 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 			continue
 		}
 
+		// Set resource context for persisting resource attributes with each series.
+		c.appender.SetResourceContext(resource)
+
 		// keep track of the earliest and latest timestamp in the ResourceMetrics for
 		// use with the "target" info metric
 		earliestTimestamp := pcommon.Timestamp(math.MaxUint64)
@@ -476,4 +479,17 @@ func (c *PrometheusConverter) setScopeContext(scope scope, settings Settings) er
 func (c *PrometheusConverter) clearResourceContext() {
 	c.resourceLabels = nil
 	c.scopeLabels = nil
+}
+
+// resourceAttrsToMap converts OTel resource attributes to a map[string]string.
+func resourceAttrsToMap(attrs pcommon.Map) map[string]string {
+	if attrs.Len() == 0 {
+		return nil
+	}
+	result := make(map[string]string, attrs.Len())
+	attrs.Range(func(key string, value pcommon.Value) bool {
+		result[key] = value.AsString()
+		return true
+	})
+	return result
 }

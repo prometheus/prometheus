@@ -40,6 +40,12 @@ export interface PrometheusClient {
   // flags returns flag values that prometheus was configured with.
   flags(): Promise<Record<string, string>>;
 
+  // resourceAttributePairs returns all unique resource attribute names and their values.
+  // If translate is true, OTel attribute names are translated to Prometheus label names
+  // using the configured translation strategy.
+  // If metricName is provided, only returns attributes from resources associated with that metric.
+  resourceAttributePairs(translate?: boolean, metricName?: string): Promise<Record<string, string[]>>;
+
   // destroy is called to release all resources held by this client
   destroy?(): void;
 }
@@ -203,6 +209,23 @@ export class HTTPPrometheusClient implements PrometheusClient {
     });
   }
 
+  resourceAttributePairs(translate = false, metricName?: string): Promise<Record<string, string[]>> {
+    const urlParams = new URLSearchParams();
+    urlParams.set('format', 'attributes');
+    if (translate) {
+      urlParams.set('translate', 'true');
+    }
+    if (metricName) {
+      urlParams.set('match[]', metricName);
+    }
+    return this.fetchAPI<Record<string, string[]>>(`${this.resourcesEndpoint()}?${urlParams}`).catch((error) => {
+      if (this.errorHandler) {
+        this.errorHandler(error);
+      }
+      return {};
+    });
+  }
+
   destroy(): void {
     for (const controller of this.abortControllers) {
       controller.abort();
@@ -271,6 +294,10 @@ export class HTTPPrometheusClient implements PrometheusClient {
   private flagsEndpoint(): string {
     return `${this.apiPrefix}/status/flags`;
   }
+
+  private resourcesEndpoint(): string {
+    return `${this.apiPrefix}/resources`;
+  }
 }
 
 class Cache {
@@ -281,6 +308,7 @@ class Cache {
   private labelValues: LRUCache<string, string[]>;
   private labelNames: string[];
   private flags: Record<string, string>;
+  private resourceAttributePairs: LRUCache<string, Record<string, string[]>>;
 
   constructor(config?: CacheConfig) {
     const maxAge = {
@@ -292,6 +320,7 @@ class Cache {
     this.labelValues = new LRUCache<string, string[]>(maxAge);
     this.labelNames = [];
     this.flags = {};
+    this.resourceAttributePairs = new LRUCache<string, Record<string, string[]>>(maxAge);
     if (config?.initialMetricList) {
       this.setLabelValues('__name__', config.initialMetricList);
     }
@@ -399,6 +428,14 @@ class Cache {
     }
     return [];
   }
+
+  setResourceAttributePairs(cacheKey: string, labels: Record<string, string[]>): void {
+    this.resourceAttributePairs.set(cacheKey, labels);
+  }
+
+  getResourceAttributePairs(cacheKey: string): Record<string, string[]> | undefined {
+    return this.resourceAttributePairs.get(cacheKey);
+  }
 }
 
 export class CachedPrometheusClient implements PrometheusClient {
@@ -464,6 +501,21 @@ export class CachedPrometheusClient implements PrometheusClient {
     return this.client.flags().then((flags) => {
       this.cache.setFlags(flags);
       return flags;
+    });
+  }
+
+  resourceAttributePairs(translate = false, metricName?: string): Promise<Record<string, string[]>> {
+    // Resource labels are expected to be relatively stable, so we cache them.
+    // The cache key includes the translate parameter and metric name.
+    const cacheKey = `resourceLabels_${translate}_${metricName || ''}`;
+    const cached = this.cache.getResourceAttributePairs(cacheKey);
+    if (cached && Object.keys(cached).length > 0) {
+      return Promise.resolve(cached);
+    }
+
+    return this.client.resourceAttributePairs(translate, metricName).then((labels) => {
+      this.cache.setResourceAttributePairs(cacheKey, labels);
+      return labels;
     });
   }
 
